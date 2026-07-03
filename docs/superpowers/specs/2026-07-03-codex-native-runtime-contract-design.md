@@ -1,8 +1,27 @@
-# Codex-native Runtime 契约详细设计
+# Codex-native Runtime 契约草案与验证计划
+
+## 0. 文档状态
+
+状态：草案。
+
+本设计不能直接作为 R0 编码输入。Codex CLI 是外部 ABI，必须先通过验证 spike 钉住真实行为，再冻结 Runtime 契约。验证 spike 完成前，本文中的事件映射、Chat 续接、sandbox 边界、审批策略和日志策略都属于候选设计。
+
+已在本机做过的最小验证：
+
+1. `codex --version` 返回 `codex-cli 0.139.0`。
+2. `codex exec --help` 确认支持 `--json`、stdin prompt、`-p/--profile`、`-C/--cd`、`--sandbox`、`--image`、`--ephemeral`。
+3. `codex exec --help` 未显示 `--ask-for-approval`，第一版不能把审批策略当成已验证的 `exec` 参数。
+4. `codex exec resume --help` 确认存在 session resume 能力，支持 session id、`--last`、prompt、`--json`。
+5. `codex mcp add --help` 确认支持 `--url`、stdio command、`--env`、bearer token env var。
+6. 简单 `codex exec --json` 输出了 `thread.started`、`turn.started`、`item.completed agent_message`、`turn.completed usage`。
+7. 只读 shell 样本输出了 `item.started command_execution` 和 `item.completed command_execution`，字段包括 `command`、`aggregated_output`、`exit_code`、`status`。
+8. 已观察到的 assistant 文本是整块 `agent_message.text`，不是 token 级 delta。第一版 UI 不承诺 token 级打字机流式。
+
+验证 spike 必须把 stdout 和 stderr 分离采集。本次终端采样视图同时显示了 Codex 诊断日志和 JSONL 事件，不能据此假设诊断日志一定来自 stdout。
 
 ## 1. 背景
 
-本设计是 `docs/2026-07-03-codex-native-agent-runtime-design.md` 的补充设计。基础方案定义产品方向和总体架构，本设计补齐第一版 Local Runtime Daemon 的运行契约，使其可以被实现、测试、诊断和长期演进。
+本设计是 `docs/2026-07-03-codex-native-agent-runtime-design.md` 的补充设计。基础方案定义产品方向和总体架构，本设计补齐第一版 Local Runtime Daemon 的候选运行契约，使其在通过 Codex 行为验证后可以被实现、测试、诊断和长期演进。
 
 核心原则保持不变：Codex CLI 是执行内核，Runtime 是产品契约层。Runtime 不重新实现 Agent loop、Skills runtime 或 MCP runtime，只托管输入、输出、配置、进程生命周期、事件、日志和本地调度。
 
@@ -10,7 +29,7 @@
 
 第一版 Runtime 契约目标：
 
-1. 固化 `codex exec --json` 作为唯一执行内核。
+1. 在验证 spike 通过后，固化 `codex exec --json` 和 `codex exec resume --json` 作为第一版执行内核。
 2. 定义 Local Runtime Daemon 对 UI 暴露的稳定 API 和 SSE 事件协议。
 3. 定义 Run 生命周期、并发、取消、超时和崩溃恢复语义。
 4. 定义 Codex CLI 版本检测、能力检测和 JSONL 兼容策略。
@@ -18,7 +37,7 @@
 6. 定义 Scheduler 的时区、错过触发和并发策略。
 7. 定义本地 HTTP API 的安全边界。
 8. 定义日志、脱敏和诊断包策略。
-9. 调整 P0-P7 里程碑，使 P0-P2 能优先压实 Runtime 基座。
+9. 调整 R-1 到 R7 里程碑，使验证 spike 先于 Runtime 编码。
 
 ## 3. 非目标
 
@@ -32,6 +51,7 @@
 6. 不做长期记忆系统。
 7. 不做多 Agent 协作编排。
 8. 不把 Codex 原始 JSONL 事件直接暴露给前端作为产品协议。
+9. 第一版不承诺 token 级文本增量流式；如果 Codex 只输出整块 assistant message，UI 按消息级实时展示。
 
 ## 4. 与基础方案的关系
 
@@ -119,6 +139,7 @@ daemon 启动时检测：
 10. `codex mcp remove`
 11. `codex mcp login`
 12. `codex mcp logout`
+13. `codex exec resume --json`
 
 检测结果写入 SQLite，并通过 `/codex/status` 返回给 UI。
 
@@ -147,7 +168,8 @@ Codex stdout JSONL 分三层保存：
 
 | 层 | 文件或事件 | 用途 |
 |---|---|---|
-| 原始层 | `raw.ndjson` | 保存 Codex stdout 原始行 |
+| 原始流 | 进程 stdout 内存流 | 供 parser 逐行处理，不默认明文落盘 |
+| 脱敏原始层 | `raw.redacted.ndjson` | 保存落盘前脱敏后的 Codex stdout JSONL |
 | 产品层 | `events.ndjson` 和 `run_events` | 保存 Runtime 归一化事件 |
 | 兼容层 | `unknown_event` | 保存合法但无法识别的 Codex 事件 |
 
@@ -158,6 +180,41 @@ Codex stdout JSONL 分三层保存：
 3. 缺失关键字段的合法 JSON 降级为 `unknown_event`。
 4. `Event Normalizer` 带 `normalizerVersion`。
 5. UI 只依赖 Runtime 的 `AgentEventEnvelope`，不依赖 Codex 原始事件。
+
+### 6.4 版本兼容 Gate
+
+第一版必须维护已验证 Codex 版本区间。当前草案只验证过 `codex-cli 0.139.0` 的部分行为，不能代表完整兼容。
+
+版本策略：
+
+1. Runtime 启动时检查 Codex 版本是否落在 `verifiedCodexVersionRange`。
+2. 版本落在区间内时，可以创建 run。
+3. 版本高于已验证区间时，默认进入 `compatibility_warning`，UI 强提示需要重新验证；核心事件缺失时 run 标记为 `CODEX_INCOMPATIBLE`。
+4. 版本低于最小版本或缺少必需能力时，拒绝创建 run。
+5. `POST /codex/update` 不进入第一版 API。Codex 升级由用户或系统包管理器负责，Runtime 只检测并提示。
+6. `unknown_event` 只用于非核心事件。核心事件缺失或形状不兼容不能静默降级。
+
+核心事件最小集合：
+
+1. `thread.started`
+2. `turn.started`
+3. assistant message 完成事件
+4. `turn.completed` 或等价终态事件
+
+### 6.5 当前实测事件映射
+
+以下映射来自 `codex-cli 0.139.0` 的最小样本，冻结契约前必须用验证脚本重新采集并保存 fixture。
+
+| Codex JSONL | Runtime 事件 |
+|---|---|
+| `{ "type": "thread.started", "thread_id": "..." }` | `status(initializing)`，并记录 `codexThreadId` |
+| `{ "type": "turn.started" }` | `status(running)` |
+| `{ "type": "item.started", "item": { "type": "command_execution", ... } }` | `tool_use` |
+| `{ "type": "item.completed", "item": { "type": "command_execution", ... } }` | `tool_result` |
+| `{ "type": "item.completed", "item": { "type": "agent_message", "text": "..." } }` | `assistant_message(delivery=message)` |
+| `{ "type": "turn.completed", "usage": { ... } }` | `usage` 后接 `done(succeeded)` |
+
+工具事件当前已观察字段包括 `command`、`aggregated_output`、`exit_code`、`status`。文本输出当前已观察为整块 `agent_message.text`，未观察到 token 级文本 delta。
 
 ## 7. `CODEX_HOME` 管理契约
 
@@ -187,15 +244,38 @@ Codex stdout JSONL 分三层保存：
 
 1. app 启动时全量扫描 `CODEX_HOME`。
 2. profile、skill、MCP 操作成功后刷新对应缓存。
-3. 页面打开时可以触发轻量刷新。
+3. 页面打开时应触发轻量刷新，确保 UI 不长期展示陈旧缓存。
 4. 外部文件变化如果被检测到，以 `CODEX_HOME` 内容刷新缓存。
 5. 缓存刷新失败不应导致 daemon 崩溃，应返回可诊断错误。
 
-## 8. Run 生命周期
+## 8. Chat、Thread 和 Run 生命周期
 
-Run 是 Runtime 的基本原子单元。每个 run 必须拥有固化执行计划、状态机、事件日志、Codex 快照和终止原因。
+Run 是 Runtime 的基本执行原子，一次 run 对应一次 Codex 子进程和一个最终状态。Chat 是产品入口，由一个 thread 串联多个 run。第一版多轮对话不重新实现上下文拼接，优先使用 Codex 原生 session resume。
 
-### 8.1 状态模型
+### 8.1 Chat 和 thread 模型
+
+```ts
+type ChatThread = {
+  id: string;
+  codexThreadId?: string;
+  cwd: string;
+  profile: string;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+规则：
+
+1. 用户新建 Chat 时创建 Runtime thread。
+2. 第一次消息创建普通 `codex exec --json` run。
+3. Runtime 从 `thread.started` 事件记录 `codexThreadId`。
+4. 同一 Chat 的后续消息使用 `codex exec resume <codexThreadId> --json`。
+5. 如果 Codex resume 失败，UI 明确提示“无法续接会话”，不能静默退化为全新上下文。
+6. Runs 页面展示每次执行；Chat 页面按 thread 聚合这些 run。
+7. schedule run 默认不属于 Chat thread，除非用户显式指定目标 thread。
+
+### 8.2 状态模型
 
 对 UI 暴露的状态：
 
@@ -234,20 +314,23 @@ daemon restart while running          -> orphaned
 
 `orphaned` 表示 daemon 重启后无法确认或接管原 Codex 子进程。第一版不尝试跨平台接管旧进程。对 UI 而言，`orphaned` run 展示为失败或中断；数据库保留 `internal_status = orphaned` 作为诊断状态。
 
-### 8.2 Run 执行计划
+### 8.3 Run 执行计划
 
 创建 run 时固化执行计划：
 
 ```ts
 type RunExecutionPlan = {
   runId: string;
+  threadId?: string;
+  codexThreadId?: string;
+  resumeMode: 'new_thread' | 'resume_thread';
   prompt: string;
   cwd: string;
+  canonicalCwd: string;
   workspaceMode: 'managed' | 'external';
   profile: string;
   model?: string;
   sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
-  approvalPolicy: 'never' | 'on-request' | 'untrusted';
   images: string[];
   timeoutMs?: number;
   codexSnapshot: RunCodexSnapshot;
@@ -258,28 +341,33 @@ type RunExecutionPlan = {
 
 run 开始后不再依赖可变配置。profile 后续改变只影响新 run。
 
-### 8.3 并发策略
+审批策略暂不进入第一版 `RunExecutionPlan`。`codex exec` 当前实测未显示 `--ask-for-approval` 参数；如果后续通过 config override 支持审批，必须先补双向审批协议，而不是只在 schema 中增加枚举。
+
+### 8.4 并发策略
 
 第一版默认策略：
 
 1. 不同 managed workspace 的 run 可以并发。
-2. 同一个 external `cwd` 的写入型 run 默认串行。
-3. `read-only` run 可以并发。
-4. `workspace-write` 和 `danger-full-access` 对同一 `cwd` 默认排队。
-5. 配置写操作使用全局配置锁，不杀正在运行的 run。
+2. external `cwd` 必须先经 `realpath` 归一化为 `canonicalCwd`。
+3. 同一个 `canonicalCwd` 的写入型 run 默认串行。
+4. `read-only` run 可以并发。
+5. `workspace-write` 和 `danger-full-access` 对同一 `canonicalCwd` 默认排队。
+6. 配置写操作使用全局配置锁，不杀正在运行的 run。
+7. 如果 run 使用 `--add-dir` 或后续引入额外可写目录，必须把所有可写 realpath 纳入锁集合；第一版默认不开放 `--add-dir`。
 
 ```ts
 type RunConcurrencyPolicy = {
-  sameCwdPolicy: 'queue' | 'reject' | 'parallel';
-  defaultSameCwdPolicy: 'queue';
+  sameWorkspacePolicy: 'queue' | 'reject' | 'parallel';
 };
 ```
 
-### 8.4 取消和进程清理
+默认值为 `queue`。
+
+### 8.5 取消和进程清理
 
 取消规则：
 
-1. spawn 时尽量创建独立 process group。
+1. spawn 时必须创建可清理的进程树边界；不同平台可以用不同实现。
 2. cancel 时先发送温和终止信号。
 3. grace period 后仍未退出，则强制 kill。
 4. Windows、macOS、Linux 分别封装 ProcessTreeKiller。
@@ -298,7 +386,9 @@ type TerminationReason =
   | 'process_kill_failed';
 ```
 
-### 8.5 超时
+daemon 正常退出时必须先尝试取消并清理所有子 Codex 进程。`orphaned` 只用于 daemon 崩溃、系统强杀或进程清理失败后无法确认状态的场景。
+
+### 8.6 超时
 
 第一版支持两个 timeout：
 
@@ -307,14 +397,14 @@ type TerminationReason =
 
 普通用户 run 可以不设置默认总超时。schedule run 应支持 timeout，避免长期挂起。
 
-### 8.6 崩溃恢复
+### 8.7 崩溃恢复
 
 daemon 启动时执行恢复扫描：
 
 1. 查询 SQLite 中 `spawning`、`running`、`canceling` 的 run。
 2. 如果没有可接管进程，标记为 `orphaned`。
 3. 写入 `error` 事件和 `done` 事件，其中 `done.status = failed`，同时保留 `internal_status = orphaned`。
-4. 检查 raw log 和 events 是否完整。
+4. 检查 `raw.redacted.ndjson` 和 `events.ndjson` 是否完整。
 5. Scheduler 根据 misfire 策略处理错过触发。
 
 ## 9. 事件协议和 SSE
@@ -330,7 +420,7 @@ type AgentEventEnvelope = {
   seq: number;
   ts: string;
   type: AgentEventType;
-  payload: unknown;
+  payload: AgentEventPayload;
   normalizerVersion: number;
   rawEventId?: string;
 };
@@ -343,7 +433,7 @@ type AgentEventEnvelope = {
 ```ts
 type AgentEventType =
   | 'status'
-  | 'text_delta'
+  | 'assistant_message'
   | 'tool_use'
   | 'tool_result'
   | 'usage'
@@ -352,14 +442,46 @@ type AgentEventType =
   | 'done';
 ```
 
+```ts
+type AgentEventPayload =
+  | { type: 'status'; label: 'initializing' | 'running' | 'canceling' | 'finalizing' }
+  | { type: 'assistant_message'; text: string; format: 'plain_text'; delivery: 'message' | 'delta' }
+  | { type: 'tool_use'; toolCallId: string; name: string; input: { command?: string; args?: string[]; raw?: unknown } }
+  | { type: 'tool_result'; toolCallId: string; output: string; exitCode?: number | null; isError: boolean }
+  | { type: 'usage'; inputTokens?: number; cachedInputTokens?: number; outputTokens?: number; reasoningOutputTokens?: number }
+  | { type: 'error'; code: string; message: string; details?: Record<string, unknown> }
+  | { type: 'unknown_event'; rawEventId: string; codexType?: string }
+  | { type: 'done'; status: 'succeeded' | 'failed' | 'canceled'; terminationReason: TerminationReason };
+```
+
 规则：
 
 1. `unknown_event` 不表示失败。
 2. `error` 表示 Codex 或 Runtime 出现可展示错误。
 3. `done` 是每个进入终态的 run 的最终事件。
 4. `done.status` 只能是 `succeeded`、`failed` 或 `canceled`。
+5. 当前已验证 Codex 文本输出是消息级 `agent_message.text`，因此第一版默认发送 `assistant_message.delivery = message`。
+6. 只有在验证到 Codex 确实输出文本增量时，才允许发送 `assistant_message.delivery = delta`。
 
-### 9.3 SSE replay
+### 9.3 事件序号和版本兼容
+
+事件序号规则：
+
+1. `seq` 由 Runtime 在持久化事件时生成，不来自 Codex。
+2. 每个 run 的 `seq` 从 1 开始单调递增。
+3. 写入 `run_events` 和 `events.ndjson` 必须在同一个持久化步骤中使用同一个 `seq`。
+4. 崩溃恢复补写 `error` 和 `done` 时，必须先读取该 run 已持久化的最大 `seq`，再从 `max(seq) + 1` 继续。
+5. 如果 `events.ndjson` 和 SQLite `run_events` 的最大 `seq` 不一致，恢复流程必须先进入诊断状态，不得盲目覆盖已有事件。
+
+`normalizerVersion` 规则：
+
+1. 每条 `AgentEventEnvelope` 保存生成它的 `normalizerVersion`。
+2. UI 必须支持当前版本和至少上一个 normalizer 主版本生成的事件。
+3. 已归一化的历史事件默认按原版本回放，不在读取时隐式重写。
+4. 如果新版本需要重建历史事件，必须通过显式 migration 任务从 `raw.redacted.ndjson` 或原始诊断样本生成新事件，并保留原事件备份。
+5. normalizer 主版本升级必须带真实 Codex fixture 回归测试。
+
+### 9.4 SSE replay
 
 `GET /runs/:id/events` 支持按序号恢复：
 
@@ -370,8 +492,8 @@ Last-Event-ID: 42
 
 规则：
 
-1. 首次连接默认从最新事件开始。
-2. UI 可以指定 `fromSeq=0` 拉取全量。
+1. 首次连接默认从 `fromSeq=0` 回放全量历史，然后继续 tail。
+2. UI 可以指定 `fromSeq` 从某个序号继续。
 3. 断线重连使用 `Last-Event-ID` 或 `fromSeq` 继续。
 4. SSE `id` 使用事件 `seq`。
 5. run 已结束时，重放历史事件后发送最终 `done` 并关闭连接。
@@ -382,8 +504,8 @@ SSE 示例：
 
 ```text
 id: 43
-event: text_delta
-data: {"id":"evt_...","runId":"run_...","seq":43,"ts":"...","type":"text_delta","payload":{"text":"..."}}
+event: assistant_message
+data: {"id":"evt_...","runId":"run_...","seq":43,"ts":"...","type":"assistant_message","payload":{"type":"assistant_message","text":"...","format":"plain_text","delivery":"message"}}
 ```
 
 ## 10. 日志、脱敏和诊断
@@ -395,9 +517,9 @@ data: {"id":"evt_...","runId":"run_...","seq":43,"ts":"...","type":"text_delta",
 ```text
 runs/run-<id>/
   meta.json
-  raw.ndjson
+  raw.redacted.ndjson
   events.ndjson
-  stderr.log
+  stderr.redacted.log
   diagnostics.json
 ```
 
@@ -405,21 +527,23 @@ runs/run-<id>/
 
 | 文件 | 职责 |
 |---|---|
-| `meta.json` | 执行计划、Codex 快照、终止原因、开始结束时间 |
-| `raw.ndjson` | Codex stdout 原始 JSONL |
+| `meta.json` | 执行计划、Codex 快照、终止原因、开始结束时间；敏感字段脱敏或摘要化 |
+| `raw.redacted.ndjson` | 落盘前脱敏后的 Codex stdout JSONL |
 | `events.ndjson` | Runtime 归一化事件 |
-| `stderr.log` | Codex stderr |
+| `stderr.redacted.log` | 落盘前脱敏后的 Codex stderr |
 | `diagnostics.json` | 解析错误、未知事件统计、退出码、信号、runtime 版本 |
 
 SQLite 保存索引和查询字段，不替代文件日志。
 
 ### 10.2 脱敏策略
 
-Runtime 分存储层和展示层处理敏感信息：
+Runtime 分落盘层、展示层和导出层处理敏感信息：
 
-1. 存储层默认保存原始日志，便于本地诊断。
-2. 展示层和诊断包导出必须脱敏。
-3. 后续可以增加隐私模式，不保存 raw。
+1. 默认落盘的是 redacted raw 和 redacted stderr。
+2. 展示层和诊断包导出必须再次经过脱敏管道。
+3. 真正原始 raw/stderr 只允许在显式诊断模式下短期保存，默认关闭。
+4. 显式诊断模式必须有 UI 二次确认、保留期限和一键删除。
+5. `prompt_preview` 默认关闭；如果开启，必须使用脱敏后的短摘要。
 
 第一版脱敏规则至少覆盖：
 
@@ -428,6 +552,7 @@ Runtime 分存储层和展示层处理敏感信息：
 3. Authorization headers。
 4. 常见 API key 模式。
 5. 用户配置中显式标记为 secret 的字段。
+6. prompt、tool input、tool output 中匹配上述规则的内容。
 
 MCP 展示规则：
 
@@ -441,11 +566,11 @@ MCP 展示规则：
 
 1. `meta.json`
 2. `events.ndjson`
-3. `stderr.log`
+3. `stderr.redacted.log`
 4. `diagnostics.json`
 5. `/codex/status` 快照
 
-默认不包含 `raw.ndjson`。如果用户选择包含原始日志，UI 必须二次确认。
+默认不包含原始日志。诊断包可以包含 `raw.redacted.ndjson`。如果用户选择包含未脱敏原始日志，必须先开启显式诊断模式并二次确认。
 
 ## 11. Scheduler 语义
 
@@ -482,10 +607,11 @@ type Schedule = {
 
 ### 11.2 默认值
 
-1. `timezone` 使用系统当前时区。
+1. `timezone` 创建时使用系统当前时区，并固化到 schedule。
 2. `concurrencyPolicy` 默认为 `skip`。
 3. `misfirePolicy` 默认为 `skip`。
 4. `sandbox` 默认为 `workspace-write`。
+5. 系统时区变化后，已有 schedule 继续按创建时固化的 `timezone` 计算，除非用户显式修改。
 
 ### 11.3 策略语义
 
@@ -506,6 +632,17 @@ type Schedule = {
 
 第一版不默认补跑，避免本地桌面环境恢复后产生意外写操作。
 
+### 11.4 调度库验证
+
+Scheduler 实现前必须验证所选 cron 库是否能支持以下行为：
+
+1. 进程关闭后重启，能根据 `nextRunAt` 判断是否 misfire。
+2. 系统睡眠后唤醒，Runtime 能识别错过的 `nextRunAt`。
+3. DST 切换日能给出确定行为。
+4. 用户修改系统时区后，不会隐式改变已固化 schedule 的语义。
+
+如果 cron 库不能直接提供 misfire 检测，Runtime 必须用 SQLite 中的 `nextRunAt` 自行判断，而不能依赖进程内 timer 的补触发行为。
+
 ## 12. 本地 API 安全
 
 Local Runtime Daemon 默认只作为本机服务，不提供远程访问能力。
@@ -516,13 +653,15 @@ Local Runtime Daemon 默认只作为本机服务，不提供远程访问能力�
 
 1. 默认监听 `127.0.0.1`。
 2. 不监听 `0.0.0.0`。
-3. daemon 启动时生成随机 `runtimeAuthToken`。
+3. Electron 托管模式下，daemon 启动时生成随机 `runtimeAuthToken`。
 4. Electron main 进程持有 token，并注入给 UI。
 5. 所有非健康检查接口要求 `Authorization: Bearer <token>`。
 6. SSE 也必须鉴权。
-7. token 只保存在当前 daemon 生命周期内。
+7. Electron 托管模式下，token 只保存在当前 daemon 生命周期内。
 8. CORS 默认关闭，或只允许 Electron app origin。
 9. 写接口校验 `Content-Type: application/json`。
+10. 后续常驻 daemon 模式必须改用 OS keychain 或 owner-only 权限文件分发 token，不能依赖 Electron 注入链路。
+11. 多窗口 UI 必须通过 Electron main 获取当前 token，不能各自生成 token。
 
 `GET /healthz` 可以不鉴权，但只返回：
 
@@ -540,14 +679,15 @@ type Healthz = {
 
 1. `POST /runs`
 2. `POST /runs/:id/cancel`
-3. `POST /codex/update`
-4. `POST /codex/login`
-5. `POST /codex/mcp/add`
-6. `POST /codex/mcp/:name/login`
-7. `POST /schedules`
-8. `PATCH /schedules/:id`
+3. `POST /codex/login`
+4. `POST /codex/mcp/add`
+5. `POST /codex/mcp/:name/login`
+6. `POST /schedules`
+7. `PATCH /schedules/:id`
 
 高风险接口必须记录操作日志，并在 UI 层提供必要的确认和风险提示。
+
+`POST /codex/update` 不进入第一版。升级 Codex 会改变 Runtime 依赖的外部 ABI，必须由用户或系统包管理器处理，Runtime 只检测兼容性并提示。
 
 ## 13. 数据模型补充
 
@@ -556,18 +696,20 @@ type Healthz = {
 ```text
 runs
   id
+  thread_id
+  codex_thread_id
   public_status
   internal_status
   created_by
   source_id
   profile
   cwd
+  canonical_cwd
   workspace_mode
   prompt_hash
-  prompt_preview
+  prompt_preview_redacted
   model
   sandbox
-  approval_policy
   codex_version
   codex_bin
   codex_home
@@ -584,7 +726,7 @@ runs
   error_message
 ```
 
-完整 prompt 放入 `meta.json`。SQLite 存 hash 和 preview，减少敏感内容扩散。
+完整 prompt 默认不进入 SQLite。`meta.json` 中的 prompt 字段也必须按日志策略脱敏或显式诊断模式控制。SQLite 存 hash 和脱敏摘要，减少敏感内容扩散。
 
 ### 13.2 `run_events`
 
@@ -605,6 +747,8 @@ run_events
 unique(run_id, seq)
 ```
 
+`run_events` 只保存状态、工具、usage、error、done 和消息级 assistant 事件索引。大体量回放数据以 `events.ndjson` 为准，避免 token 级或大文本事件把 SQLite 作为主回放存储。
+
 ### 13.3 `schedules`
 
 ```text
@@ -616,8 +760,9 @@ schedules
   enabled
   profile
   cwd
+  canonical_cwd
   prompt_hash
-  prompt_preview
+  prompt_preview_redacted
   model
   sandbox
   timeout_ms
@@ -644,6 +789,9 @@ runtime_capabilities
   supports_mcp
   supports_images
   supports_sandbox
+  supports_resume
+  verified_min_version
+  verified_max_version
   checked_at
   raw_json
 ```
@@ -669,7 +817,7 @@ runtime_capabilities
 7. redaction 脱敏规则。
 8. `CODEX_HOME` profile TOML 读写和原子写入。
 
-### 14.2 集成测试
+### 14.2 fake Codex 集成测试
 
 使用 fake Codex binary，模拟：
 
@@ -685,7 +833,24 @@ runtime_capabilities
 10. cancel 后子进程不退出，需要强杀。
 11. 大量事件输出时 SSE 仍可 replay。
 
-### 14.3 端到端测试
+fake Codex 用于验证 Runtime 实现是否符合契约，不能证明契约符合真实 Codex。
+
+### 14.3 真实 Codex smoke 测试
+
+每个支持的 Codex 版本至少保留一组真实 smoke 样本：
+
+1. `codex --version`
+2. `codex exec --help`
+3. `codex exec resume --help`
+4. `codex mcp --help`
+5. `codex mcp add --help`
+6. 简单 assistant message run 的 stdout/stderr 分离样本。
+7. command execution run 的 stdout/stderr 分离样本。
+8. 失败路径样本：认证失败、非零退出或非法配置。
+
+这些样本用于冻结 normalizer fixture。没有真实样本覆盖的事件类型不得作为稳定产品事件承诺。
+
+### 14.4 端到端测试
 
 覆盖：
 
@@ -699,7 +864,29 @@ runtime_capabilities
 
 ## 15. 里程碑调整
 
-### P0：Runtime Kernel
+基础方案中的 P0-P6 是方向性里程碑。本文档以 R-1 到 R7 作为 Runtime 落地里程碑；后续计划和实施以 R 编号为准。
+
+### R-1：Codex 行为验证 Spike
+
+目标：
+
+1. 固化验证脚本，采集 stdout 和 stderr 分离样本。
+2. 验证 `codex exec --json` 的真实事件粒度。
+3. 验证 command execution、usage、错误路径事件结构。
+4. 验证 `codex exec resume --json` 的 thread 续接行为。
+5. 验证 `--sandbox workspace-write` 的真实可写边界。
+6. 验证 `--image` 多图、路径、格式和大小约束。
+7. 验证 `codex mcp` 子命令参数。
+8. 验证所选 cron 库的 sleep、misfire、timezone、DST 行为。
+
+验收：
+
+1. 文档中有真实 Codex 版本、help 输出摘要和 JSONL fixture。
+2. 明确支持的 Codex 版本区间。
+3. 明确第一版是否支持 resume Chat、image、approval、scheduler misfire。
+4. 未验证能力不得进入 R0 实现范围。
+
+### R0：Runtime Kernel Harness
 
 目标：
 
@@ -707,7 +894,7 @@ runtime_capabilities
 2. 独立 `CODEX_HOME` 初始化。
 3. Codex Runner。
 4. stdin prompt。
-5. raw、stdout、stderr 落盘。
+5. redacted raw、events、redacted stderr 落盘。
 6. JSONL parser。
 7. Run 状态机。
 8. cancel、timeout、process cleanup。
@@ -715,11 +902,11 @@ runtime_capabilities
 
 验收：
 
-1. 通过本地 API 创建 run，能完整记录 raw、events、stderr、meta。
+1. 通过命令行 harness 创建 run，能完整记录 redacted raw、events、redacted stderr、meta。
 2. 非法 JSON、非零退出、cancel、timeout 都能进入确定状态。
 3. daemon 重启后 running run 标记为 `orphaned`。
 
-### P1：Run API + SSE
+### R1：Run API + SSE
 
 目标：
 
@@ -737,7 +924,7 @@ runtime_capabilities
 2. 已结束 run 可以重放完整事件。
 3. 未授权请求被拒绝。
 
-### P2：Desktop UI Chat + Runs
+### R2：Desktop UI Chat + Runs
 
 目标：
 
@@ -753,8 +940,9 @@ runtime_capabilities
 
 1. 非开发用户可以通过桌面 UI 完成一次普通 run。
 2. 用户可以看到 run 历史和基础诊断信息。
+3. 如果 R-1 验证通过 resume，则 Chat 可以续接同一 Codex thread；否则 UI 明确标注为独立 run 模式。
 
-### P3：Profiles / Settings / `CODEX_HOME` 管理
+### R3：Profiles / Settings / `CODEX_HOME` 管理
 
 目标：
 
@@ -769,7 +957,7 @@ runtime_capabilities
 1. 修改 profile 只影响新 run。
 2. 配置损坏可诊断，不会让 daemon 崩溃。
 
-### P4：Skills Pass-through
+### R4：Skills Pass-through
 
 目标：
 
@@ -784,7 +972,7 @@ runtime_capabilities
 1. 安装后新 run 能由 Codex 原生发现 skill。
 2. 无效 skill 被标记为 `invalid`。
 
-### P5：MCP Pass-through
+### R5：MCP Pass-through
 
 目标：
 
@@ -798,7 +986,7 @@ runtime_capabilities
 1. UI 添加 MCP 后，新 run 可由 Codex 原生使用。
 2. MCP env value 默认不明文展示。
 
-### P6：Scheduler
+### R6：Scheduler
 
 目标：
 
@@ -815,7 +1003,7 @@ runtime_capabilities
 2. daemon 重启后按 misfire 策略处理。
 3. 同 schedule 并发按 policy 执行。
 
-### P7：Packaging + Diagnostics
+### R7：Packaging + Diagnostics
 
 目标：
 
@@ -827,7 +1015,7 @@ runtime_capabilities
 
 验收：
 
-1. 安装包环境可完整使用 P0-P6。
+1. 安装包环境可完整使用 R0-R6。
 2. 用户可导出脱敏诊断包。
 
 ## 16. 第一版完成定义
