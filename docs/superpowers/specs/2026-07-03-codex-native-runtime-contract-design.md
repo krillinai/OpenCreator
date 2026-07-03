@@ -216,6 +216,18 @@ Codex stdout JSONL 分三层保存：
 
 工具事件当前已观察字段包括 `command`、`aggregated_output`、`exit_code`、`status`。文本输出当前已观察为整块 `agent_message.text`，未观察到 token 级文本 delta。
 
+### 6.6 危险参数禁止透传
+
+第一版 Runtime 不允许通过 UI、API、profile、schedule 或 config override 透传会绕过安全边界的 Codex 参数。
+
+禁止项：
+
+1. `--dangerously-bypass-approvals-and-sandbox`
+2. `--dangerously-bypass-hook-trust`
+3. 等价的 config override 或 profile 字段。
+
+如果未来需要支持这些能力，必须先新增独立设计，明确外部沙箱、用户确认、日志提示和风险隔离策略。第一版只能使用显式 `sandbox` 枚举：`read-only`、`workspace-write`、`danger-full-access`。
+
 ## 7. `CODEX_HOME` 管理契约
 
 `CODEX_HOME` 是 Codex 原生配置、profile、skills、MCP 和 session 状态的真相源。Runtime 只托管它，不替代它。
@@ -407,6 +419,19 @@ daemon 启动时执行恢复扫描：
 4. 检查 `raw.redacted.ndjson` 和 `events.ndjson` 是否完整。
 5. Scheduler 根据 misfire 策略处理错过触发。
 
+### 8.8 最终状态判定
+
+run 最终状态由 Runtime 综合 Codex 子进程退出状态、JSONL 终态事件和 Runtime 自身错误决定。
+
+规则：
+
+1. Codex 子进程 exit code 为 0，且 JSONL 中出现可识别的成功终态时，run 标记为 `succeeded`。
+2. Codex 子进程非零退出时，run 标记为 `failed`，`terminationReason = codex_exit_non_zero`。
+3. stdout JSONL 非法或关键事件缺失时，run 标记为 `failed`，`terminationReason = stream_error` 或 `CODEX_INCOMPATIBLE`。
+4. spawn 失败、timeout、用户取消、进程清理失败分别按对应 `TerminationReason` 判定。
+5. stderr 内容默认写入 `stderr.redacted.log` 和 `diagnostics.json`，但 stderr 中出现 `ERROR` 字样不能单独决定 run 失败。
+6. stderr 中的认证、插件、MCP、analytics 警告应归类为 diagnostics warning；只有当它导致非零退出、关键 JSONL 缺失或 Codex 明确失败事件时，才影响最终状态。
+
 ## 9. 事件协议和 SSE
 
 ### 9.1 AgentEventEnvelope
@@ -499,6 +524,7 @@ Last-Event-ID: 42
 5. run 已结束时，重放历史事件后发送最终 `done` 并关闭连接。
 6. 服务端发送心跳事件，避免空闲连接中断。
 7. run 不存在返回 `RUN_NOT_FOUND`。
+8. SSE replay 的权威数据源是 `events.ndjson`；SQLite `run_events` 只用于查询、定位和索引，不能作为完整回放数据源。
 
 SSE 示例：
 
@@ -888,6 +914,11 @@ fake Codex 用于验证 Runtime 实现是否符合契约，不能证明契约符
 
 ### R0：Runtime Kernel Harness
 
+前置条件：
+
+1. R-1 验证通过。
+2. 已冻结第一版支持的 Codex 版本区间和 fixture。
+
 目标：
 
 1. Codex CLI 检测和能力快照。
@@ -907,6 +938,10 @@ fake Codex 用于验证 Runtime 实现是否符合契约，不能证明契约符
 3. daemon 重启后 running run 标记为 `orphaned`。
 
 ### R1：Run API + SSE
+
+前置条件：
+
+1. R0 的命令行 harness 已通过 fake Codex 和真实 Codex smoke 测试。
 
 目标：
 
@@ -1028,4 +1063,7 @@ fake Codex 用于验证 Runtime 实现是否符合契约，不能证明契约符
 4. 本地 API 不裸露给未授权调用方。
 5. 配置写入有锁、原子性和缓存同步。
 6. Scheduler 行为可预测。
-7. fake Codex 测试覆盖主要异常路径。
+7. R-1 真实 Codex 验证通过，并保存 stdout/stderr 分离 fixture。
+8. 支持的 Codex 版本区间已明确，版本超界行为可验证。
+9. fake Codex 测试覆盖主要异常路径。
+10. 真实 Codex smoke 测试覆盖 assistant message、command execution、usage、stderr warning 和失败路径。

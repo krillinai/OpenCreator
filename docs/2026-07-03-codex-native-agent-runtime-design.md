@@ -1,5 +1,11 @@
 # Codex-native 自有 Agent Runtime 技术方案
 
+## 0. 文档状态
+
+本文件是 Codex-native 自有 Agent Runtime 的基础蓝图，描述产品方向、总体架构和长期演进路线。
+
+具体运行契约、Codex CLI 兼容策略、日志脱敏、安全边界、Run 状态机、Scheduler 语义和实施里程碑，以 `docs/superpowers/specs/2026-07-03-codex-native-runtime-contract-design.md` 为准。若两份文档存在差异，后者优先。
+
 ## 1. 背景
 
 本方案面向一个本地运行的自有 Agent 产品。产品需要拥有自己的入口、界面、任务中心、Skills 管理、MCP 管理和定时任务能力，但底层 Agent 执行能力尽量复用 Codex 原生能力。
@@ -900,4 +906,3 @@ Codex 可以作为其中一个 runtime，不排斥 Claude、Gemini、自研 HTTP
 6. Scheduler 是薄触发器，不是 Agent runtime。
 7. 前端依赖自有事件协议，不依赖 Codex 原始 JSONL。
 8. 企业能力逐步叠加在壳和 Gateway 上，不侵入 Codex 执行内核。
-
