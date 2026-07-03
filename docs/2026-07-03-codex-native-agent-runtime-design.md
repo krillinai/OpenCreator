@@ -23,7 +23,7 @@
 5. 提供稳定的本地 Run API 和 SSE 事件流，前端不直接依赖 Codex 原始事件格式。
 6. 通过 Codex 原生目录和命令透传 Skills、MCP、plugin、login、doctor 等能力。
 7. 通过本地 Scheduler 最小化补齐定时触发能力，到点后仍然执行普通 Codex run。
-8. 保存 run 元数据、原始日志、归一化事件和 stderr，便于诊断和后续审计。
+8. 保存 run 元数据、脱敏原始日志、归一化事件和脱敏 stderr，便于诊断和后续审计。
 
 ## 3. 第一版非目标
 
@@ -214,6 +214,8 @@ Codex Home Manager 是 Codex 原生能力的配置托管层。
 4. 管理 `skills/` 目录。
 5. 为 Codex 子进程设置 `CODEX_HOME`。
 6. 支持检测 Codex CLI、版本、doctor 状态。
+7. 启动 Codex 前对托管 `CODEX_HOME` 做防御性配置归一化。
+8. 统一展开 `~`，确保 daemon 侧、诊断侧和子进程 env 侧看到同一个路径。
 
 设计原则：
 
@@ -260,6 +262,14 @@ codex mcp remove <name>
 codex mcp login <name>
 codex mcp logout <name>
 ```
+
+添加 stdio MCP server 时使用 Codex 原生命令形态：
+
+```bash
+codex mcp add <name> --env KEY=VALUE -- <command> <args...>
+```
+
+探测已安装 server 使用 `codex mcp get <name>` 的退出码，MCP 管理命令需要短超时，候选值为 30 秒。
 
 职责：
 
@@ -323,13 +333,14 @@ Codex Runner 是进程托管层。
 CODEX_HOME=~/.your-agent/codex-home \
 codex exec \
   --json \
+  --skip-git-repo-check \
   -p <profile> \
   -C <workspace> \
   --sandbox workspace-write \
   --model <model>
 ```
 
-prompt 必须走 stdin，不放 argv，避免跨平台命令行长度限制。
+prompt 必须走 stdin，不放 argv，避免跨平台命令行长度限制；stdin 形态不追加裸 `-` 哨兵。reasoning 通过 `-c model_reasoning_effort=...` 传递。resume run 的参数形态与 create run 不同，具体以详细契约为准。
 
 ### 7.9 Event Normalizer
 
@@ -343,7 +354,7 @@ Codex 常见事件映射：
 | `turn.started` | `status: running` |
 | `item.started command_execution` | `tool_use` |
 | `item.completed command_execution` | `tool_result` |
-| `item.completed agent_message` | `text_delta` |
+| `item.completed agent_message` | `assistant_message` |
 | `turn.completed usage` | `usage` |
 | `turn.failed` / `error` | `error` |
 
@@ -352,10 +363,11 @@ Codex 常见事件映射：
 ```ts
 type AgentEvent =
   | { type: 'status'; label: string }
-  | { type: 'text_delta'; text: string }
+  | { type: 'assistant_message'; text: string; format: 'plain_text'; delivery: 'message' | 'delta' }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; id: string; output: unknown; isError: boolean }
-  | { type: 'usage'; inputTokens?: number; outputTokens?: number; cachedInputTokens?: number }
+  | { type: 'usage'; inputTokens?: number; outputTokens?: number; cachedInputTokens?: number; source: 'stream_cumulative' | 'rollout_best_effort' }
+  | { type: 'diagnostic'; code: string; severity: 'info' | 'warning' | 'error'; message: string }
   | { type: 'error'; code?: string; message: string }
   | { type: 'done'; status: 'succeeded' | 'failed' | 'canceled' };
 ```
@@ -417,6 +429,8 @@ Run 状态：
 ```ts
 type RunStatus = {
   id: string;
+  threadId?: string;
+  codexThreadId?: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
   profile: string;
   cwd: string;
@@ -588,11 +602,15 @@ type ApiError = {
 |---|---|
 | `CODEX_NOT_FOUND` | 找不到 Codex CLI |
 | `CODEX_AUTH_REQUIRED` | Codex 未登录或凭证不可用 |
+| `CODEX_CONFIG_INVALID` | 托管 `CODEX_HOME` 配置无法被 Codex CLI 接受或归一化失败 |
 | `RUN_NOT_FOUND` | run 不存在 |
+| `THREAD_NOT_FOUND` | thread 不存在 |
+| `RESUME_TARGET_NOT_FOUND` | Codex session/thread 不存在、过期或不可读 |
 | `RUN_ALREADY_TERMINAL` | run 已结束，不能取消 |
 | `SPAWN_FAILED` | 启动 Codex 失败 |
 | `CODEX_EXIT_NON_ZERO` | Codex 非零退出 |
 | `CODEX_STREAM_ERROR` | Codex JSONL 解析或协议错误 |
+| `RESUME_FAILED` | resume 调用失败且无法安全 reseed |
 | `SKILL_INVALID` | skill 缺失 `SKILL.md` 或格式无效 |
 | `MCP_COMMAND_FAILED` | `codex mcp` 命令失败 |
 | `SCHEDULE_INVALID` | cron 或 schedule 配置无效 |
@@ -608,6 +626,7 @@ type ApiError = {
 5. MCP server 添加需要展示 command、args 和 env。
 6. run 日志里避免明文显示敏感 env。
 7. 取消 run 时确保子进程和衍生资源清理。
+8. sandbox 选择必须展示用户意图和实际执行策略；Windows/WSL/macOS/Linux 的可用边界以详细契约的能力矩阵为准。
 
 ## 13. 数据库模型
 
@@ -618,6 +637,8 @@ type ApiError = {
 ```text
 runs
   id
+  thread_id
+  codex_thread_id
   status
   profile
   cwd
@@ -625,6 +646,10 @@ runs
   model
   reasoning
   sandbox
+  timeout_ms
+  inactivity_timeout_ms
+  transcript_reseed_mode
+  usage_source
   started_at
   ended_at
   error
