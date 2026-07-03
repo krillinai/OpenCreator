@@ -114,13 +114,14 @@
       skill-b/
         SKILL.md
   workspaces/
+    thread-<id>/
     run-<id>/
   runs/
     run-<id>/
       meta.json
-      raw.ndjson
+      raw.redacted.ndjson
       events.ndjson
-      stderr.log
+      stderr.redacted.log
   schedules/
     schedules.json
 ```
@@ -130,8 +131,9 @@
 | 目录 | 职责 |
 |---|---|
 | `codex-home/` | 自有 Agent 专属 `CODEX_HOME`，承载 Codex 原生配置、profile、skills、MCP 和 session 状态 |
-| `workspaces/` | 每次 run 的默认工作目录，Codex 在其中读写文件 |
-| `runs/` | run 元数据、原始事件、归一化事件和错误日志 |
+| `workspaces/thread-<id>/` | managed Chat/thread 的固定工作目录，保证同一多轮会话的文件连续性 |
+| `workspaces/run-<id>/` | 独立 run 的默认工作目录，用于不属于 Chat thread 的一次性执行 |
+| `runs/` | run 元数据、脱敏后的原始事件、归一化事件和脱敏错误日志 |
 | `app.sqlite` | 本地索引数据库，保存 runs、profiles、schedules、settings 等可查询状态 |
 
 ## 7. 分层职责
@@ -286,6 +288,7 @@ type Schedule = {
   cwd?: string;
   prompt: string;
   model?: string;
+  reasoning?: 'default' | 'low' | 'medium' | 'high' | 'xhigh';
   sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
   createdAt: string;
   updatedAt: string;
@@ -295,7 +298,7 @@ type Schedule = {
 触发流程：
 
 ```text
-到点 -> 创建 run -> 使用 schedule 中的 profile/cwd/prompt -> codex exec --json
+到点 -> 创建 run -> 使用 schedule 中的 profile/cwd/model/reasoning/sandbox/prompt -> codex exec --json
 ```
 
 如果未来 Codex 提供稳定原生 scheduler，则本层可以降级为配置壳或迁移器。
@@ -369,6 +372,12 @@ GET  /runs
 GET  /runs/:id
 GET  /runs/:id/events
 POST /runs/:id/cancel
+POST /threads
+GET  /threads
+GET  /threads/:id
+GET  /threads/:id/runs
+PATCH /threads/:id
+POST /threads/:id/archive
 ```
 
 Run 请求：
@@ -376,6 +385,8 @@ Run 请求：
 ```ts
 type RunRequest = {
   prompt: string;
+  threadId?: string;
+  resumeMode?: 'new_thread' | 'resume_thread';
   profile?: string;
   cwd?: string;
   model?: string;
@@ -384,6 +395,13 @@ type RunRequest = {
   images?: string[];
 };
 ```
+
+规则：
+
+1. 未传 `threadId` 时，`POST /runs` 创建独立 run，默认使用 `workspaces/run-<id>/`。
+2. 传入 `threadId` 时，run 属于对应 Chat thread；managed thread 使用 `workspaces/thread-<id>/`，external thread 使用创建时固化的 `cwd`。
+3. thread run 的 `profile`、`cwd`、`model`、`reasoning` 和 `sandbox` 以 thread 创建时固化配置为准，不能被每次 run 请求覆盖。
+4. `resumeMode`、thread API 的完整字段和错误语义以详细契约文档为准。
 
 Run 创建响应：
 
@@ -605,6 +623,7 @@ runs
   cwd
   prompt
   model
+  reasoning
   sandbox
   started_at
   ended_at
@@ -627,6 +646,7 @@ schedules
   cwd
   prompt
   model
+  reasoning
   sandbox
   created_at
   updated_at
