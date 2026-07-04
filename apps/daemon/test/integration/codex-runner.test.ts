@@ -150,6 +150,28 @@ describe('codex runner', () => {
     ).rejects.toMatchObject({ terminationReason: 'inactivity_timeout' });
   });
 
+  it('rejects with spawn timeout before codex emits any activity', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.started' }],
+      initialDelayMs: 500,
+      hang: true
+    });
+
+    await expect(
+      runCodexExec({
+        codexBin: fake.bin,
+        codexHome: join(tempDir, 'codex-home'),
+        cwd: tempDir,
+        args: ['exec', '--json'],
+        prompt: 'hello',
+        timeoutMs: 5000,
+        spawnTimeoutMs: 50,
+        inactivityTimeoutMs: 5000
+      })
+    ).rejects.toMatchObject({ terminationReason: 'spawn_timeout' });
+  });
+
   it('surfaces spawn failures as classified errors', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
 

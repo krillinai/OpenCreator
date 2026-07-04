@@ -7,6 +7,7 @@ export type RunCodexExecInput = {
   args: string[];
   prompt: string;
   timeoutMs?: number;
+  spawnTimeoutMs?: number;
   inactivityTimeoutMs?: number;
   forceKillGraceMs?: number;
   onStdoutLine?: (line: string) => void;
@@ -25,6 +26,7 @@ export type CodexExecTerminationReason =
   | 'completed'
   | 'canceled'
   | 'timeout'
+  | 'spawn_timeout'
   | 'inactivity_timeout'
   | 'spawn_failed'
   | 'stdin_error';
@@ -75,13 +77,17 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
     let settled = false;
     let pendingError: CodexExecError | undefined;
     let timeout: NodeJS.Timeout | undefined;
+    let spawnTimeout: NodeJS.Timeout | undefined;
     let inactivityTimeout: NodeJS.Timeout | undefined;
+    let sawActivity = false;
 
     const clearTimers = () => {
       if (timeout) clearTimeout(timeout);
+      if (spawnTimeout) clearTimeout(spawnTimeout);
       if (inactivityTimeout) clearTimeout(inactivityTimeout);
       if (forceKillTimeout) clearTimeout(forceKillTimeout);
       timeout = undefined;
+      spawnTimeout = undefined;
       inactivityTimeout = undefined;
       forceKillTimeout = undefined;
     };
@@ -124,6 +130,15 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
       }, input.inactivityTimeoutMs);
     };
 
+    const markActivity = () => {
+      sawActivity = true;
+      if (spawnTimeout) {
+        clearTimeout(spawnTimeout);
+        spawnTimeout = undefined;
+      }
+      resetInactivityTimer();
+    };
+
     if (input.timeoutMs) {
       timeout = setTimeout(() => {
         killAndRejectOnClose(
@@ -136,13 +151,26 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
         );
       }, input.timeoutMs);
     }
+    if (input.spawnTimeoutMs) {
+      spawnTimeout = setTimeout(() => {
+        if (sawActivity) return;
+        killAndRejectOnClose(
+          new CodexExecError({
+            message: `Codex exec spawn timeout after ${input.spawnTimeoutMs}ms`,
+            terminationReason: 'spawn_timeout',
+            stdoutLines,
+            stderr
+          })
+        );
+      }, input.spawnTimeoutMs);
+    }
     resetInactivityTimer();
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
 
     child.stdout.on('data', (chunk: string) => {
-      resetInactivityTimer();
+      markActivity();
       stdoutBuffer += chunk;
       const lines = stdoutBuffer.split(/\r?\n/);
       stdoutBuffer = lines.pop() ?? '';
@@ -153,7 +181,7 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
     });
 
     child.stderr.on('data', (chunk: string) => {
-      resetInactivityTimer();
+      markActivity();
       stderr += chunk;
       input.onStderrChunk?.(chunk);
     });

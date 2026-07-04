@@ -41,7 +41,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | Codex exec argv | `apps/daemon/src/codex/argv.ts` | `apps/daemon/test/unit/codex-argv.test.ts` | `PASS` | resume argv 未实现 |
 | Codex capability parser | `apps/daemon/src/codex/capabilities.ts` | `apps/daemon/test/unit/codex-capabilities.test.ts` | `PARTIAL` | 未接 daemon 启动检测和 `/codex/status` |
 | CODEX_HOME 解析 | `apps/daemon/src/codex/home.ts` | `apps/daemon/test/unit/codex-home.test.ts` | `PASS` | 隔离模式 e2e、配置缓存、冲突处理未实现 |
-| Codex runner | `apps/daemon/src/codex/runner.ts` | `apps/daemon/test/integration/codex-runner.test.ts` | `PARTIAL` | 已覆盖 SIGTERM 后 SIGKILL 兜底、spawn fail、timeout、inactivity；缺进程树强杀、spawnTimeout 独立分类 |
+| Codex runner | `apps/daemon/src/codex/runner.ts` | `apps/daemon/test/integration/codex-runner.test.ts` | `PARTIAL` | 已覆盖 SIGTERM 后 SIGKILL 兜底、spawn fail、spawnTimeout、timeout、inactivity；缺进程树强杀专项 |
 | JSONL parser | `apps/daemon/src/events/parser.ts` | `apps/daemon/test/unit/events.test.ts` | `PASS` | 真实 fixture 回归不足 |
 | Event normalizer | `apps/daemon/src/events/normalizer.ts` | `apps/daemon/test/unit/events.test.ts` | `PARTIAL` | usage、MCP、patch、web search、reasoning 事件未覆盖 |
 | Run manager | `apps/daemon/src/runs/manager.ts` | `apps/daemon/test/integration/run-manager.test.ts` | `PARTIAL` | 已覆盖 events 文件/DB seq 一致性、done 连续 seq、inactivity、daemon restart orphan 恢复、关键成功终态缺失判失败；缺同 workspace/thread 串行 |
@@ -68,7 +68,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | Scheduler 行为可预测 | `MISSING_IMPL` | 只有 helper |
 | R-1 真实 Codex 验证通过，并保存 stdout/stderr 分离 fixture | `PARTIAL` | version/help/resume help/MCP help/JSONL/command execution smoke 通过；已生成本地 ignored fixture，未形成版本化 fixture 回归 |
 | 支持的 Codex 版本区间已明确，版本超界行为可验证 | `MISSING_IMPL` | 没有版本区间 gate |
-| fake Codex 测试覆盖主要异常路径 | `PARTIAL` | 覆盖基础异常、强杀兜底、inactivity、orphan 恢复；缺 spawnTimeout 独立分类、进程树强杀专项 |
+| fake Codex 测试覆盖主要异常路径 | `PARTIAL` | 覆盖基础异常、强杀兜底、spawnTimeout、inactivity、orphan 恢复；缺进程树强杀专项 |
 | 真实 Codex smoke 覆盖 assistant message、command execution、usage、stderr warning 和失败路径 | `PARTIAL` | assistant/stderr 间接覆盖，command execution 已覆盖；usage/failure 缺失 |
 | 如果承诺 Chat，多轮 thread/resume 已通过真实 Codex 验证 | `MISSING_IMPL` | 当前不能承诺 Chat resume |
 | 如果不承诺 resume Chat，Runtime capability 和文档明确标注独立 run 模式 | `MISSING_TEST` | 需要 capability/status 明确表达 |
@@ -76,7 +76,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 
 ## 下一步优先级
 
-1. 继续补 R0 剩余异常路径：spawnTimeout 独立分类、进程树强杀专项、同 workspace/thread 串行。
+1. 继续补 R0 剩余异常路径：进程树强杀专项、同 workspace/thread 串行。
 2. 继续补 R-1 失败路径和 fixture 回归：usage、failure、sandbox、可提交的脱敏版本化 fixture。
 3. 补 R1 剩余 contract 细节：更真实的断线重连 e2e。
 4. 再决定是否进入 R2 Thread/Chat resume 实现。

@@ -36,7 +36,7 @@
 | 里程碑 | contract 目标 | 当前状态 | 说明 |
 |---|---|---|---|
 | R-1 | Codex 行为验证 Spike | `PARTIAL` | 已测 version/help/resume help/MCP help/最小 JSONL/command execution，并生成本地 ignored fixture；缺 image、sandbox 平台、rollout usage、失败路径、版本化 fixture |
-| R0 | Runtime Kernel Harness | `PARTIAL` | run 成功/失败/cancel/timeout/inactivity/非法 JSON/stderr/SIGTERM 后 SIGKILL 兜底、done 连续 seq、daemon restart orphan、关键成功终态缺失判失败已覆盖；缺 spawn timeout、进程树强杀专项、config normalize、usage source |
+| R0 | Runtime Kernel Harness | `PARTIAL` | run 成功/失败/cancel/spawn timeout/timeout/inactivity/非法 JSON/stderr/SIGTERM 后 SIGKILL 兜底、done 连续 seq、daemon restart orphan、关键成功终态缺失判失败已覆盖；缺进程树强杀专项、config normalize、usage source |
 | R1 | Run API + SSE | `PARTIAL/PASS` | create/get/list/cancel/events/auth、`fromSeq`、`afterSeq`、`Last-Event-ID`、terminal cancel 错误码、大量事件、运行中 tail、heartbeat 已覆盖；缺断线重连 e2e |
 | R2 | Thread / Chat Runtime | `MISSING_IMPL` | 只有 `POST /threads` 内存创建；缺持久化、list/get/runs/archive、真实 resume、同 thread 串行锁 |
 | R3 | Profiles / Settings / CODEX_HOME | `MISSING_IMPL` | 只有 `CODEX_HOME` 解析；缺 profile CRUD、写锁、原子写入、备份、config normalize、缓存同步 |
@@ -223,7 +223,7 @@ codex mcp add --help
 | cancel 后不退出 | 强杀后 `canceled` 或 `failed/process_kill_failed`，必须无遗留进程 |
 | daemon crash/restart | running run 标记 `orphaned` |
 
-**当前状态：** `PARTIAL`。已覆盖 success/fail/invalid/stderr/关键成功终态缺失/timeout/inactivity/cancel/忽略 SIGTERM 后强杀兜底/done 连续 seq/daemon restart orphan/resume missing；缺 spawn timeout、进程树强杀专项。
+**当前状态：** `PARTIAL`。已覆盖 success/fail/invalid/stderr/关键成功终态缺失/spawn timeout/timeout/inactivity/cancel/忽略 SIGTERM 后强杀兜底/done 连续 seq/daemon restart orphan/resume missing；缺进程树强杀专项。
 
 ### Task R0.2: 日志一致性测试
 

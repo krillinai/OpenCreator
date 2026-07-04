@@ -17,6 +17,7 @@ export type RunManagerOptions = {
   codexBin: string;
   codexHome: string;
   timeoutMs?: number;
+  spawnTimeoutMs?: number;
   inactivityTimeoutMs?: number;
 };
 
@@ -130,6 +131,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         }),
         prompt: input.prompt,
         timeoutMs: options.timeoutMs ?? EXEC_TIMEOUT_MS,
+        spawnTimeoutMs: options.spawnTimeoutMs,
         inactivityTimeoutMs: options.inactivityTimeoutMs ?? EXEC_INACTIVITY_TIMEOUT_MS,
         onStdoutLine(line) {
           const redactedLine = redactText(line);
@@ -462,6 +464,7 @@ function isTurnCompleted(value: unknown): boolean {
 function errorToTerminationReason(error: unknown): TerminationReason {
   if (error instanceof CodexExecError) {
     if (error.terminationReason === 'timeout') return 'timeout';
+    if (error.terminationReason === 'spawn_timeout') return 'spawn_timeout';
     if (error.terminationReason === 'inactivity_timeout') return 'inactivity_timeout';
     if (error.terminationReason === 'spawn_failed') return 'spawn_failed';
   }
@@ -470,6 +473,7 @@ function errorToTerminationReason(error: unknown): TerminationReason {
 
 function errorCodeForTermination(reason: TerminationReason): string {
   if (reason === 'timeout' || reason === 'inactivity_timeout') return 'CODEX_STREAM_ERROR';
+  if (reason === 'spawn_timeout') return 'SPAWN_TIMEOUT';
   if (reason === 'spawn_failed') return 'SPAWN_FAILED';
   return 'CODEX_STREAM_ERROR';
 }

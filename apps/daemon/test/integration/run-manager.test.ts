@@ -209,6 +209,35 @@ describe('run manager', () => {
     expect(manager.getRun(run.id)?.terminationReason).toBe('inactivity_timeout');
   });
 
+  it('marks a run failed on spawn timeout', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.started' }],
+      initialDelayMs: 500,
+      hang: true
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 5000,
+      spawnTimeoutMs: 50,
+      inactivityTimeoutMs: 5000
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.terminationReason).toBe('spawn_timeout');
+  });
+
   it('marks runs left running before daemon restart as orphaned', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

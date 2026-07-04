@@ -4,6 +4,7 @@ export type TerminationReason =
   | 'completed'
   | 'user_canceled'
   | 'timeout'
+  | 'spawn_timeout'
   | 'inactivity_timeout'
   | 'spawn_failed'
   | 'codex_exit_non_zero'
