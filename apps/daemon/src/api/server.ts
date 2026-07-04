@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { requireAuth } from './auth.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerRunRoutes } from './routes.runs.js';
+import { registerThreadRoutes } from './routes.threads.js';
 
 export type BuildServerInput = {
   token: string;
@@ -20,6 +21,7 @@ export async function buildServer(input: BuildServerInput) {
 
   await registerCodexRoutes(server);
   await registerRunRoutes(server);
+  await registerThreadRoutes(server);
 
   return server;
 }
