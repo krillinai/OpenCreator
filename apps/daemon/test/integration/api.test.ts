@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { mkdtempSync, rmSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
@@ -261,6 +263,52 @@ describe('runtime api', () => {
     await waitForRunStatus(run.id, 'succeeded');
   });
 
+  it('sends SSE heartbeats while a run is still active', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.started' }],
+      hang: true
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      sseHeartbeatMs: 20
+    });
+    await server.listen({ host: '127.0.0.1', port: 0 });
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/runs',
+      headers: { authorization: 'Bearer secret' },
+      payload: { prompt: 'hello', cwd: tempDir, sandbox: 'read-only' }
+    });
+    const run = created.json() as { id: string };
+    const address = server.server.address() as AddressInfo;
+    const controller = new AbortController();
+
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/runs/${run.id}/events`,
+      {
+        headers: { authorization: 'Bearer secret' },
+        signal: controller.signal
+      }
+    );
+    expect(response.status).toBe(200);
+
+    const text = await readUntil(response, ': heartbeat', controller, 500);
+    expect(text).toContain(': heartbeat');
+
+    const canceled = await server.inject({
+      method: 'POST',
+      url: `/runs/${run.id}/cancel`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(canceled.statusCode).toBe(202);
+    await waitForRunStatus(run.id, 'canceled');
+  });
+
   it('cancels a running run through the api', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
@@ -351,4 +399,36 @@ function parseSseData(body: string): Array<{ seq: number; type: string }> {
       expect(dataLine).toBeDefined();
       return JSON.parse(dataLine!.slice('data: '.length)) as { seq: number; type: string };
     });
+}
+
+async function readUntil(
+  response: Response,
+  needle: string,
+  controller: AbortController,
+  timeoutMs: number
+): Promise<string> {
+  const reader = response.body?.getReader();
+  expect(reader).toBeDefined();
+  const decoder = new TextDecoder();
+  let text = '';
+  const timeout = delay(timeoutMs).then((): { timeout: true } => {
+    controller.abort();
+    return { timeout: true };
+  });
+
+  try {
+    while (!text.includes(needle)) {
+      const result = await Promise.race([reader!.read(), timeout]);
+      if ('timeout' in result) break;
+      if (result.done) break;
+      text += decoder.decode(result.value, { stream: true });
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
+  } finally {
+    controller.abort();
+    reader!.releaseLock();
+  }
+
+  return text;
 }

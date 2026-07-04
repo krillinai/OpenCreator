@@ -6,8 +6,10 @@ import { formatSseEvent } from './sse.js';
 
 export async function registerRunRoutes(
   server: FastifyInstance,
-  manager: RunManager
+  manager: RunManager,
+  options: { sseHeartbeatMs?: number } = {}
 ): Promise<void> {
+  const sseHeartbeatMs = options.sseHeartbeatMs ?? 15_000;
   server.post<{ Body: RunRequest }>('/runs', async (request, reply) => {
     const body = request.body ?? ({} as RunRequest);
     if (typeof body.prompt !== 'string' || body.prompt.length === 0) {
@@ -81,7 +83,7 @@ export async function registerRunRoutes(
     const unsubscribe = manager.subscribe(id, writeEvent);
     const heartbeat = setInterval(() => {
       if (!reply.raw.destroyed && !reply.raw.writableEnded) reply.raw.write(': heartbeat\n\n');
-    }, 15_000);
+    }, sseHeartbeatMs);
 
     const cleanup = () => {
       clearInterval(heartbeat);

@@ -37,7 +37,7 @@
 |---|---|---|---|
 | R-1 | Codex 行为验证 Spike | `PARTIAL` | 已测 version/help/resume help/MCP help/最小 JSONL/command execution，并生成本地 ignored fixture；缺 image、sandbox 平台、rollout usage、失败路径、版本化 fixture |
 | R0 | Runtime Kernel Harness | `PARTIAL` | run 成功/失败/cancel/timeout/inactivity/非法 JSON/stderr/SIGTERM 后 SIGKILL 兜底、done 连续 seq、daemon restart orphan、关键成功终态缺失判失败已覆盖；缺 spawn timeout、进程树强杀专项、config normalize、usage source |
-| R1 | Run API + SSE | `PARTIAL/PASS` | create/get/list/cancel/events/auth、`fromSeq`、`afterSeq`、`Last-Event-ID`、terminal cancel 错误码、大量事件、运行中 tail 已覆盖；缺断线重连 e2e、心跳专项 |
+| R1 | Run API + SSE | `PARTIAL/PASS` | create/get/list/cancel/events/auth、`fromSeq`、`afterSeq`、`Last-Event-ID`、terminal cancel 错误码、大量事件、运行中 tail、heartbeat 已覆盖；缺断线重连 e2e |
 | R2 | Thread / Chat Runtime | `MISSING_IMPL` | 只有 `POST /threads` 内存创建；缺持久化、list/get/runs/archive、真实 resume、同 thread 串行锁 |
 | R3 | Profiles / Settings / CODEX_HOME | `MISSING_IMPL` | 只有 `CODEX_HOME` 解析；缺 profile CRUD、写锁、原子写入、备份、config normalize、缓存同步 |
 | R4 | Skills Pass-through | `MISSING_IMPL` | 缺 scan/install/delete/metadata/API/真实 skill 触发测试 |
@@ -266,7 +266,7 @@ codex mcp add --help
 6. 运行中 run replay 历史后 tail 新事件。
 7. 大量事件不丢失、不乱序。
 
-**当前状态：** `PARTIAL`。已自动测 full replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、大量事件、运行中 tail；缺心跳专项和更真实的断线重连 e2e。
+**当前状态：** `PARTIAL`。已自动测 full replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、大量事件、运行中 tail、heartbeat；缺更真实的断线重连 e2e。
 
 ## 7. R2 Thread / Chat / Resume 测试
 

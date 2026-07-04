@@ -46,7 +46,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | Event normalizer | `apps/daemon/src/events/normalizer.ts` | `apps/daemon/test/unit/events.test.ts` | `PARTIAL` | usage、MCP、patch、web search、reasoning 事件未覆盖 |
 | Run manager | `apps/daemon/src/runs/manager.ts` | `apps/daemon/test/integration/run-manager.test.ts` | `PARTIAL` | 已覆盖 events 文件/DB seq 一致性、done 连续 seq、inactivity、daemon restart orphan 恢复、关键成功终态缺失判失败；缺同 workspace/thread 串行 |
 | Run API | `apps/daemon/src/api/routes.runs.ts` | `apps/daemon/test/integration/api.test.ts` | `PARTIAL` | 已覆盖 `fromSeq`、`afterSeq`、`Last-Event-ID`、terminal cancel 错误码、大量事件 replay、content-type；缺更真实的断线重连 e2e |
-| SSE formatter | `apps/daemon/src/api/sse.ts` | `apps/daemon/test/integration/api.test.ts` | `PARTIAL` | 已覆盖 full replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、done 后关闭、运行中 tail；缺心跳专项测试 |
+| SSE formatter | `apps/daemon/src/api/sse.ts` | `apps/daemon/test/integration/api.test.ts` | `PARTIAL` | 已覆盖 full replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、done 后关闭、运行中 tail、heartbeat；缺更真实的断线重连 e2e |
 | Diagnostics | `apps/daemon/src/api/routes.diagnostics.ts` | `apps/daemon/test/integration/diagnostics.test.ts` | `PARTIAL` | `/codex/status` 快照、raw.redacted 策略、二次脱敏、清理策略缺失 |
 | Thread manager | `apps/daemon/src/threads/manager.ts` | `apps/daemon/test/unit/thread-manager.test.ts` | `PARTIAL` | 只有 create；没有持久化、list/get/runs/archive、resume |
 | Scheduler helper | `apps/daemon/src/scheduler/scheduler.ts` | `apps/daemon/test/unit/scheduler.test.ts` | `PARTIAL` | 没有 schedule CRUD/run-now/cron/timezone/concurrency |
@@ -62,7 +62,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 |---|---|---|
 | run 可创建、观察、取消、恢复和诊断 | `PARTIAL` | 创建、观察、取消、诊断通过；恢复/resume 未实现 |
 | Codex 版本和能力可检测 | `PARTIAL` | 有 parser 和 smoke；未持久化 capability matrix，`/codex/status` 仍是静态 unknown |
-| 事件协议稳定，SSE 可 replay | `PARTIAL` | 基础 replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、大量事件顺序、运行中 tail 通过；真实 fixture 回归不足 |
+| 事件协议稳定，SSE 可 replay | `PARTIAL` | 基础 replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、大量事件顺序、运行中 tail、heartbeat 通过；真实 fixture 回归不足 |
 | 本地 API 不裸露给未授权调用方 | `PASS` | 非 healthz 接口有 bearer token |
 | 配置写入有锁、原子性和缓存同步 | `MISSING_IMPL` | profile/config 写入未实现 |
 | Scheduler 行为可预测 | `MISSING_IMPL` | 只有 helper |
@@ -78,6 +78,6 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 
 1. 继续补 R0 剩余异常路径：spawnTimeout 独立分类、进程树强杀专项、同 workspace/thread 串行。
 2. 继续补 R-1 失败路径和 fixture 回归：usage、failure、sandbox、可提交的脱敏版本化 fixture。
-3. 补 R1 剩余 contract 细节：SSE 心跳和更真实的断线重连 e2e。
+3. 补 R1 剩余 contract 细节：更真实的断线重连 e2e。
 4. 再决定是否进入 R2 Thread/Chat resume 实现。
 5. R3-R7 不应再被口头归为已完成，必须作为独立 milestone 实现和验收。

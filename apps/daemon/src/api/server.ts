@@ -17,6 +17,7 @@ export type BuildServerInput = {
   codexBin?: string;
   codexHome?: string;
   runManager?: RunManager;
+  sseHeartbeatMs?: number;
 };
 
 export async function buildServer(input: BuildServerInput) {
@@ -47,7 +48,7 @@ export async function buildServer(input: BuildServerInput) {
   });
 
   await registerCodexRoutes(server);
-  await registerRunRoutes(server, runManager);
+  await registerRunRoutes(server, runManager, { sseHeartbeatMs: input.sseHeartbeatMs });
   await registerDiagnosticsRoutes(server, dataDir);
   await registerThreadRoutes(server, dataDir);
 
