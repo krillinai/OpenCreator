@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 
@@ -22,10 +22,31 @@ export function collectRunDiagnostics(dataDir: string, runId: string): Diagnosti
   const runDir = resolve(runsDir, runId);
   if (!isPathInside(runsDir, runDir)) return [];
 
+  let realRunsDir: string;
+  let realRunDir: string;
+  try {
+    const runDirStat = lstatSync(runDir);
+    if (!runDirStat.isDirectory() || runDirStat.isSymbolicLink()) return [];
+
+    realRunsDir = realpathSync(runsDir);
+    realRunDir = realpathSync(runDir);
+    if (!isPathInside(realRunsDir, realRunDir)) return [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+
   const files: DiagnosticFile[] = [];
   for (const name of allowedFiles) {
+    const filePath = resolve(runDir, name);
     try {
-      files.push({ name, content: readFileSync(resolve(runDir, name), 'utf8') });
+      const fileStat = lstatSync(filePath);
+      if (!fileStat.isFile() || fileStat.isSymbolicLink()) continue;
+
+      const realFilePath = realpathSync(filePath);
+      if (!isPathInside(realRunDir, realFilePath)) continue;
+
+      files.push({ name, content: readFileSync(filePath, 'utf8') });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }

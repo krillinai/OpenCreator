@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -43,6 +43,20 @@ describe('diagnostics', () => {
     writeFileSync(join(outsideDir, 'meta.json'), '{"id":"outside"}');
 
     expect(collectRunDiagnostics(tempDir, '../outside')).toEqual([]);
+  });
+
+  it('does not export allowed diagnostic names when they are symlinks', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    const runDir = join(tempDir, 'runs', 'run_1');
+    const outsideDir = join(tempDir, 'outside');
+    mkdirSync(runDir, { recursive: true });
+    mkdirSync(outsideDir, { recursive: true });
+    writeFileSync(join(outsideDir, 'meta.json'), '{"secret":"outside"}');
+    writeFileSync(join(runDir, 'events.ndjson'), '{"type":"done"}\n');
+    symlinkSync(join(outsideDir, 'meta.json'), join(runDir, 'meta.json'));
+
+    const files = collectRunDiagnostics(tempDir, 'run_1');
+    expect(files).toEqual([{ name: 'events.ndjson', content: '{"type":"done"}\n' }]);
   });
 
   it('rejects unauthorized diagnostics route requests', async () => {
