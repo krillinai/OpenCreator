@@ -7,6 +7,8 @@ export type FakeCodexOptions = {
   stderrLines?: string[];
   exitCode?: number;
   delayMs?: number;
+  initialDelayMs?: number;
+  lineDelayMs?: number;
   hang?: boolean;
   ignoreSigterm?: boolean;
 };
@@ -23,19 +25,32 @@ const prompt = fs.readFileSync(0, 'utf8');
 fs.writeFileSync(${JSON.stringify(promptPath)}, prompt);
 fs.writeFileSync(${JSON.stringify(codexHomePath)}, process.env.CODEX_HOME ?? '');
 const delayMs = ${JSON.stringify(options.delayMs ?? 0)};
+const initialDelayMs = ${JSON.stringify(options.initialDelayMs ?? 0)};
+const lineDelayMs = ${JSON.stringify(options.lineDelayMs ?? 0)};
 const ignoreSigterm = ${JSON.stringify(options.ignoreSigterm ?? false)};
 process.on('SIGTERM', () => {
   if (!ignoreSigterm) process.exit(0);
 });
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function main() {
-  for (const line of ${JSON.stringify(options.stderrLines ?? [])}) console.error(line);
-  for (const line of ${JSON.stringify(options.rawStdoutLines ?? [])}) console.log(line);
-  for (const event of ${JSON.stringify(options.stdoutLines)}) console.log(JSON.stringify(event));
+  if (initialDelayMs > 0) await sleep(initialDelayMs);
+  for (const line of ${JSON.stringify(options.stderrLines ?? [])}) {
+    console.error(line);
+    if (lineDelayMs > 0) await sleep(lineDelayMs);
+  }
+  for (const line of ${JSON.stringify(options.rawStdoutLines ?? [])}) {
+    console.log(line);
+    if (lineDelayMs > 0) await sleep(lineDelayMs);
+  }
+  for (const event of ${JSON.stringify(options.stdoutLines)}) {
+    console.log(JSON.stringify(event));
+    if (lineDelayMs > 0) await sleep(lineDelayMs);
+  }
   if (${JSON.stringify(options.hang ?? false)}) {
     setInterval(() => {}, 1000);
     return;
   }
-  if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+  if (delayMs > 0) await sleep(delayMs);
   process.exit(${options.exitCode ?? 0});
 }
 main().catch(error => {

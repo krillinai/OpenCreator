@@ -141,6 +141,126 @@ describe('runtime api', () => {
     expect(lastEventId.body).toContain('event: done');
   });
 
+  it('replays events after the legacy afterSeq query parameter', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'hello' } },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/runs',
+      headers: { authorization: 'Bearer secret' },
+      payload: { prompt: 'hello', cwd: tempDir, sandbox: 'read-only' }
+    });
+    const run = created.json() as { id: string };
+
+    await waitForRunStatus(run.id, 'succeeded');
+
+    const replay = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events?afterSeq=2`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.body).not.toContain('"seq":1');
+    expect(replay.body).not.toContain('"seq":2');
+    expect(replay.body).toContain('"seq":3');
+    expect(replay.body).toContain('event: done');
+  });
+
+  it('replays many SSE events in sequence order', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        ...Array.from({ length: 50 }, (_, index) => ({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: `message-${index + 1}` }
+        })),
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/runs',
+      headers: { authorization: 'Bearer secret' },
+      payload: { prompt: 'hello', cwd: tempDir, sandbox: 'read-only' }
+    });
+    const run = created.json() as { id: string };
+
+    await waitForRunStatus(run.id, 'succeeded');
+
+    const replay = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.headers['content-type']).toContain('text/event-stream');
+
+    const events = parseSseData(replay.body);
+    expect(events).toHaveLength(53);
+    expect(events.map(event => event.seq)).toEqual(
+      Array.from({ length: 53 }, (_, index) => index + 1)
+    );
+    expect(events.at(-1)).toMatchObject({ type: 'done', seq: 53 });
+  });
+
+  it('tails a running run and closes after done', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'hello' } },
+        { type: 'turn.completed' }
+      ],
+      initialDelayMs: 100,
+      lineDelayMs: 100
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/runs',
+      headers: { authorization: 'Bearer secret' },
+      payload: { prompt: 'hello', cwd: tempDir, sandbox: 'read-only' }
+    });
+    const run = created.json() as { id: string };
+
+    const events = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(events.statusCode).toBe(200);
+    expect(events.body).toContain('event: assistant_message');
+    expect(events.body).toContain('event: done');
+    await waitForRunStatus(run.id, 'succeeded');
+  });
+
   it('cancels a running run through the api', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
@@ -220,4 +340,15 @@ async function waitForRunStatus(runId: string, status: string): Promise<void> {
       return response?.json().status;
     }, { timeout: RUN_STATUS_TIMEOUT_MS })
     .toBe(status);
+}
+
+function parseSseData(body: string): Array<{ seq: number; type: string }> {
+  return body
+    .split('\n\n')
+    .filter(chunk => chunk.trim().length > 0)
+    .map(chunk => {
+      const dataLine = chunk.split('\n').find(line => line.startsWith('data: '));
+      expect(dataLine).toBeDefined();
+      return JSON.parse(dataLine!.slice('data: '.length)) as { seq: number; type: string };
+    });
 }

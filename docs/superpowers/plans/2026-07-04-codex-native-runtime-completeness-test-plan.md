@@ -35,9 +35,9 @@
 
 | 里程碑 | contract 目标 | 当前状态 | 说明 |
 |---|---|---|---|
-| R-1 | Codex 行为验证 Spike | `PARTIAL` | 已测 version/help/resume help/MCP help/最小 JSONL/command execution；缺 image、sandbox 平台、rollout usage、失败路径、落盘 fixture |
-| R0 | Runtime Kernel Harness | `PARTIAL` | run 成功/失败/cancel/timeout/inactivity/非法 JSON/stderr/SIGTERM 后 SIGKILL 兜底已覆盖；缺 orphan 恢复、spawn timeout、进程树强杀专项、config normalize、usage source |
-| R1 | Run API + SSE | `PARTIAL/PASS` | create/get/list/cancel/events/auth、`fromSeq`、`Last-Event-ID`、terminal cancel 错误码已覆盖；缺断线重连专项、大量事件、运行中 tail |
+| R-1 | Codex 行为验证 Spike | `PARTIAL` | 已测 version/help/resume help/MCP help/最小 JSONL/command execution，并生成本地 ignored fixture；缺 image、sandbox 平台、rollout usage、失败路径、版本化 fixture |
+| R0 | Runtime Kernel Harness | `PARTIAL` | run 成功/失败/cancel/timeout/inactivity/非法 JSON/stderr/SIGTERM 后 SIGKILL 兜底、done 连续 seq 已覆盖；缺 orphan 恢复、spawn timeout、进程树强杀专项、config normalize、usage source |
+| R1 | Run API + SSE | `PARTIAL/PASS` | create/get/list/cancel/events/auth、`fromSeq`、`afterSeq`、`Last-Event-ID`、terminal cancel 错误码、大量事件、运行中 tail 已覆盖；缺断线重连 e2e、心跳专项 |
 | R2 | Thread / Chat Runtime | `MISSING_IMPL` | 只有 `POST /threads` 内存创建；缺持久化、list/get/runs/archive、真实 resume、同 thread 串行锁 |
 | R3 | Profiles / Settings / CODEX_HOME | `MISSING_IMPL` | 只有 `CODEX_HOME` 解析；缺 profile CRUD、写锁、原子写入、备份、config normalize、缓存同步 |
 | R4 | Skills Pass-through | `MISSING_IMPL` | 缺 scan/install/delete/metadata/API/真实 skill 触发测试 |
@@ -129,7 +129,7 @@ codex mcp add --help
 3. 记录不支持或 help 未显示的 flags。
 4. 写入 `runtime_capability_matrix` 或临时 fixture report。
 
-**当前状态：** `PARTIAL`。已有 version/exec help/resume help/MCP help/minimal JSONL/command execution 自动化 smoke；缺能力矩阵持久化。
+**当前状态：** `PARTIAL`。已有 version/exec help/resume help/MCP help/minimal JSONL/command execution 自动化 smoke，并生成本地 ignored fixture；缺能力矩阵持久化。
 
 ### Task R-1.2: stdout/stderr 分离 fixture
 
@@ -148,7 +148,7 @@ codex mcp add --help
 3. fixture 保存到 `apps/daemon/test/fixtures/real-codex/<version>/`。
 4. normalizer fixture test 使用这些样本回归。
 
-**当前状态：** `PARTIAL`。已有最小 JSONL 和 command execution smoke，没有持久 fixture、usage 和失败路径。
+**当前状态：** `PARTIAL`。已有最小 JSONL 和 command execution smoke，并保存 stdout/stderr 到本地 ignored fixture；缺版本化脱敏 fixture、usage 和失败路径。
 
 ### Task R-1.3: resume ABI fixture
 
@@ -223,7 +223,7 @@ codex mcp add --help
 | cancel 后不退出 | 强杀后 `canceled` 或 `failed/process_kill_failed`，必须无遗留进程 |
 | daemon crash/restart | running run 标记 `orphaned` |
 
-**当前状态：** `PARTIAL`。已覆盖 success/fail/invalid/stderr/timeout/inactivity/cancel/忽略 SIGTERM 后强杀兜底/resume missing；缺 orphan、spawn timeout、进程树强杀专项。
+**当前状态：** `PARTIAL`。已覆盖 success/fail/invalid/stderr/timeout/inactivity/cancel/忽略 SIGTERM 后强杀兜底/done 连续 seq/resume missing；缺 orphan、spawn timeout、进程树强杀专项。
 
 ### Task R0.2: 日志一致性测试
 
@@ -252,7 +252,7 @@ codex mcp add --help
 | `POST /runs/:id/cancel` | running 可取消，terminal 返回 `RUN_ALREADY_TERMINAL` |
 | `GET /runs/:id/events` | auth、full replay、tail、done 后关闭 |
 
-**当前状态：** `PARTIAL`。基础 API、terminal cancel `RUN_ALREADY_TERMINAL`、`fromSeq`/`Last-Event-ID` 通过；大量事件、运行中 tail、content-type 校验缺专项。
+**当前状态：** `PARTIAL`。基础 API、terminal cancel `RUN_ALREADY_TERMINAL`、`fromSeq`/`afterSeq`/`Last-Event-ID`、大量事件、运行中 tail、content-type 校验通过；断线重连 e2e 缺专项。
 
 ### Task R1.2: SSE replay 专项
 
@@ -266,7 +266,7 @@ codex mcp add --help
 6. 运行中 run replay 历史后 tail 新事件。
 7. 大量事件不丢失、不乱序。
 
-**当前状态：** `PARTIAL`。已自动测 full replay、`fromSeq`、`Last-Event-ID`；缺大量事件、运行中 tail、心跳专项。
+**当前状态：** `PARTIAL`。已自动测 full replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、大量事件、运行中 tail；缺心跳专项和更真实的断线重连 e2e。
 
 ## 7. R2 Thread / Chat / Resume 测试
 

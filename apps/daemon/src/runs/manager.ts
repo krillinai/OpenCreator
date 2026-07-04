@@ -104,7 +104,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           errorMessage: 'resume_thread requires threadId',
           endedAt: new Date().toISOString()
         });
-        publishDone(id, 'failed', 'stream_error', publish);
+        publishDone(id, 1, 'failed', 'stream_error', publish);
         return { id, status: 'failed' };
       }
 
@@ -173,7 +173,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             endedAt: new Date().toISOString()
           });
 
-          if (!hasDoneEvent(id)) publishDone(id, publicStatus, terminationReason, publish);
+          if (!hasDoneEvent(id)) publishDone(id, ++seq, publicStatus, terminationReason, publish);
           activeRuns.delete(id);
           return { id, status: publicStatus };
         })
@@ -199,7 +199,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
               appendFileSync(join(runDir, 'stderr.redacted.log'), redactText(error.stderr));
             }
           }
-          publishDone(id, publicStatus, terminationReason, publish);
+          publishDone(id, ++seq, publicStatus, terminationReason, publish);
           activeRuns.delete(id);
           return { id, status: publicStatus };
         });
@@ -353,14 +353,15 @@ function publishDiagnostic(
 
 function publishDone(
   runId: string,
+  seq: number,
   status: 'succeeded' | 'failed' | 'canceled',
   terminationReason: TerminationReason,
   publish: (event: AgentEventEnvelope) => void
 ): void {
   publish({
-    id: `evt_${runId}_done`,
+    id: `evt_${runId}_${seq}`,
     runId,
-    seq: Number.MAX_SAFE_INTEGER,
+    seq,
     ts: new Date().toISOString(),
     type: 'done',
     payload: {
