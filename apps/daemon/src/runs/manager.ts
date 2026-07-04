@@ -89,6 +89,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     });
   };
 
+  recoverOrphanedRuns();
+
   const manager: RunManager = {
     startRun(input: CreateRunInput): CreatedRun {
       if (input.resumeMode === 'resume_thread' && input.threadId === undefined) {
@@ -302,6 +304,37 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     return runs.listRunEvents(runId).some(event => event.type === 'done');
   }
 
+  function recoverOrphanedRuns(): void {
+    for (const run of runs.listNonTerminalRuns()) {
+      mkdirSync(join(options.dataDir, 'runs', run.id), { recursive: true });
+      const existingEvents = runs.listRunEvents(run.id);
+      const nextSeq = (existingEvents.at(-1)?.seq ?? 0) + 1;
+      updateStatus(run.id, 'failed', 'orphaned', {
+        terminationReason: 'daemon_restart',
+        errorCode: 'DAEMON_RESTART',
+        errorMessage: 'Run was still active when daemon restarted',
+        endedAt: new Date().toISOString()
+      });
+      writeJson(join(options.dataDir, 'runs', run.id, 'diagnostics.json'), {
+        error: 'Run was still active when daemon restarted',
+        terminationReason: 'daemon_restart'
+      });
+      if (!existingEvents.some(event => event.type === 'error')) {
+        publishError(
+          run.id,
+          nextSeq,
+          'DAEMON_RESTART',
+          'Run was still active when daemon restarted',
+          publish
+        );
+      }
+      if (!existingEvents.some(event => event.type === 'done')) {
+        const doneSeq = existingEvents.some(event => event.type === 'error') ? nextSeq : nextSeq + 1;
+        publishDone(run.id, doneSeq, 'failed', 'daemon_restart', publish);
+      }
+    }
+  }
+
   return manager;
 }
 
@@ -344,6 +377,30 @@ function publishDiagnostic(
       type: 'diagnostic',
       code,
       severity: 'warning',
+      message,
+      ...(details === undefined ? {} : { details })
+    },
+    normalizerVersion
+  });
+}
+
+function publishError(
+  runId: string,
+  seq: number,
+  code: string,
+  message: string,
+  publish: (event: AgentEventEnvelope) => void,
+  details?: Record<string, unknown>
+): void {
+  publish({
+    id: `evt_${runId}_${seq}`,
+    runId,
+    seq,
+    ts: new Date().toISOString(),
+    type: 'error',
+    payload: {
+      type: 'error',
+      code,
       message,
       ...(details === undefined ? {} : { details })
     },

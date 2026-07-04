@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -182,6 +182,46 @@ describe('run manager', () => {
 
     expect(run.status).toBe('failed');
     expect(manager.getRun(run.id)?.terminationReason).toBe('inactivity_timeout');
+  });
+
+  it('marks runs left running before daemon restart as orphaned', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const runId = 'run_orphaned_1';
+    mkdirSync(join(tempDir, 'runs', runId), { recursive: true });
+    writeFileSync(join(tempDir, 'runs', runId, 'events.ndjson'), '');
+    const runs = db.prepare(`
+      INSERT INTO runs (
+        id, public_status, internal_status, created_by, profile, cwd, canonical_cwd,
+        workspace_mode, sandbox, codex_version, codex_bin, codex_home, normalizer_version
+      ) VALUES (
+        @id, 'running', 'running', 'api', 'default', @cwd, @cwd,
+        'managed', 'read-only', 'unknown', 'codex', @codexHome, 1
+      )
+    `);
+    runs.run({
+      id: runId,
+      cwd: tempDir,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: join(tempDir, 'codex'),
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    expect(manager.getRun(runId)).toMatchObject({
+      status: 'failed',
+      terminationReason: 'daemon_restart',
+      errorCode: 'DAEMON_RESTART'
+    });
+    const row = db.prepare('SELECT internal_status FROM runs WHERE id = ?').get(runId) as
+      | { internal_status: string }
+      | undefined;
+    expect(row?.internal_status).toBe('orphaned');
+    expect(manager.listEvents(runId).map(event => event.type)).toEqual(['error', 'done']);
   });
 
   it('can cancel a running run', async () => {

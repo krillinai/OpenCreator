@@ -65,6 +65,7 @@ export type RunRepository = {
   insertRun(input: InsertRunInput): void;
   getRun(id: string): RunRow | undefined;
   listRuns(limit?: number): RunRow[];
+  listNonTerminalRuns(): RunRow[];
   updateRunStatus(input: UpdateRunStatusInput): void;
   insertRunEvent(event: AgentEventEnvelope): void;
   listRunEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
@@ -88,6 +89,13 @@ export function createRunRepository(db: Database.Database): RunRepository {
     SELECT * FROM runs
     ORDER BY created_at DESC, id DESC
     LIMIT @limit
+  `);
+  const listNonTerminal = db.prepare(`
+    SELECT *
+    FROM runs
+    WHERE public_status IN ('queued', 'running')
+       OR internal_status IN ('created', 'queued', 'spawning', 'running', 'canceling')
+    ORDER BY created_at ASC, id ASC
   `);
   const updateStatus = db.prepare(`
     UPDATE runs
@@ -135,6 +143,9 @@ export function createRunRepository(db: Database.Database): RunRepository {
     },
     listRuns(limit = 50): RunRow[] {
       return list.all({ limit }) as RunRow[];
+    },
+    listNonTerminalRuns(): RunRow[] {
+      return listNonTerminal.all() as RunRow[];
     },
     updateRunStatus(input: UpdateRunStatusInput): void {
       updateStatus.run({
