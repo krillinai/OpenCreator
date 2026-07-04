@@ -18,4 +18,21 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout + result.stderr).toContain('--json');
   });
+
+  it('captures a minimal codex exec jsonl fixture', () => {
+    const result = runSmokeCommand([
+      'codex',
+      'exec',
+      '--json',
+      '--skip-git-repo-check',
+      '--sandbox',
+      'read-only',
+      'Reply with OK only.'
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
+  });
 });
