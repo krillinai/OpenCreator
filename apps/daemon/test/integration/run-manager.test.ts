@@ -130,6 +130,31 @@ describe('run manager', () => {
     expect(events.some(event => event.type === 'diagnostic')).toBe(true);
   });
 
+  it('marks a zero-exit run failed when codex never emits a terminal turn event', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.started' }]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.terminationReason).toBe('stream_error');
+    expect(manager.listEvents(run.id).some(event => event.type === 'diagnostic')).toBe(true);
+  });
+
   it('marks a run failed on timeout', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
     const fake = createFakeCodex(tempDir, {

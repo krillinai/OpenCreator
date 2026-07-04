@@ -115,6 +115,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       const stdoutLines: string[] = [];
       let stderr = '';
       let seq = 0;
+      let sawTurnCompleted = false;
 
       const process = startCodexExec({
         codexBin: options.codexBin,
@@ -144,6 +145,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             return;
           }
 
+          if (isTurnCompleted(parsed.value)) sawTurnCompleted = true;
           publish(normalizeCodexEvent({ runId: id, seq, raw: parsed.value }));
         },
         onStderrChunk(chunk) {
@@ -157,17 +159,28 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
       const done = process.result
         .then(result => {
+          const streamError = result.exitCode === 0 && !sawTurnCompleted;
           const publicStatus: PublicRunStatus = result.terminationReason === 'canceled'
             ? 'canceled'
-            : result.exitCode === 0
+            : result.exitCode === 0 && !streamError
               ? 'succeeded'
               : 'failed';
-          const terminationReason = resultToTerminationReason(result);
+          const terminationReason = streamError ? 'stream_error' : resultToTerminationReason(result);
           writeJson(join(runDir, 'diagnostics.json'), {
             exitCode: result.exitCode,
             signal: result.signal,
-            terminationReason
+            terminationReason,
+            ...(streamError ? { error: 'Codex stream ended without turn.completed' } : {})
           });
+          if (streamError) {
+            publishDiagnostic(
+              id,
+              ++seq,
+              'CODEX_STREAM_ERROR',
+              'Codex stream ended without turn.completed',
+              publish
+            );
+          }
           updateStatus(id, publicStatus, publicStatus, {
             terminationReason,
             exitCode: result.exitCode,
@@ -437,6 +450,13 @@ function resultToTerminationReason(result: {
   if (result.terminationReason === 'canceled') return 'user_canceled';
   if (result.exitCode === 0) return 'completed';
   return 'codex_exit_non_zero';
+}
+
+function isTurnCompleted(value: unknown): boolean {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+    && (value as { type?: unknown }).type === 'turn.completed';
 }
 
 function errorToTerminationReason(error: unknown): TerminationReason {
