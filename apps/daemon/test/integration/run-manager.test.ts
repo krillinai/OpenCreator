@@ -96,4 +96,111 @@ describe('run manager', () => {
       | undefined;
     expect(row?.public_status).toBe('failed');
   });
+
+  it('records a diagnostic event for invalid codex json lines', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      rawStdoutLines: ['{broken'],
+      stdoutLines: [{ type: 'turn.completed' }]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    const events = manager.listEvents(run.id);
+    expect(events.some(event => event.type === 'diagnostic')).toBe(true);
+  });
+
+  it('marks a run failed on timeout', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 50,
+      inactivityTimeoutMs: 5000
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.terminationReason).toBe('timeout');
+  });
+
+  it('can cancel a running run', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 5000,
+      inactivityTimeoutMs: 5000
+    });
+
+    const run = manager.startRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('running');
+    expect(manager.cancelRun(run.id)).toBe(true);
+
+    await expect
+      .poll(() => manager.getRun(run.id)?.status, { timeout: 1000 })
+      .toBe('canceled');
+    expect(manager.listEvents(run.id).some(event => event.type === 'done')).toBe(true);
+  });
+
+  it('fails resume_thread requests without a thread id', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, { stdoutLines: [] });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = manager.startRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      resumeMode: 'resume_thread'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.errorCode).toBe('RESUME_FAILED');
+  });
 });

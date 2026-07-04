@@ -128,12 +128,11 @@ export function normalizeCodexEvent(input: NormalizeInput): AgentEventEnvelope {
   if (type === 'turn.completed') {
     return {
       ...base,
-      type: 'done',
+      type: 'status',
       rawEventId,
       payload: {
-        type: 'done',
-        status: 'succeeded',
-        terminationReason: 'completed'
+        type: 'status',
+        label: 'finalizing'
       }
     };
   }

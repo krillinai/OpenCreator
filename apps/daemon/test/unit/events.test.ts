@@ -49,6 +49,16 @@ describe('event parser and normalizer', () => {
     expect(event.payload).toMatchObject({ type: 'tool_result', output: '/repo', exitCode: 0 });
   });
 
+  it('normalizes turn completion as finalizing before daemon exit decides done', () => {
+    const event = normalizeCodexEvent({
+      runId: 'run_1',
+      seq: 3,
+      raw: { type: 'turn.completed' }
+    });
+    expect(event.type).toBe('status');
+    expect(event.payload).toMatchObject({ type: 'status', label: 'finalizing' });
+  });
+
   it('uses fallback raw event id inside unknown event payload', () => {
     const event = normalizeCodexEvent({
       runId: 'run_1',

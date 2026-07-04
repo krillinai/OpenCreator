@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeCodex } from '../helpers/fake-codex.js';
-import { runCodexExec } from '../../src/codex/runner.js';
+import { CodexExecError, runCodexExec, startCodexExec } from '../../src/codex/runner.js';
 
 let tempDir = '';
 
@@ -62,5 +62,62 @@ describe('codex runner', () => {
     expect(result.exitCode).toBe(42);
     expect(result.signal).toBeNull();
     expect(result.stdoutLines).toEqual(['{"type":"turn.completed"}']);
+  });
+
+  it('rejects with timeout when codex hangs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+
+    await expect(
+      runCodexExec({
+        codexBin: fake.bin,
+        codexHome: join(tempDir, 'codex-home'),
+        cwd: tempDir,
+        args: ['exec', '--json'],
+        prompt: 'hello',
+        timeoutMs: 50,
+        inactivityTimeoutMs: 5000
+      })
+    ).rejects.toMatchObject({ terminationReason: 'timeout' });
+  });
+
+  it('can cancel a running codex process', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+
+    const process = startCodexExec({
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      args: ['exec', '--json'],
+      prompt: 'hello',
+      timeoutMs: 5000,
+      inactivityTimeoutMs: 5000
+    });
+
+    process.cancel();
+    await expect(process.result).resolves.toMatchObject({ terminationReason: 'canceled' });
+  });
+
+  it('surfaces spawn failures as classified errors', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+
+    await expect(
+      runCodexExec({
+        codexBin: join(tempDir, 'missing-codex'),
+        codexHome: join(tempDir, 'codex-home'),
+        cwd: tempDir,
+        args: ['exec', '--json'],
+        prompt: 'hello',
+        timeoutMs: 5000,
+        inactivityTimeoutMs: 5000
+      })
+    ).rejects.toBeInstanceOf(CodexExecError);
   });
 });

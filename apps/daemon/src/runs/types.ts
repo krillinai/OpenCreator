@@ -1,4 +1,4 @@
-import type { SandboxMode } from '@clawee/protocol';
+import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
 
 export type CreateRunInput = {
   prompt: string;
@@ -6,9 +6,12 @@ export type CreateRunInput = {
   profile: string;
   sandbox: SandboxMode;
   threadId?: string;
+  resumeMode?: 'new_thread' | 'resume_thread';
+  model?: string;
+  reasoning?: ReasoningEffort;
 };
 
 export type CreatedRun = {
   id: string;
-  status: 'succeeded' | 'failed' | 'canceled';
+  status: 'running' | 'succeeded' | 'failed' | 'canceled';
 };
