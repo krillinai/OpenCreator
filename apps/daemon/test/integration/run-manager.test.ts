@@ -59,6 +59,14 @@ describe('run manager', () => {
     expect(events).not.toContain('secret-value');
     for (const line of rawRedacted.trim().split('\n')) JSON.parse(line);
 
+    const fileSeqs = events
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(line => (JSON.parse(line) as { seq: number }).seq);
+    const dbSeqs = manager.listEvents(run.id).map(event => event.seq);
+    expect(fileSeqs).toEqual(dbSeqs);
+
     const row = db.prepare('SELECT public_status FROM runs WHERE id = ?').get(run.id) as
       | { public_status: string }
       | undefined;
@@ -147,6 +155,33 @@ describe('run manager', () => {
 
     expect(run.status).toBe('failed');
     expect(manager.getRun(run.id)?.terminationReason).toBe('timeout');
+  });
+
+  it('marks a run failed on inactivity timeout', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 5000,
+      inactivityTimeoutMs: 50
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.terminationReason).toBe('inactivity_timeout');
   });
 
   it('can cancel a running run', async () => {

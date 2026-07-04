@@ -105,6 +105,51 @@ describe('codex runner', () => {
     await expect(process.result).resolves.toMatchObject({ terminationReason: 'canceled' });
   });
 
+  it('does not hang when canceling a process that ignores SIGTERM', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true,
+      ignoreSigterm: true
+    });
+
+    const process = startCodexExec({
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      args: ['exec', '--json'],
+      prompt: 'hello',
+      timeoutMs: 5000,
+      inactivityTimeoutMs: 5000,
+      forceKillGraceMs: 50
+    });
+
+    process.cancel();
+    await expect(process.result).resolves.toMatchObject({
+      terminationReason: 'canceled'
+    });
+  });
+
+  it('rejects with inactivity timeout when codex is silent', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+
+    await expect(
+      runCodexExec({
+        codexBin: fake.bin,
+        codexHome: join(tempDir, 'codex-home'),
+        cwd: tempDir,
+        args: ['exec', '--json'],
+        prompt: 'hello',
+        timeoutMs: 5000,
+        inactivityTimeoutMs: 50
+      })
+    ).rejects.toMatchObject({ terminationReason: 'inactivity_timeout' });
+  });
+
   it('surfaces spawn failures as classified errors', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
 

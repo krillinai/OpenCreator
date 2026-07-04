@@ -8,6 +8,7 @@ export type RunCodexExecInput = {
   prompt: string;
   timeoutMs?: number;
   inactivityTimeoutMs?: number;
+  forceKillGraceMs?: number;
   onStdoutLine?: (line: string) => void;
   onStderrChunk?: (chunk: string) => void;
 };
@@ -98,7 +99,7 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
       if (forceKillTimeout === undefined) {
         forceKillTimeout = setTimeout(() => {
           if (!settled) child.kill('SIGKILL');
-        }, 2_000);
+        }, input.forceKillGraceMs ?? 2_000);
       }
     };
 

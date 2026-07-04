@@ -24,7 +24,9 @@ fs.writeFileSync(${JSON.stringify(promptPath)}, prompt);
 fs.writeFileSync(${JSON.stringify(codexHomePath)}, process.env.CODEX_HOME ?? '');
 const delayMs = ${JSON.stringify(options.delayMs ?? 0)};
 const ignoreSigterm = ${JSON.stringify(options.ignoreSigterm ?? false)};
-if (!ignoreSigterm) process.on('SIGTERM', () => process.exit(0));
+process.on('SIGTERM', () => {
+  if (!ignoreSigterm) process.exit(0);
+});
 async function main() {
   for (const line of ${JSON.stringify(options.stderrLines ?? [])}) console.error(line);
   for (const line of ${JSON.stringify(options.rawStdoutLines ?? [])}) console.log(line);

@@ -43,8 +43,14 @@ export async function registerRunRoutes(
 
   server.post('/runs/:id/cancel', async (request, reply) => {
     const { id } = request.params as { id: string };
-    if (manager.getRun(id) === undefined) {
+    const run = manager.getRun(id);
+    if (run === undefined) {
       return reply.code(404).send(apiError('RUN_NOT_FOUND', 'Run not found'));
+    }
+    if (run.status === 'succeeded' || run.status === 'failed' || run.status === 'canceled') {
+      return reply
+        .code(409)
+        .send(apiError('RUN_ALREADY_TERMINAL', 'Run is already terminal'));
     }
     const canceled = manager.cancelRun(id);
     return reply.code(canceled ? 202 : 409).send({ id, canceled });
@@ -89,8 +95,8 @@ export async function registerRunRoutes(
 }
 
 function getReplayAfterSeq(lastEventId: string | string[] | undefined, query: unknown): number {
-  const queryValue = typeof query === 'object' && query !== null && 'afterSeq' in query
-    ? Number((query as { afterSeq?: string }).afterSeq)
+  const queryValue = typeof query === 'object' && query !== null
+    ? Number((query as { afterSeq?: string; fromSeq?: string }).fromSeq ?? (query as { afterSeq?: string }).afterSeq)
     : undefined;
   if (typeof queryValue === 'number' && Number.isFinite(queryValue)) return queryValue;
 

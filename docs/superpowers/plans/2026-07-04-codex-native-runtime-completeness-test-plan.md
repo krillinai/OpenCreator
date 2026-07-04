@@ -35,9 +35,9 @@
 
 | 里程碑 | contract 目标 | 当前状态 | 说明 |
 |---|---|---|---|
-| R-1 | Codex 行为验证 Spike | `PARTIAL` | 已测 version/help/最小 JSONL；缺 resume、MCP、image、sandbox 平台、rollout usage、失败路径、command execution fixture |
-| R0 | Runtime Kernel Harness | `PARTIAL` | run 成功/失败/cancel/timeout/非法 JSON/stderr 已覆盖；缺 orphan 恢复、spawn timeout、进程树强杀专项、config normalize、usage source |
-| R1 | Run API + SSE | `PARTIAL/PASS` | create/get/list/cancel/events/auth 基础通过；缺 `fromSeq` 别名、断线重连专项、大量事件、events.ndjson 权威 replay 一致性 |
+| R-1 | Codex 行为验证 Spike | `PARTIAL` | 已测 version/help/resume help/MCP help/最小 JSONL/command execution；缺 image、sandbox 平台、rollout usage、失败路径、落盘 fixture |
+| R0 | Runtime Kernel Harness | `PARTIAL` | run 成功/失败/cancel/timeout/inactivity/非法 JSON/stderr/SIGTERM 后 SIGKILL 兜底已覆盖；缺 orphan 恢复、spawn timeout、进程树强杀专项、config normalize、usage source |
+| R1 | Run API + SSE | `PARTIAL/PASS` | create/get/list/cancel/events/auth、`fromSeq`、`Last-Event-ID`、terminal cancel 错误码已覆盖；缺断线重连专项、大量事件、运行中 tail |
 | R2 | Thread / Chat Runtime | `MISSING_IMPL` | 只有 `POST /threads` 内存创建；缺持久化、list/get/runs/archive、真实 resume、同 thread 串行锁 |
 | R3 | Profiles / Settings / CODEX_HOME | `MISSING_IMPL` | 只有 `CODEX_HOME` 解析；缺 profile CRUD、写锁、原子写入、备份、config normalize、缓存同步 |
 | R4 | Skills Pass-through | `MISSING_IMPL` | 缺 scan/install/delete/metadata/API/真实 skill 触发测试 |
@@ -129,7 +129,7 @@ codex mcp add --help
 3. 记录不支持或 help 未显示的 flags。
 4. 写入 `runtime_capability_matrix` 或临时 fixture report。
 
-**当前状态：** `PARTIAL`。已有 version/exec help/minimal JSONL；缺 resume/mcp help 自动化记录。
+**当前状态：** `PARTIAL`。已有 version/exec help/resume help/MCP help/minimal JSONL/command execution 自动化 smoke；缺能力矩阵持久化。
 
 ### Task R-1.2: stdout/stderr 分离 fixture
 
@@ -148,7 +148,7 @@ codex mcp add --help
 3. fixture 保存到 `apps/daemon/test/fixtures/real-codex/<version>/`。
 4. normalizer fixture test 使用这些样本回归。
 
-**当前状态：** `PARTIAL`。只有最小 JSONL smoke，没有持久 fixture。
+**当前状态：** `PARTIAL`。已有最小 JSONL 和 command execution smoke，没有持久 fixture、usage 和失败路径。
 
 ### Task R-1.3: resume ABI fixture
 
@@ -223,7 +223,7 @@ codex mcp add --help
 | cancel 后不退出 | 强杀后 `canceled` 或 `failed/process_kill_failed`，必须无遗留进程 |
 | daemon crash/restart | running run 标记 `orphaned` |
 
-**当前状态：** `PARTIAL`。已覆盖 success/fail/invalid/stderr/timeout/cancel/resume missing；缺 orphan、强杀、spawn timeout、inactivity 专项。
+**当前状态：** `PARTIAL`。已覆盖 success/fail/invalid/stderr/timeout/inactivity/cancel/忽略 SIGTERM 后强杀兜底/resume missing；缺 orphan、spawn timeout、进程树强杀专项。
 
 ### Task R0.2: 日志一致性测试
 
@@ -236,7 +236,7 @@ codex mcp add --help
 5. `diagnostics.json` 记录 exitCode/signal/terminationReason。
 6. symlink/path traversal 不可导出。
 
-**当前状态：** `PARTIAL`。diagnostics symlink 已过；prompt/meta 脱敏和 events 一致性缺专项。
+**当前状态：** `PARTIAL`。diagnostics symlink 和 events 文件/DB seq 一致性已过；prompt/meta 脱敏缺专项。
 
 ## 6. R1 Run API + SSE 测试
 
@@ -252,7 +252,7 @@ codex mcp add --help
 | `POST /runs/:id/cancel` | running 可取消，terminal 返回 `RUN_ALREADY_TERMINAL` |
 | `GET /runs/:id/events` | auth、full replay、tail、done 后关闭 |
 
-**当前状态：** `PARTIAL`。基础 API 通过；terminal cancel 当前返回 409 但未按错误码 `RUN_ALREADY_TERMINAL`；`fromSeq` 规范使用别名未实现。
+**当前状态：** `PARTIAL`。基础 API、terminal cancel `RUN_ALREADY_TERMINAL`、`fromSeq`/`Last-Event-ID` 通过；大量事件、运行中 tail、content-type 校验缺专项。
 
 ### Task R1.2: SSE replay 专项
 
@@ -266,7 +266,7 @@ codex mcp add --help
 6. 运行中 run replay 历史后 tail 新事件。
 7. 大量事件不丢失、不乱序。
 
-**当前状态：** `PARTIAL`。已手动测 full replay；缺 fromSeq/Last-Event-ID/大量事件专项。
+**当前状态：** `PARTIAL`。已自动测 full replay、`fromSeq`、`Last-Event-ID`；缺大量事件、运行中 tail、心跳专项。
 
 ## 7. R2 Thread / Chat / Resume 测试
 
@@ -478,10 +478,10 @@ codex mcp add --help
 - Create: `docs/superpowers/reports/2026-07-04-runtime-contract-coverage.md`
 
 **Steps:**
-- [ ] 按本文第 3 节逐条映射 contract。
-- [ ] 给每条标记 `PASS/PARTIAL/MISSING_TEST/MISSING_IMPL/BLOCKED_ENV`。
-- [ ] 引用当前代码路径和测试路径。
-- [ ] 明确当前版本只能声明 R0/R1 子集。
+- [x] 按本文第 3 节逐条映射 contract。
+- [x] 给每条标记 `PASS/PARTIAL/MISSING_TEST/MISSING_IMPL/BLOCKED_ENV`。
+- [x] 引用当前代码路径和测试路径。
+- [x] 明确当前版本只能声明 R0/R1 子集。
 
 ### Task 2: R-1 smoke expansion
 
@@ -490,11 +490,11 @@ codex mcp add --help
 - Create: `apps/daemon/test/fixtures/real-codex/.gitkeep`
 
 **Steps:**
-- [ ] 增加 `codex exec resume --help` smoke。
-- [ ] 增加 `codex mcp --help` smoke。
-- [ ] 增加 `codex mcp add --help` smoke。
-- [ ] 增加 command execution run smoke。
-- [ ] 默认仍由 `CLAWEE_RUN_REAL_CODEX_SMOKE=1` gate 控制。
+- [x] 增加 `codex exec resume --help` smoke。
+- [x] 增加 `codex mcp --help` smoke。
+- [x] 增加 `codex mcp add --help` smoke。
+- [x] 增加 command execution run smoke。
+- [x] 默认仍由 `CLAWEE_RUN_REAL_CODEX_SMOKE=1` gate 控制。
 
 ### Task 3: R1 SSE contract tests
 
@@ -503,10 +503,10 @@ codex mcp add --help
 - Modify: `apps/daemon/src/api/routes.runs.ts`
 
 **Steps:**
-- [ ] 添加 `fromSeq` 测试，当前实现预期失败。
-- [ ] 添加 `Last-Event-ID` 测试。
-- [ ] 添加 terminal cancel 错误码测试。
-- [ ] 实现最小修复。
+- [x] 添加 `fromSeq` 测试，当前实现预期失败。
+- [x] 添加 `Last-Event-ID` 测试。
+- [x] 添加 terminal cancel 错误码测试。
+- [x] 实现最小修复。
 
 ### Task 4: R0 recovery and consistency tests
 
@@ -516,10 +516,10 @@ codex mcp add --help
 - Modify: `apps/daemon/src/storage/repositories.ts`
 
 **Steps:**
-- [ ] 添加 events.ndjson 与 run_events seq 一致性测试。
-- [ ] 添加 fake Codex 忽略 SIGTERM 的强杀测试。
+- [x] 添加 events.ndjson 与 run_events seq 一致性测试。
+- [x] 添加 fake Codex 忽略 SIGTERM 的强杀测试。
 - [ ] 添加 daemon restart orphan 标记测试。
-- [ ] 实现或明确标记缺口。
+- [x] 实现或明确标记缺口。
 
 ## 15. 通过标准
 

@@ -8,6 +8,7 @@ import { createFakeCodex } from '../helpers/fake-codex.js';
 
 let server: FastifyInstance | undefined;
 let tempDir = '';
+const RUN_STATUS_TIMEOUT_MS = 5_000;
 
 afterEach(async () => {
   await server?.close();
@@ -70,14 +71,7 @@ describe('runtime api', () => {
     const run = created.json() as { id: string; status: string };
     expect(run.status).toBe('running');
 
-    await expect.poll(async () => {
-      const response = await server?.inject({
-        method: 'GET',
-        url: `/runs/${run.id}`,
-        headers: { authorization: 'Bearer secret' }
-      });
-      return response?.json().status;
-    }, { timeout: 1000 }).toBe('succeeded');
+    await waitForRunStatus(run.id, 'succeeded');
 
     const history = await server.inject({
       method: 'GET',
@@ -95,6 +89,56 @@ describe('runtime api', () => {
     expect(events.statusCode).toBe(200);
     expect(events.body).toContain('event: assistant_message');
     expect(events.body).toContain('event: done');
+  });
+
+  it('replays events after fromSeq and Last-Event-ID', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'hello' } },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/runs',
+      headers: { authorization: 'Bearer secret' },
+      payload: { prompt: 'hello', cwd: tempDir, sandbox: 'read-only' }
+    });
+    const run = created.json() as { id: string };
+
+    await waitForRunStatus(run.id, 'succeeded');
+
+    const fromSeq = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events?fromSeq=2`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(fromSeq.statusCode).toBe(200);
+    expect(fromSeq.body).not.toContain('"seq":1');
+    expect(fromSeq.body).not.toContain('"seq":2');
+    expect(fromSeq.body).toContain('"seq":3');
+    expect(fromSeq.body).toContain('event: done');
+
+    const lastEventId = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events`,
+      headers: {
+        authorization: 'Bearer secret',
+        'last-event-id': '3'
+      }
+    });
+    expect(lastEventId.statusCode).toBe(200);
+    expect(lastEventId.body).not.toContain('"seq":3');
+    expect(lastEventId.body).toContain('event: done');
   });
 
   it('cancels a running run through the api', async () => {
@@ -125,13 +169,55 @@ describe('runtime api', () => {
     });
     expect(canceled.statusCode).toBe(202);
 
-    await expect.poll(async () => {
+    await waitForRunStatus(run.id, 'canceled');
+  });
+
+  it('returns RUN_ALREADY_TERMINAL when canceling a completed run', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.completed' }]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/runs',
+      headers: { authorization: 'Bearer secret' },
+      payload: { prompt: 'hello', cwd: tempDir, sandbox: 'read-only' }
+    });
+    const run = created.json() as { id: string };
+
+    await waitForRunStatus(run.id, 'succeeded');
+
+    const canceled = await server.inject({
+      method: 'POST',
+      url: `/runs/${run.id}/cancel`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(canceled.statusCode).toBe(409);
+    expect(canceled.json()).toEqual({
+      error: {
+        code: 'RUN_ALREADY_TERMINAL',
+        message: 'Run is already terminal'
+      }
+    });
+  });
+});
+
+async function waitForRunStatus(runId: string, status: string): Promise<void> {
+  await expect
+    .poll(async () => {
       const response = await server?.inject({
         method: 'GET',
-        url: `/runs/${run.id}`,
+        url: `/runs/${runId}`,
         headers: { authorization: 'Bearer secret' }
       });
       return response?.json().status;
-    }, { timeout: 1000 }).toBe('canceled');
-  });
-});
+    }, { timeout: RUN_STATUS_TIMEOUT_MS })
+    .toBe(status);
+}
