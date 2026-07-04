@@ -1,0 +1,99 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type Database from 'better-sqlite3';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createFakeCodex } from '../helpers/fake-codex.js';
+import { openRuntimeDatabase } from '../../src/storage/database.js';
+import { createRunManager } from '../../src/runs/manager.js';
+
+let tempDir = '';
+let db: Database.Database | undefined;
+
+afterEach(() => {
+  db?.close();
+  db = undefined;
+  if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+  tempDir = '';
+});
+
+describe('run manager', () => {
+  it('creates a run and writes redacted raw/events/stderr/meta files', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex_thread_1' },
+        { type: 'turn.started' },
+        {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'ok TOKEN=secret-value' }
+        },
+        { type: 'turn.completed' }
+      ],
+      stderrLines: ['warning TOKEN=secret-value']
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('succeeded');
+    expect(existsSync(join(tempDir, 'runs', run.id, 'meta.json'))).toBe(true);
+    expect(readFileSync(join(tempDir, 'runs', run.id, 'stderr.redacted.log'), 'utf8')).toContain(
+      '[REDACTED]'
+    );
+    const rawRedacted = readFileSync(join(tempDir, 'runs', run.id, 'raw.redacted.ndjson'), 'utf8');
+    const events = readFileSync(join(tempDir, 'runs', run.id, 'events.ndjson'), 'utf8');
+    expect(rawRedacted).not.toContain('secret-value');
+    expect(events).toContain('assistant_message');
+    expect(events).not.toContain('secret-value');
+    for (const line of rawRedacted.trim().split('\n')) JSON.parse(line);
+
+    const row = db.prepare('SELECT public_status FROM runs WHERE id = ?').get(run.id) as
+      | { public_status: string }
+      | undefined;
+    expect(row?.public_status).toBe('succeeded');
+  });
+
+  it('marks a run failed and writes diagnostics when codex exits non-zero', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.started' }],
+      stderrLines: ['failed TOKEN=secret-value'],
+      exitCode: 42
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(readFileSync(join(tempDir, 'runs', run.id, 'diagnostics.json'), 'utf8')).toContain(
+      '"exitCode": 42'
+    );
+    const row = db.prepare('SELECT public_status FROM runs WHERE id = ?').get(run.id) as
+      | { public_status: string }
+      | undefined;
+    expect(row?.public_status).toBe('failed');
+  });
+});
