@@ -1,0 +1,21 @@
+{
+  "name": "@clawee/daemon",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@clawee/protocol": "workspace:*",
+    "better-sqlite3": "^11.8.1",
+    "fastify": "^5.2.1",
+    "nanoid": "^5.0.9",
+    "toml": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12"
+  }
+}
