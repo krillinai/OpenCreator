@@ -506,10 +506,15 @@ describe('runtime api', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const invalidSource = join(tempDir, 'invalid-source');
+    const missingSource = join(tempDir, 'does-not-exist');
     mkdirSync(invalidSource, { recursive: true });
     server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
 
     const missingDelete = await authDelete('/codex/skills/missing');
+    const invalidSourcePathInstall = await authPost('/codex/skills/install', {
+      sourcePath: missingSource,
+      id: 'missing-source'
+    });
     const invalidInstall = await authPost('/codex/skills/install', {
       sourcePath: invalidSource,
       id: 'broken'
@@ -517,6 +522,8 @@ describe('runtime api', () => {
 
     expect(missingDelete.statusCode).toBe(404);
     expect(missingDelete.json().error.code).toBe('CODEX_SKILL_NOT_FOUND');
+    expect(invalidSourcePathInstall.statusCode).toBe(422);
+    expect(invalidSourcePathInstall.json().error.code).toBe('CODEX_SKILL_INVALID');
     expect(invalidInstall.statusCode).toBe(422);
     expect(invalidInstall.json().error.code).toBe('CODEX_SKILL_INVALID');
   });
