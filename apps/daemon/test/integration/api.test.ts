@@ -60,10 +60,10 @@ describe('runtime api', () => {
       capabilities: {
         resumeJson: true,
         resumeByThreadId: true,
-        skillsScan: false,
-        skillsInstall: false,
-        skillsDelete: false,
-        skillsGlobalWrite: false,
+        skillsScan: true,
+        skillsInstall: true,
+        skillsDelete: true,
+        skillsGlobalWrite: true,
         skillsRuntimeDiscoveryVerified: false,
         skillsRuntimeBehaviorVerified: false
       }
@@ -328,6 +328,101 @@ describe('runtime api', () => {
     expect(updated.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
     expect(deleted.statusCode).toBe(404);
     expect(deleted.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
+  });
+
+  it('lists, installs, overwrites, deletes, and logs codex skills', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const source = join(tempDir, 'source-skill');
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, 'SKILL.md'), [
+      '---',
+      'name: writer',
+      'description: "first"',
+      '---',
+      ''
+    ].join('\n'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const empty = await authGet('/codex/skills');
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json()).toMatchObject({
+      codexHome,
+      codexHomeMode: 'isolated',
+      skillsPath: join(codexHome, 'skills'),
+      skillsWritable: true,
+      requiresWriteConfirmation: false,
+      skills: []
+    });
+
+    const installed = await authPost('/codex/skills/install', {
+      sourcePath: source,
+      id: 'writer'
+    });
+    expect(installed.statusCode).toBe(201);
+    expect(installed.json().skill).toMatchObject({
+      id: 'writer',
+      name: 'writer',
+      description: 'first',
+      status: 'valid'
+    });
+
+    const duplicate = await authPost('/codex/skills/install', {
+      sourcePath: source,
+      id: 'writer'
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().error.code).toBe('CODEX_SKILL_EXISTS');
+
+    writeFileSync(join(source, 'SKILL.md'), [
+      '---',
+      'name: writer',
+      'description: "second"',
+      '---',
+      ''
+    ].join('\n'));
+    const overwritten = await authPost('/codex/skills/install', {
+      sourcePath: source,
+      id: 'writer',
+      overwrite: true
+    });
+    expect(overwritten.statusCode).toBe(201);
+    expect(overwritten.json().operation.operation).toBe('overwrite');
+    expect(overwritten.json().operation.backupPath).toEqual(expect.stringContaining('backups'));
+
+    const listed = await authGet('/codex/skills');
+    expect(listed.json().skills).toEqual([
+      expect.objectContaining({ id: 'writer', description: 'second', status: 'valid' })
+    ]);
+
+    const deleted = await authDelete('/codex/skills/writer');
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toMatchObject({ deleted: true });
+    expect(deleted.json().backupPath).toEqual(expect.stringContaining('backups'));
+
+    const operations = await authGet('/codex/skills/operations');
+    expect(operations.statusCode).toBe(200);
+    expect(operations.json().operations.map((operation: { operation: string }) => operation.operation)).toEqual([
+      'delete',
+      'overwrite',
+      'install'
+    ]);
+  });
+
+  it('requires explicit confirmation for global codex skill writes', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const source = join(tempDir, 'source-skill');
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, 'SKILL.md'), '---\nname: writer\ndescription: writer\n---\n');
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const install = await authPost('/codex/skills/install', {
+      sourcePath: source,
+      id: 'writer'
+    });
+
+    expect(install.statusCode).toBe(409);
+    expect(install.json().error.code).toBe('CODEX_SKILL_WRITE_CONFIRMATION_REQUIRED');
   });
 
   it('rejects invalid profile write bodies without server errors', async () => {

@@ -3,10 +3,12 @@ import Fastify from 'fastify';
 import { join } from 'node:path';
 import {
   isResumeExecutionSupported,
+  withRuntimeSkillCapabilities,
   type RuntimeCapabilityMatrix
 } from '../codex/capabilities.js';
 import { resolveCodexHome } from '../codex/home.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
+import { createSkillManager } from '../codex/skills/manager.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { openRuntimeDatabase } from '../storage/database.js';
 import { createThreadManager } from '../threads/manager.js';
@@ -16,6 +18,7 @@ import { registerCodexRoutes } from './routes.codex.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerProfileRoutes } from './routes.profiles.js';
 import { registerRunRoutes } from './routes.runs.js';
+import { registerSkillRoutes } from './routes.skills.js';
 import { registerThreadRoutes } from './routes.threads.js';
 
 export type BuildServerInput = {
@@ -44,10 +47,14 @@ export async function buildServer(input: BuildServerInput) {
     input.resumeCapabilityVerified ?? (
       input.capabilities === undefined ? undefined : isResumeExecutionSupported(input.capabilities)
     );
+  const capabilities = withRuntimeSkillCapabilities(
+    input.capabilities ?? createUnknownCapabilityMatrix()
+  );
   const db = input.db ?? openRuntimeDatabase(join(dataDir, 'app.sqlite'));
   const ownsDb = input.db === undefined;
   const threadManager = createThreadManager({ db, dataDir });
   const profileManager = createProfileManager({ codexHome: resolvedCodexHome });
+  const skillManager = createSkillManager({ codexHome: resolvedCodexHome, db });
   const runManager =
     input.runManager ??
     createRunManager({
@@ -83,12 +90,13 @@ export async function buildServer(input: BuildServerInput) {
   await registerCodexRoutes(server, {
     codexBin,
     codexHome: resolvedCodexHome,
-    capabilities: input.capabilities ?? createUnknownCapabilityMatrix()
+    capabilities
   });
   await registerProfileRoutes(server, {
     codexHome: resolvedCodexHome,
     profileManager
   });
+  await registerSkillRoutes(server, { skillManager });
   await registerRunRoutes(server, runManager, {
     sseHeartbeatMs: input.sseHeartbeatMs,
     threadManager,

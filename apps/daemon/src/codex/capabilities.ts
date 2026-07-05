@@ -132,6 +132,18 @@ export function isResumeExecutionSupported(matrix: RuntimeCapabilityMatrix): boo
   return matrix.resumeJson && matrix.resumeByThreadId;
 }
 
+export function withRuntimeSkillCapabilities(
+  matrix: RuntimeCapabilityMatrix
+): RuntimeCapabilityMatrix {
+  return {
+    ...matrix,
+    skillsScan: true,
+    skillsInstall: true,
+    skillsDelete: true,
+    skillsGlobalWrite: true
+  };
+}
+
 function runCodexInfo(
   codexBin: string,
   args: string[],
