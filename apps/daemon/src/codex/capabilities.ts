@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+
 export type ExecHelpCapabilities = {
   supportsJson: boolean;
   supportsProfiles: boolean;
@@ -27,6 +29,13 @@ export type RuntimeCapabilityMatrix = {
   resumeContextContinuityVerified: boolean;
   mcpAddEnv: boolean;
   warnings: string[];
+};
+
+export type CollectCodexCapabilityMatrixInput = {
+  codexBin?: string;
+  checkedAt?: string;
+  resumeContextContinuityVerified?: boolean;
+  timeoutMs?: number;
 };
 
 export function parseCodexExecHelp(help: string): ExecHelpCapabilities {
@@ -74,4 +83,61 @@ export function parseCodexCapabilityMatrix(input: {
     mcpAddEnv: input.mcpAddHelp.includes('--env'),
     warnings: []
   };
+}
+
+export function collectCodexCapabilityMatrix(
+  input: CollectCodexCapabilityMatrixInput = {}
+): RuntimeCapabilityMatrix {
+  const codexBin = input.codexBin ?? 'codex';
+  const version = runCodexInfo(codexBin, ['--version'], input.timeoutMs);
+  const execHelp = runCodexInfo(codexBin, ['exec', '--help'], input.timeoutMs);
+  const resumeHelp = runCodexInfo(codexBin, ['exec', 'resume', '--help'], input.timeoutMs);
+  const mcpAddHelp = runCodexInfo(codexBin, ['mcp', 'add', '--help'], input.timeoutMs);
+
+  const matrix = parseCodexCapabilityMatrix({
+    versionOutput: version.output.trim() || 'unknown',
+    execHelp: execHelp.output,
+    resumeHelp: resumeHelp.output,
+    mcpAddHelp: mcpAddHelp.output,
+    resumeContextContinuityVerified: input.resumeContextContinuityVerified,
+    checkedAt: input.checkedAt
+  });
+
+  matrix.warnings.push(
+    ...version.warnings,
+    ...execHelp.warnings,
+    ...resumeHelp.warnings,
+    ...mcpAddHelp.warnings
+  );
+  if (!isResumeExecutionSupported(matrix)) {
+    matrix.warnings.push('Codex resume execution support was not verified from help output.');
+  }
+
+  return matrix;
+}
+
+export function isResumeExecutionSupported(matrix: RuntimeCapabilityMatrix): boolean {
+  return matrix.resumeJson && matrix.resumeByThreadId;
+}
+
+function runCodexInfo(
+  codexBin: string,
+  args: string[],
+  timeoutMs = 5_000
+): { output: string; warnings: string[] } {
+  const result = spawnSync(codexBin, args, {
+    encoding: 'utf8',
+    timeout: timeoutMs
+  });
+  const command = [codexBin, ...args].join(' ');
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  const warnings: string[] = [];
+
+  if (result.error !== undefined) {
+    warnings.push(`${command} failed: ${result.error.message}`);
+  } else if (result.status !== 0) {
+    warnings.push(`${command} exited with code ${result.status}`);
+  }
+
+  return { output, warnings };
 }

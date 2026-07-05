@@ -1,24 +1,18 @@
 import type { FastifyInstance } from 'fastify';
-import { parseCodexCapabilityMatrix } from '../codex/capabilities.js';
-import { resolveCodexHome } from '../codex/home.js';
+import type { RuntimeCapabilityMatrix } from '../codex/capabilities.js';
+import type { ResolvedCodexHome } from '../codex/home.js';
 
-export async function registerCodexRoutes(server: FastifyInstance): Promise<void> {
+export async function registerCodexRoutes(
+  server: FastifyInstance,
+  input: { codexBin: string; codexHome: ResolvedCodexHome; capabilities: RuntimeCapabilityMatrix }
+): Promise<void> {
   server.get('/codex/status', async () => {
-    const home = resolveCodexHome();
-    const capabilities = parseCodexCapabilityMatrix({
-      versionOutput: 'unknown',
-      execHelp: '',
-      resumeHelp: '',
-      mcpAddHelp: ''
-    });
-    capabilities.warnings.push('Codex runtime help has not been collected yet.');
-
     return {
-      codexBin: 'codex',
-      codexVersion: 'unknown',
-      codexHome: home.path,
-      codexHomeMode: home.mode,
-      capabilities,
+      codexBin: input.codexBin,
+      codexVersion: input.capabilities.codexVersion,
+      codexHome: input.codexHome.path,
+      codexHomeMode: input.codexHome.mode,
+      capabilities: input.capabilities,
       diagnostics: []
     };
   });

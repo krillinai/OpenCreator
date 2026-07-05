@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
+import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 
@@ -40,14 +41,25 @@ describe('runtime api', () => {
   });
 
   it('returns codex status with auth', async () => {
-    server = await buildServer({ token: 'secret' });
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const capabilities = makeResumeCapableMatrix();
+    const codexHome = join(tempDir, 'codex-home');
+    server = await buildServer({ token: 'secret', codexHome, capabilities });
     const response = await server.inject({
       method: 'GET',
       url: '/codex/status',
       headers: { authorization: 'Bearer secret' }
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ codexHomeMode: 'global' });
+    expect(response.json()).toMatchObject({
+      codexHome,
+      codexHomeMode: 'isolated',
+      codexVersion: capabilities.codexVersion,
+      capabilities: {
+        resumeJson: true,
+        resumeByThreadId: true
+      }
+    });
   });
 
   it('creates, lists, gets, and archives threads through the api', async () => {
@@ -274,7 +286,7 @@ describe('runtime api', () => {
       dataDir: tempDir,
       codexBin: fake.bin,
       codexHome: join(tempDir, 'codex-home'),
-      resumeCapabilityVerified: true
+      capabilities: makeResumeCapableMatrix()
     });
 
     const thread = (await authPost('/threads', {
@@ -796,6 +808,30 @@ describe('runtime api', () => {
     });
   });
 });
+
+function makeResumeCapableMatrix(): RuntimeCapabilityMatrix {
+  return {
+    codexVersion: 'codex-cli test',
+    checkedAt: '2026-07-05T00:00:00.000Z',
+    execJson: true,
+    execStdinPrompt: true,
+    execProfile: true,
+    execCwd: true,
+    execSandbox: true,
+    execSkipGitRepoCheck: true,
+    resumeJson: true,
+    resumeByThreadId: true,
+    resumeLast: true,
+    resumeModelOverride: true,
+    resumeConfigOverride: true,
+    resumeCwdOverride: false,
+    resumeProfileOverride: false,
+    resumeSandboxOverride: false,
+    resumeContextContinuityVerified: false,
+    mcpAddEnv: true,
+    warnings: []
+  };
+}
 
 function authPost(url: string, payload: unknown) {
   return server!.inject({

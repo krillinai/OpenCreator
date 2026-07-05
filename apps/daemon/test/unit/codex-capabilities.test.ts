@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseCodexCapabilityMatrix, parseCodexExecHelp } from '../../src/codex/capabilities.js';
+import {
+  isResumeExecutionSupported,
+  parseCodexCapabilityMatrix,
+  parseCodexExecHelp
+} from '../../src/codex/capabilities.js';
 
 const EXEC_HELP_01425 = `
 Usage: codex exec [OPTIONS] [PROMPT]
@@ -57,5 +61,6 @@ describe('codex capability parsing', () => {
     expect(matrix.resumeCwdOverride).toBe(false);
     expect(matrix.resumeProfileOverride).toBe(false);
     expect(matrix.resumeSandboxOverride).toBe(false);
+    expect(isResumeExecutionSupported(matrix)).toBe(true);
   });
 });

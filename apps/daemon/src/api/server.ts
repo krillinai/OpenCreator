@@ -1,6 +1,10 @@
 import type Database from 'better-sqlite3';
 import Fastify from 'fastify';
 import { join } from 'node:path';
+import {
+  isResumeExecutionSupported,
+  type RuntimeCapabilityMatrix
+} from '../codex/capabilities.js';
 import { resolveCodexHome } from '../codex/home.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { openRuntimeDatabase } from '../storage/database.js';
@@ -21,13 +25,23 @@ export type BuildServerInput = {
   runManager?: RunManager;
   sseHeartbeatMs?: number;
   resumeCapabilityVerified?: boolean;
+  capabilities?: RuntimeCapabilityMatrix;
 };
 
 export async function buildServer(input: BuildServerInput) {
   const server = Fastify({ logger: false });
   const auth = requireAuth(input.token);
   const dataDir = input.dataDir ?? '.runtime';
-  const codexHome = input.codexHome ?? resolveCodexHome().path;
+  const codexBin = input.codexBin ?? 'codex';
+  const resolvedCodexHome =
+    input.codexHome === undefined
+      ? resolveCodexHome()
+      : resolveCodexHome({ isolatedHome: input.codexHome });
+  const codexHome = resolvedCodexHome.path;
+  const resumeCapabilityVerified =
+    input.resumeCapabilityVerified ?? (
+      input.capabilities === undefined ? undefined : isResumeExecutionSupported(input.capabilities)
+    );
   const db = input.db ?? openRuntimeDatabase(join(dataDir, 'app.sqlite'));
   const ownsDb = input.db === undefined;
   const threadManager = createThreadManager({ db, dataDir });
@@ -36,10 +50,10 @@ export async function buildServer(input: BuildServerInput) {
     createRunManager({
       db,
       dataDir,
-      codexBin: input.codexBin ?? 'codex',
+      codexBin,
       codexHome,
       threadAccess: threadManager,
-      resumeCapabilityVerified: input.resumeCapabilityVerified
+      resumeCapabilityVerified
     });
 
   server.setErrorHandler((error, _request, reply) => {
@@ -62,7 +76,11 @@ export async function buildServer(input: BuildServerInput) {
     await auth(request, reply);
   });
 
-  await registerCodexRoutes(server);
+  await registerCodexRoutes(server, {
+    codexBin,
+    codexHome: resolvedCodexHome,
+    capabilities: input.capabilities ?? createUnknownCapabilityMatrix()
+  });
   await registerRunRoutes(server, runManager, {
     sseHeartbeatMs: input.sseHeartbeatMs,
     threadManager
@@ -71,4 +89,28 @@ export async function buildServer(input: BuildServerInput) {
   await registerThreadRoutes(server, threadManager, runManager);
 
   return server;
+}
+
+function createUnknownCapabilityMatrix(): RuntimeCapabilityMatrix {
+  return {
+    codexVersion: 'unknown',
+    checkedAt: new Date().toISOString(),
+    execJson: false,
+    execStdinPrompt: false,
+    execProfile: false,
+    execCwd: false,
+    execSandbox: false,
+    execSkipGitRepoCheck: false,
+    resumeJson: false,
+    resumeByThreadId: false,
+    resumeLast: false,
+    resumeModelOverride: false,
+    resumeConfigOverride: false,
+    resumeCwdOverride: false,
+    resumeProfileOverride: false,
+    resumeSandboxOverride: false,
+    resumeContextContinuityVerified: false,
+    mcpAddEnv: false,
+    warnings: ['Codex runtime help has not been collected yet.']
+  };
 }

@@ -41,7 +41,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | Contract 区域 | 代码位置 | 测试位置 | 状态 | 缺口 |
 |---|---|---|---|---|
 | Codex exec argv | `apps/daemon/src/codex/argv.ts` | `apps/daemon/test/unit/codex-argv.test.ts` | `PASS` | 已覆盖 exec argv、resume argv 不携带 cwd/profile/sandbox；缺能力矩阵持久化 |
-| Codex capability parser | `apps/daemon/src/codex/capabilities.ts` | `apps/daemon/test/unit/codex-capabilities.test.ts` | `PARTIAL` | 未接 daemon 启动检测和 `/codex/status` |
+| Codex capability parser | `apps/daemon/src/codex/capabilities.ts` | `apps/daemon/test/unit/codex-capabilities.test.ts`, `apps/daemon/test/integration/api.test.ts` | `PARTIAL` | 已接 daemon 启动 help 检测、`/codex/status` 和 resume gate；缺持久化 runtime capability matrix、版本区间 gate 和完整能力矩阵验收 |
 | CODEX_HOME 解析 | `apps/daemon/src/codex/home.ts` | `apps/daemon/test/unit/codex-home.test.ts` | `PASS` | 隔离模式 e2e、配置缓存、冲突处理未实现 |
 | Codex runner | `apps/daemon/src/codex/runner.ts` | `apps/daemon/test/integration/codex-runner.test.ts` | `PARTIAL` | 已覆盖 SIGTERM 后 SIGKILL 兜底、spawn fail、spawnTimeout、timeout、inactivity；缺进程树强杀专项 |
 | JSONL parser | `apps/daemon/src/events/parser.ts` | `apps/daemon/test/unit/events.test.ts` | `PASS` | 真实 fixture 回归不足 |
@@ -63,7 +63,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | 完成定义 | 状态 | 说明 |
 |---|---|---|
 | run 可创建、观察、取消、恢复和诊断 | `PARTIAL` | 创建、观察、取消、诊断通过；thread resume 后端闭环和真实 Codex resume smoke 通过；UI、messages 表、workspace 全局写锁未实现 |
-| Codex 版本和能力可检测 | `PARTIAL` | 有 parser 和 smoke；未持久化 capability matrix，`/codex/status` 仍是静态 unknown |
+| Codex 版本和能力可检测 | `PARTIAL` | daemon 启动时会采集 `codex --version`、`codex exec --help`、`codex exec resume --help`、`codex mcp add --help`，`/codex/status` 返回同一份能力矩阵，resume gate 会按 `resumeJson && resumeByThreadId` 放行；未持久化 capability matrix，也没有版本区间 gate |
 | 事件协议稳定，SSE 可 replay | `PARTIAL` | 基础 replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、大量事件顺序、运行中 tail、heartbeat 通过；真实 fixture 回归不足 |
 | 本地 API 不裸露给未授权调用方 | `PASS` | 非 healthz 接口有 bearer token |
 | 配置写入有锁、原子性和缓存同步 | `MISSING_IMPL` | profile/config 写入未实现 |
@@ -73,7 +73,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | fake Codex 测试覆盖主要异常路径 | `PARTIAL` | 覆盖基础异常、强杀兜底、spawnTimeout、inactivity、orphan 恢复；缺进程树强杀专项 |
 | 真实 Codex smoke 覆盖 assistant message、command execution、usage、stderr warning 和失败路径 | `PARTIAL` | assistant/stderr 字段、command execution、真实 resume continuity、JSONL clean 和无工具/命令事件已覆盖；usage/failure/sandbox 缺失。resume smoke 只验证上下文连续性和无工具事件，不单独证明 sandbox 继承 |
 | 如果承诺 Chat，多轮 thread/resume 已通过真实 Codex 验证 | `PARTIAL` | 后端真实 resume continuity 已通过；UI、messages 表和完整 Chat transcript 尚未实现，不能声明完整 Chat 产品能力 |
-| 如果不承诺 resume Chat，Runtime capability 和文档明确标注独立 run 模式 | `MISSING_TEST` | 需要 capability/status 明确表达当前 thread resume 能力边界 |
+| 如果不承诺 resume Chat，Runtime capability 和文档明确标注独立 run 模式 | `PARTIAL` | `/codex/status` 已暴露启动时采集的 resume capability，默认 daemon 已用该矩阵控制 resume gate；缺持久化状态、版本区间 gate 和产品文档中的完整能力边界 |
 | create/resume argv、skip git、stdin `-`、rollout usage、config normalize、平台 sandbox 进入能力矩阵 | `PARTIAL` | create/resume argv、skip git、stdin 写入已覆盖；rollout usage、config normalize、平台 sandbox 能力矩阵未实现 |
 
 ## 下一步优先级
