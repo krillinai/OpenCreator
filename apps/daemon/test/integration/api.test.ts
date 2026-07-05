@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -541,6 +541,135 @@ describe('runtime api', () => {
     });
     expect(response.statusCode).toBe(422);
     expect(response.json().error.code).toBe('CODEX_PROFILE_INVALID');
+  });
+
+  it('rejects thread runs when the stored profile is deleted before run start', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const createdProfile = await authPost('/codex/profiles', {
+      name: 'review',
+      config: { model: 'gpt-5.3-codex' }
+    });
+    expect(createdProfile.statusCode).toBe(201);
+
+    const thread = await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'review',
+      sandbox: 'read-only'
+    });
+    expect(thread.statusCode).toBe(201);
+
+    const deletedProfile = await authDelete('/codex/profiles/review');
+    expect(deletedProfile.statusCode).toBe(200);
+
+    const run = await authPost('/runs', {
+      threadId: thread.json().thread.id,
+      prompt: 'hello'
+    });
+    if (run.statusCode === 202) await waitForRunStatus(run.json().id, 'succeeded');
+
+    expect(run.statusCode).toBe(404);
+    expect(run.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
+    expect(existsSync(join(tempDir, 'argv.json'))).toBe(false);
+  });
+
+  it('rejects thread runs when the stored profile overlay becomes invalid', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome
+    });
+
+    const createdProfile = await authPost('/codex/profiles', {
+      name: 'review',
+      config: { model: 'gpt-5.3-codex' }
+    });
+    expect(createdProfile.statusCode).toBe(201);
+
+    const thread = await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'review',
+      sandbox: 'read-only'
+    });
+    expect(thread.statusCode).toBe(201);
+
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "broken');
+
+    const run = await authPost('/runs', {
+      threadId: thread.json().thread.id,
+      prompt: 'hello'
+    });
+    if (run.statusCode === 202) await waitForRunStatus(run.json().id, 'succeeded');
+
+    expect(run.statusCode).toBe(422);
+    expect(run.json().error.code).toBe('CODEX_PROFILE_INVALID');
+    expect(existsSync(join(tempDir, 'argv.json'))).toBe(false);
+  });
+
+  it('rejects thread runs when base config.toml becomes invalid', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome
+    });
+
+    const createdProfile = await authPost('/codex/profiles', {
+      name: 'review',
+      config: { model: 'gpt-5.3-codex' }
+    });
+    expect(createdProfile.statusCode).toBe(201);
+
+    const thread = await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'review',
+      sandbox: 'read-only'
+    });
+    expect(thread.statusCode).toBe(201);
+
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "broken');
+
+    const run = await authPost('/runs', {
+      threadId: thread.json().thread.id,
+      prompt: 'hello'
+    });
+    if (run.statusCode === 202) await waitForRunStatus(run.json().id, 'succeeded');
+
+    expect(run.statusCode).toBe(422);
+    expect(run.json().error.code).toBe('CODEX_CONFIG_INVALID');
+    expect(existsSync(join(tempDir, 'argv.json'))).toBe(false);
   });
 
   it('creates, lists, gets, and archives threads through the api', async () => {

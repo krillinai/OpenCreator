@@ -42,6 +42,11 @@ export async function registerRunRoutes(
           .send(apiError('THREAD_CONFIG_IMMUTABLE', 'Thread run config is immutable'));
       }
 
+      const validation = options.profileValidator?.validateProfileForRun(thread.profile);
+      if (validation !== undefined && !validation.ok) {
+        return sendProfileValidationError(reply, validation);
+      }
+
       const run = manager.startRun({
         prompt: body.prompt,
         cwd: thread.cwd,
