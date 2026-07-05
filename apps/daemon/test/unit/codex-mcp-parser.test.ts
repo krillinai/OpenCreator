@@ -67,6 +67,28 @@ describe('codex mcp parser', () => {
 
     expect(result.raw).toBe('node --api-key [REDACTED]');
     expect(result.raw).not.toContain('secret');
+    expect(result.hasSecrets).toBe(true);
+  });
+
+  it('redacts quoted secrets in unparsed get raw output', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: [
+        'GITHUB_TOKEN="secret"',
+        "GITHUB_TOKEN='secret'",
+        '--api-key="secret"',
+        "--api-key='secret'"
+      ].join('\n'),
+      stderr: '',
+      exitCode: 0
+    });
+
+    expect(result.raw).toContain('GITHUB_TOKEN=[REDACTED]');
+    expect(result.raw).toContain('--api-key=[REDACTED]');
+    expect(result.raw).not.toContain('secret');
+    expect(result.hasSecrets).toBe(true);
   });
 
   it('maps not found get output to missing status', () => {
@@ -92,6 +114,8 @@ describe('codex mcp parser', () => {
     expect(isMcpNotFoundOutput('missing token')).toBe(false);
     expect(isMcpNotFoundOutput('missing required env')).toBe(false);
     expect(isMcpNotFoundOutput('missing permission')).toBe(false);
+    expect(isMcpNotFoundOutput('MCP server github missing required env GITHUB_TOKEN')).toBe(false);
+    expect(isMcpNotFoundOutput('MCP server github missing token')).toBe(false);
     expect(isMcpNotFoundOutput('permission denied')).toBe(false);
   });
 
@@ -303,6 +327,7 @@ describe('codex mcp parser', () => {
 
     expect(getResult.raw).toBe('GITHUB_TOKEN=[REDACTED]');
     expect(getResult.raw).not.toContain('secret');
+    expect(getResult.hasSecrets).toBe(true);
     expect(getResult.diagnostics.join('\n')).not.toContain('secret');
     expect(listResult.diagnostics.join('\n')).toContain('not fully recognized');
     expect(listResult.diagnostics.join('\n')).not.toContain('secret');

@@ -20,6 +20,10 @@ const SECRET_ARG_FLAGS = new Set([
 ]);
 const SECRET_ARG_FLAG_IN_COMMAND =
   /(--(?:api[-_]key|token|secret|password|access[-_]token|bearer[-_]token))(\s+)(?:"[^"]*"|'[^']*'|[^\s]+)/gi;
+const QUOTED_SECRET_KEY_VALUE =
+  /([A-Za-z_][A-Za-z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|ACCESS[_-]?TOKEN|KEY)[A-Za-z0-9_.-]*\s*[=:]\s*)(["'])[^"'\r\n]*\2/gi;
+const QUOTED_SECRET_FLAG_VALUE =
+  /(--(?:api[-_]key|token|secret|password|access[-_]token|bearer[-_]token)=)(["'])[^"'\r\n]*\2/gi;
 
 export type ParseMcpGetOutputInput = {
   name: string;
@@ -56,6 +60,7 @@ export function parseMcpGetOutput(input: ParseMcpGetOutputInput): CodexMcpServer
   }
 
   const missing = isMcpNotFoundOutput(output);
+  const redactedRaw = redactMcpFreeText(output);
   return missing
     ? missingServerResponse(input, output)
     : {
@@ -63,11 +68,11 @@ export function parseMcpGetOutput(input: ParseMcpGetOutputInput): CodexMcpServer
         transport: 'unknown',
         status: input.exitCode === 0 ? 'configured' : 'unknown',
         envKeys: [],
-        hasSecrets: false,
+        hasSecrets: redactedRaw !== output,
         codexHome: input.codexHome,
         codexHomeMode: input.codexHomeMode,
         diagnostics: ['codex mcp get output was not fully recognized'],
-        raw: redactMcpFreeText(output)
+        raw: redactedRaw
       };
 }
 
@@ -108,7 +113,7 @@ export function parseMcpListOutput(input: ParseMcpListOutputInput): CodexMcpList
 }
 
 export function isMcpNotFoundOutput(output: string): boolean {
-  return /\b(?:not found|not configured|no mcp server named|missing\s+mcp\s+server|mcp\s+server\b[\s\S]*\bmissing)\b/i.test(
+  return /\b(?:not found|not configured|no mcp server named|missing\s+mcp\s+server)\b/i.test(
     output
   );
 }
@@ -288,8 +293,8 @@ function isSecretArgFlag(arg: string): boolean {
 }
 
 function redactMcpFreeText(text: string, sensitiveValues: string[] = []): string {
-  return redactMcpText(text, sensitiveValues).replace(
-    SECRET_ARG_FLAG_IN_COMMAND,
-    (_match, flag: string, separator: string) => `${flag}${separator}${REDACTED}`
-  );
+  return redactMcpText(text, sensitiveValues)
+    .replace(QUOTED_SECRET_KEY_VALUE, `$1${REDACTED}`)
+    .replace(QUOTED_SECRET_FLAG_VALUE, `$1${REDACTED}`)
+    .replace(SECRET_ARG_FLAG_IN_COMMAND, (_match, flag: string, separator: string) => `${flag}${separator}${REDACTED}`);
 }
