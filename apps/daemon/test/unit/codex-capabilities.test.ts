@@ -105,6 +105,31 @@ describe('codex capability parsing', () => {
     });
   });
 
+  it('does not detect mcp commands from descriptive help text alone', () => {
+    const matrix = parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.142.5',
+      execHelp: EXEC_HELP_01425,
+      resumeHelp: RESUME_HELP_01425,
+      mcpHelp: `
+Usage: codex mcp [OPTIONS] <COMMAND>
+Manage MCP servers. You can list, get, add, remove, login, and logout servers.
+Commands:
+  list
+  add [OPTIONS] <NAME> <COMMAND>...
+`,
+      mcpAddHelp: MCP_ADD_HELP_01425
+    });
+
+    expect(matrix).toMatchObject({
+      mcpList: true,
+      mcpGet: false,
+      mcpAdd: true,
+      mcpRemove: false,
+      mcpLogin: false,
+      mcpLogout: false
+    });
+  });
+
   it('defaults skill capability flags to false when capability help is unknown', () => {
     const matrix = parseCodexCapabilityMatrix({
       versionOutput: 'codex-cli 0.142.5',

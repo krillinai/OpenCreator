@@ -66,6 +66,23 @@ export function parseCodexExecHelp(help: string): ExecHelpCapabilities {
   };
 }
 
+function hasMcpCommand(help: string, command: string): boolean {
+  const commandPattern = new RegExp(`^\\s*${command}\\b`);
+  let inCommandsSection = false;
+
+  for (const line of help.split(/\r?\n/)) {
+    if (/^\s*Commands:\s*$/.test(line)) {
+      inCommandsSection = true;
+      continue;
+    }
+    if (!inCommandsSection || line.trim() === '') continue;
+    if (commandPattern.test(line)) return true;
+    if (/^\S/.test(line)) break;
+  }
+
+  return false;
+}
+
 export function parseCodexCapabilityMatrix(input: {
   versionOutput: string;
   execHelp: string;
@@ -98,12 +115,12 @@ export function parseCodexCapabilityMatrix(input: {
       input.resumeHelp.includes('--profile') || input.resumeHelp.includes('-p,'),
     resumeSandboxOverride: input.resumeHelp.includes('--sandbox'),
     resumeContextContinuityVerified: input.resumeContextContinuityVerified ?? false,
-    mcpList: input.mcpHelp.includes('list'),
-    mcpGet: input.mcpHelp.includes('get'),
-    mcpAdd: input.mcpHelp.includes('add'),
-    mcpRemove: input.mcpHelp.includes('remove'),
-    mcpLogin: input.mcpHelp.includes('login'),
-    mcpLogout: input.mcpHelp.includes('logout'),
+    mcpList: hasMcpCommand(input.mcpHelp, 'list'),
+    mcpGet: hasMcpCommand(input.mcpHelp, 'get'),
+    mcpAdd: hasMcpCommand(input.mcpHelp, 'add'),
+    mcpRemove: hasMcpCommand(input.mcpHelp, 'remove'),
+    mcpLogin: hasMcpCommand(input.mcpHelp, 'login'),
+    mcpLogout: hasMcpCommand(input.mcpHelp, 'logout'),
     mcpAddEnv: input.mcpAddHelp.includes('--env'),
     mcpAddUrl: input.mcpAddHelp.includes('--url'),
     mcpAddBearerTokenEnvVar: input.mcpAddHelp.includes('--bearer-token-env-var'),
