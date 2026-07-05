@@ -215,6 +215,169 @@ describe('runtime api', () => {
     expect(response.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
   });
 
+  it('creates, updates, and deletes profiles in an isolated codex home', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const created = await authPost('/codex/profiles', {
+      name: 'review',
+      config: {
+        model: 'gpt-5.3-codex',
+        model_reasoning_effort: 'high'
+      }
+    });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      profile: {
+        name: 'review',
+        status: 'valid',
+        config: {
+          model: 'gpt-5.3-codex',
+          model_reasoning_effort: 'high'
+        },
+        codexHomeMode: 'isolated'
+      }
+    });
+
+    const updated = await authPatch('/codex/profiles/review', {
+      config: {
+        model: 'gpt-5.3-codex',
+        model_reasoning_effort: 'medium'
+      }
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({
+      profile: {
+        name: 'review',
+        status: 'valid',
+        config: {
+          model: 'gpt-5.3-codex',
+          model_reasoning_effort: 'medium'
+        },
+        codexHomeMode: 'isolated'
+      }
+    });
+
+    const deleted = await authDelete('/codex/profiles/review');
+
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toEqual({ deleted: true });
+
+    const missing = await authGet('/codex/profiles/review');
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
+  });
+
+  it('rejects profile writes for the global codex home', async () => {
+    server = await buildServer({ token: 'secret' });
+
+    const response = await authPost('/codex/profiles', {
+      name: 'review',
+      config: { model: 'gpt-5.3-codex' }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('CODEX_HOME_READ_ONLY');
+  });
+
+  it('returns CODEX_PROFILE_EXISTS when creating a duplicate profile', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const payload = {
+      name: 'review',
+      config: { model: 'gpt-5.3-codex' }
+    };
+
+    expect((await authPost('/codex/profiles', payload)).statusCode).toBe(201);
+    const duplicate = await authPost('/codex/profiles', payload);
+
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().error.code).toBe('CODEX_PROFILE_EXISTS');
+  });
+
+  it('returns CODEX_PROFILE_NOT_FOUND when updating or deleting a missing profile', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const updated = await authPatch('/codex/profiles/missing', {
+      config: { model: 'gpt-5.3-codex' }
+    });
+    const deleted = await authDelete('/codex/profiles/missing');
+
+    expect(updated.statusCode).toBe(404);
+    expect(updated.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
+    expect(deleted.statusCode).toBe(404);
+    expect(deleted.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
+  });
+
+  it('rejects invalid profile write bodies without server errors', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const invalidPosts: Array<{
+      label: string;
+      payload: unknown;
+      headers?: Record<string, string>;
+    }> = [
+      {
+        label: 'string body',
+        payload: JSON.stringify('not-an-object'),
+        headers: { 'content-type': 'application/json' }
+      },
+      { label: 'array body', payload: [] },
+      { label: 'missing name', payload: { config: { model: 'gpt-5.3-codex' } } },
+      { label: 'invalid name', payload: { name: '../review', config: { model: 'gpt-5.3-codex' } } },
+      { label: 'missing config', payload: { name: 'review' } },
+      { label: 'array config', payload: { name: 'review', config: [] } },
+      { label: 'nested config', payload: { name: 'review', config: { nested: { bad: true } } } }
+    ];
+
+    for (const { label, payload, headers } of invalidPosts) {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/codex/profiles',
+        headers: { authorization: 'Bearer secret', ...headers },
+        payload: payload as TestInjectPayload
+      });
+      expect(response.statusCode, label).toBe(400);
+      expect(response.json().error.code, label).toBe('VALIDATION_FAILED');
+    }
+
+    const invalidPatches: Array<{
+      label: string;
+      payload: unknown;
+      headers?: Record<string, string>;
+    }> = [
+      {
+        label: 'string body',
+        payload: JSON.stringify('not-an-object'),
+        headers: { 'content-type': 'application/json' }
+      },
+      { label: 'array body', payload: [] },
+      { label: 'missing config', payload: {} },
+      { label: 'array config', payload: { config: [] } },
+      { label: 'nested config', payload: { config: { nested: { bad: true } } } }
+    ];
+
+    for (const { label, payload, headers } of invalidPatches) {
+      const response = await server.inject({
+        method: 'PATCH',
+        url: '/codex/profiles/review',
+        headers: { authorization: 'Bearer secret', ...headers },
+        payload: payload as TestInjectPayload
+      });
+      expect(response.statusCode, label).toBe(400);
+      expect(response.json().error.code, label).toBe('VALIDATION_FAILED');
+    }
+  });
+
   it('creates, lists, gets, and archives threads through the api', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
@@ -992,6 +1155,23 @@ function authPost(url: string, payload: unknown) {
     url,
     headers: { authorization: 'Bearer secret' },
     payload: payload as TestInjectPayload
+  });
+}
+
+function authPatch(url: string, payload: unknown) {
+  return server!.inject({
+    method: 'PATCH',
+    url,
+    headers: { authorization: 'Bearer secret' },
+    payload: payload as TestInjectPayload
+  });
+}
+
+function authDelete(url: string) {
+  return server!.inject({
+    method: 'DELETE',
+    url,
+    headers: { authorization: 'Bearer secret' }
   });
 }
 
