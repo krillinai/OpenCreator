@@ -9,6 +9,7 @@ import type {
 } from './types.js';
 
 const PROFILE_NAME_PATTERN = /^[A-Za-z0-9_.-]+$/;
+const INVALID_PROFILE_SOURCE = 'invalid.config.toml';
 
 export function isValidProfileName(name: string): boolean {
   return name.length > 0 && PROFILE_NAME_PATTERN.test(name);
@@ -36,6 +37,11 @@ export function validateProfileConfig(config: Record<string, unknown>): Validati
 }
 
 export function parseCodexProfileOverlay(name: string, content: string): ParseProfileConfigResult {
+  if (!isValidProfileName(name)) {
+    const diagnostic = `invalid profile name: ${name}`;
+    return { ok: false, profile: invalidProfile(name, [diagnostic]), diagnostics: [diagnostic] };
+  }
+
   let parsed: unknown;
   try {
     parsed = content.trim().length === 0 ? {} : parse(content);
@@ -70,7 +76,7 @@ function invalidProfile(name: string, diagnostics: string[]): Omit<CodexProfile,
     status: 'invalid',
     config: {},
     diagnostics,
-    source: profileFileName(name)
+    source: isValidProfileName(name) ? profileFileName(name) : INVALID_PROFILE_SOURCE
   };
 }
 

@@ -34,6 +34,19 @@ describe('codex profile config parser', () => {
     expect(result.diagnostics[0]).toContain('Failed to parse');
   });
 
+  it('returns diagnostics for invalid profile names without throwing', () => {
+    let result: ReturnType<typeof parseCodexProfileOverlay> | undefined;
+
+    expect(() => {
+      result = parseCodexProfileOverlay('../secret', 'model = "x"');
+    }).not.toThrow();
+
+    expect(result?.ok).toBe(false);
+    expect(result?.profile.status).toBe('invalid');
+    expect(result?.profile.source).toBe('invalid.config.toml');
+    expect(result?.diagnostics[0]).toContain('invalid profile name');
+  });
+
   it('validates profile names', () => {
     expect(isValidProfileName('default')).toBe(true);
     expect(isValidProfileName('review-1')).toBe(true);
