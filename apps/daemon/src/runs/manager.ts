@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
-import { buildCodexExecArgs } from '../codex/argv.js';
+import { buildCodexExecArgs, buildCodexResumeArgs } from '../codex/argv.js';
 import { CodexExecError, startCodexExec } from '../codex/runner.js';
 import { normalizerVersion, normalizeCodexEvent } from '../events/normalizer.js';
 import { parseJsonLine } from '../events/parser.js';
@@ -107,41 +107,84 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   const manager: RunManager = {
     startRun(input: CreateRunInput): CreatedRun {
       if (input.resumeMode === 'resume_thread' && input.threadId === undefined) {
-        const id = insertInitialRun(input);
+        const id = insertInitialRun(input, 'independent');
         const runDir = join(options.dataDir, 'runs', id);
-        writeJson(join(runDir, 'diagnostics.json'), {
-          error: 'resume_thread requires threadId',
-          terminationReason: 'stream_error'
-        });
-        updateStatus(id, 'failed', 'failed', {
+        return failRunBeforeSpawn({
+          id,
+          runDir,
+          code: 'RESUME_FAILED',
+          message: 'resume_thread requires threadId',
           terminationReason: 'stream_error',
-          errorCode: 'RESUME_FAILED',
-          errorMessage: 'resume_thread requires threadId',
-          endedAt: new Date().toISOString()
+          publish
         });
-        publishDone(id, 1, 'failed', 'stream_error', publish);
-        return { id, status: 'failed' };
       }
 
-      const id = insertInitialRun(input);
+      const thread = input.threadId === undefined
+        ? undefined
+        : options.threadAccess?.getThread(input.threadId);
+      const resolvedResumeMode = resolveResumeMode(input, thread);
+      const codexThreadId = thread?.codexThreadId ?? undefined;
+      const id = insertInitialRun(input, resolvedResumeMode, codexThreadId);
       const runDir = join(options.dataDir, 'runs', id);
+
+      if (resolvedResumeMode === 'resume_thread' && codexThreadId === undefined) {
+        return failRunBeforeSpawn({
+          id,
+          runDir,
+          code: 'CODEX_THREAD_ID_MISSING',
+          message: 'resume_thread requires a persisted codexThreadId',
+          terminationReason: 'stream_error',
+          publish
+        });
+      }
+      if (resolvedResumeMode === 'resume_thread' && options.resumeCapabilityVerified !== true) {
+        return failRunBeforeSpawn({
+          id,
+          runDir,
+          code: 'RESUME_CAPABILITY_UNVERIFIED',
+          message: 'Codex resume capability has not been verified',
+          terminationReason: 'stream_error',
+          publish
+        });
+      }
+
       const stdoutLines: string[] = [];
       let stderr = '';
       let seq = 0;
       let sawTurnCompleted = false;
-      let sawCodexThreadId = false;
+      let sawCodexThreadId = resolvedResumeMode === 'resume_thread';
+      const codexArgs = resolvedResumeMode === 'resume_thread'
+        ? buildCodexResumeArgs({
+            codexThreadId: codexThreadId!,
+            model: input.model,
+            reasoning: input.reasoning
+          })
+        : buildCodexExecArgs({
+            profile: input.profile,
+            cwd: input.cwd,
+            sandbox: input.sandbox,
+            model: input.model,
+            reasoning: input.reasoning
+          });
+      if (resolvedResumeMode === 'resume_thread') {
+        runs.setRunCodexThreadId(id, codexThreadId!);
+      }
+      if (resolvedResumeMode === 'new_thread' && codexThreadId !== undefined) {
+        publishDiagnostic(
+          id,
+          ++seq,
+          'THREAD_CODEX_SESSION_RESET',
+          'Starting a new Codex session for a thread that already had a Codex session',
+          publish,
+          { previousCodexThreadId: codexThreadId }
+        );
+      }
 
       const process = startCodexExec({
         codexBin: options.codexBin,
         codexHome: options.codexHome,
         cwd: input.cwd,
-        args: buildCodexExecArgs({
-          profile: input.profile,
-          cwd: input.cwd,
-          sandbox: input.sandbox,
-          model: input.model,
-          reasoning: input.reasoning
-        }),
+        args: codexArgs,
         prompt: input.prompt,
         timeoutMs: options.timeoutMs ?? EXEC_TIMEOUT_MS,
         spawnTimeoutMs: options.spawnTimeoutMs,
@@ -196,16 +239,30 @@ export function createRunManager(options: RunManagerOptions): RunManager {
               ? 'succeeded'
               : 'failed';
           const terminationReason = streamError ? 'stream_error' : resultToTerminationReason(result);
-          const errorCode = missingCodexThreadId ? 'CODEX_THREAD_ID_MISSING' : undefined;
+          const resumeFailureCode =
+            resolvedResumeMode === 'resume_thread'
+              && result.terminationReason !== 'canceled'
+              && result.exitCode !== 0
+              && !streamError
+              ? classifyResumeFailure(stdoutLines, stderr)
+              : undefined;
+          const errorCode = missingCodexThreadId
+            ? 'CODEX_THREAD_ID_MISSING'
+            : resumeFailureCode;
           const errorMessage = missingCodexThreadId
             ? CODEX_THREAD_ID_MISSING_MESSAGE
-            : undefined;
+            : resumeFailureCode === undefined
+              ? undefined
+              : 'Codex resume failed';
           writeJson(join(runDir, 'diagnostics.json'), {
             exitCode: result.exitCode,
             signal: result.signal,
             terminationReason,
+            ...(errorCode === undefined ? {} : { errorCode }),
             ...(missingCodexThreadId
               ? { error: errorMessage }
+              : resumeFailureCode !== undefined
+                ? { error: errorMessage }
               : streamError
                 ? { error: 'Codex stream ended without turn.completed' }
                 : {})
@@ -319,17 +376,52 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     }
   };
 
-  function insertInitialRun(input: CreateRunInput): string {
+  function failRunBeforeSpawn(input: {
+    id: string;
+    runDir: string;
+    code: string;
+    message: string;
+    terminationReason: TerminationReason;
+    publish: (event: AgentEventEnvelope) => void;
+  }): CreatedRun {
+    const endedAt = new Date().toISOString();
+    writeJson(join(input.runDir, 'diagnostics.json'), {
+      error: input.message,
+      errorCode: input.code,
+      terminationReason: input.terminationReason
+    });
+    updateStatus(input.id, 'failed', 'failed', {
+      terminationReason: input.terminationReason,
+      errorCode: input.code,
+      errorMessage: input.message,
+      endedAt
+    });
+    publishError(input.id, 1, input.code, input.message, input.publish);
+    publishDone(input.id, 2, 'failed', input.terminationReason, input.publish);
+    return { id: input.id, status: 'failed' };
+  }
+
+  function insertInitialRun(
+    input: CreateRunInput,
+    resolvedResumeMode: 'independent' | 'new_thread' | 'resume_thread',
+    codexThreadId?: string
+  ): string {
     const id = `run_${nanoid(10)}`;
     const runDir = join(options.dataDir, 'runs', id);
     const canonicalCwd = resolve(input.cwd);
-    const args = buildCodexExecArgs({
-      profile: input.profile,
-      cwd: input.cwd,
-      sandbox: input.sandbox,
-      model: input.model,
-      reasoning: input.reasoning
-    });
+    const args = resolvedResumeMode === 'resume_thread' && codexThreadId !== undefined
+      ? buildCodexResumeArgs({
+          codexThreadId,
+          model: input.model,
+          reasoning: input.reasoning
+        })
+      : buildCodexExecArgs({
+          profile: input.profile,
+          cwd: input.cwd,
+          sandbox: input.sandbox,
+          model: input.model,
+          reasoning: input.reasoning
+        });
 
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, 'raw.redacted.ndjson'), '');
@@ -341,6 +433,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       internalStatus: 'created',
       createdBy: 'api',
       threadId: input.threadId,
+      codexThreadId: resolvedResumeMode === 'resume_thread' ? codexThreadId : undefined,
       profile: input.profile,
       cwd: input.cwd,
       canonicalCwd,
@@ -349,7 +442,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       codexVersion: 'unknown',
       codexBin: options.codexBin,
       codexHome: options.codexHome,
-      resumeMode: input.threadId === undefined ? 'independent' : normalizeResumeMode(input.resumeMode),
+      resumeMode: resolvedResumeMode,
       normalizerVersion
     });
 
@@ -360,7 +453,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       profile: input.profile,
       sandbox: input.sandbox,
       threadId: input.threadId,
-      resumeMode: input.resumeMode ?? 'new_thread'
+      resumeMode: resolvedResumeMode
     });
 
     return id;
@@ -522,10 +615,21 @@ function isThreadStarted(value: unknown): value is { type: 'thread.started'; thr
     && (value as { thread_id: string }).thread_id.trim().length > 0;
 }
 
-function normalizeResumeMode(
-  resumeMode: CreateRunInput['resumeMode']
-): 'new_thread' | 'resume_thread' {
-  return resumeMode === 'resume_thread' ? 'resume_thread' : 'new_thread';
+function resolveResumeMode(
+  input: CreateRunInput,
+  thread?: RuntimeThread
+): 'independent' | 'new_thread' | 'resume_thread' {
+  if (!input.threadId) return 'independent';
+  if (input.resumeMode === 'new_thread') return 'new_thread';
+  if (input.resumeMode === 'resume_thread') return 'resume_thread';
+  return thread?.codexThreadId ? 'resume_thread' : 'new_thread';
+}
+
+function classifyResumeFailure(stdoutLines: string[], stderr: string): 'RESUME_TARGET_NOT_FOUND' | 'RESUME_FAILED' {
+  const output = `${stdoutLines.join('\n')}\n${stderr}`.toLowerCase();
+  return output.includes('not found') || output.includes('no session') || output.includes('unknown session')
+    ? 'RESUME_TARGET_NOT_FOUND'
+    : 'RESUME_FAILED';
 }
 
 function errorToTerminationReason(error: unknown): TerminationReason {

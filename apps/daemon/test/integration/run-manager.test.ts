@@ -1,3 +1,4 @@
+import type { SandboxMode } from '@clawee/protocol';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunManager } from '../../src/runs/manager.js';
+import { createThreadManager } from '../../src/threads/manager.js';
 
 let tempDir = '';
 let db: Database.Database | undefined;
@@ -16,6 +18,69 @@ afterEach(() => {
   if (tempDir) rmSync(tempDir, { recursive: true, force: true });
   tempDir = '';
 });
+
+function createTestRunManager(input: {
+  tempDir?: string;
+  codexBin?: string;
+  resumeCapabilityVerified?: boolean;
+} = {}) {
+  tempDir = input.tempDir ?? mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+  db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+  const threadManager = createThreadManager({ db, dataDir: tempDir });
+  const manager = createRunManager({
+    db,
+    dataDir: tempDir,
+    codexBin: input.codexBin ?? createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    }).bin,
+    codexHome: join(tempDir, 'codex-home'),
+    threadAccess: threadManager,
+    resumeCapabilityVerified: input.resumeCapabilityVerified ?? true
+  });
+  return { manager, threadManager };
+}
+
+function createPersistedThread(
+  threadManager: ReturnType<typeof createThreadManager>,
+  overrides: { codexThreadId?: string } = {}
+) {
+  const thread = threadManager.createThread({
+    workspaceMode: 'external',
+    cwd: tempDir,
+    profile: 'default',
+    sandbox: 'read-only'
+  });
+  if (overrides.codexThreadId) threadManager.setCodexThreadId(thread.id, overrides.codexThreadId);
+  return threadManager.getThread(thread.id)!;
+}
+
+function threadRun(
+  thread: { id: string; cwd: string; profile: string; sandbox: SandboxMode },
+  prompt: string
+) {
+  return {
+    threadId: thread.id,
+    prompt,
+    cwd: thread.cwd,
+    profile: thread.profile,
+    sandbox: thread.sandbox,
+    resumeMode: 'auto' as const
+  };
+}
+
+async function waitForRunStatus(
+  manager: ReturnType<typeof createRunManager>,
+  runId: string,
+  status: string
+): Promise<void> {
+  await expect
+    .poll(() => manager.getRun(runId)?.status, { timeout: 1000 })
+    .toBe(status);
+}
 
 describe('run manager', () => {
   it('creates a run and writes redacted raw/events/stderr/meta files', async () => {
@@ -194,27 +259,115 @@ describe('run manager', () => {
         { type: 'turn.completed' }
       ]
     });
-    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
-    const manager = createRunManager({
-      db,
-      dataDir: tempDir,
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
       codexBin: fake.bin,
-      codexHome: join(tempDir, 'codex-home')
+      resumeCapabilityVerified: true
     });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex_thread_old' });
 
     const run = await manager.createAndRun({
-      prompt: 'hello',
-      cwd: tempDir,
-      profile: 'default',
-      sandbox: 'read-only',
-      threadId: 'thread_1',
-      codexThreadId: 'codex_thread_old',
-      resumeMode: 'auto'
+      ...threadRun(thread, 'hello'),
+      resumeMode: 'new_thread'
     });
 
     expect(run.status).toBe('failed');
     expect(manager.getRun(run.id)?.errorCode).toBe('CODEX_THREAD_ID_MISSING');
     expect(manager.getRun(run.id)?.codexThreadId).toBeUndefined();
+    expect(manager.listEvents(run.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'diagnostic',
+          payload: expect.objectContaining({ code: 'THREAD_CODEX_SESSION_RESET' })
+        })
+      ])
+    );
+  });
+
+  it('uses codex exec resume for a thread with codexThreadId', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'resumed' } },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
+
+    const run = await manager.createAndRun(threadRun(thread, 'continue'));
+
+    expect(run.status).toBe('succeeded');
+    expect(fake.readArgv()).toEqual(
+      expect.arrayContaining(['exec', 'resume', 'codex-thread-1', '--json'])
+    );
+  });
+
+  it('maps missing resume targets to a not found error code', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      stderrLines: ['No session found for codex-thread-1'],
+      exitCode: 1
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
+
+    const run = await manager.createAndRun(threadRun(thread, 'continue'));
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)).toMatchObject({
+      terminationReason: 'codex_exit_non_zero',
+      errorCode: 'RESUME_TARGET_NOT_FOUND'
+    });
+    expect(readFileSync(join(tempDir, 'runs', run.id, 'diagnostics.json'), 'utf8')).toContain(
+      'RESUME_TARGET_NOT_FOUND'
+    );
+  });
+
+  it('maps other resume non-zero exits to a generic resume error code', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      stderrLines: ['resume failed unexpectedly'],
+      exitCode: 1
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
+
+    const run = await manager.createAndRun(threadRun(thread, 'continue'));
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.errorCode).toBe('RESUME_FAILED');
+  });
+
+  it('fails resume_thread when resume capability is unverified', async () => {
+    const { manager, threadManager } = createTestRunManager({ resumeCapabilityVerified: false });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
+
+    const run = manager.startRun({
+      ...threadRun(thread, 'continue'),
+      resumeMode: 'resume_thread'
+    });
+
+    await waitForRunStatus(manager, run.id, 'failed');
+    expect(manager.getRun(run.id)).toMatchObject({
+      errorCode: 'RESUME_CAPABILITY_UNVERIFIED'
+    });
   });
 
   it('marks a thread run failed when codex emits an empty thread id', async () => {

@@ -268,7 +268,8 @@ describe('runtime api', () => {
       token: 'secret',
       dataDir: tempDir,
       codexBin: fake.bin,
-      codexHome: join(tempDir, 'codex-home')
+      codexHome: join(tempDir, 'codex-home'),
+      resumeCapabilityVerified: true
     });
 
     const thread = (await authPost('/threads', {
@@ -288,6 +289,17 @@ describe('runtime api', () => {
 
     const detail = await authGet(`/threads/${thread.id}`);
     expect(detail.json().thread.codexThreadId).toBe('codex-thread-1');
+
+    const resumedRun = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'continue'
+    });
+    expect(resumedRun.statusCode).toBe(202);
+
+    await waitForRunStatus(resumedRun.json().id, 'succeeded');
+    expect(fake.readArgv()).toEqual(
+      expect.arrayContaining(['exec', 'resume', 'codex-thread-1', '--json'])
+    );
   });
 
   it('allows equivalent cwd paths when checking immutable thread config', async () => {

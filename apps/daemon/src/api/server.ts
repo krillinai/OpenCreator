@@ -20,6 +20,7 @@ export type BuildServerInput = {
   codexHome?: string;
   runManager?: RunManager;
   sseHeartbeatMs?: number;
+  resumeCapabilityVerified?: boolean;
 };
 
 export async function buildServer(input: BuildServerInput) {
@@ -37,7 +38,8 @@ export async function buildServer(input: BuildServerInput) {
       dataDir,
       codexBin: input.codexBin ?? 'codex',
       codexHome,
-      threadAccess: threadManager
+      threadAccess: threadManager,
+      resumeCapabilityVerified: input.resumeCapabilityVerified
     });
 
   server.setErrorHandler((error, _request, reply) => {

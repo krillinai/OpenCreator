@@ -17,6 +17,7 @@ export function createFakeCodex(dir: string, options: FakeCodexOptions) {
   const bin = join(dir, 'fake-codex.js');
   const promptPath = join(dir, 'prompt.txt');
   const codexHomePath = join(dir, 'codex-home.txt');
+  const argvPath = join(dir, 'argv.json');
   mkdirSync(dir, { recursive: true });
 
   const script = `#!/usr/bin/env node
@@ -24,6 +25,7 @@ const fs = require('fs');
 const prompt = fs.readFileSync(0, 'utf8');
 fs.writeFileSync(${JSON.stringify(promptPath)}, prompt);
 fs.writeFileSync(${JSON.stringify(codexHomePath)}, process.env.CODEX_HOME ?? '');
+fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));
 const delayMs = ${JSON.stringify(options.delayMs ?? 0)};
 const initialDelayMs = ${JSON.stringify(options.initialDelayMs ?? 0)};
 const lineDelayMs = ${JSON.stringify(options.lineDelayMs ?? 0)};
@@ -69,6 +71,9 @@ main().catch(error => {
     },
     readCodexHome(): string {
       return readFileSync(codexHomePath, 'utf8');
+    },
+    readArgv(): string[] {
+      return JSON.parse(readFileSync(argvPath, 'utf8')) as string[];
     }
   };
 }
