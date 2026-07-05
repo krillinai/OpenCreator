@@ -331,6 +331,7 @@ describe('run manager', () => {
     const first = manager.startRun(threadRun(thread, 'first'));
     const second = manager.startRun(threadRun(thread, 'second'));
 
+    expect(second).toMatchObject({ id: second.id, threadId: thread.id, status: 'queued' });
     expect(manager.getRun(second.id)?.status).toBe('queued');
     await waitForRunStatus(manager, first.id, 'succeeded');
     await waitForRunStatus(manager, second.id, 'succeeded');

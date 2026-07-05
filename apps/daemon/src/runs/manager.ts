@@ -141,7 +141,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         const queue = threadQueues.get(input.threadId) ?? [];
         queue.push({ id, input, runDir });
         threadQueues.set(input.threadId, queue);
-        return { id, status: 'queued' };
+        return { id, threadId: input.threadId, status: 'queued' };
       }
 
       return startExistingRun({ id, input, runDir });
@@ -171,7 +171,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       runs.setRunQueueState(id, 'none');
       publishStatus(id, seq, 'canceling', publish, { threadId: queued.threadId });
       publishDone(id, seq + 1, 'canceled', 'user_canceled', publish);
-      resolveRunCompletion(id, { id, status: 'canceled' });
+      resolveRunCompletion(id, { id, threadId: queued.threadId, status: 'canceled' });
       return true;
     },
 

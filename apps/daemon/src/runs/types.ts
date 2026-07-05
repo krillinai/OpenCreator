@@ -14,5 +14,6 @@ export type CreateRunInput = {
 
 export type CreatedRun = {
   id: string;
+  threadId?: string;
   status: PublicRunStatus;
 };

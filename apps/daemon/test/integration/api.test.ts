@@ -4,18 +4,23 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
+import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 
 let server: FastifyInstance | undefined;
 let tempDir = '';
+let db: Database.Database | undefined;
 const RUN_STATUS_TIMEOUT_MS = 5_000;
 type TestInjectPayload = string | object;
 
 afterEach(async () => {
   await server?.close();
   server = undefined;
+  db?.close();
+  db = undefined;
   if (tempDir) rmSync(tempDir, { recursive: true, force: true });
   tempDir = '';
 });
@@ -405,7 +410,7 @@ describe('runtime api', () => {
     expect(archived.json().error.code).toBe('THREAD_ARCHIVED');
   });
 
-  it('rejects archiving a thread with queued or running runs', async () => {
+  it('rejects archiving a thread with a running run', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, { stdoutLines: [{ type: 'turn.started' }], hang: true });
     server = await buildServer({
@@ -422,6 +427,57 @@ describe('runtime api', () => {
     expect(archived.json().error.code).toBe('THREAD_HAS_ACTIVE_RUN');
 
     await authPost(`/runs/${run.id}/cancel`, {});
+    await waitForRunStatus(run.id, 'canceled');
+  });
+
+  it('rejects archiving a thread with a queued run', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir, db });
+    const thread = await createThreadViaApi();
+    db.prepare(`
+      INSERT INTO runs (
+        id, thread_id, public_status, internal_status, created_by, profile, cwd, canonical_cwd,
+        workspace_mode, sandbox, codex_version, codex_bin, codex_home, normalizer_version
+      ) VALUES (
+        'run_queued_archive_conflict', @threadId, 'queued', 'queued', 'api', 'default', @cwd, @cwd,
+        'managed', 'read-only', 'unknown', 'codex', @codexHome, 1
+      )
+    `).run({
+      threadId: thread.id,
+      cwd: tempDir,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const archived = await authPost(`/threads/${thread.id}/archive`, {});
+    expect(archived.statusCode).toBe(409);
+    expect(archived.json().error.code).toBe('THREAD_HAS_ACTIVE_RUN');
+  });
+
+  it('rejects archiving a thread with a canceling run', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.started' }],
+      hang: true,
+      ignoreSigterm: true
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      db,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+    const thread = await createThreadViaApi();
+    const run = (await authPost('/runs', { threadId: thread.id, prompt: 'hang' })).json();
+    await authPost(`/runs/${run.id}/cancel`, {});
+    await waitForRunInternalStatus(run.id, 'canceling');
+
+    const archived = await authPost(`/threads/${thread.id}/archive`, {});
+    expect(archived.statusCode).toBe(409);
+    expect(archived.json().error.code).toBe('THREAD_HAS_ACTIVE_RUN');
+
     await waitForRunStatus(run.id, 'canceled');
   });
 
@@ -744,6 +800,17 @@ async function waitForRunStatus(runId: string, status: string): Promise<void> {
         headers: { authorization: 'Bearer secret' }
       });
       return response?.json().status;
+    }, { timeout: RUN_STATUS_TIMEOUT_MS })
+    .toBe(status);
+}
+
+async function waitForRunInternalStatus(runId: string, status: string): Promise<void> {
+  await expect
+    .poll(() => {
+      const row = db
+        ?.prepare('SELECT internal_status FROM runs WHERE id = ?')
+        .get(runId) as { internal_status: string } | undefined;
+      return row?.internal_status;
     }, { timeout: RUN_STATUS_TIMEOUT_MS })
     .toBe(status);
 }
