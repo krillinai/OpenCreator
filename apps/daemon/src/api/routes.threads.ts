@@ -9,15 +9,19 @@ export async function registerThreadRoutes(
   manager: ThreadManager,
   runManager: Pick<RunManager, 'listRunsByThread'>
 ): Promise<void> {
-  server.post<{ Body: CreateRuntimeThreadInput }>('/threads', async (request, reply) => {
-    const thread = manager.createThread(request.body ?? {});
+  server.post<{ Body: unknown }>('/threads', async (request, reply) => {
+    const body = parseCreateThreadRequest(request.body);
+    if (!body.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
+
+    const thread = manager.createThread(body.value);
     return reply.code(201).send({ thread: toThreadResponse(thread) });
   });
 
-  server.get('/threads', async request => {
-    const query = request.query as { status?: string; limit?: string } | undefined;
-    const status = parseThreadStatus(query?.status);
-    const limit = parseLimit(query?.limit);
+  server.get('/threads', async (request, reply) => {
+    const query = parseThreadListQuery(request.query);
+    if (!query.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', query.message));
+
+    const { status, limit } = query.value;
     const threads = manager.listThreads({ status, limit }).map(toThreadResponse);
     return { threads };
   });
@@ -38,8 +42,10 @@ export async function registerThreadRoutes(
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
 
-    const query = request.query as { limit?: string } | undefined;
-    return { runs: runManager.listRunsByThread(id, parseLimit(query?.limit)) };
+    const limit = parseLimitQuery(request.query);
+    if (!limit.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', limit.message));
+
+    return { runs: runManager.listRunsByThread(id, limit.value) };
   });
 
   server.post('/threads/:id/archive', async (request, reply) => {
@@ -54,16 +60,6 @@ export async function registerThreadRoutes(
       throw error;
     }
   });
-}
-
-function parseThreadStatus(status: string | undefined): 'active' | 'archived' | 'all' | undefined {
-  return status === 'active' || status === 'archived' || status === 'all' ? status : undefined;
-}
-
-function parseLimit(limit: string | undefined): number | undefined {
-  if (limit === undefined) return undefined;
-  const parsed = Number(limit);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function toThreadResponse(thread: RuntimeThread): ThreadResponse {
@@ -83,4 +79,107 @@ function toThreadResponse(thread: RuntimeThread): ThreadResponse {
     updatedAt: thread.updatedAt,
     archivedAt: thread.archivedAt
   };
+}
+
+type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
+
+const WORKSPACE_MODES = ['managed', 'external'] as const;
+const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;
+const REASONING_EFFORTS = ['default', 'low', 'medium', 'high', 'xhigh'] as const;
+const THREAD_STATUSES = ['active', 'archived', 'all'] as const;
+const LIMIT_PATTERN = /^[1-9]\d*$/;
+const MAX_LIMIT = 100;
+
+function parseCreateThreadRequest(body: unknown): ParseResult<CreateRuntimeThreadInput> {
+  if (body === undefined) return { ok: true, value: {} };
+  if (!isPlainObject(body)) return { ok: false, message: 'body must be an object' };
+
+  const input = body as Record<string, unknown>;
+  const value: CreateRuntimeThreadInput = {};
+
+  for (const key of ['title', 'cwd', 'profile', 'model'] as const) {
+    const field = input[key];
+    if (field === undefined) continue;
+    if (typeof field !== 'string') return { ok: false, message: `${key} must be a string` };
+    value[key] = field;
+  }
+
+  if (input.workspaceMode !== undefined) {
+    if (!isOneOf(input.workspaceMode, WORKSPACE_MODES)) {
+      return { ok: false, message: 'workspaceMode must be managed or external' };
+    }
+    value.workspaceMode = input.workspaceMode;
+  }
+
+  if (input.sandbox !== undefined) {
+    if (!isOneOf(input.sandbox, SANDBOX_MODES)) {
+      return { ok: false, message: 'sandbox must be a valid sandbox mode' };
+    }
+    value.sandbox = input.sandbox;
+  }
+
+  if (input.reasoning !== undefined) {
+    if (!isOneOf(input.reasoning, REASONING_EFFORTS)) {
+      return { ok: false, message: 'reasoning must be a valid reasoning effort' };
+    }
+    value.reasoning = input.reasoning;
+  }
+
+  return { ok: true, value };
+}
+
+function parseThreadListQuery(
+  query: unknown
+): ParseResult<{ status?: 'active' | 'archived' | 'all'; limit?: number }> {
+  const status = getQueryString(query, 'status');
+  if (!status.ok) return status;
+  if (status.value !== undefined && !isOneOf(status.value, THREAD_STATUSES)) {
+    return { ok: false, message: 'status must be active, archived, or all' };
+  }
+
+  const limit = parseLimitQuery(query);
+  if (!limit.ok) return limit;
+
+  return {
+    ok: true,
+    value: {
+      ...(status.value === undefined ? {} : { status: status.value }),
+      ...(limit.value === undefined ? {} : { limit: limit.value })
+    }
+  };
+}
+
+function parseLimitQuery(query: unknown): ParseResult<number | undefined> {
+  const limit = getQueryString(query, 'limit');
+  if (!limit.ok) return limit;
+  if (limit.value === undefined) return { ok: true, value: undefined };
+  if (!LIMIT_PATTERN.test(limit.value)) {
+    return { ok: false, message: 'limit must be an integer between 1 and 100' };
+  }
+
+  const parsed = Number(limit.value);
+  if (parsed < 1 || parsed > MAX_LIMIT) {
+    return { ok: false, message: 'limit must be an integer between 1 and 100' };
+  }
+  return { ok: true, value: parsed };
+}
+
+function getQueryString(query: unknown, key: string): ParseResult<string | undefined> {
+  if (query === undefined || query === null) return { ok: true, value: undefined };
+  if (typeof query !== 'object' || Array.isArray(query)) {
+    return { ok: false, message: 'query must be an object' };
+  }
+
+  const value = (query as Record<string, unknown>)[key];
+  if (value === undefined) return { ok: true, value: undefined };
+  if (typeof value !== 'string') return { ok: false, message: `${key} must be a string` };
+  return { ok: true, value };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isOneOf<const T extends readonly string[]>(value: unknown, options: T): value is T[number] {
+  return typeof value === 'string' && options.includes(value);
 }

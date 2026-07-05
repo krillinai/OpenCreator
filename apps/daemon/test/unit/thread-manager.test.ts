@@ -58,6 +58,20 @@ describe('thread manager', () => {
     });
     expect(external.cwd).toBe(tempDir);
     expect(external.canonicalCwd).toBe(realpathSync(tempDir));
+
+    db?.close();
+    db = undefined;
+    const reopenedDatabase = openTestDatabase(tempDir);
+    const reopenedManager = createThreadManager({ db: reopenedDatabase, dataDir: tempDir });
+    expect(reopenedManager.getThread(managed.id)).toMatchObject({
+      id: managed.id,
+      title: 'Managed'
+    });
+    expect(reopenedManager.getThread(external.id)).toMatchObject({
+      id: external.id,
+      title: 'External',
+      cwd: tempDir
+    });
   });
 
   it('archives active threads and rejects missing threads', () => {

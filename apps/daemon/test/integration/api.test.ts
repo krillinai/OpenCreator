@@ -80,6 +80,78 @@ describe('runtime api', () => {
     expect(archived.json().thread.status).toBe('archived');
   });
 
+  it('rejects invalid thread list query parameters', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    for (const url of ['/threads?limit=-1', '/threads?limit=1.5', '/threads?status=paused']) {
+      const response = await server.inject({
+        method: 'GET',
+        url,
+        headers: { authorization: 'Bearer secret' }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe('VALIDATION_FAILED');
+    }
+  });
+
+  it('rejects invalid thread run history limits', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/threads',
+      headers: { authorization: 'Bearer secret' },
+      payload: { workspaceMode: 'managed' }
+    });
+    const thread = created.json().thread;
+
+    const response = await server.inject({
+      method: 'GET',
+      url: `/threads/${thread.id}/runs?limit=0`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('rejects invalid thread creation bodies', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const invalidPayloads: Array<{
+      label: string;
+      payload: unknown;
+      headers?: Record<string, string>;
+    }> = [
+      {
+        label: 'string body',
+        payload: JSON.stringify('not-an-object'),
+        headers: { 'content-type': 'application/json' }
+      },
+      { label: 'array body', payload: [] },
+      { label: 'numeric title', payload: { title: 123 } },
+      { label: 'invalid workspace mode', payload: { workspaceMode: 'workspace' } },
+      { label: 'invalid sandbox', payload: { sandbox: 'full-access' } },
+      { label: 'invalid reasoning', payload: { reasoning: 'extreme' } },
+      { label: 'numeric cwd', payload: { cwd: 123 } },
+      { label: 'boolean profile', payload: { profile: false } },
+      { label: 'numeric model', payload: { model: 4 } }
+    ];
+
+    for (const { label, payload, headers } of invalidPayloads) {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/threads',
+        headers: { authorization: 'Bearer secret', ...headers },
+        payload
+      });
+      expect(response.statusCode, label).toBe(400);
+      expect(response.json().error.code, label).toBe('VALIDATION_FAILED');
+    }
+  });
+
   it('creates a run, lists history, and replays events over SSE', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
