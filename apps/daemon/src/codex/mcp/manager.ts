@@ -71,24 +71,6 @@ export function createMcpManager(input: {
     return { result, operation: operationResponse };
   };
 
-  const getServerWithoutOperation = async (name: string): Promise<CodexMcpServerResponse> => {
-    const result = runMcpCommand({
-      codexBin: input.codexBin,
-      codexHome: input.codexHome.path,
-      args: buildMcpGetArgs(name),
-      timeoutMs: input.timeoutMs
-    });
-    assertCommandSucceeded(result);
-    return parseMcpGetOutput({
-      name,
-      codexHome: input.codexHome.path,
-      codexHomeMode: input.codexHome.mode,
-      stdout: result.stdout,
-      stderr: result.redactedStderr,
-      exitCode: result.exitCode
-    });
-  };
-
   return {
     async listServers() {
       const { result } = run('list', null, buildMcpListArgs());
@@ -132,7 +114,7 @@ export function createMcpManager(input: {
 
       let server: CodexMcpServerResponse | undefined;
       try {
-        server = await getServerWithoutOperation(request.name);
+        server = await this.getServer(request.name);
       } catch {
         server = undefined;
       }

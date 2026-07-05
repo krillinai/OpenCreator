@@ -71,6 +71,7 @@ describe('codex mcp manager', () => {
       'remove',
       'get',
       'list',
+      'get',
       'add'
     ]);
   });
