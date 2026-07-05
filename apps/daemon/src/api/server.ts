@@ -6,6 +6,7 @@ import {
   type RuntimeCapabilityMatrix
 } from '../codex/capabilities.js';
 import { resolveCodexHome } from '../codex/home.js';
+import { createProfileManager } from '../codex/profiles/manager.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { openRuntimeDatabase } from '../storage/database.js';
 import { createThreadManager } from '../threads/manager.js';
@@ -13,6 +14,7 @@ import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
+import { registerProfileRoutes } from './routes.profiles.js';
 import { registerRunRoutes } from './routes.runs.js';
 import { registerThreadRoutes } from './routes.threads.js';
 
@@ -45,6 +47,7 @@ export async function buildServer(input: BuildServerInput) {
   const db = input.db ?? openRuntimeDatabase(join(dataDir, 'app.sqlite'));
   const ownsDb = input.db === undefined;
   const threadManager = createThreadManager({ db, dataDir });
+  const profileManager = createProfileManager({ codexHome: resolvedCodexHome });
   const runManager =
     input.runManager ??
     createRunManager({
@@ -80,6 +83,10 @@ export async function buildServer(input: BuildServerInput) {
     codexBin,
     codexHome: resolvedCodexHome,
     capabilities: input.capabilities ?? createUnknownCapabilityMatrix()
+  });
+  await registerProfileRoutes(server, {
+    codexHome: resolvedCodexHome,
+    profileManager
   });
   await registerRunRoutes(server, runManager, {
     sseHeartbeatMs: input.sseHeartbeatMs,

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -62,6 +62,120 @@ describe('runtime api', () => {
         resumeByThreadId: true
       }
     });
+  });
+
+  it('lists profiles from an isolated codex home', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(
+      join(codexHome, 'review.config.toml'),
+      'model = "gpt-5.3-codex"\n'
+    );
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/profiles',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      codexHome,
+      codexHomeMode: 'isolated',
+      writable: true,
+      profiles: [
+        {
+          name: 'review',
+          status: 'valid',
+          config: { model: 'gpt-5.3-codex' }
+        }
+      ]
+    });
+  });
+
+  it('returns invalid profile diagnostics instead of crashing for invalid profile config', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "broken');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/profiles',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().profiles).toEqual([
+      expect.objectContaining({
+        name: 'review',
+        status: 'invalid',
+        diagnostics: [expect.stringContaining('Failed to parse')]
+      })
+    ]);
+  });
+
+  it('returns diagnostics instead of crashing when base config is invalid', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "broken');
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "gpt-5.3-codex"\n');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/profiles',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().profiles).toEqual([
+      expect.objectContaining({ name: 'review', status: 'valid' })
+    ]);
+    expect(response.json().diagnostics[0]).toContain('Failed to parse config.toml');
+  });
+
+  it('gets a profile by name from an isolated codex home', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "gpt-5.3-codex"\n');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/profiles/review',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      profile: {
+        name: 'review',
+        status: 'valid',
+        config: { model: 'gpt-5.3-codex' }
+      }
+    });
+  });
+
+  it('returns not found when getting a missing profile by name', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/profiles/review',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
   });
 
   it('creates, lists, gets, and archives threads through the api', async () => {
