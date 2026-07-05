@@ -152,6 +152,95 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     }
   }, 240_000);
 
+  it('adds, gets, lists, and removes a stdio MCP server through codex mcp', () => {
+    const home = join(fixtureDir, `mcp-smoke-home-${Date.now()}`);
+    const serverDir = join(fixtureDir, `mcp-smoke-server-${Date.now()}`);
+    const serverPath = join(serverDir, 'echo-mcp.js');
+    mkdirSync(home, { recursive: true });
+    mkdirSync(serverDir, { recursive: true });
+    writeFileSync(
+      serverPath,
+      [
+        '#!/usr/bin/env node',
+        'process.stdin.resume();',
+        "process.stdin.on('data', chunk => {",
+        '  process.stdout.write(chunk);',
+        '});',
+        ''
+      ].join('\n')
+    );
+
+    // R5 verifies Codex MCP configuration management. Model-time MCP tool invocation
+    // remains a runtime behavior smoke and is recorded separately as BLOCKED_ENV
+    // when local Codex auth is unavailable.
+    try {
+      const addResult = runSmokeCommand([
+        'env',
+        `CODEX_HOME=${home}`,
+        'codex',
+        'mcp',
+        'add',
+        'clawee-r5-echo',
+        '--env',
+        'R5_SMOKE_VALUE=visible-smoke-value',
+        '--',
+        process.execPath,
+        serverPath
+      ]);
+      writeFixture('mcp-add', addResult);
+      expect(addResult.exitCode, addResult.stderr || addResult.stdout).toBe(0);
+
+      const getResult = runSmokeCommand([
+        'env',
+        `CODEX_HOME=${home}`,
+        'codex',
+        'mcp',
+        'get',
+        'clawee-r5-echo'
+      ]);
+      writeFixture('mcp-get', getResult);
+      expect(getResult.exitCode, getResult.stderr || getResult.stdout).toBe(0);
+      expect(getResult.stdout).toContain('clawee-r5-echo');
+      expect(getResult.stdout).toContain('R5_SMOKE_VALUE');
+
+      const listResult = runSmokeCommand([
+        'env',
+        `CODEX_HOME=${home}`,
+        'codex',
+        'mcp',
+        'list'
+      ]);
+      writeFixture('mcp-list', listResult);
+      expect(listResult.exitCode, listResult.stderr || listResult.stdout).toBe(0);
+      expect(listResult.stdout).toContain('clawee-r5-echo');
+
+      const removeResult = runSmokeCommand([
+        'env',
+        `CODEX_HOME=${home}`,
+        'codex',
+        'mcp',
+        'remove',
+        'clawee-r5-echo'
+      ]);
+      writeFixture('mcp-remove', removeResult);
+      expect(removeResult.exitCode, removeResult.stderr || removeResult.stdout).toBe(0);
+
+      const getAfterRemove = runSmokeCommand([
+        'env',
+        `CODEX_HOME=${home}`,
+        'codex',
+        'mcp',
+        'get',
+        'clawee-r5-echo'
+      ]);
+      writeFixture('mcp-get-after-remove', getAfterRemove);
+      expect(getAfterRemove.exitCode).not.toBe(0);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(serverDir, { recursive: true, force: true });
+    }
+  });
+
   it('captures a command execution jsonl fixture', () => {
     const result = runSmokeCommand([
       'codex',
