@@ -133,18 +133,22 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
         '--sandbox',
         'read-only',
         'Use the r4_smoke_skill skill and reply with R4_SKILL_SMOKE_MARKER only.'
-      ]);
+      ], { timeoutMs: 180_000 });
       writeFixture('skills-discovery-jsonl', result);
 
+      throwIfBlockedEnvironment(result);
       expect(result.exitCode).toBe(0);
       const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
       expect(lines.length).toBeGreaterThan(0);
       for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
       expect(result.stdout + result.stderr).not.toContain('No such file or directory');
     } finally {
-      await server.close();
-      rmSync(home, { recursive: true, force: true });
-      rmSync(source, { recursive: true, force: true });
+      try {
+        await server.close();
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+        rmSync(source, { recursive: true, force: true });
+      }
     }
   }, 240_000);
 
@@ -197,7 +201,10 @@ function writeFixture(name: string, result: SmokeCommandResult): void {
       command: result.command,
       exitCode: result.exitCode,
       stdout: result.stdout,
-      stderr: result.stderr
+      stderr: result.stderr,
+      timedOut: result.timedOut,
+      terminationSignal: result.terminationSignal,
+      errorMessage: result.errorMessage
     }, null, 2)}\n`
   );
 }
@@ -208,4 +215,31 @@ function writeResumeFixture(result: Awaited<ReturnType<typeof runRealCodexResume
     join(fixtureDir, 'exec-resume-context-continuity.json'),
     `${JSON.stringify(result, null, 2)}\n`
   );
+}
+
+function throwIfBlockedEnvironment(result: SmokeCommandResult): void {
+  if (result.exitCode === 0) return;
+
+  const output = `${result.stdout}\n${result.stderr}\n${result.errorMessage ?? ''}`;
+  const blockedPattern =
+    /(not logged in|login|authentication|unauthorized|network|connection|timed out|ETIMEDOUT|rate limit|model .*unavailable|model_not_found|insufficient_quota|quota|offline)/i;
+  if (!blockedPattern.test(output)) return;
+
+  throw new Error(`BLOCKED_ENV: real Codex smoke could not reach an authenticated/model-ready runtime.
+Command: ${result.command.join(' ')}
+Exit code: ${result.exitCode}
+Timed out: ${result.timedOut}
+Signal: ${result.terminationSignal ?? 'none'}
+Summary:
+${summarizeSmokeOutput(output)}`);
+}
+
+function summarizeSmokeOutput(output: string): string {
+  const summary = output
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+    .join('\n');
+  return summary === '' ? '(no output)' : summary;
 }

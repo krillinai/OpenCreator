@@ -5,6 +5,13 @@ export type SmokeCommandResult = {
   exitCode: number | null;
   stdout: string;
   stderr: string;
+  timedOut: boolean;
+  terminationSignal: NodeJS.Signals | null;
+  errorMessage: string | null;
+};
+
+export type SmokeCommandOptions = {
+  timeoutMs?: number;
 };
 
 export type RealCodexSmokeTurn = {
@@ -33,22 +40,33 @@ const REAL_CODEX_RESUME_TURN_TIMEOUT_MS = CODEX_JSON_TURN_TIMEOUT_MS;
 const CODEX_JSON_TURN_KILL_GRACE_MS = 2_000;
 const TOOL_EVENT_PATTERN = /(^|[._-])(command|tool|mcp|function_call|web_search|shell|patch)([._-]|$)/i;
 
-export function runSmokeCommand(command: string[]): SmokeCommandResult {
+export function runSmokeCommand(command: string[], options: SmokeCommandOptions = {}): SmokeCommandResult {
   const [bin, ...args] = command;
   if (!bin) {
     throw new Error('empty command');
   }
+  const timeoutMs = options.timeoutMs ?? 30_000;
 
   const result = spawnSync(bin, args, {
     encoding: 'utf8',
-    timeout: 30000
+    timeout: timeoutMs
   });
+  const errorMessage = result.error?.message ?? null;
+  const timedOut = errorMessage !== null && /\bETIMEDOUT\b/.test(errorMessage);
+  const diagnostic = [
+    timedOut ? formatSmokeDiagnostic(`timed out after ${timeoutMs}ms`) : '',
+    errorMessage !== null ? formatSmokeDiagnostic(`process error: ${errorMessage}`) : '',
+    result.signal !== null ? formatSmokeDiagnostic(`termination signal: ${result.signal}`) : ''
+  ].join('');
 
   return {
     command,
     exitCode: result.status,
     stdout: result.stdout ?? '',
-    stderr: result.stderr ?? ''
+    stderr: `${result.stderr ?? ''}${diagnostic}`,
+    timedOut,
+    terminationSignal: result.signal,
+    errorMessage
   };
 }
 
