@@ -43,6 +43,7 @@ export type NormalizedAddMcpServerInput =
     };
 
 export type McpAddCapabilityFlags = {
+  mcpAdd: boolean;
   mcpAddEnv: boolean;
   mcpAddUrl: boolean;
   mcpAddBearerTokenEnvVar: boolean;

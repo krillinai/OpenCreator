@@ -5,13 +5,15 @@ import {
   isValidMcpName,
   validateMcpAddRequest
 } from '../../src/codex/mcp/validator.js';
+import type { McpAddCapabilityFlags } from '../../src/codex/mcp/types.js';
 
 const allCapabilities = {
+  mcpAdd: true,
   mcpAddEnv: true,
   mcpAddUrl: true,
   mcpAddBearerTokenEnvVar: true,
   mcpAddOAuth: true
-};
+} satisfies McpAddCapabilityFlags;
 
 class CustomMcpRequest {
   name = 'github';
@@ -131,8 +133,29 @@ describe('codex mcp validator', () => {
       ok: false,
       message: 'url must use http or https'
     });
+    expect(validateMcpAddRequest({ ...request, bearerTokenEnvVar: 'BAD-NAME' })).toEqual({
+      ok: false,
+      message: 'bearerTokenEnvVar must be a valid environment variable name'
+    });
+    expect(validateMcpAddRequest({ ...request, oauthClientId: 1 })).toEqual({
+      ok: false,
+      message: 'oauthClientId must be a string'
+    });
+    expect(validateMcpAddRequest({ ...request, oauthResource: 1 })).toEqual({
+      ok: false,
+      message: 'oauthResource must be a string'
+    });
+    expect(validateMcpAddRequest({ ...request, confirmWriteToCodexHome: false })).toEqual({
+      ok: false,
+      message: 'confirmWriteToCodexHome must be true when provided'
+    });
 
     expect(assertMcpAddRequestSupported(request, allCapabilities)).toEqual({ ok: true });
+    expect(assertMcpAddRequestSupported(request, { ...allCapabilities, mcpAdd: false })).toEqual({
+      ok: false,
+      code: 'CODEX_INCOMPATIBLE',
+      message: 'Current Codex does not support mcp add'
+    });
     expect(assertMcpAddRequestSupported(request, { ...allCapabilities, mcpAddBearerTokenEnvVar: false })).toEqual({
       ok: false,
       code: 'CODEX_INCOMPATIBLE',

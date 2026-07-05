@@ -87,6 +87,9 @@ export function assertMcpAddRequestSupported(
   input: AddMcpServerInput | NormalizedAddMcpServerInput,
   capabilities: McpAddCapabilityFlags
 ): McpCapabilityResult {
+  if (!capabilities.mcpAdd) {
+    return { ok: false, code: 'CODEX_INCOMPATIBLE', message: 'Current Codex does not support mcp add' };
+  }
   if (Object.keys(input.env ?? {}).length > 0 && !capabilities.mcpAddEnv) {
     return { ok: false, code: 'CODEX_INCOMPATIBLE', message: 'Current Codex does not support --env for mcp add' };
   }
