@@ -5,6 +5,8 @@ export type InsertRunInput = {
   id: string;
   threadId?: string;
   codexThreadId?: string;
+  resumeMode?: 'independent' | 'new_thread' | 'resume_thread';
+  queueState?: 'none' | 'queued' | 'started';
   publicStatus: string;
   internalStatus: string;
   createdBy: string;
@@ -28,6 +30,8 @@ export type RunRow = {
   id: string;
   thread_id: string | null;
   codex_thread_id: string | null;
+  resume_mode: 'independent' | 'new_thread' | 'resume_thread' | null;
+  queue_state: 'none' | 'queued' | 'started';
   public_status: string;
   internal_status: string;
   created_by: string;
@@ -65,20 +69,65 @@ export type RunRepository = {
   insertRun(input: InsertRunInput): void;
   getRun(id: string): RunRow | undefined;
   listRuns(limit?: number): RunRow[];
+  listRunsByThread(threadId: string, limit?: number): RunRow[];
   listNonTerminalRuns(): RunRow[];
   updateRunStatus(input: UpdateRunStatusInput): void;
+  setRunCodexThreadId(runId: string, codexThreadId: string): void;
+  setRunQueueState(runId: string, queueState: 'none' | 'queued' | 'started'): void;
   insertRunEvent(event: AgentEventEnvelope): void;
   listRunEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
+};
+
+export type InsertThreadInput = {
+  id: string;
+  title?: string | null;
+  codexThreadId?: string | null;
+  cwd: string;
+  canonicalCwd: string;
+  workspaceMode: string;
+  profile: string;
+  sandbox: string;
+  model?: string | null;
+  reasoning?: string | null;
+  status: 'active' | 'archived';
+};
+
+export type ThreadRow = {
+  id: string;
+  title: string | null;
+  codex_thread_id: string | null;
+  cwd: string;
+  canonical_cwd: string;
+  workspace_mode: string;
+  profile: string;
+  sandbox: string;
+  model: string | null;
+  reasoning: string | null;
+  status: 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+  last_error_code: string | null;
+  last_error_message: string | null;
+};
+
+export type ThreadRepository = {
+  insertThread(input: InsertThreadInput): void;
+  getThread(id: string): ThreadRow | undefined;
+  listThreads(input?: { status?: 'active' | 'archived' | 'all'; limit?: number }): ThreadRow[];
+  archiveThread(id: string): void;
+  setCodexThreadId(threadId: string, codexThreadId: string): void;
+  touchThread(threadId: string): void;
 };
 
 export function createRunRepository(db: Database.Database): RunRepository {
   const insert = db.prepare(`
     INSERT INTO runs (
-      id, thread_id, codex_thread_id, public_status, internal_status, created_by, source_id,
+      id, thread_id, codex_thread_id, resume_mode, queue_state, public_status, internal_status, created_by, source_id,
       profile, cwd, canonical_cwd, workspace_mode, prompt_hash, prompt_preview_redacted,
       model, reasoning, sandbox, codex_version, codex_bin, codex_home, normalizer_version
     ) VALUES (
-      @id, @threadId, @codexThreadId, @publicStatus, @internalStatus, @createdBy, @sourceId,
+      @id, @threadId, @codexThreadId, @resumeMode, @queueState, @publicStatus, @internalStatus, @createdBy, @sourceId,
       @profile, @cwd, @canonicalCwd, @workspaceMode, @promptHash, @promptPreviewRedacted,
       @model, @reasoning, @sandbox, @codexVersion, @codexBin, @codexHome, @normalizerVersion
     )
@@ -87,6 +136,12 @@ export function createRunRepository(db: Database.Database): RunRepository {
   const get = db.prepare<string>('SELECT * FROM runs WHERE id = ?');
   const list = db.prepare<{ limit: number }>(`
     SELECT * FROM runs
+    ORDER BY created_at DESC, id DESC
+    LIMIT @limit
+  `);
+  const listByThread = db.prepare<{ threadId: string; limit: number }>(`
+    SELECT * FROM runs
+    WHERE thread_id = @threadId
     ORDER BY created_at DESC, id DESC
     LIMIT @limit
   `);
@@ -111,6 +166,18 @@ export function createRunRepository(db: Database.Database): RunRepository {
         updated_at = CURRENT_TIMESTAMP
     WHERE id = @id
   `);
+  const setCodexThreadId = db.prepare(`
+    UPDATE runs
+    SET codex_thread_id = @codexThreadId,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @runId
+  `);
+  const setQueueState = db.prepare(`
+    UPDATE runs
+    SET queue_state = @queueState,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @runId
+  `);
   const insertEvent = db.prepare(`
     INSERT OR REPLACE INTO run_events (
       id, run_id, seq, type, payload_json, raw_event_id
@@ -130,6 +197,8 @@ export function createRunRepository(db: Database.Database): RunRepository {
       insert.run({
         threadId: null,
         codexThreadId: null,
+        resumeMode: null,
+        queueState: 'none',
         sourceId: null,
         promptHash: null,
         promptPreviewRedacted: null,
@@ -143,6 +212,9 @@ export function createRunRepository(db: Database.Database): RunRepository {
     },
     listRuns(limit = 50): RunRow[] {
       return list.all({ limit }) as RunRow[];
+    },
+    listRunsByThread(threadId: string, limit = 50): RunRow[] {
+      return listByThread.all({ threadId, limit }) as RunRow[];
     },
     listNonTerminalRuns(): RunRow[] {
       return listNonTerminal.all() as RunRow[];
@@ -158,6 +230,12 @@ export function createRunRepository(db: Database.Database): RunRepository {
         endedAt: null,
         ...input
       });
+    },
+    setRunCodexThreadId(runId: string, codexThreadId: string): void {
+      setCodexThreadId.run({ runId, codexThreadId });
+    },
+    setRunQueueState(runId: string, queueState: 'none' | 'queued' | 'started'): void {
+      setQueueState.run({ runId, queueState });
     },
     insertRunEvent(event: AgentEventEnvelope): void {
       insertEvent.run({
@@ -181,6 +259,73 @@ export function createRunRepository(db: Database.Database): RunRepository {
         normalizerVersion: 1,
         ...(row.raw_event_id === null ? {} : { rawEventId: row.raw_event_id })
       })) as AgentEventEnvelope[];
+    }
+  };
+}
+
+export function createThreadRepository(db: Database.Database): ThreadRepository {
+  const insert = db.prepare(`
+    INSERT INTO threads (
+      id, title, codex_thread_id, cwd, canonical_cwd, workspace_mode,
+      profile, sandbox, model, reasoning, status
+    ) VALUES (
+      @id, @title, @codexThreadId, @cwd, @canonicalCwd, @workspaceMode,
+      @profile, @sandbox, @model, @reasoning, @status
+    )
+  `);
+  const get = db.prepare<string>('SELECT * FROM threads WHERE id = ?');
+  const list = db.prepare<{ status: 'active' | 'archived' | 'all'; limit: number }>(`
+    SELECT * FROM threads
+    WHERE (@status = 'all' OR status = @status)
+    ORDER BY updated_at DESC, id DESC
+    LIMIT @limit
+  `);
+  const archive = db.prepare(`
+    UPDATE threads
+    SET status = 'archived',
+        archived_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  const setCodexThreadId = db.prepare(`
+    UPDATE threads
+    SET codex_thread_id = @codexThreadId,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @threadId
+  `);
+  const touch = db.prepare(`
+    UPDATE threads
+    SET updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+
+  return {
+    insertThread(input: InsertThreadInput): void {
+      insert.run({
+        title: null,
+        codexThreadId: null,
+        model: null,
+        reasoning: null,
+        ...input
+      });
+    },
+    getThread(id: string): ThreadRow | undefined {
+      return get.get(id) as ThreadRow | undefined;
+    },
+    listThreads(input = {}): ThreadRow[] {
+      return list.all({
+        status: input.status ?? 'active',
+        limit: input.limit ?? 50
+      }) as ThreadRow[];
+    },
+    archiveThread(id: string): void {
+      archive.run(id);
+    },
+    setCodexThreadId(threadId: string, codexThreadId: string): void {
+      setCodexThreadId.run({ threadId, codexThreadId });
+    },
+    touchThread(threadId: string): void {
+      touch.run(threadId);
     }
   };
 }
