@@ -98,13 +98,26 @@ function isTomlProfileValue(value: unknown): value is TomlProfileValue {
 }
 
 function isTomlPrimitive(value: unknown): value is TomlPrimitive {
-  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+  return (
+    typeof value === 'string'
+    || (typeof value === 'number' && Number.isFinite(value))
+    || typeof value === 'boolean'
+  );
 }
 
 function isHomogeneousTomlPrimitiveArray(value: unknown[]): value is TomlPrimitive[] {
   if (value.length === 0) return true;
   if (!value.every(isTomlPrimitive)) return false;
 
-  const firstType = typeof value[0];
-  return value.every((item) => typeof item === firstType);
+  const [first, ...rest] = value;
+  if (first === undefined) return true;
+
+  const firstType = getTomlPrimitiveType(first);
+  return rest.every((item) => getTomlPrimitiveType(item) === firstType);
+}
+
+function getTomlPrimitiveType(value: TomlPrimitive): 'string' | 'integer' | 'float' | 'boolean' {
+  if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'float';
+  if (typeof value === 'string') return 'string';
+  return 'boolean';
 }

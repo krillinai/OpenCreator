@@ -129,6 +129,17 @@ describe('codex profile writer', () => {
     expect(existsSync(join(codexHome, 'review.config.toml'))).toBe(false);
   });
 
+  it('rejects mixed integer and float arrays before writing invalid TOML', async () => {
+    const codexHome = createCodexHome();
+    const writer = createProfileWriter({ codexHome });
+
+    await expect(
+      writer.create('review', { nums: [1, 2.5] } as never)
+    ).rejects.toThrow(/CODEX_PROFILE_INVALID/);
+
+    expect(existsSync(join(codexHome, 'review.config.toml'))).toBe(false);
+  });
+
   it('quotes dotted TOML keys so they remain primitive profile keys', () => {
     const content = serializeCodexProfileOverlay({ 'team.alpha': 'x' });
 

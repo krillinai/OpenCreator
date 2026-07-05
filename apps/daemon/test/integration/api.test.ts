@@ -348,6 +348,10 @@ describe('runtime api', () => {
         label: 'mixed array config',
         payload: { name: 'review', config: { experimental_features: ['writer', 3, false] } }
       },
+      {
+        label: 'mixed integer and float array config',
+        payload: { name: 'review', config: { nums: [1, 2.5] } }
+      },
       { label: 'nested config', payload: { name: 'review', config: { nested: { bad: true } } } }
     ];
 
@@ -378,6 +382,10 @@ describe('runtime api', () => {
       {
         label: 'mixed array config',
         payload: { config: { experimental_features: ['writer', 3, false] } }
+      },
+      {
+        label: 'mixed integer and float array config',
+        payload: { config: { nums: [1, 2.5] } }
       },
       { label: 'nested config', payload: { config: { nested: { bad: true } } } }
     ];
