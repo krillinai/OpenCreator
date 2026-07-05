@@ -44,6 +44,42 @@ describe('runtime api', () => {
     expect(response.json()).toMatchObject({ codexHomeMode: 'global' });
   });
 
+  it('creates, lists, gets, and archives threads through the api', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/threads',
+      headers: { authorization: 'Bearer secret' },
+      payload: { title: 'R2', workspaceMode: 'managed', sandbox: 'read-only' }
+    });
+    expect(created.statusCode).toBe(201);
+    const thread = created.json().thread;
+
+    const listed = await server.inject({
+      method: 'GET',
+      url: '/threads',
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(listed.json().threads).toEqual([expect.objectContaining({ id: thread.id })]);
+
+    const detail = await server.inject({
+      method: 'GET',
+      url: `/threads/${thread.id}`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(detail.json().thread).toMatchObject({ id: thread.id, status: 'active' });
+
+    const archived = await server.inject({
+      method: 'POST',
+      url: `/threads/${thread.id}/archive`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(archived.statusCode).toBe(200);
+    expect(archived.json().thread.status).toBe('archived');
+  });
+
   it('creates a run, lists history, and replays events over SSE', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {

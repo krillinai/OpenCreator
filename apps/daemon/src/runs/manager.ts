@@ -9,6 +9,7 @@ import { normalizerVersion, normalizeCodexEvent } from '../events/normalizer.js'
 import { parseJsonLine } from '../events/parser.js';
 import { redactText } from '../security/redaction.js';
 import { createRunRepository, type RunRow } from '../storage/repositories.js';
+import type { ThreadManager } from '../threads/types.js';
 import type { CreatedRun, CreateRunInput } from './types.js';
 
 export type RunManagerOptions = {
@@ -19,6 +20,7 @@ export type RunManagerOptions = {
   timeoutMs?: number;
   spawnTimeoutMs?: number;
   inactivityTimeoutMs?: number;
+  threadManager?: Pick<ThreadManager, 'getThread' | 'setCodexThreadId' | 'touchThread'>;
 };
 
 export type RuntimeRun = {
@@ -45,6 +47,7 @@ export type RunManager = {
   cancelRun(id: string): boolean;
   getRun(id: string): RuntimeRun | undefined;
   listRuns(limit?: number): RuntimeRun[];
+  listRunsByThread(threadId: string, limit?: number): RuntimeRun[];
   listEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
   subscribe(runId: string, subscriber: RunEventSubscriber): () => void;
 };
@@ -252,6 +255,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
     listRuns(limit?: number): RuntimeRun[] {
       return runs.listRuns(limit).map(mapRunRow);
+    },
+
+    listRunsByThread(threadId: string, limit?: number): RuntimeRun[] {
+      return runs.listRunsByThread(threadId, limit).map(mapRunRow);
     },
 
     listEvents(runId: string, afterSeq?: number): AgentEventEnvelope[] {

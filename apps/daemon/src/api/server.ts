@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { resolveCodexHome } from '../codex/home.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { openRuntimeDatabase } from '../storage/database.js';
+import { createThreadManager } from '../threads/manager.js';
 import { requireAuth } from './auth.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
@@ -27,13 +28,15 @@ export async function buildServer(input: BuildServerInput) {
   const codexHome = input.codexHome ?? resolveCodexHome().path;
   const db = input.db ?? openRuntimeDatabase(join(dataDir, 'app.sqlite'));
   const ownsDb = input.db === undefined;
+  const threadManager = createThreadManager({ db, dataDir });
   const runManager =
     input.runManager ??
     createRunManager({
       db,
       dataDir,
       codexBin: input.codexBin ?? 'codex',
-      codexHome
+      codexHome,
+      threadManager
     });
 
   server.addHook('onClose', async () => {
@@ -50,7 +53,7 @@ export async function buildServer(input: BuildServerInput) {
   await registerCodexRoutes(server);
   await registerRunRoutes(server, runManager, { sseHeartbeatMs: input.sseHeartbeatMs });
   await registerDiagnosticsRoutes(server, dataDir);
-  await registerThreadRoutes(server, dataDir);
+  await registerThreadRoutes(server, threadManager, runManager);
 
   return server;
 }
