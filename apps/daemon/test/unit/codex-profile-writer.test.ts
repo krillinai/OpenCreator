@@ -109,13 +109,24 @@ describe('codex profile writer', () => {
       model: 'gpt-5.3-codex',
       include_plan_tool: true,
       max_tokens: 4096,
-      experimental_features: ['writer', 'isolated', 3, false]
+      experimental_features: ['writer', 'isolated']
     });
 
     expect(content).toContain('"model" = "gpt-5.3-codex"');
     expect(content).toContain('"include_plan_tool" = true');
     expect(content).toContain('"max_tokens" = 4096');
-    expect(content).toContain('"experimental_features" = ["writer", "isolated", 3, false]');
+    expect(content).toContain('"experimental_features" = ["writer", "isolated"]');
+  });
+
+  it('rejects mixed-type arrays before writing invalid TOML', async () => {
+    const codexHome = createCodexHome();
+    const writer = createProfileWriter({ codexHome });
+
+    await expect(
+      writer.create('review', { experimental_features: ['writer', 3, false] } as never)
+    ).rejects.toThrow(/CODEX_PROFILE_INVALID/);
+
+    expect(existsSync(join(codexHome, 'review.config.toml'))).toBe(false);
   });
 
   it('quotes dotted TOML keys so they remain primitive profile keys', () => {

@@ -274,13 +274,21 @@ describe('runtime api', () => {
   it('rejects profile writes for the global codex home', async () => {
     server = await buildServer({ token: 'secret' });
 
-    const response = await authPost('/codex/profiles', {
+    const created = await authPost('/codex/profiles', {
       name: 'review',
       config: { model: 'gpt-5.3-codex' }
     });
+    const updated = await authPatch('/codex/profiles/review', {
+      config: { model: 'gpt-5.3-codex' }
+    });
+    const deleted = await authDelete('/codex/profiles/review');
 
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe('CODEX_HOME_READ_ONLY');
+    expect(created.statusCode).toBe(409);
+    expect(created.json().error.code).toBe('CODEX_HOME_READ_ONLY');
+    expect(updated.statusCode).toBe(409);
+    expect(updated.json().error.code).toBe('CODEX_HOME_READ_ONLY');
+    expect(deleted.statusCode).toBe(409);
+    expect(deleted.json().error.code).toBe('CODEX_HOME_READ_ONLY');
   });
 
   it('returns CODEX_PROFILE_EXISTS when creating a duplicate profile', async () => {
@@ -336,6 +344,10 @@ describe('runtime api', () => {
       { label: 'invalid name', payload: { name: '../review', config: { model: 'gpt-5.3-codex' } } },
       { label: 'missing config', payload: { name: 'review' } },
       { label: 'array config', payload: { name: 'review', config: [] } },
+      {
+        label: 'mixed array config',
+        payload: { name: 'review', config: { experimental_features: ['writer', 3, false] } }
+      },
       { label: 'nested config', payload: { name: 'review', config: { nested: { bad: true } } } }
     ];
 
@@ -363,6 +375,10 @@ describe('runtime api', () => {
       { label: 'array body', payload: [] },
       { label: 'missing config', payload: {} },
       { label: 'array config', payload: { config: [] } },
+      {
+        label: 'mixed array config',
+        payload: { config: { experimental_features: ['writer', 3, false] } }
+      },
       { label: 'nested config', payload: { config: { nested: { bad: true } } } }
     ];
 

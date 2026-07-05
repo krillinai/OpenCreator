@@ -68,6 +68,10 @@ describe('codex profile config parser', () => {
     expect(validateProfileConfig({ model: 'gpt-5.3-codex', effort: 'high' }).ok).toBe(true);
     expect(validateProfileConfig({ enabled: true, count: 2 }).ok).toBe(true);
     expect(validateProfileConfig({ tags: ['a', 'b'] }).ok).toBe(true);
+    expect(validateProfileConfig({ counts: [1, 2] }).ok).toBe(true);
+    expect(validateProfileConfig({ flags: [true, false] }).ok).toBe(true);
+    expect(validateProfileConfig({ empty: [] }).ok).toBe(true);
+    expect(validateProfileConfig({ mixed: ['writer', 3, false] }).ok).toBe(false);
     expect(validateProfileConfig({ nested: { bad: true } }).ok).toBe(false);
   });
 });

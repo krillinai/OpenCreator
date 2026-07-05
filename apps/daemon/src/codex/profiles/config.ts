@@ -94,9 +94,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isTomlProfileValue(value: unknown): value is TomlProfileValue {
   if (isTomlPrimitive(value)) return true;
-  return Array.isArray(value) && value.every(isTomlPrimitive);
+  return Array.isArray(value) && isHomogeneousTomlPrimitiveArray(value);
 }
 
 function isTomlPrimitive(value: unknown): value is TomlPrimitive {
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+}
+
+function isHomogeneousTomlPrimitiveArray(value: unknown[]): value is TomlPrimitive[] {
+  if (value.length === 0) return true;
+  if (!value.every(isTomlPrimitive)) return false;
+
+  const firstType = typeof value[0];
+  return value.every((item) => typeof item === firstType);
 }
