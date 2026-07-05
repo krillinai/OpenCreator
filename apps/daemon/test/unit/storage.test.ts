@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createSkillOperationRepository } from '../../src/codex/skills/operations.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import type { InsertRunInput } from '../../src/storage/repositories.js';
 import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
@@ -79,6 +80,50 @@ describe('runtime storage', () => {
     insertEvent.run('event_1', 'run_1', 1, 'status', '{}');
 
     expect(() => insertEvent.run('event_2', 'run_1', 1, 'status', '{}')).toThrow();
+  });
+
+  it('creates codex skill operation log table', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+
+    const tableRows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'codex_skill_operations'"
+      )
+      .all() as Array<{ name: string }>;
+    expect(tableRows).toEqual([{ name: 'codex_skill_operations' }]);
+
+    const indexRows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_codex_skill_operations_created_at'"
+      )
+      .all() as Array<{ name: string }>;
+    expect(indexRows).toEqual([{ name: 'idx_codex_skill_operations_created_at' }]);
+  });
+
+  it('persists codex skill operations', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const operations = createSkillOperationRepository(db);
+
+    const inserted = operations.insertOperation({
+      operation: 'install',
+      skillId: 'writer',
+      codexHome: join(tempDir, 'codex-home'),
+      skillsPath: join(tempDir, 'codex-home', 'skills'),
+      sourcePath: join(tempDir, 'source'),
+      targetPath: join(tempDir, 'codex-home', 'skills', 'writer'),
+      status: 'succeeded'
+    });
+
+    expect(inserted).toMatchObject({
+      operation: 'install',
+      skillId: 'writer',
+      status: 'succeeded',
+      sourcePath: join(tempDir, 'source'),
+      errorCode: null
+    });
+    expect(operations.listOperations()).toEqual([inserted]);
   });
 
 function createTestDatabase(): Database.Database {
