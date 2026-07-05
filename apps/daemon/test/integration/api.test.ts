@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -202,6 +202,53 @@ describe('runtime api', () => {
     expect(events.body).toContain('event: done');
   });
 
+  it('rejects invalid run request bodies without server errors', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.completed' }]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const invalidPayloads: Array<{
+      label: string;
+      payload: unknown;
+      headers?: Record<string, string>;
+    }> = [
+      {
+        label: 'string body',
+        payload: JSON.stringify('not-an-object'),
+        headers: { 'content-type': 'application/json' }
+      },
+      { label: 'array body', payload: [] },
+      { label: 'missing prompt', payload: {} },
+      { label: 'empty prompt', payload: { prompt: '' } },
+      { label: 'numeric prompt', payload: { prompt: 123 } },
+      { label: 'object threadId', payload: { prompt: 'x', threadId: { bad: 1 } } },
+      { label: 'numeric cwd', payload: { prompt: 'x', cwd: 123 } },
+      { label: 'boolean profile', payload: { prompt: 'x', profile: false } },
+      { label: 'numeric model', payload: { prompt: 'x', model: 4 } },
+      { label: 'invalid resume mode', payload: { prompt: 'x', resumeMode: 'resume' } },
+      { label: 'invalid sandbox', payload: { prompt: 'x', sandbox: 'full-access' } },
+      { label: 'invalid reasoning', payload: { prompt: 'x', reasoning: 'extreme' } }
+    ];
+
+    for (const { label, payload, headers } of invalidPayloads) {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/runs',
+        headers: { authorization: 'Bearer secret', ...headers },
+        payload: payload as TestInjectPayload
+      });
+      expect(response.statusCode, label).toBe(400);
+      expect(response.json().error.code, label).toBe('VALIDATION_FAILED');
+    }
+  });
+
   it('creates a thread run using immutable thread config and binds codex thread id', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
@@ -238,6 +285,42 @@ describe('runtime api', () => {
     expect(detail.json().thread.codexThreadId).toBe('codex-thread-1');
   });
 
+  it('allows equivalent cwd paths when checking immutable thread config', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread;
+
+    const equivalentCwd = join(tempDir, 'equivalent-cwd');
+    symlinkSync(tempDir, equivalentCwd);
+
+    const createdRun = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'hello',
+      cwd: equivalentCwd
+    });
+
+    expect(createdRun.statusCode).toBe(202);
+    await waitForRunStatus(createdRun.json().id, 'succeeded');
+  });
+
   it('rejects run requests that override thread config', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
@@ -256,6 +339,53 @@ describe('runtime api', () => {
 
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe('THREAD_CONFIG_IMMUTABLE');
+  });
+
+  it('rejects run requests that override non-sandbox thread config', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread;
+
+    const response = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'hello',
+      profile: 'review'
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('THREAD_CONFIG_IMMUTABLE');
+  });
+
+  it('rejects missing and archived thread run targets', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const missing = await authPost('/runs', {
+      threadId: 'thread_missing',
+      prompt: 'hello'
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe('THREAD_NOT_FOUND');
+
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread;
+    await authPost(`/threads/${thread.id}/archive`, {});
+
+    const archived = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'hello'
+    });
+    expect(archived.statusCode).toBe(409);
+    expect(archived.json().error.code).toBe('THREAD_ARCHIVED');
   });
 
   it('replays events after fromSeq and Last-Event-ID', async () => {

@@ -1,5 +1,6 @@
 import type { RunRequest } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { realpathSync } from 'node:fs';
 import type { RunManager } from '../runs/manager.js';
 import type { RuntimeThread, ThreadManager } from '../threads/types.js';
 import { apiError } from './errors.js';
@@ -11,11 +12,12 @@ export async function registerRunRoutes(
   options: { sseHeartbeatMs?: number; threadManager?: ThreadManager } = {}
 ): Promise<void> {
   const sseHeartbeatMs = options.sseHeartbeatMs ?? 15_000;
-  server.post<{ Body: RunRequest }>('/runs', async (request, reply) => {
-    const body = request.body ?? ({} as RunRequest);
-    if (typeof body.prompt !== 'string' || body.prompt.length === 0) {
-      return reply.code(400).send(apiError('VALIDATION_FAILED', 'prompt is required'));
+  server.post<{ Body: unknown }>('/runs', async (request, reply) => {
+    const parsedBody = parseRunRequest(request.body);
+    if (!parsedBody.ok) {
+      return reply.code(400).send(apiError('VALIDATION_FAILED', parsedBody.message));
     }
+    const body = parsedBody.value;
 
     if (body.threadId !== undefined) {
       const threadManager = options.threadManager;
@@ -26,7 +28,11 @@ export async function registerRunRoutes(
       if (thread.status === 'archived') {
         return reply.code(409).send(apiError('THREAD_ARCHIVED', 'Thread is archived'));
       }
-      if (overridesThreadConfig(body, thread)) {
+      const immutable = overridesThreadConfig(body, thread);
+      if (!immutable.ok) {
+        return reply.code(400).send(apiError('VALIDATION_FAILED', immutable.message));
+      }
+      if (immutable.value) {
         return reply
           .code(409)
           .send(apiError('THREAD_CONFIG_IMMUTABLE', 'Thread run config is immutable'));
@@ -39,7 +45,6 @@ export async function registerRunRoutes(
         sandbox: thread.sandbox,
         threadId: thread.id,
         resumeMode: body.resumeMode ?? 'auto',
-        codexThreadId: thread.codexThreadId ?? undefined,
         model: thread.model ?? undefined,
         reasoning: thread.reasoning ?? undefined
       });
@@ -127,14 +132,81 @@ export async function registerRunRoutes(
   });
 }
 
-function overridesThreadConfig(body: RunRequest, thread: RuntimeThread): boolean {
-  return (
-    (body.cwd !== undefined && body.cwd !== thread.cwd)
-    || (body.profile !== undefined && body.profile !== thread.profile)
-    || (body.model !== undefined && body.model !== thread.model)
-    || (body.reasoning !== undefined && body.reasoning !== thread.reasoning)
-    || (body.sandbox !== undefined && body.sandbox !== thread.sandbox)
-  );
+type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
+
+const RESUME_MODES = ['auto', 'new_thread', 'resume_thread'] as const;
+const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;
+const REASONING_EFFORTS = ['default', 'low', 'medium', 'high', 'xhigh'] as const;
+
+function parseRunRequest(body: unknown): ParseResult<RunRequest> {
+  if (body === undefined) return { ok: false, message: 'prompt is required' };
+  if (!isPlainObject(body)) return { ok: false, message: 'body must be an object' };
+
+  const input = body as Record<string, unknown>;
+  const prompt = input.prompt;
+  if (typeof prompt !== 'string' || prompt.length === 0) {
+    return { ok: false, message: 'prompt is required' };
+  }
+
+  const value: RunRequest = { prompt };
+  for (const key of ['threadId', 'cwd', 'profile', 'model'] as const) {
+    const field = input[key];
+    if (field === undefined) continue;
+    if (typeof field !== 'string') return { ok: false, message: `${key} must be a string` };
+    value[key] = field;
+  }
+
+  if (input.resumeMode !== undefined) {
+    if (!isOneOf(input.resumeMode, RESUME_MODES)) {
+      return { ok: false, message: 'resumeMode must be auto, new_thread, or resume_thread' };
+    }
+    value.resumeMode = input.resumeMode;
+  }
+
+  if (input.sandbox !== undefined) {
+    if (!isOneOf(input.sandbox, SANDBOX_MODES)) {
+      return { ok: false, message: 'sandbox must be a valid sandbox mode' };
+    }
+    value.sandbox = input.sandbox;
+  }
+
+  if (input.reasoning !== undefined) {
+    if (!isOneOf(input.reasoning, REASONING_EFFORTS)) {
+      return { ok: false, message: 'reasoning must be a valid reasoning effort' };
+    }
+    value.reasoning = input.reasoning;
+  }
+
+  return { ok: true, value };
+}
+
+function overridesThreadConfig(body: RunRequest, thread: RuntimeThread): ParseResult<boolean> {
+  let cwdChanged = false;
+  if (body.cwd !== undefined) {
+    try {
+      cwdChanged = realpathSync(body.cwd) !== thread.canonicalCwd;
+    } catch {
+      return { ok: false, message: 'cwd must exist' };
+    }
+  }
+
+  return {
+    ok: true,
+    value:
+      cwdChanged
+      || (body.profile !== undefined && body.profile !== thread.profile)
+      || (body.model !== undefined && body.model !== thread.model)
+      || (body.reasoning !== undefined && body.reasoning !== thread.reasoning)
+      || (body.sandbox !== undefined && body.sandbox !== thread.sandbox)
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isOneOf<const T extends readonly string[]>(value: unknown, options: T): value is T[number] {
+  return typeof value === 'string' && options.includes(value);
 }
 
 function getReplayAfterSeq(lastEventId: string | string[] | undefined, query: unknown): number {

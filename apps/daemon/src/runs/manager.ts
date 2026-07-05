@@ -349,7 +349,6 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       codexVersion: 'unknown',
       codexBin: options.codexBin,
       codexHome: options.codexHome,
-      ...(input.codexThreadId === undefined ? {} : { codexThreadId: input.codexThreadId }),
       resumeMode: input.threadId === undefined ? 'independent' : normalizeResumeMode(input.resumeMode),
       normalizerVersion
     });
@@ -361,7 +360,6 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       profile: input.profile,
       sandbox: input.sandbox,
       threadId: input.threadId,
-      codexThreadId: input.codexThreadId,
       resumeMode: input.resumeMode ?? 'new_thread'
     });
 
@@ -520,7 +518,8 @@ function isThreadStarted(value: unknown): value is { type: 'thread.started'; thr
     && value !== null
     && !Array.isArray(value)
     && (value as { type?: unknown }).type === 'thread.started'
-    && typeof (value as { thread_id?: unknown }).thread_id === 'string';
+    && typeof (value as { thread_id?: unknown }).thread_id === 'string'
+    && (value as { thread_id: string }).thread_id.trim().length > 0;
 }
 
 function normalizeResumeMode(

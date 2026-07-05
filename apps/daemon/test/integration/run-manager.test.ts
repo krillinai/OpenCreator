@@ -186,6 +186,67 @@ describe('run manager', () => {
     expect(manager.listEvents(run.id).some(event => event.type === 'error')).toBe(true);
   });
 
+  it('does not prefill an existing codex thread id for a new thread run', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      threadId: 'thread_1',
+      codexThreadId: 'codex_thread_old',
+      resumeMode: 'auto'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.errorCode).toBe('CODEX_THREAD_ID_MISSING');
+    expect(manager.getRun(run.id)?.codexThreadId).toBeUndefined();
+  });
+
+  it('marks a thread run failed when codex emits an empty thread id', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: '   ' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      threadId: 'thread_1',
+      resumeMode: 'auto'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.errorCode).toBe('CODEX_THREAD_ID_MISSING');
+  });
+
   it('marks a run failed on timeout', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
     const fake = createFakeCodex(tempDir, {
