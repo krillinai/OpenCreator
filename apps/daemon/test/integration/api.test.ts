@@ -85,6 +85,7 @@ describe('runtime api', () => {
       codexHome,
       codexHomeMode: 'isolated',
       writable: true,
+      baseConfigValid: true,
       profiles: [
         {
           name: 'review',
@@ -133,10 +134,29 @@ describe('runtime api', () => {
     });
 
     expect(response.statusCode).toBe(200);
+    expect(response.json().baseConfigValid).toBe(false);
     expect(response.json().profiles).toEqual([
       expect.objectContaining({ name: 'review', status: 'valid' })
     ]);
     expect(response.json().diagnostics[0]).toContain('Failed to parse config.toml');
+  });
+
+  it('returns config invalid when getting a profile by name with invalid base config', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "broken');
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "gpt-5.3-codex"\n');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/profiles/review',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe('CODEX_CONFIG_INVALID');
   });
 
   it('returns diagnostics instead of crashing when codex home is not a directory', async () => {

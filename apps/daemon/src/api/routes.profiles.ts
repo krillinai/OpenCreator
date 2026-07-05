@@ -13,6 +13,7 @@ export async function registerProfileRoutes(
       codexHome: input.codexHome.path,
       codexHomeMode: input.codexHome.mode,
       writable: input.codexHome.writable,
+      baseConfigValid: result.baseConfigValid,
       profiles: result.profiles,
       diagnostics: result.diagnostics
     };
