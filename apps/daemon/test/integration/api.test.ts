@@ -409,6 +409,42 @@ describe('runtime api', () => {
     ]);
   });
 
+  it('scans global codex skills without requiring write access', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const response = await authGet('/codex/skills');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      codexHomeMode: 'global',
+      skillsWritable: true,
+      requiresWriteConfirmation: true
+    });
+    expect(response.json().skillsPath).toEqual(expect.any(String));
+    expect(Array.isArray(response.json().skills)).toBe(true);
+  });
+
+  it('returns invalid skill diagnostics instead of crashing', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const invalidDir = join(codexHome, 'skills', 'broken');
+    mkdirSync(invalidDir, { recursive: true });
+    writeFileSync(join(invalidDir, 'SKILL.md'), '# no frontmatter');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await authGet('/codex/skills');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().skills).toEqual([
+      expect.objectContaining({
+        id: 'broken',
+        status: 'invalid',
+        diagnostics: [expect.stringContaining('frontmatter')]
+      })
+    ]);
+  });
+
   it('requires explicit confirmation for global codex skill writes', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const source = join(tempDir, 'source-skill');
@@ -423,6 +459,66 @@ describe('runtime api', () => {
 
     expect(install.statusCode).toBe(409);
     expect(install.json().error.code).toBe('CODEX_SKILL_WRITE_CONFIRMATION_REQUIRED');
+  });
+
+  it('maps invalid codex skill API requests to validation failures', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const stringBody = await server.inject({
+      method: 'POST',
+      url: '/codex/skills/install',
+      headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
+      payload: JSON.stringify('not-an-object')
+    });
+    expect(stringBody.statusCode).toBe(400);
+    expect(stringBody.json().error.code).toBe('VALIDATION_FAILED');
+
+    const invalidBodies: Array<{ label: string; payload: unknown }> = [
+      { label: 'array body', payload: [] },
+      { label: 'missing sourcePath', payload: { id: 'writer' } },
+      { label: 'blank sourcePath', payload: { sourcePath: '   ' } },
+      { label: 'invalid id', payload: { sourcePath: tempDir, id: '../writer' } },
+      { label: 'non-boolean overwrite', payload: { sourcePath: tempDir, overwrite: 'yes' } },
+      {
+        label: 'false confirmation',
+        payload: { sourcePath: tempDir, confirmWriteToCodexHome: false }
+      }
+    ];
+
+    for (const { label, payload } of invalidBodies) {
+      const response = await authPost('/codex/skills/install', payload);
+      expect(response.statusCode, label).toBe(400);
+      expect(response.json().error.code, label).toBe('VALIDATION_FAILED');
+    }
+
+    const invalidGet = await authGet('/codex/skills/bad%20id');
+    const invalidDelete = await authDelete('/codex/skills/bad%20id');
+
+    expect(invalidGet.statusCode).toBe(400);
+    expect(invalidGet.json().error.code).toBe('VALIDATION_FAILED');
+    expect(invalidDelete.statusCode).toBe(400);
+    expect(invalidDelete.json().error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('maps missing and invalid codex skill writes to skill API errors', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const invalidSource = join(tempDir, 'invalid-source');
+    mkdirSync(invalidSource, { recursive: true });
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const missingDelete = await authDelete('/codex/skills/missing');
+    const invalidInstall = await authPost('/codex/skills/install', {
+      sourcePath: invalidSource,
+      id: 'broken'
+    });
+
+    expect(missingDelete.statusCode).toBe(404);
+    expect(missingDelete.json().error.code).toBe('CODEX_SKILL_NOT_FOUND');
+    expect(invalidInstall.statusCode).toBe(422);
+    expect(invalidInstall.json().error.code).toBe('CODEX_SKILL_INVALID');
   });
 
   it('rejects invalid profile write bodies without server errors', async () => {
