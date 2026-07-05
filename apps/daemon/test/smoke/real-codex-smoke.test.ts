@@ -67,6 +67,34 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
   });
 
+  it('verifies isolated CODEX_HOME profile config shape', () => {
+    const home = join(fixtureDir, `profile-smoke-${Date.now()}`);
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, 'r3_smoke.config.toml'),
+      [
+        'model = "gpt-5.3-codex"',
+        'model_reasoning_effort = "medium"',
+        ''
+      ].join('\n')
+    );
+
+    const result = runSmokeCommand([
+      'env',
+      `CODEX_HOME=${home}`,
+      'codex',
+      '-p',
+      'r3_smoke',
+      'features',
+      'list',
+      '--help'
+    ]);
+    writeFixture('profile-overlay-help', result);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout + result.stderr).toContain('List known features');
+  });
+
   it('captures a command execution jsonl fixture', () => {
     const result = runSmokeCommand([
       'codex',
