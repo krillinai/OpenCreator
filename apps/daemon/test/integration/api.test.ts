@@ -409,7 +409,7 @@ describe('runtime api', () => {
     ]);
   });
 
-  it('scans global codex skills without requiring write access', async () => {
+  it('scans global codex skills non-destructively and requires write confirmation', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
 
