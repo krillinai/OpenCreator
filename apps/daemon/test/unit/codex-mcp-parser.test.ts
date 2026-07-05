@@ -70,6 +70,21 @@ describe('codex mcp parser', () => {
     expect(result.hasSecrets).toBe(true);
   });
 
+  it('redacts token-like separated flag values in unparsed get raw output', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: 'node --github-token secret',
+      stderr: '',
+      exitCode: 0
+    });
+
+    expect(result.raw).toBe('node --github-token [REDACTED]');
+    expect(result.raw).not.toContain('secret');
+    expect(result.hasSecrets).toBe(true);
+  });
+
   it('redacts quoted secrets in unparsed get raw output', () => {
     const result = parseMcpGetOutput({
       name: 'github',
@@ -105,6 +120,22 @@ describe('codex mcp parser', () => {
     expect(result.status).toBe('missing');
     expect(result.raw).toBe('No MCP server named github is configured');
     expect(result.diagnostics.join('\n')).toContain('server is missing');
+  });
+
+  it('marks missing get output with redacted raw secrets', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: '',
+      stderr: 'server not found --github-token secret',
+      exitCode: 1
+    });
+
+    expect(result.status).toBe('missing');
+    expect(result.raw).toContain('--github-token [REDACTED]');
+    expect(result.raw).not.toContain('secret');
+    expect(result.hasSecrets).toBe(true);
   });
 
   it('detects not found output without matching permission errors', () => {
@@ -267,6 +298,28 @@ describe('codex mcp parser', () => {
     expect(result.hasSecrets).toBe(true);
   });
 
+  it('redacts token-like separated flag values in parsed command and args', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({
+        name: 'github',
+        transport: 'stdio',
+        command: 'node --github-token secret',
+        args: ['--client-secret', 'client-secret-value']
+      }),
+      stderr: '',
+      exitCode: 0
+    });
+
+    expect(result.command).toBe('node --github-token [REDACTED]');
+    expect(result.args).toEqual(['--client-secret', '[REDACTED]']);
+    expect(JSON.stringify(result)).not.toContain(' secret');
+    expect(JSON.stringify(result)).not.toContain('client-secret-value');
+    expect(result.hasSecrets).toBe(true);
+  });
+
   it('redacts quoted secrets in parsed args', () => {
     const result = parseMcpGetOutput({
       name: 'github',
@@ -316,6 +369,32 @@ describe('codex mcp parser', () => {
 
     expect(result.status).toBe('missing');
     expect(result.transport).toBe('unknown');
+  });
+
+  it('maps non-missing JSON errors to unknown status', () => {
+    const tokenResult = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({ error: 'missing token' }),
+      stderr: '',
+      exitCode: 1
+    });
+    const permissionResult = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({ message: 'permission denied' }),
+      stderr: '',
+      exitCode: 1
+    });
+
+    expect(tokenResult.status).toBe('unknown');
+    expect(tokenResult.transport).toBe('unknown');
+    expect(tokenResult.diagnostics.join('\n')).toContain('missing token');
+    expect(permissionResult.status).toBe('unknown');
+    expect(permissionResult.transport).toBe('unknown');
+    expect(permissionResult.diagnostics.join('\n')).toContain('permission denied');
   });
 
   it('does not map JSON diagnostics about missing token to missing status', () => {

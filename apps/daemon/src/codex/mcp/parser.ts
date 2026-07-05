@@ -7,23 +7,13 @@ import type {
 import { redactMcpText } from './redaction.js';
 
 const REDACTED = '[REDACTED]';
-const SECRET_ARG_FLAGS = new Set([
-  '--api-key',
-  '--api_key',
-  '--token',
-  '--secret',
-  '--password',
-  '--access-token',
-  '--access_token',
-  '--bearer-token',
-  '--bearer_token'
-]);
+const TOKEN_LIKE_FLAG_NAME = /(?:token|secret|password|api[-_]?key|apikey|access[-_]?token|bearer[-_]?token)/i;
 const SECRET_ARG_FLAG_IN_COMMAND =
-  /(--(?:api[-_]key|token|secret|password|access[-_]token|bearer[-_]token))(\s+)(?:"[^"]*"|'[^']*'|[^\s]+)/gi;
+  /(--[A-Za-z0-9_.-]*(?:token|secret|password|api[-_]?key|apikey|access[-_]?token|bearer[-_]?token)[A-Za-z0-9_.-]*)(\s+)(?:"[^"]*"|'[^']*'|[^\s]+)/gi;
 const QUOTED_SECRET_KEY_VALUE =
   /([A-Za-z_][A-Za-z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|ACCESS[_-]?TOKEN|KEY)[A-Za-z0-9_.-]*\s*[=:]\s*)(["'])[^"'\r\n]*\2/gi;
 const QUOTED_SECRET_FLAG_VALUE =
-  /(--(?:api[-_]key|token|secret|password|access[-_]token|bearer[-_]token)=)(["'])[^"'\r\n]*\2/gi;
+  /(--[A-Za-z0-9_.-]*(?:token|secret|password|api[-_]?key|apikey|access[-_]?token|bearer[-_]?token)[A-Za-z0-9_.-]*=)(["'])[^"'\r\n]*\2/gi;
 
 export type ParseMcpGetOutputInput = {
   name: string;
@@ -49,6 +39,9 @@ export function parseMcpGetOutput(input: ParseMcpGetOutputInput): CodexMcpServer
   if (isPlainObject(parsed)) {
     if (jsonObjectIndicatesMissing(parsed)) {
       return missingServerResponse(input);
+    }
+    if (jsonObjectIndicatesError(parsed)) {
+      return errorServerResponse(input, parsed);
     }
 
     return mapServer(parsed, {
@@ -189,10 +182,33 @@ function missingServerResponse(
   };
 
   if (rawOutput !== undefined) {
-    result.raw = redactMcpFreeText(rawOutput);
+    const redactedRaw = redactMcpFreeText(rawOutput);
+    result.raw = redactedRaw;
+    result.hasSecrets = redactedRaw !== rawOutput;
   }
 
   return result;
+}
+
+function errorServerResponse(
+  input: {
+    name: string;
+    codexHome: string;
+    codexHomeMode: CodexHomeMode;
+  },
+  errorObject: Record<string, unknown>
+): CodexMcpServerResponse {
+  const diagnostics = getErrorDiagnostics(errorObject);
+  return {
+    name: input.name,
+    transport: 'unknown',
+    status: 'unknown',
+    envKeys: [],
+    hasSecrets: diagnostics.some((diagnostic) => diagnostic.includes(REDACTED)),
+    codexHome: input.codexHome,
+    codexHomeMode: input.codexHomeMode,
+    diagnostics
+  };
 }
 
 function combineOutput(stdout: string, stderr: string): string {
@@ -280,6 +296,27 @@ function jsonObjectIndicatesMissing(value: Record<string, unknown>): boolean {
   return false;
 }
 
+function jsonObjectIndicatesError(value: Record<string, unknown>): boolean {
+  if (typeof value.error === 'string' || typeof value.message === 'string') {
+    return true;
+  }
+  return isPlainObject(value.error) && typeof value.error.message === 'string';
+}
+
+function getErrorDiagnostics(value: Record<string, unknown>): string[] {
+  const diagnostics: string[] = [];
+  if (typeof value.error === 'string') {
+    diagnostics.push(redactMcpFreeText(value.error));
+  }
+  if (isPlainObject(value.error) && typeof value.error.message === 'string') {
+    diagnostics.push(redactMcpFreeText(value.error.message));
+  }
+  if (typeof value.message === 'string') {
+    diagnostics.push(redactMcpFreeText(value.message));
+  }
+  return diagnostics.length === 0 ? ['codex mcp get output contained an error'] : diagnostics;
+}
+
 function redactMcpCommand(command: string, sensitiveValues: string[]): string {
   return redactMcpFreeText(command, sensitiveValues);
 }
@@ -298,7 +335,10 @@ function redactMcpArgs(args: string[], sensitiveValues: string[]): string[] {
 }
 
 function isSecretArgFlag(arg: string): boolean {
-  return SECRET_ARG_FLAGS.has(arg.toLowerCase());
+  if (!arg.startsWith('--')) {
+    return false;
+  }
+  return TOKEN_LIKE_FLAG_NAME.test(arg.slice(2));
 }
 
 function redactMcpFreeText(text: string, sensitiveValues: string[] = []): string {
