@@ -680,6 +680,13 @@ describe('runtime api', () => {
     expect(login.statusCode).toBe(200);
     expect(logout.statusCode).toBe(200);
     expect(fake.readCommands()).toEqual(['mcp login github', 'mcp logout github']);
+
+    const operations = await authGet('/codex/mcp/operations');
+    expect(operations.statusCode).toBe(200);
+    expect(operations.json().operations.map((operation: { operation: string }) => operation.operation)).toEqual([
+      'logout',
+      'login'
+    ]);
   });
 
   it('maps unsupported mcp add capabilities to safe API errors', async () => {
@@ -711,6 +718,91 @@ describe('runtime api', () => {
     expect(JSON.stringify(response.json())).not.toContain('GITHUB_TOKEN');
     expect(JSON.stringify(response.json())).not.toContain('secret');
     expect(fake.readCommands()).toEqual([]);
+  });
+
+  it('maps unsupported mcp add URL transport to safe API errors without running codex', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const fake = createFakeMcpCodex(tempDir);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome,
+      capabilities: makeResumeCapableMatrix({ mcpAddUrl: false })
+    });
+
+    const response = await authPost('/codex/mcp/add', {
+      name: 'github-http',
+      transport: 'http',
+      url: 'https://example.com/mcp'
+    });
+
+    expect(response.statusCode).toBe(501);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'CODEX_INCOMPATIBLE',
+        message: 'Codex does not support this MCP operation'
+      }
+    });
+    expect(fake.readCommands()).toEqual([]);
+  });
+
+  it('maps failed codex mcp add commands to MCP_COMMAND_FAILED', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const fake = createFakeMcpCodex(tempDir);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome,
+      capabilities: makeResumeCapableMatrix()
+    });
+
+    const response = await authPost('/codex/mcp/add', {
+      name: 'broken',
+      transport: 'stdio',
+      command: 'node',
+      args: ['server.js']
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'MCP_COMMAND_FAILED',
+        message: 'Codex MCP command failed'
+      }
+    });
+    expect(fake.readCommands()).toEqual(['mcp add broken -- node server.js']);
+  });
+
+  it('redacts raw codex mcp get output from add responses and operations', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const fake = createFakeMcpCodex(tempDir);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome,
+      capabilities: makeResumeCapableMatrix()
+    });
+
+    const added = await authPost('/codex/mcp/add', {
+      name: 'secret-server',
+      transport: 'stdio',
+      command: 'node',
+      env: { MCP_API_TOKEN: 'super-secret-value' }
+    });
+    const operations = await authGet('/codex/mcp/operations');
+
+    expect(added.statusCode).toBe(201);
+    expect(JSON.stringify(added.json())).not.toContain('super-secret-value');
+    expect(JSON.stringify(added.json())).toContain('[REDACTED]');
+    expect(operations.statusCode).toBe(200);
+    expect(JSON.stringify(operations.json())).not.toContain('super-secret-value');
+    expect(JSON.stringify(operations.json())).toContain('[REDACTED]');
   });
 
   it('rejects invalid profile write bodies without server errors', async () => {
@@ -1967,6 +2059,14 @@ function createFakeMcpCodex(dir: string): { bin: string; readCommands: () => str
       '  process.exit(0);',
       '}',
       'if (args[0] === "mcp" && args[1] === "add") {',
+      '  if (args[2] === "broken") {',
+      '    process.stderr.write("mcp add failed: invalid transport\\n");',
+      '    process.exit(1);',
+      '  }',
+      '  process.exit(0);',
+      '}',
+      'if (args[0] === "mcp" && args[1] === "get" && args[2] === "secret-server") {',
+      '  process.stdout.write("secret-server configured with MCP_API_TOKEN=super-secret-value\\n");',
       '  process.exit(0);',
       '}',
       'if (args[0] === "mcp" && args[1] === "get" && args[2] === "github") {',
