@@ -28,6 +28,32 @@ describe('codex mcp redaction', () => {
     ]);
   });
 
+  it('redacts separated token-like argv values', () => {
+    expect(redactMcpArgv([
+      'mcp',
+      'add',
+      'github',
+      '--',
+      'node',
+      'server.js',
+      '--api-key',
+      'secret-value',
+      '--safe',
+      'visible'
+    ])).toEqual([
+      'mcp',
+      'add',
+      'github',
+      '--',
+      'node',
+      'server.js',
+      '[REDACTED]',
+      '[REDACTED]',
+      '--safe',
+      'visible'
+    ]);
+  });
+
   it('redacts token-like text and url query secrets', () => {
     expect(redactMcpText('GITHUB_TOKEN=secret\nAuthorization: Bearer abc123')).toContain('GITHUB_TOKEN=[REDACTED]');
     expect(redactMcpText('Authorization: Bearer abc123')).toContain('Authorization: Bearer [REDACTED]');

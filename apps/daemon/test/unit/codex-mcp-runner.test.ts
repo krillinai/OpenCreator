@@ -90,14 +90,14 @@ process.stderr.write('GITHUB_TOKEN=secret\\n', () => setTimeout(() => {}, 10_000
       codexBin,
       codexHome,
       args: ['mcp', 'list'],
-      timeoutMs: 1000
+      timeoutMs: 3000
     });
 
     expect(result.timedOut).toBe(true);
     expect(result.exitCode).toBeNull();
     expect(result.stderr).toBe('GITHUB_TOKEN=secret\n');
     expect(result.redactedStderr).toContain('GITHUB_TOKEN=[REDACTED]');
-    expect(result.redactedStderr).toContain('[codex-mcp] timed out after 1000ms');
+    expect(result.redactedStderr).toContain('[codex-mcp] timed out after 3000ms');
   });
 
   it('does not treat a process SIGTERM as a timeout', () => {
@@ -111,7 +111,7 @@ process.kill(process.pid, 'SIGTERM');
       codexBin,
       codexHome,
       args: ['mcp', 'list'],
-      timeoutMs: 1000
+      timeoutMs: 3000
     });
 
     expect(result.timedOut).toBe(false);

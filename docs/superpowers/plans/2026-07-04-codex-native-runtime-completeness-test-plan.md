@@ -392,11 +392,11 @@ Scope:
 Verification:
 
 - `pnpm --filter @clawee/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts test/unit/codex-mcp-parser.test.ts test/unit/codex-mcp-operations.test.ts test/unit/codex-mcp-manager.test.ts test/unit/storage.test.ts test/unit/codex-capabilities.test.ts test/integration/api.test.ts`
-  - 结果：`10` 个测试文件、`120` 个测试通过。
+  - 结果：`10` 个测试文件、`121` 个测试通过。
 - `pnpm typecheck`
   - 结果：通过。
 - `pnpm test`
-  - 结果：通过；daemon `25` 个测试文件通过、`1` 个真实 smoke 文件默认 gate 跳过，`215` 个测试通过、`11` 个 gated smoke 测试跳过。
+  - 结果：通过；daemon `25` 个测试文件通过、`1` 个真实 smoke 文件默认 gate 跳过，`216` 个测试通过、`11` 个 gated smoke 测试跳过。
 - `git diff --check`
   - 结果：通过。
 - `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "adds, gets, lists, and removes a stdio MCP server"`

@@ -1,4 +1,5 @@
 const REDACTED = '[REDACTED]';
+const TOKEN_LIKE_FLAG_NAME = /(?:token|secret|password|api[-_]?key|apikey|access[-_]?token|bearer[-_]?token)/i;
 const TOKEN_LIKE_KEY =
   /([A-Za-z_][A-Za-z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|ACCESS[_-]?TOKEN|KEY)[A-Za-z0-9_.-]*)(\s*[=:]\s*)([^\s'"`<>;&]+)/gi;
 const AUTHORIZATION_HEADER = /(Authorization\s*:\s*)(?:(Bearer|Basic|token)\s+)?[^\r\n]*/gi;
@@ -13,6 +14,13 @@ export function redactMcpArgv(argv: string[]): string[] {
     if (arg === '--env' && index + 1 < argv.length) {
       index += 1;
       redacted.push(redactKeyValue(argv[index] ?? ''));
+      continue;
+    }
+
+    if (isSecretArgFlag(arg ?? '') && index + 1 < argv.length) {
+      redacted[redacted.length - 1] = REDACTED;
+      index += 1;
+      redacted.push(REDACTED);
     }
   }
   return redacted;
@@ -42,4 +50,8 @@ function redactKeyValue(value: string): string {
     return REDACTED;
   }
   return `${value.slice(0, separatorIndex + 1)}${REDACTED}`;
+}
+
+function isSecretArgFlag(arg: string): boolean {
+  return arg.startsWith('--') && TOKEN_LIKE_FLAG_NAME.test(arg.slice(2));
 }
