@@ -106,19 +106,6 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
   const manager: RunManager = {
     startRun(input: CreateRunInput): CreatedRun {
-      if (input.resumeMode === 'resume_thread' && input.threadId === undefined) {
-        const id = insertInitialRun(input, 'independent');
-        const runDir = join(options.dataDir, 'runs', id);
-        return failRunBeforeSpawn({
-          id,
-          runDir,
-          code: 'RESUME_FAILED',
-          message: 'resume_thread requires threadId',
-          terminationReason: 'stream_error',
-          publish
-        });
-      }
-
       const thread = input.threadId === undefined
         ? undefined
         : options.threadAccess?.getThread(input.threadId);

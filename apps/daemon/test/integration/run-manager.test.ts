@@ -355,8 +355,50 @@ describe('run manager', () => {
     expect(manager.getRun(run.id)?.errorCode).toBe('RESUME_FAILED');
   });
 
+  it('runs explicit resume_thread without a thread id as an independent exec', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'independent' } },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: false
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      resumeMode: 'resume_thread'
+    });
+
+    expect(run.status).toBe('succeeded');
+    const completedRun = manager.getRun(run.id)!;
+    expect(completedRun.status).toBe('succeeded');
+    expect('errorCode' in completedRun).toBe(false);
+    expect(fake.readArgv()).toEqual(expect.arrayContaining(['exec', '--json']));
+    expect(fake.readArgv()).not.toContain('resume');
+  });
+
   it('fails resume_thread when resume capability is unverified', async () => {
-    const { manager, threadManager } = createTestRunManager({ resumeCapabilityVerified: false });
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: false
+    });
     const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
 
     const run = manager.startRun({
@@ -368,6 +410,7 @@ describe('run manager', () => {
     expect(manager.getRun(run.id)).toMatchObject({
       errorCode: 'RESUME_CAPABILITY_UNVERIFIED'
     });
+    expect(existsSync(join(tempDir, 'argv.json'))).toBe(false);
   });
 
   it('marks a thread run failed when codex emits an empty thread id', async () => {
@@ -553,28 +596,5 @@ describe('run manager', () => {
       .poll(() => manager.getRun(run.id)?.status, { timeout: 1000 })
       .toBe('canceled');
     expect(manager.listEvents(run.id).some(event => event.type === 'done')).toBe(true);
-  });
-
-  it('fails resume_thread requests without a thread id', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
-    const fake = createFakeCodex(tempDir, { stdoutLines: [] });
-    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
-    const manager = createRunManager({
-      db,
-      dataDir: tempDir,
-      codexBin: fake.bin,
-      codexHome: join(tempDir, 'codex-home')
-    });
-
-    const run = manager.startRun({
-      prompt: 'hello',
-      cwd: tempDir,
-      profile: 'default',
-      sandbox: 'read-only',
-      resumeMode: 'resume_thread'
-    });
-
-    expect(run.status).toBe('failed');
-    expect(manager.getRun(run.id)?.errorCode).toBe('RESUME_FAILED');
   });
 });
