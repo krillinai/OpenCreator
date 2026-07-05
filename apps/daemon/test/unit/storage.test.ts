@@ -80,7 +80,6 @@ describe('runtime storage', () => {
 
     expect(() => insertEvent.run('event_2', 'run_1', 1, 'status', '{}')).toThrow();
   });
-});
 
 function createTestDatabase(): Database.Database {
   tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
@@ -158,9 +157,10 @@ it('lists thread run history and preserves archived thread data', () => {
   expect(threads.getThread('thread_1')).toMatchObject({ status: 'archived' });
   expect(runs.listRunsByThread('thread_1')).toHaveLength(1);
 
-  const firstArchivedAt = threads.getThread('thread_1')?.archived_at;
+  const fixedArchivedAt = '2026-01-01T00:00:00.000Z';
+  database.prepare('UPDATE threads SET archived_at = ? WHERE id = ?').run(fixedArchivedAt, 'thread_1');
   threads.archiveThread('thread_1');
-  expect(threads.getThread('thread_1')?.archived_at).toBe(firstArchivedAt);
+  expect(threads.getThread('thread_1')?.archived_at).toBe(fixedArchivedAt);
 });
 
 it('migrates legacy storage and preserves existing thread operations', () => {
@@ -272,11 +272,13 @@ it('migrates legacy storage and preserves existing thread operations', () => {
   expect(threads.getThread('legacy_thread_1')?.codex_thread_id).toBe('019f-legacy-thread');
 
   threads.archiveThread('legacy_thread_1');
-  const archivedAt = threads.getThread('legacy_thread_1')?.archived_at;
+  const fixedArchivedAt = '2026-01-01T00:00:00.000Z';
+  db.prepare('UPDATE threads SET archived_at = ? WHERE id = ?').run(fixedArchivedAt, 'legacy_thread_1');
   expect(threads.getThread('legacy_thread_1')).toMatchObject({ status: 'archived' });
 
   threads.archiveThread('legacy_thread_1');
-  expect(threads.getThread('legacy_thread_1')?.archived_at).toBe(archivedAt);
+  expect(threads.getThread('legacy_thread_1')?.archived_at).toBe(fixedArchivedAt);
+});
 });
 
 function columnNames(database: Database.Database, table: string): string[] {
