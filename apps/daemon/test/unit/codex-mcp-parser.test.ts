@@ -55,6 +55,20 @@ describe('codex mcp parser', () => {
     expect(result.diagnostics.join('\n')).not.toContain('secret');
   });
 
+  it('redacts separated secret flag values in unparsed get raw output', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: 'node --api-key secret',
+      stderr: '',
+      exitCode: 0
+    });
+
+    expect(result.raw).toBe('node --api-key [REDACTED]');
+    expect(result.raw).not.toContain('secret');
+  });
+
   it('maps not found get output to missing status', () => {
     const result = parseMcpGetOutput({
       name: 'github',
@@ -74,6 +88,10 @@ describe('codex mcp parser', () => {
   it('detects not found output without matching permission errors', () => {
     expect(isMcpNotFoundOutput('server not found')).toBe(true);
     expect(isMcpNotFoundOutput('No MCP server named github is configured')).toBe(true);
+    expect(isMcpNotFoundOutput('missing mcp server github')).toBe(true);
+    expect(isMcpNotFoundOutput('missing token')).toBe(false);
+    expect(isMcpNotFoundOutput('missing required env')).toBe(false);
+    expect(isMcpNotFoundOutput('missing permission')).toBe(false);
     expect(isMcpNotFoundOutput('permission denied')).toBe(false);
   });
 
@@ -133,6 +151,24 @@ describe('codex mcp parser', () => {
     expect(result.status).toBe('configured');
     expect(result.transport).toBe('stdio');
     expect(result.diagnostics.join('\n')).toContain('GITHUB_TOKEN=[REDACTED] warning');
+    expect(result.diagnostics.join('\n')).not.toContain('secret');
+  });
+
+  it('redacts separated secret flag values in stderr diagnostics', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({
+        name: 'github',
+        transport: 'stdio'
+      }),
+      stderr: 'warning --token secret',
+      exitCode: 0
+    });
+
+    expect(result.status).toBe('configured');
+    expect(result.diagnostics.join('\n')).toContain('warning --token [REDACTED]');
     expect(result.diagnostics.join('\n')).not.toContain('secret');
   });
 
@@ -218,6 +254,20 @@ describe('codex mcp parser', () => {
     expect(result.envKeys).toEqual([]);
     expect(result.hasSecrets).toBe(false);
     expect(result.diagnostics.join('\n')).toContain('server is missing');
+  });
+
+  it('does not map JSON diagnostics about missing token to missing status', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({ name: 'github', transport: 'stdio', diagnostics: ['missing token'] }),
+      stderr: '',
+      exitCode: 1
+    });
+
+    expect(result.status).not.toBe('missing');
+    expect(result.status).toBe('configured');
   });
 
   it('adds diagnostics when list output contains non-object entries', () => {

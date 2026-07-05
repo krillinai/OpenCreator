@@ -67,7 +67,7 @@ export function parseMcpGetOutput(input: ParseMcpGetOutputInput): CodexMcpServer
         codexHome: input.codexHome,
         codexHomeMode: input.codexHomeMode,
         diagnostics: ['codex mcp get output was not fully recognized'],
-        raw: redactMcpText(output)
+        raw: redactMcpFreeText(output)
       };
 }
 
@@ -108,7 +108,9 @@ export function parseMcpListOutput(input: ParseMcpListOutputInput): CodexMcpList
 }
 
 export function isMcpNotFoundOutput(output: string): boolean {
-  return /\b(?:not found|not configured|no mcp server named|missing)\b/i.test(output);
+  return /\b(?:not found|not configured|no mcp server named|missing\s+mcp\s+server|mcp\s+server\b[\s\S]*\bmissing)\b/i.test(
+    output
+  );
 }
 
 function mapServer(
@@ -180,7 +182,7 @@ function missingServerResponse(
   };
 
   if (rawOutput !== undefined) {
-    result.raw = redactMcpText(rawOutput);
+    result.raw = redactMcpFreeText(rawOutput);
   }
 
   return result;
@@ -241,11 +243,11 @@ function getDiagnostics(diagnostics: unknown, sensitiveValues: string[]): string
   }
   return diagnostics
     .filter((diagnostic): diagnostic is string => typeof diagnostic === 'string')
-    .map((diagnostic) => redactMcpText(diagnostic, sensitiveValues));
+    .map((diagnostic) => redactMcpFreeText(diagnostic, sensitiveValues));
 }
 
 function redactedTextDiagnostics(text: string, sensitiveValues: string[]): string[] {
-  const diagnostic = redactMcpText(text, sensitiveValues).trim();
+  const diagnostic = redactMcpFreeText(text, sensitiveValues).trim();
   return diagnostic.length === 0 ? [] : [diagnostic];
 }
 
@@ -265,10 +267,7 @@ function jsonObjectIndicatesMissing(value: Record<string, unknown>): boolean {
 }
 
 function redactMcpCommand(command: string, sensitiveValues: string[]): string {
-  return redactMcpText(command, sensitiveValues).replace(
-    SECRET_ARG_FLAG_IN_COMMAND,
-    (_match, flag: string, separator: string) => `${flag}${separator}${REDACTED}`
-  );
+  return redactMcpFreeText(command, sensitiveValues);
 }
 
 function redactMcpArgs(args: string[], sensitiveValues: string[]): string[] {
@@ -286,4 +285,11 @@ function redactMcpArgs(args: string[], sensitiveValues: string[]): string[] {
 
 function isSecretArgFlag(arg: string): boolean {
   return SECRET_ARG_FLAGS.has(arg.toLowerCase());
+}
+
+function redactMcpFreeText(text: string, sensitiveValues: string[] = []): string {
+  return redactMcpText(text, sensitiveValues).replace(
+    SECRET_ARG_FLAG_IN_COMMAND,
+    (_match, flag: string, separator: string) => `${flag}${separator}${REDACTED}`
+  );
 }
