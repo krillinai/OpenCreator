@@ -1,4 +1,4 @@
-import type { ThreadResponse } from '@clawee/protocol';
+import type { RunResponse, ThreadResponse, ThreadRunsResponse } from '@clawee/protocol';
 import type { FastifyInstance } from 'fastify';
 import type { RunManager } from '../runs/manager.js';
 import type { CreateRuntimeThreadInput, RuntimeThread, ThreadManager } from '../threads/types.js';
@@ -45,7 +45,15 @@ export async function registerThreadRoutes(
     const limit = parseLimitQuery(request.query);
     if (!limit.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', limit.message));
 
-    return { runs: runManager.listRunsByThread(id, limit.value) };
+    const response: ThreadRunsResponse = {
+      runs: runManager.listRunsByThread(id, limit.value).map((run): RunResponse => ({
+        id: run.id,
+        threadId: run.threadId,
+        codexThreadId: run.codexThreadId,
+        status: run.status
+      }))
+    };
+    return response;
   });
 
   server.post('/threads/:id/archive', async (request, reply) => {

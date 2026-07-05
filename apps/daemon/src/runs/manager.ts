@@ -8,7 +8,12 @@ import { CodexExecError, startCodexExec } from '../codex/runner.js';
 import { normalizerVersion, normalizeCodexEvent } from '../events/normalizer.js';
 import { parseJsonLine } from '../events/parser.js';
 import { redactText } from '../security/redaction.js';
-import { createRunRepository, type RunRow } from '../storage/repositories.js';
+import {
+  createRunRepository,
+  type ResolvedResumeMode,
+  type RunQueueState,
+  type RunRow
+} from '../storage/repositories.js';
 import type { RuntimeThread } from '../threads/types.js';
 import type { CreatedRun, CreateRunInput } from './types.js';
 
@@ -78,6 +83,12 @@ type QueuedRun = {
 
 export function createRunManager(options: RunManagerOptions): RunManager {
   const runs = createRunRepository(options.db);
+  const listRunsByThreadNewestFirst = options.db.prepare<{ threadId: string; limit: number }>(`
+    SELECT * FROM runs
+    WHERE thread_id = @threadId
+    ORDER BY created_at DESC, rowid DESC
+    LIMIT @limit
+  `);
   const activeRuns = new Map<string, ActiveRun>();
   const runCompletions = new Map<string, Promise<CreatedRun>>();
   const queuedCompletionResolvers = new Map<string, (run: CreatedRun) => void>();
@@ -199,7 +210,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     },
 
     listRunsByThread(threadId: string, limit?: number): RuntimeRun[] {
-      return runs.listRunsByThread(threadId, limit).map(mapRunRow);
+      return (listRunsByThreadNewestFirst.all({ threadId, limit: limit ?? 50 }) as RunRow[]).map(mapRunRow);
     },
 
     listEvents(runId: string, afterSeq?: number): AgentEventEnvelope[] {
@@ -227,6 +238,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       : options.threadAccess?.getThread(runInput.threadId);
     const resolvedResumeMode = resolveResumeMode(runInput, thread);
     const codexThreadId = thread?.codexThreadId ?? undefined;
+    let resolvedCodexThreadId = resolvedResumeMode === 'resume_thread' ? codexThreadId : undefined;
+    const plannedArgv = buildRunArgv(runInput, resolvedResumeMode, resolvedCodexThreadId);
 
     runs.setRunResumeMode(id, resolvedResumeMode);
     if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'started');
@@ -248,6 +261,16 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         message: failure.message,
         terminationReason: failure.terminationReason,
         threadId: runInput.threadId,
+        diagnostics: buildThreadRunDiagnosticsMetadata({
+          runInput,
+          resumeMode: resolvedResumeMode,
+          codexThreadId: resolvedCodexThreadId,
+          argv: plannedArgv,
+          queueState: runs.getRun(id)?.queue_state,
+          errorCode: failure.code,
+          errorMessage: failure.message,
+          terminationReason: failure.terminationReason
+        }),
         publish
       });
       resolveRunCompletion(id, run);
@@ -256,7 +279,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       return run;
     };
 
-    if (resolvedResumeMode === 'resume_thread' && codexThreadId === undefined) {
+    if (plannedArgv === undefined) {
       return failBeforeSpawnAndRelease({
         code: 'CODEX_THREAD_ID_MISSING',
         message: 'resume_thread requires a persisted codexThreadId',
@@ -276,21 +299,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     let seq = lastSeqForRun(id);
     let sawTurnCompleted = false;
     let sawCodexThreadId = resolvedResumeMode === 'resume_thread';
-    const codexArgs = resolvedResumeMode === 'resume_thread'
-      ? buildCodexResumeArgs({
-          codexThreadId: codexThreadId!,
-          model: runInput.model,
-          reasoning: runInput.reasoning
-        })
-      : buildCodexExecArgs({
-          profile: runInput.profile,
-          cwd: runInput.cwd,
-          sandbox: runInput.sandbox,
-          model: runInput.model,
-          reasoning: runInput.reasoning
-        });
+    const codexArgs = plannedArgv;
     if (resolvedResumeMode === 'resume_thread') {
-      runs.setRunCodexThreadId(id, codexThreadId!);
+      runs.setRunCodexThreadId(id, resolvedCodexThreadId!);
     }
     writeJson(join(runDir, 'meta.json'), {
       id,
@@ -336,13 +347,14 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         }
 
         if (isThreadStarted(parsed.value)) {
-          const codexThreadId = parsed.value.thread_id;
+          const parsedCodexThreadId = parsed.value.thread_id;
           sawCodexThreadId = true;
-          runs.setRunCodexThreadId(id, codexThreadId);
-          if (runInput.threadId) options.threadAccess?.setCodexThreadId(runInput.threadId, codexThreadId);
+          resolvedCodexThreadId = parsedCodexThreadId;
+          runs.setRunCodexThreadId(id, parsedCodexThreadId);
+          if (runInput.threadId) options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
           publishStatus(id, seq, 'initializing', publish, {
             threadId: runInput.threadId,
-            codexThreadId
+            codexThreadId: parsedCodexThreadId
           });
           return;
         }
@@ -384,20 +396,26 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         const errorMessage = missingCodexThreadId
           ? CODEX_THREAD_ID_MISSING_MESSAGE
           : resumeFailureCode === undefined
-            ? undefined
+            ? streamError
+              ? 'Codex stream ended without turn.completed'
+              : undefined
             : 'Codex resume failed';
         writeJson(join(runDir, 'diagnostics.json'), {
+          ...buildThreadRunDiagnosticsMetadata({
+            runInput,
+            resumeMode: resolvedResumeMode,
+            codexThreadId: resolvedCodexThreadId,
+            argv: codexArgs,
+            queueState: runs.getRun(id)?.queue_state,
+            errorCode: errorCode ?? null,
+            errorMessage: errorMessage ?? null,
+            terminationReason
+          }),
           exitCode: result.exitCode,
           signal: result.signal,
           terminationReason,
           ...(errorCode === undefined ? {} : { errorCode }),
-          ...(missingCodexThreadId
-            ? { error: errorMessage }
-            : resumeFailureCode !== undefined
-              ? { error: errorMessage }
-            : streamError
-              ? { error: 'Codex stream ended without turn.completed' }
-              : {})
+          ...(errorMessage === undefined ? {} : { error: errorMessage, errorMessage })
         });
         if (missingCodexThreadId) {
           publishError(
@@ -435,14 +453,27 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         const terminationReason = errorToTerminationReason(error);
         const publicStatus: PublicRunStatus =
           terminationReason === 'user_canceled' ? 'canceled' : 'failed';
+        const errorCode = errorCodeForTermination(terminationReason);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         writeJson(join(runDir, 'diagnostics.json'), {
-          error: error instanceof Error ? error.message : String(error),
+          ...buildThreadRunDiagnosticsMetadata({
+            runInput,
+            resumeMode: resolvedResumeMode,
+            codexThreadId: resolvedCodexThreadId,
+            argv: codexArgs,
+            queueState: runs.getRun(id)?.queue_state,
+            errorCode,
+            errorMessage,
+            terminationReason
+          }),
+          error: errorMessage,
+          errorMessage,
           terminationReason
         });
         updateStatus(id, publicStatus, publicStatus, {
           terminationReason,
-          errorCode: errorCodeForTermination(terminationReason),
-          errorMessage: error instanceof Error ? error.message : String(error),
+          errorCode,
+          errorMessage,
           endedAt: new Date().toISOString()
         });
         if (error instanceof CodexExecError) {
@@ -480,11 +511,14 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     message: string;
     terminationReason: TerminationReason;
     threadId?: string;
+    diagnostics?: Record<string, unknown>;
     publish: (event: AgentEventEnvelope) => void;
   }): CreatedRun {
     const endedAt = new Date().toISOString();
     writeJson(join(input.runDir, 'diagnostics.json'), {
+      ...input.diagnostics,
       error: input.message,
+      errorMessage: input.message,
       errorCode: input.code,
       terminationReason: input.terminationReason
     });
@@ -639,7 +673,13 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         endedAt: new Date().toISOString()
       });
       writeJson(join(options.dataDir, 'runs', run.id, 'diagnostics.json'), {
+        ...buildThreadRunDiagnosticsMetadataFromRow(run, {
+          errorCode: orphanErrorCode,
+          errorMessage: orphanErrorMessage,
+          terminationReason: 'daemon_restart'
+        }),
         error: orphanErrorMessage,
+        errorMessage: orphanErrorMessage,
         errorCode: orphanErrorCode,
         terminationReason: 'daemon_restart'
       });
@@ -664,6 +704,81 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
 function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function buildRunArgv(
+  input: CreateRunInput,
+  resumeMode: ResolvedResumeMode,
+  codexThreadId?: string
+): string[] | undefined {
+  if (resumeMode === 'resume_thread') {
+    if (codexThreadId === undefined) return undefined;
+    return buildCodexResumeArgs({
+      codexThreadId,
+      model: input.model,
+      reasoning: input.reasoning
+    });
+  }
+
+  return buildCodexExecArgs({
+    profile: input.profile,
+    cwd: input.cwd,
+    sandbox: input.sandbox,
+    model: input.model,
+    reasoning: input.reasoning
+  });
+}
+
+function buildThreadRunDiagnosticsMetadata(input: {
+  runInput: CreateRunInput;
+  resumeMode: ResolvedResumeMode;
+  codexThreadId?: string;
+  argv?: string[];
+  queueState?: RunQueueState;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  terminationReason?: TerminationReason;
+}): Record<string, unknown> {
+  if (input.runInput.threadId === undefined) return {};
+
+  return {
+    threadId: input.runInput.threadId,
+    codexThreadId: input.codexThreadId ?? null,
+    resumeMode: input.resumeMode,
+    argv: input.argv ?? null,
+    cwd: input.runInput.cwd,
+    profile: input.runInput.profile,
+    sandbox: input.runInput.sandbox,
+    queueState: input.queueState ?? 'none',
+    errorCode: input.errorCode ?? null,
+    errorMessage: input.errorMessage ?? null,
+    ...(input.terminationReason === undefined ? {} : { terminationReason: input.terminationReason })
+  };
+}
+
+function buildThreadRunDiagnosticsMetadataFromRow(
+  run: RunRow,
+  failure: {
+    errorCode: string;
+    errorMessage: string;
+    terminationReason: TerminationReason;
+  }
+): Record<string, unknown> {
+  if (run.thread_id === null) return {};
+
+  return {
+    threadId: run.thread_id,
+    codexThreadId: run.codex_thread_id,
+    resumeMode: run.resume_mode ?? 'independent',
+    argv: null,
+    cwd: run.cwd,
+    profile: run.profile,
+    sandbox: run.sandbox,
+    queueState: run.queue_state,
+    errorCode: failure.errorCode,
+    errorMessage: failure.errorMessage,
+    terminationReason: failure.terminationReason
+  };
 }
 
 function publishStatus(

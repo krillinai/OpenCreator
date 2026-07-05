@@ -307,6 +307,38 @@ describe('runtime api', () => {
     );
   });
 
+  it('lists runs for a thread in newest-first order', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      resumeCapabilityVerified: true
+    });
+
+    const thread = await createThreadViaApi();
+    const first = await authPost('/runs', { threadId: thread.id, prompt: 'first' });
+    const second = await authPost('/runs', { threadId: thread.id, prompt: 'second' });
+
+    await waitForRunStatus(first.json().id, 'succeeded');
+    await waitForRunStatus(second.json().id, 'succeeded');
+
+    const history = await authGet(`/threads/${thread.id}/runs`);
+    expect(history.statusCode).toBe(200);
+    expect(history.json().runs.map((run: { id: string }) => run.id)).toEqual([
+      second.json().id,
+      first.json().id
+    ]);
+  });
+
   it('allows equivalent cwd paths when checking immutable thread config', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
