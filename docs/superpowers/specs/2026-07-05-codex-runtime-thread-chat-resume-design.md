@@ -16,6 +16,21 @@ Codex CLI 本身已经提供 `codex exec resume` 能力，但这是外部 ABI。
 
 因此，R2 不只是新增 thread CRUD，而是把 thread、run、Codex resume、串行调度、能力矩阵、错误诊断和验收测试作为一个完整闭环实现。
 
+## 1.1 当前 Codex ABI 复验记录
+
+2026-07-05 已在本机升级后的 `codex-cli 0.142.5` 上做过最小复验：
+
+1. `codex exec --json --skip-git-repo-check --sandbox read-only -C <cwd>` 可以通过 stdin prompt 启动，并输出合法 JSONL。
+2. 第一轮事件包含 `thread.started`、`turn.started`、`item.completed agent_message` 和 `turn.completed`。
+3. 可以从 `thread.started.thread_id` 捕获 Codex session id。
+4. `codex exec resume <thread_id> --json` 可以恢复同一上下文；第二轮要求复述第一轮 marker，返回结果一致。
+5. 裸 `-` stdin 哨兵已验证可用，但 R2 默认仍可以直接通过 stdin 写入 prompt，不依赖该形态作为唯一输入方式。
+6. `codex exec resume --help` 支持 `SESSION_ID`、prompt、`--last`、`--all`、`--json`、`-m/--model`、`-c/--config`、`--skip-git-repo-check`、`--ephemeral`、`--ignore-user-config`、`--ignore-rules` 和 `--output-schema`。
+7. `codex exec resume --help` 未显示 `-C/--cd`、`-p/--profile`、`--sandbox` 或 `--add-dir`，因此 R2 仍必须坚持 thread 配置固化，不能允许后续 run 覆盖 cwd/profile/sandbox。
+8. smoke 中 stderr 出现 auth refresh 401 诊断，但进程 exit code 为 0 且 stdout JSONL 完整成功；stderr 中出现 `ERROR` 不能单独决定 run 失败。
+
+该复验增强了 R2 方向的可信度，但不替代实现期的 gated real Codex smoke。R2 仍必须把能力检测结果写入 capability matrix，并通过 `/codex/status` 暴露。
+
 ## 2. 目标
 
 R2 必须完成以下目标：
