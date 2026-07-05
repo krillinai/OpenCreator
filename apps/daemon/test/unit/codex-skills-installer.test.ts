@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -52,6 +52,17 @@ describe('codex skills installer', () => {
     expect(deleted.backupPath).toEqual(expect.stringContaining('backups'));
     expect(existsSync(deleted.backupPath ?? '')).toBe(true);
     expect(existsSync(join(codexHome, 'skills', 'writer'))).toBe(false);
+  });
+
+  it('rejects a sourcePath directory that is a symlink', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
+    const source = createSourceSkill('writer', 'first');
+    const linkedSource = join(tempDir, 'linked-writer');
+    const codexHome = join(tempDir, 'codex-home');
+    const installer = createSkillInstaller({ codexHome });
+    symlinkSync(source, linkedSource);
+
+    await expect(installer.install({ sourcePath: linkedSource, id: 'writer' })).rejects.toThrow(/CODEX_SKILL_INVALID/);
   });
 });
 

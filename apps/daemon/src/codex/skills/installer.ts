@@ -1,6 +1,7 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -55,6 +56,10 @@ function installSkill(
 ): { id: string; backupPath: string | null } {
   if (!existsSync(request.sourcePath)) {
     throw new Error(`CODEX_SKILL_INVALID: sourcePath does not exist: ${request.sourcePath}`);
+  }
+  const requestedPathStat = lstatSync(request.sourcePath);
+  if (requestedPathStat.isSymbolicLink()) {
+    throw new Error(`CODEX_SKILL_INVALID: symlink is not allowed: ${request.sourcePath}`);
   }
   const sourcePath = realpathSync(request.sourcePath);
   if (!statSync(sourcePath).isDirectory()) {
