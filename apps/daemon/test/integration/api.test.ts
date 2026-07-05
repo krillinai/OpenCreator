@@ -405,6 +405,26 @@ describe('runtime api', () => {
     expect(archived.json().error.code).toBe('THREAD_ARCHIVED');
   });
 
+  it('rejects archiving a thread with queued or running runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, { stdoutLines: [{ type: 'turn.started' }], hang: true });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+    const thread = await createThreadViaApi();
+    const run = (await authPost('/runs', { threadId: thread.id, prompt: 'hang' })).json();
+
+    const archived = await authPost(`/threads/${thread.id}/archive`, {});
+    expect(archived.statusCode).toBe(409);
+    expect(archived.json().error.code).toBe('THREAD_HAS_ACTIVE_RUN');
+
+    await authPost(`/runs/${run.id}/cancel`, {});
+    await waitForRunStatus(run.id, 'canceled');
+  });
+
   it('replays events after fromSeq and Last-Event-ID', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
@@ -704,6 +724,15 @@ function authGet(url: string) {
     url,
     headers: { authorization: 'Bearer secret' }
   });
+}
+
+async function createThreadViaApi() {
+  return (await authPost('/threads', {
+    workspaceMode: 'external',
+    cwd: tempDir,
+    profile: 'default',
+    sandbox: 'read-only'
+  })).json().thread;
 }
 
 async function waitForRunStatus(runId: string, status: string): Promise<void> {

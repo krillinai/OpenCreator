@@ -7,7 +7,7 @@ import { apiError } from './errors.js';
 export async function registerThreadRoutes(
   server: FastifyInstance,
   manager: ThreadManager,
-  runManager: Pick<RunManager, 'listRunsByThread'>
+  runManager: Pick<RunManager, 'hasActiveRunForThread' | 'listRunsByThread'>
 ): Promise<void> {
   server.post<{ Body: unknown }>('/threads', async (request, reply) => {
     const body = parseCreateThreadRequest(request.body);
@@ -50,6 +50,12 @@ export async function registerThreadRoutes(
 
   server.post('/threads/:id/archive', async (request, reply) => {
     const { id } = request.params as { id: string };
+    if (manager.getThread(id) === undefined) {
+      return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+    }
+    if (runManager.hasActiveRunForThread(id)) {
+      return reply.code(409).send(apiError('THREAD_HAS_ACTIVE_RUN', 'Thread has active run'));
+    }
     try {
       const thread = manager.archiveThread(id);
       return { thread: toThreadResponse(thread) };

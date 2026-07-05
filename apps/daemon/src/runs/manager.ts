@@ -54,6 +54,7 @@ export type RunManager = {
   createAndRun(input: CreateRunInput): Promise<CreatedRun>;
   cancelRun(id: string): boolean;
   getRun(id: string): RuntimeRun | undefined;
+  hasActiveRunForThread(threadId: string): boolean;
   listRuns(limit?: number): RuntimeRun[];
   listRunsByThread(threadId: string, limit?: number): RuntimeRun[];
   listEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
@@ -69,9 +70,19 @@ type ActiveRun = {
   done: Promise<CreatedRun>;
 };
 
+type QueuedRun = {
+  id: string;
+  input: CreateRunInput;
+  runDir: string;
+};
+
 export function createRunManager(options: RunManagerOptions): RunManager {
   const runs = createRunRepository(options.db);
   const activeRuns = new Map<string, ActiveRun>();
+  const runCompletions = new Map<string, Promise<CreatedRun>>();
+  const queuedCompletionResolvers = new Map<string, (run: CreatedRun) => void>();
+  const threadQueues = new Map<string, QueuedRun[]>();
+  const runningThreadRun = new Map<string, string>();
   const subscribers = new Map<string, Set<RunEventSubscriber>>();
 
   const publish = (event: AgentEventEnvelope) => {
@@ -114,230 +125,73 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       const id = insertInitialRun(input, resolvedResumeMode, codexThreadId);
       const runDir = join(options.dataDir, 'runs', id);
 
-      if (resolvedResumeMode === 'resume_thread' && codexThreadId === undefined) {
-        return failRunBeforeSpawn({
-          id,
-          runDir,
-          code: 'CODEX_THREAD_ID_MISSING',
-          message: 'resume_thread requires a persisted codexThreadId',
-          terminationReason: 'stream_error',
-          publish
+      if (input.threadId !== undefined && runningThreadRun.has(input.threadId)) {
+        updateStatus(id, 'queued', 'queued');
+        runs.setRunQueueState(id, 'queued');
+        publishStatus(id, 1, 'queued', publish, {
+          threadId: input.threadId,
+          codexThreadId
         });
-      }
-      if (resolvedResumeMode === 'resume_thread' && options.resumeCapabilityVerified !== true) {
-        return failRunBeforeSpawn({
-          id,
-          runDir,
-          code: 'RESUME_CAPABILITY_UNVERIFIED',
-          message: 'Codex resume capability has not been verified',
-          terminationReason: 'stream_error',
-          publish
+        let resolveCompletion!: (run: CreatedRun) => void;
+        const completion = new Promise<CreatedRun>(resolve => {
+          resolveCompletion = resolve;
         });
+        runCompletions.set(id, completion);
+        queuedCompletionResolvers.set(id, resolveCompletion);
+        const queue = threadQueues.get(input.threadId) ?? [];
+        queue.push({ id, input, runDir });
+        threadQueues.set(input.threadId, queue);
+        return { id, status: 'queued' };
       }
 
-      const stdoutLines: string[] = [];
-      let stderr = '';
-      let seq = 0;
-      let sawTurnCompleted = false;
-      let sawCodexThreadId = resolvedResumeMode === 'resume_thread';
-      const codexArgs = resolvedResumeMode === 'resume_thread'
-        ? buildCodexResumeArgs({
-            codexThreadId: codexThreadId!,
-            model: input.model,
-            reasoning: input.reasoning
-          })
-        : buildCodexExecArgs({
-            profile: input.profile,
-            cwd: input.cwd,
-            sandbox: input.sandbox,
-            model: input.model,
-            reasoning: input.reasoning
-          });
-      if (resolvedResumeMode === 'resume_thread') {
-        runs.setRunCodexThreadId(id, codexThreadId!);
-      }
-      if (resolvedResumeMode === 'new_thread' && codexThreadId !== undefined) {
-        publishDiagnostic(
-          id,
-          ++seq,
-          'THREAD_CODEX_SESSION_RESET',
-          'Starting a new Codex session for a thread that already had a Codex session',
-          publish,
-          { previousCodexThreadId: codexThreadId }
-        );
-      }
-
-      const process = startCodexExec({
-        codexBin: options.codexBin,
-        codexHome: options.codexHome,
-        cwd: input.cwd,
-        args: codexArgs,
-        prompt: input.prompt,
-        timeoutMs: options.timeoutMs ?? EXEC_TIMEOUT_MS,
-        spawnTimeoutMs: options.spawnTimeoutMs,
-        inactivityTimeoutMs: options.inactivityTimeoutMs ?? EXEC_INACTIVITY_TIMEOUT_MS,
-        onStdoutLine(line) {
-          const redactedLine = redactText(line);
-          stdoutLines.push(redactedLine);
-          appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactedLine}\n`);
-
-          const parsed = parseJsonLine(redactedLine);
-          seq += 1;
-          if (!parsed.ok) {
-            publishDiagnostic(id, seq, 'CODEX_STREAM_ERROR', parsed.error, publish, {
-              line: redactedLine
-            });
-            return;
-          }
-
-          if (isThreadStarted(parsed.value)) {
-            const codexThreadId = parsed.value.thread_id;
-            sawCodexThreadId = true;
-            runs.setRunCodexThreadId(id, codexThreadId);
-            if (input.threadId) options.threadAccess?.setCodexThreadId(input.threadId, codexThreadId);
-            publishStatus(id, seq, 'initializing', publish, {
-              threadId: input.threadId,
-              codexThreadId
-            });
-            return;
-          }
-          if (isTurnCompleted(parsed.value)) sawTurnCompleted = true;
-          publish(normalizeCodexEvent({ runId: id, seq, raw: parsed.value }));
-        },
-        onStderrChunk(chunk) {
-          const redactedChunk = redactText(chunk);
-          stderr += redactedChunk;
-          appendFileSync(join(runDir, 'stderr.redacted.log'), redactedChunk);
-        }
-      });
-
-      updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
-
-      const done = process.result
-        .then(result => {
-          const exitedSuccessfully =
-            result.exitCode === 0 && result.terminationReason !== 'canceled';
-          const missingCodexThreadId =
-            exitedSuccessfully && input.threadId !== undefined && !sawCodexThreadId;
-          const streamError = exitedSuccessfully && (!sawTurnCompleted || missingCodexThreadId);
-          const publicStatus: PublicRunStatus = result.terminationReason === 'canceled'
-            ? 'canceled'
-            : result.exitCode === 0 && !streamError
-              ? 'succeeded'
-              : 'failed';
-          const terminationReason = streamError ? 'stream_error' : resultToTerminationReason(result);
-          const resumeFailureCode =
-            resolvedResumeMode === 'resume_thread'
-              && result.terminationReason !== 'canceled'
-              && result.exitCode !== 0
-              && !streamError
-              ? classifyResumeFailure(stdoutLines, stderr)
-              : undefined;
-          const errorCode = missingCodexThreadId
-            ? 'CODEX_THREAD_ID_MISSING'
-            : resumeFailureCode;
-          const errorMessage = missingCodexThreadId
-            ? CODEX_THREAD_ID_MISSING_MESSAGE
-            : resumeFailureCode === undefined
-              ? undefined
-              : 'Codex resume failed';
-          writeJson(join(runDir, 'diagnostics.json'), {
-            exitCode: result.exitCode,
-            signal: result.signal,
-            terminationReason,
-            ...(errorCode === undefined ? {} : { errorCode }),
-            ...(missingCodexThreadId
-              ? { error: errorMessage }
-              : resumeFailureCode !== undefined
-                ? { error: errorMessage }
-              : streamError
-                ? { error: 'Codex stream ended without turn.completed' }
-                : {})
-          });
-          if (missingCodexThreadId) {
-            publishError(
-              id,
-              ++seq,
-              'CODEX_THREAD_ID_MISSING',
-              CODEX_THREAD_ID_MISSING_MESSAGE,
-              publish
-            );
-          } else if (streamError) {
-            publishDiagnostic(
-              id,
-              ++seq,
-              'CODEX_STREAM_ERROR',
-              'Codex stream ended without turn.completed',
-              publish
-            );
-          }
-          updateStatus(id, publicStatus, publicStatus, {
-            terminationReason,
-            exitCode: result.exitCode,
-            signal: result.signal,
-            ...(errorCode === undefined ? {} : { errorCode }),
-            ...(errorMessage === undefined ? {} : { errorMessage }),
-            endedAt: new Date().toISOString()
-          });
-
-          if (!hasDoneEvent(id)) publishDone(id, ++seq, publicStatus, terminationReason, publish);
-          activeRuns.delete(id);
-          return { id, status: publicStatus };
-        })
-        .catch(error => {
-          const terminationReason = errorToTerminationReason(error);
-          const publicStatus: PublicRunStatus =
-            terminationReason === 'user_canceled' ? 'canceled' : 'failed';
-          writeJson(join(runDir, 'diagnostics.json'), {
-            error: error instanceof Error ? error.message : String(error),
-            terminationReason
-          });
-          updateStatus(id, publicStatus, publicStatus, {
-            terminationReason,
-            errorCode: errorCodeForTermination(terminationReason),
-            errorMessage: error instanceof Error ? error.message : String(error),
-            endedAt: new Date().toISOString()
-          });
-          if (error instanceof CodexExecError) {
-            for (const line of error.stdoutLines.slice(stdoutLines.length)) {
-              appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactText(line)}\n`);
-            }
-            if (stderr.length === 0 && error.stderr.length > 0) {
-              appendFileSync(join(runDir, 'stderr.redacted.log'), redactText(error.stderr));
-            }
-          }
-          publishDone(id, ++seq, publicStatus, terminationReason, publish);
-          activeRuns.delete(id);
-          return { id, status: publicStatus };
-        });
-
-      activeRuns.set(id, {
-        cancel() {
-          updateStatus(id, 'running', 'canceling');
-          publishStatus(id, ++seq, 'canceling', publish);
-          process.cancel();
-        },
-        done
-      });
-
-      return { id, status: 'running' };
+      return startExistingRun({ id, input, runDir });
     },
 
     async createAndRun(input: CreateRunInput): Promise<CreatedRun> {
       const run = manager.startRun(input);
-      return activeRuns.get(run.id)?.done ?? run;
+      return runCompletions.get(run.id) ?? activeRuns.get(run.id)?.done ?? run;
     },
 
     cancelRun(id: string): boolean {
       const active = activeRuns.get(id);
-      if (active === undefined) return false;
-      active.cancel();
+      if (active !== undefined) {
+        active.cancel();
+        return true;
+      }
+
+      const queued = removeQueuedRun(id);
+      if (queued === undefined) return false;
+
+      const endedAt = new Date().toISOString();
+      const seq = nextSeqForRun(id);
+      updateStatus(id, 'canceled', 'canceled', {
+        terminationReason: 'user_canceled',
+        endedAt
+      });
+      runs.setRunQueueState(id, 'none');
+      publishStatus(id, seq, 'canceling', publish, { threadId: queued.threadId });
+      publishDone(id, seq + 1, 'canceled', 'user_canceled', publish);
+      resolveRunCompletion(id, { id, status: 'canceled' });
       return true;
     },
 
     getRun(id: string): RuntimeRun | undefined {
       const row = runs.getRun(id);
       return row === undefined ? undefined : mapRunRow(row);
+    },
+
+    hasActiveRunForThread(threadId: string): boolean {
+      if (runningThreadRun.has(threadId)) return true;
+      if ((threadQueues.get(threadId)?.length ?? 0) > 0) return true;
+      return runs
+        .listRunsByThread(threadId, 10_000)
+        .some(run =>
+          run.public_status === 'queued'
+          || run.public_status === 'running'
+          || run.internal_status === 'queued'
+          || run.internal_status === 'running'
+          || run.internal_status === 'canceling'
+        );
     },
 
     listRuns(limit?: number): RuntimeRun[] {
@@ -363,6 +217,255 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     }
   };
 
+  function startExistingRun(input: QueuedRun): CreatedRun {
+    const { id, runDir } = input;
+    const runInput = input.input;
+    if (runInput.threadId !== undefined) runningThreadRun.set(runInput.threadId, id);
+
+    const thread = runInput.threadId === undefined
+      ? undefined
+      : options.threadAccess?.getThread(runInput.threadId);
+    const resolvedResumeMode = resolveResumeMode(runInput, thread);
+    const codexThreadId = thread?.codexThreadId ?? undefined;
+
+    if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'started');
+
+    const failBeforeSpawnAndRelease = (failure: {
+      code: string;
+      message: string;
+      terminationReason: TerminationReason;
+    }): CreatedRun => {
+      const run = failRunBeforeSpawn({
+        id,
+        runDir,
+        code: failure.code,
+        message: failure.message,
+        terminationReason: failure.terminationReason,
+        publish
+      });
+      resolveRunCompletion(id, run);
+      if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
+      completeThreadRun(runInput.threadId, id);
+      return run;
+    };
+
+    if (resolvedResumeMode === 'resume_thread' && codexThreadId === undefined) {
+      return failBeforeSpawnAndRelease({
+        code: 'CODEX_THREAD_ID_MISSING',
+        message: 'resume_thread requires a persisted codexThreadId',
+        terminationReason: 'stream_error'
+      });
+    }
+    if (resolvedResumeMode === 'resume_thread' && options.resumeCapabilityVerified !== true) {
+      return failBeforeSpawnAndRelease({
+        code: 'RESUME_CAPABILITY_UNVERIFIED',
+        message: 'Codex resume capability has not been verified',
+        terminationReason: 'stream_error'
+      });
+    }
+
+    const stdoutLines: string[] = [];
+    let stderr = '';
+    let seq = lastSeqForRun(id);
+    let sawTurnCompleted = false;
+    let sawCodexThreadId = resolvedResumeMode === 'resume_thread';
+    const codexArgs = resolvedResumeMode === 'resume_thread'
+      ? buildCodexResumeArgs({
+          codexThreadId: codexThreadId!,
+          model: runInput.model,
+          reasoning: runInput.reasoning
+        })
+      : buildCodexExecArgs({
+          profile: runInput.profile,
+          cwd: runInput.cwd,
+          sandbox: runInput.sandbox,
+          model: runInput.model,
+          reasoning: runInput.reasoning
+        });
+    if (resolvedResumeMode === 'resume_thread') {
+      runs.setRunCodexThreadId(id, codexThreadId!);
+    }
+    writeJson(join(runDir, 'meta.json'), {
+      id,
+      args: codexArgs,
+      cwd: runInput.cwd,
+      profile: runInput.profile,
+      sandbox: runInput.sandbox,
+      threadId: runInput.threadId,
+      resumeMode: resolvedResumeMode
+    });
+    if (resolvedResumeMode === 'new_thread' && codexThreadId !== undefined) {
+      publishDiagnostic(
+        id,
+        ++seq,
+        'THREAD_CODEX_SESSION_RESET',
+        'Starting a new Codex session for a thread that already had a Codex session',
+        publish,
+        { previousCodexThreadId: codexThreadId }
+      );
+    }
+
+    const process = startCodexExec({
+      codexBin: options.codexBin,
+      codexHome: options.codexHome,
+      cwd: runInput.cwd,
+      args: codexArgs,
+      prompt: runInput.prompt,
+      timeoutMs: options.timeoutMs ?? EXEC_TIMEOUT_MS,
+      spawnTimeoutMs: options.spawnTimeoutMs,
+      inactivityTimeoutMs: options.inactivityTimeoutMs ?? EXEC_INACTIVITY_TIMEOUT_MS,
+      onStdoutLine(line) {
+        const redactedLine = redactText(line);
+        stdoutLines.push(redactedLine);
+        appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactedLine}\n`);
+
+        const parsed = parseJsonLine(redactedLine);
+        seq += 1;
+        if (!parsed.ok) {
+          publishDiagnostic(id, seq, 'CODEX_STREAM_ERROR', parsed.error, publish, {
+            line: redactedLine
+          });
+          return;
+        }
+
+        if (isThreadStarted(parsed.value)) {
+          const codexThreadId = parsed.value.thread_id;
+          sawCodexThreadId = true;
+          runs.setRunCodexThreadId(id, codexThreadId);
+          if (runInput.threadId) options.threadAccess?.setCodexThreadId(runInput.threadId, codexThreadId);
+          publishStatus(id, seq, 'initializing', publish, {
+            threadId: runInput.threadId,
+            codexThreadId
+          });
+          return;
+        }
+        if (isTurnCompleted(parsed.value)) sawTurnCompleted = true;
+        publish(normalizeCodexEvent({ runId: id, seq, raw: parsed.value }));
+      },
+      onStderrChunk(chunk) {
+        const redactedChunk = redactText(chunk);
+        stderr += redactedChunk;
+        appendFileSync(join(runDir, 'stderr.redacted.log'), redactedChunk);
+      }
+    });
+
+    updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
+
+    const done = process.result
+      .then(result => {
+        const exitedSuccessfully =
+          result.exitCode === 0 && result.terminationReason !== 'canceled';
+        const missingCodexThreadId =
+          exitedSuccessfully && runInput.threadId !== undefined && !sawCodexThreadId;
+        const streamError = exitedSuccessfully && (!sawTurnCompleted || missingCodexThreadId);
+        const publicStatus: PublicRunStatus = result.terminationReason === 'canceled'
+          ? 'canceled'
+          : result.exitCode === 0 && !streamError
+            ? 'succeeded'
+            : 'failed';
+        const terminationReason = streamError ? 'stream_error' : resultToTerminationReason(result);
+        const resumeFailureCode =
+          resolvedResumeMode === 'resume_thread'
+            && result.terminationReason !== 'canceled'
+            && result.exitCode !== 0
+            && !streamError
+            ? classifyResumeFailure(stdoutLines, stderr)
+            : undefined;
+        const errorCode = missingCodexThreadId
+          ? 'CODEX_THREAD_ID_MISSING'
+          : resumeFailureCode;
+        const errorMessage = missingCodexThreadId
+          ? CODEX_THREAD_ID_MISSING_MESSAGE
+          : resumeFailureCode === undefined
+            ? undefined
+            : 'Codex resume failed';
+        writeJson(join(runDir, 'diagnostics.json'), {
+          exitCode: result.exitCode,
+          signal: result.signal,
+          terminationReason,
+          ...(errorCode === undefined ? {} : { errorCode }),
+          ...(missingCodexThreadId
+            ? { error: errorMessage }
+            : resumeFailureCode !== undefined
+              ? { error: errorMessage }
+            : streamError
+              ? { error: 'Codex stream ended without turn.completed' }
+              : {})
+        });
+        if (missingCodexThreadId) {
+          publishError(
+            id,
+            ++seq,
+            'CODEX_THREAD_ID_MISSING',
+            CODEX_THREAD_ID_MISSING_MESSAGE,
+            publish
+          );
+        } else if (streamError) {
+          publishDiagnostic(
+            id,
+            ++seq,
+            'CODEX_STREAM_ERROR',
+            'Codex stream ended without turn.completed',
+            publish
+          );
+        }
+        updateStatus(id, publicStatus, publicStatus, {
+          terminationReason,
+          exitCode: result.exitCode,
+          signal: result.signal,
+          ...(errorCode === undefined ? {} : { errorCode }),
+          ...(errorMessage === undefined ? {} : { errorMessage }),
+          endedAt: new Date().toISOString()
+        });
+
+        if (!hasDoneEvent(id)) publishDone(id, ++seq, publicStatus, terminationReason, publish);
+        activeRuns.delete(id);
+        if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
+        completeThreadRun(runInput.threadId, id);
+        return { id, status: publicStatus };
+      })
+      .catch(error => {
+        const terminationReason = errorToTerminationReason(error);
+        const publicStatus: PublicRunStatus =
+          terminationReason === 'user_canceled' ? 'canceled' : 'failed';
+        writeJson(join(runDir, 'diagnostics.json'), {
+          error: error instanceof Error ? error.message : String(error),
+          terminationReason
+        });
+        updateStatus(id, publicStatus, publicStatus, {
+          terminationReason,
+          errorCode: errorCodeForTermination(terminationReason),
+          errorMessage: error instanceof Error ? error.message : String(error),
+          endedAt: new Date().toISOString()
+        });
+        if (error instanceof CodexExecError) {
+          for (const line of error.stdoutLines.slice(stdoutLines.length)) {
+            appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactText(line)}\n`);
+          }
+          if (stderr.length === 0 && error.stderr.length > 0) {
+            appendFileSync(join(runDir, 'stderr.redacted.log'), redactText(error.stderr));
+          }
+        }
+        publishDone(id, ++seq, publicStatus, terminationReason, publish);
+        activeRuns.delete(id);
+        if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
+        completeThreadRun(runInput.threadId, id);
+        return { id, status: publicStatus };
+      });
+
+    activeRuns.set(id, {
+      cancel() {
+        updateStatus(id, 'running', 'canceling');
+        publishStatus(id, ++seq, 'canceling', publish);
+        process.cancel();
+      },
+      done
+    });
+    bridgeRunCompletion(id, done);
+
+    return { id, status: 'running' };
+  }
+
   function failRunBeforeSpawn(input: {
     id: string;
     runDir: string;
@@ -383,8 +486,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       errorMessage: input.message,
       endedAt
     });
-    publishError(input.id, 1, input.code, input.message, input.publish);
-    publishDone(input.id, 2, 'failed', input.terminationReason, input.publish);
+    const seq = nextSeqForRun(input.id);
+    publishError(input.id, seq, input.code, input.message, input.publish);
+    publishDone(input.id, seq + 1, 'failed', input.terminationReason, input.publish);
     return { id: input.id, status: 'failed' };
   }
 
@@ -450,27 +554,89 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     return runs.listRunEvents(runId).some(event => event.type === 'done');
   }
 
+  function lastSeqForRun(runId: string): number {
+    return runs.listRunEvents(runId).at(-1)?.seq ?? 0;
+  }
+
+  function nextSeqForRun(runId: string): number {
+    return lastSeqForRun(runId) + 1;
+  }
+
+  function removeQueuedRun(runId: string): { threadId: string } | undefined {
+    for (const [threadId, queue] of threadQueues) {
+      const index = queue.findIndex(run => run.id === runId);
+      if (index === -1) continue;
+      queue.splice(index, 1);
+      if (queue.length === 0) threadQueues.delete(threadId);
+      return { threadId };
+    }
+    return undefined;
+  }
+
+  function bridgeRunCompletion(runId: string, done: Promise<CreatedRun>): void {
+    const queuedResolve = queuedCompletionResolvers.get(runId);
+    if (queuedResolve !== undefined) {
+      done.then(run => resolveRunCompletion(runId, run));
+      return;
+    }
+
+    runCompletions.set(
+      runId,
+      done.finally(() => {
+        runCompletions.delete(runId);
+      })
+    );
+  }
+
+  function resolveRunCompletion(runId: string, run: CreatedRun): void {
+    const resolve = queuedCompletionResolvers.get(runId);
+    if (resolve === undefined) return;
+    queuedCompletionResolvers.delete(runId);
+    runCompletions.delete(runId);
+    resolve(run);
+  }
+
+  function completeThreadRun(threadId: string | undefined, runId: string): void {
+    if (threadId === undefined) return;
+    if (runningThreadRun.get(threadId) === runId) runningThreadRun.delete(threadId);
+    startNextQueuedThreadRun(threadId);
+  }
+
+  function startNextQueuedThreadRun(threadId: string): void {
+    if (runningThreadRun.has(threadId)) return;
+    const queue = threadQueues.get(threadId);
+    const next = queue?.shift();
+    if (queue !== undefined && queue.length === 0) threadQueues.delete(threadId);
+    if (next === undefined) return;
+    startExistingRun(next);
+  }
+
   function recoverOrphanedRuns(): void {
     for (const run of runs.listNonTerminalRuns()) {
       mkdirSync(join(options.dataDir, 'runs', run.id), { recursive: true });
       const existingEvents = runs.listRunEvents(run.id);
       const nextSeq = (existingEvents.at(-1)?.seq ?? 0) + 1;
+      const orphanErrorCode = run.thread_id === null ? 'DAEMON_RESTART' : 'THREAD_RUN_ORPHANED';
+      const orphanErrorMessage = run.thread_id === null
+        ? 'Run was still active when daemon restarted'
+        : 'Thread run was still active when daemon restarted';
       updateStatus(run.id, 'failed', 'orphaned', {
         terminationReason: 'daemon_restart',
-        errorCode: 'DAEMON_RESTART',
-        errorMessage: 'Run was still active when daemon restarted',
+        errorCode: orphanErrorCode,
+        errorMessage: orphanErrorMessage,
         endedAt: new Date().toISOString()
       });
       writeJson(join(options.dataDir, 'runs', run.id, 'diagnostics.json'), {
-        error: 'Run was still active when daemon restarted',
+        error: orphanErrorMessage,
+        errorCode: orphanErrorCode,
         terminationReason: 'daemon_restart'
       });
       if (!existingEvents.some(event => event.type === 'error')) {
         publishError(
           run.id,
           nextSeq,
-          'DAEMON_RESTART',
-          'Run was still active when daemon restarted',
+          orphanErrorCode,
+          orphanErrorMessage,
           publish
         );
       }

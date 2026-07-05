@@ -11,6 +11,7 @@ import { createThreadManager } from '../../src/threads/manager.js';
 
 let tempDir = '';
 let db: Database.Database | undefined;
+const RUN_STATUS_TIMEOUT_MS = 5_000;
 
 afterEach(() => {
   db?.close();
@@ -78,7 +79,7 @@ async function waitForRunStatus(
   status: string
 ): Promise<void> {
   await expect
-    .poll(() => manager.getRun(runId)?.status, { timeout: 1000 })
+    .poll(() => manager.getRun(runId)?.status, { timeout: RUN_STATUS_TIMEOUT_MS })
     .toBe(status);
 }
 
@@ -307,6 +308,58 @@ describe('run manager', () => {
     expect(fake.readArgv()).toEqual(
       expect.arrayContaining(['exec', 'resume', 'codex-thread-1', '--json'])
     );
+  });
+
+  it('queues same-thread runs and starts the second after the first completes', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'ok' } },
+        { type: 'turn.completed' }
+      ],
+      lineDelayMs: 50
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
+
+    const first = manager.startRun(threadRun(thread, 'first'));
+    const second = manager.startRun(threadRun(thread, 'second'));
+
+    expect(manager.getRun(second.id)?.status).toBe('queued');
+    await waitForRunStatus(manager, first.id, 'succeeded');
+    await waitForRunStatus(manager, second.id, 'succeeded');
+  });
+
+  it('cancels queued same-thread runs without spawning codex', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ],
+      lineDelayMs: 50
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
+
+    const first = manager.startRun(threadRun(thread, 'first'));
+    const second = manager.startRun(threadRun(thread, 'second'));
+
+    expect(manager.cancelRun(second.id)).toBe(true);
+    expect(manager.getRun(second.id)).toMatchObject({ status: 'canceled' });
+    await waitForRunStatus(manager, first.id, 'succeeded');
+    expect(fake.readPrompt()).toBe('first');
   });
 
   it('maps missing resume targets to a not found error code', async () => {
@@ -564,6 +617,41 @@ describe('run manager', () => {
       | undefined;
     expect(row?.internal_status).toBe('orphaned');
     expect(manager.listEvents(runId).map(event => event.type)).toEqual(['error', 'done']);
+  });
+
+  it('marks queued thread runs left before daemon restart as thread orphaned', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const runId = 'run_thread_orphaned_1';
+    mkdirSync(join(tempDir, 'runs', runId), { recursive: true });
+    writeFileSync(join(tempDir, 'runs', runId, 'events.ndjson'), '');
+    const runs = db.prepare(`
+      INSERT INTO runs (
+        id, thread_id, public_status, internal_status, created_by, profile, cwd, canonical_cwd,
+        workspace_mode, sandbox, codex_version, codex_bin, codex_home, normalizer_version
+      ) VALUES (
+        @id, 'thread_1', 'queued', 'queued', 'api', 'default', @cwd, @cwd,
+        'managed', 'read-only', 'unknown', 'codex', @codexHome, 1
+      )
+    `);
+    runs.run({
+      id: runId,
+      cwd: tempDir,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: join(tempDir, 'codex'),
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    expect(manager.getRun(runId)).toMatchObject({
+      status: 'failed',
+      terminationReason: 'daemon_restart',
+      errorCode: 'THREAD_RUN_ORPHANED'
+    });
   });
 
   it('can cancel a running run', async () => {

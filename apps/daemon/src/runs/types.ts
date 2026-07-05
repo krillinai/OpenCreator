@@ -1,4 +1,4 @@
-import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
+import type { PublicRunStatus, ReasoningEffort, SandboxMode } from '@clawee/protocol';
 
 export type CreateRunInput = {
   prompt: string;
@@ -14,5 +14,5 @@ export type CreateRunInput = {
 
 export type CreatedRun = {
   id: string;
-  status: 'running' | 'succeeded' | 'failed' | 'canceled';
+  status: PublicRunStatus;
 };
