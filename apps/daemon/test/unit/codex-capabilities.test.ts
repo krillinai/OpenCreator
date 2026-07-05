@@ -29,9 +29,24 @@ Usage: codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]
       --json
 `;
 
+const MCP_HELP_01425 = `
+Usage: codex mcp [OPTIONS] <COMMAND>
+Commands:
+  list
+  get <NAME>
+  add [OPTIONS] <NAME> <COMMAND>...
+  remove <NAME>
+  login <NAME>
+  logout <NAME>
+`;
+
 const MCP_ADD_HELP_01425 = `
 Usage: codex mcp add [OPTIONS] <NAME> <COMMAND>...
   --env <KEY=VALUE>
+  --url <URL>
+  --bearer-token-env-var <ENV_VAR>
+  --oauth-client-id <CLIENT_ID>
+  --oauth-resource <RESOURCE>
 `;
 
 describe('codex capability parsing', () => {
@@ -50,6 +65,7 @@ describe('codex capability parsing', () => {
       versionOutput: 'codex-cli 0.142.5',
       execHelp: EXEC_HELP_01425,
       resumeHelp: RESUME_HELP_01425,
+      mcpHelp: MCP_HELP_01425,
       mcpAddHelp: MCP_ADD_HELP_01425
     });
 
@@ -64,16 +80,54 @@ describe('codex capability parsing', () => {
     expect(isResumeExecutionSupported(matrix)).toBe(true);
   });
 
+  it('detects mcp management support from help output', () => {
+    const matrix = parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.142.5',
+      execHelp: EXEC_HELP_01425,
+      resumeHelp: RESUME_HELP_01425,
+      mcpHelp: MCP_HELP_01425,
+      mcpAddHelp: MCP_ADD_HELP_01425
+    });
+
+    expect(matrix).toMatchObject({
+      mcpList: true,
+      mcpGet: true,
+      mcpAdd: true,
+      mcpRemove: true,
+      mcpLogin: true,
+      mcpLogout: true,
+      mcpAddEnv: true,
+      mcpAddUrl: true,
+      mcpAddBearerTokenEnvVar: true,
+      mcpAddOAuth: true,
+      mcpRuntimeDiscoveryVerified: false,
+      mcpRuntimeBehaviorVerified: false
+    });
+  });
+
   it('defaults skill capability flags to false when capability help is unknown', () => {
     const matrix = parseCodexCapabilityMatrix({
       versionOutput: 'codex-cli 0.142.5',
       execHelp: '',
       resumeHelp: '',
+      mcpHelp: '',
       mcpAddHelp: '',
       checkedAt: '2026-07-05T00:00:00.000Z'
     });
 
     expect(matrix).toMatchObject({
+      mcpList: false,
+      mcpGet: false,
+      mcpAdd: false,
+      mcpRemove: false,
+      mcpLogin: false,
+      mcpLogout: false,
+      mcpAddEnv: false,
+      mcpAddUrl: false,
+      mcpAddBearerTokenEnvVar: false,
+      mcpAddOAuth: false,
+      mcpRuntimeDiscoveryVerified: false,
+      mcpRuntimeBehaviorVerified: false,
       skillsScan: false,
       skillsInstall: false,
       skillsDelete: false,

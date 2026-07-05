@@ -10,6 +10,10 @@ export type CodexHomeSource = 'env' | 'default' | 'isolated';
 export type CodexSkillStatus = 'valid' | 'invalid';
 export type CodexSkillOperationType = 'install' | 'overwrite' | 'delete';
 export type CodexSkillOperationStatus = 'succeeded' | 'failed';
+export type CodexMcpTransport = 'stdio' | 'http' | 'sse' | 'unknown';
+export type CodexMcpStatus = 'configured' | 'missing' | 'invalid' | 'unknown';
+export type CodexMcpOperationType = 'add' | 'remove' | 'login' | 'logout' | 'get' | 'list';
+export type CodexMcpOperationStatus = 'succeeded' | 'failed';
 
 export type CodexStatusResponse = {
   codexBin: string;
@@ -124,4 +128,65 @@ export type CodexSkillOperationResponse = {
 
 export type CodexSkillOperationListResponse = {
   operations: CodexSkillOperationResponse[];
+};
+
+export type CodexMcpServerResponse = {
+  name: string;
+  transport: CodexMcpTransport;
+  status: CodexMcpStatus;
+  command?: string;
+  args?: string[];
+  url?: string;
+  envKeys: string[];
+  hasSecrets: boolean;
+  codexHome: string;
+  codexHomeMode: CodexHomeMode;
+  diagnostics: string[];
+  raw?: string;
+};
+
+export type CodexMcpListResponse = {
+  codexHome: string;
+  codexHomeMode: CodexHomeMode;
+  requiresWriteConfirmation: boolean;
+  servers: CodexMcpServerResponse[];
+  diagnostics: string[];
+};
+
+export type AddCodexMcpRequest =
+  | {
+      name: string;
+      transport: 'stdio';
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      confirmWriteToCodexHome?: true;
+    }
+  | {
+      name: string;
+      transport: 'http' | 'sse';
+      url: string;
+      env?: Record<string, string>;
+      oauthClientId?: string;
+      oauthResource?: string;
+      bearerTokenEnvVar?: string;
+      confirmWriteToCodexHome?: true;
+    };
+
+export type CodexMcpOperationResponse = {
+  id: string;
+  operation: CodexMcpOperationType;
+  serverName?: string | null;
+  codexHome: string;
+  command: string[];
+  status: CodexMcpOperationStatus;
+  exitCode?: number | null;
+  timedOut: boolean;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+};
+
+export type CodexMcpOperationListResponse = {
+  operations: CodexMcpOperationResponse[];
 };

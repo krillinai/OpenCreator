@@ -27,7 +27,18 @@ export type RuntimeCapabilityMatrix = {
   resumeProfileOverride: boolean;
   resumeSandboxOverride: boolean;
   resumeContextContinuityVerified: boolean;
+  mcpList: boolean;
+  mcpGet: boolean;
+  mcpAdd: boolean;
+  mcpRemove: boolean;
+  mcpLogin: boolean;
+  mcpLogout: boolean;
   mcpAddEnv: boolean;
+  mcpAddUrl: boolean;
+  mcpAddBearerTokenEnvVar: boolean;
+  mcpAddOAuth: boolean;
+  mcpRuntimeDiscoveryVerified: boolean;
+  mcpRuntimeBehaviorVerified: boolean;
   skillsScan: boolean;
   skillsInstall: boolean;
   skillsDelete: boolean;
@@ -59,6 +70,7 @@ export function parseCodexCapabilityMatrix(input: {
   versionOutput: string;
   execHelp: string;
   resumeHelp: string;
+  mcpHelp: string;
   mcpAddHelp: string;
   resumeContextContinuityVerified?: boolean;
   checkedAt?: string;
@@ -86,7 +98,20 @@ export function parseCodexCapabilityMatrix(input: {
       input.resumeHelp.includes('--profile') || input.resumeHelp.includes('-p,'),
     resumeSandboxOverride: input.resumeHelp.includes('--sandbox'),
     resumeContextContinuityVerified: input.resumeContextContinuityVerified ?? false,
+    mcpList: input.mcpHelp.includes('list'),
+    mcpGet: input.mcpHelp.includes('get'),
+    mcpAdd: input.mcpHelp.includes('add'),
+    mcpRemove: input.mcpHelp.includes('remove'),
+    mcpLogin: input.mcpHelp.includes('login'),
+    mcpLogout: input.mcpHelp.includes('logout'),
     mcpAddEnv: input.mcpAddHelp.includes('--env'),
+    mcpAddUrl: input.mcpAddHelp.includes('--url'),
+    mcpAddBearerTokenEnvVar: input.mcpAddHelp.includes('--bearer-token-env-var'),
+    mcpAddOAuth:
+      input.mcpAddHelp.includes('--oauth-client-id') &&
+      input.mcpAddHelp.includes('--oauth-resource'),
+    mcpRuntimeDiscoveryVerified: false,
+    mcpRuntimeBehaviorVerified: false,
     skillsScan: false,
     skillsInstall: false,
     skillsDelete: false,
@@ -104,12 +129,14 @@ export function collectCodexCapabilityMatrix(
   const version = runCodexInfo(codexBin, ['--version'], input.timeoutMs);
   const execHelp = runCodexInfo(codexBin, ['exec', '--help'], input.timeoutMs);
   const resumeHelp = runCodexInfo(codexBin, ['exec', 'resume', '--help'], input.timeoutMs);
+  const mcpHelp = runCodexInfo(codexBin, ['mcp', '--help'], input.timeoutMs);
   const mcpAddHelp = runCodexInfo(codexBin, ['mcp', 'add', '--help'], input.timeoutMs);
 
   const matrix = parseCodexCapabilityMatrix({
     versionOutput: version.output.trim() || 'unknown',
     execHelp: execHelp.output,
     resumeHelp: resumeHelp.output,
+    mcpHelp: mcpHelp.output,
     mcpAddHelp: mcpAddHelp.output,
     resumeContextContinuityVerified: input.resumeContextContinuityVerified,
     checkedAt: input.checkedAt
@@ -119,6 +146,7 @@ export function collectCodexCapabilityMatrix(
     ...version.warnings,
     ...execHelp.warnings,
     ...resumeHelp.warnings,
+    ...mcpHelp.warnings,
     ...mcpAddHelp.warnings
   );
   if (!isResumeExecutionSupported(matrix)) {
