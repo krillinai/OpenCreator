@@ -1,7 +1,7 @@
 const REDACTED = '[REDACTED]';
 const TOKEN_LIKE_KEY =
   /([A-Za-z_][A-Za-z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|ACCESS[_-]?TOKEN|KEY)[A-Za-z0-9_.-]*)(\s*[=:]\s*)([^\s'"`<>;&]+)/gi;
-const AUTHORIZATION_BEARER = /(Authorization\s*:\s*Bearer\s+)[^\s\r\n]+/gi;
+const AUTHORIZATION_HEADER = /(Authorization\s*:\s*)(?:(Bearer|Basic|token)\s+)?[^\r\n]*/gi;
 const URL_QUERY_SECRET = /([?&](?:token|secret|password|key|api[_-]?key|access[_-]?token)=)[^&#\s]+/gi;
 
 export function redactMcpArgv(argv: string[]): string[] {
@@ -29,7 +29,9 @@ export function redactMcpText(input: string, sensitiveValues: string[] = []): st
   }
 
   return output
-    .replace(AUTHORIZATION_BEARER, `$1${REDACTED}`)
+    .replace(AUTHORIZATION_HEADER, (_match, prefix: string, scheme: string | undefined) =>
+      scheme === undefined ? `${prefix}${REDACTED}` : `${prefix}${scheme} ${REDACTED}`
+    )
     .replace(URL_QUERY_SECRET, `$1${REDACTED}`)
     .replace(TOKEN_LIKE_KEY, `$1$2${REDACTED}`);
 }

@@ -34,6 +34,12 @@ describe('codex mcp redaction', () => {
     expect(redactMcpText('https://example.test/mcp?token=secret&safe=ok')).toContain('token=[REDACTED]');
   });
 
+  it('redacts authorization credentials for common schemes and no scheme', () => {
+    expect(redactMcpText('Authorization: Basic abc123')).toBe('Authorization: Basic [REDACTED]');
+    expect(redactMcpText('Authorization: token abc123')).toBe('Authorization: token [REDACTED]');
+    expect(redactMcpText('Authorization: abc123')).toBe('Authorization: [REDACTED]');
+  });
+
   it('redacts exact sensitive values', () => {
     expect(redactMcpText('server responded with exact-secret', ['exact-secret'])).toBe(
       'server responded with [REDACTED]'

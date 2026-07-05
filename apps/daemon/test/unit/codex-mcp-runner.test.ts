@@ -78,4 +78,45 @@ setTimeout(() => {}, 1000);
     expect(result.exitCode).toBeNull();
     expect(result.redactedStderr).toContain('[codex-mcp] timed out after 10ms');
   });
+
+  it('preserves raw stderr when timed out while redacting stderr diagnostics', () => {
+    const codexBin = makeFakeCodex(`
+process.stderr.write('GITHUB_TOKEN=secret\\n', () => setTimeout(() => {}, 10_000));
+`);
+    const codexHome = mkdtempSync(join(tmpdir(), 'clawee-codex-home-'));
+    tmpDirs.push(codexHome);
+
+    const result = runMcpCommand({
+      codexBin,
+      codexHome,
+      args: ['mcp', 'list'],
+      timeoutMs: 1000
+    });
+
+    expect(result.timedOut).toBe(true);
+    expect(result.exitCode).toBeNull();
+    expect(result.stderr).toBe('GITHUB_TOKEN=secret\n');
+    expect(result.redactedStderr).toContain('GITHUB_TOKEN=[REDACTED]');
+    expect(result.redactedStderr).toContain('[codex-mcp] timed out after 1000ms');
+  });
+
+  it('does not treat a process SIGTERM as a timeout', () => {
+    const codexBin = makeFakeCodex(`
+process.kill(process.pid, 'SIGTERM');
+`);
+    const codexHome = mkdtempSync(join(tmpdir(), 'clawee-codex-home-'));
+    tmpDirs.push(codexHome);
+
+    const result = runMcpCommand({
+      codexBin,
+      codexHome,
+      args: ['mcp', 'list'],
+      timeoutMs: 1000
+    });
+
+    expect(result.timedOut).toBe(false);
+    expect(result.exitCode).toBeNull();
+    expect(result.redactedStderr).toContain('[codex-mcp] termination signal: SIGTERM');
+    expect(result.redactedStderr).not.toContain('timed out');
+  });
 });

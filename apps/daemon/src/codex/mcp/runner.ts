@@ -26,23 +26,25 @@ export function runMcpCommand(input: RunMcpCommandInput): McpCommandResult {
   const result = spawnSync(input.codexBin, input.args, {
     encoding: 'utf8',
     timeout: timeoutMs,
+    // Codex CLI expects the daemon environment (PATH/HOME/SHELL); env is not recorded, and argv/output are redacted.
     env: { ...process.env, CODEX_HOME: input.codexHome },
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
   const stdout = result.stdout ?? '';
-  let stderr = result.stderr ?? '';
+  const stderr = result.stderr ?? '';
+  let diagnosticStderr = stderr;
   const errorMessage = result.error?.message ?? null;
   const timedOut = isTimedOut(result, errorMessage);
 
   if (timedOut) {
-    stderr = appendDiagnostic(stderr, `[codex-mcp] timed out after ${timeoutMs}ms`);
+    diagnosticStderr = appendDiagnostic(diagnosticStderr, `[codex-mcp] timed out after ${timeoutMs}ms`);
   } else if (errorMessage !== null) {
-    stderr = appendDiagnostic(stderr, `[codex-mcp] process error: ${errorMessage}`);
+    diagnosticStderr = appendDiagnostic(diagnosticStderr, `[codex-mcp] process error: ${errorMessage}`);
   }
 
   if (result.signal !== null && result.signal !== undefined) {
-    stderr = appendDiagnostic(stderr, `[codex-mcp] termination signal: ${result.signal}`);
+    diagnosticStderr = appendDiagnostic(diagnosticStderr, `[codex-mcp] termination signal: ${result.signal}`);
   }
 
   const sensitiveValues = input.sensitiveValues ?? [];
@@ -53,7 +55,7 @@ export function runMcpCommand(input: RunMcpCommandInput): McpCommandResult {
     stdout,
     stderr,
     redactedStdout: redactMcpText(stdout, sensitiveValues),
-    redactedStderr: redactMcpText(stderr, sensitiveValues),
+    redactedStderr: redactMcpText(diagnosticStderr, sensitiveValues),
     timedOut,
     errorMessage
   };
@@ -61,9 +63,8 @@ export function runMcpCommand(input: RunMcpCommandInput): McpCommandResult {
 
 function isTimedOut(result: ReturnType<typeof spawnSync>, errorMessage: string | null): boolean {
   return (
-    errorMessage?.includes('ETIMEDOUT') === true ||
     getErrorCode(result.error) === 'ETIMEDOUT' ||
-    (result.signal === 'SIGTERM' && result.status === null)
+    (errorMessage !== null && /ETIMEDOUT|timed out/i.test(errorMessage))
   );
 }
 
