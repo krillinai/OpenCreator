@@ -139,6 +139,23 @@ describe('runtime api', () => {
     expect(response.json().diagnostics[0]).toContain('Failed to parse config.toml');
   });
 
+  it('returns diagnostics instead of crashing when codex home is not a directory', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    writeFileSync(codexHome, 'not a directory');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/profiles',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().profiles).toEqual([]);
+    expect(response.json().diagnostics.length).toBeGreaterThan(0);
+  });
+
   it('gets a profile by name from an isolated codex home', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');
