@@ -11,7 +11,7 @@
 1. R0/R1 的基础 run 闭环通过：create run、SSE replay、fromSeq/Last-Event-ID、cancel、terminal cancel 错误码、history、diagnostics、fake Codex 异常路径和 real Codex smoke 子集。
 2. R2 Thread/Chat resume 的后端最小闭环已通过：thread 持久化、list/detail/history/archive、`thread.started` 捕获、resume argv、fake resume、同 thread queue、diagnostics metadata、gated real resume smoke。仍不能声明完整 Chat 产品能力，因为 UI、messages 表和 workspace 全局写锁还没有实现。
 3. R3-R7 中的 Profile 管理、Skills 管理、MCP pass-through 管理、Scheduler 行为和 release readiness 大部分还没有实现。
-4. R-1 真实 Codex ABI 验证已覆盖 version/help/resume help/MCP help/最小 JSONL/command execution/真实 resume continuity smoke，并在 gated smoke 运行时生成本地 stdout/stderr fixture；尚未产出完整能力矩阵和可提交的版本化 fixture。
+4. R-1 真实 Codex ABI 验证的当前子集已覆盖 version/help/resume help/MCP help/最小 JSONL/command execution/真实 resume continuity smoke，并在 gated smoke 运行时生成本地 stdout/stderr fixture；usage、failure、sandbox/image、完整能力矩阵和可提交的版本化 fixture 仍是缺口。
 
 ## 当前自动化结果基线
 
@@ -32,7 +32,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 5. harness `diagnostics --output` 能导出诊断包。
 6. harness `cancel` 能取消运行中 run。
 7. `resume_thread` 缺 threadId 失败路径按独立 run 处理；已有 Codex thread 但目标缺失时返回 `RESUME_TARGET_NOT_FOUND`，其他 resume 非零退出返回 `RESUME_FAILED`。
-8. 真实 Codex `exec resume <thread_id> --json` 上下文连续性已通过 gated smoke：第二轮回复包含第一轮 marker。
+8. 真实 Codex `exec resume <thread_id> --json` 上下文连续性已通过 gated smoke：第二轮回复包含第一轮 marker，JSONL clean，且未出现工具/命令事件。
 9. 未授权 `/runs` 返回 401。
 10. `/healthz` 和 `/codex/status` 可用。
 
@@ -56,7 +56,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | Redaction | `apps/daemon/src/security/redaction.ts` | 间接覆盖 | `PARTIAL` | 缺独立脱敏规则矩阵 |
 | Storage schema | `apps/daemon/src/storage/migrations.ts` | `apps/daemon/test/unit/storage.test.ts` | `PARTIAL` | 已有 threads/runs 关联和 archived_at；缺 messages 表、runtime_capabilities、schedules、settings |
 | Harness CLI | `apps/harness/src/cli.ts` | 手动 smoke | `PARTIAL` | 缺自动化 CLI 测试 |
-| Real Codex smoke | `apps/daemon/src/codex/smoke.ts` | `apps/daemon/test/smoke/real-codex-smoke.test.ts` | `PASS` | 已覆盖 version、exec help、resume help、mcp help、mcp add help、最小 JSONL、command execution、真实 resume context continuity；缺 usage/failure/sandbox/image 和版本化 fixture 回归 |
+| Real Codex smoke | `apps/daemon/src/codex/smoke.ts` | `apps/daemon/test/smoke/real-codex-smoke.test.ts` | `PARTIAL` | 当前真实 smoke 子集通过：version、exec help、resume help、mcp help、mcp add help、最小 JSONL、command execution、真实 resume context continuity、resume JSONL clean、无工具/命令事件；缺 usage/failure/sandbox/image 和版本化 fixture 回归 |
 
 ## 第一版完成定义逐条审计
 
@@ -68,10 +68,10 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | 本地 API 不裸露给未授权调用方 | `PASS` | 非 healthz 接口有 bearer token |
 | 配置写入有锁、原子性和缓存同步 | `MISSING_IMPL` | profile/config 写入未实现 |
 | Scheduler 行为可预测 | `MISSING_IMPL` | 只有 helper |
-| R-1 真实 Codex 验证通过，并保存 stdout/stderr 分离 fixture | `PASS` | version/help/resume help/MCP help/JSONL/command execution/真实 resume continuity smoke 通过；已生成本地 ignored fixture，未形成版本化 fixture 回归 |
+| R-1 真实 Codex 验证通过，并保存 stdout/stderr 分离 fixture | `PARTIAL` | 当前真实 smoke 子集通过：version/help/resume help/MCP help/JSONL/command execution/真实 resume continuity；已生成本地 ignored fixture，未形成 usage/failure/sandbox/image/versioned fixture 回归 |
 | 支持的 Codex 版本区间已明确，版本超界行为可验证 | `MISSING_IMPL` | 没有版本区间 gate |
 | fake Codex 测试覆盖主要异常路径 | `PARTIAL` | 覆盖基础异常、强杀兜底、spawnTimeout、inactivity、orphan 恢复；缺进程树强杀专项 |
-| 真实 Codex smoke 覆盖 assistant message、command execution、usage、stderr warning 和失败路径 | `PARTIAL` | assistant/stderr 字段、command execution 和真实 resume continuity 已覆盖；usage/failure/sandbox 缺失 |
+| 真实 Codex smoke 覆盖 assistant message、command execution、usage、stderr warning 和失败路径 | `PARTIAL` | assistant/stderr 字段、command execution、真实 resume continuity、JSONL clean 和无工具/命令事件已覆盖；usage/failure/sandbox 缺失。resume smoke 只验证上下文连续性和无工具事件，不单独证明 sandbox 继承 |
 | 如果承诺 Chat，多轮 thread/resume 已通过真实 Codex 验证 | `PARTIAL` | 后端真实 resume continuity 已通过；UI、messages 表和完整 Chat transcript 尚未实现，不能声明完整 Chat 产品能力 |
 | 如果不承诺 resume Chat，Runtime capability 和文档明确标注独立 run 模式 | `MISSING_TEST` | 需要 capability/status 明确表达当前 thread resume 能力边界 |
 | create/resume argv、skip git、stdin `-`、rollout usage、config normalize、平台 sandbox 进入能力矩阵 | `PARTIAL` | create/resume argv、skip git、stdin 写入已覆盖；rollout usage、config normalize、平台 sandbox 能力矩阵未实现 |

@@ -92,15 +92,20 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     const result = await runRealCodexResumeSmoke({
       marker: `R2_RESUME_${Date.now()}`
     });
+    writeResumeFixture(result);
 
     expect(result.first.exitCode).toBe(0);
     expect(result.first.threadId).toMatch(/[0-9a-f-]{10,}/);
+    expect(result.first.malformedLines).toEqual([]);
+    expect(result.first.toolEvents).toEqual([]);
     expect(result.second.exitCode).toBe(0);
+    expect(result.second.malformedLines).toEqual([]);
+    expect(result.second.toolEvents).toEqual([]);
     expect(result.second.agentMessages.join('\n')).toContain(result.marker);
     expect(result.resumeContextContinuityVerified).toBe(true);
     expect(result.first.stderr).toEqual(expect.any(String));
     expect(result.second.stderr).toEqual(expect.any(String));
-  }, 120_000);
+  }, 240_000);
 });
 
 function writeFixture(name: string, result: SmokeCommandResult): void {
@@ -113,5 +118,13 @@ function writeFixture(name: string, result: SmokeCommandResult): void {
       stdout: result.stdout,
       stderr: result.stderr
     }, null, 2)}\n`
+  );
+}
+
+function writeResumeFixture(result: Awaited<ReturnType<typeof runRealCodexResumeSmoke>>): void {
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(
+    join(fixtureDir, 'exec-resume-context-continuity.json'),
+    `${JSON.stringify(result, null, 2)}\n`
   );
 }
