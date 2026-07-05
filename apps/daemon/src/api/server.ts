@@ -7,6 +7,7 @@ import {
   type RuntimeCapabilityMatrix
 } from '../codex/capabilities.js';
 import { resolveCodexHome } from '../codex/home.js';
+import { createMcpManager } from '../codex/mcp/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { createSkillManager } from '../codex/skills/manager.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
@@ -16,6 +17,7 @@ import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
+import { registerMcpRoutes } from './routes.mcp.js';
 import { registerProfileRoutes } from './routes.profiles.js';
 import { registerRunRoutes } from './routes.runs.js';
 import { registerSkillRoutes } from './routes.skills.js';
@@ -55,6 +57,7 @@ export async function buildServer(input: BuildServerInput) {
   const threadManager = createThreadManager({ db, dataDir });
   const profileManager = createProfileManager({ codexHome: resolvedCodexHome });
   const skillManager = createSkillManager({ codexHome: resolvedCodexHome, db });
+  const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const runManager =
     input.runManager ??
     createRunManager({
@@ -97,6 +100,7 @@ export async function buildServer(input: BuildServerInput) {
     profileManager
   });
   await registerSkillRoutes(server, { skillManager });
+  await registerMcpRoutes(server, { mcpManager });
   await registerRunRoutes(server, runManager, {
     sseHeartbeatMs: input.sseHeartbeatMs,
     threadManager,

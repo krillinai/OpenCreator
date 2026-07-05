@@ -1,5 +1,14 @@
 import type { FastifyInstance } from 'fastify';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -538,6 +547,117 @@ describe('runtime api', () => {
     expect(invalidSourcePathInstall.json().error.code).toBe('CODEX_SKILL_INVALID');
     expect(invalidInstall.statusCode).toBe(422);
     expect(invalidInstall.json().error.code).toBe('CODEX_SKILL_INVALID');
+  });
+
+  it('lists, adds, gets, removes, and logs codex mcp servers', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const fake = createFakeMcpCodex(tempDir);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome,
+      capabilities: makeResumeCapableMatrix()
+    });
+
+    const empty = await authGet('/codex/mcp');
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json()).toMatchObject({
+      codexHome,
+      codexHomeMode: 'isolated',
+      requiresWriteConfirmation: false,
+      servers: []
+    });
+
+    const added = await authPost('/codex/mcp/add', {
+      name: 'github',
+      transport: 'stdio',
+      command: 'node',
+      args: ['server.js'],
+      env: { GITHUB_TOKEN: 'secret' }
+    });
+    expect(added.statusCode).toBe(201);
+    expect(JSON.stringify(added.json())).not.toContain('secret');
+    expect(added.json().server).toMatchObject({
+      name: 'github',
+      transport: 'stdio',
+      command: 'node',
+      args: ['server.js'],
+      envKeys: ['GITHUB_TOKEN'],
+      hasSecrets: true
+    });
+
+    const serverResponse = await authGet('/codex/mcp/github');
+    expect(serverResponse.statusCode).toBe(200);
+    expect(serverResponse.json().server).toMatchObject({
+      name: 'github',
+      transport: 'stdio',
+      envKeys: ['GITHUB_TOKEN']
+    });
+
+    const removed = await authDelete('/codex/mcp/github');
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json()).toEqual({ removed: true });
+
+    const operations = await authGet('/codex/mcp/operations');
+    expect(operations.statusCode).toBe(200);
+    expect(operations.json().operations.map((operation: { operation: string }) => operation.operation)).toEqual([
+      'remove',
+      'get',
+      'get',
+      'add',
+      'list'
+    ]);
+    expect(JSON.stringify(operations.json())).not.toContain('secret');
+    expect(fake.readCommands()).toContain('mcp add github --env GITHUB_TOKEN=secret -- node server.js');
+  });
+
+  it('requires explicit confirmation for global codex mcp writes', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeMcpCodex(tempDir);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      capabilities: makeResumeCapableMatrix()
+    });
+
+    const added = await authPost('/codex/mcp/add', {
+      name: 'github',
+      transport: 'stdio',
+      command: 'node',
+      args: ['server.js']
+    });
+
+    expect(added.statusCode).toBe(409);
+    expect(added.json().error.code).toBe('MCP_WRITE_CONFIRMATION_REQUIRED');
+  });
+
+  it('maps invalid and missing mcp API requests', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const fake = createFakeMcpCodex(tempDir);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome,
+      capabilities: makeResumeCapableMatrix()
+    });
+
+    const invalidAdd = await authPost('/codex/mcp/add', {
+      name: '../github',
+      transport: 'stdio',
+      command: 'node',
+      args: ['server.js']
+    });
+    const missing = await authGet('/codex/mcp/missing');
+
+    expect(invalidAdd.statusCode).toBe(400);
+    expect(invalidAdd.json().error.code).toBe('VALIDATION_FAILED');
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe('MCP_SERVER_NOT_FOUND');
   });
 
   it('rejects invalid profile write bodies without server errors', async () => {
@@ -1771,6 +1891,57 @@ function authGet(url: string) {
     url,
     headers: { authorization: 'Bearer secret' }
   });
+}
+
+function createFakeMcpCodex(dir: string): { bin: string; readCommands: () => string[] } {
+  const bin = join(dir, 'fake-mcp-codex.js');
+  const commandsPath = join(dir, 'mcp-commands.json');
+  writeFileSync(commandsPath, '[]');
+  writeFileSync(
+    bin,
+    [
+      '#!/usr/bin/env node',
+      "const { existsSync, readFileSync, writeFileSync } = require('node:fs');",
+      "const { join } = require('node:path');",
+      'const commandsPath = join(__dirname, "mcp-commands.json");',
+      'const commands = existsSync(commandsPath) ? JSON.parse(readFileSync(commandsPath, "utf8")) : [];',
+      'const args = process.argv.slice(2);',
+      'commands.push(args.join(" "));',
+      'writeFileSync(commandsPath, JSON.stringify(commands, null, 2));',
+      'if (args[0] === "mcp" && args[1] === "list") {',
+      '  process.stdout.write("[]\\n");',
+      '  process.exit(0);',
+      '}',
+      'if (args[0] === "mcp" && args[1] === "add") {',
+      '  process.exit(0);',
+      '}',
+      'if (args[0] === "mcp" && args[1] === "get" && args[2] === "github") {',
+      '  process.stdout.write(JSON.stringify({',
+      '    name: "github",',
+      '    transport: "stdio",',
+      '    command: "node",',
+      '    args: ["server.js"],',
+      '    env: { GITHUB_TOKEN: "[REDACTED]" }',
+      '  }) + "\\n");',
+      '  process.exit(0);',
+      '}',
+      'if (args[0] === "mcp" && args[1] === "remove" && args[2] === "github") {',
+      '  process.exit(0);',
+      '}',
+      'if (args[0] === "mcp" && (args[1] === "login" || args[1] === "logout") && args[2] === "github") {',
+      '  process.exit(0);',
+      '}',
+      'const name = args[2] || "unknown";',
+      'process.stderr.write("No MCP server named " + name + " is configured\\n");',
+      'process.exit(1);',
+      ''
+    ].join('\n')
+  );
+  chmodSync(bin, 0o755);
+  return {
+    bin,
+    readCommands: () => JSON.parse(readFileSync(commandsPath, 'utf8')) as string[]
+  };
 }
 
 async function createThreadViaApi() {
