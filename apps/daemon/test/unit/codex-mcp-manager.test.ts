@@ -94,6 +94,76 @@ describe('codex mcp manager', () => {
     expect(manager.listOperations()).toEqual([]);
     expect(readCommands(tempDir)).toEqual([]);
   });
+
+  it('supports destructured addServer calls and still logs the verification get', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-manager-'));
+    const codexHome = makeCodexHome(join(tempDir, 'codex-home'), 'isolated');
+    const codexBin = makeFakeCodex(tempDir);
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const { addServer, listOperations } = createMcpManager({ codexBin, codexHome, db, capabilities });
+
+    const added = await addServer({
+      name: 'github',
+      transport: 'stdio',
+      command: 'node',
+      args: ['server.js'],
+      env: { GITHUB_TOKEN: 'real-secret' }
+    });
+
+    expect(added.server).toMatchObject({ name: 'github', transport: 'stdio' });
+    expect(readCommands(tempDir)).toEqual([
+      'mcp add github --env GITHUB_TOKEN=real-secret -- node server.js',
+      'mcp get github'
+    ]);
+    expect(listOperations().map((operation) => operation.operation)).toEqual(['get', 'add']);
+  });
+
+  it('redacts add request env values from failed operation diagnostics', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-manager-'));
+    const codexHome = makeCodexHome(join(tempDir, 'codex-home'), 'isolated');
+    const codexBin = makeFakeCodex(tempDir);
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createMcpManager({ codexBin, codexHome, db, capabilities });
+
+    await expect(
+      manager.addServer({
+        name: 'fail-add',
+        transport: 'stdio',
+        command: 'node',
+        env: { GITHUB_TOKEN: 'real-secret' }
+      })
+    ).rejects.toThrow('[REDACTED]');
+
+    const failed = manager.listOperations()[0];
+    expect(failed).toMatchObject({
+      operation: 'add',
+      status: 'failed',
+      errorCode: 'MCP_COMMAND_FAILED'
+    });
+    expect(JSON.stringify(failed)).toContain('[REDACTED]');
+    expect(JSON.stringify(failed)).not.toContain('real-secret');
+  });
+
+  it('returns diagnostics and logs a failed operation when list fails', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-manager-'));
+    const codexHome = makeCodexHome(join(tempDir, 'fail-list-codex-home'), 'isolated');
+    const codexBin = makeFakeCodex(tempDir);
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createMcpManager({ codexBin, codexHome, db, capabilities });
+
+    const listed = await manager.listServers();
+
+    expect(listed).toMatchObject({
+      servers: [],
+      diagnostics: ['list failed']
+    });
+    expect(manager.listOperations()[0]).toMatchObject({
+      operation: 'list',
+      status: 'failed',
+      errorCode: 'MCP_COMMAND_FAILED',
+      errorMessage: 'list failed'
+    });
+  });
 });
 
 function makeCodexHome(path: string, mode: ResolvedCodexHome['mode']): ResolvedCodexHome {
@@ -119,6 +189,10 @@ commands.push(command);
 writeFileSync(commandsPath, JSON.stringify(commands));
 
 if (command === 'mcp list') {
+  if (process.env.CODEX_HOME && process.env.CODEX_HOME.includes('fail-list')) {
+    process.stderr.write('list failed');
+    process.exit(1);
+  }
   process.stdout.write(JSON.stringify([{ name: 'github', transport: 'stdio', command: 'node', args: ['server.js'], env: { GITHUB_TOKEN: 'real-secret' } }]));
   process.exit(0);
 }
@@ -127,6 +201,10 @@ if (command === 'mcp get github') {
   process.exit(0);
 }
 if (/^mcp (add|remove|login|logout)\\b/.test(command)) {
+  if (command.startsWith('mcp add fail-add ')) {
+    process.stderr.write('codex saw bare secret real-secret');
+    process.exit(1);
+  }
   process.exit(0);
 }
 process.stderr.write('not found\\n');
