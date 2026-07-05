@@ -4,7 +4,7 @@
 
 **Goal:** 实现 R3 Profiles / Settings / CODEX_HOME 后端能力：全局 Codex home 只读，isolated Codex home 支持 profile CRUD、写锁、备份、原子写入和 run/thread profile 校验。
 
-**Architecture:** `CODEX_HOME/config.toml` 是 profile 真相源；SQLite 不作为 profile 真相源。新增 `codex/profiles` 小模块负责解析、校验、写入和扫描 profile，`routes.profiles.ts` 暴露 API，run/thread 创建前通过 profile manager 校验显式 profile。
+**Architecture:** Codex 0.142.5 的 profile 真相源是 `CODEX_HOME/<name>.config.toml` overlay 文件，基础 `CODEX_HOME/config.toml` 只作为 base config；SQLite 不作为 profile 真相源。新增 `codex/profiles` 小模块负责解析、校验、写入和扫描 profile overlay，`routes.profiles.ts` 暴露 API，run/thread 创建前通过 profile manager 校验显式 profile。
 
 **Tech Stack:** TypeScript, Fastify, Vitest, Node fs/path, existing `toml` parser, fake Codex helper, gated real Codex smoke.
 
@@ -17,9 +17,9 @@ Create:
 - `apps/daemon/src/codex/profiles/types.ts`  
   Profile 类型、错误类型、请求校验结果。
 - `apps/daemon/src/codex/profiles/config.ts`  
-  读取和解析 `config.toml`，解析 `[profiles.<name>]`，校验 profile name 和受支持 TOML value。
+  读取和解析 `<name>.config.toml` overlay，校验 profile name、profile 文件名和受支持 TOML value。
 - `apps/daemon/src/codex/profiles/writer.ts`  
-  isolated 写入：进程内写锁、临时文件、备份、原子 rename。
+  isolated 写入 `<name>.config.toml`：进程内写锁、临时文件、备份、原子 rename。
 - `apps/daemon/src/codex/profiles/manager.ts`  
   组合 reader/writer，提供 list/get/create/update/delete/validate 接口。
 - `apps/daemon/src/api/routes.profiles.ts`  
@@ -67,7 +67,7 @@ Do not modify in R3:
 **Files:**
 - Modify: `apps/daemon/test/smoke/real-codex-smoke.test.ts`
 
-- [ ] **Step 1: Add a gated smoke test that writes an isolated profile config**
+- [ ] **Step 1: Add a gated smoke test that writes an isolated profile overlay**
 
 Append this test inside `describe.runIf(runRealCodex)('real codex smoke', () => { ... })`:
 
@@ -76,9 +76,8 @@ Append this test inside `describe.runIf(runRealCodex)('real codex smoke', () => 
     const home = join(fixtureDir, `profile-smoke-${Date.now()}`);
     mkdirSync(home, { recursive: true });
     writeFileSync(
-      join(home, 'config.toml'),
+      join(home, 'r3_smoke.config.toml'),
       [
-        '[profiles.r3_smoke]',
         'model = "gpt-5.3-codex"',
         'model_reasoning_effort = "medium"',
         ''
@@ -89,22 +88,17 @@ Append this test inside `describe.runIf(runRealCodex)('real codex smoke', () => 
       'env',
       `CODEX_HOME=${home}`,
       'codex',
-      'exec',
       '-p',
       'r3_smoke',
-      '--json',
-      '--skip-git-repo-check',
-      '--sandbox',
-      'read-only',
-      'Reply with OK only.'
+      'features',
+      'list',
+      '--help'
     ]);
-    writeFixture('exec-isolated-profile-jsonl', result);
+    writeFixture('profile-overlay-help', result);
 
     expect(result.exitCode).toBe(0);
-    const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
-    expect(lines.length).toBeGreaterThan(0);
-    for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
-  }, 120_000);
+    expect(result.stdout + result.stderr).toContain('List known features');
+  });
 ```
 
 - [ ] **Step 2: Run the smoke and confirm profile shape**
@@ -113,8 +107,8 @@ Append this test inside `describe.runIf(runRealCodex)('real codex smoke', () => 
 CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
-Expected: the new profile smoke passes.  
-If it fails because Codex rejects `[profiles.r3_smoke]`, stop and update the R3 spec and this plan to match the real Codex profile format.
+Expected: the new profile overlay ABI smoke passes.
+If it fails because Codex rejects `r3_smoke.config.toml` or `-p r3_smoke`, stop and update the R3 spec and this plan to match the real Codex profile format. Do not use `codex exec` as the only ABI check because model networking/authentication can fail independently from profile parsing.
 
 - [ ] **Step 3: Commit**
 
@@ -285,47 +279,34 @@ Create `apps/daemon/test/unit/codex-profile-config.test.ts`:
 import { describe, expect, it } from 'vitest';
 import {
   isValidProfileName,
-  parseCodexProfileConfig,
+  parseCodexProfileOverlay,
+  profileNameFromFileName,
   validateProfileConfig
 } from '../../src/codex/profiles/config.js';
 
 describe('codex profile config parser', () => {
-  it('parses profiles from config.toml', () => {
-    const result = parseCodexProfileConfig([
-      '[profiles.default]',
+  it('parses a profile overlay file', () => {
+    const result = parseCodexProfileOverlay('review', [
       'model = "gpt-5.3-codex"',
       'model_reasoning_effort = "medium"',
-      '',
-      '[profiles.review]',
-      'model = "gpt-5.3-codex"',
-      'model_reasoning_effort = "high"',
       ''
     ].join('\n'));
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('expected parser success');
-    expect(result.profiles).toEqual([
-      expect.objectContaining({
-        name: 'default',
-        status: 'valid',
-        config: {
-          model: 'gpt-5.3-codex',
-          model_reasoning_effort: 'medium'
-        }
-      }),
-      expect.objectContaining({
-        name: 'review',
-        status: 'valid',
-        config: {
-          model: 'gpt-5.3-codex',
-          model_reasoning_effort: 'high'
-        }
-      })
-    ]);
+    expect(result.profile).toEqual(expect.objectContaining({
+      name: 'review',
+      status: 'valid',
+      config: {
+        model: 'gpt-5.3-codex',
+        model_reasoning_effort: 'medium'
+      },
+      source: 'review.config.toml'
+    }));
   });
 
   it('returns diagnostics for invalid toml without throwing', () => {
-    const result = parseCodexProfileConfig('[profiles.default\\nmodel = "x"');
+    const result = parseCodexProfileOverlay('review', 'model = "x');
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected parser failure');
     expect(result.diagnostics[0]).toContain('Failed to parse');
@@ -338,6 +319,14 @@ describe('codex profile config parser', () => {
     expect(isValidProfileName('')).toBe(false);
     expect(isValidProfileName('../secret')).toBe(false);
     expect(isValidProfileName('bad/name')).toBe(false);
+  });
+
+  it('maps only profile overlay file names to profile names', () => {
+    expect(profileNameFromFileName('review.config.toml')).toBe('review');
+    expect(profileNameFromFileName('team.alpha.config.toml')).toBe('team.alpha');
+    expect(profileNameFromFileName('config.toml')).toBeUndefined();
+    expect(profileNameFromFileName('review.config.toml.tmp')).toBeUndefined();
+    expect(profileNameFromFileName('../secret.config.toml')).toBeUndefined();
   });
 
   it('rejects nested profile values in R3 first version', () => {
@@ -374,14 +363,14 @@ export type CodexProfile = {
   status: CodexProfileStatus;
   config: TomlProfileConfig;
   diagnostics: string[];
-  source: 'config.toml';
+  source: `${string}.config.toml`;
   codexHomeMode: CodexHomeMode;
   updatedAt?: string;
 };
 
 export type ParseProfileConfigResult =
-  | { ok: true; profiles: Array<Omit<CodexProfile, 'codexHomeMode'>>; diagnostics: string[] }
-  | { ok: false; profiles: []; diagnostics: string[] };
+  | { ok: true; profile: Omit<CodexProfile, 'codexHomeMode'>; diagnostics: string[] }
+  | { ok: false; profile: Omit<CodexProfile, 'codexHomeMode'>; diagnostics: string[] };
 
 export type ValidationResult = { ok: true } | { ok: false; message: string };
 ```
@@ -406,6 +395,17 @@ export function isValidProfileName(name: string): boolean {
   return name.length > 0 && PROFILE_NAME_PATTERN.test(name);
 }
 
+export function profileFileName(name: string): string {
+  if (!isValidProfileName(name)) throw new Error(`CODEX_PROFILE_INVALID: invalid profile name: ${name}`);
+  return `${name}.config.toml`;
+}
+
+export function profileNameFromFileName(fileName: string): string | undefined {
+  if (!fileName.endsWith('.config.toml')) return undefined;
+  const name = fileName.slice(0, -'.config.toml'.length);
+  return isValidProfileName(name) ? name : undefined;
+}
+
 export function validateProfileConfig(config: Record<string, unknown>): ValidationResult {
   for (const [key, value] of Object.entries(config)) {
     if (!isValidProfileName(key)) return { ok: false, message: `invalid config key: ${key}` };
@@ -416,52 +416,46 @@ export function validateProfileConfig(config: Record<string, unknown>): Validati
   return { ok: true };
 }
 
-export function parseCodexProfileConfig(content: string): ParseProfileConfigResult {
+export function parseCodexProfileOverlay(name: string, content: string): ParseProfileConfigResult {
   let parsed: unknown;
   try {
     parsed = content.trim().length === 0 ? {} : parse(content);
   } catch (error) {
     return {
       ok: false,
-      profiles: [],
-      diagnostics: [`Failed to parse config.toml: ${error instanceof Error ? error.message : String(error)}`]
+      profile: invalidProfile(name, [`Failed to parse ${profileFileName(name)}: ${error instanceof Error ? error.message : String(error)}`]),
+      diagnostics: [`Failed to parse ${profileFileName(name)}: ${error instanceof Error ? error.message : String(error)}`]
     };
   }
 
   const root = isRecord(parsed) ? parsed : {};
-  const profiles = isRecord(root.profiles) ? root.profiles : {};
-  const result: Array<{
-    name: string;
-    status: 'valid' | 'invalid';
-    config: TomlProfileConfig;
-    diagnostics: string[];
-    source: 'config.toml';
-  }> = [];
-
-  for (const [name, rawConfig] of Object.entries(profiles)) {
-    if (!isRecord(rawConfig)) {
-      result.push({
-        name,
-        status: 'invalid',
-        config: {},
-        diagnostics: ['profile config must be a table'],
-        source: 'config.toml'
-      });
-      continue;
-    }
-
-    const validation = validateProfileConfig(rawConfig);
-    result.push({
-      name,
-      status: validation.ok ? 'valid' : 'invalid',
-      config: validation.ok ? normalizeProfileConfig(rawConfig) : {},
-      diagnostics: validation.ok ? [] : [validation.message],
-      source: 'config.toml'
-    });
+  const validation = validateProfileConfig(root);
+  if (!validation.ok) {
+    const profile = invalidProfile(name, [validation.message]);
+    return { ok: false, profile, diagnostics: [validation.message] };
   }
 
-  result.sort((a, b) => a.name.localeCompare(b.name));
-  return { ok: true, profiles: result, diagnostics: [] };
+  return {
+    ok: true,
+    profile: {
+      name,
+      status: 'valid',
+      config: normalizeProfileConfig(root),
+      diagnostics: [],
+      source: profileFileName(name)
+    },
+    diagnostics: []
+  };
+}
+
+function invalidProfile(name: string, diagnostics: string[]): Omit<CodexProfile, 'codexHomeMode'> {
+  return {
+    name,
+    status: 'invalid',
+    config: {},
+    diagnostics,
+    source: profileFileName(name)
+  };
 }
 
 function normalizeProfileConfig(config: Record<string, unknown>): TomlProfileConfig {
@@ -523,7 +517,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createProfileWriter,
-  serializeCodexProfileConfig
+  serializeCodexProfileOverlay
 } from '../../src/codex/profiles/writer.js';
 
 let tempDir = '';
@@ -542,61 +536,62 @@ describe('codex profile writer', () => {
       model: 'gpt-5.3-codex',
       model_reasoning_effort: 'high'
     });
-    expect(readFileSync(join(tempDir, 'config.toml'), 'utf8')).toContain('[profiles.review]');
+    expect(readFileSync(join(tempDir, 'review.config.toml'), 'utf8')).toContain('model = "gpt-5.3-codex"');
 
     await writer.updateProfile('review', {
       model: 'gpt-5.3-codex',
       model_reasoning_effort: 'medium'
     });
-    expect(readFileSync(join(tempDir, 'config.toml'), 'utf8')).toContain('model_reasoning_effort = "medium"');
-    expect(readdirSync(join(tempDir, 'backups')).some(name => name.startsWith('config.toml.'))).toBe(true);
+    expect(readFileSync(join(tempDir, 'review.config.toml'), 'utf8')).toContain('model_reasoning_effort = "medium"');
+    expect(readdirSync(join(tempDir, 'backups')).some(name => name.startsWith('review.config.toml.'))).toBe(true);
 
     await writer.deleteProfile('review');
-    expect(readFileSync(join(tempDir, 'config.toml'), 'utf8')).not.toContain('[profiles.review]');
+    expect(readdirSync(tempDir)).not.toContain('review.config.toml');
   });
 
-  it('does not destroy the original config when current toml is invalid', async () => {
+  it('does not destroy the original profile when new config is invalid', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-profile-writer-'));
     mkdirSync(tempDir, { recursive: true });
-    const configPath = join(tempDir, 'config.toml');
-    writeFileSync(configPath, '[profiles.default\\nmodel = "broken"');
+    const profilePath = join(tempDir, 'review.config.toml');
+    writeFileSync(profilePath, 'model = "gpt-5.3-codex"\n');
     const writer = createProfileWriter({ codexHome: tempDir });
 
-    await expect(writer.createProfile('review', { model: 'gpt-5.3-codex' })).rejects.toThrow(/CODEX_CONFIG_INVALID/);
-    expect(readFileSync(configPath, 'utf8')).toBe('[profiles.default\\nmodel = "broken"');
+    await expect(writer.updateProfile('review', { nested: { bad: true } as never })).rejects.toThrow(/CODEX_PROFILE_INVALID/);
+    expect(readFileSync(profilePath, 'utf8')).toBe('model = "gpt-5.3-codex"\n');
   });
 
   it('serializes supported profile values', () => {
-    const content = serializeCodexProfileConfig({
-      root: {},
-      profiles: {
-        review: {
-          model: 'gpt-5.3-codex',
-          enabled: true,
-          count: 2,
-          tags: ['a', 'b']
-        }
-      }
+    const content = serializeCodexProfileOverlay({
+      model: 'gpt-5.3-codex',
+      enabled: true,
+      count: 2,
+      tags: ['a', 'b']
     });
 
-    expect(content).toContain('[profiles.review]');
     expect(content).toContain('model = "gpt-5.3-codex"');
     expect(content).toContain('enabled = true');
     expect(content).toContain('count = 2');
     expect(content).toContain('tags = ["a", "b"]');
   });
 
-  it('preserves supported non-profile root config fields', async () => {
+  it('does not modify base config.toml when writing profiles', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-profile-writer-'));
     writeFileSync(join(tempDir, 'config.toml'), 'model = "gpt-5.3-codex"\napproval_policy = "never"\n');
     const writer = createProfileWriter({ codexHome: tempDir });
 
     await writer.createProfile('review', { model_reasoning_effort: 'high' });
 
-    const content = readFileSync(join(tempDir, 'config.toml'), 'utf8');
-    expect(content).toContain('model = "gpt-5.3-codex"');
-    expect(content).toContain('approval_policy = "never"');
-    expect(content).toContain('[profiles.review]');
+    expect(readFileSync(join(tempDir, 'config.toml'), 'utf8')).toBe('model = "gpt-5.3-codex"\napproval_policy = "never"\n');
+    expect(readFileSync(join(tempDir, 'review.config.toml'), 'utf8')).toContain('model_reasoning_effort = "high"');
+  });
+
+  it('rejects writes when the base config.toml is invalid', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-profile-writer-'));
+    writeFileSync(join(tempDir, 'config.toml'), 'model = "broken');
+    const writer = createProfileWriter({ codexHome: tempDir });
+
+    await expect(writer.createProfile('review', { model: 'gpt-5.3-codex' })).rejects.toThrow(/CODEX_CONFIG_INVALID/);
+    expect(readdirSync(tempDir)).not.toContain('review.config.toml');
   });
 });
 ```
@@ -614,21 +609,16 @@ Expected: fails because writer module does not exist.
 Create `apps/daemon/src/codex/profiles/writer.ts`:
 
 ```ts
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'toml';
-import { parseCodexProfileConfig, validateProfileConfig } from './config.js';
+import { profileFileName, validateProfileConfig } from './config.js';
 import type { TomlProfileConfig, TomlProfileValue } from './types.js';
 
 export type ProfileWriter = {
   createProfile(name: string, config: TomlProfileConfig): Promise<void>;
   updateProfile(name: string, config: TomlProfileConfig): Promise<void>;
   deleteProfile(name: string): Promise<void>;
-};
-
-type RootConfig = {
-  root: TomlProfileConfig;
-  profiles: Record<string, TomlProfileConfig>;
 };
 
 const locks = new Map<string, Promise<void>>();
@@ -647,34 +637,26 @@ export function createProfileWriter(input: { codexHome: string }): ProfileWriter
   };
 }
 
-export function serializeCodexProfileConfig(root: RootConfig): string {
+export function serializeCodexProfileOverlay(config: TomlProfileConfig): string {
   const lines: string[] = [];
-  for (const [key, value] of Object.entries(root.root).sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [key, value] of Object.entries(config).sort(([a], [b]) => a.localeCompare(b))) {
     lines.push(`${key} = ${formatTomlValue(value)}`);
   }
-  if (lines.length > 0) lines.push('');
-
-  for (const [name, config] of Object.entries(root.profiles).sort(([a], [b]) => a.localeCompare(b))) {
-    lines.push(`[profiles.${name}]`);
-    for (const [key, value] of Object.entries(config).sort(([a], [b]) => a.localeCompare(b))) {
-      lines.push(`${key} = ${formatTomlValue(value)}`);
-    }
-    lines.push('');
-  }
-  return lines.join('\n');
+  return `${lines.join('\n')}\n`;
 }
 
 async function withLock(codexHome: string, fn: () => void): Promise<void> {
   const previous = locks.get(codexHome) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>(resolve => { release = resolve; });
-  locks.set(codexHome, previous.then(() => current));
+  const chained = previous.then(() => current);
+  locks.set(codexHome, chained);
   await previous;
   try {
     fn();
   } finally {
     release();
-    if (locks.get(codexHome) === current) locks.delete(codexHome);
+    if (locks.get(codexHome) === chained) locks.delete(codexHome);
   }
 }
 
@@ -690,62 +672,48 @@ function writeProfile(
   }
 
   mkdirSync(codexHome, { recursive: true });
-  const configPath = join(codexHome, 'config.toml');
-  const existing = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
-  const parsed = parseCodexProfileConfig(existing);
-  if (!parsed.ok) throw new Error(`CODEX_CONFIG_INVALID: ${parsed.diagnostics.join('; ')}`);
+  assertBaseConfigReadable(codexHome);
 
-  const root = parseRootConfig(existing);
-  if (action === 'create' && root.profiles[name] !== undefined) {
+  const fileName = profileFileName(name);
+  const profilePath = join(codexHome, fileName);
+  const exists = existsSync(profilePath);
+  if (action === 'create' && exists) {
     throw new Error('CODEX_PROFILE_EXISTS');
   }
-  if ((action === 'update' || action === 'delete') && root.profiles[name] === undefined) {
+  if ((action === 'update' || action === 'delete') && !exists) {
     throw new Error('CODEX_PROFILE_NOT_FOUND');
   }
 
-  if (action === 'delete') delete root.profiles[name];
-  else root.profiles[name] = config ?? {};
+  if (action === 'delete') {
+    backupProfile(codexHome, profilePath, fileName);
+    rmSync(profilePath);
+    return;
+  }
 
-  const next = serializeCodexProfileConfig(root);
+  const next = serializeCodexProfileOverlay(config ?? {});
   parse(next);
 
-  const tmpPath = join(codexHome, `config.toml.tmp-${process.pid}-${Date.now()}`);
+  const tmpPath = join(codexHome, `${fileName}.tmp-${process.pid}-${Date.now()}`);
   writeFileSync(tmpPath, next);
   parse(readFileSync(tmpPath, 'utf8'));
-  if (existsSync(configPath)) backupConfig(codexHome, configPath);
-  renameSync(tmpPath, configPath);
+  if (exists) backupProfile(codexHome, profilePath, fileName);
+  renameSync(tmpPath, profilePath);
 }
 
-function parseRootConfig(content: string): RootConfig {
-  const parsed = content.trim().length === 0 ? {} : parse(content);
-  if (!isRecord(parsed)) return { root: {}, profiles: {} };
-
-  const validation = validateProfileConfig(
-    Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== 'profiles'))
-  );
-  if (!validation.ok) {
-    throw new Error(`CODEX_CONFIG_INVALID: unsupported top-level config: ${validation.message}`);
+function assertBaseConfigReadable(codexHome: string): void {
+  const baseConfigPath = join(codexHome, 'config.toml');
+  if (!existsSync(baseConfigPath)) return;
+  try {
+    parse(readFileSync(baseConfigPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`CODEX_CONFIG_INVALID: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  const root: TomlProfileConfig = {};
-  for (const [key, value] of Object.entries(parsed)) {
-    if (key !== 'profiles' && isTomlProfileValue(value)) root[key] = value;
-  }
-
-  const rawProfiles = isRecord(parsed.profiles)
-    ? parsed.profiles
-    : {};
-  const profiles: Record<string, TomlProfileConfig> = {};
-  for (const [name, value] of Object.entries(rawProfiles)) {
-    if (isRecord(value)) profiles[name] = value as TomlProfileConfig;
-  }
-  return { root, profiles };
 }
 
-function backupConfig(codexHome: string, configPath: string): void {
+function backupProfile(codexHome: string, profilePath: string, fileName: string): void {
   const backupDir = join(codexHome, 'backups');
   mkdirSync(backupDir, { recursive: true });
-  copyFileSync(configPath, join(backupDir, `config.toml.${Date.now()}.bak`));
+  copyFileSync(profilePath, join(backupDir, `${fileName}.${Date.now()}.bak`));
 }
 
 function formatTomlValue(value: TomlProfileValue): string {
@@ -754,17 +722,6 @@ function formatTomlValue(value: TomlProfileValue): string {
   return `[${value.map(formatTomlValue).join(', ')}]`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isTomlProfileValue(value: unknown): value is TomlProfileValue {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return true;
-  }
-  return Array.isArray(value)
-    && value.every(item => typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean');
-}
 ```
 
 - [ ] **Step 4: Run tests**
@@ -803,8 +760,8 @@ Add to `apps/daemon/test/integration/api.test.ts`:
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
     writeFileSync(
-      join(codexHome, 'config.toml'),
-      '[profiles.review]\nmodel = "gpt-5.3-codex"\n'
+      join(codexHome, 'review.config.toml'),
+      'model = "gpt-5.3-codex"\n'
     );
     server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
 
@@ -829,11 +786,11 @@ Add to `apps/daemon/test/integration/api.test.ts`:
     });
   });
 
-  it('returns diagnostics instead of crashing for invalid profile config', async () => {
+  it('returns invalid profile diagnostics instead of crashing for invalid profile config', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
-    writeFileSync(join(codexHome, 'config.toml'), '[profiles.review\nmodel = "broken"');
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "broken');
     server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
 
     const response = await server.inject({
@@ -843,8 +800,34 @@ Add to `apps/daemon/test/integration/api.test.ts`:
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().profiles).toEqual([]);
-    expect(response.json().diagnostics[0]).toContain('Failed to parse');
+    expect(response.json().profiles).toEqual([
+      expect.objectContaining({
+        name: 'review',
+        status: 'invalid',
+        diagnostics: [expect.stringContaining('Failed to parse')]
+      })
+    ]);
+  });
+
+  it('returns diagnostics instead of crashing when base config is invalid', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "broken');
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "gpt-5.3-codex"\n');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/profiles',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().profiles).toEqual([
+      expect.objectContaining({ name: 'review', status: 'valid' })
+    ]);
+    expect(response.json().diagnostics[0]).toContain('Failed to parse config.toml');
   });
 ```
 
@@ -863,10 +846,11 @@ Expected: 404 for `/codex/profiles`.
 Create `apps/daemon/src/codex/profiles/manager.ts`:
 
 ```ts
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse } from 'toml';
 import type { ResolvedCodexHome } from '../home.js';
-import { parseCodexProfileConfig } from './config.js';
+import { parseCodexProfileOverlay, profileNameFromFileName } from './config.js';
 import { createProfileWriter } from './writer.js';
 import type { CodexProfile, TomlProfileConfig } from './types.js';
 
@@ -904,7 +888,7 @@ export function createProfileManager(input: { codexHome: ResolvedCodexHome }): P
     validateProfileForRun(name) {
       if (name === 'default') return { ok: true };
       const scan = scanProfiles(input.codexHome);
-      if (scan.diagnostics.length > 0) {
+      if (scan.baseConfigValid === false) {
         return { ok: false, code: 'CODEX_CONFIG_INVALID', message: scan.diagnostics.join('; ') };
       }
       const profile = scan.profiles.find(item => item.name === name);
@@ -919,19 +903,36 @@ export function createProfileManager(input: { codexHome: ResolvedCodexHome }): P
   };
 }
 
-function scanProfiles(codexHome: ResolvedCodexHome): { profiles: CodexProfile[]; diagnostics: string[] } {
-  const configPath = join(codexHome.path, 'config.toml');
-  const content = existsSync(configPath) ? readFileSync(configPath, 'utf8') : '';
-  const updatedAt = existsSync(configPath) ? statSync(configPath).mtime.toISOString() : undefined;
-  const parsed = parseCodexProfileConfig(content);
-  if (!parsed.ok) return { profiles: [], diagnostics: parsed.diagnostics };
+function scanProfiles(codexHome: ResolvedCodexHome): { profiles: CodexProfile[]; diagnostics: string[]; baseConfigValid: boolean } {
+  const diagnostics: string[] = [];
+  let baseConfigValid = true;
+  const baseConfigPath = join(codexHome.path, 'config.toml');
+  if (existsSync(baseConfigPath)) {
+    try {
+      parse(readFileSync(baseConfigPath, 'utf8'));
+    } catch (error) {
+      baseConfigValid = false;
+      diagnostics.push(`Failed to parse config.toml: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const profiles = existsSync(codexHome.path)
+    ? readdirSync(codexHome.path)
+        .flatMap(fileName => {
+          const name = profileNameFromFileName(fileName);
+          if (name === undefined) return [];
+          const profilePath = join(codexHome.path, fileName);
+          const parsed = parseCodexProfileOverlay(name, readFileSync(profilePath, 'utf8'));
+          const updatedAt = statSync(profilePath).mtime.toISOString();
+          return [{ ...parsed.profile, codexHomeMode: codexHome.mode, updatedAt }];
+        })
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
   return {
-    profiles: parsed.profiles.map(profile => ({
-      ...profile,
-      codexHomeMode: codexHome.mode,
-      updatedAt
-    })),
-    diagnostics: parsed.diagnostics
+    profiles,
+    diagnostics,
+    baseConfigValid
   };
 }
 
@@ -1289,11 +1290,12 @@ Add to `apps/daemon/test/integration/api.test.ts`:
     await waitForRunStatus(run.json().id, 'succeeded');
   });
 
-  it('rejects explicit profiles when config.toml is invalid', async () => {
+  it('rejects explicit profiles when base config.toml is invalid', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
-    writeFileSync(join(codexHome, 'config.toml'), '[profiles.review\nmodel = "broken"');
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "broken');
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "gpt-5.3-codex"\n');
     server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
 
     const run = await server.inject({
@@ -1305,6 +1307,24 @@ Add to `apps/daemon/test/integration/api.test.ts`:
 
     expect(run.statusCode).toBe(422);
     expect(run.json().error.code).toBe('CODEX_CONFIG_INVALID');
+  });
+
+  it('rejects explicit profiles when the profile overlay is invalid', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "broken');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const run = await server.inject({
+      method: 'POST',
+      url: '/runs',
+      headers: { authorization: 'Bearer secret' },
+      payload: { prompt: 'hello', cwd: tempDir, profile: 'review' }
+    });
+
+    expect(run.statusCode).toBe(422);
+    expect(run.json().error.code).toBe('CODEX_PROFILE_INVALID');
   });
 ```
 
@@ -1413,7 +1433,7 @@ In `docs/superpowers/reports/2026-07-04-runtime-contract-coverage.md`, update:
 Update Profile row or add one:
 
 ```md
-| Profile API | `apps/daemon/src/codex/profiles/*`, `apps/daemon/src/api/routes.profiles.ts` | `apps/daemon/test/unit/codex-profile-*.test.ts`, `apps/daemon/test/integration/api.test.ts`, `apps/daemon/test/smoke/real-codex-smoke.test.ts` | `PARTIAL` | isolated profile CRUD、写锁、备份、原子写入、run/thread 校验已覆盖；全局写入、复杂 config normalize、UI 未实现 |
+| Profile API | `apps/daemon/src/codex/profiles/*`, `apps/daemon/src/api/routes.profiles.ts` | `apps/daemon/test/unit/codex-profile-*.test.ts`, `apps/daemon/test/integration/api.test.ts`, `apps/daemon/test/smoke/real-codex-smoke.test.ts` | `PARTIAL` | isolated profile overlay CRUD、写锁、备份、原子写入、run/thread 校验已覆盖；全局写入、复杂 base config 修复、UI 未实现 |
 ```
 
 Do not claim Skills, MCP, Scheduler, or UI are complete.

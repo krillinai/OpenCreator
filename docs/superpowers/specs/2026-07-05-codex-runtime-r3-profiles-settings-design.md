@@ -29,7 +29,7 @@ R3 第一版不做：
 4. 不实现 MCP 管理 API。
 5. 不实现 Scheduler CRUD。
 6. 不扫描或展示用户所有 Codex 历史 session。
-7. 不实现复杂 config normalize 删除策略。
+7. 不实现复杂 base config 修复或 normalize 策略。
 8. 不实现桌面 UI。
 9. 不把 SQLite 作为 profile 真相源。
 
@@ -43,38 +43,46 @@ R3 第一版不做：
 2. 否则使用 Codex 默认路径 `~/.codex`。
 3. 这两种都属于 `global` 模式。
 
-全局模式只允许读取 profile 和诊断状态。任何会修改 `config.toml` 的 API 都直接拒绝，返回 `CODEX_HOME_READ_ONLY`。
+全局模式只允许读取 profile 和诊断状态。任何会修改 profile overlay 文件的 API 都直接拒绝，返回 `CODEX_HOME_READ_ONLY`。
 
 isolated 模式只在 Runtime 显式传入 isolated home 时启用。只有 isolated 模式允许 profile 写入。这样第一版可以实现写锁、原子写入、备份和损坏恢复测试，而不冒险改用户真实 Codex 配置。
 
-### 4.2 使用 Codex 原生 profile 结构
+### 4.2 使用 Codex 当前原生 profile overlay 结构
 
-R3 不创建 `profiles/<name>.toml` 这样的第二套 profile 体系。profile 真相源是当前 `CODEX_HOME/config.toml` 中的 Codex 原生配置。
+R3 不创建 `profiles/<name>.toml` 这样的第二套 profile 体系。profile 真相源是当前 Codex CLI 原生的 profile overlay 文件：
 
-候选 TOML 结构：
-
-```toml
-[profiles.default]
-model = "gpt-5.3-codex"
-model_reasoning_effort = "medium"
-
-[profiles.review]
-model = "gpt-5.3-codex"
-model_reasoning_effort = "high"
+```text
+CODEX_HOME/<profile>.config.toml
 ```
 
-实施前必须用 isolated `CODEX_HOME` 验证当前 Codex CLI 能通过 `codex exec -p <name>` 读取该结构。若验证发现 Codex 0.142.5 的 profile 结构不同，以真实 Codex 行为为准更新本设计和实施计划。
+Codex 0.142.5 的 `codex --help` 显示 `--profile <name>` 会将 `$CODEX_HOME/<name>.config.toml` 叠加到基础用户配置上。实测中旧式 `profile = "<name>"` 或 `[profiles.<name>]` 会被 Codex 拒绝，并提示迁移到 `<name>.config.toml`。
+
+基础 `CODEX_HOME/config.toml` 仍属于 Codex 原生基础配置，但它不是 profile 列表或 profile 真相源。R3 第一版只管理 `<profile>.config.toml` 文件。
+
+示例：
+
+```text
+CODEX_HOME/review.config.toml
+```
+
+```toml
+model = "gpt-5.3-codex"
+model_reasoning_effort = "medium"
+```
+
+实施必须以真实 Codex 行为为准。R3 smoke 需要用 isolated `CODEX_HOME` 写入 `<name>.config.toml`，再通过真实 Codex CLI 的 `-p <name>` 加载路径验证 ABI。该 ABI 验证不应依赖模型网络请求是否可用。
 
 ### 4.3 SQLite 是缓存，不是真相源
 
-SQLite 可以保存 profile cache、状态和最后一次扫描时间，但 run 执行仍以 `CODEX_HOME/config.toml` 为准。
+SQLite 可以保存 profile cache、状态和最后一次扫描时间，但 run 执行仍以 `CODEX_HOME/config.toml` 加 `<profile>.config.toml` overlay 为准。
 
 规则：
 
-1. API 查询 profile 时先轻量扫描当前 `CODEX_HOME`。
+1. API 查询 profile 时先轻量扫描当前 `CODEX_HOME/*.config.toml`，排除基础 `config.toml`、临时文件和备份目录。
 2. 文件内容和缓存冲突时，以文件内容为准。
-3. 缓存刷新失败不能导致 daemon 崩溃。
-4. run 创建时保存 profile 名称和 Codex 快照，后续 profile 修改不改变历史 run。
+3. 基础 `config.toml` 或 profile 文件和缓存冲突时，以文件内容为准。
+4. 缓存刷新失败不能导致 daemon 崩溃。
+5. run 创建时保存 profile 名称和 Codex 快照，后续 profile 修改不改变历史 run。
 
 ## 5. API 设计
 
@@ -159,12 +167,12 @@ type UpdateCodexProfileRequest = {
 
 ### 5.6 `DELETE /codex/profiles/:name`
 
-只在 isolated 模式允许。删除 `[profiles.<name>]`。
+只在 isolated 模式允许。删除 `<name>.config.toml`。
 
 规则：
 
 1. 不存在返回 `CODEX_PROFILE_NOT_FOUND`。
-2. 删除前备份当前 `config.toml`。
+2. 删除前备份当前 `<name>.config.toml`。
 3. 删除后新 run 不再能使用该 profile。
 
 ## 6. Profile 响应模型
@@ -177,36 +185,36 @@ type CodexProfileResponse = {
   status: CodexProfileStatus;
   config: Record<string, unknown>;
   diagnostics: string[];
-  source: "config.toml";
+  source: "<name>.config.toml";
   codexHomeMode: "global" | "isolated";
   updatedAt?: string;
 };
 ```
 
-`status = invalid` 表示 Runtime 能识别 profile 名称，但 profile 配置无法安全用于 run，或 `config.toml` 无法被完整解析。
+`status = invalid` 表示 Runtime 能从文件名识别 profile 名称，但 profile overlay TOML 无法安全用于 run。基础 `config.toml` 解析失败时不生成 profile invalid 项，而是在 list 响应 diagnostics 和 run/thread 校验中返回 `CODEX_CONFIG_INVALID`。
 
 ## 7. 文件写入策略
 
-R3 引入 Codex config 写锁。所有写 `CODEX_HOME/config.toml` 的操作必须串行执行。
+R3 引入 Codex profile 写锁。所有写 `CODEX_HOME/<name>.config.toml` 的操作必须串行执行。
 
 写入步骤：
 
 1. 获取写锁。
-2. 读取当前 `config.toml`；不存在时视为空配置。
-3. 解析 TOML。
-4. 修改 `profiles` 表。
-5. 序列化为 TOML。
+2. 读取当前 `<name>.config.toml`；create 时文件必须不存在，update/delete 时文件必须存在。
+3. 解析基础 `config.toml`；如果基础配置损坏，写操作返回 `CODEX_CONFIG_INVALID`，不尝试自动修复。
+4. create/update 时校验并序列化 profile overlay TOML。
+5. delete 时不生成新 overlay 文件。
 6. 写入同目录临时文件。
 7. 重新读取临时文件并解析，确认 TOML 合法。
-8. 备份旧 `config.toml`。
-9. rename 临时文件覆盖正式文件。
+8. 如果旧 `<name>.config.toml` 存在，备份旧文件。
+9. create/update 用 rename 临时文件覆盖正式文件；delete 备份后删除正式文件。
 10. 刷新 profile cache。
 11. 释放写锁。
 
 备份路径建议：
 
 ```text
-CODEX_HOME/backups/config.toml.<timestamp>.bak
+CODEX_HOME/backups/<name>.config.toml.<timestamp>.bak
 ```
 
 第一版只要求保留最近一次备份；可以清理更旧备份，也可以先保留多份但不提供管理 API。
@@ -216,11 +224,19 @@ CODEX_HOME/backups/config.toml.<timestamp>.bak
 如果 `config.toml` 解析失败：
 
 1. daemon 不崩溃。
-2. `GET /codex/profiles` 返回空 profile 列表和 diagnostics。
+2. `GET /codex/profiles` 仍尽量扫描 `<name>.config.toml` profile 列表，并在 diagnostics 中报告基础配置损坏。
 3. `GET /codex/profiles/:name` 返回 `CODEX_CONFIG_INVALID`。
 4. 写操作返回 `CODEX_CONFIG_INVALID`，不尝试自动修复。
 5. 全局模式不提供修复 API。
 6. isolated 模式后续可以提供显式 reset/replace，但不进入 R3 第一版。
+
+如果单个 `<name>.config.toml` 解析失败：
+
+1. daemon 不崩溃。
+2. `GET /codex/profiles` 返回该 profile，`status = invalid`，并在该 profile 的 diagnostics 中报告解析失败。
+3. `GET /codex/profiles/:name` 返回该 profile 及 diagnostics。
+4. run/thread 显式指定该 profile 时返回 `CODEX_PROFILE_INVALID`。
+5. isolated 写入该 profile 时，create 返回 `CODEX_PROFILE_EXISTS`，update 可以用新的完整配置替换损坏文件，但必须先备份损坏文件。
 
 ## 9. Run / Thread 联动
 
@@ -266,7 +282,7 @@ HTTP 映射：
 | `CODEX_PROFILE_NOT_FOUND` | 404 | profile 不存在 |
 | `CODEX_PROFILE_EXISTS` | 409 | profile 已存在 |
 | `CODEX_PROFILE_INVALID` | 422 | profile 存在但配置不可用 |
-| `CODEX_CONFIG_INVALID` | 422 | `config.toml` 无法解析或不安全 |
+| `CODEX_CONFIG_INVALID` | 422 | 基础 `config.toml` 无法解析或不安全 |
 | `CODEX_CONFIG_WRITE_FAILED` | 500 | 写入、备份或 rename 失败 |
 | `CODEX_CONFIG_LOCKED` | 409 | 写锁不可用或超时 |
 
@@ -277,8 +293,8 @@ HTTP 映射：
 新增测试：
 
 1. `codex-home.test.ts`：覆盖 `source` 和 `writable` 推导。
-2. `codex-profile-config.test.ts`：解析空配置、多个 profile、非法 TOML、非法 name。
-3. `codex-profile-writer.test.ts`：写锁、临时文件、备份、原子替换、失败不破坏原文件。
+2. `codex-profile-config.test.ts`：解析单个 profile overlay、空配置、非法 TOML、非法 name、非法文件名。
+3. `codex-profile-writer.test.ts`：写锁、临时文件、备份、原子替换、失败不破坏原 profile 文件。
 
 ### 11.2 Integration tests
 
@@ -287,8 +303,8 @@ HTTP 映射：
 1. 全局模式 `GET /codex/profiles` 可读。
 2. 全局模式 `POST/PATCH/DELETE /codex/profiles` 返回 `CODEX_HOME_READ_ONLY`。
 3. isolated 模式 create/list/get/patch/delete profile。
-4. isolated 写入产生备份。
-5. TOML 损坏时 API 返回 diagnostics，daemon 不崩溃。
+4. isolated 写入产生 `<name>.config.toml` 备份。
+5. 基础 `config.toml` 或单个 profile overlay TOML 损坏时 API 返回 diagnostics，daemon 不崩溃。
 6. 显式指定 invalid profile 创建 run 返回 `CODEX_PROFILE_INVALID`。
 7. 显式指定 missing profile 创建 run 返回 `CODEX_PROFILE_NOT_FOUND`。
 8. thread 创建指定 missing/invalid profile 被拒绝。
@@ -299,11 +315,11 @@ HTTP 映射：
 
 新增 gated smoke，仅使用 isolated `CODEX_HOME`：
 
-1. 写入 `config.toml` 中的 `[profiles.r3_smoke]`。
-2. 执行 `CODEX_HOME=<isolated> codex exec -p r3_smoke --json --skip-git-repo-check --sandbox read-only "Reply OK only."`。
-3. 断言 exit code 0，stdout JSONL 合法。
+1. 写入 `CODEX_HOME/r3_smoke.config.toml`。
+2. 执行 `CODEX_HOME=<isolated> codex -p r3_smoke features list --help`，断言 exit code 0，用于验证 profile overlay ABI，不依赖模型网络请求。
+3. 在认证可用时，继续执行 `CODEX_HOME=<isolated> codex exec -p r3_smoke --json --skip-git-repo-check --sandbox read-only "Reply OK only."`，断言 stdout JSONL 合法。若失败原因是认证或网络，不应回滚 profile ABI 结论；若失败原因是 profile 文件被拒绝，必须停止修正方案。
 
-如果当前 Codex CLI 不接受候选 profile 结构，R3 实施必须先更新 parser/writer 以匹配真实结构。
+如果当前 Codex CLI 不接受 `<name>.config.toml` profile 结构，R3 实施必须先更新 parser/writer 以匹配真实结构。
 
 ## 12. 实施任务拆分
 
@@ -311,7 +327,7 @@ HTTP 映射：
 
 1. 扩展 `ResolvedCodexHome` 和 `/codex/status`，返回 source/writable。
 2. 增加 protocol 类型和 R3 错误码。
-3. 增加 profile config parser，支持读取 `[profiles.<name>]`。
+3. 增加 profile config parser，支持读取 `<name>.config.toml` overlay。
 4. 增加 read-only Profile API。
 5. 增加 isolated profile writer：写锁、备份、原子写入。
 6. 将 run/thread 创建接入 profile validate。
@@ -325,7 +341,7 @@ R3 完成后必须满足：
 
 1. 全局 `CODEX_HOME` 下 profile 可读但不可写。
 2. isolated `CODEX_HOME` 下 profile CRUD 全部通过。
-3. 写入失败不会破坏原 `config.toml`。
+3. 写入失败不会破坏原 `<name>.config.toml` 或基础 `config.toml`。
 4. 每次写入前都有备份。
 5. 配置损坏时 daemon 不崩溃。
 6. run/thread 显式指定 missing 或 invalid profile 会被拒绝。
