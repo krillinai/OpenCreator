@@ -9,8 +9,14 @@ import { normalizerVersion, normalizeCodexEvent } from '../events/normalizer.js'
 import { parseJsonLine } from '../events/parser.js';
 import { redactText } from '../security/redaction.js';
 import { createRunRepository, type RunRow } from '../storage/repositories.js';
-import type { ThreadManager } from '../threads/types.js';
+import type { RuntimeThread } from '../threads/types.js';
 import type { CreatedRun, CreateRunInput } from './types.js';
+
+export type ThreadAccess = {
+  getThread(id: string): RuntimeThread | undefined;
+  setCodexThreadId(threadId: string, codexThreadId: string): void;
+  touchThread(threadId: string): void;
+};
 
 export type RunManagerOptions = {
   db: Database.Database;
@@ -20,12 +26,14 @@ export type RunManagerOptions = {
   timeoutMs?: number;
   spawnTimeoutMs?: number;
   inactivityTimeoutMs?: number;
-  threadManager?: Pick<ThreadManager, 'getThread' | 'setCodexThreadId' | 'touchThread'>;
+  threadAccess?: ThreadAccess;
+  resumeCapabilityVerified?: boolean;
 };
 
 export type RuntimeRun = {
   id: string;
   threadId?: string;
+  codexThreadId?: string;
   status: PublicRunStatus;
   cwd: string;
   profile: string;
@@ -54,6 +62,7 @@ export type RunManager = {
 
 const EXEC_TIMEOUT_MS = 30_000;
 const EXEC_INACTIVITY_TIMEOUT_MS = 30_000;
+const CODEX_THREAD_ID_MISSING_MESSAGE = 'Codex stream ended without thread.started thread_id';
 
 type ActiveRun = {
   cancel(): void;
@@ -120,6 +129,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       let stderr = '';
       let seq = 0;
       let sawTurnCompleted = false;
+      let sawCodexThreadId = false;
 
       const process = startCodexExec({
         codexBin: options.codexBin,
@@ -150,6 +160,17 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             return;
           }
 
+          if (isThreadStarted(parsed.value)) {
+            const codexThreadId = parsed.value.thread_id;
+            sawCodexThreadId = true;
+            runs.setRunCodexThreadId(id, codexThreadId);
+            if (input.threadId) options.threadAccess?.setCodexThreadId(input.threadId, codexThreadId);
+            publishStatus(id, seq, 'initializing', publish, {
+              threadId: input.threadId,
+              codexThreadId
+            });
+            return;
+          }
           if (isTurnCompleted(parsed.value)) sawTurnCompleted = true;
           publish(normalizeCodexEvent({ runId: id, seq, raw: parsed.value }));
         },
@@ -164,20 +185,40 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
       const done = process.result
         .then(result => {
-          const streamError = result.exitCode === 0 && !sawTurnCompleted;
+          const exitedSuccessfully =
+            result.exitCode === 0 && result.terminationReason !== 'canceled';
+          const missingCodexThreadId =
+            exitedSuccessfully && input.threadId !== undefined && !sawCodexThreadId;
+          const streamError = exitedSuccessfully && (!sawTurnCompleted || missingCodexThreadId);
           const publicStatus: PublicRunStatus = result.terminationReason === 'canceled'
             ? 'canceled'
             : result.exitCode === 0 && !streamError
               ? 'succeeded'
               : 'failed';
           const terminationReason = streamError ? 'stream_error' : resultToTerminationReason(result);
+          const errorCode = missingCodexThreadId ? 'CODEX_THREAD_ID_MISSING' : undefined;
+          const errorMessage = missingCodexThreadId
+            ? CODEX_THREAD_ID_MISSING_MESSAGE
+            : undefined;
           writeJson(join(runDir, 'diagnostics.json'), {
             exitCode: result.exitCode,
             signal: result.signal,
             terminationReason,
-            ...(streamError ? { error: 'Codex stream ended without turn.completed' } : {})
+            ...(missingCodexThreadId
+              ? { error: errorMessage }
+              : streamError
+                ? { error: 'Codex stream ended without turn.completed' }
+                : {})
           });
-          if (streamError) {
+          if (missingCodexThreadId) {
+            publishError(
+              id,
+              ++seq,
+              'CODEX_THREAD_ID_MISSING',
+              CODEX_THREAD_ID_MISSING_MESSAGE,
+              publish
+            );
+          } else if (streamError) {
             publishDiagnostic(
               id,
               ++seq,
@@ -190,6 +231,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             terminationReason,
             exitCode: result.exitCode,
             signal: result.signal,
+            ...(errorCode === undefined ? {} : { errorCode }),
+            ...(errorMessage === undefined ? {} : { errorMessage }),
             endedAt: new Date().toISOString()
           });
 
@@ -306,6 +349,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       codexVersion: 'unknown',
       codexBin: options.codexBin,
       codexHome: options.codexHome,
+      ...(input.codexThreadId === undefined ? {} : { codexThreadId: input.codexThreadId }),
+      resumeMode: input.threadId === undefined ? 'independent' : normalizeResumeMode(input.resumeMode),
       normalizerVersion
     });
 
@@ -316,6 +361,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       profile: input.profile,
       sandbox: input.sandbox,
       threadId: input.threadId,
+      codexThreadId: input.codexThreadId,
       resumeMode: input.resumeMode ?? 'new_thread'
     });
 
@@ -367,8 +413,9 @@ function writeJson(path: string, value: unknown): void {
 function publishStatus(
   runId: string,
   seq: number,
-  label: 'initializing' | 'running' | 'canceling' | 'finalizing',
-  publish: (event: AgentEventEnvelope) => void
+  label: 'queued' | 'initializing' | 'running' | 'canceling' | 'finalizing',
+  publish: (event: AgentEventEnvelope) => void,
+  metadata: { threadId?: string; codexThreadId?: string } = {}
 ): void {
   publish({
     id: `evt_${runId}_${seq}`,
@@ -376,7 +423,7 @@ function publishStatus(
     seq,
     ts: new Date().toISOString(),
     type: 'status',
-    payload: { type: 'status', label },
+    payload: { type: 'status', label, ...metadata },
     normalizerVersion
   });
 }
@@ -468,6 +515,20 @@ function isTurnCompleted(value: unknown): boolean {
     && (value as { type?: unknown }).type === 'turn.completed';
 }
 
+function isThreadStarted(value: unknown): value is { type: 'thread.started'; thread_id: string } {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+    && (value as { type?: unknown }).type === 'thread.started'
+    && typeof (value as { thread_id?: unknown }).thread_id === 'string';
+}
+
+function normalizeResumeMode(
+  resumeMode: CreateRunInput['resumeMode']
+): 'new_thread' | 'resume_thread' {
+  return resumeMode === 'resume_thread' ? 'resume_thread' : 'new_thread';
+}
+
 function errorToTerminationReason(error: unknown): TerminationReason {
   if (error instanceof CodexExecError) {
     if (error.terminationReason === 'timeout') return 'timeout';
@@ -489,6 +550,7 @@ function mapRunRow(row: RunRow): RuntimeRun {
   return {
     id: row.id,
     ...(row.thread_id === null ? {} : { threadId: row.thread_id }),
+    ...(row.codex_thread_id === null ? {} : { codexThreadId: row.codex_thread_id }),
     status: row.public_status as PublicRunStatus,
     cwd: row.cwd,
     profile: row.profile,

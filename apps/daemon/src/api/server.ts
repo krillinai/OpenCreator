@@ -36,7 +36,7 @@ export async function buildServer(input: BuildServerInput) {
       dataDir,
       codexBin: input.codexBin ?? 'codex',
       codexHome,
-      threadManager
+      threadAccess: threadManager
     });
 
   server.addHook('onClose', async () => {
@@ -51,7 +51,10 @@ export async function buildServer(input: BuildServerInput) {
   });
 
   await registerCodexRoutes(server);
-  await registerRunRoutes(server, runManager, { sseHeartbeatMs: input.sseHeartbeatMs });
+  await registerRunRoutes(server, runManager, {
+    sseHeartbeatMs: input.sseHeartbeatMs,
+    threadManager
+  });
   await registerDiagnosticsRoutes(server, dataDir);
   await registerThreadRoutes(server, threadManager, runManager);
 

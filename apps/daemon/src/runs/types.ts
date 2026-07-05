@@ -6,7 +6,8 @@ export type CreateRunInput = {
   profile: string;
   sandbox: SandboxMode;
   threadId?: string;
-  resumeMode?: 'new_thread' | 'resume_thread';
+  resumeMode?: 'auto' | 'new_thread' | 'resume_thread';
+  codexThreadId?: string;
   model?: string;
   reasoning?: ReasoningEffort;
 };

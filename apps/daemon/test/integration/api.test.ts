@@ -11,6 +11,7 @@ import { createFakeCodex } from '../helpers/fake-codex.js';
 let server: FastifyInstance | undefined;
 let tempDir = '';
 const RUN_STATUS_TIMEOUT_MS = 5_000;
+type TestInjectPayload = string | object;
 
 afterEach(async () => {
   await server?.close();
@@ -145,7 +146,7 @@ describe('runtime api', () => {
         method: 'POST',
         url: '/threads',
         headers: { authorization: 'Bearer secret', ...headers },
-        payload
+        payload: payload as TestInjectPayload
       });
       expect(response.statusCode, label).toBe(400);
       expect(response.json().error.code, label).toBe('VALIDATION_FAILED');
@@ -199,6 +200,62 @@ describe('runtime api', () => {
     expect(events.statusCode).toBe(200);
     expect(events.body).toContain('event: assistant_message');
     expect(events.body).toContain('event: done');
+  });
+
+  it('creates a thread run using immutable thread config and binds codex thread id', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'hello' } },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread;
+
+    const createdRun = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'hello'
+    });
+    expect(createdRun.statusCode).toBe(202);
+
+    await waitForRunStatus(createdRun.json().id, 'succeeded');
+
+    const detail = await authGet(`/threads/${thread.id}`);
+    expect(detail.json().thread.codexThreadId).toBe('codex-thread-1');
+  });
+
+  it('rejects run requests that override thread config', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread;
+
+    const response = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'hello',
+      sandbox: 'workspace-write'
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe('THREAD_CONFIG_IMMUTABLE');
   });
 
   it('replays events after fromSeq and Last-Event-ID', async () => {
@@ -484,6 +541,23 @@ describe('runtime api', () => {
     });
   });
 });
+
+function authPost(url: string, payload: unknown) {
+  return server!.inject({
+    method: 'POST',
+    url,
+    headers: { authorization: 'Bearer secret' },
+    payload: payload as TestInjectPayload
+  });
+}
+
+function authGet(url: string) {
+  return server!.inject({
+    method: 'GET',
+    url,
+    headers: { authorization: 'Bearer secret' }
+  });
+}
 
 async function waitForRunStatus(runId: string, status: string): Promise<void> {
   await expect

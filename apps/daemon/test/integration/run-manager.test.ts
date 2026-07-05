@@ -155,6 +155,37 @@ describe('run manager', () => {
     expect(manager.listEvents(run.id).some(event => event.type === 'diagnostic')).toBe(true);
   });
 
+  it('marks a successful thread run failed when codex never emits a thread id', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      threadId: 'thread_1',
+      resumeMode: 'auto'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.terminationReason).toBe('stream_error');
+    expect(manager.getRun(run.id)?.errorCode).toBe('CODEX_THREAD_ID_MISSING');
+    expect(manager.listEvents(run.id).some(event => event.type === 'error')).toBe(true);
+  });
+
   it('marks a run failed on timeout', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
     const fake = createFakeCodex(tempDir, {

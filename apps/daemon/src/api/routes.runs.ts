@@ -1,19 +1,50 @@
 import type { RunRequest } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { RunManager } from '../runs/manager.js';
+import type { RuntimeThread, ThreadManager } from '../threads/types.js';
 import { apiError } from './errors.js';
 import { formatSseEvent } from './sse.js';
 
 export async function registerRunRoutes(
   server: FastifyInstance,
   manager: RunManager,
-  options: { sseHeartbeatMs?: number } = {}
+  options: { sseHeartbeatMs?: number; threadManager?: ThreadManager } = {}
 ): Promise<void> {
   const sseHeartbeatMs = options.sseHeartbeatMs ?? 15_000;
   server.post<{ Body: RunRequest }>('/runs', async (request, reply) => {
     const body = request.body ?? ({} as RunRequest);
     if (typeof body.prompt !== 'string' || body.prompt.length === 0) {
       return reply.code(400).send(apiError('VALIDATION_FAILED', 'prompt is required'));
+    }
+
+    if (body.threadId !== undefined) {
+      const threadManager = options.threadManager;
+      const thread = threadManager?.getThread(body.threadId);
+      if (thread === undefined) {
+        return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+      }
+      if (thread.status === 'archived') {
+        return reply.code(409).send(apiError('THREAD_ARCHIVED', 'Thread is archived'));
+      }
+      if (overridesThreadConfig(body, thread)) {
+        return reply
+          .code(409)
+          .send(apiError('THREAD_CONFIG_IMMUTABLE', 'Thread run config is immutable'));
+      }
+
+      const run = manager.startRun({
+        prompt: body.prompt,
+        cwd: thread.cwd,
+        profile: thread.profile,
+        sandbox: thread.sandbox,
+        threadId: thread.id,
+        resumeMode: body.resumeMode ?? 'auto',
+        codexThreadId: thread.codexThreadId ?? undefined,
+        model: thread.model ?? undefined,
+        reasoning: thread.reasoning ?? undefined
+      });
+
+      return reply.code(202).send(run);
     }
 
     const run = manager.startRun({
@@ -94,6 +125,16 @@ export async function registerRunRoutes(
 
     return reply;
   });
+}
+
+function overridesThreadConfig(body: RunRequest, thread: RuntimeThread): boolean {
+  return (
+    (body.cwd !== undefined && body.cwd !== thread.cwd)
+    || (body.profile !== undefined && body.profile !== thread.profile)
+    || (body.model !== undefined && body.model !== thread.model)
+    || (body.reasoning !== undefined && body.reasoning !== thread.reasoning)
+    || (body.sandbox !== undefined && body.sandbox !== thread.sandbox)
+  );
 }
 
 function getReplayAfterSeq(lastEventId: string | string[] | undefined, query: unknown): number {
