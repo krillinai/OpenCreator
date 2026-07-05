@@ -28,6 +28,12 @@ export type RuntimeCapabilityMatrix = {
   resumeSandboxOverride: boolean;
   resumeContextContinuityVerified: boolean;
   mcpAddEnv: boolean;
+  skillsScan: boolean;
+  skillsInstall: boolean;
+  skillsDelete: boolean;
+  skillsGlobalWrite: boolean;
+  skillsRuntimeDiscoveryVerified: boolean;
+  skillsRuntimeBehaviorVerified: boolean;
   warnings: string[];
 };
 
@@ -81,6 +87,12 @@ export function parseCodexCapabilityMatrix(input: {
     resumeSandboxOverride: input.resumeHelp.includes('--sandbox'),
     resumeContextContinuityVerified: input.resumeContextContinuityVerified ?? false,
     mcpAddEnv: input.mcpAddHelp.includes('--env'),
+    skillsScan: false,
+    skillsInstall: false,
+    skillsDelete: false,
+    skillsGlobalWrite: false,
+    skillsRuntimeDiscoveryVerified: false,
+    skillsRuntimeBehaviorVerified: false,
     warnings: []
   };
 }

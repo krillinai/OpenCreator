@@ -7,6 +7,9 @@ export type ResumeMode = 'auto' | 'new_thread' | 'resume_thread';
 export type ThreadStatus = 'active' | 'archived';
 export type CodexHomeMode = 'global' | 'isolated';
 export type CodexHomeSource = 'env' | 'default' | 'isolated';
+export type CodexSkillStatus = 'valid' | 'invalid';
+export type CodexSkillOperationType = 'install' | 'overwrite' | 'delete';
+export type CodexSkillOperationStatus = 'succeeded' | 'failed';
 
 export type CodexStatusResponse = {
   codexBin: string;
@@ -71,4 +74,54 @@ export type ThreadListResponse = {
 
 export type ThreadRunsResponse = {
   runs: RunResponse[];
+};
+
+export type CodexSkillResponse = {
+  id: string;
+  name?: string;
+  description?: string;
+  status: CodexSkillStatus;
+  diagnostics: string[];
+  codexHome: string;
+  codexHomeMode: CodexHomeMode;
+  skillsPath: string;
+  skillPath: string;
+  skillFilePath: string;
+  updatedAt?: string;
+};
+
+export type CodexSkillListResponse = {
+  codexHome: string;
+  codexHomeMode: CodexHomeMode;
+  skillsPath: string;
+  skillsWritable: boolean;
+  requiresWriteConfirmation: boolean;
+  skills: CodexSkillResponse[];
+  diagnostics: string[];
+};
+
+export type InstallCodexSkillRequest = {
+  sourcePath: string;
+  id?: string;
+  overwrite?: boolean;
+  confirmWriteToCodexHome?: true;
+};
+
+export type CodexSkillOperationResponse = {
+  id: string;
+  operation: CodexSkillOperationType;
+  skillId: string;
+  codexHome: string;
+  skillsPath: string;
+  sourcePath?: string | null;
+  targetPath: string;
+  backupPath?: string | null;
+  status: CodexSkillOperationStatus;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+};
+
+export type CodexSkillOperationListResponse = {
+  operations: CodexSkillOperationResponse[];
 };

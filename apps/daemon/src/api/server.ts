@@ -122,6 +122,12 @@ function createUnknownCapabilityMatrix(): RuntimeCapabilityMatrix {
     resumeSandboxOverride: false,
     resumeContextContinuityVerified: false,
     mcpAddEnv: false,
+    skillsScan: false,
+    skillsInstall: false,
+    skillsDelete: false,
+    skillsGlobalWrite: false,
+    skillsRuntimeDiscoveryVerified: false,
+    skillsRuntimeBehaviorVerified: false,
     warnings: ['Codex runtime help has not been collected yet.']
   };
 }

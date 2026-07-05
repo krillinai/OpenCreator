@@ -59,7 +59,13 @@ describe('runtime api', () => {
       codexVersion: capabilities.codexVersion,
       capabilities: {
         resumeJson: true,
-        resumeByThreadId: true
+        resumeByThreadId: true,
+        skillsScan: false,
+        skillsInstall: false,
+        skillsDelete: false,
+        skillsGlobalWrite: false,
+        skillsRuntimeDiscoveryVerified: false,
+        skillsRuntimeBehaviorVerified: false
       }
     });
   });
@@ -1502,6 +1508,12 @@ function makeResumeCapableMatrix(): RuntimeCapabilityMatrix {
     resumeSandboxOverride: false,
     resumeContextContinuityVerified: false,
     mcpAddEnv: true,
+    skillsScan: false,
+    skillsInstall: false,
+    skillsDelete: false,
+    skillsGlobalWrite: false,
+    skillsRuntimeDiscoveryVerified: false,
+    skillsRuntimeBehaviorVerified: false,
     warnings: []
   };
 }

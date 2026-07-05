@@ -63,4 +63,23 @@ describe('codex capability parsing', () => {
     expect(matrix.resumeSandboxOverride).toBe(false);
     expect(isResumeExecutionSupported(matrix)).toBe(true);
   });
+
+  it('defaults skill capability flags to false when capability help is unknown', () => {
+    const matrix = parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.142.5',
+      execHelp: '',
+      resumeHelp: '',
+      mcpAddHelp: '',
+      checkedAt: '2026-07-05T00:00:00.000Z'
+    });
+
+    expect(matrix).toMatchObject({
+      skillsScan: false,
+      skillsInstall: false,
+      skillsDelete: false,
+      skillsGlobalWrite: false,
+      skillsRuntimeDiscoveryVerified: false,
+      skillsRuntimeBehaviorVerified: false
+    });
+  });
 });
