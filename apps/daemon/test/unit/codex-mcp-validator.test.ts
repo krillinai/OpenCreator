@@ -13,6 +13,12 @@ const allCapabilities = {
   mcpAddOAuth: true
 };
 
+class CustomMcpRequest {
+  name = 'github';
+  transport = 'stdio';
+  command = 'node';
+}
+
 describe('codex mcp validator', () => {
   it('validates mcp names and env keys', () => {
     expect(isValidMcpName('github')).toBe(true);
@@ -80,6 +86,32 @@ describe('codex mcp validator', () => {
       ok: false,
       message: 'env values must be strings'
     });
+    expect(validateMcpAddRequest(new CustomMcpRequest())).toEqual({
+      ok: false,
+      message: 'body must be an object'
+    });
+    expect(validateMcpAddRequest(new Date())).toEqual({
+      ok: false,
+      message: 'body must be an object'
+    });
+    expect(validateMcpAddRequest({
+      name: 'github',
+      transport: 'stdio',
+      command: 'node',
+      env: new Date()
+    })).toEqual({
+      ok: false,
+      message: 'env must be an object'
+    });
+    expect(validateMcpAddRequest({
+      name: 'github',
+      transport: 'stdio',
+      command: 'node',
+      env: new CustomMcpRequest()
+    })).toEqual({
+      ok: false,
+      message: 'env must be an object'
+    });
   });
 
   it('validates url add requests and capability gates', () => {
@@ -91,6 +123,10 @@ describe('codex mcp validator', () => {
     };
 
     expect(validateMcpAddRequest(request)).toEqual({ ok: true, value: { ...request, env: {} } });
+    expect(validateMcpAddRequest({ ...request, url: 'http://example.test/mcp' })).toEqual({
+      ok: true,
+      value: { ...request, url: 'http://example.test/mcp', env: {} }
+    });
     expect(validateMcpAddRequest({ ...request, url: 'file:///tmp/mcp' })).toEqual({
       ok: false,
       message: 'url must use http or https'
