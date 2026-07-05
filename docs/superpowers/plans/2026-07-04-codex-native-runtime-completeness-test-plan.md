@@ -41,7 +41,7 @@
 | R2 | Thread / Chat Runtime | `MISSING_IMPL` | 只有 `POST /threads` 内存创建；缺持久化、list/get/runs/archive、真实 resume、同 thread 串行锁 |
 | R3 | Profiles / Settings / CODEX_HOME | `MISSING_IMPL` | 只有 `CODEX_HOME` 解析；缺 profile CRUD、写锁、原子写入、备份、config normalize、缓存同步 |
 | R4 | Skills Pass-through | `PARTIAL/BLOCKED_ENV` | skills 扫描、元数据、安装、覆盖、删除、备份、invalid 诊断、写确认、操作日志、API 自动化测试通过；真实 Codex discovery smoke 已实现但当前机器 Codex auth 返回 401，标记 `BLOCKED_ENV`；真实模型按 skill 行为输出仍为 `UNVERIFIED_BEHAVIOR` |
-| R5 | MCP Pass-through | `PARTIAL/MISSING_IMPL` | 只有 MCP argv builder；缺 API、真实 `codex mcp` 调用、env 脱敏响应、运行期 MCP fixture |
+| R5 | MCP Pass-through | `PASS` | R5 范围内 MCP 管理 API、fake Codex MCP command、env/API/log/diagnostics 脱敏、SQLite 操作审计、真实 `codex mcp add/get/list/remove` gated smoke 已通过；R5 不实现自研 MCP runtime 或托管 MCP server，真实模型调用 MCP tool 行为仍为 `UNVERIFIED_BEHAVIOR` |
 | R6 | Scheduler | `PARTIAL/MISSING_IMPL` | 只有 misfire helper；缺 schedule CRUD、run-now、cron/timezone/DST、concurrency policy |
 | R7 | Diagnostics + Release Readiness | `PARTIAL` | diagnostics 导出和 symlink 防护已测；缺 `/codex/status` 快照打包、日志/workspace 清理 API、release smoke 脚本 |
 
@@ -376,31 +376,43 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 
 ## 10. R5 MCP Pass-through 测试
 
-### Task R5.1: MCP 管理 API
+### R5 MCP pass-through
 
-**测试：**
+Status: `PASS`
 
-1. `GET /mcp`
-2. `GET /mcp/:name`
-3. `POST /mcp`
-4. `DELETE /mcp/:name`
-5. `POST /mcp/:name/login`
-6. `POST /mcp/:name/logout`
-7. env value 脱敏。
-8. 命令 30s 超时。
+Scope:
 
-**当前状态：** `MISSING_IMPL`。
+- MCP 管理 API：`PASS`
+- fake Codex MCP command coverage：`PASS`
+- env value API/log/diagnostics 脱敏：`PASS`
+- SQLite MCP 操作审计：`PASS`
+- real `codex mcp add/get/list/remove`：`PASS`
+- real model MCP behavior：`UNVERIFIED_BEHAVIOR`
 
-### Task R5.2: 本地 fake MCP server e2e
+Verification:
 
-**测试：**
+- `pnpm --filter @clawee/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts test/unit/codex-mcp-parser.test.ts test/unit/codex-mcp-operations.test.ts test/unit/codex-mcp-manager.test.ts test/unit/storage.test.ts test/unit/codex-capabilities.test.ts test/integration/api.test.ts`
+  - 结果：`10` 个测试文件、`120` 个测试通过。
+- `pnpm typecheck`
+  - 结果：通过。
+- `pnpm test`
+  - 结果：通过；daemon `25` 个测试文件通过、`1` 个真实 smoke 文件默认 gate 跳过，`215` 个测试通过、`11` 个 gated smoke 测试跳过。
+- `git diff --check`
+  - 结果：通过。
+- `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "adds, gets, lists, and removes a stdio MCP server"`
+  - 结果：通过；`1` 个真实 `codex mcp` command smoke 通过，`10` 个非目标 smoke 跳过。
 
-1. 启动 stdio echo MCP server。
-2. 通过 Runtime 添加到隔离 `CODEX_HOME`。
-3. Codex run 能看到/调用该 MCP。
-4. Runtime 输出至少 diagnostic 或 unknown_event，不泄漏 env value。
+Environment notes:
 
-**当前状态：** `MISSING_IMPL/BLOCKED_ENV`。
+- `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts` 当前整体结果为 `BLOCKED_ENV`：其中 R5 MCP command smoke 已通过，但 R4 skill/model smoke 在真实 Codex API 请求阶段返回 `401 Unauthorized: Missing bearer or basic authentication`。
+- 因此 R5 command/config pass-through 范围判定为 `PASS`；真实模型是否能在运行中调用 MCP tool 不在 R5 第一版验收内，保留为后续 runtime behavior smoke。
+
+Notes:
+
+- R5 不实现自研 MCP runtime。
+- R5 不托管 MCP server 进程。
+- R5 不要求真实模型成功调用 MCP tool；该项归入后续 runtime behavior smoke。
+- 当前真实 smoke 使用的是 stdio MCP server configuration 测试，只验证 Codex MCP 配置管理链路，不验证 MCP JSON-RPC handshake。
 
 ## 11. R6 Scheduler 测试
 
