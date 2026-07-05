@@ -9,13 +9,13 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'toml';
-import { profileFileName, validateProfileConfig } from './config.js';
+import { parseCodexProfileOverlay, profileFileName, validateProfileConfig } from './config.js';
 import type { TomlPrimitive, TomlProfileConfig, TomlProfileValue } from './types.js';
 
 export type ProfileWriter = {
-  createProfile(name: string, config: TomlProfileConfig): Promise<void>;
-  updateProfile(name: string, config: TomlProfileConfig): Promise<void>;
-  deleteProfile(name: string): Promise<void>;
+  create(name: string, config: TomlProfileConfig): Promise<void>;
+  update(name: string, config: TomlProfileConfig): Promise<void>;
+  delete(name: string): Promise<void>;
 };
 
 const locks = new Map<string, Promise<void>>();
@@ -25,13 +25,13 @@ export function createProfileWriter(input: { codexHome: string }): ProfileWriter
   const codexHome = input.codexHome;
 
   return {
-    createProfile(name, config) {
+    create(name, config) {
       return withCodexHomeLock(codexHome, () => createProfile(codexHome, name, config));
     },
-    updateProfile(name, config) {
+    update(name, config) {
       return withCodexHomeLock(codexHome, () => updateProfile(codexHome, name, config));
     },
-    deleteProfile(name) {
+    delete(name) {
       return withCodexHomeLock(codexHome, () => deleteProfile(codexHome, name));
     }
   };
@@ -42,7 +42,7 @@ export function serializeCodexProfileOverlay(config: TomlProfileConfig): string 
   if (!validation.ok) throw new Error(`CODEX_PROFILE_INVALID: ${validation.message}`);
 
   return `${Object.entries(config)
-    .map(([key, value]) => `${key} = ${serializeValue(value)}`)
+    .map(([key, value]) => `${serializeKey(key)} = ${serializeValue(value)}`)
     .join('\n')}\n`;
 }
 
@@ -71,7 +71,7 @@ function createProfile(codexHome: string, name: string, config: TomlProfileConfi
 
   const content = serializeCodexProfileOverlay(config);
   validateBaseConfig(codexHome);
-  writeProfileFile(codexHome, fileName, content);
+  writeProfileFile(codexHome, name, fileName, content);
 }
 
 function updateProfile(codexHome: string, name: string, config: TomlProfileConfig): void {
@@ -82,7 +82,7 @@ function updateProfile(codexHome: string, name: string, config: TomlProfileConfi
   const content = serializeCodexProfileOverlay(config);
   validateBaseConfig(codexHome);
   backupProfile(codexHome, fileName, profilePath);
-  writeProfileFile(codexHome, fileName, content);
+  writeProfileFile(codexHome, name, fileName, content);
 }
 
 function deleteProfile(codexHome: string, name: string): void {
@@ -95,14 +95,19 @@ function deleteProfile(codexHome: string, name: string): void {
   rmSync(profilePath);
 }
 
-function writeProfileFile(codexHome: string, fileName: string, content: string): void {
+function writeProfileFile(codexHome: string, profileName: string, fileName: string, content: string): void {
   mkdirSync(codexHome, { recursive: true });
   const profilePath = join(codexHome, fileName);
   const tempPath = join(codexHome, `.${fileName}.${process.pid}.${Date.now()}.${nextFileCounter()}.tmp`);
 
   try {
     writeFileSync(tempPath, content);
-    parse(readFileSync(tempPath, 'utf8'));
+    const tempContent = readFileSync(tempPath, 'utf8');
+    parse(tempContent);
+    const parsedOverlay = parseCodexProfileOverlay(profileName, tempContent);
+    if (!parsedOverlay.ok) {
+      throw new Error(`CODEX_PROFILE_INVALID: ${parsedOverlay.diagnostics.join('; ')}`);
+    }
     renameSync(tempPath, profilePath);
   } catch (error) {
     rmSync(tempPath, { force: true });
@@ -126,6 +131,10 @@ function backupProfile(codexHome: string, fileName: string, profilePath: string)
   mkdirSync(backupDir, { recursive: true });
   const backupPath = join(backupDir, `${fileName}.${new Date().toISOString().replace(/[:.]/g, '-')}.${nextFileCounter()}.bak`);
   copyFileSync(profilePath, backupPath);
+}
+
+function serializeKey(key: string): string {
+  return JSON.stringify(key);
 }
 
 function serializeValue(value: TomlProfileValue): string {

@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { parseCodexProfileOverlay } from '../../src/codex/profiles/config.js';
 import {
   createProfileWriter,
   serializeCodexProfileOverlay
@@ -36,23 +37,23 @@ describe('codex profile writer', () => {
     const writer = createProfileWriter({ codexHome });
     const profilePath = join(codexHome, 'review.config.toml');
 
-    await writer.createProfile('review', {
+    await writer.create('review', {
       model: 'gpt-5.3-codex',
       model_reasoning_effort: 'high'
     });
 
-    expect(readFileSync(profilePath, 'utf8')).toContain('model = "gpt-5.3-codex"');
+    expect(readFileSync(profilePath, 'utf8')).toContain('"model" = "gpt-5.3-codex"');
 
-    await writer.updateProfile('review', {
+    await writer.update('review', {
       model: 'gpt-5.3-codex',
       model_reasoning_effort: 'medium'
     });
 
-    expect(readFileSync(profilePath, 'utf8')).toContain('model_reasoning_effort = "medium"');
+    expect(readFileSync(profilePath, 'utf8')).toContain('"model_reasoning_effort" = "medium"');
     const updateBackups = readdirSync(join(codexHome, 'backups'));
     expect(updateBackups.some((file) => file.startsWith('review.config.toml.'))).toBe(true);
 
-    await writer.deleteProfile('review');
+    await writer.delete('review');
 
     expect(existsSync(profilePath)).toBe(false);
     const deleteBackups = readdirSync(join(codexHome, 'backups'));
@@ -66,11 +67,11 @@ describe('codex profile writer', () => {
     const writer = createProfileWriter({ codexHome });
     const profilePath = join(codexHome, 'review.config.toml');
 
-    await writer.createProfile('review', { model: 'gpt-5.3-codex' });
+    await writer.create('review', { model: 'gpt-5.3-codex' });
     const original = readFileSync(profilePath, 'utf8');
 
     await expect(
-      writer.updateProfile('review', { nested: { unsupported: true } } as never)
+      writer.update('review', { nested: { unsupported: true } } as never)
     ).rejects.toThrow(/CODEX_PROFILE_INVALID/);
 
     expect(readFileSync(profilePath, 'utf8')).toBe(original);
@@ -84,10 +85,29 @@ describe('codex profile writer', () => {
       experimental_features: ['writer', 'isolated', 3, false]
     });
 
-    expect(content).toContain('model = "gpt-5.3-codex"');
-    expect(content).toContain('include_plan_tool = true');
-    expect(content).toContain('max_tokens = 4096');
-    expect(content).toContain('experimental_features = ["writer", "isolated", 3, false]');
+    expect(content).toContain('"model" = "gpt-5.3-codex"');
+    expect(content).toContain('"include_plan_tool" = true');
+    expect(content).toContain('"max_tokens" = 4096');
+    expect(content).toContain('"experimental_features" = ["writer", "isolated", 3, false]');
+  });
+
+  it('quotes dotted TOML keys so they remain primitive profile keys', () => {
+    const content = serializeCodexProfileOverlay({ 'team.alpha': 'x' });
+
+    expect(content).toContain('"team.alpha" = "x"');
+  });
+
+  it('writes dotted keys that round-trip through the profile overlay parser', async () => {
+    const codexHome = createCodexHome();
+    const writer = createProfileWriter({ codexHome });
+    const profilePath = join(codexHome, 'review.config.toml');
+
+    await writer.create('review', { 'team.alpha': 'x' });
+
+    const result = parseCodexProfileOverlay('review', readFileSync(profilePath, 'utf8'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected parser success');
+    expect(result.profile.config).toEqual({ 'team.alpha': 'x' });
   });
 
   it('does not modify base config.toml when writing a profile', async () => {
@@ -96,8 +116,8 @@ describe('codex profile writer', () => {
     const basePath = join(codexHome, 'config.toml');
     const originalBase = readFileSync(basePath, 'utf8');
 
-    await writer.createProfile('review', { model: 'gpt-5.3-codex' });
-    await writer.updateProfile('review', { model: 'gpt-5.3-codex', model_reasoning_effort: 'medium' });
+    await writer.create('review', { model: 'gpt-5.3-codex' });
+    await writer.update('review', { model: 'gpt-5.3-codex', model_reasoning_effort: 'medium' });
 
     expect(readFileSync(basePath, 'utf8')).toBe(originalBase);
   });
@@ -107,11 +127,25 @@ describe('codex profile writer', () => {
     writeFileSync(join(codexHome, 'config.toml'), 'approval_policy = "never\n');
     const writer = createProfileWriter({ codexHome });
 
-    await expect(writer.createProfile('review', { model: 'gpt-5.3-codex' })).rejects.toThrow(
+    await expect(writer.create('review', { model: 'gpt-5.3-codex' })).rejects.toThrow(
       /CODEX_CONFIG_INVALID/
     );
 
     expect(existsSync(join(codexHome, 'review.config.toml'))).toBe(false);
+  });
+
+  it('does not leave the codex home lock stuck after a failed write', async () => {
+    const codexHome = createCodexHome();
+    const basePath = join(codexHome, 'config.toml');
+    const writer = createProfileWriter({ codexHome });
+
+    writeFileSync(basePath, 'approval_policy = "never\n');
+    await expect(writer.create('review', { model: 'gpt-5.3-codex' })).rejects.toThrow(/CODEX_CONFIG_INVALID/);
+
+    writeFileSync(basePath, 'approval_policy = "never"\n');
+    await writer.create('review', { model: 'gpt-5.3-codex' });
+
+    expect(existsSync(join(codexHome, 'review.config.toml'))).toBe(true);
   });
 
   it('serializes concurrent writes to the same codex home without leaving temp files', async () => {
@@ -119,8 +153,8 @@ describe('codex profile writer', () => {
     const writer = createProfileWriter({ codexHome });
 
     await Promise.all([
-      writer.createProfile('a', { model: 'gpt-5.3-codex' }),
-      writer.createProfile('b', { model: 'gpt-5.3-codex', model_reasoning_effort: 'medium' })
+      writer.create('a', { model: 'gpt-5.3-codex' }),
+      writer.create('b', { model: 'gpt-5.3-codex', model_reasoning_effort: 'medium' })
     ]);
 
     expect(existsSync(join(codexHome, 'a.config.toml'))).toBe(true);
@@ -132,7 +166,7 @@ describe('codex profile writer', () => {
     const codexHome = createCodexHome();
     const writer = createProfileWriter({ codexHome });
 
-    await expect(writer.createProfile('review', { nested: { unsupported: true } } as never)).rejects.toThrow(
+    await expect(writer.create('review', { nested: { unsupported: true } } as never)).rejects.toThrow(
       /CODEX_PROFILE_INVALID/
     );
 
