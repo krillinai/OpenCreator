@@ -660,6 +660,59 @@ describe('runtime api', () => {
     expect(missing.json().error.code).toBe('MCP_SERVER_NOT_FOUND');
   });
 
+  it('accepts body confirmation for global codex mcp login and logout', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeMcpCodex(tempDir);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      capabilities: makeResumeCapableMatrix()
+    });
+
+    const login = await authPost('/codex/mcp/github/login', {
+      confirmWriteToCodexHome: true
+    });
+    const logout = await authPost('/codex/mcp/github/logout', {
+      confirmWriteToCodexHome: true
+    });
+
+    expect(login.statusCode).toBe(200);
+    expect(logout.statusCode).toBe(200);
+    expect(fake.readCommands()).toEqual(['mcp login github', 'mcp logout github']);
+  });
+
+  it('maps unsupported mcp add capabilities to safe API errors', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const fake = createFakeMcpCodex(tempDir);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome,
+      capabilities: makeResumeCapableMatrix({ mcpAddEnv: false })
+    });
+
+    const response = await authPost('/codex/mcp/add', {
+      name: 'github',
+      transport: 'stdio',
+      command: 'node',
+      env: { GITHUB_TOKEN: 'secret' }
+    });
+
+    expect(response.statusCode).toBe(501);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'CODEX_INCOMPATIBLE',
+        message: 'Codex does not support this MCP operation'
+      }
+    });
+    expect(JSON.stringify(response.json())).not.toContain('GITHUB_TOKEN');
+    expect(JSON.stringify(response.json())).not.toContain('secret');
+    expect(fake.readCommands()).toEqual([]);
+  });
+
   it('rejects invalid profile write bodies without server errors', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');
@@ -1818,7 +1871,7 @@ describe('runtime api', () => {
   });
 });
 
-function makeResumeCapableMatrix(): RuntimeCapabilityMatrix {
+function makeResumeCapableMatrix(overrides: Partial<RuntimeCapabilityMatrix> = {}): RuntimeCapabilityMatrix {
   return {
     codexVersion: 'codex-cli test',
     checkedAt: '2026-07-05T00:00:00.000Z',
@@ -1855,7 +1908,8 @@ function makeResumeCapableMatrix(): RuntimeCapabilityMatrix {
     skillsGlobalWrite: false,
     skillsRuntimeDiscoveryVerified: false,
     skillsRuntimeBehaviorVerified: false,
-    warnings: []
+    warnings: [],
+    ...overrides
   };
 }
 

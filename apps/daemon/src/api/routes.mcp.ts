@@ -60,22 +60,30 @@ export async function registerMcpRoutes(
     }
   );
 
-  server.post<{ Params: { name: string }; Querystring: { confirmWriteToCodexHome?: string } }>(
+  server.post<{
+    Params: { name: string };
+    Querystring: { confirmWriteToCodexHome?: string };
+    Body: unknown;
+  }>(
     '/codex/mcp/:name/login',
     async (request, reply) => handleAuthOperation(request.params.name, reply, () =>
       input.mcpManager.loginServer(
         request.params.name,
-        request.query.confirmWriteToCodexHome === 'true'
+        isWriteConfirmed(request.query.confirmWriteToCodexHome, request.body)
       )
     )
   );
 
-  server.post<{ Params: { name: string }; Querystring: { confirmWriteToCodexHome?: string } }>(
+  server.post<{
+    Params: { name: string };
+    Querystring: { confirmWriteToCodexHome?: string };
+    Body: unknown;
+  }>(
     '/codex/mcp/:name/logout',
     async (request, reply) => handleAuthOperation(request.params.name, reply, () =>
       input.mcpManager.logoutServer(
         request.params.name,
-        request.query.confirmWriteToCodexHome === 'true'
+        isWriteConfirmed(request.query.confirmWriteToCodexHome, request.body)
       )
     )
   );
@@ -104,6 +112,11 @@ function parseLimit(raw: string | undefined): number {
   return Math.max(1, Math.min(parsed, 200));
 }
 
+function isWriteConfirmed(queryValue: string | undefined, body: unknown): boolean {
+  if (queryValue === 'true') return true;
+  return isPlainObject(body) && body.confirmWriteToCodexHome === true;
+}
+
 function sendMcpError(error: unknown, reply: FastifyReply) {
   const code = getCodexErrorCode(error);
   if (code === 'MCP_WRITE_CONFIRMATION_REQUIRED') {
@@ -118,10 +131,10 @@ function sendMcpError(error: unknown, reply: FastifyReply) {
     return reply.code(409).send(apiError(code, 'MCP server already exists'));
   }
   if (code === 'MCP_SERVER_INVALID') {
-    return reply.code(422).send(apiError(code, getErrorMessage(error, 'MCP server is invalid')));
+    return reply.code(422).send(apiError(code, 'MCP server is invalid'));
   }
   if (code === 'CODEX_INCOMPATIBLE') {
-    return reply.code(501).send(apiError(code, getErrorMessage(error, 'Codex MCP command is incompatible')));
+    return reply.code(501).send(apiError(code, 'Codex does not support this MCP operation'));
   }
   return reply.code(502).send(apiError('MCP_COMMAND_FAILED', 'Codex MCP command failed'));
 }
@@ -131,6 +144,6 @@ function getCodexErrorCode(error: unknown): string | undefined {
   return error.message.split(':', 1)[0];
 }
 
-function getErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
