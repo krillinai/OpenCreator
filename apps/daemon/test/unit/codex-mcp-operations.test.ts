@@ -67,4 +67,53 @@ describe('codex mcp operations', () => {
     ]);
     expect(operations.listOperations(1)).toHaveLength(1);
   });
+
+  it('maps timeout and nullable failure fields', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-ops-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const operations = createMcpOperationRepository(db);
+
+    const failed = operations.insertOperation({
+      operation: 'login',
+      serverName: null,
+      codexHome: join(tempDir, 'codex-home'),
+      command: ['mcp', 'login', 'github'],
+      status: 'failed',
+      timedOut: true,
+      errorCode: 'MCP_COMMAND_TIMEOUT',
+      errorMessage: 'timed out'
+    });
+
+    expect(failed).toMatchObject({
+      operation: 'login',
+      serverName: null,
+      timedOut: true,
+      exitCode: null,
+      errorCode: 'MCP_COMMAND_TIMEOUT',
+      errorMessage: 'timed out'
+    });
+    expect(operations.listOperations()).toEqual([failed]);
+  });
+
+  it('clamps list operation limits', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-ops-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const operations = createMcpOperationRepository(db);
+
+    for (let index = 0; index < 201; index += 1) {
+      operations.insertOperation({
+        operation: 'get',
+        serverName: `server-${index}`,
+        codexHome: join(tempDir, 'codex-home'),
+        command: ['mcp', 'get', `server-${index}`],
+        status: 'succeeded',
+        exitCode: 0,
+        timedOut: false
+      });
+    }
+
+    expect(operations.listOperations(0)).toHaveLength(1);
+    expect(operations.listOperations(-10)).toHaveLength(1);
+    expect(operations.listOperations(999)).toHaveLength(200);
+  });
 });
