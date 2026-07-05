@@ -56,7 +56,8 @@ export async function buildServer(input: BuildServerInput) {
       codexBin,
       codexHome,
       threadAccess: threadManager,
-      resumeCapabilityVerified
+      resumeCapabilityVerified,
+      profileValidator: profileManager
     });
 
   server.setErrorHandler((error, _request, reply) => {

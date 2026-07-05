@@ -586,6 +586,69 @@ describe('runtime api', () => {
     expect(existsSync(join(tempDir, 'argv.json'))).toBe(false);
   });
 
+  it('fails queued thread runs when the stored profile is deleted before dequeue', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ],
+      lineDelayMs: 100
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      resumeCapabilityVerified: true
+    });
+
+    const createdProfile = await authPost('/codex/profiles', {
+      name: 'review',
+      config: { model: 'gpt-5.3-codex' }
+    });
+    expect(createdProfile.statusCode).toBe(201);
+
+    const thread = await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'review',
+      sandbox: 'read-only'
+    });
+    expect(thread.statusCode).toBe(201);
+
+    const first = await authPost('/runs', {
+      threadId: thread.json().thread.id,
+      prompt: 'first'
+    });
+    expect(first.statusCode).toBe(202);
+
+    const second = await authPost('/runs', {
+      threadId: thread.json().thread.id,
+      prompt: 'second'
+    });
+    expect(second.statusCode).toBe(202);
+    expect(second.json().status).toBe('queued');
+
+    const deletedProfile = await authDelete('/codex/profiles/review');
+    expect(deletedProfile.statusCode).toBe(200);
+
+    await waitForRunStatus(first.json().id, 'succeeded');
+    await waitForRunStatus(second.json().id, 'failed');
+
+    const failed = await authGet(`/runs/${second.json().id}`);
+    expect(failed.statusCode).toBe(200);
+    expect(failed.json()).toMatchObject({
+      status: 'failed',
+      terminationReason: 'stream_error',
+      errorCode: 'CODEX_PROFILE_NOT_FOUND'
+    });
+    const events = await authGet(`/runs/${second.json().id}/events`);
+    expect(events.body).toContain('CODEX_PROFILE_NOT_FOUND');
+    expect(fake.readPrompt()).toBe('first');
+  });
+
   it('rejects thread runs when the stored profile overlay becomes invalid', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');

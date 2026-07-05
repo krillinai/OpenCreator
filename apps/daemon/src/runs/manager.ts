@@ -33,6 +33,9 @@ export type RunManagerOptions = {
   inactivityTimeoutMs?: number;
   threadAccess?: ThreadAccess;
   resumeCapabilityVerified?: boolean;
+  profileValidator?: {
+    validateProfileForRun(name: string): { ok: true } | { ok: false; code: string; message: string };
+  };
 };
 
 export type RuntimeRun = {
@@ -293,6 +296,16 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         message: 'Codex resume capability has not been verified',
         terminationReason: 'stream_error'
       });
+    }
+    if (runInput.threadId !== undefined) {
+      const validation = options.profileValidator?.validateProfileForRun(runInput.profile);
+      if (validation !== undefined && !validation.ok) {
+        return failBeforeSpawnAndRelease({
+          code: validation.code,
+          message: validation.message,
+          terminationReason: 'stream_error'
+        });
+      }
     }
 
     const stdoutLines: string[] = [];
