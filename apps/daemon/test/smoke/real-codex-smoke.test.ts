@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { runSmokeCommand } from '../../src/codex/smoke.js';
+import { runRealCodexResumeSmoke, runSmokeCommand } from '../../src/codex/smoke.js';
 
 const runRealCodex = process.env.CLAWEE_RUN_REAL_CODEX_SMOKE === '1';
 const fixtureDir = join(process.cwd(), 'test', 'fixtures', 'real-codex', 'generated');
@@ -87,6 +87,20 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
       .map(line => JSON.parse(line) as { type?: string; item?: { type?: string } });
     expect(events.some(event => event.item?.type === 'command_execution')).toBe(true);
   });
+
+  it('verifies codex exec resume context continuity', async () => {
+    const result = await runRealCodexResumeSmoke({
+      marker: `R2_RESUME_${Date.now()}`
+    });
+
+    expect(result.first.exitCode).toBe(0);
+    expect(result.first.threadId).toMatch(/[0-9a-f-]{10,}/);
+    expect(result.second.exitCode).toBe(0);
+    expect(result.second.agentMessages.join('\n')).toContain(result.marker);
+    expect(result.resumeContextContinuityVerified).toBe(true);
+    expect(result.first.stderr).toEqual(expect.any(String));
+    expect(result.second.stderr).toEqual(expect.any(String));
+  }, 120_000);
 });
 
 function writeFixture(name: string, result: SmokeCommandResult): void {
