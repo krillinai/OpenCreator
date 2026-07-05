@@ -77,6 +77,33 @@ describe('codex profile writer', () => {
     expect(readFileSync(profilePath, 'utf8')).toBe(original);
   });
 
+  it('throws CODEX_PROFILE_EXISTS when creating an existing profile', async () => {
+    const codexHome = createCodexHome();
+    const writer = createProfileWriter({ codexHome });
+
+    await writer.create('review', { model: 'gpt-5.3-codex' });
+
+    await expect(writer.create('review', { model: 'gpt-5.3-codex' })).rejects.toThrow(
+      /CODEX_PROFILE_EXISTS/
+    );
+  });
+
+  it('throws CODEX_PROFILE_NOT_FOUND when updating a missing profile', async () => {
+    const codexHome = createCodexHome();
+    const writer = createProfileWriter({ codexHome });
+
+    await expect(writer.update('review', { model: 'gpt-5.3-codex' })).rejects.toThrow(
+      /CODEX_PROFILE_NOT_FOUND/
+    );
+  });
+
+  it('throws CODEX_PROFILE_NOT_FOUND when deleting a missing profile', async () => {
+    const codexHome = createCodexHome();
+    const writer = createProfileWriter({ codexHome });
+
+    await expect(writer.delete('review')).rejects.toThrow(/CODEX_PROFILE_NOT_FOUND/);
+  });
+
   it('serializes supported TOML profile overlay values', () => {
     const content = serializeCodexProfileOverlay({
       model: 'gpt-5.3-codex',
