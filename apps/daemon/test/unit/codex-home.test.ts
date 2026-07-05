@@ -29,7 +29,42 @@ describe('codex home resolution', () => {
     expect(result).toEqual({
       path: '',
       mode: 'isolated',
-      source: 'isolated'
+      source: 'isolated',
+      writable: true
+    });
+  });
+
+  it('marks global codex homes read-only and isolated homes writable', () => {
+    expect(resolveCodexHome({ env: {}, homeDir: '/Users/tester' })).toMatchObject({
+      path: '/Users/tester/.codex',
+      mode: 'global',
+      source: 'default',
+      writable: false
+    });
+
+    expect(
+      resolveCodexHome({
+        env: { CODEX_HOME: '~/custom-codex' },
+        homeDir: '/Users/tester'
+      })
+    ).toMatchObject({
+      path: '/Users/tester/custom-codex',
+      mode: 'global',
+      source: 'env',
+      writable: false
+    });
+
+    expect(
+      resolveCodexHome({
+        env: { CODEX_HOME: '~/custom-codex' },
+        homeDir: '/Users/tester',
+        isolatedHome: '~/isolated-codex'
+      })
+    ).toMatchObject({
+      path: '/Users/tester/isolated-codex',
+      mode: 'isolated',
+      source: 'isolated',
+      writable: true
     });
   });
 

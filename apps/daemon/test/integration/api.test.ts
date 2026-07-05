@@ -54,6 +54,8 @@ describe('runtime api', () => {
     expect(response.json()).toMatchObject({
       codexHome,
       codexHomeMode: 'isolated',
+      codexHomeSource: 'isolated',
+      codexHomeWritable: true,
       codexVersion: capabilities.codexVersion,
       capabilities: {
         resumeJson: true,

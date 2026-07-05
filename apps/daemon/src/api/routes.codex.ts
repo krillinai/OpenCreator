@@ -12,6 +12,8 @@ export async function registerCodexRoutes(
       codexVersion: input.capabilities.codexVersion,
       codexHome: input.codexHome.path,
       codexHomeMode: input.codexHome.mode,
+      codexHomeSource: input.codexHome.source,
+      codexHomeWritable: input.codexHome.writable,
       capabilities: input.capabilities,
       diagnostics: []
     };

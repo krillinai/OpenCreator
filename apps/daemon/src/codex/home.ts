@@ -1,8 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type { CodexHomeMode, CodexHomeSource } from '@clawee/protocol';
 import { expandHome } from '../platform/paths.js';
-
-export type CodexHomeMode = 'global' | 'isolated';
 
 export type ResolveCodexHomeInput = {
   env?: NodeJS.ProcessEnv;
@@ -13,7 +12,8 @@ export type ResolveCodexHomeInput = {
 export type ResolvedCodexHome = {
   path: string;
   mode: CodexHomeMode;
-  source: 'env' | 'default' | 'isolated';
+  source: CodexHomeSource;
+  writable: boolean;
 };
 
 export function resolveCodexHome(input: ResolveCodexHomeInput = {}): ResolvedCodexHome {
@@ -24,7 +24,8 @@ export function resolveCodexHome(input: ResolveCodexHomeInput = {}): ResolvedCod
     return {
       path: expandHome(input.isolatedHome, homeDir),
       mode: 'isolated',
-      source: 'isolated'
+      source: 'isolated',
+      writable: true
     };
   }
 
@@ -32,13 +33,15 @@ export function resolveCodexHome(input: ResolveCodexHomeInput = {}): ResolvedCod
     return {
       path: expandHome(env.CODEX_HOME, homeDir),
       mode: 'global',
-      source: 'env'
+      source: 'env',
+      writable: false
     };
   }
 
   return {
     path: join(homeDir, '.codex'),
     mode: 'global',
-    source: 'default'
+    source: 'default',
+    writable: false
   };
 }
