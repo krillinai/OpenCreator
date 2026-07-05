@@ -796,13 +796,35 @@ describe('runtime api', () => {
       env: { MCP_API_TOKEN: 'super-secret-value' }
     });
     const operations = await authGet('/codex/mcp/operations');
+    const addedBody = added.json();
+    const operationsBody = operations.json();
 
     expect(added.statusCode).toBe(201);
-    expect(JSON.stringify(added.json())).not.toContain('super-secret-value');
-    expect(JSON.stringify(added.json())).toContain('[REDACTED]');
+    expect(addedBody.server).toMatchObject({
+      name: 'secret-server',
+      transport: 'unknown',
+      diagnostics: ['codex mcp get output was not fully recognized'],
+      raw: 'secret-server configured with MCP_API_TOKEN=[REDACTED]\n'
+    });
+    expect(addedBody.server.raw).not.toContain('super-secret-value');
     expect(operations.statusCode).toBe(200);
-    expect(JSON.stringify(operations.json())).not.toContain('super-secret-value');
-    expect(JSON.stringify(operations.json())).toContain('[REDACTED]');
+    expect(operationsBody.operations).toEqual([
+      expect.objectContaining({
+        operation: 'get',
+        serverName: 'secret-server',
+        command: ['mcp', 'get', 'secret-server']
+      }),
+      expect.objectContaining({
+        operation: 'add',
+        serverName: 'secret-server',
+        command: expect.arrayContaining(['MCP_API_TOKEN=[REDACTED]'])
+      })
+    ]);
+    expect(JSON.stringify(operationsBody)).not.toContain('super-secret-value');
+    expect(fake.readCommands()).toEqual([
+      'mcp add secret-server --env MCP_API_TOKEN=super-secret-value -- node',
+      'mcp get secret-server'
+    ]);
   });
 
   it('rejects invalid profile write bodies without server errors', async () => {
