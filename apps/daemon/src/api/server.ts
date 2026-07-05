@@ -6,6 +6,7 @@ import { createRunManager, type RunManager } from '../runs/manager.js';
 import { openRuntimeDatabase } from '../storage/database.js';
 import { createThreadManager } from '../threads/manager.js';
 import { requireAuth } from './auth.js';
+import { apiError } from './errors.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerRunRoutes } from './routes.runs.js';
@@ -38,6 +39,15 @@ export async function buildServer(input: BuildServerInput) {
       codexHome,
       threadAccess: threadManager
     });
+
+  server.setErrorHandler((error, _request, reply) => {
+    if ((error as { code?: string }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
+      return reply
+        .code(400)
+        .send(apiError('VALIDATION_FAILED', 'body must be valid JSON'));
+    }
+    throw error;
+  });
 
   server.addHook('onClose', async () => {
     if (ownsDb) db.close();

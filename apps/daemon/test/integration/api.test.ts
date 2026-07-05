@@ -224,6 +224,11 @@ describe('runtime api', () => {
         payload: JSON.stringify('not-an-object'),
         headers: { 'content-type': 'application/json' }
       },
+      {
+        label: 'malformed json body',
+        payload: '{',
+        headers: { 'content-type': 'application/json' }
+      },
       { label: 'array body', payload: [] },
       { label: 'missing prompt', payload: {} },
       { label: 'empty prompt', payload: { prompt: '' } },
