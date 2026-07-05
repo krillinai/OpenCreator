@@ -90,6 +90,20 @@ export function migrate(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS codex_mcp_operations (
+      id TEXT PRIMARY KEY,
+      operation TEXT NOT NULL,
+      server_name TEXT,
+      codex_home TEXT NOT NULL,
+      command_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      exit_code INTEGER,
+      timed_out INTEGER NOT NULL DEFAULT 0,
+      error_code TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status);
     CREATE INDEX IF NOT EXISTS idx_threads_codex_thread_id ON threads(codex_thread_id);
     CREATE INDEX IF NOT EXISTS idx_threads_updated_at ON threads(updated_at);
@@ -99,6 +113,8 @@ export function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_runs_thread_public_status ON runs(thread_id, public_status);
     CREATE INDEX IF NOT EXISTS idx_codex_skill_operations_created_at
       ON codex_skill_operations(created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_codex_mcp_operations_created_at
+      ON codex_mcp_operations(created_at DESC, id DESC);
   `);
 
   ensureColumn(db, 'threads', 'title', 'title TEXT');

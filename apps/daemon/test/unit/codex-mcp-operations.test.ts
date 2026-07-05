@@ -1,0 +1,70 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createMcpOperationRepository } from '../../src/codex/mcp/operations.js';
+import { openRuntimeDatabase } from '../../src/storage/database.js';
+
+let tempDir = '';
+let db: Database.Database | undefined;
+
+afterEach(() => {
+  db?.close();
+  db = undefined;
+  if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+  tempDir = '';
+});
+
+describe('codex mcp operations', () => {
+  it('persists redacted mcp operations newest first', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-ops-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const operations = createMcpOperationRepository(db);
+
+    const first = operations.insertOperation({
+      operation: 'add',
+      serverName: 'github',
+      codexHome: join(tempDir, 'codex-home'),
+      command: [
+        'mcp',
+        'add',
+        'github',
+        '--env',
+        'GITHUB_TOKEN=[REDACTED]',
+        '--',
+        'node',
+        'server.js'
+      ],
+      status: 'succeeded',
+      exitCode: 0,
+      timedOut: false
+    });
+    const second = operations.insertOperation({
+      operation: 'remove',
+      serverName: 'github',
+      codexHome: join(tempDir, 'codex-home'),
+      command: ['mcp', 'remove', 'github'],
+      status: 'failed',
+      exitCode: 1,
+      timedOut: false,
+      errorCode: 'MCP_COMMAND_FAILED',
+      errorMessage: 'failed'
+    });
+
+    expect(first.id).toMatch(/^mcpop_/);
+    expect(operations.listOperations()).toEqual([
+      expect.objectContaining({
+        id: second.id,
+        operation: 'remove',
+        errorCode: 'MCP_COMMAND_FAILED'
+      }),
+      expect.objectContaining({
+        id: first.id,
+        operation: 'add',
+        command: expect.arrayContaining(['GITHUB_TOKEN=[REDACTED]'])
+      })
+    ]);
+    expect(operations.listOperations(1)).toHaveLength(1);
+  });
+});

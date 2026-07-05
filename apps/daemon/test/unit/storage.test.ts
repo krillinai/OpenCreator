@@ -101,6 +101,25 @@ describe('runtime storage', () => {
     expect(indexRows).toEqual([{ name: 'idx_codex_skill_operations_created_at' }]);
   });
 
+  it('creates codex mcp operation log table', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+
+    const tableRows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'codex_mcp_operations'"
+      )
+      .all() as Array<{ name: string }>;
+    expect(tableRows).toEqual([{ name: 'codex_mcp_operations' }]);
+
+    const indexRows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_codex_mcp_operations_created_at'"
+      )
+      .all() as Array<{ name: string }>;
+    expect(indexRows).toEqual([{ name: 'idx_codex_mcp_operations_created_at' }]);
+  });
+
   it('persists codex skill operations', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
