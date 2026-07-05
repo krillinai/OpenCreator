@@ -1,12 +1,15 @@
 import type { AgentEventEnvelope } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 
+export type ResolvedResumeMode = 'independent' | 'new_thread' | 'resume_thread';
+export type RunQueueState = 'none' | 'queued' | 'started';
+
 export type InsertRunInput = {
   id: string;
   threadId?: string;
   codexThreadId?: string;
-  resumeMode?: 'independent' | 'new_thread' | 'resume_thread';
-  queueState?: 'none' | 'queued' | 'started';
+  resumeMode?: ResolvedResumeMode;
+  queueState?: RunQueueState;
   publicStatus: string;
   internalStatus: string;
   createdBy: string;
@@ -30,8 +33,8 @@ export type RunRow = {
   id: string;
   thread_id: string | null;
   codex_thread_id: string | null;
-  resume_mode: 'independent' | 'new_thread' | 'resume_thread' | null;
-  queue_state: 'none' | 'queued' | 'started';
+  resume_mode: ResolvedResumeMode | null;
+  queue_state: RunQueueState;
   public_status: string;
   internal_status: string;
   created_by: string;
@@ -73,7 +76,7 @@ export type RunRepository = {
   listNonTerminalRuns(): RunRow[];
   updateRunStatus(input: UpdateRunStatusInput): void;
   setRunCodexThreadId(runId: string, codexThreadId: string): void;
-  setRunQueueState(runId: string, queueState: 'none' | 'queued' | 'started'): void;
+  setRunQueueState(runId: string, queueState: RunQueueState): void;
   insertRunEvent(event: AgentEventEnvelope): void;
   listRunEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
 };
@@ -197,7 +200,7 @@ export function createRunRepository(db: Database.Database): RunRepository {
       insert.run({
         threadId: null,
         codexThreadId: null,
-        resumeMode: null,
+        resumeMode: 'independent',
         queueState: 'none',
         sourceId: null,
         promptHash: null,
@@ -234,7 +237,7 @@ export function createRunRepository(db: Database.Database): RunRepository {
     setRunCodexThreadId(runId: string, codexThreadId: string): void {
       setCodexThreadId.run({ runId, codexThreadId });
     },
-    setRunQueueState(runId: string, queueState: 'none' | 'queued' | 'started'): void {
+    setRunQueueState(runId: string, queueState: RunQueueState): void {
       setQueueState.run({ runId, queueState });
     },
     insertRunEvent(event: AgentEventEnvelope): void {
@@ -283,7 +286,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   const archive = db.prepare(`
     UPDATE threads
     SET status = 'archived',
-        archived_at = CURRENT_TIMESTAMP,
+        archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP),
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `);
