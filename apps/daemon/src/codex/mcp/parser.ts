@@ -6,6 +6,21 @@ import type {
 } from '@clawee/protocol';
 import { redactMcpText } from './redaction.js';
 
+const REDACTED = '[REDACTED]';
+const SECRET_ARG_FLAGS = new Set([
+  '--api-key',
+  '--api_key',
+  '--token',
+  '--secret',
+  '--password',
+  '--access-token',
+  '--access_token',
+  '--bearer-token',
+  '--bearer_token'
+]);
+const SECRET_ARG_FLAG_IN_COMMAND =
+  /(--(?:api[-_]key|token|secret|password|access[-_]token|bearer[-_]token))(\s+)(?:"[^"]*"|'[^']*'|[^\s]+)/gi;
+
 export type ParseMcpGetOutputInput = {
   name: string;
   codexHome: string;
@@ -28,6 +43,10 @@ export function parseMcpGetOutput(input: ParseMcpGetOutputInput): CodexMcpServer
   const parsed = parsePreferredJson(input.stdout, output);
 
   if (isPlainObject(parsed)) {
+    if (jsonObjectIndicatesMissing(parsed)) {
+      return missingServerResponse(input);
+    }
+
     return mapServer(parsed, {
       fallbackName: input.name,
       codexHome: input.codexHome,
@@ -37,21 +56,19 @@ export function parseMcpGetOutput(input: ParseMcpGetOutputInput): CodexMcpServer
   }
 
   const missing = isMcpNotFoundOutput(output);
-  return {
-    name: input.name,
-    transport: 'unknown',
-    status: missing ? 'missing' : input.exitCode === 0 ? 'configured' : 'unknown',
-    envKeys: [],
-    hasSecrets: false,
-    codexHome: input.codexHome,
-    codexHomeMode: input.codexHomeMode,
-    diagnostics: [
-      missing
-        ? 'codex mcp get output indicates server is missing'
-        : 'codex mcp get output was not fully recognized'
-    ],
-    raw: redactMcpText(output)
-  };
+  return missing
+    ? missingServerResponse(input, output)
+    : {
+        name: input.name,
+        transport: 'unknown',
+        status: input.exitCode === 0 ? 'configured' : 'unknown',
+        envKeys: [],
+        hasSecrets: false,
+        codexHome: input.codexHome,
+        codexHomeMode: input.codexHomeMode,
+        diagnostics: ['codex mcp get output was not fully recognized'],
+        raw: redactMcpText(output)
+      };
 }
 
 export function parseMcpListOutput(input: ParseMcpListOutputInput): CodexMcpListResponse {
@@ -105,10 +122,10 @@ function mapServer(
 ): CodexMcpServerResponse {
   const envKeys = getEnvKeys(server.env);
   const sensitiveValues = getEnvValues(server.env);
-  const command = typeof server.command === 'string' ? redactMcpText(server.command, sensitiveValues) : undefined;
+  const command = typeof server.command === 'string' ? redactMcpCommand(server.command, sensitiveValues) : undefined;
   const originalArgs =
     Array.isArray(server.args) && server.args.every((arg) => typeof arg === 'string') ? server.args : undefined;
-  const args = originalArgs?.map((arg) => redactMcpText(arg, sensitiveValues));
+  const args = originalArgs === undefined ? undefined : redactMcpArgs(originalArgs, sensitiveValues);
   const url = typeof server.url === 'string' ? redactMcpText(server.url, sensitiveValues) : undefined;
   const redactionChanged =
     (command !== undefined && command !== server.command) ||
@@ -138,6 +155,32 @@ function mapServer(
 
   if (url !== undefined) {
     result.url = url;
+  }
+
+  return result;
+}
+
+function missingServerResponse(
+  input: {
+    name: string;
+    codexHome: string;
+    codexHomeMode: CodexHomeMode;
+  },
+  rawOutput?: string
+): CodexMcpServerResponse {
+  const result: CodexMcpServerResponse = {
+    name: input.name,
+    transport: 'unknown',
+    status: 'missing',
+    envKeys: [],
+    hasSecrets: false,
+    codexHome: input.codexHome,
+    codexHomeMode: input.codexHomeMode,
+    diagnostics: ['codex mcp get output indicates server is missing']
+  };
+
+  if (rawOutput !== undefined) {
+    result.raw = redactMcpText(rawOutput);
   }
 
   return result;
@@ -204,4 +247,43 @@ function getDiagnostics(diagnostics: unknown, sensitiveValues: string[]): string
 function redactedTextDiagnostics(text: string, sensitiveValues: string[]): string[] {
   const diagnostic = redactMcpText(text, sensitiveValues).trim();
   return diagnostic.length === 0 ? [] : [diagnostic];
+}
+
+function jsonObjectIndicatesMissing(value: Record<string, unknown>): boolean {
+  if (typeof value.error === 'string' && isMcpNotFoundOutput(value.error)) {
+    return true;
+  }
+  if (typeof value.message === 'string' && isMcpNotFoundOutput(value.message)) {
+    return true;
+  }
+  if (Array.isArray(value.diagnostics)) {
+    return value.diagnostics.some(
+      (diagnostic) => typeof diagnostic === 'string' && isMcpNotFoundOutput(diagnostic)
+    );
+  }
+  return false;
+}
+
+function redactMcpCommand(command: string, sensitiveValues: string[]): string {
+  return redactMcpText(command, sensitiveValues).replace(
+    SECRET_ARG_FLAG_IN_COMMAND,
+    (_match, flag: string, separator: string) => `${flag}${separator}${REDACTED}`
+  );
+}
+
+function redactMcpArgs(args: string[], sensitiveValues: string[]): string[] {
+  const redactedArgs = args.map((arg) => redactMcpText(arg, sensitiveValues));
+
+  for (let index = 0; index < redactedArgs.length - 1; index += 1) {
+    if (isSecretArgFlag(args[index] ?? '') || isSecretArgFlag(redactedArgs[index] ?? '')) {
+      index += 1;
+      redactedArgs[index] = REDACTED;
+    }
+  }
+
+  return redactedArgs;
+}
+
+function isSecretArgFlag(arg: string): boolean {
+  return SECRET_ARG_FLAGS.has(arg.toLowerCase());
 }

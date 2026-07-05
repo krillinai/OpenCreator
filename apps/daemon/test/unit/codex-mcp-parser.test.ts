@@ -182,6 +182,44 @@ describe('codex mcp parser', () => {
     expect(result.hasSecrets).toBe(true);
   });
 
+  it('redacts separated secret flag values in parsed command and args', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({
+        name: 'github',
+        transport: 'stdio',
+        command: 'node --api-key secret',
+        args: ['--api-key', 'secret']
+      }),
+      stderr: '',
+      exitCode: 0
+    });
+
+    expect(result.command).toBe('node --api-key [REDACTED]');
+    expect(result.args).toEqual(['--api-key', '[REDACTED]']);
+    expect(JSON.stringify(result)).not.toContain('secret');
+    expect(result.hasSecrets).toBe(true);
+  });
+
+  it('maps JSON not found errors to missing status', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({ error: 'server not found' }),
+      stderr: '',
+      exitCode: 1
+    });
+
+    expect(result.status).toBe('missing');
+    expect(result.transport).toBe('unknown');
+    expect(result.envKeys).toEqual([]);
+    expect(result.hasSecrets).toBe(false);
+    expect(result.diagnostics.join('\n')).toContain('server is missing');
+  });
+
   it('adds diagnostics when list output contains non-object entries', () => {
     const result = parseMcpListOutput({
       codexHome: '/tmp/codex-home',
