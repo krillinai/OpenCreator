@@ -393,6 +393,9 @@ describe('run manager', () => {
     };
     expect(row?.resume_mode).toBe('resume_thread');
     expect(meta.args).toEqual(expect.arrayContaining(['exec', 'resume', 'codex-thread-1', '--json']));
+    expect(fake.readArgv()).toEqual(
+      expect.arrayContaining(['exec', 'resume', 'codex-thread-1', '--json'])
+    );
   });
 
   it('cancels queued same-thread runs without spawning codex', async () => {
