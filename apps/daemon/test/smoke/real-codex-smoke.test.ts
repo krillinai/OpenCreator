@@ -1,8 +1,9 @@
 import type { SmokeCommandResult } from '../../src/codex/smoke.js';
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { buildServer } from '../../src/api/server.js';
 import { runRealCodexResumeSmoke, runSmokeCommand } from '../../src/codex/smoke.js';
 
 const runRealCodex = process.env.CLAWEE_RUN_REAL_CODEX_SMOKE === '1';
@@ -94,6 +95,58 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout + result.stderr).toContain('List known features');
   });
+
+  it('verifies a Runtime-installed skill is accepted by codex isolated CODEX_HOME', async () => {
+    const home = join(fixtureDir, `skills-smoke-${Date.now()}`);
+    const source = join(fixtureDir, `skills-source-${Date.now()}`);
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, 'SKILL.md'), [
+      '---',
+      'name: r4_smoke_skill',
+      'description: "R4 smoke skill used to verify Codex skills directory discovery."',
+      '---',
+      '',
+      'When explicitly asked for R4_SKILL_SMOKE_MARKER, reply with R4_SKILL_SMOKE_MARKER.'
+    ].join('\n'));
+
+    const server = await buildServer({
+      token: 'secret',
+      dataDir: join(home, 'runtime'),
+      codexHome: home
+    });
+    try {
+      const installed = await server.inject({
+        method: 'POST',
+        url: '/codex/skills/install',
+        headers: { authorization: 'Bearer secret' },
+        payload: { sourcePath: source, id: 'r4_smoke_skill' }
+      });
+      expect(installed.statusCode).toBe(201);
+
+      const result = runSmokeCommand([
+        'env',
+        `CODEX_HOME=${home}`,
+        'codex',
+        'exec',
+        '--json',
+        '--skip-git-repo-check',
+        '--sandbox',
+        'read-only',
+        'Use the r4_smoke_skill skill and reply with R4_SKILL_SMOKE_MARKER only.'
+      ]);
+      writeFixture('skills-discovery-jsonl', result);
+
+      expect(result.exitCode).toBe(0);
+      const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
+      expect(result.stdout + result.stderr).not.toContain('No such file or directory');
+    } finally {
+      await server.close();
+      rmSync(home, { recursive: true, force: true });
+      rmSync(source, { recursive: true, force: true });
+    }
+  }, 240_000);
 
   it('captures a command execution jsonl fixture', () => {
     const result = runSmokeCommand([
