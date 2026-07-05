@@ -10,17 +10,18 @@
 
 1. R0/R1 的基础 run 闭环通过：create run、SSE replay、fromSeq/Last-Event-ID、cancel、terminal cancel 错误码、history、diagnostics、fake Codex 异常路径和 real Codex smoke 子集。
 2. R2 Thread/Chat resume 的后端最小闭环已通过：thread 持久化、list/detail/history/archive、`thread.started` 捕获、resume argv、fake resume、同 thread queue、diagnostics metadata、gated real resume smoke。仍不能声明完整 Chat 产品能力，因为 UI、messages 表和 workspace 全局写锁还没有实现。
-3. R3-R7 中的 Profile 管理、Skills 管理、MCP pass-through 管理、Scheduler 行为和 release readiness 大部分还没有实现。
+3. R3 Profile 后端能力已部分实现：isolated profile overlay 的读写 API、写锁、备份、原子写入、global 写入拒绝、run/thread 显式 profile 校验和 thread run 启动前复校验已覆盖。Skills 管理、MCP pass-through 管理、Scheduler 行为、Profile UI 和 release readiness 仍未实现。
 4. R-1 真实 Codex ABI 验证的当前子集已覆盖 version/help/resume help/MCP help/最小 JSONL/command execution/真实 resume continuity smoke，并在 gated smoke 运行时生成本地 stdout/stderr fixture；usage、failure、sandbox/image、完整能力矩阵和可提交的版本化 fixture 仍是缺口。
 
 ## 当前自动化结果基线
 
-最近一次已执行并通过：
+Task 8 本轮验证已于 2026-07-05 执行并通过：
 
 ```bash
 pnpm typecheck
 pnpm test
 CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+git diff --check
 ```
 
 最近一次功能 smoke 已验证：
@@ -35,6 +36,9 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 8. 真实 Codex `exec resume <thread_id> --json` 上下文连续性已通过 gated smoke：第二轮回复包含第一轮 marker，JSONL clean，且未出现工具/命令事件。
 9. 未授权 `/runs` 返回 401。
 10. `/healthz` 和 `/codex/status` 可用。
+11. Task 8 手动 daemon smoke 已验证：global mode 下 `/codex/status` 返回 `codexHomeWritable: false`。
+12. Task 8 手动 daemon smoke 已验证：global mode 下 `GET /codex/profiles` 返回 200。
+13. Task 8 手动 daemon smoke 已验证：global mode 下 `POST /codex/profiles` 返回 `CODEX_HOME_READ_ONLY`。
 
 ## 覆盖矩阵
 
@@ -42,7 +46,8 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 |---|---|---|---|---|
 | Codex exec argv | `apps/daemon/src/codex/argv.ts` | `apps/daemon/test/unit/codex-argv.test.ts` | `PASS` | 已覆盖 exec argv、resume argv 不携带 cwd/profile/sandbox；缺能力矩阵持久化 |
 | Codex capability parser | `apps/daemon/src/codex/capabilities.ts` | `apps/daemon/test/unit/codex-capabilities.test.ts`, `apps/daemon/test/integration/api.test.ts` | `PARTIAL` | 已接 daemon 启动 help 检测、`/codex/status` 和 resume gate；缺持久化 runtime capability matrix、版本区间 gate 和完整能力矩阵验收 |
-| CODEX_HOME 解析 | `apps/daemon/src/codex/home.ts` | `apps/daemon/test/unit/codex-home.test.ts` | `PASS` | 隔离模式 e2e、配置缓存、冲突处理未实现 |
+| CODEX_HOME 解析 | `apps/daemon/src/codex/home.ts` | `apps/daemon/test/unit/codex-home.test.ts` | `PASS` | 已覆盖 global/env/isolated/source/writable；全局 CODEX_HOME 写入禁止 |
+| Profile API | `apps/daemon/src/codex/profiles/*`, `apps/daemon/src/api/routes.profiles.ts`, `apps/daemon/src/api/routes.runs.ts`, `apps/daemon/src/api/routes.threads.ts` | `apps/daemon/test/unit/codex-profile-*.test.ts`, `apps/daemon/test/integration/api.test.ts`, `apps/daemon/test/smoke/real-codex-smoke.test.ts` | `PARTIAL` | isolated profile overlay CRUD、写锁、备份、原子写入、global 写入拒绝、run/thread 显式 profile 校验、thread run 启动前 profile 复校验已覆盖；复杂 base config 修复、UI、Skills/MCP/Scheduler 仍未实现 |
 | Codex runner | `apps/daemon/src/codex/runner.ts` | `apps/daemon/test/integration/codex-runner.test.ts` | `PARTIAL` | 已覆盖 SIGTERM 后 SIGKILL 兜底、spawn fail、spawnTimeout、timeout、inactivity；缺进程树强杀专项 |
 | JSONL parser | `apps/daemon/src/events/parser.ts` | `apps/daemon/test/unit/events.test.ts` | `PASS` | 真实 fixture 回归不足 |
 | Event normalizer | `apps/daemon/src/events/normalizer.ts` | `apps/daemon/test/unit/events.test.ts` | `PARTIAL` | usage、MCP、patch、web search、reasoning 事件未覆盖 |
@@ -66,7 +71,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 | Codex 版本和能力可检测 | `PARTIAL` | daemon 启动时会采集 `codex --version`、`codex exec --help`、`codex exec resume --help`、`codex mcp add --help`，`/codex/status` 返回同一份能力矩阵，resume gate 会按 `resumeJson && resumeByThreadId` 放行；未持久化 capability matrix，也没有版本区间 gate |
 | 事件协议稳定，SSE 可 replay | `PARTIAL` | 基础 replay、`fromSeq`、`afterSeq`、`Last-Event-ID`、大量事件顺序、运行中 tail、heartbeat 通过；真实 fixture 回归不足 |
 | 本地 API 不裸露给未授权调用方 | `PASS` | 非 healthz 接口有 bearer token |
-| 配置写入有锁、原子性和缓存同步 | `MISSING_IMPL` | profile/config 写入未实现 |
+| 配置写入有锁、原子性和缓存同步 | `PARTIAL` | profile overlay 写入已有锁、备份、原子 rename 和 global 写入拒绝；通用 settings、缓存同步和复杂 config normalize 尚未完成 |
 | Scheduler 行为可预测 | `MISSING_IMPL` | 只有 helper |
 | R-1 真实 Codex 验证通过，并保存 stdout/stderr 分离 fixture | `PARTIAL` | 当前真实 smoke 子集通过：version/help/resume help/MCP help/JSONL/command execution/真实 resume continuity；已生成本地 ignored fixture，未形成 usage/failure/sandbox/image/versioned fixture 回归 |
 | 支持的 Codex 版本区间已明确，版本超界行为可验证 | `MISSING_IMPL` | 没有版本区间 gate |
@@ -81,5 +86,6 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 1. 继续补 workspace 全局写锁、进程树强杀专项和更真实的断线重连 e2e。
 2. 继续补 R-1 失败路径和 fixture 回归：usage、failure、sandbox、可提交的脱敏版本化 fixture。
 3. 补 R2 产品面缺口：UI、messages 表、完整 Chat transcript 模型和 capability/status 边界表达。
-4. 将 Profile 管理、Skills 管理、MCP 管理/pass-through、Scheduler 行为作为独立 milestone 实现和验收。
-5. R3-R7 不应再被口头归为已完成，必须作为独立 milestone 实现和验收。
+4. Profile 后端继续补复杂 base config 修复、缓存同步和产品边界文档；Profile UI 仍作为后续 milestone。
+5. 将 Skills 管理、MCP 管理/pass-through、Scheduler 行为作为独立后续 milestone 实现和验收。
+6. R3-R7 不应再被口头归为已完成，必须按后端/API/UI/集成边界分别实现和验收。
