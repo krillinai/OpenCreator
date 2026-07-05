@@ -109,6 +109,8 @@ describe('codex mcp parser', () => {
 
   it('detects not found output without matching permission errors', () => {
     expect(isMcpNotFoundOutput('server not found')).toBe(true);
+    expect(isMcpNotFoundOutput('server not configured')).toBe(true);
+    expect(isMcpNotFoundOutput('mcp server not configured')).toBe(true);
     expect(isMcpNotFoundOutput('No MCP server named github is configured')).toBe(true);
     expect(isMcpNotFoundOutput('missing mcp server github')).toBe(true);
     expect(isMcpNotFoundOutput('missing token')).toBe(false);
@@ -116,6 +118,8 @@ describe('codex mcp parser', () => {
     expect(isMcpNotFoundOutput('missing permission')).toBe(false);
     expect(isMcpNotFoundOutput('MCP server github missing required env GITHUB_TOKEN')).toBe(false);
     expect(isMcpNotFoundOutput('MCP server github missing token')).toBe(false);
+    expect(isMcpNotFoundOutput('GITHUB_TOKEN not configured')).toBe(false);
+    expect(isMcpNotFoundOutput('env var not configured')).toBe(false);
     expect(isMcpNotFoundOutput('permission denied')).toBe(false);
   });
 
@@ -263,6 +267,26 @@ describe('codex mcp parser', () => {
     expect(result.hasSecrets).toBe(true);
   });
 
+  it('redacts quoted secrets in parsed args', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({
+        name: 'github',
+        transport: 'stdio',
+        args: ['GITHUB_TOKEN="secret"', '--api-key="secret2"']
+      }),
+      stderr: '',
+      exitCode: 0
+    });
+
+    expect(result.args).toEqual(['GITHUB_TOKEN=[REDACTED]', '--api-key=[REDACTED]']);
+    expect(JSON.stringify(result)).not.toContain('secret');
+    expect(JSON.stringify(result)).not.toContain('secret2');
+    expect(result.hasSecrets).toBe(true);
+  });
+
   it('maps JSON not found errors to missing status', () => {
     const result = parseMcpGetOutput({
       name: 'github',
@@ -278,6 +302,20 @@ describe('codex mcp parser', () => {
     expect(result.envKeys).toEqual([]);
     expect(result.hasSecrets).toBe(false);
     expect(result.diagnostics.join('\n')).toContain('server is missing');
+  });
+
+  it('maps nested JSON error messages to missing status', () => {
+    const result = parseMcpGetOutput({
+      name: 'github',
+      codexHome: '/tmp/codex-home',
+      codexHomeMode: 'isolated',
+      stdout: JSON.stringify({ error: { message: 'server not found' } }),
+      stderr: '',
+      exitCode: 1
+    });
+
+    expect(result.status).toBe('missing');
+    expect(result.transport).toBe('unknown');
   });
 
   it('does not map JSON diagnostics about missing token to missing status', () => {

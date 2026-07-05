@@ -113,8 +113,10 @@ export function parseMcpListOutput(input: ParseMcpListOutputInput): CodexMcpList
 }
 
 export function isMcpNotFoundOutput(output: string): boolean {
-  return /\b(?:not found|not configured|no mcp server named|missing\s+mcp\s+server)\b/i.test(
-    output
+  return (
+    /\b(?:server\s+not\s+found|mcp\s+server\s+not\s+found|no\s+mcp\s+server\s+named|mcp\s+server\s+not\s+configured|server\s+not\s+configured|missing\s+mcp\s+server)\b/i.test(
+      output
+    )
   );
 }
 
@@ -260,6 +262,13 @@ function jsonObjectIndicatesMissing(value: Record<string, unknown>): boolean {
   if (typeof value.error === 'string' && isMcpNotFoundOutput(value.error)) {
     return true;
   }
+  if (
+    isPlainObject(value.error) &&
+    typeof value.error.message === 'string' &&
+    isMcpNotFoundOutput(value.error.message)
+  ) {
+    return true;
+  }
   if (typeof value.message === 'string' && isMcpNotFoundOutput(value.message)) {
     return true;
   }
@@ -276,7 +285,7 @@ function redactMcpCommand(command: string, sensitiveValues: string[]): string {
 }
 
 function redactMcpArgs(args: string[], sensitiveValues: string[]): string[] {
-  const redactedArgs = args.map((arg) => redactMcpText(arg, sensitiveValues));
+  const redactedArgs = args.map((arg) => redactMcpFreeText(arg, sensitiveValues));
 
   for (let index = 0; index < redactedArgs.length - 1; index += 1) {
     if (isSecretArgFlag(args[index] ?? '') || isSecretArgFlag(redactedArgs[index] ?? '')) {
