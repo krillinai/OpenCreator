@@ -175,6 +175,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
       const endedAt = new Date().toISOString();
       const seq = nextSeqForRun(id);
+      writeQueuedCancelDiagnostics(queued);
       updateStatus(id, 'canceled', 'canceled', {
         terminationReason: 'user_canceled',
         endedAt
@@ -608,15 +609,40 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     return lastSeqForRun(runId) + 1;
   }
 
-  function removeQueuedRun(runId: string): { threadId: string } | undefined {
+  function removeQueuedRun(runId: string): (QueuedRun & { threadId: string }) | undefined {
     for (const [threadId, queue] of threadQueues) {
       const index = queue.findIndex(run => run.id === runId);
       if (index === -1) continue;
-      queue.splice(index, 1);
+      const [queued] = queue.splice(index, 1);
+      if (queued === undefined) return undefined;
       if (queue.length === 0) threadQueues.delete(threadId);
-      return { threadId };
+      return { ...queued, threadId };
     }
     return undefined;
+  }
+
+  function writeQueuedCancelDiagnostics(queued: QueuedRun & { threadId: string }): void {
+    const row = runs.getRun(queued.id);
+    const resumeMode = row?.resume_mode ?? resolveResumeMode(
+      queued.input,
+      options.threadAccess?.getThread(queued.threadId)
+    );
+    const codexThreadId = row?.codex_thread_id ?? undefined;
+    const runInput: CreateRunInput = { ...queued.input, threadId: queued.threadId };
+
+    writeJson(join(queued.runDir, 'diagnostics.json'), {
+      ...buildThreadRunDiagnosticsMetadata({
+        runInput,
+        resumeMode,
+        codexThreadId,
+        argv: buildRunArgv(runInput, resumeMode, codexThreadId),
+        queueState: row?.queue_state ?? 'queued',
+        errorCode: null,
+        errorMessage: null,
+        terminationReason: 'user_canceled'
+      }),
+      terminationReason: 'user_canceled'
+    });
   }
 
   function bridgeRunCompletion(runId: string, done: Promise<CreatedRun>): void {

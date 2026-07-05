@@ -128,6 +128,47 @@ describe('diagnostics', () => {
       errorCode: 'RESUME_TARGET_NOT_FOUND'
     });
   });
+
+  it('includes thread diagnostics when canceling queued thread runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.started' }],
+      hang: true
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread;
+
+    const first = await authPost('/runs', { threadId: thread.id, prompt: 'hang' });
+    const second = await authPost('/runs', { threadId: thread.id, prompt: 'queued' });
+    expect(second.json().status).toBe('queued');
+
+    const canceled = await authPost(`/runs/${second.json().id}/cancel`, {});
+    expect(canceled.statusCode).toBe(202);
+    await waitForRunStatus(second.json().id, 'canceled');
+
+    expect(readDiagnosticsFile(tempDir, second.json().id)).toMatchObject({
+      threadId: thread.id,
+      resumeMode: 'new_thread',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      queueState: 'queued',
+      terminationReason: 'user_canceled'
+    });
+
+    await authPost(`/runs/${first.json().id}/cancel`, {});
+    await waitForRunStatus(first.json().id, 'canceled');
+  });
 });
 
 function readDiagnosticsFile(root: string, runId: string) {
