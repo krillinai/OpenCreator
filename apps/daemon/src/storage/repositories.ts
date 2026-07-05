@@ -76,6 +76,7 @@ export type RunRepository = {
   listNonTerminalRuns(): RunRow[];
   updateRunStatus(input: UpdateRunStatusInput): void;
   setRunCodexThreadId(runId: string, codexThreadId: string): void;
+  setRunResumeMode(runId: string, resumeMode: ResolvedResumeMode): void;
   setRunQueueState(runId: string, queueState: RunQueueState): void;
   insertRunEvent(event: AgentEventEnvelope): void;
   listRunEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
@@ -175,6 +176,12 @@ export function createRunRepository(db: Database.Database): RunRepository {
         updated_at = CURRENT_TIMESTAMP
     WHERE id = @runId
   `);
+  const setResumeMode = db.prepare(`
+    UPDATE runs
+    SET resume_mode = @resumeMode,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @runId
+  `);
   const setQueueState = db.prepare(`
     UPDATE runs
     SET queue_state = @queueState,
@@ -236,6 +243,9 @@ export function createRunRepository(db: Database.Database): RunRepository {
     },
     setRunCodexThreadId(runId: string, codexThreadId: string): void {
       setCodexThreadId.run({ runId, codexThreadId });
+    },
+    setRunResumeMode(runId: string, resumeMode: ResolvedResumeMode): void {
+      setResumeMode.run({ runId, resumeMode });
     },
     setRunQueueState(runId: string, queueState: RunQueueState): void {
       setQueueState.run({ runId, queueState });

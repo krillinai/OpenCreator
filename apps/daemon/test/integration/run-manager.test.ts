@@ -310,6 +310,31 @@ describe('run manager', () => {
     );
   });
 
+  it('returns threadId for immediate and completed thread runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ],
+      lineDelayMs: 50
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
+
+    const started = manager.startRun(threadRun(thread, 'start'));
+    expect(started).toMatchObject({ threadId: thread.id, status: 'running' });
+    await waitForRunStatus(manager, started.id, 'succeeded');
+
+    const completed = await manager.createAndRun(threadRun(thread, 'complete'));
+    expect(completed).toMatchObject({ threadId: thread.id, status: 'succeeded' });
+  });
+
   it('queues same-thread runs and starts the second after the first completes', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
     const fake = createFakeCodex(tempDir, {
@@ -335,6 +360,39 @@ describe('run manager', () => {
     expect(manager.getRun(second.id)?.status).toBe('queued');
     await waitForRunStatus(manager, first.id, 'succeeded');
     await waitForRunStatus(manager, second.id, 'succeeded');
+  });
+
+  it('updates queued run resume mode when dequeued as a resumed thread run', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ],
+      lineDelayMs: 50
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager);
+
+    const first = manager.startRun(threadRun(thread, 'first'));
+    const second = manager.startRun(threadRun(thread, 'second'));
+
+    await waitForRunStatus(manager, first.id, 'succeeded');
+    await waitForRunStatus(manager, second.id, 'succeeded');
+
+    const row = db!.prepare('SELECT resume_mode FROM runs WHERE id = ?').get(second.id) as
+      | { resume_mode: string }
+      | undefined;
+    const meta = JSON.parse(readFileSync(join(tempDir, 'runs', second.id, 'meta.json'), 'utf8')) as {
+      args: string[];
+    };
+    expect(row?.resume_mode).toBe('resume_thread');
+    expect(meta.args).toEqual(expect.arrayContaining(['exec', 'resume', 'codex-thread-1', '--json']));
   });
 
   it('cancels queued same-thread runs without spawning codex', async () => {
@@ -460,6 +518,7 @@ describe('run manager', () => {
       resumeMode: 'resume_thread'
     });
 
+    expect(run).toMatchObject({ threadId: thread.id, status: 'failed' });
     await waitForRunStatus(manager, run.id, 'failed');
     expect(manager.getRun(run.id)).toMatchObject({
       errorCode: 'RESUME_CAPABILITY_UNVERIFIED'

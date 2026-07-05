@@ -228,7 +228,13 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     const resolvedResumeMode = resolveResumeMode(runInput, thread);
     const codexThreadId = thread?.codexThreadId ?? undefined;
 
+    runs.setRunResumeMode(id, resolvedResumeMode);
     if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'started');
+    const createdRun = (status: PublicRunStatus): CreatedRun => ({
+      id,
+      ...(runInput.threadId === undefined ? {} : { threadId: runInput.threadId }),
+      status
+    });
 
     const failBeforeSpawnAndRelease = (failure: {
       code: string;
@@ -241,6 +247,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         code: failure.code,
         message: failure.message,
         terminationReason: failure.terminationReason,
+        threadId: runInput.threadId,
         publish
       });
       resolveRunCompletion(id, run);
@@ -422,7 +429,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         activeRuns.delete(id);
         if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
         completeThreadRun(runInput.threadId, id);
-        return { id, status: publicStatus };
+        return createdRun(publicStatus);
       })
       .catch(error => {
         const terminationReason = errorToTerminationReason(error);
@@ -450,7 +457,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         activeRuns.delete(id);
         if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
         completeThreadRun(runInput.threadId, id);
-        return { id, status: publicStatus };
+        return createdRun(publicStatus);
       });
 
     activeRuns.set(id, {
@@ -463,7 +470,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     });
     bridgeRunCompletion(id, done);
 
-    return { id, status: 'running' };
+    return createdRun('running');
   }
 
   function failRunBeforeSpawn(input: {
@@ -472,6 +479,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     code: string;
     message: string;
     terminationReason: TerminationReason;
+    threadId?: string;
     publish: (event: AgentEventEnvelope) => void;
   }): CreatedRun {
     const endedAt = new Date().toISOString();
@@ -489,7 +497,11 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     const seq = nextSeqForRun(input.id);
     publishError(input.id, seq, input.code, input.message, input.publish);
     publishDone(input.id, seq + 1, 'failed', input.terminationReason, input.publish);
-    return { id: input.id, status: 'failed' };
+    return {
+      id: input.id,
+      ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
+      status: 'failed'
+    };
   }
 
   function insertInitialRun(
