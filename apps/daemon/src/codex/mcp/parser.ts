@@ -25,49 +25,59 @@ export type ParseMcpListOutputInput = {
 
 export function parseMcpGetOutput(input: ParseMcpGetOutputInput): CodexMcpServerResponse {
   const output = combineOutput(input.stdout, input.stderr);
-  const parsed = parseJson(output);
+  const parsed = parsePreferredJson(input.stdout, output);
 
   if (isPlainObject(parsed)) {
     return mapServer(parsed, {
       fallbackName: input.name,
       codexHome: input.codexHome,
-      codexHomeMode: input.codexHomeMode
+      codexHomeMode: input.codexHomeMode,
+      diagnosticText: input.stderr
     });
   }
 
-  const diagnostics = ['codex mcp get output was not fully recognized'];
+  const missing = isMcpNotFoundOutput(output);
   return {
     name: input.name,
     transport: 'unknown',
-    status: input.exitCode === 0 ? 'configured' : 'unknown',
+    status: missing ? 'missing' : input.exitCode === 0 ? 'configured' : 'unknown',
     envKeys: [],
     hasSecrets: false,
     codexHome: input.codexHome,
     codexHomeMode: input.codexHomeMode,
-    diagnostics,
+    diagnostics: [
+      missing
+        ? 'codex mcp get output indicates server is missing'
+        : 'codex mcp get output was not fully recognized'
+    ],
     raw: redactMcpText(output)
   };
 }
 
 export function parseMcpListOutput(input: ParseMcpListOutputInput): CodexMcpListResponse {
   const output = combineOutput(input.stdout, input.stderr);
-  const parsed = parseJson(output);
+  const parsed = parsePreferredJson(input.stdout, output);
 
   if (Array.isArray(parsed)) {
+    const plainServers = parsed.filter(isPlainObject);
+    const sensitiveValues = plainServers.flatMap((server) => getEnvValues(server.env));
+    const diagnostics = redactedTextDiagnostics(input.stderr, sensitiveValues);
+    if (plainServers.length !== parsed.length) {
+      diagnostics.push('codex mcp list output contained non-object entries');
+    }
+
     return {
       codexHome: input.codexHome,
       codexHomeMode: input.codexHomeMode,
       requiresWriteConfirmation: input.codexHomeMode === 'global',
-      servers: parsed
-        .filter(isPlainObject)
-        .map((server) =>
-          mapServer(server, {
-            fallbackName: '',
-            codexHome: input.codexHome,
-            codexHomeMode: input.codexHomeMode
-          })
-        ),
-      diagnostics: []
+      servers: plainServers.map((server) =>
+        mapServer(server, {
+          fallbackName: '',
+          codexHome: input.codexHome,
+          codexHomeMode: input.codexHomeMode
+        })
+      ),
+      diagnostics
     };
   }
 
@@ -90,31 +100,44 @@ function mapServer(
     fallbackName: string;
     codexHome: string;
     codexHomeMode: CodexHomeMode;
+    diagnosticText?: string;
   }
 ): CodexMcpServerResponse {
   const envKeys = getEnvKeys(server.env);
   const sensitiveValues = getEnvValues(server.env);
+  const command = typeof server.command === 'string' ? redactMcpText(server.command, sensitiveValues) : undefined;
+  const originalArgs =
+    Array.isArray(server.args) && server.args.every((arg) => typeof arg === 'string') ? server.args : undefined;
+  const args = originalArgs?.map((arg) => redactMcpText(arg, sensitiveValues));
+  const url = typeof server.url === 'string' ? redactMcpText(server.url, sensitiveValues) : undefined;
+  const redactionChanged =
+    (command !== undefined && command !== server.command) ||
+    (args !== undefined && originalArgs !== undefined && args.some((arg, index) => arg !== originalArgs[index])) ||
+    (url !== undefined && url !== server.url);
   const result: CodexMcpServerResponse = {
     name: typeof server.name === 'string' ? server.name : context.fallbackName,
     transport: normalizeTransport(server.transport),
     status: 'configured',
     envKeys,
-    hasSecrets: envKeys.length > 0,
+    hasSecrets: envKeys.length > 0 || redactionChanged,
     codexHome: context.codexHome,
     codexHomeMode: context.codexHomeMode,
-    diagnostics: getDiagnostics(server.diagnostics, sensitiveValues)
+    diagnostics: [
+      ...getDiagnostics(server.diagnostics, sensitiveValues),
+      ...redactedTextDiagnostics(context.diagnosticText ?? '', sensitiveValues)
+    ]
   };
 
-  if (typeof server.command === 'string') {
-    result.command = server.command;
+  if (command !== undefined) {
+    result.command = command;
   }
 
-  if (Array.isArray(server.args) && server.args.every((arg) => typeof arg === 'string')) {
-    result.args = server.args;
+  if (args !== undefined) {
+    result.args = args;
   }
 
-  if (typeof server.url === 'string') {
-    result.url = redactMcpText(server.url, sensitiveValues);
+  if (url !== undefined) {
+    result.url = url;
   }
 
   return result;
@@ -136,6 +159,11 @@ function parseJson(output: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+function parsePreferredJson(stdout: string, output: string): unknown {
+  const parsedStdout = parseJson(stdout);
+  return parsedStdout === undefined ? parseJson(output) : parsedStdout;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -171,4 +199,9 @@ function getDiagnostics(diagnostics: unknown, sensitiveValues: string[]): string
   return diagnostics
     .filter((diagnostic): diagnostic is string => typeof diagnostic === 'string')
     .map((diagnostic) => redactMcpText(diagnostic, sensitiveValues));
+}
+
+function redactedTextDiagnostics(text: string, sensitiveValues: string[]): string[] {
+  const diagnostic = redactMcpText(text, sensitiveValues).trim();
+  return diagnostic.length === 0 ? [] : [diagnostic];
 }
