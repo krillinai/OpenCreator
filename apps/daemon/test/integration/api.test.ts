@@ -402,6 +402,147 @@ describe('runtime api', () => {
     }
   });
 
+  it('rejects explicit missing profiles for new runs and threads', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.completed' }]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await authPost('/runs', {
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'missing-profile'
+    });
+    expect(run.statusCode).toBe(404);
+    expect(run.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
+
+    const thread = await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'missing-profile',
+      sandbox: 'read-only'
+    });
+    expect(thread.statusCode).toBe(404);
+    expect(thread.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
+  });
+
+  it('allows runs and threads with profiles created in isolated codex home', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const createdProfile = await authPost('/codex/profiles', {
+      name: 'review',
+      config: { model: 'gpt-5.3-codex' }
+    });
+    expect(createdProfile.statusCode).toBe(201);
+
+    const thread = await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'review',
+      sandbox: 'read-only'
+    });
+    expect(thread.statusCode).toBe(201);
+    expect(thread.json().thread.profile).toBe('review');
+
+    const run = await authPost('/runs', {
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'review'
+    });
+    expect(run.statusCode).toBe(202);
+
+    await waitForRunStatus(run.json().id, 'succeeded');
+    expect(fake.readArgv()).toEqual(expect.arrayContaining(['-p', 'review']));
+  });
+
+  it('does not require default profile to exist', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.completed' }]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await authPost('/runs', {
+      prompt: 'hello',
+      cwd: tempDir
+    });
+    expect(run.statusCode).toBe(202);
+
+    await waitForRunStatus(run.json().id, 'succeeded');
+  });
+
+  it('rejects explicit profiles when base config.toml is invalid', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "broken');
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "gpt-5.3-codex"\n');
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.completed' }]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome
+    });
+
+    const response = await authPost('/runs', {
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'review'
+    });
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe('CODEX_CONFIG_INVALID');
+  });
+
+  it('rejects explicit profiles when profile overlay is invalid', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(join(codexHome, 'review.config.toml'), 'model = "broken');
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [{ type: 'turn.completed' }]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome
+    });
+
+    const response = await authPost('/runs', {
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'review'
+    });
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error.code).toBe('CODEX_PROFILE_INVALID');
+  });
+
   it('creates, lists, gets, and archives threads through the api', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });

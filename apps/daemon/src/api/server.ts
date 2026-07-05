@@ -90,10 +90,13 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerRunRoutes(server, runManager, {
     sseHeartbeatMs: input.sseHeartbeatMs,
-    threadManager
+    threadManager,
+    profileValidator: profileManager
   });
   await registerDiagnosticsRoutes(server, dataDir);
-  await registerThreadRoutes(server, threadManager, runManager);
+  await registerThreadRoutes(server, threadManager, runManager, {
+    profileValidator: profileManager
+  });
 
   return server;
 }

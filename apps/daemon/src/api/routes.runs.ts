@@ -9,7 +9,11 @@ import { formatSseEvent } from './sse.js';
 export async function registerRunRoutes(
   server: FastifyInstance,
   manager: RunManager,
-  options: { sseHeartbeatMs?: number; threadManager?: ThreadManager } = {}
+  options: {
+    sseHeartbeatMs?: number;
+    threadManager?: ThreadManager;
+    profileValidator?: ProfileValidator;
+  } = {}
 ): Promise<void> {
   const sseHeartbeatMs = options.sseHeartbeatMs ?? 15_000;
   server.post<{ Body: unknown }>('/runs', async (request, reply) => {
@@ -50,6 +54,13 @@ export async function registerRunRoutes(
       });
 
       return reply.code(202).send(run);
+    }
+
+    if (body.profile !== undefined) {
+      const validation = options.profileValidator?.validateProfileForRun(body.profile);
+      if (validation !== undefined && !validation.ok) {
+        return sendProfileValidationError(reply, validation);
+      }
     }
 
     const run = manager.startRun({
@@ -133,6 +144,10 @@ export async function registerRunRoutes(
 }
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
+type ProfileValidationResult = { ok: true } | { ok: false; code: string; message: string };
+type ProfileValidator = {
+  validateProfileForRun(name: string): ProfileValidationResult;
+};
 
 const RESUME_MODES = ['auto', 'new_thread', 'resume_thread'] as const;
 const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;
@@ -207,6 +222,19 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isOneOf<const T extends readonly string[]>(value: unknown, options: T): value is T[number] {
   return typeof value === 'string' && options.includes(value);
+}
+
+function sendProfileValidationError(
+  reply: FastifyReply,
+  validation: Extract<ProfileValidationResult, { ok: false }>
+) {
+  if (validation.code === 'CODEX_PROFILE_NOT_FOUND') {
+    return reply.code(404).send(apiError('CODEX_PROFILE_NOT_FOUND', validation.message));
+  }
+  if (validation.code === 'CODEX_CONFIG_INVALID') {
+    return reply.code(422).send(apiError('CODEX_CONFIG_INVALID', validation.message));
+  }
+  return reply.code(422).send(apiError('CODEX_PROFILE_INVALID', validation.message));
 }
 
 function getReplayAfterSeq(lastEventId: string | string[] | undefined, query: unknown): number {
