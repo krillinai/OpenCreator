@@ -40,7 +40,7 @@
 | R1 | Run API + SSE | `PARTIAL/PASS` | create/get/list/cancel/events/auth、`fromSeq`、`afterSeq`、`Last-Event-ID`、terminal cancel 错误码、大量事件、运行中 tail、heartbeat 已覆盖；缺断线重连 e2e |
 | R2 | Thread / Chat Runtime | `MISSING_IMPL` | 只有 `POST /threads` 内存创建；缺持久化、list/get/runs/archive、真实 resume、同 thread 串行锁 |
 | R3 | Profiles / Settings / CODEX_HOME | `MISSING_IMPL` | 只有 `CODEX_HOME` 解析；缺 profile CRUD、写锁、原子写入、备份、config normalize、缓存同步 |
-| R4 | Skills Pass-through | `MISSING_IMPL` | 缺 scan/install/delete/metadata/API/真实 skill 触发测试 |
+| R4 | Skills Pass-through | `PARTIAL/BLOCKED_ENV` | skills 扫描、元数据、安装、覆盖、删除、备份、invalid 诊断、写确认、操作日志、API 自动化测试通过；真实 Codex discovery smoke 已实现但当前机器 Codex auth 返回 401，标记 `BLOCKED_ENV`；真实模型按 skill 行为输出仍为 `UNVERIFIED_BEHAVIOR` |
 | R5 | MCP Pass-through | `PARTIAL/MISSING_IMPL` | 只有 MCP argv builder；缺 API、真实 `codex mcp` 调用、env 脱敏响应、运行期 MCP fixture |
 | R6 | Scheduler | `PARTIAL/MISSING_IMPL` | 只有 misfire helper；缺 schedule CRUD、run-now、cron/timezone/DST、concurrency policy |
 | R7 | Diagnostics + Release Readiness | `PARTIAL` | diagnostics 导出和 symlink 防护已测；缺 `/codex/status` 快照打包、日志/workspace 清理 API、release smoke 脚本 |
@@ -333,7 +333,24 @@ codex mcp add --help
 4. 无效 skill 标记 `invalid`。
 5. 操作日志。
 
-**当前状态：** `MISSING_IMPL`。
+**当前状态：** `PASS`。
+
+已实现并通过自动化测试：
+
+1. `CODEX_HOME/skills` 扫描和 `valid/invalid` 诊断。
+2. 本地 skill 目录安装、覆盖、删除和备份。
+3. 全局 `CODEX_HOME` 写操作显式确认。
+4. symlink/path traversal 拒绝。
+5. `codex_skill_operations` 写操作日志。
+6. `/codex/skills` API 集成测试。
+
+验证命令：
+
+```bash
+pnpm --filter @clawee/daemon test -- test/unit/codex-skills-validator.test.ts test/unit/codex-skills-scanner.test.ts test/unit/codex-skills-installer.test.ts test/unit/codex-smoke.test.ts test/unit/storage.test.ts test/integration/api.test.ts
+```
+
+结果：`6` 个测试文件、`71` 个测试通过。
 
 ### Task R4.2: skill 触发真实 Codex 测试
 
@@ -343,7 +360,19 @@ codex mcp add --help
 2. 运行 prompt 显式引用该 skill。
 3. 检查 Codex stdout/stderr 和事件是否能证明 skill 被发现或使用。
 
-**当前状态：** `MISSING_IMPL/BLOCKED_ENV`。
+**当前状态：** `BLOCKED_ENV/UNVERIFIED_BEHAVIOR`。
+
+已实现 gated smoke：Runtime 通过 `/codex/skills/install` 把测试 skill 安装到隔离 `CODEX_HOME/skills`，再运行真实 `codex exec --json` 验证 Codex 接受该目录布局并输出合法 JSONL。
+
+当前机器复测结果：`BLOCKED_ENV`。`skills-discovery-jsonl.json` 显示真实 Codex 已启动并进入 JSONL 事件流，但请求 OpenAI API 时返回 `401 Unauthorized: Missing bearer or basic authentication`。额外探测只复制 `~/.codex/auth.json` 到隔离 home 后仍返回 `token_expired/refresh_token_reused`，需要重新登录或提供可用真实 Codex 凭据后复测。
+
+真实模型是否按 `SKILL.md` 行为输出 marker 暂不作为 R4 第一版硬断言，状态为 `UNVERIFIED_BEHAVIOR`。
+
+复测命令：
+
+```bash
+CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+```
 
 ## 10. R5 MCP Pass-through 测试
 
@@ -456,7 +485,7 @@ codex mcp add --help
 ### Phase 4: 实现 R3-R5 Codex 原生生态透传
 
 1. profile/config 安全写入。
-2. skills scan/install/delete。
+2. skills scan/install/delete 已完成；真实 Codex discovery 需在可用 auth 环境下复测。
 3. MCP pass-through API。
 4. 隔离 `CODEX_HOME` 写操作测试。
 
