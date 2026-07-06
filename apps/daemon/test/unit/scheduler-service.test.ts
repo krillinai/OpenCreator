@@ -129,6 +129,36 @@ describe('scheduler service', () => {
     });
   });
 
+  it('records failed run-now operations when run manager throws', () => {
+    const { runManager, service } = createFixture();
+    const schedule = service.createSchedule({
+      name: 'daily status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status'
+    });
+    runManager.startRun.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+
+    expect(() => service.runNow(schedule.id)).toThrow(
+      expect.objectContaining({
+        code: 'INTERNAL_ERROR',
+        message: 'boom'
+      })
+    );
+    expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
+      operation: 'run_now',
+      status: 'failed',
+      errorCode: 'INTERNAL_ERROR',
+      errorMessage: 'boom'
+    });
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      lastRunAt: null,
+      lastRunId: null,
+      lastStatus: null
+    });
+  });
+
   it('throws SCHEDULE_NOT_FOUND for missing schedule mutations', () => {
     const { service } = createFixture();
 

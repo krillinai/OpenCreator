@@ -4,21 +4,20 @@ import type {
   ScheduleDetailResponse,
   ScheduleListResponse,
   ScheduleOperationListResponse,
-  ScheduleOperationResponse,
   ScheduleResponse,
   UpdateScheduleRequest
 } from '@clawee/protocol';
 import type { RunManager } from '../runs/manager.js';
 import { computeNextRunAt } from './cron.js';
 import type { ScheduleRepository } from './repository.js';
-import type { ProfileValidator, ScheduleRecord, SchedulerClock } from './types.js';
+import type { ProfileValidator, ScheduleOperationRecord, ScheduleRecord, SchedulerClock } from './types.js';
 import {
   parseCreateScheduleRequest,
   parseUpdateScheduleRequest,
   type ScheduleValidationErrorCode
 } from './validator.js';
 
-export type SchedulerErrorCode = ScheduleValidationErrorCode | 'SCHEDULE_NOT_FOUND';
+export type SchedulerErrorCode = ScheduleValidationErrorCode | 'SCHEDULE_NOT_FOUND' | 'INTERNAL_ERROR';
 
 export class SchedulerError extends Error {
   readonly code: SchedulerErrorCode;
@@ -128,17 +127,30 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
 
     runNow(id) {
       const schedule = requireSchedule(options.repository, id);
-      const run = options.runManager.startRun({
-        prompt: schedule.prompt,
-        cwd: schedule.cwd,
-        profile: schedule.profile,
-        sandbox: schedule.sandbox,
-        model: schedule.model ?? undefined,
-        reasoning: schedule.reasoning ?? undefined,
-        createdBy: 'schedule',
-        sourceId: schedule.id,
-        timeoutMs: schedule.timeoutMs ?? undefined
-      });
+      let run;
+      try {
+        run = options.runManager.startRun({
+          prompt: schedule.prompt,
+          cwd: schedule.cwd,
+          profile: schedule.profile,
+          sandbox: schedule.sandbox,
+          model: schedule.model ?? undefined,
+          reasoning: schedule.reasoning ?? undefined,
+          createdBy: 'schedule',
+          sourceId: schedule.id,
+          timeoutMs: schedule.timeoutMs ?? undefined
+        });
+      } catch (error) {
+        const message = formatError(error);
+        options.repository.insertOperation({
+          scheduleId: schedule.id,
+          operation: 'run_now',
+          status: 'failed',
+          errorCode: 'INTERNAL_ERROR',
+          errorMessage: message
+        });
+        throw new SchedulerError('INTERNAL_ERROR', message);
+      }
       const updated = options.repository.recordRun({
         id: schedule.id,
         runId: run.id,
@@ -218,9 +230,7 @@ function toScheduleDetailResponse(schedule: ScheduleRecord): ScheduleDetailRespo
   };
 }
 
-function toScheduleOperationResponse(
-  operation: ScheduleOperationResponse
-): ScheduleOperationResponse {
+function toScheduleOperationResponse(operation: ScheduleOperationRecord) {
   return operation;
 }
 
@@ -236,4 +246,8 @@ function notFound(): SchedulerError {
 
 function requiresNextRunRecompute(input: UpdateScheduleRequest): boolean {
   return input.cron !== undefined || input.timezone !== undefined || input.enabled !== undefined;
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
