@@ -16,9 +16,18 @@ export function CapabilitiesView(props: CapabilitiesViewProps) {
   return (
     <div className="panel-scroll">
       <h2>能力</h2>
-      <div>{props.skills?.skills.length ?? 0} 个 skills</div>
-      <div>{props.mcp?.servers.length ?? 0} 个 servers</div>
-      <div>{props.profiles?.profiles.length ?? 0} 个 profiles</div>
+      <section>
+        <h3>Skills</h3>
+        <p>{props.skills?.skills.length ?? 0} 个 skills</p>
+      </section>
+      <section>
+        <h3>MCP</h3>
+        <p>{props.mcp?.servers.length ?? 0} 个 servers</p>
+      </section>
+      <section>
+        <h3>Profiles</h3>
+        <p>{props.profiles?.profiles.length ?? 0} 个 profiles</p>
+      </section>
     </div>
   );
 }
