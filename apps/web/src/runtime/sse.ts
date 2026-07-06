@@ -18,21 +18,16 @@ export type SubscribeRunEventsInput = {
   signal?: AbortSignal;
 };
 
-type SseParser = {
+export type SseParser = {
   parseChunk(chunk: string): SseFrame[];
 };
 
-let defaultParser = createSseParser();
-
 export function parseSseChunk(chunk: string): SseFrame[] {
-  return defaultParser.parseChunk(chunk);
+  return createSseParser().parseChunk(chunk);
 }
 
 export function sseEventsToFrames(lines: string[]): SseFrame[] {
-  defaultParser = createSseParser();
-  const frames = parseSseChunk(lines.join(''));
-  defaultParser = createSseParser();
-  return frames;
+  return parseSseChunk(lines.join(''));
 }
 
 export async function subscribeRunEvents(input: SubscribeRunEventsInput): Promise<void> {
@@ -65,21 +60,22 @@ export async function subscribeRunEvents(input: SubscribeRunEventsInput): Promis
   }
 }
 
-function createSseParser(): SseParser {
+export function createSseParser(): SseParser {
   let buffer = '';
 
   return {
     parseChunk(chunk: string): SseFrame[] {
       buffer += chunk;
       const frames: SseFrame[] = [];
-      let boundary = buffer.indexOf('\n\n');
+      let boundary = findFrameBoundary(buffer);
 
       while (boundary >= 0) {
         const rawFrame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
+        const boundaryLength = buffer.startsWith('\r\n\r\n', boundary) ? 4 : 2;
+        buffer = buffer.slice(boundary + boundaryLength);
         const frame = parseFrame(rawFrame);
         if (frame !== undefined) frames.push(frame);
-        boundary = buffer.indexOf('\n\n');
+        boundary = findFrameBoundary(buffer);
       }
 
       return frames;
@@ -87,11 +83,20 @@ function createSseParser(): SseParser {
   };
 }
 
+function findFrameBoundary(value: string): number {
+  const lfBoundary = value.indexOf('\n\n');
+  const crlfBoundary = value.indexOf('\r\n\r\n');
+
+  if (lfBoundary < 0) return crlfBoundary;
+  if (crlfBoundary < 0) return lfBoundary;
+  return Math.min(lfBoundary, crlfBoundary);
+}
+
 function parseFrame(rawFrame: string): SseFrame | undefined {
   const frame: Partial<SseFrame> = {};
   const data: string[] = [];
 
-  for (const line of rawFrame.split('\n')) {
+  for (const line of rawFrame.split(/\r\n|\n|\r/)) {
     if (line.startsWith(':')) continue;
     if (line.startsWith('id:')) frame.id = line.slice(3).trimStart();
     if (line.startsWith('event:')) frame.event = line.slice(6).trimStart();

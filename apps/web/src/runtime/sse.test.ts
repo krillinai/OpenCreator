@@ -28,6 +28,32 @@ describe('sse parser', () => {
     expect(result).toEqual([]);
   });
 
+  it('does not let incomplete helper calls pollute later direct calls', () => {
+    expect(parseSseChunk('id: 6\nevent: status\n')).toEqual([]);
+    expect(parseSseChunk('data: {"type":"done"}\n\n')).toEqual([
+      {
+        data: '{"type":"done"}'
+      }
+    ]);
+  });
+
+  it('parses frames with CRLF line endings', () => {
+    const frames = sseEventsToFrames([
+      'id: 7\r\n',
+      'event: done\r\n',
+      'data: {"type":"done","seq":7}\r\n',
+      '\r\n'
+    ]);
+
+    expect(frames).toEqual([
+      {
+        id: '7',
+        event: 'done',
+        data: '{"type":"done","seq":7}'
+      }
+    ]);
+  });
+
   it('keeps subscription buffers isolated', async () => {
     const received: string[] = [];
     const errors: Error[] = [];
