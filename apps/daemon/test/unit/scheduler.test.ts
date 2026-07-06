@@ -35,7 +35,7 @@ describe('scheduler semantics', () => {
     ).toBe(false);
   });
 
-  it('runs once when policy is run_once', () => {
+  it('does not catch up missed schedules even if legacy callers pass run_once', () => {
     expect(
       shouldRunMissedSchedule({
         enabled: true,
@@ -43,10 +43,10 @@ describe('scheduler semantics', () => {
         nextRunAt: '2026-07-04T01:00:00.000Z',
         now: '2026-07-04T02:00:00.000Z'
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('treats nextRunAt equal to now as due', () => {
+  it('does not treat equality as a catch-up signal in the legacy helper', () => {
     expect(
       shouldRunMissedSchedule({
         enabled: true,
@@ -54,6 +54,6 @@ describe('scheduler semantics', () => {
         nextRunAt: '2026-07-04T02:00:00.000Z',
         now: '2026-07-04T02:00:00.000Z'
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 });
