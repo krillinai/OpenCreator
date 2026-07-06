@@ -127,6 +127,85 @@ describe('schedule repository', () => {
     ]);
   });
 
+  it('returns the next enabled schedule by next run time', () => {
+    const repository = createRepository({
+      ids: ['sch_later', 'sch_disabled', 'sch_without_next', 'sch_earlier', 'sch_deleted']
+    });
+    repository.create(scheduleInput({ name: 'later', nextRunAt: '2026-07-06T08:30:00.000Z' }));
+    repository.create(scheduleInput({ name: 'disabled', enabled: false, nextRunAt: '2026-07-06T07:00:00.000Z' }));
+    repository.create(scheduleInput({ name: 'without next', nextRunAt: null }));
+    repository.create(scheduleInput({ name: 'earlier', nextRunAt: '2026-07-06T08:00:00.000Z' }));
+    repository.create(scheduleInput({ name: 'deleted', nextRunAt: '2026-07-06T06:00:00.000Z' }));
+    repository.softDelete('sch_deleted');
+
+    expect(repository.getNextEnabled()?.id).toBe('sch_earlier');
+  });
+
+  it('lists pending triggers for enabled non-deleted schedules', () => {
+    const repository = createRepository({
+      ids: ['sch_pending', 'sch_not_pending', 'sch_disabled', 'sch_deleted']
+    });
+    repository.create(scheduleInput({ name: 'pending' }));
+    repository.create(scheduleInput({ name: 'not pending' }));
+    repository.create(scheduleInput({ name: 'disabled', enabled: false }));
+    repository.create(scheduleInput({ name: 'deleted' }));
+    repository.setPendingTrigger('sch_pending', true);
+    repository.setPendingTrigger('sch_disabled', true);
+    repository.setPendingTrigger('sch_deleted', true);
+    repository.softDelete('sch_deleted');
+
+    expect(repository.listPendingTriggers().map(schedule => schedule.id)).toEqual(['sch_pending']);
+  });
+
+  it('records run metadata and clears pending trigger', () => {
+    const repository = createRepository({
+      ids: ['sch_one'],
+      nowValues: ['2026-07-06T00:00:00.000Z', '2026-07-06T00:01:00.000Z', '2026-07-06T00:02:00.000Z']
+    });
+    repository.create(scheduleInput());
+    repository.setPendingTrigger('sch_one', true);
+
+    const updated = repository.recordRun({
+      id: 'sch_one',
+      runId: 'run_one',
+      ranAt: '2026-07-06T00:02:00.000Z',
+      status: 'running'
+    });
+
+    expect(updated).toMatchObject({
+      id: 'sch_one',
+      lastRunAt: '2026-07-06T00:02:00.000Z',
+      lastRunId: 'run_one',
+      lastStatus: 'running',
+      pendingTrigger: false,
+      updatedAt: '2026-07-06T00:02:00.000Z'
+    });
+  });
+
+  it('records skipped status without changing last run identity', () => {
+    const repository = createRepository({
+      ids: ['sch_one'],
+      nowValues: ['2026-07-06T00:00:00.000Z', '2026-07-06T00:01:00.000Z', '2026-07-06T00:02:00.000Z']
+    });
+    repository.create(scheduleInput());
+    repository.recordRun({
+      id: 'sch_one',
+      runId: 'run_one',
+      ranAt: '2026-07-06T00:01:00.000Z',
+      status: 'running'
+    });
+
+    const updated = repository.recordSkipped({ id: 'sch_one', status: 'queued' });
+
+    expect(updated).toMatchObject({
+      id: 'sch_one',
+      lastRunAt: '2026-07-06T00:01:00.000Z',
+      lastRunId: 'run_one',
+      lastStatus: 'queued',
+      updatedAt: '2026-07-06T00:02:00.000Z'
+    });
+  });
+
   it('inserts and lists operations newest first with nullable fields mapped', () => {
     const repository = createRepository({
       ids: ['sch_one'],

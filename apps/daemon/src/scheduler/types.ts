@@ -67,6 +67,9 @@ export type UpdateScheduleInput = Partial<
     | 'concurrencyPolicy'
     | 'misfirePolicy'
     | 'nextRunAt'
+    | 'lastRunAt'
+    | 'lastRunId'
+    | 'lastStatus'
     | 'pendingTrigger'
   >
 >;

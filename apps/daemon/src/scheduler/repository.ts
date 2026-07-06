@@ -200,8 +200,62 @@ export class ScheduleRepository {
     return rows.map(mapSchedule);
   }
 
+  getNextEnabled(): ScheduleRecord | null {
+    const row = this.db
+      .prepare(
+        `
+        SELECT ${scheduleColumns}
+        FROM schedules
+        WHERE enabled = 1
+          AND deleted_at IS NULL
+          AND next_run_at IS NOT NULL
+        ORDER BY next_run_at ASC, id ASC
+        LIMIT 1
+      `
+      )
+      .get() as ScheduleRow | undefined;
+    return row === undefined ? null : mapSchedule(row);
+  }
+
+  listPendingTriggers(): ScheduleRecord[] {
+    const rows = this.db
+      .prepare(
+        `
+        SELECT ${scheduleColumns}
+        FROM schedules
+        WHERE enabled = 1
+          AND deleted_at IS NULL
+          AND pending_trigger = 1
+        ORDER BY updated_at ASC, id ASC
+      `
+      )
+      .all() as ScheduleRow[];
+    return rows.map(mapSchedule);
+  }
+
   setPendingTrigger(id: string, pending: boolean): ScheduleRecord | null {
     return this.update(id, { pendingTrigger: pending });
+  }
+
+  recordRun(input: {
+    id: string;
+    runId: string;
+    ranAt: string;
+    status: ScheduleRecord['lastStatus'];
+  }): ScheduleRecord | null {
+    return this.update(input.id, {
+      lastRunAt: input.ranAt,
+      lastRunId: input.runId,
+      lastStatus: input.status,
+      pendingTrigger: false
+    });
+  }
+
+  recordSkipped(input: {
+    id: string;
+    status: Extract<ScheduleRecord['lastStatus'], 'skipped' | 'queued' | 'failed'>;
+  }): ScheduleRecord | null {
+    return this.update(input.id, { lastStatus: input.status });
   }
 
   insertOperation(input: InsertScheduleOperationInput): ScheduleOperationRecord {
@@ -337,6 +391,9 @@ function updateEntries(input: UpdateScheduleInput): Array<[string, string | numb
   addIfOwn(entries, input, 'concurrencyPolicy', 'concurrency_policy');
   addIfOwn(entries, input, 'misfirePolicy', 'misfire_policy');
   addIfOwn(entries, input, 'nextRunAt', 'next_run_at');
+  addIfOwn(entries, input, 'lastRunAt', 'last_run_at');
+  addIfOwn(entries, input, 'lastRunId', 'last_run_id');
+  addIfOwn(entries, input, 'lastStatus', 'last_status');
   addBooleanIfOwn(entries, input, 'pendingTrigger', 'pending_trigger');
   return entries;
 }
