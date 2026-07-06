@@ -11,15 +11,17 @@ import { createMcpManager } from '../codex/mcp/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { createSkillManager } from '../codex/skills/manager.js';
 import { buildCodexStatusResponse } from '../codex/status.js';
+import { createCleanupService } from '../cleanup/service.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { ScheduleRepository } from '../scheduler/repository.js';
 import { createSchedulerService, type SchedulerService } from '../scheduler/service.js';
 import { openRuntimeDatabase } from '../storage/database.js';
-import { createRunRepository } from '../storage/repositories.js';
+import { createRunRepository, createThreadRepository } from '../storage/repositories.js';
 import { createThreadManager } from '../threads/manager.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerCodexRoutes } from './routes.codex.js';
+import { registerCleanupRoutes } from './routes.cleanup.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
 import { registerProfileRoutes } from './routes.profiles.js';
@@ -62,6 +64,7 @@ export async function buildServer(input: BuildServerInput) {
   const db = input.db ?? openRuntimeDatabase(join(dataDir, 'app.sqlite'));
   const ownsDb = input.db === undefined;
   const runRepository = createRunRepository(db);
+  const threadRepository = createThreadRepository(db);
   const threadManager = createThreadManager({ db, dataDir });
   const profileManager = createProfileManager({ codexHome: resolvedCodexHome });
   const skillManager = createSkillManager({ codexHome: resolvedCodexHome, db });
@@ -86,6 +89,11 @@ export async function buildServer(input: BuildServerInput) {
       profileValidator: profileManager,
       autostart: input.schedulerAutostart ?? false
     });
+  const cleanupService = createCleanupService({
+    dataDir,
+    runs: runRepository,
+    threads: threadRepository
+  });
 
   server.setErrorHandler((error, _request, reply) => {
     if ((error as { code?: string }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
@@ -125,6 +133,7 @@ export async function buildServer(input: BuildServerInput) {
     profileValidator: profileManager
   });
   await registerScheduleRoutes(server, scheduler);
+  await registerCleanupRoutes(server, cleanupService);
   await registerDiagnosticsRoutes(server, {
     dataDir,
     runs: runRepository,

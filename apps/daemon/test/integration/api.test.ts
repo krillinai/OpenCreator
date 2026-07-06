@@ -7,6 +7,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync
 } from 'node:fs';
 import type { AddressInfo } from 'node:net';
@@ -19,6 +20,7 @@ import { buildServer } from '../../src/api/server.js';
 import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
 import { SchedulerError, type SchedulerService } from '../../src/scheduler/service.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
+import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 
 let server: FastifyInstance | undefined;
@@ -238,6 +240,125 @@ describe('runtime api', () => {
     const response = await server.inject({ method: 'GET', url: '/healthz' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
+  });
+
+  it('previews and confirms runtime cleanup without deleting database rows', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir, db });
+    const oldRunDir = writeOldApiDir(join(tempDir, 'runs', 'run_cleanup_old'), 'events.ndjson', 'done');
+    const activeRunDir = writeOldApiDir(join(tempDir, 'runs', 'run_cleanup_active'), 'events.ndjson', 'active');
+    const archivedThreadDir = writeOldApiDir(
+      join(tempDir, 'workspaces', 'thread_cleanup_archived'),
+      'workspace.txt',
+      'workspace'
+    );
+    const activeThreadDir = writeOldApiDir(
+      join(tempDir, 'workspaces', 'thread_cleanup_active'),
+      'workspace.txt',
+      'active workspace'
+    );
+    const externalThreadDir = writeOldApiDir(
+      join(tempDir, 'workspaces', 'thread_cleanup_external'),
+      'workspace.txt',
+      'external workspace'
+    );
+
+    insertApiRun('run_cleanup_old', { publicStatus: 'succeeded', internalStatus: 'succeeded' });
+    insertApiRun('run_cleanup_active', { publicStatus: 'running', internalStatus: 'running' });
+    insertApiThread('thread_cleanup_archived', { status: 'archived', workspaceMode: 'managed' });
+    insertApiThread('thread_cleanup_active', { status: 'active', workspaceMode: 'managed' });
+    insertApiThread('thread_cleanup_external', { status: 'archived', workspaceMode: 'external' });
+
+    const preview = await authGet('/runtime/cleanup/preview?olderThanDays=30');
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'run_logs',
+          id: 'run_cleanup_old',
+          path: oldRunDir
+        }),
+        expect.objectContaining({
+          type: 'managed_thread_workspace',
+          id: 'thread_cleanup_archived',
+          path: archivedThreadDir
+        })
+      ])
+    );
+    expect(preview.json().items).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'run_cleanup_active' }),
+        expect.objectContaining({ id: 'thread_cleanup_active' }),
+        expect.objectContaining({ id: 'thread_cleanup_external' })
+      ])
+    );
+
+    const unconfirmed = await authPost('/runtime/cleanup', { olderThanDays: 30 });
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(unconfirmed.json().error.code).toBe('VALIDATION_FAILED');
+
+    const deleted = await authPost('/runtime/cleanup', { olderThanDays: 30, confirm: true });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json().deleted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'run_cleanup_old', path: oldRunDir }),
+        expect.objectContaining({ id: 'thread_cleanup_archived', path: archivedThreadDir })
+      ])
+    );
+    expect(deleted.json().failed).toEqual([]);
+    expect(existsSync(oldRunDir)).toBe(false);
+    expect(existsSync(archivedThreadDir)).toBe(false);
+    expect(existsSync(activeRunDir)).toBe(true);
+    expect(existsSync(activeThreadDir)).toBe(true);
+    expect(existsSync(externalThreadDir)).toBe(true);
+    expect(createRunRepository(db).getRun('run_cleanup_old')).toBeDefined();
+    expect(createThreadRepository(db).getThread('thread_cleanup_archived')).toBeDefined();
+  });
+
+  it('validates runtime cleanup query and body parameters', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    for (const url of [
+      '/runtime/cleanup/preview',
+      '/runtime/cleanup/preview?olderThanDays=0',
+      '/runtime/cleanup/preview?olderThanDays=1.5',
+      '/runtime/cleanup/preview?olderThanDays=abc'
+    ]) {
+      const response = await authGet(url);
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe('VALIDATION_FAILED');
+    }
+
+    const stringBody = await server.inject({
+      method: 'POST',
+      url: '/runtime/cleanup',
+      headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
+      payload: '"not-object"'
+    });
+    expect(stringBody.statusCode).toBe(400);
+    expect(stringBody.json().error.code).toBe('VALIDATION_FAILED');
+
+    const confirmFalse = await authPost('/runtime/cleanup', { olderThanDays: 30, confirm: false });
+    expect(confirmFalse.statusCode).toBe(400);
+    expect(confirmFalse.json().error.code).toBe('VALIDATION_FAILED');
+
+    const missingOlderThanDays = await authPost('/runtime/cleanup', { confirm: true });
+    expect(missingOlderThanDays.statusCode).toBe(400);
+    expect(missingOlderThanDays.json().error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('unauthorized runtime cleanup route requests return 401', async () => {
+    server = await buildServer({ token: 'secret' });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/runtime/cleanup/preview?olderThanDays=30'
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error.code).toBe('UNAUTHORIZED');
   });
 
   it('returns codex status with auth', async () => {
@@ -2250,6 +2371,52 @@ function authGet(url: string) {
     url,
     headers: { authorization: 'Bearer secret' }
   });
+}
+
+function insertApiRun(
+  id: string,
+  overrides: Partial<{ publicStatus: string; internalStatus: string; workspaceMode: string }> = {}
+): void {
+  createRunRepository(db!).insertRun({
+    id,
+    publicStatus: overrides.publicStatus ?? 'succeeded',
+    internalStatus: overrides.internalStatus ?? 'succeeded',
+    createdBy: 'api',
+    profile: 'default',
+    cwd: tempDir,
+    canonicalCwd: tempDir,
+    workspaceMode: overrides.workspaceMode ?? 'managed',
+    sandbox: 'read-only',
+    codexVersion: 'unknown',
+    codexBin: 'codex',
+    codexHome: join(tempDir, 'codex-home'),
+    normalizerVersion: 1
+  });
+}
+
+function insertApiThread(
+  id: string,
+  overrides: Partial<{ status: 'active' | 'archived'; workspaceMode: string }> = {}
+): void {
+  const cwd = overrides.workspaceMode === 'external' ? tempDir : join(tempDir, 'workspaces', id);
+  createThreadRepository(db!).insertThread({
+    id,
+    cwd,
+    canonicalCwd: cwd,
+    workspaceMode: overrides.workspaceMode ?? 'managed',
+    profile: 'default',
+    sandbox: 'read-only',
+    status: overrides.status ?? 'active'
+  });
+}
+
+function writeOldApiDir(dir: string, fileName: string, content: string): string {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, fileName), content);
+  const oldDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+  utimesSync(join(dir, fileName), oldDate, oldDate);
+  utimesSync(dir, oldDate, oldDate);
+  return dir;
 }
 
 function createFakeScheduler(overrides: Partial<SchedulerService> = {}): SchedulerService {
