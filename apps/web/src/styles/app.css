@@ -1,0 +1,55 @@
+@import "./tokens.css";
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 1024px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.workbench-shell {
+  display: grid;
+  grid-template-columns: 260px minmax(360px, 1fr) minmax(360px, 520px) 280px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar-pane,
+.timeline-pane,
+.right-pane,
+.tree-pane {
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.timeline-pane {
+  background: #fbfcfd;
+}
+
+.panel-header {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-scroll {
+  height: calc(100vh - 48px);
+  overflow: auto;
+}
