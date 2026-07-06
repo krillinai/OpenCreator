@@ -1,0 +1,30 @@
+{
+  "name": "@clawee/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -p tsconfig.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@clawee/protocol": "workspace:*",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.0.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^15.0.7",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "fake-indexeddb": "^6.0.0",
+    "jsdom": "^25.0.1",
+    "vitest": "^3.2.4"
+  }
+}
