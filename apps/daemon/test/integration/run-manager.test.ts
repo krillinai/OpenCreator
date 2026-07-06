@@ -128,6 +128,34 @@ describe('run manager', () => {
     });
   });
 
+  it('uses per-run timeout when executing codex', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 5000,
+      inactivityTimeoutMs: 5000
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'scheduled prompt',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      timeoutMs: 50
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)?.terminationReason).toBe('timeout');
+  });
+
   it('creates a run and writes redacted raw/events/stderr/meta files', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
     const fake = createFakeCodex(tempDir, {
