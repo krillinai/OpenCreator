@@ -70,6 +70,10 @@ describe('scheduler validator', () => {
       ok: false,
       code: 'SCHEDULE_INVALID'
     });
+    expect(parseCreateScheduleRequest({ ...base, timezone: 123 }, options)).toMatchObject({
+      ok: false,
+      code: 'SCHEDULE_INVALID'
+    });
     expect(parseCreateScheduleRequest({ ...base, timeoutMs: 999 }, options)).toMatchObject({
       ok: false,
       code: 'SCHEDULE_INVALID'

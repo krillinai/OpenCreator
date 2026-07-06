@@ -68,7 +68,10 @@ export function parseCreateScheduleRequest(
   if (!cron.ok) return cron;
   const prompt = requireString(body.prompt, 'prompt');
   if (!prompt.ok) return prompt;
-  const timezone = typeof body.timezone === 'string' ? body.timezone : getDefaultTimezone();
+  if (body.timezone !== undefined && typeof body.timezone !== 'string') {
+    return { ok: false, code: 'SCHEDULE_INVALID', message: 'timezone must be a valid IANA timezone' };
+  }
+  const timezone = body.timezone ?? getDefaultTimezone();
   const cronResult = validateCronAndTimezone(cron.value, timezone, options.now);
   if (!cronResult.ok) return cronResult;
   const promptMetadata = buildPromptMetadata(prompt.value);
