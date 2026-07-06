@@ -1,13 +1,20 @@
 import type { AgentEventEnvelope } from '@clawee/protocol';
 
 export type TimelineItem =
-  | { kind: 'user_message'; id: string; text: string; source: 'runtime' | 'mock' }
-  | { kind: 'assistant_message'; id: string; text: string; source: 'runtime' | 'mock' }
+  | { kind: 'user_message'; id: string; text: string; content?: string; source: 'runtime' | 'mock' }
+  | { kind: 'assistant_message'; id: string; text: string; content?: string; source: 'runtime' | 'mock' }
   | { kind: 'tool_step'; id: string; name: string; content: string; source: 'runtime' }
   | { kind: 'change_card'; id: string; title: string; path: string; delta: string; source: 'mock' }
-  | { kind: 'diagnostic'; id: string; severity: 'info' | 'warning' | 'error'; message: string; source: 'runtime' }
+  | {
+      kind: 'diagnostic';
+      id: string;
+      severity: 'info' | 'warning' | 'error';
+      message: string;
+      content: string;
+      source: 'runtime';
+    }
   | { kind: 'run_status'; id: string; label: string; content?: string; source: 'runtime' }
-  | { kind: 'done'; id: string; status: string; terminationReason?: string; source: 'runtime' };
+  | { kind: 'done'; id: string; status: string; terminationReason?: string; content: string; source: 'runtime' };
 
 function safeStringify(value: unknown): string {
   const seen = new WeakSet<object>();
@@ -39,13 +46,19 @@ function safeStringify(value: unknown): string {
 export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
   switch (event.type) {
     case 'assistant_message':
-      return { kind: 'assistant_message', id: event.id, text: event.payload.text, source: 'runtime' };
+      return {
+        kind: 'assistant_message',
+        id: event.id,
+        text: event.payload.text,
+        content: safeStringify(event.payload),
+        source: 'runtime'
+      };
     case 'tool_use':
       return {
         kind: 'tool_step',
         id: event.id,
         name: event.payload.name,
-        content: safeStringify(event.payload.input),
+        content: safeStringify(event.payload),
         source: 'runtime'
       };
     case 'tool_result':
@@ -53,7 +66,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         kind: 'tool_step',
         id: event.id,
         name: event.payload.toolCallId,
-        content: event.payload.output,
+        content: safeStringify(event.payload),
         source: 'runtime'
       };
     case 'diagnostic':
@@ -62,6 +75,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         id: event.id,
         severity: event.payload.severity,
         message: event.payload.message,
+        content: safeStringify(event.payload),
         source: 'runtime'
       };
     case 'error':
@@ -70,6 +84,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         id: event.id,
         severity: 'error',
         message: event.payload.message,
+        content: safeStringify(event.payload),
         source: 'runtime'
       };
     case 'done':
@@ -78,6 +93,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         id: event.id,
         status: event.payload.status,
         terminationReason: event.payload.terminationReason,
+        content: safeStringify(event.payload),
         source: 'runtime'
       };
     case 'status':

@@ -4,7 +4,12 @@ function renderTimelineItemContent(item: TimelineItem) {
   switch (item.kind) {
     case 'user_message':
     case 'assistant_message':
-      return <p>{item.text}</p>;
+      return (
+        <>
+          <p>{item.text}</p>
+          {item.content ? <pre>{item.content}</pre> : null}
+        </>
+      );
     case 'tool_step':
       return (
         <>
@@ -26,6 +31,7 @@ function renderTimelineItemContent(item: TimelineItem) {
         <>
           <p>{item.severity}</p>
           <p>{item.message}</p>
+          <pre>{item.content}</pre>
         </>
       );
     case 'run_status':
@@ -40,6 +46,7 @@ function renderTimelineItemContent(item: TimelineItem) {
         <>
           <p>{item.status}</p>
           {item.terminationReason ? <p>{item.terminationReason}</p> : null}
+          <pre>{item.content}</pre>
         </>
       );
     default:

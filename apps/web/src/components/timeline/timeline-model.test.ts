@@ -21,7 +21,7 @@ describe('timeline model', () => {
     });
   });
 
-  it('maps tool_use events with the tool name and serialized input', () => {
+  it('maps tool_use events with the tool name and complete payload summary', () => {
     const event: AgentEventEnvelope = {
       id: 'evt_tool_use',
       runId: 'run_1',
@@ -40,12 +40,13 @@ describe('timeline model', () => {
     expect(eventToTimelineItem(event)).toMatchObject({
       kind: 'tool_step',
       name: 'exec_command',
-      content: '{"command":"pnpm test","args":["--runInBand"]}',
+      content:
+        '{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"command":"pnpm test","args":["--runInBand"]}}',
       source: 'runtime'
     });
   });
 
-  it('maps tool_result events with the tool call id and output', () => {
+  it('maps tool_result events with the tool call id and complete payload summary', () => {
     const event: AgentEventEnvelope = {
       id: 'evt_tool_result',
       runId: 'run_1',
@@ -65,12 +66,13 @@ describe('timeline model', () => {
     expect(eventToTimelineItem(event)).toMatchObject({
       kind: 'tool_step',
       name: 'call_1',
-      content: 'test output',
+      content:
+        '{"type":"tool_result","toolCallId":"call_1","output":"test output","exitCode":0,"isError":false}',
       source: 'runtime'
     });
   });
 
-  it('maps diagnostic and error events to diagnostics', () => {
+  it('maps diagnostic and error events to diagnostics with complete payload summaries', () => {
     const diagnostic: AgentEventEnvelope = {
       id: 'evt_diagnostic',
       runId: 'run_1',
@@ -81,7 +83,8 @@ describe('timeline model', () => {
         type: 'diagnostic',
         code: 'warn_1',
         severity: 'warning',
-        message: 'check config'
+        message: 'check config',
+        details: { path: 'settings.json', reason: 'missing value' }
       },
       normalizerVersion: 1
     };
@@ -94,7 +97,8 @@ describe('timeline model', () => {
       payload: {
         type: 'error',
         code: 'runtime_error',
-        message: 'runtime failed'
+        message: 'runtime failed',
+        details: { exitCode: 1, stderr: 'boom' }
       },
       normalizerVersion: 1
     };
@@ -102,12 +106,16 @@ describe('timeline model', () => {
     expect(eventToTimelineItem(diagnostic)).toMatchObject({
       kind: 'diagnostic',
       severity: 'warning',
-      message: 'check config'
+      message: 'check config',
+      content:
+        '{"type":"diagnostic","code":"warn_1","severity":"warning","message":"check config","details":{"path":"settings.json","reason":"missing value"}}'
     });
     expect(eventToTimelineItem(error)).toMatchObject({
       kind: 'diagnostic',
       severity: 'error',
-      message: 'runtime failed'
+      message: 'runtime failed',
+      content:
+        '{"type":"error","code":"runtime_error","message":"runtime failed","details":{"exitCode":1,"stderr":"boom"}}'
     });
   });
 
@@ -129,7 +137,8 @@ describe('timeline model', () => {
     expect(eventToTimelineItem(done)).toMatchObject({
       kind: 'done',
       status: 'succeeded',
-      terminationReason: 'completed'
+      terminationReason: 'completed',
+      content: '{"type":"done","status":"succeeded","terminationReason":"completed"}'
     });
   });
 
