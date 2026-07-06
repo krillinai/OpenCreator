@@ -6,7 +6,7 @@
 
 body {
   margin: 0;
-  min-width: 1024px;
+  min-width: 1280px;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -22,6 +22,7 @@ select {
 .workbench-shell {
   display: grid;
   grid-template-columns: 260px minmax(360px, 1fr) minmax(360px, 520px) 280px;
+  min-width: 1280px;
   height: 100vh;
   overflow: hidden;
 }
@@ -40,7 +41,7 @@ select {
   background: #fbfcfd;
 }
 
-.panel-header {
+.workbench-shell .panel-header {
   min-height: 48px;
   display: flex;
   align-items: center;
@@ -49,7 +50,7 @@ select {
   border-bottom: 1px solid var(--border);
 }
 
-.panel-scroll {
+.workbench-shell .panel-scroll {
   height: calc(100vh - 48px);
   overflow: auto;
 }
