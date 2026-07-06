@@ -100,7 +100,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         const mergedEnabled = parsed.value.enabled ?? existing.enabled;
         const mergedCron = parsed.value.cron ?? existing.cron;
         const mergedTimezone = parsed.value.timezone ?? existing.timezone;
-        nextInput.nextRunAt = mergedEnabled || parsed.value.cron !== undefined || parsed.value.timezone !== undefined
+        nextInput.nextRunAt = mergedEnabled
           ? computeNextRunAt({ cron: mergedCron, timezone: mergedTimezone, from: clock.now() })
           : null;
       }

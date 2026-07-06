@@ -33,7 +33,7 @@ export type NormalizedCreateScheduleInput = {
   timeoutMs?: number | null;
   concurrencyPolicy: ScheduleConcurrencyPolicy;
   misfirePolicy: 'skip';
-  nextRunAt: string;
+  nextRunAt: string | null;
 };
 
 export type NormalizedUpdateScheduleInput = Partial<
@@ -84,7 +84,7 @@ export function parseCreateScheduleRequest(
       timezone,
       prompt: prompt.value,
       ...promptMetadata,
-      nextRunAt: cronResult.value.nextRunAt
+      nextRunAt: base.value.enabled === false ? null : cronResult.value.nextRunAt
     }
   };
 }

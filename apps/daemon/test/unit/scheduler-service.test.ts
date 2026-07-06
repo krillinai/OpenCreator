@@ -51,7 +51,7 @@ describe('scheduler service', () => {
     expect(updated).toMatchObject({
       enabled: false,
       name: 'paused',
-      nextRunAt: '2026-07-06T09:30:00.000Z'
+      nextRunAt: null
     });
 
     service.deleteSchedule(created.id);
@@ -63,6 +63,26 @@ describe('scheduler service', () => {
       'update',
       'create'
     ]);
+  });
+
+  it('creates disabled schedules without a next run', () => {
+    const { service } = createFixture();
+
+    const created = service.createSchedule({
+      name: 'paused status',
+      cron: '0 9 * * *',
+      enabled: false,
+      prompt: 'Summarize project status'
+    });
+
+    expect(created).toMatchObject({
+      enabled: false,
+      nextRunAt: null
+    });
+    expect(service.getSchedule(created.id)).toMatchObject({
+      enabled: false,
+      nextRunAt: null
+    });
   });
 
   it('run-now creates a scheduled run with source metadata', () => {

@@ -53,6 +53,32 @@ describe('scheduler validator', () => {
     });
   });
 
+  it('normalizes disabled create requests with no next run', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    const result = parseCreateScheduleRequest(
+      {
+        name: 'paused status',
+        cron: '0 9 * * *',
+        enabled: false,
+        prompt: 'Summarize status',
+        cwd: tempDir
+      },
+      {
+        now: '2026-07-06T00:00:00.000Z',
+        defaultCwd: tempDir,
+        profileValidator
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        enabled: false,
+        nextRunAt: null
+      }
+    });
+  });
+
   it('rejects invalid cron, timezone, timeout, misfire, cwd, and profile', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
     const base = { name: 'bad', cron: '0 9 * * *', prompt: 'x', cwd: tempDir };
