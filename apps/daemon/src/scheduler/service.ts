@@ -75,6 +75,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
   };
   const triggerGraceMs = options.triggerGraceMs ?? DEFAULT_TRIGGER_GRACE_MS;
   let timer: TimerHandle | unknown;
+  let started = false;
 
   function triggerSchedule(
     schedule: ScheduleRecord,
@@ -128,10 +129,17 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
 
   function processDueSchedules(): void {
     const now = clock.now().toISOString();
-    for (const schedule of options.repository.listDue(now)) {
-      processDueSchedule(schedule, now);
+    try {
+      for (const schedule of options.repository.listDue(now)) {
+        try {
+          processDueSchedule(schedule, now);
+        } catch (error) {
+          recordUnexpectedTimerFailure(schedule, error);
+        }
+      }
+    } finally {
+      refreshTimerIfStarted();
     }
-    service.refreshTimer();
   }
 
   function processDueSchedule(schedule: ScheduleRecord, now: string): void {
@@ -140,10 +148,10 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     const nextRunAt = computeNextRunAt({ cron: schedule.cron, timezone: schedule.timezone, from: now });
     const ageMs = new Date(now).getTime() - new Date(schedule.nextRunAt).getTime();
     if (ageMs > triggerGraceMs) {
-      const skipped = options.repository.recordSkipped({ id: schedule.id, status: 'skipped' });
-      if (skipped === null) throw notFound();
       const updated = options.repository.update(schedule.id, { nextRunAt });
       if (updated === null) throw notFound();
+      const skipped = options.repository.recordSkipped({ id: schedule.id, status: 'skipped' });
+      if (skipped === null) throw notFound();
       options.repository.insertOperation({
         scheduleId: schedule.id,
         operation: 'skip_misfire',
@@ -152,9 +160,25 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
       return;
     }
 
-    triggerSchedule(schedule, 'timer_trigger', now);
     const updated = options.repository.update(schedule.id, { nextRunAt });
     if (updated === null) throw notFound();
+    triggerSchedule(schedule, 'timer_trigger', now);
+  }
+
+  function recordUnexpectedTimerFailure(schedule: ScheduleRecord, error: unknown): void {
+    if (error instanceof SchedulerError) return;
+
+    options.repository.insertOperation({
+      scheduleId: schedule.id,
+      operation: 'timer_trigger',
+      status: 'failed',
+      errorCode: 'INTERNAL_ERROR',
+      errorMessage: formatError(error)
+    });
+  }
+
+  function refreshTimerIfStarted(): void {
+    if (started) service.refreshTimer();
   }
 
   const service: SchedulerService = {
@@ -172,7 +196,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         operation: 'create',
         status: 'succeeded'
       });
-      service.refreshTimer();
+      refreshTimerIfStarted();
       return toScheduleResponse(schedule);
     },
 
@@ -211,7 +235,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         operation: 'update',
         status: 'succeeded'
       });
-      service.refreshTimer();
+      refreshTimerIfStarted();
       return toScheduleResponse(updated);
     },
 
@@ -224,13 +248,13 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         operation: 'delete',
         status: 'succeeded'
       });
-      service.refreshTimer();
+      refreshTimerIfStarted();
     },
 
     runNow(id) {
       const schedule = requireSchedule(options.repository, id);
       const response = triggerSchedule(schedule, 'run_now', clock.now().toISOString());
-      service.refreshTimer();
+      refreshTimerIfStarted();
       return response;
     },
 
@@ -242,10 +266,12 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     },
 
     start() {
+      started = true;
       service.refreshTimer();
     },
 
     stop() {
+      started = false;
       if (timer !== undefined) {
         timers.clearTimeout(timer);
         timer = undefined;
@@ -253,7 +279,12 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     },
 
     refreshTimer() {
-      service.stop();
+      if (timer !== undefined) {
+        timers.clearTimeout(timer);
+        timer = undefined;
+      }
+      if (!started) return;
+
       const next = options.repository.getNextEnabled();
       if (next?.nextRunAt === null || next?.nextRunAt === undefined) return;
 

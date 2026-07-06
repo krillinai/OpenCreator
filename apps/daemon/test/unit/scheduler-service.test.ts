@@ -161,6 +161,7 @@ describe('scheduler service', () => {
 
   it('creates a run for a due timer inside the grace window', () => {
     const { runManager, service, timers, setNow } = createFixtureWithTimers('2026-07-06T08:59:45.000Z');
+    service.start();
     const schedule = service.createSchedule({
       name: 'daily run',
       cron: '0 9 * * *',
@@ -194,6 +195,7 @@ describe('scheduler service', () => {
 
   it('skips missed triggers outside the grace window and advances nextRunAt', () => {
     const { runManager, service, setNow } = createFixtureWithTimers('2026-07-06T08:00:00.000Z');
+    service.start();
     const schedule = service.createSchedule({
       name: 'daily run',
       cron: '0 9 * * *',
@@ -218,6 +220,7 @@ describe('scheduler service', () => {
 
   it('stop clears active timer', () => {
     const { service, timers, cleared } = createFixtureWithTimers('2026-07-06T08:59:45.000Z');
+    service.start();
 
     service.createSchedule({
       name: 'daily run',
@@ -234,6 +237,94 @@ describe('scheduler service', () => {
     expect(cleared).toEqual([timers[0]?.handle]);
     service.refreshTimer();
     expect(cleared).toHaveLength(1);
+  });
+
+  it('stop prevents later mutations from scheduling timers', () => {
+    const { service, timers, cleared } = createFixtureWithTimers('2026-07-06T08:59:45.000Z');
+    service.start();
+    const schedule = service.createSchedule({
+      name: 'daily run',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'run at nine',
+      cwd: tempDir
+    });
+
+    expect(timers).toHaveLength(1);
+
+    service.stop();
+    expect(cleared).toEqual([timers[0]?.handle]);
+
+    service.updateSchedule(schedule.id, { name: 'renamed daily run' });
+
+    expect(timers).toHaveLength(1);
+  });
+
+  it('continues due processing and refreshes timer when one trigger fails', () => {
+    const { runManager, service, timers, setNow } = createFixtureWithTimers('2026-07-06T08:00:00.000Z');
+    service.start();
+    const first = service.createSchedule({
+      name: 'first daily run',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'first run',
+      cwd: tempDir
+    });
+    const second = service.createSchedule({
+      name: 'second daily run',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'second run',
+      cwd: tempDir
+    });
+    runManager.startRun.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+
+    setNow('2026-07-06T09:00:00.000Z');
+    service.processDueSchedulesForTest?.();
+
+    expect(runManager.startRun).toHaveBeenCalledTimes(2);
+    expect(service.getSchedule(second.id)).toMatchObject({
+      lastRunId: 'run_0',
+      lastStatus: 'running'
+    });
+    expect(service.listOperations(first.id).operations[0]).toMatchObject({
+      operation: 'timer_trigger',
+      status: 'failed',
+      errorCode: 'INTERNAL_ERROR',
+      errorMessage: 'boom'
+    });
+    expect(timers.at(-1)?.ms).toBeGreaterThanOrEqual(0);
+    expect(timers.length).toBeGreaterThan(2);
+  });
+
+  it('advances nextRunAt before timer run failure so failed trigger is not immediately due', () => {
+    const { repository, runManager, service, setNow } = createFixtureWithTimers('2026-07-06T08:00:00.000Z');
+    service.start();
+    const schedule = service.createSchedule({
+      name: 'daily run',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'run at nine',
+      cwd: tempDir
+    });
+    runManager.startRun.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+
+    setNow('2026-07-06T09:00:00.000Z');
+    expect(() => service.processDueSchedulesForTest?.()).not.toThrow();
+
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      nextRunAt: '2026-07-07T09:00:00.000Z'
+    });
+    expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
+      operation: 'timer_trigger',
+      status: 'failed',
+      errorCode: 'INTERNAL_ERROR'
+    });
+    expect(repository.listDue('2026-07-06T09:00:00.000Z').map(record => record.id)).not.toContain(schedule.id);
   });
 
   it('throws SCHEDULE_NOT_FOUND for missing schedule mutations', () => {
