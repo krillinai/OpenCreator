@@ -41,6 +41,7 @@ export type SchedulerService = {
   stop(): void;
   refreshTimer(): void;
   processDueSchedulesForTest?(): void;
+  processPendingTriggersForTest?(): void;
 };
 
 type TimerHandle = ReturnType<typeof setTimeout>;
@@ -62,6 +63,7 @@ export type SchedulerServiceOptions = {
 
 const DEFAULT_TRIGGER_GRACE_MS = 30_000;
 const MAX_TIMER_DELAY_MS = 2_147_000_000;
+const QUEUE_CHECK_INTERVAL_MS = 5_000;
 
 const systemClock: SchedulerClock = {
   now: () => new Date()
@@ -75,7 +77,53 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
   };
   const triggerGraceMs = options.triggerGraceMs ?? DEFAULT_TRIGGER_GRACE_MS;
   let timer: TimerHandle | unknown;
+  let queueTimer: TimerHandle | unknown;
   let started = false;
+
+  function handleTrigger(
+    schedule: ScheduleRecord,
+    operation: 'run_now' | 'timer_trigger' | 'run_queued',
+    ranAt: string
+  ): RunScheduleNowResponse {
+    if (operation !== 'run_queued' && schedule.concurrencyPolicy !== 'parallel') {
+      const active = options.repository.hasActiveRunForSource('schedule', schedule.id);
+      if (active && schedule.concurrencyPolicy === 'skip') {
+        const skipped = options.repository.recordSkipped({ id: schedule.id, status: 'skipped' });
+        if (skipped === null) throw notFound();
+        options.repository.insertOperation({
+          scheduleId: schedule.id,
+          operation: 'skip_concurrency',
+          status: 'skipped'
+        });
+        return {
+          run: null,
+          schedule: toScheduleResponse(skipped),
+          skipped: true,
+          queued: false
+        };
+      }
+      if (active && schedule.concurrencyPolicy === 'queue') {
+        const queued = options.repository.setPendingTrigger(schedule.id, true);
+        if (queued === null) throw notFound();
+        const updated = options.repository.recordSkipped({ id: schedule.id, status: 'queued' });
+        if (updated === null) throw notFound();
+        options.repository.insertOperation({
+          scheduleId: schedule.id,
+          operation: 'queue_trigger',
+          status: 'queued'
+        });
+        refreshQueueTimerIfStarted();
+        return {
+          run: null,
+          schedule: toScheduleResponse(updated),
+          skipped: false,
+          queued: true
+        };
+      }
+    }
+
+    return triggerSchedule(schedule, operation, ranAt);
+  }
 
   function triggerSchedule(
     schedule: ScheduleRecord,
@@ -162,7 +210,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
 
     const updated = options.repository.update(schedule.id, { nextRunAt });
     if (updated === null) throw notFound();
-    triggerSchedule(schedule, 'timer_trigger', now);
+    handleTrigger(updated, 'timer_trigger', now);
   }
 
   function recordUnexpectedTimerFailure(schedule: ScheduleRecord, error: unknown): void {
@@ -178,7 +226,45 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
   }
 
   function refreshTimerIfStarted(): void {
-    if (started) service.refreshTimer();
+    if (started) refreshTimers();
+  }
+
+  function refreshQueueTimerIfStarted(): void {
+    if (started) refreshQueueTimer();
+  }
+
+  function refreshTimers(): void {
+    service.refreshTimer();
+    refreshQueueTimer();
+  }
+
+  function clearQueueTimer(): void {
+    if (queueTimer !== undefined) {
+      timers.clearTimeout(queueTimer);
+      queueTimer = undefined;
+    }
+  }
+
+  function refreshQueueTimer(): void {
+    clearQueueTimer();
+    if (!started) return;
+    if (options.repository.listPendingTriggers().length === 0) return;
+
+    queueTimer = timers.setTimeout(() => {
+      queueTimer = undefined;
+      processPendingTriggers();
+    }, QUEUE_CHECK_INTERVAL_MS);
+  }
+
+  function processPendingTriggers(): void {
+    try {
+      for (const schedule of options.repository.listPendingTriggers()) {
+        if (options.repository.hasActiveRunForSource('schedule', schedule.id)) continue;
+        handleTrigger(schedule, 'run_queued', clock.now().toISOString());
+      }
+    } finally {
+      refreshQueueTimerIfStarted();
+    }
   }
 
   const service: SchedulerService = {
@@ -253,7 +339,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
 
     runNow(id) {
       const schedule = requireSchedule(options.repository, id);
-      const response = triggerSchedule(schedule, 'run_now', clock.now().toISOString());
+      const response = handleTrigger(schedule, 'run_now', clock.now().toISOString());
       refreshTimerIfStarted();
       return response;
     },
@@ -267,7 +353,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
 
     start() {
       started = true;
-      service.refreshTimer();
+      refreshTimers();
     },
 
     stop() {
@@ -276,6 +362,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         timers.clearTimeout(timer);
         timer = undefined;
       }
+      clearQueueTimer();
     },
 
     refreshTimer() {
@@ -300,6 +387,10 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
 
     processDueSchedulesForTest() {
       processDueSchedules();
+    },
+
+    processPendingTriggersForTest() {
+      processPendingTriggers();
     }
   };
 

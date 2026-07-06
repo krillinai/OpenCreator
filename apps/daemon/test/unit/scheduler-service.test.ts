@@ -129,6 +129,112 @@ describe('scheduler service', () => {
     });
   });
 
+  it('skips run-now when skip policy has an active run', () => {
+    const { runManager, service } = createFixture();
+    const schedule = service.createSchedule({
+      name: 'daily status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status',
+      concurrencyPolicy: 'skip'
+    });
+    insertRun('active_run', {
+      sourceId: schedule.id,
+      publicStatus: 'running',
+      internalStatus: 'running'
+    });
+
+    const response = service.runNow(schedule.id);
+
+    expect(response).toMatchObject({
+      run: null,
+      skipped: true,
+      queued: false
+    });
+    expect(runManager.startRun).not.toHaveBeenCalled();
+    expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
+      operation: 'skip_concurrency',
+      status: 'skipped'
+    });
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      lastStatus: 'skipped'
+    });
+  });
+
+  it('coalesces queue policy and runs one pending trigger after active run ends', () => {
+    const { runManager, service } = createFixtureWithTimers('2026-07-06T00:00:00.000Z');
+    service.start();
+    const schedule = service.createSchedule({
+      name: 'daily status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status',
+      concurrencyPolicy: 'queue'
+    });
+    insertRun('active_run', {
+      sourceId: schedule.id,
+      publicStatus: 'running',
+      internalStatus: 'running'
+    });
+
+    const first = service.runNow(schedule.id);
+    const second = service.runNow(schedule.id);
+
+    expect(first).toMatchObject({ run: null, skipped: false, queued: true });
+    expect(second).toMatchObject({ run: null, skipped: false, queued: true });
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      pendingTrigger: true,
+      lastStatus: 'queued'
+    });
+    expect(runManager.startRun).not.toHaveBeenCalled();
+    expect(service.listOperations(schedule.id).operations.filter(operation => operation.operation === 'queue_trigger')).toHaveLength(
+      2
+    );
+
+    db?.prepare(
+      `
+      UPDATE runs
+      SET public_status = 'succeeded',
+          internal_status = 'succeeded'
+      WHERE id = 'active_run'
+    `
+    ).run();
+    service.processPendingTriggersForTest?.();
+
+    expect(runManager.startRun).toHaveBeenCalledTimes(1);
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      pendingTrigger: false,
+      lastStatus: 'running',
+      lastRunId: 'run_0'
+    });
+    expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
+      operation: 'run_queued',
+      status: 'succeeded'
+    });
+  });
+
+  it('allows parallel policy to create overlapping runs', () => {
+    const { runManager, service } = createFixture();
+    const schedule = service.createSchedule({
+      name: 'daily status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status',
+      concurrencyPolicy: 'parallel'
+    });
+    insertRun('active_run', {
+      sourceId: schedule.id,
+      publicStatus: 'running',
+      internalStatus: 'running'
+    });
+
+    const response = service.runNow(schedule.id);
+
+    expect(response).toMatchObject({
+      run: { id: 'run_0', status: 'running' },
+      skipped: false,
+      queued: false
+    });
+    expect(runManager.startRun).toHaveBeenCalledTimes(1);
+  });
+
   it('records failed run-now operations when run manager throws', () => {
     const { runManager, service } = createFixture();
     const schedule = service.createSchedule({
@@ -190,6 +296,37 @@ describe('scheduler service', () => {
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'timer_trigger',
       status: 'succeeded'
+    });
+  });
+
+  it('timer trigger follows skip policy when active run exists', () => {
+    const { runManager, service, timers, setNow } = createFixtureWithTimers('2026-07-06T08:59:45.000Z');
+    service.start();
+    const schedule = service.createSchedule({
+      name: 'daily run',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'run at nine',
+      cwd: tempDir,
+      concurrencyPolicy: 'skip'
+    });
+    insertRun('active_run', {
+      sourceId: schedule.id,
+      publicStatus: 'running',
+      internalStatus: 'running'
+    });
+
+    setNow('2026-07-06T09:00:00.000Z');
+    timers[0]?.callback();
+
+    expect(runManager.startRun).not.toHaveBeenCalled();
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      lastStatus: 'skipped',
+      nextRunAt: '2026-07-07T09:00:00.000Z'
+    });
+    expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
+      operation: 'skip_concurrency',
+      status: 'skipped'
     });
   });
 
@@ -416,4 +553,30 @@ function createFixtureWithTimers(now: string) {
       currentNow = value;
     }
   };
+}
+
+function insertRun(
+  id: string,
+  input: { sourceId: string; publicStatus?: string; internalStatus?: string }
+): void {
+  db
+    ?.prepare(
+      `
+      INSERT INTO runs (
+        id, public_status, internal_status, created_by, source_id, profile, cwd, canonical_cwd,
+        workspace_mode, sandbox, codex_version, codex_bin, codex_home, normalizer_version
+      ) VALUES (
+        @id, @publicStatus, @internalStatus, 'schedule', @sourceId, 'default', @cwd, @cwd,
+        'external', 'read-only', 'test', 'codex', @codexHome, 1
+      )
+    `
+    )
+    .run({
+      id,
+      sourceId: input.sourceId,
+      publicStatus: input.publicStatus ?? 'running',
+      internalStatus: input.internalStatus ?? input.publicStatus ?? 'running',
+      cwd: tempDir,
+      codexHome: join(tempDir, 'codex-home')
+    });
 }
