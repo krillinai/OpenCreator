@@ -46,6 +46,9 @@ export type RuntimeRun = {
   cwd: string;
   profile: string;
   sandbox: string;
+  createdBy: string;
+  sourceId?: string | null;
+  timeoutMs?: number | null;
   createdAt: string;
   updatedAt: string;
   terminationReason?: string;
@@ -343,7 +346,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       cwd: runInput.cwd,
       args: codexArgs,
       prompt: runInput.prompt,
-      timeoutMs: options.timeoutMs ?? EXEC_TIMEOUT_MS,
+      timeoutMs: runInput.timeoutMs ?? options.timeoutMs ?? EXEC_TIMEOUT_MS,
       spawnTimeoutMs: options.spawnTimeoutMs,
       inactivityTimeoutMs: options.inactivityTimeoutMs ?? EXEC_INACTIVITY_TIMEOUT_MS,
       onStdoutLine(line) {
@@ -582,7 +585,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       id,
       publicStatus: 'queued',
       internalStatus: 'created',
-      createdBy: 'api',
+      createdBy: input.createdBy ?? 'api',
+      sourceId: input.sourceId,
+      timeoutMs: input.timeoutMs ?? null,
       threadId: input.threadId,
       codexThreadId: resolvedResumeMode === 'resume_thread' ? codexThreadId : undefined,
       profile: input.profile,
@@ -977,6 +982,9 @@ function mapRunRow(row: RunRow): RuntimeRun {
     cwd: row.cwd,
     profile: row.profile,
     sandbox: row.sandbox,
+    createdBy: row.created_by,
+    sourceId: row.source_id,
+    timeoutMs: row.timeout_ms,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.termination_reason === null ? {} : { terminationReason: row.termination_reason }),

@@ -84,6 +84,50 @@ async function waitForRunStatus(
 }
 
 describe('run manager', () => {
+  it('persists schedule source metadata and per-run timeout', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex_thread_1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'scheduled prompt',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      createdBy: 'schedule',
+      sourceId: 'sch_123',
+      timeoutMs: 2500
+    });
+
+    const row = db.prepare('SELECT created_by, source_id, timeout_ms FROM runs WHERE id = ?').get(run.id) as {
+      created_by: string;
+      source_id: string | null;
+      timeout_ms: number | null;
+    };
+    expect(row).toEqual({
+      created_by: 'schedule',
+      source_id: 'sch_123',
+      timeout_ms: 2500
+    });
+    expect(manager.getRun(run.id)).toMatchObject({
+      createdBy: 'schedule',
+      sourceId: 'sch_123',
+      timeoutMs: 2500
+    });
+  });
+
   it('creates a run and writes redacted raw/events/stderr/meta files', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
     const fake = createFakeCodex(tempDir, {

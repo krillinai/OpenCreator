@@ -14,6 +14,7 @@ export type InsertRunInput = {
   internalStatus: string;
   createdBy: string;
   sourceId?: string;
+  timeoutMs?: number | null;
   profile: string;
   cwd: string;
   canonicalCwd: string;
@@ -129,11 +130,11 @@ export function createRunRepository(db: Database.Database): RunRepository {
     INSERT INTO runs (
       id, thread_id, codex_thread_id, resume_mode, queue_state, public_status, internal_status, created_by, source_id,
       profile, cwd, canonical_cwd, workspace_mode, prompt_hash, prompt_preview_redacted,
-      model, reasoning, sandbox, codex_version, codex_bin, codex_home, normalizer_version
+      model, reasoning, sandbox, codex_version, codex_bin, codex_home, normalizer_version, timeout_ms
     ) VALUES (
       @id, @threadId, @codexThreadId, @resumeMode, @queueState, @publicStatus, @internalStatus, @createdBy, @sourceId,
       @profile, @cwd, @canonicalCwd, @workspaceMode, @promptHash, @promptPreviewRedacted,
-      @model, @reasoning, @sandbox, @codexVersion, @codexBin, @codexHome, @normalizerVersion
+      @model, @reasoning, @sandbox, @codexVersion, @codexBin, @codexHome, @normalizerVersion, @timeoutMs
     )
   `);
 
@@ -210,6 +211,7 @@ export function createRunRepository(db: Database.Database): RunRepository {
         resumeMode: 'independent',
         queueState: 'none',
         sourceId: null,
+        timeoutMs: null,
         promptHash: null,
         promptPreviewRedacted: null,
         model: null,

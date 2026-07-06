@@ -10,6 +10,9 @@ export type CreateRunInput = {
   codexThreadId?: string;
   model?: string;
   reasoning?: ReasoningEffort;
+  createdBy?: 'api' | 'schedule';
+  sourceId?: string;
+  timeoutMs?: number;
 };
 
 export type CreatedRun = {
