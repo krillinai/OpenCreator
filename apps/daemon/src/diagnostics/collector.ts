@@ -63,6 +63,12 @@ export function collectRunDiagnostics(
 
   let realRunDir: string;
   try {
+    const runsDirStat = lstatSync(runsDir);
+    if (!runsDirStat.isDirectory() || runsDirStat.isSymbolicLink()) {
+      warnings.push('Run diagnostics root was skipped because it is unsafe.');
+      return { runId, files: [], warnings };
+    }
+
     const runDirStat = lstatSync(runDir);
     if (!runDirStat.isDirectory() || runDirStat.isSymbolicLink()) {
       warnings.push('Run diagnostics directory was skipped because it is unsafe.');
@@ -103,7 +109,7 @@ export function collectRunDiagnostics(
         continue;
       }
 
-      files.push({ name, content: readFileSync(filePath, 'utf8') });
+      files.push({ name, content: readFileSync(realFilePath, 'utf8') });
     } catch (error) {
       if (isMissingPathError(error)) {
         warnings.push(`Diagnostic file ${name} is missing.`);
@@ -118,7 +124,7 @@ export function collectRunDiagnostics(
 
 function isPathInside(parent: string, child: string): boolean {
   const path = relative(parent, child);
-  return path === '' || (!path.startsWith('..') && !path.includes(`..${sep}`));
+  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !path.includes(`..${sep}`));
 }
 
 function isMissingPathError(error: unknown): boolean {

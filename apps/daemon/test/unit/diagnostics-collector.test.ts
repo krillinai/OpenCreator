@@ -110,6 +110,68 @@ describe('diagnostics collector', () => {
     );
   });
 
+  it('returns empty files when the runs root is missing', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+
+    const result = collectRunDiagnostics({
+      dataDir: tempDir,
+      runs: makeRunRepository(['run_1']),
+      runId: 'run_1'
+    });
+
+    expect(result.files).toEqual([]);
+    expect(result.warnings).toContain('Run diagnostics directory is missing.');
+  });
+
+  it('returns empty files when the run diagnostics directory is missing', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    mkdirSync(join(tempDir, 'runs'), { recursive: true });
+
+    const result = collectRunDiagnostics({
+      dataDir: tempDir,
+      runs: makeRunRepository(['run_1']),
+      runId: 'run_1'
+    });
+
+    expect(result.files).toEqual([]);
+    expect(result.warnings).toContain('Run diagnostics directory is missing.');
+  });
+
+  it('skips diagnostics when the runs root is a symlink', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    const realRunsDir = join(tempDir, 'real-runs');
+    mkdirSync(realRunsDir, { recursive: true });
+    symlinkSync(realRunsDir, join(tempDir, 'runs'));
+
+    const result = collectRunDiagnostics({
+      dataDir: tempDir,
+      runs: makeRunRepository(['run_1']),
+      runId: 'run_1'
+    });
+
+    expect(result.files).toEqual([]);
+    expect(result.warnings).toContain('Run diagnostics root was skipped because it is unsafe.');
+  });
+
+  it('skips diagnostics when the run directory is a symlink', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    const realRunDir = join(tempDir, 'real-run');
+    mkdirSync(join(tempDir, 'runs'), { recursive: true });
+    mkdirSync(realRunDir, { recursive: true });
+    symlinkSync(realRunDir, join(tempDir, 'runs', 'run_1'));
+
+    const result = collectRunDiagnostics({
+      dataDir: tempDir,
+      runs: makeRunRepository(['run_1']),
+      runId: 'run_1'
+    });
+
+    expect(result.files).toEqual([]);
+    expect(result.warnings).toContain(
+      'Run diagnostics directory was skipped because it is unsafe.'
+    );
+  });
+
   it('skips symlinked diagnostic files', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
     const runDir = join(tempDir, 'runs', 'run_1');
@@ -119,6 +181,22 @@ describe('diagnostics collector', () => {
     writeFileSync(join(outsideDir, 'meta.json'), 'SECRET=outside');
     writeFileSync(join(runDir, 'events.ndjson'), '{"type":"done"}\n');
     symlinkSync(join(outsideDir, 'meta.json'), join(runDir, 'meta.json'));
+
+    const result = collectRunDiagnostics({
+      dataDir: tempDir,
+      runs: makeRunRepository(['run_1']),
+      runId: 'run_1'
+    });
+
+    expect(result.files).toEqual([{ name: 'events.ndjson', content: '{"type":"done"}\n' }]);
+    expect(result.warnings).toContain('Diagnostic file meta.json was skipped because it is unsafe.');
+  });
+
+  it('skips allowed diagnostic file names that are directories', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    const runDir = join(tempDir, 'runs', 'run_1');
+    mkdirSync(join(runDir, 'meta.json'), { recursive: true });
+    writeFileSync(join(runDir, 'events.ndjson'), '{"type":"done"}\n');
 
     const result = collectRunDiagnostics({
       dataDir: tempDir,
