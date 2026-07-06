@@ -1,9 +1,7 @@
 import type { ResumeMode, RunResponse } from '@clawee/protocol';
+import type { RuntimeClient } from '../runtime/client.js';
 
-type ClientLike = {
-  post(path: string, body?: unknown): Promise<unknown>;
-  get?(path: string): Promise<unknown>;
-};
+type ClientLike = Pick<RuntimeClient, 'post' | 'get'>;
 
 export function createRunService(client: ClientLike) {
   return {
@@ -12,18 +10,15 @@ export function createRunService(client: ClientLike) {
         threadId: input.threadId,
         prompt: input.prompt,
         resumeMode: input.resumeMode ?? 'auto'
-      }) as Promise<RunResponse>;
+      });
     },
     startStandaloneRun(input: { prompt: string; cwd?: string; profile?: string }): Promise<RunResponse> {
-      return client.post('/runs', input) as Promise<RunResponse>;
+      return client.post('/runs', input);
     },
     cancelRun(id: string): Promise<{ id: string; canceled: boolean }> {
-      return client.post(`/runs/${encodeURIComponent(id)}/cancel`) as Promise<{ id: string; canceled: boolean }>;
+      return client.post(`/runs/${encodeURIComponent(id)}/cancel`);
     },
     getRun(id: string): Promise<unknown> {
-      if (client.get === undefined) {
-        return Promise.reject(new TypeError('Runtime client get is required'));
-      }
       return client.get(`/runs/${encodeURIComponent(id)}`);
     }
   };

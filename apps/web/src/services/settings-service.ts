@@ -1,13 +1,15 @@
-import type { CleanupDeleteResponse, CleanupPreviewResponse } from '@clawee/protocol';
+import type { CleanupDeleteRequest, CleanupDeleteResponse, CleanupPreviewResponse } from '@clawee/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
-export function createSettingsService(client: RuntimeClient) {
+type ClientLike = Pick<RuntimeClient, 'get' | 'post'>;
+
+export function createSettingsService(client: ClientLike) {
   return {
     previewCleanup(olderThanDays: number): Promise<CleanupPreviewResponse> {
       return client.get(`/runtime/cleanup/preview?olderThanDays=${olderThanDays}`);
     },
-    deleteCleanup(olderThanDays: number): Promise<CleanupDeleteResponse> {
-      return client.post('/runtime/cleanup', { olderThanDays, confirm: true });
+    deleteCleanup(input: CleanupDeleteRequest): Promise<CleanupDeleteResponse> {
+      return client.post('/runtime/cleanup', input);
     }
   };
 }

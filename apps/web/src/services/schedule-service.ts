@@ -1,4 +1,10 @@
-import type { CreateScheduleRequest, ScheduleListResponse, ScheduleResponse, UpdateScheduleRequest } from '@clawee/protocol';
+import type {
+  CreateScheduleRequest,
+  RunScheduleNowResponse,
+  ScheduleListResponse,
+  ScheduleResponse,
+  UpdateScheduleRequest
+} from '@clawee/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createScheduleService(client: RuntimeClient) {
@@ -15,7 +21,7 @@ export function createScheduleService(client: RuntimeClient) {
     deleteSchedule(id: string): Promise<{ deleted: true }> {
       return client.delete(`/schedules/${encodeURIComponent(id)}`);
     },
-    runNow(id: string): Promise<unknown> {
+    runNow(id: string): Promise<RunScheduleNowResponse> {
       return client.post(`/schedules/${encodeURIComponent(id)}/run-now`);
     }
   };
