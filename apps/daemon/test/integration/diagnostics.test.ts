@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
-import { createThreadRepository } from '../../src/storage/repositories.js';
+import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 
 let tempDir = '';
@@ -33,8 +33,23 @@ describe('diagnostics', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('returns diagnostics response for authorized route requests', async () => {
-    server = await buildServer({ token: 'secret' });
+  it('returns enhanced diagnostics with a codex status snapshot and redacted default files', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    db = database;
+    insertFinishedRun(database, 'run_1');
+    writeRunFiles(tempDir, 'run_1', {
+      'meta.json': '{"id":"run_1"}',
+      'stderr.redacted.log': 'Authorization: Bearer sk-secret-token\n',
+      'raw.redacted.ndjson': 'Authorization: Bearer sk-raw-token\n'
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      db: database,
+      codexBin: 'codex-test',
+      codexHome: join(tempDir, 'codex-home')
+    });
 
     const response = await server.inject({
       method: 'GET',
@@ -43,7 +58,111 @@ describe('diagnostics', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ runId: 'run_1', files: [] });
+    expect(response.json()).toMatchObject({
+      runId: 'run_1',
+      codexStatusSnapshot: {
+        codexBin: 'codex-test',
+        codexVersion: 'unknown',
+        codexHome: join(tempDir, 'codex-home')
+      },
+      warnings: expect.arrayContaining(['Diagnostics are redacted on a best-effort basis.'])
+    });
+    expect(response.json().files).toEqual([
+      { name: 'meta.json', content: '{"id":"run_1"}' },
+      { name: 'stderr.redacted.log', content: 'Authorization: Bearer [REDACTED]\n' }
+    ]);
+  });
+
+  it('includes raw.redacted.ndjson only when includeRawRedacted is true', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    db = database;
+    insertFinishedRun(database, 'run_1');
+    writeRunFiles(tempDir, 'run_1', {
+      'meta.json': '{"id":"run_1"}',
+      'raw.redacted.ndjson': 'Authorization: Bearer sk-raw-token\n'
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      db: database,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const withoutRaw = await server.inject({
+      method: 'GET',
+      url: '/runs/run_1/diagnostics',
+      headers: { authorization: 'Bearer secret' }
+    });
+    const withRaw = await server.inject({
+      method: 'GET',
+      url: '/runs/run_1/diagnostics?includeRawRedacted=true',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(withoutRaw.statusCode).toBe(200);
+    expect(withoutRaw.json().files.map((file: { name: string }) => file.name)).not.toContain(
+      'raw.redacted.ndjson'
+    );
+    expect(withRaw.statusCode).toBe(200);
+    expect(withRaw.json().files).toContainEqual({
+      name: 'raw.redacted.ndjson',
+      content: 'Authorization: Bearer [REDACTED]\n'
+    });
+  });
+
+  it('returns validation and not found errors for invalid or missing runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    db = database;
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      db: database,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const invalid = await server.inject({
+      method: 'GET',
+      url: '/runs/not-a-run/diagnostics',
+      headers: { authorization: 'Bearer secret' }
+    });
+    const missing = await server.inject({
+      method: 'GET',
+      url: '/runs/run_missing/diagnostics',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.code).toBe('VALIDATION_FAILED');
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe('RUN_NOT_FOUND');
+  });
+
+  it('returns empty files with a warning when the DB run exists but the run directory is missing', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    db = database;
+    insertFinishedRun(database, 'run_1');
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      db: database,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/runs/run_1/diagnostics',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      runId: 'run_1',
+      files: [],
+      warnings: expect.arrayContaining(['Run diagnostics directory is missing.'])
+    });
   });
 
   it('includes thread and resume diagnostics for failed resume runs', async () => {
@@ -133,6 +252,32 @@ function readDiagnosticsFile(root: string, runId: string) {
     string,
     unknown
   >;
+}
+
+function insertFinishedRun(database: Database.Database, id: string): void {
+  createRunRepository(database).insertRun({
+    id,
+    publicStatus: 'succeeded',
+    internalStatus: 'succeeded',
+    createdBy: 'test',
+    profile: 'default',
+    cwd: tempDir,
+    canonicalCwd: tempDir,
+    workspaceMode: 'external',
+    sandbox: 'read-only',
+    codexVersion: 'test',
+    codexBin: 'codex',
+    codexHome: join(tempDir, 'codex-home'),
+    normalizerVersion: 1
+  });
+}
+
+function writeRunFiles(root: string, runId: string, files: Record<string, string>): void {
+  const runDir = join(root, 'runs', runId);
+  mkdirSync(runDir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) {
+    writeFileSync(join(runDir, name), content);
+  }
 }
 
 function authPost(url: string, payload: unknown) {

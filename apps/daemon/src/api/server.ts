@@ -10,10 +10,12 @@ import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { createSkillManager } from '../codex/skills/manager.js';
+import { buildCodexStatusResponse } from '../codex/status.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { ScheduleRepository } from '../scheduler/repository.js';
 import { createSchedulerService, type SchedulerService } from '../scheduler/service.js';
 import { openRuntimeDatabase } from '../storage/database.js';
+import { createRunRepository } from '../storage/repositories.js';
 import { createThreadManager } from '../threads/manager.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
@@ -59,6 +61,7 @@ export async function buildServer(input: BuildServerInput) {
   );
   const db = input.db ?? openRuntimeDatabase(join(dataDir, 'app.sqlite'));
   const ownsDb = input.db === undefined;
+  const runRepository = createRunRepository(db);
   const threadManager = createThreadManager({ db, dataDir });
   const profileManager = createProfileManager({ codexHome: resolvedCodexHome });
   const skillManager = createSkillManager({ codexHome: resolvedCodexHome, db });
@@ -122,7 +125,16 @@ export async function buildServer(input: BuildServerInput) {
     profileValidator: profileManager
   });
   await registerScheduleRoutes(server, scheduler);
-  await registerDiagnosticsRoutes(server, dataDir);
+  await registerDiagnosticsRoutes(server, {
+    dataDir,
+    runs: runRepository,
+    getCodexStatusSnapshot: () =>
+      buildCodexStatusResponse({
+        codexBin,
+        codexHome: resolvedCodexHome,
+        capabilities
+      })
+  });
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager
   });
