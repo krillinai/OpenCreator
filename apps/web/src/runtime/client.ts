@@ -46,8 +46,8 @@ export class RuntimeClient {
       body: input.body === undefined ? undefined : JSON.stringify(input.body)
     });
 
-    const payload = await readJson(response);
     if (!response.ok) {
+      const payload = await readErrorPayload(response);
       const error = parseApiError(payload);
       throw new ApiClientError({
         status: response.status,
@@ -56,6 +56,7 @@ export class RuntimeClient {
         details: error.error.details
       });
     }
+    const payload = await readJson(response);
     return payload as T;
   }
 }
@@ -74,4 +75,12 @@ function parseApiError(payload: unknown): ApiErrorPayload {
   const message = typeof payload.error.message === 'string' ? payload.error.message : 'Runtime request failed';
   const details = isRecord(payload.error.details) ? payload.error.details : undefined;
   return { error: { code, message, details } };
+}
+
+async function readErrorPayload(response: Response): Promise<unknown> {
+  try {
+    return await readJson(response);
+  } catch {
+    return {};
+  }
 }

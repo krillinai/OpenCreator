@@ -44,4 +44,20 @@ describe('RuntimeClient', () => {
       status: 401
     });
   });
+
+  it('throws ApiClientError for non-JSON error responses', async () => {
+    const fetchMock = vi.fn(async () => new Response('Internal Server Error', {
+      status: 500,
+      headers: { 'content-type': 'text/plain' }
+    }));
+    const client = new RuntimeClient({ baseUrl: 'http://127.0.0.1:60855', token: 'tok', fetchImpl: fetchMock });
+
+    const request = client.get('/runs');
+
+    await expect(request).rejects.toBeInstanceOf(ApiClientError);
+    await expect(request).rejects.toMatchObject({
+      status: 500,
+      code: 'HTTP_ERROR'
+    });
+  });
 });
