@@ -9,16 +9,22 @@ export function RunDetailPanel(props: { runId?: string; diagnostics?: RunDiagnos
     );
   }
 
+  const diagnosticFiles = props.diagnostics?.files ?? [];
+
   return (
     <div className="panel-scroll">
       <h2>Run {props.runId}</h2>
       <h3>Diagnostics</h3>
-      {props.diagnostics?.files.map((file) => (
-        <details key={file.name}>
-          <summary>{file.name}</summary>
-          <pre>{file.content}</pre>
-        </details>
-      )) ?? <p>暂无诊断文件</p>}
+      {diagnosticFiles.length === 0 ? (
+        <p>暂无诊断文件</p>
+      ) : (
+        diagnosticFiles.map((file) => (
+          <details key={file.name}>
+            <summary>{file.name}</summary>
+            <pre>{file.content}</pre>
+          </details>
+        ))
+      )}
     </div>
   );
 }
