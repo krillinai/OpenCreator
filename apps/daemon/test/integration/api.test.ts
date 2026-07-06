@@ -168,6 +168,50 @@ describe('runtime api', () => {
     expect(response.body).not.toContain('/tmp/foo');
   });
 
+  it('maps scheduler internal errors from list without leaking details', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const scheduler = createFakeScheduler({
+      listSchedules() {
+        throw new SchedulerError('INTERNAL_ERROR', 'secret list /tmp/list');
+      }
+    });
+    server = await buildServer({ token: 'secret', dataDir: tempDir, scheduler });
+
+    const response = await authGet('/schedules');
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Internal error'
+      }
+    });
+    expect(response.body).not.toContain('secret');
+    expect(response.body).not.toContain('/tmp/list');
+  });
+
+  it('maps scheduler internal errors from get without leaking details', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const scheduler = createFakeScheduler({
+      getSchedule() {
+        throw new SchedulerError('INTERNAL_ERROR', 'secret get /tmp/get');
+      }
+    });
+    server = await buildServer({ token: 'secret', dataDir: tempDir, scheduler });
+
+    const response = await authGet('/schedules/sch_1');
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Internal error'
+      }
+    });
+    expect(response.body).not.toContain('secret');
+    expect(response.body).not.toContain('/tmp/get');
+  });
+
   it('keeps injected scheduler stopped by default and stops it on close', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     let startCount = 0;

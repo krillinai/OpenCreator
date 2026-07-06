@@ -7,7 +7,13 @@ export async function registerScheduleRoutes(
   server: FastifyInstance,
   scheduler: SchedulerService
 ): Promise<void> {
-  server.get('/schedules', async () => scheduler.listSchedules());
+  server.get('/schedules', async (_request, reply) => {
+    try {
+      return scheduler.listSchedules();
+    } catch (error) {
+      return sendSchedulerError(error, reply);
+    }
+  });
 
   server.post<{ Body: unknown }>('/schedules', async (request, reply) => {
     const body = parseBodyObject(request.body);
@@ -22,11 +28,15 @@ export async function registerScheduleRoutes(
   });
 
   server.get<{ Params: { id: string } }>('/schedules/:id', async (request, reply) => {
-    const schedule = scheduler.getSchedule(request.params.id);
-    if (schedule === undefined) {
-      return reply.code(404).send(apiError('SCHEDULE_NOT_FOUND', 'Schedule not found'));
+    try {
+      const schedule = scheduler.getSchedule(request.params.id);
+      if (schedule === undefined) {
+        return reply.code(404).send(apiError('SCHEDULE_NOT_FOUND', 'Schedule not found'));
+      }
+      return schedule;
+    } catch (error) {
+      return sendSchedulerError(error, reply);
     }
-    return schedule;
   });
 
   server.patch<{ Params: { id: string }; Body: unknown }>(
