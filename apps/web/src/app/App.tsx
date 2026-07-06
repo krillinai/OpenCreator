@@ -188,6 +188,7 @@ export function App(props: AppProps = {}) {
             content={selectedDraftContent}
             dirty={dirty}
             saving={savingCurrentFile}
+            loadError={loadError}
             saveError={saveError}
             onChange={handleEditorContentChange}
             onSave={saveCurrentFile}

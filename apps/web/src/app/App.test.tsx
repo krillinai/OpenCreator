@@ -201,6 +201,55 @@ describe('App', () => {
     expect(await screen.findByText('无法加载文件')).toBeInTheDocument();
     expect(screen.queryByText('正在加载文件...')).not.toBeInTheDocument();
   });
+
+  it('surfaces reload failures while preserving an existing file draft', async () => {
+    const user = userEvent.setup();
+    const filePathA = 'docs/design/enterprise-agent-workbench.md';
+    const filePathB = 'docs/notes.md';
+    const initialContentA = '# Workbench';
+    const draftContentA = '# Workbench\nunsaved edit';
+    const contentB = '# Notes';
+    const openCallsByPath = new Map<string, number>();
+    const treeNodes: FileTreeNode[] = [
+      { type: 'file', name: 'enterprise-agent-workbench.md', path: filePathA, depth: 0 },
+      { type: 'file', name: 'notes.md', path: filePathB, depth: 0 }
+    ];
+
+    const fileService = {
+      async listTree() {
+        return treeNodes;
+      },
+      async openFile(path: string) {
+        openCallsByPath.set(path, (openCallsByPath.get(path) ?? 0) + 1);
+        if (path === filePathA && openCallsByPath.get(path) === 2) {
+          throw new Error('file unavailable');
+        }
+        return createWorkspaceFile(path, path === filePathA ? initialContentA : contentB);
+      },
+      async saveFile(path: string, content: string) {
+        return createWorkspaceFile(path, content);
+      }
+    };
+
+    render(<App fileService={fileService} />);
+
+    const editorA = await screen.findByRole('textbox', { name: `${filePathA} 编辑器` });
+    expect(editorA).toHaveValue(initialContentA);
+
+    await user.clear(editorA);
+    await user.type(editorA, draftContentA);
+    expect(editorA).toHaveValue(draftContentA);
+
+    await user.click(screen.getByRole('button', { name: 'notes.md' }));
+    expect(await screen.findByRole('textbox', { name: `${filePathB} 编辑器` })).toHaveValue(contentB);
+
+    await user.click(screen.getByRole('button', { name: 'enterprise-agent-workbench.md' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: `${filePathA} 编辑器` })).toHaveValue(draftContentA);
+      expect(screen.getByText('无法加载文件')).toBeInTheDocument();
+    });
+  });
 });
 
 function createWorkspaceFile(path: string, content: string): WorkspaceFile {

@@ -48,4 +48,22 @@ describe('FileEditor', () => {
 
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it('shows a lightweight file loading error without hiding the draft editor', () => {
+    render(
+      <FileEditor
+        path="docs/design/enterprise-agent-workbench.md"
+        content={'# Workbench\nunsaved edit'}
+        dirty={true}
+        loadError="无法加载文件"
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('无法加载文件')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'docs/design/enterprise-agent-workbench.md 编辑器' })).toHaveValue(
+      '# Workbench\nunsaved edit'
+    );
+  });
 });
