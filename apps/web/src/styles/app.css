@@ -74,3 +74,120 @@ select {
   min-height: 0;
   overflow: auto;
 }
+
+.empty-state {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+}
+
+.session-row,
+.tree-file,
+.tree-folder {
+  width: 100%;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.session-row[aria-current="true"],
+.tree-file[aria-current="page"] {
+  background: #eef6ff;
+  color: var(--accent);
+}
+
+.timeline-shell {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.timeline-list {
+  padding: 12px;
+}
+
+.timeline-item {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.timeline-item p {
+  margin: 0;
+}
+
+.timeline-item pre {
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.composer textarea {
+  min-height: 76px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+}
+
+.composer button {
+  align-self: end;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.composer button:disabled {
+  border-color: var(--border);
+  background: var(--border);
+  color: var(--muted);
+}
+
+.file-editor {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.code-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}

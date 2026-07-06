@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
+import { Timeline } from '../components/timeline/Timeline.js';
+import type { TimelineItem } from '../components/timeline/timeline-model.js';
 import { FileEditor } from '../components/editor/FileEditor.js';
 import { FileTree } from '../components/editor/FileTree.js';
 import { CapabilitiesView } from '../features/capabilities/CapabilitiesView.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
 import { ConnectionPanel } from '../features/connection/ConnectionPanel.js';
 import { Composer } from '../features/runs/Composer.js';
+import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
 import { ThreadList } from '../features/threads/ThreadList.js';
+import { createMockChangeService } from '../services/change-service.js';
 import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
+import { createMockProjectService } from '../services/project-service.js';
 import { initialAppState, reduceAppState } from './app-state.js';
 
 type AppFileService = {
@@ -28,12 +33,16 @@ export function App(props: AppProps = {}) {
   const fileService = props.fileService ?? defaultFileService;
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
   const [treeLoadError, setTreeLoadError] = useState<string>();
+  const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [savedFileByPath, setSavedFileByPath] = useState<Record<string, WorkspaceFile>>({});
   const [draftContentByPath, setDraftContentByPath] = useState<Record<string, string>>({});
   const [loadingFilePath, setLoadingFilePath] = useState<string>(state.selectedFilePath);
   const [loadErrorByPath, setLoadErrorByPath] = useState<Record<string, string | undefined>>({});
   const [saveErrorByPath, setSaveErrorByPath] = useState<Record<string, string | undefined>>({});
   const [savingFilePaths, setSavingFilePaths] = useState<Set<string>>(() => new Set());
+  const projectService = useMemo(() => createMockProjectService(), []);
+  const changeService = useMemo(() => createMockChangeService(), []);
+  const timelineIdSequenceRef = useRef(0);
   const mountedRef = useRef(true);
   const selectedFilePathRef = useRef(state.selectedFilePath);
   const savedFileByPathRef = useRef<Record<string, WorkspaceFile>>({});
@@ -71,6 +80,10 @@ export function App(props: AppProps = {}) {
       canceled = true;
     };
   }, [fileService]);
+
+  useEffect(() => {
+    void projectService.getDefaultProject();
+  }, [projectService]);
 
   useEffect(() => {
     const path = state.selectedFilePath;
@@ -138,7 +151,11 @@ export function App(props: AppProps = {}) {
   const loadError = loadErrorByPath[selectedFilePath];
   const saveError = saveErrorByPath[selectedFilePath];
   const rightPanel =
-    props.capabilitiesView === undefined ? (
+    props.capabilitiesView !== undefined ? (
+      <CapabilitiesView {...props.capabilitiesView} />
+    ) : state.rightPanelMode === 'run_detail' ? (
+      <RunDetailPanel runId={state.selectedRunId} />
+    ) : (
       loadingSelectedFile ? (
         <div className="panel-header">正在加载文件...</div>
       ) : currentFile === undefined ? (
@@ -155,8 +172,6 @@ export function App(props: AppProps = {}) {
           onSave={saveCurrentFile}
         />
       )
-    ) : (
-      <CapabilitiesView {...props.capabilitiesView} />
     );
 
   function handleEditorContentChange(content: string) {
@@ -181,6 +196,42 @@ export function App(props: AppProps = {}) {
 
   function bumpFileRevision(path: string) {
     fileRevisionByPathRef.current[path] = (fileRevisionByPathRef.current[path] ?? 0) + 1;
+  }
+
+  function createTimelineId(prefix: string) {
+    timelineIdSequenceRef.current += 1;
+    return `${prefix}_${Date.now()}_${timelineIdSequenceRef.current}`;
+  }
+
+  function submitPrompt(prompt: string) {
+    const nextItems: TimelineItem[] = [
+      {
+        kind: 'user_message',
+        id: createTimelineId('user'),
+        text: prompt,
+        source: 'mock'
+      },
+      {
+        kind: 'assistant_message',
+        id: createTimelineId('assistant'),
+        text: '当前未连接 Runtime，已在 mock workspace 中记录本次任务。',
+        source: 'mock'
+      }
+    ];
+
+    if (currentFile !== undefined) {
+      const change = changeService.createPromptChange(prompt, currentFile.path);
+      nextItems.push({
+        kind: 'change_card',
+        id: createTimelineId('change'),
+        title: change.title,
+        path: change.path,
+        delta: change.delta,
+        source: change.source
+      });
+    }
+
+    setTimelineItems(previous => [...previous, ...nextItems]);
   }
 
   async function saveCurrentFile() {
@@ -228,10 +279,10 @@ export function App(props: AppProps = {}) {
         </div>
       }
       timeline={
-        <>
-          <div className="panel-header">Agent 对话</div>
-          <Composer onSubmit={() => {}} />
-        </>
+        <div className="timeline-shell">
+          <Timeline items={timelineItems} />
+          <Composer onSubmit={submitPrompt} />
+        </div>
       }
       rightPanel={rightPanel}
       fileTree={
