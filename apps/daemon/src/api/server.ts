@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { join } from 'node:path';
 import {
@@ -46,6 +47,17 @@ export type BuildServerInput = {
 
 export async function buildServer(input: BuildServerInput) {
   const server = Fastify({ logger: false });
+  await server.register(cors, {
+    origin(origin, callback) {
+      if (origin === undefined) return callback(null, false);
+      if (isAllowedWebOrigin(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Last-Event-ID'],
+    credentials: false,
+    maxAge: 600
+  });
   const auth = requireAuth(input.token);
   const dataDir = input.dataDir ?? '.runtime';
   const codexBin = input.codexBin ?? 'codex';
@@ -190,4 +202,15 @@ function createUnknownCapabilityMatrix(): RuntimeCapabilityMatrix {
     skillsRuntimeBehaviorVerified: false,
     warnings: ['Codex runtime help has not been collected yet.']
   };
+}
+
+function isAllowedWebOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:') return false;
+    if (url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') return false;
+    return url.port === '5173' || url.port === '4173';
+  } catch {
+    return false;
+  }
 }

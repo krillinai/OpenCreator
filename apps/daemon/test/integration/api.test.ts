@@ -45,6 +45,45 @@ describe('runtime api', () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it('allows web app CORS preflight from localhost origins', async () => {
+    server = await buildServer({ token: 'secret' });
+    const response = await server.inject({
+      method: 'OPTIONS',
+      url: '/runs',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type,last-event-id'
+      }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(String(response.headers['access-control-allow-headers']).toLowerCase()).toContain(
+      'authorization'
+    );
+    expect(String(response.headers['access-control-allow-headers']).toLowerCase()).toContain(
+      'content-type'
+    );
+    expect(String(response.headers['access-control-allow-headers']).toLowerCase()).toContain(
+      'last-event-id'
+    );
+  });
+
+  it('does not allow arbitrary web origins', async () => {
+    server = await buildServer({ token: 'secret' });
+    const response = await server.inject({
+      method: 'OPTIONS',
+      url: '/runs',
+      headers: {
+        origin: 'https://example.com',
+        'access-control-request-method': 'GET'
+      }
+    });
+
+    expect(response.headers['access-control-allow-origin']).not.toBe('https://example.com');
+  });
+
   it('creates, lists, gets, updates, deletes, and runs schedules', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
