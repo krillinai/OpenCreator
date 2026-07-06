@@ -339,6 +339,17 @@ export function App(props: AppProps = {}) {
     ]);
 
     try {
+      const pendingRunId = createTimelineId('pending_run');
+      setTimelineItems(previous => [
+        ...previous,
+        {
+          kind: 'run_status',
+          id: pendingRunId,
+          label: 'queued',
+          content: JSON.stringify({ status: 'queued' }),
+          source: 'runtime'
+        }
+      ]);
       const run = await runService.startStandaloneRun({ prompt });
       handleRunStarted(run);
       await subscribeToRunEvents(run.id, connectionConfigRef.current);

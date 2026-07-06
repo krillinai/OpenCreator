@@ -71,7 +71,7 @@ describe('App', () => {
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(codexStatus);
-      if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', status: 'queued' }, { status: 202 });
+      if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', status: 'running' }, { status: 202 });
       if (url.endsWith('/runs/run_1/diagnostics')) return jsonResponse(createRunDiagnosticsResponse(codexStatus));
       throw new Error(`Unexpected request ${url}`);
     };
@@ -121,7 +121,7 @@ describe('App', () => {
 
     expect(await screen.findByText(prompt)).toBeInTheDocument();
     expect(await screen.findByText('queued')).toBeInTheDocument();
-    expect(await screen.findByText('running')).toBeInTheDocument();
+    expect((await screen.findAllByText('running')).length).toBeGreaterThan(0);
     expect(await screen.findByText('OK')).toBeInTheDocument();
     expect(await screen.findByText('succeeded')).toBeInTheDocument();
     expect(JSON.parse(String(fetchCalls.find(call => call.url.endsWith('/runs'))?.init?.body))).toEqual({ prompt });
