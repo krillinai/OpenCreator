@@ -263,7 +263,10 @@ export class ScheduleRepository {
         FROM runs
         WHERE created_by = @createdBy
           AND source_id = @sourceId
-          AND public_status IN ('queued', 'running', 'cancelling')
+          AND (
+            public_status IN ('queued', 'running')
+            OR internal_status IN ('queued', 'running', 'canceling')
+          )
         LIMIT 1
       `
       )

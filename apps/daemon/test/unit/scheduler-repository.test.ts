@@ -110,12 +110,16 @@ describe('schedule repository', () => {
     expect(repository.list()).toEqual([]);
   });
 
-  it('lists due enabled schedules by next run time', () => {
-    const repository = createRepository({ ids: ['sch_later', 'sch_disabled', 'sch_future', 'sch_earlier'] });
+  it('lists due enabled non-deleted schedules by next run time', () => {
+    const repository = createRepository({
+      ids: ['sch_later', 'sch_disabled', 'sch_future', 'sch_earlier', 'sch_deleted']
+    });
     repository.create(scheduleInput({ name: 'later', nextRunAt: '2026-07-06T08:30:00.000Z' }));
     repository.create(scheduleInput({ name: 'disabled', enabled: false, nextRunAt: '2026-07-06T08:00:00.000Z' }));
     repository.create(scheduleInput({ name: 'future', nextRunAt: '2026-07-06T10:00:00.000Z' }));
     repository.create(scheduleInput({ name: 'earlier', nextRunAt: '2026-07-06T08:00:00.000Z' }));
+    repository.create(scheduleInput({ name: 'deleted', nextRunAt: '2026-07-06T07:00:00.000Z' }));
+    repository.softDelete('sch_deleted');
 
     expect(repository.listDue('2026-07-06T09:00:00.000Z').map(schedule => schedule.id)).toEqual([
       'sch_earlier',
@@ -167,12 +171,22 @@ describe('schedule repository', () => {
 
   it('detects active runs only for matching schedule source', () => {
     const repository = createRepository();
-    insertRun('run_active', { createdBy: 'schedule', sourceId: 'sch_one', publicStatus: 'running' });
-    insertRun('run_done', { createdBy: 'schedule', sourceId: 'sch_two', publicStatus: 'succeeded' });
+    insertRun('run_queued', { createdBy: 'schedule', sourceId: 'sch_queued', publicStatus: 'queued' });
+    insertRun('run_running', { createdBy: 'schedule', sourceId: 'sch_running', publicStatus: 'running' });
+    insertRun('run_canceling', {
+      createdBy: 'schedule',
+      sourceId: 'sch_canceling',
+      publicStatus: 'canceled',
+      internalStatus: 'canceling'
+    });
+    insertRun('run_done', { createdBy: 'schedule', sourceId: 'sch_done', publicStatus: 'succeeded' });
     insertRun('run_api', { createdBy: 'api', sourceId: 'sch_one', publicStatus: 'running' });
 
-    expect(repository.hasActiveRunForSource('schedule', 'sch_one')).toBe(true);
-    expect(repository.hasActiveRunForSource('schedule', 'sch_two')).toBe(false);
+    expect(repository.hasActiveRunForSource('schedule', 'sch_queued')).toBe(true);
+    expect(repository.hasActiveRunForSource('schedule', 'sch_running')).toBe(true);
+    expect(repository.hasActiveRunForSource('schedule', 'sch_canceling')).toBe(true);
+    expect(repository.hasActiveRunForSource('schedule', 'sch_done')).toBe(false);
+    expect(repository.hasActiveRunForSource('schedule', 'sch_one')).toBe(false);
     expect(repository.hasActiveRunForSource('schedule', 'missing')).toBe(false);
   });
 });
@@ -220,7 +234,7 @@ function scheduleInput(overrides: Partial<InsertScheduleInput> = {}): InsertSche
 
 function insertRun(
   id: string,
-  input: { createdBy: string; sourceId: string; publicStatus: string }
+  input: { createdBy: string; sourceId: string; publicStatus: string; internalStatus?: string }
 ): void {
   db
     ?.prepare(
@@ -229,7 +243,7 @@ function insertRun(
         id, public_status, internal_status, created_by, source_id, profile, cwd, canonical_cwd,
         workspace_mode, sandbox, codex_version, codex_bin, codex_home, normalizer_version
       ) VALUES (
-        @id, @publicStatus, @publicStatus, @createdBy, @sourceId, 'default', @cwd, @cwd,
+        @id, @publicStatus, @internalStatus, @createdBy, @sourceId, 'default', @cwd, @cwd,
         'external', 'read-only', 'test', 'codex', @codexHome, 1
       )
     `
@@ -237,6 +251,7 @@ function insertRun(
     .run({
       id,
       ...input,
+      internalStatus: input.internalStatus ?? input.publicStatus,
       cwd: tempDir,
       codexHome: join(tempDir, 'codex-home')
     });
