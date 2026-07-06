@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseSseChunk, sseEventsToFrames, subscribeRunEvents } from './sse.js';
 
 describe('sse parser', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('parses id event and data frame', () => {
     const frames = sseEventsToFrames([
       'id: 4\n',
@@ -89,6 +93,59 @@ describe('sse parser', () => {
 
     expect(errors).toEqual([]);
     expect(received.sort()).toEqual(['run-a', 'run-b']);
+  });
+
+  it('binds the default browser fetch when no fetch implementation is injected', async () => {
+    const received: string[] = [];
+    vi.stubGlobal('fetch', (async function fetchMock(this: typeof globalThis) {
+      if (this !== globalThis) throw new Error('fetch was called without its global binding');
+      return new Response(
+        streamFromChunks([
+          'data: {"id":"evt_1","runId":"run_1","seq":1,"ts":"2026-07-06T00:00:00.000Z","type":"done","payload":{"type":"done","status":"succeeded","terminationReason":"completed"},"normalizerVersion":1}\n\n'
+        ])
+      );
+    }) as typeof fetch);
+
+    await subscribeRunEvents({
+      baseUrl: 'https://runtime.test',
+      token: 'token',
+      runId: 'run_1',
+      onEvent: (event) => received.push(event.type),
+      onError: (error) => {
+        throw error;
+      }
+    });
+
+    expect(received).toEqual(['done']);
+  });
+
+  it('cancels the response reader when parsing an SSE event fails', async () => {
+    let canceled = false;
+    const errors: Error[] = [];
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {not-json}\n\n'));
+      },
+      cancel() {
+        canceled = true;
+      }
+    });
+    const fetchImpl = (async () => new Response(body)) as typeof fetch;
+
+    await subscribeRunEvents({
+      baseUrl: 'https://runtime.test',
+      token: 'token',
+      runId: 'run_1',
+      fetchImpl,
+      onEvent: () => {
+        throw new Error('unexpected event');
+      },
+      onError: (error) => errors.push(error)
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain('JSON');
+    expect(canceled).toBe(true);
   });
 });
 

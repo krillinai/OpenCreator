@@ -1,5 +1,5 @@
 import type { CodexStatusResponse } from '@clawee/protocol';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ConnectionConfig } from '../../runtime/types.js';
 
 export function ConnectionPanel(props: {
@@ -7,6 +7,7 @@ export function ConnectionPanel(props: {
   codexStatus?: CodexStatusResponse;
   initialConfig?: ConnectionConfig | null;
   message?: string;
+  onEdit?(): void;
   onConnect?(config: ConnectionConfig): void;
 }) {
   const text =
@@ -17,11 +18,19 @@ export function ConnectionPanel(props: {
         : '未连接 Runtime';
   const [baseUrl, setBaseUrl] = useState(props.initialConfig?.baseUrl ?? '');
   const [token, setToken] = useState(props.initialConfig?.token ?? '');
+  const editedRef = useRef(false);
 
   useEffect(() => {
+    if (editedRef.current) return;
     setBaseUrl(props.initialConfig?.baseUrl ?? '');
     setToken(props.initialConfig?.token ?? '');
   }, [props.initialConfig?.baseUrl, props.initialConfig?.token]);
+
+  function markEdited() {
+    if (editedRef.current) return;
+    editedRef.current = true;
+    props.onEdit?.();
+  }
 
   return (
     <div className="connection-panel" aria-label="Runtime 连接状态">
@@ -44,7 +53,10 @@ export function ConnectionPanel(props: {
             aria-label="Runtime 地址"
             value={baseUrl}
             placeholder="http://127.0.0.1:60764"
-            onChange={(event) => setBaseUrl(event.target.value)}
+            onChange={(event) => {
+              markEdited();
+              setBaseUrl(event.target.value);
+            }}
           />
         </label>
         <label>
@@ -54,7 +66,10 @@ export function ConnectionPanel(props: {
             type="password"
             value={token}
             autoComplete="off"
-            onChange={(event) => setToken(event.target.value)}
+            onChange={(event) => {
+              markEdited();
+              setToken(event.target.value);
+            }}
           />
         </label>
         {props.message ? <p>{props.message}</p> : null}

@@ -31,7 +31,7 @@ export function sseEventsToFrames(lines: string[]): SseFrame[] {
 }
 
 export async function subscribeRunEvents(input: SubscribeRunEventsInput): Promise<void> {
-  const fetchImpl = input.fetchImpl ?? fetch;
+  const fetchImpl = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const url = `${input.baseUrl.replace(/\/+$/, '')}/runs/${encodeURIComponent(input.runId)}/events?fromSeq=${input.fromSeq ?? 0}`;
   const response = await fetchImpl(url, {
     method: 'GET',
@@ -44,6 +44,7 @@ export async function subscribeRunEvents(input: SubscribeRunEventsInput): Promis
 
   const parser = createSseParser();
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let cancelReader = false;
   try {
     while (true) {
       const read = await reader.read();
@@ -54,8 +55,12 @@ export async function subscribeRunEvents(input: SubscribeRunEventsInput): Promis
       }
     }
   } catch (error) {
-    if (!input.signal?.aborted) input.onError(error instanceof Error ? error : new Error(String(error)));
+    if (!input.signal?.aborted) {
+      cancelReader = true;
+      input.onError(error instanceof Error ? error : new Error(String(error)));
+    }
   } finally {
+    if (cancelReader) await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }

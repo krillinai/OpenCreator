@@ -44,7 +44,7 @@ export function App(props: AppProps = {}) {
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
-  const runtimeFetch = props.runtimeFetch ?? fetch;
+  const runtimeFetch = useMemo(() => props.runtimeFetch ?? globalThis.fetch.bind(globalThis), [props.runtimeFetch]);
   const subscribeRunEvents = props.subscribeRunEvents ?? defaultSubscribeRunEvents;
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
   const [treeLoadError, setTreeLoadError] = useState<string>();
@@ -70,6 +70,7 @@ export function App(props: AppProps = {}) {
   const fileRevisionByPathRef = useRef<Record<string, number>>({});
   const savingFilePathsRef = useRef(new Set<string>());
   const connectionConfigRef = useRef<ConnectionConfig | null>(null);
+  const connectionConfigVersionRef = useRef(0);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
 
   const runtimeClient = useMemo(
@@ -87,6 +88,8 @@ export function App(props: AppProps = {}) {
   );
 
   useEffect(() => {
+    mountedRef.current = true;
+
     return () => {
       mountedRef.current = false;
       sseAbortControllerRef.current?.abort();
@@ -103,14 +106,15 @@ export function App(props: AppProps = {}) {
 
   useEffect(() => {
     let canceled = false;
+    const loadVersion = connectionConfigVersionRef.current;
 
     hostBridge
       .readConnectionConfig()
       .then(config => {
-        if (!canceled) setConnectionConfig(config);
+        if (!canceled && connectionConfigVersionRef.current === loadVersion) setConnectionConfig(config);
       })
       .catch(() => {
-        if (!canceled) setConnectionConfig(null);
+        if (!canceled && connectionConfigVersionRef.current === loadVersion) setConnectionConfig(null);
       });
 
     return () => {
@@ -155,11 +159,11 @@ export function App(props: AppProps = {}) {
     connectionService
       .check()
       .then(nextState => {
-        if (canceled || !mountedRef.current) return;
+        if (canceled) return;
         setConnectionState(nextState);
       })
       .catch(() => {
-        if (canceled || !mountedRef.current) return;
+        if (canceled) return;
         setConnectionState({ status: 'disconnected', message: 'Runtime 连接失败' });
       });
 
@@ -288,8 +292,13 @@ export function App(props: AppProps = {}) {
   }
 
   async function handleConnect(config: ConnectionConfig) {
+    connectionConfigVersionRef.current += 1;
     setConnectionConfig(config);
     await hostBridge.writeConnectionConfig(config);
+  }
+
+  function handleConnectionEdit() {
+    connectionConfigVersionRef.current += 1;
   }
 
   function submitPrompt(prompt: string) {
@@ -395,6 +404,7 @@ export function App(props: AppProps = {}) {
       ...config,
       runId,
       fromSeq: 0,
+      fetchImpl: runtimeFetch,
       signal: abortController.signal,
       onEvent(event) {
         if (!mountedRef.current) return;
@@ -481,6 +491,7 @@ export function App(props: AppProps = {}) {
             codexStatus={connectionState.status === 'connected' ? connectionState.codexStatus : undefined}
             initialConfig={connectionConfig}
             message={connectionState.status === 'connected' ? undefined : connectionState.message}
+            onEdit={handleConnectionEdit}
             onConnect={handleConnect}
           />
           <ThreadList threads={[]} selectedThreadId={state.selectedThreadId} onSelect={() => {}} onNewThread={() => {}} />

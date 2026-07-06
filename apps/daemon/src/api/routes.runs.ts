@@ -117,6 +117,9 @@ export async function registerRunRoutes(
     }
 
     const afterSeq = getReplayAfterSeq(request.headers['last-event-id'], request.query);
+    for (const [header, value] of Object.entries(reply.getHeaders())) {
+      if (value !== undefined) reply.raw.setHeader(header, value);
+    }
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { userEvent } from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentEventEnvelope, AgentEventPayload, CodexStatusResponse, RunDiagnosticsResponse } from '@clawee/protocol';
 import { App } from './App.js';
 import type { HostBridge } from '../host/bridge.js';
@@ -26,6 +26,10 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 describe('App', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('records a submitted prompt in the timeline with a mock change card for the current file', async () => {
     const user = userEvent.setup();
     const filePath = 'docs/design/enterprise-agent-workbench.md';
@@ -65,6 +69,8 @@ describe('App', () => {
     const codexStatus = createCodexStatusResponse();
     const treeNodes: FileTreeNode[] = [{ type: 'file', name: 'enterprise-agent-workbench.md', path: filePath, depth: 0 }];
     const hostBridge = createHostBridge();
+    const connectionRead = createDeferred<null>();
+    hostBridge.readConnectionConfig = () => connectionRead.promise;
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -75,7 +81,9 @@ describe('App', () => {
       if (url.endsWith('/runs/run_1/diagnostics')) return jsonResponse(createRunDiagnosticsResponse(codexStatus));
       throw new Error(`Unexpected request ${url}`);
     };
+    let sseFetchImpl: SubscribeRunEventsInput['fetchImpl'];
     const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      sseFetchImpl = input.fetchImpl;
       input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 1));
       input.onEvent(
         createRuntimeEvent('assistant_message', {
@@ -100,16 +108,19 @@ describe('App', () => {
     };
 
     render(
-      <App
-        fileService={fileService}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={subscribeRunEvents}
-      />
+      <StrictMode>
+        <App
+          fileService={fileService}
+          hostBridge={hostBridge}
+          runtimeFetch={runtimeFetch}
+          subscribeRunEvents={subscribeRunEvents}
+        />
+      </StrictMode>
     );
 
     await user.type(screen.getByRole('textbox', { name: 'Runtime 地址' }), 'http://127.0.0.1:60764');
     await user.type(screen.getByLabelText('Runtime Token'), 'runtime-token');
+    connectionRead.resolve(null);
     await user.click(screen.getByRole('button', { name: '连接 Runtime' }));
 
     expect(await screen.findByText('已连接 codex-cli test')).toBeInTheDocument();
@@ -125,6 +136,7 @@ describe('App', () => {
     expect(await screen.findByText('OK')).toBeInTheDocument();
     expect(await screen.findByText('succeeded')).toBeInTheDocument();
     expect(JSON.parse(String(fetchCalls.find(call => call.url.endsWith('/runs'))?.init?.body))).toEqual({ prompt });
+    expect(sseFetchImpl).toBe(runtimeFetch);
 
     const runDetailButtons = screen.getAllByRole('button', { name: '查看 Run 详情' });
     const runDetailButton = runDetailButtons[0];
@@ -136,6 +148,98 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'enterprise-agent-workbench.md' }));
     expect(await screen.findByRole('textbox', { name: `${filePath} 编辑器` })).toBeInTheDocument();
+  });
+
+  it('uses the browser fetch binding when no runtime fetch is injected', async () => {
+    const user = userEvent.setup();
+    const codexStatus = createCodexStatusResponse();
+    const filePath = 'docs/design/enterprise-agent-workbench.md';
+    const hostBridge = createHostBridge();
+    const fetchCalls: string[] = [];
+    vi.stubGlobal('fetch', (async function fetchMock(this: typeof globalThis, input: RequestInfo | URL) {
+      if (this !== globalThis) throw new Error('fetch was called without its global binding');
+      const url = String(input);
+      fetchCalls.push(url);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(codexStatus);
+      throw new Error(`Unexpected request ${url}`);
+    }) as typeof fetch);
+    const fileService = {
+      async listTree() {
+        return [{ type: 'file', name: 'enterprise-agent-workbench.md', path: filePath, depth: 0 }] satisfies FileTreeNode[];
+      },
+      async openFile(path: string) {
+        return createWorkspaceFile(path, '# Workbench');
+      },
+      async saveFile(path: string, content: string) {
+        return createWorkspaceFile(path, content);
+      }
+    };
+
+    render(<App fileService={fileService} hostBridge={hostBridge} subscribeRunEvents={async () => undefined} />);
+
+    await user.type(screen.getByRole('textbox', { name: 'Runtime 地址' }), 'http://127.0.0.1:60764');
+    await user.type(screen.getByLabelText('Runtime Token'), 'runtime-token');
+    await user.click(screen.getByRole('button', { name: '连接 Runtime' }));
+
+    expect(await screen.findByText('已连接 codex-cli test')).toBeInTheDocument();
+    expect(fetchCalls).toEqual(['http://127.0.0.1:60764/healthz', 'http://127.0.0.1:60764/codex/status']);
+  });
+
+  it('does not activate a stale saved runtime config after the user starts editing', async () => {
+    const user = userEvent.setup();
+    const filePath = 'docs/design/enterprise-agent-workbench.md';
+    const hostBridge = createHostBridge();
+    const connectionRead = createDeferred<{ baseUrl: string; token: string }>();
+    hostBridge.readConnectionConfig = () => connectionRead.promise;
+    const fetchUrls: string[] = [];
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      fetchUrls.push(url);
+      if (url.startsWith('http://old-runtime.test')) {
+        throw new Error(`stale config should not be activated: ${url}`);
+      }
+      if (url === 'http://new-runtime.test/healthz') return jsonResponse({ ok: true });
+      if (url === 'http://new-runtime.test/codex/status') return jsonResponse(createCodexStatusResponse());
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const fileService = {
+      async listTree() {
+        return [{ type: 'file', name: 'enterprise-agent-workbench.md', path: filePath, depth: 0 }] satisfies FileTreeNode[];
+      },
+      async openFile(path: string) {
+        return createWorkspaceFile(path, '# Workbench');
+      },
+      async saveFile(path: string, content: string) {
+        return createWorkspaceFile(path, content);
+      }
+    };
+
+    render(
+      <App
+        fileService={fileService}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch as typeof fetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await user.type(screen.getByRole('textbox', { name: 'Runtime 地址' }), 'http://new-runtime.test');
+    await user.type(screen.getByLabelText('Runtime Token'), 'new-token');
+
+    await act(async () => {
+      connectionRead.resolve({ baseUrl: 'http://old-runtime.test', token: 'old-token' });
+      await connectionRead.promise;
+    });
+
+    expect(screen.getByRole('textbox', { name: 'Runtime 地址' })).toHaveValue('http://new-runtime.test');
+    expect(screen.getByLabelText('Runtime Token')).toHaveValue('new-token');
+
+    await user.click(screen.getByRole('button', { name: '连接 Runtime' }));
+
+    expect(await screen.findByText('已连接 codex-cli test')).toBeInTheDocument();
+    expect(hostBridge.savedConnection).toEqual({ baseUrl: 'http://new-runtime.test', token: 'new-token' });
+    expect(fetchUrls).toEqual(['http://new-runtime.test/healthz', 'http://new-runtime.test/codex/status']);
   });
 
   it('preserves edits made during a pending save when switching away and back', async () => {

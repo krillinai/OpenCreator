@@ -1776,6 +1776,48 @@ describe('runtime api', () => {
     expect(events.body).toContain('event: done');
   });
 
+  it('includes web app CORS headers on SSE event responses', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'hello' } },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const created = await authPost('/runs', {
+      prompt: 'hello',
+      cwd: tempDir,
+      sandbox: 'read-only'
+    });
+    expect(created.statusCode).toBe(202);
+    const run = created.json() as { id: string };
+
+    await waitForRunStatus(run.id, 'succeeded');
+
+    const events = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events`,
+      headers: {
+        authorization: 'Bearer secret',
+        origin: 'http://127.0.0.1:5173'
+      }
+    });
+
+    expect(events.statusCode).toBe(200);
+    expect(events.headers['content-type']).toContain('text/event-stream');
+    expect(events.headers.vary).toBe('Origin');
+    expect(events.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5173');
+    expect(events.body).toContain('event: done');
+  });
+
   it('rejects invalid run request bodies without server errors', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
