@@ -20,6 +20,10 @@ export type FileTreeNode = {
   language?: WorkspaceFile['language'];
 };
 
+export type MockFileServiceOptions = {
+  databaseName?: string;
+};
+
 const seedFiles: WorkspaceFile[] = [
   {
     path: 'docs/design/enterprise-agent-workbench.md',
@@ -63,16 +67,16 @@ const seedFiles: WorkspaceFile[] = [
   }
 ];
 
-export function createMockFileService() {
-  const store = createIndexedDbStore();
+export function createMockFileService(options: MockFileServiceOptions = {}) {
+  const store = createIndexedDbStore(options.databaseName);
 
   async function openFile(path: string): Promise<WorkspaceFile> {
     const stored = await store.getFile(path);
-    const seed = seedFiles.find(file => file.path === path) ?? seedFiles[0]!;
+    const seed = seedFiles.find(file => file.path === path);
     if (stored !== undefined) {
-      return { ...seed, content: stored.content, updatedAt: stored.updatedAt, dirty: false, saved: true };
+      return { ...(seed ?? createEmptyFile(path)), content: stored.content, updatedAt: stored.updatedAt, dirty: false, saved: true };
     }
-    return seed;
+    return seed ?? createEmptyFile(path);
   }
 
   return {
@@ -102,4 +106,30 @@ export function createMockFileService() {
       return openFile(path);
     }
   };
+}
+
+function createEmptyFile(path: string): WorkspaceFile {
+  return {
+    path,
+    name: basename(path),
+    language: inferLanguage(path),
+    content: '',
+    saved: false,
+    dirty: false,
+    updatedAt: new Date(0).toISOString(),
+    source: 'mock'
+  };
+}
+
+function basename(path: string) {
+  return path.split('/').filter(Boolean).at(-1) ?? path;
+}
+
+function inferLanguage(path: string): WorkspaceFile['language'] {
+  if (path.endsWith('.md')) return 'markdown';
+  if (path.endsWith('.srt')) return 'srt';
+  if (path.endsWith('.html')) return 'html';
+  if (path.endsWith('.json')) return 'json';
+  if (path.endsWith('.txt')) return 'text';
+  return 'unknown';
 }
