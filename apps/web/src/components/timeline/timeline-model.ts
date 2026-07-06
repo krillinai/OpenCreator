@@ -104,7 +104,8 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         content: safeStringify(event.payload),
         source: 'runtime'
       };
-    default:
+    case 'usage':
+    case 'unknown_event':
       return {
         kind: 'run_status',
         id: event.id,
@@ -112,5 +113,9 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         content: safeStringify(event.payload),
         source: 'runtime'
       };
+    default: {
+      const _exhaustive: never = event;
+      return _exhaustive;
+    }
   }
 }

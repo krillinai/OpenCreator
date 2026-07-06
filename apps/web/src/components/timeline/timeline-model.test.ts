@@ -165,7 +165,7 @@ describe('timeline model', () => {
     });
   });
 
-  it('keeps fallback payload details visible for events without dedicated timeline variants', () => {
+  it('maps usage events with the complete payload summary', () => {
     const event: AgentEventEnvelope = {
       id: 'evt_usage',
       runId: 'run_1',
@@ -188,16 +188,38 @@ describe('timeline model', () => {
     });
   });
 
-  it('serializes circular fallback payloads without throwing', () => {
+  it('maps unknown_event events with the complete payload summary', () => {
+    const event: AgentEventEnvelope = {
+      id: 'evt_unknown',
+      runId: 'run_1',
+      seq: 9,
+      ts: '2026-07-06T00:00:00.000Z',
+      type: 'unknown_event',
+      payload: {
+        type: 'unknown_event',
+        rawEventId: 'raw_1',
+        codexType: 'session_configured'
+      },
+      normalizerVersion: 1
+    };
+
+    expect(eventToTimelineItem(event)).toMatchObject({
+      kind: 'run_status',
+      label: 'unknown_event',
+      content: '{"type":"unknown_event","rawEventId":"raw_1","codexType":"session_configured"}'
+    });
+  });
+
+  it('serializes circular unknown_event payloads without throwing', () => {
     const payload: Record<string, unknown> = {
       type: 'unknown_event',
-      rawEventId: 'raw_1'
+      rawEventId: 'raw_2'
     };
     payload.self = payload;
     const event = {
       id: 'evt_circular',
       runId: 'run_1',
-      seq: 9,
+      seq: 10,
       ts: '2026-07-06T00:00:00.000Z',
       type: 'unknown_event',
       payload,
@@ -207,20 +229,20 @@ describe('timeline model', () => {
     expect(eventToTimelineItem(event)).toMatchObject({
       kind: 'run_status',
       label: 'unknown_event',
-      content: '{"type":"unknown_event","rawEventId":"raw_1","self":"[Circular]"}'
+      content: '{"type":"unknown_event","rawEventId":"raw_2","self":"[Circular]"}'
     });
   });
 
-  it('serializes BigInt fallback payload fields as strings', () => {
+  it('serializes BigInt unknown_event payload fields as strings', () => {
     const event = {
       id: 'evt_bigint',
       runId: 'run_1',
-      seq: 10,
+      seq: 11,
       ts: '2026-07-06T00:00:00.000Z',
       type: 'unknown_event',
       payload: {
         type: 'unknown_event',
-        rawEventId: 'raw_2',
+        rawEventId: 'raw_3',
         tokenCount: 123n
       },
       normalizerVersion: 1
@@ -229,7 +251,7 @@ describe('timeline model', () => {
     expect(eventToTimelineItem(event)).toMatchObject({
       kind: 'run_status',
       label: 'unknown_event',
-      content: '{"type":"unknown_event","rawEventId":"raw_2","tokenCount":"123"}'
+      content: '{"type":"unknown_event","rawEventId":"raw_3","tokenCount":"123"}'
     });
   });
 });
