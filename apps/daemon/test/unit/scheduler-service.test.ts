@@ -211,6 +211,83 @@ describe('scheduler service', () => {
     });
   });
 
+  it('continues pending processing and clears failed pending trigger', () => {
+    const { repository, runManager, service } = createFixtureWithTimers('2026-07-06T00:00:00.000Z');
+    const first = service.createSchedule({
+      name: 'first queued status',
+      cron: '0 9 * * *',
+      prompt: 'First pending run',
+      concurrencyPolicy: 'queue'
+    });
+    const second = service.createSchedule({
+      name: 'second queued status',
+      cron: '0 9 * * *',
+      prompt: 'Second pending run',
+      concurrencyPolicy: 'queue'
+    });
+    repository.setPendingTrigger(first.id, true);
+    repository.setPendingTrigger(second.id, true);
+    runManager.startRun.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+
+    expect(() => service.processPendingTriggersForTest?.()).not.toThrow();
+
+    expect(runManager.startRun).toHaveBeenCalledTimes(2);
+    expect(service.getSchedule(first.id)).toMatchObject({
+      pendingTrigger: false,
+      lastStatus: 'failed'
+    });
+    expect(service.listOperations(first.id).operations[0]).toMatchObject({
+      operation: 'run_queued',
+      status: 'failed',
+      errorCode: 'INTERNAL_ERROR',
+      errorMessage: 'boom'
+    });
+    expect(service.getSchedule(second.id)).toMatchObject({
+      pendingTrigger: false,
+      lastStatus: 'running',
+      lastRunId: 'run_0'
+    });
+    expect(service.listOperations(second.id).operations[0]).toMatchObject({
+      operation: 'run_queued',
+      status: 'succeeded'
+    });
+  });
+
+  it('start schedules queue timer for existing pending triggers', () => {
+    const { repository, service, timers } = createFixtureWithTimers('2026-07-06T00:00:00.000Z');
+    const schedule = service.createSchedule({
+      name: 'queued status',
+      cron: '0 9 * * *',
+      prompt: 'Pending run',
+      concurrencyPolicy: 'queue'
+    });
+    repository.setPendingTrigger(schedule.id, true);
+
+    service.start();
+
+    expect(timers.some(timer => timer.ms === 5_000)).toBe(true);
+  });
+
+  it('stop clears queue timer', () => {
+    const { repository, service, timers, cleared } = createFixtureWithTimers('2026-07-06T00:00:00.000Z');
+    const schedule = service.createSchedule({
+      name: 'queued status',
+      cron: '0 9 * * *',
+      prompt: 'Pending run',
+      concurrencyPolicy: 'queue'
+    });
+    repository.setPendingTrigger(schedule.id, true);
+    service.start();
+    const queueTimer = timers.find(timer => timer.ms === 5_000);
+
+    service.stop();
+
+    expect(queueTimer).toBeDefined();
+    expect(cleared).toContain(queueTimer?.handle);
+  });
+
   it('allows parallel policy to create overlapping runs', () => {
     const { runManager, service } = createFixture();
     const schedule = service.createSchedule({

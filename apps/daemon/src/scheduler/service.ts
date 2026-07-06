@@ -260,11 +260,31 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     try {
       for (const schedule of options.repository.listPendingTriggers()) {
         if (options.repository.hasActiveRunForSource('schedule', schedule.id)) continue;
-        handleTrigger(schedule, 'run_queued', clock.now().toISOString());
+        try {
+          handleTrigger(schedule, 'run_queued', clock.now().toISOString());
+        } catch (error) {
+          recordQueuedTriggerFailure(schedule, error);
+        }
       }
     } finally {
       refreshQueueTimerIfStarted();
     }
+  }
+
+  function recordQueuedTriggerFailure(schedule: ScheduleRecord, error: unknown): void {
+    const pending = options.repository.setPendingTrigger(schedule.id, false);
+    if (pending === null) throw notFound();
+    const failed = options.repository.recordSkipped({ id: schedule.id, status: 'failed' });
+    if (failed === null) throw notFound();
+    if (error instanceof SchedulerError && error.code === 'INTERNAL_ERROR') return;
+
+    options.repository.insertOperation({
+      scheduleId: schedule.id,
+      operation: 'run_queued',
+      status: 'failed',
+      errorCode: 'INTERNAL_ERROR',
+      errorMessage: formatError(error)
+    });
   }
 
   const service: SchedulerService = {
