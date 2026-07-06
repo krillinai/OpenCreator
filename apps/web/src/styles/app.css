@@ -110,7 +110,7 @@ select {
   overflow: hidden;
 }
 
-.timeline-list {
+.timeline-shell .timeline-list {
   height: auto;
   min-height: 0;
   overflow: auto;
