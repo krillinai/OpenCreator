@@ -1,5 +1,10 @@
 import type { TimelineItem } from './timeline-model.js';
 
+function canOpenRunDetail(item: TimelineItem): item is TimelineItem & { runId: string } {
+  if (!('runId' in item)) return false;
+  return item.source === 'runtime' && typeof item.runId === 'string' && item.runId.length > 0;
+}
+
 function renderTimelineItemContent(item: TimelineItem) {
   switch (item.kind) {
     case 'user_message':
@@ -55,7 +60,7 @@ function renderTimelineItemContent(item: TimelineItem) {
   }
 }
 
-export function Timeline(props: { items: TimelineItem[] }) {
+export function Timeline(props: { items: TimelineItem[]; onOpenRunDetail?(runId: string): void }) {
   return (
     <div className="panel-scroll timeline-list">
       {props.items.length === 0 ? (
@@ -65,6 +70,11 @@ export function Timeline(props: { items: TimelineItem[] }) {
           <article key={item.id} className={`timeline-item timeline-${item.kind}`}>
             <strong>{item.kind}</strong>
             {renderTimelineItemContent(item)}
+            {props.onOpenRunDetail && canOpenRunDetail(item) ? (
+              <button type="button" className="inline-action" onClick={() => props.onOpenRunDetail?.(item.runId)}>
+                查看 Run 详情
+              </button>
+            ) : null}
           </article>
         ))
       )}

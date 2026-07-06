@@ -2,7 +2,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import type { AgentEventEnvelope, AgentEventPayload, CodexStatusResponse, RunDiagnosticsResponse } from '@clawee/protocol';
 import { App } from './App.js';
+import type { HostBridge } from '../host/bridge.js';
+import type { SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 
 type Deferred<T> = {
@@ -53,6 +56,86 @@ describe('App', () => {
     expect(screen.getByText('当前未连接 Runtime，已在 mock workspace 中记录本次任务。')).toBeInTheDocument();
     expect(screen.getByText('根据本次输入生成 mock 文件变更')).toBeInTheDocument();
     expect(screen.getByText(`${filePath} +1 -0`)).toBeInTheDocument();
+  });
+
+  it('connects to a real runtime config and records run events from SSE', async () => {
+    const user = userEvent.setup();
+    const filePath = 'docs/design/enterprise-agent-workbench.md';
+    const prompt = 'Reply with OK only.';
+    const codexStatus = createCodexStatusResponse();
+    const treeNodes: FileTreeNode[] = [{ type: 'file', name: 'enterprise-agent-workbench.md', path: filePath, depth: 0 }];
+    const hostBridge = createHostBridge();
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(codexStatus);
+      if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', status: 'queued' }, { status: 202 });
+      if (url.endsWith('/runs/run_1/diagnostics')) return jsonResponse(createRunDiagnosticsResponse(codexStatus));
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 1));
+      input.onEvent(
+        createRuntimeEvent('assistant_message', {
+          type: 'assistant_message',
+          text: 'OK',
+          format: 'plain_text',
+          delivery: 'message'
+        }, 2)
+      );
+      input.onEvent(createRuntimeEvent('done', { type: 'done', status: 'succeeded', terminationReason: 'completed' }, 3));
+    };
+    const fileService = {
+      async listTree() {
+        return treeNodes;
+      },
+      async openFile(path: string) {
+        return createWorkspaceFile(path, '# Workbench');
+      },
+      async saveFile(path: string, content: string) {
+        return createWorkspaceFile(path, content);
+      }
+    };
+
+    render(
+      <App
+        fileService={fileService}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    await user.type(screen.getByRole('textbox', { name: 'Runtime 地址' }), 'http://127.0.0.1:60764');
+    await user.type(screen.getByLabelText('Runtime Token'), 'runtime-token');
+    await user.click(screen.getByRole('button', { name: '连接 Runtime' }));
+
+    expect(await screen.findByText('已连接 codex-cli test')).toBeInTheDocument();
+    expect(hostBridge.savedConnection).toEqual({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+
+    await screen.findByRole('textbox', { name: `${filePath} 编辑器` });
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(await screen.findByText(prompt)).toBeInTheDocument();
+    expect(await screen.findByText('queued')).toBeInTheDocument();
+    expect(await screen.findByText('running')).toBeInTheDocument();
+    expect(await screen.findByText('OK')).toBeInTheDocument();
+    expect(await screen.findByText('succeeded')).toBeInTheDocument();
+    expect(JSON.parse(String(fetchCalls.find(call => call.url.endsWith('/runs'))?.init?.body))).toEqual({ prompt });
+
+    const runDetailButtons = screen.getAllByRole('button', { name: '查看 Run 详情' });
+    const runDetailButton = runDetailButtons[0];
+    if (runDetailButton === undefined) throw new Error('Expected a run detail button');
+    await user.click(runDetailButton);
+
+    expect(await screen.findByText('Run run_1')).toBeInTheDocument();
+    expect(await screen.findByText('codex-cli test')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'enterprise-agent-workbench.md' }));
+    expect(await screen.findByRole('textbox', { name: `${filePath} 编辑器` })).toBeInTheDocument();
   });
 
   it('preserves edits made during a pending save when switching away and back', async () => {
@@ -426,4 +509,71 @@ function createWorkspaceFile(path: string, content: string): WorkspaceFile {
     updatedAt: new Date(0).toISOString(),
     source: 'mock'
   };
+}
+
+function createHostBridge(): HostBridge & { savedConnection?: { baseUrl: string; token: string } } {
+  return {
+    kind: 'browser',
+    savedConnection: undefined,
+    async readConnectionConfig() {
+      return null;
+    },
+    async writeConnectionConfig(config) {
+      this.savedConnection = config;
+    },
+    async openExternal() {
+      return;
+    },
+    async revealPath() {
+      return { ok: false, code: 'UNSUPPORTED', message: 'unsupported in test' };
+    },
+    async notify() {
+      return;
+    }
+  };
+}
+
+function jsonResponse(value: unknown, init: ResponseInit = {}): Response {
+  return new Response(JSON.stringify(value), {
+    status: init.status ?? 200,
+    headers: { 'Content-Type': 'application/json', ...init.headers }
+  });
+}
+
+function createCodexStatusResponse(): CodexStatusResponse {
+  return {
+    codexBin: 'codex',
+    codexVersion: 'codex-cli test',
+    codexHome: '/Users/test/.codex',
+    codexHomeMode: 'global',
+    codexHomeSource: 'default',
+    codexHomeWritable: true,
+    capabilities: {},
+    diagnostics: []
+  };
+}
+
+function createRunDiagnosticsResponse(codexStatus: CodexStatusResponse): RunDiagnosticsResponse {
+  return {
+    runId: 'run_1',
+    files: [],
+    codexStatusSnapshot: codexStatus,
+    warnings: []
+  };
+}
+
+function createRuntimeEvent<Type extends AgentEventEnvelope['type']>(
+  type: Type,
+  payload: Extract<AgentEventPayload, { type: Type }>,
+  seq: number
+): AgentEventEnvelope {
+  return {
+    id: `event_${seq}`,
+    runId: 'run_1',
+    seq,
+    ts: new Date(0).toISOString(),
+    type,
+    payload,
+    normalizerVersion: 1
+  } as AgentEventEnvelope;
 }

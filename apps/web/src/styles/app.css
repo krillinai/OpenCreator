@@ -55,6 +55,53 @@ select {
   overflow: auto;
 }
 
+.connection-panel {
+  border-bottom: 1px solid var(--border);
+}
+
+.connection-form {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.connection-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.connection-form input {
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.connection-form p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.connection-form button,
+.inline-action {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+}
+
+.connection-form button:disabled {
+  color: var(--muted);
+}
+
 .sidebar-stack,
 .thread-list {
   display: grid;
@@ -138,6 +185,11 @@ select {
   border-radius: 6px;
   background: var(--bg);
   color: var(--text);
+}
+
+.inline-action {
+  justify-self: start;
+  padding: 0 10px;
 }
 
 .composer {
