@@ -61,15 +61,18 @@ export async function registerScheduleRoutes(
     }
   });
 
-  server.get<{ Params: { id: string } }>('/schedules/:id/operations', async (request, reply) => {
-    const limit = parseLimitQuery(request.query);
+  server.get<{ Params: { id: string }; Querystring: { limit?: string } }>(
+    '/schedules/:id/operations',
+    async (request, reply) => {
+      const limit = parseLimitQuery(request.query);
 
-    try {
-      return scheduler.listOperations(request.params.id, limit);
-    } catch (error) {
-      return sendSchedulerError(error, reply);
+      try {
+        return scheduler.listOperations(request.params.id, limit);
+      } catch (error) {
+        return sendSchedulerError(error, reply);
+      }
     }
-  });
+  );
 }
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
@@ -108,10 +111,10 @@ function sendSchedulerError(error: unknown, reply: FastifyReply) {
     return reply.code(422).send(apiError(error.code, error.message));
   }
   if (error.code === 'INTERNAL_ERROR') {
-    return reply.code(500).send(apiError(error.code, error.message));
+    return reply.code(500).send(apiError(error.code, 'Internal error'));
   }
 
-  return reply.code(500).send(apiError('INTERNAL_ERROR', `Unhandled scheduler error: ${error.code}`));
+  return reply.code(500).send(apiError('INTERNAL_ERROR', 'Internal error'));
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -74,15 +74,14 @@ export async function buildServer(input: BuildServerInput) {
       resumeCapabilityVerified,
       profileValidator: profileManager
     });
-  const scheduleRepository = new ScheduleRepository(db);
   const scheduler =
     input.scheduler ??
     createSchedulerService({
-      repository: scheduleRepository,
+      repository: new ScheduleRepository(db),
       runManager,
       defaultCwd: process.cwd(),
       profileValidator: profileManager,
-      autostart: input.schedulerAutostart ?? true
+      autostart: input.schedulerAutostart ?? false
     });
 
   server.setErrorHandler((error, _request, reply) => {

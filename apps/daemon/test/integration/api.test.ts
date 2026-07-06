@@ -17,6 +17,7 @@ import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
+import { SchedulerError, type SchedulerService } from '../../src/scheduler/service.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 
@@ -143,6 +144,49 @@ describe('runtime api', () => {
     const missing = await authGet('/schedules/sch_missing');
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error.code).toBe('SCHEDULE_NOT_FOUND');
+  });
+
+  it('maps scheduler internal errors without leaking details', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const scheduler = createFakeScheduler({
+      runNow() {
+        throw new SchedulerError('INTERNAL_ERROR', 'secret path /tmp/foo');
+      }
+    });
+    server = await buildServer({ token: 'secret', dataDir: tempDir, scheduler });
+
+    const response = await authPost('/schedules/sch_1/run-now', {});
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Internal error'
+      }
+    });
+    expect(response.body).not.toContain('secret');
+    expect(response.body).not.toContain('/tmp/foo');
+  });
+
+  it('keeps injected scheduler stopped by default and stops it on close', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    let startCount = 0;
+    let stopCount = 0;
+    const scheduler = createFakeScheduler({
+      start() {
+        startCount += 1;
+      },
+      stop() {
+        stopCount += 1;
+      }
+    });
+
+    server = await buildServer({ token: 'secret', dataDir: tempDir, scheduler });
+
+    expect(startCount).toBe(0);
+    await server.close();
+    server = undefined;
+    expect(stopCount).toBe(1);
   });
 
   it('returns health without auth', async () => {
@@ -2162,6 +2206,36 @@ function authGet(url: string) {
     url,
     headers: { authorization: 'Bearer secret' }
   });
+}
+
+function createFakeScheduler(overrides: Partial<SchedulerService> = {}): SchedulerService {
+  return {
+    createSchedule() {
+      throw new Error('unexpected createSchedule');
+    },
+    listSchedules() {
+      return { schedules: [] };
+    },
+    getSchedule() {
+      return undefined;
+    },
+    updateSchedule() {
+      throw new Error('unexpected updateSchedule');
+    },
+    deleteSchedule() {
+      throw new Error('unexpected deleteSchedule');
+    },
+    runNow() {
+      throw new Error('unexpected runNow');
+    },
+    listOperations() {
+      return { operations: [] };
+    },
+    start() {},
+    stop() {},
+    refreshTimer() {},
+    ...overrides
+  };
 }
 
 function createFakeMcpCodex(dir: string): { bin: string; readCommands: () => string[] } {
