@@ -25,4 +25,27 @@ describe('FileEditor', () => {
 
     expect(onSave).toHaveBeenCalledTimes(1);
   });
+
+  it('disables local draft save while saving', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+
+    render(
+      <FileEditor
+        path="docs/design/enterprise-agent-workbench.md"
+        content="# Workbench"
+        dirty={true}
+        saving={true}
+        onChange={vi.fn()}
+        onSave={onSave}
+      />
+    );
+
+    const saveButton = screen.getByRole('button', { name: '保存到本地草稿' });
+    expect(saveButton).toBeDisabled();
+
+    await user.click(saveButton);
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
 });

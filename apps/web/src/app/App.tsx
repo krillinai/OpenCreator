@@ -9,8 +9,10 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { initialAppState, reduceAppState } from './app-state.js';
 
+type AppFileService = Pick<ReturnType<typeof createMockFileService>, 'listTree' | 'openFile' | 'saveFile'>;
+
 export type AppProps = {
-  fileService?: ReturnType<typeof createMockFileService>;
+  fileService?: AppFileService;
 };
 
 export function App(props: AppProps = {}) {
@@ -21,9 +23,11 @@ export function App(props: AppProps = {}) {
   const [currentFile, setCurrentFile] = useState<WorkspaceFile>();
   const [editorContent, setEditorContent] = useState('');
   const [loadingFile, setLoadingFile] = useState(true);
+  const [savingFilePaths, setSavingFilePaths] = useState<Set<string>>(() => new Set());
   const mountedRef = useRef(true);
   const selectedFilePathRef = useRef(state.selectedFilePath);
   const editorContentRef = useRef(editorContent);
+  const savingFilePathsRef = useRef(new Set<string>());
 
   useEffect(() => {
     return () => {
@@ -65,24 +69,48 @@ export function App(props: AppProps = {}) {
   }, [fileService, state.selectedFilePath]);
 
   const dirty = currentFile !== undefined && editorContent !== currentFile.content;
+  const savingCurrentFile = currentFile !== undefined && savingFilePaths.has(currentFile.path);
 
   function handleEditorContentChange(content: string) {
     editorContentRef.current = content;
     setEditorContent(content);
   }
 
+  function setFileSaving(path: string, saving: boolean) {
+    const nextSavingPaths = new Set(savingFilePathsRef.current);
+    if (saving) {
+      nextSavingPaths.add(path);
+    } else {
+      nextSavingPaths.delete(path);
+    }
+
+    savingFilePathsRef.current = nextSavingPaths;
+    setSavingFilePaths(nextSavingPaths);
+  }
+
   async function saveCurrentFile() {
     if (currentFile === undefined) return;
+    if (savingFilePathsRef.current.has(currentFile.path)) return;
 
     const saveSnapshot = { path: currentFile.path, content: editorContentRef.current };
-    const savedFile = await fileService.saveFile(saveSnapshot.path, saveSnapshot.content);
+    setFileSaving(saveSnapshot.path, true);
 
-    if (!mountedRef.current || selectedFilePathRef.current !== saveSnapshot.path) return;
+    try {
+      const savedFile = await fileService.saveFile(saveSnapshot.path, saveSnapshot.content);
 
-    setCurrentFile(savedFile);
-    if (editorContentRef.current === saveSnapshot.content) {
-      editorContentRef.current = savedFile.content;
-      setEditorContent(savedFile.content);
+      if (!mountedRef.current || selectedFilePathRef.current !== saveSnapshot.path) return;
+
+      setCurrentFile(savedFile);
+      if (editorContentRef.current === saveSnapshot.content) {
+        editorContentRef.current = savedFile.content;
+        setEditorContent(savedFile.content);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setFileSaving(saveSnapshot.path, false);
+      } else {
+        savingFilePathsRef.current.delete(saveSnapshot.path);
+      }
     }
   }
 
@@ -108,6 +136,7 @@ export function App(props: AppProps = {}) {
             path={currentFile.path}
             content={editorContent}
             dirty={dirty}
+            saving={savingCurrentFile}
             onChange={handleEditorContentChange}
             onSave={saveCurrentFile}
           />
