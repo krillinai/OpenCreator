@@ -1,6 +1,6 @@
 import type { SmokeCommandResult } from '../../src/codex/smoke.js';
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { buildServer } from '../../src/api/server.js';
@@ -8,6 +8,7 @@ import { runRealCodexResumeSmoke, runSmokeCommand } from '../../src/codex/smoke.
 
 const runRealCodex = process.env.CLAWEE_RUN_REAL_CODEX_SMOKE === '1';
 const fixtureDir = join(process.cwd(), 'test', 'fixtures', 'real-codex', 'generated');
+const SCHEDULER_SMOKE_MARKER = 'R6_SCHEDULER_SMOKE_MARKER';
 
 describe.runIf(runRealCodex)('real codex smoke', () => {
   it('captures codex version', () => {
@@ -251,6 +252,8 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
       token: 'secret',
       dataDir,
       codexBin: 'codex',
+      // R6 verifies the production pass-through path against the user's real Codex home.
+      // The smoke only creates Runtime data/workspace and runs Codex in read-only sandbox.
       schedulerAutostart: false
     });
 
@@ -263,7 +266,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
           name: 'real codex scheduler smoke',
           cron: '0 9 * * *',
           timezone: 'UTC',
-          prompt: 'Automated Runtime scheduler smoke. Do not run tools and do not modify files. Reply with R6_SCHEDULER_SMOKE_MARKER only.',
+          prompt: `Automated Runtime scheduler smoke. Do not run tools and do not modify files. Reply with ${SCHEDULER_SMOKE_MARKER} only.`,
           cwd: workspace,
           sandbox: 'read-only',
           timeoutMs: 180_000
@@ -295,7 +298,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
       expect(runNow.statusCode).toBe(202);
 
       const runId = runNow.json<{ run: { id: string } | null }>().run?.id;
-      expect(runId).toEqual(expect.any(String));
+      if (runId === undefined) throw new Error('scheduler smoke did not create a run');
 
       await expect
         .poll(async () => {
@@ -318,18 +321,14 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
         url: `/schedules/${scheduleId}/operations`,
         headers: { authorization: 'Bearer secret' }
       });
-      const events = await server.inject({
-        method: 'GET',
-        url: `/runs/${runId}/events`,
-        headers: { authorization: 'Bearer secret' }
-      });
+      const events = readRunEventsFixture(dataDir, runId);
 
       const fixture = {
         created: responseFixture(created),
         runNow: responseFixture(runNow),
         finished: responseFixture(finished),
         operations: responseFixture(operations),
-        events: responseFixture(events)
+        events
       };
       writeSchedulerFixture('scheduler-run-now', fixture);
 
@@ -364,7 +363,9 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
           })
         ])
       );
-      expect(events.body).toContain('done');
+      expect(events.body).toContain(SCHEDULER_SMOKE_MARKER);
+      expect(events.eventTypes).toContain('assistant_message');
+      expect(events.eventTypes).toContain('done');
     } finally {
       await server.close();
       rmSync(dataDir, { recursive: true, force: true });
@@ -454,6 +455,19 @@ function responseFixture(response: {
     body = response.body;
   }
   return { statusCode: response.statusCode, body };
+}
+
+function readRunEventsFixture(
+  dataDir: string,
+  runId: string
+): { body: string; eventTypes: string[] } {
+  const body = readFileSync(join(dataDir, 'runs', runId, 'events.ndjson'), 'utf8');
+  const eventTypes = body
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map(line => (JSON.parse(line) as { type?: string }).type)
+    .filter((type): type is string => type !== undefined);
+  return { body, eventTypes };
 }
 
 function throwIfBlockedEnvironment(result: SmokeCommandResult): void {
