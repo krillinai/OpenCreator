@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
 import { FileEditor } from '../components/editor/FileEditor.js';
 import { FileTree } from '../components/editor/FileTree.js';
@@ -9,13 +9,31 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { initialAppState, reduceAppState } from './app-state.js';
 
-export function App() {
+export type AppProps = {
+  fileService?: ReturnType<typeof createMockFileService>;
+};
+
+export function App(props: AppProps = {}) {
   const [state, dispatch] = useReducer(reduceAppState, initialAppState);
-  const fileService = useMemo(() => createMockFileService(), []);
+  const defaultFileService = useMemo(() => createMockFileService(), []);
+  const fileService = props.fileService ?? defaultFileService;
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
   const [currentFile, setCurrentFile] = useState<WorkspaceFile>();
   const [editorContent, setEditorContent] = useState('');
   const [loadingFile, setLoadingFile] = useState(true);
+  const mountedRef = useRef(true);
+  const selectedFilePathRef = useRef(state.selectedFilePath);
+  const editorContentRef = useRef(editorContent);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    selectedFilePathRef.current = state.selectedFilePath;
+  }, [state.selectedFilePath]);
 
   useEffect(() => {
     let canceled = false;
@@ -36,6 +54,7 @@ export function App() {
     fileService.openFile(state.selectedFilePath).then(file => {
       if (canceled) return;
       setCurrentFile(file);
+      editorContentRef.current = file.content;
       setEditorContent(file.content);
       setLoadingFile(false);
     });
@@ -47,12 +66,24 @@ export function App() {
 
   const dirty = currentFile !== undefined && editorContent !== currentFile.content;
 
+  function handleEditorContentChange(content: string) {
+    editorContentRef.current = content;
+    setEditorContent(content);
+  }
+
   async function saveCurrentFile() {
     if (currentFile === undefined) return;
 
-    const savedFile = await fileService.saveFile(currentFile.path, editorContent);
+    const saveSnapshot = { path: currentFile.path, content: editorContentRef.current };
+    const savedFile = await fileService.saveFile(saveSnapshot.path, saveSnapshot.content);
+
+    if (!mountedRef.current || selectedFilePathRef.current !== saveSnapshot.path) return;
+
     setCurrentFile(savedFile);
-    setEditorContent(savedFile.content);
+    if (editorContentRef.current === saveSnapshot.content) {
+      editorContentRef.current = savedFile.content;
+      setEditorContent(savedFile.content);
+    }
   }
 
   return (
@@ -77,7 +108,7 @@ export function App() {
             path={currentFile.path}
             content={editorContent}
             dirty={dirty}
-            onChange={setEditorContent}
+            onChange={handleEditorContentChange}
             onSave={saveCurrentFile}
           />
         )
@@ -88,7 +119,10 @@ export function App() {
           <FileTree
             nodes={treeNodes}
             selectedPath={state.selectedFilePath}
-            onSelect={path => dispatch({ type: 'select_file', path })}
+            onSelect={path => {
+              selectedFilePathRef.current = path;
+              dispatch({ type: 'select_file', path });
+            }}
           />
         </>
       }
