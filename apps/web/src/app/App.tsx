@@ -7,10 +7,10 @@ export function App() {
   return (
     <WorkbenchLayout
       sidebar={
-        <>
+        <div className="sidebar-stack">
           <ConnectionPanel status="disconnected" />
           <ThreadList threads={[]} onSelect={() => {}} onNewThread={() => {}} />
-        </>
+        </div>
       }
       timeline={
         <>

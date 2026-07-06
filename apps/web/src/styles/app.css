@@ -54,3 +54,23 @@ select {
   height: calc(100vh - 48px);
   overflow: auto;
 }
+
+.sidebar-stack,
+.thread-list {
+  display: grid;
+  min-height: 0;
+}
+
+.sidebar-stack {
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.thread-list {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.thread-list-scroll {
+  min-height: 0;
+  overflow: auto;
+}
