@@ -6,8 +6,35 @@ export type TimelineItem =
   | { kind: 'tool_step'; id: string; name: string; content: string; source: 'runtime' }
   | { kind: 'change_card'; id: string; title: string; path: string; delta: string; source: 'mock' }
   | { kind: 'diagnostic'; id: string; severity: 'info' | 'warning' | 'error'; message: string; source: 'runtime' }
-  | { kind: 'run_status'; id: string; label: string; source: 'runtime' }
+  | { kind: 'run_status'; id: string; label: string; content?: string; source: 'runtime' }
   | { kind: 'done'; id: string; status: string; source: 'runtime' };
+
+function safeStringify(value: unknown): string {
+  const seen = new WeakSet<object>();
+
+  try {
+    const serialized = JSON.stringify(value, (_key, field) => {
+      if (typeof field === 'bigint') {
+        return field.toString();
+      }
+
+      if (typeof field !== 'object' || field === null) {
+        return field;
+      }
+
+      if (seen.has(field)) {
+        return '[Circular]';
+      }
+
+      seen.add(field);
+      return field;
+    });
+
+    return serialized ?? String(value);
+  } catch {
+    return '[Unserializable payload]';
+  }
+}
 
 export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
   switch (event.type) {
@@ -18,7 +45,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         kind: 'tool_step',
         id: event.id,
         name: event.payload.name,
-        content: JSON.stringify(event.payload.input),
+        content: safeStringify(event.payload.input),
         source: 'runtime'
       };
     case 'tool_result':
@@ -50,6 +77,12 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
     case 'status':
       return { kind: 'run_status', id: event.id, label: event.payload.label, source: 'runtime' };
     default:
-      return { kind: 'run_status', id: event.id, label: event.type, source: 'runtime' };
+      return {
+        kind: 'run_status',
+        id: event.id,
+        label: event.type,
+        content: safeStringify(event.payload),
+        source: 'runtime'
+      };
   }
 }

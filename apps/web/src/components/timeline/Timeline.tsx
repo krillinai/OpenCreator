@@ -1,5 +1,47 @@
 import type { TimelineItem } from './timeline-model.js';
 
+function renderTimelineItemContent(item: TimelineItem) {
+  switch (item.kind) {
+    case 'user_message':
+    case 'assistant_message':
+      return <p>{item.text}</p>;
+    case 'tool_step':
+      return (
+        <>
+          <p>{item.name}</p>
+          <pre>{item.content}</pre>
+        </>
+      );
+    case 'change_card':
+      return (
+        <>
+          <p>{item.title}</p>
+          <p>
+            {item.path} {item.delta}
+          </p>
+        </>
+      );
+    case 'diagnostic':
+      return (
+        <>
+          <p>{item.severity}</p>
+          <p>{item.message}</p>
+        </>
+      );
+    case 'run_status':
+      return (
+        <>
+          <p>{item.label}</p>
+          {item.content ? <pre>{item.content}</pre> : null}
+        </>
+      );
+    case 'done':
+      return <p>{item.status}</p>;
+    default:
+      return null;
+  }
+}
+
 export function Timeline(props: { items: TimelineItem[] }) {
   return (
     <div className="panel-scroll timeline-list">
@@ -9,14 +51,7 @@ export function Timeline(props: { items: TimelineItem[] }) {
         props.items.map((item) => (
           <article key={item.id} className={`timeline-item timeline-${item.kind}`}>
             <strong>{item.kind}</strong>
-            {'text' in item ? <p>{item.text}</p> : null}
-            {'message' in item ? <p>{item.message}</p> : null}
-            {'content' in item ? <pre>{item.content}</pre> : null}
-            {item.kind === 'change_card' ? (
-              <p>
-                {item.path} {item.delta}
-              </p>
-            ) : null}
+            {renderTimelineItemContent(item)}
           </article>
         ))
       )}
