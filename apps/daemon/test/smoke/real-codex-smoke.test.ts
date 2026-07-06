@@ -241,6 +241,137 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     }
   });
 
+  it('creates a schedule run-now path through the daemon', async () => {
+    const dataDir = join(fixtureDir, `scheduler-data-${Date.now()}`);
+    const workspace = join(fixtureDir, `scheduler-workspace-${Date.now()}`);
+    mkdirSync(dataDir, { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+
+    const server = await buildServer({
+      token: 'secret',
+      dataDir,
+      codexBin: 'codex',
+      schedulerAutostart: false
+    });
+
+    try {
+      const created = await server.inject({
+        method: 'POST',
+        url: '/schedules',
+        headers: { authorization: 'Bearer secret' },
+        payload: {
+          name: 'real codex scheduler smoke',
+          cron: '0 9 * * *',
+          timezone: 'UTC',
+          prompt: 'Automated Runtime scheduler smoke. Do not run tools and do not modify files. Reply with R6_SCHEDULER_SMOKE_MARKER only.',
+          cwd: workspace,
+          sandbox: 'read-only',
+          timeoutMs: 180_000
+        }
+      });
+
+      if (created.statusCode !== 201) {
+        writeSchedulerFixture('scheduler-run-now', {
+          created: responseFixture(created)
+        });
+        throwIfBlockedResponse(created, 'create schedule');
+      }
+      expect(created.statusCode).toBe(201);
+
+      const scheduleId = created.json<{ id: string }>().id;
+      const runNow = await server.inject({
+        method: 'POST',
+        url: `/schedules/${scheduleId}/run-now`,
+        headers: { authorization: 'Bearer secret' }
+      });
+
+      if (runNow.statusCode !== 202) {
+        writeSchedulerFixture('scheduler-run-now', {
+          created: responseFixture(created),
+          runNow: responseFixture(runNow)
+        });
+        throwIfBlockedResponse(runNow, 'run schedule now');
+      }
+      expect(runNow.statusCode).toBe(202);
+
+      const runId = runNow.json<{ run: { id: string } | null }>().run?.id;
+      expect(runId).toEqual(expect.any(String));
+
+      await expect
+        .poll(async () => {
+          const response = await server.inject({
+            method: 'GET',
+            url: `/runs/${runId}`,
+            headers: { authorization: 'Bearer secret' }
+          });
+          return response.json<{ status?: string }>().status;
+        }, { timeout: 180_000, interval: 1_000 })
+        .toMatch(/^(succeeded|failed|canceled)$/);
+
+      const finished = await server.inject({
+        method: 'GET',
+        url: `/runs/${runId}`,
+        headers: { authorization: 'Bearer secret' }
+      });
+      const operations = await server.inject({
+        method: 'GET',
+        url: `/schedules/${scheduleId}/operations`,
+        headers: { authorization: 'Bearer secret' }
+      });
+      const events = await server.inject({
+        method: 'GET',
+        url: `/runs/${runId}/events`,
+        headers: { authorization: 'Bearer secret' }
+      });
+
+      const fixture = {
+        created: responseFixture(created),
+        runNow: responseFixture(runNow),
+        finished: responseFixture(finished),
+        operations: responseFixture(operations),
+        events: responseFixture(events)
+      };
+      writeSchedulerFixture('scheduler-run-now', fixture);
+
+      const run = finished.json<{
+        status: string;
+        createdBy?: string;
+        sourceId?: string | null;
+        errorCode?: string | null;
+        errorMessage?: string | null;
+      }>();
+      if (run.status !== 'succeeded') throwIfBlockedRun(run, fixture);
+
+      expect(run).toMatchObject({
+        status: 'succeeded',
+        createdBy: 'schedule',
+        sourceId: scheduleId
+      });
+      expect(runNow.json()).toMatchObject({
+        skipped: false,
+        queued: false,
+        schedule: {
+          id: scheduleId,
+          lastRunId: runId
+        }
+      });
+      expect(operations.json().operations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'run_now',
+            status: 'succeeded',
+            runId
+          })
+        ])
+      );
+      expect(events.body).toContain('done');
+    } finally {
+      await server.close();
+      rmSync(dataDir, { recursive: true, force: true });
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  }, 240_000);
+
   it('captures a command execution jsonl fixture', () => {
     const result = runSmokeCommand([
       'codex',
@@ -306,6 +437,25 @@ function writeResumeFixture(result: Awaited<ReturnType<typeof runRealCodexResume
   );
 }
 
+function writeSchedulerFixture(name: string, value: unknown): void {
+  mkdirSync(fixtureDir, { recursive: true });
+  writeFileSync(join(fixtureDir, `${name}.json`), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function responseFixture(response: {
+  statusCode: number;
+  body: string;
+  json: <T = unknown>() => T;
+}): { statusCode: number; body: unknown } {
+  let body: unknown;
+  try {
+    body = response.json();
+  } catch {
+    body = response.body;
+  }
+  return { statusCode: response.statusCode, body };
+}
+
 function throwIfBlockedEnvironment(result: SmokeCommandResult): void {
   if (result.exitCode === 0) return;
 
@@ -331,4 +481,34 @@ function summarizeSmokeOutput(output: string): string {
     .slice(0, 12)
     .join('\n');
   return summary === '' ? '(no output)' : summary;
+}
+
+function throwIfBlockedResponse(response: { body: string }, phase: string): void {
+  if (!isBlockedEnvironmentText(response.body)) return;
+  throw new Error(`BLOCKED_ENV: real Codex scheduler smoke could not ${phase}.
+Summary:
+${summarizeSmokeOutput(response.body)}`);
+}
+
+function throwIfBlockedRun(
+  run: {
+    status: string;
+    errorCode?: string | null;
+    errorMessage?: string | null;
+  },
+  fixture: unknown
+): void {
+  const output = JSON.stringify(fixture);
+  if (!isBlockedEnvironmentText(output)) return;
+
+  throw new Error(`BLOCKED_ENV: real Codex scheduler smoke could not reach an authenticated/model-ready runtime.
+Status: ${run.status}
+Error code: ${run.errorCode ?? 'none'}
+Error message: ${run.errorMessage ?? 'none'}
+Summary:
+${summarizeSmokeOutput(output)}`);
+}
+
+function isBlockedEnvironmentText(output: string): boolean {
+  return /(not logged in|login|authentication|unauthorized|network|connection|timed out|ETIMEDOUT|rate limit|model .*unavailable|model_not_found|insufficient_quota|quota|offline|token_expired|refresh_token_reused)/i.test(output);
 }
