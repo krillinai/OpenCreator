@@ -9,7 +9,11 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { initialAppState, reduceAppState } from './app-state.js';
 
-type AppFileService = Pick<ReturnType<typeof createMockFileService>, 'listTree' | 'openFile' | 'saveFile'>;
+type AppFileService = {
+  listTree(): Promise<FileTreeNode[]>;
+  openFile(path: string): Promise<WorkspaceFile>;
+  saveFile(path: string, content: string): Promise<WorkspaceFile>;
+};
 
 export type AppProps = {
   fileService?: AppFileService;
@@ -20,13 +24,17 @@ export function App(props: AppProps = {}) {
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
-  const [currentFile, setCurrentFile] = useState<WorkspaceFile>();
-  const [editorContent, setEditorContent] = useState('');
-  const [loadingFile, setLoadingFile] = useState(true);
+  const [treeLoadError, setTreeLoadError] = useState<string>();
+  const [savedFileByPath, setSavedFileByPath] = useState<Record<string, WorkspaceFile>>({});
+  const [draftContentByPath, setDraftContentByPath] = useState<Record<string, string>>({});
+  const [loadingFilePath, setLoadingFilePath] = useState<string>(state.selectedFilePath);
+  const [loadErrorByPath, setLoadErrorByPath] = useState<Record<string, string | undefined>>({});
+  const [saveErrorByPath, setSaveErrorByPath] = useState<Record<string, string | undefined>>({});
   const [savingFilePaths, setSavingFilePaths] = useState<Set<string>>(() => new Set());
   const mountedRef = useRef(true);
   const selectedFilePathRef = useRef(state.selectedFilePath);
-  const editorContentRef = useRef(editorContent);
+  const draftContentByPathRef = useRef<Record<string, string>>({});
+  const openRequestByPathRef = useRef<Record<string, number>>({});
   const savingFilePathsRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -42,9 +50,17 @@ export function App(props: AppProps = {}) {
   useEffect(() => {
     let canceled = false;
 
-    fileService.listTree().then(nodes => {
-      if (!canceled) setTreeNodes(nodes);
-    });
+    fileService
+      .listTree()
+      .then(nodes => {
+        if (!canceled) {
+          setTreeNodes(nodes);
+          setTreeLoadError(undefined);
+        }
+      })
+      .catch(() => {
+        if (!canceled) setTreeLoadError('无法加载项目文件');
+      });
 
     return () => {
       canceled = true;
@@ -52,28 +68,55 @@ export function App(props: AppProps = {}) {
   }, [fileService]);
 
   useEffect(() => {
-    let canceled = false;
+    const path = state.selectedFilePath;
+    const requestId = (openRequestByPathRef.current[path] ?? 0) + 1;
+    openRequestByPathRef.current[path] = requestId;
 
-    setLoadingFile(true);
-    fileService.openFile(state.selectedFilePath).then(file => {
-      if (canceled) return;
-      setCurrentFile(file);
-      editorContentRef.current = file.content;
-      setEditorContent(file.content);
-      setLoadingFile(false);
-    });
+    setLoadingFilePath(path);
+    setLoadErrorByPath(previous => ({ ...previous, [path]: undefined }));
 
-    return () => {
-      canceled = true;
-    };
+    fileService
+      .openFile(path)
+      .then(file => {
+        if (!mountedRef.current || openRequestByPathRef.current[path] !== requestId) return;
+
+        setSavedFileByPath(previous => ({ ...previous, [path]: file }));
+        if (!hasOwnPath(draftContentByPathRef.current, path)) {
+          const nextDrafts = { ...draftContentByPathRef.current, [path]: file.content };
+          draftContentByPathRef.current = nextDrafts;
+          setDraftContentByPath(nextDrafts);
+        }
+        setLoadErrorByPath(previous => ({ ...previous, [path]: undefined }));
+
+        if (selectedFilePathRef.current === path) {
+          setLoadingFilePath('');
+        }
+      })
+      .catch(() => {
+        if (!mountedRef.current || openRequestByPathRef.current[path] !== requestId) return;
+
+        setLoadErrorByPath(previous => ({ ...previous, [path]: '无法加载文件' }));
+        if (selectedFilePathRef.current === path) {
+          setLoadingFilePath('');
+        }
+      });
   }, [fileService, state.selectedFilePath]);
 
-  const dirty = currentFile !== undefined && editorContent !== currentFile.content;
-  const savingCurrentFile = currentFile !== undefined && savingFilePaths.has(currentFile.path);
+  const selectedFilePath = state.selectedFilePath;
+  const currentFile = savedFileByPath[selectedFilePath];
+  const selectedDraftContent = draftContentByPath[selectedFilePath] ?? currentFile?.content ?? '';
+  const dirty = currentFile !== undefined && selectedDraftContent !== currentFile.content;
+  const savingCurrentFile = savingFilePaths.has(selectedFilePath);
+  const loadingSelectedFile = loadingFilePath === selectedFilePath && currentFile === undefined;
+  const loadError = loadErrorByPath[selectedFilePath];
+  const saveError = saveErrorByPath[selectedFilePath];
 
   function handleEditorContentChange(content: string) {
-    editorContentRef.current = content;
-    setEditorContent(content);
+    const path = selectedFilePathRef.current;
+    const nextDrafts = { ...draftContentByPathRef.current, [path]: content };
+    draftContentByPathRef.current = nextDrafts;
+    setDraftContentByPath(nextDrafts);
+    setSaveErrorByPath(previous => ({ ...previous, [path]: undefined }));
   }
 
   function setFileSaving(path: string, saving: boolean) {
@@ -92,18 +135,24 @@ export function App(props: AppProps = {}) {
     if (currentFile === undefined) return;
     if (savingFilePathsRef.current.has(currentFile.path)) return;
 
-    const saveSnapshot = { path: currentFile.path, content: editorContentRef.current };
+    const saveSnapshot = { path: currentFile.path, content: selectedDraftContent };
     setFileSaving(saveSnapshot.path, true);
+    setSaveErrorByPath(previous => ({ ...previous, [saveSnapshot.path]: undefined }));
 
     try {
       const savedFile = await fileService.saveFile(saveSnapshot.path, saveSnapshot.content);
 
-      if (!mountedRef.current || selectedFilePathRef.current !== saveSnapshot.path) return;
+      if (!mountedRef.current) return;
 
-      setCurrentFile(savedFile);
-      if (editorContentRef.current === saveSnapshot.content) {
-        editorContentRef.current = savedFile.content;
-        setEditorContent(savedFile.content);
+      setSavedFileByPath(previous => ({ ...previous, [saveSnapshot.path]: savedFile }));
+      if (draftContentByPathRef.current[saveSnapshot.path] === saveSnapshot.content) {
+        const nextDrafts = { ...draftContentByPathRef.current, [saveSnapshot.path]: savedFile.content };
+        draftContentByPathRef.current = nextDrafts;
+        setDraftContentByPath(nextDrafts);
+      }
+    } catch {
+      if (mountedRef.current) {
+        setSaveErrorByPath(previous => ({ ...previous, [saveSnapshot.path]: '保存到本地草稿失败' }));
       }
     } finally {
       if (mountedRef.current) {
@@ -129,14 +178,17 @@ export function App(props: AppProps = {}) {
         </>
       }
       rightPanel={
-        loadingFile || currentFile === undefined ? (
+        loadingSelectedFile ? (
           <div className="panel-header">正在加载文件...</div>
+        ) : currentFile === undefined ? (
+          <div className="panel-header">{loadError ?? '无法加载文件'}</div>
         ) : (
           <FileEditor
             path={currentFile.path}
-            content={editorContent}
+            content={selectedDraftContent}
             dirty={dirty}
             saving={savingCurrentFile}
+            saveError={saveError}
             onChange={handleEditorContentChange}
             onSave={saveCurrentFile}
           />
@@ -144,7 +196,7 @@ export function App(props: AppProps = {}) {
       }
       fileTree={
         <>
-          <div className="panel-header">项目文件</div>
+          <div className="panel-header">{treeLoadError ?? '项目文件'}</div>
           <FileTree
             nodes={treeNodes}
             selectedPath={state.selectedFilePath}
@@ -157,4 +209,8 @@ export function App(props: AppProps = {}) {
       }
     />
   );
+}
+
+function hasOwnPath<T>(record: Record<string, T>, path: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, path);
 }

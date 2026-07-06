@@ -3,6 +3,7 @@ export type FileEditorProps = {
   content: string;
   dirty: boolean;
   saving?: boolean;
+  saveError?: string;
   onChange(content: string): void;
   onSave(): void;
 };
@@ -14,6 +15,11 @@ export function FileEditor(props: FileEditorProps) {
         <div style={{ minWidth: 0 }}>
           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{props.path}</div>
           <div style={{ color: 'var(--muted)', fontSize: 12 }}>{props.dirty ? '未保存' : '已保存到本地草稿'}</div>
+          {props.saveError === undefined ? null : (
+            <div role="status" style={{ color: 'var(--danger)', fontSize: 12 }}>
+              {props.saveError}
+            </div>
+          )}
         </div>
         <button type="button" disabled={props.saving} onClick={props.onSave}>
           保存到本地草稿

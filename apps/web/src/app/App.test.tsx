@@ -8,33 +8,41 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 type Deferred<T> = {
   promise: Promise<T>;
   resolve(value: T): void;
+  reject(reason?: unknown): void;
 };
 
 function createDeferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>(next => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((next, fail) => {
     resolve = next;
+    reject = fail;
   });
 
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe('App', () => {
-  it('keeps edits made while a save is pending marked as unsaved', async () => {
+  it('preserves edits made during a pending save when switching away and back', async () => {
     const user = userEvent.setup();
-    const filePath = 'docs/design/enterprise-agent-workbench.md';
-    const initialContent = '# Workbench';
-    const savedSnapshotContent = '# Workbench\nfirst edit';
-    const continuedEditContent = '# Workbench\nfirst edit\nsecond edit';
+    const filePathA = 'docs/design/enterprise-agent-workbench.md';
+    const filePathB = 'docs/notes.md';
+    const initialContentA = '# Workbench';
+    const contentB = '# Notes';
+    const savedSnapshotContentA = '# Workbench\nfirst edit';
+    const continuedEditContentA = '# Workbench\nfirst edit\nsecond edit';
     const saveDeferred = createDeferred<WorkspaceFile>();
-    const treeNodes: FileTreeNode[] = [{ type: 'file', name: 'enterprise-agent-workbench.md', path: filePath, depth: 0 }];
+    const treeNodes: FileTreeNode[] = [
+      { type: 'file', name: 'enterprise-agent-workbench.md', path: filePathA, depth: 0 },
+      { type: 'file', name: 'notes.md', path: filePathB, depth: 0 }
+    ];
 
     const fileService = {
       async listTree() {
         return treeNodes;
       },
       async openFile(path: string) {
-        return createWorkspaceFile(path, initialContent);
+        return createWorkspaceFile(path, path === filePathA ? initialContentA : contentB);
       },
       saveFile() {
         return saveDeferred.promise;
@@ -43,23 +51,29 @@ describe('App', () => {
 
     render(<App fileService={fileService} />);
 
-    const editor = await screen.findByRole('textbox', { name: `${filePath} 编辑器` });
-    expect(editor).toHaveValue(initialContent);
+    const editorA = await screen.findByRole('textbox', { name: `${filePathA} 编辑器` });
+    expect(editorA).toHaveValue(initialContentA);
 
-    await user.clear(editor);
-    await user.type(editor, savedSnapshotContent);
+    await user.clear(editorA);
+    await user.type(editorA, savedSnapshotContentA);
     await user.click(screen.getByRole('button', { name: '保存到本地草稿' }));
 
-    await user.clear(editor);
-    await user.type(editor, continuedEditContent);
+    await user.clear(editorA);
+    await user.type(editorA, continuedEditContentA);
+
+    await user.click(screen.getByRole('button', { name: 'notes.md' }));
+    expect(await screen.findByRole('textbox', { name: `${filePathB} 编辑器` })).toHaveValue(contentB);
+
+    await user.click(screen.getByRole('button', { name: 'enterprise-agent-workbench.md' }));
+    const returnedEditorA = await screen.findByRole('textbox', { name: `${filePathA} 编辑器` });
 
     await act(async () => {
-      saveDeferred.resolve(createWorkspaceFile(filePath, savedSnapshotContent));
+      saveDeferred.resolve(createWorkspaceFile(filePathA, savedSnapshotContentA));
       await saveDeferred.promise;
     });
 
     await waitFor(() => {
-      expect(editor).toHaveValue(continuedEditContent);
+      expect(returnedEditorA).toHaveValue(continuedEditContentA);
       expect(screen.getByText('未保存')).toBeInTheDocument();
     });
   });
@@ -121,6 +135,71 @@ describe('App', () => {
       { path: filePath, content: firstEditContent },
       { path: filePath, content: latestContent }
     ]);
+  });
+
+  it('keeps the draft and clears pending state when saving fails', async () => {
+    const user = userEvent.setup();
+    const filePath = 'docs/design/enterprise-agent-workbench.md';
+    const initialContent = '# Workbench';
+    const draftContent = '# Workbench\nunsaved edit';
+    const saveDeferred = createDeferred<WorkspaceFile>();
+    const treeNodes: FileTreeNode[] = [{ type: 'file', name: 'enterprise-agent-workbench.md', path: filePath, depth: 0 }];
+
+    const fileService = {
+      async listTree() {
+        return treeNodes;
+      },
+      async openFile(path: string) {
+        return createWorkspaceFile(path, initialContent);
+      },
+      saveFile() {
+        return saveDeferred.promise;
+      }
+    };
+
+    render(<App fileService={fileService} />);
+
+    const editor = await screen.findByRole('textbox', { name: `${filePath} 编辑器` });
+    const saveButton = screen.getByRole('button', { name: '保存到本地草稿' });
+
+    await user.clear(editor);
+    await user.type(editor, draftContent);
+    await user.click(saveButton);
+    expect(saveButton).toBeDisabled();
+
+    await act(async () => {
+      saveDeferred.reject(new Error('disk unavailable'));
+      await saveDeferred.promise.catch(() => undefined);
+    });
+
+    await waitFor(() => {
+      expect(editor).toHaveValue(draftContent);
+      expect(saveButton).not.toBeDisabled();
+      expect(screen.getByText('保存到本地草稿失败')).toBeInTheDocument();
+      expect(screen.getByText('未保存')).toBeInTheDocument();
+    });
+  });
+
+  it('shows a file loading failure when openFile rejects', async () => {
+    const filePath = 'docs/design/enterprise-agent-workbench.md';
+    const treeNodes: FileTreeNode[] = [{ type: 'file', name: 'enterprise-agent-workbench.md', path: filePath, depth: 0 }];
+
+    const fileService = {
+      async listTree() {
+        return treeNodes;
+      },
+      async openFile() {
+        throw new Error('missing file');
+      },
+      async saveFile(path: string, content: string) {
+        return createWorkspaceFile(path, content);
+      }
+    };
+
+    render(<App fileService={fileService} />);
+
+    expect(await screen.findByText('无法加载文件')).toBeInTheDocument();
+    expect(screen.queryByText('正在加载文件...')).not.toBeInTheDocument();
   });
 });
 
