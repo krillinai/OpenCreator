@@ -265,7 +265,7 @@ export class ScheduleRepository {
           AND source_id = @sourceId
           AND (
             public_status IN ('queued', 'running')
-            OR internal_status IN ('queued', 'running', 'canceling')
+            OR internal_status IN ('created', 'queued', 'spawning', 'running', 'canceling')
           )
         LIMIT 1
       `

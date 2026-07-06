@@ -171,6 +171,18 @@ describe('schedule repository', () => {
 
   it('detects active runs only for matching schedule source', () => {
     const repository = createRepository();
+    insertRun('run_created', {
+      createdBy: 'schedule',
+      sourceId: 'sch_created',
+      publicStatus: 'failed',
+      internalStatus: 'created'
+    });
+    insertRun('run_spawning', {
+      createdBy: 'schedule',
+      sourceId: 'sch_spawning',
+      publicStatus: 'failed',
+      internalStatus: 'spawning'
+    });
     insertRun('run_queued', { createdBy: 'schedule', sourceId: 'sch_queued', publicStatus: 'queued' });
     insertRun('run_running', { createdBy: 'schedule', sourceId: 'sch_running', publicStatus: 'running' });
     insertRun('run_canceling', {
@@ -182,6 +194,8 @@ describe('schedule repository', () => {
     insertRun('run_done', { createdBy: 'schedule', sourceId: 'sch_done', publicStatus: 'succeeded' });
     insertRun('run_api', { createdBy: 'api', sourceId: 'sch_one', publicStatus: 'running' });
 
+    expect(repository.hasActiveRunForSource('schedule', 'sch_created')).toBe(true);
+    expect(repository.hasActiveRunForSource('schedule', 'sch_spawning')).toBe(true);
     expect(repository.hasActiveRunForSource('schedule', 'sch_queued')).toBe(true);
     expect(repository.hasActiveRunForSource('schedule', 'sch_running')).toBe(true);
     expect(repository.hasActiveRunForSource('schedule', 'sch_canceling')).toBe(true);
