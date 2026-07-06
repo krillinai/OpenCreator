@@ -36,6 +36,7 @@ export function App(props: AppProps = {}) {
   const savedFileByPathRef = useRef<Record<string, WorkspaceFile>>({});
   const draftContentByPathRef = useRef<Record<string, string>>({});
   const openRequestByPathRef = useRef<Record<string, number>>({});
+  const fileRevisionByPathRef = useRef<Record<string, number>>({});
   const savingFilePathsRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -71,6 +72,7 @@ export function App(props: AppProps = {}) {
   useEffect(() => {
     const path = state.selectedFilePath;
     const requestId = (openRequestByPathRef.current[path] ?? 0) + 1;
+    const openRevision = fileRevisionByPathRef.current[path] ?? 0;
     openRequestByPathRef.current[path] = requestId;
 
     setLoadingFilePath(path);
@@ -79,7 +81,13 @@ export function App(props: AppProps = {}) {
     fileService
       .openFile(path)
       .then(file => {
-        if (!mountedRef.current || openRequestByPathRef.current[path] !== requestId) return;
+        if (
+          !mountedRef.current ||
+          openRequestByPathRef.current[path] !== requestId ||
+          openRevision !== (fileRevisionByPathRef.current[path] ?? 0)
+        ) {
+          return;
+        }
 
         const previousSavedFile = savedFileByPathRef.current[path];
         const hasExistingDraft = hasOwnPath(draftContentByPathRef.current, path);
@@ -103,7 +111,13 @@ export function App(props: AppProps = {}) {
         }
       })
       .catch(() => {
-        if (!mountedRef.current || openRequestByPathRef.current[path] !== requestId) return;
+        if (
+          !mountedRef.current ||
+          openRequestByPathRef.current[path] !== requestId ||
+          openRevision !== (fileRevisionByPathRef.current[path] ?? 0)
+        ) {
+          return;
+        }
 
         setLoadErrorByPath(previous => ({ ...previous, [path]: '无法加载文件' }));
         if (selectedFilePathRef.current === path) {
@@ -141,11 +155,16 @@ export function App(props: AppProps = {}) {
     setSavingFilePaths(nextSavingPaths);
   }
 
+  function bumpFileRevision(path: string) {
+    fileRevisionByPathRef.current[path] = (fileRevisionByPathRef.current[path] ?? 0) + 1;
+  }
+
   async function saveCurrentFile() {
     if (currentFile === undefined) return;
     if (savingFilePathsRef.current.has(currentFile.path)) return;
 
     const saveSnapshot = { path: currentFile.path, content: selectedDraftContent };
+    bumpFileRevision(saveSnapshot.path);
     setFileSaving(saveSnapshot.path, true);
     setSaveErrorByPath(previous => ({ ...previous, [saveSnapshot.path]: undefined }));
 
@@ -154,6 +173,7 @@ export function App(props: AppProps = {}) {
 
       if (!mountedRef.current) return;
 
+      bumpFileRevision(saveSnapshot.path);
       const nextSavedFiles = { ...savedFileByPathRef.current, [saveSnapshot.path]: savedFile };
       savedFileByPathRef.current = nextSavedFiles;
       setSavedFileByPath(nextSavedFiles);
