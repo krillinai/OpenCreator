@@ -6,7 +6,13 @@ export type AppRoute =
   | { view: 'settings' };
 
 export function parseRoute(hash: string): AppRoute {
-  if (hash.startsWith('#/thread/')) return { view: 'thread', threadId: decodeURIComponent(hash.slice('#/thread/'.length)) };
+  if (hash.startsWith('#/thread/')) {
+    try {
+      return { view: 'thread', threadId: decodeURIComponent(hash.slice('#/thread/'.length)) };
+    } catch {
+      return { view: 'home' };
+    }
+  }
   if (hash === '#/schedules') return { view: 'schedules' };
   if (hash === '#/capabilities') return { view: 'capabilities' };
   if (hash === '#/settings') return { view: 'settings' };
