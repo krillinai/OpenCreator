@@ -107,9 +107,13 @@ select {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
 .timeline-list {
+  height: auto;
+  min-height: 0;
+  overflow: auto;
   padding: 12px;
 }
 

@@ -82,7 +82,7 @@ export function App(props: AppProps = {}) {
   }, [fileService]);
 
   useEffect(() => {
-    void projectService.getDefaultProject();
+    void projectService.getDefaultProject().catch(() => undefined);
   }, [projectService]);
 
   useEffect(() => {

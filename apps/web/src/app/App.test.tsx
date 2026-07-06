@@ -23,6 +23,38 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 describe('App', () => {
+  it('records a submitted prompt in the timeline with a mock change card for the current file', async () => {
+    const user = userEvent.setup();
+    const filePath = 'docs/design/enterprise-agent-workbench.md';
+    const prompt = '整理企业 Agent 工作台设计';
+    const treeNodes: FileTreeNode[] = [{ type: 'file', name: 'enterprise-agent-workbench.md', path: filePath, depth: 0 }];
+
+    const fileService = {
+      async listTree() {
+        return treeNodes;
+      },
+      async openFile(path: string) {
+        return createWorkspaceFile(path, '# Workbench');
+      },
+      async saveFile(path: string, content: string) {
+        return createWorkspaceFile(path, content);
+      }
+    };
+
+    render(<App fileService={fileService} />);
+
+    await screen.findByRole('textbox', { name: `${filePath} 编辑器` });
+
+    const promptInput = screen.getByRole('textbox', { name: '输入任务' });
+    await user.type(promptInput, prompt);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(screen.getByText(prompt)).toBeInTheDocument();
+    expect(screen.getByText('当前未连接 Runtime，已在 mock workspace 中记录本次任务。')).toBeInTheDocument();
+    expect(screen.getByText('根据本次输入生成 mock 文件变更')).toBeInTheDocument();
+    expect(screen.getByText(`${filePath} +1 -0`)).toBeInTheDocument();
+  });
+
   it('preserves edits made during a pending save when switching away and back', async () => {
     const user = userEvent.setup();
     const filePathA = 'docs/design/enterprise-agent-workbench.md';
