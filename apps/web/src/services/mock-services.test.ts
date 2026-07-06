@@ -48,6 +48,24 @@ describe('mock services', () => {
     });
   });
 
+  it('isolates saved drafts by mock file service database name', async () => {
+    const path = 'docs/shared.md';
+    const serviceA = createMockFileService({ databaseName: testDatabaseName('isolation-a') });
+    const serviceB = createMockFileService({ databaseName: testDatabaseName('isolation-b') });
+
+    await serviceA.saveFile(path, '# Draft A');
+    await serviceB.saveFile(path, '# Draft B');
+
+    await expect(serviceA.openFile(path)).resolves.toMatchObject({
+      path,
+      content: '# Draft A'
+    });
+    await expect(serviceB.openFile(path)).resolves.toMatchObject({
+      path,
+      content: '# Draft B'
+    });
+  });
+
   it('labels mock approvals as local drafts that do not write to disk', () => {
     const service = createMockApprovalService();
     const approval = service.createFileWriteApproval('foo/new.json');
