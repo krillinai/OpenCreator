@@ -7,7 +7,7 @@ export type TimelineItem =
   | { kind: 'change_card'; id: string; title: string; path: string; delta: string; source: 'mock' }
   | { kind: 'diagnostic'; id: string; severity: 'info' | 'warning' | 'error'; message: string; source: 'runtime' }
   | { kind: 'run_status'; id: string; label: string; content?: string; source: 'runtime' }
-  | { kind: 'done'; id: string; status: string; source: 'runtime' };
+  | { kind: 'done'; id: string; status: string; terminationReason?: string; source: 'runtime' };
 
 function safeStringify(value: unknown): string {
   const seen = new WeakSet<object>();
@@ -73,9 +73,21 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         source: 'runtime'
       };
     case 'done':
-      return { kind: 'done', id: event.id, status: event.payload.status, source: 'runtime' };
+      return {
+        kind: 'done',
+        id: event.id,
+        status: event.payload.status,
+        terminationReason: event.payload.terminationReason,
+        source: 'runtime'
+      };
     case 'status':
-      return { kind: 'run_status', id: event.id, label: event.payload.label, source: 'runtime' };
+      return {
+        kind: 'run_status',
+        id: event.id,
+        label: event.payload.label,
+        content: safeStringify(event.payload),
+        source: 'runtime'
+      };
     default:
       return {
         kind: 'run_status',

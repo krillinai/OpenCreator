@@ -111,7 +111,7 @@ describe('timeline model', () => {
     });
   });
 
-  it('maps done and status events', () => {
+  it('maps done events with the termination reason', () => {
     const done: AgentEventEnvelope = {
       id: 'evt_done',
       runId: 'run_1',
@@ -125,6 +125,15 @@ describe('timeline model', () => {
       },
       normalizerVersion: 1
     };
+
+    expect(eventToTimelineItem(done)).toMatchObject({
+      kind: 'done',
+      status: 'succeeded',
+      terminationReason: 'completed'
+    });
+  });
+
+  it('maps status events with thread identifiers in the content summary', () => {
     const status: AgentEventEnvelope = {
       id: 'evt_status',
       runId: 'run_1',
@@ -133,18 +142,17 @@ describe('timeline model', () => {
       type: 'status',
       payload: {
         type: 'status',
-        label: 'running'
+        label: 'running',
+        threadId: 'thread_1',
+        codexThreadId: 'codex_thread_1'
       },
       normalizerVersion: 1
     };
 
-    expect(eventToTimelineItem(done)).toMatchObject({
-      kind: 'done',
-      status: 'succeeded'
-    });
     expect(eventToTimelineItem(status)).toMatchObject({
       kind: 'run_status',
-      label: 'running'
+      label: 'running',
+      content: '{"type":"status","label":"running","threadId":"thread_1","codexThreadId":"codex_thread_1"}'
     });
   });
 
@@ -168,6 +176,51 @@ describe('timeline model', () => {
       kind: 'run_status',
       label: 'usage',
       content: '{"type":"usage","inputTokens":12,"outputTokens":34,"source":"stream_cumulative"}'
+    });
+  });
+
+  it('serializes circular fallback payloads without throwing', () => {
+    const payload: Record<string, unknown> = {
+      type: 'unknown_event',
+      rawEventId: 'raw_1'
+    };
+    payload.self = payload;
+    const event = {
+      id: 'evt_circular',
+      runId: 'run_1',
+      seq: 9,
+      ts: '2026-07-06T00:00:00.000Z',
+      type: 'unknown_event',
+      payload,
+      normalizerVersion: 1
+    } as AgentEventEnvelope;
+
+    expect(eventToTimelineItem(event)).toMatchObject({
+      kind: 'run_status',
+      label: 'unknown_event',
+      content: '{"type":"unknown_event","rawEventId":"raw_1","self":"[Circular]"}'
+    });
+  });
+
+  it('serializes BigInt fallback payload fields as strings', () => {
+    const event = {
+      id: 'evt_bigint',
+      runId: 'run_1',
+      seq: 10,
+      ts: '2026-07-06T00:00:00.000Z',
+      type: 'unknown_event',
+      payload: {
+        type: 'unknown_event',
+        rawEventId: 'raw_2',
+        tokenCount: 123n
+      },
+      normalizerVersion: 1
+    } as AgentEventEnvelope;
+
+    expect(eventToTimelineItem(event)).toMatchObject({
+      kind: 'run_status',
+      label: 'unknown_event',
+      content: '{"type":"unknown_event","rawEventId":"raw_2","tokenCount":"123"}'
     });
   });
 });

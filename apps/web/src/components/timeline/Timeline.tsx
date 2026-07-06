@@ -36,9 +36,15 @@ function renderTimelineItemContent(item: TimelineItem) {
         </>
       );
     case 'done':
-      return <p>{item.status}</p>;
+      return (
+        <>
+          <p>{item.status}</p>
+          {item.terminationReason ? <p>{item.terminationReason}</p> : null}
+        </>
+      );
     default:
-      return null;
+      const _exhaustive: never = item;
+      return _exhaustive;
   }
 }
 

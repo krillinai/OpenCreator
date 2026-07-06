@@ -4,8 +4,20 @@ import { Timeline } from './Timeline.js';
 import type { TimelineItem } from './timeline-model.js';
 
 describe('Timeline', () => {
-  it('renders key fields for timeline event variants', () => {
+  it('renders key fields for every timeline event variant', () => {
     const items: TimelineItem[] = [
+      {
+        kind: 'user_message',
+        id: 'user_1',
+        text: 'please inspect the run',
+        source: 'runtime'
+      },
+      {
+        kind: 'assistant_message',
+        id: 'assistant_1',
+        text: 'I am checking the logs',
+        source: 'runtime'
+      },
       {
         kind: 'tool_step',
         id: 'tool_1',
@@ -14,26 +26,51 @@ describe('Timeline', () => {
         source: 'runtime'
       },
       {
+        kind: 'change_card',
+        id: 'change_1',
+        title: 'Edited timeline model',
+        path: 'apps/web/src/components/timeline/timeline-model.ts',
+        delta: '+12 -3',
+        source: 'mock'
+      },
+      {
+        kind: 'diagnostic',
+        id: 'diagnostic_1',
+        severity: 'warning',
+        message: 'stream resumed',
+        source: 'runtime'
+      },
+      {
         kind: 'run_status',
         id: 'status_1',
         label: 'running',
-        content: '{"type":"usage","inputTokens":12}',
+        content: '{"type":"status","label":"running","threadId":"thread_1","codexThreadId":"codex_thread_1"}',
         source: 'runtime'
       },
       {
         kind: 'done',
         id: 'done_1',
         status: 'succeeded',
+        terminationReason: 'completed',
         source: 'runtime'
       }
     ];
 
     render(<Timeline items={items} />);
 
+    expect(screen.getByText('please inspect the run')).toBeInTheDocument();
+    expect(screen.getByText('I am checking the logs')).toBeInTheDocument();
     expect(screen.getByText('exec_command')).toBeInTheDocument();
     expect(screen.getByText('pnpm test')).toBeInTheDocument();
+    expect(screen.getByText('Edited timeline model')).toBeInTheDocument();
+    expect(screen.getByText('apps/web/src/components/timeline/timeline-model.ts +12 -3')).toBeInTheDocument();
+    expect(screen.getByText('warning')).toBeInTheDocument();
+    expect(screen.getByText('stream resumed')).toBeInTheDocument();
     expect(screen.getByText('running')).toBeInTheDocument();
-    expect(screen.getByText('{"type":"usage","inputTokens":12}')).toBeInTheDocument();
+    expect(
+      screen.getByText('{"type":"status","label":"running","threadId":"thread_1","codexThreadId":"codex_thread_1"}')
+    ).toBeInTheDocument();
     expect(screen.getByText('succeeded')).toBeInTheDocument();
+    expect(screen.getByText('completed')).toBeInTheDocument();
   });
 });
