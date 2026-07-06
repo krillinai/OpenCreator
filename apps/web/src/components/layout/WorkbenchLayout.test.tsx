@@ -36,10 +36,11 @@ describe('WorkbenchLayout', () => {
     expect(screen.getByLabelText('项目文件树')).toHaveClass('tree-pane');
   });
 
-  it('defines a minimum width that fits the four-column workbench', () => {
+  it('defines responsive tracks for the workbench', () => {
     const css = readFileSync('src/styles/app.css', 'utf8');
 
-    expect(css).toMatch(/body\s*{[^}]*min-width:\s*1280px;/s);
-    expect(css).toMatch(/\.workbench-shell\s*{[^}]*min-width:\s*1280px;/s);
+    expect(css).toMatch(/\.workbench-shell\s*{[^}]*grid-template-columns:\s*260px minmax\(420px, 0\.92fr\) minmax\(520px, 1\.08fr\) 280px;/s);
+    expect(css).toMatch(/@media\s*\(max-width:\s*1180px\)/);
+    expect(css).not.toMatch(/body\s*{[^}]*min-width:\s*1280px;/s);
   });
 });

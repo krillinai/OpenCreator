@@ -23,60 +23,66 @@ export function RunDetailPanel(props: { runId?: string; diagnostics?: RunDiagnos
   const codexDiagnostics = codexStatusSnapshot?.diagnostics ?? [];
 
   return (
-    <div className="panel-scroll">
-      <h2>Run {props.runId}</h2>
-      <h3>Diagnostics</h3>
-      {diagnosticFiles.length === 0 ? (
-        <p>暂无诊断文件</p>
-      ) : (
-        diagnosticFiles.map((file) => (
-          <details key={file.name}>
-            <summary>{file.name}</summary>
-            <pre>{file.content}</pre>
-          </details>
-        ))
-      )}
-      <h3>Warnings</h3>
-      {warnings.length === 0 ? (
-        <p>暂无诊断警告</p>
-      ) : (
-        <ul>
-          {warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
-      )}
-      {codexStatusSnapshot ? (
-        <>
-          <h3>Codex Status</h3>
-          <dl>
-            <dt>Version</dt>
-            <dd>{codexStatusSnapshot.codexVersion}</dd>
-            <dt>Binary</dt>
-            <dd>{codexStatusSnapshot.codexBin}</dd>
-            <dt>Home</dt>
-            <dd>{codexStatusSnapshot.codexHome}</dd>
-            <dt>Home writable</dt>
-            <dd>{String(codexStatusSnapshot.codexHomeWritable)}</dd>
-            <dt>Diagnostics</dt>
-            <dd>
-              {codexDiagnostics.length === 0 ? (
-                '暂无 Codex 诊断'
-              ) : (
-                <ul>
-                  {codexDiagnostics.map((diagnostic) => (
-                    <li key={diagnostic}>{diagnostic}</li>
-                  ))}
-                </ul>
-              )}
-            </dd>
-            <dt>Capabilities</dt>
-            <dd>
-              <pre>{stringifyDiagnosticValue(codexStatusSnapshot.capabilities)}</pre>
-            </dd>
-          </dl>
-        </>
-      ) : null}
+    <div className="panel-scroll run-detail">
+      <div className="run-detail-card">
+        <h2>Run {props.runId}</h2>
+        <section>
+          <h3>Diagnostics</h3>
+          {diagnosticFiles.length === 0 ? (
+            <p>暂无诊断文件</p>
+          ) : (
+            diagnosticFiles.map((file) => (
+              <details key={file.name}>
+                <summary>{file.name}</summary>
+                <pre>{file.content}</pre>
+              </details>
+            ))
+          )}
+        </section>
+        <section>
+          <h3>Warnings</h3>
+          {warnings.length === 0 ? (
+            <p>暂无诊断警告</p>
+          ) : (
+            <ul>
+              {warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+        {codexStatusSnapshot ? (
+          <section>
+            <h3>Codex Status</h3>
+            <dl>
+              <dt>Version</dt>
+              <dd>{codexStatusSnapshot.codexVersion}</dd>
+              <dt>Binary</dt>
+              <dd>{codexStatusSnapshot.codexBin}</dd>
+              <dt>Home</dt>
+              <dd>{codexStatusSnapshot.codexHome}</dd>
+              <dt>Home writable</dt>
+              <dd>{String(codexStatusSnapshot.codexHomeWritable)}</dd>
+              <dt>Diagnostics</dt>
+              <dd>
+                {codexDiagnostics.length === 0 ? (
+                  '暂无 Codex 诊断'
+                ) : (
+                  <ul>
+                    {codexDiagnostics.map((diagnostic) => (
+                      <li key={diagnostic}>{diagnostic}</li>
+                    ))}
+                  </ul>
+                )}
+              </dd>
+              <dt>Capabilities</dt>
+              <dd>
+                <pre>{stringifyDiagnosticValue(codexStatusSnapshot.capabilities)}</pre>
+              </dd>
+            </dl>
+          </section>
+        ) : null}
+      </div>
     </div>
   );
 }

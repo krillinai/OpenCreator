@@ -245,9 +245,9 @@ export function App(props: AppProps = {}) {
       <RunDetailPanel runId={state.selectedRunId} diagnostics={runDiagnostics} />
     ) : (
       loadingSelectedFile ? (
-        <div className="panel-header">正在加载文件...</div>
+        <div className="empty-state">正在加载文件...</div>
       ) : currentFile === undefined ? (
-        <div className="panel-header">{loadError ?? '无法加载文件'}</div>
+        <div className="empty-state">{loadError ?? '无法加载文件'}</div>
       ) : (
         <FileEditor
           path={currentFile.path}
@@ -486,6 +486,13 @@ export function App(props: AppProps = {}) {
     <WorkbenchLayout
       sidebar={
         <div className="sidebar-stack">
+          <div className="product-bar">
+            <div className="product-mark">C</div>
+            <div>
+              <strong>Clawee Agent</strong>
+              <span>Codex Runtime Workbench</span>
+            </div>
+          </div>
           <ConnectionPanel
             status={connectionState.status}
             codexStatus={connectionState.status === 'connected' ? connectionState.codexStatus : undefined}
@@ -499,6 +506,12 @@ export function App(props: AppProps = {}) {
       }
       timeline={
         <div className="timeline-shell">
+          <div className="timeline-head">
+            <div>
+              <strong>Agent 对话</strong>
+              <span>{connectionState.status === 'connected' ? '已接入真实 Runtime' : '未连接时使用本地 mock 记录'}</span>
+            </div>
+          </div>
           <Timeline items={timelineItems} onOpenRunDetail={openRunDetail} />
           <Composer disabled={runtimeBusy} onSubmit={submitPrompt} />
         </div>
@@ -506,7 +519,12 @@ export function App(props: AppProps = {}) {
       rightPanel={rightPanel}
       fileTree={
         <>
-          <div className="panel-header">{treeLoadError ?? '项目文件'}</div>
+          <div className="tree-header">
+            <strong>{treeLoadError ?? '项目文件'}</strong>
+          </div>
+          <div className="tree-search">
+            <input aria-label="搜索项目文件" placeholder="搜索文件" />
+          </div>
           <FileTree
             nodes={treeNodes}
             selectedPath={state.selectedFilePath}

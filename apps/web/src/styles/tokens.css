@@ -1,15 +1,26 @@
 :root {
   color-scheme: light;
-  --bg: #f6f7f9;
+  --bg: #f5f6f8;
+  --sidebar: #f1f3f6;
+  --sidebar-hover: #e8edf3;
   --surface: #ffffff;
-  --surface-2: #f1f4f7;
-  --border: #d7dde5;
-  --text: #17202a;
-  --muted: #667085;
+  --surface-2: #f8fafc;
+  --surface-3: #eef2f7;
+  --border: #dde3eb;
+  --border-strong: #c8d1dd;
+  --text: #18212f;
+  --muted: #667184;
+  --subtle: #8a94a6;
   --accent: #2563eb;
+  --accent-soft: #eaf2ff;
   --danger: #b42318;
+  --danger-soft: #fff1f0;
   --warning: #b54708;
+  --warning-soft: #fff7ed;
   --success: #067647;
+  --success-soft: #ecfdf3;
   --radius: 8px;
+  --shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
   --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 }

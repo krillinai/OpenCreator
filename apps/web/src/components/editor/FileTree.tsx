@@ -6,46 +6,47 @@ export type FileTreeProps = {
   onSelect(path: string): void;
 };
 
+const languageLabels: Partial<Record<NonNullable<FileTreeNode['language']>, string>> = {
+  markdown: 'MD',
+  text: 'TXT',
+  html: 'HTML',
+  srt: 'SRT',
+  json: 'JSON',
+  unknown: ''
+};
+
 export function FileTree(props: FileTreeProps) {
   return (
-    <nav className="panel-scroll" aria-label="项目文件">
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {props.nodes.map(node => (
-          <li key={node.path}>
-            {node.type === 'folder' ? (
-              <div
-                style={{
-                  padding: '8px 12px',
-                  paddingLeft: 12 + node.depth * 16,
-                  color: 'var(--muted)',
-                  fontWeight: 600
-                }}
-              >
-                {node.name}
-              </div>
-            ) : (
-              <button
-                type="button"
-                aria-current={node.path === props.selectedPath ? 'page' : undefined}
-                onClick={() => props.onSelect(node.path)}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  border: 0,
-                  padding: '8px 12px',
-                  paddingLeft: 12 + node.depth * 16,
-                  background: node.path === props.selectedPath ? '#eef6ff' : 'transparent',
-                  color: 'var(--text)',
-                  textAlign: 'left',
-                  cursor: 'pointer'
-                }}
-              >
-                {node.name}
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+    <nav className="tree-list" aria-label="项目文件">
+      {props.nodes.length === 0 ? (
+        <p className="empty-state compact">暂无项目文件</p>
+      ) : (
+        <ul>
+          {props.nodes.map(node => (
+            <li key={node.path}>
+              {node.type === 'folder' ? (
+                <div className="tree-folder" style={{ paddingLeft: 8 + node.depth * 14 }}>
+                  <span className="tree-icon">▾</span>
+                  <span className="tree-name">{node.name}</span>
+                </div>
+              ) : (
+                <button
+                  className="tree-file"
+                  type="button"
+                  aria-label={node.name}
+                  aria-current={node.path === props.selectedPath ? 'page' : undefined}
+                  onClick={() => props.onSelect(node.path)}
+                  style={{ paddingLeft: 8 + node.depth * 14 }}
+                >
+                  <span className="tree-icon">•</span>
+                  <span className="tree-name">{node.name}</span>
+                  {node.language ? <span className="tree-kind">{languageLabels[node.language]}</span> : null}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </nav>
   );
 }

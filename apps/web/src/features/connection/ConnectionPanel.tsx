@@ -35,7 +35,10 @@ export function ConnectionPanel(props: {
   return (
     <div className="connection-panel" aria-label="Runtime 连接状态">
       <div className="panel-header">
-        <span>{text}</span>
+        <div className="connection-status">
+          <span className={`connection-status-dot ${props.status}`} aria-hidden="true" />
+          <span>{text}</span>
+        </div>
       </div>
       <form
         className="connection-form"
