@@ -61,4 +61,25 @@ describe('RunDetailPanel', () => {
     expect(screen.getByText('missing optional MCP server')).toBeInTheDocument();
     expect(screen.getByText(/"imageInput": true/)).toBeInTheDocument();
   });
+
+  it('shows an empty codex diagnostics state when snapshot diagnostics are missing', () => {
+    const diagnostics: RunDiagnosticsResponse = {
+      runId: 'run_3',
+      files: [],
+      warnings: [],
+      codexStatusSnapshot: {
+        codexBin: '/usr/local/bin/codex',
+        codexVersion: '1.0.0',
+        codexHome: '/tmp/codex',
+        codexHomeMode: 'isolated',
+        codexHomeSource: 'isolated',
+        codexHomeWritable: true,
+        capabilities: {}
+      } as RunDiagnosticsResponse['codexStatusSnapshot']
+    };
+
+    render(<RunDetailPanel runId="run_3" diagnostics={diagnostics} />);
+
+    expect(screen.getByText('暂无 Codex 诊断')).toBeInTheDocument();
+  });
 });

@@ -20,6 +20,7 @@ export function RunDetailPanel(props: { runId?: string; diagnostics?: RunDiagnos
   const diagnosticFiles = props.diagnostics?.files ?? [];
   const warnings = props.diagnostics?.warnings ?? [];
   const codexStatusSnapshot = props.diagnostics?.codexStatusSnapshot;
+  const codexDiagnostics = codexStatusSnapshot?.diagnostics ?? [];
 
   return (
     <div className="panel-scroll">
@@ -59,11 +60,11 @@ export function RunDetailPanel(props: { runId?: string; diagnostics?: RunDiagnos
             <dd>{String(codexStatusSnapshot.codexHomeWritable)}</dd>
             <dt>Diagnostics</dt>
             <dd>
-              {codexStatusSnapshot.diagnostics.length === 0 ? (
+              {codexDiagnostics.length === 0 ? (
                 '暂无 Codex 诊断'
               ) : (
                 <ul>
-                  {codexStatusSnapshot.diagnostics.map((diagnostic) => (
+                  {codexDiagnostics.map((diagnostic) => (
                     <li key={diagnostic}>{diagnostic}</li>
                   ))}
                 </ul>
