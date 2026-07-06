@@ -250,6 +250,74 @@ describe('App', () => {
       expect(screen.getByText('无法加载文件')).toBeInTheDocument();
     });
   });
+
+  it('refreshes a clean draft when a file reload returns newer content', async () => {
+    const user = userEvent.setup();
+    const filePathA = 'docs/design/enterprise-agent-workbench.md';
+    const filePathB = 'docs/notes.md';
+    const initialContentA = '# Workbench v1';
+    const reloadedContentA = '# Workbench v2';
+    const contentB = '# Notes';
+    const openCallsByPath = new Map<string, number>();
+    const treeNodes: FileTreeNode[] = [
+      { type: 'file', name: 'enterprise-agent-workbench.md', path: filePathA, depth: 0 },
+      { type: 'file', name: 'notes.md', path: filePathB, depth: 0 }
+    ];
+
+    const fileService = {
+      async listTree() {
+        return treeNodes;
+      },
+      async openFile(path: string) {
+        openCallsByPath.set(path, (openCallsByPath.get(path) ?? 0) + 1);
+        if (path === filePathA) {
+          return createWorkspaceFile(path, openCallsByPath.get(path) === 1 ? initialContentA : reloadedContentA);
+        }
+        return createWorkspaceFile(path, contentB);
+      },
+      async saveFile(path: string, content: string) {
+        return createWorkspaceFile(path, content);
+      }
+    };
+
+    render(<App fileService={fileService} />);
+
+    expect(await screen.findByRole('textbox', { name: `${filePathA} 编辑器` })).toHaveValue(initialContentA);
+    expect(screen.getByText('已保存到本地草稿')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'notes.md' }));
+    expect(await screen.findByRole('textbox', { name: `${filePathB} 编辑器` })).toHaveValue(contentB);
+
+    await user.click(screen.getByRole('button', { name: 'enterprise-agent-workbench.md' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: `${filePathA} 编辑器` })).toHaveValue(reloadedContentA);
+      expect(screen.getByText('已保存到本地草稿')).toBeInTheDocument();
+      expect(screen.queryByText('未保存')).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows the editor when loading the project tree fails', async () => {
+    const filePath = 'docs/design/enterprise-agent-workbench.md';
+    const content = '# Workbench';
+
+    const fileService = {
+      async listTree() {
+        throw new Error('tree unavailable');
+      },
+      async openFile(path: string) {
+        return createWorkspaceFile(path, content);
+      },
+      async saveFile(path: string, nextContent: string) {
+        return createWorkspaceFile(path, nextContent);
+      }
+    };
+
+    render(<App fileService={fileService} />);
+
+    expect(await screen.findByText('无法加载项目文件')).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: `${filePath} 编辑器` })).toHaveValue(content);
+  });
 });
 
 function createWorkspaceFile(path: string, content: string): WorkspaceFile {

@@ -10,20 +10,19 @@ export type FileEditorProps = {
 };
 
 export function FileEditor(props: FileEditorProps) {
+  const errors = [props.loadError, props.saveError].filter((error): error is string => error !== undefined);
+
   return (
     <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', height: '100%' }}>
       <div className="panel-header" style={{ justifyContent: 'space-between' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{props.path}</div>
           <div style={{ color: 'var(--muted)', fontSize: 12 }}>{props.dirty ? '未保存' : '已保存到本地草稿'}</div>
-          {props.loadError === undefined ? null : (
+          {errors.length === 0 ? null : (
             <div role="status" style={{ color: 'var(--danger)', fontSize: 12 }}>
-              {props.loadError}
-            </div>
-          )}
-          {props.saveError === undefined ? null : (
-            <div role="status" style={{ color: 'var(--danger)', fontSize: 12 }}>
-              {props.saveError}
+              {errors.map(error => (
+                <div key={error}>{error}</div>
+              ))}
             </div>
           )}
         </div>

@@ -33,6 +33,7 @@ export function App(props: AppProps = {}) {
   const [savingFilePaths, setSavingFilePaths] = useState<Set<string>>(() => new Set());
   const mountedRef = useRef(true);
   const selectedFilePathRef = useRef(state.selectedFilePath);
+  const savedFileByPathRef = useRef<Record<string, WorkspaceFile>>({});
   const draftContentByPathRef = useRef<Record<string, string>>({});
   const openRequestByPathRef = useRef<Record<string, number>>({});
   const savingFilePathsRef = useRef(new Set<string>());
@@ -80,8 +81,17 @@ export function App(props: AppProps = {}) {
       .then(file => {
         if (!mountedRef.current || openRequestByPathRef.current[path] !== requestId) return;
 
-        setSavedFileByPath(previous => ({ ...previous, [path]: file }));
-        if (!hasOwnPath(draftContentByPathRef.current, path)) {
+        const previousSavedFile = savedFileByPathRef.current[path];
+        const hasExistingDraft = hasOwnPath(draftContentByPathRef.current, path);
+        const existingDraft = draftContentByPathRef.current[path];
+        const shouldRefreshDraft =
+          !hasExistingDraft || (previousSavedFile !== undefined && existingDraft === previousSavedFile.content);
+
+        const nextSavedFiles = { ...savedFileByPathRef.current, [path]: file };
+        savedFileByPathRef.current = nextSavedFiles;
+        setSavedFileByPath(nextSavedFiles);
+
+        if (shouldRefreshDraft) {
           const nextDrafts = { ...draftContentByPathRef.current, [path]: file.content };
           draftContentByPathRef.current = nextDrafts;
           setDraftContentByPath(nextDrafts);
@@ -144,7 +154,9 @@ export function App(props: AppProps = {}) {
 
       if (!mountedRef.current) return;
 
-      setSavedFileByPath(previous => ({ ...previous, [saveSnapshot.path]: savedFile }));
+      const nextSavedFiles = { ...savedFileByPathRef.current, [saveSnapshot.path]: savedFile };
+      savedFileByPathRef.current = nextSavedFiles;
+      setSavedFileByPath(nextSavedFiles);
       if (draftContentByPathRef.current[saveSnapshot.path] === saveSnapshot.content) {
         const nextDrafts = { ...draftContentByPathRef.current, [saveSnapshot.path]: savedFile.content };
         draftContentByPathRef.current = nextDrafts;

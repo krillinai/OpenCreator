@@ -66,4 +66,22 @@ describe('FileEditor', () => {
       '# Workbench\nunsaved edit'
     );
   });
+
+  it('combines load and save errors into one status region', () => {
+    render(
+      <FileEditor
+        path="docs/design/enterprise-agent-workbench.md"
+        content="# Workbench"
+        dirty={true}
+        loadError="无法加载文件"
+        saveError="保存到本地草稿失败"
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByText('无法加载文件')).toBeInTheDocument();
+    expect(screen.getByText('保存到本地草稿失败')).toBeInTheDocument();
+  });
 });
