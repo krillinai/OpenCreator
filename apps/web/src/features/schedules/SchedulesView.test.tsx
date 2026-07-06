@@ -7,6 +7,7 @@ describe('SchedulesView', () => {
   it('shows workspace-write risk copy', () => {
     render(<SchedulesView connected schedules={[]} />);
     expect(screen.getByText('计划任务默认使用 workspace-write，可能在无人值守时修改工作区。')).toBeInTheDocument();
+    expect(screen.getByText('暂无计划任务')).toBeInTheDocument();
   });
 
   it('shows disconnected copy when runtime is unavailable', () => {
