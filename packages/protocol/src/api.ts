@@ -26,6 +26,54 @@ export type CodexStatusResponse = {
   diagnostics: string[];
 };
 
+export type DiagnosticFileResponse = {
+  name: string;
+  content: string;
+};
+
+export type RunDiagnosticsResponse = {
+  runId: string;
+  files: DiagnosticFileResponse[];
+  codexStatusSnapshot: CodexStatusResponse;
+  warnings: string[];
+};
+
+export type CleanupItemType = 'run_logs' | 'managed_thread_workspace';
+
+export type CleanupPreviewItem = {
+  type: CleanupItemType;
+  id: string;
+  path: string;
+  sizeBytes: number;
+  lastModifiedAt: string;
+  reason: string;
+};
+
+export type CleanupPreviewResponse = {
+  olderThanDays: number;
+  items: CleanupPreviewItem[];
+  totalSizeBytes: number;
+  warnings: string[];
+};
+
+export type CleanupDeleteRequest = {
+  olderThanDays: number;
+  confirm: true;
+};
+
+export type CleanupDeletedItem = Pick<CleanupPreviewItem, 'type' | 'id' | 'path' | 'sizeBytes'>;
+
+export type CleanupFailedItem = CleanupDeletedItem & {
+  error: string;
+};
+
+export type CleanupDeleteResponse = {
+  deleted: CleanupDeletedItem[];
+  failed: CleanupFailedItem[];
+  totalDeletedBytes: number;
+  warnings: string[];
+};
+
 export type RunRequest = {
   prompt: string;
   threadId?: string;

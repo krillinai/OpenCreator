@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type {
   AgentEventEnvelope,
+  CleanupDeleteRequest,
+  CleanupDeleteResponse,
+  CleanupPreviewResponse,
   CreateScheduleRequest,
+  RunDiagnosticsResponse,
   RunRequest,
   RunScheduleNowResponse,
   RuntimeErrorCode,
@@ -108,5 +112,78 @@ describe('protocol shape', () => {
   it('includes schedule not found as a closed error code', () => {
     const code: RuntimeErrorCode = 'SCHEDULE_NOT_FOUND';
     expect(code).toBe('SCHEDULE_NOT_FOUND');
+  });
+
+  it('allows run diagnostics response shape', () => {
+    const response: RunDiagnosticsResponse = {
+      runId: 'run_123',
+      files: [
+        { name: 'meta.json', content: '{"id":"run_123"}' },
+        { name: 'events.ndjson', content: '{"type":"done"}\n' }
+      ],
+      codexStatusSnapshot: {
+        codexBin: 'codex',
+        codexVersion: '0.0.0-test',
+        codexHome: '/tmp/codex-home',
+        codexHomeMode: 'isolated',
+        codexHomeSource: 'isolated',
+        codexHomeWritable: true,
+        capabilities: { execJson: true },
+        diagnostics: []
+      },
+      warnings: ['Diagnostics are redacted on a best-effort basis.']
+    };
+
+    expect(response.files[0]?.name).toBe('meta.json');
+    expect(response.codexStatusSnapshot.codexHomeMode).toBe('isolated');
+  });
+
+  it('allows runtime cleanup request and response shapes', () => {
+    const preview: CleanupPreviewResponse = {
+      olderThanDays: 30,
+      items: [
+        {
+          type: 'run_logs',
+          id: 'run_123',
+          path: '/tmp/runtime/runs/run_123',
+          sizeBytes: 100,
+          lastModifiedAt: '2026-07-06T00:00:00.000Z',
+          reason: 'run logs older than 30 days'
+        },
+        {
+          type: 'managed_thread_workspace',
+          id: 'thread_123',
+          path: '/tmp/runtime/workspaces/thread_123',
+          sizeBytes: 200,
+          lastModifiedAt: '2026-07-05T00:00:00.000Z',
+          reason: 'archived managed thread workspace older than 30 days'
+        }
+      ],
+      totalSizeBytes: 300,
+      warnings: []
+    };
+    const request: CleanupDeleteRequest = { olderThanDays: 30, confirm: true };
+    const deleted: CleanupDeleteResponse = {
+      deleted: [
+        {
+          type: 'run_logs',
+          id: 'run_123',
+          path: '/tmp/runtime/runs/run_123',
+          sizeBytes: 100
+        }
+      ],
+      failed: [],
+      totalDeletedBytes: 100,
+      warnings: []
+    };
+
+    expect(preview.totalSizeBytes).toBe(300);
+    expect(request.confirm).toBe(true);
+    expect(deleted.deleted[0]?.type).toBe('run_logs');
+  });
+
+  it('includes cleanup failed as a closed error code', () => {
+    const code: RuntimeErrorCode = 'CLEANUP_FAILED';
+    expect(code).toBe('CLEANUP_FAILED');
   });
 });
