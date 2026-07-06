@@ -2,6 +2,8 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
 import { FileEditor } from '../components/editor/FileEditor.js';
 import { FileTree } from '../components/editor/FileTree.js';
+import { CapabilitiesView } from '../features/capabilities/CapabilitiesView.js';
+import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
 import { ConnectionPanel } from '../features/connection/ConnectionPanel.js';
 import { Composer } from '../features/runs/Composer.js';
 import { ThreadList } from '../features/threads/ThreadList.js';
@@ -17,6 +19,7 @@ type AppFileService = {
 
 export type AppProps = {
   fileService?: AppFileService;
+  capabilitiesView?: CapabilitiesViewProps;
 };
 
 export function App(props: AppProps = {}) {
@@ -134,6 +137,27 @@ export function App(props: AppProps = {}) {
   const loadingSelectedFile = loadingFilePath === selectedFilePath && currentFile === undefined;
   const loadError = loadErrorByPath[selectedFilePath];
   const saveError = saveErrorByPath[selectedFilePath];
+  const rightPanel =
+    props.capabilitiesView === undefined ? (
+      loadingSelectedFile ? (
+        <div className="panel-header">正在加载文件...</div>
+      ) : currentFile === undefined ? (
+        <div className="panel-header">{loadError ?? '无法加载文件'}</div>
+      ) : (
+        <FileEditor
+          path={currentFile.path}
+          content={selectedDraftContent}
+          dirty={dirty}
+          saving={savingCurrentFile}
+          loadError={loadError}
+          saveError={saveError}
+          onChange={handleEditorContentChange}
+          onSave={saveCurrentFile}
+        />
+      )
+    ) : (
+      <CapabilitiesView {...props.capabilitiesView} />
+    );
 
   function handleEditorContentChange(content: string) {
     const path = selectedFilePathRef.current;
@@ -209,24 +233,7 @@ export function App(props: AppProps = {}) {
           <Composer onSubmit={() => {}} />
         </>
       }
-      rightPanel={
-        loadingSelectedFile ? (
-          <div className="panel-header">正在加载文件...</div>
-        ) : currentFile === undefined ? (
-          <div className="panel-header">{loadError ?? '无法加载文件'}</div>
-        ) : (
-          <FileEditor
-            path={currentFile.path}
-            content={selectedDraftContent}
-            dirty={dirty}
-            saving={savingCurrentFile}
-            loadError={loadError}
-            saveError={saveError}
-            onChange={handleEditorContentChange}
-            onSave={saveCurrentFile}
-          />
-        )
-      }
+      rightPanel={rightPanel}
       fileTree={
         <>
           <div className="panel-header">{treeLoadError ?? '项目文件'}</div>
