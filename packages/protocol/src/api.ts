@@ -190,3 +190,98 @@ export type CodexMcpOperationResponse = {
 export type CodexMcpOperationListResponse = {
   operations: CodexMcpOperationResponse[];
 };
+
+export type ScheduleConcurrencyPolicy = 'skip' | 'queue' | 'parallel';
+export type ScheduleMisfirePolicy = 'skip';
+export type ScheduleLastStatus = PublicRunStatus | 'skipped' | 'queued';
+export type ScheduleOperationType =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'run_now'
+  | 'timer_trigger'
+  | 'skip_misfire'
+  | 'skip_concurrency'
+  | 'queue_trigger'
+  | 'run_queued';
+export type ScheduleOperationStatus = 'succeeded' | 'failed' | 'skipped' | 'queued';
+export type ScheduleRunSummary = Pick<RunResponse, 'id' | 'threadId' | 'status'>;
+
+export type CreateScheduleRequest = {
+  name: string;
+  cron: string;
+  timezone?: string;
+  enabled?: boolean;
+  prompt: string;
+  profile?: string;
+  cwd?: string;
+  model?: string;
+  reasoning?: ReasoningEffort;
+  sandbox?: SandboxMode;
+  timeoutMs?: number;
+  concurrencyPolicy?: ScheduleConcurrencyPolicy;
+  misfirePolicy?: ScheduleMisfirePolicy;
+};
+
+export type UpdateScheduleRequest = Partial<
+  Omit<CreateScheduleRequest, 'model' | 'reasoning' | 'timeoutMs'>
+> & {
+  model?: string | null;
+  reasoning?: ReasoningEffort | null;
+  timeoutMs?: number | null;
+};
+
+export type ScheduleResponse = {
+  id: string;
+  name: string;
+  cron: string;
+  timezone: string;
+  enabled: boolean;
+  promptPreviewRedacted: string;
+  profile: string;
+  cwd: string;
+  canonicalCwd: string;
+  model?: string | null;
+  reasoning?: ReasoningEffort | null;
+  sandbox: SandboxMode;
+  timeoutMs?: number | null;
+  concurrencyPolicy: ScheduleConcurrencyPolicy;
+  misfirePolicy: ScheduleMisfirePolicy;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  lastRunId?: string | null;
+  lastStatus?: ScheduleLastStatus | null;
+  pendingTrigger: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ScheduleDetailResponse = ScheduleResponse & {
+  prompt: string;
+};
+
+export type ScheduleListResponse = {
+  schedules: ScheduleResponse[];
+};
+
+export type RunScheduleNowResponse = {
+  run: ScheduleRunSummary | null;
+  schedule: ScheduleResponse;
+  skipped: boolean;
+  queued: boolean;
+};
+
+export type ScheduleOperationResponse = {
+  id: string;
+  operation: ScheduleOperationType;
+  scheduleId: string;
+  status: ScheduleOperationStatus;
+  runId?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+};
+
+export type ScheduleOperationListResponse = {
+  operations: ScheduleOperationResponse[];
+};

@@ -11,6 +11,7 @@
   "dependencies": {
     "@clawee/protocol": "workspace:*",
     "better-sqlite3": "^11.8.1",
+    "cron-parser": "^5.6.1",
     "fastify": "^5.2.1",
     "nanoid": "^5.0.9",
     "toml": "^3.0.0"

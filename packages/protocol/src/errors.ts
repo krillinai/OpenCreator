@@ -38,6 +38,7 @@ export type RuntimeErrorCode =
   | 'MCP_SERVER_INVALID'
   | 'MCP_WRITE_CONFIRMATION_REQUIRED'
   | 'SCHEDULE_INVALID'
+  | 'SCHEDULE_NOT_FOUND'
   | 'INTERNAL_ERROR';
 
 export type ApiError = {

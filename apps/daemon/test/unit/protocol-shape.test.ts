@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentEventEnvelope, RunRequest, RuntimeErrorCode } from '@clawee/protocol';
+import type {
+  AgentEventEnvelope,
+  CreateScheduleRequest,
+  RunRequest,
+  RunScheduleNowResponse,
+  RuntimeErrorCode,
+  ScheduleDetailResponse,
+  ScheduleOperationListResponse,
+  ScheduleResponse
+} from '@clawee/protocol';
 
 describe('protocol shape', () => {
   it('allows a minimal run request', () => {
@@ -30,5 +39,74 @@ describe('protocol shape', () => {
   it('keeps error codes as closed string literals', () => {
     const code: RuntimeErrorCode = 'CODEX_NOT_FOUND';
     expect(code).toBe('CODEX_NOT_FOUND');
+  });
+
+  it('allows schedule request and response shapes', () => {
+    const request: CreateScheduleRequest = {
+      name: 'daily status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize the project state',
+      profile: 'default',
+      sandbox: 'workspace-write',
+      concurrencyPolicy: 'skip',
+      misfirePolicy: 'skip'
+    };
+    const response: ScheduleResponse = {
+      id: 'sch_123',
+      name: request.name,
+      cron: request.cron,
+      timezone: 'Asia/Shanghai',
+      enabled: true,
+      promptPreviewRedacted: 'Summarize the project state',
+      profile: 'default',
+      cwd: '/tmp/project',
+      canonicalCwd: '/tmp/project',
+      model: null,
+      reasoning: null,
+      sandbox: 'workspace-write',
+      timeoutMs: 60000,
+      concurrencyPolicy: 'skip',
+      misfirePolicy: 'skip',
+      nextRunAt: '2026-07-06T01:00:00.000Z',
+      lastRunAt: null,
+      lastRunId: null,
+      lastStatus: null,
+      pendingTrigger: false,
+      createdAt: '2026-07-06T00:00:00.000Z',
+      updatedAt: '2026-07-06T00:00:00.000Z'
+    };
+    const detail: ScheduleDetailResponse = {
+      ...response,
+      prompt: request.prompt
+    };
+    const runNow: RunScheduleNowResponse = {
+      run: { id: 'run_1', status: 'running' },
+      schedule: response,
+      skipped: false,
+      queued: false
+    };
+    const operations: ScheduleOperationListResponse = {
+      operations: [
+        {
+          id: 'schop_1',
+          operation: 'run_now',
+          scheduleId: 'sch_123',
+          status: 'succeeded',
+          runId: 'run_1',
+          errorCode: null,
+          errorMessage: null,
+          createdAt: '2026-07-06T00:00:01.000Z'
+        }
+      ]
+    };
+
+    expect(detail.prompt).toBe('Summarize the project state');
+    expect(runNow.run?.id).toBe('run_1');
+    expect(operations.operations[0]?.operation).toBe('run_now');
+  });
+
+  it('includes schedule not found as a closed error code', () => {
+    const code: RuntimeErrorCode = 'SCHEDULE_NOT_FOUND';
+    expect(code).toBe('SCHEDULE_NOT_FOUND');
   });
 });
