@@ -11,6 +11,8 @@ import { createMcpManager } from '../codex/mcp/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { createSkillManager } from '../codex/skills/manager.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
+import { ScheduleRepository } from '../scheduler/repository.js';
+import { createSchedulerService, type SchedulerService } from '../scheduler/service.js';
 import { openRuntimeDatabase } from '../storage/database.js';
 import { createThreadManager } from '../threads/manager.js';
 import { requireAuth } from './auth.js';
@@ -20,6 +22,7 @@ import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
 import { registerProfileRoutes } from './routes.profiles.js';
 import { registerRunRoutes } from './routes.runs.js';
+import { registerScheduleRoutes } from './routes.schedules.js';
 import { registerSkillRoutes } from './routes.skills.js';
 import { registerThreadRoutes } from './routes.threads.js';
 
@@ -30,6 +33,8 @@ export type BuildServerInput = {
   codexBin?: string;
   codexHome?: string;
   runManager?: RunManager;
+  scheduler?: SchedulerService;
+  schedulerAutostart?: boolean;
   sseHeartbeatMs?: number;
   resumeCapabilityVerified?: boolean;
   capabilities?: RuntimeCapabilityMatrix;
@@ -69,6 +74,16 @@ export async function buildServer(input: BuildServerInput) {
       resumeCapabilityVerified,
       profileValidator: profileManager
     });
+  const scheduleRepository = new ScheduleRepository(db);
+  const scheduler =
+    input.scheduler ??
+    createSchedulerService({
+      repository: scheduleRepository,
+      runManager,
+      defaultCwd: process.cwd(),
+      profileValidator: profileManager,
+      autostart: input.schedulerAutostart ?? true
+    });
 
   server.setErrorHandler((error, _request, reply) => {
     if ((error as { code?: string }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
@@ -80,6 +95,7 @@ export async function buildServer(input: BuildServerInput) {
   });
 
   server.addHook('onClose', async () => {
+    scheduler.stop();
     if (ownsDb) db.close();
   });
 
@@ -106,6 +122,7 @@ export async function buildServer(input: BuildServerInput) {
     threadManager,
     profileValidator: profileManager
   });
+  await registerScheduleRoutes(server, scheduler);
   await registerDiagnosticsRoutes(server, dataDir);
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager

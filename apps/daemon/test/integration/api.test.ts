@@ -42,6 +42,109 @@ describe('runtime api', () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it('creates, lists, gets, updates, deletes, and runs schedules', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-schedule' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      schedulerAutostart: false
+    });
+
+    const created = await authPost('/schedules', {
+      name: 'daily status',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'Summarize status',
+      cwd: tempDir,
+      timeoutMs: 5000
+    });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      name: 'daily status',
+      promptPreviewRedacted: 'Summarize status',
+      timeoutMs: 5000,
+      concurrencyPolicy: 'skip',
+      misfirePolicy: 'skip'
+    });
+    expect(created.json()).not.toHaveProperty('prompt');
+    const id = created.json().id;
+
+    const listed = await authGet('/schedules');
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().schedules).toEqual([expect.objectContaining({ id, name: 'daily status' })]);
+    expect(listed.json().schedules[0]).not.toHaveProperty('prompt');
+
+    const fetched = await authGet(`/schedules/${id}`);
+    expect(fetched.statusCode).toBe(200);
+    expect(fetched.json()).toMatchObject({
+      id,
+      name: 'daily status',
+      prompt: 'Summarize status'
+    });
+
+    const updated = await authPatch(`/schedules/${id}`, {
+      enabled: false,
+      name: 'paused status'
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({
+      id,
+      enabled: false,
+      name: 'paused status',
+      nextRunAt: null
+    });
+
+    const runNow = await authPost(`/schedules/${id}/run-now`, {});
+    expect(runNow.statusCode).toBe(202);
+    expect(runNow.json().run).toMatchObject({ status: 'running' });
+    await waitForRunStatus(runNow.json().run.id, 'succeeded');
+
+    const operations = await authGet(`/schedules/${id}/operations`);
+    expect(operations.statusCode).toBe(200);
+    expect(operations.json().operations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ operation: 'run_now' })])
+    );
+
+    const deleted = await authDelete(`/schedules/${id}`);
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toEqual({ deleted: true });
+  });
+
+  it('maps invalid and missing schedule requests', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      schedulerAutostart: false
+    });
+
+    const invalidBody = await authPost('/schedules', {});
+    expect(invalidBody.statusCode).toBe(400);
+    expect(invalidBody.json().error.code).toBe('VALIDATION_FAILED');
+
+    const invalidCron = await authPost('/schedules', {
+      name: 'daily status',
+      cron: 'not a cron',
+      timezone: 'UTC',
+      prompt: 'Summarize status',
+      cwd: tempDir
+    });
+    expect(invalidCron.statusCode).toBe(422);
+    expect(invalidCron.json().error.code).toBe('SCHEDULE_INVALID');
+
+    const missing = await authGet('/schedules/sch_missing');
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe('SCHEDULE_NOT_FOUND');
+  });
+
   it('returns health without auth', async () => {
     server = await buildServer({ token: 'secret' });
     const response = await server.inject({ method: 'GET', url: '/healthz' });
