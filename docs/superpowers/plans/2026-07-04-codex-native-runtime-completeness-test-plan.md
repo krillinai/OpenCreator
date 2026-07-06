@@ -42,7 +42,7 @@
 | R3 | Profiles / Settings / CODEX_HOME | `MISSING_IMPL` | 只有 `CODEX_HOME` 解析；缺 profile CRUD、写锁、原子写入、备份、config normalize、缓存同步 |
 | R4 | Skills Pass-through | `PARTIAL/BLOCKED_ENV` | skills 扫描、元数据、安装、覆盖、删除、备份、invalid 诊断、写确认、操作日志、API 自动化测试通过；真实 Codex discovery smoke 已实现但当前机器 Codex auth 返回 401，标记 `BLOCKED_ENV`；真实模型按 skill 行为输出仍为 `UNVERIFIED_BEHAVIOR` |
 | R5 | MCP Pass-through | `PASS` | R5 范围内 MCP 管理 API、fake Codex MCP command、env/API/log/diagnostics 脱敏、SQLite 操作审计、真实 `codex mcp add/get/list/remove` gated smoke 已通过；R5 不实现自研 MCP runtime 或托管 MCP server，真实模型调用 MCP tool 行为仍为 `UNVERIFIED_BEHAVIOR` |
-| R6 | Scheduler | `PARTIAL/MISSING_IMPL` | 只有 misfire helper；缺 schedule CRUD、run-now、cron/timezone/DST、concurrency policy |
+| R6 | Scheduler | `PASS` | schedule CRUD/run-now、timer trigger、source metadata、per-run timeout、cron/timezone/DST、misfire skip、`run_once` 拒绝、concurrency skip/queue/parallel、API 错误映射和真实 Codex run-now smoke 已通过 |
 | R7 | Diagnostics + Release Readiness | `PARTIAL` | diagnostics 导出和 symlink 防护已测；缺 `/codex/status` 快照打包、日志/workspace 清理 API、release smoke 脚本 |
 
 当前已经通过的基础测试不能被描述为“完整 Codex 全功能通过”。准确表述是：**R0/R1 的最小 Runtime run 闭环通过，完整 contract 仍有 R2-R7 大量缺口。**
@@ -426,7 +426,31 @@ Notes:
 4. schedule run 写入 `createdBy=schedule/sourceId`。
 5. schedule timeout 生效。
 
-**当前状态：** `MISSING_IMPL`。
+**当前状态：** `PASS`。
+
+已实现并通过自动化测试：
+
+1. `/schedules` create/list/get/update/delete。
+2. `/schedules/:id/run-now` 通过 `SchedulerService -> RunManager.startRun()` 创建 independent run。
+3. schedule run 持久化 `createdBy=schedule`、`sourceId=<scheduleId>` 和 `timeoutMs`。
+4. disabled schedule 清空 `nextRunAt`。
+5. schedule operation audit 覆盖 `create/update/delete/run_now/timer_trigger/skip_misfire/skip_concurrency/queue_trigger/run_queued`。
+6. API 对 scheduler `INTERNAL_ERROR` 统一返回 `"Internal error"`，不泄漏内部路径或 secret。
+7. gated 真实 Codex smoke 已验证 schedule run-now 能穿透 daemon 调起真实 `codex exec`，并产生 `done/succeeded` 事件。
+
+验证命令：
+
+```bash
+pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts test/unit/scheduler-repository.test.ts test/unit/scheduler-service.test.ts test/unit/storage.test.ts test/integration/run-manager.test.ts test/integration/api.test.ts
+```
+
+结果：`9` 个测试文件、`146` 个测试通过。
+
+```bash
+CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
+```
+
+结果：通过；`1` 个真实 Codex scheduler smoke 通过，`11` 个非目标 smoke 跳过。生成的 ignored fixture 记录了 `createdBy=schedule`、`sourceId`、`run_now` operation、assistant marker 和 `done/succeeded` 事件。
 
 ### Task R6.2: time semantics
 
@@ -439,7 +463,34 @@ Notes:
 5. concurrency `skip/queue/parallel`。
 6. DST 切换日行为。
 
-**当前状态：** `PARTIAL/MISSING_IMPL`。只有 `shouldRunMissedSchedule` helper。
+**当前状态：** `PASS`。
+
+已实现并通过自动化测试：
+
+1. cron adapter 使用固定 timezone 计算下一次运行时间。
+2. UTC、Asia/Shanghai 和 America/New_York DST spring-forward 样例有确定性测试。
+3. misfire 只支持 `skip`；睡眠/离线/长卡顿错过触发时跳过并推进 `nextRunAt`，不补跑。
+4. `run_once` 不作为第一版能力实现；validator 对 `misfirePolicy: "run_once"` 返回 `SCHEDULE_INVALID`。
+5. concurrency `skip` 在同 schedule 有 active run 时记录 skip，不启动新 run。
+6. concurrency `queue` 合并 pending trigger，active run 结束后只补一个 queued run；queued trigger 失败会清理 pending 状态并继续处理其它 schedule。
+7. concurrency `parallel` 允许同 schedule 重叠创建 run。
+8. scheduler timer lifecycle 覆盖 start/stop、queue timer、失败隔离和失败后刷新 timer。
+
+补充验证：
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+git diff --check
+```
+
+结果：
+
+1. `pnpm typecheck` 通过。
+2. `pnpm test` 通过；daemon `29` 个测试文件通过、`1` 个真实 smoke 文件默认 gate 跳过，`264` 个测试通过、`12` 个 gated smoke 跳过。
+3. 默认真实 smoke gate 关闭时通过，`12` 个 smoke 测试全部跳过。
+4. `git diff --check` 通过。
 
 ## 12. R7 Diagnostics / Release Readiness 测试
 
