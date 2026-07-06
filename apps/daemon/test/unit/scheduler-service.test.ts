@@ -159,6 +159,83 @@ describe('scheduler service', () => {
     });
   });
 
+  it('creates a run for a due timer inside the grace window', () => {
+    const { runManager, service, timers, setNow } = createFixtureWithTimers('2026-07-06T08:59:45.000Z');
+    const schedule = service.createSchedule({
+      name: 'daily run',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'run at nine',
+      cwd: tempDir
+    });
+
+    expect(timers).toHaveLength(1);
+    expect(timers[0]?.ms).toBe(15_000);
+
+    setNow('2026-07-06T09:00:00.000Z');
+    timers[0]?.callback();
+
+    expect(runManager.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'run at nine',
+        createdBy: 'schedule'
+      })
+    );
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      lastStatus: 'running',
+      lastRunId: 'run_0',
+      nextRunAt: '2026-07-07T09:00:00.000Z'
+    });
+    expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
+      operation: 'timer_trigger',
+      status: 'succeeded'
+    });
+  });
+
+  it('skips missed triggers outside the grace window and advances nextRunAt', () => {
+    const { runManager, service, setNow } = createFixtureWithTimers('2026-07-06T08:00:00.000Z');
+    const schedule = service.createSchedule({
+      name: 'daily run',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'run at nine',
+      cwd: tempDir
+    });
+
+    setNow('2026-07-06T09:05:00.000Z');
+    service.processDueSchedulesForTest?.();
+
+    expect(runManager.startRun).not.toHaveBeenCalled();
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      lastStatus: 'skipped',
+      nextRunAt: '2026-07-07T09:00:00.000Z'
+    });
+    expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
+      operation: 'skip_misfire',
+      status: 'skipped'
+    });
+  });
+
+  it('stop clears active timer', () => {
+    const { service, timers, cleared } = createFixtureWithTimers('2026-07-06T08:59:45.000Z');
+
+    service.createSchedule({
+      name: 'daily run',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'run at nine',
+      cwd: tempDir
+    });
+
+    expect(timers).toHaveLength(1);
+
+    service.stop();
+
+    expect(cleared).toEqual([timers[0]?.handle]);
+    service.refreshTimer();
+    expect(cleared).toHaveLength(1);
+  });
+
   it('throws SCHEDULE_NOT_FOUND for missing schedule mutations', () => {
     const { service } = createFixture();
 
@@ -179,7 +256,7 @@ describe('scheduler service', () => {
   });
 });
 
-function createFixture() {
+function createFixture(options: { autostart?: boolean } = {}) {
   tempDir = mkdtempSync(join(tmpdir(), 'clawee-scheduler-service-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const repository = new ScheduleRepository(db, {
@@ -211,7 +288,41 @@ function createFixture() {
     defaultCwd: tempDir,
     profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
     clock: { now: () => new Date('2026-07-06T00:00:00.000Z') },
-    autostart: false
+    autostart: options.autostart ?? false
   });
   return { repository, runManager, service };
+}
+
+function createFixtureWithTimers(now: string) {
+  const timers: Array<{ callback: () => void; ms: number; handle: object }> = [];
+  const cleared: unknown[] = [];
+  const fixture = createFixture({ autostart: false });
+  let currentNow = now;
+  const service = createSchedulerService({
+    repository: fixture.repository,
+    runManager: fixture.runManager as unknown as RunManager,
+    defaultCwd: tempDir,
+    profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
+    clock: { now: () => new Date(currentNow) },
+    timers: {
+      setTimeout(callback, ms) {
+        const handle = { index: timers.length };
+        timers.push({ callback, ms, handle });
+        return handle;
+      },
+      clearTimeout(handle) {
+        cleared.push(handle);
+      }
+    },
+    autostart: false
+  });
+  return {
+    ...fixture,
+    service,
+    timers,
+    cleared,
+    setNow(value: string) {
+      currentNow = value;
+    }
+  };
 }

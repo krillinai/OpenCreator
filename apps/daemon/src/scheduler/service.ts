@@ -40,6 +40,13 @@ export type SchedulerService = {
   start(): void;
   stop(): void;
   refreshTimer(): void;
+  processDueSchedulesForTest?(): void;
+};
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+type SchedulerTimers = {
+  setTimeout(callback: () => void, ms: number): TimerHandle | unknown;
+  clearTimeout(handle: TimerHandle | unknown): void;
 };
 
 export type SchedulerServiceOptions = {
@@ -48,8 +55,13 @@ export type SchedulerServiceOptions = {
   defaultCwd: string;
   profileValidator: ProfileValidator;
   clock?: SchedulerClock;
+  timers?: SchedulerTimers;
+  triggerGraceMs?: number;
   autostart?: boolean;
 };
+
+const DEFAULT_TRIGGER_GRACE_MS = 30_000;
+const MAX_TIMER_DELAY_MS = 2_147_000_000;
 
 const systemClock: SchedulerClock = {
   now: () => new Date()
@@ -57,6 +69,93 @@ const systemClock: SchedulerClock = {
 
 export function createSchedulerService(options: SchedulerServiceOptions): SchedulerService {
   const clock = options.clock ?? systemClock;
+  const timers = options.timers ?? {
+    setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms),
+    clearTimeout: (handle: TimerHandle | unknown) => clearTimeout(handle as TimerHandle)
+  };
+  const triggerGraceMs = options.triggerGraceMs ?? DEFAULT_TRIGGER_GRACE_MS;
+  let timer: TimerHandle | unknown;
+
+  function triggerSchedule(
+    schedule: ScheduleRecord,
+    operation: 'run_now' | 'timer_trigger' | 'run_queued',
+    ranAt: string
+  ): RunScheduleNowResponse {
+    let run;
+    try {
+      run = options.runManager.startRun({
+        prompt: schedule.prompt,
+        cwd: schedule.cwd,
+        profile: schedule.profile,
+        sandbox: schedule.sandbox,
+        model: schedule.model ?? undefined,
+        reasoning: schedule.reasoning ?? undefined,
+        createdBy: 'schedule',
+        sourceId: schedule.id,
+        timeoutMs: schedule.timeoutMs ?? undefined
+      });
+    } catch (error) {
+      const message = formatError(error);
+      options.repository.insertOperation({
+        scheduleId: schedule.id,
+        operation,
+        status: 'failed',
+        errorCode: 'INTERNAL_ERROR',
+        errorMessage: message
+      });
+      throw new SchedulerError('INTERNAL_ERROR', message);
+    }
+    const updated = options.repository.recordRun({
+      id: schedule.id,
+      runId: run.id,
+      ranAt,
+      status: run.status
+    });
+    if (updated === null) throw notFound();
+    options.repository.insertOperation({
+      scheduleId: schedule.id,
+      operation,
+      status: 'succeeded',
+      runId: run.id
+    });
+    return {
+      run,
+      schedule: toScheduleResponse(updated),
+      skipped: false,
+      queued: false
+    };
+  }
+
+  function processDueSchedules(): void {
+    const now = clock.now().toISOString();
+    for (const schedule of options.repository.listDue(now)) {
+      processDueSchedule(schedule, now);
+    }
+    service.refreshTimer();
+  }
+
+  function processDueSchedule(schedule: ScheduleRecord, now: string): void {
+    if (schedule.nextRunAt === null || schedule.nextRunAt === undefined) return;
+
+    const nextRunAt = computeNextRunAt({ cron: schedule.cron, timezone: schedule.timezone, from: now });
+    const ageMs = new Date(now).getTime() - new Date(schedule.nextRunAt).getTime();
+    if (ageMs > triggerGraceMs) {
+      const skipped = options.repository.recordSkipped({ id: schedule.id, status: 'skipped' });
+      if (skipped === null) throw notFound();
+      const updated = options.repository.update(schedule.id, { nextRunAt });
+      if (updated === null) throw notFound();
+      options.repository.insertOperation({
+        scheduleId: schedule.id,
+        operation: 'skip_misfire',
+        status: 'skipped'
+      });
+      return;
+    }
+
+    triggerSchedule(schedule, 'timer_trigger', now);
+    const updated = options.repository.update(schedule.id, { nextRunAt });
+    if (updated === null) throw notFound();
+  }
 
   const service: SchedulerService = {
     createSchedule(input) {
@@ -73,6 +172,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         operation: 'create',
         status: 'succeeded'
       });
+      service.refreshTimer();
       return toScheduleResponse(schedule);
     },
 
@@ -111,6 +211,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         operation: 'update',
         status: 'succeeded'
       });
+      service.refreshTimer();
       return toScheduleResponse(updated);
     },
 
@@ -123,53 +224,14 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         operation: 'delete',
         status: 'succeeded'
       });
+      service.refreshTimer();
     },
 
     runNow(id) {
       const schedule = requireSchedule(options.repository, id);
-      let run;
-      try {
-        run = options.runManager.startRun({
-          prompt: schedule.prompt,
-          cwd: schedule.cwd,
-          profile: schedule.profile,
-          sandbox: schedule.sandbox,
-          model: schedule.model ?? undefined,
-          reasoning: schedule.reasoning ?? undefined,
-          createdBy: 'schedule',
-          sourceId: schedule.id,
-          timeoutMs: schedule.timeoutMs ?? undefined
-        });
-      } catch (error) {
-        const message = formatError(error);
-        options.repository.insertOperation({
-          scheduleId: schedule.id,
-          operation: 'run_now',
-          status: 'failed',
-          errorCode: 'INTERNAL_ERROR',
-          errorMessage: message
-        });
-        throw new SchedulerError('INTERNAL_ERROR', message);
-      }
-      const updated = options.repository.recordRun({
-        id: schedule.id,
-        runId: run.id,
-        ranAt: clock.now().toISOString(),
-        status: run.status
-      });
-      if (updated === null) throw notFound();
-      options.repository.insertOperation({
-        scheduleId: schedule.id,
-        operation: 'run_now',
-        status: 'succeeded',
-        runId: run.id
-      });
-      return {
-        run,
-        schedule: toScheduleResponse(updated),
-        skipped: false,
-        queued: false
-      };
+      const response = triggerSchedule(schedule, 'run_now', clock.now().toISOString());
+      service.refreshTimer();
+      return response;
     },
 
     listOperations(id, limit) {
@@ -180,15 +242,33 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     },
 
     start() {
-      return;
+      service.refreshTimer();
     },
 
     stop() {
-      return;
+      if (timer !== undefined) {
+        timers.clearTimeout(timer);
+        timer = undefined;
+      }
     },
 
     refreshTimer() {
-      return;
+      service.stop();
+      const next = options.repository.getNextEnabled();
+      if (next?.nextRunAt === null || next?.nextRunAt === undefined) return;
+
+      const delayMs = Math.max(
+        0,
+        Math.min(MAX_TIMER_DELAY_MS, new Date(next.nextRunAt).getTime() - clock.now().getTime())
+      );
+      timer = timers.setTimeout(() => {
+        timer = undefined;
+        processDueSchedules();
+      }, delayMs);
+    },
+
+    processDueSchedulesForTest() {
+      processDueSchedules();
     }
   };
 
