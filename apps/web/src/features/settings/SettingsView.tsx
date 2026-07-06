@@ -14,7 +14,7 @@ export function SettingsView(props: SettingsViewProps) {
       <section>
         <h3>清理</h3>
         <button type="button">预览清理</button>
-        <button type="button" disabled={!props.cleanupPreviewed}>
+        <button type="button" disabled={!props.connected || !props.cleanupPreviewed}>
           确认清理
         </button>
       </section>
