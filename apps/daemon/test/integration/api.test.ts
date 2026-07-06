@@ -352,13 +352,22 @@ describe('runtime api', () => {
   it('unauthorized runtime cleanup route requests return 401', async () => {
     server = await buildServer({ token: 'secret' });
 
-    const response = await server.inject({
+    const preview = await server.inject({
       method: 'GET',
       url: '/runtime/cleanup/preview?olderThanDays=30'
     });
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json().error.code).toBe('UNAUTHORIZED');
+    expect(preview.statusCode).toBe(401);
+    expect(preview.json().error.code).toBe('UNAUTHORIZED');
+
+    const cleanup = await server.inject({
+      method: 'POST',
+      url: '/runtime/cleanup',
+      payload: { olderThanDays: 30, confirm: true }
+    });
+
+    expect(cleanup.statusCode).toBe(401);
+    expect(cleanup.json().error.code).toBe('UNAUTHORIZED');
   });
 
   it('returns codex status with auth', async () => {
