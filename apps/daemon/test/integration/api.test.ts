@@ -316,6 +316,27 @@ describe('runtime api', () => {
     expect(createThreadRepository(db).getThread('thread_cleanup_archived')).toBeDefined();
   });
 
+  it('keeps run database records after cleanup so diagnostics reports missing files', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir, db });
+    const oldRunDir = writeOldApiDir(join(tempDir, 'runs', 'run_old'), 'events.ndjson', 'done');
+    insertApiRun('run_old', { publicStatus: 'succeeded', internalStatus: 'succeeded' });
+
+    const deleted = await authPost('/runtime/cleanup', { olderThanDays: 30, confirm: true });
+    const diagnostics = await authGet('/runs/run_old/diagnostics');
+
+    expect(deleted.statusCode).toBe(200);
+    expect(existsSync(oldRunDir)).toBe(false);
+    expect(createRunRepository(db).getRun('run_old')).toBeDefined();
+    expect(diagnostics.statusCode).toBe(200);
+    expect(diagnostics.json()).toMatchObject({
+      runId: 'run_old',
+      files: [],
+      warnings: expect.arrayContaining(['Run diagnostics directory is missing.'])
+    });
+  });
+
   it('validates runtime cleanup query and body parameters', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
