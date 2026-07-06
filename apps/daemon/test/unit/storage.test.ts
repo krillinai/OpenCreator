@@ -120,6 +120,82 @@ describe('runtime storage', () => {
     expect(indexRows).toEqual([{ name: 'idx_codex_mcp_operations_created_at' }]);
   });
 
+  it('creates scheduler tables, indexes, and run timeout column', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+
+    const tableRows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('schedules', 'schedule_operations')"
+      )
+      .all() as Array<{ name: string }>;
+    expect(tableRows.map(row => row.name).sort()).toEqual(['schedule_operations', 'schedules']);
+
+    expect(columnNames(db, 'schedules')).toEqual(
+      expect.arrayContaining([
+        'id',
+        'name',
+        'cron',
+        'timezone',
+        'enabled',
+        'prompt',
+        'prompt_hash',
+        'prompt_preview_redacted',
+        'profile',
+        'cwd',
+        'canonical_cwd',
+        'model',
+        'reasoning',
+        'sandbox',
+        'timeout_ms',
+        'concurrency_policy',
+        'misfire_policy',
+        'next_run_at',
+        'last_run_at',
+        'last_run_id',
+        'last_status',
+        'pending_trigger',
+        'created_at',
+        'updated_at',
+        'deleted_at'
+      ])
+    );
+    expect(columnNames(db, 'schedule_operations')).toEqual(
+      expect.arrayContaining([
+        'id',
+        'schedule_id',
+        'operation',
+        'status',
+        'run_id',
+        'error_code',
+        'error_message',
+        'created_at'
+      ])
+    );
+    expect(columnNames(db, 'runs')).toContain('timeout_ms');
+
+    const indexRows = db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'index'
+           AND name IN (
+             'idx_schedules_enabled_next_run_at',
+             'idx_schedules_deleted_at',
+             'idx_schedule_operations_created_at',
+             'idx_schedule_operations_schedule_id',
+             'idx_runs_schedule_source'
+           )`
+      )
+      .all() as Array<{ name: string }>;
+    expect(indexRows.map(row => row.name).sort()).toEqual([
+      'idx_runs_schedule_source',
+      'idx_schedule_operations_created_at',
+      'idx_schedule_operations_schedule_id',
+      'idx_schedules_deleted_at',
+      'idx_schedules_enabled_next_run_at'
+    ]);
+  });
+
   it('persists codex skill operations', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -328,7 +404,7 @@ it('migrates legacy storage and preserves existing thread operations', () => {
   const runs = createRunRepository(db);
   const threads = createThreadRepository(db);
 
-  expect(columnNames(db, 'runs')).toEqual(expect.arrayContaining(['resume_mode', 'queue_state']));
+  expect(columnNames(db, 'runs')).toEqual(expect.arrayContaining(['resume_mode', 'queue_state', 'timeout_ms']));
   expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining(['title', 'archived_at']));
   expect(runs.getRun('legacy_run_1')?.queue_state).toBe('none');
 
