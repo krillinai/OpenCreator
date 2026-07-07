@@ -18,7 +18,8 @@ describe('Composer', () => {
     expect(screen.getByText('content-design')).toBeInTheDocument();
     expect(screen.getByText('本地模式')).toBeInTheDocument();
     expect(screen.getByText('main')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '添加' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '添加' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '添加' })).toHaveAttribute('title', '添加附件暂不可用');
     expect(screen.getByText('工作区读写')).not.toHaveProperty('tagName', 'BUTTON');
     expect(screen.getByText('GPT-5')).not.toHaveProperty('tagName', 'BUTTON');
     expect(screen.getByPlaceholderText('随心输入')).toBeInTheDocument();

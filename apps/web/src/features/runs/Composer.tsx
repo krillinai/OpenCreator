@@ -39,7 +39,13 @@ export function Composer(props: {
       />
       <div className="composer-toolbar">
         <div className="composer-left-actions">
-          <button className="composer-icon-button" type="button" aria-label="添加" disabled={props.disabled}>
+          <button
+            className="composer-icon-button"
+            type="button"
+            aria-label="添加"
+            title="添加附件暂不可用"
+            disabled
+          >
             <Plus aria-hidden="true" size={16} />
           </button>
           <span className="composer-pill" role="status">
