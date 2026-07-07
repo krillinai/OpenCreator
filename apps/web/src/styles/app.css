@@ -868,6 +868,233 @@ textarea:focus-visible {
   grid-template-columns: 248px minmax(0, 1fr) minmax(320px, 400px);
 }
 
+.conversation-page {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--surface);
+}
+
+.conversation-header {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.conversation-title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.conversation-title h1 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 720;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.toolbar-button,
+.icon-button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.toolbar-button {
+  gap: 7px;
+  padding: 0 11px;
+  font-weight: 620;
+}
+
+.icon-button {
+  width: 32px;
+  padding: 0;
+}
+
+.toolbar-button:hover,
+.icon-button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+
+.conversation-project {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.conversation-empty-state {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  text-align: center;
+}
+
+.conversation-empty-state h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.composer-wrap {
+  padding: 0 18px 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--surface) 26%);
+}
+
+.clawee-composer {
+  display: grid;
+  gap: 10px;
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.clawee-composer textarea {
+  min-height: 88px;
+  max-height: 180px;
+  resize: vertical;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.clawee-composer textarea::placeholder {
+  color: var(--subtle);
+}
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.composer-left-actions,
+.composer-right-actions {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-left-actions {
+  flex: 1 1 auto;
+}
+
+.composer-right-actions {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+.composer-icon-button,
+.composer-send,
+.composer-pill {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.composer-icon-button,
+.composer-pill {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.composer-icon-button {
+  width: 30px;
+  padding: 0;
+}
+
+.composer-send {
+  width: 32px;
+  border: 1px solid #121826;
+  background: #121826;
+  color: #fff;
+}
+
+.composer-send:disabled {
+  border-color: var(--border);
+  background: var(--surface-3);
+  color: var(--subtle);
+}
+
+.composer-pill {
+  padding: 0 10px;
+  color: var(--muted);
+}
+
+.composer-context {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composer-context span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-context span + span::before {
+  content: "/";
+  margin-right: 8px;
+  color: var(--subtle);
+}
+
 .clawee-sidebar-pane,
 .clawee-main-pane,
 .clawee-detail-pane {

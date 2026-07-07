@@ -1,17 +1,32 @@
 import { useState } from 'react';
+import { Plus, SendHorizontal } from 'lucide-react';
+import type { ProjectPermission } from '../projects/project-model.js';
 
-export function Composer(props: { disabled?: boolean; onSubmit(prompt: string): void }) {
+const permissionLabels: Record<ProjectPermission, string> = {
+  'danger-full-access': '完全访问',
+  'workspace-write': '工作区读写',
+  'follow-global': '跟随全局配置'
+};
+
+export function Composer(props: {
+  disabled?: boolean;
+  projectName: string;
+  branchName: string;
+  permission: ProjectPermission;
+  modelLabel: string;
+  onSubmit(prompt: string): void;
+}) {
   const [prompt, setPrompt] = useState('');
+  const trimmedPrompt = prompt.trim();
 
   return (
     <form
-      className="composer"
+      className="clawee-composer"
       onSubmit={(event) => {
         event.preventDefault();
         if (props.disabled) return;
-        const trimmed = prompt.trim();
-        if (trimmed.length === 0) return;
-        props.onSubmit(trimmed);
+        if (trimmedPrompt.length === 0) return;
+        props.onSubmit(trimmedPrompt);
         setPrompt('');
       }}
     >
@@ -20,11 +35,36 @@ export function Composer(props: { disabled?: boolean; onSubmit(prompt: string): 
         value={prompt}
         disabled={props.disabled}
         onChange={(event) => setPrompt(event.target.value)}
-        placeholder={props.disabled ? '当前会话有任务运行中' : '输入要交给 Agent 的任务...'}
+        placeholder={props.disabled ? '当前对话有任务运行中' : '随心输入'}
       />
-      <button type="submit" disabled={props.disabled || prompt.trim().length === 0}>
-        发送
-      </button>
+      <div className="composer-toolbar">
+        <div className="composer-left-actions">
+          <button className="composer-icon-button" type="button" aria-label="添加" disabled={props.disabled}>
+            <Plus aria-hidden="true" size={16} />
+          </button>
+          <button className="composer-pill" type="button">
+            {permissionLabels[props.permission]}
+          </button>
+          <button className="composer-pill" type="button">
+            {props.modelLabel}
+          </button>
+        </div>
+        <div className="composer-right-actions">
+          <div className="composer-context" aria-label="会话上下文">
+            <span>{props.projectName}</span>
+            <span>本地模式</span>
+            <span>{props.branchName}</span>
+          </div>
+          <button
+            className="composer-send"
+            type="submit"
+            aria-label="发送"
+            disabled={props.disabled || trimmedPrompt.length === 0}
+          >
+            <SendHorizontal aria-hidden="true" size={16} />
+          </button>
+        </div>
+      </div>
     </form>
   );
 }
