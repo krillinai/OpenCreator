@@ -99,7 +99,7 @@ function PluginSettings(props: { runtimeStatus: RuntimeStatus }) {
 }
 
 function AboutSettings(props: { runtimeStatus: RuntimeStatus }) {
-  const runtimeStatusText = props.runtimeStatus.connected ? '已连接' : '未连接';
+  const runtimeStatusText = props.runtimeStatus.connected ? '正常' : '未连接';
 
   return (
     <section className="settings-section" aria-labelledby="settings-about-title">

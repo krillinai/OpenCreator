@@ -8,13 +8,16 @@ const runtimeStatus = {
   codexVersion: 'codex-cli 1.2.3',
   codexPath: '/opt/homebrew/bin/codex',
   codexHome: '/Users/wulien/.codex',
-  lastCheckedAt: '2026-07-07 10:30'
+  lastCheckedAt: '2026-07-07 10:00'
 };
 
 describe('ClaweeSettingsView', () => {
   it('renders default navigation and general settings without old work mode copy', () => {
-    render(<ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
+    const { container } = render(<ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
 
+    expect(container.querySelector('.traffic-light-red')).toBeInTheDocument();
+    expect(container.querySelector('.traffic-light-yellow')).toBeInTheDocument();
+    expect(container.querySelector('.traffic-light-green')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '返回应用' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('搜索设置')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '常规' })).toHaveAttribute('aria-current', 'page');
@@ -46,6 +49,7 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByText('Skills 状态')).toBeInTheDocument();
     expect(screen.getByText('MCP 服务状态')).toBeInTheDocument();
     expect(screen.getByText('最近检测时间')).toBeInTheDocument();
+    expect(screen.getByText(runtimeStatus.lastCheckedAt)).toBeInTheDocument();
     expect(screen.getByText('本地能力已就绪')).toBeInTheDocument();
   });
 
@@ -62,8 +66,24 @@ describe('ClaweeSettingsView', () => {
     const advanced = screen.getByRole('region', { name: '高级信息' });
     expect(within(advanced).getByText('Codex CLI 版本')).toBeInTheDocument();
     expect(within(advanced).getByText(runtimeStatus.codexVersion)).toBeInTheDocument();
+    expect(within(advanced).getByText('Codex CLI 路径')).toBeInTheDocument();
+    expect(within(advanced).getByText(runtimeStatus.codexPath)).toBeInTheDocument();
     expect(within(advanced).getByText('CODEX_HOME')).toBeInTheDocument();
     expect(within(advanced).getByText(runtimeStatus.codexHome)).toBeInTheDocument();
+    expect(within(advanced).getByText('本地运行内核状态')).toBeInTheDocument();
+    expect(within(advanced).getByText('正常')).toBeInTheDocument();
+    expect(within(advanced).getByText('最近一次检测时间')).toBeInTheDocument();
+    expect(within(advanced).getByText(runtimeStatus.lastCheckedAt)).toBeInTheDocument();
+  });
+
+  it('shows disconnected local runtime status in about advanced information', () => {
+    render(<ClaweeSettingsView runtimeStatus={{ ...runtimeStatus, connected: false }} onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '关于 Clawee' }));
+
+    const advanced = screen.getByRole('region', { name: '高级信息' });
+    expect(within(advanced).getByText('本地运行内核状态')).toBeInTheDocument();
+    expect(within(advanced).getByText('未连接')).toBeInTheDocument();
   });
 
   it('calls onBack when returning to the app', () => {
