@@ -24,29 +24,35 @@ describe('app state', () => {
   });
 
   it('opens files, changes, run details, and closes the detail panel', () => {
-    const file = reduceAppState(initialAppState, {
+    const file = reduceAppState({ ...initialAppState, activeView: 'settings' }, {
       type: 'select_file',
       path: 'docs/runtime-api-for-ui-v1.md'
     });
+    expect(file.activeView).toBe('conversation');
     expect(file.selectedFilePath).toBe('docs/runtime-api-for-ui-v1.md');
     expect(file.rightPanelMode).toBe('file');
 
-    const change = reduceAppState(file, {
+    const change = reduceAppState({ ...file, activeView: 'search' }, {
       type: 'select_change',
       changeId: 'change_1'
     });
+    expect(change.activeView).toBe('conversation');
     expect(change.selectedChangeId).toBe('change_1');
     expect(change.rightPanelMode).toBe('change');
 
-    const runDetail = reduceAppState(change, {
+    const runDetail = reduceAppState({ ...change, activeView: 'settings' }, {
       type: 'select_run_detail',
       runId: 'run_1'
     });
+    expect(runDetail.activeView).toBe('conversation');
     expect(runDetail.selectedRunId).toBe('run_1');
     expect(runDetail.rightPanelMode).toBe('run_detail');
 
     const closed = reduceAppState(runDetail, { type: 'close_detail' });
     expect(closed.rightPanelMode).toBe('closed');
+    expect(closed.selectedFilePath).toBe('docs/runtime-api-for-ui-v1.md');
+    expect(closed.selectedChangeId).toBe('change_1');
+    expect(closed.selectedRunId).toBe('run_1');
   });
 
   it('closes detail when switching away from the conversation view', () => {
