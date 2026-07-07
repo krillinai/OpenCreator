@@ -3,13 +3,21 @@ import { Info, MapPin } from 'lucide-react';
 export function ConversationHeader(props: {
   title: string;
   projectName: string;
+  statusLabel?: string;
   onOpenLocation(): void;
   onToggleDetail(): void;
 }) {
   return (
     <header className="conversation-header">
       <div className="conversation-title">
-        <h1>{props.title}</h1>
+        <div className="conversation-title-row">
+          <h1>{props.title}</h1>
+          {props.statusLabel ? (
+            <span className="connection-pill" role="status">
+              {props.statusLabel}
+            </span>
+          ) : null}
+        </div>
         <span className="conversation-project">{props.projectName}</span>
       </div>
       <div className="conversation-actions">

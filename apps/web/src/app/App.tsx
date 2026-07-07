@@ -481,10 +481,10 @@ export function App(props: AppProps = {}) {
     <ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={() => dispatch({ type: 'back_to_app' })} />
   ) : state.activeView === 'conversation' ? (
     <section className="conversation-page">
-      <ConnectionStatusMessage connectionState={connectionState} />
       <ConversationHeader
         title={selectedConversation?.title ?? '新对话'}
         projectName={currentProjectName}
+        statusLabel={getConnectionStatusLabel(connectionState)}
         onOpenLocation={() => dispatch({ type: 'select_file', path: selectedFilePath })}
         onToggleDetail={() => {
           if (state.rightPanelMode === 'closed') {
@@ -502,14 +502,16 @@ export function App(props: AppProps = {}) {
           <Timeline items={timelineItems} onOpenRunDetail={openRunDetail} onOpenChange={openChangeDetail} />
         )}
       </div>
-      <Composer
-        projectName={currentProjectName}
-        branchName="open-clawee"
-        permission={currentProject?.sandbox ?? 'follow-global'}
-        modelLabel="5.5 超高"
-        disabled={runtimeBusy}
-        onSubmit={submitPrompt}
-      />
+      <div className="composer-wrap">
+        <Composer
+          projectName={currentProjectName}
+          branchName="open-clawee"
+          permission={currentProject?.sandbox ?? 'follow-global'}
+          modelLabel="5.5 超高"
+          disabled={runtimeBusy}
+          onSubmit={submitPrompt}
+        />
+      </div>
     </section>
   ) : (
     <PlaceholderView label={getPlaceholderLabel(state.activeView)} />
@@ -586,20 +588,9 @@ export function App(props: AppProps = {}) {
   }
 }
 
-function ConnectionStatusMessage(props: { connectionState: ConnectionState }) {
-  if (props.connectionState.status === 'connected') {
-    return (
-      <p className="runtime-status" role="status">
-        本地运行内核正常
-      </p>
-    );
-  }
-
-  return (
-    <p className="runtime-status" role="status">
-      {props.connectionState.message}
-    </p>
-  );
+function getConnectionStatusLabel(connectionState: ConnectionState) {
+  if (connectionState.status === 'connected') return '本地运行内核正常';
+  return connectionState.message;
 }
 
 function PlaceholderView(props: { label: string }) {

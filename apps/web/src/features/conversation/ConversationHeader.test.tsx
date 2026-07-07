@@ -9,6 +9,7 @@ describe('ConversationHeader', () => {
       <ConversationHeader
         title="整理本周项目进展"
         projectName="content-design"
+        statusLabel="正在等待本地服务"
         onOpenLocation={vi.fn()}
         onToggleDetail={vi.fn()}
       />
@@ -16,6 +17,7 @@ describe('ConversationHeader', () => {
 
     expect(screen.getByRole('heading', { name: '整理本周项目进展' })).toBeInTheDocument();
     expect(screen.getByText('content-design')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('正在等待本地服务');
     expect(screen.getByRole('button', { name: '打开位置' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '详情' })).toBeInTheDocument();
   });

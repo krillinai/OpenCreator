@@ -931,12 +931,12 @@ textarea:focus-visible {
 }
 
 .conversation-header {
-  min-height: 56px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 18px;
+  padding: 12px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
@@ -944,7 +944,14 @@ textarea:focus-visible {
 .conversation-title {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 4px;
+}
+
+.conversation-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .conversation-title h1 {
@@ -956,6 +963,34 @@ textarea:focus-visible {
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.connection-pill {
+  min-width: 0;
+  max-width: 220px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--subtle);
 }
 
 .conversation-actions {
@@ -1013,8 +1048,9 @@ textarea:focus-visible {
 .conversation-empty-state {
   min-height: 100%;
   display: grid;
-  place-items: center;
-  padding: 32px;
+  align-content: end;
+  justify-items: center;
+  padding: 32px 32px 18px;
   text-align: center;
 }
 
@@ -1684,8 +1720,8 @@ textarea:focus-visible {
   .sidebar-primary,
   .sidebar-section-list {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
-    overflow-x: auto;
     padding-bottom: 2px;
   }
 
@@ -1709,6 +1745,10 @@ textarea:focus-visible {
 
   .conversation-header {
     align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .conversation-title-row {
     flex-wrap: wrap;
   }
 
@@ -1774,6 +1814,10 @@ textarea:focus-visible {
 
   .conversation-header {
     padding: 10px 12px;
+  }
+
+  .connection-pill {
+    max-width: 100%;
   }
 
   .conversation-actions .toolbar-button span {
