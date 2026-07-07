@@ -42,12 +42,12 @@ export function Composer(props: {
           <button className="composer-icon-button" type="button" aria-label="添加" disabled={props.disabled}>
             <Plus aria-hidden="true" size={16} />
           </button>
-          <button className="composer-pill" type="button">
+          <span className="composer-pill" role="status">
             {permissionLabels[props.permission]}
-          </button>
-          <button className="composer-pill" type="button">
+          </span>
+          <span className="composer-pill" role="status">
             {props.modelLabel}
-          </button>
+          </span>
         </div>
         <div className="composer-right-actions">
           <div className="composer-context" aria-label="会话上下文">

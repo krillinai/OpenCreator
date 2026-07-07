@@ -19,17 +19,19 @@ describe('Composer', () => {
     expect(screen.getByText('本地模式')).toBeInTheDocument();
     expect(screen.getByText('main')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '工作区读写' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'GPT-5' })).toBeInTheDocument();
+    expect(screen.getByText('工作区读写')).not.toHaveProperty('tagName', 'BUTTON');
+    expect(screen.getByText('GPT-5')).not.toHaveProperty('tagName', 'BUTTON');
     expect(screen.getByPlaceholderText('随心输入')).toBeInTheDocument();
   });
 
   it('maps permission labels', () => {
     const { rerender } = render(<Composer {...defaultProps} permission="danger-full-access" />);
-    expect(screen.getByRole('button', { name: '完全访问' })).toBeInTheDocument();
+    expect(screen.getByText('完全访问')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '完全访问' })).not.toBeInTheDocument();
 
     rerender(<Composer {...defaultProps} permission="follow-global" />);
-    expect(screen.getByRole('button', { name: '跟随全局配置' })).toBeInTheDocument();
+    expect(screen.getByText('跟随全局配置')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '跟随全局配置' })).not.toBeInTheDocument();
   });
 
   it('is disabled when current thread has an active run', () => {
@@ -38,6 +40,15 @@ describe('Composer', () => {
     expect(screen.getByRole('textbox', { name: '输入任务' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     expect(screen.getByPlaceholderText('当前对话有任务运行中')).toBeInTheDocument();
+  });
+
+  it('keeps permission and model as status text when disabled', () => {
+    render(<Composer {...defaultProps} disabled />);
+
+    expect(screen.getByText('完全访问')).not.toHaveProperty('tagName', 'BUTTON');
+    expect(screen.getByText('GPT-5')).not.toHaveProperty('tagName', 'BUTTON');
+    expect(screen.queryByRole('button', { name: '完全访问' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'GPT-5' })).not.toBeInTheDocument();
   });
 
   it('submits the trimmed prompt and clears the textbox', async () => {
