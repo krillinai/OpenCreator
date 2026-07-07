@@ -1,16 +1,15 @@
 import type { ConnectionConfig } from '../runtime/types.js';
-import { readJsonFromStorage, writeJsonToStorage } from '../storage/browser-storage.js';
+import { readJsonFromStorage } from '../storage/browser-storage.js';
 import type { HostBridge, HostBridgeResult, HostNotification } from './bridge.js';
 
 const CONNECTION_KEY = 'clawee.web.connection.v1';
+const DEV_RUNTIME_CONFIG_PATH = '/.clawee/runtime-config';
 
 export const browserBridge: HostBridge = {
   kind: 'browser',
   async readConnectionConfig(): Promise<ConnectionConfig | null> {
-    return readJsonFromStorage<ConnectionConfig>(CONNECTION_KEY);
-  },
-  async writeConnectionConfig(config: ConnectionConfig): Promise<void> {
-    writeJsonToStorage(CONNECTION_KEY, config);
+    const sameOriginConfig = await readSameOriginRuntimeConfig();
+    return sameOriginConfig ?? readJsonFromStorage<ConnectionConfig>(CONNECTION_KEY);
   },
   async openExternal(url: string): Promise<void> {
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -22,3 +21,25 @@ export const browserBridge: HostBridge = {
     return;
   }
 };
+
+async function readSameOriginRuntimeConfig(): Promise<ConnectionConfig | null> {
+  try {
+    const response = await fetch(DEV_RUNTIME_CONFIG_PATH, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store'
+    });
+    if (!response.ok) return null;
+    return parseConnectionConfig(await response.json());
+  } catch {
+    return null;
+  }
+}
+
+function parseConnectionConfig(value: unknown): ConnectionConfig | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.baseUrl !== 'string' || record.baseUrl.length === 0) return null;
+  if (typeof record.token !== 'string' || record.token.length === 0) return null;
+  return { baseUrl: record.baseUrl, token: record.token };
+}

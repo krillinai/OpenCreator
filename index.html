@@ -1,0 +1,1826 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>企业 Agent 工作台</title>
+  <style>
+    :root {
+      --bg: oklch(97.6% 0.004 250);
+      --sidebar: oklch(95.8% 0.005 250);
+      --sidebar-hover: oklch(93.8% 0.006 250);
+      --surface: oklch(100% 0 0);
+      --surface-soft: oklch(98.3% 0.003 250);
+      --surface-raised: oklch(99.4% 0.002 250);
+      --fg: oklch(18% 0.012 250);
+      --muted: oklch(50% 0.012 250);
+      --subtle: oklch(66% 0.01 250);
+      --border: oklch(89.5% 0.006 250);
+      --border-strong: oklch(82% 0.01 250);
+      --blue: oklch(56% 0.17 250);
+      --blue-soft: oklch(94% 0.028 250);
+      --green: oklch(55% 0.13 150);
+      --green-soft: oklch(94% 0.034 150);
+      --amber: oklch(70% 0.13 74);
+      --amber-soft: oklch(95% 0.032 74);
+      --red: oklch(58% 0.18 30);
+      --red-soft: oklch(95% 0.03 30);
+      --shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
+      --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+    body {
+      margin: 0;
+      height: 100vh;
+      min-height: 720px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--fg);
+      font: 13px/1.45 var(--font-body);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      color: inherit;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    button:focus-visible,
+    textarea:focus-visible,
+    input:focus-visible {
+      outline: 2px solid color-mix(in oklch, var(--blue) 75%, white);
+      outline-offset: 2px;
+    }
+
+    .app {
+      height: 100vh;
+      min-height: 720px;
+      display: grid;
+      grid-template-columns: 244px minmax(500px, 620px) minmax(520px, 1fr) 286px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .sidebar {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+    }
+
+    .window-bar {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+    }
+
+    .traffic {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+
+    .traffic i {
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      display: block;
+      background: var(--border-strong);
+    }
+
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #ffbd2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+
+    .history-controls {
+      margin-left: 4px;
+      display: flex;
+      gap: 2px;
+    }
+
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 7px;
+      color: var(--muted);
+    }
+
+    .icon-btn:hover,
+    .nav-btn:hover,
+    .session-btn:hover,
+    .project-btn:hover,
+    .utility-btn:hover,
+    .ghost-btn:hover,
+    .file-card:hover {
+      background: var(--sidebar-hover);
+    }
+
+    .top-actions {
+      padding: 4px 10px 12px;
+      display: grid;
+      gap: 4px;
+      border-bottom: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+    }
+
+    .nav-btn,
+    .project-btn,
+    .session-btn,
+    .utility-btn {
+      width: 100%;
+      min-width: 0;
+      border-radius: 8px;
+      text-align: left;
+      transition: background 120ms ease, box-shadow 120ms ease;
+    }
+
+    .nav-btn {
+      min-height: 34px;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 9px;
+      color: color-mix(in oklch, var(--fg) 85%, var(--muted));
+    }
+
+    .nav-btn[aria-current="page"] {
+      background: var(--surface);
+      box-shadow: inset 0 0 0 1px var(--border);
+      color: var(--fg);
+    }
+
+    .nav-icon,
+    .row-icon {
+      width: 18px;
+      height: 18px;
+      display: inline-grid;
+      place-items: center;
+      color: var(--muted);
+      font: 700 11px/1 var(--font-mono);
+    }
+
+    .shortcut {
+      color: var(--subtle);
+      font: 11px/1 var(--font-mono);
+    }
+
+    .sidebar-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding: 11px 10px 14px;
+    }
+
+    .section-label {
+      margin: 12px 8px 7px;
+      color: var(--subtle);
+      font: 650 11px/1 var(--font-body);
+    }
+
+    .project-list,
+    .session-list,
+    .utility-list {
+      display: grid;
+      gap: 4px;
+    }
+
+    .project-btn {
+      min-height: 32px;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+    }
+
+    .project-btn span,
+    .nav-btn span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .count {
+      color: var(--subtle);
+      font: 11px/1 var(--font-mono);
+    }
+
+    .session-btn {
+      padding: 8px;
+      display: grid;
+      gap: 5px;
+      border: 1px solid transparent;
+    }
+
+    .session-btn[aria-current="true"] {
+      background: var(--surface);
+      border-color: var(--border);
+    }
+
+    .session-top,
+    .session-meta,
+    .chat-top,
+    .message-head,
+    .status-row,
+    .file-card,
+    .file-head,
+    .file-actions,
+    .composer-tools,
+    .composer-foot,
+    .pill-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .session-top strong {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .time {
+      flex: 0 0 auto;
+      color: var(--subtle);
+      font: 11px/1 var(--font-mono);
+    }
+
+    .session-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--subtle);
+      flex: 0 0 auto;
+    }
+
+    .status-dot.active { background: var(--green); }
+    .status-dot.warn { background: var(--amber); }
+    .status-dot.blue { background: var(--blue); }
+
+    .sidebar-foot {
+      padding: 10px;
+      border-top: 1px solid var(--border);
+      display: grid;
+      gap: 4px;
+    }
+
+    .utility-btn {
+      min-height: 34px;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+    }
+
+    .avatar {
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      display: inline-grid;
+      place-items: center;
+      background: var(--fg);
+      color: white;
+      font: 700 10px/1 var(--font-mono);
+    }
+
+    .chat-pane {
+      min-width: 0;
+      position: relative;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+    }
+
+    .chat-top {
+      height: 50px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border);
+      justify-content: space-between;
+    }
+
+    .chat-title {
+      min-width: 0;
+    }
+
+    .chat-title strong {
+      display: block;
+      font-size: 13.5px;
+      font-weight: 650;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chat-title span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 1px;
+    }
+
+    .top-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--surface-soft);
+      white-space: nowrap;
+    }
+
+    .chat-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding: 18px 18px 24px;
+    }
+
+    .message-stack {
+      max-width: 590px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .date-line {
+      justify-self: center;
+      color: var(--subtle);
+      font: 11px/1 var(--font-mono);
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-soft);
+    }
+
+    .user-message {
+      justify-self: end;
+      max-width: 440px;
+      padding: 10px 12px;
+      border-radius: 14px 14px 4px 14px;
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      color: var(--fg);
+    }
+
+    .agent-message {
+      display: grid;
+      gap: 12px;
+    }
+
+    .message-head {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .agent-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      display: inline-grid;
+      place-items: center;
+      background: var(--fg);
+      color: white;
+      font: 700 11px/1 var(--font-mono);
+      flex: 0 0 auto;
+    }
+
+    .agent-body {
+      margin-left: 32px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .agent-body p {
+      margin: 0;
+      color: color-mix(in oklch, var(--fg) 86%, var(--muted));
+    }
+
+    .status-card,
+    .result-card,
+    .change-card {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--surface-raised);
+      overflow: hidden;
+    }
+
+    .status-card {
+      padding: 10px 12px;
+      display: grid;
+      gap: 9px;
+    }
+
+    .status-row {
+      color: var(--muted);
+      font-size: 12.5px;
+    }
+
+    .status-row strong {
+      color: var(--fg);
+      font-weight: 600;
+    }
+
+    .progress {
+      height: 4px;
+      border-radius: 999px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .progress span {
+      display: block;
+      width: 78%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--blue), var(--green));
+    }
+
+    .result-card {
+      padding: 13px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .result-card h2 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.35;
+      font-weight: 680;
+    }
+
+    .check-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .check-list li {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr);
+      gap: 8px;
+      color: var(--muted);
+    }
+
+    .check {
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      display: inline-grid;
+      place-items: center;
+      background: var(--green-soft);
+      color: var(--green);
+      font: 700 11px/1 var(--font-mono);
+      margin-top: 1px;
+    }
+
+    .file-card {
+      width: 100%;
+      justify-content: space-between;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface);
+      text-align: left;
+    }
+
+    .file-card[aria-current="true"] {
+      border-color: color-mix(in oklch, var(--blue) 35%, var(--border));
+      background: var(--blue-soft);
+    }
+
+    .file-left {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 9px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .file-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font: 700 10px/1 var(--font-mono);
+    }
+
+    .file-title {
+      min-width: 0;
+    }
+
+    .file-title strong,
+    .file-title span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-title strong {
+      font-size: 12.5px;
+      font-weight: 650;
+    }
+
+    .file-title span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .change-card {
+      padding: 11px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .diff-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .delta {
+      font: 12px/1 var(--font-mono);
+      white-space: nowrap;
+    }
+
+    .delta .plus { color: var(--green); }
+    .delta .minus { color: var(--red); }
+
+    .mini-btn {
+      height: 28px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mini-btn:hover { background: var(--surface-soft); }
+
+    .composer-wrap {
+      padding: 12px 18px 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0), var(--surface) 22%);
+    }
+
+    .composer {
+      max-width: 590px;
+      margin: 0 auto;
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      background: var(--surface);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.07);
+      overflow: hidden;
+    }
+
+    .composer textarea {
+      width: 100%;
+      min-height: 74px;
+      max-height: 150px;
+      resize: vertical;
+      border: 0;
+      outline: 0;
+      padding: 12px 13px 4px;
+      color: var(--fg);
+      background: transparent;
+    }
+
+    .composer textarea::placeholder { color: var(--subtle); }
+
+    .composer-foot {
+      justify-content: space-between;
+      padding: 8px;
+      border-top: 1px solid color-mix(in oklch, var(--border) 65%, transparent);
+    }
+
+    .composer-tools {
+      flex-wrap: wrap;
+    }
+
+    .tool-chip {
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 9px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: var(--surface-soft);
+      white-space: nowrap;
+    }
+
+    .send-btn {
+      width: 30px;
+      height: 30px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--fg);
+      color: white;
+      font-weight: 700;
+    }
+
+    .send-btn:hover { background: color-mix(in oklch, var(--fg) 88%, var(--blue)); }
+
+    .file-pane {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      background: var(--surface-soft);
+      border-right: 1px solid var(--border);
+    }
+
+    .file-head {
+      height: 50px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      justify-content: space-between;
+    }
+
+    .breadcrumb {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .breadcrumb strong {
+      color: var(--fg);
+      font-weight: 600;
+    }
+
+    .file-actions {
+      flex: 0 0 auto;
+    }
+
+    .ghost-btn {
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 0 10px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .file-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 18px;
+    }
+
+    .save-state,
+    .search-count {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .save-state {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .save-state.dirty {
+      color: var(--amber);
+    }
+
+    .file-action-primary {
+      height: 32px;
+      border-radius: 8px;
+      background: var(--fg);
+      color: white;
+      padding: 0 12px;
+      font-weight: 620;
+      white-space: nowrap;
+    }
+
+    .file-action-primary:hover {
+      background: color-mix(in oklch, var(--fg) 88%, var(--blue));
+    }
+
+    .editor-card {
+      min-width: 680px;
+      max-width: 1120px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: 10px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      overflow: hidden;
+    }
+
+    .editor-toolbar {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-raised);
+      flex-wrap: wrap;
+    }
+
+    .editor-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .editor-search label {
+      color: var(--muted);
+      font-size: 12px;
+      flex: 0 0 auto;
+    }
+
+    .editor-search input {
+      min-width: 0;
+      flex: 1;
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0 10px;
+      background: var(--surface);
+      color: var(--fg);
+      outline: 0;
+    }
+
+    .editor-search input.replace-input {
+      flex: 0.8;
+    }
+
+    .editor-search button {
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--fg);
+      padding: 0 10px;
+      font-weight: 560;
+      white-space: nowrap;
+    }
+
+    .editor-search button:hover {
+      background: color-mix(in oklch, var(--blue-soft) 48%, var(--surface));
+      border-color: color-mix(in oklch, var(--blue) 28%, var(--border));
+    }
+
+    .search-count {
+      color: var(--subtle);
+      font: 11px/1 var(--font-mono);
+      flex: 0 0 auto;
+    }
+
+    .editor-layout {
+      min-height: 560px;
+      background: var(--surface);
+    }
+
+    .code-textarea {
+      width: 100%;
+      min-height: 560px;
+      border: 0;
+      resize: none;
+      outline: 0;
+      padding: 13px 14px 24px;
+      background: var(--surface);
+      color: var(--fg);
+      font: 12px/1.65 var(--font-mono);
+      white-space: pre;
+      overflow: auto;
+      tab-size: 2;
+    }
+
+    .code-textarea::selection {
+      background: color-mix(in oklch, var(--blue-soft) 82%, var(--blue));
+    }
+
+    .file-tree-pane {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      background: var(--surface);
+    }
+
+    .file-tree-head {
+      height: 50px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .file-tree-head strong {
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .tree-tools {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      color: var(--muted);
+    }
+
+    .tree-search {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tree-search input {
+      width: 100%;
+      height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 0 10px;
+      background: var(--surface-soft);
+      color: var(--fg);
+      outline: 0;
+    }
+
+    .tree-search input::placeholder { color: var(--subtle); }
+
+    .tree-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding: 8px;
+    }
+
+    .tree-folder,
+    .tree-file {
+      width: 100%;
+      height: 28px;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+      border-radius: 7px;
+      padding: 0 7px;
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .tree-file {
+      color: color-mix(in oklch, var(--fg) 82%, var(--muted));
+    }
+
+    .tree-folder:hover,
+    .tree-file:hover,
+    .tree-file[aria-current="true"] {
+      background: var(--surface-soft);
+    }
+
+    .tree-file[aria-current="true"] {
+      color: var(--fg);
+      box-shadow: inset 2px 0 0 var(--green);
+    }
+
+    .tree-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tree-kind {
+      color: var(--subtle);
+      font: 10px/1 var(--font-mono);
+      letter-spacing: 0.02em;
+    }
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      min-width: 220px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--fg);
+      color: white;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+      z-index: 20;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .hide { display: none !important; }
+
+    @media (max-width: 1320px) {
+      .app {
+        grid-template-columns: 232px minmax(470px, 590px) minmax(440px, 1fr) 252px;
+      }
+
+    }
+
+    @media (max-width: 1080px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow: auto;
+      }
+
+      .app {
+        min-height: 100vh;
+        height: auto;
+        grid-template-columns: 232px minmax(0, 1fr);
+        grid-template-rows: minmax(680px, 100vh) minmax(620px, auto) minmax(420px, auto);
+        overflow: visible;
+      }
+
+      .file-pane {
+        grid-column: 1 / -1;
+        border-top: 1px solid var(--border);
+        border-right: 0;
+      }
+
+      .file-tree-pane {
+        grid-column: 1 / -1;
+        border-top: 1px solid var(--border);
+      }
+
+      .file-body {
+        padding: 14px;
+      }
+
+      .editor-card {
+        min-width: 0;
+        max-width: 100%;
+      }
+
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        display: block;
+      }
+
+      .sidebar,
+      .chat-pane,
+      .file-pane,
+      .file-tree-pane {
+        min-height: auto;
+      }
+
+      .sidebar {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sidebar-scroll {
+        max-height: 360px;
+      }
+
+      .chat-pane {
+        min-height: 680px;
+        border-right: 0;
+      }
+
+      .chat-top,
+      .file-head,
+      .file-tree-head {
+        height: auto;
+        min-height: 50px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        flex-wrap: wrap;
+      }
+
+      .message-stack,
+      .composer {
+        max-width: none;
+      }
+
+      .agent-body {
+        margin-left: 0;
+      }
+
+      .editor-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .editor-layout {
+        min-height: 460px;
+      }
+
+      .code-textarea {
+        min-height: 460px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app" aria-label="企业 Agent 工作台">
+    <aside class="sidebar" aria-label="左侧导航">
+      <div class="window-bar" aria-hidden="true">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="history-controls">
+          <button class="icon-btn" type="button" aria-label="后退">‹</button>
+          <button class="icon-btn" type="button" aria-label="前进">›</button>
+        </div>
+      </div>
+
+      <div class="top-actions" role="navigation" aria-label="常用入口">
+        <button class="nav-btn" type="button" data-prompt="帮我设计一个个人使用的企业 Agent 工作台，保持左侧菜单、中间聊天、右侧文件编辑器、最右文件树。" aria-current="page">
+          <span class="nav-icon">+</span><span>新对话</span><span class="shortcut">N</span>
+        </button>
+        <button class="nav-btn" type="button" data-prompt="搜索最近的企业 Agent UI、Codex 接入、MCP 能力相关会话。">
+          <span class="nav-icon">⌕</span><span>搜索</span><span class="shortcut">⌘K</span>
+        </button>
+        <button class="nav-btn" type="button" data-prompt="列出我今天需要继续推进的计划任务。">
+          <span class="nav-icon">◷</span><span>计划任务</span><span class="shortcut">3</span>
+        </button>
+        <button class="nav-btn" type="button" data-prompt="检查可用插件、skills 和 MCP 服务，并给出推荐组合。">
+          <span class="nav-icon">▣</span><span>插件</span><span class="shortcut">P</span>
+        </button>
+      </div>
+
+      <div class="sidebar-scroll">
+        <div class="section-label">项目</div>
+        <div class="project-list">
+          <button class="project-btn" type="button" data-prompt="切换到 Agent Runtime 项目，读取项目上下文。">
+            <span class="row-icon">▸</span><span>Agent Runtime</span><span class="count">12</span>
+          </button>
+          <button class="project-btn" type="button" data-prompt="打开企业工作台项目，继续 UI 设计。">
+            <span class="row-icon">▾</span><span>企业工作台</span><span class="count">8</span>
+          </button>
+          <button class="project-btn" type="button" data-prompt="打开 content-design 项目，查看文稿生成模板。">
+            <span class="row-icon">▸</span><span>content-design</span><span class="count">5</span>
+          </button>
+        </div>
+
+        <div class="section-label">今天</div>
+        <div class="session-list" id="session-list"></div>
+
+        <div class="section-label">更早</div>
+        <div class="session-list">
+          <button class="session-btn" type="button" data-session="runtime">
+            <span class="session-top"><strong>Agent runtime API 对接</strong><span class="time">周五</span></span>
+            <span class="session-meta"><i class="status-dot blue"></i>工具调用、权限边界、任务状态</span>
+          </button>
+          <button class="session-btn" type="button" data-session="mcp">
+            <span class="session-top"><strong>MCP 能力梳理</strong><span class="time">周四</span></span>
+            <span class="session-meta"><i class="status-dot"></i>服务、资源、连接状态</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-foot">
+        <button class="utility-btn" type="button" id="open-settings">
+          <span class="row-icon">⚙</span><span>设置</span><span class="count">⌘,</span>
+        </button>
+        <button class="utility-btn" type="button" data-prompt="打开个人账户、用量和企业策略概览。">
+          <span class="avatar">W</span><span>Wulien</span><span class="count">Pro</span>
+        </button>
+      </div>
+    </aside>
+
+    <section class="chat-pane" aria-label="Agent 对话">
+      <header class="chat-top">
+        <div class="chat-title">
+          <strong id="conversation-title">企业 Agent 工作台设计</strong>
+          <span id="conversation-subtitle">个人使用 · 企业能力 · Codex 式任务流</span>
+        </div>
+        <span class="top-pill"><i class="status-dot active"></i>本地工作区已连接</span>
+      </header>
+
+      <div class="chat-scroll" id="chat-scroll">
+        <div class="message-stack" id="message-stack"></div>
+      </div>
+
+      <div class="composer-wrap">
+        <form class="composer" id="composer">
+          <textarea id="prompt" rows="3" placeholder="要求后续变更"></textarea>
+          <div class="composer-foot">
+            <div class="composer-tools">
+              <button class="tool-chip" type="button" data-toast="已打开附件选择器">＋</button>
+              <button class="tool-chip" type="button" data-toast="模式已保持：Agent">Agent</button>
+              <button class="tool-chip" type="button" data-toast="已选择当前项目上下文">企业工作台</button>
+            </div>
+            <button class="send-btn" type="submit" aria-label="发送">↑</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="file-pane" aria-label="打开的文件">
+      <header class="file-head">
+        <div class="breadcrumb" id="breadcrumb">agent-ui › docs › design › <strong>enterprise-agent-workbench.md</strong></div>
+        <div class="file-actions">
+          <span class="save-state" id="save-state"><i class="status-dot active"></i>已保存</span>
+          <button class="file-action-primary" type="button" id="save-file">保存</button>
+        </div>
+      </header>
+
+      <div class="file-body" id="file-body"></div>
+    </section>
+
+    <aside class="file-tree-pane" aria-label="文件树">
+      <header class="file-tree-head">
+        <strong>文件</strong>
+        <div class="tree-tools" aria-label="文件树操作">
+          <button class="icon-btn" type="button" aria-label="新建文件" data-toast="准备新建文件">＋</button>
+          <button class="icon-btn" type="button" aria-label="刷新文件树" data-toast="文件树已刷新">↻</button>
+        </div>
+      </header>
+      <div class="tree-search">
+        <input id="file-search" type="search" placeholder="筛选文件..." aria-label="筛选文件" />
+      </div>
+      <div class="tree-scroll" id="file-tree"></div>
+    </aside>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const sessions = [
+      {
+        id: "design",
+        title: "企业 Agent UI 设计",
+        time: "14:28",
+        meta: "四区工作台、文件编辑、文件树",
+        status: "active",
+        subtitle: "个人使用 · 企业能力 · Codex 式任务流",
+        user: "文件打开后要支持编辑，要支持常见的 md、srt、html、txt 等的编辑。",
+        summary: "我会保持四区结构不变，把右侧区域收敛成轻量文件编辑器：文件卡和树节点点击后直接进入编辑器，只保留编辑、保存和搜索。",
+        bullets: ["左侧仍然负责菜单、项目和会话，不增加设计控制面板。", "中间聊天继续记录任务过程、结果卡、文件卡和变更卡。", "右侧打开后就是编辑器，最右侧文件树支持 md、srt、html、txt 快速切换。"],
+        file: "docs/design/enterprise-agent-workbench.md",
+        delta: "+903 -0"
+      },
+      {
+        id: "codex",
+        title: "分析 Codex 接入方案",
+        time: "13:05",
+        meta: "API、沙箱、工具流",
+        status: "blue",
+        subtitle: "Codex 能力封装 · API 调用 · 工作区状态",
+        user: "我底层用 Agent runtime 封装了 Codex 的能力，帮我整理接入 UI 的关键路径。",
+        summary: "UI 层应该把模型调用包装成任务会话，而不是暴露底层接口。用户需要看到上下文、权限、运行步骤、文件变更和可回滚结果。",
+        bullets: ["API 层暴露任务创建、消息追加、工具事件、文件产物和权限审批。", "前端用流式事件渲染步骤，让用户知道 Agent 当前在读文件、改文件还是验证。", "编辑区绑定工作区文件，让聊天和产物始终同屏。"],
+        file: "docs/runtime/codex-runtime-contract.md",
+        delta: "+214 -18"
+      },
+      {
+        id: "skills",
+        title: "插件与 Skills 页面",
+        time: "11:42",
+        meta: "插件、skills、MCP",
+        status: "warn",
+        subtitle: "能力栈编排 · 技能启用 · MCP 连接",
+        user: "把插件、skills、MCP 按常见企业产品设计成可管理的能力面板。",
+        summary: "能力面板不应该压过聊天主流程。它适合放在左侧入口和文件树上下文里，按任务需要显示当前会话已启用的插件、skills 和 MCP 服务。",
+        bullets: ["插件负责外部能力，例如浏览器、文档、GitHub、设计系统。", "Skills 负责稳定工作流，例如代码审查、前端工程、验证。", "MCP 负责资源和工具连接，要显示连通状态、权限范围和最近调用。"],
+        file: "docs/capability/capability-panel.md",
+        delta: "+147 -6"
+      },
+      {
+        id: "runtime",
+        title: "Agent runtime API 对接",
+        time: "周五",
+        meta: "工具调用、权限边界、任务状态",
+        status: "blue",
+        subtitle: "任务 API · 工具事件 · 权限边界",
+        user: "把 Agent runtime 的 API 能力映射到前端页面，重点是工具调用和权限控制。",
+        summary: "这一层应该让用户看到 Agent 在做什么，而不是看到底层接口名。UI 只展示任务状态、工具调用、文件产物和需要确认的风险操作。",
+        bullets: ["任务会话用统一 timeline 承载运行步骤。", "权限请求以内联确认卡出现，不打断当前对话。", "工具调用结果和文件产物同步到编辑区。"],
+        file: "docs/runtime/codex-runtime-contract.md",
+        delta: "+98 -12"
+      },
+      {
+        id: "mcp",
+        title: "MCP 能力梳理",
+        time: "周四",
+        meta: "服务、资源、连接状态",
+        status: "",
+        subtitle: "MCP 服务 · 资源浏览 · 工具连接",
+        user: "梳理 MCP 在这个企业 Agent 产品里的展示方式。",
+        summary: "MCP 适合被设计成当前会话的能力上下文。用户需要看到服务是否在线、暴露哪些资源、最近调用了什么，以及是否需要授权。",
+        bullets: ["连接状态放在插件页或当前会话上下文里，不占据聊天主路径。", "资源浏览要支持搜索和打开文件。", "失败状态要进入对话流，方便用户直接让 Agent 修复。"],
+        file: "docs/capability/capability-panel.md",
+        delta: "+74 -3"
+      }
+    ];
+
+    const workspaceFiles = {
+      "docs/design/enterprise-agent-workbench.md": {
+        path: "docs/design/enterprise-agent-workbench.md",
+        type: "md",
+        language: "Markdown",
+        saved: true,
+        content: `# 企业 Agent 工作台 UI 方案
+
+这是一个给个人使用的企业 Agent 页面。它保留企业级上下文、权限、插件、skills 与 MCP 能力，但主体验像 Codex：左侧组织任务，中间对话推进工作，右侧编辑产物文件，最右侧浏览项目文件树。
+
+## 四区布局
+
+- 左侧：空间、项目、会话和常用入口，包含新对话、搜索、计划任务、插件。
+- 中间：任务对话流，展示用户消息、Agent 运行状态、结果摘要、文件卡和变更卡。
+- 右侧：打开的文件编辑器，顶部显示路径、保存状态和保存操作。
+- 最右：项目文件树，支持搜索、当前文件高亮和点击打开。
+
+## 第一版目标
+
+第一版不做团队管理后台，也不做营销页。它要让用户在一个页面里完成从提出任务、观察 Agent 执行、编辑文件变更到继续追问的完整闭环。
+
+## 关键交互
+
+用户点击会话时，中间恢复该任务上下文，右侧同步打开对应文件。点击文件卡或最右侧文件树节点时，右侧编辑器直接切到该文件。文件区只保留编辑、保存和搜索。
+`
+      },
+      "docs/runtime/codex-runtime-contract.md": {
+        path: "docs/runtime/codex-runtime-contract.md",
+        type: "md",
+        language: "Markdown",
+        saved: true,
+        content: `# Codex 能力接入 UI 契约
+
+前端只关心任务、消息、工具事件、文件产物、权限审批和验证结果。底层 API 可以保持 Agent runtime 的抽象，不必暴露模型实现细节。
+
+## 事件模型
+
+每个任务会话由用户消息触发，runtime 持续推送 step、tool_call、file_patch、verification、done 等事件，聊天区按事件类型渲染。
+
+## 权限边界
+
+- 读取：默认允许当前项目上下文读取。
+- 写入：写文件前展示目标文件和摘要，必要时请求确认。
+- 网络：按任务和企业策略决定是否允许。
+
+## 产物同步
+
+文件卡与右侧编辑区保持绑定。Agent 生成或修改文件后，右侧自动切换到最相关产物，让用户不必在文件树里搜索。
+`
+      },
+      "docs/capability/capability-panel.md": {
+        path: "docs/capability/capability-panel.md",
+        type: "md",
+        language: "Markdown",
+        saved: true,
+        content: `# 插件、Skills 与 MCP 能力面板
+
+能力面板服务于任务，而不是独立成为后台。用户只需要知道当前任务启用了哪些能力、是否可用、最近做了什么，以及如何临时关闭。
+
+## 插件
+
+插件面向外部能力，例如浏览器、文档处理、GitHub、设计生成。它们应该以可启用的能力行出现，并显示权限范围。
+
+## Skills
+
+- 前端工程：负责 UI 实现、可访问性、响应式和状态。
+- 验证：负责完成前的脚本、DOM 和浏览器检查。
+- 设计流程：负责从截图拆解到方案确认。
+
+## MCP
+
+MCP 服务显示在线、延迟、可用工具和最近调用。连接异常时，把错误放进对话流，而不是只在设置页里提示。
+`
+      },
+      "transcripts/demo-agent-task.srt": {
+        path: "transcripts/demo-agent-task.srt",
+        type: "srt",
+        language: "SubRip",
+        saved: true,
+        content: `1
+00:00:00,000 --> 00:00:03,200
+We need an enterprise agent UI that still feels personal.
+我们需要一个企业级 Agent UI，但它仍然要像个人工作台。
+
+2
+00:00:03,200 --> 00:00:07,400
+The left side keeps projects and sessions. The center is the task conversation.
+左侧保留项目和会话，中间是任务对话。
+
+3
+00:00:07,400 --> 00:00:11,800
+The right pane opens editable files, and the far right shows the file tree.
+右侧打开可编辑文件，最右侧显示文件树。
+`
+      },
+      "screens/workbench.html": {
+        path: "screens/workbench.html",
+        type: "html",
+        language: "HTML",
+        saved: true,
+        content: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Agent Workbench Screen</title>
+</head>
+<body>
+  <main class="workbench">
+    <aside class="sidebar">菜单和会话</aside>
+    <section class="chat">Agent 对话</section>
+    <section class="editor">打开文件编辑器</section>
+    <aside class="tree">文件树</aside>
+  </main>
+</body>
+</html>
+`
+      },
+      "notes/release-notes.txt": {
+        path: "notes/release-notes.txt",
+        type: "txt",
+        language: "Plain Text",
+        saved: true,
+        content: `Agent Workbench v0.2
+
+- 四区布局已经确认：左菜单 / 中聊天 / 右侧编辑器 / 最右文件树。
+- 文件打开后直接进入编辑状态。
+- 支持 Markdown、SRT、HTML、TXT 的文本编辑、保存和搜索。
+- 下一步可以补充真实文件读写 API、变更审阅和多文件标签。
+`
+      },
+      "index.html": {
+        path: "index.html",
+        type: "html",
+        language: "HTML",
+        saved: true,
+        content: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>企业 Agent 工作台</title>
+</head>
+<body>
+  <main class="app">
+    <!-- 当前原型文件较长，这里展示编辑器中的入口摘要。 -->
+    <section class="chat-pane">Agent 对话</section>
+    <section class="file-pane">可编辑文件</section>
+    <aside class="file-tree-pane">文件树</aside>
+  </main>
+</body>
+</html>
+`
+      }
+    };
+
+    const fileTree = [
+      { type: "folder", icon: "▾", name: "docs", depth: 0, meta: "" },
+      { type: "folder", icon: "▾", name: "design", depth: 1, meta: "" },
+      { type: "file", icon: "MD", name: "enterprise-agent-workbench.md", depth: 2, meta: "md", file: "docs/design/enterprise-agent-workbench.md" },
+      { type: "folder", icon: "▾", name: "runtime", depth: 1, meta: "" },
+      { type: "file", icon: "MD", name: "codex-runtime-contract.md", depth: 2, meta: "md", file: "docs/runtime/codex-runtime-contract.md" },
+      { type: "folder", icon: "▾", name: "capability", depth: 1, meta: "" },
+      { type: "file", icon: "MD", name: "capability-panel.md", depth: 2, meta: "md", file: "docs/capability/capability-panel.md" },
+      { type: "folder", icon: "▾", name: "transcripts", depth: 0, meta: "" },
+      { type: "file", icon: "SR", name: "demo-agent-task.srt", depth: 1, meta: "srt", file: "transcripts/demo-agent-task.srt" },
+      { type: "folder", icon: "▾", name: "screens", depth: 0, meta: "" },
+      { type: "file", icon: "HT", name: "workbench.html", depth: 1, meta: "html", file: "screens/workbench.html" },
+      { type: "folder", icon: "▾", name: "notes", depth: 0, meta: "" },
+      { type: "file", icon: "TX", name: "release-notes.txt", depth: 1, meta: "txt", file: "notes/release-notes.txt" },
+      { type: "file", icon: "HT", name: "index.html", depth: 0, meta: "html", file: "index.html" },
+      { type: "folder", icon: "▸", name: "plugins", depth: 0, meta: "" },
+      { type: "folder", icon: "▸", name: "skills", depth: 0, meta: "" },
+      { type: "folder", icon: "▸", name: "mcp", depth: 0, meta: "" }
+    ];
+
+    const state = {
+      session: "design",
+      file: "docs/design/enterprise-agent-workbench.md",
+      query: "",
+      editorSearch: "",
+      editorReplace: ""
+    };
+
+    const sessionList = document.getElementById("session-list");
+    const messageStack = document.getElementById("message-stack");
+    const conversationTitle = document.getElementById("conversation-title");
+    const conversationSubtitle = document.getElementById("conversation-subtitle");
+    const fileBody = document.getElementById("file-body");
+    const fileTreeEl = document.getElementById("file-tree");
+    const fileSearch = document.getElementById("file-search");
+    const breadcrumb = document.getElementById("breadcrumb");
+    const saveState = document.getElementById("save-state");
+    const chatScroll = document.getElementById("chat-scroll");
+    const promptInput = document.getElementById("prompt");
+    const toast = document.getElementById("toast");
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escapeRegExp(value) {
+      return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function currentSession() {
+      return sessions.find((item) => item.id === state.session) || sessions[0];
+    }
+
+    function showToast(text) {
+      toast.textContent = text;
+      toast.classList.add("show");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    function renderSessions() {
+      sessionList.innerHTML = sessions.map((item) => `
+        <button class="session-btn" type="button" data-session="${item.id}" aria-current="${item.id === state.session ? "true" : "false"}">
+          <span class="session-top"><strong>${escapeHtml(item.title)}</strong><span class="time">${escapeHtml(item.time)}</span></span>
+          <span class="session-meta"><i class="status-dot ${item.status}"></i>${escapeHtml(item.meta)}</span>
+        </button>
+      `).join("");
+    }
+
+    function renderChat() {
+      const item = currentSession();
+      conversationTitle.textContent = item.title;
+      conversationSubtitle.textContent = item.subtitle;
+      state.file = item.file;
+      const file = workspaceFiles[item.file] || workspaceFiles[state.file];
+      messageStack.innerHTML = `
+        <div class="date-line">今天</div>
+        <div class="user-message">${escapeHtml(item.user)}</div>
+        <article class="agent-message">
+          <div class="message-head"><span class="agent-avatar">A</span><span>Agent</span><span>刚刚</span></div>
+          <div class="agent-body">
+            <div class="status-card">
+              <div class="status-row"><i class="status-dot active"></i><strong>已确认四区结构</strong><span>聊天、文件编辑器和文件树已分离</span></div>
+              <div class="progress"><span></span></div>
+            </div>
+            <p>${escapeHtml(item.summary)}</p>
+            <div class="result-card">
+              <h2>当前页面按四区可编辑工作台生成</h2>
+              <ul class="check-list">
+                ${item.bullets.map((text) => `<li><span class="check">✓</span><span>${escapeHtml(text)}</span></li>`).join("")}
+              </ul>
+              <button class="file-card" type="button" data-file="${escapeHtml(item.file)}" aria-current="true">
+                <span class="file-left">
+                  <span class="file-icon">${escapeHtml(file.type.toUpperCase().slice(0, 2))}</span>
+                  <span class="file-title"><strong>${escapeHtml(file.path.split("/").pop())}</strong><span>右侧编辑器已打开 · ${escapeHtml(file.language)}</span></span>
+                </span>
+                <span class="time">编辑</span>
+              </button>
+            </div>
+            <div class="change-card">
+              <div class="diff-line"><span>已打开 ${escapeHtml(file.path)}</span><span class="delta"><span class="plus">${escapeHtml(item.delta.split(" ")[0])}</span> <span class="minus">${escapeHtml(item.delta.split(" ")[1] || "-0")}</span></span></div>
+              <div class="diff-line"><span>状态</span><span>等待你继续提出修改</span></div>
+            </div>
+          </div>
+        </article>
+      `;
+      openFile(item.file, false);
+    }
+
+    function currentFile() {
+      return workspaceFiles[state.file] || workspaceFiles["docs/design/enterprise-agent-workbench.md"];
+    }
+
+    function pathBreadcrumb(file) {
+      const parts = file.path.split("/");
+      return parts.map((part, index) => {
+        if (index === parts.length - 1) return `<strong>${escapeHtml(part)}</strong>`;
+        return escapeHtml(part);
+      }).join(" › ");
+    }
+
+    function updateHeader(file) {
+      breadcrumb.innerHTML = pathBreadcrumb(file);
+      saveState.classList.toggle("dirty", !file.saved);
+      saveState.innerHTML = file.saved
+        ? `<i class="status-dot active"></i>已保存`
+        : `<i class="status-dot warn"></i>未保存`;
+    }
+
+    function updateEditorState() {
+      const file = currentFile();
+      const textarea = document.getElementById("code-editor");
+      if (!textarea) return;
+      updateHeader(file);
+    }
+
+    function searchInEditor(query, selectFirst = false) {
+      const textarea = document.getElementById("code-editor");
+      const countEl = document.getElementById("editor-search-count");
+      if (!textarea || !countEl) return;
+      const value = textarea.value;
+      const term = query.trim();
+      if (!term) {
+        countEl.textContent = "0";
+        return;
+      }
+      const lowerValue = value.toLowerCase();
+      const lowerTerm = term.toLowerCase();
+      let count = 0;
+      let index = lowerValue.indexOf(lowerTerm);
+      while (index !== -1) {
+        count += 1;
+        index = lowerValue.indexOf(lowerTerm, index + lowerTerm.length);
+      }
+      countEl.textContent = String(count);
+      const first = lowerValue.indexOf(lowerTerm);
+      if (selectFirst && first >= 0) {
+        textarea.focus();
+        textarea.setSelectionRange(first, first + term.length);
+      }
+    }
+
+    function markEditorChanged(textarea) {
+      const file = currentFile();
+      file.content = textarea.value;
+      file.saved = false;
+      updateEditorState();
+      searchInEditor(state.editorSearch);
+      renderFileTree();
+    }
+
+    function replaceCurrentMatch() {
+      const textarea = document.getElementById("code-editor");
+      if (!textarea) return;
+      const term = state.editorSearch.trim();
+      if (!term) return;
+      const value = textarea.value;
+      const lowerValue = value.toLowerCase();
+      const lowerTerm = term.toLowerCase();
+      let start = textarea.selectionStart;
+      let end = textarea.selectionEnd;
+      const selected = value.slice(start, end).toLowerCase();
+      if (selected !== lowerTerm) {
+        start = lowerValue.indexOf(lowerTerm, Math.max(0, start));
+        if (start === -1) start = lowerValue.indexOf(lowerTerm);
+        if (start === -1) return;
+        end = start + term.length;
+      }
+      textarea.setRangeText(state.editorReplace, start, end, "end");
+      markEditorChanged(textarea);
+      const next = textarea.value.toLowerCase().indexOf(lowerTerm, start + state.editorReplace.length);
+      if (next >= 0) {
+        textarea.focus();
+        textarea.setSelectionRange(next, next + term.length);
+      }
+    }
+
+    function replaceAllMatches() {
+      const textarea = document.getElementById("code-editor");
+      if (!textarea) return;
+      const term = state.editorSearch.trim();
+      if (!term) return;
+      const pattern = new RegExp(escapeRegExp(term), "gi");
+      let count = 0;
+      textarea.value = textarea.value.replace(pattern, () => {
+        count += 1;
+        return state.editorReplace;
+      });
+      markEditorChanged(textarea);
+      textarea.focus();
+      textarea.setSelectionRange(0, 0);
+      showToast(`已替换 ${count} 处`);
+    }
+
+    function editorTemplate(file) {
+      return `
+        <article class="editor-card">
+          <div class="editor-toolbar">
+            <div class="editor-search">
+              <label for="editor-search-input">搜索</label>
+              <input id="editor-search-input" type="search" value="${escapeHtml(state.editorSearch)}" placeholder="搜索当前文件..." autocomplete="off" />
+              <label for="editor-replace-input">替换</label>
+              <input class="replace-input" id="editor-replace-input" type="text" value="${escapeHtml(state.editorReplace)}" placeholder="替换为..." autocomplete="off" />
+              <button type="button" id="replace-current">替换当前</button>
+              <button type="button" id="replace-all">全部替换</button>
+              <span class="search-count"><span id="editor-search-count">0</span> 个匹配</span>
+            </div>
+          </div>
+          <div class="editor-layout">
+            <textarea class="code-textarea" id="code-editor" spellcheck="false" aria-label="${escapeHtml(file.path)} 编辑器">${escapeHtml(file.content)}</textarea>
+          </div>
+        </article>
+      `;
+    }
+
+    function renderFileTree() {
+      const query = state.query.trim().toLowerCase();
+      const rows = fileTree.filter((item) => {
+        if (!query) return true;
+        return item.type === "file" && `${item.name} ${item.file || ""}`.toLowerCase().includes(query);
+      });
+      fileTreeEl.innerHTML = rows.map((item) => {
+        const pad = `padding-left:${7 + item.depth * 14}px`;
+        if (item.type === "folder") {
+          return `<button class="tree-folder" type="button" style="${pad}" data-toast="${escapeHtml(item.name)} 已展开">
+            <span class="row-icon">${escapeHtml(item.icon)}</span><span class="tree-name">${escapeHtml(item.name)}</span><span class="tree-kind">${escapeHtml(item.meta)}</span>
+          </button>`;
+        }
+        const file = workspaceFiles[item.file];
+        const dirty = file && !file.saved ? "•" : item.meta;
+        return `<button class="tree-file" type="button" style="${pad}" data-file="${escapeHtml(item.file)}" aria-current="${item.file === state.file ? "true" : "false"}">
+          <span class="row-icon">${escapeHtml(item.icon)}</span><span class="tree-name">${escapeHtml(item.name)}</span><span class="tree-kind">${escapeHtml(dirty)}</span>
+        </button>`;
+      }).join("");
+    }
+
+    function renderOpenedFile() {
+      const file = currentFile();
+      state.file = file.path;
+      updateHeader(file);
+      fileBody.innerHTML = editorTemplate(file);
+      bindEditor();
+      renderFileTree();
+    }
+
+    function openFile(file, notify = true) {
+      state.file = workspaceFiles[file] ? file : "docs/design/enterprise-agent-workbench.md";
+      renderOpenedFile();
+      if (notify) showToast(`${state.file} 已打开`);
+    }
+
+    function bindEditor() {
+      const textarea = document.getElementById("code-editor");
+      const editorSearch = document.getElementById("editor-search-input");
+      const editorReplace = document.getElementById("editor-replace-input");
+      const replaceCurrent = document.getElementById("replace-current");
+      const replaceAll = document.getElementById("replace-all");
+      if (!textarea) return;
+      textarea.addEventListener("input", () => {
+        markEditorChanged(textarea);
+      });
+      textarea.addEventListener("keydown", (event) => {
+        if (event.key === "Tab") {
+          event.preventDefault();
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          textarea.setRangeText("  ", start, end, "end");
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          saveCurrentFile();
+        }
+      });
+      if (editorSearch) {
+        editorSearch.addEventListener("input", (event) => {
+          state.editorSearch = event.target.value;
+          searchInEditor(state.editorSearch, true);
+        });
+        searchInEditor(state.editorSearch);
+      }
+      if (editorReplace) {
+        editorReplace.addEventListener("input", (event) => {
+          state.editorReplace = event.target.value;
+        });
+      }
+      if (replaceCurrent) {
+        replaceCurrent.addEventListener("click", replaceCurrentMatch);
+      }
+      if (replaceAll) {
+        replaceAll.addEventListener("click", replaceAllMatches);
+      }
+      updateEditorState();
+    }
+
+    function saveCurrentFile() {
+      const file = currentFile();
+      file.saved = true;
+      updateEditorState();
+      renderFileTree();
+      showToast(`${file.path} 已保存`);
+    }
+
+    function addUserMessage(text) {
+      const safe = escapeHtml(text);
+      const node = document.createElement("div");
+      node.className = "user-message";
+      node.textContent = text;
+      messageStack.appendChild(node);
+      const reply = document.createElement("article");
+      reply.className = "agent-message";
+      reply.innerHTML = `
+        <div class="message-head"><span class="agent-avatar">A</span><span>Agent</span><span>现在</span></div>
+        <div class="agent-body">
+          <div class="status-card">
+            <div class="status-row"><i class="status-dot active"></i><strong>已接收后续变更</strong><span>保持四区结构继续更新</span></div>
+            <div class="progress"><span style="width:46%"></span></div>
+          </div>
+          <p>收到：${safe}。我会保持左侧菜单、中间聊天、右侧文件编辑器、最右文件树的结构，只调整你指出的局部。</p>
+        </div>
+      `;
+      messageStack.appendChild(reply);
+      chatScroll.scrollTop = chatScroll.scrollHeight;
+    }
+
+    document.addEventListener("click", (event) => {
+      const sessionButton = event.target.closest("[data-session]");
+      if (sessionButton) {
+        state.session = sessionButton.dataset.session;
+        renderSessions();
+        renderChat();
+        return;
+      }
+
+      const promptButton = event.target.closest("[data-prompt]");
+      if (promptButton) {
+        promptInput.value = promptButton.dataset.prompt;
+        promptInput.focus();
+        return;
+      }
+
+      const fileButton = event.target.closest("[data-file]");
+      if (fileButton) {
+        openFile(fileButton.dataset.file);
+        return;
+      }
+
+      if (event.target.closest("#save-file")) {
+        saveCurrentFile();
+        return;
+      }
+
+      const toastButton = event.target.closest("[data-toast]");
+      if (toastButton) {
+        showToast(toastButton.dataset.toast);
+        return;
+      }
+
+      if (event.target.closest("#open-settings")) {
+        promptInput.value = "打开设置：模型、权限、插件、skills、MCP、通知与企业策略。";
+        promptInput.focus();
+      }
+    });
+
+    fileSearch.addEventListener("input", (event) => {
+      state.query = event.target.value;
+      renderFileTree();
+    });
+
+    document.getElementById("composer").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = promptInput.value.trim();
+      if (!text) {
+        showToast("先输入要变更的内容");
+        return;
+      }
+      addUserMessage(text);
+      promptInput.value = "";
+      showToast("任务已加入当前会话");
+    });
+
+    renderSessions();
+    renderChat();
+  </script>
+</body>
+</html>

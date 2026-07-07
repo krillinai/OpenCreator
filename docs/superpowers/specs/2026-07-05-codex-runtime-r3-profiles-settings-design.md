@@ -35,7 +35,7 @@ R3 第一版不做：
 
 ## 4. 设计决策
 
-### 4.1 全局只读，隔离可写
+### 4.1 全局 Codex 是生产真相源，隔离只作测试夹具
 
 默认模式继续复用 Codex 原生全局环境：
 
@@ -43,9 +43,18 @@ R3 第一版不做：
 2. 否则使用 Codex 默认路径 `~/.codex`。
 3. 这两种都属于 `global` 模式。
 
-全局模式只允许读取 profile 和诊断状态。任何会修改 profile overlay 文件的 API 都直接拒绝，返回 `CODEX_HOME_READ_ONLY`。
+产品目标不是再管理一套 Clawee profile，而是操作 Codex 原生 profile overlay 文件。全局模式是生产路径，profile 写入最终应该允许，但必须满足：
 
-isolated 模式只在 Runtime 显式传入 isolated home 时启用。只有 isolated 模式允许 profile 写入。这样第一版可以实现写锁、原子写入、备份和损坏恢复测试，而不冒险改用户真实 Codex 配置。
+1. 请求显式确认会写入全局 Codex 环境。
+2. 写入前获取 Codex 配置写锁。
+3. 写入前备份原文件。
+4. 使用临时文件加 rename 的原子写入。
+5. 操作失败不能破坏原 profile 或基础 `config.toml`。
+6. 操作日志记录影响的 `CODEX_HOME`、profile 名称、备份路径和失败原因。
+
+当前 R3 实现仍把全局 profile 写入作为只读保护并返回 `CODEX_HOME_READ_ONLY`。这只能视为阶段性安全保守实现，不应作为最终产品原则。后续补齐 profiles 写入时，应与 R4 skills、R5 MCP 一样采用“全局可写 + 显式确认 + 备份 + 审计”的策略。
+
+isolated 模式只在 Runtime 测试注入显式 isolated home 时启用。它用于单元/集成测试验证写锁、原子写入、备份和损坏恢复，不作为真实 Codex 可用性的验收环境。
 
 ### 4.2 使用 Codex 当前原生 profile overlay 结构
 
@@ -70,7 +79,7 @@ model = "gpt-5.3-codex"
 model_reasoning_effort = "medium"
 ```
 
-实施必须以真实 Codex 行为为准。R3 smoke 需要用 isolated `CODEX_HOME` 写入 `<name>.config.toml`，再通过真实 Codex CLI 的 `-p <name>` 加载路径验证 ABI。该 ABI 验证不应依赖模型网络请求是否可用。
+实施必须以真实 Codex 行为为准。R3 ABI smoke 可以用 isolated `CODEX_HOME` 写入 `<name>.config.toml`，再通过真实 Codex CLI 的 `-p <name>` 加载路径验证 profile overlay 文件结构；该 ABI 验证不依赖模型网络请求。真实运行 smoke 必须使用用户当前全局 Codex 环境，不能用空 isolated `CODEX_HOME` 代表生产可用性。
 
 ### 4.3 SQLite 是缓存，不是真相源
 
@@ -313,11 +322,12 @@ HTTP 映射：
 
 ### 11.3 Real Codex smoke
 
-新增 gated smoke，仅使用 isolated `CODEX_HOME`：
+新增 gated smoke 分两类：
 
-1. 写入 `CODEX_HOME/r3_smoke.config.toml`。
-2. 执行 `CODEX_HOME=<isolated> codex -p r3_smoke features list --help`，断言 exit code 0，用于验证 profile overlay ABI，不依赖模型网络请求。
-3. 在认证可用时，继续执行 `CODEX_HOME=<isolated> codex exec -p r3_smoke --json --skip-git-repo-check --sandbox read-only "Reply OK only."`，断言 stdout JSONL 合法。若失败原因是认证或网络，不应回滚 profile ABI 结论；若失败原因是 profile 文件被拒绝，必须停止修正方案。
+1. ABI/layout smoke：使用 isolated `CODEX_HOME` 写入 `r3_smoke.config.toml`，执行 `CODEX_HOME=<isolated> codex -p r3_smoke features list --help`，断言 exit code 0，用于验证 profile overlay 文件结构，不依赖模型网络请求。
+2. runtime smoke：使用当前全局 Codex 环境执行 `codex exec -p <existing-or-test-profile> --json --skip-git-repo-check --sandbox read-only "Reply OK only."`。如果要创建测试 profile，必须写入全局 Codex 前显式确认，使用唯一测试名称并在 finally 清理。
+
+若 isolated ABI smoke 失败原因是 profile 文件被拒绝，必须停止修正方案。若全局 runtime smoke 失败原因是认证、网络、额度或模型不可用，应标记为 `BLOCKED_ENV`。
 
 如果当前 Codex CLI 不接受 `<name>.config.toml` profile 结构，R3 实施必须先更新 parser/writer 以匹配真实结构。
 
@@ -329,9 +339,9 @@ HTTP 映射：
 2. 增加 protocol 类型和 R3 错误码。
 3. 增加 profile config parser，支持读取 `<name>.config.toml` overlay。
 4. 增加 read-only Profile API。
-5. 增加 isolated profile writer：写锁、备份、原子写入。
+5. 增加 profile writer：先用 isolated 测试夹具验证写锁、备份、原子写入，再补全全局写入确认和审计。
 6. 将 run/thread 创建接入 profile validate。
-7. 增加 real Codex isolated profile smoke 和覆盖报告更新。
+7. 增加 real Codex profile ABI/layout smoke、全局 runtime smoke 和覆盖报告更新。
 
 每个任务都应先写失败测试，再实现，再提交。
 
@@ -339,13 +349,13 @@ HTTP 映射：
 
 R3 完成后必须满足：
 
-1. 全局 `CODEX_HOME` 下 profile 可读但不可写。
-2. isolated `CODEX_HOME` 下 profile CRUD 全部通过。
+1. 全局 `CODEX_HOME` 下 profile 可读；全局写入在显式确认、备份和审计补齐前可以保持拒绝，但必须在覆盖报告中标为阶段性缺口。
+2. isolated `CODEX_HOME` 下 profile CRUD 全部通过，作为写入安全测试夹具。
 3. 写入失败不会破坏原 `<name>.config.toml` 或基础 `config.toml`。
 4. 每次写入前都有备份。
 5. 配置损坏时 daemon 不崩溃。
 6. run/thread 显式指定 missing 或 invalid profile 会被拒绝。
 7. profile 修改只影响新 run，不影响历史 run 或已有 thread。
-8. real Codex isolated profile smoke 通过。
+8. real Codex profile ABI/layout smoke 通过；真实运行 smoke 使用全局 Codex 环境，不能用空 isolated `CODEX_HOME` 代表生产能力。
 
 R3 完成后仍不能声明 Skills、MCP、Scheduler 或 UI 完成。

@@ -8,7 +8,7 @@ describe('CapabilitiesView', () => {
   it('shows a runtime connection prompt when disconnected', () => {
     render(<CapabilitiesView connected={false} />);
 
-    expect(screen.getByText('连接 Runtime 后查看 Skills、MCP 和 Profiles')).toBeInTheDocument();
+    expect(screen.getByText('本机 Runtime 就绪后查看 Skills、MCP 和 Profiles')).toBeInTheDocument();
   });
 
   it('shows capability section headings and counts when connected', () => {

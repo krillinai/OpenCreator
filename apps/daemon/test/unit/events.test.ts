@@ -49,6 +49,51 @@ describe('event parser and normalizer', () => {
     expect(event.payload).toMatchObject({ type: 'tool_result', output: '/repo', exitCode: 0 });
   });
 
+  it('normalizes public reasoning summaries', () => {
+    const event = normalizeCodexEvent({
+      runId: 'run_1',
+      seq: 3,
+      raw: {
+        type: 'item.completed',
+        item: {
+          type: 'reasoning',
+          summary: [
+            { type: 'summary_text', text: '我先确认项目结构和可用命令。' },
+            { type: 'summary_text', text: '然后运行测试验证结果。' }
+          ]
+        }
+      }
+    });
+
+    expect(event.type).toBe('reasoning_summary');
+    expect(event.payload).toMatchObject({
+      type: 'reasoning_summary',
+      text: '我先确认项目结构和可用命令。\n\n然后运行测试验证结果。',
+      format: 'plain_text',
+      delivery: 'summary'
+    });
+  });
+
+  it('normalizes reasoning summaries from text fields', () => {
+    const event = normalizeCodexEvent({
+      runId: 'run_1',
+      seq: 4,
+      raw: {
+        type: 'item.completed',
+        item: {
+          type: 'reasoning',
+          text: '我会先读取输入，再给出结果。'
+        }
+      }
+    });
+
+    expect(event.type).toBe('reasoning_summary');
+    expect(event.payload).toMatchObject({
+      type: 'reasoning_summary',
+      text: '我会先读取输入，再给出结果。'
+    });
+  });
+
   it('normalizes turn completion as finalizing before daemon exit decides done', () => {
     const event = normalizeCodexEvent({
       runId: 'run_1',

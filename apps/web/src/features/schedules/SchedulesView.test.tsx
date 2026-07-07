@@ -12,7 +12,7 @@ describe('SchedulesView', () => {
 
   it('shows disconnected copy when runtime is unavailable', () => {
     render(<SchedulesView connected={false} />);
-    expect(screen.getByText('连接 Runtime 后管理计划任务')).toBeInTheDocument();
+    expect(screen.getByText('本机 Runtime 就绪后管理计划任务')).toBeInTheDocument();
   });
 
   it('renders schedule list items when schedules exist', () => {

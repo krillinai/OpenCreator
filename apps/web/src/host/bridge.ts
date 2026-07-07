@@ -10,7 +10,6 @@ export type HostNotification = {
 export type HostBridge = {
   kind: 'browser' | 'desktop';
   readConnectionConfig(): Promise<ConnectionConfig | null>;
-  writeConnectionConfig(config: ConnectionConfig): Promise<void>;
   openExternal(url: string): Promise<void>;
   revealPath(path: string): Promise<HostBridgeResult>;
   notify(message: HostNotification): Promise<void>;

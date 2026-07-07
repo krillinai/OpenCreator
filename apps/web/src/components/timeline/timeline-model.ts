@@ -2,6 +2,7 @@ import type { AgentEventEnvelope } from '@clawee/protocol';
 
 export type TimelineItem =
   | { kind: 'user_message'; id: string; text: string; content?: string; source: 'runtime' | 'mock' }
+  | { kind: 'reasoning_summary'; id: string; runId?: string; text: string; content?: string; source: 'runtime' }
   | { kind: 'assistant_message'; id: string; runId?: string; text: string; content?: string; source: 'runtime' | 'mock' }
   | { kind: 'tool_step'; id: string; runId?: string; name: string; content: string; source: 'runtime' }
   | { kind: 'change_card'; id: string; title: string; path: string; delta: string; source: 'mock' }
@@ -44,11 +45,20 @@ function safeStringify(value: unknown): string {
   }
 }
 
-export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
+export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | null {
   switch (event.type) {
     case 'assistant_message':
       return {
         kind: 'assistant_message',
+        id: event.id,
+        runId: event.runId,
+        text: event.payload.text,
+        content: safeStringify(event.payload),
+        source: 'runtime'
+      };
+    case 'reasoning_summary':
+      return {
+        kind: 'reasoning_summary',
         id: event.id,
         runId: event.runId,
         text: event.payload.text,
@@ -113,7 +123,6 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         source: 'runtime'
       };
     case 'usage':
-    case 'unknown_event':
       return {
         kind: 'run_status',
         id: event.id,
@@ -122,6 +131,8 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem {
         content: safeStringify(event.payload),
         source: 'runtime'
       };
+    case 'unknown_event':
+      return null;
     default: {
       const _exhaustive: never = event;
       return _exhaustive;

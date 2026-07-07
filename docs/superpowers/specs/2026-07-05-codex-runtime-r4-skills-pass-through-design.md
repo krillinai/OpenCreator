@@ -422,15 +422,16 @@ type RuntimeCapabilityMatrix = {
 
 ### 12.4 真实 Codex smoke
 
-使用 isolated `CODEX_HOME`：
+真实运行 smoke 使用当前全局 Codex 环境，因为产品目标是套壳用户本机 Codex CLI，而不是证明空白 isolated home 也具备认证态。
 
 ```text
-1. 创建临时 CODEX_HOME。
+1. 生成唯一测试 skill id，例如 r4_smoke_skill_<timestamp>。
 2. 写入最小测试 skill 到 sourcePath。
-3. 通过 Runtime API 安装到 CODEX_HOME/skills/<id>。
-4. 启动真实 codex exec。
+3. 通过 Runtime API 安装到当前全局 CODEX_HOME/skills/<id>，请求必须带 confirmWriteToCodexHome: true。
+4. 启动真实 codex exec，不覆盖 CODEX_HOME。
 5. prompt 显式引用该 skill。
 6. 从 stdout/stderr/events 判断 Codex 是否发现或使用 skill。
+7. finally 中通过 Runtime API 删除测试 skill，并保留备份/操作日志。
 ```
 
 命令建议：
@@ -443,10 +444,11 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 
 | 层级 | 要求 |
 |---|---|
-| ABI smoke | 确认 Codex 在 isolated `CODEX_HOME` 下会扫描 skills 目录 |
+| layout smoke | 使用 isolated `CODEX_HOME` 验证 Runtime 安装出的 `skills/<id>/SKILL.md` 布局、扫描、删除和备份，不调用模型 |
+| global ABI smoke | 确认 Codex 在当前全局 `CODEX_HOME` 下会扫描 Runtime 安装的测试 skill |
 | behavior smoke | 确认模型按 prompt 实际使用 skill 内容 |
 
-第一版必须完成 ABI smoke。behavior smoke 可能受模型、网络、账号状态和 Codex 事件可观测性影响。如果当前 Codex 版本没有稳定事件证明 skill 被加载，测试报告必须标记为 `UNVERIFIED_BEHAVIOR` 或 `BLOCKED_ENV`，不能假装通过。
+第一版必须完成 layout smoke 和 global ABI smoke。behavior smoke 可能受模型、网络、账号状态和 Codex 事件可观测性影响。如果当前 Codex 版本没有稳定事件证明 skill 被加载，测试报告必须标记为 `UNVERIFIED_BEHAVIOR` 或 `BLOCKED_ENV`，不能假装通过。
 
 ## 13. 完成定义
 
@@ -462,6 +464,5 @@ R4 完成必须满足：
 8. symlink 和 path traversal 被拒绝。
 9. `/codex/status` 能暴露 skills 能力矩阵。
 10. `GET /codex/skills/operations` 能返回最近操作记录。
-11. gated real Codex smoke 能验证文件布局和发现能力。
+11. gated real Codex smoke 能在全局 Codex 环境中验证文件布局和发现能力；isolated 只作为布局/写入安全测试夹具。
 12. 如果行为验证受环境阻塞，报告必须明确标记，不能声称 R4 行为 smoke 全通过。
-

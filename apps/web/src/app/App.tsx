@@ -17,7 +17,6 @@ import type { HostBridge } from '../host/bridge.js';
 import { RuntimeClient } from '../runtime/client.js';
 import { subscribeRunEvents as defaultSubscribeRunEvents, type SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { ConnectionConfig } from '../runtime/types.js';
-import { createMockChangeService } from '../services/change-service.js';
 import { createConnectionService, type ConnectionState } from '../services/connection-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
 import { createMockFileService } from '../services/file-service.js';
@@ -66,7 +65,6 @@ export function App(props: AppProps = {}) {
   const [saveErrorByPath, setSaveErrorByPath] = useState<Record<string, string | undefined>>({});
   const [savingFilePaths, setSavingFilePaths] = useState<Set<string>>(() => new Set());
   const projectService = useMemo(() => createMockProjectService(), []);
-  const changeService = useMemo(() => createMockChangeService(), []);
   const timelineIdSequenceRef = useRef(0);
   const mountedRef = useRef(true);
   const selectedFilePathRef = useRef(state.selectedFilePath);
@@ -78,6 +76,7 @@ export function App(props: AppProps = {}) {
   const connectionConfigRef = useRef<ConnectionConfig | null>(null);
   const connectionConfigVersionRef = useRef(0);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
+  const conversationBodyRef = useRef<HTMLDivElement | null>(null);
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -170,6 +169,16 @@ export function App(props: AppProps = {}) {
       canceled = true;
     };
   }, [connectionService]);
+
+  useEffect(() => {
+    const body = conversationBodyRef.current;
+    if (body === null) return;
+    if (typeof body.scrollTo === 'function') {
+      body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
+      return;
+    }
+    body.scrollTop = body.scrollHeight;
+  }, [timelineItems.length]);
 
   useEffect(() => {
     const path = state.selectedFilePath;
@@ -295,34 +304,17 @@ export function App(props: AppProps = {}) {
       return;
     }
 
-    const nextItems: TimelineItem[] = [
+    setTimelineItems(previous => [
+      ...previous,
       {
-        kind: 'user_message',
-        id: createTimelineId('user'),
-        text: prompt,
-        source: 'mock'
-      },
-      {
-        kind: 'assistant_message',
-        id: createTimelineId('assistant'),
-        text: '本地服务暂未就绪，已先记录本次任务。',
-        source: 'mock'
+        kind: 'diagnostic',
+        id: createTimelineId('runtime_not_connected'),
+        severity: 'error',
+        message: '本地运行内核尚未连接，无法发送任务。',
+        content: getConnectionStatusLabel(connectionState),
+        source: 'runtime'
       }
-    ];
-
-    if (currentFile !== undefined) {
-      const change = changeService.createPromptChange(prompt, currentFile.path);
-      nextItems.push({
-        kind: 'change_card',
-        id: createTimelineId('change'),
-        title: change.title,
-        path: change.path,
-        delta: change.delta,
-        source: change.source
-      });
-    }
-
-    setTimelineItems(previous => [...previous, ...nextItems]);
+    ]);
   }
 
   async function submitRuntimePrompt(prompt: string) {
@@ -396,7 +388,8 @@ export function App(props: AppProps = {}) {
       signal: abortController.signal,
       onEvent(event) {
         if (!mountedRef.current) return;
-        setTimelineItems(previous => [...previous, eventToTimelineItem(event)]);
+        const item = eventToTimelineItem(event);
+        if (item !== null) setTimelineItems(previous => [...previous, item]);
         if (event.type === 'done') {
           void loadRunDiagnostics(event.runId);
         }
@@ -475,6 +468,8 @@ export function App(props: AppProps = {}) {
   }
 
   const detailPanel = createDetailPanel();
+  const composerDisabled = runtimeBusy || connectionState.status !== 'connected';
+  const composerDisabledReason = runtimeBusy ? '当前对话有任务运行中' : '正在连接本地运行内核';
   const main = props.capabilitiesView !== undefined ? (
     <CapabilitiesView {...props.capabilitiesView} />
   ) : state.activeView === 'settings' ? (
@@ -494,7 +489,7 @@ export function App(props: AppProps = {}) {
           }
         }}
       />
-      <div className="conversation-body">
+      <div className="conversation-body" ref={conversationBodyRef}>
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
         {timelineItems.length === 0 ? (
           <ConversationEmptyState projectName={currentProjectName} />
@@ -508,7 +503,8 @@ export function App(props: AppProps = {}) {
           branchName="open-clawee"
           permission={currentProject?.sandbox ?? 'follow-global'}
           modelLabel="5.5 超高"
-          disabled={runtimeBusy}
+          disabled={composerDisabled}
+          disabledReason={composerDisabledReason}
           onSubmit={submitPrompt}
         />
       </div>

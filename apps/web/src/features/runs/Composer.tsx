@@ -10,6 +10,7 @@ const permissionLabels: Record<ProjectPermission, string> = {
 
 export function Composer(props: {
   disabled?: boolean;
+  disabledReason?: string;
   projectName: string;
   branchName: string;
   permission: ProjectPermission;
@@ -35,7 +36,7 @@ export function Composer(props: {
         value={prompt}
         disabled={props.disabled}
         onChange={(event) => setPrompt(event.target.value)}
-        placeholder={props.disabled ? '当前对话有任务运行中' : '随心输入'}
+        placeholder={props.disabled ? props.disabledReason ?? '当前对话不可用' : '随心输入'}
       />
       <div className="composer-toolbar">
         <div className="composer-left-actions">

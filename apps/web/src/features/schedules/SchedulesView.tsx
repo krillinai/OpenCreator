@@ -7,7 +7,7 @@ export type SchedulesViewProps = {
 
 export function SchedulesView(props: SchedulesViewProps) {
   if (!props.connected) {
-    return <div className="panel-scroll">连接 Runtime 后管理计划任务</div>;
+    return <div className="panel-scroll">本机 Runtime 就绪后管理计划任务</div>;
   }
 
   const schedules = props.schedules ?? [];

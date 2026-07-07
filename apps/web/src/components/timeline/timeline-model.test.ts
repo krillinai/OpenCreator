@@ -21,6 +21,29 @@ describe('timeline model', () => {
     });
   });
 
+  it('maps reasoning_summary events as visible process summaries', () => {
+    const event: AgentEventEnvelope = {
+      id: 'evt_reasoning',
+      runId: 'run_1',
+      seq: 2,
+      ts: '2026-07-06T00:00:00.000Z',
+      type: 'reasoning_summary',
+      payload: {
+        type: 'reasoning_summary',
+        text: '我先确认输入要求。\n\n然后执行本地检查。',
+        format: 'plain_text',
+        delivery: 'summary'
+      },
+      normalizerVersion: 1
+    };
+
+    expect(eventToTimelineItem(event)).toMatchObject({
+      kind: 'reasoning_summary',
+      text: '我先确认输入要求。\n\n然后执行本地检查。',
+      source: 'runtime'
+    });
+  });
+
   it('maps tool_use events with the tool name and complete payload summary', () => {
     const event: AgentEventEnvelope = {
       id: 'evt_tool_use',
@@ -188,7 +211,7 @@ describe('timeline model', () => {
     });
   });
 
-  it('maps unknown_event events with the complete payload summary', () => {
+  it('hides unknown_event events from the main conversation timeline', () => {
     const event: AgentEventEnvelope = {
       id: 'evt_unknown',
       runId: 'run_1',
@@ -203,14 +226,10 @@ describe('timeline model', () => {
       normalizerVersion: 1
     };
 
-    expect(eventToTimelineItem(event)).toMatchObject({
-      kind: 'run_status',
-      label: 'unknown_event',
-      content: '{"type":"unknown_event","rawEventId":"raw_1","codexType":"session_configured"}'
-    });
+    expect(eventToTimelineItem(event)).toBeNull();
   });
 
-  it('serializes circular unknown_event payloads without throwing', () => {
+  it('ignores circular unknown_event payloads without throwing', () => {
     const payload: Record<string, unknown> = {
       type: 'unknown_event',
       rawEventId: 'raw_2'
@@ -226,14 +245,10 @@ describe('timeline model', () => {
       normalizerVersion: 1
     } as AgentEventEnvelope;
 
-    expect(eventToTimelineItem(event)).toMatchObject({
-      kind: 'run_status',
-      label: 'unknown_event',
-      content: '{"type":"unknown_event","rawEventId":"raw_2","self":"[Circular]"}'
-    });
+    expect(eventToTimelineItem(event)).toBeNull();
   });
 
-  it('serializes BigInt unknown_event payload fields as strings', () => {
+  it('ignores BigInt unknown_event payload fields without throwing', () => {
     const event = {
       id: 'evt_bigint',
       runId: 'run_1',
@@ -248,10 +263,6 @@ describe('timeline model', () => {
       normalizerVersion: 1
     } as AgentEventEnvelope;
 
-    expect(eventToTimelineItem(event)).toMatchObject({
-      kind: 'run_status',
-      label: 'unknown_event',
-      content: '{"type":"unknown_event","rawEventId":"raw_3","tokenCount":"123"}'
-    });
+    expect(eventToTimelineItem(event)).toBeNull();
   });
 });

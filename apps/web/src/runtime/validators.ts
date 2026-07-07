@@ -10,6 +10,7 @@ export function getStringField(value: Record<string, unknown>, key: string): str
 export function assertKnownEventType(type: string): boolean {
   return [
     'status',
+    'reasoning_summary',
     'assistant_message',
     'tool_use',
     'tool_result',

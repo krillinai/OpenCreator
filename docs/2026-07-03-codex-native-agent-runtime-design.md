@@ -8,22 +8,22 @@
 
 ## 1. 背景
 
-本方案面向一个本地运行的自有 Agent 产品。产品需要拥有自己的入口、界面、任务中心、Skills 管理、MCP 管理和定时任务能力，但底层 Agent 执行能力尽量复用 Codex 原生能力。
+本方案面向一个本地运行的自有 Agent 产品。产品最终需要拥有自己的入口、界面、任务中心、Skills 管理、MCP 管理和定时任务能力，但第一版先收敛为 Agent Runtime 内核，优先验证底层执行、事件、状态、日志和调度能力。
 
-核心原则是：**能用 Codex 的就用 Codex，不重新实现一套 Agent loop、Skills runtime 或 MCP runtime**。自有系统只做薄壳，负责入口、配置托管、进程生命周期、事件转发、日志和定时触发。
+核心原则是：**能用 Codex 的就用 Codex，不重新实现一套 Agent loop、Skills runtime 或 MCP runtime**。第一版 Runtime 只做 Codex 原生环境适配、进程生命周期、事件转发、日志、状态持久化和定时触发，为后续 UI 产品层打基础。
 
 ## 2. 第一版目标
 
-第一版目标是实现一个可长期演进的本地 Agent Runtime 基座：
+第一版目标是实现一个可长期演进的本地 Agent Runtime 内核。它可以被命令行 harness、本地 API、后续桌面 UI 或其它产品入口调用，但第一版验收不绑定桌面 UI。
 
-1. 提供自有 Agent UI，而不是把用户入口交给 Codex UI。
-2. 托管一个独立的 `CODEX_HOME`，使该 Agent 拥有自己的 Codex 配置、profile、skills、MCP 和会话状态。
-3. 使用 `codex exec --json` 作为唯一执行内核，保留 Codex 原生 Agent 能力。
-4. 通过 stdin 向 Codex 输入 prompt，通过 stdout JSONL 接收 Codex 事件。
-5. 提供稳定的本地 Run API 和 SSE 事件流，前端不直接依赖 Codex 原始事件格式。
-6. 通过 Codex 原生目录和命令透传 Skills、MCP、plugin、login、doctor 等能力。
-7. 通过本地 Scheduler 最小化补齐定时触发能力，到点后仍然执行普通 Codex run。
-8. 保存 run 元数据、脱敏原始日志、归一化事件和脱敏 stderr，便于诊断和后续审计。
+1. 默认复用 Codex 原生全局环境，优先遵循用户已有的 `$CODEX_HOME`，否则使用 Codex 默认的 `~/.codex`。
+2. 使用 `codex exec --json` 作为唯一执行内核，保留 Codex 原生 Agent 能力。
+3. 通过 stdin 向 Codex 输入 prompt，通过 stdout JSONL 接收 Codex 事件。
+4. 提供稳定的本地 Run API、Thread API 和 SSE 事件流，让后续 UI 不直接依赖 Codex 原始事件格式。
+5. 固化 Run 状态机、取消、超时、崩溃恢复、并发锁和本地鉴权。
+6. 保存 run 元数据、脱敏原始日志、归一化事件、脱敏 stderr 和 diagnostics，便于诊断和后续审计。
+7. 通过 Codex 原生目录和命令透传 Skills、MCP、login、doctor 等能力，但第一版只做 Runtime API 和命令层契约，不做最终 UI 管理界面。
+8. 通过本地 Scheduler 最小化补齐定时触发能力，到点后仍然执行普通 Codex run。
 
 ## 3. 第一版非目标
 
@@ -37,6 +37,8 @@
 6. 不做多 Agent 协作编排。
 7. 不做云端 Agent 执行服务。
 8. 不 fork Codex UI 作为产品底座。
+9. 第一版不设计和实现完整桌面 UI；UI 在 Runtime 内核稳定后单独设计。
+10. 第一版不做 Electron 打包和安装器；可保留后续桌面产品方向。
 
 这些能力可以在 Runtime 稳定后逐步演进。
 
@@ -44,7 +46,7 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│                         自有 Agent UI                         │
+│             Future Product UI / CLI Harness / API Client       │
 │ Chat / Runs / Skills / MCP / Schedules / Settings / Logs       │
 └───────────────────────────────┬──────────────────────────────┘
                                 │ HTTP + SSE
@@ -58,7 +60,7 @@
 │         │                  │                    │            │
 │  ┌──────▼───────┐  ┌───────▼────────┐  ┌────────▼─────────┐  │
 │  │ Codex Runner │  │ Pass-through   │  │ Event Normalizer │  │
-│  │ spawn codex  │  │ skills/mcp/etc │  │ JSONL -> UI事件   │  │
+│  │ spawn codex  │  │ skills/mcp/etc │  │ JSONL -> 事件协议 │  │
 │  └──────┬───────┘  └────────────────┘  └────────┬─────────┘  │
 └─────────┼───────────────────────────────────────┼────────────┘
           │ spawn / stdin / stdout                │ SSE events
@@ -71,8 +73,8 @@
 └───────────────────────────────┬──────────────────────────────┘
                                 ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                       Managed CODEX_HOME                      │
-│ config.toml / <profile>.config.toml / skills/ / session state  │
+│                    Codex Global CODEX_HOME                    │
+│ $CODEX_HOME 或 ~/.codex：config / skills / MCP / session state │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -80,8 +82,6 @@
 
 | 模块 | 技术 |
 |---|---|
-| 桌面壳 | Electron |
-| 前端 UI | React + Vite + TypeScript |
 | 本地 Runtime Daemon | Node.js + TypeScript |
 | HTTP API | Fastify 或 Hono |
 | 实时事件 | SSE |
@@ -91,10 +91,10 @@
 | 配置读写 | TOML parser |
 | 定时任务 | SQLite + croner/node-cron |
 | 单元测试 | Vitest |
-| UI 测试 | Playwright |
-| 打包 | Electron Builder 或 Electron Forge |
+| 集成测试 | fake Codex binary + 真实 Codex smoke fixture |
+| API/E2E 测试 | Vitest 或 Playwright API mode |
 
-第一版推荐全 TypeScript。原因是 Codex CLI 托管、JSONL、SSE、MCP、文件系统和 Electron 都与 Node.js 生态契合，能最大化降低实现复杂度。
+第一版推荐 TypeScript。原因是 Codex CLI 托管、JSONL、SSE、MCP、文件系统、SQLite 和后续 Electron UI 都与 Node.js 生态契合，能最大化降低实现复杂度。桌面 UI 技术栈暂不进入第一版 Runtime 内核验收。
 
 ## 6. 本地目录设计
 
@@ -103,16 +103,6 @@
 ```text
 ~/.your-agent/
   app.sqlite
-  codex-home/
-    config.toml
-    default.config.toml
-    sales.config.toml
-    content.config.toml
-    skills/
-      skill-a/
-        SKILL.md
-      skill-b/
-        SKILL.md
   workspaces/
     thread-<id>/
     run-<id>/
@@ -126,11 +116,13 @@
     schedules.json
 ```
 
+Codex 原生目录默认不放在 `~/.your-agent/` 下。Runtime 默认解析并使用用户现有的 `$CODEX_HOME`；如果环境变量未设置，则使用 Codex 默认目录 `~/.codex`。只有用户显式开启隔离模式时，才使用类似 `~/.your-agent/codex-home/` 的独立 `CODEX_HOME`。
+
 目录职责：
 
 | 目录 | 职责 |
 |---|---|
-| `codex-home/` | 自有 Agent 专属 `CODEX_HOME`，承载 Codex 原生配置、profile、skills、MCP 和 session 状态 |
+| `$CODEX_HOME` / `~/.codex` | Codex 原生配置、profile、skills、MCP 和 session 状态的默认真相源，不属于本 app 数据目录 |
 | `workspaces/thread-<id>/` | managed Chat/thread 的固定工作目录，保证同一多轮会话的文件连续性 |
 | `workspaces/run-<id>/` | 独立 run 的默认工作目录，用于不属于 Chat thread 的一次性执行 |
 | `runs/` | run 元数据、脱敏后的原始事件、归一化事件和脱敏错误日志 |
@@ -138,19 +130,19 @@
 
 ## 7. 分层职责
 
-### 7.1 Agent UI
+### 7.1 Runtime Client
 
-Agent UI 是用户入口。
+Runtime Client 是第一版 Runtime 的调用方，可以是命令行 harness、API 测试、脚本或后续 UI。第一版只要求 API 和事件契约稳定，不要求完整界面。
 
 职责：
 
 1. 发起普通 run。
 2. 查看 run 实时输出。
 3. 查看工具调用和结果。
-4. 管理 Codex profiles。
-5. 管理 Codex skills。
-6. 管理 Codex MCP servers。
-7. 配置定时任务。
+4. 通过 Runtime API 管理 Codex profiles。
+5. 通过 Runtime API 管理 Codex skills。
+6. 通过 Runtime API 管理 Codex MCP servers。
+7. 通过 Runtime API 配置定时任务。
 8. 查看历史 runs、日志和失败原因。
 
 不做：
@@ -167,7 +159,7 @@ Local Runtime Daemon 是本地常驻服务，定位类似 Codex 本地运行时�
 
 1. 提供本地 HTTP API。
 2. 管理 run 生命周期。
-3. 托管 `CODEX_HOME`。
+3. 解析并使用 Codex 原生 `CODEX_HOME`。
 4. 调用 Codex 原生命令。
 5. 启动和停止 Codex 进程。
 6. 提供 SSE 事件流。
@@ -202,19 +194,19 @@ queued -> running -> succeeded
 6. 支持 cancel。
 7. 支持 run 状态查询。
 
-### 7.4 Codex Home Manager
+### 7.4 Codex Home Adapter
 
-Codex Home Manager 是 Codex 原生能力的配置托管层。
+Codex Home Adapter 是 Codex 原生环境的解析、索引和安全操作层。
 
 职责：
 
-1. 创建和迁移 `~/.your-agent/codex-home`。
-2. 管理 base `config.toml`。
-3. 管理 `<profile>.config.toml`。
-4. 管理 `skills/` 目录。
-5. 为 Codex 子进程设置 `CODEX_HOME`。
+1. 解析实际 `CODEX_HOME`：优先 `$CODEX_HOME`，否则 `~/.codex`。
+2. 读取 base `config.toml` 和 profile 配置。
+3. 索引 `skills/` 目录。
+4. 通过 Codex 原生命令管理 MCP、login、doctor 等能力。
+5. 为 Codex 子进程传递与当前环境一致的 `CODEX_HOME`。
 6. 支持检测 Codex CLI、版本、doctor 状态。
-7. 启动 Codex 前对托管 `CODEX_HOME` 做防御性配置归一化。
+7. 启动 Codex 前检查 config 是否可能导致 CLI 启动失败。
 8. 统一展开 `~`，确保 daemon 侧、诊断侧和子进程 env 侧看到同一个路径。
 
 设计原则：
@@ -223,6 +215,9 @@ Codex Home Manager 是 Codex 原生能力的配置托管层。
 2. Profile 直接映射 Codex profile。
 3. Skills 直接落到 Codex 原生 `skills/` 目录。
 4. MCP 直接落到 Codex 原生 config 或通过 `codex mcp` 命令管理。
+5. 默认模式下 Runtime 不拥有 `CODEX_HOME`，修改全局 Codex 配置前必须让用户明确知道影响范围。
+6. 独立 `CODEX_HOME` 仅作为隔离模式，用于测试、企业隔离或用户显式选择的独立环境。
+7. 隔离模式的目录可以放在 `~/.your-agent/codex-home/`，但必须在设置和诊断中明确标注它不是用户全局 Codex 环境。
 
 ### 7.5 Skills Pass-through
 
@@ -239,13 +234,13 @@ Skills Pass-through 只管理文件，不实现 skill runtime。
 第一版安装方式：
 
 ```text
-选择本地 skill 文件夹 -> 复制到 CODEX_HOME/skills/<skill-id>/
+选择本地 skill 文件夹 -> 复制到当前 CODEX_HOME/skills/<skill-id>/
 ```
 
 后续演进：
 
 ```text
-企业 Skills 市场 -> 下载 skill 包 -> 校验签名/版本 -> 安装到 CODEX_HOME/skills/
+企业 Skills 市场 -> 下载 skill 包 -> 校验签名/版本 -> 安装到当前 CODEX_HOME/skills/
 ```
 
 ### 7.6 MCP Pass-through
@@ -273,8 +268,8 @@ codex mcp add <name> --env KEY=VALUE -- <command> <args...>
 
 职责：
 
-1. 将 UI 操作映射到 Codex MCP 命令。
-2. 读取 Codex MCP 列表并返回给 UI。
+1. 将客户端请求映射到 Codex MCP 命令。
+2. 读取 Codex MCP 列表并返回给客户端。
 3. 保存操作日志。
 4. 处理命令失败、未登录、配置错误。
 
@@ -330,7 +325,7 @@ Codex Runner 是进程托管层。
 启动形态：
 
 ```bash
-CODEX_HOME=~/.your-agent/codex-home \
+CODEX_HOME=<resolved-codex-home> \
 codex exec \
   --json \
   --skip-git-repo-check \
@@ -344,7 +339,7 @@ prompt 必须走 stdin，不放 argv，避免跨平台命令行长度限制；st
 
 ### 7.9 Event Normalizer
 
-Event Normalizer 将 Codex 原始 JSONL 转成自有 UI 协议。
+Event Normalizer 将 Codex 原始 JSONL 转成 Runtime 自有事件协议。
 
 Codex 常见事件映射：
 
@@ -521,8 +516,8 @@ POST   /schedules/:id/run-now
 ### 9.1 普通 run
 
 ```text
-1. 用户在 UI 输入 prompt。
-2. UI 调 POST /runs。
+1. 客户端提交 prompt。
+2. 客户端调 `POST /runs`。
 3. Daemon 创建 runId。
 4. Daemon 选择 profile 和 workspace。
 5. Codex Runner 构建 args。
@@ -531,7 +526,7 @@ POST   /schedules/:id/run-now
 8. Codex 执行原生 Agent loop。
 9. Daemon 保存 stdout raw JSONL。
 10. Event Normalizer 生成自有 AgentEvent。
-11. UI 通过 SSE 实时展示。
+11. 客户端通过 SSE 实时接收事件。
 12. 子进程退出，Run Manager 标记最终状态。
 ```
 
@@ -547,20 +542,20 @@ POST   /schedules/:id/run-now
 ### 9.3 MCP 管理
 
 ```text
-1. 用户在 UI 添加 MCP server。
-2. UI 调 POST /codex/mcp/add。
+1. 客户端请求添加 MCP server。
+2. 客户端调 `POST /codex/mcp/add`。
 3. Daemon 调 codex mcp add。
 4. Codex 更新原生 config。
-5. UI 重新拉取 /codex/mcp。
+5. 客户端重新拉取 `/codex/mcp`。
 ```
 
 ### 9.4 Skill 安装
 
 ```text
-1. 用户选择本地 skill 目录。
+1. 客户端提交本地 skill 目录。
 2. Daemon 校验 SKILL.md 存在。
-3. Daemon 复制目录到 CODEX_HOME/skills/<id>/。
-4. UI 刷新 skills 列表。
+3. Daemon 在请求包含确认标记后复制目录到当前 CODEX_HOME/skills/<id>/。
+4. 客户端刷新 skills 列表。
 5. 后续 Codex run 原生加载 skill。
 ```
 
@@ -569,7 +564,7 @@ POST   /schedules/:id/run-now
 | 能力 | 第一版处理方式 |
 |---|---|
 | Agent loop | 交给 `codex exec --json` |
-| Skills | 安装到 `CODEX_HOME/skills`，交给 Codex 原生加载 |
+| Skills | 安装到当前 `CODEX_HOME/skills`，交给 Codex 原生加载 |
 | MCP | 通过 `codex mcp` 或 Codex 原生 config 管理 |
 | Profiles | 使用 `codex -p <profile>` |
 | Model | 使用 `--model` |
@@ -580,7 +575,7 @@ POST   /schedules/:id/run-now
 | Doctor | 调 `codex doctor` |
 | Plugin | 后续通过 `codex plugin` 透传 |
 | Scheduler | Codex 无后台调度时，由本地 daemon 触发 run |
-| Memory | 第一版不做；Codex 自有状态保留在托管 `CODEX_HOME` |
+| Memory | 第一版不做；Codex 自有状态保留在当前 Codex `CODEX_HOME` |
 
 ## 11. 错误处理
 
@@ -602,7 +597,7 @@ type ApiError = {
 |---|---|
 | `CODEX_NOT_FOUND` | 找不到 Codex CLI |
 | `CODEX_AUTH_REQUIRED` | Codex 未登录或凭证不可用 |
-| `CODEX_CONFIG_INVALID` | 托管 `CODEX_HOME` 配置无法被 Codex CLI 接受或归一化失败 |
+| `CODEX_CONFIG_INVALID` | 当前 `CODEX_HOME` 配置无法被 Codex CLI 接受，且用户未确认修复或修复失败 |
 | `RUN_NOT_FOUND` | run 不存在 |
 | `THREAD_NOT_FOUND` | thread 不存在 |
 | `RESUME_TARGET_NOT_FOUND` | Codex session/thread 不存在、过期或不可读 |
@@ -619,10 +614,10 @@ type ApiError = {
 
 第一版虽然不做企业权限治理，但仍需保留本地安全底线：
 
-1. 默认使用独立 `CODEX_HOME`，不污染用户全局 Codex。
+1. 默认复用 Codex 全局 `CODEX_HOME`，任何会修改全局 Codex 配置的 API 都必须在响应或预检中明确返回影响范围，并要求调用方显式确认。
 2. 默认 workspace 在 `~/.your-agent/workspaces`。
 3. 不把用户系统敏感目录默认加入 `--add-dir`。
-4. `danger-full-access` 需要 UI 明确提示。
+4. `danger-full-access` 需要调用方显式确认。
 5. MCP server 添加需要展示 command、args 和 env。
 6. run 日志里避免明文显示敏感 env。
 7. 取消 run 时确保子进程和衍生资源清理。
@@ -681,25 +676,25 @@ settings
   value_json
 ```
 
-Skills、MCP、profiles 的真相源优先是 Codex 原生文件和命令，SQLite 只做缓存或 UI 索引，不作为执行真相源。
+Skills、MCP、profiles 的真相源优先是当前 Codex 原生文件和命令，SQLite 只做缓存或查询索引，不作为执行真相源。
 
-## 14. 打包和启动
+## 14. 启动和运行形态
 
-桌面应用启动流程：
+第一版 Runtime 启动流程：
 
 ```text
-1. Electron main 进程启动。
-2. 检查 Local Runtime Daemon 是否已运行。
-3. 未运行则启动 daemon。
-4. UI 连接 daemon。
-5. Daemon 检查 Codex CLI、CODEX_HOME、config.toml。
-6. UI 展示初始化状态。
+1. 命令行或测试 harness 启动 Local Runtime Daemon。
+2. Daemon 绑定 127.0.0.1，并生成或读取本地 runtime token。
+3. Daemon 检查 Codex CLI、CODEX_HOME、config.toml 和能力矩阵。
+4. 客户端通过 HTTP API 和 SSE 连接 daemon。
+5. 客户端可创建 run、订阅事件、取消 run、查询诊断。
 ```
 
 daemon 运行形态：
 
-1. 第一版可以由 Electron 启动和托管。
-2. 后续可以注册为 macOS LaunchAgent、Windows Service、Linux systemd user service。
+1. 第一版使用 foreground daemon 或开发期命令行启动，便于验证和测试。
+2. 后续桌面产品可以由 Electron main 启动和托管。
+3. 更后续可以注册为 macOS LaunchAgent、Windows Service、Linux systemd user service。
 
 ## 15. 测试策略
 
@@ -730,12 +725,12 @@ daemon 运行形态：
 
 覆盖：
 
-1. UI 创建 run。
-2. UI 接收实时事件。
-3. UI 取消 run。
-4. UI 安装 skill。
-5. UI 添加 MCP。
-6. UI 创建 schedule 并手动触发。
+1. API 创建 run。
+2. API 接收实时事件。
+3. API 取消 run。
+4. API 安装 skill。
+5. API 添加 MCP。
+6. API 创建 schedule 并手动触发。
 
 ## 16. 实施里程碑
 
@@ -744,7 +739,7 @@ daemon 运行形态：
 目标：
 
 1. 能检测 Codex CLI。
-2. 能创建独立 `CODEX_HOME`。
+2. 能解析当前 Codex `CODEX_HOME`，并支持可选隔离 `CODEX_HOME`。
 3. 能运行 `codex exec --json`。
 4. 能通过 stdin 写 prompt。
 5. 能保存 raw JSONL。
@@ -756,19 +751,19 @@ daemon 运行形态：
 命令行调用本地 daemon API，能得到完整流式 Codex 输出。
 ```
 
-### P1：Run API + UI Chat
+### P1：Run API + SSE
 
 目标：
 
 1. 实现 `/runs`。
 2. 实现 `/runs/:id/events`。
 3. 实现 `/runs/:id/cancel`。
-4. UI 能创建和观察 run。
+4. 命令行 harness 或 API 测试能创建和观察 run。
 
 验收：
 
 ```text
-桌面 UI 中发起任务，能看到实时文本、工具调用和最终状态。
+通过本地 API 发起任务，能看到实时文本、工具调用和最终状态。
 ```
 
 ### P2：Profiles 和 Settings
@@ -793,7 +788,7 @@ daemon 运行形态：
 1. 列出 `CODEX_HOME/skills`。
 2. 安装本地 skill 目录。
 3. 删除 skill。
-4. UI 展示 skill 元数据。
+4. API 返回 skill 元数据。
 
 验收：
 
@@ -806,13 +801,13 @@ daemon 运行形态：
 目标：
 
 1. 封装 `codex mcp list/add/remove/login/logout`。
-2. UI 管理 MCP servers。
+2. API 管理 MCP servers。
 3. 显示命令失败原因。
 
 验收：
 
 ```text
-通过 UI 添加 MCP 后，Codex run 可发现并使用该 MCP server。
+通过 API 添加 MCP 后，Codex run 可发现并使用该 MCP server。
 ```
 
 ### P5：Scheduler
@@ -827,22 +822,23 @@ daemon 运行形态：
 验收：
 
 ```text
-定时任务能按计划创建 Codex run，并在 Runs 页面可追踪。
+定时任务能按计划创建 Codex run，并可通过 Runs API 追踪。
 ```
 
-### P6：桌面打包
+### P6：Runtime 诊断和发布准备
 
 目标：
 
-1. Electron 打包。
-2. 自动启动 daemon。
-3. 基础日志导出。
-4. 初始化向导。
+1. 诊断包导出。
+2. 日志清理策略。
+3. managed workspace 清理策略。
+4. Runtime 配置样例和启动脚本。
+5. 为后续桌面 UI 输出稳定 API 文档和事件 fixture。
 
 验收：
 
 ```text
-非开发环境安装后可完整使用 P0-P5 能力。
+通过命令行启动 Runtime 后可完整使用 P0-P5 能力，并能导出脱敏诊断包。
 ```
 
 ## 17. 长期企业演进路线
@@ -857,7 +853,7 @@ daemon 运行形态：
 
 能力：
 
-1. Codex runtime 托管。
+1. Codex runtime 适配和薄封装。
 2. Skills 透传。
 3. MCP 透传。
 4. 定时任务。
@@ -874,7 +870,7 @@ daemon 运行形态：
 5. 灰度发布。
 6. 禁用和回滚。
 
-执行仍然落到 `CODEX_HOME/skills`，Codex 原生执行。
+执行仍然落到当前 `CODEX_HOME/skills`，Codex 原生执行。
 
 ### 阶段 3：企业 MCP Gateway
 
@@ -887,7 +883,7 @@ Codex -> 本地/远端 MCP Gateway -> CRM/OA/ERP/知识库/内容系统
 新增能力：
 
 1. 工具目录。
-2. 统一凭证托管。
+2. 企业工具凭证托管。
 3. 工具调用日志。
 4. 敏感字段脱敏。
 5. 写操作审批。
@@ -943,11 +939,11 @@ Codex 可以作为其中一个 runtime，不排斥 Claude、Gemini、自研 HTTP
 
 ## 18. 架构原则总结
 
-1. 自有 UI 控制产品入口。
+1. Runtime 内核先控制进程、事件和状态；自有 UI 在后续阶段控制产品入口。
 2. Local Runtime Daemon 控制进程和事件。
 3. Codex CLI 控制 Agent 执行能力。
-4. `CODEX_HOME` 是 Codex 原生能力的真相源。
+4. 当前 Codex `CODEX_HOME` 是 Codex 原生能力的真相源，默认不再创建第二套真相源。
 5. Skills、MCP、profile 优先使用 Codex 原生机制。
 6. Scheduler 是薄触发器，不是 Agent runtime。
-7. 前端依赖自有事件协议，不依赖 Codex 原始 JSONL。
+7. 后续客户端依赖自有事件协议，不依赖 Codex 原始 JSONL。
 8. 企业能力逐步叠加在壳和 Gateway 上，不侵入 Codex 执行内核。

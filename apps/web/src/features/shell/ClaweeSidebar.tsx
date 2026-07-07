@@ -22,12 +22,6 @@ export function ClaweeSidebar(props: {
 
   return (
     <nav className="clawee-sidebar" aria-label="Clawee">
-      <div className="window-controls" aria-hidden="true">
-        <span className="traffic-light traffic-light-red" />
-        <span className="traffic-light traffic-light-yellow" />
-        <span className="traffic-light traffic-light-green" />
-      </div>
-
       <div className="sidebar-primary">
         {globalActions.map((action) => (
           <button

@@ -13,11 +13,8 @@ const runtimeStatus = {
 
 describe('ClaweeSettingsView', () => {
   it('renders default navigation and general settings without old work mode copy', () => {
-    const { container } = render(<ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
+    render(<ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
 
-    expect(container.querySelector('.traffic-light-red')).toBeInTheDocument();
-    expect(container.querySelector('.traffic-light-yellow')).toBeInTheDocument();
-    expect(container.querySelector('.traffic-light-green')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '返回应用' })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('搜索暂不可用')).toBeDisabled();
     expect(screen.getByText('搜索暂不可用')).toBeInTheDocument();

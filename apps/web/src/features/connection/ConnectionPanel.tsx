@@ -1,85 +1,40 @@
 import type { CodexStatusResponse } from '@clawee/protocol';
-import { useEffect, useRef, useState } from 'react';
-import type { ConnectionConfig } from '../../runtime/types.js';
 
 export function ConnectionPanel(props: {
   status: 'connected' | 'disconnected' | 'invalid_token';
   codexStatus?: CodexStatusResponse;
-  initialConfig?: ConnectionConfig | null;
   message?: string;
-  onEdit?(): void;
-  onConnect?(config: ConnectionConfig): void;
+  onRetry?(): void;
 }) {
-  const text =
+  const title =
     props.status === 'connected'
       ? `已连接 ${props.codexStatus?.codexVersion ?? 'unknown'}`
       : props.status === 'invalid_token'
-        ? 'Token 无效'
-        : '未连接 Runtime';
-  const [baseUrl, setBaseUrl] = useState(props.initialConfig?.baseUrl ?? '');
-  const [token, setToken] = useState(props.initialConfig?.token ?? '');
-  const editedRef = useRef(false);
-
-  useEffect(() => {
-    if (editedRef.current) return;
-    setBaseUrl(props.initialConfig?.baseUrl ?? '');
-    setToken(props.initialConfig?.token ?? '');
-  }, [props.initialConfig?.baseUrl, props.initialConfig?.token]);
-
-  function markEdited() {
-    if (editedRef.current) return;
-    editedRef.current = true;
-    props.onEdit?.();
-  }
+        ? 'Runtime 授权未就绪'
+        : '正在等待本机 Runtime';
+  const message =
+    props.status === 'connected'
+      ? props.codexStatus?.codexHome
+      : props.status === 'invalid_token'
+        ? '本机 Runtime 握手失败，请重新检测。'
+        : props.message !== undefined && props.message !== title
+          ? props.message
+          : '应用会自动接入本机 Codex Runtime，无需手动配置。';
 
   return (
     <div className="connection-panel" aria-label="Runtime 连接状态">
       <div className="panel-header">
         <div className="connection-status">
           <span className={`connection-status-dot ${props.status}`} aria-hidden="true" />
-          <span>{text}</span>
+          <span>{title}</span>
         </div>
       </div>
-      <form
-        className="connection-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const trimmedBaseUrl = baseUrl.trim();
-          const trimmedToken = token.trim();
-          if (trimmedBaseUrl.length === 0 || trimmedToken.length === 0) return;
-          props.onConnect?.({ baseUrl: trimmedBaseUrl, token: trimmedToken });
-        }}
-      >
-        <label>
-          <span>Runtime 地址</span>
-          <input
-            aria-label="Runtime 地址"
-            value={baseUrl}
-            placeholder="http://127.0.0.1:60764"
-            onChange={(event) => {
-              markEdited();
-              setBaseUrl(event.target.value);
-            }}
-          />
-        </label>
-        <label>
-          <span>Runtime Token</span>
-          <input
-            aria-label="Runtime Token"
-            type="password"
-            value={token}
-            autoComplete="off"
-            onChange={(event) => {
-              markEdited();
-              setToken(event.target.value);
-            }}
-          />
-        </label>
-        {props.message ? <p>{props.message}</p> : null}
-        <button type="submit" disabled={baseUrl.trim().length === 0 || token.trim().length === 0}>
-          连接 Runtime
+      <div className="connection-summary">
+        {message ? <p>{message}</p> : null}
+        <button type="button" onClick={props.onRetry}>
+          重新检测
         </button>
-      </form>
+      </div>
     </div>
   );
 }

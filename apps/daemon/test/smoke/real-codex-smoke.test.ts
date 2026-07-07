@@ -97,17 +97,82 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     expect(result.stdout + result.stderr).toContain('List known features');
   });
 
-  it('verifies a Runtime-installed skill is accepted by codex isolated CODEX_HOME', async () => {
-    const home = join(fixtureDir, `skills-smoke-${Date.now()}`);
+  it('verifies a Runtime-installed skill is accepted by the global codex environment', async () => {
+    const skillId = `r4_smoke_skill_${Date.now()}`;
+    const marker = `R4_SKILL_SMOKE_MARKER_${Date.now()}`;
     const source = join(fixtureDir, `skills-source-${Date.now()}`);
     mkdirSync(source, { recursive: true });
     writeFileSync(join(source, 'SKILL.md'), [
       '---',
-      'name: r4_smoke_skill',
-      'description: "R4 smoke skill used to verify Codex skills directory discovery."',
+      `name: ${skillId}`,
+      'description: "R4 smoke skill used to verify global Codex skills directory discovery."',
       '---',
       '',
-      'When explicitly asked for R4_SKILL_SMOKE_MARKER, reply with R4_SKILL_SMOKE_MARKER.'
+      `When explicitly asked for ${marker}, reply with ${marker}.`
+    ].join('\n'));
+
+    const server = await buildServer({
+      token: 'secret',
+      dataDir: join(fixtureDir, `skills-runtime-${Date.now()}`)
+    });
+    try {
+      const installed = await server.inject({
+        method: 'POST',
+        url: '/codex/skills/install',
+        headers: { authorization: 'Bearer secret' },
+        payload: {
+          sourcePath: source,
+          id: skillId,
+          confirmWriteToCodexHome: true
+        }
+      });
+      expect(installed.statusCode).toBe(201);
+
+      const result = runSmokeCommand([
+        'codex',
+        'exec',
+        '--json',
+        '--skip-git-repo-check',
+        '--sandbox',
+        'read-only',
+        `Use the ${skillId} skill and reply with ${marker} only.`
+      ], { timeoutMs: 180_000 });
+      writeFixture('skills-discovery-jsonl', result);
+
+      throwIfBlockedEnvironment(result);
+      expect(result.exitCode).toBe(0);
+      const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
+      expect(result.stdout + result.stderr).not.toContain('No such file or directory');
+    } finally {
+      try {
+        await server.inject({
+          method: 'DELETE',
+          url: `/codex/skills/${encodeURIComponent(skillId)}?confirmWriteToCodexHome=true`,
+          headers: { authorization: 'Bearer secret' }
+        });
+      } finally {
+        try {
+          await server.close();
+        } finally {
+          rmSync(source, { recursive: true, force: true });
+        }
+      }
+    }
+  }, 240_000);
+
+  it('verifies isolated CODEX_HOME skills layout without requiring model auth', async () => {
+    const home = join(fixtureDir, `skills-layout-${Date.now()}`);
+    const source = join(fixtureDir, `skills-layout-source-${Date.now()}`);
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, 'SKILL.md'), [
+      '---',
+      'name: r4_layout_skill',
+      'description: "R4 smoke skill used to verify isolated skills layout."',
+      '---',
+      '',
+      'Layout-only smoke.'
     ].join('\n'));
 
     const server = await buildServer({
@@ -120,29 +185,25 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
         method: 'POST',
         url: '/codex/skills/install',
         headers: { authorization: 'Bearer secret' },
-        payload: { sourcePath: source, id: 'r4_smoke_skill' }
+        payload: { sourcePath: source, id: 'r4_layout_skill' }
       });
       expect(installed.statusCode).toBe(201);
 
-      const result = runSmokeCommand([
-        'env',
-        `CODEX_HOME=${home}`,
-        'codex',
-        'exec',
-        '--json',
-        '--skip-git-repo-check',
-        '--sandbox',
-        'read-only',
-        'Use the r4_smoke_skill skill and reply with R4_SKILL_SMOKE_MARKER only.'
-      ], { timeoutMs: 180_000 });
-      writeFixture('skills-discovery-jsonl', result);
-
-      throwIfBlockedEnvironment(result);
-      expect(result.exitCode).toBe(0);
-      const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
-      expect(lines.length).toBeGreaterThan(0);
-      for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
-      expect(result.stdout + result.stderr).not.toContain('No such file or directory');
+      const listed = await server.inject({
+        method: 'GET',
+        url: '/codex/skills',
+        headers: { authorization: 'Bearer secret' }
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toMatchObject({
+        codexHomeMode: 'isolated',
+        skills: [
+          expect.objectContaining({
+            id: 'r4_layout_skill',
+            status: 'valid'
+          })
+        ]
+      });
     } finally {
       try {
         await server.close();

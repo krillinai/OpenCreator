@@ -10,7 +10,7 @@ export type CapabilitiesViewProps = {
 
 export function CapabilitiesView(props: CapabilitiesViewProps) {
   if (!props.connected) {
-    return <div className="panel-scroll">连接 Runtime 后查看 Skills、MCP 和 Profiles</div>;
+    return <div className="panel-scroll">本机 Runtime 就绪后查看 Skills、MCP 和 Profiles</div>;
   }
 
   return (

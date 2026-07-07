@@ -22,6 +22,35 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function firstStringValue(record: JsonRecord, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = stringValue(record[key]);
+    if (value !== undefined && value.trim().length > 0) return value;
+  }
+  return undefined;
+}
+
+function extractReasoningSummary(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length === 0 ? undefined : trimmed;
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map(part => extractReasoningSummary(part))
+      .filter((part): part is string => part !== undefined && part.length > 0);
+    return parts.length === 0 ? undefined : parts.join('\n\n');
+  }
+
+  if (!isRecord(value)) return undefined;
+
+  const direct = firstStringValue(value, ['text', 'summary_text', 'content', 'message']);
+  if (direct !== undefined) return direct;
+
+  return extractReasoningSummary(value.summary ?? value.summaries ?? value.content ?? value.parts);
+}
+
 function fallbackEventId(input: NormalizeInput): string {
   return `${input.runId}:${input.seq}`;
 }
@@ -72,6 +101,23 @@ export function normalizeCodexEvent(input: NormalizeInput): AgentEventEnvelope {
 
   const item = isRecord(raw?.item) ? raw.item : undefined;
   const itemType = stringValue(item?.type);
+
+  if (type === 'item.completed' && item !== undefined && isReasoningItemType(itemType)) {
+    const text = extractReasoningSummary(item.summary ?? item.summaries ?? item.text ?? item.content ?? item.parts);
+    if (text !== undefined) {
+      return {
+        ...base,
+        type: 'reasoning_summary',
+        rawEventId,
+        payload: {
+          type: 'reasoning_summary',
+          text,
+          format: 'plain_text',
+          delivery: 'summary'
+        }
+      };
+    }
+  }
 
   if (type === 'item.completed' && item !== undefined && itemType === 'agent_message') {
     return {
@@ -147,4 +193,11 @@ export function normalizeCodexEvent(input: NormalizeInput): AgentEventEnvelope {
       ...(type === undefined ? {} : { codexType: type })
     }
   };
+}
+
+function isReasoningItemType(itemType: string | undefined): boolean {
+  return itemType === 'reasoning'
+    || itemType === 'reasoning_summary'
+    || itemType === 'agent_reasoning'
+    || itemType === 'thinking';
 }

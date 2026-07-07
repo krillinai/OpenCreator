@@ -36,7 +36,7 @@ describe('Composer', () => {
   });
 
   it('is disabled when current thread has an active run', () => {
-    render(<Composer {...defaultProps} disabled />);
+    render(<Composer {...defaultProps} disabled disabledReason="当前对话有任务运行中" />);
 
     expect(screen.getByRole('textbox', { name: '输入任务' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();

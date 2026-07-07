@@ -28,11 +28,6 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
   return (
     <div className="settings-page">
       <aside className="settings-sidebar" aria-label="设置导航">
-        <div className="traffic-lights" aria-hidden="true">
-          <span className="traffic-light traffic-light-red" />
-          <span className="traffic-light traffic-light-yellow" />
-          <span className="traffic-light traffic-light-green" />
-        </div>
         <button className="settings-back" type="button" onClick={props.onBack}>
           返回应用
         </button>

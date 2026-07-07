@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,25 +23,22 @@ describe('App', () => {
     expect(screen.queryByText(/Token|API Key|连接 Runtime/)).not.toBeInTheDocument();
   });
 
-  it('records a mock submit with fallback message and opens the change detail', async () => {
+  it('does not allow chat submission before the local runtime is connected', async () => {
     const user = userEvent.setup();
     const prompt = '整理企业 Agent 工作台设计';
 
     render(<App fileService={createFileService()} />);
 
-    await user.type(await screen.findByRole('textbox', { name: '输入任务' }), prompt);
-    await user.click(screen.getByRole('button', { name: '发送' }));
+    const textbox = await screen.findByRole('textbox', { name: '输入任务' });
+    expect(textbox).toBeDisabled();
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
+    expect(screen.getByPlaceholderText('正在连接本地运行内核')).toBeInTheDocument();
 
-    expect(await screen.findByText(prompt)).toBeInTheDocument();
-    expect(screen.getByText('本地服务暂未就绪，已先记录本次任务。')).toBeInTheDocument();
-    expect(screen.getByText('根据本次输入生成 mock 文件变更')).toBeInTheDocument();
-    expect(screen.getByText('docs/atoms.md')).toBeInTheDocument();
+    await user.keyboard(prompt);
 
-    await user.click(screen.getByRole('button', { name: /审查 根据本次输入生成 mock 文件变更 docs\/atoms\.md/ }));
-
-    expect(await screen.findByRole('heading', { name: '已编辑 docs/atoms.md' })).toBeInTheDocument();
-    expect(screen.getByText('+903 -0')).toBeInTheDocument();
-    expect(screen.getAllByText('docs/atoms.md').length).toBeGreaterThan(0);
+    expect(screen.queryByText(prompt)).not.toBeInTheDocument();
+    expect(screen.queryByText(/收到。我会先围绕/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/mock 文件变更/)).not.toBeInTheDocument();
   });
 
   it('starts a real runtime run, records SSE events, opens run detail, and shows Codex info in settings', async () => {
@@ -66,6 +63,29 @@ describe('App', () => {
       input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 1));
       input.onEvent(
         createRuntimeEvent(
+          'unknown_event',
+          {
+            type: 'unknown_event',
+            rawEventId: 'raw_ignored',
+            codexType: 'item.completed'
+          },
+          2
+        )
+      );
+      input.onEvent(
+        createRuntimeEvent(
+          'reasoning_summary',
+          {
+            type: 'reasoning_summary',
+            text: '我会先确认输入要求。\n\n然后返回指定文本。',
+            format: 'plain_text',
+            delivery: 'summary'
+          },
+          3
+        )
+      );
+      input.onEvent(
+        createRuntimeEvent(
           'assistant_message',
           {
             type: 'assistant_message',
@@ -73,10 +93,10 @@ describe('App', () => {
             format: 'plain_text',
             delivery: 'message'
           },
-          2
+          4
         )
       );
-      input.onEvent(createRuntimeEvent('done', { type: 'done', status: 'succeeded', terminationReason: 'completed' }, 3));
+      input.onEvent(createRuntimeEvent('done', { type: 'done', status: 'succeeded', terminationReason: 'completed' }, 5));
     };
 
     render(
@@ -97,10 +117,16 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(await screen.findByText(prompt)).toBeInTheDocument();
-    expect(await screen.findByText('queued')).toBeInTheDocument();
-    expect((await screen.findAllByText('running')).length).toBeGreaterThan(0);
+    expect(await screen.findByText('思考过程')).toBeInTheDocument();
+    expect(screen.queryByText('queued')).not.toBeInTheDocument();
+    expect(screen.queryByText('running')).not.toBeInTheDocument();
+    expect(screen.queryByText('排队中')).not.toBeInTheDocument();
+    expect(screen.queryByText('处理中')).not.toBeInTheDocument();
+    expect(await screen.findByText('我会先确认输入要求。')).toBeInTheDocument();
+    expect(await screen.findByText('然后返回指定文本。')).toBeInTheDocument();
     expect(await screen.findByText('OK')).toBeInTheDocument();
-    expect(await screen.findByText('succeeded')).toBeInTheDocument();
+    expect(screen.queryByText('完成')).not.toBeInTheDocument();
+    expect(screen.queryByText('unknown_event')).not.toBeInTheDocument();
     expect(JSON.parse(String(fetchCalls.find(call => call.url.endsWith('/runs'))?.init?.body))).toEqual({ prompt });
     expect(sseFetchImpl).toBe(runtimeFetch);
 
@@ -117,6 +143,196 @@ describe('App', () => {
 
     expect(await screen.findByText('高级信息')).toBeInTheDocument();
     expect(screen.getAllByText('codex-cli test').length).toBeGreaterThan(0);
+  });
+
+  it('does not show an empty process block when runtime events have no public reasoning summary', async () => {
+    const user = userEvent.setup();
+    const prompt = '只回复 OK';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', status: 'running' }, { status: 202 });
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'queued' }, 1));
+      input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 2));
+      input.onEvent(
+        createRuntimeEvent(
+          'assistant_message',
+          {
+            type: 'assistant_message',
+            text: 'OK',
+            format: 'plain_text',
+            delivery: 'message'
+          },
+          3
+        )
+      );
+      input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'finalizing' }, 4));
+      input.onEvent(createRuntimeEvent('done', { type: 'done', status: 'succeeded', terminationReason: 'completed' }, 5));
+    };
+
+    const { container } = render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(await screen.findByText(prompt)).toBeInTheDocument();
+    expect(await screen.findByText('OK')).toBeInTheDocument();
+    expect(container.querySelector('.timeline-process')).not.toBeInTheDocument();
+    expect(screen.queryByText('思考过程')).not.toBeInTheDocument();
+    expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
+    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
+    expect(screen.queryByText('queued')).not.toBeInTheDocument();
+    expect(screen.queryByText('running')).not.toBeInTheDocument();
+    expect(screen.queryByText('finalizing')).not.toBeInTheDocument();
+  });
+
+  it('shows a thinking indicator while the runtime has started but has not emitted assistant text yet', async () => {
+    const user = userEvent.setup();
+    const prompt = '你都会做什么';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', status: 'running' }, { status: 202 });
+      throw new Error(`Unexpected request ${url}`);
+    };
+    let releaseSse!: () => void;
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 1));
+      await new Promise<void>(resolve => {
+        releaseSse = resolve;
+      });
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(await screen.findByText(prompt)).toBeInTheDocument();
+    expect(await screen.findByText('正在思考')).toBeInTheDocument();
+    expect(screen.queryByText('running')).not.toBeInTheDocument();
+
+    await act(async () => {
+      releaseSse();
+    });
+  });
+
+  it('renders Codex process agent messages as folded process text and only the final agent message as Clawee reply', async () => {
+    const user = userEvent.setup();
+    const prompt = '检查当前目录并总结';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', status: 'running' }, { status: 202 });
+      if (url.endsWith('/runs/run_1/diagnostics')) return jsonResponse(createRunDiagnosticsResponse(createCodexStatusResponse()));
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 1));
+      input.onEvent(
+        createRuntimeEvent(
+          'assistant_message',
+          {
+            type: 'assistant_message',
+            text: '我会先确认当前目录，再读取必要文件。',
+            format: 'plain_text',
+            delivery: 'message'
+          },
+          2
+        )
+      );
+      input.onEvent(
+        createRuntimeEvent(
+          'tool_use',
+          {
+            type: 'tool_use',
+            toolCallId: 'call_1',
+            name: 'command_execution',
+            input: { command: 'pwd' }
+          },
+          3
+        )
+      );
+      input.onEvent(
+        createRuntimeEvent(
+          'tool_result',
+          {
+            type: 'tool_result',
+            toolCallId: 'call_1',
+            output: '/repo',
+            exitCode: 0,
+            isError: false
+          },
+          4
+        )
+      );
+      input.onEvent(
+        createRuntimeEvent(
+          'assistant_message',
+          {
+            type: 'assistant_message',
+            text: '当前目录是 /repo，检查已完成。',
+            format: 'plain_text',
+            delivery: 'message'
+          },
+          5
+        )
+      );
+      input.onEvent(createRuntimeEvent('done', { type: 'done', status: 'succeeded', terminationReason: 'completed' }, 6));
+    };
+
+    const { container } = render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(await screen.findByText(prompt)).toBeInTheDocument();
+    expect(await screen.findByText('思考过程')).toBeInTheDocument();
+    expect(screen.getByText('我会先确认当前目录，再读取必要文件。')).toBeInTheDocument();
+    expect(screen.getByText('使用工具 command_execution')).toBeInTheDocument();
+    expect(screen.getByText('工具完成 call_1')).toBeInTheDocument();
+    expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
+    expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
+    expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
   });
 
   it('opens settings and returns to the app', async () => {
