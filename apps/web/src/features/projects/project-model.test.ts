@@ -21,6 +21,11 @@ describe('project model', () => {
     }
 
     const contentDesign = projects[1];
+    expect(contentDesign).toBeDefined();
+    if (contentDesign === undefined) {
+      throw new Error('content-design project should exist');
+    }
+
     expect(contentDesign.cwd).toContain('content-design');
     expect(contentDesign.sandbox).toBe('danger-full-access');
 
