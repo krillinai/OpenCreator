@@ -11,6 +11,7 @@ export function ClaweeSidebar(props: {
   onSelectConversation(conversationId: string): void;
   onOpenView(view: ActiveView): void;
   onOpenSettings(): void;
+  onCheckUpdates(): void;
 }) {
   const globalActions: Array<{ label: string; view?: ActiveView; onClick(): void }> = [
     { label: '新对话', onClick: props.onNewConversation },
@@ -86,7 +87,7 @@ export function ClaweeSidebar(props: {
           </span>
           <span>设置</span>
         </button>
-        <button className="update-button" type="button">
+        <button className="update-button" type="button" onClick={props.onCheckUpdates}>
           更新
         </button>
       </div>

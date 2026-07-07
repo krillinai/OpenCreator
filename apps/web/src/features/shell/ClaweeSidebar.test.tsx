@@ -52,6 +52,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ClaweeSidebar>> 
       onSelectConversation={vi.fn()}
       onOpenView={vi.fn()}
       onOpenSettings={vi.fn()}
+      onCheckUpdates={vi.fn()}
       {...overrides}
     />
   );
@@ -95,5 +96,38 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: '设置 账户' }));
 
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks updates from the footer button', async () => {
+    const user = userEvent.setup();
+    const onCheckUpdates = vi.fn();
+
+    renderSidebar({ onCheckUpdates });
+
+    await user.click(screen.getByRole('button', { name: '更新' }));
+
+    expect(onCheckUpdates).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a new conversation from the primary action', async () => {
+    const user = userEvent.setup();
+    const onNewConversation = vi.fn();
+
+    renderSidebar({ onNewConversation });
+
+    await user.click(screen.getByRole('button', { name: '新对话' }));
+
+    expect(onNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens search from the primary action', async () => {
+    const user = userEvent.setup();
+    const onOpenView = vi.fn();
+
+    renderSidebar({ onOpenView });
+
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+
+    expect(onOpenView).toHaveBeenCalledWith('search');
   });
 });
