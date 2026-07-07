@@ -1,46 +1,38 @@
-import { readFileSync } from 'node:fs';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { WorkbenchLayout } from './WorkbenchLayout.js';
 
 describe('WorkbenchLayout', () => {
-  it('renders four workbench regions', () => {
+  it('renders sidebar, main, and detail regions when detail is open', () => {
     render(
       <WorkbenchLayout
         sidebar={<div>左侧</div>}
-        timeline={<div>中间</div>}
-        rightPanel={<div>右侧</div>}
-        fileTree={<div>最右</div>}
+        main={<div>中间</div>}
+        detail={<div>详情内容</div>}
+        detailOpen
       />
     );
 
-    expect(screen.getByLabelText('主导航和会话')).toBeInTheDocument();
-    expect(screen.getByLabelText('Agent 对话')).toBeInTheDocument();
-    expect(screen.getByLabelText('文件和运行详情')).toBeInTheDocument();
-    expect(screen.getByLabelText('项目文件树')).toBeInTheDocument();
+    expect(screen.getByLabelText('Clawee 导航')).toBeInTheDocument();
+    expect(screen.getByLabelText('Clawee 工作区')).toBeInTheDocument();
+    expect(screen.getByLabelText('详情')).toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('clawee-shell', 'has-detail');
   });
 
-  it('keeps region class names wired to workbench styles', () => {
+  it('does not render detail when detail is closed', () => {
     render(
       <WorkbenchLayout
         sidebar={<div>左侧</div>}
-        timeline={<div>中间</div>}
-        rightPanel={<div>右侧</div>}
-        fileTree={<div>最右</div>}
+        main={<div>中间</div>}
+        detail={<div>详情内容</div>}
+        detailOpen={false}
       />
     );
 
-    expect(screen.getByLabelText('主导航和会话')).toHaveClass('sidebar-pane');
-    expect(screen.getByLabelText('Agent 对话')).toHaveClass('timeline-pane');
-    expect(screen.getByLabelText('文件和运行详情')).toHaveClass('right-pane');
-    expect(screen.getByLabelText('项目文件树')).toHaveClass('tree-pane');
-  });
-
-  it('defines responsive tracks for the workbench', () => {
-    const css = readFileSync('src/styles/app.css', 'utf8');
-
-    expect(css).toMatch(/\.workbench-shell\s*{[^}]*grid-template-columns:\s*260px minmax\(420px, 0\.92fr\) minmax\(520px, 1\.08fr\) 280px;/s);
-    expect(css).toMatch(/@media\s*\(max-width:\s*1180px\)/);
-    expect(css).not.toMatch(/body\s*{[^}]*min-width:\s*1280px;/s);
+    expect(screen.getByLabelText('Clawee 导航')).toHaveClass('clawee-sidebar-pane');
+    expect(screen.getByLabelText('Clawee 工作区')).toHaveClass('clawee-main-pane');
+    expect(screen.queryByLabelText('详情')).not.toBeInTheDocument();
+    expect(screen.getByRole('main')).toHaveClass('clawee-shell');
+    expect(screen.getByRole('main')).not.toHaveClass('has-detail');
   });
 });

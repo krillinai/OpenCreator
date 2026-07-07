@@ -2,24 +2,25 @@ import type { ReactNode } from 'react';
 
 export function WorkbenchLayout(props: {
   sidebar: ReactNode;
-  timeline: ReactNode;
-  rightPanel: ReactNode;
-  fileTree: ReactNode;
+  main: ReactNode;
+  detail?: ReactNode;
+  detailOpen?: boolean;
 }) {
+  const shellClassName = props.detailOpen ? 'clawee-shell has-detail' : 'clawee-shell';
+
   return (
-    <main className="workbench-shell">
-      <aside className="sidebar-pane" aria-label="主导航和会话">
+    <main className={shellClassName}>
+      <aside className="clawee-sidebar-pane" aria-label="Clawee 导航">
         {props.sidebar}
       </aside>
-      <section className="timeline-pane" aria-label="Agent 对话">
-        {props.timeline}
+      <section className="clawee-main-pane" aria-label="Clawee 工作区">
+        {props.main}
       </section>
-      <section className="right-pane" aria-label="文件和运行详情">
-        {props.rightPanel}
-      </section>
-      <aside className="tree-pane" aria-label="项目文件树">
-        {props.fileTree}
-      </aside>
+      {props.detailOpen ? (
+        <aside className="clawee-detail-pane" aria-label="详情">
+          {props.detail}
+        </aside>
+      ) : null}
     </main>
   );
 }
