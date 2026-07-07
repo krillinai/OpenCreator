@@ -3,14 +3,15 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
 import { Timeline } from '../components/timeline/Timeline.js';
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
-import { FileEditor } from '../components/editor/FileEditor.js';
-import { FileTree } from '../components/editor/FileTree.js';
 import { CapabilitiesView } from '../features/capabilities/CapabilitiesView.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
-import { ConnectionPanel } from '../features/connection/ConnectionPanel.js';
+import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
+import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
+import { DetailPanel } from '../features/details/DetailPanel.js';
+import { createDefaultProjects, findProjectById, listRecentConversations } from '../features/projects/project-model.js';
 import { Composer } from '../features/runs/Composer.js';
-import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
-import { ThreadList } from '../features/threads/ThreadList.js';
+import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
+import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
 import { RuntimeClient } from '../runtime/client.js';
@@ -41,6 +42,8 @@ export type AppProps = {
 
 export function App(props: AppProps = {}) {
   const [state, dispatch] = useReducer(reduceAppState, initialAppState);
+  const projects = useMemo(() => createDefaultProjects(), []);
+  const conversations = useMemo(() => listRecentConversations(), []);
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
@@ -50,7 +53,10 @@ export function App(props: AppProps = {}) {
   const [treeLoadError, setTreeLoadError] = useState<string>();
   const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig | null>(null);
-  const [connectionState, setConnectionState] = useState<ConnectionState>({ status: 'disconnected', message: '未连接 Runtime' });
+  const [connectionState, setConnectionState] = useState<ConnectionState>({
+    status: 'disconnected',
+    message: '正在等待本地服务'
+  });
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [runtimeBusy, setRuntimeBusy] = useState(false);
   const [savedFileByPath, setSavedFileByPath] = useState<Record<string, WorkspaceFile>>({});
@@ -108,14 +114,7 @@ export function App(props: AppProps = {}) {
     let canceled = false;
     const loadVersion = connectionConfigVersionRef.current;
 
-    hostBridge
-      .readConnectionConfig()
-      .then(config => {
-        if (!canceled && connectionConfigVersionRef.current === loadVersion) setConnectionConfig(config);
-      })
-      .catch(() => {
-        if (!canceled && connectionConfigVersionRef.current === loadVersion) setConnectionConfig(null);
-      });
+    readHostRuntimeConfig(loadVersion, () => canceled);
 
     return () => {
       canceled = true;
@@ -150,7 +149,7 @@ export function App(props: AppProps = {}) {
     let canceled = false;
 
     if (connectionService === null) {
-      setConnectionState({ status: 'disconnected', message: '未连接 Runtime' });
+      setConnectionState({ status: 'disconnected', message: '正在等待本地服务' });
       return () => {
         canceled = true;
       };
@@ -164,7 +163,7 @@ export function App(props: AppProps = {}) {
       })
       .catch(() => {
         if (canceled) return;
-        setConnectionState({ status: 'disconnected', message: 'Runtime 连接失败' });
+        setConnectionState({ status: 'disconnected', message: '本地服务连接失败' });
       });
 
     return () => {
@@ -232,35 +231,15 @@ export function App(props: AppProps = {}) {
   const selectedFilePath = state.selectedFilePath;
   const currentFile = savedFileByPath[selectedFilePath];
   const selectedDraftContent = draftContentByPath[selectedFilePath] ?? currentFile?.content ?? '';
-  const dirty = currentFile !== undefined && selectedDraftContent !== currentFile.content;
-  const savingCurrentFile = savingFilePaths.has(selectedFilePath);
   const loadingSelectedFile = loadingFilePath === selectedFilePath && currentFile === undefined;
   const loadError = loadErrorByPath[selectedFilePath];
   const saveError = saveErrorByPath[selectedFilePath];
   const runDiagnostics = state.selectedRunId === undefined ? undefined : runDiagnosticsById[state.selectedRunId];
-  const rightPanel =
-    props.capabilitiesView !== undefined ? (
-      <CapabilitiesView {...props.capabilitiesView} />
-    ) : state.rightPanelMode === 'run_detail' ? (
-      <RunDetailPanel runId={state.selectedRunId} diagnostics={runDiagnostics} />
-    ) : (
-      loadingSelectedFile ? (
-        <div className="empty-state">正在加载文件...</div>
-      ) : currentFile === undefined ? (
-        <div className="empty-state">{loadError ?? '无法加载文件'}</div>
-      ) : (
-        <FileEditor
-          path={currentFile.path}
-          content={selectedDraftContent}
-          dirty={dirty}
-          saving={savingCurrentFile}
-          loadError={loadError}
-          saveError={saveError}
-          onChange={handleEditorContentChange}
-          onSave={saveCurrentFile}
-        />
-      )
-    );
+  const currentProject = findProjectById(projects, state.currentProjectId) ?? projects[0];
+  const currentProjectName = currentProject?.name ?? 'content-design';
+  const projectConversations = conversations.filter(conversation => conversation.projectId === state.currentProjectId);
+  const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
+  const runtimeStatus = mapRuntimeStatus(connectionState);
 
   function handleEditorContentChange(content: string) {
     const path = selectedFilePathRef.current;
@@ -291,14 +270,23 @@ export function App(props: AppProps = {}) {
     return `${prefix}_${Date.now()}_${timelineIdSequenceRef.current}`;
   }
 
-  async function handleConnect(config: ConnectionConfig) {
-    connectionConfigVersionRef.current += 1;
-    setConnectionConfig(config);
-    await hostBridge.writeConnectionConfig(config);
+  function readHostRuntimeConfig(loadVersion: number, isCanceled: () => boolean) {
+    hostBridge
+      .readConnectionConfig()
+      .then(config => {
+        if (!isCanceled() && connectionConfigVersionRef.current === loadVersion) setConnectionConfig(config);
+      })
+      .catch(() => {
+        if (!isCanceled() && connectionConfigVersionRef.current === loadVersion) setConnectionConfig(null);
+      });
   }
 
-  function handleConnectionEdit() {
+  function retryRuntimeConnection() {
     connectionConfigVersionRef.current += 1;
+    const loadVersion = connectionConfigVersionRef.current;
+    setConnectionConfig(null);
+    setConnectionState({ status: 'disconnected', message: '正在等待本地服务' });
+    readHostRuntimeConfig(loadVersion, () => false);
   }
 
   function submitPrompt(prompt: string) {
@@ -317,7 +305,7 @@ export function App(props: AppProps = {}) {
       {
         kind: 'assistant_message',
         id: createTimelineId('assistant'),
-        text: '当前未连接 Runtime，已在 mock workspace 中记录本次任务。',
+        text: '本地服务暂未就绪，已先记录本次任务。',
         source: 'mock'
       }
     ];
@@ -446,6 +434,10 @@ export function App(props: AppProps = {}) {
     void loadRunDiagnostics(runId);
   }
 
+  function openChangeDetail(changeId: string) {
+    dispatch({ type: 'select_change', changeId });
+  }
+
   async function saveCurrentFile() {
     if (currentFile === undefined) return;
     if (savingFilePathsRef.current.has(currentFile.path)) return;
@@ -482,60 +474,183 @@ export function App(props: AppProps = {}) {
     }
   }
 
+  const detailPanel = createDetailPanel();
+  const main = props.capabilitiesView !== undefined ? (
+    <CapabilitiesView {...props.capabilitiesView} />
+  ) : state.activeView === 'settings' ? (
+    <ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={() => dispatch({ type: 'back_to_app' })} />
+  ) : state.activeView === 'conversation' ? (
+    <section className="conversation-page">
+      <ConnectionStatusMessage connectionState={connectionState} />
+      <ConversationHeader
+        title={selectedConversation?.title ?? '新对话'}
+        projectName={currentProjectName}
+        onOpenLocation={() => dispatch({ type: 'select_file', path: selectedFilePath })}
+        onToggleDetail={() => {
+          if (state.rightPanelMode === 'closed') {
+            dispatch({ type: 'select_file', path: selectedFilePath });
+          } else {
+            dispatch({ type: 'close_detail' });
+          }
+        }}
+      />
+      <div className="conversation-body">
+        {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
+        {timelineItems.length === 0 ? (
+          <ConversationEmptyState projectName={currentProjectName} />
+        ) : (
+          <Timeline items={timelineItems} onOpenRunDetail={openRunDetail} onOpenChange={openChangeDetail} />
+        )}
+      </div>
+      <Composer
+        projectName={currentProjectName}
+        branchName="open-clawee"
+        permission={currentProject?.sandbox ?? 'follow-global'}
+        modelLabel="5.5 超高"
+        disabled={runtimeBusy}
+        onSubmit={submitPrompt}
+      />
+    </section>
+  ) : (
+    <PlaceholderView label={getPlaceholderLabel(state.activeView)} />
+  );
+
   return (
     <WorkbenchLayout
       sidebar={
-        <div className="sidebar-stack">
-          <div className="product-bar">
-            <div className="product-mark">C</div>
-            <div>
-              <strong>Clawee Agent</strong>
-              <span>Codex Runtime Workbench</span>
-            </div>
-          </div>
-          <ConnectionPanel
-            status={connectionState.status}
-            codexStatus={connectionState.status === 'connected' ? connectionState.codexStatus : undefined}
-            initialConfig={connectionConfig}
-            message={connectionState.status === 'connected' ? undefined : connectionState.message}
-            onEdit={handleConnectionEdit}
-            onConnect={handleConnect}
-          />
-          <ThreadList threads={[]} selectedThreadId={state.selectedThreadId} onSelect={() => {}} onNewThread={() => {}} />
-        </div>
+        <ClaweeSidebar
+          projects={projects}
+          conversations={projectConversations}
+          currentProjectId={state.currentProjectId}
+          activeView={state.activeView}
+          onNewConversation={() => {
+            dispatch({ type: 'set_active_view', activeView: 'conversation' });
+            dispatch({ type: 'close_detail' });
+          }}
+          onSelectProject={(projectId) => dispatch({ type: 'select_project', projectId })}
+          onSelectConversation={(conversationId) => dispatch({ type: 'select_thread', threadId: conversationId })}
+          onOpenView={(activeView) => dispatch({ type: 'set_active_view', activeView })}
+          onOpenSettings={() => dispatch({ type: 'open_settings' })}
+          onCheckUpdates={() => dispatch({ type: 'open_settings' })}
+        />
       }
-      timeline={
-        <div className="timeline-shell">
-          <div className="timeline-head">
-            <div>
-              <strong>Agent 对话</strong>
-              <span>{connectionState.status === 'connected' ? '已接入真实 Runtime' : '未连接时使用本地 mock 记录'}</span>
-            </div>
-          </div>
-          <Timeline items={timelineItems} onOpenRunDetail={openRunDetail} />
-          <Composer disabled={runtimeBusy} onSubmit={submitPrompt} />
-        </div>
-      }
-      rightPanel={rightPanel}
-      fileTree={
-        <>
-          <div className="tree-header">
-            <strong>{treeLoadError ?? '项目文件'}</strong>
-          </div>
-          <div className="tree-search">
-            <input aria-label="搜索项目文件" placeholder="搜索文件" />
-          </div>
-          <FileTree
-            nodes={treeNodes}
-            selectedPath={state.selectedFilePath}
-            onSelect={path => {
-              selectedFilePathRef.current = path;
-              dispatch({ type: 'select_file', path });
-            }}
-          />
-        </>
-      }
+      main={main}
+      detail={detailPanel}
+      detailOpen={detailPanel !== null && state.activeView === 'conversation'}
     />
+  );
+
+  function createDetailPanel() {
+    if (state.rightPanelMode === 'closed') return null;
+
+    if (state.rightPanelMode === 'run_detail') {
+      return (
+        <DetailPanel
+          mode="run"
+          title="运行详情"
+          subtitle={state.selectedRunId}
+          content={formatRunDiagnostics(runDiagnostics)}
+          onClose={() => dispatch({ type: 'close_detail' })}
+        />
+      );
+    }
+
+    if (state.rightPanelMode === 'change') {
+      return (
+        <DetailPanel
+          mode="change"
+          title="已编辑 docs/atoms.md"
+          subtitle="+903 -0"
+          content="docs/atoms.md"
+          onClose={() => dispatch({ type: 'close_detail' })}
+          onApprove={() => dispatch({ type: 'close_detail' })}
+          onRevert={() => dispatch({ type: 'close_detail' })}
+        />
+      );
+    }
+
+    const fileTitle = selectedFilePath.split('/').at(-1) ?? selectedFilePath;
+    const fileContent = loadingSelectedFile
+      ? '正在加载文件...'
+      : loadError ?? saveError ?? (selectedDraftContent.length > 0 ? selectedDraftContent : '暂无预览内容');
+
+    return (
+      <DetailPanel
+        mode="file"
+        title={fileTitle}
+        subtitle={selectedFilePath}
+        content={fileContent}
+        onClose={() => dispatch({ type: 'close_detail' })}
+      />
+    );
+  }
+}
+
+function ConnectionStatusMessage(props: { connectionState: ConnectionState }) {
+  if (props.connectionState.status === 'connected') {
+    return (
+      <p className="runtime-status" role="status">
+        本地运行内核正常
+      </p>
+    );
+  }
+
+  return (
+    <p className="runtime-status" role="status">
+      {props.connectionState.message}
+    </p>
+  );
+}
+
+function PlaceholderView(props: { label: string }) {
+  return (
+    <section className="placeholder-page" aria-labelledby="placeholder-title">
+      <h1 id="placeholder-title">Clawee：{props.label}</h1>
+    </section>
+  );
+}
+
+function getPlaceholderLabel(activeView: 'search' | 'schedules' | 'plugins') {
+  switch (activeView) {
+    case 'search':
+      return '搜索';
+    case 'schedules':
+      return '已安排';
+    case 'plugins':
+      return '插件';
+  }
+}
+
+function mapRuntimeStatus(connectionState: ConnectionState): RuntimeStatus {
+  if (connectionState.status !== 'connected') {
+    return {
+      connected: false,
+      runtimeVersion: '0.1.0',
+      lastCheckedAt: '2026-07-07 10:00'
+    };
+  }
+
+  return {
+    connected: true,
+    runtimeVersion: '0.1.0',
+    codexVersion: connectionState.codexStatus.codexVersion,
+    codexPath: connectionState.codexStatus.codexBin,
+    codexHome: connectionState.codexStatus.codexHome,
+    lastCheckedAt: '2026-07-07 10:00'
+  };
+}
+
+function formatRunDiagnostics(diagnostics: RunDiagnosticsResponse | undefined): string {
+  if (diagnostics === undefined) return '正在加载运行详情...';
+
+  return JSON.stringify(
+    {
+      runId: diagnostics.runId,
+      files: diagnostics.files,
+      warnings: diagnostics.warnings
+    },
+    null,
+    2
   );
 }
 
