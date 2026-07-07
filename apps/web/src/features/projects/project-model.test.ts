@@ -49,11 +49,11 @@ describe('project model', () => {
     const conversations = listRecentConversations();
 
     expect(conversations.map((conversation) => conversation.title)).toEqual([
-      '分析 Codex 接入方案',
-      '分析打包后使用困难',
+      '整理本周项目进展',
+      '提炼会议待办事项',
       '评审项目设计',
-      '检查竖屏字幕进度',
-      '查看最新git更新'
+      '检查内容产线进度',
+      '汇总团队最新更新'
     ]);
     expect(conversations.map((conversation) => conversation.updatedLabel)).toEqual(['4天', '5天', '1周', '1周', '3周']);
     expect(conversations.every((conversation) => conversation.projectId === 'content-design')).toBe(true);

@@ -7,14 +7,14 @@ describe('ConversationHeader', () => {
   it('renders the title, project name, and actions', () => {
     render(
       <ConversationHeader
-        title="分析 Codex 接入方案"
+        title="整理本周项目进展"
         projectName="content-design"
         onOpenLocation={vi.fn()}
         onToggleDetail={vi.fn()}
       />
     );
 
-    expect(screen.getByRole('heading', { name: '分析 Codex 接入方案' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '整理本周项目进展' })).toBeInTheDocument();
     expect(screen.getByText('content-design')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '打开位置' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '详情' })).toBeInTheDocument();
@@ -27,7 +27,7 @@ describe('ConversationHeader', () => {
 
     render(
       <ConversationHeader
-        title="分析 Codex 接入方案"
+        title="整理本周项目进展"
         projectName="content-design"
         onOpenLocation={onOpenLocation}
         onToggleDetail={onToggleDetail}

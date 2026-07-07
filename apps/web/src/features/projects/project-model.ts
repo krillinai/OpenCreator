@@ -40,11 +40,11 @@ export function findProjectById(projects: ClaweeProject[], projectId: string): C
 
 export function listRecentConversations(): ClaweeConversation[] {
   return [
-    createConversation('analysis-codex-integration', '分析 Codex 接入方案', '4天'),
-    createConversation('analysis-packaged-app-friction', '分析打包后使用困难', '5天'),
+    createConversation('weekly-progress-brief', '整理本周项目进展', '4天'),
+    createConversation('meeting-action-items', '提炼会议待办事项', '5天'),
     createConversation('review-project-design', '评审项目设计', '1周'),
-    createConversation('check-vertical-subtitle-progress', '检查竖屏字幕进度', '1周'),
-    createConversation('view-latest-git-updates', '查看最新git更新', '3周')
+    createConversation('check-content-pipeline-progress', '检查内容产线进度', '1周'),
+    createConversation('summarize-team-updates', '汇总团队最新更新', '3周')
   ];
 }
 

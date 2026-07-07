@@ -27,9 +27,9 @@ const projects = [
 
 const conversations = [
   {
-    id: 'analysis-codex-integration',
+    id: 'weekly-progress-brief',
     projectId: 'content-design',
-    title: '分析 Codex 接入方案',
+    title: '整理本周项目进展',
     updatedLabel: '4天'
   },
   {
@@ -70,7 +70,7 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('aria-current', 'true');
     expect(screen.getByRole('button', { name: 'bili' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '对话' })).toBeInTheDocument();
-    expect(screen.getByText('分析 Codex 接入方案')).toBeInTheDocument();
+    expect(screen.getByText('整理本周项目进展')).toBeInTheDocument();
     expect(screen.getByText('4天')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置 账户' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '更新' })).toBeInTheDocument();

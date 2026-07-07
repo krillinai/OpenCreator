@@ -1658,10 +1658,129 @@ textarea:focus-visible {
 @media (max-width: 920px) {
   .clawee-shell,
   .clawee-shell.has-detail {
-    grid-template-columns: 220px minmax(0, 1fr);
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(620px, calc(100vh - 180px));
+    overflow: visible;
+  }
+
+  .clawee-sidebar-pane,
+  .clawee-main-pane {
+    overflow: visible;
+  }
+
+  .clawee-sidebar-pane {
+    border-right: 0;
+    border-bottom: 1px solid rgba(41, 37, 32, 0.12);
+  }
+
+  .clawee-sidebar {
+    height: auto;
+    grid-template-rows: auto auto auto;
+    gap: 10px;
+  }
+
+  .sidebar-primary,
+  .sidebar-section-list {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .sidebar-row,
+  .conversation-row {
+    width: auto;
+    flex: 0 0 auto;
+  }
+
+  .sidebar-conversations {
+    display: none;
+  }
+
+  .sidebar-bottom {
+    padding-top: 4px;
   }
 
   .clawee-detail-pane {
     display: none;
+  }
+
+  .conversation-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .conversation-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .conversation-empty-state {
+    padding: 24px 16px;
+  }
+
+  .conversation-empty-state h2 {
+    max-width: 16rem;
+    font-size: 22px;
+  }
+
+  .composer-wrap {
+    padding: 0 12px 12px;
+  }
+
+  .clawee-composer {
+    border-radius: 10px;
+  }
+
+  .composer-toolbar,
+  .composer-left-actions,
+  .composer-right-actions {
+    flex-wrap: wrap;
+  }
+
+  .composer-toolbar {
+    align-items: flex-start;
+  }
+
+  .composer-context {
+    order: 2;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .clawee-shell,
+  .clawee-shell.has-detail {
+    grid-template-rows: auto minmax(620px, calc(100vh - 220px));
+  }
+
+  .window-controls {
+    display: none;
+  }
+
+  .clawee-sidebar {
+    padding: 10px;
+  }
+
+  .sidebar-section h2 {
+    padding-inline: 4px;
+  }
+
+  .sidebar-bottom {
+    grid-template-columns: 1fr auto;
+  }
+
+  .conversation-header {
+    padding: 10px 12px;
+  }
+
+  .conversation-actions .toolbar-button span {
+    display: none;
+  }
+
+  .conversation-empty-state h2 {
+    font-size: 20px;
   }
 }
