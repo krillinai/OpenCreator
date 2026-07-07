@@ -134,12 +134,23 @@ describe('Timeline', () => {
 
     render(<Timeline items={items} onOpenChange={onOpenChange} />);
 
-    await user.click(screen.getByRole('button', { name: '审查' }));
+    const reviewButton = screen.getByRole('button', {
+      name: '审查 Edited timeline model apps/web/src/components/timeline/timeline-model.ts'
+    });
+
+    expect(reviewButton).toHaveAttribute(
+      'aria-label',
+      '审查 Edited timeline model apps/web/src/components/timeline/timeline-model.ts'
+    );
+
+    await user.click(reviewButton);
 
     expect(onOpenChange).toHaveBeenCalledWith('change_1');
   });
 
-  it('uses the Clawee run detail copy', () => {
+  it('opens run detail with a labeled target', async () => {
+    const user = userEvent.setup();
+    const onOpenRunDetail = vi.fn();
     const items: TimelineItem[] = [
       {
         kind: 'assistant_message',
@@ -150,10 +161,16 @@ describe('Timeline', () => {
       }
     ];
 
-    render(<Timeline items={items} onOpenRunDetail={vi.fn()} />);
+    render(<Timeline items={items} onOpenRunDetail={onOpenRunDetail} />);
 
-    expect(screen.getByRole('button', { name: '查看运行详情' })).toBeInTheDocument();
+    const runDetailButton = screen.getByRole('button', { name: '查看运行详情 run_1' });
+
+    expect(runDetailButton).toHaveAttribute('aria-label', '查看运行详情 run_1');
     expect(screen.queryByText('查看 Run 详情')).not.toBeInTheDocument();
+
+    await user.click(runDetailButton);
+
+    expect(onOpenRunDetail).toHaveBeenCalledWith('run_1');
   });
 
   it('renders the Clawee empty state', () => {

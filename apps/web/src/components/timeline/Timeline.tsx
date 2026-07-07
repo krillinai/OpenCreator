@@ -58,7 +58,12 @@ function renderTimelineItemContent(item: TimelineItem, onOpenChange?: (changeId:
           <span>{item.path}</span>
           <code>{item.delta}</code>
           {onOpenChange ? (
-            <button type="button" className="inline-action" onClick={() => onOpenChange(item.id)}>
+            <button
+              type="button"
+              className="inline-action"
+              aria-label={`审查 ${item.title} ${item.path}`}
+              onClick={() => onOpenChange(item.id)}
+            >
               审查
             </button>
           ) : null}
@@ -114,7 +119,12 @@ export function Timeline(props: {
               <div className="timeline-bubble">
                 {renderTimelineItemContent(item, props.onOpenChange)}
                 {props.onOpenRunDetail && canOpenRunDetail(item) ? (
-                  <button type="button" className="inline-action" onClick={() => props.onOpenRunDetail?.(item.runId)}>
+                  <button
+                    type="button"
+                    className="inline-action"
+                    aria-label={item.runId ? `查看运行详情 ${item.runId}` : '查看运行详情'}
+                    onClick={() => props.onOpenRunDetail?.(item.runId)}
+                  >
                     查看运行详情
                   </button>
                 ) : null}
