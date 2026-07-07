@@ -10,7 +10,7 @@ function getTimelineTitle(item: TimelineItem): string {
     case 'user_message':
       return '你';
     case 'assistant_message':
-      return item.source === 'runtime' ? 'Codex' : 'Mock Agent';
+      return 'Clawee';
     case 'tool_step':
       return `工具 ${item.name}`;
     case 'change_card':
@@ -36,31 +36,33 @@ function getTimelineAvatar(item: TimelineItem): string {
   return 'C';
 }
 
-function renderTimelineItemContent(item: TimelineItem) {
+function renderTimelineItemContent(item: TimelineItem, onOpenChange?: (changeId: string) => void) {
   switch (item.kind) {
     case 'user_message':
     case 'assistant_message':
       return (
         <>
           <p>{item.text}</p>
-          {item.content ? <pre>{item.content}</pre> : null}
         </>
       );
     case 'tool_step':
       return (
         <>
           <p>{item.name}</p>
-          <pre>{item.content}</pre>
         </>
       );
     case 'change_card':
       return (
-        <>
-          <p>{item.title}</p>
-          <p>
-            {item.path} {item.delta}
-          </p>
-        </>
+        <div className="change-card-content">
+          <strong>{item.title}</strong>
+          <span>{item.path}</span>
+          <code>{item.delta}</code>
+          {onOpenChange ? (
+            <button type="button" className="inline-action" onClick={() => onOpenChange(item.id)}>
+              审查
+            </button>
+          ) : null}
+        </div>
       );
     case 'diagnostic':
       return (
@@ -74,7 +76,6 @@ function renderTimelineItemContent(item: TimelineItem) {
       return (
         <>
           <p>{item.label}</p>
-          {item.content ? <pre>{item.content}</pre> : null}
         </>
       );
     case 'done':
@@ -82,7 +83,6 @@ function renderTimelineItemContent(item: TimelineItem) {
         <>
           <p>{item.status}</p>
           {item.terminationReason ? <p>{item.terminationReason}</p> : null}
-          <pre>{item.content}</pre>
         </>
       );
     default:
@@ -91,13 +91,17 @@ function renderTimelineItemContent(item: TimelineItem) {
   }
 }
 
-export function Timeline(props: { items: TimelineItem[]; onOpenRunDetail?(runId: string): void }) {
+export function Timeline(props: {
+  items: TimelineItem[];
+  onOpenRunDetail?(runId: string): void;
+  onOpenChange?(changeId: string): void;
+}) {
   return (
     <div className="timeline-list">
       {props.items.length === 0 ? (
         <div className="timeline-empty">
-          <strong>还没有任务记录</strong>
-          <span>连接 Runtime 后发送任务，或先用本地 mock workspace 记录一次 Agent 请求。</span>
+          <strong>暂无任务记录</strong>
+          <span>发送任务后，Clawee 会在这里展示处理过程和结果。</span>
         </div>
       ) : (
         <div className="timeline-stack">
@@ -108,10 +112,10 @@ export function Timeline(props: { items: TimelineItem[]; onOpenRunDetail?(runId:
                 <span className="timeline-kind">{getTimelineTitle(item)}</span>
               </div>
               <div className="timeline-bubble">
-                {renderTimelineItemContent(item)}
+                {renderTimelineItemContent(item, props.onOpenChange)}
                 {props.onOpenRunDetail && canOpenRunDetail(item) ? (
                   <button type="button" className="inline-action" onClick={() => props.onOpenRunDetail?.(item.runId)}>
-                    查看 Run 详情
+                    查看运行详情
                   </button>
                 ) : null}
               </div>
