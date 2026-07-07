@@ -38,7 +38,8 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
         </button>
         <label className="settings-search">
           <span>搜索设置</span>
-          <input type="search" placeholder="搜索设置" />
+          <input type="search" placeholder="搜索暂不可用" aria-describedby="settings-search-disabled" disabled />
+          <span id="settings-search-disabled">搜索暂不可用</span>
         </label>
         <nav className="settings-nav" aria-label="设置分类">
           {tabs.map(tab => (
@@ -111,12 +112,7 @@ function AboutSettings(props: { runtimeStatus: RuntimeStatus }) {
         <SettingsRow label="Clawee 版本" value="0.1.0" />
         <SettingsRow label="Runtime 版本" value={props.runtimeStatus.runtimeVersion ?? '未知'} />
         <SettingsRow label="数据目录" value={props.runtimeStatus.codexHome ?? '未设置'} />
-        <div className="settings-row">
-          <span>更新</span>
-          <button className="settings-action" type="button">
-            检查更新
-          </button>
-        </div>
+        <SettingsRow label="检查更新" value="手动检查稍后支持" />
       </div>
       <section className="settings-card settings-advanced" aria-label="高级信息">
         <h2>高级信息</h2>

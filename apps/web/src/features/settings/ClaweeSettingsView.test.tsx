@@ -19,7 +19,8 @@ describe('ClaweeSettingsView', () => {
     expect(container.querySelector('.traffic-light-yellow')).toBeInTheDocument();
     expect(container.querySelector('.traffic-light-green')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '返回应用' })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('搜索设置')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('搜索暂不可用')).toBeDisabled();
+    expect(screen.getByText('搜索暂不可用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '常规' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '关于 Clawee' })).toBeInTheDocument();
@@ -61,7 +62,9 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByText('Clawee 版本')).toBeInTheDocument();
     expect(screen.getByText('Runtime 版本')).toBeInTheDocument();
     expect(screen.getByText('数据目录')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '检查更新' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '检查更新' })).not.toBeInTheDocument();
+    expect(screen.getByText('检查更新')).toBeInTheDocument();
+    expect(screen.getByText('手动检查稍后支持')).toBeInTheDocument();
 
     const advanced = screen.getByRole('region', { name: '高级信息' });
     expect(within(advanced).getByText('Codex CLI 版本')).toBeInTheDocument();
