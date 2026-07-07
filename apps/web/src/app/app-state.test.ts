@@ -2,6 +2,79 @@ import { describe, expect, it } from 'vitest';
 import { reduceAppState, initialAppState } from './app-state.js';
 
 describe('app state', () => {
+  it('switches projects, opens settings, and returns to the conversation view', () => {
+    const changedProject = reduceAppState(
+      { ...initialAppState, activeView: 'plugins', rightPanelMode: 'file' },
+      {
+        type: 'select_project',
+        projectId: 'bili'
+      }
+    );
+
+    expect(changedProject.currentProjectId).toBe('bili');
+    expect(changedProject.activeView).toBe('conversation');
+    expect(changedProject.rightPanelMode).toBe('closed');
+
+    const settings = reduceAppState(changedProject, { type: 'open_settings' });
+    expect(settings.activeView).toBe('settings');
+    expect(settings.rightPanelMode).toBe('closed');
+
+    const app = reduceAppState(settings, { type: 'back_to_app' });
+    expect(app.activeView).toBe('conversation');
+  });
+
+  it('opens files, changes, run details, and closes the detail panel', () => {
+    const file = reduceAppState(initialAppState, {
+      type: 'select_file',
+      path: 'docs/runtime-api-for-ui-v1.md'
+    });
+    expect(file.selectedFilePath).toBe('docs/runtime-api-for-ui-v1.md');
+    expect(file.rightPanelMode).toBe('file');
+
+    const change = reduceAppState(file, {
+      type: 'select_change',
+      changeId: 'change_1'
+    });
+    expect(change.selectedChangeId).toBe('change_1');
+    expect(change.rightPanelMode).toBe('change');
+
+    const runDetail = reduceAppState(change, {
+      type: 'select_run_detail',
+      runId: 'run_1'
+    });
+    expect(runDetail.selectedRunId).toBe('run_1');
+    expect(runDetail.rightPanelMode).toBe('run_detail');
+
+    const closed = reduceAppState(runDetail, { type: 'close_detail' });
+    expect(closed.rightPanelMode).toBe('closed');
+  });
+
+  it('closes detail when switching away from the conversation view', () => {
+    const state = reduceAppState(
+      { ...initialAppState, rightPanelMode: 'run_detail', selectedRunId: 'run_1' },
+      {
+        type: 'set_active_view',
+        activeView: 'search'
+      }
+    );
+
+    expect(state.activeView).toBe('search');
+    expect(state.rightPanelMode).toBe('closed');
+  });
+
+  it('selects a thread and returns to the conversation view', () => {
+    const state = reduceAppState(
+      { ...initialAppState, activeView: 'search' },
+      {
+        type: 'select_thread',
+        threadId: 'thread_1'
+      }
+    );
+
+    expect(state.selectedThreadId).toBe('thread_1');
+    expect(state.activeView).toBe('conversation');
+  });
+
   it('tracks active run by thread id and clears it on done', () => {
     const running = reduceAppState(initialAppState, {
       type: 'run_started',

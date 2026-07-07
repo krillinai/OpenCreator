@@ -1,10 +1,14 @@
 import type { PublicRunStatus } from '@clawee/protocol';
 
-export type RightPanelMode = 'editor' | 'run_detail';
+export type RightPanelMode = 'closed' | 'file' | 'change' | 'run_detail';
+export type ActiveView = 'conversation' | 'search' | 'schedules' | 'plugins' | 'settings';
 
 export type AppState = {
+  activeView: ActiveView;
+  currentProjectId: string;
   selectedThreadId?: string;
   selectedRunId?: string;
+  selectedChangeId?: string;
   selectedFilePath: string;
   rightPanelMode: RightPanelMode;
   activeRunByThreadId: Record<string, string>;
@@ -12,26 +16,55 @@ export type AppState = {
 };
 
 export type AppAction =
+  | { type: 'select_project'; projectId: string }
+  | { type: 'set_active_view'; activeView: ActiveView }
+  | { type: 'open_settings' }
+  | { type: 'back_to_app' }
   | { type: 'select_thread'; threadId: string }
   | { type: 'select_file'; path: string }
+  | { type: 'select_change'; changeId: string }
   | { type: 'select_run_detail'; runId: string }
+  | { type: 'close_detail' }
   | { type: 'run_started'; threadId: string; runId: string; status: PublicRunStatus }
   | { type: 'run_done'; threadId: string; runId: string };
 
 export const initialAppState: AppState = {
-  selectedFilePath: 'docs/design/enterprise-agent-workbench.md',
-  rightPanelMode: 'editor',
+  activeView: 'conversation',
+  currentProjectId: 'content-design',
+  selectedFilePath: 'docs/atoms.md',
+  rightPanelMode: 'closed',
   activeRunByThreadId: {}
 };
 
 export function reduceAppState(state: AppState, action: AppAction): AppState {
   switch (action.type) {
+    case 'select_project':
+      return {
+        ...state,
+        currentProjectId: action.projectId,
+        activeView: 'conversation',
+        rightPanelMode: 'closed'
+      };
+    case 'set_active_view':
+      return {
+        ...state,
+        activeView: action.activeView,
+        rightPanelMode: action.activeView === 'conversation' ? state.rightPanelMode : 'closed'
+      };
+    case 'open_settings':
+      return { ...state, activeView: 'settings', rightPanelMode: 'closed' };
+    case 'back_to_app':
+      return { ...state, activeView: 'conversation' };
     case 'select_thread':
-      return { ...state, selectedThreadId: action.threadId };
+      return { ...state, selectedThreadId: action.threadId, activeView: 'conversation' };
     case 'select_file':
-      return { ...state, selectedFilePath: action.path, rightPanelMode: 'editor' };
+      return { ...state, selectedFilePath: action.path, rightPanelMode: 'file' };
+    case 'select_change':
+      return { ...state, selectedChangeId: action.changeId, rightPanelMode: 'change' };
     case 'select_run_detail':
       return { ...state, selectedRunId: action.runId, rightPanelMode: 'run_detail' };
+    case 'close_detail':
+      return { ...state, rightPanelMode: 'closed' };
     case 'run_started':
       if (action.status === 'succeeded' || action.status === 'failed' || action.status === 'canceled') return state;
       return { ...state, activeRunByThreadId: { ...state.activeRunByThreadId, [action.threadId]: action.runId } };
