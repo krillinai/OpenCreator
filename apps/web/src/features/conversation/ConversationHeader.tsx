@@ -23,7 +23,7 @@ export function ConversationHeader(props: {
       <div className="conversation-actions">
         <button className="toolbar-button" type="button" onClick={props.onOpenLocation}>
           <MapPin aria-hidden="true" size={16} />
-          <span>打开位置</span>
+          <span>文件</span>
         </button>
         <button className="icon-button" type="button" aria-label="详情" onClick={props.onToggleDetail}>
           <Info aria-hidden="true" size={16} />

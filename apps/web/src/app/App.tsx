@@ -15,6 +15,7 @@ import type { CapabilitiesViewProps } from '../features/capabilities/Capabilitie
 import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
 import { DetailPanel } from '../features/details/DetailPanel.js';
+import { FileWorkspaceView } from '../features/files/FileWorkspaceView.js';
 import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
 import { Composer, type ComposerRunConfig } from '../features/runs/Composer.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
@@ -31,6 +32,7 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createMockProjectService } from '../services/project-service.js';
 import { createRunService } from '../services/run-service.js';
 import { createThreadService } from '../services/thread-service.js';
+import { createWorkspaceFileService } from '../services/workspace-file-service.js';
 import { initialAppState, reduceAppState } from './app-state.js';
 
 type AppFileService = {
@@ -105,6 +107,10 @@ export function App(props: AppProps = {}) {
   );
   const diagnosticsService = useMemo(
     () => runtimeClient === null ? null : createDiagnosticsService(runtimeClient),
+    [runtimeClient]
+  );
+  const workspaceFileService = useMemo(
+    () => runtimeClient === null ? null : createWorkspaceFileService(runtimeClient),
     [runtimeClient]
   );
   const projects = useMemo(() => createProjectsForThreads(baseProjects, runtimeThreads), [baseProjects, runtimeThreads]);
@@ -368,6 +374,7 @@ export function App(props: AppProps = {}) {
   const currentProject = findProjectById(projects, state.currentProjectId) ?? projects[0];
   const currentProjectName = currentProject?.name ?? 'content-design';
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
+  const selectedThread = runtimeThreads.find(thread => thread.id === state.selectedThreadId);
   const runtimeStatus = mapRuntimeStatus(connectionState);
 
   function handleEditorContentChange(content: string) {
@@ -658,13 +665,20 @@ export function App(props: AppProps = {}) {
     <CapabilitiesView {...props.capabilitiesView} />
   ) : state.activeView === 'settings' ? (
     <ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={() => dispatch({ type: 'back_to_app' })} />
+  ) : state.activeView === 'files' ? (
+    <FileWorkspaceView
+      selectedThread={selectedThread}
+      workspaceFileService={workspaceFileService}
+      onBack={() => dispatch({ type: 'close_file_workspace' })}
+      onSelectPath={(path) => dispatch({ type: 'select_workspace_file', path })}
+    />
   ) : state.activeView === 'conversation' ? (
     <section className="conversation-page">
       <ConversationHeader
         title={selectedConversation?.title ?? '新对话'}
         projectName={currentProjectName}
         statusLabel={getConnectionStatusLabel(connectionState)}
-        onOpenLocation={() => dispatch({ type: 'select_file', path: selectedFilePath })}
+        onOpenLocation={() => dispatch({ type: 'open_files' })}
         onToggleDetail={() => {
           if (state.rightPanelMode === 'closed') {
             dispatch({ type: 'select_file', path: selectedFilePath });
