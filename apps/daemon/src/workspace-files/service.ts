@@ -1,4 +1,4 @@
-import { constants as fsConstants } from 'node:fs';
+import { constants as fsConstants, type Stats } from 'node:fs';
 import {
   accessSync,
   closeSync,
@@ -13,7 +13,7 @@ import {
   unlinkSync,
   writeSync
 } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import type {
   WorkspaceDirectoryListRequest,
@@ -269,7 +269,7 @@ function safeOverwriteFile(
   assertInsideRoot(rootReal, realBefore);
   assertInsideRoot(rootReal, parentReal);
 
-  const tempPath = createTempPath(dirname(candidatePath), basename(candidatePath));
+  const tempPath = createTempPath(parentReal, basename(candidatePath));
   let tempHandle: number | undefined;
   try {
     const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL;
@@ -283,14 +283,7 @@ function safeOverwriteFile(
     fileOps.closeSync(tempHandle);
     tempHandle = undefined;
 
-    const verifyStats = fileOps.lstatSync(candidatePath);
-    if (!verifyStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
-    if (verifyStats.isSymbolicLink()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target symlink is not writable.');
-    const realAfter = fileOps.realpathSync(candidatePath);
-    assertInsideRoot(rootReal, realAfter);
-    if (realAfter !== realBefore || verifyStats.dev !== stats.dev || verifyStats.ino !== stats.ino) {
-      throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');
-    }
+    assertSameWritableTarget(rootReal, candidatePath, realBefore, stats, fileOps);
     fileOps.renameSync(tempPath, absolutePath);
     fsyncParentDirectory(parentReal, fileOps);
   } catch (error) {
@@ -315,6 +308,31 @@ function safeOverwriteFile(
     } catch {
       // ignore cleanup failure
     }
+  }
+}
+
+function assertSameWritableTarget(
+  rootReal: string,
+  targetPath: string,
+  realBefore: string,
+  originalStats: Stats,
+  fileOps: WorkspaceFileOps
+): void {
+  let verifyStats: Stats;
+  try {
+    verifyStats = fileOps.lstatSync(targetPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      throw new WorkspaceFileError('FILE_NOT_FOUND', 'File not found.');
+    }
+    throw error;
+  }
+  if (!verifyStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
+  if (verifyStats.isSymbolicLink()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target symlink is not writable.');
+  const realAfter = fileOps.realpathSync(targetPath);
+  assertInsideRoot(rootReal, realAfter);
+  if (realAfter !== realBefore || verifyStats.dev !== originalStats.dev || verifyStats.ino !== originalStats.ino) {
+    throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');
   }
 }
 

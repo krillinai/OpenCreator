@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -117,6 +117,39 @@ describe('workspace file service', () => {
 
     expect(result.saved).toBe(true);
     expect(readFileSync(join(tempDir, 'README.md'), 'utf8')).toBe('# updated\n');
+  });
+
+  it('does not let overwriteConflict=true bypass read-only or sensitive file guards', async () => {
+    const readOnly = createFixture({ sandbox: 'read-only' });
+    writeFile('README.md', '# hello\n');
+    const readOnlyBefore = await readOnly.service.readContent({ threadId: 'thread_1', path: 'README.md' });
+
+    await expect(
+      readOnly.service.saveContent({
+        threadId: 'thread_1',
+        path: 'README.md',
+        content: '# changed\n',
+        baseVersionToken: 'stale',
+        overwriteConflict: true
+      })
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    expect(readFileSync(join(tempDir, 'README.md'), 'utf8')).toBe(readOnlyBefore.content);
+
+    rmSync(tempDir, { recursive: true, force: true });
+    tempDir = '';
+
+    const writable = createFixture({ sandbox: 'workspace-write' });
+    writeFile('.env', 'TOKEN=secret\n');
+    await expect(
+      writable.service.saveContent({
+        threadId: 'thread_1',
+        path: '.env',
+        content: 'TOKEN=changed\n',
+        baseVersionToken: 'stale',
+        overwriteConflict: true
+      })
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    expect(readFileSync(join(tempDir, '.env'), 'utf8')).toBe('TOKEN=secret\n');
   });
 
   it('rejects absolute paths and path traversal', async () => {
@@ -350,6 +383,74 @@ describe('workspace file service', () => {
 
     expect(readFileSync(join(tempDir, 'README.md'), 'utf8')).toBe('# hello\n');
     expect(readdirSync(tempDir)).toEqual(['README.md']);
+  });
+
+  it('creates atomic save temp files in resolved parentReal, not the mutable candidate parent path', async () => {
+    const tempOpenPaths: string[] = [];
+    const { service } = createFixture({
+      sandbox: 'workspace-write',
+      fileOps: {
+        openSync(path, flags, mode) {
+          if (String(path).includes('.clawee-')) tempOpenPaths.push(String(path));
+          return openSync(path, flags, mode);
+        }
+      }
+    });
+    mkdirSync(join(tempDir, 'real-docs'));
+    writeFile('real-docs/README.md', '# hello\n');
+    symlinkSync(join(tempDir, 'real-docs'), join(tempDir, 'docs'));
+    const before = await service.readContent({ threadId: 'thread_1', path: 'docs/README.md' });
+
+    await service.saveContent({
+      threadId: 'thread_1',
+      path: 'docs/README.md',
+      content: '# updated\n',
+      baseVersionToken: before.meta.versionToken
+    });
+
+    expect(readFileSync(join(tempDir, 'real-docs', 'README.md'), 'utf8')).toBe('# updated\n');
+    expect(tempOpenPaths.some((path) => path.startsWith(realpathSync(join(tempDir, 'real-docs'))))).toBe(true);
+    expect(tempOpenPaths.some((path) => path.startsWith(join(tempDir, 'docs')))).toBe(false);
+  });
+
+  it('does not recreate a target missing at the final pre-rename check', async () => {
+    let targetChecks = 0;
+    let renameCalled = false;
+    let targetPath = '';
+    const { service } = createFixture({
+      sandbox: 'workspace-write',
+      fileOps: {
+        lstatSync: ((path) => {
+          if (targetPath.length > 0 && String(path) === targetPath) {
+            targetChecks += 1;
+            if (targetChecks >= 2) {
+              unlinkSync(path);
+              throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+            }
+          }
+          return lstatSync(path);
+        }) as typeof lstatSync,
+        renameSync() {
+          renameCalled = true;
+          throw new Error('rename should not be called when target disappears before rename');
+        }
+      }
+    });
+    writeFile('README.md', '# hello\n');
+    targetPath = realpathSync(join(tempDir, 'README.md'));
+    const before = await service.readContent({ threadId: 'thread_1', path: 'README.md' });
+
+    await expect(
+      service.saveContent({
+        threadId: 'thread_1',
+        path: 'README.md',
+        content: '# updated\n',
+        baseVersionToken: before.meta.versionToken
+      })
+    ).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+
+    expect(renameCalled).toBe(false);
+    expect(readdirSync(tempDir).some((name) => name.includes('.clawee-'))).toBe(false);
   });
 
   it.each([
