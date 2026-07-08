@@ -1,3 +1,4 @@
+import { MarkdownRenderer } from '../markdown/MarkdownRenderer.js';
 import type { TimelineItem } from './timeline-model.js';
 
 type ProcessTimelineItem = Extract<
@@ -6,7 +7,7 @@ type ProcessTimelineItem = Extract<
 >;
 type VisibleProcessItem = Extract<
   ProcessTimelineItem,
-  { kind: 'reasoning_summary' | 'assistant_message' | 'tool_step' | 'diagnostic' }
+  { kind: 'reasoning_summary' | 'assistant_message' | 'tool_step' | 'diagnostic' | 'done' }
 >;
 
 type ProcessBlock = {
@@ -65,21 +66,31 @@ function isProcessComplete(process: ProcessBlock): boolean {
   return process.items.some(item => item.kind === 'done');
 }
 
+function hasFailedOrCanceledDone(process: ProcessBlock): boolean {
+  return process.items.some(item => item.kind === 'done' && item.status !== 'succeeded');
+}
+
 function visibleProcessItems(process: ProcessBlock): VisibleProcessItem[] {
-  return process.items.filter((item): item is VisibleProcessItem =>
-    item.kind === 'reasoning_summary'
-    || item.kind === 'assistant_message'
-    || item.kind === 'tool_step'
-    || item.kind === 'diagnostic'
-  );
+  return process.items.filter((item): item is VisibleProcessItem => {
+    if (item.kind === 'done') return item.status !== 'succeeded';
+    return item.kind === 'reasoning_summary'
+      || item.kind === 'assistant_message'
+      || item.kind === 'tool_step'
+      || item.kind === 'diagnostic';
+  });
 }
 
 function hasVisibleProcessContent(process: ProcessBlock): boolean {
   return visibleProcessItems(process).length > 0;
 }
 
+function hasStartedRun(process: ProcessBlock): boolean {
+  return process.runId !== undefined
+    && process.items.some(item => item.kind === 'run_status' && item.label !== 'queued');
+}
+
 function shouldRenderProcess(process: ProcessBlock): boolean {
-  return hasVisibleProcessContent(process) || !isProcessComplete(process);
+  return hasVisibleProcessContent(process) || !isProcessComplete(process) || hasStartedRun(process);
 }
 
 function safeParseJson(content: string): unknown {
@@ -90,6 +101,20 @@ function safeParseJson(content: string): unknown {
   }
 }
 
+function formatPayload(content: string): string {
+  const parsed = safeParseJson(content);
+  if (parsed === null) return content;
+  return JSON.stringify(parsed, null, 2);
+}
+
+function CodePayloadBlock(props: { content: string }) {
+  return (
+    <pre className="process-code-payload">
+      <code>{formatPayload(props.content)}</code>
+    </pre>
+  );
+}
+
 function getPayloadType(item: ProcessTimelineItem): string | undefined {
   if (!('content' in item) || typeof item.content !== 'string') return undefined;
   const payload = safeParseJson(item.content);
@@ -98,17 +123,43 @@ function getPayloadType(item: ProcessTimelineItem): string | undefined {
   return typeof type === 'string' ? type : undefined;
 }
 
-function getProcessStepTitle(item: ProcessTimelineItem): string {
+function getToolCallId(item: ProcessTimelineItem): string | undefined {
+  if (item.kind !== 'tool_step') return undefined;
+  const payload = safeParseJson(item.content);
+  if (typeof payload !== 'object' || payload === null || !('toolCallId' in payload)) return undefined;
+  const toolCallId = (payload as { toolCallId?: unknown }).toolCallId;
+  return typeof toolCallId === 'string' && toolCallId.length > 0 ? toolCallId : undefined;
+}
+
+function buildToolNameByCallId(items: ProcessTimelineItem[]): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const item of items) {
+    if (item.kind !== 'tool_step') continue;
+    if (getPayloadType(item) !== 'tool_use') continue;
+    const toolCallId = getToolCallId(item);
+    if (toolCallId !== undefined) names.set(toolCallId, item.name);
+  }
+  return names;
+}
+
+function getProcessStepTitle(item: ProcessTimelineItem, toolNameByCallId = new Map<string, string>()): string {
   switch (item.kind) {
     case 'reasoning_summary':
     case 'assistant_message':
       return item.text;
-    case 'tool_step':
-      return getPayloadType(item) === 'tool_result' ? `工具完成 ${item.name}` : `使用工具 ${item.name}`;
+    case 'tool_step': {
+      if (getPayloadType(item) !== 'tool_result') return `使用工具 ${item.name}`;
+      const toolCallId = getToolCallId(item);
+      const readableName = toolCallId !== undefined ? toolNameByCallId.get(toolCallId) : undefined;
+      return readableName !== undefined ? `工具完成 ${readableName}` : '工具完成';
+    }
     case 'diagnostic':
       return item.message;
-    case 'run_status':
     case 'done':
+      return item.status === 'canceled'
+        ? `运行已取消：${item.terminationReason ?? 'user_canceled'}`
+        : `运行失败：${item.terminationReason ?? item.status}`;
+    case 'run_status':
       return '';
     default:
       const _exhaustive: never = item;
@@ -209,7 +260,7 @@ function buildTimelineRenderItems(items: TimelineItem[]): TimelineRenderItem[] {
 }
 
 function renderMessageContent(item: Extract<TimelineItem, { kind: 'user_message' | 'assistant_message' }>) {
-  return <p>{item.text}</p>;
+  return <MarkdownRenderer text={item.text} variant={item.kind === 'user_message' ? 'user' : 'assistant'} />;
 }
 
 function renderChangeCard(item: Extract<TimelineItem, { kind: 'change_card' }>, onOpenChange?: (changeId: string) => void) {
@@ -251,14 +302,12 @@ function renderTimelineItemContent(item: TimelineItem, onOpenChange?: (changeId:
   }
 }
 
-function renderProcessStep(item: VisibleProcessItem) {
+function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<string, string>) {
   if (item.kind === 'reasoning_summary' || item.kind === 'assistant_message') {
     return (
       <li key={item.id} className={`process-step process-step-${item.kind}`}>
         <div className="process-reasoning-text">
-          {splitSummaryParagraphs(item.text).map((paragraph, index) => (
-            <p key={`${item.id}_${index}`}>{paragraph}</p>
-          ))}
+          <MarkdownRenderer text={item.text} variant="process" />
         </div>
       </li>
     );
@@ -268,28 +317,25 @@ function renderProcessStep(item: VisibleProcessItem) {
     <li key={item.id} className={`process-step process-step-${item.kind}`}>
       <div className="process-step-row">
         {item.kind === 'diagnostic' ? <span className={`process-step-severity ${item.severity}`}>{item.severity}</span> : null}
-        <span className="process-step-title">{getProcessStepTitle(item)}</span>
+        {item.kind === 'done' ? <span className="process-step-severity error">{item.status}</span> : null}
+        <span className="process-step-title">{getProcessStepTitle(item, toolNameByCallId)}</span>
       </div>
-      {item.kind === 'diagnostic' ? <pre>{item.content}</pre> : null}
+      {item.kind === 'diagnostic' ? <CodePayloadBlock content={item.content} /> : null}
+      {item.kind === 'done' ? <CodePayloadBlock content={item.content} /> : null}
     </li>
   );
 }
 
-function splitSummaryParagraphs(text: string): string[] {
-  const paragraphs = text
-    .split(/\n{2,}/)
-    .map(paragraph => paragraph.trim())
-    .filter(paragraph => paragraph.length > 0);
-  return paragraphs.length === 0 ? [text] : paragraphs;
-}
-
 function renderProcessBlock(process: ProcessBlock, onOpenRunDetail?: (runId: string) => void) {
   const complete = isProcessComplete(process);
+  const shouldOpen = !complete || hasFailedOrCanceledDone(process);
   const steps = visibleProcessItems(process);
+  const emptyCopy = complete ? '本次没有可展示的中间过程。' : '等待 Clawee 返回过程...';
+  const toolNameByCallId = buildToolNameByCallId(process.items);
 
   return (
     <article key={process.key} className="timeline-item timeline-process">
-      <details open={!complete}>
+      <details open={shouldOpen}>
         <summary>
           <span className="process-caret" aria-hidden="true">
             &gt;
@@ -299,9 +345,9 @@ function renderProcessBlock(process: ProcessBlock, onOpenRunDetail?: (runId: str
         </summary>
         <div className="process-detail">
           {steps.length > 0 ? (
-            <ol className="process-steps">{steps.map(renderProcessStep)}</ol>
+            <ol className="process-steps">{steps.map(item => renderProcessStep(item, toolNameByCallId))}</ol>
           ) : (
-            <div className="process-waiting" role="status">等待 Clawee 返回结果...</div>
+            <div className="process-waiting" role="status">{emptyCopy}</div>
           )}
           {onOpenRunDetail && canOpenRunDetail(process) ? (
             <button

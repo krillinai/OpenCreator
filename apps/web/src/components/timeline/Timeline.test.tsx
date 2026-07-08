@@ -122,7 +122,8 @@ describe('Timeline', () => {
     expect(
       screen.queryByText('{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"command":"pnpm test"}}')
     ).not.toBeInTheDocument();
-    expect(screen.getByText('工具完成 call_1')).toBeInTheDocument();
+    expect(screen.getByText('工具完成 exec_command')).toBeInTheDocument();
+    expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(
       screen.queryByText('{"type":"tool_result","toolCallId":"call_1","output":"test output","exitCode":0,"isError":false}')
     ).not.toBeInTheDocument();
@@ -131,16 +132,20 @@ describe('Timeline', () => {
     expect(screen.getByText('+12 -3')).toBeInTheDocument();
     expect(screen.getByText('warning')).toBeInTheDocument();
     expect(screen.getByText('stream resumed')).toBeInTheDocument();
+    expect(screen.getByText(/"code": "warn_1"/)).toBeInTheDocument();
+    expect(screen.getByText(/"source": "sse"/)).toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.queryByText(
         '{"type":"diagnostic","code":"warn_1","severity":"warning","message":"stream resumed","details":{"source":"sse"}}'
       )
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(screen.getByText('error')).toBeInTheDocument();
     expect(screen.getByText('runtime failed')).toBeInTheDocument();
+    expect(screen.getByText(/"code": "runtime_error"/)).toBeInTheDocument();
+    expect(screen.getByText(/"exitCode": 1/)).toBeInTheDocument();
     expect(
-      screen.getByText('{"type":"error","code":"runtime_error","message":"runtime failed","details":{"exitCode":1}}')
-    ).toBeInTheDocument();
+      screen.queryByText('{"type":"error","code":"runtime_error","message":"runtime failed","details":{"exitCode":1}}')
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText('{"type":"status","label":"running","threadId":"thread_1","codexThreadId":"codex_thread_1"}')
     ).not.toBeInTheDocument();
@@ -165,7 +170,56 @@ describe('Timeline', () => {
 
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(screen.getByText('正在思考')).toBeInTheDocument();
+    expect(screen.getByText('等待 Clawee 返回过程...')).toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
+  });
+
+  it('renders final assistant markdown without exposing syntax', () => {
+    render(
+      <Timeline
+        items={[
+          { kind: 'assistant_message', id: 'a1', text: '今天是 **29°C**。\n\n- 多喝水', source: 'runtime' }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('29°C')).toHaveProperty('tagName', 'STRONG');
+    expect(screen.getByText('多喝水')).toBeInTheDocument();
+    expect(screen.queryByText('今天是 **29°C**。')).not.toBeInTheDocument();
+  });
+
+  it('keeps user messages conservative while still rendering code and safe links', () => {
+    render(
+      <Timeline
+        items={[
+          {
+            kind: 'user_message',
+            id: 'u1',
+            text: '# 不要变标题\n1. 不要变列表\n`保留代码` [链接](https://example.com)',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
+    expect(screen.getByText('# 不要变标题')).toBeInTheDocument();
+    expect(screen.getByText('保留代码')).toHaveProperty('tagName', 'CODE');
+    expect(screen.getByRole('link', { name: '链接' })).toHaveAttribute('href', 'https://example.com');
+  });
+
+  it('renders markdown inside process assistant messages', () => {
+    render(
+      <Timeline
+        items={[
+          { kind: 'run_status', id: 's1', runId: 'run_1', label: 'running', source: 'runtime' },
+          { kind: 'assistant_message', id: 'a1', runId: 'run_1', text: '正在检查 **日志**', source: 'runtime' }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('日志')).toHaveProperty('tagName', 'STRONG');
   });
 
   it('keeps an active process with visible reasoning expanded until completion', () => {
@@ -196,7 +250,7 @@ describe('Timeline', () => {
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
   });
 
-  it('does not render an empty process block when a run has only status and done events', () => {
+  it('keeps a completed status-only run process available for inspection', () => {
     const items: TimelineItem[] = [
       {
         kind: 'user_message',
@@ -249,13 +303,64 @@ describe('Timeline', () => {
 
     expect(screen.getByText('只回复 OK')).toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
-    expect(container.querySelector('.timeline-process')).not.toBeInTheDocument();
-    expect(screen.queryByText('思考过程')).not.toBeInTheDocument();
+    expect(container.querySelector('.timeline-process')).toBeInTheDocument();
+    expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
+    expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
-    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
+    expect(screen.getByText('运行详情')).toBeInTheDocument();
+    expect(screen.getByText('本次没有可展示的中间过程。')).toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
     expect(screen.queryByText('finalizing')).not.toBeInTheDocument();
+  });
+
+  it('renders failed status-only runs as visible process errors', () => {
+    const items: TimelineItem[] = [
+      {
+        kind: 'run_status',
+        id: 'status_running',
+        runId: 'run_1',
+        label: 'running',
+        source: 'runtime'
+      },
+      {
+        kind: 'done',
+        id: 'done_failed',
+        runId: 'run_1',
+        status: 'failed',
+        terminationReason: 'timeout',
+        content: '{"type":"done","status":"failed","terminationReason":"timeout"}',
+        source: 'runtime'
+      }
+    ];
+
+    const { container } = render(<Timeline items={items} onOpenRunDetail={vi.fn()} />);
+
+    expect(container.querySelector('.timeline-process')).toBeInTheDocument();
+    expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
+    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    expect(screen.getByText('运行失败：timeout')).toBeInTheDocument();
+    expect(screen.getByText('运行详情')).toBeInTheDocument();
+  });
+
+  it('does not show opaque toolCallId in the main title when tool_use is missing', () => {
+    render(
+      <Timeline
+        items={[
+          {
+            kind: 'tool_step',
+            id: 'tool_result_only',
+            runId: 'run_1',
+            name: 'call_missing',
+            content: '{"type":"tool_result","toolCallId":"call_missing","output":"done","isError":false}',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('工具完成')).toBeInTheDocument();
+    expect(screen.queryByText('工具完成 call_missing')).not.toBeInTheDocument();
   });
 
   it('folds intermediate Codex agent messages into the run process and leaves only the final answer as Clawee reply', () => {
@@ -320,7 +425,8 @@ describe('Timeline', () => {
     expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.getByText('我会先确认当前目录，再读取相关文件做判断。')).toBeInTheDocument();
     expect(screen.getByText('使用工具 command_execution')).toBeInTheDocument();
-    expect(screen.getByText('工具完成 call_1')).toBeInTheDocument();
+    expect(screen.getByText('工具完成 command_execution')).toBeInTheDocument();
+    expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
     expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
