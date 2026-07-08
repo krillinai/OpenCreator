@@ -1,4 +1,5 @@
 import { Check, RotateCcw, X } from 'lucide-react';
+import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer.js';
 
 type DetailPanelProps = {
   mode: 'file' | 'change' | 'run';
@@ -9,6 +10,45 @@ type DetailPanelProps = {
   onApprove?(): void;
   onRevert?(): void;
 };
+
+function fileExtension(title: string, subtitle?: string): string {
+  const path = subtitle ?? title;
+  const filename = path.split('/').pop() ?? path;
+  const dot = filename.lastIndexOf('.');
+  return dot === -1 ? '' : filename.slice(dot + 1).toLowerCase();
+}
+
+function formatJson(content: string): string {
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return content;
+  }
+}
+
+function DetailContent(props: Pick<DetailPanelProps, 'mode' | 'title' | 'subtitle' | 'content'>) {
+  if (props.mode !== 'file') return <pre>{props.content}</pre>;
+
+  const ext = fileExtension(props.title, props.subtitle);
+
+  if (ext === 'md' || ext === 'markdown') {
+    return <MarkdownRenderer text={props.content} variant="document" />;
+  }
+
+  if (ext === 'json') {
+    return (
+      <pre className="detail-code-block">
+        <code>{formatJson(props.content)}</code>
+      </pre>
+    );
+  }
+
+  return (
+    <pre className={ext === 'html' || ext === 'htm' ? 'detail-code-block detail-html-source' : 'detail-code-block'}>
+      <code>{props.content}</code>
+    </pre>
+  );
+}
 
 export function DetailPanel(props: DetailPanelProps) {
   return (
@@ -24,7 +64,7 @@ export function DetailPanel(props: DetailPanelProps) {
       </header>
 
       <div className="detail-content" role="region" aria-label="详情内容">
-        <pre>{props.content}</pre>
+        <DetailContent mode={props.mode} title={props.title} subtitle={props.subtitle} content={props.content} />
       </div>
 
       {props.mode === 'change' ? (

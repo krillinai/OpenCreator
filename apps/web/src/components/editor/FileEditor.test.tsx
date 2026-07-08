@@ -84,4 +84,19 @@ describe('FileEditor', () => {
     expect(screen.getByText('无法加载文件')).toBeInTheDocument();
     expect(screen.getByText('保存到本地草稿失败')).toBeInTheDocument();
   });
+
+  it('keeps markdown content as raw editable text', () => {
+    render(
+      <FileEditor
+        path="README.md"
+        content={'# Clawee\n\n**raw**'}
+        dirty={false}
+        onChange={vi.fn()}
+        onSave={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('textbox', { name: 'README.md 编辑器' })).toHaveValue('# Clawee\n\n**raw**');
+    expect(screen.queryByRole('heading', { name: 'Clawee' })).not.toBeInTheDocument();
+  });
 });

@@ -8,18 +8,55 @@ describe('DetailPanel', () => {
     render(
       <DetailPanel
         mode="file"
-        title="README.md"
-        subtitle="apps/web/README.md"
+        title="notes.txt"
+        subtitle="apps/web/notes.txt"
         content={'# Clawee\n\nDetail content'}
         onClose={vi.fn()}
       />
     );
 
-    expect(screen.getByRole('heading', { name: 'README.md' })).toBeInTheDocument();
-    expect(screen.getByText('apps/web/README.md')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'notes.txt' })).toBeInTheDocument();
+    expect(screen.getByText('apps/web/notes.txt')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '详情内容' }).querySelector('pre')?.textContent).toBe(
       '# Clawee\n\nDetail content'
     );
+  });
+
+  it('renders markdown file content with document markdown renderer', () => {
+    render(
+      <DetailPanel
+        mode="file"
+        title="README.md"
+        subtitle="apps/web/README.md"
+        content={'# Clawee\n\n当前温度 **29°C**'}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: 'Clawee', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText('29°C')).toHaveProperty('tagName', 'STRONG');
+    expect(screen.queryByText('# Clawee')).not.toBeInTheDocument();
+  });
+
+  it('renders html file content as source instead of executing markup', () => {
+    render(
+      <DetailPanel
+        mode="file"
+        title="preview.html"
+        content={'<h1>Unsafe</h1><script>alert(1)</script>'}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('<h1>Unsafe</h1><script>alert(1)</script>')).toBeInTheDocument();
+    expect(document.querySelector('script')).not.toBeInTheDocument();
+  });
+
+  it('formats json file content when possible', () => {
+    render(<DetailPanel mode="file" title="data.json" content={'{"a":1,"b":{"c":2}}'} onClose={vi.fn()} />);
+
+    expect(screen.getByText(/"a": 1/)).toBeInTheDocument();
+    expect(screen.getByText(/"c": 2/)).toBeInTheDocument();
   });
 
   it('calls onClose from the close button', async () => {
