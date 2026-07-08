@@ -57,6 +57,13 @@
   - `pnpm --filter @clawee/web test -- src/services/workspace-file-service.test.ts src/runtime/client.test.ts`
   - `pnpm --filter @clawee/web typecheck`
 
+## 本次补充
+
+- 为 `workspace-file-service.getMeta(threadId, path)` 增加测试，覆盖：
+  - 请求 `GET /workspace/files/meta?threadId=&path=`
+  - 返回 `WorkspaceFileMeta`
+- 复跑验证命令，结果均通过。
+
 ## 风险与备注
 
 - 按要求仅修改 web runtime client 与 workspace file service，未触碰 App/UI。

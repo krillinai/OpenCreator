@@ -60,6 +60,17 @@ describe('WorkspaceFileService', () => {
     expect(getMock).toHaveBeenCalledWith('/workspace/files/content?threadId=thread-1&path=docs%2Freadme.md');
   });
 
+  it('getMeta calls GET /workspace/files/meta', async () => {
+    const getMock = vi.fn(async (_path: string) => meta);
+    const get: ClientOverrides['get'] = (path) => getMock(path);
+    const service = createWorkspaceFileService(createClient({ get }));
+
+    const result = await service.getMeta('thread-1', 'docs/readme.md');
+
+    expect(getMock).toHaveBeenCalledWith('/workspace/files/meta?threadId=thread-1&path=docs%2Freadme.md');
+    expect(result).toEqual(meta);
+  });
+
   it('saveText calls POST /workspace/files/content', async () => {
     const postMock = vi.fn(async (_path: string, _body?: unknown) => ({
       meta,
