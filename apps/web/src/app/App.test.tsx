@@ -329,7 +329,8 @@ describe('App', () => {
     expect(await screen.findByText('思考过程')).toBeInTheDocument();
     expect(screen.getByText('我会先确认当前目录，再读取必要文件。')).toBeInTheDocument();
     expect(screen.getByText('使用工具 command_execution')).toBeInTheDocument();
-    expect(screen.getByText('工具完成 call_1')).toBeInTheDocument();
+    expect(screen.getByText('工具完成 command_execution')).toBeInTheDocument();
+    expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
     expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
