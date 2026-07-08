@@ -1016,6 +1016,189 @@ textarea:focus-visible {
   font-size: 12px;
 }
 
+.file-editor-pane {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  background: var(--surface);
+}
+
+.file-editor-toolbar {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.file-editor-toolbar-main,
+.file-editor-toolbar-actions,
+.file-editor-toolbar-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-editor-toolbar-title {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.file-editor-toolbar-title strong,
+.file-editor-toolbar-title span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-editor-toolbar-title span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.file-editor-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.file-editor-mode-toggle button {
+  min-width: 56px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.file-editor-mode-toggle button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.text-file-editor,
+.text-file-editor-host,
+.file-preview {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.text-file-editor {
+  overflow: hidden;
+}
+
+.text-file-editor-host .cm-editor {
+  height: 100%;
+}
+
+.file-preview {
+  overflow: auto;
+  padding: 16px;
+}
+
+.file-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12.5px/1.55 var(--font-mono);
+}
+
+.file-preview-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.file-preview-media {
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+}
+
+.file-preview-media img,
+.file-preview-media object {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.file-preview-note {
+  margin: 0 0 12px;
+  color: var(--warning);
+}
+
+.unsupported-file-state {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-content: start;
+  padding: 20px 16px;
+}
+
+.unsupported-file-state-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.unsupported-file-state-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.unsupported-file-state-copy strong,
+.unsupported-file-state-copy span,
+.unsupported-file-state-copy p {
+  margin: 0;
+}
+
+.unsupported-file-state-copy span {
+  color: var(--muted);
+}
+
+.dirty-indicator {
+  padding: 0 8px;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.file-error-bar {
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+}
+
 .run-detail {
   min-height: 0;
   padding: 16px;
