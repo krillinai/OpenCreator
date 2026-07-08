@@ -9,13 +9,19 @@ import type {
   RunRequest,
   RunScheduleNowResponse,
   RuntimeErrorCode,
+  WorkspaceDirectoryListRequest,
   WorkspaceDirectoryResponse,
+  WorkspaceFileBlobRequest,
   WorkspaceFileContentResponse,
+  WorkspaceFileContentRequest,
   WorkspaceFileKind,
   WorkspaceFileMeta,
+  WorkspaceFileMetaRequest,
   WorkspaceFileNode,
   WorkspaceFileRevealRequest,
   WorkspaceFileSaveRequest,
+  WorkspaceFileSaveResponse,
+  WorkspaceFileRevealResponse,
   ScheduleDetailResponse,
   ScheduleOperationListResponse,
   ScheduleResponse
@@ -252,6 +258,22 @@ describe('protocol shape', () => {
   });
 
   it('allows workspace directory response shape', () => {
+    const listRequest: WorkspaceDirectoryListRequest = {
+      threadId: 'thread_1',
+      path: 'docs'
+    };
+    const metaRequest: WorkspaceFileMetaRequest = {
+      threadId: 'thread_1',
+      path: 'docs/readme.md'
+    };
+    const contentRequest: WorkspaceFileContentRequest = {
+      threadId: 'thread_1',
+      path: 'docs/readme.md'
+    };
+    const blobRequest: WorkspaceFileBlobRequest = {
+      threadId: 'thread_1',
+      path: 'docs/readme.png'
+    };
     const response: WorkspaceDirectoryResponse = {
       threadId: 'thread_1',
       rootName: 'workspace',
@@ -272,6 +294,10 @@ describe('protocol shape', () => {
       ]
     };
 
+    expect(listRequest.path).toBe('docs');
+    expect(metaRequest.threadId).toBe('thread_1');
+    expect(contentRequest.path).toBe('docs/readme.md');
+    expect(blobRequest.path).toBe('docs/readme.png');
     expect(response.threadId).toBe('thread_1');
     expect(response.nodes[0]?.type).toBe('directory');
   });
@@ -306,10 +332,19 @@ describe('protocol shape', () => {
       path: 'docs/readme.md',
       mode: 'file'
     };
+    const saveResponse: WorkspaceFileSaveResponse = {
+      meta: contentResponse.meta,
+      saved: true
+    };
+    const revealResponse: WorkspaceFileRevealResponse = {
+      ok: true
+    };
 
     expect(contentResponse.encoding).toBe('utf8');
     expect(saveRequest.baseVersionToken).toBe('1000:12:sha256:abc');
     expect(revealRequest.mode).toBe('file');
+    expect(saveResponse.saved).toBe(true);
+    expect(revealResponse.ok).toBe(true);
   });
 
   it('keeps workspace file runtime error codes closed', () => {

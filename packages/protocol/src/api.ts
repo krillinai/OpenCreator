@@ -58,6 +58,16 @@ export type WorkspaceFileMetaSummary = Pick<
   'kind' | 'mime' | 'size' | 'mtimeMs' | 'previewable' | 'editable' | 'readonly' | 'reason'
 >;
 
+export type WorkspaceFilePathRequest = {
+  threadId: string;
+  path: string;
+};
+
+export type WorkspaceDirectoryListRequest = WorkspaceFilePathRequest;
+export type WorkspaceFileMetaRequest = WorkspaceFilePathRequest;
+export type WorkspaceFileContentRequest = WorkspaceFilePathRequest;
+export type WorkspaceFileBlobRequest = WorkspaceFilePathRequest;
+
 export type WorkspaceFileNode =
   | {
       path: string;
