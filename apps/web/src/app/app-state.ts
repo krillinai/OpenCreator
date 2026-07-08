@@ -1,7 +1,7 @@
 import type { PublicRunStatus } from '@clawee/protocol';
 
 export type RightPanelMode = 'closed' | 'file' | 'change' | 'run_detail';
-export type ActiveView = 'conversation' | 'search' | 'schedules' | 'plugins' | 'settings';
+export type ActiveView = 'conversation' | 'search' | 'schedules' | 'plugins' | 'settings' | 'files';
 
 export type AppState = {
   activeView: ActiveView;
@@ -20,11 +20,14 @@ export type AppAction =
   | { type: 'select_project'; projectId: string }
   | { type: 'set_active_view'; activeView: ActiveView }
   | { type: 'open_settings' }
+  | { type: 'open_files' }
   | { type: 'back_to_app' }
   | { type: 'select_thread'; threadId: string }
   | { type: 'select_file'; path: string }
+  | { type: 'select_workspace_file'; path: string }
   | { type: 'select_change'; changeId: string }
   | { type: 'select_run_detail'; runId: string }
+  | { type: 'close_file_workspace' }
   | { type: 'close_detail' }
   | { type: 'run_started'; threadId: string; runId: string; status: PublicRunStatus }
   | { type: 'run_done'; threadId: string; runId: string };
@@ -66,16 +69,22 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
       };
     case 'open_settings':
       return { ...state, activeView: 'settings', rightPanelMode: 'closed' };
+    case 'open_files':
+      return { ...state, activeView: 'files', rightPanelMode: 'closed' };
     case 'back_to_app':
       return { ...state, activeView: 'conversation' };
     case 'select_thread':
       return { ...state, selectedThreadId: action.threadId, activeView: 'conversation' };
     case 'select_file':
       return { ...state, activeView: 'conversation', selectedFilePath: action.path, rightPanelMode: 'file' };
+    case 'select_workspace_file':
+      return { ...state, activeView: 'files', selectedFilePath: action.path, rightPanelMode: 'closed' };
     case 'select_change':
       return { ...state, activeView: 'conversation', selectedChangeId: action.changeId, rightPanelMode: 'change' };
     case 'select_run_detail':
       return { ...state, activeView: 'conversation', selectedRunId: action.runId, rightPanelMode: 'run_detail' };
+    case 'close_file_workspace':
+      return { ...state, activeView: 'conversation', rightPanelMode: 'closed' };
     case 'close_detail':
       return { ...state, rightPanelMode: 'closed' };
     case 'run_started':

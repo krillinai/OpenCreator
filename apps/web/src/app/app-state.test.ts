@@ -69,6 +69,46 @@ describe('app state', () => {
     expect(state.rightPanelMode).toBe('closed');
   });
 
+  it('opens the file workspace and closes the detail panel', () => {
+    const state = reduceAppState(
+      { ...initialAppState, activeView: 'conversation', rightPanelMode: 'file' },
+      {
+        type: 'open_files'
+      }
+    );
+
+    expect(state.activeView).toBe('files');
+    expect(state.rightPanelMode).toBe('closed');
+  });
+
+  it('selects a workspace file without opening the right detail panel', () => {
+    const state = reduceAppState(
+      { ...initialAppState, activeView: 'files', rightPanelMode: 'change' },
+      {
+        type: 'select_workspace_file',
+        path: 'docs/workspace.md'
+      }
+    );
+
+    expect(state.activeView).toBe('files');
+    expect(state.selectedFilePath).toBe('docs/workspace.md');
+    expect(state.rightPanelMode).toBe('closed');
+  });
+
+  it('closes conversation detail when switching to the file workspace', () => {
+    const state = reduceAppState(
+      { ...initialAppState, activeView: 'conversation', rightPanelMode: 'run_detail', selectedRunId: 'run_1' },
+      {
+        type: 'set_active_view',
+        activeView: 'files'
+      }
+    );
+
+    expect(state.activeView).toBe('files');
+    expect(state.rightPanelMode).toBe('closed');
+    expect(state.selectedRunId).toBe('run_1');
+  });
+
   it('selects a thread and returns to the conversation view', () => {
     const state = reduceAppState(
       { ...initialAppState, activeView: 'search' },
