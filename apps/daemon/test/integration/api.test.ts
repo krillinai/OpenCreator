@@ -186,6 +186,49 @@ describe('runtime api', () => {
     expect(meta.versionToken).toEqual(expect.any(String));
   });
 
+  it('workspace file save honors overwriteConflict only when explicitly true', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-workspace-conflict-'));
+    writeFileSync(join(tempDir, 'note.txt'), 'before');
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write'
+    })).json().thread as { id: string };
+
+    const initialMeta = (
+      await authGet(`/workspace/files/meta?threadId=${thread.id}&path=${encodeURIComponent('note.txt')}`)
+    ).json() as { versionToken: string };
+
+    writeFileSync(join(tempDir, 'note.txt'), 'other');
+
+    const conflict = await authPost('/workspace/files/content', {
+      threadId: thread.id,
+      path: 'note.txt',
+      content: 'updated',
+      baseVersionToken: initialMeta.versionToken
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toEqual({
+      error: {
+        code: 'FILE_CONFLICT',
+        message: expect.any(String)
+      }
+    });
+
+    const overwrite = await authPost('/workspace/files/content', {
+      threadId: thread.id,
+      path: 'note.txt',
+      content: 'updated',
+      baseVersionToken: initialMeta.versionToken,
+      overwriteConflict: true
+    });
+    expect(overwrite.statusCode).toBe(200);
+    expect(readFileSync(join(tempDir, 'note.txt'), 'utf8')).toBe('updated');
+  });
+
   it('creates, lists, gets, updates, deletes, and runs schedules', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {

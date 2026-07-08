@@ -408,6 +408,38 @@ describe('FileWorkspaceView', () => {
     expect(await screen.findByRole('textbox', { name: 'notes.txt 编辑器' })).toHaveAttribute('aria-readonly', 'true');
     expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
   });
+
+  it('点击打开所在目录时以 file 模式 reveal 当前文件', async () => {
+    const user = userEvent.setup();
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'notes.txt',
+          nodes: [fileNode('notes.txt', 'text')]
+        })
+      },
+      metas: {
+        'notes.txt': createMeta({ path: 'notes.txt', name: 'notes.txt', kind: 'text', mime: 'text/plain' })
+      },
+      contents: {
+        'notes.txt': 'draft'
+      }
+    });
+
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+
+    await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
+    await user.click(screen.getByRole('button', { name: '打开所在目录' }));
+
+    await waitFor(() => {
+      expect(service.reveal).toHaveBeenCalledWith({
+        threadId: thread.id,
+        path: 'notes.txt',
+        mode: 'file'
+      });
+    });
+  });
 });
 
 type ServiceOptions = {

@@ -3,18 +3,18 @@ import {
   accessSync,
   closeSync,
   existsSync,
-  fstatSync,
-  ftruncateSync,
+  fsyncSync,
   lstatSync,
   openSync,
   readFileSync,
   realpathSync,
+  renameSync,
   statSync,
-  writeFileSync,
+  unlinkSync,
   writeSync
 } from 'node:fs';
-import { basename, join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { basename, dirname, join } from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
 import type {
   WorkspaceDirectoryListRequest,
   WorkspaceDirectoryResponse,
@@ -45,11 +45,37 @@ export type WorkspaceFileService = {
   reveal(request: WorkspaceFileRevealRequest): Promise<WorkspaceFileRevealResponse>;
 };
 
+type WorkspaceFileOps = {
+  accessSync: typeof accessSync;
+  closeSync: typeof closeSync;
+  fsyncSync: typeof fsyncSync;
+  lstatSync: typeof lstatSync;
+  openSync: typeof openSync;
+  realpathSync: typeof realpathSync;
+  renameSync: typeof renameSync;
+  unlinkSync: typeof unlinkSync;
+  writeSync: typeof writeSync;
+};
+
+const defaultFileOps: WorkspaceFileOps = {
+  accessSync,
+  closeSync,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeSync
+};
+
 export function createWorkspaceFileService(input: {
   getThread(threadId: string): RuntimeThread | undefined;
   revealExecutor?: RevealExecutor;
+  fileOps?: Partial<WorkspaceFileOps>;
 }): WorkspaceFileService {
   const revealExecutor = input.revealExecutor ?? defaultRevealExecutor;
+  const fileOps: WorkspaceFileOps = { ...defaultFileOps, ...input.fileOps };
 
   return {
     async listDirectory(request) {
@@ -114,11 +140,11 @@ export function createWorkspaceFileService(input: {
         throw new WorkspaceFileError('FILE_NOT_EDITABLE', 'File is not editable.');
       }
       assertWithinLimit(currentMeta.kind, Buffer.byteLength(request.content, 'utf8'));
-      if (currentMeta.versionToken !== request.baseVersionToken) {
+      if (request.overwriteConflict !== true && currentMeta.versionToken !== request.baseVersionToken) {
         throw new WorkspaceFileError('FILE_CONFLICT', 'File version token does not match current content.');
       }
 
-      safeOverwriteFile(resolved.rootReal, resolved.relativePath, resolved.absolutePath, request.content);
+      safeOverwriteFile(resolved.rootReal, resolved.relativePath, resolved.absolutePath, request.content, fileOps);
       return {
         meta: buildMeta(resolved.thread, resolved.relativePath, resolved.absolutePath),
         saved: true
@@ -225,41 +251,48 @@ function assertWithinLimit(kind: WorkspaceFileMeta['kind'], size: number): void 
   }
 }
 
-function safeOverwriteFile(rootReal: string, relativePath: string, absolutePath: string, content: string): void {
+function safeOverwriteFile(
+  rootReal: string,
+  relativePath: string,
+  absolutePath: string,
+  content: string,
+  fileOps: WorkspaceFileOps
+): void {
   const { candidatePath, parentReal } = resolveSafeParent(rootReal, relativePath);
-  const stats = lstatSync(candidatePath);
+  const stats = fileOps.lstatSync(candidatePath);
   if (stats.isSymbolicLink()) {
     throw new WorkspaceFileError('PATH_ESCAPE', 'Target symlink is not writable.');
   }
   if (!stats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
-  accessSync(candidatePath, fsConstants.W_OK);
-  const realBefore = realpathSync(candidatePath);
+  fileOps.accessSync(candidatePath, fsConstants.W_OK);
+  const realBefore = fileOps.realpathSync(candidatePath);
   assertInsideRoot(rootReal, realBefore);
   assertInsideRoot(rootReal, parentReal);
 
-  let handle: number | undefined;
+  const tempPath = createTempPath(dirname(candidatePath), basename(candidatePath));
+  let tempHandle: number | undefined;
   try {
-    const flags = fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
-    handle = openSync(candidatePath, flags);
-    const openedStats = fstatSync(handle);
-    if (!openedStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
-    if (openedStats.dev !== stats.dev || openedStats.ino !== stats.ino) {
-      throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');
-    }
-    ftruncateSync(handle, 0);
+    const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL;
+    tempHandle = fileOps.openSync(tempPath, flags, stats.mode & 0o777);
     const buffer = Buffer.from(content, 'utf8');
     let written = 0;
     while (written < buffer.byteLength) {
-      written += writeSync(handle, buffer, written, buffer.byteLength - written);
+      written += fileOps.writeSync(tempHandle, buffer, written, buffer.byteLength - written);
     }
-    const verifyStats = lstatSync(candidatePath);
+    fileOps.fsyncSync(tempHandle);
+    fileOps.closeSync(tempHandle);
+    tempHandle = undefined;
+
+    const verifyStats = fileOps.lstatSync(candidatePath);
     if (!verifyStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
     if (verifyStats.isSymbolicLink()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target symlink is not writable.');
-    const realAfter = realpathSync(candidatePath);
+    const realAfter = fileOps.realpathSync(candidatePath);
     assertInsideRoot(rootReal, realAfter);
     if (realAfter !== realBefore || verifyStats.dev !== stats.dev || verifyStats.ino !== stats.ino) {
       throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');
     }
+    fileOps.renameSync(tempPath, absolutePath);
+    fsyncParentDirectory(parentReal, fileOps);
   } catch (error) {
     if (error instanceof WorkspaceFileError) throw error;
     if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
@@ -270,9 +303,36 @@ function safeOverwriteFile(rootReal: string, relativePath: string, absolutePath:
     }
     throw error;
   } finally {
-    if (handle !== undefined) {
+    if (tempHandle !== undefined) {
       try {
-        closeSync(handle);
+        fileOps.closeSync(tempHandle);
+      } catch {
+        // ignore cleanup failure
+      }
+    }
+    try {
+      fileOps.unlinkSync(tempPath);
+    } catch {
+      // ignore cleanup failure
+    }
+  }
+}
+
+function createTempPath(parentPath: string, fileName: string): string {
+  return join(parentPath, `.${fileName}.clawee-${process.pid}-${randomBytes(6).toString('hex')}.tmp`);
+}
+
+function fsyncParentDirectory(parentReal: string, fileOps: WorkspaceFileOps): void {
+  let directoryHandle: number | undefined;
+  try {
+    directoryHandle = fileOps.openSync(parentReal, fsConstants.O_RDONLY);
+    fileOps.fsyncSync(directoryHandle);
+  } catch {
+    // best effort only
+  } finally {
+    if (directoryHandle !== undefined) {
+      try {
+        fileOps.closeSync(directoryHandle);
       } catch {
         // ignore cleanup failure
       }

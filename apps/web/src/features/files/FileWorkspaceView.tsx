@@ -301,7 +301,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
 
     setWorkspaceMessage(undefined);
     try {
-      await service.reveal({ threadId: thread.id, path: activePath, mode: 'directory' });
+      await service.reveal({ threadId: thread.id, path: activePath, mode: 'file' });
     } catch (error) {
       setWorkspaceMessage(humanizeError(error, '无法打开所在目录'));
     }

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -99,6 +99,24 @@ describe('workspace file service', () => {
         baseVersionToken: before.meta.versionToken
       })
     ).rejects.toMatchObject({ code: 'FILE_CONFLICT' });
+  });
+
+  it('allows overwriteConflict=true to replace current file content after a conflict', async () => {
+    const { service } = createFixture({ sandbox: 'workspace-write' });
+    writeFile('README.md', '# hello\n');
+    const before = await service.readContent({ threadId: 'thread_1', path: 'README.md' });
+    writeFile('README.md', '# other\n');
+
+    const result = await service.saveContent({
+      threadId: 'thread_1',
+      path: 'README.md',
+      content: '# updated\n',
+      baseVersionToken: before.meta.versionToken,
+      overwriteConflict: true
+    });
+
+    expect(result.saved).toBe(true);
+    expect(readFileSync(join(tempDir, 'README.md'), 'utf8')).toBe('# updated\n');
   });
 
   it('rejects absolute paths and path traversal', async () => {
@@ -308,6 +326,32 @@ describe('workspace file service', () => {
     expect(result.meta.size).toBe(Buffer.byteLength(largeContent, 'utf8'));
   });
 
+  it('keeps original content unchanged when atomic rename fails before replacing target', async () => {
+    const renameError = Object.assign(new Error('rename failed'), { code: 'EIO' });
+    const { service } = createFixture({
+      sandbox: 'workspace-write',
+      fileOps: {
+        renameSync() {
+          throw renameError;
+        }
+      }
+    });
+    writeFile('README.md', '# hello\n');
+    const before = await service.readContent({ threadId: 'thread_1', path: 'README.md' });
+
+    await expect(
+      service.saveContent({
+        threadId: 'thread_1',
+        path: 'README.md',
+        content: '# updated\n',
+        baseVersionToken: before.meta.versionToken
+      })
+    ).rejects.toBe(renameError);
+
+    expect(readFileSync(join(tempDir, 'README.md'), 'utf8')).toBe('# hello\n');
+    expect(readdirSync(tempDir)).toEqual(['README.md']);
+  });
+
   it.each([
     ['README.md', '# hello\n', 'markdown'],
     ['README.markdown', '# hello\n', 'markdown'],
@@ -430,6 +474,7 @@ type FixtureOptions = {
   sandbox?: RuntimeThread['sandbox'];
   status?: RuntimeThread['status'];
   revealExecutor?: (request: { absolutePath: string; mode: 'file' | 'directory' }) => Promise<void> | void;
+  fileOps?: Parameters<typeof createWorkspaceFileService>[0]['fileOps'];
 };
 
 function createFixture(options: FixtureOptions = {}) {
@@ -441,7 +486,8 @@ function createFixture(options: FixtureOptions = {}) {
     getThread(threadId) {
       return threads.get(threadId);
     },
-    revealExecutor: options.revealExecutor
+    revealExecutor: options.revealExecutor,
+    fileOps: options.fileOps
   });
 
   return { service, thread };
