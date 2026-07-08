@@ -9,6 +9,7 @@ import type {
   RunRequest,
   RunScheduleNowResponse,
   RuntimeErrorCode,
+  WorkspaceFileMeta,
   ScheduleDetailResponse,
   ScheduleOperationListResponse,
   ScheduleResponse
@@ -185,5 +186,41 @@ describe('protocol shape', () => {
   it('includes cleanup failed as a closed error code', () => {
     const code: RuntimeErrorCode = 'CLEANUP_FAILED';
     expect(code).toBe('CLEANUP_FAILED');
+  });
+
+  it('allows workspace file meta shape', () => {
+    const meta: WorkspaceFileMeta = {
+      path: 'docs/readme.md',
+      name: 'readme.md',
+      type: 'file',
+      kind: 'markdown',
+      mime: 'text/markdown; charset=utf-8',
+      size: 12,
+      mtimeMs: 1000,
+      versionToken: '1000:12:sha256:abc',
+      previewable: true,
+      editable: true,
+      readonly: false
+    };
+
+    expect(meta.kind).toBe('markdown');
+  });
+
+  it('keeps workspace file runtime error codes closed', () => {
+    const codes: RuntimeErrorCode[] = [
+      'WORKSPACE_NOT_FOUND',
+      'FILE_NOT_FOUND',
+      'PATH_INVALID',
+      'PATH_ESCAPE',
+      'PATH_IGNORED',
+      'FILE_TOO_LARGE',
+      'UNSUPPORTED_FILE_TYPE',
+      'FILE_NOT_EDITABLE',
+      'FILE_CONFLICT',
+      'PERMISSION_DENIED',
+      'REVEAL_UNAVAILABLE'
+    ];
+
+    expect(codes).toHaveLength(11);
   });
 });

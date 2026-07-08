@@ -26,6 +26,83 @@ export type CodexStatusResponse = {
   diagnostics: string[];
 };
 
+export type WorkspaceFileKind =
+  | 'directory'
+  | 'markdown'
+  | 'text'
+  | 'json'
+  | 'code'
+  | 'html'
+  | 'image'
+  | 'pdf'
+  | 'binary'
+  | 'unknown';
+
+export type WorkspaceFileMeta = {
+  path: string;
+  name: string;
+  type: 'file';
+  kind: WorkspaceFileKind;
+  mime: string;
+  size: number;
+  mtimeMs: number;
+  versionToken: string;
+  previewable: boolean;
+  editable: boolean;
+  readonly: boolean;
+};
+
+export type WorkspaceFileNode =
+  | {
+      path: string;
+      name: string;
+      type: 'directory';
+      kind: 'directory';
+      hasChildren: boolean;
+      childrenLoaded: boolean;
+      meta: WorkspaceFileMeta;
+    }
+  | {
+      path: string;
+      name: string;
+      type: 'file';
+      kind: Exclude<WorkspaceFileKind, 'directory'>;
+      meta: WorkspaceFileMeta;
+    };
+
+export type WorkspaceDirectoryResponse = {
+  path: string;
+  entries: WorkspaceFileNode[];
+};
+
+export type WorkspaceFileContentResponse = {
+  path: string;
+  meta: WorkspaceFileMeta;
+  content: string;
+  encoding: 'utf-8' | 'base64';
+};
+
+export type WorkspaceFileSaveRequest = {
+  path: string;
+  content: string;
+  versionToken: string;
+};
+
+export type WorkspaceFileSaveResponse = {
+  path: string;
+  meta: WorkspaceFileMeta;
+  saved: true;
+};
+
+export type WorkspaceFileRevealRequest = {
+  path: string;
+};
+
+export type WorkspaceFileRevealResponse = {
+  path: string;
+  revealed: boolean;
+};
+
 export type DiagnosticFileResponse = {
   name: string;
   content: string;
