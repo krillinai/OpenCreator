@@ -82,10 +82,10 @@ export function createWorkspaceFileService(input: {
 
     async readContent(request) {
       const resolved = resolveFileRequest(input.getThread, request.threadId, request.path);
-      const meta = buildMeta(resolved.thread, resolved.relativePath, resolved.absolutePath);
       if (isSensitivePath(resolved.relativePath)) {
         throw new WorkspaceFileError('PERMISSION_DENIED', 'Sensitive files are not readable.');
       }
+      const meta = buildMeta(resolved.thread, resolved.relativePath, resolved.absolutePath);
       if (!isTextualKind(meta.kind)) {
         throw new WorkspaceFileError('UNSUPPORTED_FILE_TYPE', 'Only text-like files can be read as content.');
       }

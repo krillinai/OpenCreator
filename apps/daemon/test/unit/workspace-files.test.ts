@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -141,6 +141,16 @@ describe('workspace file service', () => {
         baseVersionToken: 'anything'
       })
     ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+  });
+
+  it('rejects sensitive readContent before file reads or hash computation', async () => {
+    const { service } = createFixture({ sandbox: 'workspace-write' });
+    writeFile('.env', 'TOKEN=secret\n');
+    chmodSync(join(tempDir, '.env'), 0o000);
+
+    await expect(service.readContent({ threadId: 'thread_1', path: '.env' })).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED'
+    });
   });
 
   it('blocks additional sensitive files such as .env.production, id_ed25519, and .crt', async () => {

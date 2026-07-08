@@ -211,3 +211,29 @@ pnpm --filter @clawee/daemon typecheck
 
 - 单测通过：`58 tests passed`
 - Typecheck 通过
+
+## Task 2 最后一个 Important 修复追加
+
+### 本轮修复
+
+- 修复 `readContent` 的敏感文件顺序问题：先判断 `isSensitivePath(relativePath)`，再调用 `buildMeta`，避免对敏感文件先执行 `statSync` / `readFileSync` / `sha256` 计算。
+- 复查 `getMeta`、`saveContent`、`readBlob` 的顺序后未发现同类问题：它们都在 `buildMeta` 之前完成了敏感路径拦截。
+
+### 本轮新增测试
+
+- 新增 `rejects sensitive readContent before file reads or hash computation`，覆盖 `.env` 的敏感路径拒绝。
+- 测试保持对 `.env`、`.env.production`、`id_ed25519`、`.crt` 的直接拒绝断言。
+
+### 本轮验证
+
+执行命令：
+
+```bash
+pnpm --filter @clawee/daemon test -- test/unit/workspace-files.test.ts
+pnpm --filter @clawee/daemon typecheck
+```
+
+结果摘要：
+
+- 单测通过：`59 tests passed`
+- Typecheck 通过
