@@ -5,6 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProjectFileTree } from './ProjectFileTree.js';
 
 describe('ProjectFileTree', () => {
+  it('nodes 为空时显示空态文案', () => {
+    renderTree({ nodes: [] });
+
+    expect(screen.getByText('当前工作区暂无可显示文件')).toBeInTheDocument();
+    expect(screen.queryByRole('tree')).not.toBeInTheDocument();
+  });
+
   it('渲染搜索框、目录、文件和当前文件高亮', () => {
     renderTree();
 
@@ -49,10 +56,59 @@ describe('ProjectFileTree', () => {
     expect(within(tree).queryByRole('treeitem', { name: 'src' })).not.toBeInTheDocument();
   });
 
+  it('只有深层文件时补出必要父级目录层次', () => {
+    renderTree({
+      nodes: [fileNode('src/components/App.tsx', 2)],
+      expandedPaths: ['src', 'src/components'],
+      selectedPath: 'src/components/App.tsx'
+    });
+
+    const tree = screen.getByRole('tree');
+
+    expect(within(tree).getByRole('treeitem', { name: 'src' })).toBeInTheDocument();
+    expect(within(tree).getByRole('treeitem', { name: 'components' })).toBeInTheDocument();
+    expect(within(tree).getByRole('treeitem', { name: 'App.tsx' })).toBeInTheDocument();
+  });
+
   it('渲染截断目录提示', () => {
     renderTree({ truncatedPaths: ['docs'] });
 
     expect(screen.getByText('当前目录文件较多，仅显示前 500 项')).toBeInTheDocument();
+  });
+
+  it('输入搜索时触发 onSearchChange(value)', async () => {
+    const user = userEvent.setup();
+    const onSearchChange = vi.fn();
+    const { rerender } = render(
+      <ProjectFileTree
+        nodes={createNodes()}
+        selectedPath="docs/README.md"
+        expandedPaths={['docs']}
+        search=""
+        truncatedPaths={[]}
+        onToggleDirectory={vi.fn()}
+        onSelectFile={vi.fn()}
+        onSearchChange={onSearchChange}
+      />
+    );
+
+    for (const value of ['r', 're', 'rea', 'read', 'readm', 'readme']) {
+      await user.type(screen.getByRole('searchbox', { name: '筛选文件' }), value.slice(-1));
+      rerender(
+        <ProjectFileTree
+          nodes={createNodes()}
+          selectedPath="docs/README.md"
+          expandedPaths={['docs']}
+          search={value}
+          truncatedPaths={[]}
+          onToggleDirectory={vi.fn()}
+          onSelectFile={vi.fn()}
+          onSearchChange={onSearchChange}
+        />
+      );
+    }
+
+    expect(onSearchChange).toHaveBeenLastCalledWith('readme');
   });
 });
 
@@ -100,7 +156,7 @@ function fileNode(path: string, depth: number): WorkspaceFileNode {
     depth,
     type: 'file',
     meta: {
-      kind: path.endsWith('.md') ? 'markdown' : 'text',
+      kind: path.endsWith('.md') ? 'markdown' : path.endsWith('.tsx') ? 'code' : 'text',
       mime: 'text/plain',
       size: 1,
       mtimeMs: 1,

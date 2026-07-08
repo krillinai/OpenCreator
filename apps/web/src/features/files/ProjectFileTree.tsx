@@ -157,30 +157,33 @@ function TreeNodeRow(props: TreeNodeRowProps) {
 function buildTree(nodes: WorkspaceFileNode[]): TreeEntry[] {
   const entryByPath = new Map<string, TreeEntry>();
   const roots: TreeEntry[] = [];
+  const rootPaths = new Set<string>();
 
   for (const node of nodes) {
-    entryByPath.set(node.path, { node, children: [] });
+    ensureEntry(entryByPath, node.path, node);
   }
 
-  for (const node of nodes) {
-    const entry = entryByPath.get(node.path);
+  const sortedPaths = [...entryByPath.keys()].sort(comparePathsByDepthThenName);
+
+  for (const path of sortedPaths) {
+    const entry = entryByPath.get(path);
     if (!entry) {
       continue;
     }
 
-    const parentPath = parentPathOf(node.path);
+    const parentPath = parentPathOf(path);
     if (parentPath.length === 0) {
-      roots.push(entry);
+      if (!rootPaths.has(path)) {
+        roots.push(entry);
+        rootPaths.add(path);
+      }
       continue;
     }
 
-    const parent = entryByPath.get(parentPath);
-    if (!parent) {
-      roots.push(entry);
-      continue;
+    const parent = ensureEntry(entryByPath, parentPath);
+    if (!parent.children.some((child) => child.node.path === path)) {
+      parent.children.push(entry);
     }
-
-    parent.children.push(entry);
   }
 
   return roots;
@@ -206,6 +209,59 @@ function filterEntries(entries: TreeEntry[], query: string): TreeEntry[] {
 function parentPathOf(path: string): string {
   const index = path.lastIndexOf('/');
   return index === -1 ? '' : path.slice(0, index);
+}
+
+function ensureEntry(
+  entryByPath: Map<string, TreeEntry>,
+  path: string,
+  node?: WorkspaceFileNode
+): TreeEntry {
+  const existing = entryByPath.get(path);
+  if (existing) {
+    if (node) {
+      existing.node = node;
+    }
+    return existing;
+  }
+
+  const entry: TreeEntry = {
+    node: node ?? syntheticDirectoryNode(path),
+    children: []
+  };
+  entryByPath.set(path, entry);
+
+  const parentPath = parentPathOf(path);
+  if (parentPath.length > 0) {
+    ensureEntry(entryByPath, parentPath);
+  }
+
+  return entry;
+}
+
+function syntheticDirectoryNode(path: string): WorkspaceFileNode {
+  const depth = path.split('/').filter(Boolean).length - 1;
+  return {
+    path,
+    name: path.split('/').at(-1) ?? path,
+    depth,
+    type: 'directory',
+    hasChildren: true
+  };
+}
+
+function comparePathsByDepthThenName(left: string, right: string): number {
+  const leftDepth = depthOf(left);
+  const rightDepth = depthOf(right);
+
+  if (leftDepth !== rightDepth) {
+    return leftDepth - rightDepth;
+  }
+
+  return left.localeCompare(right);
+}
+
+function depthOf(path: string): number {
+  return path.length === 0 ? 0 : path.split('/').filter(Boolean).length - 1;
 }
 
 function iconForFile(node: Extract<WorkspaceFileNode, { type: 'file' }>) {
