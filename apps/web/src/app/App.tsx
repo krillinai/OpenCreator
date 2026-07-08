@@ -781,7 +781,7 @@ function PlaceholderView(props: { label: string }) {
   );
 }
 
-function getPlaceholderLabel(activeView: 'search' | 'schedules' | 'plugins') {
+function getPlaceholderLabel(activeView: 'search' | 'schedules' | 'plugins' | 'files') {
   switch (activeView) {
     case 'search':
       return '搜索';
@@ -789,6 +789,8 @@ function getPlaceholderLabel(activeView: 'search' | 'schedules' | 'plugins') {
       return '已安排';
     case 'plugins':
       return '插件';
+    case 'files':
+      return '文件';
   }
 }
 
