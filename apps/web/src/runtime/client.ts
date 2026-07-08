@@ -23,6 +23,10 @@ export class RuntimeClient {
     return this.request<T>(path, { method: 'GET' });
   }
 
+  async rawGet(path: string): Promise<Response> {
+    return this.rawRequest(path, { method: 'GET' });
+  }
+
   async post<T = unknown>(path: string, body?: unknown): Promise<T> {
     return this.request<T>(path, { method: 'POST', body });
   }
@@ -36,6 +40,12 @@ export class RuntimeClient {
   }
 
   async request<T>(path: string, input: { method: string; body?: unknown }): Promise<T> {
+    const response = await this.rawRequest(path, input);
+    const payload = await readJson(response);
+    return payload as T;
+  }
+
+  async rawRequest(path: string, input: { method: string; body?: unknown }): Promise<Response> {
     const headers: Record<string, string> = {};
     if (path !== '/healthz') headers.Authorization = `Bearer ${this.token}`;
     if (input.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -56,8 +66,7 @@ export class RuntimeClient {
         details: error.error.details
       });
     }
-    const payload = await readJson(response);
-    return payload as T;
+    return response;
   }
 }
 
