@@ -21,6 +21,8 @@ import { createSchedulerService, type SchedulerService } from '../scheduler/serv
 import { openRuntimeDatabase } from '../storage/database.js';
 import { createRunRepository, createThreadRepository } from '../storage/repositories.js';
 import { createThreadManager } from '../threads/manager.js';
+import { createDefaultRevealExecutor } from '../workspace-files/reveal.js';
+import { createWorkspaceFileService } from '../workspace-files/service.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerCodexRoutes } from './routes.codex.js';
@@ -32,6 +34,7 @@ import { registerRunRoutes } from './routes.runs.js';
 import { registerScheduleRoutes } from './routes.schedules.js';
 import { registerSkillRoutes } from './routes.skills.js';
 import { registerThreadRoutes } from './routes.threads.js';
+import { registerWorkspaceFileRoutes } from './routes.workspace-files.js';
 
 export type BuildServerInput = {
   token: string;
@@ -80,6 +83,10 @@ export async function buildServer(input: BuildServerInput) {
   const runRepository = createRunRepository(db);
   const threadRepository = createThreadRepository(db);
   const threadManager = createThreadManager({ db, dataDir });
+  const workspaceFileService = createWorkspaceFileService({
+    getThread: (id) => threadManager.getThread(id),
+    revealExecutor: createDefaultRevealExecutor()
+  });
   const profileManager = createProfileManager({ codexHome: resolvedCodexHome });
   const skillManager = createSkillManager({ codexHome: resolvedCodexHome, db });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
@@ -158,6 +165,7 @@ export async function buildServer(input: BuildServerInput) {
         capabilities
       })
   });
+  await registerWorkspaceFileRoutes(server, workspaceFileService);
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager,
     syncCodexSessions(limit) {

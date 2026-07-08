@@ -14,3 +14,7 @@ export const defaultRevealExecutor: RevealExecutor = async ({ absolutePath, mode
   const args = mode === 'file' ? ['-R', absolutePath] : [absolutePath];
   await execFileAsync('open', args);
 };
+
+export function createDefaultRevealExecutor(): RevealExecutor {
+  return defaultRevealExecutor;
+}

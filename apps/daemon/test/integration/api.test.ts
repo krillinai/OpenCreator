@@ -100,6 +100,92 @@ describe('runtime api', () => {
     expect(response.headers['access-control-allow-origin']).not.toBe('https://example.com');
   });
 
+  it('workspace files routes expose external thread files and enforce auth and path validation', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-workspace-files-'));
+    writeFileSync(join(tempDir, 'README.md'), '# Hello\n');
+    writeFileSync(join(tempDir, 'note.txt'), 'before');
+    writeFileSync(
+      join(tempDir, 'pixel.png'),
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wn6zkAAAAAASUVORK5CYII=',
+        'base64'
+      )
+    );
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write'
+    })).json().thread as { id: string };
+
+    const directory = await authGet(
+      `/workspace/files/directory?threadId=${thread.id}&path=${encodeURIComponent('')}`
+    );
+    expect(directory.statusCode).toBe(200);
+    expect(directory.json().nodes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: 'README.md', type: 'file' })])
+    );
+
+    const content = await authGet(
+      `/workspace/files/content?threadId=${thread.id}&path=${encodeURIComponent('README.md')}`
+    );
+    expect(content.statusCode).toBe(200);
+    expect(content.json().content).toBe('# Hello\n');
+
+    const meta = content.json().meta as { versionToken: string };
+    const save = await authPost('/workspace/files/content', {
+      threadId: thread.id,
+      path: 'note.txt',
+      content: 'after',
+      baseVersionToken: (
+        await authGet(`/workspace/files/meta?threadId=${thread.id}&path=${encodeURIComponent('note.txt')}`)
+      ).json().versionToken
+    });
+    expect(save.statusCode).toBe(200);
+    expect(readFileSync(join(tempDir, 'note.txt'), 'utf8')).toBe('after');
+
+    const blob = await authGet(
+      `/workspace/files/blob?threadId=${thread.id}&path=${encodeURIComponent('pixel.png')}`
+    );
+    expect(blob.statusCode).toBe(200);
+    expect(blob.headers['content-type']).toBe('image/png');
+    expect(blob.headers['cache-control']).toBe('no-store');
+    expect(Buffer.isBuffer(blob.rawPayload)).toBe(true);
+
+    const unauthorized = await server.inject({
+      method: 'GET',
+      url: `/workspace/files/blob?threadId=${thread.id}&path=${encodeURIComponent('pixel.png')}`
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const preflight = await server.inject({
+      method: 'OPTIONS',
+      url: '/workspace/files/content',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type'
+      }
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(String(preflight.headers['access-control-allow-methods'])).toContain('POST');
+
+    const traversal = await authGet(
+      `/workspace/files/content?threadId=${thread.id}&path=${encodeURIComponent('../secret.txt')}`
+    );
+    expect(traversal.statusCode).toBe(400);
+    expect(traversal.json()).toEqual({
+      error: {
+        code: 'PATH_INVALID',
+        message: expect.any(String)
+      }
+    });
+    expect(meta.versionToken).toEqual(expect.any(String));
+  });
+
   it('creates, lists, gets, updates, deletes, and runs schedules', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
