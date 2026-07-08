@@ -283,7 +283,7 @@ function safeOverwriteFile(
     fileOps.closeSync(tempHandle);
     tempHandle = undefined;
 
-    assertSameWritableTarget(rootReal, candidatePath, realBefore, stats, fileOps);
+    assertSameWritableTarget(rootReal, absolutePath, realBefore, stats, fileOps);
     fileOps.renameSync(tempPath, absolutePath);
     fsyncParentDirectory(parentReal, fileOps);
   } catch (error) {

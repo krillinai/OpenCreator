@@ -453,6 +453,51 @@ describe('workspace file service', () => {
     expect(readdirSync(tempDir).some((name) => name.includes('.clawee-'))).toBe(false);
   });
 
+  it('does not recreate an originally resolved target when a symlinked parent changes before save', async () => {
+    let mutated = false;
+    let renameCalled = false;
+    let candidatePath = '';
+    const { service } = createFixture({
+      sandbox: 'workspace-write',
+      fileOps: {
+        lstatSync: ((path) => {
+          if (!mutated && candidatePath.length > 0 && String(path) === candidatePath) {
+            mutated = true;
+            unlinkSync(join(tempDir, 'docs'));
+            symlinkSync(join(tempDir, 'new-docs'), join(tempDir, 'docs'));
+            unlinkSync(join(tempDir, 'real-docs', 'README.md'));
+          }
+          return lstatSync(path);
+        }) as typeof lstatSync,
+        renameSync(source, target) {
+          renameCalled = true;
+          renameSync(source, target);
+        }
+      }
+    });
+    mkdirSync(join(tempDir, 'real-docs'));
+    mkdirSync(join(tempDir, 'new-docs'));
+    writeFile('real-docs/README.md', '# hello\n');
+    writeFile('new-docs/README.md', '# unrelated\n');
+    symlinkSync(join(tempDir, 'real-docs'), join(tempDir, 'docs'));
+    const before = await service.readContent({ threadId: 'thread_1', path: 'docs/README.md' });
+    candidatePath = join(realpathSync(tempDir), 'docs', 'README.md');
+
+    await expect(
+      service.saveContent({
+        threadId: 'thread_1',
+        path: 'docs/README.md',
+        content: '# updated\n',
+        baseVersionToken: before.meta.versionToken
+      })
+    ).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+
+    expect(renameCalled).toBe(false);
+    expect(() => readFileSync(join(tempDir, 'real-docs', 'README.md'), 'utf8')).toThrow();
+    expect(readFileSync(join(tempDir, 'new-docs', 'README.md'), 'utf8')).toBe('# unrelated\n');
+    expect(readdirSync(join(tempDir, 'real-docs')).some((name) => name.includes('.clawee-'))).toBe(false);
+  });
+
   it.each([
     ['README.md', '# hello\n', 'markdown'],
     ['README.markdown', '# hello\n', 'markdown'],
