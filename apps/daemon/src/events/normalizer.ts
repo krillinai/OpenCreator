@@ -30,6 +30,27 @@ function firstStringValue(record: JsonRecord, keys: string[]): string | undefine
   return undefined;
 }
 
+function normalizeFileChangeKind(value: unknown): 'add' | 'modify' | 'delete' | 'unknown' {
+  if (value === 'add' || value === 'modify' || value === 'delete') return value;
+  return 'unknown';
+}
+
+function normalizeFileChangeStatus(value: unknown): 'in_progress' | 'completed' | 'failed' | 'unknown' {
+  if (value === 'in_progress' || value === 'completed' || value === 'failed') return value;
+  return 'unknown';
+}
+
+function extractFileChanges(value: unknown): Array<{ path: string; kind: 'add' | 'modify' | 'delete' | 'unknown' }> {
+  if (!Array.isArray(value)) return [];
+  return value.map(change => {
+    const record = isRecord(change) ? change : {};
+    return {
+      path: stringValue(record.path) ?? '',
+      kind: normalizeFileChangeKind(record.kind)
+    };
+  });
+}
+
 function extractReasoningSummary(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -99,8 +120,43 @@ export function normalizeCodexEvent(input: NormalizeInput): AgentEventEnvelope {
     };
   }
 
+  if (type === 'error') {
+    const message = firstStringValue(raw ?? {}, ['message', 'error']) ?? 'Codex stream error';
+    return {
+      ...base,
+      type: 'error',
+      rawEventId,
+      payload: {
+        type: 'error',
+        code: 'CODEX_STREAM_ERROR',
+        message,
+        details: {
+          raw
+        }
+      }
+    };
+  }
+
   const item = isRecord(raw?.item) ? raw.item : undefined;
   const itemType = stringValue(item?.type);
+
+  if (type === 'item.completed' && item !== undefined && itemType === 'error') {
+    const message = firstStringValue(item, ['message', 'text', 'content']) ?? 'Codex item error';
+    return {
+      ...base,
+      type: 'diagnostic',
+      rawEventId,
+      payload: {
+        type: 'diagnostic',
+        code: 'CODEX_ITEM_ERROR',
+        severity: 'warning',
+        message,
+        details: {
+          raw: item
+        }
+      }
+    };
+  }
 
   if (type === 'item.completed' && item !== undefined && isReasoningItemType(itemType)) {
     const text = extractReasoningSummary(item.summary ?? item.summaries ?? item.text ?? item.content ?? item.parts);
@@ -167,6 +223,19 @@ export function normalizeCodexEvent(input: NormalizeInput): AgentEventEnvelope {
         output: stringValue(item.aggregated_output) ?? '',
         exitCode,
         isError: exitCode !== 0
+      }
+    };
+  }
+
+  if ((type === 'item.started' || type === 'item.completed') && item !== undefined && itemType === 'file_change') {
+    return {
+      ...base,
+      type: 'file_change',
+      rawEventId,
+      payload: {
+        type: 'file_change',
+        changes: extractFileChanges(item.changes),
+        status: normalizeFileChangeStatus(item.status)
       }
     };
   }

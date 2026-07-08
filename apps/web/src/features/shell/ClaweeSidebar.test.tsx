@@ -11,8 +11,8 @@ const projects = [
     cwd: '~/develop/content-design',
     sandbox: 'danger-full-access' as const,
     profile: 'default',
-    model: '5.5',
-    reasoning: 'xhigh'
+    model: null,
+    reasoning: null
   },
   {
     id: 'bili',
@@ -20,8 +20,8 @@ const projects = [
     cwd: '~/develop/clawee/bili',
     sandbox: 'follow-global' as const,
     profile: 'default',
-    model: '5.5',
-    reasoning: 'xhigh'
+    model: null,
+    reasoning: null
   }
 ];
 
@@ -59,7 +59,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ClaweeSidebar>> 
 }
 
 describe('ClaweeSidebar', () => {
-  it('renders global actions, projects, conversations, and footer actions', () => {
+  it('renders global actions, projects with nested conversations, and footer actions', () => {
     renderSidebar();
 
     expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument();
@@ -70,7 +70,8 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('aria-current', 'true');
     expect(screen.getByRole('button', { name: 'bili' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '对话' })).toBeInTheDocument();
-    expect(screen.getByText('整理本周项目进展')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
     expect(screen.getByText('4天')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置 账户' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '更新' })).toBeInTheDocument();
@@ -85,6 +86,37 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: 'bili' }));
 
     expect(onSelectProject).toHaveBeenCalledWith('bili');
+  });
+
+  it('shows conversations under the selected project', () => {
+    renderSidebar({ currentProjectId: 'bili' });
+
+    expect(screen.getByRole('button', { name: 'bili' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '整理本周项目进展 4天' })).not.toBeInTheDocument();
+  });
+
+  it('collapses the selected project when clicking it again', async () => {
+    const user = userEvent.setup();
+
+    renderSidebar({ currentProjectId: 'bili' });
+
+    expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'bili' }));
+
+    expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'bili' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('selects a nested project conversation', async () => {
+    const user = userEvent.setup();
+    const onSelectConversation = vi.fn();
+
+    renderSidebar({ onSelectConversation });
+
+    await user.click(screen.getByRole('button', { name: '整理本周项目进展 4天' }));
+
+    expect(onSelectConversation).toHaveBeenCalledWith('weekly-progress-brief');
   });
 
   it('opens settings from the footer button', async () => {

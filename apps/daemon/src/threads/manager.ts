@@ -1,13 +1,16 @@
 import type Database from 'better-sqlite3';
-import { mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { nanoid } from 'nanoid';
+import { expandHome } from '../platform/paths.js';
 import { createThreadRepository, type ThreadRow } from '../storage/repositories.js';
-import type { CreateRuntimeThreadInput, RuntimeThread, ThreadManager } from './types.js';
+import type { CreateRuntimeThreadInput, ImportCodexThreadInput, RuntimeThread, ThreadManager } from './types.js';
 
 export type CreateThreadManagerInput = {
   db: Database.Database;
   dataDir: string;
+  homeDir?: string;
 };
 
 export function createThreadManager(input: CreateThreadManagerInput): ThreadManager {
@@ -20,7 +23,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       const cwd =
         workspaceMode === 'managed'
           ? join(input.dataDir, 'workspaces', id)
-          : request.cwd ?? process.cwd();
+          : normalizeExternalCwd(request.cwd ?? process.cwd(), input.homeDir ?? homedir());
       mkdirSync(cwd, { recursive: true });
       const canonicalCwd = realpathSync(cwd);
       const title = request.title ?? null;
@@ -49,8 +52,50 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       return row === undefined ? undefined : mapThreadRow(row);
     },
 
+    getThreadByCodexThreadId(codexThreadId: string): RuntimeThread | undefined {
+      const row = threads.getThreadByCodexThreadId(codexThreadId);
+      return row === undefined ? undefined : mapThreadRow(row);
+    },
+
     listThreads(filter?: { status?: 'active' | 'archived' | 'all'; limit?: number }): RuntimeThread[] {
       return threads.listThreads(filter).map(mapThreadRow);
+    },
+
+    importCodexThread(request: ImportCodexThreadInput): RuntimeThread {
+      const existing = threads.getThreadByCodexThreadId(request.codexThreadId);
+      const cwd = request.cwd;
+      const canonicalCwd = existsSync(cwd) ? realpathSync(cwd) : cwd;
+      const updatedAt = toSqliteTimestamp(request.updatedAt);
+      if (existing !== undefined) {
+        threads.updateImportedThread({
+          id: existing.id,
+          title: request.title,
+          cwd,
+          canonicalCwd,
+          updatedAt
+        });
+        return mapThreadRow(threads.getThread(existing.id)!);
+      }
+
+      const id = createImportedThreadId(request.codexThreadId);
+
+      threads.insertThread({
+        id,
+        title: request.title,
+        codexThreadId: request.codexThreadId,
+        cwd,
+        canonicalCwd,
+        workspaceMode: 'external',
+        profile: request.profile ?? 'default',
+        model: request.model ?? null,
+        reasoning: request.reasoning ?? null,
+        sandbox: request.sandbox ?? 'read-only',
+        status: 'active',
+        createdAt: toSqliteTimestamp(request.createdAt),
+        updatedAt
+      });
+
+      return mapThreadRow(threads.getThread(id)!);
     },
 
     archiveThread(id: string): RuntimeThread {
@@ -67,6 +112,21 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       threads.touchThread(threadId);
     }
   };
+}
+
+function normalizeExternalCwd(cwd: string, homeDir: string): string {
+  return expandHome(cwd, homeDir);
+}
+
+function createImportedThreadId(codexThreadId: string): string {
+  const safe = codexThreadId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+  return `thread_codex_${safe || nanoid(10)}`;
+}
+
+function toSqliteTimestamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '');
 }
 
 function mapThreadRow(row: ThreadRow): RuntimeThread {

@@ -5,7 +5,7 @@ export type TimelineItem =
   | { kind: 'reasoning_summary'; id: string; runId?: string; text: string; content?: string; source: 'runtime' }
   | { kind: 'assistant_message'; id: string; runId?: string; text: string; content?: string; source: 'runtime' | 'mock' }
   | { kind: 'tool_step'; id: string; runId?: string; name: string; content: string; source: 'runtime' }
-  | { kind: 'change_card'; id: string; title: string; path: string; delta: string; source: 'mock' }
+  | { kind: 'change_card'; id: string; runId?: string; title: string; path: string; delta: string; source: 'runtime' | 'mock' }
   | {
       kind: 'diagnostic';
       id: string;
@@ -43,6 +43,34 @@ function safeStringify(value: unknown): string {
   } catch {
     return '[Unserializable payload]';
   }
+}
+
+function formatChangeKind(kind: 'add' | 'modify' | 'delete' | 'unknown'): string {
+  switch (kind) {
+    case 'add':
+      return '新增';
+    case 'modify':
+      return '修改';
+    case 'delete':
+      return '删除';
+    case 'unknown':
+      return '变更';
+  }
+}
+
+function formatFileChangeTitle(changes: Array<{ kind: 'add' | 'modify' | 'delete' | 'unknown' }>): string {
+  if (changes.length === 0) return '文件变更';
+
+  const counts = new Map<'add' | 'modify' | 'delete' | 'unknown', number>();
+  for (const change of changes) counts.set(change.kind, (counts.get(change.kind) ?? 0) + 1);
+
+  return (['add', 'modify', 'delete', 'unknown'] as const)
+    .map(kind => {
+      const count = counts.get(kind) ?? 0;
+      return count === 0 ? undefined : `${formatChangeKind(kind)} ${count} 个文件`;
+    })
+    .filter((part): part is string => part !== undefined)
+    .join('，');
 }
 
 export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | null {
@@ -83,6 +111,18 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         content: safeStringify(event.payload),
         source: 'runtime'
       };
+    case 'file_change': {
+      const primaryPath = event.payload.changes.find(change => change.path.length > 0)?.path ?? '文件变更';
+      return {
+        kind: 'change_card',
+        id: event.id,
+        runId: event.runId,
+        title: formatFileChangeTitle(event.payload.changes),
+        path: primaryPath,
+        delta: `${event.payload.changes.length} 项变更`,
+        source: 'runtime'
+      };
+    }
     case 'diagnostic':
       return {
         kind: 'diagnostic',

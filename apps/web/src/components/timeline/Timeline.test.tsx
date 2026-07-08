@@ -174,6 +174,35 @@ describe('Timeline', () => {
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
   });
 
+  it('renders local request errors outside the thinking process', () => {
+    const items: TimelineItem[] = [
+      {
+        kind: 'user_message',
+        id: 'user_1',
+        text: 'hello',
+        source: 'runtime'
+      },
+      {
+        kind: 'diagnostic',
+        id: 'runtime_error_1',
+        severity: 'error',
+        message: 'Failed to fetch',
+        content: 'Failed to fetch',
+        source: 'runtime'
+      }
+    ];
+
+    const { container } = render(<Timeline items={items} />);
+
+    expect(screen.getByText('hello')).toBeInTheDocument();
+    expect(screen.getByText('处理过程')).toBeInTheDocument();
+    expect(screen.getByText('Failed to fetch')).toBeInTheDocument();
+    expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
+    expect(screen.queryByText('思考过程')).not.toBeInTheDocument();
+    expect(container.querySelector('.timeline-process')).not.toBeInTheDocument();
+    expect(container.querySelector('.timeline-diagnostic')).toBeInTheDocument();
+  });
+
   it('renders final assistant markdown without exposing syntax', () => {
     render(
       <Timeline
@@ -339,8 +368,38 @@ describe('Timeline', () => {
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
     expect(screen.getByText('思考过程')).toBeInTheDocument();
-    expect(screen.getByText('运行失败：timeout')).toBeInTheDocument();
+    expect(screen.getByText('任务运行时间过长，已自动停止')).toBeInTheDocument();
     expect(screen.getByText('运行详情')).toBeInTheDocument();
+  });
+
+  it('renders readable timeout failure labels', () => {
+    const reasons = [
+      ['timeout', '任务运行时间过长，已自动停止'],
+      ['inactivity_timeout', '任务长时间无响应，已自动停止'],
+      ['spawn_timeout', 'Codex 启动超时']
+    ] as const;
+
+    for (const [terminationReason, label] of reasons) {
+      const { unmount } = render(
+        <Timeline
+          items={[
+            {
+              kind: 'done',
+              id: `done_${terminationReason}`,
+              runId: `run_${terminationReason}`,
+              status: 'failed',
+              terminationReason,
+              content: JSON.stringify({ type: 'done', status: 'failed', terminationReason }),
+              source: 'runtime'
+            }
+          ]}
+          onOpenRunDetail={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText(label)).toBeInTheDocument();
+      unmount();
+    }
   });
 
   it('does not show opaque toolCallId in the main title when tool_use is missing', () => {

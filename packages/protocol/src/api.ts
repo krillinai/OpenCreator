@@ -128,6 +128,28 @@ export type ThreadRunsResponse = {
   runs: RunResponse[];
 };
 
+export type ThreadHistoryItem =
+  | { id: string; type: 'user_message'; text: string; createdAt: string; turnId?: string }
+  | { id: string; type: 'assistant_message'; text: string; createdAt: string; turnId?: string }
+  | { id: string; type: 'reasoning_summary'; text: string; createdAt: string; turnId?: string }
+  | { id: string; type: 'tool_use'; name: string; input: Record<string, unknown>; createdAt: string; turnId?: string }
+  | { id: string; type: 'tool_result'; name: string; output: string; isError: boolean; createdAt: string; turnId?: string }
+  | {
+      id: string;
+      type: 'file_change';
+      changes: Array<{ path: string; kind: 'add' | 'modify' | 'delete' | 'unknown' }>;
+      status: 'in_progress' | 'completed' | 'failed' | 'unknown';
+      createdAt: string;
+      turnId?: string;
+    }
+  | { id: string; type: 'done'; status: 'succeeded' | 'failed' | 'canceled'; createdAt: string; turnId?: string };
+
+export type ThreadHistoryResponse = {
+  threadId: string;
+  codexThreadId?: string | null;
+  items: ThreadHistoryItem[];
+};
+
 export type CodexSkillResponse = {
   id: string;
   name?: string;

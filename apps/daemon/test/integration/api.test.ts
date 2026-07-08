@@ -70,6 +70,22 @@ describe('runtime api', () => {
     );
   });
 
+  it('allows web app CORS preflight from Vite fallback ports', async () => {
+    server = await buildServer({ token: 'secret' });
+    const response = await server.inject({
+      method: 'OPTIONS',
+      url: '/runs',
+      headers: {
+        origin: 'http://127.0.0.1:5174',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type'
+      }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5174');
+  });
+
   it('does not allow arbitrary web origins', async () => {
     server = await buildServer({ token: 'secret' });
     const response = await server.inject({
@@ -1625,7 +1641,7 @@ describe('runtime api', () => {
 
     const created = await server.inject({
       method: 'POST',
-      url: '/threads',
+      url: '/threads?limit=100',
       headers: { authorization: 'Bearer secret' },
       payload: { title: 'R2', workspaceMode: 'managed', sandbox: 'read-only' }
     });
@@ -1637,7 +1653,7 @@ describe('runtime api', () => {
       url: '/threads',
       headers: { authorization: 'Bearer secret' }
     });
-    expect(listed.json().threads).toEqual([expect.objectContaining({ id: thread.id })]);
+    expect(listed.json().threads).toContainEqual(expect.objectContaining({ id: thread.id }));
 
     const detail = await server.inject({
       method: 'GET',
@@ -1653,6 +1669,120 @@ describe('runtime api', () => {
     });
     expect(archived.statusCode).toBe(200);
     expect(archived.json().thread.status).toBe('archived');
+  });
+
+  it('imports global Codex sessions into the thread list', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '07');
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(
+      join(sessionDir, 'rollout-2026-07-07T10-00-00-codex-session-api.jsonl'),
+      [
+        JSON.stringify({
+          timestamp: '2026-07-07T02:00:00.000Z',
+          type: 'session_meta',
+          payload: {
+            id: 'codex-session-api',
+            session_id: 'codex-session-api',
+            timestamp: '2026-07-07T02:00:00.000Z',
+            cwd: tempDir
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-07T02:00:01.000Z',
+          type: 'event_msg',
+          payload: { type: 'user_message', message: '复盘今天的销售进展' }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-07T02:00:02.000Z',
+          type: 'event_msg',
+          payload: { type: 'agent_message', message: '已复盘。' }
+        })
+      ].join('\n')
+    );
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const listed = await authGet('/threads');
+    const listedAgain = await authGet('/threads');
+
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().threads).toEqual([
+      expect.objectContaining({
+        title: '复盘今天的销售进展',
+        codexThreadId: 'codex-session-api',
+        cwd: tempDir,
+        workspaceMode: 'external',
+        status: 'active'
+      })
+    ]);
+    expect(listedAgain.json().threads).toHaveLength(1);
+  });
+
+  it('returns Codex session chat history for imported runtime threads', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '07');
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(
+      join(sessionDir, 'rollout-2026-07-07T10-00-00-codex-session-history.jsonl'),
+      [
+        JSON.stringify({
+          timestamp: '2026-07-07T02:00:00.000Z',
+          type: 'session_meta',
+          payload: {
+            id: 'codex-session-history',
+            session_id: 'codex-session-history',
+            timestamp: '2026-07-07T02:00:00.000Z',
+            cwd: tempDir
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-07T02:00:01.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: '# AGENTS.md instructions\n\n忽略这段注入上下文' }]
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-07T02:00:02.000Z',
+          type: 'event_msg',
+          payload: { type: 'user_message', message: '分析这个 skill 是干什么的' }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-07T02:00:03.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'reasoning',
+            summary: [{ type: 'summary_text', text: '先读取 skill 说明。' }]
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-07T02:00:04.000Z',
+          type: 'event_msg',
+          payload: { type: 'agent_message', message: '这个 skill 用于分析选品资料。' }
+        })
+      ].join('\n')
+    );
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const listed = await authGet('/threads');
+    const thread = listed.json().threads[0];
+    const history = await authGet(`/threads/${thread.id}/history`);
+
+    expect(history.statusCode).toBe(200);
+    expect(history.json()).toMatchObject({
+      threadId: thread.id,
+      codexThreadId: 'codex-session-history',
+      items: [
+        { type: 'user_message', text: '分析这个 skill 是干什么的' },
+        { type: 'reasoning_summary', text: '先读取 skill 说明。' },
+        { type: 'assistant_message', text: '这个 skill 用于分析选品资料。' }
+      ]
+    });
+    expect(history.body).not.toContain('AGENTS.md instructions');
   });
 
   it('rejects invalid thread list query parameters', async () => {

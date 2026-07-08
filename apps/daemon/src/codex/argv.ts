@@ -12,7 +12,7 @@ export type BuildCodexResumeArgsInput = {
   codexThreadId: string;
   profile?: string;
   cwd?: string;
-  sandbox?: SandboxMode;
+  sandbox: SandboxMode;
   model?: string;
   reasoning?: ReasoningEffort;
 };
@@ -32,12 +32,14 @@ export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
 }
 
 export function buildCodexResumeArgs(input: BuildCodexResumeArgsInput): string[] {
-  const args = ['exec', 'resume', input.codexThreadId, '--json', '--skip-git-repo-check'];
+  const args = ['exec', 'resume', '--json', '--skip-git-repo-check'];
 
+  args.push('-c', `sandbox_mode="${input.sandbox}"`);
   if (input.model) args.push('--model', input.model);
   if (input.reasoning && input.reasoning !== 'default') {
     args.push('-c', `model_reasoning_effort="${input.reasoning}"`);
   }
+  args.push(input.codexThreadId);
 
   return args;
 }

@@ -16,8 +16,8 @@ describe('project model', () => {
 
     for (const project of projects) {
       expect(project.profile).toBe('default');
-      expect(project.model).toBe('5.5');
-      expect(project.reasoning).toBe('xhigh');
+      expect(project.model).toBeNull();
+      expect(project.reasoning).toBeNull();
     }
 
     const contentDesign = projects[1];

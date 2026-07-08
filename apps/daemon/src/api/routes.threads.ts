@@ -1,4 +1,4 @@
-import type { RunResponse, ThreadResponse, ThreadRunsResponse } from '@clawee/protocol';
+import type { RunResponse, ThreadHistoryResponse, ThreadResponse, ThreadRunsResponse } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { RunManager } from '../runs/manager.js';
 import type { CreateRuntimeThreadInput, RuntimeThread, ThreadManager } from '../threads/types.js';
@@ -8,7 +8,7 @@ export async function registerThreadRoutes(
   server: FastifyInstance,
   manager: ThreadManager,
   runManager: Pick<RunManager, 'hasActiveRunForThread' | 'listRunsByThread'>,
-  options: { profileValidator?: ProfileValidator } = {}
+  options: { profileValidator?: ProfileValidator; syncCodexSessions?: SyncCodexSessions; readThreadHistory?: ReadThreadHistory } = {}
 ): Promise<void> {
   server.post<{ Body: unknown }>('/threads', async (request, reply) => {
     const body = parseCreateThreadRequest(request.body);
@@ -30,6 +30,7 @@ export async function registerThreadRoutes(
     if (!query.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', query.message));
 
     const { status, limit } = query.value;
+    options.syncCodexSessions?.(limit);
     const threads = manager.listThreads({ status, limit }).map(toThreadResponse);
     return { threads };
   });
@@ -60,6 +61,23 @@ export async function registerThreadRoutes(
         codexThreadId: run.codexThreadId,
         status: run.status
       }))
+    };
+    return response;
+  });
+
+  server.get('/threads/:id/history', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const thread = manager.getThread(id);
+    if (thread === undefined) {
+      return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+    }
+
+    const response: ThreadHistoryResponse = {
+      threadId: thread.id,
+      codexThreadId: thread.codexThreadId,
+      items: thread.codexThreadId === undefined || thread.codexThreadId === null
+        ? []
+        : options.readThreadHistory?.(thread.codexThreadId) ?? []
     };
     return response;
   });
@@ -108,6 +126,8 @@ type ProfileValidationResult = { ok: true } | { ok: false; code: string; message
 type ProfileValidator = {
   validateProfileForRun(name: string): ProfileValidationResult;
 };
+type SyncCodexSessions = (limit?: number) => void;
+type ReadThreadHistory = (codexThreadId: string) => ThreadHistoryResponse['items'];
 
 const WORKSPACE_MODES = ['managed', 'external'] as const;
 const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;

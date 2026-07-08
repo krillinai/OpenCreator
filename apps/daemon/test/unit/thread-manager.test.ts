@@ -74,6 +74,24 @@ describe('thread manager', () => {
     });
   });
 
+  it('expands home-relative cwd for external threads', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+    const database = openTestDatabase(tempDir);
+    const testHome = join(tempDir, 'home');
+    const manager = createThreadManager({ db: database, dataDir: tempDir, homeDir: testHome });
+
+    const thread = manager.createThread({
+      title: 'Playground',
+      workspaceMode: 'external',
+      cwd: '~/develop/clawee/playground',
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(thread.cwd).toBe(join(testHome, 'develop/clawee/playground'));
+    expect(thread.canonicalCwd).toBe(realpathSync(thread.cwd));
+  });
+
   it('archives active threads and rejects missing threads', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
     const database = openTestDatabase(tempDir);
@@ -82,5 +100,47 @@ describe('thread manager', () => {
 
     expect(manager.archiveThread(thread.id).status).toBe('archived');
     expect(() => manager.archiveThread('thread_missing')).toThrow(/THREAD_NOT_FOUND/);
+  });
+
+  it('imports Codex sessions with timestamps that sort correctly with runtime threads', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({ db: database, dataDir: tempDir });
+    manager.importCodexThread({
+      codexThreadId: 'codex-old',
+      title: 'Old Codex',
+      cwd: tempDir,
+      createdAt: '2026-07-07T00:00:00.000Z',
+      updatedAt: '2026-07-07T00:00:00.000Z'
+    });
+
+    const runtime = manager.createThread({ title: 'Runtime', workspaceMode: 'external', cwd: tempDir });
+
+    expect(manager.listThreads({ limit: 1 })[0]?.id).toBe(runtime.id);
+  });
+
+  it('refreshes imported Codex sessions when the source JSONL changes', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({ db: database, dataDir: tempDir });
+    const imported = manager.importCodexThread({
+      codexThreadId: 'codex-existing',
+      title: '旧标题',
+      cwd: tempDir,
+      createdAt: '2026-07-07T00:00:00.000Z',
+      updatedAt: '2026-07-07T00:00:00.000Z'
+    });
+
+    const refreshed = manager.importCodexThread({
+      codexThreadId: 'codex-existing',
+      title: '新标题',
+      cwd: tempDir,
+      createdAt: '2026-07-07T00:00:00.000Z',
+      updatedAt: '2026-07-07T01:00:00.000Z'
+    });
+
+    expect(refreshed.id).toBe(imported.id);
+    expect(refreshed.title).toBe('新标题');
+    expect(refreshed.updatedAt).toBe('2026-07-07 01:00:00');
   });
 });

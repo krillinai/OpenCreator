@@ -211,6 +211,35 @@ describe('timeline model', () => {
     });
   });
 
+  it('maps file_change events to visible change cards', () => {
+    const event: AgentEventEnvelope = {
+      id: 'evt_file_change',
+      runId: 'run_1',
+      seq: 9,
+      ts: '2026-07-06T00:00:00.000Z',
+      type: 'file_change',
+      payload: {
+        type: 'file_change',
+        status: 'completed',
+        changes: [
+          { path: '/repo/放假.md', kind: 'add' },
+          { path: '/repo/notes.md', kind: 'modify' }
+        ]
+      },
+      normalizerVersion: 1
+    };
+
+    expect(eventToTimelineItem(event)).toMatchObject({
+      kind: 'change_card',
+      id: 'evt_file_change',
+      runId: 'run_1',
+      title: '新增 1 个文件，修改 1 个文件',
+      path: '/repo/放假.md',
+      delta: '2 项变更',
+      source: 'runtime'
+    });
+  });
+
   it('hides unknown_event events from the main conversation timeline', () => {
     const event: AgentEventEnvelope = {
       id: 'evt_unknown',

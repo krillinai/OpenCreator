@@ -129,6 +129,29 @@ describe('scheduler service', () => {
     });
   });
 
+  it('run-now leaves timeout unspecified when schedule uses the scheduler default', () => {
+    const { runManager, service } = createFixture();
+    const schedule = service.createSchedule({
+      name: 'daily status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status'
+    });
+
+    service.runNow(schedule.id);
+
+    expect(runManager.startRun).toHaveBeenCalledWith({
+      prompt: 'Summarize project status',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      model: undefined,
+      reasoning: undefined,
+      createdBy: 'schedule',
+      sourceId: schedule.id,
+      timeoutMs: undefined
+    });
+  });
+
   it('skips run-now when skip policy has an active run', () => {
     const { runManager, service } = createFixture();
     const schedule = service.createSchedule({

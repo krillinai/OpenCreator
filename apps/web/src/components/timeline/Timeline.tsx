@@ -24,10 +24,11 @@ function isProcessTimelineItem(item: TimelineItem, finalAssistantMessageIds: Rea
     return typeof item.runId === 'string' && item.runId.length > 0 && !finalAssistantMessageIds.has(item.id);
   }
 
+  if (item.kind === 'diagnostic') return hasRunId(item);
+
   return item.kind === 'reasoning_summary'
     || item.kind === 'run_status'
     || item.kind === 'tool_step'
-    || item.kind === 'diagnostic'
     || item.kind === 'done';
 }
 
@@ -115,6 +116,12 @@ function CodePayloadBlock(props: { content: string }) {
   );
 }
 
+function shouldRenderDiagnosticPayload(item: Extract<TimelineItem, { kind: 'diagnostic' }>): boolean {
+  const content = item.content.trim();
+  if (content.length === 0) return false;
+  return content !== item.message.trim();
+}
+
 function getPayloadType(item: ProcessTimelineItem): string | undefined {
   if (!('content' in item) || typeof item.content !== 'string') return undefined;
   const payload = safeParseJson(item.content);
@@ -142,6 +149,31 @@ function buildToolNameByCallId(items: ProcessTimelineItem[]): Map<string, string
   return names;
 }
 
+function formatTerminationReason(reason: string | undefined): string {
+  switch (reason) {
+    case 'timeout':
+      return '任务运行时间过长，已自动停止';
+    case 'inactivity_timeout':
+      return '任务长时间无响应，已自动停止';
+    case 'spawn_timeout':
+      return 'Codex 启动超时';
+    case 'user_canceled':
+      return '用户已取消';
+    case 'daemon_restart':
+      return '服务重启，任务已中断';
+    case 'codex_exit_non_zero':
+      return 'Codex 执行失败';
+    case 'spawn_failed':
+      return 'Codex 启动失败';
+    case 'stream_error':
+      return 'Codex 输出异常';
+    case undefined:
+      return '未知原因';
+    default:
+      return reason;
+  }
+}
+
 function getProcessStepTitle(item: ProcessTimelineItem, toolNameByCallId = new Map<string, string>()): string {
   switch (item.kind) {
     case 'reasoning_summary':
@@ -157,8 +189,10 @@ function getProcessStepTitle(item: ProcessTimelineItem, toolNameByCallId = new M
       return item.message;
     case 'done':
       return item.status === 'canceled'
-        ? `运行已取消：${item.terminationReason ?? 'user_canceled'}`
-        : `运行失败：${item.terminationReason ?? item.status}`;
+        ? `运行已取消：${formatTerminationReason(item.terminationReason ?? 'user_canceled')}`
+        : item.status === 'failed'
+          ? formatTerminationReason(item.terminationReason)
+          : '';
     case 'run_status':
       return '';
     default:
@@ -290,9 +324,18 @@ function renderTimelineItemContent(item: TimelineItem, onOpenChange?: (changeId:
       return renderMessageContent(item);
     case 'change_card':
       return renderChangeCard(item, onOpenChange);
+    case 'diagnostic':
+      return (
+        <div className="timeline-diagnostic-content">
+          <div className="process-step-row">
+            <span className={`process-step-severity ${item.severity}`}>{item.severity}</span>
+            <span className="process-step-title">{item.message}</span>
+          </div>
+          {shouldRenderDiagnosticPayload(item) ? <CodePayloadBlock content={item.content} /> : null}
+        </div>
+      );
     case 'reasoning_summary':
     case 'tool_step':
-    case 'diagnostic':
     case 'run_status':
     case 'done':
       return null;
@@ -320,7 +363,7 @@ function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<strin
         {item.kind === 'done' ? <span className="process-step-severity error">{item.status}</span> : null}
         <span className="process-step-title">{getProcessStepTitle(item, toolNameByCallId)}</span>
       </div>
-      {item.kind === 'diagnostic' ? <CodePayloadBlock content={item.content} /> : null}
+      {item.kind === 'diagnostic' && shouldRenderDiagnosticPayload(item) ? <CodePayloadBlock content={item.content} /> : null}
       {item.kind === 'done' ? <CodePayloadBlock content={item.content} /> : null}
     </li>
   );

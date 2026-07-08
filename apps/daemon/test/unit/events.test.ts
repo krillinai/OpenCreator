@@ -49,10 +49,41 @@ describe('event parser and normalizer', () => {
     expect(event.payload).toMatchObject({ type: 'tool_result', output: '/repo', exitCode: 0 });
   });
 
-  it('normalizes public reasoning summaries', () => {
+  it('normalizes file change items as visible file_change events', () => {
     const event = normalizeCodexEvent({
       runId: 'run_1',
       seq: 3,
+      raw: {
+        type: 'item.completed',
+        item: {
+          id: 'item_2',
+          type: 'file_change',
+          changes: [
+            { path: '/repo/放假.md', kind: 'add' },
+            { path: '/repo/old.md', kind: 'delete' },
+            { path: 123, kind: 'replace' }
+          ],
+          status: 'completed'
+        }
+      }
+    });
+
+    expect(event.type).toBe('file_change');
+    expect(event.payload).toMatchObject({
+      type: 'file_change',
+      changes: [
+        { path: '/repo/放假.md', kind: 'add' },
+        { path: '/repo/old.md', kind: 'delete' },
+        { path: '', kind: 'unknown' }
+      ],
+      status: 'completed'
+    });
+  });
+
+  it('normalizes public reasoning summaries', () => {
+    const event = normalizeCodexEvent({
+      runId: 'run_1',
+      seq: 4,
       raw: {
         type: 'item.completed',
         item: {
@@ -91,6 +122,47 @@ describe('event parser and normalizer', () => {
     expect(event.payload).toMatchObject({
       type: 'reasoning_summary',
       text: '我会先读取输入，再给出结果。'
+    });
+  });
+
+  it('normalizes top-level Codex stream errors as visible runtime errors', () => {
+    const event = normalizeCodexEvent({
+      runId: 'run_1',
+      seq: 5,
+      raw: {
+        type: 'error',
+        message: 'Reconnecting... 1/5 (unexpected status 503 Service Unavailable)'
+      }
+    });
+
+    expect(event.type).toBe('error');
+    expect(event.payload).toMatchObject({
+      type: 'error',
+      code: 'CODEX_STREAM_ERROR',
+      message: 'Reconnecting... 1/5 (unexpected status 503 Service Unavailable)'
+    });
+  });
+
+  it('normalizes Codex error items as visible diagnostics', () => {
+    const event = normalizeCodexEvent({
+      runId: 'run_1',
+      seq: 6,
+      raw: {
+        type: 'item.completed',
+        item: {
+          id: 'item_1',
+          type: 'error',
+          message: 'Skill descriptions were shortened to fit the skills context budget.'
+        }
+      }
+    });
+
+    expect(event.type).toBe('diagnostic');
+    expect(event.payload).toMatchObject({
+      type: 'diagnostic',
+      code: 'CODEX_ITEM_ERROR',
+      severity: 'warning',
+      message: 'Skill descriptions were shortened to fit the skills context budget.'
     });
   });
 

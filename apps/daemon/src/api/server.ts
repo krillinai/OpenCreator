@@ -10,6 +10,8 @@ import {
 import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
+import { readCodexSessionHistory } from '../codex/sessions/history.js';
+import { scanCodexSessions } from '../codex/sessions/scanner.js';
 import { createSkillManager } from '../codex/skills/manager.js';
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
@@ -157,7 +159,21 @@ export async function buildServer(input: BuildServerInput) {
       })
   });
   await registerThreadRoutes(server, threadManager, runManager, {
-    profileValidator: profileManager
+    profileValidator: profileManager,
+    syncCodexSessions(limit) {
+      for (const session of scanCodexSessions({ codexHome, limit })) {
+        threadManager.importCodexThread({
+          codexThreadId: session.codexThreadId,
+          title: session.title,
+          cwd: session.cwd,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt
+        });
+      }
+    },
+    readThreadHistory(codexThreadId) {
+      return readCodexSessionHistory({ codexHome, codexThreadId });
+    }
   });
 
   return server;
@@ -209,7 +225,8 @@ function isAllowedWebOrigin(origin: string): boolean {
     const url = new URL(origin);
     if (url.protocol !== 'http:') return false;
     if (url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') return false;
-    return url.port === '5173' || url.port === '4173';
+    const port = Number(url.port);
+    return Number.isInteger(port) && port >= 1024 && port <= 65535;
   } catch {
     return false;
   }

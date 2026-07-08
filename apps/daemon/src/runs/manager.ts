@@ -72,8 +72,10 @@ export type RunManager = {
   subscribe(runId: string, subscriber: RunEventSubscriber): () => void;
 };
 
-const EXEC_TIMEOUT_MS = 30_000;
-const EXEC_INACTIVITY_TIMEOUT_MS = 30_000;
+const INTERACTIVE_RUN_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+const SCHEDULED_RUN_TIMEOUT_MS = 30 * 60 * 1000;
+const EXEC_INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+const EXEC_SPAWN_TIMEOUT_MS = 30_000;
 const CODEX_THREAD_ID_MISSING_MESSAGE = 'Codex stream ended without thread.started thread_id';
 
 type ActiveRun = {
@@ -317,6 +319,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     let sawTurnCompleted = false;
     let sawCodexThreadId = resolvedResumeMode === 'resume_thread';
     const codexArgs = plannedArgv;
+    const runTimeouts = resolveRunTimeouts(runInput, options);
     if (resolvedResumeMode === 'resume_thread') {
       runs.setRunCodexThreadId(id, resolvedCodexThreadId!);
     }
@@ -346,9 +349,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       cwd: runInput.cwd,
       args: codexArgs,
       prompt: runInput.prompt,
-      timeoutMs: runInput.timeoutMs ?? options.timeoutMs ?? EXEC_TIMEOUT_MS,
-      spawnTimeoutMs: options.spawnTimeoutMs,
-      inactivityTimeoutMs: options.inactivityTimeoutMs ?? EXEC_INACTIVITY_TIMEOUT_MS,
+      timeoutMs: runTimeouts.timeoutMs,
+      spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
+      inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
       onStdoutLine(line) {
         const redactedLine = redactText(line);
         stdoutLines.push(redactedLine);
@@ -431,6 +434,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           exitCode: result.exitCode,
           signal: result.signal,
           terminationReason,
+          ...runTimeouts,
           ...(errorCode === undefined ? {} : { errorCode }),
           ...(errorMessage === undefined ? {} : { error: errorMessage, errorMessage })
         });
@@ -467,11 +471,64 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         return createdRun(publicStatus);
       })
       .catch(error => {
-        const terminationReason = errorToTerminationReason(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const shutdownTimeoutAfterCompletedTurn = isShutdownTimeoutAfterCompletedTurn({
+          error,
+          sawTurnCompleted,
+          sawCodexThreadId,
+          threadId: runInput.threadId
+        });
+        if (shutdownTimeoutAfterCompletedTurn) {
+          const terminationReason: TerminationReason = 'completed';
+          writeJson(join(runDir, 'diagnostics.json'), {
+            ...buildThreadRunDiagnosticsMetadata({
+              runInput,
+              resumeMode: resolvedResumeMode,
+              codexThreadId: resolvedCodexThreadId,
+              argv: codexArgs,
+              queueState: runs.getRun(id)?.queue_state,
+              errorCode: null,
+              errorMessage: null,
+              terminationReason
+            }),
+            terminationReason,
+            ...runTimeouts,
+            warnings: [
+              {
+                code: 'CODEX_PROCESS_EXIT_TIMEOUT_AFTER_TURN_COMPLETED',
+                message: errorMessage
+              }
+            ]
+          });
+          updateStatus(id, 'succeeded', 'succeeded', {
+            terminationReason,
+            endedAt: new Date().toISOString()
+          });
+          if (error instanceof CodexExecError) {
+            for (const line of error.stdoutLines.slice(stdoutLines.length)) {
+              appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactText(line)}\n`);
+            }
+            if (stderr.length === 0 && error.stderr.length > 0) {
+              appendFileSync(join(runDir, 'stderr.redacted.log'), redactText(error.stderr));
+            }
+          }
+          if (!hasDoneEvent(id)) publishDone(id, ++seq, 'succeeded', terminationReason, publish);
+          activeRuns.delete(id);
+          if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
+          completeThreadRun(runInput.threadId, id);
+          return createdRun('succeeded');
+        }
+
+        const missingCodexThreadId = runInput.threadId !== undefined && sawTurnCompleted && !sawCodexThreadId;
+        const terminationReason = missingCodexThreadId ? 'stream_error' : errorToTerminationReason(error);
         const publicStatus: PublicRunStatus =
           terminationReason === 'user_canceled' ? 'canceled' : 'failed';
-        const errorCode = errorCodeForTermination(terminationReason);
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorCode = missingCodexThreadId
+          ? 'CODEX_THREAD_ID_MISSING'
+          : errorCodeForTermination(terminationReason);
+        const finalErrorMessage = missingCodexThreadId
+          ? CODEX_THREAD_ID_MISSING_MESSAGE
+          : errorMessage;
         writeJson(join(runDir, 'diagnostics.json'), {
           ...buildThreadRunDiagnosticsMetadata({
             runInput,
@@ -480,19 +537,29 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             argv: codexArgs,
             queueState: runs.getRun(id)?.queue_state,
             errorCode,
-            errorMessage,
+            errorMessage: finalErrorMessage,
             terminationReason
           }),
-          error: errorMessage,
-          errorMessage,
-          terminationReason
+          error: finalErrorMessage,
+          errorMessage: finalErrorMessage,
+          terminationReason,
+          ...runTimeouts
         });
         updateStatus(id, publicStatus, publicStatus, {
           terminationReason,
           errorCode,
-          errorMessage,
+          errorMessage: finalErrorMessage,
           endedAt: new Date().toISOString()
         });
+        if (missingCodexThreadId) {
+          publishError(
+            id,
+            ++seq,
+            'CODEX_THREAD_ID_MISSING',
+            CODEX_THREAD_ID_MISSING_MESSAGE,
+            publish
+          );
+        }
         if (error instanceof CodexExecError) {
           for (const line of error.stdoutLines.slice(stdoutLines.length)) {
             appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactText(line)}\n`);
@@ -501,7 +568,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             appendFileSync(join(runDir, 'stderr.redacted.log'), redactText(error.stderr));
           }
         }
-        publishDone(id, ++seq, publicStatus, terminationReason, publish);
+        if (!hasDoneEvent(id)) publishDone(id, ++seq, publicStatus, terminationReason, publish);
         activeRuns.delete(id);
         if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
         completeThreadRun(runInput.threadId, id);
@@ -566,6 +633,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     const args = resolvedResumeMode === 'resume_thread' && codexThreadId !== undefined
       ? buildCodexResumeArgs({
           codexThreadId,
+          sandbox: input.sandbox,
           model: input.model,
           reasoning: input.reasoning
         })
@@ -759,6 +827,7 @@ function buildRunArgv(
     if (codexThreadId === undefined) return undefined;
     return buildCodexResumeArgs({
       codexThreadId,
+      sandbox: input.sandbox,
       model: input.model,
       reasoning: input.reasoning
     });
@@ -956,6 +1025,18 @@ function classifyResumeFailure(stdoutLines: string[], stderr: string): 'RESUME_T
     : 'RESUME_FAILED';
 }
 
+function isShutdownTimeoutAfterCompletedTurn(input: {
+  error: unknown;
+  sawTurnCompleted: boolean;
+  sawCodexThreadId: boolean;
+  threadId?: string;
+}): boolean {
+  return input.error instanceof CodexExecError
+    && input.error.terminationReason === 'timeout'
+    && input.sawTurnCompleted
+    && (input.threadId === undefined || input.sawCodexThreadId);
+}
+
 function errorToTerminationReason(error: unknown): TerminationReason {
   if (error instanceof CodexExecError) {
     if (error.terminationReason === 'timeout') return 'timeout';
@@ -967,10 +1048,26 @@ function errorToTerminationReason(error: unknown): TerminationReason {
 }
 
 function errorCodeForTermination(reason: TerminationReason): string {
-  if (reason === 'timeout' || reason === 'inactivity_timeout') return 'CODEX_STREAM_ERROR';
-  if (reason === 'spawn_timeout') return 'SPAWN_TIMEOUT';
+  if (reason === 'timeout') return 'CODEX_EXEC_TIMEOUT';
+  if (reason === 'inactivity_timeout') return 'CODEX_EXEC_INACTIVITY_TIMEOUT';
+  if (reason === 'spawn_timeout') return 'CODEX_EXEC_SPAWN_TIMEOUT';
   if (reason === 'spawn_failed') return 'SPAWN_FAILED';
   return 'CODEX_STREAM_ERROR';
+}
+
+function resolveRunTimeouts(
+  input: CreateRunInput,
+  options: Pick<RunManagerOptions, 'timeoutMs' | 'spawnTimeoutMs' | 'inactivityTimeoutMs'>
+): { timeoutMs: number; spawnTimeoutMs: number; inactivityTimeoutMs: number } {
+  const defaultTimeoutMs = input.createdBy === 'schedule'
+    ? SCHEDULED_RUN_TIMEOUT_MS
+    : INTERACTIVE_RUN_TIMEOUT_MS;
+
+  return {
+    timeoutMs: input.timeoutMs ?? options.timeoutMs ?? defaultTimeoutMs,
+    spawnTimeoutMs: options.spawnTimeoutMs ?? EXEC_SPAWN_TIMEOUT_MS,
+    inactivityTimeoutMs: options.inactivityTimeoutMs ?? EXEC_INACTIVITY_TIMEOUT_MS
+  };
 }
 
 function mapRunRow(row: RunRow): RuntimeRun {

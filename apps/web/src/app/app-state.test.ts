@@ -14,6 +14,7 @@ describe('app state', () => {
     expect(changedProject.currentProjectId).toBe('bili');
     expect(changedProject.activeView).toBe('conversation');
     expect(changedProject.rightPanelMode).toBe('closed');
+    expect(changedProject.selectedThreadId).toBeUndefined();
 
     const settings = reduceAppState(changedProject, { type: 'open_settings' });
     expect(settings.activeView).toBe('settings');
@@ -79,6 +80,28 @@ describe('app state', () => {
 
     expect(state.selectedThreadId).toBe('thread_1');
     expect(state.activeView).toBe('conversation');
+  });
+
+  it('starts a new conversation and clears selected conversation context', () => {
+    const state = reduceAppState(
+      {
+        ...initialAppState,
+        activeView: 'plugins',
+        selectedThreadId: 'thread_1',
+        selectedRunId: 'run_1',
+        selectedChangeId: 'change_1',
+        rightPanelMode: 'run_detail'
+      },
+      {
+        type: 'new_conversation'
+      }
+    );
+
+    expect(state.activeView).toBe('conversation');
+    expect(state.selectedThreadId).toBeUndefined();
+    expect(state.selectedRunId).toBeUndefined();
+    expect(state.selectedChangeId).toBeUndefined();
+    expect(state.rightPanelMode).toBe('closed');
   });
 
   it('tracks active run by thread id and clears it on done', () => {

@@ -95,6 +95,8 @@ export type InsertThreadInput = {
   model?: string | null;
   reasoning?: string | null;
   status: 'active' | 'archived';
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type ThreadRow = {
@@ -119,10 +121,20 @@ export type ThreadRow = {
 export type ThreadRepository = {
   insertThread(input: InsertThreadInput): void;
   getThread(id: string): ThreadRow | undefined;
+  getThreadByCodexThreadId(codexThreadId: string): ThreadRow | undefined;
   listThreads(input?: { status?: 'active' | 'archived' | 'all'; limit?: number }): ThreadRow[];
   archiveThread(id: string): void;
+  updateImportedThread(input: UpdateImportedThreadInput): void;
   setCodexThreadId(threadId: string, codexThreadId: string): void;
   touchThread(threadId: string): void;
+};
+
+export type UpdateImportedThreadInput = {
+  id: string;
+  title: string;
+  cwd: string;
+  canonicalCwd: string;
+  updatedAt: string;
 };
 
 export function createRunRepository(db: Database.Database): RunRepository {
@@ -282,13 +294,15 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   const insert = db.prepare(`
     INSERT INTO threads (
       id, title, codex_thread_id, cwd, canonical_cwd, workspace_mode,
-      profile, sandbox, model, reasoning, status
+      profile, sandbox, model, reasoning, status, created_at, updated_at
     ) VALUES (
       @id, @title, @codexThreadId, @cwd, @canonicalCwd, @workspaceMode,
-      @profile, @sandbox, @model, @reasoning, @status
+      @profile, @sandbox, @model, @reasoning, @status,
+      COALESCE(@createdAt, CURRENT_TIMESTAMP), COALESCE(@updatedAt, CURRENT_TIMESTAMP)
     )
   `);
   const get = db.prepare<string>('SELECT * FROM threads WHERE id = ?');
+  const getByCodexThreadId = db.prepare<string>('SELECT * FROM threads WHERE codex_thread_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1');
   const list = db.prepare<{ status: 'active' | 'archived' | 'all'; limit: number }>(`
     SELECT * FROM threads
     WHERE (@status = 'all' OR status = @status)
@@ -301,6 +315,14 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP),
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
+  `);
+  const updateImported = db.prepare(`
+    UPDATE threads
+    SET title = @title,
+        cwd = @cwd,
+        canonical_cwd = @canonicalCwd,
+        updated_at = @updatedAt
+    WHERE id = @id
   `);
   const setCodexThreadId = db.prepare(`
     UPDATE threads
@@ -321,11 +343,16 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         codexThreadId: null,
         model: null,
         reasoning: null,
+        createdAt: null,
+        updatedAt: null,
         ...input
       });
     },
     getThread(id: string): ThreadRow | undefined {
       return get.get(id) as ThreadRow | undefined;
+    },
+    getThreadByCodexThreadId(codexThreadId: string): ThreadRow | undefined {
+      return getByCodexThreadId.get(codexThreadId) as ThreadRow | undefined;
     },
     listThreads(input = {}): ThreadRow[] {
       return list.all({
@@ -335,6 +362,9 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     },
     archiveThread(id: string): void {
       archive.run(id);
+    },
+    updateImportedThread(input: UpdateImportedThreadInput): void {
+      updateImported.run(input);
     },
     setCodexThreadId(threadId: string, codexThreadId: string): void {
       setCodexThreadId.run({ threadId, codexThreadId });

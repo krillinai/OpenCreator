@@ -1244,33 +1244,79 @@ textarea:focus-visible {
   justify-content: flex-end;
 }
 
+.composer-control-wrap {
+  position: relative;
+  min-width: 0;
+  display: inline-flex;
+}
+
 .composer-icon-button,
-.composer-send,
-.composer-pill {
-  min-height: 30px;
+.composer-select,
+.composer-model-button,
+.composer-send {
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  font-weight: 620;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 660;
+  line-height: 1;
   white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
-.composer-icon-button,
-.composer-pill {
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--text);
+.composer-icon-button:hover,
+.composer-select:hover,
+.composer-model-button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
 }
 
 .composer-icon-button {
-  width: 30px;
+  width: 32px;
   padding: 0;
+  border-radius: 999px;
+}
+
+.composer-select,
+.composer-model-button {
+  gap: 7px;
+  max-width: 188px;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+
+.composer-select span,
+.composer-model-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-select-danger-full-access {
+  border-color: rgba(181, 83, 38, 0.34);
+  background: #fff8f1;
+  color: #8a3f17;
+}
+
+.composer-select-danger-full-access:hover {
+  border-color: rgba(181, 83, 38, 0.52);
+  background: #fff2e4;
+}
+
+.composer-model-button svg:first-child {
+  fill: currentColor;
+  color: #2d6b5f;
 }
 
 .composer-send {
   width: 32px;
+  height: 32px;
   border: 1px solid #121826;
+  border-radius: 999px;
   background: #121826;
   color: #fff;
 }
@@ -1281,32 +1327,80 @@ textarea:focus-visible {
   color: var(--subtle);
 }
 
-.composer-pill {
-  padding: 0 10px;
-  color: var(--muted);
+.composer-popover {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 232px;
+  padding: 6px;
+  border: 1px solid rgba(41, 37, 32, 0.14);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
 }
 
-.composer-context {
-  min-width: 0;
-  display: inline-flex;
+.composer-right-actions .composer-popover {
+  right: 0;
+  left: auto;
+}
+
+.composer-popover-compact {
+  min-width: 168px;
+}
+
+.composer-menu-item {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
 }
 
-.composer-context span {
+.composer-menu-item:hover {
+  background: var(--surface-3);
+}
+
+.composer-menu-item > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.composer-menu-item strong {
   min-width: 0;
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 690;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-context span + span::before {
-  content: "/";
-  margin-right: 8px;
-  color: var(--subtle);
+.composer-menu-item small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-menu-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
 }
 
 .clawee-sidebar-pane,
@@ -1335,41 +1429,53 @@ textarea:focus-visible {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 14px;
-  padding: 18px 12px 12px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 18px;
+  padding: 24px 12px 12px;
   color: #292520;
 }
 
 .sidebar-primary,
-.sidebar-section-list {
+.sidebar-section-list,
+.sidebar-project-tree,
+.sidebar-project-node,
+.sidebar-conversation-tree {
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 
 .sidebar-section {
   min-width: 0;
+  min-height: 0;
   display: grid;
-  gap: 6px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
 }
 
 .sidebar-conversations {
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-self: end;
+  min-height: auto;
+  padding-bottom: 4px;
 }
 
 .sidebar-section h2 {
   margin: 0;
-  padding: 0 8px;
+  padding: 0 16px;
   color: #7b756d;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 18px;
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 22px;
 }
 
-.sidebar-conversations .sidebar-section-list {
+.sidebar-project-tree {
   min-height: 0;
   overflow: auto;
+  padding: 0 0 4px;
+}
+
+.sidebar-conversation-tree {
+  padding: 2px 0 7px;
 }
 
 .sidebar-row,
@@ -1383,11 +1489,14 @@ textarea:focus-visible {
 }
 
 .sidebar-row {
-  min-height: 30px;
-  display: flex;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
-  padding: 0 8px;
-  font-weight: 600;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 680;
 }
 
 .sidebar-row:hover,
@@ -1402,13 +1511,11 @@ textarea:focus-visible {
   background: rgba(41, 37, 32, 0.1);
 }
 
-.conversation-row {
-  min-height: 46px;
-  display: grid;
-  gap: 2px;
-  padding: 6px 8px;
+.sidebar-row svg {
+  color: #4b4741;
 }
 
+.sidebar-row span,
 .conversation-row strong,
 .conversation-row span {
   min-width: 0;
@@ -1417,9 +1524,22 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.conversation-row {
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 46px;
+}
+
+.nested-conversation-row[aria-current="page"] {
+  background: rgba(41, 37, 32, 0.1);
+}
+
 .conversation-row strong {
-  font-size: 13px;
-  font-weight: 620;
+  font-size: 13.5px;
+  font-weight: 700;
 }
 
 .conversation-row span,
@@ -1430,7 +1550,8 @@ textarea:focus-visible {
 
 .sidebar-empty {
   margin: 0;
-  padding: 8px;
+  padding: 4px 16px;
+  font-weight: 650;
 }
 
 .sidebar-bottom {
@@ -1879,12 +2000,22 @@ textarea:focus-visible {
   }
 
   .composer-toolbar {
+    gap: 8px;
     align-items: flex-start;
   }
 
-  .composer-context {
-    order: 2;
-    width: 100%;
+  .composer-left-actions {
+    flex: 1 1 100%;
+  }
+
+  .composer-right-actions {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+
+  .composer-select,
+  .composer-model-button {
+    max-width: calc(100vw - 96px);
   }
 }
 

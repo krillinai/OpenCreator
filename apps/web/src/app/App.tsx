@@ -1,4 +1,11 @@
-import type { RunDiagnosticsResponse, RunResponse } from '@clawee/protocol';
+import type {
+  CreateThreadRequest,
+  RunDiagnosticsResponse,
+  RunResponse,
+  SandboxMode,
+  ThreadHistoryItem,
+  ThreadResponse
+} from '@clawee/protocol';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
 import { Timeline } from '../components/timeline/Timeline.js';
@@ -8,8 +15,8 @@ import type { CapabilitiesViewProps } from '../features/capabilities/Capabilitie
 import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
 import { DetailPanel } from '../features/details/DetailPanel.js';
-import { createDefaultProjects, findProjectById, listRecentConversations } from '../features/projects/project-model.js';
-import { Composer } from '../features/runs/Composer.js';
+import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
+import { Composer, type ComposerRunConfig } from '../features/runs/Composer.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
@@ -23,6 +30,7 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createMockProjectService } from '../services/project-service.js';
 import { createRunService } from '../services/run-service.js';
+import { createThreadService } from '../services/thread-service.js';
 import { initialAppState, reduceAppState } from './app-state.js';
 
 type AppFileService = {
@@ -41,8 +49,7 @@ export type AppProps = {
 
 export function App(props: AppProps = {}) {
   const [state, dispatch] = useReducer(reduceAppState, initialAppState);
-  const projects = useMemo(() => createDefaultProjects(), []);
-  const conversations = useMemo(() => listRecentConversations(), []);
+  const baseProjects = useMemo(() => createDefaultProjects(), []);
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
@@ -52,11 +59,15 @@ export function App(props: AppProps = {}) {
   const [treeLoadError, setTreeLoadError] = useState<string>();
   const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig | null>(null);
+  const [runtimeThreads, setRuntimeThreads] = useState<ThreadResponse[]>([]);
+  const [threadLoadError, setThreadLoadError] = useState<string>();
+  const [threadHistoryLoadError, setThreadHistoryLoadError] = useState<string>();
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     status: 'disconnected',
     message: '正在等待本地服务'
   });
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
+  const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
   const [runtimeBusy, setRuntimeBusy] = useState(false);
   const [savedFileByPath, setSavedFileByPath] = useState<Record<string, WorkspaceFile>>({});
   const [draftContentByPath, setDraftContentByPath] = useState<Record<string, string>>({});
@@ -77,6 +88,7 @@ export function App(props: AppProps = {}) {
   const connectionConfigVersionRef = useRef(0);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
   const conversationBodyRef = useRef<HTMLDivElement | null>(null);
+  const allowInitialRuntimeProjectFocusRef = useRef(true);
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -87,9 +99,18 @@ export function App(props: AppProps = {}) {
     [runtimeClient]
   );
   const runService = useMemo(() => runtimeClient === null ? null : createRunService(runtimeClient), [runtimeClient]);
+  const threadService = useMemo(
+    () => runtimeClient === null ? null : createThreadService(runtimeClient),
+    [runtimeClient]
+  );
   const diagnosticsService = useMemo(
     () => runtimeClient === null ? null : createDiagnosticsService(runtimeClient),
     [runtimeClient]
+  );
+  const projects = useMemo(() => createProjectsForThreads(baseProjects, runtimeThreads), [baseProjects, runtimeThreads]);
+  const conversations = useMemo(
+    () => runtimeThreads.map(thread => mapThreadToConversation(thread, projects)),
+    [runtimeThreads, projects]
   );
 
   useEffect(() => {
@@ -171,6 +192,106 @@ export function App(props: AppProps = {}) {
   }, [connectionService]);
 
   useEffect(() => {
+    let canceled = false;
+
+    if (connectionState.status !== 'connected' || threadService === null) {
+      if (connectionState.status !== 'connected') setRuntimeThreads([]);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    threadService
+      .listActiveThreads()
+      .then(response => {
+        if (canceled) return;
+        setRuntimeThreads(response.threads);
+        setThreadLoadError(undefined);
+      })
+      .catch(() => {
+        if (canceled) return;
+        setThreadLoadError('无法加载历史会话');
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [connectionState.status, threadService]);
+
+  useEffect(() => {
+    if (!allowInitialRuntimeProjectFocusRef.current) return;
+    if (state.activeView !== 'conversation' || state.selectedThreadId !== undefined) return;
+    if (conversations.length === 0) return;
+
+    const currentProjectHasHistory = conversations.some(
+      conversation => conversation.projectId === state.currentProjectId
+    );
+    if (currentProjectHasHistory) {
+      allowInitialRuntimeProjectFocusRef.current = false;
+      return;
+    }
+
+    const firstRuntimeProjectId = conversations[0]?.projectId;
+    if (firstRuntimeProjectId === undefined || firstRuntimeProjectId === state.currentProjectId) return;
+
+    allowInitialRuntimeProjectFocusRef.current = false;
+    dispatch({ type: 'select_project', projectId: firstRuntimeProjectId });
+  }, [conversations, state.activeView, state.currentProjectId, state.selectedThreadId]);
+
+  useEffect(() => {
+    let canceled = false;
+    const selectedThreadId = state.selectedThreadId;
+
+    if (selectedThreadId === undefined || threadService === null || connectionState.status !== 'connected') {
+      setThreadHistoryLoadError(undefined);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    const selectedThread = runtimeThreads.find(thread => thread.id === selectedThreadId);
+    if (selectedThread === undefined) {
+      return () => {
+        canceled = true;
+      };
+    }
+    if (selectedThread.codexThreadId === undefined || selectedThread.codexThreadId === null) {
+      setThreadHistoryLoadError(undefined);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    setTimelineItems([
+      {
+        kind: 'run_status',
+        id: `history_loading_${selectedThreadId}`,
+        label: 'running',
+        content: JSON.stringify({ type: 'history_loading', threadId: selectedThreadId }),
+        source: 'runtime'
+      }
+    ]);
+    setThreadHistoryLoadError(undefined);
+
+    threadService
+      .getThreadHistory(selectedThreadId)
+      .then(response => {
+        if (canceled) return;
+        setTimelineItems(mapHistoryItemsToTimelineItems(response.items));
+        setThreadHistoryLoadError(undefined);
+      })
+      .catch(() => {
+        if (canceled) return;
+        setTimelineItems([]);
+        setThreadHistoryLoadError('无法加载聊天历史');
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [connectionState.status, runtimeThreads, state.selectedThreadId, threadService]);
+
+  useEffect(() => {
     const body = conversationBodyRef.current;
     if (body === null) return;
     if (typeof body.scrollTo === 'function') {
@@ -246,7 +367,6 @@ export function App(props: AppProps = {}) {
   const runDiagnostics = state.selectedRunId === undefined ? undefined : runDiagnosticsById[state.selectedRunId];
   const currentProject = findProjectById(projects, state.currentProjectId) ?? projects[0];
   const currentProjectName = currentProject?.name ?? 'content-design';
-  const projectConversations = conversations.filter(conversation => conversation.projectId === state.currentProjectId);
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
   const runtimeStatus = mapRuntimeStatus(connectionState);
 
@@ -298,9 +418,14 @@ export function App(props: AppProps = {}) {
     readHostRuntimeConfig(loadVersion, () => false);
   }
 
-  function submitPrompt(prompt: string) {
-    if (connectionState.status === 'connected' && runService !== null && connectionConfigRef.current !== null) {
-      void submitRuntimePrompt(prompt);
+  function submitPrompt(prompt: string, config?: ComposerRunConfig) {
+    if (
+      connectionState.status === 'connected'
+      && runService !== null
+      && threadService !== null
+      && connectionConfigRef.current !== null
+    ) {
+      void submitRuntimePrompt(prompt, config);
       return;
     }
 
@@ -317,10 +442,40 @@ export function App(props: AppProps = {}) {
     ]);
   }
 
-  async function submitRuntimePrompt(prompt: string) {
-    if (runService === null || connectionConfigRef.current === null) return;
+  function startNewConversation() {
+    allowInitialRuntimeProjectFocusRef.current = false;
+    sseAbortControllerRef.current?.abort();
+    setTimelineItems([]);
+    setRuntimeBusy(false);
+    dispatch({ type: 'new_conversation' });
+  }
+
+  function selectProject(projectId: string) {
+    allowInitialRuntimeProjectFocusRef.current = false;
+    sseAbortControllerRef.current?.abort();
+    setTimelineItems([]);
+    setRuntimeBusy(false);
+    dispatch({ type: 'select_project', projectId });
+  }
+
+  function selectConversation(conversationId: string) {
+    allowInitialRuntimeProjectFocusRef.current = false;
+    sseAbortControllerRef.current?.abort();
+    setTimelineItems([]);
+    setRuntimeBusy(false);
+    const conversation = conversations.find(item => item.id === conversationId);
+    if (conversation !== undefined && conversation.projectId !== state.currentProjectId) {
+      dispatch({ type: 'select_project', projectId: conversation.projectId });
+    }
+    dispatch({ type: 'select_thread', threadId: conversationId });
+  }
+
+  async function submitRuntimePrompt(prompt: string, config?: ComposerRunConfig) {
+    if (runService === null || threadService === null || connectionConfigRef.current === null) return;
     if (runtimeBusy) return;
 
+    const effectiveConfig = config ?? composerRunConfig ?? defaultComposerRunConfig(currentProject);
+    setComposerRunConfig(effectiveConfig);
     setRuntimeBusy(true);
     setTimelineItems(previous => [
       ...previous,
@@ -339,7 +494,23 @@ export function App(props: AppProps = {}) {
           source: 'runtime'
         }
       ]);
-      const run = await runService.startStandaloneRun({ prompt });
+      const resolvedThread = await resolveThreadIdForPrompt(prompt, effectiveConfig);
+      const runInput: {
+        threadId: string;
+        prompt: string;
+        resumeMode: 'auto';
+        model?: string;
+        reasoning?: NonNullable<ComposerRunConfig['reasoning']>;
+      } = {
+        threadId: resolvedThread.threadId,
+        prompt,
+        resumeMode: 'auto'
+      };
+      if (resolvedThread.created) {
+        if (effectiveConfig.model !== null) runInput.model = effectiveConfig.model;
+        if (effectiveConfig.reasoning !== null) runInput.reasoning = effectiveConfig.reasoning;
+      }
+      const run = await runService.startThreadRun(runInput);
       handleRunStarted(run);
       await subscribeToRunEvents(run.id, connectionConfigRef.current);
     } catch (error) {
@@ -359,6 +530,19 @@ export function App(props: AppProps = {}) {
     } finally {
       if (mountedRef.current) setRuntimeBusy(false);
     }
+  }
+
+  async function resolveThreadIdForPrompt(
+    prompt: string,
+    config: ComposerRunConfig
+  ): Promise<{ threadId: string; created: boolean }> {
+    if (state.selectedThreadId !== undefined) return { threadId: state.selectedThreadId, created: false };
+    if (threadService === null) throw new Error('Thread service is not available');
+
+    const created = await threadService.createThread(buildThreadRequest(prompt, currentProject, config));
+    setRuntimeThreads(previous => upsertThread(previous, created.thread));
+    dispatch({ type: 'select_thread', threadId: created.thread.id });
+    return { threadId: created.thread.id, created: true };
   }
 
   function handleRunStarted(run: RunResponse) {
@@ -491,6 +675,8 @@ export function App(props: AppProps = {}) {
       />
       <div className="conversation-body" ref={conversationBodyRef}>
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
+        {threadLoadError ? <p className="inline-error">{threadLoadError}</p> : null}
+        {threadHistoryLoadError ? <p className="inline-error">{threadHistoryLoadError}</p> : null}
         {timelineItems.length === 0 ? (
           <ConversationEmptyState projectName={currentProjectName} />
         ) : (
@@ -500,9 +686,9 @@ export function App(props: AppProps = {}) {
       <div className="composer-wrap">
         <Composer
           projectName={currentProjectName}
-          branchName="open-clawee"
-          permission={currentProject?.sandbox ?? 'follow-global'}
-          modelLabel="5.5 超高"
+          permission={(composerRunConfig ?? defaultComposerRunConfig(currentProject)).permission}
+          model={(composerRunConfig ?? defaultComposerRunConfig(currentProject)).model}
+          reasoning={(composerRunConfig ?? defaultComposerRunConfig(currentProject)).reasoning}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
           onSubmit={submitPrompt}
@@ -518,15 +704,13 @@ export function App(props: AppProps = {}) {
       sidebar={
         <ClaweeSidebar
           projects={projects}
-          conversations={projectConversations}
+          conversations={conversations}
           currentProjectId={state.currentProjectId}
+          selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
-          onNewConversation={() => {
-            dispatch({ type: 'set_active_view', activeView: 'conversation' });
-            dispatch({ type: 'close_detail' });
-          }}
-          onSelectProject={(projectId) => dispatch({ type: 'select_project', projectId })}
-          onSelectConversation={(conversationId) => dispatch({ type: 'select_thread', threadId: conversationId })}
+          onNewConversation={startNewConversation}
+          onSelectProject={selectProject}
+          onSelectConversation={selectConversation}
           onOpenView={(activeView) => dispatch({ type: 'set_active_view', activeView })}
           onOpenSettings={() => dispatch({ type: 'open_settings' })}
           onCheckUpdates={() => dispatch({ type: 'open_settings' })}
@@ -606,6 +790,252 @@ function getPlaceholderLabel(activeView: 'search' | 'schedules' | 'plugins') {
     case 'plugins':
       return '插件';
   }
+}
+
+function createProjectsForThreads(baseProjects: ClaweeProject[], threads: ThreadResponse[]): ClaweeProject[] {
+  const projectById = new Map(baseProjects.map(project => [project.id, project]));
+
+  for (const thread of threads) {
+    const projectId = projectIdForThread(thread, baseProjects);
+    if (projectById.has(projectId)) continue;
+
+    projectById.set(projectId, {
+      id: projectId,
+      name: formatProjectName(thread.cwd),
+      cwd: thread.cwd,
+      sandbox: thread.sandbox === 'danger-full-access' || thread.sandbox === 'workspace-write'
+        ? thread.sandbox
+        : 'follow-global',
+      profile: thread.profile,
+      model: thread.model ?? null,
+      reasoning: thread.reasoning ?? null
+    });
+  }
+
+  return Array.from(projectById.values());
+}
+
+function mapThreadToConversation(thread: ThreadResponse, projects: ClaweeProject[]): ClaweeConversation {
+  return {
+    id: thread.id,
+    projectId: projectIdForThread(thread, projects),
+    title: thread.title ?? thread.codexThreadId ?? thread.id,
+    updatedLabel: formatRelativeTime(thread.updatedAt)
+  };
+}
+
+function projectIdForThread(thread: ThreadResponse, projects: ClaweeProject[]): string {
+  const matched = projects.find(project => pathsLookRelated(project.cwd, thread.cwd));
+  return matched?.id ?? projectIdFromCwd(thread.cwd);
+}
+
+function pathsLookRelated(left: string, right: string): boolean {
+  const normalizedLeft = normalizePathForCompare(left);
+  const normalizedRight = normalizePathForCompare(right);
+  return normalizedLeft === normalizedRight
+    || normalizedLeft.endsWith(`/${lastPathSegment(normalizedRight)}`)
+    || normalizedRight.endsWith(`/${lastPathSegment(normalizedLeft)}`);
+}
+
+function normalizePathForCompare(path: string): string {
+  return path.replace(/^~(?=\/)/, '').replace(/\/+$/, '');
+}
+
+function projectIdFromCwd(cwd: string): string {
+  const name = formatProjectName(cwd);
+  return `cwd-${name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'project'}`;
+}
+
+function formatProjectName(cwd: string): string {
+  return cwd.split('/').filter(Boolean).at(-1) ?? '项目';
+}
+
+function lastPathSegment(path: string): string {
+  return path.split('/').filter(Boolean).at(-1) ?? path;
+}
+
+function formatRelativeTime(iso: string): string {
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) return '';
+
+  const diffMs = Math.max(0, Date.now() - timestamp);
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diffMs < minute) return '刚刚';
+  if (diffMs < hour) return `${Math.floor(diffMs / minute)}分钟`;
+  if (diffMs < day) return `${Math.floor(diffMs / hour)}小时`;
+  if (diffMs < 7 * day) return `${Math.floor(diffMs / day)}天`;
+  return `${Math.floor(diffMs / (7 * day))}周`;
+}
+
+function buildThreadRequest(prompt: string, project: ClaweeProject | undefined, config: ComposerRunConfig): CreateThreadRequest {
+  const request: CreateThreadRequest = {
+    title: prompt.trim().slice(0, 80) || '新对话',
+    cwd: project?.cwd,
+    workspaceMode: 'external',
+    profile: project?.profile,
+    sandbox: toRuntimeSandbox(config.permission)
+  };
+  if (config.model !== null) request.model = config.model;
+  if (config.reasoning !== null) {
+    request.reasoning = config.reasoning;
+  }
+  return request;
+}
+
+function defaultComposerRunConfig(project?: ClaweeProject): ComposerRunConfig {
+  return {
+    permission: project?.sandbox ?? 'follow-global',
+    model: project?.model ?? null,
+    reasoning: (project?.reasoning ?? null) as ComposerRunConfig['reasoning']
+  };
+}
+
+function toRuntimeSandbox(permission: ClaweeProject['sandbox'] | undefined): SandboxMode {
+  if (permission === 'danger-full-access' || permission === 'workspace-write') return permission;
+  return 'read-only';
+}
+
+function upsertThread(threads: ThreadResponse[], thread: ThreadResponse): ThreadResponse[] {
+  const withoutThread = threads.filter(item => item.id !== thread.id);
+  return [thread, ...withoutThread];
+}
+
+function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {
+  let syntheticTurnSeq = 0;
+  let currentRunId: string | undefined;
+  let currentRunHasDone = false;
+  const timelineItems: TimelineItem[] = [];
+
+  function closeCurrentRun() {
+    if (currentRunId === undefined || currentRunHasDone) return;
+    timelineItems.push({
+      id: `${currentRunId}_done`,
+      runId: currentRunId,
+      kind: 'done',
+      status: 'succeeded',
+      content: JSON.stringify({ type: 'done', status: 'succeeded' }),
+      source: 'runtime'
+    });
+    currentRunHasDone = true;
+  }
+
+  for (const item of items) {
+    if (item.type === 'user_message') {
+      closeCurrentRun();
+      syntheticTurnSeq += 1;
+      currentRunId = item.turnId === undefined ? `history_turn_${syntheticTurnSeq}` : `history_${item.turnId}`;
+      currentRunHasDone = false;
+      timelineItems.push(mapHistoryItemToTimelineItem(item));
+      continue;
+    }
+
+    if (item.type === 'done') {
+      timelineItems.push(mapHistoryItemToTimelineItem(item, currentRunId));
+      currentRunHasDone = true;
+      currentRunId = undefined;
+      continue;
+    }
+
+    timelineItems.push(mapHistoryItemToTimelineItem(item, item.turnId === undefined ? currentRunId : undefined));
+  }
+
+  closeCurrentRun();
+  return timelineItems;
+}
+
+function mapHistoryItemToTimelineItem(item: ThreadHistoryItem, fallbackRunId?: string): TimelineItem {
+  const runId = item.turnId === undefined ? fallbackRunId : `history_${item.turnId}`;
+  const base = {
+    id: item.id,
+    ...(runId === undefined ? {} : { runId })
+  };
+
+  switch (item.type) {
+    case 'user_message':
+      return {
+        ...base,
+        kind: 'user_message',
+        text: item.text,
+        source: 'runtime'
+      };
+    case 'assistant_message':
+      return {
+        ...base,
+        kind: 'assistant_message',
+        text: item.text,
+        content: JSON.stringify(item),
+        source: 'runtime'
+      };
+    case 'reasoning_summary':
+      return {
+        ...base,
+        kind: 'reasoning_summary',
+        text: item.text,
+        content: JSON.stringify(item),
+        source: 'runtime'
+      };
+    case 'tool_use':
+      return {
+        ...base,
+        kind: 'tool_step',
+        name: item.name,
+        content: JSON.stringify({ type: 'tool_use', name: item.name, input: item.input }),
+        source: 'runtime'
+      };
+    case 'tool_result':
+      return {
+        ...base,
+        kind: 'tool_step',
+        name: item.name,
+        content: JSON.stringify({ type: 'tool_result', name: item.name, output: item.output, isError: item.isError }),
+        source: 'runtime'
+      };
+    case 'file_change':
+      return {
+        ...base,
+        kind: 'change_card',
+        title: formatHistoryFileChangeTitle(item.changes),
+        path: item.changes.find(change => change.path.length > 0)?.path ?? '文件变更',
+        delta: `${item.changes.length} 项变更`,
+        source: 'runtime'
+      };
+    case 'done':
+      return {
+        ...base,
+        kind: 'done',
+        status: item.status,
+        content: JSON.stringify(item),
+        source: 'runtime'
+      };
+    default: {
+      const _exhaustive: never = item;
+      return _exhaustive;
+    }
+  }
+}
+
+function formatHistoryFileChangeTitle(
+  changes: Array<{ kind: 'add' | 'modify' | 'delete' | 'unknown' }>
+): string {
+  if (changes.length === 0) return '文件变更';
+
+  const counts = new Map<'add' | 'modify' | 'delete' | 'unknown', number>();
+  for (const change of changes) counts.set(change.kind, (counts.get(change.kind) ?? 0) + 1);
+
+  return (['add', 'modify', 'delete', 'unknown'] as const)
+    .map(kind => {
+      const count = counts.get(kind) ?? 0;
+      if (count === 0) return undefined;
+      if (kind === 'add') return `新增 ${count} 个文件`;
+      if (kind === 'modify') return `修改 ${count} 个文件`;
+      if (kind === 'delete') return `删除 ${count} 个文件`;
+      return `变更 ${count} 个文件`;
+    })
+    .filter((part): part is string => part !== undefined)
+    .join('，');
 }
 
 function mapRuntimeStatus(connectionState: ConnectionState): RuntimeStatus {

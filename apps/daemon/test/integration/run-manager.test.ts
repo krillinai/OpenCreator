@@ -84,6 +84,73 @@ async function waitForRunStatus(
 }
 
 describe('run manager', () => {
+  it('uses long-running friendly defaults for interactive codex runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex_thread_1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'interactive prompt',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+
+    expect(run.status).toBe('succeeded');
+    const diagnostics = JSON.parse(
+      readFileSync(join(tempDir, 'runs', run.id, 'diagnostics.json'), 'utf8')
+    ) as { timeoutMs?: number; inactivityTimeoutMs?: number; spawnTimeoutMs?: number };
+    expect(diagnostics.timeoutMs).toBe(7_200_000);
+    expect(diagnostics.inactivityTimeoutMs).toBe(600_000);
+    expect(diagnostics.spawnTimeoutMs).toBe(30_000);
+  });
+
+  it('uses conservative defaults for scheduled codex runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex_thread_1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'scheduled prompt',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      createdBy: 'schedule'
+    });
+
+    expect(run.status).toBe('succeeded');
+    const diagnostics = JSON.parse(
+      readFileSync(join(tempDir, 'runs', run.id, 'diagnostics.json'), 'utf8')
+    ) as { timeoutMs?: number; inactivityTimeoutMs?: number; spawnTimeoutMs?: number };
+    expect(diagnostics.timeoutMs).toBe(1_800_000);
+    expect(diagnostics.inactivityTimeoutMs).toBe(600_000);
+    expect(diagnostics.spawnTimeoutMs).toBe(30_000);
+  });
+
   it('persists schedule source metadata and per-run timeout', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
     const fake = createFakeCodex(tempDir, {
@@ -154,6 +221,68 @@ describe('run manager', () => {
 
     expect(run.status).toBe('failed');
     expect(manager.getRun(run.id)?.terminationReason).toBe('timeout');
+    expect(manager.getRun(run.id)?.errorCode).toBe('CODEX_EXEC_TIMEOUT');
+  });
+
+  it('maps inactivity timeout to a distinct codex error code', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 5000,
+      inactivityTimeoutMs: 50
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'scheduled prompt',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)).toMatchObject({
+      terminationReason: 'inactivity_timeout',
+      errorCode: 'CODEX_EXEC_INACTIVITY_TIMEOUT'
+    });
+  });
+
+  it('maps spawn timeout to a distinct codex error code', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      initialDelayMs: 5000
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 5000,
+      spawnTimeoutMs: 50,
+      inactivityTimeoutMs: 5000
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'scheduled prompt',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)).toMatchObject({
+      terminationReason: 'spawn_timeout',
+      errorCode: 'CODEX_EXEC_SPAWN_TIMEOUT'
+    });
   });
 
   it('creates a run and writes redacted raw/events/stderr/meta files', async () => {
@@ -377,9 +506,46 @@ describe('run manager', () => {
     const run = await manager.createAndRun(threadRun(thread, 'continue'));
 
     expect(run.status).toBe('succeeded');
+    const argv = fake.readArgv();
+    expect(argv.slice(0, 4)).toEqual(['exec', 'resume', '--json', '--skip-git-repo-check']);
+    expect(argv).toEqual(expect.arrayContaining(['-c', 'sandbox_mode="read-only"']));
+    expect(argv.at(-1)).toBe('codex-thread-1');
+    const meta = JSON.parse(readFileSync(join(tempDir, 'runs', run.id, 'meta.json'), 'utf8')) as {
+      args: string[];
+    };
+    expect(meta.args).toEqual(argv);
+    expect(meta.args).toEqual(expect.arrayContaining(['-c', 'sandbox_mode="read-only"']));
+  });
+
+  it('uses the thread sandbox override for workspace-write resumed runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = threadManager.createThread({
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+    threadManager.setCodexThreadId(thread.id, 'codex-thread-1');
+
+    const run = await manager.createAndRun(threadRun(thread, 'continue'));
+
+    expect(run.status).toBe('succeeded');
     expect(fake.readArgv()).toEqual(
-      expect.arrayContaining(['exec', 'resume', 'codex-thread-1', '--json'])
+      expect.arrayContaining(['exec', 'resume', '-c', 'sandbox_mode="workspace-write"'])
     );
+    expect(fake.readArgv()).not.toContain('--sandbox');
   });
 
   it('returns threadId for immediate and completed thread runs', async () => {
@@ -656,6 +822,89 @@ describe('run manager', () => {
 
     expect(run.status).toBe('failed');
     expect(manager.getRun(run.id)?.terminationReason).toBe('timeout');
+  });
+
+  it('keeps a completed turn successful when the codex process times out during shutdown', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'ok' } },
+        { type: 'turn.completed' }
+      ],
+      hang: true
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 2000,
+      inactivityTimeoutMs: 5000
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      threadId: 'thread_1',
+      resumeMode: 'auto'
+    });
+
+    expect(run.status).toBe('succeeded');
+    expect(manager.getRun(run.id)).toMatchObject({
+      status: 'succeeded',
+      terminationReason: 'completed'
+    });
+    expect(manager.getRun(run.id)?.errorCode).toBeUndefined();
+    const doneEvents = manager.listEvents(run.id).filter(event => event.type === 'done');
+    expect(doneEvents).toHaveLength(1);
+    expect(doneEvents[0]).toMatchObject({
+      payload: { status: 'succeeded', terminationReason: 'completed' }
+    });
+    expect(readFileSync(join(tempDir, 'runs', run.id, 'diagnostics.json'), 'utf8')).toContain(
+      'CODEX_PROCESS_EXIT_TIMEOUT_AFTER_TURN_COMPLETED'
+    );
+  });
+
+  it('does not hide a missing thread id when a completed thread run times out during shutdown', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { type: 'agent_message', text: 'ok' } },
+        { type: 'turn.completed' }
+      ],
+      hang: true
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      timeoutMs: 2000,
+      inactivityTimeoutMs: 5000
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'hello',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      threadId: 'thread_1',
+      resumeMode: 'auto'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)).toMatchObject({
+      status: 'failed',
+      terminationReason: 'stream_error',
+      errorCode: 'CODEX_THREAD_ID_MISSING'
+    });
   });
 
   it('marks a run failed on inactivity timeout', async () => {

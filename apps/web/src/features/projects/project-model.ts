@@ -6,8 +6,8 @@ export type ClaweeProject = {
   cwd: string;
   sandbox: ProjectPermission;
   profile: string;
-  model: string;
-  reasoning: string;
+  model: string | null;
+  reasoning: string | null;
 };
 
 export type ClaweeConversation = {
@@ -19,8 +19,8 @@ export type ClaweeConversation = {
 
 const defaultRuntime = {
   profile: 'default',
-  model: '5.5',
-  reasoning: 'xhigh'
+  model: null,
+  reasoning: null
 } as const;
 
 export function createDefaultProjects(): ClaweeProject[] {

@@ -16,6 +16,7 @@ export type AppState = {
 };
 
 export type AppAction =
+  | { type: 'new_conversation' }
   | { type: 'select_project'; projectId: string }
   | { type: 'set_active_view'; activeView: ActiveView }
   | { type: 'open_settings' }
@@ -43,6 +44,18 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
         ...state,
         currentProjectId: action.projectId,
         activeView: 'conversation',
+        selectedThreadId: undefined,
+        selectedRunId: undefined,
+        selectedChangeId: undefined,
+        rightPanelMode: 'closed'
+      };
+    case 'new_conversation':
+      return {
+        ...state,
+        activeView: 'conversation',
+        selectedThreadId: undefined,
+        selectedRunId: undefined,
+        selectedChangeId: undefined,
         rightPanelMode: 'closed'
       };
     case 'set_active_view':

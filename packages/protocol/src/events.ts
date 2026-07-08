@@ -18,6 +18,7 @@ export type AgentEventType =
   | 'assistant_message'
   | 'tool_use'
   | 'tool_result'
+  | 'file_change'
   | 'usage'
   | 'diagnostic'
   | 'error'
@@ -35,6 +36,11 @@ export type AgentEventPayload =
   | { type: 'assistant_message'; text: string; format: 'plain_text'; delivery: 'message' | 'delta' }
   | { type: 'tool_use'; toolCallId: string; name: string; input: { command?: string; args?: string[]; raw?: unknown } }
   | { type: 'tool_result'; toolCallId: string; output: string; exitCode?: number | null; isError: boolean }
+  | {
+      type: 'file_change';
+      changes: Array<{ path: string; kind: 'add' | 'modify' | 'delete' | 'unknown' }>;
+      status: 'in_progress' | 'completed' | 'failed' | 'unknown';
+    }
   | {
       type: 'usage';
       inputTokens?: number;
