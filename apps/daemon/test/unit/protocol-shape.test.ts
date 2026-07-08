@@ -9,7 +9,13 @@ import type {
   RunRequest,
   RunScheduleNowResponse,
   RuntimeErrorCode,
+  WorkspaceDirectoryResponse,
+  WorkspaceFileContentResponse,
+  WorkspaceFileKind,
   WorkspaceFileMeta,
+  WorkspaceFileNode,
+  WorkspaceFileRevealRequest,
+  WorkspaceFileSaveRequest,
   ScheduleDetailResponse,
   ScheduleOperationListResponse,
   ScheduleResponse
@@ -206,6 +212,106 @@ describe('protocol shape', () => {
     expect(meta.kind).toBe('markdown');
   });
 
+  it('allows workspace file directory and file node shapes', () => {
+    const directoryNode: WorkspaceFileNode = {
+      path: 'docs',
+      name: 'docs',
+      depth: 0,
+      type: 'directory',
+      hasChildren: true,
+      childrenLoaded: false,
+      meta: {
+        kind: 'directory',
+        mime: 'inode/directory',
+        size: 0,
+        mtimeMs: 1000,
+        previewable: false,
+        editable: false,
+        readonly: true,
+        reason: 'directory'
+      }
+    };
+    const fileNode: WorkspaceFileNode = {
+      path: 'docs/readme.md',
+      name: 'readme.md',
+      depth: 1,
+      type: 'file',
+      meta: {
+        kind: 'markdown',
+        mime: 'text/markdown; charset=utf-8',
+        size: 12,
+        mtimeMs: 1000,
+        previewable: true,
+        editable: true,
+        readonly: false
+      }
+    };
+
+    expect(directoryNode.childrenLoaded).toBe(false);
+    expect(fileNode.meta?.kind).toBe('markdown');
+  });
+
+  it('allows workspace directory response shape', () => {
+    const response: WorkspaceDirectoryResponse = {
+      threadId: 'thread_1',
+      rootName: 'workspace',
+      rootPathLabel: '/',
+      path: '/',
+      suggestedOpenPath: 'docs/readme.md',
+      truncated: false,
+      warnings: [],
+      nodes: [
+        {
+          path: 'docs',
+          name: 'docs',
+          depth: 0,
+          type: 'directory',
+          hasChildren: true,
+          childrenLoaded: false
+        }
+      ]
+    };
+
+    expect(response.threadId).toBe('thread_1');
+    expect(response.nodes[0]?.type).toBe('directory');
+  });
+
+  it('allows workspace file content, save and reveal request shapes', () => {
+    const contentResponse: WorkspaceFileContentResponse = {
+      meta: {
+        path: 'docs/readme.md',
+        name: 'readme.md',
+        type: 'file',
+        kind: 'markdown',
+        mime: 'text/markdown; charset=utf-8',
+        size: 12,
+        mtimeMs: 1000,
+        versionToken: '1000:12:sha256:abc',
+        previewable: true,
+        editable: true,
+        readonly: false
+      },
+      content: '# readme',
+      encoding: 'utf8'
+    };
+    const saveRequest: WorkspaceFileSaveRequest = {
+      threadId: 'thread_1',
+      path: 'docs/readme.md',
+      content: '# updated',
+      baseVersionToken: '1000:12:sha256:abc',
+      overwriteConflict: false
+    };
+    const revealRequest: WorkspaceFileRevealRequest = {
+      threadId: 'thread_1',
+      path: 'docs/readme.md',
+      mode: 'file'
+    };
+
+    expect(contentResponse.encoding).toBe('utf8');
+    expect(saveRequest.baseVersionToken).toBe('1000:12:sha256:abc');
+    expect(revealRequest.mode).toBe('file');
+  });
+
   it('keeps workspace file runtime error codes closed', () => {
     const codes: RuntimeErrorCode[] = [
       'WORKSPACE_NOT_FOUND',
@@ -222,5 +328,22 @@ describe('protocol shape', () => {
     ];
 
     expect(codes).toHaveLength(11);
+  });
+
+  it('keeps workspace file kinds closed', () => {
+    const kinds: WorkspaceFileKind[] = [
+      'directory',
+      'markdown',
+      'text',
+      'json',
+      'code',
+      'html',
+      'image',
+      'pdf',
+      'binary',
+      'unknown'
+    ];
+
+    expect(kinds).toHaveLength(10);
   });
 });

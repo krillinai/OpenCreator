@@ -41,7 +41,7 @@ export type WorkspaceFileKind =
 export type WorkspaceFileMeta = {
   path: string;
   name: string;
-  type: 'file';
+  type: 'file' | 'directory';
   kind: WorkspaceFileKind;
   mime: string;
   size: number;
@@ -50,57 +50,70 @@ export type WorkspaceFileMeta = {
   previewable: boolean;
   editable: boolean;
   readonly: boolean;
+  reason?: string;
 };
+
+export type WorkspaceFileMetaSummary = Pick<
+  WorkspaceFileMeta,
+  'kind' | 'mime' | 'size' | 'mtimeMs' | 'previewable' | 'editable' | 'readonly' | 'reason'
+>;
 
 export type WorkspaceFileNode =
   | {
       path: string;
       name: string;
+      depth: number;
       type: 'directory';
-      kind: 'directory';
-      hasChildren: boolean;
-      childrenLoaded: boolean;
-      meta: WorkspaceFileMeta;
+      hasChildren?: boolean;
+      childrenLoaded?: false;
+      meta?: WorkspaceFileMetaSummary;
     }
   | {
       path: string;
       name: string;
+      depth: number;
       type: 'file';
-      kind: Exclude<WorkspaceFileKind, 'directory'>;
-      meta: WorkspaceFileMeta;
+      meta?: WorkspaceFileMetaSummary;
     };
 
 export type WorkspaceDirectoryResponse = {
+  threadId: string;
+  rootName: string;
+  rootPathLabel: string;
   path: string;
-  entries: WorkspaceFileNode[];
+  suggestedOpenPath?: string;
+  truncated: boolean;
+  warnings: string[];
+  nodes: WorkspaceFileNode[];
 };
 
 export type WorkspaceFileContentResponse = {
-  path: string;
   meta: WorkspaceFileMeta;
   content: string;
-  encoding: 'utf-8' | 'base64';
+  encoding: 'utf8';
 };
 
 export type WorkspaceFileSaveRequest = {
+  threadId: string;
   path: string;
   content: string;
-  versionToken: string;
+  baseVersionToken: string;
+  overwriteConflict?: boolean;
 };
 
 export type WorkspaceFileSaveResponse = {
-  path: string;
   meta: WorkspaceFileMeta;
   saved: true;
 };
 
 export type WorkspaceFileRevealRequest = {
-  path: string;
+  threadId: string;
+  path?: string;
+  mode: 'file' | 'directory';
 };
 
 export type WorkspaceFileRevealResponse = {
-  path: string;
-  revealed: boolean;
+  ok: true;
 };
 
 export type DiagnosticFileResponse = {
