@@ -904,6 +904,118 @@ textarea:focus-visible {
   text-overflow: ellipsis;
 }
 
+.file-tree-panel {
+  width: min(100%, 360px);
+  min-width: 280px;
+  max-width: 360px;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--surface);
+}
+
+.file-search {
+  position: relative;
+  display: block;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.file-search-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.file-search-icon {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-35%);
+  color: var(--subtle);
+  pointer-events: none;
+}
+
+.file-search input {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px 0 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.file-tree-list,
+.file-tree-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.file-tree-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.file-tree-row {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 0;
+  border-radius: 8px;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.file-tree-row:hover {
+  background: var(--surface-3);
+}
+
+.file-tree-row[aria-current="page"] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.file-tree-row-leading {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--subtle);
+}
+
+.file-tree-row-leading .is-expanded {
+  transform: rotate(90deg);
+}
+
+.file-tree-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-tree-empty {
+  margin: 0;
+  padding: 18px 14px;
+  color: var(--muted);
+}
+
+.file-tree-warning {
+  margin: 2px 0 6px;
+  color: var(--warning);
+  font-size: 12px;
+}
+
 .run-detail {
   min-height: 0;
   padding: 16px;
