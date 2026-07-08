@@ -681,10 +681,11 @@ export function App(props: AppProps = {}) {
         onOpenLocation={() => dispatch({ type: 'open_files' })}
         onToggleDetail={() => {
           if (state.rightPanelMode === 'closed') {
-            dispatch({ type: 'select_file', path: selectedFilePath });
-          } else {
-            dispatch({ type: 'close_detail' });
+            dispatch({ type: 'select_change', changeId: 'session_overview' });
+            return;
           }
+
+          dispatch({ type: 'close_detail' });
         }}
       />
       <div className="conversation-body" ref={conversationBodyRef}>

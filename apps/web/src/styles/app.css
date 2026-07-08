@@ -1537,7 +1537,7 @@ textarea:focus-visible {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
 }
 
 .file-workspace-editor {
@@ -1545,7 +1545,7 @@ textarea:focus-visible {
   min-height: 0;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   background: var(--surface);
 }
 
@@ -2400,7 +2400,7 @@ textarea:focus-visible {
   }
 
   .file-workspace-body {
-    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 240px);
   }
 
   .conversation-empty-state {
@@ -2487,7 +2487,7 @@ textarea:focus-visible {
   }
 
   .file-workspace-editor {
-    border-left: 0;
+    border-right: 0;
     border-bottom: 1px solid var(--border);
   }
 

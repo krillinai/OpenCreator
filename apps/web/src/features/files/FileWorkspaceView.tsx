@@ -361,17 +361,6 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
       />
 
       <div className="file-workspace-body">
-        <ProjectFileTree
-          nodes={nodes}
-          selectedPath={activePath ?? ''}
-          expandedPaths={expandedPaths}
-          search={search}
-          truncatedPaths={truncatedPaths}
-          onToggleDirectory={handleToggleDirectory}
-          onSelectFile={(path) => void openFilePath(path)}
-          onSearchChange={setSearch}
-        />
-
         <div className="file-workspace-editor">
           {threadReadonly ? <div className="file-workspace-notice">当前会话为只读模式，不能保存文件</div> : null}
           {workspaceMessage ? <div className="file-workspace-notice">{workspaceMessage}</div> : null}
@@ -404,6 +393,17 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
             onSave={() => void handleSave(false)}
           />
         </div>
+
+        <ProjectFileTree
+          nodes={nodes}
+          selectedPath={activePath ?? ''}
+          expandedPaths={expandedPaths}
+          search={search}
+          truncatedPaths={truncatedPaths}
+          onToggleDirectory={handleToggleDirectory}
+          onSelectFile={(path) => void openFilePath(path)}
+          onSearchChange={setSearch}
+        />
       </div>
     </section>
   );

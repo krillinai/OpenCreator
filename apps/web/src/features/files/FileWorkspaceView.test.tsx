@@ -1,5 +1,5 @@
 import type { ThreadResponse, WorkspaceDirectoryResponse, WorkspaceFileMeta, WorkspaceFileNode } from '@clawee/protocol';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '../../runtime/errors.js';
@@ -154,6 +154,32 @@ describe('FileWorkspaceView', () => {
     await waitFor(() => expect(service.openBlob).toHaveBeenCalledWith(thread.id, 'spec.pdf'));
   });
 
+  it('主工作区 DOM 顺序为编辑区在前、文件树在后', async () => {
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'README.md',
+          nodes: [fileNode('README.md', 'markdown')]
+        })
+      }
+    });
+
+    const { container } = render(
+      <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />
+    );
+
+    await screen.findByRole('textbox', { name: 'README.md 编辑器' });
+
+    const body = container.querySelector('.file-workspace-body');
+    if (!(body instanceof HTMLElement)) throw new Error('Expected file workspace body');
+    const editor = body.querySelector('.file-workspace-editor');
+    const tree = body.querySelector('.file-tree-panel');
+
+    expect(body.firstElementChild).toBe(editor);
+    expect(body.lastElementChild).toBe(tree);
+  });
+
   it('切换 blob 文件或卸载时会 revokeBlob', async () => {
     const user = userEvent.setup();
     const thread = createThread();
@@ -274,6 +300,111 @@ describe('FileWorkspaceView', () => {
     expect(await screen.findByRole('button', { name: '重新加载' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '覆盖保存' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '取消' })).toBeInTheDocument();
+  });
+
+  it('编辑后切换文件时，取消 confirm 不切换，确认后才切换', async () => {
+    const user = userEvent.setup();
+    const confirmMock = vi.spyOn(window, 'confirm');
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'notes.txt',
+          nodes: [fileNode('notes.txt', 'text'), fileNode('guide.md', 'markdown')]
+        })
+      },
+      metas: {
+        'notes.txt': createMeta({ path: 'notes.txt', name: 'notes.txt', kind: 'text', mime: 'text/plain' }),
+        'guide.md': createMeta({ path: 'guide.md', name: 'guide.md', kind: 'markdown', mime: 'text/markdown' })
+      },
+      contents: {
+        'notes.txt': 'draft',
+        'guide.md': '# guide'
+      }
+    });
+
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+
+    const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
+    await user.click(editor);
+    await user.keyboard('A');
+
+    confirmMock.mockReturnValueOnce(false);
+    await user.click(screen.getByRole('treeitem', { name: 'guide.md' }));
+
+    expect(confirmMock).toHaveBeenCalledWith('当前文件有未保存修改，确定放弃并切换吗？');
+    expect(service.getMeta).not.toHaveBeenCalledWith(thread.id, 'guide.md');
+    expect(screen.getByRole('textbox', { name: 'notes.txt 编辑器' })).toBeInTheDocument();
+
+    confirmMock.mockReturnValueOnce(true);
+    await user.click(screen.getByRole('treeitem', { name: 'guide.md' }));
+
+    await waitFor(() => expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'guide.md'));
+    expect(await screen.findByRole('textbox', { name: 'guide.md 编辑器' })).toBeInTheDocument();
+  });
+
+  it('409 冲突时重新加载会重新打开当前文件，覆盖保存会带 overwriteConflict，取消会关闭提示', async () => {
+    const user = userEvent.setup();
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'notes.txt',
+          nodes: [fileNode('notes.txt', 'text')]
+        })
+      },
+      metas: {
+        'notes.txt': createMeta({ path: 'notes.txt', name: 'notes.txt', kind: 'text', mime: 'text/plain', versionToken: 'v1' })
+      },
+      contents: {
+        'notes.txt': 'draft'
+      },
+      saveError: new ApiClientError({
+        status: 409,
+        code: 'FILE_CONFLICT',
+        message: 'conflict'
+      })
+    });
+
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+
+    const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
+    await user.click(editor);
+    await user.keyboard('A');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('文件内容与最新版本冲突。')).toBeInTheDocument();
+
+    const metaCallsBeforeReload = service.getMeta.mock.calls.length;
+    const textCallsBeforeReload = service.openText.mock.calls.length;
+    await user.click(within(alert).getByRole('button', { name: '重新加载' }));
+    await waitFor(() => expect(service.getMeta.mock.calls.length).toBe(metaCallsBeforeReload + 1));
+    await waitFor(() => expect(service.openText.mock.calls.length).toBe(textCallsBeforeReload + 1));
+
+    await user.click(screen.getByRole('textbox', { name: 'notes.txt 编辑器' }));
+    await user.keyboard('B');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    const conflictAlert = await screen.findByRole('alert');
+    await user.click(within(conflictAlert).getByRole('button', { name: '覆盖保存' }));
+
+    await waitFor(() => {
+      expect(service.saveText).toHaveBeenLastCalledWith({
+        threadId: thread.id,
+        path: 'notes.txt',
+        content: 'Bdraft',
+        baseVersionToken: 'v1',
+        overwriteConflict: true
+      });
+    });
+
+    await user.click(screen.getByRole('textbox', { name: 'notes.txt 编辑器' }));
+    await user.keyboard('C');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    const closeAlert = await screen.findByRole('alert');
+    await user.click(within(closeAlert).getByRole('button', { name: '取消' }));
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 
   it('read-only thread 显示只读提示且不能保存', async () => {

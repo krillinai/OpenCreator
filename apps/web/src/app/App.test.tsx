@@ -751,6 +751,116 @@ describe('App', () => {
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
   });
 
+  it('点击详情不会打开旧 mock 文件详情，点击文件才进入真实文件工作区', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_files',
+              title: '真实文件会话',
+              cwd: '/Users/test/develop/clawee/clawee-agent',
+              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_files/history')) {
+        return jsonResponse({ threadId: 'thread_files', codexThreadId: null, items: [] });
+      }
+      if (url.includes('/workspace/files/directory?')) {
+        return jsonResponse({
+          threadId: 'thread_files',
+          rootName: 'clawee-agent',
+          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          path: '',
+          suggestedOpenPath: 'README.md',
+          truncated: false,
+          warnings: [],
+          nodes: [
+            {
+              path: 'README.md',
+              name: 'README.md',
+              depth: 0,
+              type: 'file',
+              meta: {
+                kind: 'markdown',
+                mime: 'text/markdown',
+                size: 1,
+                mtimeMs: 1,
+                previewable: true,
+                editable: true,
+                readonly: false
+              }
+            }
+          ]
+        });
+      }
+      if (url.includes('/workspace/files/meta?')) {
+        return jsonResponse({
+          path: 'README.md',
+          name: 'README.md',
+          type: 'file',
+          kind: 'markdown',
+          mime: 'text/markdown',
+          size: 1,
+          mtimeMs: 1,
+          versionToken: 'v1',
+          previewable: true,
+          editable: true,
+          readonly: false
+        });
+      }
+      if (url.includes('/workspace/files/content?')) {
+        return jsonResponse({
+          meta: {
+            path: 'README.md',
+            name: 'README.md',
+            type: 'file',
+            kind: 'markdown',
+            mime: 'text/markdown',
+            size: 1,
+            mtimeMs: 1,
+            versionToken: 'v1',
+            previewable: true,
+            editable: true,
+            readonly: false
+          },
+          content: '# Workspace',
+          encoding: 'utf8'
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
+
+    await user.click(screen.getByRole('button', { name: '详情' }));
+    expect(screen.queryByRole('heading', { name: 'README.md' })).not.toBeInTheDocument();
+    expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
+    expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '文件' }));
+    expect(await screen.findByText('打开文件')).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+  });
+
   it('focuses the most recent runtime project when the default project has no history', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
