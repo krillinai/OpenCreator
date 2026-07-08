@@ -18,7 +18,7 @@ describe('ConversationHeader', () => {
     expect(screen.getByRole('heading', { name: '整理本周项目进展' })).toBeInTheDocument();
     expect(screen.getByText('content-design')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('正在等待本地服务');
-    expect(screen.getByRole('button', { name: '打开位置' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '文件' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '详情' })).toBeInTheDocument();
   });
 
@@ -36,7 +36,7 @@ describe('ConversationHeader', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: '打开位置' }));
+    await user.click(screen.getByRole('button', { name: '文件' }));
     await user.click(screen.getByRole('button', { name: '详情' }));
 
     expect(onOpenLocation).toHaveBeenCalledTimes(1);
