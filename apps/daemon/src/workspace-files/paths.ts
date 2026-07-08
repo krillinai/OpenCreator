@@ -1,5 +1,5 @@
 import { lstatSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, normalize, sep } from 'node:path';
+import { dirname, isAbsolute, join, normalize, sep } from 'node:path';
 import { WorkspaceFileError } from './errors.js';
 
 const ignoredNames = new Set([
@@ -53,6 +53,14 @@ export function resolveSafeExisting(root: string, relativePath: string): string 
   const realTarget = realpathSync(target);
   assertInsideRoot(root, realTarget);
   return realTarget;
+}
+
+export function resolveSafeParent(root: string, relativePath: string): { candidatePath: string; parentReal: string } {
+  const candidatePath = relativePath ? join(root, relativePath) : root;
+  const parentPath = dirname(candidatePath);
+  const parentReal = realpathSync(parentPath);
+  assertInsideRoot(root, parentReal);
+  return { candidatePath, parentReal };
 }
 
 export function assertInsideRoot(rootReal: string, targetReal: string): void {

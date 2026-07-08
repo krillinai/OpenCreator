@@ -25,6 +25,7 @@ export function buildDirectoryResponse(input: {
   const truncated = entries.length > MAX_DIRECTORY_CHILDREN;
   const limited = truncated ? entries.slice(0, MAX_DIRECTORY_CHILDREN) : entries;
   const warnings = truncated ? [`Directory truncated to ${MAX_DIRECTORY_CHILDREN} children.`] : [];
+  let skippedSensitive = false;
   const nodes: WorkspaceFileNode[] = [];
 
   for (const entry of limited) {
@@ -35,7 +36,7 @@ export function buildDirectoryResponse(input: {
       const childReal = realpathSync(childAbsolutePath);
       assertInsideRoot(input.rootReal, childReal);
       if (isSensitivePath(childPath)) {
-        warnings.push('Skipped sensitive file.');
+        skippedSensitive = true;
         continue;
       }
 
@@ -71,6 +72,10 @@ export function buildDirectoryResponse(input: {
     } catch {
       warnings.push('Skipped path outside workspace root.');
     }
+  }
+
+  if (skippedSensitive) {
+    warnings.push('Skipped sensitive files.');
   }
 
   return {

@@ -31,7 +31,7 @@ import type {
 import type { RuntimeThread } from '../threads/types.js';
 import { WorkspaceFileError } from './errors.js';
 import { isEditable, isPreviewable, isSensitivePath, isTextualKind, kindFor, mimeFor, reasonForUnavailable } from './mime.js';
-import { assertInsideRoot, assertRegularFile, isIgnoredDir, resolveSafeExisting, validateRelativePath } from './paths.js';
+import { assertInsideRoot, assertRegularFile, isIgnoredDir, resolveSafeExisting, resolveSafeParent, validateRelativePath } from './paths.js';
 import { defaultRevealExecutor, type RevealExecutor } from './reveal.js';
 import { buildDirectoryResponse } from './tree.js';
 import { MAX_IMAGE_BYTES, MAX_JSON_FORMAT_BYTES, MAX_PDF_BYTES, MAX_TEXT_BYTES } from './types.js';
@@ -118,7 +118,7 @@ export function createWorkspaceFileService(input: {
         throw new WorkspaceFileError('FILE_CONFLICT', 'File version token does not match current content.');
       }
 
-      safeOverwriteFile(resolved.rootReal, resolved.absolutePath, request.content);
+      safeOverwriteFile(resolved.rootReal, resolved.relativePath, resolved.absolutePath, request.content);
       return {
         meta: buildMeta(resolved.thread, resolved.relativePath, resolved.absolutePath),
         saved: true
@@ -225,27 +225,37 @@ function assertWithinLimit(kind: WorkspaceFileMeta['kind'], size: number): void 
   }
 }
 
-function safeOverwriteFile(rootReal: string, absolutePath: string, content: string): void {
-  const realBefore = realpathSync(absolutePath);
-  assertInsideRoot(rootReal, realBefore);
-  const stats = lstatSync(absolutePath);
+function safeOverwriteFile(rootReal: string, relativePath: string, absolutePath: string, content: string): void {
+  const { candidatePath, parentReal } = resolveSafeParent(rootReal, relativePath);
+  const stats = lstatSync(candidatePath);
+  if (stats.isSymbolicLink()) {
+    throw new WorkspaceFileError('PATH_ESCAPE', 'Target symlink is not writable.');
+  }
   if (!stats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
-  accessSync(absolutePath, fsConstants.W_OK);
+  accessSync(candidatePath, fsConstants.W_OK);
+  const realBefore = realpathSync(candidatePath);
+  assertInsideRoot(rootReal, realBefore);
+  assertInsideRoot(rootReal, parentReal);
 
   let handle: number | undefined;
   try {
     const flags = fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
-    handle = openSync(absolutePath, flags);
+    handle = openSync(candidatePath, flags);
     const openedStats = fstatSync(handle);
     if (!openedStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
     if (openedStats.dev !== stats.dev || openedStats.ino !== stats.ino) {
       throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');
     }
     ftruncateSync(handle, 0);
-    writeSync(handle, content, undefined, 'utf8');
-    const verifyStats = lstatSync(absolutePath);
+    const buffer = Buffer.from(content, 'utf8');
+    let written = 0;
+    while (written < buffer.byteLength) {
+      written += writeSync(handle, buffer, written, buffer.byteLength - written);
+    }
+    const verifyStats = lstatSync(candidatePath);
     if (!verifyStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
-    const realAfter = realpathSync(absolutePath);
+    if (verifyStats.isSymbolicLink()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target symlink is not writable.');
+    const realAfter = realpathSync(candidatePath);
     assertInsideRoot(rootReal, realAfter);
     if (realAfter !== realBefore || verifyStats.dev !== stats.dev || verifyStats.ino !== stats.ino) {
       throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');

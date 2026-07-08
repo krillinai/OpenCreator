@@ -241,11 +241,7 @@ describe('workspace file service', () => {
     const result = await service.listDirectory({ threadId: 'thread_1', path: '' });
 
     expect(result.nodes.map((node) => node.name)).toEqual(['.env.example', 'README.md']);
-    expect(result.warnings).toEqual([
-      'Skipped sensitive file.',
-      'Skipped sensitive file.',
-      'Skipped sensitive file.'
-    ]);
+    expect(result.warnings).toEqual(['Skipped sensitive files.']);
   });
 
   it('does not create a new file when target is deleted before saveContent writes', async () => {
@@ -264,6 +260,42 @@ describe('workspace file service', () => {
     ).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
 
     expect(() => readFileSync(join(tempDir, 'README.md'), 'utf8')).toThrow();
+  });
+
+  it('rejects saving through an in-workspace symlink and keeps target content unchanged', async () => {
+    const { service } = createFixture({ sandbox: 'workspace-write' });
+    writeFile('target.md', '# target\n');
+    symlinkSync(join(tempDir, 'target.md'), join(tempDir, 'link.md'));
+    const before = await service.readContent({ threadId: 'thread_1', path: 'target.md' });
+
+    await expect(
+      service.saveContent({
+        threadId: 'thread_1',
+        path: 'link.md',
+        content: '# changed\n',
+        baseVersionToken: before.meta.versionToken
+      })
+    ).rejects.toMatchObject({ code: 'PATH_ESCAPE' });
+
+    expect(readFileSync(join(tempDir, 'target.md'), 'utf8')).toBe('# target\n');
+  });
+
+  it('writes large content fully when saveContent overwrites an existing file', async () => {
+    const { service } = createFixture({ sandbox: 'workspace-write' });
+    writeFile('README.md', '# hello\n');
+    const before = await service.readContent({ threadId: 'thread_1', path: 'README.md' });
+    const largeContent = 'x'.repeat(256 * 1024);
+
+    const result = await service.saveContent({
+      threadId: 'thread_1',
+      path: 'README.md',
+      content: largeContent,
+      baseVersionToken: before.meta.versionToken
+    });
+
+    expect(result.saved).toBe(true);
+    expect(readFileSync(join(tempDir, 'README.md'), 'utf8')).toBe(largeContent);
+    expect(result.meta.size).toBe(Buffer.byteLength(largeContent, 'utf8'));
   });
 
   it.each([

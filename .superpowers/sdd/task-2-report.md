@@ -182,3 +182,32 @@ pnpm --filter @clawee/daemon typecheck
 
 - 单测通过：`56 tests passed`
 - Typecheck 通过
+
+## Task 2 最终复审最后问题修复追加
+
+### 本轮修复
+
+- 修复 `saveContent` 对工作区内 symlink 的跟随问题：保存时不再使用最终节点的 realpath 作为写入目标，而是保留用户相对路径生成 root 下 `candidatePath`，先校验父目录 `realpath` 仍在 root 内，再对最终候选路径执行 `lstat`，若最终节点是 symlink 直接返回 `PATH_ESCAPE`。
+- 保存时改为对 `candidatePath` 直接执行 `openSync(O_WRONLY | O_NOFOLLOW)`，继续只允许已存在常规文件，避免通过已解引用后的真实路径绕过最后一跳 symlink 防护。
+- 修复覆写逻辑 partial write 风险：将内容转成 `Buffer`，循环调用 `writeSync`，直到所有字节写完，再做 inode/dev 与 root containment 复核。
+- 修复 `listDirectory` 敏感文件 warning 泄露数量：多个敏感文件现在只返回一条目录级 warning，内容为 `Skipped sensitive files.`，且不带任何文件名。
+
+### 本轮新增测试
+
+- `target.md` + `link.md -> target.md` 场景下，对 `link.md` 调用 `saveContent` 必须返回 `PATH_ESCAPE`，并验证 `target.md` 内容保持不变。
+- `saveContent` 覆写 256KB 大内容时必须完整写入，最终磁盘内容与返回 meta.size 一致。
+- 目录下存在多个敏感文件时，`listDirectory` 只返回一次 `Skipped sensitive files.` warning。
+
+### 本轮验证
+
+执行命令：
+
+```bash
+pnpm --filter @clawee/daemon test -- test/unit/workspace-files.test.ts
+pnpm --filter @clawee/daemon typecheck
+```
+
+结果摘要：
+
+- 单测通过：`58 tests passed`
+- Typecheck 通过
