@@ -240,7 +240,14 @@ function isTextLike(meta: WorkspaceFileMeta): boolean {
 }
 
 function isPreviewable(meta: WorkspaceFileMeta): boolean {
-  if (meta.kind === 'markdown' || meta.kind === 'json' || meta.kind === 'text' || meta.kind === 'code' || meta.kind === 'html') {
+  if (
+    meta.kind === 'markdown' ||
+    meta.kind === 'json' ||
+    meta.kind === 'text' ||
+    meta.kind === 'code' ||
+    meta.kind === 'html' ||
+    isSvgSource(meta)
+  ) {
     return true;
   }
 
@@ -257,6 +264,10 @@ function isSvgSource(meta: WorkspaceFileMeta): boolean {
 
 function defaultModeForMeta(meta?: WorkspaceFileMeta): PaneMode {
   if (!meta) {
+    return 'edit';
+  }
+
+  if (isSvgSource(meta) && meta.editable) {
     return 'edit';
   }
 

@@ -102,6 +102,47 @@ describe('FileEditorPane', () => {
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
+  it('实际编辑后按用户输入触发 onChange(value)', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(
+      <FileEditorPane
+        meta={createMeta({ name: 'notes.txt', path: 'notes.txt', kind: 'text' })}
+        content="草稿"
+        onChange={onChange}
+      />
+    );
+
+    const editor = screen.getByRole('textbox', { name: 'notes.txt 编辑器' });
+    await user.click(editor);
+    await user.keyboard('A');
+
+    expect(onChange).toHaveBeenCalled();
+    expect(onChange.mock.lastCall?.[0]).toContain('A');
+  });
+
+  it('外部 rerender 更新 content 不触发 onChange', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <FileEditorPane
+        meta={createMeta({ name: 'notes.txt', path: 'notes.txt', kind: 'text' })}
+        content="初始内容"
+        onChange={onChange}
+      />
+    );
+
+    rerender(
+      <FileEditorPane
+        meta={createMeta({ name: 'notes.txt', path: 'notes.txt', kind: 'text' })}
+        content="外部同步内容"
+        onChange={onChange}
+      />
+    );
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('image 使用 objectUrl 渲染 img', () => {
     render(
       <FileEditorPane
@@ -170,6 +211,56 @@ describe('FileEditorPane', () => {
     });
 
     expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('readonly=true 时 Mod-s 不会保存', () => {
+    const onSave = vi.fn();
+
+    render(
+      <FileEditorPane
+        meta={createMeta({ name: 'notes.txt', path: 'notes.txt', kind: 'text', readonly: true })}
+        content="只读草稿"
+        dirty={true}
+        onSave={onSave}
+      />
+    );
+
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'notes.txt 编辑器' }), {
+      key: 's',
+      code: 'KeyS',
+      ctrlKey: true
+    });
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('SVG 文件支持编辑和源码预览，不渲染图片', async () => {
+    const user = userEvent.setup();
+    const svgSource = '<svg viewBox="0 0 10 10"><rect width="10" height="10" /></svg>';
+
+    render(
+      <FileEditorPane
+        meta={createMeta({
+          name: 'logo.svg',
+          path: 'logo.svg',
+          kind: 'image',
+          mime: 'image/svg+xml',
+          editable: true,
+          previewable: true
+        })}
+        content={svgSource}
+        objectUrl="blob:logo-svg"
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '编辑' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '预览' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'logo.svg 编辑器' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '预览' }));
+
+    expect(screen.queryByRole('img', { name: 'logo.svg' })).not.toBeInTheDocument();
+    expect(document.querySelector('.file-preview pre')?.textContent).toBe(svgSource);
   });
 });
 

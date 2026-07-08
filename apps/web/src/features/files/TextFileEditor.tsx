@@ -8,7 +8,7 @@ import { markdownLanguage } from '@codemirror/lang-markdown';
 import { pythonLanguage } from '@codemirror/lang-python';
 import { xmlLanguage } from '@codemirror/lang-xml';
 import { LanguageSupport, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
-import { EditorState, Compartment } from '@codemirror/state';
+import { Annotation, EditorState, Compartment } from '@codemirror/state';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { useEffect, useMemo, useRef } from 'react';
@@ -21,6 +21,8 @@ export type TextFileEditorProps = {
   onChange?(value: string): void;
   onSave?(): void;
 };
+
+const externalSyncAnnotation = Annotation.define<boolean>();
 
 export function TextFileEditor(props: TextFileEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -74,7 +76,7 @@ export function TextFileEditor(props: TextFileEditorProps) {
           ...searchKeymap
         ]),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
+          if (update.docChanged && !update.transactions.some((transaction) => transaction.annotation(externalSyncAnnotation))) {
             onChangeRef.current?.(update.state.doc.toString());
           }
         }),
@@ -135,7 +137,8 @@ export function TextFileEditor(props: TextFileEditorProps) {
         from: 0,
         to: current.length,
         insert: props.content
-      }
+      },
+      annotations: externalSyncAnnotation.of(true)
     });
   }, [props.content]);
 
