@@ -1922,3 +1922,236 @@ textarea:focus-visible {
     font-size: 20px;
   }
 }
+
+.markdown-prose {
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.68;
+  overflow-wrap: anywhere;
+}
+
+.markdown-prose[data-variant="assistant"],
+.markdown-prose[data-variant="document"] {
+  font-size: 14.5px;
+  line-height: 1.72;
+}
+
+.markdown-prose[data-variant="process"],
+.markdown-prose[data-variant="tool"],
+.markdown-prose[data-variant="diagnostic"] {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.58;
+}
+
+.markdown-prose .md-p {
+  margin: 0;
+}
+
+.markdown-prose .md-p + .md-p,
+.markdown-prose .md-p + .md-code-block,
+.markdown-prose .md-code-block + .md-p,
+.markdown-prose .md-p + .md-table-wrap,
+.markdown-prose .md-table-wrap + .md-p {
+  margin-top: 12px;
+}
+
+.markdown-prose .md-h {
+  margin: 18px 0 8px;
+  color: var(--text);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.markdown-prose .md-h:first-child {
+  margin-top: 0;
+}
+
+.markdown-prose .md-h1 {
+  font-size: 22px;
+}
+
+.markdown-prose .md-h2 {
+  font-size: 18px;
+}
+
+.markdown-prose .md-h3 {
+  font-size: 15px;
+}
+
+.markdown-prose .md-h4 {
+  font-size: 14px;
+}
+
+.markdown-prose .md-ul,
+.markdown-prose .md-ol {
+  margin: 10px 0;
+  padding-left: 22px;
+}
+
+.markdown-prose .md-ul li,
+.markdown-prose .md-ol li {
+  margin: 5px 0;
+}
+
+.markdown-prose .md-task-list {
+  padding-left: 0;
+  list-style: none;
+}
+
+.markdown-prose .md-task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.markdown-prose .md-task-check {
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
+.markdown-prose .md-quote {
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.markdown-prose .md-inline-code {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.markdown-prose .md-code-block,
+.detail-code-block,
+.process-code-payload {
+  margin: 12px 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.markdown-prose .md-code-header {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-prose .md-code-lang {
+  color: var(--muted);
+  font: 600 11px/1 var(--font-mono);
+  text-transform: lowercase;
+}
+
+.markdown-prose .md-code-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.markdown-prose .md-code-action {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.markdown-prose .md-code-action:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.timeline-item .markdown-prose .md-code,
+.detail-content .markdown-prose .md-code,
+.detail-content .detail-code-block,
+.process-code-payload,
+.markdown-prose .md-code {
+  max-height: none;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: 12.5px/1.62 var(--font-mono);
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.detail-content .detail-code-block,
+.process-code-payload {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown-prose .md-code-block[data-collapsed="true"] .md-code-body {
+  max-height: 168px;
+  overflow: hidden;
+}
+
+.markdown-prose .md-link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.markdown-prose .md-link:hover {
+  border-bottom-color: var(--accent);
+}
+
+.markdown-prose .md-hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.md-table-wrap {
+  max-width: 100%;
+  margin: 12px 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.md-table th,
+.md-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-table th {
+  background: var(--surface-2);
+  font-weight: 700;
+}
+
+.md-table tr:last-child td {
+  border-bottom: 0;
+}
