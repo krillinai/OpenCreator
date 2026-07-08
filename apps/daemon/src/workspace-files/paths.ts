@@ -27,6 +27,13 @@ export function validateRelativePath(raw: string | undefined, allowEmpty: boolea
   if (/^[A-Za-z]:[\\/]/.test(value)) throw new WorkspaceFileError('PATH_INVALID', 'Absolute Windows paths are not allowed.');
   if (isAbsolute(value)) throw new WorkspaceFileError('PATH_INVALID', 'Absolute paths are not allowed.');
 
+  const rawSegments = value.replace(/\\/g, '/').split('/');
+  for (const segment of rawSegments) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') throw new WorkspaceFileError('PATH_INVALID', 'Path traversal is not allowed.');
+    if (isIgnoredDir(segment)) throw new WorkspaceFileError('PATH_IGNORED', 'Ignored paths are not available.');
+  }
+
   const normalized = normalize(value).replace(/\\/g, '/');
   if (normalized === '.' && allowEmpty) return '';
   if (normalized === '.' || normalized.length === 0) throw new WorkspaceFileError('PATH_INVALID', 'Path is required.');

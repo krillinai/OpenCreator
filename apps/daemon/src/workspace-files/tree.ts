@@ -1,7 +1,7 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync, realpathSync } from 'node:fs';
 import type { WorkspaceDirectoryResponse, WorkspaceFileMetaSummary, WorkspaceFileNode } from '@clawee/protocol';
 import { kindFor, mimeFor, isEditable, isPreviewable, reasonForUnavailable } from './mime.js';
-import { isIgnoredDir } from './paths.js';
+import { assertInsideRoot, isIgnoredDir } from './paths.js';
 import { MAX_DIRECTORY_CHILDREN } from './types.js';
 
 const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
@@ -12,6 +12,8 @@ export function buildDirectoryResponse(input: {
   rootPathLabel: string;
   path: string;
   absolutePath: string;
+  rootReal: string;
+  readonly: boolean;
 }): WorkspaceDirectoryResponse {
   const entries = readdirSync(input.absolutePath, { withFileTypes: true })
     .filter((entry) => !isIgnoredDir(entry.name))
@@ -23,28 +25,49 @@ export function buildDirectoryResponse(input: {
   const truncated = entries.length > MAX_DIRECTORY_CHILDREN;
   const limited = truncated ? entries.slice(0, MAX_DIRECTORY_CHILDREN) : entries;
   const warnings = truncated ? [`Directory truncated to ${MAX_DIRECTORY_CHILDREN} children.`] : [];
-  const nodes = limited.map((entry) => {
+  const nodes: WorkspaceFileNode[] = [];
+
+  for (const entry of limited) {
     const childPath = input.path ? `${input.path}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      return {
+    const childAbsolutePath = `${input.absolutePath}/${entry.name}`;
+
+    try {
+      const childReal = realpathSync(childAbsolutePath);
+      assertInsideRoot(input.rootReal, childReal);
+
+      if (entry.isDirectory()) {
+        nodes.push({
+          path: childPath,
+          name: entry.name,
+          depth: childPath.split('/').length - 1,
+          type: 'directory',
+          hasChildren: directoryHasChildren(childAbsolutePath, input.rootReal),
+          childrenLoaded: false,
+          meta: {
+            kind: 'directory',
+            mime: 'inode/directory',
+            size: 0,
+            mtimeMs: 0,
+            previewable: false,
+            editable: false,
+            readonly: input.readonly
+          }
+        } satisfies WorkspaceFileNode);
+        continue;
+      }
+
+      const stats = statSync(childAbsolutePath);
+      nodes.push({
         path: childPath,
         name: entry.name,
         depth: childPath.split('/').length - 1,
-        type: 'directory',
-        hasChildren: directoryHasChildren(`${input.absolutePath}/${entry.name}`),
-        childrenLoaded: false
-      } satisfies WorkspaceFileNode;
+        type: 'file',
+        meta: summarizeMeta(childPath, stats.size, stats.mtimeMs, input.readonly)
+      } satisfies WorkspaceFileNode);
+    } catch {
+      warnings.push(`Skipped path outside workspace root: ${childPath}`);
     }
-
-    const stats = statSync(`${input.absolutePath}/${entry.name}`);
-    return {
-      path: childPath,
-      name: entry.name,
-      depth: childPath.split('/').length - 1,
-      type: 'file',
-      meta: summarizeMeta(childPath, stats.size, stats.mtimeMs)
-    } satisfies WorkspaceFileNode;
-  });
+  }
 
   return {
     threadId: input.threadId,
@@ -58,7 +81,7 @@ export function buildDirectoryResponse(input: {
   };
 }
 
-function summarizeMeta(path: string, size: number, mtimeMs: number): WorkspaceFileMetaSummary {
+function summarizeMeta(path: string, size: number, mtimeMs: number, readonly: boolean): WorkspaceFileMetaSummary {
   const kind = kindFor(path);
   return {
     kind,
@@ -67,13 +90,21 @@ function summarizeMeta(path: string, size: number, mtimeMs: number): WorkspaceFi
     mtimeMs,
     previewable: isPreviewable(kind, path, size),
     editable: isEditable(kind, path, size),
-    readonly: false,
+    readonly,
     reason: reasonForUnavailable(kind, path, size)
   };
 }
 
-function directoryHasChildren(path: string): boolean {
-  return readdirSync(path, { withFileTypes: true }).some((entry) => !isIgnoredDir(entry.name));
+function directoryHasChildren(path: string, rootReal: string): boolean {
+  return readdirSync(path, { withFileTypes: true }).some((entry) => {
+    if (isIgnoredDir(entry.name)) return false;
+    try {
+      assertInsideRoot(rootReal, realpathSync(`${path}/${entry.name}`));
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function suggestOpenPath(nodes: WorkspaceFileNode[]): string | undefined {

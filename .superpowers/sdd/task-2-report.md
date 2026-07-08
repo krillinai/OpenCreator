@@ -110,3 +110,43 @@ pnpm --filter @clawee/daemon typecheck
 1. brief 写到“最终文件节点不得跟随 symlink；在平台支持时使用 `O_NOFOLLOW`”。当前实现对目标文件通过 `realpathSync` 和 `lstatSync` 做了防逃逸检查，但临时文件写入路径本身不是用户输入路径，因此 `O_NOFOLLOW` 只用于临时文件打开，目标覆盖依赖 `rename`。这在现有测试和大多数场景下可工作，但如果后续要进一步收紧 TOCTOU 风险，可能需要平台差异化的更低层写入流程。
 2. `readBlob` 当前返回 `Buffer`。brief 没有单独要求响应包装结构，且当前测试未约束这一点；后续接 route 时如果需要 HTTP 元信息，可能要在 route 层补 mime/size/header。
 3. 目录节点 `meta` 当前未附加 summary；brief 允许目录节点只携带 `hasChildren`/`childrenLoaded=false`，因此未额外填充。
+
+## Task 2 审查修复追加
+
+### 修复范围
+
+- 补齐敏感文件拦截：新增 `.env.production`、`.env.development`、`.env.test`、`id_ed25519`、`.p12`、`.crt`、`.cert`；继续保留 `.env.example`、`.env.sample` 可读。
+- 收紧路径校验：`validateRelativePath` 先检查原始 path segment，再做 normalize，确保 `a/../b`、`node_modules/../README.md` 在归一化前就被拒绝。
+- 收紧目录树 symlink 行为：构建目录节点和文件节点前先 `realpath` 并做 root containment；超出 root 的 symlink 节点直接跳过，并写入 warnings，不泄露目标 meta。
+- 修复 `saveContent` 并发删除/替换窗口：覆盖前复核目标仍存在、仍是同一 inode/dev 的常规文件；如果目标丢失或被替换，不允许通过 `rename` 落成新文件。
+- 调整 archived thread 保存错误码：从 `PERMISSION_DENIED` 改为 `THREAD_ARCHIVED`。
+- 扩展基础文本/代码类型识别：补齐 `.jsonc`、`.jsonl`、`.toml`、`.csv`、`.srt`、`.zsh`，并补查 `.markdown`、`.yaml`、`.yml`、`.htm`、`.scss`、`.sass`、`.less`、`.bash`、`.npmrc`、`.prettierrc`、`.eslintrc`。
+- 调整 `readBlob` service contract：返回 `{ meta, buffer }`。
+- 修复目录列表 meta.readonly：现在会反映 thread 的 sandbox/status。
+
+### 新增测试
+
+在 `apps/daemon/test/unit/workspace-files.test.ts` 追加覆盖：
+
+- `.env.production`、`id_ed25519`、`.crt` 阻止读取。
+- `a/../README.md`、`node_modules/../README.md` 在 normalize 前被拒绝。
+- 目录树遇到 root 外 symlink 时跳过节点并返回 warning。
+- `saveContent` 遇到目标被并发删除后不会新建文件。
+- `.jsonc`、`.toml`、`.srt`、`.zsh` 作为文本/代码读取。
+- `readBlob` 返回 `meta + buffer`。
+- archived thread 保存返回 `THREAD_ARCHIVED`。
+- read-only 目录列表 `meta.readonly=true`。
+
+### 本轮验证
+
+执行命令：
+
+```bash
+pnpm --filter @clawee/daemon test -- test/unit/workspace-files.test.ts
+pnpm --filter @clawee/daemon typecheck
+```
+
+结果摘要：
+
+- 单测通过：`20 tests passed`
+- Typecheck 通过

@@ -39,7 +39,7 @@ export type WorkspaceFileService = {
   getMeta(request: WorkspaceFileMetaRequest): Promise<WorkspaceFileMeta>;
   readContent(request: WorkspaceFileContentRequest): Promise<WorkspaceFileContentResponse>;
   saveContent(request: WorkspaceFileSaveRequest): Promise<WorkspaceFileSaveResponse>;
-  readBlob(request: WorkspaceFileBlobRequest): Promise<Buffer>;
+  readBlob(request: WorkspaceFileBlobRequest): Promise<{ meta: WorkspaceFileMeta; buffer: Buffer }>;
   reveal(request: WorkspaceFileRevealRequest): Promise<WorkspaceFileRevealResponse>;
 };
 
@@ -64,7 +64,9 @@ export function createWorkspaceFileService(input: {
         rootName: basename(thread.canonicalCwd) || thread.canonicalCwd,
         rootPathLabel: thread.canonicalCwd,
         path: relativePath,
-        absolutePath
+        absolutePath,
+        rootReal,
+        readonly: thread.sandbox === 'read-only' || thread.status === 'archived'
       });
     },
 
@@ -94,7 +96,7 @@ export function createWorkspaceFileService(input: {
     async saveContent(request) {
       const resolved = resolveFileRequest(input.getThread, request.threadId, request.path);
       if (resolved.thread.status === 'archived') {
-        throw new WorkspaceFileError('PERMISSION_DENIED', 'Archived threads cannot save files.');
+        throw new WorkspaceFileError('THREAD_ARCHIVED', 'Archived threads cannot save files.');
       }
       if (resolved.thread.sandbox === 'read-only') {
         throw new WorkspaceFileError('PERMISSION_DENIED', 'Thread sandbox is read-only.');
@@ -124,7 +126,10 @@ export function createWorkspaceFileService(input: {
       if ((meta.kind !== 'image' && meta.kind !== 'pdf') || !meta.previewable) {
         throw new WorkspaceFileError('UNSUPPORTED_FILE_TYPE', 'Only previewable images and PDFs can be read as blobs.');
       }
-      return readFileSync(resolved.absolutePath);
+      return {
+        meta,
+        buffer: readFileSync(resolved.absolutePath)
+      };
     },
 
     async reveal(request) {
@@ -225,8 +230,13 @@ function safeOverwriteFile(rootReal: string, absolutePath: string, content: stri
     const flags = fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
     handle = openSync(tempPath, flags, 0o600);
     writeFileSync(handle, content, 'utf8');
+    const verifyStats = lstatSync(absolutePath);
+    if (!verifyStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
     const realAfter = realpathSync(absolutePath);
     assertInsideRoot(rootReal, realAfter);
+    if (realAfter !== realBefore || verifyStats.dev !== stats.dev || verifyStats.ino !== stats.ino) {
+      throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');
+    }
     renameSync(tempPath, absolutePath);
     const finalReal = realpathSync(absolutePath);
     assertInsideRoot(rootReal, finalReal);

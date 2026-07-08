@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -143,6 +143,23 @@ describe('workspace file service', () => {
     ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
   });
 
+  it('blocks additional sensitive files such as .env.production, id_ed25519, and .crt', async () => {
+    const { service } = createFixture();
+    writeFile('.env.production', 'TOKEN=prod\n');
+    writeFile('id_ed25519', 'private-key');
+    writeFile('server.crt', 'certificate');
+
+    await expect(service.readContent({ threadId: 'thread_1', path: '.env.production' })).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED'
+    });
+    await expect(service.readContent({ threadId: 'thread_1', path: 'id_ed25519' })).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED'
+    });
+    await expect(service.readContent({ threadId: 'thread_1', path: 'server.crt' })).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED'
+    });
+  });
+
   it('allows .env.example as text', async () => {
     const { service } = createFixture();
     writeFile('.env.example', 'TOKEN=\n');
@@ -169,6 +186,70 @@ describe('workspace file service', () => {
     ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
   });
 
+  it('rejects raw traversal and ignored segments before normalize', async () => {
+    const { service } = createFixture();
+    writeFile('README.md', '# hello\n');
+
+    await expect(service.readContent({ threadId: 'thread_1', path: 'a/../README.md' })).rejects.toMatchObject({
+      code: 'PATH_INVALID'
+    });
+    await expect(service.readContent({ threadId: 'thread_1', path: 'node_modules/../README.md' })).rejects.toMatchObject({
+      code: 'PATH_IGNORED'
+    });
+  });
+
+  it('skips directory entries whose symlink escapes outside root and reports warning', async () => {
+    const { service } = createFixture({ sandbox: 'read-only' });
+    const outside = mkdtempSync(join(tmpdir(), 'clawee-outside-tree-'));
+    mkdirSync(join(tempDir, 'docs'), { recursive: true });
+    writeFile('docs/inside.md', '# inside\n');
+    symlinkSync(outside, join(tempDir, 'docs', 'escape-link'));
+
+    const result = await service.listDirectory({ threadId: 'thread_1', path: 'docs' });
+
+    expect(result.nodes.map((node) => node.name)).toEqual(['inside.md']);
+    expect(result.warnings).toContain('Skipped path outside workspace root: docs/escape-link');
+
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it('does not create a new file when target is concurrently deleted during saveContent', async () => {
+    const { service } = createFixture({ sandbox: 'workspace-write' });
+    writeFile('README.md', '# hello\n');
+    const before = await service.readContent({ threadId: 'thread_1', path: 'README.md' });
+    renameSync(join(tempDir, 'README.md'), join(tempDir, 'README.moved.md'));
+
+    await expect(
+      service.saveContent({
+        threadId: 'thread_1',
+        path: 'README.md',
+        content: '# updated\n',
+        baseVersionToken: before.meta.versionToken
+      })
+    ).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
+
+    expect(() => readFileSync(join(tempDir, 'README.md'), 'utf8')).toThrow();
+    expect(readFileSync(join(tempDir, 'README.moved.md'), 'utf8')).toBe('# hello\n');
+  });
+
+  it('reads jsonc toml srt and zsh as text', async () => {
+    const { service } = createFixture();
+    writeFile('config.jsonc', '{\n  // comment\n  \"a\": 1\n}\n');
+    writeFile('config.toml', 'name = \"demo\"\n');
+    writeFile('captions.srt', '1\n00:00:00,000 --> 00:00:01,000\nhello\n');
+    writeFile('script.zsh', 'echo hello\n');
+
+    const jsonc = await service.readContent({ threadId: 'thread_1', path: 'config.jsonc' });
+    const toml = await service.readContent({ threadId: 'thread_1', path: 'config.toml' });
+    const srt = await service.readContent({ threadId: 'thread_1', path: 'captions.srt' });
+    const zsh = await service.readContent({ threadId: 'thread_1', path: 'script.zsh' });
+
+    expect(jsonc.meta.kind).toBe('json');
+    expect(toml.meta.kind).toBe('text');
+    expect(srt.meta.kind).toBe('text');
+    expect(zsh.meta.kind).toBe('code');
+  });
+
   it('classifies svg as code text instead of image blob', async () => {
     const { service } = createFixture();
     writeFile('icon.svg', '<svg viewBox="0 0 10 10"></svg>');
@@ -179,6 +260,47 @@ describe('workspace file service', () => {
     await expect(service.readBlob({ threadId: 'thread_1', path: 'icon.svg' })).rejects.toMatchObject({
       code: 'UNSUPPORTED_FILE_TYPE'
     });
+  });
+
+  it('returns meta and buffer from readBlob', async () => {
+    const { service } = createFixture();
+    writeFile('image.png', 'png-bytes');
+
+    const result = await service.readBlob({ threadId: 'thread_1', path: 'image.png' });
+
+    expect(result.meta.kind).toBe('image');
+    expect(result.buffer.equals(Buffer.from('png-bytes'))).toBe(true);
+  });
+
+  it('returns THREAD_ARCHIVED when saving archived thread content', async () => {
+    const { service } = createFixture({ sandbox: 'workspace-write', status: 'archived' });
+    writeFile('README.md', '# hello\n');
+    const before = await service.readContent({ threadId: 'thread_1', path: 'README.md' });
+
+    await expect(
+      service.saveContent({
+        threadId: 'thread_1',
+        path: 'README.md',
+        content: '# updated\n',
+        baseVersionToken: before.meta.versionToken
+      })
+    ).rejects.toMatchObject({ code: 'THREAD_ARCHIVED' });
+  });
+
+  it('marks directory list meta as readonly for read-only threads', async () => {
+    const { service } = createFixture({ sandbox: 'read-only' });
+    writeFile('README.md', '# hello\n');
+
+    const result = await service.listDirectory({ threadId: 'thread_1', path: '' });
+    const readme = result.nodes.find((node) => node.type === 'file' && node.name === 'README.md');
+
+    expect(readme).toEqual(
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          readonly: true
+        })
+      })
+    );
   });
 
   it('calls reveal executor only after path validation', async () => {
