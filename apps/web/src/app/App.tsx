@@ -680,11 +680,7 @@ export function App(props: AppProps = {}) {
         statusLabel={getConnectionStatusLabel(connectionState)}
         onOpenLocation={() => dispatch({ type: 'open_files' })}
         onToggleDetail={() => {
-          if (state.rightPanelMode === 'closed') {
-            dispatch({ type: 'select_change', changeId: 'session_overview' });
-            return;
-          }
-
+          if (state.rightPanelMode === 'closed') return;
           dispatch({ type: 'close_detail' });
         }}
       />

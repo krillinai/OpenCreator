@@ -24,14 +24,14 @@ describe('app state', () => {
     expect(app.activeView).toBe('conversation');
   });
 
-  it('opens files, changes, run details, and closes the detail panel', () => {
+  it('routes legacy select_file into the file workspace and keeps other details closable', () => {
     const file = reduceAppState({ ...initialAppState, activeView: 'settings' }, {
       type: 'select_file',
       path: 'docs/runtime-api-for-ui-v1.md'
     });
-    expect(file.activeView).toBe('conversation');
+    expect(file.activeView).toBe('files');
     expect(file.selectedFilePath).toBe('docs/runtime-api-for-ui-v1.md');
-    expect(file.rightPanelMode).toBe('file');
+    expect(file.rightPanelMode).toBe('closed');
 
     const change = reduceAppState({ ...file, activeView: 'search' }, {
       type: 'select_change',

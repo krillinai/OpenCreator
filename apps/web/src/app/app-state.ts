@@ -76,7 +76,7 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
     case 'select_thread':
       return { ...state, selectedThreadId: action.threadId, activeView: 'conversation' };
     case 'select_file':
-      return { ...state, activeView: 'conversation', selectedFilePath: action.path, rightPanelMode: 'file' };
+      return { ...state, activeView: 'files', selectedFilePath: action.path, rightPanelMode: 'closed' };
     case 'select_workspace_file':
       return { ...state, activeView: 'files', selectedFilePath: action.path, rightPanelMode: 'closed' };
     case 'select_change':

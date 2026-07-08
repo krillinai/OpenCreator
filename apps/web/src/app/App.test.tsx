@@ -751,7 +751,7 @@ describe('App', () => {
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
   });
 
-  it('点击详情不会打开旧 mock 文件详情，点击文件才进入真实文件工作区', async () => {
+  it('点击详情不会打开旧 mock 详情，点击文件才进入真实文件工作区', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
@@ -853,6 +853,8 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '详情' }));
     expect(screen.queryByRole('heading', { name: 'README.md' })).not.toBeInTheDocument();
+    expect(screen.queryByText('已编辑 docs/atoms.md')).not.toBeInTheDocument();
+    expect(screen.queryByText('+903 -0')).not.toBeInTheDocument();
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
     expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
 
