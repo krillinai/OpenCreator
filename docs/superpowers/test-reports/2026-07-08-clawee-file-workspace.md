@@ -17,15 +17,13 @@
 ### 全仓检查
 
 - `pnpm typecheck`: PASS
-- `pnpm test`: FAIL
+- `pnpm test`: PASS
 
-`pnpm test` 的真实失败原因：
+本次为 `apps/web` 测试环境补充了全局 jsdom Range 测量兼容层：
 
-- `apps/web` 全量 Vitest 在 `src/features/files/FileEditorPane.test.tsx` 运行期间出现 1 个未处理异常。
-- 异常内容：`TypeError: textRange(...).getClientRects is not a function`
-- 相关栈来自 `@codemirror/view` 在 `jsdom` 环境中的测量逻辑。
-- Vitest 汇总结果为 `34 passed, 201 passed, 1 error`，并以退出码 1 结束。
-- 因此全仓测试不能记为 PASS。
+- 在 `apps/web/src/test/setup.ts` 为原生 `Range` 原型补上 `getBoundingClientRect()` 与 `getClientRects()`。
+- 不再替换 `document.createRange()` 返回值，避免破坏 `Selection.addRange()` 依赖的真实 `Range` 类型。
+- 同时移除了 `FileWorkspaceView.test.tsx` 中重复的局部 `createRange` mock，让全仓运行环境一致。
 
 ## 真实功能验证
 
@@ -99,12 +97,11 @@
 ## 结论
 
 - 文件工作区核心后端能力、路径安全、真实目录根、保存链路、只读拦截均已获得真实验证。
-- Task 9 brief 中“目标测试集”总体通过，但“全仓检查”未全部通过，因为 `pnpm test` 真实失败。
-- 当前验收结论不能写成全绿；应以“定向验收通过，仓库全量测试仍有 1 个未处理异常待修复”作为真实状态。
+- Task 9 brief 中“目标测试集”和本轮要求的全仓 `pnpm test`、`pnpm typecheck` 均已真实通过。
+- 当前验收可以按“自动化测试通过，部分手动项仍为 NOT RUN”记录。
 
 ## 遗留风险
 
-- `pnpm test` 仍被 `apps/web` 的 CodeMirror/jsdom 未处理异常阻塞，影响全仓测试收口。
 - 第一版未覆盖新建、删除、重命名、上传和全局搜索。
 - 第一版文件树搜索只覆盖已加载节点。
 - 本轮未对 reveal 系统打开动作做真实点击验证。

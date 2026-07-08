@@ -14,28 +14,6 @@ class ResizeObserverMock {
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
-  document.createRange = ((() => ({
-    setStart() {},
-    setEnd() {},
-    collapse() {},
-    cloneRange() {
-      return this;
-    },
-    selectNodeContents() {},
-    getBoundingClientRect() {
-      return { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0, toJSON() {} };
-    },
-    getClientRects() {
-      return {
-        length: 0,
-        item() {
-          return null;
-        },
-        [Symbol.iterator]: function* iterator() {}
-      };
-    },
-    commonAncestorContainer: document.body
-  })) as unknown) as typeof document.createRange;
   window.localStorage.clear();
 });
 
