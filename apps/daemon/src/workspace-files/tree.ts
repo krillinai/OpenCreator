@@ -1,6 +1,6 @@
 import { readdirSync, statSync, realpathSync } from 'node:fs';
 import type { WorkspaceDirectoryResponse, WorkspaceFileMetaSummary, WorkspaceFileNode } from '@clawee/protocol';
-import { kindFor, mimeFor, isEditable, isPreviewable, reasonForUnavailable } from './mime.js';
+import { kindFor, mimeFor, isEditable, isPreviewable, isSensitivePath, reasonForUnavailable } from './mime.js';
 import { assertInsideRoot, isIgnoredDir } from './paths.js';
 import { MAX_DIRECTORY_CHILDREN } from './types.js';
 
@@ -34,6 +34,10 @@ export function buildDirectoryResponse(input: {
     try {
       const childReal = realpathSync(childAbsolutePath);
       assertInsideRoot(input.rootReal, childReal);
+      if (isSensitivePath(childPath)) {
+        warnings.push('Skipped sensitive file.');
+        continue;
+      }
 
       if (entry.isDirectory()) {
         nodes.push({
@@ -65,7 +69,7 @@ export function buildDirectoryResponse(input: {
         meta: summarizeMeta(childPath, stats.size, stats.mtimeMs, input.readonly)
       } satisfies WorkspaceFileNode);
     } catch {
-      warnings.push(`Skipped path outside workspace root: ${childPath}`);
+      warnings.push('Skipped path outside workspace root.');
     }
   }
 

@@ -1,15 +1,17 @@
 import { constants as fsConstants } from 'node:fs';
 import {
   accessSync,
+  closeSync,
   existsSync,
+  fstatSync,
+  ftruncateSync,
   lstatSync,
   openSync,
   readFileSync,
   realpathSync,
-  renameSync,
-  rmSync,
   statSync,
-  writeFileSync
+  writeFileSync,
+  writeSync
 } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -72,6 +74,9 @@ export function createWorkspaceFileService(input: {
 
     async getMeta(request) {
       const resolved = resolveFileRequest(input.getThread, request.threadId, request.path);
+      if (isSensitivePath(resolved.relativePath)) {
+        throw new WorkspaceFileError('PERMISSION_DENIED', 'Sensitive files are not readable.');
+      }
       return buildMeta(resolved.thread, resolved.relativePath, resolved.absolutePath);
     },
 
@@ -122,6 +127,9 @@ export function createWorkspaceFileService(input: {
 
     async readBlob(request) {
       const resolved = resolveFileRequest(input.getThread, request.threadId, request.path);
+      if (isSensitivePath(resolved.relativePath)) {
+        throw new WorkspaceFileError('PERMISSION_DENIED', 'Sensitive files are not readable.');
+      }
       const meta = buildMeta(resolved.thread, resolved.relativePath, resolved.absolutePath);
       if ((meta.kind !== 'image' && meta.kind !== 'pdf') || !meta.previewable) {
         throw new WorkspaceFileError('UNSUPPORTED_FILE_TYPE', 'Only previewable images and PDFs can be read as blobs.');
@@ -224,12 +232,17 @@ function safeOverwriteFile(rootReal: string, absolutePath: string, content: stri
   if (!stats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
   accessSync(absolutePath, fsConstants.W_OK);
 
-  const tempPath = `${absolutePath}.clawee-tmp-${process.pid}-${Date.now()}`;
   let handle: number | undefined;
   try {
-    const flags = fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
-    handle = openSync(tempPath, flags, 0o600);
-    writeFileSync(handle, content, 'utf8');
+    const flags = fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0);
+    handle = openSync(absolutePath, flags);
+    const openedStats = fstatSync(handle);
+    if (!openedStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
+    if (openedStats.dev !== stats.dev || openedStats.ino !== stats.ino) {
+      throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');
+    }
+    ftruncateSync(handle, 0);
+    writeSync(handle, content, undefined, 'utf8');
     const verifyStats = lstatSync(absolutePath);
     if (!verifyStats.isFile()) throw new WorkspaceFileError('PATH_ESCAPE', 'Target is not a regular file.');
     const realAfter = realpathSync(absolutePath);
@@ -237,11 +250,7 @@ function safeOverwriteFile(rootReal: string, absolutePath: string, content: stri
     if (realAfter !== realBefore || verifyStats.dev !== stats.dev || verifyStats.ino !== stats.ino) {
       throw new WorkspaceFileError('PATH_ESCAPE', 'Target changed during save.');
     }
-    renameSync(tempPath, absolutePath);
-    const finalReal = realpathSync(absolutePath);
-    assertInsideRoot(rootReal, finalReal);
   } catch (error) {
-    rmSync(tempPath, { force: true });
     if (error instanceof WorkspaceFileError) throw error;
     if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
       throw new WorkspaceFileError('FILE_NOT_FOUND', 'File not found.');
@@ -253,7 +262,7 @@ function safeOverwriteFile(rootReal: string, absolutePath: string, content: stri
   } finally {
     if (handle !== undefined) {
       try {
-        rmSync(tempPath, { force: true });
+        closeSync(handle);
       } catch {
         // ignore cleanup failure
       }

@@ -150,3 +150,35 @@ pnpm --filter @clawee/daemon typecheck
 
 - 单测通过：`20 tests passed`
 - Typecheck 通过
+
+## Task 2 复审剩余阻塞修复追加
+
+### 本轮修复
+
+- 收紧敏感文件可见性：`getMeta` 对敏感路径直接返回 `PERMISSION_DENIED`，与 `readContent`/`saveContent`/`readBlob` 保持同口径。
+- 收紧目录树构建：敏感文件在 `listDirectory` 中直接跳过，不返回节点、不返回任何 meta；warning 改为泛化的 `Skipped sensitive file.`。
+- 收紧 root 外 symlink warning：不再带相对路径，统一为 `Skipped path outside workspace root.`，避免泄露隐藏节点名。
+- 修复 `saveContent` 最后一跳 TOCTOU：移除临时文件 `rename` 覆盖，改为在目标文件通过校验后直接以 `O_WRONLY | O_NOFOLLOW` 打开目标 inode，`truncate + write` 覆盖，避免目标删除后通过 `rename` 重新创建新文件。
+
+### 本轮新增测试
+
+- `getMeta({ path: sensitive })` 对 `.env.production`、`id_rsa`、`credentials.json` 拒绝访问。
+- 目录树中 `.env.production`、`id_rsa`、`credentials.json` 不出现在 `nodes`，`.env.example` 仍可列出。
+- root 外 symlink 的目录树 warning 不带具体路径。
+- 目标文件在保存前被删除时，`saveContent` 失败且不会新建目标文件。
+- 参数化类型矩阵覆盖设计第 8 章基础文本类型：
+  `.md/.markdown/.txt/.log/.srt/.json/.jsonc/.jsonl/.yaml/.yml/.toml/.csv/.xml/.html/.htm/.css/.scss/.sass/.less/.js/.jsx/.mjs/.cjs/.ts/.tsx/.sh/.bash/.zsh/.py/.gitignore/.npmrc/.prettierrc/.eslintrc/.env.example/.env.sample`
+
+### 本轮验证
+
+执行命令：
+
+```bash
+pnpm --filter @clawee/daemon test -- test/unit/workspace-files.test.ts
+pnpm --filter @clawee/daemon typecheck
+```
+
+结果摘要：
+
+- 单测通过：`56 tests passed`
+- Typecheck 通过

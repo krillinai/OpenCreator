@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -160,6 +160,23 @@ describe('workspace file service', () => {
     });
   });
 
+  it('rejects getMeta for sensitive files', async () => {
+    const { service } = createFixture();
+    writeFile('.env.production', 'TOKEN=prod\n');
+    writeFile('id_rsa', 'private-key');
+    writeFile('credentials.json', '{\"token\":\"secret\"}\n');
+
+    await expect(service.getMeta({ threadId: 'thread_1', path: '.env.production' })).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED'
+    });
+    await expect(service.getMeta({ threadId: 'thread_1', path: 'id_rsa' })).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED'
+    });
+    await expect(service.getMeta({ threadId: 'thread_1', path: 'credentials.json' })).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED'
+    });
+  });
+
   it('allows .env.example as text', async () => {
     const { service } = createFixture();
     writeFile('.env.example', 'TOKEN=\n');
@@ -208,16 +225,34 @@ describe('workspace file service', () => {
     const result = await service.listDirectory({ threadId: 'thread_1', path: 'docs' });
 
     expect(result.nodes.map((node) => node.name)).toEqual(['inside.md']);
-    expect(result.warnings).toContain('Skipped path outside workspace root: docs/escape-link');
+    expect(result.warnings).toContain('Skipped path outside workspace root.');
 
     rmSync(outside, { recursive: true, force: true });
   });
 
-  it('does not create a new file when target is concurrently deleted during saveContent', async () => {
+  it('omits sensitive files from directory tree and uses generic warning', async () => {
+    const { service } = createFixture();
+    writeFile('.env.production', 'TOKEN=prod\n');
+    writeFile('id_rsa', 'private-key');
+    writeFile('credentials.json', '{\"token\":\"secret\"}\n');
+    writeFile('.env.example', 'TOKEN=\n');
+    writeFile('README.md', '# hello\n');
+
+    const result = await service.listDirectory({ threadId: 'thread_1', path: '' });
+
+    expect(result.nodes.map((node) => node.name)).toEqual(['.env.example', 'README.md']);
+    expect(result.warnings).toEqual([
+      'Skipped sensitive file.',
+      'Skipped sensitive file.',
+      'Skipped sensitive file.'
+    ]);
+  });
+
+  it('does not create a new file when target is deleted before saveContent writes', async () => {
     const { service } = createFixture({ sandbox: 'workspace-write' });
     writeFile('README.md', '# hello\n');
     const before = await service.readContent({ threadId: 'thread_1', path: 'README.md' });
-    renameSync(join(tempDir, 'README.md'), join(tempDir, 'README.moved.md'));
+    unlinkSync(join(tempDir, 'README.md'));
 
     await expect(
       service.saveContent({
@@ -229,25 +264,52 @@ describe('workspace file service', () => {
     ).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
 
     expect(() => readFileSync(join(tempDir, 'README.md'), 'utf8')).toThrow();
-    expect(readFileSync(join(tempDir, 'README.moved.md'), 'utf8')).toBe('# hello\n');
   });
 
-  it('reads jsonc toml srt and zsh as text', async () => {
+  it.each([
+    ['README.md', '# hello\n', 'markdown'],
+    ['README.markdown', '# hello\n', 'markdown'],
+    ['notes.txt', 'hello\n', 'text'],
+    ['server.log', 'hello\n', 'text'],
+    ['captions.srt', '1\n00:00:00,000 --> 00:00:01,000\nhello\n', 'text'],
+    ['config.json', '{\"a\":1}\n', 'json'],
+    ['config.jsonc', '{\n  // comment\n  \"a\": 1\n}\n', 'json'],
+    ['events.jsonl', '{\"a\":1}\n', 'json'],
+    ['config.yaml', 'a: 1\n', 'code'],
+    ['config.yml', 'a: 1\n', 'code'],
+    ['config.toml', 'name = \"demo\"\n', 'text'],
+    ['data.csv', 'a,b\n1,2\n', 'text'],
+    ['layout.xml', '<root />\n', 'code'],
+    ['index.html', '<p>hello</p>\n', 'html'],
+    ['index.htm', '<p>hello</p>\n', 'html'],
+    ['styles.css', 'body {}\n', 'code'],
+    ['styles.scss', '$a: red;\n', 'code'],
+    ['styles.sass', 'body\n  color: red\n', 'code'],
+    ['styles.less', '@a: red;\n', 'code'],
+    ['app.js', 'console.log(1)\n', 'code'],
+    ['app.jsx', 'export const App = () => null;\n', 'code'],
+    ['app.mjs', 'export const a = 1;\n', 'code'],
+    ['app.cjs', 'module.exports = 1;\n', 'code'],
+    ['app.ts', 'export const a = 1;\n', 'code'],
+    ['app.tsx', 'export const App = () => null;\n', 'code'],
+    ['script.sh', 'echo hello\n', 'code'],
+    ['script.bash', 'echo hello\n', 'code'],
+    ['script.zsh', 'echo hello\n', 'code'],
+    ['tool.py', 'print(\"hi\")\n', 'code'],
+    ['.gitignore', 'node_modules\n', 'text'],
+    ['.npmrc', 'registry=https://example.com\n', 'text'],
+    ['.prettierrc', '{\"semi\":false}\n', 'text'],
+    ['.eslintrc', 'module.exports = {}\n', 'code'],
+    ['.env.example', 'TOKEN=\n', 'text'],
+    ['.env.sample', 'TOKEN=\n', 'text']
+  ])('supports base text type %s', async (filePath, content, expectedKind) => {
     const { service } = createFixture();
-    writeFile('config.jsonc', '{\n  // comment\n  \"a\": 1\n}\n');
-    writeFile('config.toml', 'name = \"demo\"\n');
-    writeFile('captions.srt', '1\n00:00:00,000 --> 00:00:01,000\nhello\n');
-    writeFile('script.zsh', 'echo hello\n');
+    writeFile(filePath, content);
 
-    const jsonc = await service.readContent({ threadId: 'thread_1', path: 'config.jsonc' });
-    const toml = await service.readContent({ threadId: 'thread_1', path: 'config.toml' });
-    const srt = await service.readContent({ threadId: 'thread_1', path: 'captions.srt' });
-    const zsh = await service.readContent({ threadId: 'thread_1', path: 'script.zsh' });
+    const result = await service.readContent({ threadId: 'thread_1', path: filePath });
 
-    expect(jsonc.meta.kind).toBe('json');
-    expect(toml.meta.kind).toBe('text');
-    expect(srt.meta.kind).toBe('text');
-    expect(zsh.meta.kind).toBe('code');
+    expect(result.content).toBe(content);
+    expect(result.meta.kind).toBe(expectedKind);
   });
 
   it('classifies svg as code text instead of image blob', async () => {
