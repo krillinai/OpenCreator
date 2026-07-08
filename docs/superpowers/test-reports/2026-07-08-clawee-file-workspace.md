@@ -7,8 +7,8 @@
 ### 定向测试与类型检查
 
 - `pnpm --filter @clawee/protocol typecheck`: PASS
-- `pnpm --filter @clawee/daemon test -- apps/daemon/test/unit/protocol-shape.test.ts apps/daemon/test/unit/workspace-files.test.ts apps/daemon/test/integration/api.test.ts`: PASS（命令退出 0，但 `apps/...` filter 未命中，Vitest 输出 `No test files found`）
-- `pnpm --filter @clawee/web test -- apps/web/src/services/workspace-file-service.test.ts apps/web/src/features/files/file-view-state.test.ts apps/web/src/features/files/ProjectFileTree.test.tsx apps/web/src/features/files/FileEditorPane.test.tsx apps/web/src/features/files/FileWorkspaceView.test.tsx apps/web/src/app/app-state.test.ts apps/web/src/app/App.test.tsx`: PASS（命令退出 0，但 `apps/...` filter 未命中，Vitest 输出 `No test files found`）
+- `pnpm --filter @clawee/daemon test -- apps/daemon/test/unit/protocol-shape.test.ts apps/daemon/test/unit/workspace-files.test.ts apps/daemon/test/integration/api.test.ts`: NOT RUN（命令退出 0，但 `apps/...` filter 未命中，Vitest 输出 `No test files found`，未执行目标测试）
+- `pnpm --filter @clawee/web test -- apps/web/src/services/workspace-file-service.test.ts apps/web/src/features/files/file-view-state.test.ts apps/web/src/features/files/ProjectFileTree.test.tsx apps/web/src/features/files/FileEditorPane.test.tsx apps/web/src/features/files/FileWorkspaceView.test.tsx apps/web/src/app/app-state.test.ts apps/web/src/app/App.test.tsx`: NOT RUN（命令退出 0，但 `apps/...` filter 未命中，Vitest 输出 `No test files found`，未执行目标测试）
 - `pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts test/unit/workspace-files.test.ts test/integration/api.test.ts`: PASS
 - `pnpm --filter @clawee/web test -- src/services/workspace-file-service.test.ts src/features/files/file-view-state.test.ts src/features/files/ProjectFileTree.test.tsx src/features/files/FileEditorPane.test.tsx src/features/files/FileWorkspaceView.test.tsx src/app/app-state.test.ts src/app/App.test.tsx`: PASS
 - `pnpm --filter @clawee/daemon typecheck`: PASS
