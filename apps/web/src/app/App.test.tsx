@@ -485,6 +485,47 @@ describe('App', () => {
     });
   });
 
+  it('shows refreshed Playground conversations under Playground', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_playground',
+              title: 'Playground 历史会话',
+              cwd: '/Users/test/develop/clawee/playground',
+              canonicalCwd: '/Users/test/develop/clawee/playground',
+              updatedAt: new Date('2026-07-09T02:00:00.000Z').toISOString()
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_playground/history')) {
+        return jsonResponse({ threadId: 'thread_playground', codexThreadId: null, items: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+
+    expect(await screen.findByRole('button', { name: /Playground 历史会话/ })).toBeInTheDocument();
+  });
+
   it('clears the current conversation surface when switching projects', async () => {
     const user = userEvent.setup();
     const prompt = '生成一份项目周报';

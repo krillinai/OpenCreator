@@ -11,7 +11,7 @@ import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { readCodexSessionHistory } from '../codex/sessions/history.js';
-import { scanCodexSessions } from '../codex/sessions/scanner.js';
+import { scanCodexSessionsWithMetadata } from '../codex/sessions/scanner.js';
 import { createSkillManager } from '../codex/skills/manager.js';
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
@@ -169,7 +169,11 @@ export async function buildServer(input: BuildServerInput) {
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager,
     syncCodexSessions(limit) {
-      for (const session of scanCodexSessions({ codexHome, limit })) {
+      const scan = scanCodexSessionsWithMetadata({ codexHome, limit });
+      for (const codexThreadId of scan.excludedSubagentThreadIds) {
+        threadManager.archiveCodexThread(codexThreadId);
+      }
+      for (const session of scan.sessions) {
         threadManager.importCodexThread({
           codexThreadId: session.codexThreadId,
           title: session.title,

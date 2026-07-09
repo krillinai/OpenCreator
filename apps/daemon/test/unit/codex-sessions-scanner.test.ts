@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -65,6 +65,50 @@ describe('codex sessions scanner', () => {
         createdAt: '2026-07-07T02:00:00.000Z',
         updatedAt: '2026-07-07T02:00:03.000Z',
         path: sessionPath
+      })
+    ]);
+  });
+
+  it('filters subagent Codex sessions before applying the list limit', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '09');
+    mkdirSync(sessionDir, { recursive: true });
+
+    const subagentPath = writeSession(sessionDir, 'subagent-newer', {
+      id: 'subagent-newer',
+      cwd: join(tempDir, 'playground'),
+      timestamp: '2026-07-09T02:00:00.000Z',
+      meta: {
+        parent_thread_id: 'parent-thread',
+        thread_source: 'subagent',
+        source: {
+          subagent: {
+            thread_spawn: {
+              parent_thread_id: 'parent-thread',
+              depth: 1,
+              agent_role: 'default'
+            }
+          }
+        }
+      },
+      userMessage: '你是 Task 1 的任务审查子代理'
+    });
+    const userPath = writeSession(sessionDir, 'user-older', {
+      id: 'user-older',
+      cwd: join(tempDir, 'playground'),
+      timestamp: '2026-07-09T01:00:00.000Z',
+      userMessage: '整理 Playground 的客户跟进记录'
+    });
+    utimesSync(userPath, new Date('2026-07-09T01:00:00.000Z'), new Date('2026-07-09T01:00:00.000Z'));
+    utimesSync(subagentPath, new Date('2026-07-09T02:00:00.000Z'), new Date('2026-07-09T02:00:00.000Z'));
+
+    const sessions = scanCodexSessions({ codexHome, limit: 1 });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        codexThreadId: 'user-older',
+        title: '整理 Playground 的客户跟进记录'
       })
     ]);
   });
@@ -141,3 +185,39 @@ describe('codex sessions scanner', () => {
     );
   });
 });
+
+function writeSession(
+  sessionDir: string,
+  id: string,
+  input: {
+    id: string;
+    cwd: string;
+    timestamp: string;
+    userMessage: string;
+    meta?: Record<string, unknown>;
+  }
+): string {
+  const path = join(sessionDir, `rollout-${id}.jsonl`);
+  writeFileSync(
+    path,
+    [
+      JSON.stringify({
+        timestamp: input.timestamp,
+        type: 'session_meta',
+        payload: {
+          id: input.id,
+          session_id: input.id,
+          timestamp: input.timestamp,
+          cwd: input.cwd,
+          ...input.meta
+        }
+      }),
+      JSON.stringify({
+        timestamp: input.timestamp,
+        type: 'event_msg',
+        payload: { type: 'user_message', message: input.userMessage }
+      })
+    ].join('\n')
+  );
+  return path;
+}

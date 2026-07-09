@@ -43,6 +43,7 @@ export type ThreadManager = {
   listThreads(filter?: { status?: 'active' | 'archived' | 'all'; limit?: number }): RuntimeThread[];
   importCodexThread(input: ImportCodexThreadInput): RuntimeThread;
   archiveThread(id: string): RuntimeThread;
+  archiveCodexThread(codexThreadId: string): RuntimeThread | undefined;
   setCodexThreadId(threadId: string, codexThreadId: string): void;
   touchThread(threadId: string): void;
 };

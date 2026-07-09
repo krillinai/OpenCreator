@@ -104,6 +104,13 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       return mapThreadRow(threads.getThread(id)!);
     },
 
+    archiveCodexThread(codexThreadId: string): RuntimeThread | undefined {
+      const existing = threads.getThreadByCodexThreadId(codexThreadId);
+      if (existing === undefined) return undefined;
+      threads.archiveThread(existing.id);
+      return mapThreadRow(threads.getThread(existing.id)!);
+    },
+
     setCodexThreadId(threadId: string, codexThreadId: string): void {
       threads.setCodexThreadId(threadId, codexThreadId);
     },

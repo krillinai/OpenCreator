@@ -10,6 +10,11 @@ export type CodexSessionSummary = {
   path: string;
 };
 
+export type CodexSessionScanResult = {
+  sessions: CodexSessionSummary[];
+  excludedSubagentThreadIds: string[];
+};
+
 export type ScanCodexSessionsInput = {
   codexHome: string;
   limit?: number;
@@ -19,20 +24,29 @@ const DEFAULT_LIMIT = 50;
 const MAX_TITLE_LENGTH = 80;
 
 export function scanCodexSessions(input: ScanCodexSessionsInput): CodexSessionSummary[] {
+  return scanCodexSessionsWithMetadata(input).sessions;
+}
+
+export function scanCodexSessionsWithMetadata(input: ScanCodexSessionsInput): CodexSessionScanResult {
   const sessionsDir = join(input.codexHome, 'sessions');
-  if (!existsSync(sessionsDir)) return [];
+  if (!existsSync(sessionsDir)) return { sessions: [], excludedSubagentThreadIds: [] };
 
   const files = listJsonlFiles(sessionsDir)
     .map(path => ({ path, mtimeMs: safeStat(path)?.mtimeMs ?? 0 }))
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)
-    .slice(0, input.limit ?? DEFAULT_LIMIT);
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
 
   const sessions: CodexSessionSummary[] = [];
+  const excludedSubagentThreadIds: string[] = [];
   for (const file of files) {
     const session = readCodexSession(file.path);
-    if (session !== undefined) sessions.push(session);
+    if (session?.kind === 'subagent') {
+      excludedSubagentThreadIds.push(session.codexThreadId);
+      continue;
+    }
+    if (session?.kind === 'user') sessions.push(session.summary);
+    if (sessions.length >= (input.limit ?? DEFAULT_LIMIT)) break;
   }
-  return sessions;
+  return { sessions, excludedSubagentThreadIds };
 }
 
 function listJsonlFiles(dir: string): string[] {
@@ -51,7 +65,7 @@ function listJsonlFiles(dir: string): string[] {
   return files;
 }
 
-function readCodexSession(path: string): CodexSessionSummary | undefined {
+function readCodexSession(path: string): { kind: 'user'; summary: CodexSessionSummary } | { kind: 'subagent'; codexThreadId: string } | undefined {
   const content = safeReadFile(path);
   if (content === undefined) return undefined;
 
@@ -72,6 +86,10 @@ function readCodexSession(path: string): CodexSessionSummary | undefined {
 
     const payload = isRecord(entry.payload) ? entry.payload : undefined;
     if (entry.type === 'session_meta' && payload !== undefined) {
+      const metaCodexThreadId = getString(payload, 'id') ?? getString(payload, 'session_id') ?? codexThreadId;
+      if (isSubagentSession(payload)) {
+        return metaCodexThreadId === undefined ? undefined : { kind: 'subagent', codexThreadId: metaCodexThreadId };
+      }
       codexThreadId = getString(payload, 'id') ?? getString(payload, 'session_id') ?? codexThreadId;
       cwd = getString(payload, 'cwd') ?? cwd;
       createdAt = getString(payload, 'timestamp') ?? createdAt;
@@ -100,12 +118,15 @@ function readCodexSession(path: string): CodexSessionSummary | undefined {
   }
 
   return {
-    codexThreadId,
-    title: title ?? '未命名对话',
-    cwd,
-    createdAt,
-    updatedAt,
-    path
+    kind: 'user',
+    summary: {
+      codexThreadId,
+      title: title ?? '未命名对话',
+      cwd,
+      createdAt,
+      updatedAt,
+      path
+    }
   };
 }
 
@@ -133,6 +154,14 @@ function isInjectedUserMessage(text: string): boolean {
   return trimmed.startsWith('# AGENTS.md instructions')
     || trimmed.startsWith('<environment_context>')
     || trimmed.startsWith('Another language model started to solve this problem');
+}
+
+function isSubagentSession(payload: Record<string, unknown>): boolean {
+  if (getString(payload, 'thread_source') === 'subagent') return true;
+  if (getString(payload, 'parent_thread_id') !== undefined) return true;
+
+  const source = isRecord(payload.source) ? payload.source : undefined;
+  return source !== undefined && isRecord(source.subagent);
 }
 
 function formatTitle(text: string): string {

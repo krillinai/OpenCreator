@@ -1848,6 +1848,65 @@ describe('runtime api', () => {
     expect(listedAgain.json().threads).toHaveLength(1);
   });
 
+  it('hides subagent Codex sessions and keeps older user sessions visible within the list limit', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '09');
+    mkdirSync(sessionDir, { recursive: true });
+    const userPath = writeCodexSession(sessionDir, 'user-playground-session', {
+      timestamp: '2026-07-09T01:00:00.000Z',
+      cwd: join(tempDir, 'playground'),
+      userMessage: 'Playground 正常会话'
+    });
+    const subagentPath = writeCodexSession(sessionDir, 'subagent-review-session', {
+      timestamp: '2026-07-09T02:00:00.000Z',
+      cwd: join(tempDir, 'playground'),
+      userMessage: '你是 Task 1 的任务审查子代理',
+      meta: {
+        parent_thread_id: 'parent-thread',
+        thread_source: 'subagent',
+        source: { subagent: { thread_spawn: { parent_thread_id: 'parent-thread', depth: 1 } } }
+      }
+    });
+    utimesSync(userPath, new Date('2026-07-09T01:00:00.000Z'), new Date('2026-07-09T01:00:00.000Z'));
+    utimesSync(subagentPath, new Date('2026-07-09T02:00:00.000Z'), new Date('2026-07-09T02:00:00.000Z'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    createThreadRepository(db).insertThread({
+      id: 'thread_codex_subagentreviewsession',
+      title: '旧的子 Agent 脏数据',
+      codexThreadId: 'subagent-review-session',
+      cwd: join(tempDir, 'playground'),
+      canonicalCwd: join(tempDir, 'playground'),
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active',
+      createdAt: '2026-07-09 02:00:00',
+      updatedAt: '2026-07-09 02:00:00'
+    });
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome, db });
+
+    const listed = await authGet('/threads?limit=1');
+    const all = await authGet('/threads?status=all&limit=10');
+
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().threads).toEqual([
+      expect.objectContaining({
+        title: 'Playground 正常会话',
+        codexThreadId: 'user-playground-session'
+      })
+    ]);
+    expect(JSON.stringify(listed.json())).not.toContain('subagent-review-session');
+    expect(all.json().threads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codexThreadId: 'subagent-review-session',
+          status: 'archived'
+        })
+      ])
+    );
+  });
+
   it('returns Codex session chat history for imported runtime threads', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');
@@ -2778,6 +2837,41 @@ function insertApiThread(
     sandbox: 'read-only',
     status: overrides.status ?? 'active'
   });
+}
+
+function writeCodexSession(
+  sessionDir: string,
+  id: string,
+  input: {
+    timestamp: string;
+    cwd: string;
+    userMessage: string;
+    meta?: Record<string, unknown>;
+  }
+): string {
+  const path = join(sessionDir, `rollout-${id}.jsonl`);
+  writeFileSync(
+    path,
+    [
+      JSON.stringify({
+        timestamp: input.timestamp,
+        type: 'session_meta',
+        payload: {
+          id,
+          session_id: id,
+          timestamp: input.timestamp,
+          cwd: input.cwd,
+          ...input.meta
+        }
+      }),
+      JSON.stringify({
+        timestamp: input.timestamp,
+        type: 'event_msg',
+        payload: { type: 'user_message', message: input.userMessage }
+      })
+    ].join('\n')
+  );
+  return path;
 }
 
 function writeOldApiDir(dir: string, fileName: string, content: string): string {
