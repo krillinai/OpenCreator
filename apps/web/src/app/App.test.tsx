@@ -486,7 +486,6 @@ describe('App', () => {
   });
 
   it('shows refreshed Playground conversations under Playground', async () => {
-    const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const runtimeFetch = async (input: RequestInfo | URL) => {
@@ -524,6 +523,63 @@ describe('App', () => {
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
 
     expect(await screen.findByRole('button', { name: /Playground 历史会话/ })).toBeInTheDocument();
+  });
+
+  it('does not show managed runtime workspaces as projects', async () => {
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_RwiAbzbZ8p',
+              title: 'task9-readonly',
+              cwd: '.runtime/workspaces/thread_RwiAbzbZ8p',
+              canonicalCwd: '.runtime/workspaces/thread_RwiAbzbZ8p',
+              workspaceMode: 'managed'
+            }),
+            createThreadResponse({
+              id: 'thread_1Qm6X_K0eo',
+              title: 'task9-write',
+              cwd: '.runtime/workspaces/thread_1Qm6X_K0eo',
+              canonicalCwd: '.runtime/workspaces/thread_1Qm6X_K0eo',
+              workspaceMode: 'managed'
+            }),
+            createThreadResponse({
+              id: 'thread_playground',
+              title: 'Playground 历史会话',
+              cwd: '/Users/test/develop/clawee/playground',
+              canonicalCwd: '/Users/test/develop/clawee/playground',
+              workspaceMode: 'external'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_playground/history')) {
+        return jsonResponse({ threadId: 'thread_playground', codexThreadId: null, items: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Playground 历史会话/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'thread_RwiAbzbZ8p' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'thread_1Qm6X_K0eo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /task9-readonly/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /task9-write/ })).not.toBeInTheDocument();
   });
 
   it('clears the current conversation surface when switching projects', async () => {

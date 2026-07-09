@@ -113,10 +113,14 @@ export function App(props: AppProps = {}) {
     () => runtimeClient === null ? null : createWorkspaceFileService(runtimeClient),
     [runtimeClient]
   );
-  const projects = useMemo(() => createProjectsForThreads(baseProjects, runtimeThreads), [baseProjects, runtimeThreads]);
+  const visibleRuntimeThreads = useMemo(
+    () => runtimeThreads.filter(shouldShowThreadInSidebar),
+    [runtimeThreads]
+  );
+  const projects = useMemo(() => createProjectsForThreads(baseProjects, visibleRuntimeThreads), [baseProjects, visibleRuntimeThreads]);
   const conversations = useMemo(
-    () => runtimeThreads.map(thread => mapThreadToConversation(thread, projects)),
-    [runtimeThreads, projects]
+    () => visibleRuntimeThreads.map(thread => mapThreadToConversation(thread, projects)),
+    [visibleRuntimeThreads, projects]
   );
 
   useEffect(() => {
@@ -826,6 +830,20 @@ function createProjectsForThreads(baseProjects: ClaweeProject[], threads: Thread
   }
 
   return Array.from(projectById.values());
+}
+
+function shouldShowThreadInSidebar(thread: ThreadResponse): boolean {
+  if (thread.workspaceMode === 'managed') return false;
+  if (isRuntimeWorkspacePath(thread.cwd)) return false;
+  if (isRuntimeWorkspacePath(thread.canonicalCwd)) return false;
+  return true;
+}
+
+function isRuntimeWorkspacePath(path: string): boolean {
+  const normalized = normalizePathForCompare(path).replace(/\\/g, '/').replace(/^\.\//, '');
+  return normalized === '.runtime/workspaces'
+    || normalized.startsWith('.runtime/workspaces/')
+    || normalized.includes('/.runtime/workspaces/');
 }
 
 function mapThreadToConversation(thread: ThreadResponse, projects: ClaweeProject[]): ClaweeConversation {
