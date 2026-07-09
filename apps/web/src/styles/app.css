@@ -653,11 +653,31 @@ textarea:focus-visible {
 }
 
 .change-card-content {
+  width: 100%;
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 7px 10px;
   align-items: center;
+}
+
+.change-card-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.change-card-button:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.change-card-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset: 4px;
 }
 
 .change-card-content strong {
@@ -687,9 +707,18 @@ textarea:focus-visible {
   font: 700 11px/1 var(--font-mono);
 }
 
-.change-card-content .inline-action {
+.change-card-action {
   grid-column: 2;
   grid-row: 1;
+  justify-self: end;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
 }
 
 .timeline-item p {
@@ -1325,9 +1354,10 @@ textarea:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .change-card-content .inline-action {
+  .change-card-action {
     grid-column: 1;
     grid-row: auto;
+    justify-self: start;
   }
 
   .composer {
@@ -1704,6 +1734,12 @@ textarea:focus-visible {
   color: var(--subtle);
 }
 
+.composer-input-wrap {
+  position: relative;
+  min-width: 0;
+  display: grid;
+}
+
 .composer-toolbar {
   display: flex;
   align-items: center;
@@ -1853,6 +1889,10 @@ textarea:focus-visible {
   background: var(--surface-3);
 }
 
+.composer-menu-item.is-active {
+  background: var(--surface-3);
+}
+
 .composer-menu-item > span:last-child {
   min-width: 0;
   display: grid;
@@ -1886,6 +1926,46 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   color: var(--text);
+}
+
+.composer-slash-menu {
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  max-height: min(360px, 54vh);
+  overflow: auto;
+}
+
+.composer-slash-group {
+  display: grid;
+  gap: 2px;
+}
+
+.composer-slash-group + .composer-slash-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.composer-slash-group-label {
+  padding: 4px 10px 5px;
+  color: var(--muted);
+  font: 700 11px/1 var(--font-mono);
+  text-transform: none;
+}
+
+.composer-slash-status {
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.composer-slash-status-error {
+  color: var(--danger);
+}
+
+.composer-slash-item {
+  grid-template-columns: 24px minmax(0, 1fr);
 }
 
 .clawee-sidebar-pane,

@@ -347,33 +347,43 @@ function renderMessageContent(item: Extract<TimelineItem, { kind: 'user_message'
   return <MarkdownRenderer text={item.text} variant={item.kind === 'user_message' ? 'user' : 'assistant'} />;
 }
 
-function renderChangeCard(item: Extract<TimelineItem, { kind: 'change_card' }>, onOpenChange?: (changeId: string) => void) {
-  return (
-    <div className="change-card-content">
+function renderChangeCard(item: Extract<TimelineItem, { kind: 'change_card' }>, onOpenFile?: (path: string) => void) {
+  const content = (
+    <>
       <strong>{item.title}</strong>
       <span>{item.path}</span>
       <code>{item.delta}</code>
-      {onOpenChange ? (
-        <button
-          type="button"
-          className="inline-action"
-          aria-label={`审查 ${item.title} ${item.path}`}
-          onClick={() => onOpenChange(item.id)}
-        >
-          审查
-        </button>
-      ) : null}
+      {onOpenFile ? <span className="change-card-action">打开</span> : null}
+    </>
+  );
+
+  if (onOpenFile) {
+    return (
+      <button
+        type="button"
+        className="change-card-content change-card-button"
+        aria-label={`打开文件 ${item.path}`}
+        onClick={() => onOpenFile(item.path)}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className="change-card-content">
+      {content}
     </div>
   );
 }
 
-function renderTimelineItemContent(item: TimelineItem, onOpenChange?: (changeId: string) => void) {
+function renderTimelineItemContent(item: TimelineItem, onOpenFile?: (path: string) => void) {
   switch (item.kind) {
     case 'user_message':
     case 'assistant_message':
       return renderMessageContent(item);
     case 'change_card':
-      return renderChangeCard(item, onOpenChange);
+      return renderChangeCard(item, onOpenFile);
     case 'diagnostic':
       return (
         <div className="timeline-diagnostic-content">
@@ -464,7 +474,7 @@ function renderProcessBlock(process: ProcessBlock, onOpenRunDetail?: (runId: str
 export function Timeline(props: {
   items: TimelineItem[];
   onOpenRunDetail?(runId: string): void;
-  onOpenChange?(changeId: string): void;
+  onOpenFile?(path: string): void;
 }) {
   const renderItems = buildTimelineRenderItems(props.items);
 
@@ -490,7 +500,7 @@ export function Timeline(props: {
                   <span className="timeline-avatar">{getTimelineAvatar(item)}</span>
                   <span className="timeline-kind">{getTimelineTitle(item)}</span>
                 </div>
-                <div className="timeline-bubble">{renderTimelineItemContent(item, props.onOpenChange)}</div>
+                <div className="timeline-bubble">{renderTimelineItemContent(item, props.onOpenFile)}</div>
               </article>
             );
           })}

@@ -55,6 +55,82 @@ describe('App', () => {
     expect(screen.queryByText(/mock 文件变更/)).not.toBeInTheDocument();
   });
 
+  it('loads runtime skills and MCP servers into the composer slash menu', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/skills')) {
+        return jsonResponse({
+          codexHome: '/Users/test/.codex',
+          codexHomeMode: 'global',
+          skillsPath: '/Users/test/.codex/skills',
+          skillsWritable: true,
+          requiresWriteConfirmation: true,
+          diagnostics: [],
+          skills: [
+            {
+              id: 'brainstorming',
+              name: 'brainstorming',
+              description: '需求梳理和方案发散',
+              status: 'valid',
+              diagnostics: [],
+              codexHome: '/Users/test/.codex',
+              codexHomeMode: 'global',
+              skillsPath: '/Users/test/.codex/skills',
+              skillPath: '/Users/test/.codex/skills/brainstorming',
+              skillFilePath: '/Users/test/.codex/skills/brainstorming/SKILL.md'
+            }
+          ]
+        });
+      }
+      if (url.endsWith('/codex/mcp')) {
+        return jsonResponse({
+          codexHome: '/Users/test/.codex',
+          codexHomeMode: 'global',
+          requiresWriteConfirmation: true,
+          diagnostics: [],
+          servers: [
+            {
+              name: 'github',
+              transport: 'stdio',
+              status: 'configured',
+              command: 'node',
+              args: ['server.js'],
+              envKeys: ['GITHUB_TOKEN'],
+              hasSecrets: true,
+              codexHome: '/Users/test/.codex',
+              codexHomeMode: 'global',
+              diagnostics: []
+            }
+          ]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '/');
+
+    expect(await screen.findByRole('listbox', { name: '能力菜单' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /brainstorming/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /github/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /设置 Goal/ })).toBeInTheDocument();
+  });
+
   it('starts a real runtime run, records SSE events, opens run detail, and shows Codex info in settings', async () => {
     const user = userEvent.setup();
     const prompt = 'Reply with OK only.';
@@ -850,6 +926,150 @@ describe('App', () => {
     expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '返回对话' })).not.toBeInTheDocument();
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
+  });
+
+  it('点击聊天流里的文件变更卡片会直接打开对应文件', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const absoluteChangedPath = '/Users/test/develop/clawee/clawee-agent/docs/generated.md';
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_files',
+              title: '真实文件会话',
+              codexThreadId: 'codex-thread-files',
+              cwd: '/Users/test/develop/clawee/clawee-agent',
+              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_files/history')) {
+        return jsonResponse({
+          threadId: 'thread_files',
+          codexThreadId: 'codex-thread-files',
+          items: [
+            {
+              id: 'history_change_1',
+              type: 'file_change',
+              changes: [{ path: absoluteChangedPath, kind: 'modify' }],
+              status: 'completed',
+              createdAt: new Date(0).toISOString()
+            }
+          ]
+        });
+      }
+      if (url.includes('/workspace/files/directory?')) {
+        return jsonResponse({
+          threadId: 'thread_files',
+          rootName: 'clawee-agent',
+          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          path: '',
+          suggestedOpenPath: 'README.md',
+          truncated: false,
+          warnings: [],
+          nodes: [
+            {
+              path: 'README.md',
+              name: 'README.md',
+              depth: 0,
+              type: 'file',
+              meta: {
+                kind: 'markdown',
+                mime: 'text/markdown',
+                size: 1,
+                mtimeMs: 1,
+                previewable: true,
+                editable: true,
+                readonly: false
+              }
+            },
+            {
+              path: 'docs/generated.md',
+              name: 'generated.md',
+              depth: 1,
+              type: 'file',
+              meta: {
+                kind: 'markdown',
+                mime: 'text/markdown',
+                size: 1,
+                mtimeMs: 1,
+                previewable: true,
+                editable: true,
+                readonly: false
+              }
+            }
+          ]
+        });
+      }
+      if (url.includes('/workspace/files/meta?')) {
+        const path = new URL(url).searchParams.get('path');
+        if (path !== 'docs/generated.md') throw new Error(`Expected generated.md meta request, got ${path}`);
+        return jsonResponse({
+          path: 'docs/generated.md',
+          name: 'generated.md',
+          type: 'file',
+          kind: 'markdown',
+          mime: 'text/markdown',
+          size: 1,
+          mtimeMs: 1,
+          versionToken: 'v1',
+          previewable: true,
+          editable: true,
+          readonly: false
+        });
+      }
+      if (url.includes('/workspace/files/content?')) {
+        const path = new URL(url).searchParams.get('path');
+        if (path !== 'docs/generated.md') throw new Error(`Expected generated.md content request, got ${path}`);
+        return jsonResponse({
+          meta: {
+            path: 'docs/generated.md',
+            name: 'generated.md',
+            type: 'file',
+            kind: 'markdown',
+            mime: 'text/markdown',
+            size: 1,
+            mtimeMs: 1,
+            versionToken: 'v1',
+            previewable: true,
+            editable: true,
+            readonly: false
+          },
+          content: '# Generated',
+          encoding: 'utf8'
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
+    await user.click(await screen.findByRole('button', { name: `打开文件 ${absoluteChangedPath}` }));
+
+    expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'docs/generated.md 编辑器' })).toHaveTextContent('# Generated');
+    expect(screen.queryByText('已编辑 docs/atoms.md')).not.toBeInTheDocument();
+    expect(
+      fetchCalls.some(call => call.url.includes('/workspace/files/meta?') && call.url.includes('path=docs%2Fgenerated.md'))
+    ).toBe(true);
   });
 
   it('会话和文件工作区之间的分隔条可以拖动调整宽度', async () => {

@@ -1,4 +1,6 @@
 import type {
+  CodexMcpListResponse,
+  CodexSkillListResponse,
   CreateThreadRequest,
   RunDiagnosticsResponse,
   RunResponse,
@@ -18,7 +20,7 @@ import { ConversationHeader } from '../features/conversation/ConversationHeader.
 import { DetailPanel } from '../features/details/DetailPanel.js';
 import { FileWorkspaceView } from '../features/files/FileWorkspaceView.js';
 import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
-import { Composer, type ComposerRunConfig } from '../features/runs/Composer.js';
+import { Composer, type ComposerRunConfig, type ComposerSlashCommand } from '../features/runs/Composer.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
@@ -26,6 +28,7 @@ import type { HostBridge } from '../host/bridge.js';
 import { RuntimeClient } from '../runtime/client.js';
 import { subscribeRunEvents as defaultSubscribeRunEvents, type SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { ConnectionConfig } from '../runtime/types.js';
+import { createCapabilityService } from '../services/capability-service.js';
 import { createConnectionService, type ConnectionState } from '../services/connection-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
 import { createMockFileService } from '../services/file-service.js';
@@ -76,6 +79,10 @@ export function App(props: AppProps = {}) {
   });
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
+  const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
+  const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
+  const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [runtimeBusy, setRuntimeBusy] = useState(false);
   const [savedFileByPath, setSavedFileByPath] = useState<Record<string, WorkspaceFile>>({});
   const [draftContentByPath, setDraftContentByPath] = useState<Record<string, string>>({});
@@ -115,6 +122,10 @@ export function App(props: AppProps = {}) {
   );
   const diagnosticsService = useMemo(
     () => runtimeClient === null ? null : createDiagnosticsService(runtimeClient),
+    [runtimeClient]
+  );
+  const capabilityService = useMemo(
+    () => runtimeClient === null ? null : createCapabilityService(runtimeClient),
     [runtimeClient]
   );
   const workspaceFileService = useMemo(
@@ -235,6 +246,44 @@ export function App(props: AppProps = {}) {
       canceled = true;
     };
   }, [connectionState.status, threadService]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    if (connectionState.status !== 'connected' || capabilityService === null) {
+      setCodexSkills(undefined);
+      setCodexMcp(undefined);
+      setCapabilitiesLoading(false);
+      setCapabilitiesLoadError(undefined);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    setCapabilitiesLoading(true);
+    setCapabilitiesLoadError(undefined);
+
+    Promise.allSettled([capabilityService.listSkills(), capabilityService.listMcp()])
+      .then(results => {
+        if (canceled) return;
+        const [skillsResult, mcpResult] = results;
+        if (skillsResult?.status === 'fulfilled') setCodexSkills(skillsResult.value);
+        if (mcpResult?.status === 'fulfilled') setCodexMcp(mcpResult.value);
+        if (skillsResult?.status === 'rejected' || mcpResult?.status === 'rejected') {
+          setCapabilitiesLoadError('本机能力检测失败');
+        }
+      })
+      .catch(() => {
+        if (!canceled) setCapabilitiesLoadError('本机能力检测失败');
+      })
+      .finally(() => {
+        if (!canceled) setCapabilitiesLoading(false);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [capabilityService, connectionState.status]);
 
   useEffect(() => {
     if (!allowInitialRuntimeProjectFocusRef.current) return;
@@ -388,6 +437,10 @@ export function App(props: AppProps = {}) {
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
   const selectedThread = runtimeThreads.find(thread => thread.id === state.selectedThreadId);
   const runtimeStatus = mapRuntimeStatus(connectionState);
+  const slashCommands = useMemo(
+    () => buildComposerSlashCommands(codexSkills, codexMcp),
+    [codexSkills, codexMcp]
+  );
 
   function handleEditorContentChange(content: string) {
     const path = selectedFilePathRef.current;
@@ -664,8 +717,8 @@ export function App(props: AppProps = {}) {
     void loadRunDiagnostics(runId);
   }
 
-  function openChangeDetail(changeId: string) {
-    dispatch({ type: 'select_change', changeId });
+  function openTimelineFile(path: string) {
+    dispatch({ type: 'select_workspace_file', path: toWorkspaceRelativePath(path, selectedThread) });
   }
 
   async function saveCurrentFile() {
@@ -793,7 +846,7 @@ export function App(props: AppProps = {}) {
         {timelineItems.length === 0 ? (
           <ConversationEmptyState projectName={currentProjectName} />
         ) : (
-          <Timeline items={timelineItems} onOpenRunDetail={openRunDetail} onOpenChange={openChangeDetail} />
+          <Timeline items={timelineItems} onOpenRunDetail={openRunDetail} onOpenFile={openTimelineFile} />
         )}
       </div>
       <div className="composer-wrap">
@@ -804,6 +857,9 @@ export function App(props: AppProps = {}) {
           reasoning={effectiveComposerConfig.reasoning}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
+          slashCommands={slashCommands}
+          slashCommandsLoading={capabilitiesLoading}
+          slashCommandsError={capabilitiesLoadError}
           onPermissionChange={(permission) => void handleComposerPermissionChange(permission)}
           onSubmit={submitPrompt}
         />
@@ -830,6 +886,7 @@ export function App(props: AppProps = {}) {
       />
       <FileWorkspaceView
         selectedThread={selectedThread}
+        selectedPath={state.workspaceTargetPath}
         workspaceFileService={workspaceFileService}
         onClose={() => dispatch({ type: 'close_file_workspace' })}
         onSelectPath={(path) => dispatch({ type: 'select_workspace_file', path })}
@@ -1001,6 +1058,29 @@ function pathsLookRelated(left: string, right: string): boolean {
     || normalizedRight.endsWith(`/${lastPathSegment(normalizedLeft)}`);
 }
 
+function toWorkspaceRelativePath(path: string, thread: ThreadResponse | undefined): string {
+  const trimmedPath = path.trim();
+  if (trimmedPath.length === 0 || thread === undefined) return trimmedPath;
+
+  return stripWorkspaceRoot(trimmedPath, thread.canonicalCwd)
+    ?? stripWorkspaceRoot(trimmedPath, thread.cwd)
+    ?? normalizeWorkspacePath(trimmedPath).replace(/^\.\//, '');
+}
+
+function stripWorkspaceRoot(path: string, root: string): string | undefined {
+  const normalizedPath = normalizeWorkspacePath(path);
+  const normalizedRoot = normalizeWorkspacePath(root).replace(/\/+$/, '');
+  if (normalizedRoot.length === 0) return undefined;
+  if (normalizedPath === normalizedRoot) return '';
+  return normalizedPath.startsWith(`${normalizedRoot}/`)
+    ? normalizedPath.slice(normalizedRoot.length + 1)
+    : undefined;
+}
+
+function normalizeWorkspacePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
 function normalizePathForCompare(path: string): string {
   return path.replace(/^~(?=\/)/, '').replace(/\/+$/, '');
 }
@@ -1055,6 +1135,70 @@ function defaultComposerRunConfig(project?: ClaweeProject): ComposerRunConfig {
     model: project?.model ?? null,
     reasoning: (project?.reasoning ?? null) as ComposerRunConfig['reasoning']
   };
+}
+
+function buildComposerSlashCommands(
+  skills: CodexSkillListResponse | undefined,
+  mcp: CodexMcpListResponse | undefined
+): ComposerSlashCommand[] {
+  return [
+    ...(skills?.skills ?? [])
+      .filter(skill => skill.status === 'valid')
+      .map(skill => ({
+        id: `skill:${skill.id}`,
+        category: 'skill' as const,
+        label: skill.name ?? skill.id,
+        description: skill.description ?? skill.id,
+        insertText: `$${skill.id} `
+      })),
+    ...(mcp?.servers ?? [])
+      .filter(server => server.status === 'configured')
+      .map(server => ({
+        id: `mcp:${server.name}`,
+        category: 'mcp' as const,
+        label: server.name,
+        description: formatMcpSlashDescription(server),
+        insertText: `使用 MCP：${server.name} `
+      })),
+    ...goalSlashCommands()
+  ];
+}
+
+function goalSlashCommands(): ComposerSlashCommand[] {
+  return [
+    {
+      id: 'goal:create',
+      category: 'goal',
+      label: '设置 Goal',
+      description: '为这次任务声明明确目标',
+      insertText: '目标：'
+    },
+    {
+      id: 'goal:review',
+      category: 'goal',
+      label: '检查 Goal',
+      description: '让 Agent 对齐当前目标和剩余工作',
+      insertText: '请先检查当前目标和剩余工作，再继续。'
+    },
+    {
+      id: 'goal:complete',
+      category: 'goal',
+      label: '完成 Goal',
+      description: '让 Agent 在完成后总结目标达成情况',
+      insertText: '完成后请总结目标达成情况。'
+    }
+  ];
+}
+
+function formatMcpSlashDescription(server: CodexMcpListResponse['servers'][number]): string {
+  const status = server.status === 'configured' ? '已配置' : server.status;
+  if (server.command !== undefined && server.command.length > 0) {
+    return `${server.transport} · ${status} · ${server.command}`;
+  }
+  if (server.url !== undefined && server.url.length > 0) {
+    return `${server.transport} · ${status} · ${server.url}`;
+  }
+  return `${server.transport} · ${status}`;
 }
 
 function toRuntimeSandbox(permission: ClaweeProject['sandbox'] | undefined): SandboxMode {

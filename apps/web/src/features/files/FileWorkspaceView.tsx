@@ -27,6 +27,7 @@ export type WorkspaceFileService = {
 
 type FileWorkspaceViewProps = {
   selectedThread?: ThreadResponse;
+  selectedPath?: string;
   workspaceFileService?: WorkspaceFileService | null;
   onClose(): void;
   onSelectPath?(path: string): void;
@@ -135,8 +136,11 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
         setTruncatedPaths(directory.truncated ? [''] : []);
         setWorkspaceMessage(directory.warnings[0]);
 
+        const requestedPath = props.selectedPath?.trim();
         const recentPath = recentPathStorageKey ? readRecentPath(recentPathStorageKey) : undefined;
-        const nextPath = recentPath ?? chooseSuggestedPath(directory);
+        const nextPath = requestedPath && requestedPath.length > 0
+          ? requestedPath
+          : recentPath ?? chooseSuggestedPath(directory);
         if (nextPath) {
           await openFilePath(nextPath, { skipDirtyConfirm: true });
         }
@@ -153,7 +157,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
       canceled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread?.id, thread?.sandbox, thread?.status, service, recentPathStorageKey]);
+  }, [thread?.id, thread?.sandbox, thread?.status, service, recentPathStorageKey, props.selectedPath]);
 
   async function openFilePath(path: string, options?: { skipDirtyConfirm?: boolean }) {
     if (!thread || !service) {
