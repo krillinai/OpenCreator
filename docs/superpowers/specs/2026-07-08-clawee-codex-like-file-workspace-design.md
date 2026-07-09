@@ -86,9 +86,9 @@ Clawee 当前已经具备 Agent runtime、项目、会话、Skills、MCP、定�
 
 用户提供的 Codex 文件视图截图包含以下关键特征：
 
-1. 文件视图是主工作区，不是右侧详情面板。
+1. 文件视图和会话内容在同一工作区内并排显示，不是独立跳转页，也不是窄右侧详情面板。
 2. 左侧仍保留应用菜单。
-3. 主工作区顶部有“打开文件”、文件 Tab、加号和布局操作。
+3. 文件区域顶部有“打开文件”、文件 Tab、加号和布局操作。
 4. 第二行是 breadcrumb 路径和“打开”操作。
 5. 中间左侧是编辑器/预览区，包含行号、语法高亮和文件内容。
 6. 中间右侧是文件树，包含搜索框、可折叠目录和当前文件高亮。
@@ -604,18 +604,23 @@ PDF：
 
 ### 9.1 页面模型
 
-新增 `activeView: 'files'`。
+文件功能作为会话工作区内的并排面板打开，不再跳转到独立 `activeView: 'files'` 页面。
 
-文件功能作为主工作区，不再使用 `rightPanelMode: 'file'` 作为主要入口。现有 `rightPanelMode: 'file'` 可以在实现阶段移除、降级为兼容入口，或改成跳转到 `activeView: 'files'`。
+前端状态建议：
+
+1. `activeView` 继续保持 `conversation`。
+2. 使用 `rightPanelMode: 'file'` 或等价状态表示文件工作区已展开。
+3. `rightPanelMode: 'file'` 不渲染旧 `DetailPanel`，而是在主工作区内渲染会话 + 文件工作区的分栏布局。
+4. 旧的 `activeView: 'files'` 若已存在，应降级为兼容入口或逐步移除，不能作为会话顶部“文件”按钮的跳转目标。
 
 主布局：
 
 ```text
 ┌──────────────┬───────────────────────────────────────────────────────┐
-│ Clawee 菜单   │ Codex-like 文件视图                                   │
-│              │ 顶部文件 Tab / breadcrumb                              │
-│ 项目          │                                                       │
-│ 会话          │ 编辑器                                      文件树      │
+│ Clawee 菜单   │ 会话区                         Codex-like 文件工作区    │
+│              │                                顶部文件 Tab / breadcrumb│
+│ 项目          │ 消息 / 思考过程 / 结果          编辑器          文件树    │
+│ 会话          │ 输入框                                                  │
 │ 搜索          │                                                       │
 │ 已安排        │                                                       │
 └──────────────┴───────────────────────────────────────────────────────┘
@@ -803,10 +808,10 @@ PDF：
 
 ## 11. 状态流
 
-### 11.1 打开文件视图
+### 11.1 打开文件工作区
 
 1. 用户从会话顶部、变更卡片或项目入口进入文件视图。
-2. 前端切换到 `activeView: 'files'`。
+2. 前端保持 `activeView: 'conversation'`，在会话内展开文件工作区。
 3. 确认存在 active thread；若从项目入口进入且没有 active thread，先创建或选择该项目下的 active thread。
 4. 调用 `GET /workspace/files/directory?threadId=...&path=`。
 5. 读取本地最近打开文件状态。
@@ -996,7 +1001,7 @@ clawee.files.expandedPathsByWorkspace
 体验验收：
 
 1. 整体布局接近用户提供的 Codex 文件视图。
-2. 文件视图是主工作区，不是右侧详情面板。
+2. 文件视图和会话同屏显示，不是独立跳转页，也不是右侧详情面板。
 3. 编辑器和文件树区域稳定，不因加载、hover、长文件名而跳动。
 4. 保存、冲突、错误都有明确反馈。
 5. 不伪造文件能力，不出现 mock 文件冒充真实文件。
@@ -1014,14 +1019,14 @@ clawee.files.expandedPathsByWorkspace
 ### R2：前端服务和状态
 
 1. 新增 `workspace-file-service`。
-2. 新增 `activeView: 'files'`。
+2. 会话内新增文件工作区展开状态。
 3. 接入 active thread、`canonicalCwdHash` 最近打开文件、展开状态。
 4. 重构 `App.tsx` 中与 `rightPanelMode: 'file'`、`selectedFilePath`、draft/save/load/error 相关的旧 mock 文件状态，文件主路径改走 `workspace-file-service`。
 
 ### R3：Codex-like 文件工作区 UI
 
 1. 实现 `FileWorkspaceView`。
-2. 实现顶部栏、breadcrumb、文件树。
+2. 实现会话 + 文件工作区同屏布局、顶部栏、breadcrumb、文件树。
 3. 接入 CodeMirror 6 文本编辑器、Markdown/JSON/源码预览。
 4. 实现图片/PDF/不可预览状态。
 

@@ -665,18 +665,8 @@ export function App(props: AppProps = {}) {
   const detailPanel = createDetailPanel();
   const composerDisabled = runtimeBusy || connectionState.status !== 'connected';
   const composerDisabledReason = runtimeBusy ? '当前对话有任务运行中' : '正在连接本地运行内核';
-  const main = props.capabilitiesView !== undefined ? (
-    <CapabilitiesView {...props.capabilitiesView} />
-  ) : state.activeView === 'settings' ? (
-    <ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={() => dispatch({ type: 'back_to_app' })} />
-  ) : state.activeView === 'files' ? (
-    <FileWorkspaceView
-      selectedThread={selectedThread}
-      workspaceFileService={workspaceFileService}
-      onBack={() => dispatch({ type: 'close_file_workspace' })}
-      onSelectPath={(path) => dispatch({ type: 'select_workspace_file', path })}
-    />
-  ) : state.activeView === 'conversation' ? (
+  const fileWorkspaceOpen = state.activeView === 'conversation' && state.rightPanelMode === 'file';
+  const conversationPage = (
     <section className="conversation-page">
       <ConversationHeader
         title={selectedConversation?.title ?? '新对话'}
@@ -710,6 +700,24 @@ export function App(props: AppProps = {}) {
         />
       </div>
     </section>
+  );
+  const conversationWorkspace = fileWorkspaceOpen ? (
+    <section className="conversation-file-layout" aria-label="会话和文件工作区">
+      {conversationPage}
+      <FileWorkspaceView
+        selectedThread={selectedThread}
+        workspaceFileService={workspaceFileService}
+        onClose={() => dispatch({ type: 'close_file_workspace' })}
+        onSelectPath={(path) => dispatch({ type: 'select_workspace_file', path })}
+      />
+    </section>
+  ) : conversationPage;
+  const main = props.capabilitiesView !== undefined ? (
+    <CapabilitiesView {...props.capabilitiesView} />
+  ) : state.activeView === 'settings' ? (
+    <ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={() => dispatch({ type: 'back_to_app' })} />
+  ) : state.activeView === 'conversation' ? (
+    conversationWorkspace
   ) : (
     <PlaceholderView label={getPlaceholderLabel(state.activeView)} />
   );
@@ -739,6 +747,7 @@ export function App(props: AppProps = {}) {
 
   function createDetailPanel() {
     if (state.rightPanelMode === 'closed') return null;
+    if (state.rightPanelMode === 'file') return null;
 
     if (state.rightPanelMode === 'run_detail') {
       return (

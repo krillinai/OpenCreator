@@ -24,14 +24,14 @@ describe('app state', () => {
     expect(app.activeView).toBe('conversation');
   });
 
-  it('routes legacy select_file into the file workspace and keeps other details closable', () => {
+  it('routes legacy select_file into the conversation file workspace and keeps other details closable', () => {
     const file = reduceAppState({ ...initialAppState, activeView: 'settings' }, {
       type: 'select_file',
       path: 'docs/runtime-api-for-ui-v1.md'
     });
-    expect(file.activeView).toBe('files');
+    expect(file.activeView).toBe('conversation');
     expect(file.selectedFilePath).toBe('docs/runtime-api-for-ui-v1.md');
-    expect(file.rightPanelMode).toBe('closed');
+    expect(file.rightPanelMode).toBe('file');
 
     const change = reduceAppState({ ...file, activeView: 'search' }, {
       type: 'select_change',
@@ -69,44 +69,30 @@ describe('app state', () => {
     expect(state.rightPanelMode).toBe('closed');
   });
 
-  it('opens the file workspace and closes the detail panel', () => {
+  it('opens the file workspace inside the conversation view and closes other detail panels', () => {
     const state = reduceAppState(
-      { ...initialAppState, activeView: 'conversation', rightPanelMode: 'file' },
+      { ...initialAppState, activeView: 'conversation', rightPanelMode: 'run_detail' },
       {
         type: 'open_files'
       }
     );
 
-    expect(state.activeView).toBe('files');
-    expect(state.rightPanelMode).toBe('closed');
+    expect(state.activeView).toBe('conversation');
+    expect(state.rightPanelMode).toBe('file');
   });
 
-  it('selects a workspace file without opening the right detail panel', () => {
+  it('selects a workspace file without leaving the conversation view', () => {
     const state = reduceAppState(
-      { ...initialAppState, activeView: 'files', rightPanelMode: 'change' },
+      { ...initialAppState, activeView: 'conversation', rightPanelMode: 'file' },
       {
         type: 'select_workspace_file',
         path: 'docs/workspace.md'
       }
     );
 
-    expect(state.activeView).toBe('files');
+    expect(state.activeView).toBe('conversation');
     expect(state.selectedFilePath).toBe('docs/workspace.md');
-    expect(state.rightPanelMode).toBe('closed');
-  });
-
-  it('closes conversation detail when switching to the file workspace', () => {
-    const state = reduceAppState(
-      { ...initialAppState, activeView: 'conversation', rightPanelMode: 'run_detail', selectedRunId: 'run_1' },
-      {
-        type: 'set_active_view',
-        activeView: 'files'
-      }
-    );
-
-    expect(state.activeView).toBe('files');
-    expect(state.rightPanelMode).toBe('closed');
-    expect(state.selectedRunId).toBe('run_1');
+    expect(state.rightPanelMode).toBe('file');
   });
 
   it('selects a thread and returns to the conversation view', () => {

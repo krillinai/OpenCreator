@@ -743,7 +743,7 @@ describe('App', () => {
     expect(screen.getByText('这个 skill 用于分析选品资料。')).toBeInTheDocument();
   });
 
-  it('从会话头部点击文件会进入真实文件工作区', async () => {
+  it('从会话头部点击文件会在会话旁打开真实文件工作区', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
@@ -844,8 +844,11 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
     await user.click(screen.getByRole('button', { name: '文件' }));
 
+    expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '真实文件会话' })).toBeInTheDocument();
     expect(await screen.findByText('打开文件')).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '返回对话' })).not.toBeInTheDocument();
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
   });
 
@@ -957,6 +960,8 @@ describe('App', () => {
     expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '文件' }));
+    expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '真实文件会话' })).toBeInTheDocument();
     expect(await screen.findByText('打开文件')).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
   });

@@ -70,15 +70,15 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
     case 'open_settings':
       return { ...state, activeView: 'settings', rightPanelMode: 'closed' };
     case 'open_files':
-      return { ...state, activeView: 'files', rightPanelMode: 'closed' };
+      return { ...state, activeView: 'conversation', rightPanelMode: 'file' };
     case 'back_to_app':
       return { ...state, activeView: 'conversation' };
     case 'select_thread':
       return { ...state, selectedThreadId: action.threadId, activeView: 'conversation' };
     case 'select_file':
-      return { ...state, activeView: 'files', selectedFilePath: action.path, rightPanelMode: 'closed' };
+      return { ...state, activeView: 'conversation', selectedFilePath: action.path, rightPanelMode: 'file' };
     case 'select_workspace_file':
-      return { ...state, activeView: 'files', selectedFilePath: action.path, rightPanelMode: 'closed' };
+      return { ...state, activeView: 'conversation', selectedFilePath: action.path, rightPanelMode: 'file' };
     case 'select_change':
       return { ...state, activeView: 'conversation', selectedChangeId: action.changeId, rightPanelMode: 'change' };
     case 'select_run_detail':

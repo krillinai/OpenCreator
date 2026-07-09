@@ -19,7 +19,7 @@ beforeEach(() => {
 
 describe('FileWorkspaceView', () => {
   it('没有 selected thread 时显示空态', () => {
-    render(<FileWorkspaceView workspaceFileService={createService()} onBack={vi.fn()} />);
+    render(<FileWorkspaceView workspaceFileService={createService()} onClose={vi.fn()} />);
 
     expect(screen.getByText('请选择或创建一个会话后查看文件')).toBeInTheDocument();
   });
@@ -35,7 +35,7 @@ describe('FileWorkspaceView', () => {
       }
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     expect(service.listDirectory).toHaveBeenCalledWith(thread.id, '');
     await waitFor(() => expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'README.md'));
@@ -59,7 +59,7 @@ describe('FileWorkspaceView', () => {
       }
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     await user.click(await screen.findByRole('treeitem', { name: 'docs' }));
 
@@ -84,7 +84,7 @@ describe('FileWorkspaceView', () => {
       }
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     await user.click(await screen.findByRole('treeitem', { name: 'notes.txt' }));
 
@@ -124,7 +124,7 @@ describe('FileWorkspaceView', () => {
       }
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     await user.click(await screen.findByRole('treeitem', { name: 'preview.png' }));
     await waitFor(() => expect(service.openBlob).toHaveBeenCalledWith(thread.id, 'preview.png'));
@@ -144,7 +144,7 @@ describe('FileWorkspaceView', () => {
     });
 
     const { container } = render(
-      <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />
+      <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
     );
 
     await screen.findByRole('textbox', { name: 'README.md 编辑器' });
@@ -186,7 +186,7 @@ describe('FileWorkspaceView', () => {
     });
 
     const { unmount } = render(
-      <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />
+      <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
     );
 
     await user.click(await screen.findByRole('treeitem', { name: 'preview.png' }));
@@ -226,7 +226,7 @@ describe('FileWorkspaceView', () => {
       })
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
     await user.click(editor);
@@ -268,7 +268,7 @@ describe('FileWorkspaceView', () => {
       })
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
     await user.click(editor);
@@ -301,7 +301,7 @@ describe('FileWorkspaceView', () => {
       }
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
     await user.click(editor);
@@ -344,7 +344,7 @@ describe('FileWorkspaceView', () => {
       })
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
     await user.click(editor);
@@ -402,7 +402,7 @@ describe('FileWorkspaceView', () => {
       }
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     expect(await screen.findByText('当前会话为只读模式，不能保存文件')).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'notes.txt 编辑器' })).toHaveAttribute('aria-readonly', 'true');
@@ -427,7 +427,7 @@ describe('FileWorkspaceView', () => {
       }
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onBack={vi.fn()} />);
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
     await user.click(screen.getByRole('button', { name: '打开所在目录' }));

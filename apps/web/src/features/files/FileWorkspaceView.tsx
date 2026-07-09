@@ -27,7 +27,7 @@ export type WorkspaceFileService = {
 type FileWorkspaceViewProps = {
   selectedThread?: ThreadResponse;
   workspaceFileService?: WorkspaceFileService | null;
-  onBack(): void;
+  onClose(): void;
   onSelectPath?(path: string): void;
 };
 
@@ -327,32 +327,24 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   }
 
   function handleBack() {
-    if (dirty && !window.confirm('当前文件有未保存修改，确定返回对话吗？')) {
+    if (dirty && !window.confirm('当前文件有未保存修改，确定关闭文件工作区吗？')) {
       return;
     }
 
-    props.onBack();
+    props.onClose();
   }
 
   if (!thread) {
-    return (
-      <section className="file-workspace-empty">
-        <p>请选择或创建一个会话后查看文件</p>
-      </section>
-    );
+    return renderEmptyWorkspace('请选择或创建一个会话后查看文件');
   }
 
   if (!service) {
-    return (
-      <section className="file-workspace-empty">
-        <p>本地文件服务暂不可用</p>
-      </section>
-    );
+    return renderEmptyWorkspace('本地文件服务暂不可用');
   }
 
   return (
     <section className="file-workspace-view">
-      <FileTopBar fileName={effectiveMeta?.name} dirty={dirty} onBack={handleBack} />
+      <FileTopBar fileName={effectiveMeta?.name} dirty={dirty} onClose={handleBack} />
       <FilePathBar
         rootName={rootName}
         path={activePath}
@@ -416,6 +408,17 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     if (previousObjectUrl && previousObjectUrl !== nextObjectUrl && service) {
       service.revokeBlob(previousObjectUrl);
     }
+  }
+
+  function renderEmptyWorkspace(message: string) {
+    return (
+      <section className="file-workspace-view is-empty">
+        <FileTopBar onClose={handleBack} />
+        <section className="file-workspace-empty">
+          <p>{message}</p>
+        </section>
+      </section>
+    );
   }
 }
 

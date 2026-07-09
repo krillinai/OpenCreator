@@ -1364,6 +1364,19 @@ textarea:focus-visible {
   background: var(--surface);
 }
 
+.conversation-file-layout {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(360px, 0.48fr) minmax(560px, 1fr);
+  background: var(--surface);
+}
+
+.conversation-file-layout > .conversation-page {
+  border-right: 1px solid var(--border);
+}
+
 .conversation-header {
   min-height: 64px;
   display: flex;
@@ -1482,6 +1495,10 @@ textarea:focus-visible {
   background: var(--surface);
 }
 
+.file-workspace-view.is-empty {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .file-top-bar,
 .file-path-bar {
   min-width: 0;
@@ -1495,6 +1512,7 @@ textarea:focus-visible {
 }
 
 .file-top-bar-leading,
+.file-top-bar-actions,
 .file-top-bar-title,
 .file-path-actions,
 .file-path-breadcrumbs {
@@ -1502,6 +1520,11 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.file-top-bar-actions {
+  justify-content: flex-end;
+  flex: 1 1 auto;
 }
 
 .file-top-bar-title strong {
@@ -2391,6 +2414,16 @@ textarea:focus-visible {
 
   .clawee-detail-pane {
     display: none;
+  }
+
+  .conversation-file-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(520px, 1fr) minmax(520px, 1fr);
+  }
+
+  .conversation-file-layout > .conversation-page {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
   }
 
   .conversation-header {
