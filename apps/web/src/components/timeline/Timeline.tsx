@@ -102,6 +102,10 @@ function safeParseJson(content: string): unknown {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function formatPayload(content: string): string {
   const parsed = safeParseJson(content);
   if (parsed === null) return content;
@@ -125,17 +129,57 @@ function shouldRenderDiagnosticPayload(item: Extract<TimelineItem, { kind: 'diag
 function getPayloadType(item: ProcessTimelineItem): string | undefined {
   if (!('content' in item) || typeof item.content !== 'string') return undefined;
   const payload = safeParseJson(item.content);
-  if (typeof payload !== 'object' || payload === null || !('type' in payload)) return undefined;
-  const type = (payload as { type?: unknown }).type;
+  if (!isRecord(payload)) return undefined;
+  const type = payload.type;
   return typeof type === 'string' ? type : undefined;
 }
 
 function getToolCallId(item: ProcessTimelineItem): string | undefined {
   if (item.kind !== 'tool_step') return undefined;
   const payload = safeParseJson(item.content);
-  if (typeof payload !== 'object' || payload === null || !('toolCallId' in payload)) return undefined;
-  const toolCallId = (payload as { toolCallId?: unknown }).toolCallId;
+  if (!isRecord(payload)) return undefined;
+  const toolCallId = payload.toolCallId;
   return typeof toolCallId === 'string' && toolCallId.length > 0 ? toolCallId : undefined;
+}
+
+function getStringField(record: Record<string, unknown>, fieldNames: string[]): string | undefined {
+  for (const fieldName of fieldNames) {
+    const value = record[fieldName];
+    if (typeof value === 'string' && value.trim().length > 0) return value;
+  }
+  return undefined;
+}
+
+function getStringArgs(record: Record<string, unknown>): string[] {
+  const args = record.args;
+  if (!Array.isArray(args)) return [];
+  return args.filter((arg): arg is string => typeof arg === 'string' && arg.length > 0);
+}
+
+function formatCommandArg(arg: string): string {
+  if (arg.length === 0) return "''";
+  if (/^[A-Za-z0-9_./:=@%+-]+$/.test(arg)) return arg;
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+function formatCommandFromInput(input: Record<string, unknown>): string | undefined {
+  const command = getStringField(input, ['command', 'cmd']);
+  const args = getStringArgs(input);
+  const argsText = args.map(formatCommandArg).join(' ');
+
+  if (command !== undefined && argsText.length > 0) return `${command} ${argsText}`;
+  if (command !== undefined) return command;
+  if (argsText.length > 0) return argsText;
+
+  const raw = input.raw;
+  if (!isRecord(raw)) return undefined;
+  return formatCommandFromInput(raw);
+}
+
+function getToolCommand(item: Extract<ProcessTimelineItem, { kind: 'tool_step' }>): string | undefined {
+  const payload = safeParseJson(item.content);
+  if (!isRecord(payload) || payload.type !== 'tool_use' || !isRecord(payload.input)) return undefined;
+  return formatCommandFromInput(payload.input);
 }
 
 function buildToolNameByCallId(items: ProcessTimelineItem[]): Map<string, string> {
@@ -199,6 +243,12 @@ function getProcessStepTitle(item: ProcessTimelineItem, toolNameByCallId = new M
       const _exhaustive: never = item;
       return _exhaustive;
   }
+}
+
+function getProcessStepCommand(item: ProcessTimelineItem): string | undefined {
+  if (item.kind !== 'tool_step') return undefined;
+  if (getPayloadType(item) !== 'tool_use') return undefined;
+  return getToolCommand(item);
 }
 
 function hasRunId(item: ProcessTimelineItem): item is ProcessTimelineItem & { runId: string } {
@@ -356,6 +406,8 @@ function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<strin
     );
   }
 
+  const command = getProcessStepCommand(item);
+
   return (
     <li key={item.id} className={`process-step process-step-${item.kind}`}>
       <div className="process-step-row">
@@ -363,6 +415,7 @@ function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<strin
         {item.kind === 'done' ? <span className="process-step-severity error">{item.status}</span> : null}
         <span className="process-step-title">{getProcessStepTitle(item, toolNameByCallId)}</span>
       </div>
+      {command !== undefined ? <code className="process-step-command">{command}</code> : null}
       {item.kind === 'diagnostic' && shouldRenderDiagnosticPayload(item) ? <CodePayloadBlock content={item.content} /> : null}
       {item.kind === 'done' ? <CodePayloadBlock content={item.content} /> : null}
     </li>

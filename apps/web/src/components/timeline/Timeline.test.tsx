@@ -119,6 +119,7 @@ describe('Timeline', () => {
     expect(screen.getByText('我会先确认日志里有没有失败信息。')).toBeInTheDocument();
     expect(screen.getByText('然后根据结果给出结论。')).toBeInTheDocument();
     expect(screen.getByText('使用工具 exec_command')).toBeInTheDocument();
+    expect(screen.getByText('pnpm test')).toBeInTheDocument();
     expect(
       screen.queryByText('{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"command":"pnpm test"}}')
     ).not.toBeInTheDocument();
@@ -422,6 +423,30 @@ describe('Timeline', () => {
     expect(screen.queryByText('工具完成 call_missing')).not.toBeInTheDocument();
   });
 
+  it('renders concrete exec command details without exposing raw tool JSON', () => {
+    const content =
+      '{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"cmd":"pnpm --filter @clawee/web test -- src/app/App.test.tsx"}}';
+
+    render(
+      <Timeline
+        items={[
+          {
+            kind: 'tool_step',
+            id: 'tool_use_1',
+            runId: 'run_1',
+            name: 'exec_command',
+            content,
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('使用工具 exec_command')).toBeInTheDocument();
+    expect(screen.getByText('pnpm --filter @clawee/web test -- src/app/App.test.tsx')).toBeInTheDocument();
+    expect(screen.queryByText(content)).not.toBeInTheDocument();
+  });
+
   it('folds intermediate Codex agent messages into the run process and leaves only the final answer as Clawee reply', () => {
     const items: TimelineItem[] = [
       {
@@ -484,6 +509,7 @@ describe('Timeline', () => {
     expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.getByText('我会先确认当前目录，再读取相关文件做判断。')).toBeInTheDocument();
     expect(screen.getByText('使用工具 command_execution')).toBeInTheDocument();
+    expect(screen.getByText('pwd')).toBeInTheDocument();
     expect(screen.getByText('工具完成 command_execution')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();

@@ -599,6 +599,20 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.process-step-command {
+  width: fit-content;
+  max-width: 100%;
+  margin-left: 12px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: 12px/1.55 var(--font-mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .process-step-severity {
   padding: 1px 6px;
   border: 1px solid var(--border);
