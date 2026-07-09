@@ -6,6 +6,7 @@ import type {
   ThreadHistoryItem,
   ThreadResponse
 } from '@clawee/protocol';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
 import { Timeline } from '../components/timeline/Timeline.js';
@@ -41,6 +42,10 @@ type AppFileService = {
   saveFile(path: string, content: string): Promise<WorkspaceFile>;
 };
 
+const CONVERSATION_PANE_MIN_WIDTH = 320;
+const FILE_WORKSPACE_MIN_WIDTH = 520;
+const RESIZE_KEY_STEP = 32;
+
 export type AppProps = {
   fileService?: AppFileService;
   capabilitiesView?: CapabilitiesViewProps;
@@ -64,6 +69,7 @@ export function App(props: AppProps = {}) {
   const [runtimeThreads, setRuntimeThreads] = useState<ThreadResponse[]>([]);
   const [threadLoadError, setThreadLoadError] = useState<string>();
   const [threadHistoryLoadError, setThreadHistoryLoadError] = useState<string>();
+  const [threadConfigUpdateError, setThreadConfigUpdateError] = useState<string>();
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     status: 'disconnected',
     message: '正在等待本地服务'
@@ -77,6 +83,7 @@ export function App(props: AppProps = {}) {
   const [loadErrorByPath, setLoadErrorByPath] = useState<Record<string, string | undefined>>({});
   const [saveErrorByPath, setSaveErrorByPath] = useState<Record<string, string | undefined>>({});
   const [savingFilePaths, setSavingFilePaths] = useState<Set<string>>(() => new Set());
+  const [conversationPaneWidth, setConversationPaneWidth] = useState<number>();
   const projectService = useMemo(() => createMockProjectService(), []);
   const timelineIdSequenceRef = useRef(0);
   const mountedRef = useRef(true);
@@ -90,6 +97,7 @@ export function App(props: AppProps = {}) {
   const connectionConfigVersionRef = useRef(0);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
   const conversationBodyRef = useRef<HTMLDivElement | null>(null);
+  const conversationFileLayoutRef = useRef<HTMLElement | null>(null);
   const allowInitialRuntimeProjectFocusRef = useRef(true);
 
   const runtimeClient = useMemo(
@@ -458,6 +466,7 @@ export function App(props: AppProps = {}) {
     sseAbortControllerRef.current?.abort();
     setTimelineItems([]);
     setRuntimeBusy(false);
+    setThreadConfigUpdateError(undefined);
     dispatch({ type: 'new_conversation' });
   }
 
@@ -466,6 +475,7 @@ export function App(props: AppProps = {}) {
     sseAbortControllerRef.current?.abort();
     setTimelineItems([]);
     setRuntimeBusy(false);
+    setThreadConfigUpdateError(undefined);
     dispatch({ type: 'select_project', projectId });
   }
 
@@ -474,11 +484,43 @@ export function App(props: AppProps = {}) {
     sseAbortControllerRef.current?.abort();
     setTimelineItems([]);
     setRuntimeBusy(false);
+    setThreadConfigUpdateError(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
     if (conversation !== undefined && conversation.projectId !== state.currentProjectId) {
       dispatch({ type: 'select_project', projectId: conversation.projectId });
     }
     dispatch({ type: 'select_thread', threadId: conversationId });
+  }
+
+  async function handleComposerPermissionChange(permission: ComposerRunConfig['permission']) {
+    const baseConfig = composerRunConfig ?? defaultComposerRunConfig(currentProject);
+    setComposerRunConfig({ ...baseConfig, permission });
+
+    if (selectedThread === undefined) {
+      setThreadConfigUpdateError(undefined);
+      return;
+    }
+
+    const sandbox = toRuntimeSandbox(permission);
+    if (sandbox === selectedThread.sandbox) {
+      setThreadConfigUpdateError(undefined);
+      return;
+    }
+    if (threadService === null) {
+      setThreadConfigUpdateError('本地服务暂不可用，无法更新会话访问权限');
+      return;
+    }
+
+    try {
+      const response = await threadService.updateThread(selectedThread.id, { sandbox });
+      if (!mountedRef.current) return;
+      setRuntimeThreads(previous => upsertThread(previous, response.thread));
+      setThreadConfigUpdateError(undefined);
+    } catch {
+      if (mountedRef.current) {
+        setThreadConfigUpdateError('无法更新会话访问权限');
+      }
+    }
   }
 
   async function submitRuntimePrompt(prompt: string, config?: ComposerRunConfig) {
@@ -662,10 +704,75 @@ export function App(props: AppProps = {}) {
     }
   }
 
+  function updateConversationPaneWidth(clientX: number) {
+    const layout = conversationFileLayoutRef.current;
+    if (!layout) return;
+
+    const rect = layout.getBoundingClientRect();
+    setConversationPaneWidth(clampPaneWidth(
+      clientX - rect.left,
+      CONVERSATION_PANE_MIN_WIDTH,
+      Math.max(CONVERSATION_PANE_MIN_WIDTH, rect.width - FILE_WORKSPACE_MIN_WIDTH)
+    ));
+  }
+
+  function adjustConversationPaneWidth(delta: number) {
+    const layout = conversationFileLayoutRef.current;
+    const rect = layout?.getBoundingClientRect();
+    const fallbackWidth = rect ? Math.round(rect.width * 0.42) : 420;
+    const maxWidth = rect
+      ? Math.max(CONVERSATION_PANE_MIN_WIDTH, rect.width - FILE_WORKSPACE_MIN_WIDTH)
+      : 760;
+
+    setConversationPaneWidth((previous) => clampPaneWidth(
+      (previous ?? fallbackWidth) + delta,
+      CONVERSATION_PANE_MIN_WIDTH,
+      maxWidth
+    ));
+  }
+
+  function handleConversationResizeMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+
+    event.preventDefault();
+    updateConversationPaneWidth(event.clientX);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      updateConversationPaneWidth(moveEvent.clientX);
+    };
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }
+
+  function handleConversationResizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      adjustConversationPaneWidth(-RESIZE_KEY_STEP);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      adjustConversationPaneWidth(RESIZE_KEY_STEP);
+    }
+  }
+
   const detailPanel = createDetailPanel();
   const composerDisabled = runtimeBusy || connectionState.status !== 'connected';
   const composerDisabledReason = runtimeBusy ? '当前对话有任务运行中' : '正在连接本地运行内核';
   const fileWorkspaceOpen = state.activeView === 'conversation' && state.rightPanelMode === 'file';
+  const effectiveComposerConfig = selectedThread === undefined
+    ? composerRunConfig ?? defaultComposerRunConfig(currentProject)
+    : {
+        permission: fromRuntimeSandbox(selectedThread.sandbox),
+        model: selectedThread.model ?? null,
+        reasoning: (selectedThread.reasoning ?? null) as ComposerRunConfig['reasoning']
+      };
+  const conversationFileLayoutStyle = conversationPaneWidth === undefined
+    ? undefined
+    : ({ '--conversation-pane-width': `${conversationPaneWidth}px` } as CSSProperties);
   const conversationPage = (
     <section className="conversation-page">
       <ConversationHeader
@@ -682,6 +789,7 @@ export function App(props: AppProps = {}) {
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
         {threadLoadError ? <p className="inline-error">{threadLoadError}</p> : null}
         {threadHistoryLoadError ? <p className="inline-error">{threadHistoryLoadError}</p> : null}
+        {threadConfigUpdateError ? <p className="inline-error">{threadConfigUpdateError}</p> : null}
         {timelineItems.length === 0 ? (
           <ConversationEmptyState projectName={currentProjectName} />
         ) : (
@@ -691,19 +799,35 @@ export function App(props: AppProps = {}) {
       <div className="composer-wrap">
         <Composer
           projectName={currentProjectName}
-          permission={(composerRunConfig ?? defaultComposerRunConfig(currentProject)).permission}
-          model={(composerRunConfig ?? defaultComposerRunConfig(currentProject)).model}
-          reasoning={(composerRunConfig ?? defaultComposerRunConfig(currentProject)).reasoning}
+          permission={effectiveComposerConfig.permission}
+          model={effectiveComposerConfig.model}
+          reasoning={effectiveComposerConfig.reasoning}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
+          onPermissionChange={(permission) => void handleComposerPermissionChange(permission)}
           onSubmit={submitPrompt}
         />
       </div>
     </section>
   );
   const conversationWorkspace = fileWorkspaceOpen ? (
-    <section className="conversation-file-layout" aria-label="会话和文件工作区">
+    <section
+      className="conversation-file-layout"
+      aria-label="会话和文件工作区"
+      ref={conversationFileLayoutRef}
+      style={conversationFileLayoutStyle}
+    >
       {conversationPage}
+      <div
+        className="pane-resize-handle conversation-file-resize-handle"
+        role="separator"
+        aria-label="调整会话和文件区域宽度"
+        aria-orientation="vertical"
+        aria-valuenow={conversationPaneWidth}
+        tabIndex={0}
+        onMouseDown={handleConversationResizeMouseDown}
+        onKeyDown={handleConversationResizeKeyDown}
+      />
       <FileWorkspaceView
         selectedThread={selectedThread}
         workspaceFileService={workspaceFileService}
@@ -938,6 +1062,11 @@ function toRuntimeSandbox(permission: ClaweeProject['sandbox'] | undefined): San
   return 'read-only';
 }
 
+function fromRuntimeSandbox(sandbox: SandboxMode): ClaweeProject['sandbox'] {
+  if (sandbox === 'danger-full-access' || sandbox === 'workspace-write') return sandbox;
+  return 'follow-global';
+}
+
 function upsertThread(threads: ThreadResponse[], thread: ThreadResponse): ThreadResponse[] {
   const withoutThread = threads.filter(item => item.id !== thread.id);
   return [thread, ...withoutThread];
@@ -1076,6 +1205,10 @@ function formatHistoryFileChangeTitle(
     })
     .filter((part): part is string => part !== undefined)
     .join('，');
+}
+
+function clampPaneWidth(value: number, min: number, max: number): number {
+  return Math.round(Math.min(Math.max(value, min), max));
 }
 
 function mapRuntimeStatus(connectionState: ConnectionState): RuntimeStatus {

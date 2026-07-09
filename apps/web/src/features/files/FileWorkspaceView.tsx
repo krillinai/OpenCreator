@@ -6,6 +6,7 @@ import type {
   WorkspaceFileRevealRequest,
   WorkspaceFileSaveRequest
 } from '@clawee/protocol';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClientError } from '../../runtime/errors.js';
 import { FileEditorPane } from './FileEditorPane.js';
@@ -32,6 +33,10 @@ type FileWorkspaceViewProps = {
 };
 
 const RECENT_PATH_STORAGE_PREFIX = 'clawee.file-workspace.recent.';
+const FILE_TREE_MIN_WIDTH = 220;
+const FILE_TREE_MAX_WIDTH = 420;
+const FILE_EDITOR_MIN_WIDTH = 360;
+const RESIZE_KEY_STEP = 32;
 
 export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const [nodes, setNodes] = useState<WorkspaceDirectoryResponse['nodes']>([]);
@@ -51,7 +56,10 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const [loadError, setLoadError] = useState<string>();
   const [saveError, setSaveError] = useState<string>();
   const [conflictOpen, setConflictOpen] = useState(false);
+  const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const [treeWidth, setTreeWidth] = useState(280);
   const objectUrlRef = useRef<string>();
+  const workspaceBodyRef = useRef<HTMLDivElement | null>(null);
   const loadedPathsRef = useRef(new Set<string>());
   const openRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
@@ -145,7 +153,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
       canceled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread?.id, service, recentPathStorageKey]);
+  }, [thread?.id, thread?.sandbox, thread?.status, service, recentPathStorageKey]);
 
   async function openFilePath(path: string, options?: { skipDirtyConfirm?: boolean }) {
     if (!thread || !service) {
@@ -334,6 +342,60 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     props.onClose();
   }
 
+  function updateTreeWidth(clientX: number) {
+    const body = workspaceBodyRef.current;
+    if (!body) return;
+
+    const rect = body.getBoundingClientRect();
+    setTreeWidth(clampPaneWidth(
+      rect.right - clientX,
+      FILE_TREE_MIN_WIDTH,
+      Math.min(FILE_TREE_MAX_WIDTH, Math.max(FILE_TREE_MIN_WIDTH, rect.width - FILE_EDITOR_MIN_WIDTH))
+    ));
+  }
+
+  function adjustTreeWidth(delta: number) {
+    const body = workspaceBodyRef.current;
+    const rect = body?.getBoundingClientRect();
+    const maxWidth = rect
+      ? Math.min(FILE_TREE_MAX_WIDTH, Math.max(FILE_TREE_MIN_WIDTH, rect.width - FILE_EDITOR_MIN_WIDTH))
+      : FILE_TREE_MAX_WIDTH;
+
+    setTreeWidth((previous) => clampPaneWidth(
+      previous + delta,
+      FILE_TREE_MIN_WIDTH,
+      maxWidth
+    ));
+  }
+
+  function handleTreeResizeMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+
+    event.preventDefault();
+    updateTreeWidth(event.clientX);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      updateTreeWidth(moveEvent.clientX);
+    };
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }
+
+  function handleTreeResizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      adjustTreeWidth(RESIZE_KEY_STEP);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      adjustTreeWidth(-RESIZE_KEY_STEP);
+    }
+  }
+
   if (!thread) {
     return renderEmptyWorkspace('请选择或创建一个会话后查看文件');
   }
@@ -342,9 +404,19 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     return renderEmptyWorkspace('本地文件服务暂不可用');
   }
 
+  const fileWorkspaceBodyStyle = {
+    '--file-tree-width': `${treeWidth}px`
+  } as CSSProperties;
+
   return (
     <section className="file-workspace-view">
-      <FileTopBar fileName={effectiveMeta?.name} dirty={dirty} onClose={handleBack} />
+      <FileTopBar
+        fileName={effectiveMeta?.name}
+        dirty={dirty}
+        treeCollapsed={treeCollapsed}
+        onToggleTree={() => setTreeCollapsed(previous => !previous)}
+        onClose={handleBack}
+      />
       <FilePathBar
         rootName={rootName}
         path={activePath}
@@ -352,7 +424,12 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
         onCopyPath={handleCopyPath}
       />
 
-      <div className="file-workspace-body">
+      <div
+        className="file-workspace-body"
+        data-tree-collapsed={treeCollapsed ? 'true' : undefined}
+        ref={workspaceBodyRef}
+        style={fileWorkspaceBodyStyle}
+      >
         <div className="file-workspace-editor">
           {threadReadonly ? <div className="file-workspace-notice">当前会话为只读模式，不能保存文件</div> : null}
           {workspaceMessage ? <div className="file-workspace-notice">{workspaceMessage}</div> : null}
@@ -386,16 +463,30 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
           />
         </div>
 
-        <ProjectFileTree
-          nodes={nodes}
-          selectedPath={activePath ?? ''}
-          expandedPaths={expandedPaths}
-          search={search}
-          truncatedPaths={truncatedPaths}
-          onToggleDirectory={handleToggleDirectory}
-          onSelectFile={(path) => void openFilePath(path)}
-          onSearchChange={setSearch}
-        />
+        {treeCollapsed ? null : (
+          <>
+            <div
+              className="pane-resize-handle file-tree-resize-handle"
+              role="separator"
+              aria-label="调整编辑区和目录树宽度"
+              aria-orientation="vertical"
+              aria-valuenow={treeWidth}
+              tabIndex={0}
+              onMouseDown={handleTreeResizeMouseDown}
+              onKeyDown={handleTreeResizeKeyDown}
+            />
+            <ProjectFileTree
+              nodes={nodes}
+              selectedPath={activePath ?? ''}
+              expandedPaths={expandedPaths}
+              search={search}
+              truncatedPaths={truncatedPaths}
+              onToggleDirectory={handleToggleDirectory}
+              onSelectFile={(path) => void openFilePath(path)}
+              onSearchChange={setSearch}
+            />
+          </>
+        )}
       </div>
     </section>
   );
@@ -450,6 +541,10 @@ function humanizeError(error: unknown, fallback: string): string {
 
 function dedupePaths(paths: string[]): string[] {
   return [...new Set(paths)];
+}
+
+function clampPaneWidth(value: number, min: number, max: number): number {
+  return Math.round(Math.min(Math.max(value, min), max));
 }
 
 function readRecentPath(storageKey: string): string | undefined {

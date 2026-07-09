@@ -1,4 +1,4 @@
-import type { RunResponse, ThreadHistoryResponse, ThreadResponse, ThreadRunsResponse } from '@clawee/protocol';
+import type { RunResponse, ThreadHistoryResponse, ThreadResponse, ThreadRunsResponse, UpdateThreadRequest } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { RunManager } from '../runs/manager.js';
 import type { CreateRuntimeThreadInput, RuntimeThread, ThreadManager } from '../threads/types.js';
@@ -80,6 +80,33 @@ export async function registerThreadRoutes(
         : options.readThreadHistory?.(thread.codexThreadId) ?? []
     };
     return response;
+  });
+
+  server.patch<{ Body: unknown }>('/threads/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = parseUpdateThreadRequest(request.body);
+    if (!body.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
+
+    const existing = manager.getThread(id);
+    if (existing === undefined) {
+      return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+    }
+    if (existing.status === 'archived') {
+      return reply.code(409).send(apiError('THREAD_ARCHIVED', 'Thread is archived'));
+    }
+    if (runManager.hasActiveRunForThread(id)) {
+      return reply.code(409).send(apiError('THREAD_HAS_ACTIVE_RUN', 'Thread has active run'));
+    }
+
+    try {
+      const thread = manager.updateThread(id, body.value);
+      return { thread: toThreadResponse(thread) };
+    } catch (error) {
+      if (error instanceof Error && error.message === 'THREAD_NOT_FOUND') {
+        return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+      }
+      throw error;
+    }
   });
 
   server.post('/threads/:id/archive', async (request, reply) => {
@@ -172,6 +199,19 @@ function parseCreateThreadRequest(body: unknown): ParseResult<CreateRuntimeThrea
   }
 
   return { ok: true, value };
+}
+
+function parseUpdateThreadRequest(body: unknown): ParseResult<Required<UpdateThreadRequest>> {
+  if (body === undefined) return { ok: false, message: 'body must be an object' };
+  if (!isPlainObject(body)) return { ok: false, message: 'body must be an object' };
+
+  const input = body as Record<string, unknown>;
+  const sandbox = input.sandbox;
+  if (!isOneOf(sandbox, SANDBOX_MODES)) {
+    return { ok: false, message: 'sandbox must be a valid sandbox mode' };
+  }
+
+  return { ok: true, value: { sandbox } };
 }
 
 function parseThreadListQuery(

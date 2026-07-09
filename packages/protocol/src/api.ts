@@ -203,6 +203,10 @@ export type CreateThreadRequest = {
   sandbox?: SandboxMode;
 };
 
+export type UpdateThreadRequest = {
+  sandbox?: SandboxMode;
+};
+
 export type ThreadResponse = {
   id: string;
   title?: string | null;

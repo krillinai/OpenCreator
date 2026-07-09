@@ -1800,6 +1800,27 @@ describe('runtime api', () => {
     expect(archived.json().thread.status).toBe('archived');
   });
 
+  it('updates an active thread sandbox explicitly', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread;
+
+    const updated = await authPatch(`/threads/${thread.id}`, {
+      sandbox: 'danger-full-access'
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().thread.sandbox).toBe('danger-full-access');
+
+    const detail = await authGet(`/threads/${thread.id}`);
+    expect(detail.json().thread.sandbox).toBe('danger-full-access');
+  });
+
   it('imports global Codex sessions into the thread list', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');

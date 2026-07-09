@@ -919,9 +919,9 @@ textarea:focus-visible {
 }
 
 .file-tree-panel {
-  width: min(100%, 360px);
-  min-width: 280px;
-  max-width: 360px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1369,12 +1369,39 @@ textarea:focus-visible {
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-columns: minmax(360px, 0.48fr) minmax(560px, 1fr);
+  grid-template-columns: var(--conversation-pane-width, minmax(360px, 0.48fr)) 6px minmax(560px, 1fr);
   background: var(--surface);
 }
 
 .conversation-file-layout > .conversation-page {
-  border-right: 1px solid var(--border);
+  border-right: 0;
+}
+
+.pane-resize-handle {
+  position: relative;
+  min-width: 6px;
+  min-height: 0;
+  background: var(--surface);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.pane-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--border);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+.pane-resize-handle:hover::before,
+.pane-resize-handle:focus-visible::before {
+  width: 2px;
+  background: var(--accent);
 }
 
 .conversation-header {
@@ -1574,7 +1601,11 @@ textarea:focus-visible {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  grid-template-columns: minmax(0, 1fr) 6px minmax(220px, var(--file-tree-width, 280px));
+}
+
+.file-workspace-body[data-tree-collapsed="true"] {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .file-workspace-editor {
@@ -1582,7 +1613,7 @@ textarea:focus-visible {
   min-height: 0;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  border-right: 1px solid var(--border);
+  border-right: 0;
   background: var(--surface);
 }
 
@@ -2426,6 +2457,10 @@ textarea:focus-visible {
     border-bottom: 1px solid var(--border);
   }
 
+  .conversation-file-resize-handle {
+    display: none;
+  }
+
   .conversation-header {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -2447,7 +2482,11 @@ textarea:focus-visible {
   }
 
   .file-workspace-body {
-    grid-template-columns: minmax(0, 1fr) minmax(200px, 240px);
+    grid-template-columns: minmax(0, 1fr) 6px minmax(200px, 240px);
+  }
+
+  .file-workspace-body[data-tree-collapsed="true"] {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .conversation-empty-state {
@@ -2531,6 +2570,10 @@ textarea:focus-visible {
   .file-workspace-body {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr) minmax(180px, 240px);
+  }
+
+  .file-tree-resize-handle {
+    display: none;
   }
 
   .file-workspace-editor {

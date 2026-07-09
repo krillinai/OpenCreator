@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { nanoid } from 'nanoid';
 import { expandHome } from '../platform/paths.js';
 import { createThreadRepository, type ThreadRow } from '../storage/repositories.js';
-import type { CreateRuntimeThreadInput, ImportCodexThreadInput, RuntimeThread, ThreadManager } from './types.js';
+import type { CreateRuntimeThreadInput, ImportCodexThreadInput, RuntimeThread, ThreadManager, UpdateRuntimeThreadInput } from './types.js';
 
 export type CreateThreadManagerInput = {
   db: Database.Database;
@@ -95,6 +95,12 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
         updatedAt
       });
 
+      return mapThreadRow(threads.getThread(id)!);
+    },
+
+    updateThread(id: string, request: UpdateRuntimeThreadInput): RuntimeThread {
+      if (threads.getThread(id) === undefined) throw new Error('THREAD_NOT_FOUND');
+      threads.updateThreadSandbox({ id, sandbox: request.sandbox });
       return mapThreadRow(threads.getThread(id)!);
     },
 

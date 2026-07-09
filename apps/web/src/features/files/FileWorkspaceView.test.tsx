@@ -1,5 +1,5 @@
 import type { ThreadResponse, WorkspaceDirectoryResponse, WorkspaceFileMeta, WorkspaceFileNode } from '@clawee/protocol';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '../../runtime/errors.js';
@@ -156,6 +156,75 @@ describe('FileWorkspaceView', () => {
 
     expect(body.firstElementChild).toBe(editor);
     expect(body.lastElementChild).toBe(tree);
+  });
+
+  it('可以收起和展开右侧目录树，编辑区保持可用', async () => {
+    const user = userEvent.setup();
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'README.md',
+          nodes: [fileNode('README.md', 'markdown')]
+        })
+      }
+    });
+
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
+
+    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(screen.getByLabelText('项目文件树')).toBeInTheDocument();
+    expect(screen.getByRole('separator', { name: '调整编辑区和目录树宽度' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '收起目录树' }));
+
+    expect(screen.getByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('项目文件树')).not.toBeInTheDocument();
+    expect(screen.queryByRole('separator', { name: '调整编辑区和目录树宽度' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '展开目录树' }));
+
+    expect(screen.getByLabelText('项目文件树')).toBeInTheDocument();
+    expect(screen.getByRole('separator', { name: '调整编辑区和目录树宽度' })).toBeInTheDocument();
+  });
+
+  it('编辑区和目录树之间的分隔条可以拖动调整目录树宽度', async () => {
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'README.md',
+          nodes: [fileNode('README.md', 'markdown')]
+        })
+      }
+    });
+
+    const { container } = render(
+      <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
+    );
+
+    await screen.findByRole('textbox', { name: 'README.md 编辑器' });
+
+    const body = container.querySelector('.file-workspace-body');
+    if (!(body instanceof HTMLElement)) throw new Error('Expected file workspace body');
+    vi.spyOn(body, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 900,
+      bottom: 800,
+      width: 900,
+      height: 800,
+      toJSON: () => undefined
+    });
+
+    const separator = screen.getByRole('separator', { name: '调整编辑区和目录树宽度' });
+    fireEvent.mouseDown(separator, { clientX: 620 });
+    fireEvent.mouseMove(window, { clientX: 560 });
+    fireEvent.mouseUp(window);
+
+    expect(body).toHaveStyle({ '--file-tree-width': '340px' });
   });
 
   it('切换 blob 文件或卸载时会 revokeBlob', async () => {

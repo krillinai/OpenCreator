@@ -24,6 +24,10 @@ export type RuntimeThread = {
 
 export type CreateRuntimeThreadInput = CreateThreadRequest;
 
+export type UpdateRuntimeThreadInput = {
+  sandbox: SandboxMode;
+};
+
 export type ImportCodexThreadInput = {
   codexThreadId: string;
   title: string;
@@ -42,6 +46,7 @@ export type ThreadManager = {
   getThreadByCodexThreadId(codexThreadId: string): RuntimeThread | undefined;
   listThreads(filter?: { status?: 'active' | 'archived' | 'all'; limit?: number }): RuntimeThread[];
   importCodexThread(input: ImportCodexThreadInput): RuntimeThread;
+  updateThread(id: string, input: UpdateRuntimeThreadInput): RuntimeThread;
   archiveThread(id: string): RuntimeThread;
   archiveCodexThread(codexThreadId: string): RuntimeThread | undefined;
   setCodexThreadId(threadId: string, codexThreadId: string): void;

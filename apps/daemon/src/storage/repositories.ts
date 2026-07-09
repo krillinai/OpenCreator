@@ -125,6 +125,7 @@ export type ThreadRepository = {
   listThreads(input?: { status?: 'active' | 'archived' | 'all'; limit?: number }): ThreadRow[];
   archiveThread(id: string): void;
   updateImportedThread(input: UpdateImportedThreadInput): void;
+  updateThreadSandbox(input: UpdateThreadSandboxInput): void;
   setCodexThreadId(threadId: string, codexThreadId: string): void;
   touchThread(threadId: string): void;
 };
@@ -135,6 +136,11 @@ export type UpdateImportedThreadInput = {
   cwd: string;
   canonicalCwd: string;
   updatedAt: string;
+};
+
+export type UpdateThreadSandboxInput = {
+  id: string;
+  sandbox: string;
 };
 
 export function createRunRepository(db: Database.Database): RunRepository {
@@ -324,6 +330,12 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         updated_at = @updatedAt
     WHERE id = @id
   `);
+  const updateSandbox = db.prepare(`
+    UPDATE threads
+    SET sandbox = @sandbox,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @id
+  `);
   const setCodexThreadId = db.prepare(`
     UPDATE threads
     SET codex_thread_id = @codexThreadId,
@@ -365,6 +377,9 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     },
     updateImportedThread(input: UpdateImportedThreadInput): void {
       updateImported.run(input);
+    },
+    updateThreadSandbox(input: UpdateThreadSandboxInput): void {
+      updateSandbox.run(input);
     },
     setCodexThreadId(threadId: string, codexThreadId: string): void {
       setCodexThreadId.run({ threadId, codexThreadId });

@@ -51,6 +51,7 @@ export function Composer(props: {
   permission: ProjectPermission;
   model: string | null;
   reasoning: ReasoningEffort | null;
+  onPermissionChange?(permission: ProjectPermission): void;
   onSubmit(prompt: string, config: ComposerRunConfig): void;
 }) {
   const [prompt, setPrompt] = useState('');
@@ -145,6 +146,7 @@ export function Composer(props: {
                     aria-checked={selectedPermission === option.value}
                     onClick={() => {
                       setSelectedPermission(option.value);
+                      props.onPermissionChange?.(option.value);
                       setOpenMenu(null);
                     }}
                   >

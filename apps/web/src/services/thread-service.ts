@@ -3,7 +3,8 @@ import type {
   ThreadHistoryResponse,
   ThreadListResponse,
   ThreadResponse,
-  ThreadRunsResponse
+  ThreadRunsResponse,
+  UpdateThreadRequest
 } from '@clawee/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
@@ -14,6 +15,9 @@ export function createThreadService(client: RuntimeClient) {
     },
     createThread(input: CreateThreadRequest = {}): Promise<{ thread: ThreadResponse }> {
       return client.post('/threads', input);
+    },
+    updateThread(threadId: string, input: UpdateThreadRequest): Promise<{ thread: ThreadResponse }> {
+      return client.patch(`/threads/${encodeURIComponent(threadId)}`, input);
     },
     listThreadRuns(threadId: string): Promise<ThreadRunsResponse> {
       return client.get(`/threads/${encodeURIComponent(threadId)}/runs?limit=50`);

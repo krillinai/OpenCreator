@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -852,6 +852,260 @@ describe('App', () => {
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
   });
 
+  it('会话和文件工作区之间的分隔条可以拖动调整宽度', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_files',
+              title: '真实文件会话',
+              cwd: '/Users/test/develop/clawee/clawee-agent',
+              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_files/history')) {
+        return jsonResponse({ threadId: 'thread_files', codexThreadId: null, items: [] });
+      }
+      if (url.includes('/workspace/files/directory?')) {
+        return jsonResponse({
+          threadId: 'thread_files',
+          rootName: 'clawee-agent',
+          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          path: '',
+          suggestedOpenPath: 'README.md',
+          truncated: false,
+          warnings: [],
+          nodes: [
+            {
+              path: 'README.md',
+              name: 'README.md',
+              depth: 0,
+              type: 'file',
+              meta: {
+                kind: 'markdown',
+                mime: 'text/markdown',
+                size: 1,
+                mtimeMs: 1,
+                previewable: true,
+                editable: true,
+                readonly: false
+              }
+            }
+          ]
+        });
+      }
+      if (url.includes('/workspace/files/meta?')) {
+        return jsonResponse({
+          path: 'README.md',
+          name: 'README.md',
+          type: 'file',
+          kind: 'markdown',
+          mime: 'text/markdown',
+          size: 1,
+          mtimeMs: 1,
+          versionToken: 'v1',
+          previewable: true,
+          editable: true,
+          readonly: false
+        });
+      }
+      if (url.includes('/workspace/files/content?')) {
+        return jsonResponse({
+          meta: {
+            path: 'README.md',
+            name: 'README.md',
+            type: 'file',
+            kind: 'markdown',
+            mime: 'text/markdown',
+            size: 1,
+            mtimeMs: 1,
+            versionToken: 'v1',
+            previewable: true,
+            editable: true,
+            readonly: false
+          },
+          content: '# Workspace',
+          encoding: 'utf8'
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
+    await user.click(screen.getByRole('button', { name: '文件' }));
+    await screen.findByRole('textbox', { name: 'README.md 编辑器' });
+
+    const layout = screen.getByLabelText('会话和文件工作区');
+    vi.spyOn(layout, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1200,
+      bottom: 800,
+      width: 1200,
+      height: 800,
+      toJSON: () => undefined
+    });
+
+    const separator = screen.getByRole('separator', { name: '调整会话和文件区域宽度' });
+    fireEvent.mouseDown(separator, { clientX: 420 });
+    fireEvent.mouseMove(window, { clientX: 520 });
+    fireEvent.mouseUp(window);
+
+    expect(layout).toHaveStyle({ '--conversation-pane-width': '520px' });
+  });
+
+  it('已有只读会话切换为完全访问后会更新 thread 并允许编辑文件', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    let threadSandbox: ThreadResponse['sandbox'] = 'read-only';
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_files',
+              title: '只读文件会话',
+              sandbox: threadSandbox,
+              cwd: '/Users/test/develop/clawee/clawee-agent',
+              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_files/history')) {
+        return jsonResponse({ threadId: 'thread_files', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_files') && init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as { sandbox: ThreadResponse['sandbox'] };
+        threadSandbox = body.sandbox;
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_files',
+            title: '只读文件会话',
+            sandbox: threadSandbox,
+            cwd: '/Users/test/develop/clawee/clawee-agent',
+            canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+          })
+        });
+      }
+      if (url.includes('/workspace/files/directory?')) {
+        return jsonResponse({
+          threadId: 'thread_files',
+          rootName: 'clawee-agent',
+          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          path: '',
+          suggestedOpenPath: 'README.md',
+          truncated: false,
+          warnings: [],
+          nodes: [
+            {
+              path: 'README.md',
+              name: 'README.md',
+              depth: 0,
+              type: 'file',
+              meta: {
+                kind: 'markdown',
+                mime: 'text/markdown',
+                size: 1,
+                mtimeMs: 1,
+                previewable: true,
+                editable: true,
+                readonly: threadSandbox === 'read-only'
+              }
+            }
+          ]
+        });
+      }
+      if (url.includes('/workspace/files/meta?')) {
+        return jsonResponse({
+          path: 'README.md',
+          name: 'README.md',
+          type: 'file',
+          kind: 'markdown',
+          mime: 'text/markdown',
+          size: 1,
+          mtimeMs: 1,
+          versionToken: 'v1',
+          previewable: true,
+          editable: true,
+          readonly: threadSandbox === 'read-only'
+        });
+      }
+      if (url.includes('/workspace/files/content?')) {
+        return jsonResponse({
+          meta: {
+            path: 'README.md',
+            name: 'README.md',
+            type: 'file',
+            kind: 'markdown',
+            mime: 'text/markdown',
+            size: 1,
+            mtimeMs: 1,
+            versionToken: 'v1',
+            previewable: true,
+            editable: true,
+            readonly: threadSandbox === 'read-only'
+          },
+          content: '# Workspace',
+          encoding: 'utf8'
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /只读文件会话/ }));
+    await user.click(screen.getByRole('button', { name: '文件' }));
+
+    expect(await screen.findByText('当前会话为只读模式，不能保存文件')).toBeInTheDocument();
+    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toHaveAttribute('aria-readonly', 'true');
+
+    await user.click(screen.getByRole('button', { name: '选择访问权限 只读访问' }));
+    await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
+
+    await waitFor(() => {
+      expect(findPatchCall(fetchCalls, '/threads/thread_files')).toBeDefined();
+    });
+    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toHaveAttribute('aria-readonly', 'false');
+    expect(screen.queryByText('当前会话为只读模式，不能保存文件')).not.toBeInTheDocument();
+  });
+
   it('点击详情不会打开旧 mock 详情，点击文件才进入真实文件工作区', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
@@ -1302,6 +1556,10 @@ function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadRe
 
 function findPostCall(calls: Array<{ url: string; init?: RequestInit }>, path: string) {
   return calls.find(call => call.url.endsWith(path) && call.init?.method === 'POST');
+}
+
+function findPatchCall(calls: Array<{ url: string; init?: RequestInit }>, path: string) {
+  return calls.find(call => call.url.endsWith(path) && call.init?.method === 'PATCH');
 }
 
 async function findTimelineUserMessage(text: string) {
