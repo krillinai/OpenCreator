@@ -44,6 +44,42 @@ describe('FileWorkspaceView', () => {
     expect(window.localStorage.getItem(`clawee.file-workspace.recent.${workspaceKey(thread.canonicalCwd)}`)).toBe('README.md');
   });
 
+  it('优先打开外部传入的 selectedPath', async () => {
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'README.md',
+          nodes: [fileNode('README.md', 'markdown'), fileNode('docs/generated.md', 'markdown')]
+        })
+      },
+      metas: {
+        'docs/generated.md': createMeta({
+          path: 'docs/generated.md',
+          name: 'generated.md',
+          kind: 'markdown',
+          mime: 'text/markdown'
+        })
+      },
+      contents: {
+        'docs/generated.md': '# Generated'
+      }
+    });
+
+    render(
+      <FileWorkspaceView
+        selectedThread={thread}
+        selectedPath="docs/generated.md"
+        workspaceFileService={service}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'docs/generated.md'));
+    expect(service.getMeta).not.toHaveBeenCalledWith(thread.id, 'README.md');
+    expect(await screen.findByRole('textbox', { name: 'docs/generated.md 编辑器' })).toHaveTextContent('# Generated');
+  });
+
   it('点击目录时调用 listDirectory 并合并节点', async () => {
     const user = userEvent.setup();
     const thread = createThread();

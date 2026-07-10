@@ -215,4 +215,87 @@ describe('Composer', () => {
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it('typing slash opens skills, MCP, and goal commands and inserts the selected command', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[
+          {
+            id: 'skill:brainstorming',
+            category: 'skill',
+            label: 'brainstorming',
+            description: '需求梳理和方案发散',
+            insertText: '$brainstorming '
+          },
+          {
+            id: 'mcp:github',
+            category: 'mcp',
+            label: 'github',
+            description: 'stdio · configured',
+            insertText: '使用 MCP：github '
+          },
+          {
+            id: 'goal:create',
+            category: 'goal',
+            label: '设置 Goal',
+            description: '为这次任务声明目标',
+            insertText: '目标：'
+          }
+        ]}
+      />
+    );
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await user.type(textbox, '/');
+
+    expect(screen.getByRole('listbox', { name: '能力菜单' })).toBeInTheDocument();
+    expect(screen.getByText('Skills')).toBeInTheDocument();
+    expect(screen.getByText('MCP')).toBeInTheDocument();
+    expect(screen.getByText('Goal')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /brainstorming/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /github/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /设置 Goal/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('option', { name: /brainstorming/ }));
+
+    expect(textbox).toHaveValue('$brainstorming ');
+    expect(screen.queryByRole('listbox', { name: '能力菜单' })).not.toBeInTheDocument();
+  });
+
+  it('filters slash commands and selects the active command with Enter', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[
+          {
+            id: 'skill:brainstorming',
+            category: 'skill',
+            label: 'brainstorming',
+            description: '需求梳理和方案发散',
+            insertText: '$brainstorming '
+          },
+          {
+            id: 'mcp:github',
+            category: 'mcp',
+            label: 'github',
+            description: 'stdio · configured',
+            insertText: '使用 MCP：github '
+          }
+        ]}
+      />
+    );
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await user.type(textbox, '/git');
+
+    expect(screen.queryByRole('option', { name: /brainstorming/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /github/ })).toHaveAttribute('aria-selected', 'true');
+
+    await user.keyboard('{Enter}');
+
+    expect(textbox).toHaveValue('使用 MCP：github ');
+  });
 });

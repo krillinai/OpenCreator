@@ -547,9 +547,9 @@ describe('Timeline', () => {
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
   });
 
-  it('opens a change card for review', async () => {
+  it('opens a file change card by path', async () => {
     const user = userEvent.setup();
-    const onOpenChange = vi.fn();
+    const onOpenFile = vi.fn();
     const items: TimelineItem[] = [
       {
         kind: 'change_card',
@@ -561,20 +561,20 @@ describe('Timeline', () => {
       }
     ];
 
-    render(<Timeline items={items} onOpenChange={onOpenChange} />);
+    render(<Timeline items={items} onOpenFile={onOpenFile} />);
 
-    const reviewButton = screen.getByRole('button', {
-      name: '审查 Edited timeline model apps/web/src/components/timeline/timeline-model.ts'
+    const fileButton = screen.getByRole('button', {
+      name: '打开文件 apps/web/src/components/timeline/timeline-model.ts'
     });
 
-    expect(reviewButton).toHaveAttribute(
+    expect(fileButton).toHaveAttribute(
       'aria-label',
-      '审查 Edited timeline model apps/web/src/components/timeline/timeline-model.ts'
+      '打开文件 apps/web/src/components/timeline/timeline-model.ts'
     );
 
-    await user.click(reviewButton);
+    await user.click(fileButton);
 
-    expect(onOpenChange).toHaveBeenCalledWith('change_1');
+    expect(onOpenFile).toHaveBeenCalledWith('apps/web/src/components/timeline/timeline-model.ts');
   });
 
   it('opens run detail from the process block with a labeled target', async () => {

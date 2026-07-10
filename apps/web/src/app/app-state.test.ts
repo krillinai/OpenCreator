@@ -31,6 +31,7 @@ describe('app state', () => {
     });
     expect(file.activeView).toBe('conversation');
     expect(file.selectedFilePath).toBe('docs/runtime-api-for-ui-v1.md');
+    expect(file.workspaceTargetPath).toBe('docs/runtime-api-for-ui-v1.md');
     expect(file.rightPanelMode).toBe('file');
 
     const change = reduceAppState({ ...file, activeView: 'search' }, {
@@ -79,6 +80,7 @@ describe('app state', () => {
 
     expect(state.activeView).toBe('conversation');
     expect(state.rightPanelMode).toBe('file');
+    expect(state.workspaceTargetPath).toBeUndefined();
   });
 
   it('selects a workspace file without leaving the conversation view', () => {
@@ -92,6 +94,7 @@ describe('app state', () => {
 
     expect(state.activeView).toBe('conversation');
     expect(state.selectedFilePath).toBe('docs/workspace.md');
+    expect(state.workspaceTargetPath).toBe('docs/workspace.md');
     expect(state.rightPanelMode).toBe('file');
   });
 

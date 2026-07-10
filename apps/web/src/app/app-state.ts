@@ -10,6 +10,7 @@ export type AppState = {
   selectedRunId?: string;
   selectedChangeId?: string;
   selectedFilePath: string;
+  workspaceTargetPath?: string;
   rightPanelMode: RightPanelMode;
   activeRunByThreadId: Record<string, string>;
   currentSseRunId?: string;
@@ -50,6 +51,7 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
         selectedThreadId: undefined,
         selectedRunId: undefined,
         selectedChangeId: undefined,
+        workspaceTargetPath: undefined,
         rightPanelMode: 'closed'
       };
     case 'new_conversation':
@@ -59,6 +61,7 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
         selectedThreadId: undefined,
         selectedRunId: undefined,
         selectedChangeId: undefined,
+        workspaceTargetPath: undefined,
         rightPanelMode: 'closed'
       };
     case 'set_active_view':
@@ -70,21 +73,33 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
     case 'open_settings':
       return { ...state, activeView: 'settings', rightPanelMode: 'closed' };
     case 'open_files':
-      return { ...state, activeView: 'conversation', rightPanelMode: 'file' };
+      return { ...state, activeView: 'conversation', workspaceTargetPath: undefined, rightPanelMode: 'file' };
     case 'back_to_app':
       return { ...state, activeView: 'conversation' };
     case 'select_thread':
-      return { ...state, selectedThreadId: action.threadId, activeView: 'conversation' };
+      return { ...state, selectedThreadId: action.threadId, workspaceTargetPath: undefined, activeView: 'conversation' };
     case 'select_file':
-      return { ...state, activeView: 'conversation', selectedFilePath: action.path, rightPanelMode: 'file' };
+      return {
+        ...state,
+        activeView: 'conversation',
+        selectedFilePath: action.path,
+        workspaceTargetPath: action.path,
+        rightPanelMode: 'file'
+      };
     case 'select_workspace_file':
-      return { ...state, activeView: 'conversation', selectedFilePath: action.path, rightPanelMode: 'file' };
+      return {
+        ...state,
+        activeView: 'conversation',
+        selectedFilePath: action.path,
+        workspaceTargetPath: action.path,
+        rightPanelMode: 'file'
+      };
     case 'select_change':
       return { ...state, activeView: 'conversation', selectedChangeId: action.changeId, rightPanelMode: 'change' };
     case 'select_run_detail':
       return { ...state, activeView: 'conversation', selectedRunId: action.runId, rightPanelMode: 'run_detail' };
     case 'close_file_workspace':
-      return { ...state, activeView: 'conversation', rightPanelMode: 'closed' };
+      return { ...state, activeView: 'conversation', workspaceTargetPath: undefined, rightPanelMode: 'closed' };
     case 'close_detail':
       return { ...state, rightPanelMode: 'closed' };
     case 'run_started':
