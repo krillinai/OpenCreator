@@ -27,8 +27,28 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByText('语言')).toBeInTheDocument();
     expect(screen.getByText('中文')).toBeInTheDocument();
     expect(screen.getByText('菜单栏显示')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: '动态背景' })).toBeChecked();
     expect(screen.queryByText('工作模式')).not.toBeInTheDocument();
     expect(screen.queryByText('适用于编程')).not.toBeInTheDocument();
+  });
+
+  it('notifies when the dynamic background setting changes', () => {
+    const onDynamicBackgroundChange = vi.fn();
+    render(
+      <ClaweeSettingsView
+        runtimeStatus={runtimeStatus}
+        dynamicBackgroundEnabled={false}
+        onDynamicBackgroundChange={onDynamicBackgroundChange}
+        onBack={vi.fn()}
+      />
+    );
+
+    const switchControl = screen.getByRole('switch', { name: '动态背景' });
+    expect(switchControl).not.toBeChecked();
+
+    fireEvent.click(switchControl);
+
+    expect(onDynamicBackgroundChange).toHaveBeenCalledWith(true);
   });
 
   it('does not show Codex CLI version on the initial general tab', () => {

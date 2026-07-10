@@ -35,4 +35,17 @@ describe('WorkbenchLayout', () => {
     expect(screen.getByRole('main')).toHaveClass('clawee-shell');
     expect(screen.getByRole('main')).not.toHaveClass('has-detail');
   });
+
+  it('marks the shell as sidebar collapsed', () => {
+    render(
+      <WorkbenchLayout
+        sidebar={<div>左侧</div>}
+        main={<div>中间</div>}
+        sidebarCollapsed
+      />
+    );
+
+    expect(screen.getByRole('main')).toHaveClass('clawee-shell', 'sidebar-collapsed');
+    expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-collapsed', 'true');
+  });
 });

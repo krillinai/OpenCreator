@@ -84,7 +84,9 @@ export function TextFileEditor(props: TextFileEditorProps) {
         languageCompartment.of(languageForFile(props.path, props.kind)),
         EditorView.theme({
           '&': {
-            height: '100%'
+            height: '100%',
+            backgroundColor: 'var(--surface)',
+            color: 'var(--text)'
           },
           '.cm-scroller': {
             minHeight: '0',
@@ -94,15 +96,26 @@ export function TextFileEditor(props: TextFileEditorProps) {
             fontFamily: 'var(--font-mono)',
             fontSize: '12.5px'
           },
+          '.cm-line': {
+            color: 'var(--text)'
+          },
           '.cm-gutters': {
             borderRight: '1px solid var(--border)',
-            backgroundColor: 'var(--surface)'
+            backgroundColor: 'var(--surface-2)',
+            color: 'var(--subtle)'
           },
           '.cm-activeLineGutter': {
-            backgroundColor: 'var(--surface-2)'
+            backgroundColor: 'var(--surface-3)',
+            color: 'var(--text)'
           },
           '.cm-activeLine': {
             backgroundColor: 'color-mix(in srgb, var(--accent-soft) 55%, transparent)'
+          },
+          '.cm-cursor': {
+            borderLeftColor: 'var(--accent-strong)'
+          },
+          '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+            backgroundColor: 'color-mix(in srgb, var(--accent) 42%, transparent)'
           }
         })
       ]

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Composer } from './Composer.js';
@@ -88,6 +88,70 @@ describe('Composer', () => {
       reasoning: null
     });
     expect(textbox).toHaveValue('');
+  });
+
+  it('auto-sizes the textbox to its content and resets after submit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<Composer {...defaultProps} onSubmit={onSubmit} />);
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' }) as HTMLTextAreaElement;
+    Object.defineProperty(textbox, 'scrollHeight', {
+      configurable: true,
+      get() {
+        return textbox.value.includes('\n') ? 52 : 28;
+      }
+    });
+
+    await user.type(textbox, 'first line');
+    await waitFor(() => expect(textbox.style.height).toBe('28px'));
+
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    await user.type(textbox, 'second line');
+    await waitFor(() => expect(textbox.style.height).toBe('52px'));
+
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(onSubmit).toHaveBeenCalledWith('first line\nsecond line', {
+      permission: 'danger-full-access',
+      model: null,
+      reasoning: null
+    });
+    await waitFor(() => expect(textbox.style.height).toBe('28px'));
+  });
+
+  it('caps the textbox at three lines and scrolls to keep the latest input visible', async () => {
+    render(<Composer {...defaultProps} />);
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' }) as HTMLTextAreaElement;
+    let assignedScrollTop = 0;
+    Object.defineProperty(textbox, 'scrollHeight', {
+      configurable: true,
+      get() {
+        const lineCount = textbox.value.split('\n').length;
+        if (lineCount >= 4) return 100;
+        if (lineCount === 3) return 76;
+        if (lineCount === 2) return 52;
+        return 28;
+      }
+    });
+    Object.defineProperty(textbox, 'scrollTop', {
+      configurable: true,
+      get() {
+        return assignedScrollTop;
+      },
+      set(value: number) {
+        assignedScrollTop = value;
+      }
+    });
+
+    fireEvent.change(textbox, { target: { value: 'first\nsecond\nthird\nfourth' } });
+
+    await waitFor(() => {
+      expect(textbox.style.height).toBe('76px');
+      expect(textbox.style.overflowY).toBe('auto');
+      expect(textbox.scrollTop).toBe(100);
+    });
   });
 
   it('submits with Enter and keeps Shift+Enter for new lines', async () => {

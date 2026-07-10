@@ -11,6 +11,8 @@ export type RuntimeStatus = {
 
 export type ClaweeSettingsViewProps = {
   runtimeStatus: RuntimeStatus;
+  dynamicBackgroundEnabled?: boolean;
+  onDynamicBackgroundChange?(enabled: boolean): void;
   onBack(): void;
 };
 
@@ -50,7 +52,12 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
         </nav>
       </aside>
       <main className="settings-content">
-        {activeTab === 'general' ? <GeneralSettings /> : null}
+        {activeTab === 'general' ? (
+          <GeneralSettings
+            dynamicBackgroundEnabled={props.dynamicBackgroundEnabled ?? true}
+            onDynamicBackgroundChange={props.onDynamicBackgroundChange}
+          />
+        ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}
         {activeTab === 'about' ? <AboutSettings runtimeStatus={props.runtimeStatus} /> : null}
       </main>
@@ -58,7 +65,10 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
   );
 }
 
-function GeneralSettings() {
+function GeneralSettings(props: {
+  dynamicBackgroundEnabled: boolean;
+  onDynamicBackgroundChange?(enabled: boolean): void;
+}) {
   return (
     <section className="settings-section" aria-labelledby="settings-general-title">
       <header>
@@ -70,6 +80,11 @@ function GeneralSettings() {
         <SettingsRow label="默认文件打开方式" value="系统默认应用" />
         <SettingsRow label="语言" value="中文" />
         <SettingsRow label="菜单栏显示" value="开启" />
+        <SettingsSwitchRow
+          label="动态背景"
+          checked={props.dynamicBackgroundEnabled}
+          onChange={(checked) => props.onDynamicBackgroundChange?.(checked)}
+        />
       </div>
     </section>
   );
@@ -126,6 +141,26 @@ function SettingsRow(props: { label: string; value: string }) {
     <div className="settings-row">
       <span>{props.label}</span>
       <strong>{props.value}</strong>
+    </div>
+  );
+}
+
+function SettingsSwitchRow(props: { label: string; checked: boolean; onChange(checked: boolean): void }) {
+  const labelId = `settings-switch-${props.label}`;
+
+  return (
+    <div className="settings-row settings-control-row">
+      <span id={labelId}>{props.label}</span>
+      <button
+        className="settings-switch"
+        type="button"
+        role="switch"
+        aria-checked={props.checked}
+        aria-labelledby={labelId}
+        onClick={() => props.onChange(!props.checked)}
+      >
+        <span aria-hidden="true" />
+      </button>
     </div>
   );
 }

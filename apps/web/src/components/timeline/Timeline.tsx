@@ -63,6 +63,18 @@ function getTimelineAvatar(item: TimelineItem): string {
   return '·';
 }
 
+function renderTimelineAvatar(item: TimelineItem) {
+  if (item.kind === 'assistant_message') {
+    return <img className="timeline-avatar-logo" src="/logo-cor.png" alt="" />;
+  }
+
+  return getTimelineAvatar(item);
+}
+
+function shouldRenderTimelineHeader(item: TimelineItem) {
+  return item.kind !== 'user_message';
+}
+
 function isProcessComplete(process: ProcessBlock): boolean {
   return process.items.some(item => item.kind === 'done');
 }
@@ -486,10 +498,12 @@ export function Timeline(props: {
             const item = renderItem.item;
             return (
               <article key={item.id} className={`timeline-item timeline-${item.kind}`}>
-                <div className="timeline-item-header">
-                  <span className="timeline-avatar">{getTimelineAvatar(item)}</span>
-                  <span className="timeline-kind">{getTimelineTitle(item)}</span>
-                </div>
+                {shouldRenderTimelineHeader(item) ? (
+                  <div className="timeline-item-header">
+                    <span className="timeline-avatar">{renderTimelineAvatar(item)}</span>
+                    <span className="timeline-kind">{getTimelineTitle(item)}</span>
+                  </div>
+                ) : null}
                 <div className="timeline-bubble">{renderTimelineItemContent(item, props.onOpenChange)}</div>
               </article>
             );

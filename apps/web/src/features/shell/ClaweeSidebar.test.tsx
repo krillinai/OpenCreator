@@ -52,32 +52,35 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ClaweeSidebar>> 
       onSelectConversation={vi.fn()}
       onOpenView={vi.fn()}
       onOpenSettings={vi.fn()}
-      onCheckUpdates={vi.fn()}
+      onToggleCollapsed={vi.fn()}
       {...overrides}
     />
   );
 }
 
 describe('ClaweeSidebar', () => {
-  it('renders global actions, projects with nested conversations, and footer actions', () => {
+  it('renders global actions, projects with nested conversations, and the settings footer action', () => {
     renderSidebar();
 
+    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-all.png');
+    expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '已安排' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
     expect(screen.getByRole('button', { name: 'bili' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '对话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
     expect(screen.getByText('4天')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置 账户' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '更新' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
   });
 
-  it('calls project selection with the selected project id', async () => {
+  it('expands projects with conversations without selecting the project', async () => {
     const user = userEvent.setup();
     const onSelectProject = vi.fn();
 
@@ -85,15 +88,49 @@ describe('ClaweeSidebar', () => {
 
     await user.click(screen.getByRole('button', { name: 'bili' }));
 
-    expect(onSelectProject).toHaveBeenCalledWith('bili');
+    expect(onSelectProject).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
+  });
+
+  it('selects projects without conversations', async () => {
+    const user = userEvent.setup();
+    const onSelectProject = vi.fn();
+
+    renderSidebar({
+      projects: [
+        ...projects,
+        {
+          id: 'empty-project',
+          name: 'empty-project',
+          cwd: '~/develop/empty-project',
+          sandbox: 'follow-global' as const,
+          profile: 'default',
+          model: null,
+          reasoning: null
+        }
+      ],
+      onSelectProject
+    });
+
+    await user.click(screen.getByRole('button', { name: 'empty-project' }));
+
+    expect(onSelectProject).toHaveBeenCalledWith('empty-project');
   });
 
   it('shows conversations under the selected project', () => {
     renderSidebar({ currentProjectId: 'bili' });
 
-    expect(screen.getByRole('button', { name: 'bili' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: 'bili' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: 'bili' })).toHaveAttribute('data-current-project', 'true');
     expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '整理本周项目进展 4天' })).not.toBeInTheDocument();
+  });
+
+  it('highlights only the selected conversation instead of both project and conversation', () => {
+    renderSidebar({ selectedConversationId: 'weekly-progress-brief' });
+
+    expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('collapses the selected project when clicking it again', async () => {
@@ -130,17 +167,6 @@ describe('ClaweeSidebar', () => {
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 
-  it('checks updates from the footer button', async () => {
-    const user = userEvent.setup();
-    const onCheckUpdates = vi.fn();
-
-    renderSidebar({ onCheckUpdates });
-
-    await user.click(screen.getByRole('button', { name: '更新' }));
-
-    expect(onCheckUpdates).toHaveBeenCalledTimes(1);
-  });
-
   it('starts a new conversation from the primary action', async () => {
     const user = userEvent.setup();
     const onNewConversation = vi.fn();
@@ -161,5 +187,32 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: '搜索' }));
 
     expect(onOpenView).toHaveBeenCalledWith('search');
+  });
+
+  it('collapses from the header action', async () => {
+    const user = userEvent.setup();
+    const onToggleCollapsed = vi.fn();
+
+    renderSidebar({ onToggleCollapsed });
+
+    await user.click(screen.getByRole('button', { name: '收起侧栏' }));
+
+    expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders icon-only navigation and expands from the logo when collapsed', async () => {
+    const user = userEvent.setup();
+    const onToggleCollapsed = vi.fn();
+
+    renderSidebar({ collapsed: true, onToggleCollapsed });
+
+    expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '收起侧栏' })).not.toBeInTheDocument();
+    expect(screen.queryByText('项目')).not.toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Clawee' })).toHaveAttribute('data-collapsed', 'true');
+
+    await user.click(screen.getByRole('button', { name: '展开侧栏' }));
+
+    expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });
 });

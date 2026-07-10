@@ -1,5 +1,5 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
-import { ArrowUp, Check, ChevronDown, Circle, Paperclip, Plus, ShieldCheck } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { ArrowUp, Check, Circle, Paperclip, Plus, ShieldCheck } from 'lucide-react';
 import type { ReasoningEffort } from '@clawee/protocol';
 import type { ProjectPermission } from '../projects/project-model.js';
 
@@ -44,6 +44,12 @@ const modelOptions: ComposerModelOption[] = [
   { id: 'xhigh', label: '默认模型 超高', model: null, reasoning: 'xhigh' }
 ];
 
+const TEXTAREA_MIN_HEIGHT = 28;
+const TEXTAREA_MAX_VISIBLE_LINES = 3;
+const TEXTAREA_LINE_HEIGHT = 24;
+const TEXTAREA_VERTICAL_PADDING = 4;
+const TEXTAREA_MAX_HEIGHT = Math.ceil(TEXTAREA_LINE_HEIGHT * TEXTAREA_MAX_VISIBLE_LINES + TEXTAREA_VERTICAL_PADDING);
+
 export function Composer(props: {
   disabled?: boolean;
   disabledReason?: string;
@@ -58,6 +64,7 @@ export function Composer(props: {
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(props.permission);
   const [selectedModel, setSelectedModel] = useState(() => modelOptionForConfig(props.model, props.reasoning));
   const [openMenu, setOpenMenu] = useState<'add' | 'permission' | 'model' | null>(null);
+  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const trimmedPrompt = prompt.trim();
 
   useEffect(() => {
@@ -67,6 +74,19 @@ export function Composer(props: {
   useEffect(() => {
     setSelectedModel(modelOptionForConfig(props.model, props.reasoning));
   }, [props.model, props.reasoning, props.projectName]);
+
+  useLayoutEffect(() => {
+    const textarea = promptTextareaRef.current;
+    if (textarea === null) return;
+
+    textarea.style.height = 'auto';
+    const contentHeight = Math.max(textarea.scrollHeight, TEXTAREA_MIN_HEIGHT);
+    const nextHeight = Math.min(contentHeight, TEXTAREA_MAX_HEIGHT);
+    const isOverflowing = contentHeight > TEXTAREA_MAX_HEIGHT;
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = isOverflowing ? 'auto' : 'hidden';
+    textarea.scrollTop = isOverflowing ? textarea.scrollHeight : 0;
+  }, [prompt]);
 
   const selectedPermissionOption = permissionOptions.find(option => option.value === selectedPermission) ?? permissionOptions[0]!;
   const canSubmit = !props.disabled && trimmedPrompt.length > 0;
@@ -94,7 +114,9 @@ export function Composer(props: {
       }}
     >
       <textarea
+        ref={promptTextareaRef}
         aria-label="输入任务"
+        rows={1}
         value={prompt}
         disabled={props.disabled}
         onChange={(event) => setPrompt(event.target.value)}
@@ -133,7 +155,6 @@ export function Composer(props: {
             >
               <ShieldCheck aria-hidden="true" size={15} />
               <span>{selectedPermissionOption.label}</span>
-              <ChevronDown aria-hidden="true" size={14} />
             </button>
             {openMenu === 'permission' ? (
               <div className="composer-popover composer-permission-menu" role="menu" aria-label="访问权限">
@@ -175,7 +196,6 @@ export function Composer(props: {
             >
               <Circle aria-hidden="true" size={9} />
               <span>{selectedModel.label}</span>
-              <ChevronDown aria-hidden="true" size={14} />
             </button>
             {openMenu === 'model' ? (
               <div className="composer-popover composer-model-menu" role="menu" aria-label="模型">

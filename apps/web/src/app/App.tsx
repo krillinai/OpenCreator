@@ -9,6 +9,7 @@ import type {
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
+import Lightfall from '../components/effects/Lightfall.js';
 import { Timeline } from '../components/timeline/Timeline.js';
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
 import { CapabilitiesView } from '../features/capabilities/CapabilitiesView.js';
@@ -45,6 +46,8 @@ type AppFileService = {
 const CONVERSATION_PANE_MIN_WIDTH = 320;
 const FILE_WORKSPACE_MIN_WIDTH = 520;
 const RESIZE_KEY_STEP = 32;
+const CONVERSATION_LIGHTFALL_COLORS = ['#AD4D1F', '#D86532', '#F0A866'];
+const DYNAMIC_BACKGROUND_STORAGE_KEY = 'clawee.preferences.dynamicBackground';
 
 export type AppProps = {
   fileService?: AppFileService;
@@ -69,6 +72,7 @@ export function App(props: AppProps = {}) {
   const [runtimeThreads, setRuntimeThreads] = useState<ThreadResponse[]>([]);
   const [threadLoadError, setThreadLoadError] = useState<string>();
   const [threadHistoryLoadError, setThreadHistoryLoadError] = useState<string>();
+  const [historyLoadingThreadId, setHistoryLoadingThreadId] = useState<string>();
   const [threadConfigUpdateError, setThreadConfigUpdateError] = useState<string>();
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     status: 'disconnected',
@@ -84,6 +88,9 @@ export function App(props: AppProps = {}) {
   const [saveErrorByPath, setSaveErrorByPath] = useState<Record<string, string | undefined>>({});
   const [savingFilePaths, setSavingFilePaths] = useState<Set<string>>(() => new Set());
   const [conversationPaneWidth, setConversationPaneWidth] = useState<number>();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [dynamicBackgroundEnabled, setDynamicBackgroundEnabled] = useState(readDynamicBackgroundPreference);
+  const [threadHistoryReloadKey, setThreadHistoryReloadKey] = useState(0);
   const projectService = useMemo(() => createMockProjectService(), []);
   const timelineIdSequenceRef = useRef(0);
   const mountedRef = useRef(true);
@@ -99,6 +106,7 @@ export function App(props: AppProps = {}) {
   const conversationBodyRef = useRef<HTMLDivElement | null>(null);
   const conversationFileLayoutRef = useRef<HTMLElement | null>(null);
   const allowInitialRuntimeProjectFocusRef = useRef(true);
+  const skipNextHistoryLoadForThreadRef = useRef<string>();
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -130,6 +138,8 @@ export function App(props: AppProps = {}) {
     () => visibleRuntimeThreads.map(thread => mapThreadToConversation(thread, projects)),
     [visibleRuntimeThreads, projects]
   );
+  const selectedThreadExists = state.selectedThreadId !== undefined
+    && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -262,52 +272,65 @@ export function App(props: AppProps = {}) {
 
     if (selectedThreadId === undefined || threadService === null || connectionState.status !== 'connected') {
       setThreadHistoryLoadError(undefined);
+      setHistoryLoadingThreadId(undefined);
       return () => {
         canceled = true;
       };
     }
 
-    const selectedThread = runtimeThreads.find(thread => thread.id === selectedThreadId);
-    if (selectedThread === undefined) {
+    if (!selectedThreadExists) {
+      setHistoryLoadingThreadId(undefined);
       return () => {
         canceled = true;
       };
     }
-    if (selectedThread.codexThreadId === undefined || selectedThread.codexThreadId === null) {
-      setThreadHistoryLoadError(undefined);
+    if (skipNextHistoryLoadForThreadRef.current === selectedThreadId) {
+      skipNextHistoryLoadForThreadRef.current = undefined;
+      setHistoryLoadingThreadId(undefined);
       return () => {
         canceled = true;
       };
     }
 
-    setTimelineItems([
-      {
-        kind: 'run_status',
-        id: `history_loading_${selectedThreadId}`,
-        label: 'running',
-        content: JSON.stringify({ type: 'history_loading', threadId: selectedThreadId }),
-        source: 'runtime'
-      }
-    ]);
+    setHistoryLoadingThreadId(selectedThreadId);
+    setTimelineItems(previous => hasOnlyHistoryLoadingTimelineItem(previous)
+      ? [createHistoryLoadingTimelineItem(selectedThreadId)]
+      : previous.length === 0
+        ? [createHistoryLoadingTimelineItem(selectedThreadId)]
+        : previous
+    );
     setThreadHistoryLoadError(undefined);
 
     threadService
       .getThreadHistory(selectedThreadId)
       .then(response => {
         if (canceled) return;
+        if (response.codexThreadId !== undefined && response.codexThreadId !== null) {
+          setRuntimeThreads(previous => {
+            let changed = false;
+            const nextThreads = previous.map(thread => {
+              if (thread.id !== response.threadId || thread.codexThreadId === response.codexThreadId) return thread;
+              changed = true;
+              return { ...thread, codexThreadId: response.codexThreadId };
+            });
+            return changed ? nextThreads : previous;
+          });
+        }
         setTimelineItems(mapHistoryItemsToTimelineItems(response.items));
         setThreadHistoryLoadError(undefined);
+        setHistoryLoadingThreadId(undefined);
       })
       .catch(() => {
         if (canceled) return;
         setTimelineItems([]);
         setThreadHistoryLoadError('无法加载聊天历史');
+        setHistoryLoadingThreadId(undefined);
       });
 
     return () => {
       canceled = true;
     };
-  }, [connectionState.status, runtimeThreads, state.selectedThreadId, threadService]);
+  }, [connectionState.status, state.selectedThreadId, selectedThreadExists, threadHistoryReloadKey, threadService]);
 
   useEffect(() => {
     const body = conversationBodyRef.current;
@@ -437,6 +460,11 @@ export function App(props: AppProps = {}) {
     readHostRuntimeConfig(loadVersion, () => false);
   }
 
+  function handleDynamicBackgroundChange(enabled: boolean) {
+    setDynamicBackgroundEnabled(enabled);
+    writeDynamicBackgroundPreference(enabled);
+  }
+
   function submitPrompt(prompt: string, config?: ComposerRunConfig) {
     if (
       connectionState.status === 'connected'
@@ -465,6 +493,7 @@ export function App(props: AppProps = {}) {
     allowInitialRuntimeProjectFocusRef.current = false;
     sseAbortControllerRef.current?.abort();
     setTimelineItems([]);
+    setHistoryLoadingThreadId(undefined);
     setRuntimeBusy(false);
     setThreadConfigUpdateError(undefined);
     dispatch({ type: 'new_conversation' });
@@ -474,6 +503,7 @@ export function App(props: AppProps = {}) {
     allowInitialRuntimeProjectFocusRef.current = false;
     sseAbortControllerRef.current?.abort();
     setTimelineItems([]);
+    setHistoryLoadingThreadId(undefined);
     setRuntimeBusy(false);
     setThreadConfigUpdateError(undefined);
     dispatch({ type: 'select_project', projectId });
@@ -482,13 +512,32 @@ export function App(props: AppProps = {}) {
   function selectConversation(conversationId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
     sseAbortControllerRef.current?.abort();
-    setTimelineItems([]);
     setRuntimeBusy(false);
     setThreadConfigUpdateError(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
+    const alreadySelected = conversationId === state.selectedThreadId;
     if (conversation !== undefined && conversation.projectId !== state.currentProjectId) {
       dispatch({ type: 'select_project', projectId: conversation.projectId });
     }
+    if (alreadySelected) {
+      if (state.activeView !== 'conversation') {
+        dispatch({ type: 'select_thread', threadId: conversationId });
+      }
+      if (timelineItems.length === 0) {
+        setTimelineItems([createHistoryLoadingTimelineItem(conversationId)]);
+        setHistoryLoadingThreadId(conversationId);
+        setThreadHistoryReloadKey(previous => previous + 1);
+      }
+      return;
+    }
+
+    setHistoryLoadingThreadId(conversationId);
+    setTimelineItems(previous => hasOnlyHistoryLoadingTimelineItem(previous)
+      ? [createHistoryLoadingTimelineItem(conversationId)]
+      : previous.length === 0
+        ? [createHistoryLoadingTimelineItem(conversationId)]
+        : previous
+    );
     dispatch({ type: 'select_thread', threadId: conversationId });
   }
 
@@ -594,6 +643,7 @@ export function App(props: AppProps = {}) {
 
     const created = await threadService.createThread(buildThreadRequest(prompt, currentProject, config));
     setRuntimeThreads(previous => upsertThread(previous, created.thread));
+    skipNextHistoryLoadForThreadRef.current = created.thread.id;
     dispatch({ type: 'select_thread', threadId: created.thread.id });
     return { threadId: created.thread.id, created: true };
   }
@@ -773,8 +823,38 @@ export function App(props: AppProps = {}) {
   const conversationFileLayoutStyle = conversationPaneWidth === undefined
     ? undefined
     : ({ '--conversation-pane-width': `${conversationPaneWidth}px` } as CSSProperties);
+  const showConversationLightfall =
+    dynamicBackgroundEnabled && state.selectedThreadId === undefined && timelineItems.length === 0;
+  const showHistoryLoadingOverlay =
+    historyLoadingThreadId !== undefined && historyLoadingThreadId === state.selectedThreadId;
   const conversationPage = (
-    <section className="conversation-page">
+    <section
+      className="conversation-page"
+      data-background-mode={showConversationLightfall ? 'dynamic' : 'solid'}
+      data-dynamic-background={dynamicBackgroundEnabled ? 'on' : 'off'}
+    >
+      {showConversationLightfall ? (
+        <div className="conversation-lightfall-bg" data-testid="conversation-lightfall-background" aria-hidden="true">
+          <Lightfall
+            colors={CONVERSATION_LIGHTFALL_COLORS}
+            backgroundColor="#000000"
+            speed={0.28}
+            streakCount={3}
+            streakWidth={0.32}
+            streakLength={0.78}
+            glow={0.48}
+            density={0.12}
+            twinkle={0.62}
+            zoom={3.1}
+            backgroundGlow={0.34}
+            opacity={0.72}
+            mouseInteraction={false}
+            mouseStrength={0.3}
+            mouseRadius={1.05}
+            dpr={1.5}
+          />
+        </div>
+      ) : null}
       <ConversationHeader
         title={selectedConversation?.title ?? '新对话'}
         projectName={currentProjectName}
@@ -795,6 +875,11 @@ export function App(props: AppProps = {}) {
         ) : (
           <Timeline items={timelineItems} onOpenRunDetail={openRunDetail} onOpenChange={openChangeDetail} />
         )}
+        {showHistoryLoadingOverlay ? (
+          <div className="conversation-history-loading" role="status" aria-label="正在加载会话历史">
+            <span>正在加载会话历史...</span>
+          </div>
+        ) : null}
       </div>
       <div className="composer-wrap">
         <Composer
@@ -839,7 +924,12 @@ export function App(props: AppProps = {}) {
   const main = props.capabilitiesView !== undefined ? (
     <CapabilitiesView {...props.capabilitiesView} />
   ) : state.activeView === 'settings' ? (
-    <ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={() => dispatch({ type: 'back_to_app' })} />
+    <ClaweeSettingsView
+      runtimeStatus={runtimeStatus}
+      dynamicBackgroundEnabled={dynamicBackgroundEnabled}
+      onDynamicBackgroundChange={handleDynamicBackgroundChange}
+      onBack={() => dispatch({ type: 'back_to_app' })}
+    />
   ) : state.activeView === 'conversation' ? (
     conversationWorkspace
   ) : (
@@ -855,17 +945,19 @@ export function App(props: AppProps = {}) {
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
+          collapsed={sidebarCollapsed}
           onNewConversation={startNewConversation}
           onSelectProject={selectProject}
           onSelectConversation={selectConversation}
           onOpenView={(activeView) => dispatch({ type: 'set_active_view', activeView })}
           onOpenSettings={() => dispatch({ type: 'open_settings' })}
-          onCheckUpdates={() => dispatch({ type: 'open_settings' })}
+          onToggleCollapsed={() => setSidebarCollapsed((currentValue) => !currentValue)}
         />
       }
       main={main}
       detail={detailPanel}
       detailOpen={detailPanel !== null && state.activeView === 'conversation'}
+      sidebarCollapsed={sidebarCollapsed}
     />
   );
 
@@ -919,6 +1011,22 @@ export function App(props: AppProps = {}) {
 function getConnectionStatusLabel(connectionState: ConnectionState) {
   if (connectionState.status === 'connected') return '本地运行内核正常';
   return connectionState.message;
+}
+
+function readDynamicBackgroundPreference(): boolean {
+  try {
+    return window.localStorage.getItem(DYNAMIC_BACKGROUND_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+function writeDynamicBackgroundPreference(enabled: boolean): void {
+  try {
+    window.localStorage.setItem(DYNAMIC_BACKGROUND_STORAGE_KEY, String(enabled));
+  } catch {
+    return;
+  }
 }
 
 function PlaceholderView(props: { label: string }) {
@@ -1070,6 +1178,24 @@ function fromRuntimeSandbox(sandbox: SandboxMode): ClaweeProject['sandbox'] {
 function upsertThread(threads: ThreadResponse[], thread: ThreadResponse): ThreadResponse[] {
   const withoutThread = threads.filter(item => item.id !== thread.id);
   return [thread, ...withoutThread];
+}
+
+function createHistoryLoadingTimelineItem(threadId: string): TimelineItem {
+  return {
+    kind: 'run_status',
+    id: `history_loading_${threadId}`,
+    label: 'running',
+    content: JSON.stringify({ type: 'history_loading', threadId }),
+    source: 'runtime'
+  };
+}
+
+function hasOnlyHistoryLoadingTimelineItem(items: TimelineItem[]): boolean {
+  const item = items[0];
+  return items.length === 1
+    && item !== undefined
+    && item.kind === 'run_status'
+    && item.id.startsWith('history_loading_');
 }
 
 function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {

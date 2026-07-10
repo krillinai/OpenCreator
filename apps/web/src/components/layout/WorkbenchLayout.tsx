@@ -5,12 +5,21 @@ export function WorkbenchLayout(props: {
   main: ReactNode;
   detail?: ReactNode;
   detailOpen?: boolean;
+  sidebarCollapsed?: boolean;
 }) {
-  const shellClassName = props.detailOpen ? 'clawee-shell has-detail' : 'clawee-shell';
+  const shellClassName = [
+    'clawee-shell',
+    props.detailOpen ? 'has-detail' : undefined,
+    props.sidebarCollapsed ? 'sidebar-collapsed' : undefined
+  ].filter(Boolean).join(' ');
 
   return (
     <main className={shellClassName}>
-      <aside className="clawee-sidebar-pane" aria-label="Clawee 导航">
+      <aside
+        className="clawee-sidebar-pane"
+        aria-label="Clawee 导航"
+        data-collapsed={props.sidebarCollapsed ? 'true' : 'false'}
+      >
         {props.sidebar}
       </aside>
       <section className="clawee-main-pane" aria-label="Clawee 工作区">

@@ -17,6 +17,7 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.localStorage.clear();
   });
 
   it('renders Clawee desktop app shell without Codex product branding', async () => {
@@ -24,6 +25,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('button', { name: '新对话' })).toBeInTheDocument();
     expect(await screen.findByText('要在 content-design 中处理什么？')).toBeInTheDocument();
+    expect(screen.getByTestId('conversation-lightfall-background')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 完全访问' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
@@ -133,6 +135,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
+    expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(await screen.findByText('思考过程')).toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
@@ -743,6 +746,223 @@ describe('App', () => {
     expect(screen.getByText('这个 skill 用于分析选品资料。')).toBeInTheDocument();
   });
 
+  it('loads selected conversation history even when the listed thread has no codexThreadId yet', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    let historyRequests = 0;
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_stale_codex_id',
+              title: '刚生成的内容',
+              codexThreadId: null,
+              cwd: '/Users/test/develop/content-design',
+              canonicalCwd: '/Users/test/develop/content-design'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_stale_codex_id/history')) {
+        historyRequests += 1;
+        return jsonResponse({
+          threadId: 'thread_stale_codex_id',
+          codexThreadId: 'codex-now-available',
+          items: [
+            {
+              id: 'stale_history_user_1',
+              type: 'user_message',
+              text: '帮我生成视频脚本',
+              createdAt: new Date(0).toISOString()
+            },
+            {
+              id: 'stale_history_assistant_1',
+              type: 'assistant_message',
+              text: '这是生成好的视频脚本。',
+              createdAt: new Date(0).toISOString()
+            }
+          ]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /刚生成的内容/ }));
+
+    expect(await findTimelineUserMessage('帮我生成视频脚本')).toBeInTheDocument();
+    expect(screen.getByText('这是生成好的视频脚本。')).toBeInTheDocument();
+    expect(historyRequests).toBe(1);
+  });
+
+  it('keeps the visible transcript when selecting the currently open conversation again', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_current_history',
+              title: '当前打开的历史',
+              codexThreadId: 'codex-current-history',
+              cwd: '/Users/test/develop/content-design',
+              canonicalCwd: '/Users/test/develop/content-design'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_current_history/history')) {
+        return jsonResponse({
+          threadId: 'thread_current_history',
+          codexThreadId: 'codex-current-history',
+          items: [
+            {
+              id: 'current_history_user_1',
+              type: 'user_message',
+              text: '保持当前内容',
+              createdAt: new Date(0).toISOString()
+            },
+            {
+              id: 'current_history_assistant_1',
+              type: 'assistant_message',
+              text: '当前内容仍然可见。',
+              createdAt: new Date(0).toISOString()
+            }
+          ]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    const conversationButton = await screen.findByRole('button', { name: /当前打开的历史/ });
+    await user.click(conversationButton);
+
+    expect(await findTimelineUserMessage('保持当前内容')).toBeInTheDocument();
+    expect(screen.getByText('当前内容仍然可见。')).toBeInTheDocument();
+
+    await user.click(conversationButton);
+
+    expect(await findTimelineUserMessage('保持当前内容')).toBeInTheDocument();
+    expect(screen.getByText('当前内容仍然可见。')).toBeInTheDocument();
+    expect(screen.queryByText('要在 content-design 中处理什么？')).not.toBeInTheDocument();
+  });
+
+  it('keeps the previous transcript visible while loading a conversation from another project', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    let resolveNextHistory: ((response: Response) => void) | undefined;
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_content_history',
+              title: 'content-design 历史',
+              codexThreadId: 'codex-content-history',
+              cwd: '/Users/test/develop/content-design',
+              canonicalCwd: '/Users/test/develop/content-design'
+            }),
+            createThreadResponse({
+              id: 'thread_bili_history',
+              title: 'bili 历史',
+              codexThreadId: 'codex-bili-history',
+              cwd: '/Users/test/develop/clawee/bili',
+              canonicalCwd: '/Users/test/develop/clawee/bili'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_content_history/history')) {
+        return jsonResponse({
+          threadId: 'thread_content_history',
+          codexThreadId: 'codex-content-history',
+          items: [
+            {
+              id: 'content_history_user_1',
+              type: 'user_message',
+              text: '上一条会话内容保持可见',
+              createdAt: new Date(0).toISOString()
+            }
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_bili_history/history')) {
+        return new Promise<Response>((resolve) => {
+          resolveNextHistory = resolve;
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /content-design 历史/ }));
+    expect(await findTimelineUserMessage('上一条会话内容保持可见')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'bili' }));
+    await user.click(await screen.findByRole('button', { name: /bili 历史/ }));
+
+    expect(screen.queryByRole('heading', { name: 'bili' })).not.toBeInTheDocument();
+    expect(document.querySelector('.timeline-user_message')?.textContent).toContain('上一条会话内容保持可见');
+    expect(screen.getByRole('status', { name: '正在加载会话历史' })).toBeInTheDocument();
+
+    resolveNextHistory?.(jsonResponse({
+      threadId: 'thread_bili_history',
+      codexThreadId: 'codex-bili-history',
+      items: [
+        {
+          id: 'bili_history_user_1',
+          type: 'user_message',
+          text: '新的会话加载完成',
+          createdAt: new Date(0).toISOString()
+        }
+      ]
+    }));
+
+    expect(await findTimelineUserMessage('新的会话加载完成')).toBeInTheDocument();
+  });
+
   it('从会话头部点击文件会在会话旁打开真实文件工作区', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
@@ -846,8 +1066,8 @@ describe('App', () => {
 
     expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '真实文件会话' })).toBeInTheDocument();
-    expect(await screen.findByText('打开文件')).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '返回对话' })).not.toBeInTheDocument();
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
   });
@@ -1216,8 +1436,8 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '文件' }));
     expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '真实文件会话' })).toBeInTheDocument();
-    expect(await screen.findByText('打开文件')).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
   });
 
   it('focuses the most recent runtime project when the default project has no history', async () => {
@@ -1254,7 +1474,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'clawee-agent' })).toHaveAttribute('aria-current', 'true');
+    expect(await screen.findByRole('button', { name: 'clawee-agent' })).toHaveAttribute('data-current-project', 'true');
     expect(await screen.findByRole('button', { name: /真实 Codex 当前项目历史/ })).toBeInTheDocument();
   });
 
@@ -1455,6 +1675,23 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
     expect(await screen.findByText('要在 content-design 中处理什么？')).toBeInTheDocument();
+  });
+
+  it('can turn off the empty-state dynamic background from settings', async () => {
+    const user = userEvent.setup();
+
+    render(<App fileService={createFileService()} />);
+
+    expect(await screen.findByTestId('conversation-lightfall-background')).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: '设置 账户' }));
+    await user.click(screen.getByRole('switch', { name: '动态背景' }));
+    await user.click(screen.getByRole('button', { name: '返回应用' }));
+
+    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
+    expect(document.querySelector('.conversation-page')).toHaveAttribute('data-dynamic-background', 'off');
+    expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('clawee.preferences.dynamicBackground')).toBe('false');
   });
 });
 

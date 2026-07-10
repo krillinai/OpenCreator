@@ -9,8 +9,7 @@ import type {
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClientError } from '../../runtime/errors.js';
-import { FileEditorPane } from './FileEditorPane.js';
-import { FilePathBar } from './FilePathBar.js';
+import { defaultModeForMeta, FileEditorPane, isPreviewable, type FileEditorMode } from './FileEditorPane.js';
 import { FileTopBar } from './FileTopBar.js';
 import { ProjectFileTree } from './ProjectFileTree.js';
 import { chooseSuggestedPath, mergeDirectoryNodes, parentDirectories, workspaceKey } from './file-view-state.js';
@@ -37,6 +36,7 @@ const FILE_TREE_MIN_WIDTH = 220;
 const FILE_TREE_MAX_WIDTH = 420;
 const FILE_EDITOR_MIN_WIDTH = 360;
 const RESIZE_KEY_STEP = 32;
+const FILE_TOAST_DURATION_MS = 2200;
 
 export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const [nodes, setNodes] = useState<WorkspaceDirectoryResponse['nodes']>([]);
@@ -58,7 +58,10 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const [conflictOpen, setConflictOpen] = useState(false);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [treeWidth, setTreeWidth] = useState(280);
+  const [fileMode, setFileMode] = useState<FileEditorMode>('edit');
+  const [toastMessage, setToastMessage] = useState<string>();
   const objectUrlRef = useRef<string>();
+  const toastTimeoutRef = useRef<number>();
   const workspaceBodyRef = useRef<HTMLDivElement | null>(null);
   const loadedPathsRef = useRef(new Set<string>());
   const openRequestIdRef = useRef(0);
@@ -85,10 +88,15 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const recentPathStorageKey = thread ? `${RECENT_PATH_STORAGE_PREFIX}${workspaceKey(thread.canonicalCwd)}` : undefined;
 
   useEffect(() => {
+    setFileMode(defaultModeForMeta(effectiveMeta));
+  }, [effectiveMeta?.path, effectiveMeta?.kind, effectiveMeta?.editable]);
+
+  useEffect(() => {
     mountedRef.current = true;
 
     return () => {
       mountedRef.current = false;
+      clearToastTimer();
       if (objectUrlRef.current && service) {
         service.revokeBlob(objectUrlRef.current);
       }
@@ -106,6 +114,8 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     setRootName('工作区');
     setRootPathLabel('');
     setWorkspaceMessage(undefined);
+    setToastMessage(undefined);
+    clearToastTimer();
     setActivePath(undefined);
     setMeta(undefined);
     setSavedContent('');
@@ -322,16 +332,36 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
 
     const absolutePath = joinPath(rootPathLabel, activePath);
     if (!navigator.clipboard?.writeText) {
-      setWorkspaceMessage('当前环境不支持复制路径');
+      showToast('当前环境不支持复制路径');
       return;
     }
 
     try {
       await navigator.clipboard.writeText(absolutePath);
-      setWorkspaceMessage('已复制文件路径');
+      showToast('已复制文件路径');
     } catch (error) {
-      setWorkspaceMessage(humanizeError(error, '复制路径失败'));
+      showToast(humanizeError(error, '复制路径失败'));
     }
+  }
+
+  function showToast(message: string) {
+    clearToastTimer();
+    setToastMessage(message);
+    toastTimeoutRef.current = window.setTimeout(() => {
+      if (mountedRef.current) {
+        setToastMessage(undefined);
+      }
+      toastTimeoutRef.current = undefined;
+    }, FILE_TOAST_DURATION_MS);
+  }
+
+  function clearToastTimer() {
+    if (toastTimeoutRef.current === undefined) {
+      return;
+    }
+
+    window.clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = undefined;
   }
 
   function handleBack() {
@@ -412,16 +442,21 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     <section className="file-workspace-view">
       <FileTopBar
         fileName={effectiveMeta?.name}
-        dirty={dirty}
-        treeCollapsed={treeCollapsed}
-        onToggleTree={() => setTreeCollapsed(previous => !previous)}
-        onClose={handleBack}
-      />
-      <FilePathBar
         rootName={rootName}
         path={activePath}
-        onRevealDirectory={handleRevealDirectory}
-        onCopyPath={handleCopyPath}
+        dirty={dirty}
+        treeCollapsed={treeCollapsed}
+        mode={fileMode}
+        canToggleMode={effectiveMeta !== undefined && effectiveMeta.editable && isPreviewable(effectiveMeta)}
+        canSave={effectiveMeta !== undefined && effectiveMeta.editable}
+        saveDisabled={saving || !dirty || effectiveMeta?.readonly}
+        copyToastMessage={toastMessage}
+        onModeChange={setFileMode}
+        onSave={() => void handleSave(false)}
+        onRevealDirectory={() => void handleRevealDirectory()}
+        onCopyPath={() => void handleCopyPath()}
+        onToggleTree={() => setTreeCollapsed(previous => !previous)}
+        onClose={handleBack}
       />
 
       <div
@@ -458,8 +493,11 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
             saving={saving}
             loadError={loading ? '正在加载文件...' : loadError}
             saveError={saveError}
+            mode={fileMode}
+            toolbar="hidden"
             onChange={setDraftContent}
             onSave={() => void handleSave(false)}
+            onModeChange={setFileMode}
           />
         </div>
 

@@ -12,24 +12,37 @@ export type FileEditorPaneProps = {
   saving?: boolean;
   loadError?: string;
   saveError?: string;
+  mode?: FileEditorMode;
+  toolbar?: 'inline' | 'hidden';
   onChange?(value: string): void;
   onSave?(): void;
+  onModeChange?(mode: FileEditorMode): void;
 };
 
-type PaneMode = 'edit' | 'preview';
+export type FileEditorMode = 'edit' | 'preview';
 
 export function FileEditorPane(props: FileEditorPaneProps) {
   const meta = props.meta;
-  const [mode, setMode] = useState<PaneMode>('edit');
+  const [uncontrolledMode, setUncontrolledMode] = useState<FileEditorMode>('edit');
   const errors = [props.loadError, props.saveError].filter((error): error is string => error !== undefined);
+  const toolbar = props.toolbar ?? 'inline';
+  const defaultMode = useMemo(() => defaultModeForMeta(meta), [
+    meta?.editable,
+    meta?.kind,
+    meta?.mime,
+    meta?.name,
+    meta?.path
+  ]);
 
   useEffect(() => {
-    setMode(defaultModeForMeta(meta));
-  }, [meta?.path, meta?.kind]);
+    if (props.mode === undefined) {
+      setUncontrolledMode(defaultMode);
+    }
+  }, [defaultMode, props.mode]);
 
   if (!meta) {
     return (
-      <section className="file-editor-pane" aria-label="文件编辑区">
+      <section className="file-editor-pane" data-toolbar={toolbar} aria-label="文件编辑区">
         <div className="file-preview file-preview-empty">
           <p>选择一个文件</p>
         </div>
@@ -39,51 +52,59 @@ export function FileEditorPane(props: FileEditorPaneProps) {
 
   const editable = meta.editable;
   const previewable = isPreviewable(meta);
-  const currentMode = editable ? mode : 'preview';
+  const currentMode = editable ? props.mode ?? uncontrolledMode : 'preview';
+  const setMode = (nextMode: FileEditorMode) => {
+    if (props.mode === undefined) {
+      setUncontrolledMode(nextMode);
+    }
+    props.onModeChange?.(nextMode);
+  };
 
   return (
-    <section className="file-editor-pane" aria-label="文件编辑区">
-      <header className="file-editor-toolbar">
-        <div className="file-editor-toolbar-main">
-          <div className="file-editor-toolbar-title">
-            <strong>{meta.name}</strong>
-            <span>{meta.path}</span>
-          </div>
-          {props.dirty ? <span className="dirty-indicator">未保存</span> : null}
-        </div>
-
-        <div className="file-editor-toolbar-actions">
-          {editable && previewable ? (
-            <div className="file-editor-mode-toggle" aria-label="文件视图模式">
-              <button
-                type="button"
-                aria-pressed={currentMode === 'edit'}
-                onClick={() => setMode('edit')}
-              >
-                编辑
-              </button>
-              <button
-                type="button"
-                aria-pressed={currentMode === 'preview'}
-                onClick={() => setMode('preview')}
-              >
-                预览
-              </button>
+    <section className="file-editor-pane" data-toolbar={toolbar} aria-label="文件编辑区">
+      {toolbar === 'inline' ? (
+        <header className="file-editor-toolbar">
+          <div className="file-editor-toolbar-main">
+            <div className="file-editor-toolbar-title">
+              <strong>{meta.name}</strong>
+              <span>{meta.path}</span>
             </div>
-          ) : null}
+            {props.dirty ? <span className="dirty-indicator">未保存</span> : null}
+          </div>
 
-          {editable ? (
-            <button
-              className="editor-save-button"
-              type="button"
-              disabled={props.saving || !props.dirty || meta.readonly}
-              onClick={() => props.onSave?.()}
-            >
-              保存
-            </button>
-          ) : null}
-        </div>
-      </header>
+          <div className="file-editor-toolbar-actions">
+            {editable && previewable ? (
+              <div className="file-editor-mode-toggle" aria-label="文件视图模式">
+                <button
+                  type="button"
+                  aria-pressed={currentMode === 'edit'}
+                  onClick={() => setMode('edit')}
+                >
+                  编辑
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={currentMode === 'preview'}
+                  onClick={() => setMode('preview')}
+                >
+                  预览
+                </button>
+              </div>
+            ) : null}
+
+            {editable ? (
+              <button
+                className="editor-save-button"
+                type="button"
+                disabled={props.saving || !props.dirty || meta.readonly}
+                onClick={() => props.onSave?.()}
+              >
+                保存
+              </button>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
 
       {errors.length === 0 ? null : (
         <div className="file-error-bar" role="status">
@@ -107,7 +128,7 @@ export function FileEditorPane(props: FileEditorPaneProps) {
 
 type RenderContentArgs = {
   meta: WorkspaceFileMeta;
-  mode: PaneMode;
+  mode: FileEditorMode;
   content: string;
   objectUrl?: string;
   onChange?: (value: string) => void;
@@ -239,7 +260,7 @@ function isTextLike(meta: WorkspaceFileMeta): boolean {
   return meta.kind === 'markdown' || meta.kind === 'text' || meta.kind === 'json' || meta.kind === 'code' || meta.kind === 'html' || isSvgSource(meta);
 }
 
-function isPreviewable(meta: WorkspaceFileMeta): boolean {
+export function isPreviewable(meta: WorkspaceFileMeta): boolean {
   if (
     meta.kind === 'markdown' ||
     meta.kind === 'json' ||
@@ -262,7 +283,7 @@ function isSvgSource(meta: WorkspaceFileMeta): boolean {
   return meta.name.toLowerCase().endsWith('.svg') || meta.mime === 'image/svg+xml';
 }
 
-function defaultModeForMeta(meta?: WorkspaceFileMeta): PaneMode {
+export function defaultModeForMeta(meta?: WorkspaceFileMeta): FileEditorMode {
   if (!meta) {
     return 'edit';
   }

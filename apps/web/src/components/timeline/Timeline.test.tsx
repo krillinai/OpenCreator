@@ -105,6 +105,8 @@ describe('Timeline', () => {
     expect(screen.getByText('please inspect the run')).toBeInTheDocument();
     expect(screen.getByText('I am checking the logs')).toBeInTheDocument();
     expect(screen.getByText('Clawee')).toBeInTheDocument();
+    expect(container.querySelector('.timeline-user_message .timeline-item-header')).not.toBeInTheDocument();
+    expect(container.querySelector('.timeline-assistant_message .timeline-avatar img')).toHaveAttribute('src', '/logo-cor.png');
     expect(screen.queryByText('Codex')).not.toBeInTheDocument();
     expect(screen.queryByText('Mock Agent')).not.toBeInTheDocument();
     expect(screen.queryByText('{"type":"user_message","text":"please inspect the run"}')).not.toBeInTheDocument();
