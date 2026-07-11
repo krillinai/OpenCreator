@@ -1,54 +1,70 @@
-# Task 4 报告：daemon 市场安装/更新用例和 Fastify API
+# Task 4 报告：Web Runtime 文件服务
 
-## 实现
+## 实现范围
 
-- 新增 `SkillMarketManager`，公开 `installSkill(id)`、`updateSkill(id)`、`listInstallRecords()`。
-- 安装/更新共用 `mutateSkill(id, overwrite)`，只读取 `@clawee/skill-market` 固定目录中的 `repository`、`commit`、`skillPath`、`marketRevision`。
-- 更新前先检查真实 Skill 是否存在。
-- 下载在 `dataDir/skill-market-downloads/` 下创建本次外层临时 workDir，并在 `finally` 中 best-effort 删除。
-- 安装写入 `SkillManager.installSkill()` 时传入 `confirmWriteToCodexHome: true`；更新额外传入 `overwrite: true`。
-- 安装成功后写入市场安装记录；记录写入失败会调用 `rollbackSkillInstall(id, backupPath)`。
-- rollback 失败时抛出 `AggregateError`，错误消息同时包含原始记录写入失败和 rollback 失败上下文。
-- 新增 Fastify 路由：
-  - `GET /codex/skill-market/install-records`
-  - `POST /codex/skill-market/:id/install`
-  - `POST /codex/skill-market/:id/update`
-- `BuildServerInput.marketArchiveDownloader` 用于测试注入；默认使用现有真实 `MarketArchiveDownloader`。
+- 修改 `apps/web/src/runtime/client.ts`
+- 修改 `apps/web/src/runtime/client.test.ts`
+- 新增 `apps/web/src/services/workspace-file-service.ts`
+- 新增 `apps/web/src/services/workspace-file-service.test.ts`
 
-## RED / GREEN
+## TDD 过程
 
-- RED 命令：
-  - `pnpm --filter @clawee/daemon test -- codex-skill-market-manager api`
-- RED 结果：
-  - `codex-skill-market-manager` suite 因 `market-manager` 文件不存在加载失败。
-  - 新增 API 用例返回 404，确认新路由未注册。
-- GREEN 结果：
-  - 同一命令通过，`94 passed`。
+1. 先新增 `workspace-file-service.test.ts`，覆盖：
+   - `listDirectory` 调 `GET /workspace/files/directory`
+   - `openText` 调 `GET /workspace/files/content`
+   - `saveText` 调 `POST /workspace/files/content`
+   - `reveal` 调 `POST /workspace/files/reveal`
+   - `openBlob` 走 `RuntimeClient.rawGet`，并生成 object URL
+   - `revokeBlob` 调 `URL.revokeObjectURL`
+2. 扩展 `runtime/client.test.ts`，补充：
+   - `rawGet` 带 `Authorization`
+   - `rawRequest` 保持非 2xx 抛 `ApiClientError`
+   - 现有 JSON `request` 继续发送 JSON body
+3. 先运行失败验证：
+   - `pnpm --filter @clawee/web test -- src/services/workspace-file-service.test.ts`
+   - 初次失败为 `workspace-file-service.ts` 不存在，符合 brief 预期
+4. 实现 `rawGet` / `rawRequest` 与 `workspace-file-service`
+5. 运行目标测试与 typecheck，全部通过
 
-## 测试结果
+## RuntimeClient 改动
 
-- `pnpm --filter @clawee/daemon typecheck`
-  - 通过。
-- `pnpm --filter @clawee/daemon test`
-  - 通过：`38 passed | 1 skipped` test files，`446 passed | 13 skipped` tests。
+- 新增 `rawGet(path)`
+- 新增 `rawRequest(path, input)`
+- `request<T>` 改为先走 `rawRequest`，再 `readJson`
+- 非 2xx 错误解析逻辑保持不变，仍抛 `ApiClientError`
+- `/healthz` 不带 `Authorization`，其他 path 继续带 Bearer token
 
-## 修改文件
+## workspace-file-service 说明
 
-- `apps/daemon/src/codex/skills/market-manager.ts`
-- `apps/daemon/src/api/routes.skill-market.ts`
-- `apps/daemon/src/api/server.ts`
-- `apps/daemon/test/unit/codex-skill-market-manager.test.ts`
-- `apps/daemon/test/integration/api.test.ts`
-- `.superpowers/sdd/task-4-report.md`
+- 导出 `createWorkspaceFileService(client)`
+- 提供方法：
+  - `listDirectory(threadId, path)`
+  - `getMeta(threadId, path)`
+  - `openText(threadId, path)`
+  - `saveText(input)`
+  - `openBlob(threadId, path)`
+  - `revokeBlob(objectUrl)`
+  - `reveal(input)`
+- `openBlob` 实现：
+  - `client.rawGet('/workspace/files/blob?...')`
+  - `await response.blob()`
+  - `URL.createObjectURL(blob)`
+  - 返回 `{ objectUrl, mime, size }`
 
-## 自检
+## 验证结果
 
-- 临时目录：成功、记录写入失败、rollback 失败路径均覆盖外层 workDir 清理测试。
-- rollback：记录写入失败会 rollback；fresh install 删除目标，update 恢复旧版本。
-- 错误映射：覆盖未知 ID 404、不可安装 422、更新目标不存在 404、下载失败 502。
-- 测试隔离：API 集成测试只使用 fake downloader；global CODEX_HOME 用临时 `process.env.CODEX_HOME`，不写用户真实 CODEX_HOME。
-- 范围控制：未修改 apps/web；未修改 Task 2/3 report；提交只暂存 Task 4 文件。
+- 通过：
+  - `pnpm --filter @clawee/web test -- src/services/workspace-file-service.test.ts src/runtime/client.test.ts`
+  - `pnpm --filter @clawee/web typecheck`
 
-## 关注点
+## 本次补充
 
-- Task 3 当前导出真实 `MarketArchiveDownloader` 常量，而 brief 文案提到 `createMarketArchiveDownloader()`；为遵守 Task 4 文件边界，server 默认使用现有真实 downloader 常量。
+- 为 `workspace-file-service.getMeta(threadId, path)` 增加测试，覆盖：
+  - 请求 `GET /workspace/files/meta?threadId=&path=`
+  - 返回 `WorkspaceFileMeta`
+- 复跑验证命令，结果均通过。
+
+## 风险与备注
+
+- 按要求仅修改 web runtime client 与 workspace file service，未触碰 App/UI。
+- 测试命令使用了 `apps/web` 包内可命中的相对路径写法；仓库根路径写法在当前 Vitest 配置下不会命中测试文件。

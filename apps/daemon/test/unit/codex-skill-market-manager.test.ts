@@ -73,7 +73,8 @@ describe('codex skill market manager', () => {
 
   it('updates market skills with overwrite enabled', async () => {
     const { manager, skillManager } = createManagerFixture({
-      existingSkill: makeSkill('frontend-slides', 'old')
+      existingSkill: makeSkill('frontend-slides', 'old'),
+      installOperation: makeOperation('frontend-slides', 'overwrite')
     });
 
     await manager.updateSkill('frontend-slides');
@@ -92,6 +93,67 @@ describe('codex skill market manager', () => {
     await expect(manager.updateSkill('frontend-slides')).rejects.toThrow(/CODEX_SKILL_NOT_FOUND/);
     expect(downloader.download).not.toHaveBeenCalled();
     expect(skillManager.installSkill).not.toHaveBeenCalled();
+  });
+
+  it('rolls back and skips records when post-install cleanup fails', async () => {
+    const cleanupError = new Error('cleanup denied');
+    const { manager, skillManager, records } = createManagerFixture({
+      cleanupError
+    });
+
+    await expect(manager.installSkill('frontend-slides')).rejects.toThrow(/CODEX_SKILL_WRITE_FAILED/);
+
+    expect(skillManager.rollbackSkillInstall).toHaveBeenCalledWith('frontend-slides', null);
+    expect(records.upsertRecord).not.toHaveBeenCalled();
+  });
+
+  it('preserves cleanup and rollback errors when post-install cleanup rollback fails', async () => {
+    const { manager } = createManagerFixture({
+      cleanupError: new Error('cleanup denied'),
+      rollbackError: new Error('rollback denied')
+    });
+
+    let error: unknown;
+    try {
+      await manager.installSkill('frontend-slides');
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as Error).message).toContain('cleanup denied');
+    expect((error as Error).message).toContain('rollback denied');
+  });
+
+  it('rolls back update installs that race with a deleted target and skips records', async () => {
+    const { manager, skillManager, records } = createManagerFixture({
+      existingSkill: makeSkill('frontend-slides', 'old'),
+      installOperation: makeOperation('frontend-slides', 'install')
+    });
+
+    await expect(manager.updateSkill('frontend-slides')).rejects.toThrow(/CODEX_SKILL_NOT_FOUND/);
+
+    expect(skillManager.rollbackSkillInstall).toHaveBeenCalledWith('frontend-slides', null);
+    expect(records.upsertRecord).not.toHaveBeenCalled();
+  });
+
+  it('preserves update race and rollback errors when update rollback fails', async () => {
+    const { manager } = createManagerFixture({
+      existingSkill: makeSkill('frontend-slides', 'old'),
+      installOperation: makeOperation('frontend-slides', 'install'),
+      rollbackError: new Error('rollback denied')
+    });
+
+    let error: unknown;
+    try {
+      await manager.updateSkill('frontend-slides');
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as Error).message).toContain('CODEX_SKILL_NOT_FOUND');
+    expect((error as Error).message).toContain('rollback denied');
   });
 
   it('rolls back fresh installs when record writes fail', async () => {
@@ -173,8 +235,10 @@ describe('codex skill market manager', () => {
 
 function createManagerFixture(options: {
   existingSkill?: CodexSkillResponse;
+  installOperation?: CodexSkillOperationResponse;
   recordWriteError?: Error;
   rollbackError?: Error;
+  cleanupError?: Error;
   listRecords?: CodexSkillMarketInstallRecordResponse[];
   tempRootName?: string;
 } = {}) {
@@ -188,7 +252,14 @@ function createManagerFixture(options: {
     dataDir,
     skillManager,
     records,
-    downloader
+    downloader,
+    ...(options.cleanupError === undefined
+      ? {}
+      : {
+          cleanupWorkDir() {
+            throw options.cleanupError;
+          }
+        })
   });
 
   return { manager, skillManager, records, downloader };
@@ -216,10 +287,11 @@ function createRealManagerFixture(options: { failRecordWrite: boolean }) {
 
 function makeFakeSkillManager(options: {
   existingSkill?: CodexSkillResponse;
+  installOperation?: CodexSkillOperationResponse;
   rollbackError?: Error;
 }): SkillManager {
   const skill = makeSkill('frontend-slides', 'new');
-  const operation = makeOperation('frontend-slides');
+  const operation = options.installOperation ?? makeOperation('frontend-slides');
   return {
     listSkills: vi.fn(() => ({
       codexHome: '/codex-home',
@@ -296,10 +368,13 @@ function makeSkill(id: string, description: string): CodexSkillResponse {
   };
 }
 
-function makeOperation(skillId: string): CodexSkillOperationResponse {
+function makeOperation(
+  skillId: string,
+  operation: CodexSkillOperationResponse['operation'] = 'install'
+): CodexSkillOperationResponse {
   return {
     id: `op_${skillId}`,
-    operation: 'install',
+    operation,
     skillId,
     codexHome: '/codex-home',
     skillsPath: '/codex-home/skills',

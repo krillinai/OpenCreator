@@ -20,6 +20,7 @@ export function createSkillMarketManager(input: {
   skillManager: SkillManager;
   records: SkillMarketRecordRepository;
   downloader: MarketArchiveDownloader;
+  cleanupWorkDir?: (workDir: string) => void;
 }): SkillMarketManager {
   return {
     listInstallRecords() {
@@ -40,6 +41,7 @@ async function mutateSkill(
     skillManager: SkillManager;
     records: SkillMarketRecordRepository;
     downloader: MarketArchiveDownloader;
+    cleanupWorkDir?: (workDir: string) => void;
   },
   id: string,
   overwrite: boolean
@@ -58,7 +60,7 @@ async function mutateSkill(
   const downloadParent = join(input.dataDir, 'skill-market-downloads');
   mkdirSync(downloadParent, { recursive: true });
   const workDir = mkdtempSync(join(downloadParent, 'mutation-'));
-  let primaryError: unknown;
+  let workDirCleaned = false;
 
   try {
     const archiveRoot = await input.downloader.download({
@@ -74,6 +76,30 @@ async function mutateSkill(
       confirmWriteToCodexHome: true
     });
 
+    if (overwrite && result.operation.operation !== 'overwrite') {
+      throw await rollbackAndCreateError(
+        input.skillManager,
+        id,
+        result.operation.backupPath ?? null,
+        new Error(`CODEX_SKILL_NOT_FOUND: ${id}`)
+      );
+    }
+
+    try {
+      cleanupWorkDir(input, workDir);
+      workDirCleaned = true;
+    } catch (cleanupError) {
+      throw await rollbackAndCreateError(
+        input.skillManager,
+        id,
+        result.operation.backupPath ?? null,
+        wrapSkillWriteFailed(
+          cleanupError,
+          `market download workDir cleanup failed after install: ${workDir}; ${getErrorMessage(cleanupError)}`
+        )
+      );
+    }
+
     try {
       const record = input.records.upsertRecord({
         skillId: id,
@@ -84,39 +110,57 @@ async function mutateSkill(
       });
       return { ...result, record };
     } catch (recordError) {
-      try {
-        await input.skillManager.rollbackSkillInstall(id, result.operation.backupPath ?? null);
-      } catch (rollbackError) {
-        throw createRecordRollbackError(recordError, rollbackError);
-      }
-      throw recordError;
+      throw await rollbackAndCreateError(
+        input.skillManager,
+        id,
+        result.operation.backupPath ?? null,
+        recordError
+      );
     }
-  } catch (error) {
-    primaryError = error;
-    throw error;
   } finally {
-    try {
-      rmSync(workDir, { recursive: true, force: true });
-    } catch (cleanupError) {
-      if (primaryError !== undefined) {
-        throw createCleanupError(primaryError, cleanupError);
+    if (!workDirCleaned) {
+      try {
+        cleanupWorkDir(input, workDir);
+      } catch {
+        // Preserve the primary error. Post-install cleanup is handled explicitly above.
       }
     }
   }
 }
 
-function createRecordRollbackError(recordError: unknown, rollbackError: unknown): AggregateError {
-  return new AggregateError(
-    [recordError, rollbackError],
-    `CODEX_SKILL_WRITE_FAILED: market record write failed (${getErrorMessage(recordError)}); rollback failed (${getErrorMessage(rollbackError)})`
-  );
+async function rollbackAndCreateError(
+  skillManager: SkillManager,
+  id: string,
+  backupPath: string | null,
+  error: unknown
+): Promise<unknown> {
+  try {
+    await skillManager.rollbackSkillInstall(id, backupPath);
+    return error;
+  } catch (rollbackError) {
+    return new AggregateError(
+      [error, rollbackError],
+      `${getErrorMessage(error)}; rollback failed (${getErrorMessage(rollbackError)})`
+    );
+  }
 }
 
-function createCleanupError(primaryError: unknown, cleanupError: unknown): AggregateError {
-  return new AggregateError(
-    [primaryError, cleanupError],
-    getErrorMessage(primaryError)
-  );
+function cleanupWorkDir(
+  input: { cleanupWorkDir?: (workDir: string) => void },
+  workDir: string
+): void {
+  if (input.cleanupWorkDir) {
+    input.cleanupWorkDir(workDir);
+    return;
+  }
+  rmSync(workDir, { recursive: true, force: true });
+}
+
+function wrapSkillWriteFailed(error: unknown, message: string): Error {
+  if (error instanceof Error && error.message.startsWith('CODEX_SKILL_WRITE_FAILED:')) {
+    return error;
+  }
+  return new Error(`CODEX_SKILL_WRITE_FAILED: ${message}`, { cause: error });
 }
 
 function getErrorMessage(error: unknown): string {
