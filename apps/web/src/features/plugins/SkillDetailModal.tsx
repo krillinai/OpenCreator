@@ -22,7 +22,6 @@ export function SkillDetailModal({
   item,
   connected,
   saved,
-  useError,
   onClose,
   onToggleSaved,
   onInstall,
@@ -32,7 +31,6 @@ export function SkillDetailModal({
   item: SkillMarketViewEntry;
   connected: boolean;
   saved: boolean;
-  useError?: string;
   onClose(): void;
   onToggleSaved(skillId: string): void;
   onInstall(skillId: string): void;
@@ -45,8 +43,7 @@ export function SkillDetailModal({
   const riskNotes = getRiskNotes(item);
 
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
     closeRef.current?.focus();
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -74,7 +71,7 @@ export function SkillDetailModal({
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = previousOverflow;
+      unlockBodyScroll();
     };
   }, [onClose]);
 
@@ -174,19 +171,12 @@ export function SkillDetailModal({
               {item.operationError}
             </p>
           ) : null}
-          {useError ? (
-            <p className="skill-market-inline-error" role="alert">
-              {useError}
-            </p>
-          ) : null}
         </div>
 
         <footer className="skill-market-modal__footer">
           {!connected ? (
             <span className="skill-market-action-hint">需要连接 Runtime 后才能安装、更新或使用。</span>
-          ) : (
-            <span className="skill-market-action-hint">按钮状态与卡片保持一致。</span>
-          )}
+          ) : null}
           <button
             className="skill-market-action-button"
             disabled={action.disabled}
@@ -265,5 +255,24 @@ function getFocusableElements(root: HTMLElement | null): HTMLElement[] {
     root.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     )
-  ).filter((element) => !element.hasAttribute('disabled') && element.offsetParent !== null);
+  ).filter((element) => !element.hasAttribute('disabled'));
+}
+
+let scrollLockDepth = 0;
+let previousBodyOverflow = '';
+
+function lockBodyScroll() {
+  if (scrollLockDepth === 0) {
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+  }
+  scrollLockDepth += 1;
+}
+
+function unlockBodyScroll() {
+  scrollLockDepth = Math.max(0, scrollLockDepth - 1);
+  if (scrollLockDepth === 0) {
+    document.body.style.overflow = previousBodyOverflow;
+    previousBodyOverflow = '';
+  }
 }

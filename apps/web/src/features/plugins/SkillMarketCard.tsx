@@ -4,7 +4,6 @@ import {
   Download,
   Info,
   RefreshCw,
-  Star,
   Users,
 } from 'lucide-react';
 import type { MouseEvent } from 'react';
@@ -16,9 +15,7 @@ export type SkillMarketAction =
 
 export function SkillMarketCard({
   item,
-  connected,
   action,
-  useError,
   onOpen,
   onToggleSaved,
   onInstall,
@@ -26,9 +23,7 @@ export function SkillMarketCard({
   onUse,
 }: {
   item: SkillMarketViewEntry;
-  connected: boolean;
   action: SkillMarketAction;
-  useError?: string;
   onOpen(trigger: HTMLElement): void;
   onToggleSaved(skillId: string): void;
   onInstall(skillId: string): void;
@@ -49,110 +44,91 @@ export function SkillMarketCard({
 
   return (
     <article
-      aria-label={`打开 ${item.title} 详情`}
       className="skill-market-card"
       data-skill-id={item.id}
       data-testid="skill-market-card"
       id={`skill-card-${item.id}`}
-      onClick={(event) => onOpen(event.currentTarget)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onOpen(event.currentTarget);
-        }
-      }}
-      role="button"
-      tabIndex={0}
     >
-      <div className="skill-market-card__cover">
-        <SkillMarketCover item={item} />
-        <div className="skill-market-card__cover-top">
-          <span className="skill-market-cover-label">{item.subcategory}</span>
-          <span className={`skill-market-status skill-market-status--${statusTone}`}>
-            {statusLabel}
+      <button
+        aria-label={`打开 ${item.title} 详情`}
+        className="skill-market-card__open"
+        onClick={(event) => onOpen(event.currentTarget)}
+        type="button"
+      >
+        <span className="skill-market-card__cover">
+          <SkillMarketCover item={item} />
+          <span className="skill-market-card__cover-top">
+            <span className="skill-market-cover-label">{item.subcategory}</span>
+            <span className={`skill-market-status skill-market-status--${statusTone}`}>
+              {statusLabel}
+            </span>
           </span>
-        </div>
-      </div>
+        </span>
 
-      <div className="skill-market-card__body">
-        <div className="skill-market-card__meta-row">
-          <div className="skill-market-tag-list" aria-label="分类与平台">
+        <span className="skill-market-card__body">
+          <span className="skill-market-tag-list" aria-label="分类与平台">
             <span>{item.category.name}</span>
             {item.entry.platforms.slice(0, 2).map((platform) => (
               <span key={platform}>{platform}</span>
             ))}
-          </div>
-          <button
-            aria-label={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
-            className={`skill-market-icon-button ${item.saved ? 'is-active' : ''}`}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onToggleSaved(item.id);
-            }}
-            title={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
-            type="button"
-          >
-            <Bookmark fill={item.saved ? 'currentColor' : 'none'} size={16} aria-hidden="true" />
-          </button>
-        </div>
-
-        <h2>{item.title}</h2>
-        <p className="skill-market-card__tagline" title={item.entry.tagline}>
-          {item.entry.tagline}
-        </p>
-
-        <div className="skill-market-task-row">
-          {item.entry.tasks.slice(0, 3).map((task) => (
-            <span key={task}>{task}</span>
-          ))}
-        </div>
-
-        <div className="skill-market-card__footer">
-          <div className="skill-market-author">
-            <SkillAuthorAvatar name={item.entry.creator.name} src={item.entry.creator.avatarUrl} />
-            <span>{item.entry.creator.name}</span>
-          </div>
-          <span className="skill-market-users" title="使用人数" aria-label="使用人数">
-            <Users size={14} aria-hidden="true" />
-            {formatUsers(item.users)}
           </span>
-        </div>
 
-        <div className="skill-market-card__action-row">
-          {action.reason ? (
-            <span className="skill-market-action-hint">
-              <Info size={14} aria-hidden="true" />
-              {action.reason}
-            </span>
-          ) : (
-            <span className="skill-market-action-hint">
-              <Star size={14} aria-hidden="true" />
-              {connected ? '可在详情中查看输入与产出' : '目录仍可浏览'}
-            </span>
-          )}
-          <button
-            className="skill-market-action-button"
-            disabled={action.disabled}
-            onClick={handleAction}
-            type="button"
-          >
-            {getActionIcon(action.kind)}
-            <span>{action.label}</span>
-          </button>
-        </div>
+          <span className="skill-market-card__title">{item.title}</span>
+          <span className="skill-market-card__tagline" title={item.entry.tagline}>
+            {item.entry.tagline}
+          </span>
 
-        {item.operationError ? (
-          <p className="skill-market-inline-error" role="alert">
-            {item.operationError}
-          </p>
+          <span className="skill-market-task-row">
+            {item.entry.tasks.slice(0, 3).map((task) => (
+              <span key={task}>{task}</span>
+            ))}
+          </span>
+
+          <span className="skill-market-card__footer">
+            <span className="skill-market-author">
+              <SkillAuthorAvatar name={item.entry.creator.name} src={item.entry.creator.avatarUrl} />
+              <span>{item.entry.creator.name}</span>
+            </span>
+            <span className="skill-market-users" title="使用人数" aria-label="使用人数">
+              <Users size={14} aria-hidden="true" />
+              {formatUsers(item.users)}
+            </span>
+          </span>
+        </span>
+      </button>
+
+      <div className="skill-market-card__action-row">
+        <button
+          aria-label={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
+          className={`skill-market-icon-button ${item.saved ? 'is-active' : ''}`}
+          onClick={() => onToggleSaved(item.id)}
+          title={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
+          type="button"
+        >
+          <Bookmark fill={item.saved ? 'currentColor' : 'none'} size={16} aria-hidden="true" />
+        </button>
+        {action.reason ? (
+          <span className="skill-market-action-hint">
+            <Info size={14} aria-hidden="true" />
+            {action.reason}
+          </span>
         ) : null}
-        {item.installed && useError ? (
-          <p className="skill-market-inline-error" role="alert">
-            {useError}
-          </p>
-        ) : null}
+        <button
+          className="skill-market-action-button"
+          disabled={action.disabled}
+          onClick={handleAction}
+          type="button"
+        >
+          {getActionIcon(action.kind)}
+          <span>{action.label}</span>
+        </button>
       </div>
+
+      {item.operationError ? (
+        <p className="skill-market-inline-error" role="alert">
+          {item.operationError}
+        </p>
+      ) : null}
     </article>
   );
 }

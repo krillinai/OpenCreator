@@ -216,6 +216,55 @@ describe('skill market model', () => {
     expect(result.entries[0]?.status).toBe('installed_unknown_version');
   });
 
+  it('excludes installing, invalid, and absent skills from the installed filter while keeping updating included', () => {
+    const entries = [
+      createEntry({ id: 'installing-entry', name: 'installing-entry', title: '安装中条目' }),
+      createEntry({ id: 'invalid-entry', name: 'invalid-entry', title: '异常条目' }),
+      createEntry({ id: 'updating-entry', name: 'updating-entry', title: '更新中条目' }),
+      createEntry({ id: 'not-installed-entry', name: 'not-installed-entry', title: '未安装条目' }),
+    ];
+
+    const installingResult = filterAndSortSkillMarketEntries({
+      entries,
+      skills: createSkillsResponse([
+        createSkill({ id: 'invalid-entry', status: 'invalid' }),
+        createSkill({ id: 'updating-entry', status: 'valid' }),
+      ]),
+      records: [
+        createRecord({ skillId: 'updating-entry', marketRevision: 1 }),
+      ],
+      operation: {
+        skillId: 'installing-entry',
+        kind: 'install',
+      },
+      status: 'installed',
+    });
+
+    expect(installingResult.entries.map((entry) => entry.id)).toEqual(['updating-entry']);
+    expect(installingResult.entries[0]?.status).toBe('installed');
+    expect(installingResult.entries[0]?.installed).toBe(true);
+
+    const updatingResult = filterAndSortSkillMarketEntries({
+      entries,
+      skills: createSkillsResponse([
+        createSkill({ id: 'invalid-entry', status: 'invalid' }),
+        createSkill({ id: 'updating-entry', status: 'valid' }),
+      ]),
+      records: [
+        createRecord({ skillId: 'updating-entry', marketRevision: 1 }),
+      ],
+      operation: {
+        skillId: 'updating-entry',
+        kind: 'update',
+      },
+      status: 'installed',
+    });
+
+    expect(updatingResult.entries.map((entry) => entry.id)).toEqual(['updating-entry']);
+    expect(updatingResult.entries[0]?.status).toBe('updating');
+    expect(updatingResult.entries[0]?.installed).toBe(true);
+  });
+
   it('keeps recommended, users, installed, and saved sorts stable with explicit tie breakers', () => {
     const entries = [
       createEntry({

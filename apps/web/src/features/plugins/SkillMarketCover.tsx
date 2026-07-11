@@ -20,7 +20,9 @@ export function SkillMarketCover({
     const hash = [...item.id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
     return fallbackCovers[hash % fallbackCovers.length];
   }, [item.id]);
-  const sources = [approvedExample?.url, fallbackCover].filter(Boolean) as string[];
+  const sources = [approvedExample?.url, fallbackCover]
+    .map((source) => (source ? normalizeSkillMarketAssetUrl(source) : undefined))
+    .filter(Boolean) as string[];
   const [sourceIndex, setSourceIndex] = useState(sources.length > 0 ? 0 : -1);
   const source = sourceIndex >= 0 ? sources[sourceIndex] : undefined;
 
@@ -61,10 +63,11 @@ export function SkillAuthorAvatar({
   src?: string;
   size?: 'small' | 'large';
 }) {
-  const [failed, setFailed] = useState(!src);
+  const safeSrc = src ? normalizeSkillMarketAssetUrl(src) : undefined;
+  const [failed, setFailed] = useState(!safeSrc);
   const initial = name.trim().charAt(0).toLocaleUpperCase() || '?';
 
-  if (failed || src === undefined) {
+  if (failed || safeSrc === undefined) {
     return (
       <span
         aria-label={name}
@@ -80,7 +83,19 @@ export function SkillAuthorAvatar({
       alt={name}
       className={`skill-market-avatar skill-market-avatar--${size}`}
       onError={() => setFailed(true)}
-      src={src}
+      src={safeSrc}
     />
   );
+}
+
+export function normalizeSkillMarketAssetUrl(value: string): string | undefined {
+  if (value.startsWith('//')) return undefined;
+  if (value.startsWith('/')) return value;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }

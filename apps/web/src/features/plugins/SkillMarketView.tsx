@@ -71,6 +71,7 @@ export function SkillMarketView({
   const [subcategory, setSubcategory] = useState<string | null>(null);
   const [sort, setSort] = useState<SkillMarketSort>('recommended');
   const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [savedWriteError, setSavedWriteError] = useState<string | null>(null);
   const [activeEntry, setActiveEntry] = useState<SkillMarketViewEntry | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
@@ -119,13 +120,17 @@ export function SkillMarketView({
   const currentSubcategories = filteredResult.subcategories;
 
   function toggleSaved(skillId: string) {
-    setSavedIds((current) => {
-      const next = current.includes(skillId)
-        ? current.filter((id) => id !== skillId)
-        : [...current, skillId];
+    const next = savedIds.includes(skillId)
+      ? savedIds.filter((id) => id !== skillId)
+      : [...savedIds, skillId];
+
+    try {
       writeSavedSkillIds(next);
-      return next;
-    });
+      setSavedIds(next);
+      setSavedWriteError(null);
+    } catch {
+      setSavedWriteError('收藏保存失败，请检查浏览器存储权限');
+    }
   }
 
   function openEntry(entry: SkillMarketViewEntry, trigger: HTMLElement) {
@@ -195,6 +200,16 @@ export function SkillMarketView({
       {!connected ? (
         <p className="skill-market-banner" role="status">
           Runtime 未连接，目录可浏览，安装、更新和使用需连接后操作。
+        </p>
+      ) : null}
+      {useError ? (
+        <p className="skill-market-inline-error skill-market-page-error" role="status">
+          使用失败：{useError}
+        </p>
+      ) : null}
+      {savedWriteError ? (
+        <p className="skill-market-inline-error skill-market-page-error" role="alert">
+          {savedWriteError}
         </p>
       ) : null}
 
@@ -275,7 +290,6 @@ export function SkillMarketView({
           {filteredResult.entries.map((item) => (
             <SkillMarketCard
               action={getSkillMarketAction(item.status, connected)}
-              connected={connected}
               item={item}
               key={item.id}
               onInstall={onInstall}
@@ -283,7 +297,6 @@ export function SkillMarketView({
               onToggleSaved={toggleSaved}
               onUpdate={onUpdate}
               onUse={onUse}
-              useError={useError}
             />
           ))}
         </div>
@@ -299,7 +312,6 @@ export function SkillMarketView({
           onUpdate={onUpdate}
           onUse={onUse}
           saved={activeSyncedEntry.saved}
-          useError={useError}
         />
       ) : null}
     </section>

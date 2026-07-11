@@ -423,5 +423,10 @@ function compareNumber(left: number, right: number): number {
 }
 
 function isInstalledStatus(status: SkillMarketStatus): boolean {
-  return status !== 'not_installed' && status !== 'unavailable';
+  return (
+    status === 'installed_unknown_version' ||
+    status === 'installed' ||
+    status === 'update_available' ||
+    status === 'updating'
+  );
 }
