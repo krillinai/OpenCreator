@@ -32,6 +32,7 @@ export function SkillMarketCard({
 }) {
   const statusLabel = getStatusLabel(item.status);
   const statusTone = getStatusTone(item.status);
+  const actionReasonId = action.reason ? `skill-market-action-reason-${sanitizeId(item.id)}` : undefined;
 
   function handleAction(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -108,15 +109,17 @@ export function SkillMarketCard({
           <Bookmark fill={item.saved ? 'currentColor' : 'none'} size={16} aria-hidden="true" />
         </button>
         {action.reason ? (
-          <span className="skill-market-action-hint">
+          <span className="skill-market-action-hint" id={actionReasonId}>
             <Info size={14} aria-hidden="true" />
             {action.reason}
           </span>
         ) : null}
         <button
+          aria-describedby={actionReasonId}
           className="skill-market-action-button"
           disabled={action.disabled}
           onClick={handleAction}
+          title={action.reason}
           type="button"
         >
           {getActionIcon(action.kind)}
@@ -135,7 +138,8 @@ export function SkillMarketCard({
 
 export function getSkillMarketAction(
   status: SkillMarketStatus,
-  connected: boolean
+  connected: boolean,
+  options: { mutationLocked?: boolean } = {}
 ): SkillMarketAction {
   if (status === 'unavailable') {
     return { label: '暂不可安装', kind: 'disabled', disabled: true };
@@ -159,10 +163,16 @@ export function getSkillMarketAction(
     return { label: '更新中', kind: 'update', disabled: true };
   }
   if (status === 'update_available') {
+    if (options.mutationLocked) {
+      return { label: '更新', kind: 'update', disabled: true, reason: '请等待当前操作完成' };
+    }
     return { label: '更新', kind: 'update', disabled: false };
   }
   if (status === 'installed' || status === 'installed_unknown_version') {
     return { label: '使用', kind: 'use', disabled: false };
+  }
+  if (options.mutationLocked) {
+    return { label: '安装', kind: 'install', disabled: true, reason: '请等待当前操作完成' };
   }
   return { label: '安装', kind: 'install', disabled: false };
 }
@@ -205,4 +215,8 @@ function getStatusTone(status: SkillMarketStatus): string {
   if (status === 'update_available' || status === 'installing' || status === 'updating') return 'accent';
   if (status === 'invalid' || status === 'unavailable') return 'muted';
   return 'neutral';
+}
+
+function sanitizeId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '-');
 }

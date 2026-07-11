@@ -51,6 +51,10 @@ type AppFileService = {
   saveFile(path: string, content: string): Promise<WorkspaceFile>;
 };
 
+type CapabilityService = ReturnType<typeof createCapabilityService>;
+type SkillMarketService = ReturnType<typeof createSkillMarketService>;
+type ThreadService = ReturnType<typeof createThreadService>;
+
 const CONVERSATION_PANE_MIN_WIDTH = 320;
 const FILE_WORKSPACE_MIN_WIDTH = 520;
 const RESIZE_KEY_STEP = 32;
@@ -128,6 +132,12 @@ export function App(props: AppProps = {}) {
   const allowInitialRuntimeProjectFocusRef = useRef(true);
   const skipNextHistoryLoadForThreadRef = useRef<string>();
   const skillMarketMutationInFlightRef = useRef(false);
+  const skillMarketUseInFlightRef = useRef(false);
+  const skillMarketRuntimeGenerationRef = useRef(0);
+  const capabilityServiceRef = useRef<CapabilityService | null>(null);
+  const skillMarketServiceRef = useRef<SkillMarketService | null>(null);
+  const threadServiceRef = useRef<ThreadService | null>(null);
+  const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
   const nextComposerDraftIdRef = useRef(0);
 
   const runtimeClient = useMemo(
@@ -277,9 +287,23 @@ export function App(props: AppProps = {}) {
   }, [connectionState.status, threadService]);
 
   useEffect(() => {
+    connectionStatusRef.current = connectionState.status;
+    capabilityServiceRef.current = capabilityService;
+    skillMarketServiceRef.current = skillMarketService;
+    threadServiceRef.current = threadService;
+    skillMarketRuntimeGenerationRef.current += 1;
+    skillMarketMutationInFlightRef.current = false;
+    skillMarketUseInFlightRef.current = false;
+    setSkillMarketOperation(undefined);
+    setSkillMarketUseError(undefined);
+  }, [capabilityService, connectionState.status, skillMarketService, threadService]);
+
+  useEffect(() => {
     let canceled = false;
 
     if (connectionState.status !== 'connected' || capabilityService === null || skillMarketService === null) {
+      skillMarketMutationInFlightRef.current = false;
+      skillMarketUseInFlightRef.current = false;
       setCodexSkills(undefined);
       setCodexMcp(undefined);
       setSkillMarketInstallRecords([]);
@@ -298,14 +322,17 @@ export function App(props: AppProps = {}) {
     setSkillMarketLoading(true);
     setCapabilitiesLoadError(undefined);
     setSkillMarketLoadError(undefined);
+    const generation = skillMarketRuntimeGenerationRef.current;
+    const activeCapabilityService = capabilityService;
+    const activeSkillMarketService = skillMarketService;
 
     Promise.allSettled([
-      capabilityService.listSkills(),
-      capabilityService.listMcp(),
-      skillMarketService.listInstallRecords()
+      activeCapabilityService.listSkills(),
+      activeCapabilityService.listMcp(),
+      activeSkillMarketService.listInstallRecords()
     ])
       .then(results => {
-        if (canceled) return;
+        if (canceled || !isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) return;
         const [skillsResult, mcpResult, recordsResult] = results;
         if (skillsResult?.status === 'fulfilled') setCodexSkills(skillsResult.value);
         if (mcpResult?.status === 'fulfilled') setCodexMcp(mcpResult.value);
@@ -318,13 +345,13 @@ export function App(props: AppProps = {}) {
         }
       })
       .catch(() => {
-        if (!canceled) {
+        if (!canceled && isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
           setCapabilitiesLoadError('本机能力检测失败');
           setSkillMarketLoadError('安装状态加载失败');
         }
       })
       .finally(() => {
-        if (!canceled) {
+        if (!canceled && isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
           setCapabilitiesLoading(false);
           setSkillMarketLoading(false);
         }
@@ -665,30 +692,57 @@ export function App(props: AppProps = {}) {
     }
   }
 
-  async function refreshSkillMarketState() {
-    if (capabilityService === null || skillMarketService === null) return;
+  function isCurrentSkillMarketRuntime(
+    generation: number,
+    activeCapabilityService: CapabilityService,
+    activeSkillMarketService: SkillMarketService
+  ) {
+    return mountedRef.current
+      && skillMarketRuntimeGenerationRef.current === generation
+      && connectionStatusRef.current === 'connected'
+      && capabilityServiceRef.current === activeCapabilityService
+      && skillMarketServiceRef.current === activeSkillMarketService;
+  }
+
+  function isCurrentThreadRuntime(generation: number, activeThreadService: ThreadService) {
+    return mountedRef.current
+      && skillMarketRuntimeGenerationRef.current === generation
+      && connectionStatusRef.current === 'connected'
+      && threadServiceRef.current === activeThreadService;
+  }
+
+  async function refreshSkillMarketState(
+    generation: number,
+    activeCapabilityService: CapabilityService,
+    activeSkillMarketService: SkillMarketService
+  ) {
 
     const [skillsResponse, recordsResponse] = await Promise.all([
-      capabilityService.listSkills(),
-      skillMarketService.listInstallRecords()
+      activeCapabilityService.listSkills(),
+      activeSkillMarketService.listInstallRecords()
     ]);
-    if (!mountedRef.current) return;
+    if (!isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) return;
     setCodexSkills(skillsResponse);
     setSkillMarketInstallRecords(recordsResponse.records);
     setSkillMarketLoadError(undefined);
   }
 
   async function installMarketSkill(skillId: string) {
-    if (skillMarketService === null || skillMarketMutationInFlightRef.current) return;
+    const activeCapabilityService = capabilityService;
+    const activeSkillMarketService = skillMarketService;
+    if (activeCapabilityService === null || activeSkillMarketService === null || skillMarketMutationInFlightRef.current) return;
 
+    const generation = skillMarketRuntimeGenerationRef.current;
     skillMarketMutationInFlightRef.current = true;
     setSkillMarketOperation({ skillId, kind: 'install' });
     try {
-      await skillMarketService.installSkill(skillId);
-      await refreshSkillMarketState();
-      if (mountedRef.current) setSkillMarketOperation(undefined);
+      await activeSkillMarketService.installSkill(skillId);
+      await refreshSkillMarketState(generation, activeCapabilityService, activeSkillMarketService);
+      if (isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
+        setSkillMarketOperation(undefined);
+      }
     } catch (error) {
-      if (mountedRef.current) {
+      if (isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
         setSkillMarketOperation({
           skillId,
           kind: 'install',
@@ -696,21 +750,28 @@ export function App(props: AppProps = {}) {
         });
       }
     } finally {
-      skillMarketMutationInFlightRef.current = false;
+      if (isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
+        skillMarketMutationInFlightRef.current = false;
+      }
     }
   }
 
   async function updateMarketSkill(skillId: string) {
-    if (skillMarketService === null || skillMarketMutationInFlightRef.current) return;
+    const activeCapabilityService = capabilityService;
+    const activeSkillMarketService = skillMarketService;
+    if (activeCapabilityService === null || activeSkillMarketService === null || skillMarketMutationInFlightRef.current) return;
 
+    const generation = skillMarketRuntimeGenerationRef.current;
     skillMarketMutationInFlightRef.current = true;
     setSkillMarketOperation({ skillId, kind: 'update' });
     try {
-      await skillMarketService.updateSkill(skillId);
-      await refreshSkillMarketState();
-      if (mountedRef.current) setSkillMarketOperation(undefined);
+      await activeSkillMarketService.updateSkill(skillId);
+      await refreshSkillMarketState(generation, activeCapabilityService, activeSkillMarketService);
+      if (isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
+        setSkillMarketOperation(undefined);
+      }
     } catch (error) {
-      if (mountedRef.current) {
+      if (isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
         setSkillMarketOperation({
           skillId,
           kind: 'update',
@@ -718,12 +779,17 @@ export function App(props: AppProps = {}) {
         });
       }
     } finally {
-      skillMarketMutationInFlightRef.current = false;
+      if (isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
+        skillMarketMutationInFlightRef.current = false;
+      }
     }
   }
 
   async function useMarketSkill(skillId: string) {
-    if (threadService === null) {
+    if (skillMarketUseInFlightRef.current) return;
+
+    const activeThreadService = threadService;
+    if (activeThreadService === null) {
       setSkillMarketUseError('本地服务暂不可用，无法创建对话');
       return;
     }
@@ -737,12 +803,14 @@ export function App(props: AppProps = {}) {
     const project = currentProject;
     const config = effectiveComposerConfig;
     const title = getSkillMarketDisplayTitle(entry);
+    const generation = skillMarketRuntimeGenerationRef.current;
+    skillMarketUseInFlightRef.current = true;
     setSkillMarketUseError(undefined);
 
     try {
       const request = buildThreadRequest(title, project, config);
-      const created = await threadService.createThread(request);
-      if (!mountedRef.current) return;
+      const created = await activeThreadService.createThread(request);
+      if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
 
       sseAbortControllerRef.current?.abort();
       setRuntimeThreads(previous => upsertThread(previous, created.thread));
@@ -763,8 +831,12 @@ export function App(props: AppProps = {}) {
         }
       });
     } catch (error) {
-      if (mountedRef.current) {
+      if (isCurrentThreadRuntime(generation, activeThreadService)) {
         setSkillMarketUseError(getRuntimeErrorMessage(error, '创建对话失败，请重试'));
+      }
+    } finally {
+      if (isCurrentThreadRuntime(generation, activeThreadService)) {
+        skillMarketUseInFlightRef.current = false;
       }
     }
   }

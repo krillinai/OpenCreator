@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { StrictMode } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from './Composer.js';
 
 const defaultProps = {
@@ -12,6 +13,10 @@ const defaultProps = {
 };
 
 describe('Composer', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('shows codex-style composer controls', () => {
     render(<Composer {...defaultProps} permission="workspace-write" />);
 
@@ -237,6 +242,86 @@ describe('Composer', () => {
     await user.type(textbox, '生成季度汇报');
     rerender(<Composer {...defaultProps} onDraftApplied={onDraftApplied} />);
     expect(textbox).toHaveValue('$frontend-slides 生成季度汇报');
+  });
+
+  it('applies an external draft after RAF focus and caret placement in StrictMode', () => {
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let nextRafId = 0;
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      nextRafId += 1;
+      callbacks.set(nextRafId, callback);
+      return nextRafId;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      callbacks.delete(id);
+    });
+    const calls: string[] = [];
+    const onDraftApplied = vi.fn(() => calls.push('applied'));
+
+    render(
+      <StrictMode>
+        <Composer
+          {...defaultProps}
+          draftRequest={{ id: 7, text: '$frontend-slides ' }}
+          onDraftApplied={onDraftApplied}
+        />
+      </StrictMode>
+    );
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' }) as HTMLTextAreaElement;
+    const originalFocus = textbox.focus.bind(textbox);
+    vi.spyOn(textbox, 'focus').mockImplementation(() => {
+      calls.push('focus');
+      originalFocus();
+    });
+    const originalSetSelectionRange = textbox.setSelectionRange.bind(textbox);
+    vi.spyOn(textbox, 'setSelectionRange').mockImplementation((start, end, direction) => {
+      calls.push(`selection:${start}:${end}`);
+      originalSetSelectionRange(start, end, direction);
+    });
+
+    expect(textbox).toHaveValue('$frontend-slides ');
+    expect(callbacks.size).toBe(1);
+    expect(onDraftApplied).not.toHaveBeenCalled();
+
+    const callback = Array.from(callbacks.values())[0]!;
+    act(() => {
+      callback(16);
+    });
+
+    expect(calls).toEqual(['focus', 'selection:17:17', 'applied']);
+    expect(textbox).toHaveFocus();
+    expect(textbox.selectionStart).toBe(17);
+    expect(textbox.selectionEnd).toBe(17);
+    expect(onDraftApplied).toHaveBeenCalledWith(7);
+  });
+
+  it('cancels a pending draft RAF on unmount without applying the draft', () => {
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let nextRafId = 0;
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      nextRafId += 1;
+      callbacks.set(nextRafId, callback);
+      return nextRafId;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      callbacks.delete(id);
+    });
+    const onDraftApplied = vi.fn();
+
+    const { unmount } = render(
+      <Composer
+        {...defaultProps}
+        draftRequest={{ id: 9, text: '$frontend-slides ' }}
+        onDraftApplied={onDraftApplied}
+      />
+    );
+
+    expect(callbacks.size).toBe(1);
+    unmount();
+
+    expect(callbacks.size).toBe(0);
+    expect(onDraftApplied).not.toHaveBeenCalled();
   });
 
   it('typing slash opens skills, MCP, and goal commands and inserts the selected command', async () => {

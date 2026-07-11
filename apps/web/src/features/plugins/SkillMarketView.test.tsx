@@ -336,6 +336,75 @@ describe('SkillMarketView', () => {
     expect(onInstall).toHaveBeenCalledTimes(2);
   });
 
+  it('install/update mutation 进行中时禁用其他安装和更新按钮但不禁用使用按钮', async () => {
+    const user = userEvent.setup();
+    const onUpdate = vi.fn();
+    const onUse = vi.fn();
+    renderSkillMarket({
+      skills: createSkillsResponse([
+        createSkill({ id: 'guizang-social-card-skill', status: 'valid' }),
+        createSkill({ id: 'op7418-humanizer-zh', status: 'valid' }),
+      ]),
+      installRecords: [
+        createRecord({ skillId: 'guizang-social-card-skill', marketRevision: 0 }),
+        createRecord({ skillId: 'op7418-humanizer-zh', marketRevision: 1 }),
+      ],
+      operation: {
+        skillId: 'frontend-slides',
+        kind: 'install',
+      },
+      onUpdate,
+      onUse,
+    });
+
+    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '小红书图文与公众号封面');
+    const updateButton = within(getSkillCard('guizang-social-card-skill')).getByRole('button', { name: '更新' });
+    expect(updateButton).toBeDisabled();
+    expect(updateButton).toHaveAttribute('title', '请等待当前操作完成');
+    expect(updateButton).toHaveAccessibleDescription('请等待当前操作完成');
+
+    await user.click(updateButton);
+    expect(onUpdate).not.toHaveBeenCalled();
+
+    await user.click(getSkillDetailButton('guizang-social-card-skill'));
+    const dialog = screen.getByRole('dialog');
+    const modalUpdateButton = within(dialog).getByRole('button', { name: '更新' });
+    expect(modalUpdateButton).toBeDisabled();
+    expect(modalUpdateButton).toHaveAttribute('title', '请等待当前操作完成');
+    expect(modalUpdateButton).toHaveAccessibleDescription('请等待当前操作完成');
+    await user.click(screen.getByRole('button', { name: '关闭详情' }));
+
+    await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'humanizer-zh');
+    const useButton = within(getSkillCard('op7418-humanizer-zh')).getByRole('button', { name: '使用' });
+    expect(useButton).toBeEnabled();
+    expect(useButton).not.toHaveAttribute('title', '请等待当前操作完成');
+
+    await user.click(useButton);
+    expect(onUse).toHaveBeenCalledWith('op7418-humanizer-zh');
+  });
+
+  it('operation error 不会触发全局 mutation 禁用，其他安装按钮仍可重试', async () => {
+    const user = userEvent.setup();
+    const onInstall = vi.fn();
+    renderSkillMarket({
+      operation: {
+        skillId: 'frontend-slides',
+        kind: 'install',
+        error: '安装失败，请重试',
+      },
+      onInstall,
+    });
+
+    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'AI Builders 动态摘要');
+    const installButton = within(getSkillCard('follow-builders')).getByRole('button', { name: '安装' });
+    expect(installButton).toBeEnabled();
+    expect(installButton).not.toHaveAttribute('title', '请等待当前操作完成');
+
+    await user.click(installButton);
+    expect(onInstall).toHaveBeenCalledWith('follow-builders');
+  });
+
   it('非法图片和头像 URL 不会进入 img src，合法 https 与同源路径可使用', () => {
     expect(normalizeSkillMarketAssetUrl('  https://example.com/a path.png  ')).toBe(
       'https://example.com/a%20path.png'

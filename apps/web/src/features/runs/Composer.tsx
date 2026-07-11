@@ -91,6 +91,7 @@ export function Composer(props: {
   const [openMenu, setOpenMenu] = useState<'add' | 'permission' | 'model' | null>(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const scheduledDraftIdRef = useRef<number>();
   const appliedDraftIdRef = useRef<number>();
   const trimmedPrompt = prompt.trim();
 
@@ -119,20 +120,30 @@ export function Composer(props: {
     const draftRequest = props.draftRequest;
     if (draftRequest === undefined) return;
     if (appliedDraftIdRef.current === draftRequest.id) return;
+    if (scheduledDraftIdRef.current === draftRequest.id) return;
 
-    appliedDraftIdRef.current = draftRequest.id;
+    scheduledDraftIdRef.current = draftRequest.id;
     setPrompt(draftRequest.text);
     setSlashTrigger(null);
     setOpenMenu(null);
 
-    window.requestAnimationFrame(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      scheduledDraftIdRef.current = undefined;
       const textarea = textareaRef.current;
       if (textarea === null) return;
       const caret = draftRequest.text.length;
       textarea.focus();
       textarea.setSelectionRange(caret, caret);
+      appliedDraftIdRef.current = draftRequest.id;
+      props.onDraftApplied?.(draftRequest.id);
     });
-    props.onDraftApplied?.(draftRequest.id);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (scheduledDraftIdRef.current === draftRequest.id) {
+        scheduledDraftIdRef.current = undefined;
+      }
+    };
   }, [props.draftRequest, props.onDraftApplied]);
 
   const selectedPermissionOption = permissionOptions.find(option => option.value === selectedPermission) ?? permissionOptions[0]!;

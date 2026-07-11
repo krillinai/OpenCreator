@@ -21,6 +21,7 @@ import { SkillAuthorAvatar, SkillMarketCover } from './SkillMarketCover.js';
 export function SkillDetailModal({
   item,
   connected,
+  mutationLocked,
   saved,
   onClose,
   onToggleSaved,
@@ -30,6 +31,7 @@ export function SkillDetailModal({
 }: {
   item: SkillMarketViewEntry;
   connected: boolean;
+  mutationLocked?: boolean;
   saved: boolean;
   onClose(): void;
   onToggleSaved(skillId: string): void;
@@ -39,7 +41,8 @@ export function SkillDetailModal({
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const action = getSkillMarketAction(item.status, connected);
+  const action = getSkillMarketAction(item.status, connected, { mutationLocked });
+  const actionReasonId = action.reason ? `skill-market-modal-action-reason-${sanitizeId(item.id)}` : undefined;
   const riskNotes = getRiskNotes(item);
 
   useEffect(() => {
@@ -174,13 +177,17 @@ export function SkillDetailModal({
         </div>
 
         <footer className="skill-market-modal__footer">
-          {!connected ? (
+          {action.reason ? (
+            <span className="skill-market-action-hint" id={actionReasonId}>{action.reason}</span>
+          ) : !connected ? (
             <span className="skill-market-action-hint">需要连接 Runtime 后才能安装、更新或使用。</span>
           ) : null}
           <button
+            aria-describedby={actionReasonId}
             className="skill-market-action-button"
             disabled={action.disabled}
             onClick={() => handleAction(action, item.id, onInstall, onUpdate, onUse)}
+            title={action.reason}
             type="button"
           >
             {getActionIcon(action.kind)}
@@ -275,4 +282,8 @@ function unlockBodyScroll() {
     document.body.style.overflow = previousBodyOverflow;
     previousBodyOverflow = '';
   }
+}
+
+function sanitizeId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '-');
 }

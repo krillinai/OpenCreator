@@ -118,6 +118,7 @@ export function SkillMarketView({
   const savedCount = baseResult.entries.filter((entry) => entry.saved).length;
   const installedCount = baseResult.entries.filter((entry) => entry.installed).length;
   const currentSubcategories = filteredResult.subcategories;
+  const mutationLocked = operation !== undefined && operation.error === undefined;
 
   function toggleSaved(skillId: string) {
     const next = savedIds.includes(skillId)
@@ -289,7 +290,7 @@ export function SkillMarketView({
         <div className="skill-market-grid">
           {filteredResult.entries.map((item) => (
             <SkillMarketCard
-              action={getSkillMarketAction(item.status, connected)}
+              action={getSkillMarketAction(item.status, connected, { mutationLocked })}
               item={item}
               key={item.id}
               onInstall={onInstall}
@@ -306,6 +307,7 @@ export function SkillMarketView({
         <SkillDetailModal
           connected={connected}
           item={activeSyncedEntry}
+          mutationLocked={mutationLocked}
           onClose={closeEntry}
           onInstall={onInstall}
           onToggleSaved={toggleSaved}
