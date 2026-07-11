@@ -73,7 +73,38 @@ function mapRow(row: SkillMarketInstallRow): CodexSkillMarketInstallRecordRespon
     skillPath: row.skill_path,
     commit: row.commit_sha,
     marketRevision: row.market_revision,
-    installedAt: row.installed_at,
-    updatedAt: row.updated_at
+    installedAt: parseSqliteUtcTimestamp(row.installed_at),
+    updatedAt: parseSqliteUtcTimestamp(row.updated_at)
   };
+}
+
+function parseSqliteUtcTimestamp(value: string): string {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(value);
+  if (match === null) {
+    throw new Error(`Invalid SQLite UTC timestamp: ${value}`);
+  }
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const timestamp = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+
+  if (
+    Number.isNaN(timestamp.getTime()) ||
+    timestamp.getUTCFullYear() !== year ||
+    timestamp.getUTCMonth() !== month - 1 ||
+    timestamp.getUTCDate() !== day ||
+    timestamp.getUTCHours() !== hour ||
+    timestamp.getUTCMinutes() !== minute ||
+    timestamp.getUTCSeconds() !== second
+  ) {
+    throw new Error(`Invalid SQLite UTC timestamp: ${value}`);
+  }
+
+  return timestamp.toISOString();
 }

@@ -8,6 +8,7 @@ import { openRuntimeDatabase } from '../../src/storage/database.js';
 
 let tempDir = '';
 let db: Database.Database | undefined;
+const iso8601UtcPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/;
 
 afterEach(() => {
   db?.close();
@@ -37,6 +38,8 @@ describe('codex skill market records', () => {
       commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
       marketRevision: 1
     });
+    expect(inserted.installedAt).toMatch(iso8601UtcPattern);
+    expect(inserted.updatedAt).toMatch(iso8601UtcPattern);
     expect(records.getRecord('frontend-slides')).toEqual(inserted);
     expect(records.getRecord('missing-skill')).toBeUndefined();
   });
@@ -46,7 +49,7 @@ describe('codex skill market records', () => {
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const records = createSkillMarketRecordRepository(db);
 
-    const first = records.upsertRecord({
+    records.upsertRecord({
       skillId: 'frontend-slides',
       repository: 'zarazhangrui/frontend-slides',
       skillPath: '.',
@@ -56,9 +59,10 @@ describe('codex skill market records', () => {
 
     db.prepare(`
       UPDATE codex_skill_market_installs
-      SET updated_at = ?
+      SET installed_at = ?,
+          updated_at = ?
       WHERE skill_id = ?
-    `).run('2000-01-01 00:00:00', 'frontend-slides');
+    `).run('2026-07-11 00:00:00', '2000-01-01 00:00:00', 'frontend-slides');
 
     const updated = records.upsertRecord({
       skillId: 'frontend-slides',
@@ -68,8 +72,9 @@ describe('codex skill market records', () => {
       marketRevision: 2
     });
 
-    expect(updated.installedAt).toBe(first.installedAt);
-    expect(updated.updatedAt).not.toBe('2000-01-01 00:00:00');
+    expect(updated.installedAt).toBe('2026-07-11T00:00:00.000Z');
+    expect(updated.updatedAt).toMatch(iso8601UtcPattern);
+    expect(updated.updatedAt).not.toBe('2000-01-01T00:00:00.000Z');
     expect(updated).toMatchObject({
       skillId: 'frontend-slides',
       skillPath: 'skills/frontend-slides',
@@ -106,9 +111,39 @@ describe('codex skill market records', () => {
       END
     `).run();
 
-    expect(records.listRecords().map(record => record.skillId)).toEqual([
-      'alpha-skill',
-      'beta-skill'
+    expect(records.listRecords()).toEqual([
+      expect.objectContaining({
+        skillId: 'alpha-skill',
+        updatedAt: '2026-07-11T00:00:02.000Z'
+      }),
+      expect.objectContaining({
+        skillId: 'beta-skill',
+        updatedAt: '2026-07-11T00:00:01.000Z'
+      })
     ]);
+  });
+
+  it('throws when a stored SQLite timestamp is malformed', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-market-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const records = createSkillMarketRecordRepository(db);
+
+    records.upsertRecord({
+      skillId: 'frontend-slides',
+      repository: 'zarazhangrui/frontend-slides',
+      skillPath: '.',
+      commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
+      marketRevision: 1
+    });
+
+    db.prepare(`
+      UPDATE codex_skill_market_installs
+      SET updated_at = ?
+      WHERE skill_id = ?
+    `).run('not-a-sqlite-timestamp', 'frontend-slides');
+
+    expect(() => records.getRecord('frontend-slides')).toThrow(
+      'Invalid SQLite UTC timestamp: not-a-sqlite-timestamp'
+    );
   });
 });
