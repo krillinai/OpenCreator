@@ -450,12 +450,7 @@ export function App(props: AppProps = {}) {
     }
 
     setHistoryLoadingThreadId(selectedThreadId);
-    setTimelineItems(previous => hasOnlyHistoryLoadingTimelineItem(previous)
-      ? [createHistoryLoadingTimelineItem(selectedThreadId)]
-      : previous.length === 0
-        ? [createHistoryLoadingTimelineItem(selectedThreadId)]
-        : previous
-    );
+    setTimelineItems([]);
     setThreadHistoryLoadError(undefined);
 
     threadService
@@ -700,7 +695,6 @@ export function App(props: AppProps = {}) {
         dispatch({ type: 'select_thread', threadId: conversationId });
       }
       if (timelineItems.length === 0) {
-        setTimelineItems([createHistoryLoadingTimelineItem(conversationId)]);
         setHistoryLoadingThreadId(conversationId);
         setThreadHistoryReloadKey(previous => previous + 1);
       }
@@ -708,12 +702,7 @@ export function App(props: AppProps = {}) {
     }
 
     setHistoryLoadingThreadId(conversationId);
-    setTimelineItems(previous => hasOnlyHistoryLoadingTimelineItem(previous)
-      ? [createHistoryLoadingTimelineItem(conversationId)]
-      : previous.length === 0
-        ? [createHistoryLoadingTimelineItem(conversationId)]
-        : previous
-    );
+    setTimelineItems([]);
     dispatch({ type: 'select_thread', threadId: conversationId });
   }
 
@@ -1674,24 +1663,6 @@ function fromRuntimeSandbox(sandbox: SandboxMode): ClaweeProject['sandbox'] {
 function upsertThread(threads: ThreadResponse[], thread: ThreadResponse): ThreadResponse[] {
   const withoutThread = threads.filter(item => item.id !== thread.id);
   return [thread, ...withoutThread];
-}
-
-function createHistoryLoadingTimelineItem(threadId: string): TimelineItem {
-  return {
-    kind: 'run_status',
-    id: `history_loading_${threadId}`,
-    label: 'running',
-    content: JSON.stringify({ type: 'history_loading', threadId }),
-    source: 'runtime'
-  };
-}
-
-function hasOnlyHistoryLoadingTimelineItem(items: TimelineItem[]): boolean {
-  const item = items[0];
-  return items.length === 1
-    && item !== undefined
-    && item.kind === 'run_status'
-    && item.id.startsWith('history_loading_');
 }
 
 function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {

@@ -253,6 +253,41 @@ describe('FileWorkspaceView', () => {
     expect(container.querySelector('.file-editor-toolbar')).not.toBeInTheDocument();
   });
 
+  it('在顶部工具栏预览 HTML 时渲染实际页面', async () => {
+    const user = userEvent.setup();
+    const thread = createThread();
+    const html = '<!doctype html><html><body><main>商务封面</main></body></html>';
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'business-cover.html',
+          nodes: [fileNode('business-cover.html', 'html')]
+        })
+      },
+      metas: {
+        'business-cover.html': createMeta({
+          path: 'business-cover.html',
+          name: 'business-cover.html',
+          kind: 'html',
+          mime: 'text/html; charset=utf-8'
+        })
+      },
+      contents: {
+        'business-cover.html': html
+      }
+    });
+
+    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
+
+    expect(await screen.findByRole('textbox', { name: 'business-cover.html 编辑器' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '预览' }));
+
+    const preview = screen.getByTitle('business-cover.html HTML 预览');
+    expect(preview).toHaveAttribute('srcdoc', html);
+    expect(screen.queryByRole('textbox', { name: 'business-cover.html 编辑器' })).not.toBeInTheDocument();
+  });
+
   it('复制路径时使用自动隐藏的 toast，不占用编辑区顶部空间', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(globalThis.navigator, 'clipboard', {

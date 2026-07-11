@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer.js';
 import { isWorkspaceFilePath } from '../markdown/markdown-inline.js';
 import type { TimelineItem } from './timeline-model.js';
@@ -94,8 +95,27 @@ function visibleProcessItems(process: ProcessBlock): VisibleProcessItem[] {
   });
 }
 
+function countVisibleProcessItems(process: ProcessBlock): number {
+  let count = 0;
+  for (const item of process.items) {
+    if (item.kind === 'done') {
+      if (item.status !== 'succeeded') count += 1;
+      continue;
+    }
+    if (
+      item.kind === 'reasoning_summary'
+      || item.kind === 'assistant_message'
+      || item.kind === 'tool_step'
+      || item.kind === 'diagnostic'
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function hasVisibleProcessContent(process: ProcessBlock): boolean {
-  return visibleProcessItems(process).length > 0;
+  return countVisibleProcessItems(process) > 0;
 }
 
 function hasStartedRun(process: ProcessBlock): boolean {
@@ -462,40 +482,56 @@ function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<strin
   );
 }
 
-function renderProcessBlock(process: ProcessBlock, onOpenRunDetail?: (runId: string) => void) {
+function ProcessBlockView(props: {
+  process: ProcessBlock;
+  onOpenRunDetail?: (runId: string) => void;
+}) {
+  const { process, onOpenRunDetail } = props;
   const complete = isProcessComplete(process);
   const shouldOpen = !complete || hasFailedOrCanceledDone(process);
-  const steps = visibleProcessItems(process);
+  const [expanded, setExpanded] = useState(shouldOpen);
+  const visibleItemCount = countVisibleProcessItems(process);
   const emptyCopy = complete ? '本次没有可展示的中间过程。' : '等待 Clawee 返回过程...';
-  const toolNameByCallId = buildToolNameByCallId(process.items);
+
+  useEffect(() => {
+    setExpanded(shouldOpen);
+  }, [shouldOpen]);
+
+  const steps = expanded ? visibleProcessItems(process) : [];
+  const toolNameByCallId = expanded ? buildToolNameByCallId(process.items) : new Map<string, string>();
 
   return (
-    <article key={process.key} className="timeline-item timeline-process">
-      <details open={shouldOpen}>
+    <article className="timeline-item timeline-process">
+      <details
+        open={expanded}
+        onToggle={event => setExpanded(event.currentTarget.open)}
+      >
         <summary>
           <span className="process-caret" aria-hidden="true">
             &gt;
           </span>
           <span className="process-summary-label">{complete ? '思考过程' : '正在思考'}</span>
-          {steps.length > 0 ? <span className="process-summary-count">{steps.length} 条记录</span> : null}
+          {visibleItemCount > 0 ? <span className="process-summary-count">{visibleItemCount} 条记录</span> : null}
         </summary>
-        <div className="process-detail">
-          {steps.length > 0 ? (
-            <ol className="process-steps">{steps.map(item => renderProcessStep(item, toolNameByCallId))}</ol>
-          ) : (
-            <div className="process-waiting" role="status">{emptyCopy}</div>
-          )}
-          {onOpenRunDetail && canOpenRunDetail(process) ? (
-            <button
-              type="button"
-              className="inline-action"
-              aria-label={`查看运行详情 ${process.runId}`}
-              onClick={() => onOpenRunDetail(process.runId)}
-            >
-              运行详情
-            </button>
-          ) : null}
-        </div>
+        {expanded ? (
+          <div className="process-detail">
+            {steps.length > 0 ? (
+              <ol className="process-steps">{steps.map(item => renderProcessStep(item, toolNameByCallId))}</ol>
+            ) : (
+              <div className="process-waiting" role="status">{emptyCopy}</div>
+            )}
+            {onOpenRunDetail && canOpenRunDetail(process) ? (
+              <button
+                type="button"
+                className="inline-action"
+                aria-label={`查看运行详情 ${process.runId}`}
+                onClick={() => onOpenRunDetail(process.runId)}
+              >
+                运行详情
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </details>
     </article>
   );
@@ -520,7 +556,13 @@ export function Timeline(props: {
           {renderItems.map(renderItem => {
             if (renderItem.type === 'process') {
               if (!shouldRenderProcess(renderItem)) return null;
-              return renderProcessBlock(renderItem, props.onOpenRunDetail);
+              return (
+                <ProcessBlockView
+                  key={renderItem.key}
+                  process={renderItem}
+                  onOpenRunDetail={props.onOpenRunDetail}
+                />
+              );
             }
 
             const item = renderItem.item;

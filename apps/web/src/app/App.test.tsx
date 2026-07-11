@@ -844,6 +844,9 @@ describe('App', () => {
     expect(screen.queryByText('running')).not.toBeInTheDocument();
     expect(screen.queryByText('排队中')).not.toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('思考过程'));
+
     expect(await screen.findByText('我会先确认输入要求。')).toBeInTheDocument();
     expect(await screen.findByText('然后返回指定文本。')).toBeInTheDocument();
     expect(await screen.findByText('OK')).toBeInTheDocument();
@@ -928,6 +931,9 @@ describe('App', () => {
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
     expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('思考过程'));
+
     expect(screen.getByText('运行详情')).toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
@@ -1064,6 +1070,9 @@ describe('App', () => {
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
     expect(await screen.findByText('思考过程')).toBeInTheDocument();
+
+    await user.click(screen.getByText('思考过程'));
+
     expect(screen.getByText('我会先确认当前目录，再读取必要文件。')).toBeInTheDocument();
     expect(screen.getByText('使用工具 command_execution')).toBeInTheDocument();
     expect(screen.getByText('pwd')).toBeInTheDocument();
@@ -1071,7 +1080,7 @@ describe('App', () => {
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
     expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
-    expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
+    expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
   });
 
   it('starts a clean new conversation from the sidebar action', async () => {
@@ -1610,6 +1619,9 @@ describe('App', () => {
 
     expect(await findTimelineUserMessage('分析这个 skill 是干什么的')).toBeInTheDocument();
     expect(await screen.findByText('思考过程')).toBeInTheDocument();
+
+    await user.click(screen.getByText('思考过程'));
+
     expect(screen.getByText('先读取 skill 说明。')).toBeInTheDocument();
     expect(screen.getByText('这个 skill 用于分析选品资料。')).toBeInTheDocument();
   });
@@ -1744,7 +1756,7 @@ describe('App', () => {
     expect(screen.queryByText('要在 content-design 中处理什么？')).not.toBeInTheDocument();
   });
 
-  it('keeps the previous transcript visible while loading a conversation from another project', async () => {
+  it('replaces the previous transcript with a loading state while switching conversations', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     let resolveNextHistory: ((response: Response) => void) | undefined;
@@ -1812,7 +1824,8 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /bili 历史/ }));
 
     expect(screen.queryByRole('heading', { name: 'bili' })).not.toBeInTheDocument();
-    expect(document.querySelector('.timeline-user_message')?.textContent).toContain('上一条会话内容保持可见');
+    expect(screen.queryByText('上一条会话内容保持可见')).not.toBeInTheDocument();
+    expect(document.querySelector('.timeline-user_message')).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: '正在加载会话历史' })).toBeInTheDocument();
 
     resolveNextHistory?.(jsonResponse({

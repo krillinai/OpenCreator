@@ -66,6 +66,17 @@ describe('app CSS visual contracts', () => {
     expect(mainPane).toContain('overflow: hidden;');
   });
 
+  it('stretches HTML previews across the full editor area', () => {
+    const preview = cssBlock('.file-preview-html');
+    const frame = cssBlock('.file-preview-html iframe');
+
+    expect(preview).toContain('position: relative;');
+    expect(preview).toContain('height: auto;');
+    expect(preview).toContain('align-self: stretch;');
+    expect(frame).toContain('position: absolute;');
+    expect(frame).toContain('inset: 0;');
+  });
+
   it('keeps the desktop skill market scrollable inside the fixed app shell', () => {
     expect(skillMarketCss).toMatch(
       /@media \(min-width: 921px\)\s*\{\s*\.skill-market\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/

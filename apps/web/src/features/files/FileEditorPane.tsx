@@ -177,6 +177,19 @@ function renderContent(args: RenderContentArgs) {
 }
 
 function renderTextPreview(meta: WorkspaceFileMeta, content: string) {
+  if (meta.kind === 'html') {
+    return (
+      <div className="file-preview file-preview-html">
+        <iframe
+          title={`${meta.name} HTML 预览`}
+          srcDoc={content}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
   if (meta.kind === 'markdown') {
     return (
       <div className="file-preview">

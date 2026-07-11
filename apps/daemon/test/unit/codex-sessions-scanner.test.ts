@@ -113,6 +113,55 @@ describe('codex sessions scanner', () => {
     ]);
   });
 
+  it('only reads the session summary prefix when listing large Codex sessions', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '10');
+    mkdirSync(sessionDir, { recursive: true });
+    const sessionPath = join(sessionDir, 'rollout-large-session.jsonl');
+    const modifiedAt = new Date('2026-07-10T08:30:00.000Z');
+
+    writeFileSync(
+      sessionPath,
+      [
+        JSON.stringify({
+          timestamp: '2026-07-10T08:00:00.000Z',
+          type: 'session_meta',
+          payload: {
+            id: 'large-session',
+            session_id: 'large-session',
+            timestamp: '2026-07-10T08:00:00.000Z',
+            cwd: tempDir
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T08:10:00.000Z',
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            output: 'x'.repeat(600 * 1024)
+          }
+        }),
+        JSON.stringify({
+          timestamp: '2026-07-10T08:20:00.000Z',
+          type: 'event_msg',
+          payload: { type: 'user_message', message: '不应在列表扫描时读取到这条消息' }
+        })
+      ].join('\n')
+    );
+    utimesSync(sessionPath, modifiedAt, modifiedAt);
+
+    const sessions = scanCodexSessions({ codexHome, limit: 20 });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        codexThreadId: 'large-session',
+        title: '未命名对话',
+        updatedAt: modifiedAt.toISOString()
+      })
+    ]);
+  });
+
   it('reads patch apply file changes from Codex session history', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-history-'));
     const codexHome = join(tempDir, 'codex-home');

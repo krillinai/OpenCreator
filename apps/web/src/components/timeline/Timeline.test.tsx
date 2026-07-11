@@ -5,7 +5,45 @@ import { Timeline } from './Timeline.js';
 import type { TimelineItem } from './timeline-model.js';
 
 describe('Timeline', () => {
-  it('renders user and final assistant messages while folding completed run process', () => {
+  it('defers rendering completed process steps until the process is expanded', async () => {
+    const user = userEvent.setup();
+    const items: TimelineItem[] = [
+      ...Array.from({ length: 50 }, (_, index): TimelineItem => ({
+        kind: 'tool_step',
+        id: `tool_${index}`,
+        runId: 'run_large_history',
+        name: 'exec_command',
+        content: JSON.stringify({
+          type: 'tool_use',
+          toolCallId: `call_${index}`,
+          name: 'exec_command',
+          input: { command: `echo ${index}` }
+        }),
+        source: 'runtime'
+      })),
+      {
+        kind: 'done',
+        id: 'done_large_history',
+        runId: 'run_large_history',
+        status: 'succeeded',
+        content: '{"type":"done","status":"succeeded"}',
+        source: 'runtime'
+      }
+    ];
+
+    const { container } = render(<Timeline items={items} />);
+
+    expect(screen.getByText('50 条记录')).toBeInTheDocument();
+    expect(container.querySelectorAll('.process-step')).toHaveLength(0);
+
+    await user.click(screen.getByText('思考过程'));
+
+    expect(container.querySelectorAll('.process-step')).toHaveLength(50);
+    expect(screen.getByText('echo 49')).toBeInTheDocument();
+  });
+
+  it('renders user and final assistant messages while folding completed run process', async () => {
+    const user = userEvent.setup();
     const items: TimelineItem[] = [
       {
         kind: 'user_message',
@@ -118,6 +156,10 @@ describe('Timeline', () => {
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
     expect(screen.queryByText('排队中')).not.toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
+    expect(screen.queryByText('我会先确认日志里有没有失败信息。')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('思考过程'));
+
     expect(screen.getByText('我会先确认日志里有没有失败信息。')).toBeInTheDocument();
     expect(screen.getByText('然后根据结果给出结论。')).toBeInTheDocument();
     expect(screen.getByText('使用工具 exec_command')).toBeInTheDocument();
@@ -307,7 +349,8 @@ describe('Timeline', () => {
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
   });
 
-  it('keeps a completed status-only run process available for inspection', () => {
+  it('keeps a completed status-only run process available for inspection', async () => {
+    const user = userEvent.setup();
     const items: TimelineItem[] = [
       {
         kind: 'user_message',
@@ -364,6 +407,10 @@ describe('Timeline', () => {
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
     expect(screen.getByText('思考过程')).toBeInTheDocument();
     expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
+    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('思考过程'));
+
     expect(screen.getByText('运行详情')).toBeInTheDocument();
     expect(screen.getByText('本次没有可展示的中间过程。')).toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
@@ -474,7 +521,8 @@ describe('Timeline', () => {
     expect(screen.queryByText(content)).not.toBeInTheDocument();
   });
 
-  it('folds intermediate Codex agent messages into the run process and leaves only the final answer as Clawee reply', () => {
+  it('folds intermediate Codex agent messages into the run process and leaves only the final answer as Clawee reply', async () => {
+    const user = userEvent.setup();
     const items: TimelineItem[] = [
       {
         kind: 'user_message',
@@ -534,6 +582,10 @@ describe('Timeline', () => {
 
     expect(screen.getByText('检查当前目录并总结结果')).toBeInTheDocument();
     expect(screen.getByText('思考过程')).toBeInTheDocument();
+    expect(screen.queryByText('我会先确认当前目录，再读取相关文件做判断。')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('思考过程'));
+
     expect(screen.getByText('我会先确认当前目录，再读取相关文件做判断。')).toBeInTheDocument();
     expect(screen.getByText('使用工具 command_execution')).toBeInTheDocument();
     expect(screen.getByText('pwd')).toBeInTheDocument();
@@ -541,7 +593,7 @@ describe('Timeline', () => {
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
     expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
-    expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
+    expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
   });
 
   it('renders reasoning summaries as the main process content', () => {

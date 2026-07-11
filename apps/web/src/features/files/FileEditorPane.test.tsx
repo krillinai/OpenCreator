@@ -41,6 +41,33 @@ describe('FileEditorPane', () => {
     expect(screen.getByText('正文')).toBeInTheDocument();
   });
 
+  it('HTML 预览使用隔离 iframe 渲染页面而不是显示源码', async () => {
+    const user = userEvent.setup();
+    const html = '<!doctype html><html><body><main>商务封面</main><script>document.body.dataset.ready = "true"</script></body></html>';
+
+    const { container } = render(
+      <FileEditorPane
+        meta={createMeta({
+          name: 'business-cover.html',
+          path: 'business-cover.html',
+          kind: 'html',
+          mime: 'text/html; charset=utf-8'
+        })}
+        content={html}
+      />
+    );
+
+    expect(screen.getByRole('textbox', { name: 'business-cover.html 编辑器' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '预览' }));
+
+    const preview = screen.getByTitle('business-cover.html HTML 预览');
+    expect(preview).toHaveAttribute('srcdoc', html);
+    expect(preview).toHaveAttribute('sandbox', 'allow-scripts');
+    expect(preview).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(container.querySelector('.file-preview-html pre')).not.toBeInTheDocument();
+  });
+
   it('JSON 预览会格式化；无效 JSON 显示解析失败但保留原文', async () => {
     const user = userEvent.setup();
     const { rerender } = render(

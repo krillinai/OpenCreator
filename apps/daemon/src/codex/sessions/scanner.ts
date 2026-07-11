@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 export type CodexSessionSummary = {
@@ -22,6 +22,7 @@ export type ScanCodexSessionsInput = {
 
 const DEFAULT_LIMIT = 50;
 const MAX_TITLE_LENGTH = 80;
+const SESSION_SUMMARY_READ_LIMIT_BYTES = 512 * 1024;
 
 export function scanCodexSessions(input: ScanCodexSessionsInput): CodexSessionSummary[] {
   return scanCodexSessionsWithMetadata(input).sessions;
@@ -66,7 +67,10 @@ function listJsonlFiles(dir: string): string[] {
 }
 
 function readCodexSession(path: string): { kind: 'user'; summary: CodexSessionSummary } | { kind: 'subagent'; codexThreadId: string } | undefined {
-  const content = safeReadFile(path);
+  const stat = safeStat(path);
+  if (stat === undefined) return undefined;
+
+  const content = safeReadFilePrefix(path, stat.size);
   if (content === undefined) return undefined;
 
   let codexThreadId: string | undefined;
@@ -104,8 +108,11 @@ function readCodexSession(path: string): { kind: 'user'; summary: CodexSessionSu
     }
   }
 
-  const stat = safeStat(path);
-  if (updatedAt === undefined && stat !== undefined) updatedAt = stat.mtime.toISOString();
+  if (stat.size > SESSION_SUMMARY_READ_LIMIT_BYTES) {
+    updatedAt = stat.mtime.toISOString();
+  } else if (updatedAt === undefined) {
+    updatedAt = stat.mtime.toISOString();
+  }
   if (createdAt === undefined) createdAt = updatedAt;
 
   if (
@@ -195,11 +202,29 @@ function safeReadDir(dir: string) {
   }
 }
 
-function safeReadFile(path: string): string | undefined {
+function safeReadFilePrefix(path: string, fileSize: number): string | undefined {
+  const bytesToRead = Math.min(fileSize, SESSION_SUMMARY_READ_LIMIT_BYTES);
+  let descriptor: number | undefined;
+
   try {
-    return readFileSync(path, 'utf8');
+    descriptor = openSync(path, 'r');
+    const buffer = Buffer.allocUnsafe(bytesToRead);
+    const bytesRead = readSync(descriptor, buffer, 0, bytesToRead, 0);
+    const content = buffer.subarray(0, bytesRead).toString('utf8');
+    if (fileSize <= bytesRead) return content;
+
+    const lastLineBreak = content.lastIndexOf('\n');
+    return lastLineBreak < 0 ? '' : content.slice(0, lastLineBreak);
   } catch {
     return undefined;
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        closeSync(descriptor);
+      } catch {
+        // Ignore close errors after the read result has already been determined.
+      }
+    }
   }
 }
 
