@@ -43,14 +43,14 @@ export function SkillMarketCover({
   }
 
   return (
-    <div className="skill-market-cover__css" aria-label={`${item.title} 封面`}>
+    <span className="skill-market-cover__css" aria-label={`${item.title} 封面`}>
       <span className="skill-market-cover__pill">{item.subcategory}</span>
-      <div className="skill-market-cover__fallback-body">
+      <span className="skill-market-cover__fallback-body">
         <ImageIcon size={compact ? 20 : 24} aria-hidden="true" />
         <strong>{item.title}</strong>
         <span>{item.category.name}</span>
-      </div>
-    </div>
+      </span>
+    </span>
   );
 }
 
@@ -89,12 +89,15 @@ export function SkillAuthorAvatar({
 }
 
 export function normalizeSkillMarketAssetUrl(value: string): string | undefined {
-  if (value.startsWith('//')) return undefined;
-  if (value.startsWith('/')) return value;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.includes('\\')) return undefined;
+  if (trimmed.startsWith('//')) return undefined;
+  if (trimmed.startsWith('/')) return trimmed;
 
   try {
-    const url = new URL(value);
-    return url.protocol === 'https:' ? value : undefined;
+    const url = new URL(trimmed);
+    return url.protocol === 'https:' ? url.href : undefined;
   } catch {
     return undefined;
   }

@@ -4,7 +4,7 @@ import type {
   CodexSkillResponse,
 } from '@clawee/protocol';
 import { skillMarketCatalog, type SkillMarketEntry } from '@clawee/skill-market';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { filterAndSortSkillMarketEntries } from './skill-market-model.js';
@@ -160,12 +160,12 @@ describe('SkillMarketView', () => {
     ]);
   });
 
-  it('收藏写入失败时保持原状态并显示非致命错误', async () => {
+  it('收藏写入失败时保持原状态，恢复后可重试成功并清除错误', async () => {
     const user = userEvent.setup();
     renderSkillMarket();
     const setItemSpy = vi
       .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
+      .mockImplementationOnce(() => {
         throw new Error('blocked storage');
       });
 
@@ -184,6 +184,21 @@ describe('SkillMarketView', () => {
       })
     ).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('收藏保存失败，请检查浏览器存储权限');
+
+    await user.click(
+      within(getSkillCard('frontend-slides')).getByRole('button', {
+        name: '收藏 网页演示稿生成',
+      })
+    );
+
+    expect(setItemSpy).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: /我的收藏\s+1/ })).toBeInTheDocument();
+    expect(
+      within(getSkillCard('frontend-slides')).getByRole('button', {
+        name: '取消收藏 网页演示稿生成',
+      })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('收藏保存失败，请检查浏览器存储权限')).not.toBeInTheDocument();
   });
 
   it('未安装不可安装条目显示禁用的“暂不可安装”', async () => {
@@ -322,9 +337,15 @@ describe('SkillMarketView', () => {
   });
 
   it('非法图片和头像 URL 不会进入 img src，合法 https 与同源路径可使用', () => {
+    expect(normalizeSkillMarketAssetUrl('  https://example.com/a path.png  ')).toBe(
+      'https://example.com/a%20path.png'
+    );
+    expect(normalizeSkillMarketAssetUrl('   ')).toBeUndefined();
     expect(normalizeSkillMarketAssetUrl('http://example.com/a.png')).toBeUndefined();
     expect(normalizeSkillMarketAssetUrl('blob:https://example.com/id')).toBeUndefined();
     expect(normalizeSkillMarketAssetUrl('//example.com/a.png')).toBeUndefined();
+    expect(normalizeSkillMarketAssetUrl('/\\evil.png')).toBeUndefined();
+    expect(normalizeSkillMarketAssetUrl('https://example.com\\evil.png')).toBeUndefined();
     expect(normalizeSkillMarketAssetUrl('https://example.com/a.png')).toBe('https://example.com/a.png');
     expect(normalizeSkillMarketAssetUrl('/a.png')).toBe('/a.png');
 
@@ -404,6 +425,35 @@ describe('SkillMarketView', () => {
       'src',
       '/avatar.png'
     );
+  });
+
+  it('approved 图片和本地回退都失败后在详情按钮内显示 CSS fallback 且没有 div', async () => {
+    const entry = createMarketEntry({
+      id: 'fallback-media',
+      title: '失败封面',
+      examples: [
+        {
+          type: 'image',
+          title: 'failing approved cover',
+          url: 'https://example.com/fail.png',
+          approved: true,
+        },
+      ],
+    });
+
+    renderSkillMarket({ catalogOverride: [entry] });
+    const detailButton = getSkillDetailButton('fallback-media');
+    const firstImage = within(detailButton).getByRole('img', { name: 'failing approved cover' });
+
+    fireEvent.error(firstImage);
+
+    const fallbackImage = within(detailButton).getByRole('img', { name: 'failing approved cover' });
+    expect(fallbackImage).toHaveAttribute('src', expect.stringContaining('/skill-market/examples/'));
+    fireEvent.error(fallbackImage);
+
+    expect(await within(detailButton).findByLabelText('失败封面 封面')).toBeInTheDocument();
+    expect(within(detailButton).queryByRole('img', { name: 'failing approved cover' })).not.toBeInTheDocument();
+    expect(detailButton.querySelector('div')).toBeNull();
   });
 
   it('loading、loadError、empty 和 search-empty 都有清晰状态', async () => {
