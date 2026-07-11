@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { skillMarketCatalog } from '../src/index.js';
+import {
+  getSkillMarketEntry,
+  skillMarketCatalog,
+  skillMarketSourceCommit,
+} from '../src/index.js';
 
 describe('skill market catalog', () => {
   it('contains the reviewed 55-entry snapshot with unique ids', () => {
@@ -23,13 +27,64 @@ describe('skill market catalog', () => {
     ]);
   });
 
-  it('pins every installable entry to a full commit and positive revision', () => {
-    for (const entry of skillMarketCatalog) {
-      if (!entry.install.available) continue;
-      expect(entry.install.repository).toMatch(/^[^/]+\/[^/]+$/);
-      expect(entry.install.skillPath).toBe('.');
-      expect(entry.install.commit).toMatch(/^[a-f0-9]{40}$/);
-      expect(entry.install.marketRevision).toBeGreaterThan(0);
-    }
+  it('pins the reviewed installable entries to the exact source snapshot', () => {
+    expect(skillMarketSourceCommit).toBe(
+      '91302f79937b8f4e194e56554afdbb2ca939a1d5'
+    );
+
+    expect(getSkillMarketEntry('biliup')?.install).toEqual({
+      available: true,
+      repository: 'biliup/biliup',
+      skillPath: '.',
+      commit: '18c5bf086e943e07e9d88a905d2e5d407d6305bb',
+      marketRevision: 1,
+    });
+
+    expect(getSkillMarketEntry('codebase-to-course')?.install).toEqual({
+      available: true,
+      repository: 'zarazhangrui/codebase-to-course',
+      skillPath: '.',
+      commit: 'ff8837ecf8e9f6ce9874ffa42e42633394a52a00',
+      marketRevision: 1,
+    });
+
+    expect(getSkillMarketEntry('follow-builders')?.install).toEqual({
+      available: true,
+      repository: 'zarazhangrui/follow-builders',
+      skillPath: '.',
+      commit: 'aa6769f2a0be11fe663c4594a48d9679075f06c1',
+      marketRevision: 1,
+    });
+
+    expect(getSkillMarketEntry('frontend-slides')?.install).toEqual({
+      available: true,
+      repository: 'zarazhangrui/frontend-slides',
+      skillPath: '.',
+      commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
+      marketRevision: 1,
+    });
+
+    expect(getSkillMarketEntry('guizang-social-card-skill')?.install).toEqual({
+      available: true,
+      repository: 'op7418/guizang-social-card-skill',
+      skillPath: '.',
+      commit: 'cf4b810fac1c73fb65a2bb31d8c9278d82cbc4c5',
+      marketRevision: 1,
+    });
+
+    expect(getSkillMarketEntry('op7418-humanizer-zh')?.install).toEqual({
+      available: true,
+      repository: 'op7418/Humanizer-zh',
+      skillPath: '.',
+      commit: '91f3d394db8419c20d67ebe22a96cf8fee0a404b',
+      marketRevision: 1,
+    });
+  });
+
+  it('marks garrytan-gstack as an unsafe archive', () => {
+    expect(getSkillMarketEntry('garrytan-gstack')?.install).toEqual({
+      available: false,
+      reason: 'unsafe_archive',
+    });
   });
 });
