@@ -23,7 +23,7 @@ Skills Hub 当前的安装状态使用 `localStorage` 模拟，“去使用”�
 1. 用 Skills Hub 市场替换 Clawee“插件”Tab 的占位页面。
 2. 保留现有搜索、分类、场景、排序、收藏、视觉卡片和悬浮详情弹窗。
 3. 市场目录随 Clawee 版本内置，并且只包含经过审核的条目。
-4. 只有包含标准 `SKILL.md` 的条目可以安装和使用。
+4. 只有市场清单能定位到标准 `SKILL.md` 的条目可以从市场安装；本机已有的同名有效 Skill 可以直接使用。
 5. 可安装 Skill 从市场清单指定的 GitHub commit 下载并安装到全局 Codex Skills 目录。
 6. 以全局 Skills 目录扫描结果作为真实安装状态。
 7. 使用 Clawee 市场安装记录判断已知版本是否需要更新。
@@ -64,9 +64,9 @@ Skills Hub 当前的安装状态使用 `localStorage` 模拟，“去使用”�
 
 ### 5.3 不可安装条目
 
-1. 缺少标准 `SKILL.md` 的条目仍正常展示。
-2. 此类条目的主按钮固定显示“暂不可安装”。
-3. 按钮不可点击，不能进入使用流程。
+1. 缺少可安装标准 `SKILL.md` 来源的条目仍正常展示。
+2. 此类条目在本机未安装时，主按钮显示“暂不可安装”。
+3. 如果本机已经通过其他方式安装了同名有效 Skill，真实安装状态优先，按钮显示“使用”。
 4. 第一版不提供自动适配、安装教程或外部跳转作为替代操作。
 
 ### 5.4 使用行为
@@ -268,12 +268,12 @@ type SkillMarketInstallRecord = {
 
 状态计算顺序：
 
-1. `install.available === false`：`unavailable`。
-2. 全局目录不存在同名 Skill：`not_installed`。
-3. 全局目录存在但 Skill 无效：`invalid`。
-4. 存在市场安装记录且记录修订号低于目录修订号：`update_available`。
-5. 全局目录存在但没有市场安装记录：`installed_unknown_version`。
-6. 其他情况：`installed`。
+1. 全局目录存在但 Skill 无效：`invalid`。
+2. 全局目录存在，且存在市场安装记录，记录修订号低于目录修订号：`update_available`。
+3. 全局目录存在但没有市场安装记录：`installed_unknown_version`。
+4. 全局目录存在且版本不低于市场目录：`installed`。
+5. 全局目录不存在同名 Skill，且 `install.available === false`：`unavailable`。
+6. 其他未安装情况：`not_installed`。
 
 异步操作状态覆盖静态状态：
 
@@ -538,7 +538,7 @@ GET  /codex/skill-market/install-records
 1. “插件”Tab 显示 Skills Hub 正式市场，而不是占位页面。
 2. 页面视觉和信息架构与现有 Clawee Skills Hub 保持一致。
 3. 约 55 个目录条目可以正常浏览、搜索和筛选。
-4. 缺少标准 `SKILL.md` 的条目不可安装。
+4. 缺少可安装标准 `SKILL.md` 来源的条目在本机未安装时不可安装；若本机已有同名有效 Skill，则允许使用。
 5. 可安装条目能从固定 commit 下载并全局安装。
 6. 安装状态来自全局目录真实扫描。
 7. 市场安装修订号较低时可以更新。
