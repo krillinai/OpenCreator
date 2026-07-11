@@ -71,6 +71,37 @@ describe('Composer', () => {
     expect(screen.getByPlaceholderText('当前对话有任务运行中')).toBeInTheDocument();
   });
 
+  it('shows an interrupt control while a task is running', async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const { rerender } = render(
+      <Composer
+        {...defaultProps}
+        disabled
+        running
+        disabledReason="当前对话有任务运行中"
+        onCancel={onCancel}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: '发送' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '停止任务' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <Composer
+        {...defaultProps}
+        disabled
+        running
+        canceling
+        disabledReason="正在停止任务"
+        onCancel={onCancel}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '正在停止任务' })).toBeDisabled();
+  });
+
   it('keeps permission and model controls visible when disabled', () => {
     render(<Composer {...defaultProps} disabled />);
 

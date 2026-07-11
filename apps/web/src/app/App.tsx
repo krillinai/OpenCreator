@@ -122,6 +122,7 @@ export function App(props: AppProps = {}) {
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [runtimeBusy, setRuntimeBusy] = useState(false);
+  const [runCanceling, setRunCanceling] = useState(false);
   const [savedFileByPath, setSavedFileByPath] = useState<Record<string, WorkspaceFile>>({});
   const [draftContentByPath, setDraftContentByPath] = useState<Record<string, string>>({});
   const [loadingFilePath, setLoadingFilePath] = useState<string>(state.selectedFilePath);
@@ -145,6 +146,8 @@ export function App(props: AppProps = {}) {
   const connectionConfigVersionRef = useRef(0);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
   const timelineEventBatcherRef = useRef<FrameBatcher<TimelineItem> | null>(null);
+  const activeRunIdRef = useRef<string>();
+  const cancelRequestedRef = useRef(false);
   const conversationBodyRef = useRef<HTMLDivElement | null>(null);
   const conversationFileLayoutRef = useRef<HTMLElement | null>(null);
   const allowInitialRuntimeProjectFocusRef = useRef(persistedNavigation === null);
@@ -909,6 +912,9 @@ export function App(props: AppProps = {}) {
 
     const effectiveConfig = config ?? composerRunConfig ?? defaultComposerRunConfig(currentProject);
     setComposerRunConfig(effectiveConfig);
+    activeRunIdRef.current = undefined;
+    cancelRequestedRef.current = false;
+    setRunCanceling(false);
     setRuntimeBusy(true);
     setTimelineItems(previous => [
       ...previous,
@@ -944,7 +950,11 @@ export function App(props: AppProps = {}) {
         if (effectiveConfig.reasoning !== null) runInput.reasoning = effectiveConfig.reasoning;
       }
       const run = await runService.startThreadRun(runInput);
+      activeRunIdRef.current = run.id;
       handleRunStarted(run);
+      if (cancelRequestedRef.current) {
+        await requestRunCancellation(run.id);
+      }
       await subscribeToRunEvents(run.id, connectionConfigRef.current);
     } catch (error) {
       if (mountedRef.current) {
@@ -961,8 +971,51 @@ export function App(props: AppProps = {}) {
         ]);
       }
     } finally {
-      if (mountedRef.current) setRuntimeBusy(false);
+      activeRunIdRef.current = undefined;
+      cancelRequestedRef.current = false;
+      if (mountedRef.current) {
+        setRunCanceling(false);
+        setRuntimeBusy(false);
+      }
     }
+  }
+
+  async function cancelActiveRun() {
+    if (!runtimeBusy || cancelRequestedRef.current) return;
+
+    cancelRequestedRef.current = true;
+    setRunCanceling(true);
+    const activeRunId = activeRunIdRef.current;
+    if (activeRunId !== undefined) {
+      await requestRunCancellation(activeRunId);
+    }
+  }
+
+  async function requestRunCancellation(runId: string) {
+    let cancellationError: unknown;
+    try {
+      if (runService === null) throw new Error('本地运行内核已断开，无法停止任务');
+      await runService.cancelRun(runId);
+    } catch (error) {
+      cancellationError = error;
+    }
+    if (cancellationError === undefined) return;
+
+    cancelRequestedRef.current = false;
+    if (!mountedRef.current) return;
+    setRunCanceling(false);
+    const message = getRuntimeErrorMessage(cancellationError, '停止任务失败，请重试');
+    setTimelineItems(previous => [
+      ...previous,
+      {
+        kind: 'diagnostic',
+        id: createTimelineId('cancel_error'),
+        severity: 'error',
+        message,
+        content: message,
+        source: 'runtime'
+      }
+    ]);
   }
 
   async function resolveThreadIdForPrompt(
@@ -1147,7 +1200,11 @@ export function App(props: AppProps = {}) {
 
   const detailPanel = createDetailPanel();
   const composerDisabled = runtimeBusy || connectionState.status !== 'connected';
-  const composerDisabledReason = runtimeBusy ? '当前对话有任务运行中' : '正在连接本地运行内核';
+  const composerDisabledReason = runCanceling
+    ? '正在停止任务'
+    : runtimeBusy
+      ? '当前对话有任务运行中'
+      : '正在连接本地运行内核';
   const fileWorkspaceOpen = state.activeView === 'conversation' && state.rightPanelMode === 'file';
   const effectiveComposerConfig = selectedThread === undefined
     ? composerRunConfig ?? defaultComposerRunConfig(currentProject)
@@ -1225,6 +1282,8 @@ export function App(props: AppProps = {}) {
           reasoning={effectiveComposerConfig.reasoning}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
+          running={runtimeBusy}
+          canceling={runCanceling}
           slashCommands={slashCommands}
           slashCommandsLoading={capabilitiesLoading}
           slashCommandsError={capabilitiesLoadError}
@@ -1243,6 +1302,7 @@ export function App(props: AppProps = {}) {
                 : currentDraft
             );
           }}
+          onCancel={() => void cancelActiveRun()}
           onSubmit={submitPrompt}
         />
       </div>

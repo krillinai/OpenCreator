@@ -2152,7 +2152,8 @@ textarea:focus-visible {
 }
 
 .composer-icon-button,
-.composer-send {
+.composer-send,
+.composer-stop {
   min-height: 38px;
   display: inline-flex;
   align-items: center;
@@ -2235,6 +2236,15 @@ textarea:focus-visible {
 .composer-send {
   width: 38px;
   height: 38px;
+}
+
+.composer-stop {
+  width: 38px;
+  height: 38px;
+}
+
+.composer-send,
+.composer-stop {
   border: 1px solid rgba(216, 101, 50, 0.66);
   border-radius: 12px;
   background: linear-gradient(180deg, #DF7440 0%, #AD4D1F 54%, #7C3217 100%);
@@ -2242,6 +2252,20 @@ textarea:focus-visible {
   box-shadow:
     0 10px 22px rgba(173, 77, 31, 0.32),
     0 0 0 1px rgba(252, 253, 255, 0.1) inset;
+}
+
+.composer-stop {
+  border-radius: 50%;
+  background: rgba(252, 253, 255, 0.92);
+  color: #16191e;
+  box-shadow:
+    0 10px 22px rgba(3, 6, 10, 0.3),
+    0 0 0 1px rgba(252, 253, 255, 0.12) inset;
+}
+
+.composer-stop:hover {
+  background: #fff;
+  color: #0b0d10;
 }
 
 .composer-send:disabled {
@@ -2253,9 +2277,20 @@ textarea:focus-visible {
     0 0 0 1px rgba(252, 253, 255, 0.04) inset;
 }
 
+.composer-stop:disabled {
+  border-color: rgba(252, 253, 255, 0.12);
+  background: rgba(64, 70, 80, 0.72);
+  color: rgba(252, 253, 255, 0.48);
+  box-shadow: none;
+}
+
 .composer-send svg {
   color: #fff;
   stroke-width: 2.35;
+}
+
+.composer-stop svg {
+  stroke-width: 2;
 }
 
 .composer-send:disabled svg {

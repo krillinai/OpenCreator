@@ -985,6 +985,102 @@ describe('App', () => {
     });
   });
 
+  it('interrupts the active conversation run from the composer', async () => {
+    const user = userEvent.setup();
+    const prompt = '执行一个长任务';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    let resolveRunRequest: ((response: Response) => void) | undefined;
+    let resolveCancelRequest: ((response: Response) => void) | undefined;
+    let resolveSubscription: (() => void) | undefined;
+    let subscriptionInput: SubscribeRunEventsInput | undefined;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/threads')) return jsonResponse({ thread: createThreadResponse({ title: prompt }) }, { status: 201 });
+      if (url.endsWith('/runs')) {
+        return new Promise<Response>((resolve) => {
+          resolveRunRequest = resolve;
+        });
+      }
+      if (url.endsWith('/runs/run_interrupt/cancel') && init?.method === 'POST') {
+        return new Promise<Response>((resolve) => {
+          resolveCancelRequest = resolve;
+        });
+      }
+      if (url.endsWith('/runs/run_interrupt/diagnostics')) {
+        return jsonResponse(createRunDiagnosticsResponse(createCodexStatusResponse()));
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      subscriptionInput = input;
+      input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 1, 'run_interrupt'));
+      return new Promise<void>((resolve) => {
+        resolveSubscription = resolve;
+      });
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    await user.click(await screen.findByRole('button', { name: '停止任务' }));
+
+    expect(screen.getByRole('button', { name: '正在停止任务' })).toBeDisabled();
+    expect(fetchCalls.some(call => call.url.endsWith('/runs/run_interrupt/cancel'))).toBe(false);
+
+    await act(async () => {
+      resolveRunRequest?.(
+        jsonResponse({ id: 'run_interrupt', threadId: 'thread_from_api', status: 'running' }, { status: 202 })
+      );
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(fetchCalls.some(call =>
+        call.url.endsWith('/runs/run_interrupt/cancel') && call.init?.method === 'POST'
+      )).toBe(true);
+    });
+
+    await act(async () => {
+      resolveCancelRequest?.(jsonResponse({ id: 'run_interrupt', canceled: true }, { status: 202 }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(subscriptionInput).toBeDefined());
+
+    await act(async () => {
+      subscriptionInput?.onEvent(
+        createRuntimeEvent(
+          'done',
+          { type: 'done', status: 'canceled', terminationReason: 'user_canceled' },
+          2,
+          'run_interrupt'
+        )
+      );
+      resolveSubscription?.();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('运行已取消：用户已取消')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '停止任务' })).not.toBeInTheDocument();
+  });
+
   it('renders Codex process agent messages as folded process text and only the final agent message as Clawee reply', async () => {
     const user = userEvent.setup();
     const prompt = '检查当前目录并总结';
@@ -2922,11 +3018,12 @@ async function findTimelineUserMessage(text: string) {
 function createRuntimeEvent<Type extends AgentEventEnvelope['type']>(
   type: Type,
   payload: Extract<AgentEventPayload, { type: Type }>,
-  seq: number
+  seq: number,
+  runId = 'run_1'
 ): AgentEventEnvelope {
   return {
     id: `event_${seq}`,
-    runId: 'run_1',
+    runId,
     seq,
     ts: new Date(0).toISOString(),
     type,

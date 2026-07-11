@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowUp, Cable, Check, Circle, Paperclip, Plus, ShieldCheck, Sparkles, Target } from 'lucide-react';
+import { ArrowUp, Cable, Check, Circle, Paperclip, Plus, ShieldCheck, Sparkles, Square, Target } from 'lucide-react';
 import type { ReasoningEffort } from '@clawee/protocol';
 import type { ProjectPermission } from '../projects/project-model.js';
 
@@ -73,6 +73,8 @@ const TEXTAREA_MAX_HEIGHT = Math.ceil(TEXTAREA_LINE_HEIGHT * TEXTAREA_MAX_VISIBL
 export function Composer(props: {
   disabled?: boolean;
   disabledReason?: string;
+  running?: boolean;
+  canceling?: boolean;
   projectName: string;
   permission: ProjectPermission;
   model: string | null;
@@ -83,6 +85,7 @@ export function Composer(props: {
   draftRequest?: ComposerDraftRequest;
   onPermissionChange?(permission: ProjectPermission): void;
   onDraftApplied?(id: number): void;
+  onCancel?(): void;
   onSubmit(prompt: string, config: ComposerRunConfig): void;
 }) {
   const [prompt, setPrompt] = useState('');
@@ -409,14 +412,26 @@ export function Composer(props: {
             ) : null}
           </div>
 
-          <button
-            className="composer-send"
-            type="submit"
-            aria-label="发送"
-            disabled={!canSubmit}
-          >
-            <ArrowUp aria-hidden="true" size={17} />
-          </button>
+          {props.running ? (
+            <button
+              className="composer-stop"
+              type="button"
+              aria-label={props.canceling ? '正在停止任务' : '停止任务'}
+              disabled={props.canceling || props.onCancel === undefined}
+              onClick={props.onCancel}
+            >
+              <Square aria-hidden="true" size={13} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              className="composer-send"
+              type="submit"
+              aria-label="发送"
+              disabled={!canSubmit}
+            >
+              <ArrowUp aria-hidden="true" size={17} />
+            </button>
+          )}
         </div>
       </div>
     </form>
