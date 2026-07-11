@@ -1,0 +1,290 @@
+import type {
+  CodexSkillListResponse,
+  CodexSkillMarketInstallRecordResponse,
+  CodexSkillResponse,
+} from '@clawee/protocol';
+import type { SkillMarketEntry } from '@clawee/skill-market';
+import { describe, expect, it } from 'vitest';
+import {
+  filterAndSortSkillMarketEntries,
+  resolveSkillMarketStatus,
+} from './skill-market-model.js';
+
+describe('skill market model', () => {
+  it('resolves unavailable when the skill is absent and the catalog source is not installable', () => {
+    expect(
+      resolveSkillMarketStatus(
+        createEntry({ install: { available: false, reason: 'missing_skill_manifest' } }),
+        createSkillsResponse([]),
+        []
+      )
+    ).toBe('unavailable');
+  });
+
+  it('treats a valid local skill as installed even without a market record', () => {
+    expect(
+      resolveSkillMarketStatus(
+        createEntry({ install: { available: false, reason: 'missing_skill_manifest' } }),
+        createSkillsResponse([createSkill({ id: 'frontend-slides', status: 'valid' })]),
+        []
+      )
+    ).toBe('installed_unknown_version');
+  });
+
+  it('does not treat invalid installed skills as available', () => {
+    expect(
+      resolveSkillMarketStatus(
+        createEntry(),
+        createSkillsResponse([createSkill({ id: 'frontend-slides', status: 'invalid' })]),
+        []
+      )
+    ).toBe('invalid');
+  });
+
+  it('marks update available when the installed market revision is behind', () => {
+    expect(
+      resolveSkillMarketStatus(
+        createEntry({ install: createInstallSource(3) }),
+        createSkillsResponse([createSkill({ id: 'frontend-slides', status: 'valid' })]),
+        [createRecord({ marketRevision: 2 })]
+      )
+    ).toBe('update_available');
+  });
+
+  it('marks installed when the installed market revision matches the catalog revision', () => {
+    expect(
+      resolveSkillMarketStatus(
+        createEntry({ install: createInstallSource(3) }),
+        createSkillsResponse([createSkill({ id: 'frontend-slides', status: 'valid' })]),
+        [createRecord({ marketRevision: 3 })]
+      )
+    ).toBe('installed');
+  });
+
+  it('lets install and update mutations override only the matching skill', () => {
+    const entries = [
+      createEntry({ id: 'frontend-slides' }),
+      createEntry({ id: 'guizang-social-card-skill', name: 'guizang-social-card-skill' }),
+    ] as const;
+    const skills = createSkillsResponse([
+      createSkill({ id: 'frontend-slides', status: 'valid' }),
+      createSkill({ id: 'guizang-social-card-skill', status: 'valid' }),
+    ]);
+    const records = [
+      createRecord({ skillId: 'frontend-slides', marketRevision: 1 }),
+      createRecord({ skillId: 'guizang-social-card-skill', marketRevision: 1 }),
+    ];
+
+    expect(
+      resolveSkillMarketStatus(entries[0], skills, records, {
+        skillId: 'frontend-slides',
+        kind: 'installing',
+      })
+    ).toBe('installing');
+    expect(
+      resolveSkillMarketStatus(entries[1], skills, records, {
+        skillId: 'frontend-slides',
+        kind: 'installing',
+      })
+    ).toBe('installed');
+    expect(
+      resolveSkillMarketStatus(entries[1], skills, records, {
+        skillId: 'guizang-social-card-skill',
+        kind: 'updating',
+      })
+    ).toBe('updating');
+  });
+
+  it('searches across chinese title, english name, summary, tasks, and platforms with normalized spaces', () => {
+    const entry = createEntry({
+      id: 'frontend-slides',
+      name: 'frontend-slides',
+      title: '网页演示稿生成',
+      tagline: '把课件生成网页 slides',
+      summary: '为课程和产品演示生成 HTML slides',
+      tasks: ['课程课件', '产品演示'],
+      platforms: ['Web', 'Claude Code'],
+    });
+
+    const byTitle = filterAndSortSkillMarketEntries({
+      entries: [entry],
+      skills: createSkillsResponse([]),
+      records: [],
+      search: '网页 演示稿',
+    });
+    const byName = filterAndSortSkillMarketEntries({
+      entries: [entry],
+      skills: createSkillsResponse([]),
+      records: [],
+      search: ' FRONTEND-SLIDES ',
+    });
+    const byTask = filterAndSortSkillMarketEntries({
+      entries: [entry],
+      skills: createSkillsResponse([]),
+      records: [],
+      search: '产品演示',
+    });
+    const byPlatform = filterAndSortSkillMarketEntries({
+      entries: [entry],
+      skills: createSkillsResponse([]),
+      records: [],
+      search: 'claude   code',
+    });
+
+    expect(byTitle.entries.map((item) => item.id)).toEqual(['frontend-slides']);
+    expect(byName.entries.map((item) => item.id)).toEqual(['frontend-slides']);
+    expect(byTask.entries.map((item) => item.id)).toEqual(['frontend-slides']);
+    expect(byPlatform.entries.map((item) => item.id)).toEqual(['frontend-slides']);
+  });
+
+  it('includes externally installed skills in the installed filter', () => {
+    const entry = createEntry({
+      install: { available: false, reason: 'missing_skill_manifest' },
+    });
+
+    const result = filterAndSortSkillMarketEntries({
+      entries: [entry],
+      skills: createSkillsResponse([createSkill({ id: 'frontend-slides', status: 'valid' })]),
+      records: [],
+      status: 'installed',
+    });
+
+    expect(result.entries.map((item) => item.id)).toEqual(['frontend-slides']);
+    expect(result.entries[0]?.status).toBe('installed_unknown_version');
+  });
+
+  it('keeps recommended, users, installed, and saved sorts stable with explicit tie breakers', () => {
+    const entries = [
+      createEntry({
+        id: 'b-entry',
+        name: 'b-entry',
+        title: 'B 条目',
+        listingStatus: 'verified',
+      }),
+      createEntry({
+        id: 'a-entry',
+        name: 'a-entry',
+        title: 'A 条目',
+        listingStatus: 'verified',
+      }),
+    ];
+
+    const baseInput = {
+      entries,
+      skills: createSkillsResponse([
+        createSkill({ id: 'a-entry', status: 'valid' }),
+        createSkill({ id: 'b-entry', status: 'valid' }),
+      ]),
+      records: [
+        createRecord({ skillId: 'a-entry', marketRevision: 1 }),
+        createRecord({ skillId: 'b-entry', marketRevision: 1 }),
+      ],
+    };
+
+    expect(
+      filterAndSortSkillMarketEntries({ ...baseInput, sort: 'recommended' }).entries.map((item) => item.id)
+    ).toEqual(['a-entry', 'b-entry']);
+    expect(
+      filterAndSortSkillMarketEntries({ ...baseInput, sort: 'users' }).entries.map((item) => item.id)
+    ).toEqual(['a-entry', 'b-entry']);
+    expect(
+      filterAndSortSkillMarketEntries({ ...baseInput, sort: 'installed' }).entries.map((item) => item.id)
+    ).toEqual(['a-entry', 'b-entry']);
+    expect(
+      filterAndSortSkillMarketEntries({
+        ...baseInput,
+        sort: 'saved',
+        savedSkillIds: ['a-entry', 'b-entry'],
+      }).entries.map((item) => item.id)
+    ).toEqual(['a-entry', 'b-entry']);
+  });
+});
+
+function createEntry(
+  overrides: Partial<SkillMarketEntry> = {}
+): SkillMarketEntry {
+  return {
+    id: 'frontend-slides',
+    name: 'frontend-slides',
+    title: '网页演示稿生成',
+    tagline: '把演示稿生成网页',
+    summary: '生成可以浏览的 HTML 幻灯片。',
+    category: 'content-planning',
+    subcategory: '网页幻灯片',
+    platforms: ['Web'],
+    tasks: ['课程课件'],
+    creator: {
+      name: 'Clawee',
+      avatarUrl: 'https://example.com/avatar.png',
+    },
+    examples: [],
+    inputs: [],
+    outputs: [],
+    risks: {
+      requiresLogin: false,
+      requiresApiKey: false,
+      externalWrite: false,
+      readsLocalFiles: false,
+      privateDataRisk: false,
+      notes: [],
+    },
+    listingStatus: 'featured',
+    install: createInstallSource(1),
+    ...overrides,
+  };
+}
+
+function createInstallSource(marketRevision: number): SkillMarketEntry['install'] {
+  return {
+    available: true,
+    repository: 'zarazhangrui/frontend-slides',
+    skillPath: '.',
+    commit: 'commit',
+    marketRevision,
+  };
+}
+
+function createSkill(
+  overrides: Partial<CodexSkillResponse> & Pick<CodexSkillResponse, 'id' | 'status'>
+): CodexSkillResponse {
+  return {
+    name: overrides.id,
+    description: overrides.id,
+    id: overrides.id,
+    status: overrides.status,
+    diagnostics: [],
+    codexHome: '/tmp/codex',
+    codexHomeMode: 'global',
+    skillsPath: '/tmp/codex/skills',
+    skillPath: `/tmp/codex/skills/${overrides.id}`,
+    skillFilePath: `/tmp/codex/skills/${overrides.id}/SKILL.md`,
+    updatedAt: overrides.updatedAt,
+  };
+}
+
+function createSkillsResponse(skills: CodexSkillResponse[]): CodexSkillListResponse {
+  return {
+    codexHome: '/tmp/codex',
+    codexHomeMode: 'global',
+    skillsPath: '/tmp/codex/skills',
+    skillsWritable: true,
+    requiresWriteConfirmation: false,
+    skills,
+    diagnostics: [],
+  };
+}
+
+function createRecord(
+  overrides: Partial<CodexSkillMarketInstallRecordResponse> = {}
+): CodexSkillMarketInstallRecordResponse {
+  return {
+    skillId: 'frontend-slides',
+    repository: 'zarazhangrui/frontend-slides',
+    skillPath: '.',
+    commit: 'commit',
+    marketRevision: 1,
+    installedAt: '2026-07-10T00:00:00.000Z',
+    updatedAt: '2026-07-10T00:00:00.000Z',
+    ...overrides,
+  };
+}
