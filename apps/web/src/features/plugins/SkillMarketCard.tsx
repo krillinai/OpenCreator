@@ -139,14 +139,8 @@ export function SkillMarketCard({
 export function getSkillMarketAction(
   status: SkillMarketStatus,
   connected: boolean,
-  options: { mutationLocked?: boolean } = {}
+  options: { mutationLocked?: boolean; skillsKnown?: boolean } = {}
 ): SkillMarketAction {
-  if (status === 'unavailable') {
-    return { label: '暂不可安装', kind: 'disabled', disabled: true };
-  }
-  if (status === 'invalid') {
-    return { label: '不可使用', kind: 'disabled', disabled: true, reason: '本地 Skill 状态异常' };
-  }
   if (!connected) {
     if (status === 'update_available') {
       return { label: '连接后更新', kind: 'update', disabled: true, reason: '需要连接 Runtime' };
@@ -155,6 +149,20 @@ export function getSkillMarketAction(
       return { label: '连接后使用', kind: 'use', disabled: true, reason: '需要连接 Runtime' };
     }
     return { label: '连接后安装', kind: 'install', disabled: true, reason: '需要连接 Runtime' };
+  }
+  if (options.skillsKnown === false) {
+    return {
+      label: '状态未知',
+      kind: 'disabled',
+      disabled: true,
+      reason: 'Skill 安装状态未知',
+    };
+  }
+  if (status === 'unavailable') {
+    return { label: '暂不可安装', kind: 'disabled', disabled: true };
+  }
+  if (status === 'invalid') {
+    return { label: '不可使用', kind: 'disabled', disabled: true, reason: '本地 Skill 状态异常' };
   }
   if (status === 'installing') {
     return { label: '安装中', kind: 'install', disabled: true };

@@ -23,7 +23,11 @@ import { ConversationHeader } from '../features/conversation/ConversationHeader.
 import { DetailPanel } from '../features/details/DetailPanel.js';
 import { FileWorkspaceView } from '../features/files/FileWorkspaceView.js';
 import { getSkillMarketDisplayTitle } from '../features/plugins/skill-market-model.js';
-import { SkillMarketView, type SkillMarketOperation } from '../features/plugins/SkillMarketView.js';
+import {
+  SkillMarketView,
+  type SkillMarketOperation,
+  type SkillMarketUseError
+} from '../features/plugins/SkillMarketView.js';
 import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
 import { Composer, type ComposerDraftRequest, type ComposerRunConfig, type ComposerSlashCommand } from '../features/runs/Composer.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
@@ -94,11 +98,11 @@ export function App(props: AppProps = {}) {
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
-  const [skillMarketInstallRecords, setSkillMarketInstallRecords] = useState<CodexSkillMarketInstallRecordResponse[]>([]);
+  const [skillMarketInstallRecords, setSkillMarketInstallRecords] = useState<CodexSkillMarketInstallRecordResponse[]>();
   const [skillMarketLoading, setSkillMarketLoading] = useState(false);
   const [skillMarketLoadError, setSkillMarketLoadError] = useState<string>();
   const [skillMarketOperation, setSkillMarketOperation] = useState<SkillMarketOperation>();
-  const [skillMarketUseError, setSkillMarketUseError] = useState<string>();
+  const [skillMarketUseError, setSkillMarketUseError] = useState<SkillMarketUseError>();
   const [pendingComposerDraft, setPendingComposerDraft] = useState<
     { threadId: string; request: ComposerDraftRequest } | undefined
   >();
@@ -306,7 +310,7 @@ export function App(props: AppProps = {}) {
       skillMarketUseInFlightRef.current = false;
       setCodexSkills(undefined);
       setCodexMcp(undefined);
-      setSkillMarketInstallRecords([]);
+      setSkillMarketInstallRecords(undefined);
       setCapabilitiesLoading(false);
       setSkillMarketLoading(false);
       setCapabilitiesLoadError(undefined);
@@ -320,6 +324,8 @@ export function App(props: AppProps = {}) {
 
     setCapabilitiesLoading(true);
     setSkillMarketLoading(true);
+    setCodexSkills(undefined);
+    setSkillMarketInstallRecords(undefined);
     setCapabilitiesLoadError(undefined);
     setSkillMarketLoadError(undefined);
     const generation = skillMarketRuntimeGenerationRef.current;
@@ -327,28 +333,26 @@ export function App(props: AppProps = {}) {
     const activeSkillMarketService = skillMarketService;
 
     Promise.allSettled([
-      activeCapabilityService.listSkills(),
-      activeCapabilityService.listMcp(),
-      activeSkillMarketService.listInstallRecords()
+      Promise.resolve().then(() => activeCapabilityService.listSkills()),
+      Promise.resolve().then(() => activeCapabilityService.listMcp()),
+      Promise.resolve().then(() => activeSkillMarketService.listInstallRecords())
     ])
       .then(results => {
         if (canceled || !isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) return;
         const [skillsResult, mcpResult, recordsResult] = results;
         if (skillsResult?.status === 'fulfilled') setCodexSkills(skillsResult.value);
+        else setCodexSkills(undefined);
         if (mcpResult?.status === 'fulfilled') setCodexMcp(mcpResult.value);
+        else setCodexMcp(undefined);
         if (recordsResult?.status === 'fulfilled') setSkillMarketInstallRecords(recordsResult.value.records);
+        else setSkillMarketInstallRecords(undefined);
         if (skillsResult?.status === 'rejected' || mcpResult?.status === 'rejected') {
           setCapabilitiesLoadError('本机能力检测失败');
         }
-        if (recordsResult?.status === 'rejected') {
-          setSkillMarketLoadError('安装状态加载失败');
-        }
-      })
-      .catch(() => {
-        if (!canceled && isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
-          setCapabilitiesLoadError('本机能力检测失败');
-          setSkillMarketLoadError('安装状态加载失败');
-        }
+        const marketErrors: string[] = [];
+        if (skillsResult?.status === 'rejected') marketErrors.push('Skill 状态加载失败');
+        if (recordsResult?.status === 'rejected') marketErrors.push('安装记录加载失败');
+        setSkillMarketLoadError(marketErrors.length > 0 ? marketErrors.join('；') : undefined);
       })
       .finally(() => {
         if (!canceled && isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
@@ -715,16 +719,26 @@ export function App(props: AppProps = {}) {
     generation: number,
     activeCapabilityService: CapabilityService,
     activeSkillMarketService: SkillMarketService
-  ) {
-
-    const [skillsResponse, recordsResponse] = await Promise.all([
-      activeCapabilityService.listSkills(),
-      activeSkillMarketService.listInstallRecords()
+  ): Promise<void> {
+    const [skillsResult, recordsResult] = await Promise.allSettled([
+      Promise.resolve().then(() => activeCapabilityService.listSkills()),
+      Promise.resolve().then(() => activeSkillMarketService.listInstallRecords())
     ]);
     if (!isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) return;
-    setCodexSkills(skillsResponse);
-    setSkillMarketInstallRecords(recordsResponse.records);
-    setSkillMarketLoadError(undefined);
+    const refreshErrors: string[] = [];
+    if (skillsResult.status === 'fulfilled') {
+      setCodexSkills(skillsResult.value);
+    } else {
+      setCodexSkills(undefined);
+      refreshErrors.push('Skill 状态刷新失败');
+    }
+    if (recordsResult.status === 'fulfilled') {
+      setSkillMarketInstallRecords(recordsResult.value.records);
+    } else {
+      setSkillMarketInstallRecords(undefined);
+      refreshErrors.push('安装记录刷新失败');
+    }
+    setSkillMarketLoadError(refreshErrors.length > 0 ? refreshErrors.join('；') : undefined);
   }
 
   async function installMarketSkill(skillId: string) {
@@ -787,16 +801,20 @@ export function App(props: AppProps = {}) {
 
   async function useMarketSkill(skillId: string) {
     if (skillMarketUseInFlightRef.current) return;
+    setSkillMarketUseError(undefined);
 
     const activeThreadService = threadService;
     if (activeThreadService === null) {
-      setSkillMarketUseError('本地服务暂不可用，无法创建对话');
+      setSkillMarketUseError({
+        skillId,
+        error: '本地服务暂不可用，无法创建对话'
+      });
       return;
     }
 
     const entry = getSkillMarketEntry(skillId);
     if (entry === undefined) {
-      setSkillMarketUseError('未找到这个 Skill');
+      setSkillMarketUseError({ skillId, error: '未找到这个 Skill' });
       return;
     }
 
@@ -805,7 +823,6 @@ export function App(props: AppProps = {}) {
     const title = getSkillMarketDisplayTitle(entry);
     const generation = skillMarketRuntimeGenerationRef.current;
     skillMarketUseInFlightRef.current = true;
-    setSkillMarketUseError(undefined);
 
     try {
       const request = buildThreadRequest(title, project, config);
@@ -832,7 +849,10 @@ export function App(props: AppProps = {}) {
       });
     } catch (error) {
       if (isCurrentThreadRuntime(generation, activeThreadService)) {
-        setSkillMarketUseError(getRuntimeErrorMessage(error, '创建对话失败，请重试'));
+        setSkillMarketUseError({
+          skillId,
+          error: getRuntimeErrorMessage(error, '创建对话失败，请重试')
+        });
       }
     } finally {
       if (isCurrentThreadRuntime(generation, activeThreadService)) {

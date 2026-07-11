@@ -39,12 +39,17 @@ export function createSkillMarketRecordRepository(
     FROM codex_skill_market_installs
     ORDER BY updated_at DESC, skill_id ASC
   `);
-
-  return {
-    upsertRecord(input) {
+  const upsertAndMap = db.transaction(
+    (input: Parameters<SkillMarketRecordRepository['upsertRecord']>[0]) => {
       upsert.run(input);
       const row = get.get(input.skillId) as SkillMarketInstallRow;
       return mapRow(row);
+    }
+  );
+
+  return {
+    upsertRecord(input) {
+      return upsertAndMap(input);
     },
     getRecord(skillId) {
       const row = get.get(skillId) as SkillMarketInstallRow | undefined;

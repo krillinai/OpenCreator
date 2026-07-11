@@ -8,7 +8,11 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSkillManager, type SkillManager } from '../../src/codex/skills/manager.js';
+import {
+  createSkillManager,
+  type SkillManager,
+  type SkillWriteTransaction
+} from '../../src/codex/skills/manager.js';
 import { createSkillMarketManager } from '../../src/codex/skills/market-manager.js';
 import type { MarketArchiveDownloader } from '../../src/codex/skills/market-downloader.js';
 import type { SkillMarketRecordRepository } from '../../src/codex/skills/market-records.js';
@@ -182,6 +186,52 @@ describe('codex skill market manager', () => {
     );
   });
 
+  it('serializes a second market update until the first update finishes rollback', async () => {
+    const fixture = createConcurrentRealManagerFixture();
+    const first = join(tempDir, 'first-source');
+    writeSkill(first, 'frontend-slides', 'old');
+    await fixture.skillManager.installSkill({
+      id: 'frontend-slides',
+      sourcePath: first,
+      confirmWriteToCodexHome: true
+    });
+
+    const updateA = fixture.managerA.updateSkill('frontend-slides');
+    await fixture.cleanupStarted.promise;
+    const updateB = fixture.managerB.updateSkill('frontend-slides');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    fixture.cleanupRelease.resolve();
+
+    await expect(updateA).rejects.toThrow(/market record write failed/);
+    await expect(updateB).resolves.toMatchObject({
+      record: { skillId: 'frontend-slides' }
+    });
+    expect(
+      readFileSync(join(fixture.codexHome, 'skills', 'frontend-slides', 'SKILL.md'), 'utf8')
+    ).toContain('second-update');
+  });
+
+  it('serializes delete until a failed market update finishes rollback', async () => {
+    const fixture = createConcurrentRealManagerFixture();
+    const first = join(tempDir, 'first-source');
+    writeSkill(first, 'frontend-slides', 'old');
+    await fixture.skillManager.installSkill({
+      id: 'frontend-slides',
+      sourcePath: first,
+      confirmWriteToCodexHome: true
+    });
+
+    const update = fixture.managerA.updateSkill('frontend-slides');
+    await fixture.cleanupStarted.promise;
+    const deletion = fixture.skillManager.deleteSkill('frontend-slides', true);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    fixture.cleanupRelease.resolve();
+
+    await expect(update).rejects.toThrow(/market record write failed/);
+    await expect(deletion).resolves.toMatchObject({ deleted: true });
+    expect(existsSync(join(fixture.codexHome, 'skills', 'frontend-slides'))).toBe(false);
+  });
+
   it('preserves record write and rollback failure context when rollback fails', async () => {
     const { manager } = createManagerFixture({
       recordWriteError: new Error('market record write failed'),
@@ -285,6 +335,53 @@ function createRealManagerFixture(options: { failRecordWrite: boolean }) {
   return { manager, skillManager, codexHome };
 }
 
+function createConcurrentRealManagerFixture() {
+  tempDir ||= mkdtempSync(join(tmpdir(), 'clawee-skill-market-manager-'));
+  const dataDir = join(tempDir, 'data');
+  const codexHome = join(tempDir, 'codex-home');
+  mkdirSync(dataDir, { recursive: true });
+  const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+  dbs.push(db);
+  const skillManager = createSkillManager({
+    codexHome: { path: codexHome, mode: 'global', source: 'default', writable: false },
+    db
+  });
+  const cleanupStarted = createDeferred<void>();
+  const cleanupRelease = createDeferred<void>();
+  let cleanupCalls = 0;
+  const managerA = createSkillMarketManager({
+    dataDir,
+    skillManager,
+    records: makeFakeRecords({
+      recordWriteError: new Error('market record write failed')
+    }),
+    downloader: makeFakeDownloader('first-update-root', 'first-update'),
+    cleanupWorkDir(workDir) {
+      cleanupCalls += 1;
+      if (cleanupCalls === 1) {
+        cleanupStarted.resolve();
+        return cleanupRelease.promise;
+      }
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+  const managerB = createSkillMarketManager({
+    dataDir,
+    skillManager,
+    records: makeFakeRecords({}),
+    downloader: makeFakeDownloader('second-update-root', 'second-update')
+  });
+
+  return {
+    codexHome,
+    skillManager,
+    managerA,
+    managerB,
+    cleanupStarted,
+    cleanupRelease
+  };
+}
+
 function makeFakeSkillManager(options: {
   existingSkill?: CodexSkillResponse;
   installOperation?: CodexSkillOperationResponse;
@@ -292,6 +389,18 @@ function makeFakeSkillManager(options: {
 }): SkillManager {
   const skill = makeSkill('frontend-slides', 'new');
   const operation = options.installOperation ?? makeOperation('frontend-slides');
+  const getSkill = vi.fn((id) => (id === options.existingSkill?.id ? options.existingSkill : undefined));
+  const installSkill = vi.fn(async () => ({ skill, operation }));
+  const deleteSkill = vi.fn(async () => ({ deleted: true as const, backupPath: null, operation }));
+  const rollbackSkillInstall = vi.fn(async () => {
+    if (options.rollbackError) throw options.rollbackError;
+  });
+  const transaction: SkillWriteTransaction = {
+    getSkill,
+    installSkill,
+    deleteSkill,
+    rollbackSkillInstall
+  };
   return {
     listSkills: vi.fn(() => ({
       codexHome: '/codex-home',
@@ -302,12 +411,11 @@ function makeFakeSkillManager(options: {
       skills: options.existingSkill === undefined ? [] : [options.existingSkill],
       diagnostics: []
     })),
-    getSkill: vi.fn((id) => (id === options.existingSkill?.id ? options.existingSkill : undefined)),
-    installSkill: vi.fn(async () => ({ skill, operation })),
-    deleteSkill: vi.fn(async () => ({ deleted: true as const, backupPath: null, operation })),
-    rollbackSkillInstall: vi.fn(async () => {
-      if (options.rollbackError) throw options.rollbackError;
-    }),
+    getSkill,
+    withWriteTransaction: vi.fn(async (callback) => callback(transaction)),
+    installSkill,
+    deleteSkill,
+    rollbackSkillInstall,
     listOperations: vi.fn(() => [])
   };
 }
@@ -400,4 +508,14 @@ function makeRecord(
     updatedAt: '2026-07-11T00:00:00.000Z',
     ...overrides
   };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }

@@ -4,9 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "pnpm --filter @clawee/skill-market build",
     "dev": "vite --host 127.0.0.1",
+    "prebuild": "pnpm --filter @clawee/skill-market build",
     "build": "tsc -p tsconfig.json && vite build",
+    "pretypecheck": "pnpm --filter @clawee/skill-market build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "pnpm --filter @clawee/skill-market build",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

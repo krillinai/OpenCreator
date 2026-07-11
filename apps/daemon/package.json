@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "pnpm --filter @clawee/skill-market build",
     "dev": "tsx src/main.ts",
+    "prebuild": "pnpm --filter @clawee/skill-market build",
     "build": "tsc -p tsconfig.json",
+    "pretypecheck": "pnpm --filter @clawee/skill-market build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "pretest": "pnpm --filter @clawee/skill-market build",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

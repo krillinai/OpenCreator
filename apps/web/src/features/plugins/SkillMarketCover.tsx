@@ -31,7 +31,9 @@ export function SkillMarketCover({
       <img
         alt={approvedExample?.title ?? `${item.title} 封面`}
         className="skill-market-cover__image"
+        decoding="async"
         draggable={false}
+        loading={compact ? 'eager' : 'lazy'}
         onError={() => {
           setSourceIndex((current) =>
             current + 1 < sources.length ? current + 1 : -1
@@ -82,6 +84,8 @@ export function SkillAuthorAvatar({
     <img
       alt={name}
       className={`skill-market-avatar skill-market-avatar--${size}`}
+      decoding="async"
+      loading={size === 'large' ? 'eager' : 'lazy'}
       onError={() => setFailed(true)}
       src={safeSrc}
     />

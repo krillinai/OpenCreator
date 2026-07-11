@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getSkillMarketEntry,
   skillMarketCatalog,
+  skillMarketCategories,
   skillMarketSourceCommit,
 } from '../src/index.js';
 
@@ -86,5 +87,24 @@ describe('skill market catalog', () => {
       available: false,
       reason: 'unsafe_archive',
     });
+  });
+
+  it('deep-freezes catalog and category data without mutating the JSON-derived snapshot', () => {
+    const entry = skillMarketCatalog.find((candidate) => candidate.examples.length > 0);
+    expect(entry).toBeDefined();
+    expect(Object.isFrozen(skillMarketCatalog)).toBe(true);
+    expect(Object.isFrozen(entry)).toBe(true);
+    expect(Object.isFrozen(entry?.platforms)).toBe(true);
+    expect(Object.isFrozen(entry?.tasks)).toBe(true);
+    expect(Object.isFrozen(entry?.creator)).toBe(true);
+    expect(Object.isFrozen(entry?.examples)).toBe(true);
+    expect(Object.isFrozen(entry?.examples[0])).toBe(true);
+    expect(Object.isFrozen(entry?.inputs)).toBe(true);
+    expect(Object.isFrozen(entry?.outputs)).toBe(true);
+    expect(Object.isFrozen(entry?.risks)).toBe(true);
+    expect(Object.isFrozen(entry?.risks.notes)).toBe(true);
+    expect(Object.isFrozen(entry?.install)).toBe(true);
+    expect(Object.isFrozen(skillMarketCategories)).toBe(true);
+    expect(Object.isFrozen(skillMarketCategories[0])).toBe(true);
   });
 });

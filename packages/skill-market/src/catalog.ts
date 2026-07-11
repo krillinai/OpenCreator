@@ -30,7 +30,7 @@ function isVisibleSkill(
   return isVisibleListingStatus(skill.listingStatus);
 }
 
-export const skillMarketCatalog: readonly SkillMarketEntry[] = Object.freeze(
+export const skillMarketCatalog: readonly SkillMarketEntry[] = deepFreeze(
   [...customSkills, ...(sourceSkills as CreatorSkillSource[])]
     .filter(isVisibleSkill)
     .map(
@@ -69,10 +69,18 @@ export const skillMarketCatalog: readonly SkillMarketEntry[] = Object.freeze(
     )
 );
 
-export const skillMarketCategories = sourceCategories as readonly SkillMarketCategory[];
+export const skillMarketCategories: readonly SkillMarketCategory[] = deepFreeze(
+  structuredClone(sourceCategories) as SkillMarketCategory[]
+);
 
 export const skillMarketSourceCommit = sourceCommit;
 
 export function getSkillMarketEntry(id: string): SkillMarketEntry | undefined {
   return skillMarketCatalog.find((entry) => entry.id === id);
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return Object.freeze(value);
 }

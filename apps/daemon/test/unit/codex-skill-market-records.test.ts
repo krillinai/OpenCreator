@@ -146,4 +146,45 @@ describe('codex skill market records', () => {
       'Invalid SQLite UTC timestamp: not-a-sqlite-timestamp'
     );
   });
+
+  it('rolls back the upsert when mapping the updated row fails', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-market-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const records = createSkillMarketRecordRepository(db);
+
+    records.upsertRecord({
+      skillId: 'frontend-slides',
+      repository: 'owner/original',
+      skillPath: 'original-path',
+      commit: '1111111111111111111111111111111111111111',
+      marketRevision: 1
+    });
+    db.prepare(`
+      UPDATE codex_skill_market_installs
+      SET installed_at = ?
+      WHERE skill_id = ?
+    `).run('not-a-sqlite-timestamp', 'frontend-slides');
+
+    expect(() =>
+      records.upsertRecord({
+        skillId: 'frontend-slides',
+        repository: 'owner/updated',
+        skillPath: 'updated-path',
+        commit: '2222222222222222222222222222222222222222',
+        marketRevision: 2
+      })
+    ).toThrow('Invalid SQLite UTC timestamp: not-a-sqlite-timestamp');
+
+    const row = db.prepare(`
+      SELECT repository, skill_path, commit_sha, market_revision
+      FROM codex_skill_market_installs
+      WHERE skill_id = ?
+    `).get('frontend-slides');
+    expect(row).toEqual({
+      repository: 'owner/original',
+      skill_path: 'original-path',
+      commit_sha: '1111111111111111111111111111111111111111',
+      market_revision: 1
+    });
+  });
 });

@@ -5,7 +5,7 @@ import type {
 import { getSkillMarketEntry } from '@clawee/skill-market';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { SkillManager } from './manager.js';
+import type { SkillManager, SkillWriteTransaction } from './manager.js';
 import { type MarketArchiveDownloader, resolveMarketSkillSource } from './market-downloader.js';
 import type { SkillMarketRecordRepository } from './market-records.js';
 
@@ -20,7 +20,7 @@ export function createSkillMarketManager(input: {
   skillManager: SkillManager;
   records: SkillMarketRecordRepository;
   downloader: MarketArchiveDownloader;
-  cleanupWorkDir?: (workDir: string) => void;
+  cleanupWorkDir?: (workDir: string) => void | Promise<void>;
 }): SkillMarketManager {
   return {
     listInstallRecords() {
@@ -41,7 +41,7 @@ async function mutateSkill(
     skillManager: SkillManager;
     records: SkillMarketRecordRepository;
     downloader: MarketArchiveDownloader;
-    cleanupWorkDir?: (workDir: string) => void;
+    cleanupWorkDir?: (workDir: string) => void | Promise<void>;
   },
   id: string,
   overwrite: boolean
@@ -53,6 +53,7 @@ async function mutateSkill(
   if (!entry.install.available) {
     throw new Error(`CODEX_SKILL_MARKET_NOT_INSTALLABLE: ${id}`);
   }
+  const installSource = entry.install;
   if (overwrite && input.skillManager.getSkill(id) === undefined) {
     throw new Error(`CODEX_SKILL_NOT_FOUND: ${id}`);
   }
@@ -64,63 +65,69 @@ async function mutateSkill(
 
   try {
     const archiveRoot = await input.downloader.download({
-      repository: entry.install.repository,
-      commit: entry.install.commit,
+      repository: installSource.repository,
+      commit: installSource.commit,
       workDir
     });
-    const sourcePath = resolveMarketSkillSource(archiveRoot, entry.install.skillPath);
-    const result = await input.skillManager.installSkill({
-      id,
-      sourcePath,
-      ...(overwrite ? { overwrite: true } : {}),
-      confirmWriteToCodexHome: true
-    });
+    const sourcePath = resolveMarketSkillSource(archiveRoot, installSource.skillPath);
+    return await input.skillManager.withWriteTransaction(async (transaction) => {
+      if (overwrite && transaction.getSkill(id) === undefined) {
+        throw new Error(`CODEX_SKILL_NOT_FOUND: ${id}`);
+      }
 
-    if (overwrite && result.operation.operation !== 'overwrite') {
-      throw await rollbackAndCreateError(
-        input.skillManager,
+      const result = await transaction.installSkill({
         id,
-        result.operation.backupPath ?? null,
-        new Error(`CODEX_SKILL_NOT_FOUND: ${id}`)
-      );
-    }
-
-    try {
-      cleanupWorkDir(input, workDir);
-      workDirCleaned = true;
-    } catch (cleanupError) {
-      throw await rollbackAndCreateError(
-        input.skillManager,
-        id,
-        result.operation.backupPath ?? null,
-        wrapSkillWriteFailed(
-          cleanupError,
-          `market download workDir cleanup failed after install: ${workDir}; ${getErrorMessage(cleanupError)}`
-        )
-      );
-    }
-
-    try {
-      const record = input.records.upsertRecord({
-        skillId: id,
-        repository: entry.install.repository,
-        skillPath: entry.install.skillPath,
-        commit: entry.install.commit,
-        marketRevision: entry.install.marketRevision
+        sourcePath,
+        ...(overwrite ? { overwrite: true } : {}),
+        confirmWriteToCodexHome: true
       });
-      return { ...result, record };
-    } catch (recordError) {
-      throw await rollbackAndCreateError(
-        input.skillManager,
-        id,
-        result.operation.backupPath ?? null,
-        recordError
-      );
-    }
+
+      if (overwrite && result.operation.operation !== 'overwrite') {
+        throw await rollbackAndCreateError(
+          transaction,
+          id,
+          result.operation.backupPath ?? null,
+          new Error(`CODEX_SKILL_NOT_FOUND: ${id}`)
+        );
+      }
+
+      try {
+        await cleanupWorkDir(input, workDir);
+        workDirCleaned = true;
+      } catch (cleanupError) {
+        throw await rollbackAndCreateError(
+          transaction,
+          id,
+          result.operation.backupPath ?? null,
+          wrapSkillWriteFailed(
+            cleanupError,
+            `market download workDir cleanup failed after install: ${workDir}; ${getErrorMessage(cleanupError)}`
+          )
+        );
+      }
+
+      try {
+        const record = input.records.upsertRecord({
+          skillId: id,
+          repository: installSource.repository,
+          skillPath: installSource.skillPath,
+          commit: installSource.commit,
+          marketRevision: installSource.marketRevision
+        });
+        return { ...result, record };
+      } catch (recordError) {
+        throw await rollbackAndCreateError(
+          transaction,
+          id,
+          result.operation.backupPath ?? null,
+          recordError
+        );
+      }
+    });
   } finally {
     if (!workDirCleaned) {
       try {
-        cleanupWorkDir(input, workDir);
+        await cleanupWorkDir(input, workDir);
       } catch {
         // Preserve the primary error. Post-install cleanup is handled explicitly above.
       }
@@ -129,13 +136,13 @@ async function mutateSkill(
 }
 
 async function rollbackAndCreateError(
-  skillManager: SkillManager,
+  transaction: SkillWriteTransaction,
   id: string,
   backupPath: string | null,
   error: unknown
 ): Promise<unknown> {
   try {
-    await skillManager.rollbackSkillInstall(id, backupPath);
+    await transaction.rollbackSkillInstall(id, backupPath);
     return error;
   } catch (rollbackError) {
     return new AggregateError(
@@ -146,12 +153,11 @@ async function rollbackAndCreateError(
 }
 
 function cleanupWorkDir(
-  input: { cleanupWorkDir?: (workDir: string) => void },
+  input: { cleanupWorkDir?: (workDir: string) => void | Promise<void> },
   workDir: string
-): void {
+): void | Promise<void> {
   if (input.cleanupWorkDir) {
-    input.cleanupWorkDir(workDir);
-    return;
+    return input.cleanupWorkDir(workDir);
   }
   rmSync(workDir, { recursive: true, force: true });
 }

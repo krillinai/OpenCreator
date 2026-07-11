@@ -252,6 +252,112 @@ describe('App', () => {
     expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
   });
 
+  it('keeps the full catalog and MCP capabilities when initial install records fail', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/skills')) {
+        return jsonResponse(createSkillListResponse([
+          createSkillResponse({ id: 'frontend-slides', name: 'frontend-slides' })
+        ]));
+      }
+      if (url.endsWith('/codex/mcp')) {
+        return jsonResponse({
+          codexHome: '/Users/test/.codex',
+          codexHomeMode: 'global',
+          requiresWriteConfirmation: true,
+          diagnostics: [],
+          servers: [
+            {
+              name: 'github',
+              transport: 'stdio',
+              status: 'configured',
+              command: 'node',
+              args: ['server.js'],
+              envKeys: [],
+              hasSecrets: false,
+              codexHome: '/Users/test/.codex',
+              codexHomeMode: 'global',
+              diagnostics: []
+            }
+          ]
+        });
+      }
+      if (url.endsWith('/codex/skill-market/install-records')) {
+        return jsonResponse({ error: { code: 'LOAD_FAILED', message: 'records failed' } }, { status: 500 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '/');
+    expect(await screen.findByRole('option', { name: /github/ })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: '插件' }));
+    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55));
+    expect(screen.getByRole('alert')).toHaveTextContent('安装记录加载失败');
+    const card = getSkillMarketCard('frontend-slides');
+    expect(within(card).getByText('版本未知')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: '使用' })).toBeEnabled();
+    expect(within(card).queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the full catalog but disables actions when initial skills scan fails', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/skills')) {
+        return jsonResponse({ error: { code: 'LOAD_FAILED', message: 'skills failed' } }, { status: 500 });
+      }
+      if (url.endsWith('/codex/mcp')) return jsonResponse(createMcpListResponse());
+      if (url.endsWith('/codex/skill-market/install-records')) {
+        return jsonResponse({
+          records: [createSkillMarketInstallRecord({ skillId: 'frontend-slides', marketRevision: 0 })]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '插件' }));
+    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55));
+    expect(screen.getByRole('alert')).toHaveTextContent('Skill 状态加载失败');
+    const action = within(getSkillMarketCard('frontend-slides')).getByRole('button', {
+      name: '状态未知'
+    });
+    expect(action).toBeDisabled();
+    expect(action).toHaveAccessibleDescription('Skill 安装状态未知');
+  });
+
   it('keeps the plugin market open and shows an error when using a skill cannot create a thread', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
@@ -292,11 +398,22 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '插件' }));
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
 
-    await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
+    await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', {
+      name: /打开 .*详情/
+    }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: '使用' }));
 
-    expect(await screen.findByText('使用失败：创建对话失败')).toBeInTheDocument();
+    expect(await screen.findAllByText('使用失败：创建对话失败')).toHaveLength(2);
+    expect(within(dialog).getByText('使用失败：创建对话失败')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: '使用' }));
+    await waitFor(() => {
+      expect(
+        fetchCalls.filter(call => call.url.endsWith('/threads') && call.init?.method === 'POST')
+      ).toHaveLength(2);
+    });
     expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '网页演示稿生成' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
     expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
   });
 
@@ -526,6 +643,121 @@ describe('App', () => {
     await waitFor(() => expect(skillRequests).toBe(2));
     await waitFor(() => expect(recordRequests).toBe(2));
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
+  });
+
+  it('applies refreshed skills and shows a warning when install record refresh fails', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    let installed = false;
+    let recordRequests = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/skills')) {
+        return jsonResponse(createSkillListResponse(installed
+          ? [createSkillResponse({ id: 'frontend-slides', name: 'frontend-slides' })]
+          : []));
+      }
+      if (url.endsWith('/codex/mcp')) return jsonResponse(createMcpListResponse());
+      if (url.endsWith('/codex/skill-market/install-records')) {
+        recordRequests += 1;
+        if (recordRequests === 1) return jsonResponse({ records: [] });
+        return jsonResponse({ error: { code: 'LOAD_FAILED', message: 'records failed' } }, { status: 500 });
+      }
+      if (url.endsWith('/codex/skill-market/frontend-slides/install') && init?.method === 'POST') {
+        installed = true;
+        return jsonResponse({
+          skill: createSkillResponse({ id: 'frontend-slides', name: 'frontend-slides' }),
+          operation: {},
+          record: createSkillMarketInstallRecord({ skillId: 'frontend-slides' })
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '插件' }));
+    await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '安装' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('安装记录刷新失败');
+    expect(within(getSkillMarketCard('frontend-slides')).getByText('版本未知')).toBeInTheDocument();
+    expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled();
+    expect(screen.queryByText('安装失败，请重试')).not.toBeInTheDocument();
+  });
+
+  it('applies refreshed records and disables actions when update skills refresh fails', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    let updated = false;
+    let skillRequests = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/skills')) {
+        skillRequests += 1;
+        if (skillRequests === 1) {
+          return jsonResponse(createSkillListResponse([
+            createSkillResponse({ id: 'frontend-slides', name: 'frontend-slides' })
+          ]));
+        }
+        return jsonResponse({ error: { code: 'LOAD_FAILED', message: 'skills failed' } }, { status: 500 });
+      }
+      if (url.endsWith('/codex/mcp')) return jsonResponse(createMcpListResponse());
+      if (url.endsWith('/codex/skill-market/install-records')) {
+        return jsonResponse({
+          records: [
+            createSkillMarketInstallRecord({
+              skillId: 'frontend-slides',
+              marketRevision: updated ? 1 : 0
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/codex/skill-market/frontend-slides/update') && init?.method === 'POST') {
+        updated = true;
+        return jsonResponse({
+          skill: createSkillResponse({ id: 'frontend-slides', name: 'frontend-slides' }),
+          operation: {},
+          record: createSkillMarketInstallRecord({ skillId: 'frontend-slides' })
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '插件' }));
+    await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '更新' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Skill 状态刷新失败');
+    const action = within(getSkillMarketCard('frontend-slides')).getByRole('button', {
+      name: '状态未知'
+    });
+    expect(action).toBeDisabled();
+    expect(screen.queryByText('更新失败，请重试')).not.toBeInTheDocument();
   });
 
   it('starts a real runtime run, records SSE events, opens run detail, and shows Codex info in settings', async () => {

@@ -22,7 +22,9 @@ export function SkillDetailModal({
   item,
   connected,
   mutationLocked,
+  skillsKnown,
   saved,
+  useError,
   onClose,
   onToggleSaved,
   onInstall,
@@ -32,7 +34,9 @@ export function SkillDetailModal({
   item: SkillMarketViewEntry;
   connected: boolean;
   mutationLocked?: boolean;
+  skillsKnown: boolean;
   saved: boolean;
+  useError?: string;
   onClose(): void;
   onToggleSaved(skillId: string): void;
   onInstall(skillId: string): void;
@@ -41,9 +45,17 @@ export function SkillDetailModal({
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const action = getSkillMarketAction(item.status, connected, { mutationLocked });
+  const onCloseRef = useRef(onClose);
+  const action = getSkillMarketAction(item.status, connected, {
+    mutationLocked,
+    skillsKnown,
+  });
   const actionReasonId = action.reason ? `skill-market-modal-action-reason-${sanitizeId(item.id)}` : undefined;
   const riskNotes = getRiskNotes(item);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     lockBodyScroll();
@@ -52,7 +64,7 @@ export function SkillDetailModal({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -76,7 +88,7 @@ export function SkillDetailModal({
       document.removeEventListener('keydown', handleKeyDown);
       unlockBodyScroll();
     };
-  }, [onClose]);
+  }, [item.id]);
 
   return (
     <div
@@ -172,6 +184,11 @@ export function SkillDetailModal({
           {item.operationError ? (
             <p className="skill-market-inline-error" role="alert">
               {item.operationError}
+            </p>
+          ) : null}
+          {useError ? (
+            <p className="skill-market-inline-error" role="alert">
+              使用失败：{useError}
             </p>
           ) : null}
         </div>

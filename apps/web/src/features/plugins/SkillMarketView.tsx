@@ -27,14 +27,19 @@ export type SkillMarketOperation =
   | { skillId: string; kind: 'install' | 'update'; error?: string }
   | undefined;
 
+export type SkillMarketUseError = {
+  skillId: string;
+  error: string;
+};
+
 export type SkillMarketViewProps = {
   connected: boolean;
   skills?: CodexSkillListResponse;
-  installRecords: CodexSkillMarketInstallRecordResponse[];
+  installRecords?: CodexSkillMarketInstallRecordResponse[];
   loading: boolean;
   loadError?: string;
   operation?: SkillMarketOperation;
-  useError?: string;
+  useError?: SkillMarketUseError;
   onInstall(skillId: string): void;
   onUpdate(skillId: string): void;
   onUse(skillId: string): void;
@@ -119,6 +124,7 @@ export function SkillMarketView({
   const installedCount = baseResult.entries.filter((entry) => entry.installed).length;
   const currentSubcategories = filteredResult.subcategories;
   const mutationLocked = operation !== undefined && operation.error === undefined;
+  const skillsKnown = skills !== undefined;
 
   function toggleSaved(skillId: string) {
     const next = savedIds.includes(skillId)
@@ -203,9 +209,21 @@ export function SkillMarketView({
           Runtime 未连接，目录可浏览，安装、更新和使用需连接后操作。
         </p>
       ) : null}
+      {loading ? (
+        <p className="skill-market-banner" role="status">
+          <Loader2 size={18} aria-hidden="true" />
+          正在加载 Skills 目录
+        </p>
+      ) : null}
+      {loadError ? (
+        <p className="skill-market-inline-error skill-market-page-error" role="alert">
+          <AlertCircle size={18} aria-hidden="true" />
+          {loadError}
+        </p>
+      ) : null}
       {useError ? (
         <p className="skill-market-inline-error skill-market-page-error" role="status">
-          使用失败：{useError}
+          使用失败：{useError.error}
         </p>
       ) : null}
       {savedWriteError ? (
@@ -278,11 +296,7 @@ export function SkillMarketView({
         </span>
       </div>
 
-      {loading ? (
-        <StateMessage icon={<Loader2 size={18} />} text="正在加载 Skills 目录" />
-      ) : loadError ? (
-        <StateMessage alert icon={<AlertCircle size={18} />} text={loadError} />
-      ) : catalog.length === 0 ? (
+      {catalog.length === 0 ? (
         <StateMessage text="目录暂时为空" />
       ) : filteredResult.entries.length === 0 ? (
         <StateMessage text={query.trim().length > 0 ? '没有找到匹配的 Skill' : '当前筛选没有可显示的 Skill'} />
@@ -290,7 +304,10 @@ export function SkillMarketView({
         <div className="skill-market-grid">
           {filteredResult.entries.map((item) => (
             <SkillMarketCard
-              action={getSkillMarketAction(item.status, connected, { mutationLocked })}
+              action={getSkillMarketAction(item.status, connected, {
+                mutationLocked,
+                skillsKnown,
+              })}
               item={item}
               key={item.id}
               onInstall={onInstall}
@@ -314,24 +331,19 @@ export function SkillMarketView({
           onUpdate={onUpdate}
           onUse={onUse}
           saved={activeSyncedEntry.saved}
+          skillsKnown={skillsKnown}
+          useError={
+            useError?.skillId === activeSyncedEntry.id ? useError.error : undefined
+          }
         />
       ) : null}
     </section>
   );
 }
 
-function StateMessage({
-  text,
-  icon,
-  alert = false,
-}: {
-  text: string;
-  icon?: React.ReactNode;
-  alert?: boolean;
-}) {
+function StateMessage({ text }: { text: string }) {
   return (
-    <div className="skill-market-state" role={alert ? 'alert' : 'status'}>
-      {icon}
+    <div className="skill-market-state" role="status">
       <span>{text}</span>
     </div>
   );
