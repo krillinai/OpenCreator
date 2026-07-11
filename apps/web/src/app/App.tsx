@@ -1,6 +1,7 @@
 import type {
   CodexMcpListResponse,
   CodexSkillListResponse,
+  CodexSkillMarketInstallRecordResponse,
   CreateThreadRequest,
   RunDiagnosticsResponse,
   RunResponse,
@@ -8,6 +9,7 @@ import type {
   ThreadHistoryItem,
   ThreadResponse
 } from '@clawee/protocol';
+import { skillMarketCatalog } from '@clawee/skill-market';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
@@ -20,8 +22,10 @@ import { ConversationEmptyState } from '../features/conversation/ConversationEmp
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
 import { DetailPanel } from '../features/details/DetailPanel.js';
 import { FileWorkspaceView } from '../features/files/FileWorkspaceView.js';
+import { getSkillMarketDisplayTitle } from '../features/plugins/skill-market-model.js';
+import { SkillMarketView, type SkillMarketOperation } from '../features/plugins/SkillMarketView.js';
 import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
-import { Composer, type ComposerRunConfig, type ComposerSlashCommand } from '../features/runs/Composer.js';
+import { Composer, type ComposerDraftRequest, type ComposerRunConfig, type ComposerSlashCommand } from '../features/runs/Composer.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
@@ -36,6 +40,7 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createMockProjectService } from '../services/project-service.js';
 import { createRunService } from '../services/run-service.js';
+import { createSkillMarketService } from '../services/skill-market-service.js';
 import { createThreadService } from '../services/thread-service.js';
 import { createWorkspaceFileService } from '../services/workspace-file-service.js';
 import { initialAppState, reduceAppState } from './app-state.js';
@@ -85,6 +90,14 @@ export function App(props: AppProps = {}) {
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
+  const [skillMarketInstallRecords, setSkillMarketInstallRecords] = useState<CodexSkillMarketInstallRecordResponse[]>([]);
+  const [skillMarketLoading, setSkillMarketLoading] = useState(false);
+  const [skillMarketLoadError, setSkillMarketLoadError] = useState<string>();
+  const [skillMarketOperation, setSkillMarketOperation] = useState<SkillMarketOperation>();
+  const [skillMarketUseError, setSkillMarketUseError] = useState<string>();
+  const [pendingComposerDraft, setPendingComposerDraft] = useState<
+    { threadId: string; request: ComposerDraftRequest } | undefined
+  >();
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [runtimeBusy, setRuntimeBusy] = useState(false);
@@ -114,6 +127,8 @@ export function App(props: AppProps = {}) {
   const conversationFileLayoutRef = useRef<HTMLElement | null>(null);
   const allowInitialRuntimeProjectFocusRef = useRef(true);
   const skipNextHistoryLoadForThreadRef = useRef<string>();
+  const skillMarketMutationInFlightRef = useRef(false);
+  const nextComposerDraftIdRef = useRef(0);
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -134,6 +149,10 @@ export function App(props: AppProps = {}) {
   );
   const capabilityService = useMemo(
     () => runtimeClient === null ? null : createCapabilityService(runtimeClient),
+    [runtimeClient]
+  );
+  const skillMarketService = useMemo(
+    () => runtimeClient === null ? null : createSkillMarketService(runtimeClient),
     [runtimeClient]
   );
   const workspaceFileService = useMemo(
@@ -260,40 +279,61 @@ export function App(props: AppProps = {}) {
   useEffect(() => {
     let canceled = false;
 
-    if (connectionState.status !== 'connected' || capabilityService === null) {
+    if (connectionState.status !== 'connected' || capabilityService === null || skillMarketService === null) {
       setCodexSkills(undefined);
       setCodexMcp(undefined);
+      setSkillMarketInstallRecords([]);
       setCapabilitiesLoading(false);
+      setSkillMarketLoading(false);
       setCapabilitiesLoadError(undefined);
+      setSkillMarketLoadError(undefined);
+      setSkillMarketOperation(undefined);
+      setSkillMarketUseError(undefined);
       return () => {
         canceled = true;
       };
     }
 
     setCapabilitiesLoading(true);
+    setSkillMarketLoading(true);
     setCapabilitiesLoadError(undefined);
+    setSkillMarketLoadError(undefined);
 
-    Promise.allSettled([capabilityService.listSkills(), capabilityService.listMcp()])
+    Promise.allSettled([
+      capabilityService.listSkills(),
+      capabilityService.listMcp(),
+      skillMarketService.listInstallRecords()
+    ])
       .then(results => {
         if (canceled) return;
-        const [skillsResult, mcpResult] = results;
+        const [skillsResult, mcpResult, recordsResult] = results;
         if (skillsResult?.status === 'fulfilled') setCodexSkills(skillsResult.value);
         if (mcpResult?.status === 'fulfilled') setCodexMcp(mcpResult.value);
+        if (recordsResult?.status === 'fulfilled') setSkillMarketInstallRecords(recordsResult.value.records);
         if (skillsResult?.status === 'rejected' || mcpResult?.status === 'rejected') {
           setCapabilitiesLoadError('本机能力检测失败');
         }
+        if (recordsResult?.status === 'rejected') {
+          setSkillMarketLoadError('安装状态加载失败');
+        }
       })
       .catch(() => {
-        if (!canceled) setCapabilitiesLoadError('本机能力检测失败');
+        if (!canceled) {
+          setCapabilitiesLoadError('本机能力检测失败');
+          setSkillMarketLoadError('安装状态加载失败');
+        }
       })
       .finally(() => {
-        if (!canceled) setCapabilitiesLoading(false);
+        if (!canceled) {
+          setCapabilitiesLoading(false);
+          setSkillMarketLoading(false);
+        }
       });
 
     return () => {
       canceled = true;
     };
-  }, [capabilityService, connectionState.status]);
+  }, [capabilityService, connectionState.status, skillMarketService]);
 
   useEffect(() => {
     if (!allowInitialRuntimeProjectFocusRef.current) return;
@@ -625,6 +665,110 @@ export function App(props: AppProps = {}) {
     }
   }
 
+  async function refreshSkillMarketState() {
+    if (capabilityService === null || skillMarketService === null) return;
+
+    const [skillsResponse, recordsResponse] = await Promise.all([
+      capabilityService.listSkills(),
+      skillMarketService.listInstallRecords()
+    ]);
+    if (!mountedRef.current) return;
+    setCodexSkills(skillsResponse);
+    setSkillMarketInstallRecords(recordsResponse.records);
+    setSkillMarketLoadError(undefined);
+  }
+
+  async function installMarketSkill(skillId: string) {
+    if (skillMarketService === null || skillMarketMutationInFlightRef.current) return;
+
+    skillMarketMutationInFlightRef.current = true;
+    setSkillMarketOperation({ skillId, kind: 'install' });
+    try {
+      await skillMarketService.installSkill(skillId);
+      await refreshSkillMarketState();
+      if (mountedRef.current) setSkillMarketOperation(undefined);
+    } catch (error) {
+      if (mountedRef.current) {
+        setSkillMarketOperation({
+          skillId,
+          kind: 'install',
+          error: getRuntimeErrorMessage(error, '安装失败，请重试')
+        });
+      }
+    } finally {
+      skillMarketMutationInFlightRef.current = false;
+    }
+  }
+
+  async function updateMarketSkill(skillId: string) {
+    if (skillMarketService === null || skillMarketMutationInFlightRef.current) return;
+
+    skillMarketMutationInFlightRef.current = true;
+    setSkillMarketOperation({ skillId, kind: 'update' });
+    try {
+      await skillMarketService.updateSkill(skillId);
+      await refreshSkillMarketState();
+      if (mountedRef.current) setSkillMarketOperation(undefined);
+    } catch (error) {
+      if (mountedRef.current) {
+        setSkillMarketOperation({
+          skillId,
+          kind: 'update',
+          error: getRuntimeErrorMessage(error, '更新失败，请重试')
+        });
+      }
+    } finally {
+      skillMarketMutationInFlightRef.current = false;
+    }
+  }
+
+  async function useMarketSkill(skillId: string) {
+    if (threadService === null) {
+      setSkillMarketUseError('本地服务暂不可用，无法创建对话');
+      return;
+    }
+
+    const entry = getSkillMarketEntry(skillId);
+    if (entry === undefined) {
+      setSkillMarketUseError('未找到这个 Skill');
+      return;
+    }
+
+    const project = currentProject;
+    const config = effectiveComposerConfig;
+    const title = getSkillMarketDisplayTitle(entry);
+    setSkillMarketUseError(undefined);
+
+    try {
+      const request = buildThreadRequest(title, project, config);
+      const created = await threadService.createThread(request);
+      if (!mountedRef.current) return;
+
+      sseAbortControllerRef.current?.abort();
+      setRuntimeThreads(previous => upsertThread(previous, created.thread));
+      setTimelineItems([]);
+      setThreadHistoryLoadError(undefined);
+      setHistoryLoadingThreadId(undefined);
+      setRuntimeBusy(false);
+      setThreadConfigUpdateError(undefined);
+      skipNextHistoryLoadForThreadRef.current = created.thread.id;
+      allowInitialRuntimeProjectFocusRef.current = false;
+      dispatch({ type: 'select_thread', threadId: created.thread.id });
+      nextComposerDraftIdRef.current += 1;
+      setPendingComposerDraft({
+        threadId: created.thread.id,
+        request: {
+          id: nextComposerDraftIdRef.current,
+          text: `$${skillId} `
+        }
+      });
+    } catch (error) {
+      if (mountedRef.current) {
+        setSkillMarketUseError(getRuntimeErrorMessage(error, '创建对话失败，请重试'));
+      }
+    }
+  }
+
   async function submitRuntimePrompt(prompt: string, config?: ComposerRunConfig) {
     if (runService === null || threadService === null || connectionConfigRef.current === null) return;
     if (runtimeBusy) return;
@@ -945,7 +1089,21 @@ export function App(props: AppProps = {}) {
           slashCommands={slashCommands}
           slashCommandsLoading={capabilitiesLoading}
           slashCommandsError={capabilitiesLoadError}
+          draftRequest={
+            pendingComposerDraft !== undefined && pendingComposerDraft.threadId === state.selectedThreadId
+              ? pendingComposerDraft.request
+              : undefined
+          }
           onPermissionChange={(permission) => void handleComposerPermissionChange(permission)}
+          onDraftApplied={(draftId) => {
+            setPendingComposerDraft(currentDraft =>
+              currentDraft !== undefined
+                && currentDraft.threadId === state.selectedThreadId
+                && currentDraft.request.id === draftId
+                ? undefined
+                : currentDraft
+            );
+          }}
           onSubmit={submitPrompt}
         />
       </div>
@@ -986,6 +1144,19 @@ export function App(props: AppProps = {}) {
       dynamicBackgroundEnabled={dynamicBackgroundEnabled}
       onDynamicBackgroundChange={handleDynamicBackgroundChange}
       onBack={() => dispatch({ type: 'back_to_app' })}
+    />
+  ) : state.activeView === 'plugins' ? (
+    <SkillMarketView
+      connected={connectionState.status === 'connected'}
+      skills={codexSkills}
+      installRecords={skillMarketInstallRecords}
+      loading={skillMarketLoading}
+      loadError={skillMarketLoadError}
+      operation={skillMarketOperation}
+      useError={skillMarketUseError}
+      onInstall={skillId => void installMarketSkill(skillId)}
+      onUpdate={skillId => void updateMarketSkill(skillId)}
+      onUse={skillId => void useMarketSkill(skillId)}
     />
   ) : state.activeView === 'conversation' ? (
     conversationWorkspace
@@ -1107,6 +1278,10 @@ function getPlaceholderLabel(activeView: 'search' | 'schedules' | 'plugins' | 'f
   }
 }
 
+function getSkillMarketEntry(skillId: string): (typeof skillMarketCatalog)[number] | undefined {
+  return skillMarketCatalog.find(entry => entry.id === skillId);
+}
+
 function createProjectsForThreads(baseProjects: ClaweeProject[], threads: ThreadResponse[]): ClaweeProject[] {
   const projectById = new Map(baseProjects.map(project => [project.id, project]));
 
@@ -1220,6 +1395,11 @@ function formatRelativeTime(iso: string): string {
   if (diffMs < day) return `${Math.floor(diffMs / hour)}小时`;
   if (diffMs < 7 * day) return `${Math.floor(diffMs / day)}天`;
   return `${Math.floor(diffMs / (7 * day))}周`;
+}
+
+function getRuntimeErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) return error.message;
+  return fallback;
 }
 
 function buildThreadRequest(prompt: string, project: ClaweeProject | undefined, config: ComposerRunConfig): CreateThreadRequest {

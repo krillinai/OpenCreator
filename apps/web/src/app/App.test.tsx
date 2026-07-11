@@ -1,10 +1,14 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   AgentEventEnvelope,
   AgentEventPayload,
+  CodexMcpListResponse,
+  CodexSkillListResponse,
+  CodexSkillMarketInstallRecordResponse,
+  CodexSkillResponse,
   CodexStatusResponse,
   RunDiagnosticsResponse,
   ThreadResponse
@@ -131,6 +135,168 @@ describe('App', () => {
     expect(screen.getByRole('option', { name: /brainstorming/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /github/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /设置 Goal/ })).toBeInTheDocument();
+  });
+
+  it('connects the plugin market to real install state and creates draft conversations', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    let installed = false;
+    let skillRequests = 0;
+    let recordRequests = 0;
+    let createdThreadCount = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/skills')) {
+        skillRequests += 1;
+        return jsonResponse(createSkillListResponse(installed ? [createSkillResponse({ id: 'frontend-slides', name: 'frontend-slides' })] : []));
+      }
+      if (url.endsWith('/codex/mcp')) return jsonResponse(createMcpListResponse());
+      if (url.endsWith('/codex/skill-market/install-records')) {
+        recordRequests += 1;
+        return jsonResponse({ records: installed ? [createSkillMarketInstallRecord({ skillId: 'frontend-slides' })] : [] });
+      }
+      if (url.endsWith('/codex/skill-market/frontend-slides/install') && init?.method === 'POST') {
+        installed = true;
+        return jsonResponse({
+          skill: createSkillResponse({ id: 'frontend-slides', name: 'frontend-slides' }),
+          operation: {},
+          record: createSkillMarketInstallRecord({ skillId: 'frontend-slides' })
+        });
+      }
+      if (url.endsWith('/threads') && init?.method === 'POST') {
+        createdThreadCount += 1;
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return jsonResponse(
+          {
+            thread: createThreadResponse({
+              id: `thread_skill_${createdThreadCount}`,
+              title: String(body.title),
+              cwd: String(body.cwd),
+              canonicalCwd: String(body.cwd),
+              workspaceMode: body.workspaceMode === 'external' ? 'external' : 'managed',
+              profile: String(body.profile),
+              sandbox: body.sandbox === 'danger-full-access' ? 'danger-full-access' : 'read-only'
+            })
+          },
+          { status: 201 }
+        );
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const threadCreateCalls = () =>
+      fetchCalls.filter(call => call.url.endsWith('/threads') && call.init?.method === 'POST');
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await waitFor(() => expect(skillRequests).toBe(1));
+    await waitFor(() => expect(recordRequests).toBe(1));
+
+    await user.click(screen.getByRole('button', { name: '插件' }));
+    expect(screen.queryByRole('heading', { name: 'Clawee：插件' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55));
+
+    const frontendCard = getSkillMarketCard('frontend-slides');
+    expect(within(frontendCard).getByText('网页演示稿生成')).toBeInTheDocument();
+    await user.click(within(frontendCard).getByRole('button', { name: '安装' }));
+
+    await waitFor(() => expect(skillRequests).toBe(2));
+    await waitFor(() => expect(recordRequests).toBe(2));
+    expect(findPostCall(fetchCalls, '/codex/skill-market/frontend-slides/install')).toBeDefined();
+    await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
+
+    await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
+
+    await waitFor(() => expect(threadCreateCalls()).toHaveLength(1));
+    const createThreadBody = JSON.parse(String(threadCreateCalls()[0]?.init?.body)) as Record<string, unknown>;
+    expect(createThreadBody).toMatchObject({
+      title: '网页演示稿生成',
+      cwd: '~/develop/content-design',
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'danger-full-access'
+    });
+    expect(createThreadBody).not.toHaveProperty('model');
+    expect(createThreadBody).not.toHaveProperty('reasoning');
+    expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
+    expect(await screen.findByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await waitFor(() => {
+      expect(textbox).toHaveValue('$frontend-slides ');
+      expect(textbox).toHaveFocus();
+    });
+
+    await user.click(screen.getByRole('button', { name: '插件' }));
+    await waitFor(() => expect(getSkillMarketCard('frontend-slides')).toBeInTheDocument());
+    await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
+
+    await waitFor(() => expect(threadCreateCalls()).toHaveLength(2));
+    expect(JSON.parse(String(threadCreateCalls()[1]?.init?.body))).toMatchObject({
+      title: '网页演示稿生成'
+    });
+    expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
+  });
+
+  it('keeps the plugin market open and shows an error when using a skill cannot create a thread', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/skills')) {
+        return jsonResponse(createSkillListResponse([createSkillResponse({ id: 'frontend-slides', name: 'frontend-slides' })]));
+      }
+      if (url.endsWith('/codex/mcp')) return jsonResponse(createMcpListResponse());
+      if (url.endsWith('/codex/skill-market/install-records')) {
+        return jsonResponse({ records: [createSkillMarketInstallRecord({ skillId: 'frontend-slides' })] });
+      }
+      if (url.endsWith('/threads') && init?.method === 'POST') {
+        return jsonResponse(
+          { error: { code: 'THREAD_CREATE_FAILED', message: '创建对话失败' } },
+          { status: 500 }
+        );
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '插件' }));
+    await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
+
+    await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
+
+    expect(await screen.findByText('使用失败：创建对话失败')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '网页演示稿生成' })).not.toBeInTheDocument();
+    expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
   });
 
   it('starts a real runtime run, records SSE events, opens run detail, and shows Codex info in settings', async () => {
@@ -1967,6 +2133,66 @@ function jsonResponse(value: unknown, init: ResponseInit = {}): Response {
     status: init.status ?? 200,
     headers: { 'Content-Type': 'application/json', ...init.headers }
   });
+}
+
+function createSkillListResponse(skills: CodexSkillResponse[] = []): CodexSkillListResponse {
+  return {
+    codexHome: '/Users/test/.codex',
+    codexHomeMode: 'global',
+    skillsPath: '/Users/test/.codex/skills',
+    skillsWritable: true,
+    requiresWriteConfirmation: true,
+    skills,
+    diagnostics: []
+  };
+}
+
+function createSkillResponse(overrides: Partial<CodexSkillResponse> = {}): CodexSkillResponse {
+  const id = overrides.id ?? 'frontend-slides';
+  return {
+    id,
+    name: id,
+    description: `${id} description`,
+    status: 'valid',
+    diagnostics: [],
+    codexHome: '/Users/test/.codex',
+    codexHomeMode: 'global',
+    skillsPath: '/Users/test/.codex/skills',
+    skillPath: `/Users/test/.codex/skills/${id}`,
+    skillFilePath: `/Users/test/.codex/skills/${id}/SKILL.md`,
+    ...overrides
+  };
+}
+
+function createMcpListResponse(): CodexMcpListResponse {
+  return {
+    codexHome: '/Users/test/.codex',
+    codexHomeMode: 'global',
+    requiresWriteConfirmation: true,
+    servers: [],
+    diagnostics: []
+  };
+}
+
+function createSkillMarketInstallRecord(
+  overrides: Partial<CodexSkillMarketInstallRecordResponse> = {}
+): CodexSkillMarketInstallRecordResponse {
+  return {
+    skillId: 'frontend-slides',
+    repository: 'zarazhangrui/frontend-slides',
+    skillPath: '/Users/test/.codex/skills/frontend-slides',
+    commit: 'abc123',
+    marketRevision: 1,
+    installedAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    ...overrides
+  };
+}
+
+function getSkillMarketCard(skillId: string): HTMLElement {
+  const card = document.querySelector(`[data-testid="skill-market-card"][data-skill-id="${skillId}"]`);
+  if (!(card instanceof HTMLElement)) throw new Error(`Expected skill market card: ${skillId}`);
+  return card;
 }
 
 function createCodexStatusResponse(): CodexStatusResponse {

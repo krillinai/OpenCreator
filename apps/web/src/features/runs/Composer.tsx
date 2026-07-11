@@ -9,6 +9,11 @@ export type ComposerRunConfig = {
   reasoning: ReasoningEffort | null;
 };
 
+export type ComposerDraftRequest = {
+  id: number;
+  text: string;
+};
+
 export type ComposerSlashCommand = {
   id: string;
   category: 'skill' | 'mcp' | 'goal';
@@ -75,7 +80,9 @@ export function Composer(props: {
   slashCommands?: ComposerSlashCommand[];
   slashCommandsLoading?: boolean;
   slashCommandsError?: string;
+  draftRequest?: ComposerDraftRequest;
   onPermissionChange?(permission: ProjectPermission): void;
+  onDraftApplied?(id: number): void;
   onSubmit(prompt: string, config: ComposerRunConfig): void;
 }) {
   const [prompt, setPrompt] = useState('');
@@ -84,6 +91,7 @@ export function Composer(props: {
   const [openMenu, setOpenMenu] = useState<'add' | 'permission' | 'model' | null>(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const appliedDraftIdRef = useRef<number>();
   const trimmedPrompt = prompt.trim();
 
   useEffect(() => {
@@ -106,6 +114,26 @@ export function Composer(props: {
     textarea.style.overflowY = isOverflowing ? 'auto' : 'hidden';
     textarea.scrollTop = isOverflowing ? textarea.scrollHeight : 0;
   }, [prompt]);
+
+  useEffect(() => {
+    const draftRequest = props.draftRequest;
+    if (draftRequest === undefined) return;
+    if (appliedDraftIdRef.current === draftRequest.id) return;
+
+    appliedDraftIdRef.current = draftRequest.id;
+    setPrompt(draftRequest.text);
+    setSlashTrigger(null);
+    setOpenMenu(null);
+
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (textarea === null) return;
+      const caret = draftRequest.text.length;
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+    });
+    props.onDraftApplied?.(draftRequest.id);
+  }, [props.draftRequest, props.onDraftApplied]);
 
   const selectedPermissionOption = permissionOptions.find(option => option.value === selectedPermission) ?? permissionOptions[0]!;
   const slashCommands = props.slashCommands ?? [];

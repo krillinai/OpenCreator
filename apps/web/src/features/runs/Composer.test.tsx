@@ -216,6 +216,29 @@ describe('Composer', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('applies an external draft once and focuses the textarea', async () => {
+    const user = userEvent.setup();
+    const onDraftApplied = vi.fn();
+    const { rerender } = render(
+      <Composer
+        {...defaultProps}
+        draftRequest={{ id: 1, text: '$frontend-slides ' }}
+        onDraftApplied={onDraftApplied}
+      />
+    );
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await waitFor(() => {
+      expect(textbox).toHaveValue('$frontend-slides ');
+      expect(textbox).toHaveFocus();
+    });
+    expect(onDraftApplied).toHaveBeenCalledWith(1);
+
+    await user.type(textbox, '生成季度汇报');
+    rerender(<Composer {...defaultProps} onDraftApplied={onDraftApplied} />);
+    expect(textbox).toHaveValue('$frontend-slides 生成季度汇报');
+  });
+
   it('typing slash opens skills, MCP, and goal commands and inserts the selected command', async () => {
     const user = userEvent.setup();
     render(
