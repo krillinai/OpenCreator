@@ -64,8 +64,9 @@ export function createSkillManager(input: {
     requireWriteConfirmation(input.codexHome, request.confirmWriteToCodexHome === true);
     const skillId = request.id ?? basename(request.sourcePath);
     const requestedOperationType = request.overwrite === true ? 'overwrite' : 'install';
+    let installed: { id: string; backupPath: string | null } | undefined;
     try {
-      const installed = await installer.install(request);
+      installed = await installer.install(request);
       const skill = getSkill(installed.id);
       if (skill === undefined) throw new Error(`CODEX_SKILL_NOT_FOUND: ${installed.id}`);
       const operationType = installed.backupPath === null ? 'install' : 'overwrite';
@@ -82,7 +83,22 @@ export function createSkillManager(input: {
       return { skill, operation };
     } catch (error) {
       if (getCodexErrorCode(error) === 'CODEX_SKILL_EXISTS') throw error;
-      operations.insertOperation({
+      let failure = error;
+      if (installed !== undefined) {
+        try {
+          await installer.rollback(installed);
+        } catch (rollbackError) {
+          failure = new AggregateError(
+            [error, rollbackError],
+            [
+              'CODEX_SKILL_WRITE_FAILED: skill install failed and rollback failed',
+              `install error: ${getErrorMessage(error)}`,
+              `rollback error: ${getErrorMessage(rollbackError)}`
+            ].join('; ')
+          );
+        }
+      }
+      tryInsertFailedOperation({
         operation: requestedOperationType,
         skillId,
         codexHome: input.codexHome.path,
@@ -93,7 +109,17 @@ export function createSkillManager(input: {
         errorCode: getCodexErrorCode(error) ?? 'CODEX_SKILL_WRITE_FAILED',
         errorMessage: getErrorMessage(error)
       });
-      throw error;
+      throw failure;
+    }
+  }
+
+  function tryInsertFailedOperation(
+    operation: Parameters<typeof operations.insertOperation>[0]
+  ): void {
+    try {
+      operations.insertOperation(operation);
+    } catch {
+      // A logging failure must not replace the install or rollback failure.
     }
   }
 
