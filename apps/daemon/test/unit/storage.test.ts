@@ -120,6 +120,25 @@ describe('runtime storage', () => {
     expect(indexRows).toEqual([{ name: 'idx_codex_mcp_operations_created_at' }]);
   });
 
+  it('creates codex skill market install table and updated-at index', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+
+    const tableRows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'codex_skill_market_installs'"
+      )
+      .all() as Array<{ name: string }>;
+    expect(tableRows).toEqual([{ name: 'codex_skill_market_installs' }]);
+
+    const indexRows = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_codex_skill_market_installs_updated_at'"
+      )
+      .all() as Array<{ name: string }>;
+    expect(indexRows).toEqual([{ name: 'idx_codex_skill_market_installs_updated_at' }]);
+  });
+
   it('creates scheduler tables, indexes, and run timeout column', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

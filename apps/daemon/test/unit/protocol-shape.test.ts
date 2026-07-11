@@ -4,6 +4,8 @@ import type {
   CleanupDeleteRequest,
   CleanupDeleteResponse,
   CleanupPreviewResponse,
+  CodexSkillMarketInstallRecordResponse,
+  CodexSkillMarketMutationResponse,
   CreateScheduleRequest,
   RunDiagnosticsResponse,
   RunRequest,
@@ -125,6 +127,57 @@ describe('protocol shape', () => {
   it('includes schedule not found as a closed error code', () => {
     const code: RuntimeErrorCode = 'SCHEDULE_NOT_FOUND';
     expect(code).toBe('SCHEDULE_NOT_FOUND');
+  });
+
+  it('allows skill market install record and mutation response shapes', () => {
+    const record: CodexSkillMarketInstallRecordResponse = {
+      skillId: 'frontend-slides',
+      repository: 'zarazhangrui/frontend-slides',
+      skillPath: '.',
+      commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
+      marketRevision: 1,
+      installedAt: '2026-07-11T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z'
+    };
+    const response: CodexSkillMarketMutationResponse = {
+      skill: {
+        id: 'frontend-slides',
+        name: 'Frontend Slides',
+        description: 'Slide helpers',
+        status: 'valid',
+        diagnostics: [],
+        codexHome: '/tmp/codex-home',
+        codexHomeMode: 'isolated',
+        skillsPath: '/tmp/codex-home/skills',
+        skillPath: '.',
+        skillFilePath: '/tmp/codex-home/skills/frontend-slides/SKILL.md'
+      },
+      operation: {
+        id: 'skillop_1',
+        operation: 'install',
+        skillId: 'frontend-slides',
+        codexHome: '/tmp/codex-home',
+        skillsPath: '/tmp/codex-home/skills',
+        sourcePath: '/tmp/source/frontend-slides',
+        targetPath: '/tmp/codex-home/skills/frontend-slides',
+        status: 'succeeded',
+        createdAt: '2026-07-11T00:00:00.000Z'
+      },
+      record
+    };
+
+    expect(response.record.marketRevision).toBe(1);
+    expect(response.skill.id).toBe('frontend-slides');
+  });
+
+  it('includes skill market errors as closed error codes', () => {
+    const notFound: RuntimeErrorCode = 'CODEX_SKILL_MARKET_ENTRY_NOT_FOUND';
+    const notInstallable: RuntimeErrorCode = 'CODEX_SKILL_MARKET_NOT_INSTALLABLE';
+    const downloadFailed: RuntimeErrorCode = 'CODEX_SKILL_MARKET_DOWNLOAD_FAILED';
+
+    expect(notFound).toBe('CODEX_SKILL_MARKET_ENTRY_NOT_FOUND');
+    expect(notInstallable).toBe('CODEX_SKILL_MARKET_NOT_INSTALLABLE');
+    expect(downloadFailed).toBe('CODEX_SKILL_MARKET_DOWNLOAD_FAILED');
   });
 
   it('allows run diagnostics response shape', () => {

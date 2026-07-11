@@ -90,6 +90,16 @@ export function migrate(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS codex_skill_market_installs (
+      skill_id TEXT PRIMARY KEY,
+      repository TEXT NOT NULL,
+      skill_path TEXT NOT NULL,
+      commit_sha TEXT NOT NULL,
+      market_revision INTEGER NOT NULL,
+      installed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS codex_mcp_operations (
       id TEXT PRIMARY KEY,
       operation TEXT NOT NULL,
@@ -154,6 +164,8 @@ export function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_runs_schedule_source ON runs(created_by, source_id);
     CREATE INDEX IF NOT EXISTS idx_codex_skill_operations_created_at
       ON codex_skill_operations(created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_codex_skill_market_installs_updated_at
+      ON codex_skill_market_installs(updated_at DESC, skill_id ASC);
     CREATE INDEX IF NOT EXISTS idx_codex_mcp_operations_created_at
       ON codex_mcp_operations(created_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next_run_at

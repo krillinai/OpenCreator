@@ -304,6 +304,26 @@ export type CodexSkillOperationListResponse = {
   operations: CodexSkillOperationResponse[];
 };
 
+export type CodexSkillMarketInstallRecordResponse = {
+  skillId: string;
+  repository: string;
+  skillPath: string;
+  commit: string;
+  marketRevision: number;
+  installedAt: string;
+  updatedAt: string;
+};
+
+export type CodexSkillMarketInstallRecordListResponse = {
+  records: CodexSkillMarketInstallRecordResponse[];
+};
+
+export type CodexSkillMarketMutationResponse = {
+  skill: CodexSkillResponse;
+  operation: CodexSkillOperationResponse;
+  record: CodexSkillMarketInstallRecordResponse;
+};
+
 export type CodexMcpServerResponse = {
   name: string;
   transport: CodexMcpTransport;
