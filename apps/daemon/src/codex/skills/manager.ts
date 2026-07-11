@@ -21,6 +21,7 @@ export type SkillManager = {
     id: string,
     confirmed: boolean
   ): Promise<{ deleted: true; backupPath: string | null; operation: CodexSkillOperationResponse }>;
+  rollbackSkillInstall(id: string, backupPath: string | null): Promise<void>;
   listOperations(limit?: number): CodexSkillOperationResponse[];
 };
 
@@ -105,6 +106,9 @@ export function createSkillManager(input: {
         });
         throw error;
       }
+    },
+    rollbackSkillInstall(id, backupPath) {
+      return installer.rollback({ id, backupPath });
     },
     listOperations(limit) {
       return operations.listOperations(limit);

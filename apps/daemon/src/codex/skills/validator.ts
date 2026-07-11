@@ -1,5 +1,6 @@
 import { lstatSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { parseDocument } from 'yaml';
 import type { ParseSkillMarkdownResult } from './types.js';
 
 const SKILL_ID_PATTERN = /^[A-Za-z0-9_.-]+$/;
@@ -19,29 +20,25 @@ export function deriveSkillId(input: { requestedId?: string; sourcePath: string 
 }
 
 export function parseSkillMarkdown(content: string): ParseSkillMarkdownResult {
-  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) {
+  const normalized = content.replace(/\r\n/g, '\n');
+  if (!normalized.startsWith('---\n')) {
     return { ok: false, diagnostics: ['SKILL.md missing frontmatter'] };
   }
 
-  const normalized = content.replace(/\r\n/g, '\n');
   const end = normalized.indexOf('\n---\n', 4);
   if (end === -1) return { ok: false, diagnostics: ['SKILL.md frontmatter is not closed'] };
 
   const frontmatter = normalized.slice(4, end);
-  const values: Record<string, string> = {};
-  for (const rawLine of frontmatter.split('\n')) {
-    const line = rawLine.trim();
-    if (line.length === 0) continue;
-    const separator = line.indexOf(':');
-    if (separator === -1) {
-      return { ok: false, diagnostics: [`SKILL.md frontmatter line is invalid: ${line}`] };
-    }
-    const key = line.slice(0, separator).trim();
-    const rawValue = line.slice(separator + 1).trim();
-    values[key] = unquoteYamlString(rawValue);
+  const document = parseDocument(frontmatter, { uniqueKeys: true });
+  if (document.errors.length > 0) {
+    return {
+      ok: false,
+      diagnostics: document.errors.map((error) => `SKILL.md frontmatter is invalid: ${error.message}`)
+    };
   }
+  const values = document.toJS();
 
-  if (typeof values.name !== 'string' || values.name.trim().length === 0) {
+  if (!isRecord(values) || typeof values.name !== 'string' || values.name.trim().length === 0) {
     return { ok: false, diagnostics: ['SKILL.md frontmatter name must be a non-empty string'] };
   }
   if (typeof values.description !== 'string' || values.description.trim().length === 0) {
@@ -73,13 +70,6 @@ export function assertNoSymlinks(root: string): void {
   }
 }
 
-function unquoteYamlString(value: string): string {
-  const trimmed = value.trim();
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"'))
-    || (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
-    return trimmed.slice(1, -1);
-  }
-  return trimmed;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

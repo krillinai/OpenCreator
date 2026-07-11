@@ -54,6 +54,34 @@ describe('codex skills installer', () => {
     expect(existsSync(join(codexHome, 'skills', 'writer'))).toBe(false);
   });
 
+  it('rolls back a fresh install or restores an overwritten backup', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-rollback-'));
+    const first = createSourceSkill('writer-first', 'first');
+    const second = createSourceSkill('writer-second', 'second');
+    const freshSource = createSourceSkill('fresh-source', 'fresh');
+    const codexHome = join(tempDir, 'codex-home');
+    const installer = createSkillInstaller({ codexHome });
+
+    const fresh = await installer.install({ sourcePath: freshSource, id: 'fresh' });
+    await installer.rollback({ id: 'fresh', backupPath: fresh.backupPath });
+    expect(existsSync(join(codexHome, 'skills', 'fresh'))).toBe(false);
+
+    await installer.install({ sourcePath: first, id: 'writer' });
+    const overwritten = await installer.install({
+      sourcePath: second,
+      id: 'writer',
+      overwrite: true
+    });
+    await installer.rollback({
+      id: 'writer',
+      backupPath: overwritten.backupPath
+    });
+
+    expect(
+      readFileSync(join(codexHome, 'skills', 'writer', 'SKILL.md'), 'utf8')
+    ).toContain('first');
+  });
+
   it('rejects a sourcePath directory that is a symlink', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
     const source = createSourceSkill('writer', 'first');

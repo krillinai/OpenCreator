@@ -10,12 +10,15 @@
   },
   "dependencies": {
     "@clawee/protocol": "workspace:*",
+    "@clawee/skill-market": "workspace:*",
     "@fastify/cors": "^11.0.1",
     "better-sqlite3": "^11.8.1",
     "cron-parser": "^5.6.1",
     "fastify": "^5.2.1",
     "nanoid": "^5.0.9",
-    "toml": "^3.0.0"
+    "tar": "^7.4.3",
+    "toml": "^3.0.0",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12"

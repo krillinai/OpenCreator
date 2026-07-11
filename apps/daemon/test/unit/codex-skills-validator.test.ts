@@ -53,6 +53,29 @@ describe('codex skill validator', () => {
     });
   });
 
+  it('accepts multiline descriptions and additional YAML collections', () => {
+    const parsed = parseSkillMarkdown([
+      '---',
+      'name: humanizer-zh',
+      'description: |',
+      '  第一行',
+      '  第二行',
+      'allowed-tools:',
+      '  - Read',
+      '  - Write',
+      '---',
+      ''
+    ].join('\n'));
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      metadata: {
+        name: 'humanizer-zh',
+        description: '第一行\n第二行\n'
+      }
+    });
+  });
+
   it('returns diagnostics for invalid SKILL.md frontmatter', () => {
     expect(parseSkillMarkdown('# Missing frontmatter')).toMatchObject({
       ok: false,

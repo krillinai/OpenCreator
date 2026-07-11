@@ -16,6 +16,7 @@ import { assertNoSymlinks, assertValidSkillId, deriveSkillId, parseSkillMarkdown
 export type SkillInstaller = {
   install(input: { sourcePath: string; id?: string; overwrite?: boolean }): Promise<{ id: string; backupPath: string | null }>;
   delete(id: string): Promise<{ id: string; backupPath: string | null }>;
+  rollback(input: { id: string; backupPath: string | null }): Promise<void>;
 };
 
 const locks = new Map<string, Promise<void>>();
@@ -28,6 +29,9 @@ export function createSkillInstaller(input: { codexHome: string }): SkillInstall
     },
     delete(id) {
       return withSkillsLock(input.codexHome, () => deleteSkill(input.codexHome, id));
+    },
+    rollback(request) {
+      return withSkillsLock(input.codexHome, () => rollbackSkill(input.codexHome, request));
     }
   };
 }
@@ -114,6 +118,35 @@ function deleteSkill(codexHome: string, id: string): { id: string; backupPath: s
   return { id, backupPath };
 }
 
+function rollbackSkill(codexHome: string, request: { id: string; backupPath: string | null }): void {
+  assertValidSkillId(request.id);
+  const skillsPath = skillsPathForCodexHome(codexHome);
+  const targetPath = ensurePathInside(skillsPath, request.id);
+  const tempPath = ensurePathInside(
+    skillsPath,
+    `.tmp-rollback-${request.id}-${process.pid}-${Date.now()}-${nextFileCounter()}`
+  );
+
+  try {
+    rmSync(tempPath, { recursive: true, force: true });
+    rmSync(targetPath, { recursive: true, force: true });
+    if (request.backupPath === null) return;
+    if (!existsSync(request.backupPath)) {
+      throw new Error(`backupPath does not exist: ${request.backupPath}`);
+    }
+    const backupStat = lstatSync(request.backupPath);
+    if (backupStat.isSymbolicLink() || !backupStat.isDirectory()) {
+      throw new Error(`backupPath must be a real directory: ${request.backupPath}`);
+    }
+    cpSync(request.backupPath, tempPath, { recursive: true, force: false, errorOnExist: true });
+    assertNoSymlinks(tempPath);
+    renameSync(tempPath, targetPath);
+  } catch (error) {
+    rmSync(tempPath, { recursive: true, force: true });
+    throw wrapSkillWriteFailed(error, `rollback failed for skill: ${request.id}`);
+  }
+}
+
 function backupSkill(codexHome: string, id: string, targetPath: string): string {
   const backupRoot = join(codexHome, 'backups', 'skills');
   mkdirSync(backupRoot, { recursive: true });
@@ -135,4 +168,9 @@ function ensurePathInside(parent: string, childName: string): string {
 function nextFileCounter(): number {
   fileCounter = (fileCounter + 1) % Number.MAX_SAFE_INTEGER;
   return fileCounter;
+}
+
+function wrapSkillWriteFailed(error: unknown, message: string): Error {
+  if (error instanceof Error && error.message.startsWith('CODEX_SKILL_WRITE_FAILED:')) return error;
+  return new Error(`CODEX_SKILL_WRITE_FAILED: ${message}`, { cause: error });
 }
