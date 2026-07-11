@@ -35,6 +35,7 @@ import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
 import { RuntimeClient } from '../runtime/client.js';
+import { createFrameBatcher, type FrameBatcher } from '../runtime/frame-batcher.js';
 import { subscribeRunEvents as defaultSubscribeRunEvents, type SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { ConnectionConfig } from '../runtime/types.js';
 import { createCapabilityService } from '../services/capability-service.js';
@@ -47,6 +48,7 @@ import { createRunService } from '../services/run-service.js';
 import { createSkillMarketService } from '../services/skill-market-service.js';
 import { createThreadService } from '../services/thread-service.js';
 import { createWorkspaceFileService } from '../services/workspace-file-service.js';
+import { readJsonFromStorage, writeJsonToStorage } from '../storage/browser-storage.js';
 import { initialAppState, reduceAppState } from './app-state.js';
 
 type AppFileService = {
@@ -64,6 +66,12 @@ const FILE_WORKSPACE_MIN_WIDTH = 520;
 const RESIZE_KEY_STEP = 32;
 const CONVERSATION_LIGHTFALL_COLORS = ['#AD4D1F', '#D86532', '#F0A866'];
 const DYNAMIC_BACKGROUND_STORAGE_KEY = 'clawee.preferences.dynamicBackground';
+const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v2';
+
+type PersistedNavigation = {
+  currentProjectId: string;
+  selectedThreadId?: string;
+};
 
 export type AppProps = {
   fileService?: AppFileService;
@@ -74,7 +82,12 @@ export type AppProps = {
 };
 
 export function App(props: AppProps = {}) {
-  const [state, dispatch] = useReducer(reduceAppState, initialAppState);
+  const persistedNavigation = useMemo(readPersistedNavigation, []);
+  const [state, dispatch] = useReducer(reduceAppState, {
+    ...initialAppState,
+    currentProjectId: persistedNavigation?.currentProjectId ?? initialAppState.currentProjectId,
+    selectedThreadId: persistedNavigation?.selectedThreadId
+  });
   const baseProjects = useMemo(() => createDefaultProjects(), []);
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
@@ -131,9 +144,12 @@ export function App(props: AppProps = {}) {
   const connectionConfigRef = useRef<ConnectionConfig | null>(null);
   const connectionConfigVersionRef = useRef(0);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
+  const timelineEventBatcherRef = useRef<FrameBatcher<TimelineItem> | null>(null);
   const conversationBodyRef = useRef<HTMLDivElement | null>(null);
   const conversationFileLayoutRef = useRef<HTMLElement | null>(null);
-  const allowInitialRuntimeProjectFocusRef = useRef(true);
+  const allowInitialRuntimeProjectFocusRef = useRef(persistedNavigation === null);
+  const navigationPersistenceReadyRef = useRef(persistedNavigation !== null);
+  const restoredThreadIdRef = useRef(persistedNavigation?.selectedThreadId);
   const skipNextHistoryLoadForThreadRef = useRef<string>();
   const skillMarketMutationInFlightRef = useRef(false);
   const skillMarketUseInFlightRef = useRef(false);
@@ -143,6 +159,15 @@ export function App(props: AppProps = {}) {
   const threadServiceRef = useRef<ThreadService | null>(null);
   const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
   const nextComposerDraftIdRef = useRef(0);
+
+  if (timelineEventBatcherRef.current === null) {
+    timelineEventBatcherRef.current = createFrameBatcher({
+      onFlush(items) {
+        if (!mountedRef.current) return;
+        setTimelineItems(previous => [...previous, ...items]);
+      }
+    });
+  }
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -190,6 +215,7 @@ export function App(props: AppProps = {}) {
 
     return () => {
       mountedRef.current = false;
+      timelineEventBatcherRef.current?.clear();
       sseAbortControllerRef.current?.abort();
     };
   }, []);
@@ -197,6 +223,14 @@ export function App(props: AppProps = {}) {
   useEffect(() => {
     selectedFilePathRef.current = state.selectedFilePath;
   }, [state.selectedFilePath]);
+
+  useEffect(() => {
+    if (!navigationPersistenceReadyRef.current) return;
+    writePersistedNavigation({
+      currentProjectId: state.currentProjectId,
+      selectedThreadId: state.selectedThreadId
+    });
+  }, [state.currentProjectId, state.selectedThreadId]);
 
   useEffect(() => {
     connectionConfigRef.current = connectionConfig;
@@ -279,6 +313,11 @@ export function App(props: AppProps = {}) {
         if (canceled) return;
         setRuntimeThreads(response.threads);
         setThreadLoadError(undefined);
+        const restoredThreadId = restoredThreadIdRef.current;
+        restoredThreadIdRef.current = undefined;
+        if (restoredThreadId !== undefined && !response.threads.some(thread => thread.id === restoredThreadId)) {
+          dispatch({ type: 'new_conversation' });
+        }
       })
       .catch(() => {
         if (canceled) return;
@@ -371,18 +410,16 @@ export function App(props: AppProps = {}) {
     if (state.activeView !== 'conversation' || state.selectedThreadId !== undefined) return;
     if (conversations.length === 0) return;
 
-    const currentProjectHasHistory = conversations.some(
-      conversation => conversation.projectId === state.currentProjectId
-    );
-    if (currentProjectHasHistory) {
-      allowInitialRuntimeProjectFocusRef.current = false;
+    const firstRuntimeProjectId = conversations[0]?.projectId;
+    allowInitialRuntimeProjectFocusRef.current = false;
+    if (firstRuntimeProjectId === undefined) return;
+
+    navigationPersistenceReadyRef.current = true;
+    if (firstRuntimeProjectId === state.currentProjectId) {
+      writePersistedNavigation({ currentProjectId: firstRuntimeProjectId });
       return;
     }
 
-    const firstRuntimeProjectId = conversations[0]?.projectId;
-    if (firstRuntimeProjectId === undefined || firstRuntimeProjectId === state.currentProjectId) return;
-
-    allowInitialRuntimeProjectFocusRef.current = false;
     dispatch({ type: 'select_project', projectId: firstRuntimeProjectId });
   }, [conversations, state.activeView, state.currentProjectId, state.selectedThreadId]);
 
@@ -455,11 +492,20 @@ export function App(props: AppProps = {}) {
   useEffect(() => {
     const body = conversationBodyRef.current;
     if (body === null) return;
-    if (typeof body.scrollTo === 'function') {
-      body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
-      return;
-    }
-    body.scrollTop = body.scrollHeight;
+    const scrollToBottom = () => {
+      body.scrollTop = body.scrollHeight;
+    };
+    const frame = typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame(scrollToBottom)
+      : window.setTimeout(scrollToBottom, 0);
+
+    return () => {
+      if (typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(frame);
+      } else {
+        window.clearTimeout(frame);
+      }
+    };
   }, [timelineItems.length]);
 
   useEffect(() => {
@@ -615,7 +661,9 @@ export function App(props: AppProps = {}) {
 
   function startNewConversation() {
     allowInitialRuntimeProjectFocusRef.current = false;
+    navigationPersistenceReadyRef.current = true;
     sseAbortControllerRef.current?.abort();
+    timelineEventBatcherRef.current?.clear();
     setTimelineItems([]);
     setHistoryLoadingThreadId(undefined);
     setRuntimeBusy(false);
@@ -625,7 +673,9 @@ export function App(props: AppProps = {}) {
 
   function selectProject(projectId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
+    navigationPersistenceReadyRef.current = true;
     sseAbortControllerRef.current?.abort();
+    timelineEventBatcherRef.current?.clear();
     setTimelineItems([]);
     setHistoryLoadingThreadId(undefined);
     setRuntimeBusy(false);
@@ -635,7 +685,9 @@ export function App(props: AppProps = {}) {
 
   function selectConversation(conversationId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
+    navigationPersistenceReadyRef.current = true;
     sseAbortControllerRef.current?.abort();
+    timelineEventBatcherRef.current?.clear();
     setRuntimeBusy(false);
     setThreadConfigUpdateError(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
@@ -830,6 +882,7 @@ export function App(props: AppProps = {}) {
       if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
 
       sseAbortControllerRef.current?.abort();
+      timelineEventBatcherRef.current?.clear();
       setRuntimeThreads(previous => upsertThread(previous, created.thread));
       setTimelineItems([]);
       setThreadHistoryLoadError(undefined);
@@ -933,6 +986,7 @@ export function App(props: AppProps = {}) {
     const created = await threadService.createThread(buildThreadRequest(prompt, currentProject, config));
     setRuntimeThreads(previous => upsertThread(previous, created.thread));
     skipNextHistoryLoadForThreadRef.current = created.thread.id;
+    navigationPersistenceReadyRef.current = true;
     dispatch({ type: 'select_thread', threadId: created.thread.id });
     return { threadId: created.thread.id, created: true };
   }
@@ -953,6 +1007,7 @@ export function App(props: AppProps = {}) {
 
   async function subscribeToRunEvents(runId: string, config: ConnectionConfig) {
     sseAbortControllerRef.current?.abort();
+    timelineEventBatcherRef.current?.clear();
     const abortController = new AbortController();
     sseAbortControllerRef.current = abortController;
 
@@ -963,28 +1018,31 @@ export function App(props: AppProps = {}) {
       fetchImpl: runtimeFetch,
       signal: abortController.signal,
       onEvent(event) {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || abortController.signal.aborted) return;
         const item = eventToTimelineItem(event);
-        if (item !== null) setTimelineItems(previous => [...previous, item]);
+        if (item !== null) timelineEventBatcherRef.current?.push(item);
         if (event.type === 'done') {
+          timelineEventBatcherRef.current?.flush();
           void loadRunDiagnostics(event.runId);
         }
       },
       onError(error) {
         if (!mountedRef.current || abortController.signal.aborted) return;
-        setTimelineItems(previous => [
-          ...previous,
-          {
-            kind: 'diagnostic',
-            id: createTimelineId('sse_error'),
-            severity: 'error',
-            message: error.message,
-            content: error.message,
-            source: 'runtime'
-          }
-        ]);
+        timelineEventBatcherRef.current?.push({
+          kind: 'diagnostic',
+          id: createTimelineId('sse_error'),
+          severity: 'error',
+          message: error.message,
+          content: error.message,
+          source: 'runtime'
+        });
+        timelineEventBatcherRef.current?.flush();
       }
     });
+
+    if (!abortController.signal.aborted) {
+      timelineEventBatcherRef.current?.flush();
+    }
   }
 
   async function loadRunDiagnostics(runId: string) {
@@ -1331,6 +1389,28 @@ export function App(props: AppProps = {}) {
 function getConnectionStatusLabel(connectionState: ConnectionState) {
   if (connectionState.status === 'connected') return '本地运行内核正常';
   return connectionState.message;
+}
+
+function readPersistedNavigation(): PersistedNavigation | null {
+  const value = readJsonFromStorage<unknown>(NAVIGATION_STORAGE_KEY);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.currentProjectId !== 'string' || record.currentProjectId.length === 0) return null;
+  if (record.selectedThreadId !== undefined && typeof record.selectedThreadId !== 'string') return null;
+
+  return {
+    currentProjectId: record.currentProjectId,
+    selectedThreadId: record.selectedThreadId
+  };
+}
+
+function writePersistedNavigation(value: PersistedNavigation): void {
+  try {
+    writeJsonToStorage(NAVIGATION_STORAGE_KEY, value);
+  } catch {
+    return;
+  }
 }
 
 function readDynamicBackgroundPreference(): boolean {

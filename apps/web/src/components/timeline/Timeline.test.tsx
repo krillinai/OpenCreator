@@ -220,6 +220,31 @@ describe('Timeline', () => {
     expect(screen.queryByText('今天是 **29°C**。')).not.toBeInTheDocument();
   });
 
+  it('opens generated workspace files linked from assistant text', async () => {
+    const user = userEvent.setup();
+    const onOpenFile = vi.fn();
+
+    render(
+      <Timeline
+        items={[
+          {
+            kind: 'assistant_message',
+            id: 'a1',
+            text: '已重新生成并写入 放假.md，也生成了 `docs/report.pdf`。',
+            source: 'runtime'
+          }
+        ]}
+        onOpenFile={onOpenFile}
+      />
+    );
+
+    await user.click(screen.getByRole('link', { name: '放假.md' }));
+    await user.click(screen.getByRole('link', { name: 'docs/report.pdf' }));
+
+    expect(onOpenFile).toHaveBeenNthCalledWith(1, '放假.md');
+    expect(onOpenFile).toHaveBeenNthCalledWith(2, 'docs/report.pdf');
+  });
+
   it('keeps user messages conservative while still rendering code and safe links', () => {
     render(
       <Timeline

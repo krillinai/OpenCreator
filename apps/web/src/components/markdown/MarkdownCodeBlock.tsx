@@ -1,10 +1,16 @@
 import { AlertCircle, Check, ChevronDown, ChevronRight, Copy } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { copyToClipboard } from './clipboard.js';
+import { renderTextWithWorkspaceFileLinks, type MarkdownLinkClickHandler } from './markdown-inline.js';
 
 const CODE_COLLAPSE_LINE_THRESHOLD = 16;
 
-export function MarkdownCodeBlock(props: { body: string; lang: string | null }) {
+export function MarkdownCodeBlock(props: {
+  body: string;
+  lang: string | null;
+  onLinkClick?: MarkdownLinkClickHandler;
+  linkifyWorkspaceFiles?: boolean;
+}) {
   const lineCount = useMemo(() => props.body.split('\n').length, [props.body]);
   const collapsible = lineCount > CODE_COLLAPSE_LINE_THRESHOLD;
   const [collapsed, setCollapsed] = useState(collapsible);
@@ -33,6 +39,9 @@ export function MarkdownCodeBlock(props: { body: string; lang: string | null }) 
 
   const copyLabel = copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制代码';
   const CopyIcon = copyState === 'copied' ? Check : copyState === 'failed' ? AlertCircle : Copy;
+  const linkifyTextFiles = props.linkifyWorkspaceFiles === true
+    && props.onLinkClick !== undefined
+    && isPlainTextLanguage(props.lang);
 
   return (
     <div className="md-code-block" data-collapsed={collapsed ? 'true' : undefined}>
@@ -65,9 +74,16 @@ export function MarkdownCodeBlock(props: { body: string; lang: string | null }) 
       </div>
       <div className="md-code-body">
         <pre className="md-code">
-          <code data-lang={props.lang ?? undefined}>{props.body}</code>
+          <code data-lang={props.lang ?? undefined}>
+            {linkifyTextFiles ? renderTextWithWorkspaceFileLinks(props.body, props.onLinkClick!) : props.body}
+          </code>
         </pre>
       </div>
     </div>
   );
+}
+
+function isPlainTextLanguage(lang: string | null): boolean {
+  if (lang === null) return true;
+  return lang === 'text' || lang === 'txt' || lang === 'plaintext';
 }

@@ -1344,6 +1344,171 @@ describe('App', () => {
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
 
+  it('does not let an aborted subscription clear events queued by its replacement', async () => {
+    const user = userEvent.setup();
+    const animationFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    let threadSequence = 0;
+    let runSequence = 0;
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/threads')) {
+        threadSequence += 1;
+        return jsonResponse({
+          thread: createThreadResponse({ id: `thread_${threadSequence}`, title: `任务 ${threadSequence}` })
+        }, { status: 201 });
+      }
+      if (url.endsWith('/runs')) {
+        runSequence += 1;
+        return jsonResponse({
+          id: `run_${runSequence}`,
+          threadId: `thread_${runSequence}`,
+          status: 'running'
+        }, { status: 202 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    let resolveFirstSubscription!: () => void;
+    let resolveSecondSubscription!: () => void;
+    let subscriptionSequence = 0;
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      subscriptionSequence += 1;
+      if (subscriptionSequence === 1) {
+        await new Promise<void>(resolve => {
+          resolveFirstSubscription = resolve;
+        });
+        return;
+      }
+
+      input.onEvent({
+        ...createRuntimeEvent(
+          'assistant_message',
+          {
+            type: 'assistant_message',
+            text: '新任务仍然可以实时显示',
+            format: 'plain_text',
+            delivery: 'message'
+          },
+          1
+        ),
+        runId: 'run_2'
+      });
+      await new Promise<void>(resolve => {
+        resolveSecondSubscription = resolve;
+      });
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '旧任务');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(subscriptionSequence).toBe(1));
+
+    await user.click(screen.getByRole('button', { name: 'bili' }));
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '新任务');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    await waitFor(() => expect(subscriptionSequence).toBe(2));
+
+    await act(async () => {
+      resolveFirstSubscription();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      for (const callback of animationFrames.splice(0)) callback(performance.now());
+    });
+
+    expect(await screen.findByText('新任务仍然可以实时显示')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveSecondSubscription();
+    });
+  });
+
+  it('restores the last selected project and conversation after remount', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_content_history',
+              title: 'content-design 历史',
+              codexThreadId: 'codex-content-history',
+              cwd: '/Users/test/develop/content-design',
+              canonicalCwd: '/Users/test/develop/content-design'
+            }),
+            createThreadResponse({
+              id: 'thread_bili_history',
+              title: 'bili 历史',
+              codexThreadId: 'codex-bili-history',
+              cwd: '/Users/test/develop/clawee/bili',
+              canonicalCwd: '/Users/test/develop/clawee/bili'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_bili_history/history')) {
+        return jsonResponse({
+          threadId: 'thread_bili_history',
+          codexThreadId: 'codex-bili-history',
+          items: [
+            {
+              id: 'bili_history_user_1',
+              type: 'user_message',
+              text: '刷新后仍然打开这条对话',
+              createdAt: new Date(0).toISOString()
+            }
+          ]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const appProps = {
+      fileService: createFileService(),
+      hostBridge,
+      runtimeFetch,
+      subscribeRunEvents: async () => undefined
+    };
+
+    const firstRender = render(<App {...appProps} />);
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'bili' }));
+    await user.click(await screen.findByRole('button', { name: /bili 历史/ }));
+    expect(await findTimelineUserMessage('刷新后仍然打开这条对话')).toBeInTheDocument();
+
+    firstRender.unmount();
+    render(<App {...appProps} />);
+
+    expect(await findTimelineUserMessage('刷新后仍然打开这条对话')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'bili' })).toHaveAttribute('data-current-project', 'true');
+  });
+
   it('loads conversation history from runtime threads instead of mock conversations', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
@@ -1775,7 +1940,7 @@ describe('App', () => {
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
   });
 
-  it('点击聊天流里的文件变更卡片会直接打开对应文件', async () => {
+  it('点击聊天回复中的生成文件链接会直接打开对应文件', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     const absoluteChangedPath = '/Users/test/develop/clawee/clawee-agent/docs/generated.md';
@@ -1805,10 +1970,11 @@ describe('App', () => {
           codexThreadId: 'codex-thread-files',
           items: [
             {
-              id: 'history_change_1',
-              type: 'file_change',
-              changes: [{ path: absoluteChangedPath, kind: 'modify' }],
-              status: 'completed',
+              id: 'history_assistant_1',
+              type: 'assistant_message',
+              text: `已生成文件：\n\n\`\`\`text\n${absoluteChangedPath} (311 字节)\n\`\`\``,
+              format: 'plain_text',
+              delivery: 'message',
               createdAt: new Date(0).toISOString()
             }
           ]
@@ -1909,7 +2075,7 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
-    await user.click(await screen.findByRole('button', { name: `打开文件 ${absoluteChangedPath}` }));
+    await user.click(await screen.findByRole('link', { name: absoluteChangedPath }));
 
     expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
     expect(await screen.findByRole('textbox', { name: 'docs/generated.md 编辑器' })).toHaveTextContent('# Generated');
@@ -2287,7 +2453,7 @@ describe('App', () => {
     expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
   });
 
-  it('focuses the most recent runtime project when the default project has no history', async () => {
+  it('focuses the most recent runtime project when there is no saved navigation', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const runtimeFetch = async (input: RequestInfo | URL) => {
@@ -2304,6 +2470,14 @@ describe('App', () => {
               cwd: '/Users/test/develop/clawee/clawee-agent',
               canonicalCwd: '/Users/test/develop/clawee/clawee-agent',
               updatedAt: new Date().toISOString()
+            }),
+            createThreadResponse({
+              id: 'thread_codex_content_design',
+              title: 'content-design 旧历史',
+              codexThreadId: 'codex-history-content-design',
+              cwd: '/Users/test/develop/content-design',
+              canonicalCwd: '/Users/test/develop/content-design',
+              updatedAt: new Date(0).toISOString()
             })
           ]
         });

@@ -1,70 +1,59 @@
-# Task 4 报告：Web Runtime 文件服务
+# Task 4 报告：daemon 市场安装/更新用例和 Fastify API
 
-## 实现范围
+## 本轮修复
 
-- 修改 `apps/web/src/runtime/client.ts`
-- 修改 `apps/web/src/runtime/client.test.ts`
-- 新增 `apps/web/src/services/workspace-file-service.ts`
-- 新增 `apps/web/src/services/workspace-file-service.test.ts`
+- 恢复 `.superpowers/sdd/task-4-report.md` 提交边界：
+  - 修复提交中该文件内容恢复为 base `c09c3c44f5aefddaa44de5032ddb8a7e18fc5935` 版本。
+  - 提交后 `git diff --name-only c09c3c44f5aefddaa44de5032ddb8a7e18fc5935..HEAD | rg '^\.superpowers' || true` 无输出。
+  - 本报告仅保留在工作区，未暂存、未提交。
+- cleanup 纳入安装补偿事务：
+  - `SkillManager.installSkill()` 成功后先显式清理本次外层 workDir。
+  - cleanup 成功后才写 market record 并返回成功。
+  - cleanup 失败会调用 `rollbackSkillInstall(id, operation.backupPath ?? null)`，跳过 record 写入并抛 `CODEX_SKILL_WRITE_FAILED`。
+  - cleanup 与 rollback 双失败时抛 `AggregateError`，消息保留两个错误上下文。
+  - `finally` 仍对下载、解析、安装前失败做 best-effort cleanup，且不覆盖主错误。
+- update TOCTOU 修复：
+  - 保留 update 前 `getSkill(id)` 检查。
+  - `installSkill(overwrite: true)` 返回后校验 `operation.operation === 'overwrite'`。
+  - 若返回 `install`，立即 rollback fresh install，抛 `CODEX_SKILL_NOT_FOUND`，不写 market record。
+  - update rollback 失败时用 `AggregateError` 保留语义错误和 rollback 错误。
+- 新增 manager 单测覆盖：
+  - post-install cleanup 失败会 rollback、不会写 record。
+  - cleanup + rollback 双失败保留两个错误。
+  - update 预检存在但 install 返回 `install` 时 rollback、不会写 record、抛 `CODEX_SKILL_NOT_FOUND`。
+  - update TOCTOU rollback 失败保留两个错误。
 
-## TDD 过程
+## 验证
 
-1. 先新增 `workspace-file-service.test.ts`，覆盖：
-   - `listDirectory` 调 `GET /workspace/files/directory`
-   - `openText` 调 `GET /workspace/files/content`
-   - `saveText` 调 `POST /workspace/files/content`
-   - `reveal` 调 `POST /workspace/files/reveal`
-   - `openBlob` 走 `RuntimeClient.rawGet`，并生成 object URL
-   - `revokeBlob` 调 `URL.revokeObjectURL`
-2. 扩展 `runtime/client.test.ts`，补充：
-   - `rawGet` 带 `Authorization`
-   - `rawRequest` 保持非 2xx 抛 `ApiClientError`
-   - 现有 JSON `request` 继续发送 JSON body
-3. 先运行失败验证：
-   - `pnpm --filter @clawee/web test -- src/services/workspace-file-service.test.ts`
-   - 初次失败为 `workspace-file-service.ts` 不存在，符合 brief 预期
-4. 实现 `rawGet` / `rawRequest` 与 `workspace-file-service`
-5. 运行目标测试与 typecheck，全部通过
+- RED：
+  - `pnpm --filter @clawee/daemon test -- codex-skill-market-manager api`
+  - 新增 4 个 manager 用例在旧实现下失败，表现为错误成功返回或未保留错误上下文。
+- GREEN：
+  - `pnpm --filter @clawee/daemon test -- codex-skill-market-manager api`
+  - 通过：`98 passed`。
+- 全量：
+  - `pnpm --filter @clawee/daemon test`
+  - 通过：`38 passed | 1 skipped` test files，`450 passed | 13 skipped` tests。
+- 类型：
+  - `pnpm --filter @clawee/daemon typecheck`
+  - 通过。
 
-## RuntimeClient 改动
+## 修改文件
 
-- 新增 `rawGet(path)`
-- 新增 `rawRequest(path, input)`
-- `request<T>` 改为先走 `rawRequest`，再 `readJson`
-- 非 2xx 错误解析逻辑保持不变，仍抛 `ApiClientError`
-- `/healthz` 不带 `Authorization`，其他 path 继续带 Bearer token
+- 提交内：
+  - `apps/daemon/src/codex/skills/market-manager.ts`
+  - `apps/daemon/test/unit/codex-skill-market-manager.test.ts`
+  - `.superpowers/sdd/task-4-report.md` 恢复为 base 内容，用于移出最终 diff。
+- 工作区未提交：
+  - `.superpowers/sdd/task-4-report.md` 本报告。
 
-## workspace-file-service 说明
+## 自检
 
-- 导出 `createWorkspaceFileService(client)`
-- 提供方法：
-  - `listDirectory(threadId, path)`
-  - `getMeta(threadId, path)`
-  - `openText(threadId, path)`
-  - `saveText(input)`
-  - `openBlob(threadId, path)`
-  - `revokeBlob(objectUrl)`
-  - `reveal(input)`
-- `openBlob` 实现：
-  - `client.rawGet('/workspace/files/blob?...')`
-  - `await response.blob()`
-  - `URL.createObjectURL(blob)`
-  - 返回 `{ objectUrl, mime, size }`
+- 未触碰 apps/web。
+- 未暂存或提交 `.superpowers/sdd/task-2-report.md`、`.superpowers/sdd/task-3-report.md`。
+- 未修改 Task 3 或现有 `SkillManager` API。
+- 未向 HTTP 或 `BuildServerInput` 暴露 cleanup 测试依赖。
 
-## 验证结果
+## 关注点
 
-- 通过：
-  - `pnpm --filter @clawee/web test -- src/services/workspace-file-service.test.ts src/runtime/client.test.ts`
-  - `pnpm --filter @clawee/web typecheck`
-
-## 本次补充
-
-- 为 `workspace-file-service.getMeta(threadId, path)` 增加测试，覆盖：
-  - 请求 `GET /workspace/files/meta?threadId=&path=`
-  - 返回 `WorkspaceFileMeta`
-- 复跑验证命令，结果均通过。
-
-## 风险与备注
-
-- 按要求仅修改 web runtime client 与 workspace file service，未触碰 App/UI。
-- 测试命令使用了 `apps/web` 包内可命中的相对路径写法；仓库根路径写法在当前 Vitest 配置下不会命中测试文件。
+- 本报告按审查要求留在工作区未提交，因此 `git status` 会显示 `.superpowers/sdd/task-4-report.md` 修改。

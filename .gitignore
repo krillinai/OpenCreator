@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .runtime/
+.codegraph/
 coverage/
 *.log
 test-results/

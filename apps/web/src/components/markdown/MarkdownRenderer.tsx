@@ -10,6 +10,7 @@ export type MarkdownRendererProps = {
   variant?: MarkdownVariant;
   className?: string;
   onLinkClick?: MarkdownLinkClickHandler;
+  linkifyWorkspaceFiles?: boolean;
 };
 
 function alignStyle(align: TableAlign): React.CSSProperties | undefined {
@@ -107,7 +108,15 @@ function renderBlock(block: MarkdownBlock, key: number, options: MarkdownRendere
         </blockquote>
       );
     case 'code':
-      return <MarkdownCodeBlock key={key} body={block.body} lang={block.lang} />;
+      return (
+        <MarkdownCodeBlock
+          key={key}
+          body={block.body}
+          lang={block.lang}
+          onLinkClick={options.onLinkClick}
+          linkifyWorkspaceFiles={options.linkifyWorkspaceFiles}
+        />
+      );
     case 'table':
       return (
         <div key={key} className="md-table-wrap">

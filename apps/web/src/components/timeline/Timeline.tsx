@@ -1,4 +1,5 @@
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer.js';
+import { isWorkspaceFilePath } from '../markdown/markdown-inline.js';
 import type { TimelineItem } from './timeline-model.js';
 
 type ProcessTimelineItem = Extract<
@@ -355,8 +356,25 @@ function buildTimelineRenderItems(items: TimelineItem[]): TimelineRenderItem[] {
   return renderItems;
 }
 
-function renderMessageContent(item: Extract<TimelineItem, { kind: 'user_message' | 'assistant_message' }>) {
-  return <MarkdownRenderer text={item.text} variant={item.kind === 'user_message' ? 'user' : 'assistant'} />;
+function renderMessageContent(
+  item: Extract<TimelineItem, { kind: 'user_message' | 'assistant_message' }>,
+  onOpenFile?: (path: string) => void
+) {
+  const canOpenWorkspaceFiles = item.kind === 'assistant_message' && onOpenFile !== undefined;
+  return (
+    <MarkdownRenderer
+      text={item.text}
+      variant={item.kind === 'user_message' ? 'user' : 'assistant'}
+      linkifyWorkspaceFiles={canOpenWorkspaceFiles}
+      onLinkClick={canOpenWorkspaceFiles
+        ? (href, event) => {
+            if (!isWorkspaceFilePath(href)) return;
+            event.preventDefault();
+            onOpenFile(href);
+          }
+        : undefined}
+    />
+  );
 }
 
 function renderChangeCard(item: Extract<TimelineItem, { kind: 'change_card' }>, onOpenFile?: (path: string) => void) {
@@ -393,7 +411,7 @@ function renderTimelineItemContent(item: TimelineItem, onOpenFile?: (path: strin
   switch (item.kind) {
     case 'user_message':
     case 'assistant_message':
-      return renderMessageContent(item);
+      return renderMessageContent(item, onOpenFile);
     case 'change_card':
       return renderChangeCard(item, onOpenFile);
     case 'diagnostic':
