@@ -1,0 +1,52 @@
+[
+  {
+    "id": "topic-trend",
+    "name": "找选题与趋势",
+    "description": "发现热点、搜索需求、内容机会和趋势线索。"
+  },
+  {
+    "id": "content-planning",
+    "name": "做内容策划",
+    "description": "规划账号定位、栏目、选题池、内容日历和内容生产节奏。"
+  },
+  {
+    "id": "copy-script",
+    "name": "写文案与脚本",
+    "description": "生成文案、脚本、分镜、长文和内容结构。"
+  },
+  {
+    "id": "image-cover",
+    "name": "做图文与封面",
+    "description": "生成图文卡片、封面、信息图和视觉素材。"
+  },
+  {
+    "id": "video-subtitle",
+    "name": "做视频与字幕",
+    "description": "处理视频生成、剪辑、字幕、配音和多语言内容。"
+  },
+  {
+    "id": "ecommerce-selling",
+    "name": "做电商带货",
+    "description": "生成商品图、详情页、卖点、直播脚本、种草素材和带货转化内容。"
+  },
+  {
+    "id": "personal-brand",
+    "name": "做个人品牌",
+    "description": "建设个人主页、观点内容、作品集和长期内容资产。"
+  },
+  {
+    "id": "marketing-growth",
+    "name": "做营销增长",
+    "description": "支持 SEO、数据分析、评论互动、获客、线索、落地页、私域承接和转化优化。"
+  },
+  {
+    "id": "publish-distribute",
+    "name": "做发布分发",
+    "description": "多平台发布、投稿、分发、排期和自动化。"
+  },
+  {
+    "id": "productivity",
+    "name": "做效率提升",
+    "description": "用于素材管理、自动化流程、批量处理、团队协作和日常工作效率。"
+  }
+]
