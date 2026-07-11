@@ -1,0 +1,324 @@
+import type {
+  CodexSkillListResponse,
+  CodexSkillMarketInstallRecordResponse,
+} from '@clawee/protocol';
+import { skillMarketCatalog, type SkillMarketEntry } from '@clawee/skill-market';
+import {
+  AlertCircle,
+  ArrowDownUp,
+  Bookmark,
+  CheckCircle2,
+  Loader2,
+  Search,
+} from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  filterAndSortSkillMarketEntries,
+  type SkillMarketFilterStatus,
+  type SkillMarketSort,
+  type SkillMarketViewEntry,
+} from './skill-market-model.js';
+import { readSavedSkillIds, writeSavedSkillIds } from './skill-market-storage.js';
+import { getSkillMarketAction, SkillMarketCard } from './SkillMarketCard.js';
+import { SkillDetailModal } from './SkillDetailModal.js';
+import './skill-market.css';
+
+export type SkillMarketOperation =
+  | { skillId: string; kind: 'install' | 'update'; error?: string }
+  | undefined;
+
+export type SkillMarketViewProps = {
+  connected: boolean;
+  skills?: CodexSkillListResponse;
+  installRecords: CodexSkillMarketInstallRecordResponse[];
+  loading: boolean;
+  loadError?: string;
+  operation?: SkillMarketOperation;
+  useError?: string;
+  onInstall(skillId: string): void;
+  onUpdate(skillId: string): void;
+  onUse(skillId: string): void;
+};
+
+type SkillMarketViewInternalProps = SkillMarketViewProps & {
+  catalogOverride?: readonly SkillMarketEntry[];
+};
+
+const sortOptions: Array<{ id: SkillMarketSort; label: string }> = [
+  { id: 'recommended', label: '推荐优先' },
+  { id: 'users', label: '使用人数多到少' },
+  { id: 'installed', label: '已安装优先' },
+  { id: 'saved', label: '已收藏优先' },
+];
+
+export function SkillMarketView({
+  connected,
+  skills,
+  installRecords,
+  loading,
+  loadError,
+  operation,
+  useError,
+  onInstall,
+  onUpdate,
+  onUse,
+  catalogOverride,
+}: SkillMarketViewInternalProps) {
+  const catalog = catalogOverride ?? skillMarketCatalog;
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<SkillMarketFilterStatus>('all');
+  const [category, setCategory] = useState<string | null>(null);
+  const [subcategory, setSubcategory] = useState<string | null>(null);
+  const [sort, setSort] = useState<SkillMarketSort>('recommended');
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [activeEntry, setActiveEntry] = useState<SkillMarketViewEntry | null>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setSavedIds(readSavedSkillIds());
+  }, []);
+
+  const baseResult = useMemo(
+    () =>
+      filterAndSortSkillMarketEntries({
+        entries: catalog,
+        skills,
+        records: installRecords,
+        savedSkillIds: savedIds,
+        operation,
+      }),
+    [catalog, skills, installRecords, savedIds, operation]
+  );
+
+  const filteredResult = useMemo(
+    () =>
+      filterAndSortSkillMarketEntries({
+        entries: catalog,
+        skills,
+        records: installRecords,
+        savedSkillIds: savedIds,
+        search: query,
+        status,
+        category,
+        subcategory,
+        sort,
+        operation,
+      }),
+    [catalog, skills, installRecords, savedIds, query, status, category, subcategory, sort, operation]
+  );
+
+  const activeSyncedEntry =
+    activeEntry === null
+      ? null
+      : filteredResult.entries.find((entry) => entry.id === activeEntry.id) ??
+        baseResult.entries.find((entry) => entry.id === activeEntry.id) ??
+        activeEntry;
+
+  const savedCount = baseResult.entries.filter((entry) => entry.saved).length;
+  const installedCount = baseResult.entries.filter((entry) => entry.installed).length;
+  const currentSubcategories = filteredResult.subcategories;
+
+  function toggleSaved(skillId: string) {
+    setSavedIds((current) => {
+      const next = current.includes(skillId)
+        ? current.filter((id) => id !== skillId)
+        : [...current, skillId];
+      writeSavedSkillIds(next);
+      return next;
+    });
+  }
+
+  function openEntry(entry: SkillMarketViewEntry, trigger: HTMLElement) {
+    restoreFocusRef.current = trigger;
+    setActiveEntry(entry);
+  }
+
+  function closeEntry() {
+    setActiveEntry(null);
+    window.setTimeout(() => restoreFocusRef.current?.focus(), 0);
+  }
+
+  return (
+    <section className="skill-market" aria-label="Skill 功能目录">
+      <div className="skill-market__toolbar">
+        <label className="skill-market-search">
+          <Search size={17} aria-hidden="true" />
+          <input
+            aria-label="搜索 Skill"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索：字幕、封面、SEO、B站发布..."
+            type="search"
+            value={query}
+          />
+        </label>
+
+        <div className="skill-market-status-controls" aria-label="目录状态">
+          <button
+            aria-pressed={status === 'saved'}
+            className={status === 'saved' ? 'is-active' : ''}
+            onClick={() => setStatus(status === 'saved' ? 'all' : 'saved')}
+            type="button"
+          >
+            <Bookmark size={14} aria-hidden="true" />
+            <span>我的收藏</span>
+            <b>{savedCount}</b>
+          </button>
+          <button
+            aria-pressed={status === 'installed'}
+            className={status === 'installed' ? 'is-active' : ''}
+            onClick={() => setStatus(status === 'installed' ? 'all' : 'installed')}
+            type="button"
+          >
+            <CheckCircle2 size={14} aria-hidden="true" />
+            <span>已安装</span>
+            <b>{installedCount}</b>
+          </button>
+        </div>
+
+        <label className="skill-market-sort">
+          <ArrowDownUp size={14} aria-hidden="true" />
+          <span>排序</span>
+          <select
+            aria-label="排序"
+            onChange={(event) => setSort(event.target.value as SkillMarketSort)}
+            value={sort}
+          >
+            {sortOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {!connected ? (
+        <p className="skill-market-banner" role="status">
+          Runtime 未连接，目录可浏览，安装、更新和使用需连接后操作。
+        </p>
+      ) : null}
+
+      <div className="skill-market-filter-shell">
+        <div className="skill-market-chip-row" aria-label="主分类">
+          <button
+            aria-pressed={category === null}
+            className={category === null ? 'is-active' : ''}
+            onClick={() => {
+              setCategory(null);
+              setSubcategory(null);
+            }}
+            type="button"
+          >
+            <span>全部</span>
+            <b>{baseResult.entries.length}</b>
+          </button>
+          {baseResult.categories.map((item) => (
+            <button
+              aria-pressed={category === item.id}
+              className={category === item.id ? 'is-active' : ''}
+              key={item.id}
+              onClick={() => {
+                setCategory(item.id);
+                setSubcategory(null);
+              }}
+              type="button"
+            >
+              <span>{item.name}</span>
+              <b>{item.count}</b>
+            </button>
+          ))}
+        </div>
+
+        <div className="skill-market-chip-row skill-market-chip-row--sub" aria-label="细分场景">
+          <button
+            aria-pressed={subcategory === null}
+            className={subcategory === null ? 'is-active' : ''}
+            onClick={() => setSubcategory(null)}
+            type="button"
+          >
+            <span>全部场景</span>
+          </button>
+          {currentSubcategories.map((item) => (
+            <button
+              aria-pressed={subcategory === item.id}
+              className={subcategory === item.id ? 'is-active' : ''}
+              key={item.id}
+              onClick={() => setSubcategory(item.id)}
+              type="button"
+            >
+              <span>{item.label}</span>
+              <b>{item.count}</b>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="skill-market-summary">
+        <strong>{filteredResult.entries.length} 个 Skill</strong>
+        <span>
+          {query.trim().length > 0
+            ? `搜索 “${query.trim()}”`
+            : '从目录中选择可安装、可更新或已安装的能力'}
+        </span>
+      </div>
+
+      {loading ? (
+        <StateMessage icon={<Loader2 size={18} />} text="正在加载 Skills 目录" />
+      ) : loadError ? (
+        <StateMessage alert icon={<AlertCircle size={18} />} text={loadError} />
+      ) : catalog.length === 0 ? (
+        <StateMessage text="目录暂时为空" />
+      ) : filteredResult.entries.length === 0 ? (
+        <StateMessage text={query.trim().length > 0 ? '没有找到匹配的 Skill' : '当前筛选没有可显示的 Skill'} />
+      ) : (
+        <div className="skill-market-grid">
+          {filteredResult.entries.map((item) => (
+            <SkillMarketCard
+              action={getSkillMarketAction(item.status, connected)}
+              connected={connected}
+              item={item}
+              key={item.id}
+              onInstall={onInstall}
+              onOpen={(trigger) => openEntry(item, trigger)}
+              onToggleSaved={toggleSaved}
+              onUpdate={onUpdate}
+              onUse={onUse}
+              useError={useError}
+            />
+          ))}
+        </div>
+      )}
+
+      {activeSyncedEntry ? (
+        <SkillDetailModal
+          connected={connected}
+          item={activeSyncedEntry}
+          onClose={closeEntry}
+          onInstall={onInstall}
+          onToggleSaved={toggleSaved}
+          onUpdate={onUpdate}
+          onUse={onUse}
+          saved={activeSyncedEntry.saved}
+          useError={useError}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function StateMessage({
+  text,
+  icon,
+  alert = false,
+}: {
+  text: string;
+  icon?: React.ReactNode;
+  alert?: boolean;
+}) {
+  return (
+    <div className="skill-market-state" role={alert ? 'alert' : 'status'}>
+      {icon}
+      <span>{text}</span>
+    </div>
+  );
+}
