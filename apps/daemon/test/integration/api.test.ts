@@ -18,6 +18,7 @@ import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
+import type { MarketArchiveDownloader } from '../../src/codex/skills/market-downloader.js';
 import { SchedulerError, type SchedulerService } from '../../src/scheduler/service.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
@@ -1073,6 +1074,121 @@ describe('runtime api', () => {
     expect(invalidSourcePathInstall.json().error.code).toBe('CODEX_SKILL_INVALID');
     expect(invalidInstall.statusCode).toBe(422);
     expect(invalidInstall.json().error.code).toBe('CODEX_SKILL_INVALID');
+  });
+
+  it('installs, updates, and lists codex skill market records', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const downloader = createFakeMarketArchiveDownloader();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome,
+      marketArchiveDownloader: downloader
+    });
+
+    const installed = await authPost('/codex/skill-market/frontend-slides/install', {});
+    expect(installed.statusCode).toBe(201);
+    expect(installed.json().skill).toMatchObject({
+      id: 'frontend-slides',
+      description: 'market version 1'
+    });
+    expect(installed.json().record).toMatchObject({
+      skillId: 'frontend-slides',
+      repository: 'zarazhangrui/frontend-slides',
+      skillPath: '.',
+      commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
+      marketRevision: 1
+    });
+
+    const updated = await authPost('/codex/skill-market/frontend-slides/update', {});
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().skill).toMatchObject({
+      id: 'frontend-slides',
+      description: 'market version 2'
+    });
+    expect(updated.json().operation.operation).toBe('overwrite');
+
+    const records = await authGet('/codex/skill-market/install-records');
+    expect(records.statusCode).toBe(200);
+    expect(records.json().records).toEqual([
+      expect.objectContaining({
+        skillId: 'frontend-slides',
+        repository: 'zarazhangrui/frontend-slides',
+        marketRevision: 1
+      })
+    ]);
+  });
+
+  it('maps codex skill market API errors', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const downloader = createFakeMarketArchiveDownloader();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome,
+      marketArchiveDownloader: downloader
+    });
+
+    const unknown = await authPost('/codex/skill-market/missing-market-skill/install', {
+      repository: 'attacker/repo',
+      commit: 'bad',
+      path: '../../bad'
+    });
+    const notInstallable = await authPost('/codex/skill-market/garrytan-gstack/install', {});
+    const missingUpdate = await authPost('/codex/skill-market/frontend-slides/update', {});
+
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json().error.code).toBe('CODEX_SKILL_MARKET_ENTRY_NOT_FOUND');
+    expect(notInstallable.statusCode).toBe(422);
+    expect(notInstallable.json().error.code).toBe('CODEX_SKILL_MARKET_NOT_INSTALLABLE');
+    expect(missingUpdate.statusCode).toBe(404);
+    expect(missingUpdate.json().error.code).toBe('CODEX_SKILL_NOT_FOUND');
+  });
+
+  it('maps codex skill market download failures to bad gateway', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      marketArchiveDownloader: {
+        async download() {
+          throw new Error('CODEX_SKILL_MARKET_DOWNLOAD_FAILED: archive unavailable');
+        }
+      }
+    });
+
+    const response = await authPost('/codex/skill-market/frontend-slides/install', {});
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json().error.code).toBe('CODEX_SKILL_MARKET_DOWNLOAD_FAILED');
+  });
+
+  it('confirms global CODEX_HOME writes for codex skill market installs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const previousCodexHome = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = join(tempDir, 'fake-global-codex-home');
+    try {
+      server = await buildServer({
+        token: 'secret',
+        dataDir: tempDir,
+        marketArchiveDownloader: createFakeMarketArchiveDownloader()
+      });
+
+      const response = await authPost('/codex/skill-market/frontend-slides/install', {});
+
+      expect(response.statusCode).toBe(201);
+      expect(response.json().skill).toMatchObject({ id: 'frontend-slides' });
+      expect(response.json().operation.codexHome).toBe(process.env.CODEX_HOME);
+    } finally {
+      if (previousCodexHome === undefined) {
+        delete process.env.CODEX_HOME;
+      } else {
+        process.env.CODEX_HOME = previousCodexHome;
+      }
+    }
   });
 
   it('lists, adds, gets, removes, and logs codex mcp servers', async () => {
@@ -2990,6 +3106,26 @@ function createFakeMcpCodex(dir: string): { bin: string; readCommands: () => str
   return {
     bin,
     readCommands: () => JSON.parse(readFileSync(commandsPath, 'utf8')) as string[]
+  };
+}
+
+function createFakeMarketArchiveDownloader(): MarketArchiveDownloader {
+  let version = 0;
+  return {
+    async download(input) {
+      version += 1;
+      const root = join(input.workDir, `fake-market-archive-${version}`);
+      mkdirSync(root, { recursive: true });
+      writeFileSync(join(root, 'SKILL.md'), [
+        '---',
+        'name: frontend-slides',
+        `description: "market version ${version}"`,
+        '---',
+        '',
+        `market version ${version}`
+      ].join('\n'));
+      return root;
+    }
   };
 }
 

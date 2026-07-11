@@ -13,6 +13,9 @@ import { createProfileManager } from '../codex/profiles/manager.js';
 import { readCodexSessionHistory } from '../codex/sessions/history.js';
 import { scanCodexSessionsWithMetadata } from '../codex/sessions/scanner.js';
 import { createSkillManager } from '../codex/skills/manager.js';
+import { MarketArchiveDownloader, type MarketArchiveDownloader as MarketArchiveDownloaderType } from '../codex/skills/market-downloader.js';
+import { createSkillMarketManager } from '../codex/skills/market-manager.js';
+import { createSkillMarketRecordRepository } from '../codex/skills/market-records.js';
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
@@ -32,6 +35,7 @@ import { registerMcpRoutes } from './routes.mcp.js';
 import { registerProfileRoutes } from './routes.profiles.js';
 import { registerRunRoutes } from './routes.runs.js';
 import { registerScheduleRoutes } from './routes.schedules.js';
+import { registerSkillMarketRoutes } from './routes.skill-market.js';
 import { registerSkillRoutes } from './routes.skills.js';
 import { registerThreadRoutes } from './routes.threads.js';
 import { registerWorkspaceFileRoutes } from './routes.workspace-files.js';
@@ -48,6 +52,7 @@ export type BuildServerInput = {
   sseHeartbeatMs?: number;
   resumeCapabilityVerified?: boolean;
   capabilities?: RuntimeCapabilityMatrix;
+  marketArchiveDownloader?: MarketArchiveDownloaderType;
 };
 
 export async function buildServer(input: BuildServerInput) {
@@ -89,6 +94,13 @@ export async function buildServer(input: BuildServerInput) {
   });
   const profileManager = createProfileManager({ codexHome: resolvedCodexHome });
   const skillManager = createSkillManager({ codexHome: resolvedCodexHome, db });
+  const skillMarketRecords = createSkillMarketRecordRepository(db);
+  const skillMarketManager = createSkillMarketManager({
+    dataDir,
+    skillManager,
+    records: skillMarketRecords,
+    downloader: input.marketArchiveDownloader ?? MarketArchiveDownloader
+  });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const runManager =
     input.runManager ??
@@ -147,6 +159,7 @@ export async function buildServer(input: BuildServerInput) {
     profileManager
   });
   await registerSkillRoutes(server, { skillManager });
+  await registerSkillMarketRoutes(server, { skillMarketManager });
   await registerMcpRoutes(server, { mcpManager });
   await registerRunRoutes(server, runManager, {
     sseHeartbeatMs: input.sseHeartbeatMs,
