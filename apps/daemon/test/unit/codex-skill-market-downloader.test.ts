@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { Writable } from 'node:stream';
@@ -142,6 +142,105 @@ describe('codex skill market downloader', () => {
             callback(new Error('extract failed'));
           }
         })
+      };
+    });
+    const { MarketArchiveDownloader } = await loadDownloader();
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-market-download-'));
+    mockFetch({ status: 200, body: validArchive() });
+
+    await expect(MarketArchiveDownloader.download({
+      repository: 'owner/repo',
+      commit: 'abc',
+      workDir: tempDir
+    })).rejects.toThrow(/CODEX_SKILL_MARKET_DOWNLOAD_FAILED/);
+    expect(marketDownloadDirs(tempDir)).toEqual([]);
+  });
+
+  it('chmods read-only extracted contents before cleanup after extract failure', async () => {
+    vi.doMock('tar', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('tar')>();
+      return {
+        ...actual,
+        x: () => new Writable({
+          write(_chunk, _encoding, callback) {
+            const [privateDir] = marketDownloadDirs(tempDir);
+            if (privateDir) {
+              const readonlyDir = join(tempDir, privateDir, 'readonly');
+              mkdirSync(readonlyDir, { recursive: true });
+              writeFileSync(join(readonlyDir, 'locked.txt'), 'locked');
+              chmodSync(join(readonlyDir, 'locked.txt'), 0o400);
+              chmodSync(readonlyDir, 0o500);
+              callback(new Error('extract failed'));
+              return;
+            }
+            callback(new Error('extract failed'));
+          }
+        })
+      };
+    });
+    const { MarketArchiveDownloader } = await loadDownloader();
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-market-download-'));
+    mockFetch({ status: 200, body: validArchive() });
+
+    await expect(MarketArchiveDownloader.download({
+      repository: 'owner/repo',
+      commit: 'abc',
+      workDir: tempDir
+    })).rejects.toThrow(/CODEX_SKILL_MARKET_DOWNLOAD_FAILED/);
+    expect(marketDownloadDirs(tempDir)).toEqual([]);
+  });
+
+  it('preserves the primary download error and reports the residual private directory when cleanup fails', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('node:fs')>();
+      return {
+        ...actual,
+        rmSync(path: Parameters<typeof actual.rmSync>[0], options?: Parameters<typeof actual.rmSync>[1]) {
+          if (String(path).includes('.market-download-') && options && 'recursive' in options) {
+            throw new Error('cleanup denied');
+          }
+          return actual.rmSync(path, options);
+        }
+      };
+    });
+    const { MarketArchiveDownloader } = await loadDownloader();
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-market-download-'));
+    mockFetch({
+      status: 200,
+      body: tarGzip([
+        { path: 'repo-abc/', type: 'directory' },
+        { path: 'repo-abc/../evil/SKILL.md', type: 'file', body: 'bad' }
+      ])
+    });
+
+    let error: unknown;
+    try {
+      await MarketArchiveDownloader.download({
+        repository: 'owner/repo',
+        commit: 'abc',
+        workDir: tempDir
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('CODEX_SKILL_MARKET_DOWNLOAD_FAILED');
+    expect((error as Error).message).toContain('.market-download-');
+  });
+
+  it('wraps private directory chmod failures and cleans up the partial directory', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('node:fs')>();
+      let failed = false;
+      return {
+        ...actual,
+        chmodSync(path: Parameters<typeof actual.chmodSync>[0], mode: Parameters<typeof actual.chmodSync>[1]) {
+          if (!failed && String(path).includes('.market-download-')) {
+            failed = true;
+            throw new Error('chmod denied');
+          }
+          return actual.chmodSync(path, mode);
+        }
       };
     });
     const { MarketArchiveDownloader } = await loadDownloader();

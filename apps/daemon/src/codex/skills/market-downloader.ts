@@ -9,6 +9,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readdirSync,
   realpathSync,
   rmSync
 } from 'node:fs';
@@ -34,14 +35,20 @@ export const MarketArchiveDownloader: MarketArchiveDownloader = {
 
 async function download(input: MarketArchiveDownloadInput): Promise<string> {
   const workDir = resolve(input.workDir);
-  const downloadRoot = createPrivateDownloadRoot(workDir);
-  const archivePath = resolve(downloadRoot, 'archive.tar.gz');
+  let downloadRoot: string | undefined;
+  let archivePath: string | undefined;
   const controller = new AbortController();
   let response: Response | undefined;
   let archiveFd: number | undefined;
   let succeeded = false;
+  let failure: unknown;
 
   try {
+    mkdirSync(workDir, { recursive: true });
+    downloadRoot = mkdtempSync(join(workDir, '.market-download-'));
+    chmodSync(downloadRoot, 0o700);
+    archivePath = resolve(downloadRoot, 'archive.tar.gz');
+
     response = await fetch(`https://codeload.github.com/${input.repository}/tar.gz/${input.commit}`, {
       signal: controller.signal
     });
@@ -61,6 +68,7 @@ async function download(input: MarketArchiveDownloadInput): Promise<string> {
 
     await writeLimitedArchive(response.body, archivePath);
     archiveFd = openSync(archivePath, 'r');
+    rmSync(archivePath);
     const archiveIdentity = getArchiveIdentity(archiveFd);
     await scanArchive(archivePath, archiveFd);
     assertArchiveIdentityUnchanged(archiveIdentity, archiveFd);
@@ -68,14 +76,20 @@ async function download(input: MarketArchiveDownloadInput): Promise<string> {
     succeeded = true;
     return downloadRoot;
   } catch (error) {
+    failure = error;
     abortQuietly(controller);
     if (response !== undefined) await cancelResponseBody(response);
-    throw wrapMarketDownloadFailed(error);
   } finally {
     if (archiveFd !== undefined) closeArchiveQuietly(archiveFd);
-    rmSync(archivePath, { force: true });
-    if (!succeeded) rmSync(downloadRoot, { recursive: true, force: true });
+    let cleanupResult: CleanupResult | undefined;
+    if (!succeeded && downloadRoot !== undefined) {
+      cleanupResult = cleanupPrivateDownloadRoot(downloadRoot);
+    }
+    if (failure !== undefined) {
+      throw wrapMarketDownloadFailed(failure, cleanupResult);
+    }
   }
+  throw wrapMarketDownloadFailed(new Error('market archive download ended without a result'));
 }
 
 export function resolveMarketSkillSource(root: string, skillPath: string): string {
@@ -102,13 +116,6 @@ export function resolveMarketSkillSource(root: string, skillPath: string): strin
   } catch (error) {
     throw wrapMarketDownloadFailed(error);
   }
-}
-
-function createPrivateDownloadRoot(workDir: string): string {
-  mkdirSync(workDir, { recursive: true });
-  const root = mkdtempSync(join(workDir, '.market-download-'));
-  chmodSync(root, 0o700);
-  return resolve(root);
 }
 
 async function writeLimitedArchive(body: ReadableStream<Uint8Array>, archivePath: string): Promise<void> {
@@ -153,6 +160,41 @@ function closeArchiveQuietly(fd: number): void {
   } catch {
     // Ignore close failures so the primary error is preserved.
   }
+}
+
+type CleanupResult = {
+  error?: unknown;
+  residualPath?: string;
+};
+
+function cleanupPrivateDownloadRoot(root: string): CleanupResult {
+  try {
+    preparePathForRemoval(root);
+    rmSync(root, { recursive: true, force: true });
+    if (existsSync(root)) {
+      return {
+        error: new Error(`private download directory still exists: ${root}`),
+        residualPath: root
+      };
+    }
+    return {};
+  } catch (error) {
+    return { error, residualPath: root };
+  }
+}
+
+function preparePathForRemoval(path: string): void {
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink()) return;
+  if (stat.isDirectory()) {
+    chmodSync(path, 0o700);
+    for (const entry of readdirSync(path)) {
+      preparePathForRemoval(join(path, entry));
+    }
+    chmodSync(path, 0o700);
+    return;
+  }
+  chmodSync(path, 0o600);
 }
 
 function releaseReaderQuietly(reader: ReadableStreamDefaultReader<Uint8Array>): void {
@@ -303,9 +345,13 @@ function assertPathInside(parent: string, target: string, message: string): void
   throw new Error(message);
 }
 
-function wrapMarketDownloadFailed(error: unknown): Error {
+function wrapMarketDownloadFailed(error: unknown, cleanup?: CleanupResult): Error {
   if (error instanceof Error && error.message.startsWith('CODEX_SKILL_MARKET_DOWNLOAD_FAILED:')) return error;
-  return new Error('CODEX_SKILL_MARKET_DOWNLOAD_FAILED: failed to download market skill archive', {
-    cause: error
+  const cleanupError = cleanup?.error;
+  const residualMessage = cleanup?.residualPath ? `; cleanup residual path: ${cleanup.residualPath}` : '';
+  return new Error(`CODEX_SKILL_MARKET_DOWNLOAD_FAILED: failed to download market skill archive${residualMessage}`, {
+    cause: cleanupError === undefined
+      ? error
+      : new AggregateError([error, cleanupError], 'market archive download failed and cleanup was incomplete')
   });
 }
