@@ -9,7 +9,11 @@ export function readSavedSkillIds(): string[] {
   const value = readJsonFromStorage<unknown>(savedSkillIdsStorageKey);
   if (value === null) return [];
   if (!isStringArray(value)) {
-    window.localStorage.removeItem(savedSkillIdsStorageKey);
+    try {
+      window.localStorage.removeItem(savedSkillIdsStorageKey);
+    } catch {
+      return [];
+    }
     return [];
   }
   return [...value];

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readSavedSkillIds, writeSavedSkillIds } from './skill-market-storage.js';
 
 describe('skill market storage', () => {
@@ -33,6 +33,23 @@ describe('skill market storage', () => {
 
     expect(readSavedSkillIds()).toEqual([]);
     expect(window.localStorage.getItem('clawee.skill-market.saved.v1')).toBeNull();
+  });
+
+  it('returns an empty list when invalid shape cleanup throws', () => {
+    window.localStorage.setItem(
+      'clawee.skill-market.saved.v1',
+      JSON.stringify(['frontend-slides', 1])
+    );
+    const removeItemSpy = vi
+      .spyOn(Storage.prototype, 'removeItem')
+      .mockImplementation(() => {
+        throw new Error('blocked');
+      });
+
+    expect(() => readSavedSkillIds()).not.toThrow();
+    expect(readSavedSkillIds()).toEqual([]);
+
+    removeItemSpy.mockRestore();
   });
 
   it('deduplicates, filters empty values, and preserves first-seen order on write', () => {

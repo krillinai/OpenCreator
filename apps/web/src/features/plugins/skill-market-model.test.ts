@@ -78,21 +78,84 @@ describe('skill market model', () => {
     expect(
       resolveSkillMarketStatus(entries[0], skills, records, {
         skillId: 'frontend-slides',
-        kind: 'installing',
+        kind: 'install',
       })
     ).toBe('installing');
     expect(
       resolveSkillMarketStatus(entries[1], skills, records, {
         skillId: 'frontend-slides',
-        kind: 'installing',
+        kind: 'install',
       })
     ).toBe('installed');
     expect(
       resolveSkillMarketStatus(entries[1], skills, records, {
         skillId: 'guizang-social-card-skill',
-        kind: 'updating',
+        kind: 'update',
       })
     ).toBe('updating');
+  });
+
+  it('keeps not installed status and exposes install error when install fails', () => {
+    const result = filterAndSortSkillMarketEntries({
+      entries: [createEntry()],
+      skills: createSkillsResponse([]),
+      records: [],
+      operation: {
+        skillId: 'frontend-slides',
+        kind: 'install',
+        error: 'install failed',
+      },
+    });
+
+    expect(result.entries[0]?.status).toBe('not_installed');
+    expect(result.entries[0]?.operationKind).toBe('install');
+    expect(result.entries[0]?.operationError).toBe('install failed');
+  });
+
+  it('keeps update available status and exposes update error when update fails', () => {
+    const result = filterAndSortSkillMarketEntries({
+      entries: [createEntry({ install: createInstallSource(3) })],
+      skills: createSkillsResponse([createSkill({ id: 'frontend-slides', status: 'valid' })]),
+      records: [createRecord({ marketRevision: 2 })],
+      operation: {
+        skillId: 'frontend-slides',
+        kind: 'update',
+        error: 'update failed',
+      },
+    });
+
+    expect(result.entries[0]?.status).toBe('update_available');
+    expect(result.entries[0]?.operationKind).toBe('update');
+    expect(result.entries[0]?.operationError).toBe('update failed');
+  });
+
+  it('does not let another skill operation error contaminate external installed status', () => {
+    const result = filterAndSortSkillMarketEntries({
+      entries: [
+        createEntry({
+          id: 'frontend-slides',
+          install: { available: false, reason: 'missing_skill_manifest' },
+        }),
+        createEntry({
+          id: 'guizang-social-card-skill',
+          name: 'guizang-social-card-skill',
+        }),
+      ],
+      skills: createSkillsResponse([
+        createSkill({ id: 'frontend-slides', status: 'valid' }),
+      ]),
+      records: [],
+      operation: {
+        skillId: 'guizang-social-card-skill',
+        kind: 'install',
+        error: 'other skill failed',
+      },
+    });
+
+    const externalInstalled = result.entries.find((entry) => entry.id === 'frontend-slides');
+    expect(externalInstalled?.status).toBe('installed_unknown_version');
+    expect(externalInstalled?.operationError).toBeUndefined();
+    expect(externalInstalled?.operationKind).toBeUndefined();
   });
 
   it('searches across chinese title, english name, summary, tasks, and platforms with normalized spaces', () => {

@@ -19,8 +19,8 @@ export type SkillMarketStatus =
   | 'installing'
   | 'updating';
 
-export type SkillMarketMutationState =
-  | { skillId: string; kind: 'installing' | 'updating' }
+export type SkillMarketOperation =
+  | { skillId: string; kind: 'install' | 'update'; error?: string }
   | null
   | undefined;
 
@@ -48,6 +48,8 @@ export type SkillMarketViewEntry = {
   users: number;
   saved: boolean;
   installed: boolean;
+  operationError?: string;
+  operationKind?: 'install' | 'update';
 };
 
 export type FilterAndSortSkillMarketEntriesInput = {
@@ -60,7 +62,7 @@ export type FilterAndSortSkillMarketEntriesInput = {
   subcategory?: string | null;
   status?: SkillMarketFilterStatus | null;
   sort?: SkillMarketSort | null;
-  mutation?: SkillMarketMutationState;
+  operation?: SkillMarketOperation;
 };
 
 export type SkillMarketFilterResult = {
@@ -85,10 +87,10 @@ export function resolveSkillMarketStatus(
   entry: SkillMarketEntry,
   skills: CodexSkillListResponse | readonly CodexSkillResponse[] | null | undefined,
   records: readonly CodexSkillMarketInstallRecordResponse[] | null | undefined,
-  mutation?: SkillMarketMutationState
+  operation?: SkillMarketOperation
 ): SkillMarketStatus {
-  if (mutation?.skillId === entry.id) {
-    return mutation.kind;
+  if (operation?.skillId === entry.id && operation.error === undefined) {
+    return operation.kind === 'install' ? 'installing' : 'updating';
   }
 
   const skill = findSkillById(skills, entry.id);
@@ -111,7 +113,7 @@ export function filterAndSortSkillMarketEntries(
 ): SkillMarketFilterResult {
   const savedOrder = createSavedOrderMap(input.savedSkillIds);
   const models = input.entries.map((entry, index) =>
-    createViewEntry(entry, index, input.skills, input.records, savedOrder, input.mutation)
+    createViewEntry(entry, index, input.skills, input.records, savedOrder, input.operation)
   );
 
   const categories = summarizeCategories(models);
@@ -192,9 +194,10 @@ function createViewEntry(
   skills: CodexSkillListResponse | readonly CodexSkillResponse[] | null | undefined,
   records: readonly CodexSkillMarketInstallRecordResponse[] | null | undefined,
   savedOrder: Map<string, number>,
-  mutation?: SkillMarketMutationState
+  operation?: SkillMarketOperation
 ): SkillMarketViewEntry & { originalIndex: number } {
-  const status = resolveSkillMarketStatus(entry, skills, records, mutation);
+  const status = resolveSkillMarketStatus(entry, skills, records, operation);
+  const matchesOperation = operation?.skillId === entry.id;
   return {
     id: entry.id,
     entry,
@@ -205,6 +208,9 @@ function createViewEntry(
     users: getSkillMarketStableUserCount(entry),
     saved: savedOrder.has(entry.id),
     installed: isInstalledStatus(status),
+    operationError:
+      matchesOperation && operation?.error !== undefined ? operation.error : undefined,
+    operationKind: matchesOperation ? operation?.kind : undefined,
     originalIndex: index,
   };
 }

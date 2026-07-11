@@ -70,7 +70,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/protocol
       '@clawee/skill-market':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../packages/skill-market
       '@codemirror/commands':
         specifier: ^6.10.4
