@@ -681,6 +681,15 @@
   font-size: 11px;
 }
 
+@media (min-width: 921px) {
+  .skill-market {
+    height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+}
+
 @media (max-width: 1180px) {
   .skill-market-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

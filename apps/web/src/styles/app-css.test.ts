@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const appCss = readFileSync('src/styles/app.css', 'utf8');
 const appTsx = readFileSync('src/app/App.tsx', 'utf8');
+const skillMarketCss = readFileSync('src/features/plugins/skill-market.css', 'utf8');
 const tokensCss = readFileSync('src/styles/tokens.css', 'utf8');
 
 function cssBlock(selector: string) {
@@ -63,6 +64,12 @@ describe('app CSS visual contracts', () => {
     expect(appCss).toMatch(/html,\nbody,\n#root\s*\{[^}]*background:\s*var\(--bg\);/);
     expect(mainPane).toContain('background: var(--conversation-bg);');
     expect(mainPane).toContain('overflow: hidden;');
+  });
+
+  it('keeps the desktop skill market scrollable inside the fixed app shell', () => {
+    expect(skillMarketCss).toMatch(
+      /@media \(min-width: 921px\)\s*\{\s*\.skill-market\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/
+    );
   });
 
   it('keeps the composer compact near the bottom edge', () => {
