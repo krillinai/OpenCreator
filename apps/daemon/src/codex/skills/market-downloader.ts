@@ -1,7 +1,19 @@
-import { createWriteStream, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from 'node:fs';
-import type { WriteStream } from 'node:fs';
+import {
+  chmodSync,
+  closeSync,
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  realpathSync,
+  rmSync
+} from 'node:fs';
 import { join, posix, resolve, sep, win32 } from 'node:path';
-import { finished } from 'node:stream/promises';
+import { pipeline } from 'node:stream/promises';
 import type { SkillMarketInstallSource } from '@clawee/skill-market';
 import * as tar from 'tar';
 
@@ -26,6 +38,8 @@ async function download(input: MarketArchiveDownloadInput): Promise<string> {
   const archivePath = resolve(downloadRoot, 'archive.tar.gz');
   const controller = new AbortController();
   let response: Response | undefined;
+  let archiveFd: number | undefined;
+  let succeeded = false;
 
   try {
     response = await fetch(`https://codeload.github.com/${input.repository}/tar.gz/${input.commit}`, {
@@ -46,17 +60,21 @@ async function download(input: MarketArchiveDownloadInput): Promise<string> {
     if (response.body === null) throw new Error('GitHub archive response body is empty');
 
     await writeLimitedArchive(response.body, archivePath);
-    const archiveIdentity = getArchiveIdentity(archivePath);
-    await scanArchive(archivePath);
-    assertArchiveIdentityUnchanged(archiveIdentity, archivePath);
-    await extractArchive(archivePath, downloadRoot);
+    archiveFd = openSync(archivePath, 'r');
+    const archiveIdentity = getArchiveIdentity(archiveFd);
+    await scanArchive(archivePath, archiveFd);
+    assertArchiveIdentityUnchanged(archiveIdentity, archiveFd);
+    await extractArchive(archivePath, archiveFd, downloadRoot);
+    succeeded = true;
     return downloadRoot;
   } catch (error) {
     abortQuietly(controller);
     if (response !== undefined) await cancelResponseBody(response);
     throw wrapMarketDownloadFailed(error);
   } finally {
+    if (archiveFd !== undefined) closeArchiveQuietly(archiveFd);
     rmSync(archivePath, { force: true });
+    if (!succeeded) rmSync(downloadRoot, { recursive: true, force: true });
   }
 }
 
@@ -94,9 +112,12 @@ function createPrivateDownloadRoot(workDir: string): string {
 }
 
 async function writeLimitedArchive(body: ReadableStream<Uint8Array>, archivePath: string): Promise<void> {
+  await pipeline(limitArchiveBytes(body), createWriteStream(archivePath, { flags: 'wx' }));
+}
+
+async function* limitArchiveBytes(body: ReadableStream<Uint8Array>): AsyncGenerator<Buffer> {
   let received = 0;
   const reader = body.getReader();
-  const output = createWriteStream(archivePath, { flags: 'wx' });
   let completed = false;
 
   try {
@@ -109,38 +130,13 @@ async function writeLimitedArchive(body: ReadableStream<Uint8Array>, archivePath
         await cancelReaderQuietly(reader);
         throw new Error(`GitHub archive exceeds ${MAX_MARKET_ARCHIVE_BYTES} bytes`);
       }
-      await writeChunk(output, Buffer.from(chunk));
+      yield Buffer.from(chunk);
     }
-    output.end();
-    await finished(output);
     completed = true;
   } finally {
-    if (!completed) {
-      output.destroy();
-      await cancelReaderQuietly(reader);
-    }
+    if (!completed) await cancelReaderQuietly(reader);
     releaseReaderQuietly(reader);
   }
-}
-
-async function writeChunk(output: WriteStream, chunk: Buffer): Promise<void> {
-  if (output.write(chunk)) return;
-  await new Promise<void>((resolveWrite, rejectWrite) => {
-    const cleanup = () => {
-      output.off('drain', onDrain);
-      output.off('error', onError);
-    };
-    const onDrain = () => {
-      cleanup();
-      resolveWrite();
-    };
-    const onError = (error: Error) => {
-      cleanup();
-      rejectWrite(error);
-    };
-    output.once('drain', onDrain);
-    output.once('error', onError);
-  });
 }
 
 async function cancelReaderQuietly(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
@@ -148,6 +144,14 @@ async function cancelReaderQuietly(reader: ReadableStreamDefaultReader<Uint8Arra
     await reader.cancel();
   } catch {
     // Ignore cancellation failures so the primary error is preserved.
+  }
+}
+
+function closeArchiveQuietly(fd: number): void {
+  try {
+    closeSync(fd);
+  } catch {
+    // Ignore close failures so the primary error is preserved.
   }
 }
 
@@ -182,9 +186,9 @@ type ArchiveIdentity = {
   mtimeMs: number;
 };
 
-function getArchiveIdentity(archivePath: string): ArchiveIdentity {
-  const stat = statSync(archivePath);
-  if (!stat.isFile()) throw new Error(`archive path is not a file: ${archivePath}`);
+function getArchiveIdentity(archiveFd: number): ArchiveIdentity {
+  const stat = fstatSync(archiveFd);
+  if (!stat.isFile()) throw new Error('archive handle is not a file');
   return {
     dev: stat.dev,
     ino: stat.ino,
@@ -193,8 +197,8 @@ function getArchiveIdentity(archivePath: string): ArchiveIdentity {
   };
 }
 
-function assertArchiveIdentityUnchanged(expected: ArchiveIdentity, archivePath: string): void {
-  const actual = getArchiveIdentity(archivePath);
+function assertArchiveIdentityUnchanged(expected: ArchiveIdentity, archiveFd: number): void {
+  const actual = getArchiveIdentity(archiveFd);
   if (
     actual.dev !== expected.dev
     || actual.ino !== expected.ino
@@ -205,52 +209,56 @@ function assertArchiveIdentityUnchanged(expected: ArchiveIdentity, archivePath: 
   }
 }
 
-async function scanArchive(archivePath: string): Promise<void> {
+async function scanArchive(archivePath: string, archiveFd: number): Promise<void> {
   let validationError: Error | undefined;
-  await tar.t({
-    file: archivePath,
-    gzip: true,
-    strict: true,
-    filter(path, entry) {
-      const canonical = canonicalizeArchiveEntry(path, entry);
-      validationError ??= canonical instanceof Error ? canonical : undefined;
-      return true;
-    },
-    onReadEntry(entry) {
-      const canonical = canonicalizeArchiveEntry(entry.path, entry);
-      validationError ??= canonical instanceof Error ? canonical : undefined;
-    }
-  });
+  await pipeline(
+    createReadStream(archivePath, { fd: archiveFd, start: 0, autoClose: false }),
+    tar.t({
+      gzip: true,
+      strict: true,
+      filter(path, entry) {
+        const canonical = canonicalizeArchiveEntry(path, entry);
+        validationError ??= canonical instanceof Error ? canonical : undefined;
+        return true;
+      },
+      onReadEntry(entry) {
+        const canonical = canonicalizeArchiveEntry(entry.path, entry);
+        validationError ??= canonical instanceof Error ? canonical : undefined;
+      }
+    })
+  );
   if (validationError) throw validationError;
 }
 
-async function extractArchive(archivePath: string, workDir: string): Promise<void> {
+async function extractArchive(archivePath: string, archiveFd: number, workDir: string): Promise<void> {
   let validationError: Error | undefined;
-  await tar.x({
-    file: archivePath,
-    cwd: workDir,
-    gzip: true,
-    strip: 1,
-    preservePaths: false,
-    strict: true,
-    unlink: true,
-    filter(path, entry) {
-      const canonical = canonicalizeArchiveEntry(path, entry);
-      if (canonical instanceof Error) {
-        validationError ??= canonical;
-        return false;
+  await pipeline(
+    createReadStream(archivePath, { fd: archiveFd, start: 0, autoClose: false }),
+    tar.x({
+      cwd: workDir,
+      gzip: true,
+      strip: 1,
+      preservePaths: false,
+      strict: true,
+      unlink: true,
+      filter(path, entry) {
+        const canonical = canonicalizeArchiveEntry(path, entry);
+        if (canonical instanceof Error) {
+          validationError ??= canonical;
+          return false;
+        }
+        if (canonical.strippedPath === undefined) return false;
+        const outputPath = resolve(workDir, canonical.strippedPath);
+        try {
+          assertPathInside(workDir, outputPath, `archive entry escapes workDir after strip: ${path}`);
+        } catch (error) {
+          validationError ??= error instanceof Error ? error : new Error(String(error));
+          return false;
+        }
+        return true;
       }
-      if (canonical.strippedPath === undefined) return false;
-      const outputPath = resolve(workDir, canonical.strippedPath);
-      try {
-        assertPathInside(workDir, outputPath, `archive entry escapes workDir after strip: ${path}`);
-      } catch (error) {
-        validationError ??= error instanceof Error ? error : new Error(String(error));
-        return false;
-      }
-      return true;
-    }
-  });
+    })
+  );
   if (validationError) throw validationError;
 }
 

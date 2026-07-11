@@ -1,6 +1,7 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
+import { Writable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +10,7 @@ let tempDir = '';
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.doUnmock('tar');
+  vi.doUnmock('node:fs');
   vi.resetModules();
   if (tempDir) rmSync(tempDir, { recursive: true, force: true });
   tempDir = '';
@@ -111,6 +113,79 @@ describe('codex skill market downloader', () => {
     expect(abortState.aborted).toBe(true);
   });
 
+  it('cleans up the private directory after archive scan failure', async () => {
+    const { MarketArchiveDownloader } = await loadDownloader();
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-market-download-'));
+    mockFetch({
+      status: 200,
+      body: tarGzip([
+        { path: 'repo-abc/', type: 'directory' },
+        { path: 'repo-abc/../evil/SKILL.md', type: 'file', body: 'bad' }
+      ])
+    });
+
+    await expect(MarketArchiveDownloader.download({
+      repository: 'owner/repo',
+      commit: 'abc',
+      workDir: tempDir
+    })).rejects.toThrow(/CODEX_SKILL_MARKET_DOWNLOAD_FAILED/);
+    expect(marketDownloadDirs(tempDir)).toEqual([]);
+  });
+
+  it('cleans up the private directory after archive extract failure', async () => {
+    vi.doMock('tar', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('tar')>();
+      return {
+        ...actual,
+        x: () => new Writable({
+          write(_chunk, _encoding, callback) {
+            callback(new Error('extract failed'));
+          }
+        })
+      };
+    });
+    const { MarketArchiveDownloader } = await loadDownloader();
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-market-download-'));
+    mockFetch({ status: 200, body: validArchive() });
+
+    await expect(MarketArchiveDownloader.download({
+      repository: 'owner/repo',
+      commit: 'abc',
+      workDir: tempDir
+    })).rejects.toThrow(/CODEX_SKILL_MARKET_DOWNLOAD_FAILED/);
+    expect(marketDownloadDirs(tempDir)).toEqual([]);
+  });
+
+  it('wraps asynchronous archive write stream failures without unhandled errors', async () => {
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('node:fs')>();
+      return {
+        ...actual,
+        createWriteStream: () => {
+          const stream = new Writable({
+            write(_chunk, _encoding, callback) {
+              callback();
+              process.nextTick(() => {
+                stream.destroy(new Error('ENOSPC'));
+              });
+            }
+          });
+          return stream;
+        }
+      };
+    });
+    const { MarketArchiveDownloader } = await loadDownloader();
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-market-download-'));
+    mockFetch({ status: 200, body: validArchive() });
+
+    await expect(MarketArchiveDownloader.download({
+      repository: 'owner/repo',
+      commit: 'abc',
+      workDir: tempDir
+    })).rejects.toThrow(/CODEX_SKILL_MARKET_DOWNLOAD_FAILED/);
+    expect(marketDownloadDirs(tempDir)).toEqual([]);
+  });
+
   it.each([
     ['absolute path', '/repo-abc/SKILL.md', 'file'],
     ['windows drive path', 'C:/repo-abc/SKILL.md', 'file'],
@@ -142,21 +217,27 @@ describe('codex skill market downloader', () => {
     })).rejects.toThrow(/CODEX_SKILL_MARKET_DOWNLOAD_FAILED/);
   });
 
-  it('rejects when the archive changes after scan and before extract', async () => {
+  it('extracts the originally opened archive when the archive path changes after scan', async () => {
     vi.doMock('tar', async (importOriginal) => {
       const actual = await importOriginal<typeof import('tar')>();
       return {
         ...actual,
-        t: async (...args: Parameters<typeof actual.t>) => {
-          const result = await actual.t(...args);
-          const options = args[0];
-          if (!Array.isArray(options) && typeof options === 'object' && typeof options.file === 'string') {
-            writeFileSync(options.file, tarGzip([
-              { path: 'repo-abc/', type: 'directory' },
-              { path: 'repo-abc/replaced.txt', type: 'file', body: 'changed' }
-            ]));
-          }
-          return result;
+        t: (...args: Parameters<typeof actual.t>) => {
+          const parser = actual.t(...args);
+          (parser as unknown as { once(event: 'end', listener: () => void): void }).once('end', () => {
+            const archive = findPrivateArchive(tempDir);
+            if (archive) {
+              const replacement = `${archive}.replacement`;
+              writeFileSync(replacement, tarGzip([
+                { path: 'repo-abc/', type: 'directory' },
+                { path: 'repo-abc/replaced.txt', type: 'file', body: 'changed' }
+              ]));
+              rmSync(archive, { force: true });
+              writeFileSync(archive, readFileSync(replacement));
+              rmSync(replacement, { force: true });
+            }
+          });
+          return parser;
         }
       };
     });
@@ -164,11 +245,14 @@ describe('codex skill market downloader', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-market-download-'));
     mockFetch({ status: 200, body: validArchive() });
 
-    await expect(MarketArchiveDownloader.download({
+    const root = await MarketArchiveDownloader.download({
       repository: 'owner/repo',
       commit: 'abc',
       workDir: tempDir
-    })).rejects.toThrow(/CODEX_SKILL_MARKET_DOWNLOAD_FAILED/);
+    });
+
+    expect(readFileSync(join(root, 'SKILL.md'), 'utf8')).toContain('writer');
+    expect(existsSync(join(root, 'replaced.txt'))).toBe(false);
   });
 
   it('wraps non-2xx HTTP responses as market download failures', async () => {
@@ -267,6 +351,16 @@ function mockLargeFetch(): { aborted: boolean; cancelled: boolean } {
     }));
   });
   return state;
+}
+
+function marketDownloadDirs(root: string): string[] {
+  return readdirSync(root).filter((entry) => entry.startsWith('.market-download-'));
+}
+
+function findPrivateArchive(root: string): string | undefined {
+  const [privateDir] = marketDownloadDirs(root);
+  if (!privateDir) return undefined;
+  return join(root, privateDir, 'archive.tar.gz');
 }
 
 type TestTarEntry = {

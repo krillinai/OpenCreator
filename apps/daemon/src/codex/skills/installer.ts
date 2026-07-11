@@ -161,20 +161,13 @@ function rollbackSkill(codexHome: string, request: { id: string; backupPath: str
   let currentSnapshotCreated = false;
   try {
     if (existsSync(targetPath)) {
-      cpSync(targetPath, currentTempPath, { recursive: true, force: false, errorOnExist: true });
+      renameSync(targetPath, currentTempPath);
       currentSnapshotCreated = true;
     }
-    rmSync(targetPath, { recursive: true, force: true });
     renameSync(tempPath, targetPath);
     rmSync(currentTempPath, { recursive: true, force: true });
   } catch (error) {
-    const targetStillExists = existsSync(targetPath);
-    if (targetStillExists) {
-      rmSync(tempPath, { recursive: true, force: true });
-      rmSync(currentTempPath, { recursive: true, force: true });
-      currentSnapshotCreated = false;
-    }
-    if (currentSnapshotCreated && !targetStillExists && existsSync(currentTempPath)) {
+    if (currentSnapshotCreated && !existsSync(targetPath) && existsSync(currentTempPath)) {
       try {
         renameSync(currentTempPath, targetPath);
         currentSnapshotCreated = false;

@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSkillInstaller } from '../../src/codex/skills/installer.js';
 
 let tempDir = '';
 
 afterEach(() => {
+  vi.doUnmock('node:fs');
+  vi.resetModules();
   if (tempDir) rmSync(tempDir, { recursive: true, force: true });
   tempDir = '';
 });
@@ -107,6 +109,47 @@ describe('codex skills installer', () => {
 
     await installer.install({ sourcePath: current, id: 'writer' });
     await expect(installer.rollback({
+      id: 'writer',
+      backupPath: backup
+    })).rejects.toThrow(/CODEX_SKILL_WRITE_FAILED/);
+
+    expect(readFileSync(join(codexHome, 'skills', 'writer', 'SKILL.md'), 'utf8')).toContain('current');
+  });
+
+  it('restores the current skill when applying a prepared rollback backup fails', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-rollback-'));
+    const current = createSourceSkill('writer-current', 'current');
+    const backup = createSourceSkill('writer-backup', 'backup');
+    const codexHome = join(tempDir, 'codex-home');
+    const installer = createSkillInstaller({ codexHome });
+    await installer.install({ sourcePath: current, id: 'writer' });
+
+    vi.resetModules();
+    vi.doMock('node:fs', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('node:fs')>();
+      let currentSnapshotCreated = false;
+      return {
+        ...actual,
+        renameSync(source: string, target: string) {
+          if (String(target).includes('.tmp-rollback-current-')) {
+            currentSnapshotCreated = true;
+            return actual.renameSync(source, target);
+          }
+          if (
+            currentSnapshotCreated
+            && String(source).includes('.tmp-rollback-')
+            && !String(source).includes('.tmp-rollback-current-')
+          ) {
+            throw new Error('simulated rollback apply rename failure');
+          }
+          return actual.renameSync(source, target);
+        }
+      };
+    });
+    const { createSkillInstaller: createMockedSkillInstaller } = await import('../../src/codex/skills/installer.js');
+    const mockedInstaller = createMockedSkillInstaller({ codexHome });
+
+    await expect(mockedInstaller.rollback({
       id: 'writer',
       backupPath: backup
     })).rejects.toThrow(/CODEX_SKILL_WRITE_FAILED/);
