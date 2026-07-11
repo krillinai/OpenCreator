@@ -1,8 +1,7 @@
-import { createWriteStream, existsSync, lstatSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
-import { isAbsolute, resolve, sep } from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import { createWriteStream, chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from 'node:fs';
+import type { WriteStream } from 'node:fs';
+import { join, posix, resolve, sep, win32 } from 'node:path';
+import { finished } from 'node:stream/promises';
 import type { SkillMarketInstallSource } from '@clawee/skill-market';
 import * as tar from 'tar';
 
@@ -23,26 +22,38 @@ export const MarketArchiveDownloader: MarketArchiveDownloader = {
 
 async function download(input: MarketArchiveDownloadInput): Promise<string> {
   const workDir = resolve(input.workDir);
-  const archivePath = resolve(workDir, 'archive.tar.gz');
+  const downloadRoot = createPrivateDownloadRoot(workDir);
+  const archivePath = resolve(downloadRoot, 'archive.tar.gz');
+  const controller = new AbortController();
+  let response: Response | undefined;
 
   try {
-    mkdirSync(workDir, { recursive: true });
-    const response = await fetch(`https://codeload.github.com/${input.repository}/tar.gz/${input.commit}`);
+    response = await fetch(`https://codeload.github.com/${input.repository}/tar.gz/${input.commit}`, {
+      signal: controller.signal
+    });
     if (!response.ok) {
+      await cancelResponseBody(response);
+      abortQuietly(controller);
       throw new Error(`GitHub archive request failed with HTTP ${response.status}`);
     }
 
     const contentLength = response.headers.get('content-length');
     if (contentLength !== null && Number(contentLength) > MAX_MARKET_ARCHIVE_BYTES) {
+      await cancelResponseBody(response);
+      abortQuietly(controller);
       throw new Error(`GitHub archive exceeds ${MAX_MARKET_ARCHIVE_BYTES} bytes`);
     }
     if (response.body === null) throw new Error('GitHub archive response body is empty');
 
     await writeLimitedArchive(response.body, archivePath);
+    const archiveIdentity = getArchiveIdentity(archivePath);
     await scanArchive(archivePath);
-    await extractArchive(archivePath, workDir);
-    return workDir;
+    assertArchiveIdentityUnchanged(archiveIdentity, archivePath);
+    await extractArchive(archivePath, downloadRoot);
+    return downloadRoot;
   } catch (error) {
+    abortQuietly(controller);
+    if (response !== undefined) await cancelResponseBody(response);
     throw wrapMarketDownloadFailed(error);
   } finally {
     rmSync(archivePath, { force: true });
@@ -75,17 +86,123 @@ export function resolveMarketSkillSource(root: string, skillPath: string): strin
   }
 }
 
+function createPrivateDownloadRoot(workDir: string): string {
+  mkdirSync(workDir, { recursive: true });
+  const root = mkdtempSync(join(workDir, '.market-download-'));
+  chmodSync(root, 0o700);
+  return resolve(root);
+}
+
 async function writeLimitedArchive(body: ReadableStream<Uint8Array>, archivePath: string): Promise<void> {
   let received = 0;
-  const limited = Readable.fromWeb(body as NodeReadableStream<Uint8Array>).map((chunk) => {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    received += buffer.length;
-    if (received > MAX_MARKET_ARCHIVE_BYTES) {
-      throw new Error(`GitHub archive exceeds ${MAX_MARKET_ARCHIVE_BYTES} bytes`);
+  const reader = body.getReader();
+  const output = createWriteStream(archivePath, { flags: 'wx' });
+  let completed = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      received += chunk.byteLength;
+      if (received > MAX_MARKET_ARCHIVE_BYTES) {
+        await cancelReaderQuietly(reader);
+        throw new Error(`GitHub archive exceeds ${MAX_MARKET_ARCHIVE_BYTES} bytes`);
+      }
+      await writeChunk(output, Buffer.from(chunk));
     }
-    return buffer;
+    output.end();
+    await finished(output);
+    completed = true;
+  } finally {
+    if (!completed) {
+      output.destroy();
+      await cancelReaderQuietly(reader);
+    }
+    releaseReaderQuietly(reader);
+  }
+}
+
+async function writeChunk(output: WriteStream, chunk: Buffer): Promise<void> {
+  if (output.write(chunk)) return;
+  await new Promise<void>((resolveWrite, rejectWrite) => {
+    const cleanup = () => {
+      output.off('drain', onDrain);
+      output.off('error', onError);
+    };
+    const onDrain = () => {
+      cleanup();
+      resolveWrite();
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      rejectWrite(error);
+    };
+    output.once('drain', onDrain);
+    output.once('error', onError);
   });
-  await pipeline(limited, createWriteStream(archivePath, { flags: 'wx' }));
+}
+
+async function cancelReaderQuietly(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  try {
+    await reader.cancel();
+  } catch {
+    // Ignore cancellation failures so the primary error is preserved.
+  }
+}
+
+function releaseReaderQuietly(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  try {
+    reader.releaseLock();
+  } catch {
+    // Ignore lock release failures so the primary error is preserved.
+  }
+}
+
+async function cancelResponseBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Ignore cancellation failures so the primary error is preserved.
+  }
+}
+
+function abortQuietly(controller: AbortController): void {
+  try {
+    if (!controller.signal.aborted) controller.abort();
+  } catch {
+    // Ignore abort failures so the primary error is preserved.
+  }
+}
+
+type ArchiveIdentity = {
+  dev: number;
+  ino: number;
+  size: number;
+  mtimeMs: number;
+};
+
+function getArchiveIdentity(archivePath: string): ArchiveIdentity {
+  const stat = statSync(archivePath);
+  if (!stat.isFile()) throw new Error(`archive path is not a file: ${archivePath}`);
+  return {
+    dev: stat.dev,
+    ino: stat.ino,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs
+  };
+}
+
+function assertArchiveIdentityUnchanged(expected: ArchiveIdentity, archivePath: string): void {
+  const actual = getArchiveIdentity(archivePath);
+  if (
+    actual.dev !== expected.dev
+    || actual.ino !== expected.ino
+    || actual.size !== expected.size
+    || actual.mtimeMs !== expected.mtimeMs
+  ) {
+    throw new Error('archive changed after validation and before extraction');
+  }
 }
 
 async function scanArchive(archivePath: string): Promise<void> {
@@ -95,12 +212,13 @@ async function scanArchive(archivePath: string): Promise<void> {
     gzip: true,
     strict: true,
     filter(path, entry) {
-      const entryError = validateArchiveEntry(path, entry);
-      validationError ??= entryError;
+      const canonical = canonicalizeArchiveEntry(path, entry);
+      validationError ??= canonical instanceof Error ? canonical : undefined;
       return true;
     },
     onReadEntry(entry) {
-      validationError ??= validateArchiveEntry(entry.path, entry);
+      const canonical = canonicalizeArchiveEntry(entry.path, entry);
+      validationError ??= canonical instanceof Error ? canonical : undefined;
     }
   });
   if (validationError) throw validationError;
@@ -117,12 +235,13 @@ async function extractArchive(archivePath: string, workDir: string): Promise<voi
     strict: true,
     unlink: true,
     filter(path, entry) {
-      const entryError = validateArchiveEntry(path, entry);
-      validationError ??= entryError;
-      if (entryError) return false;
-      const strippedPath = stripFirstPathSegment(path);
-      if (strippedPath === undefined) return false;
-      const outputPath = resolve(workDir, strippedPath);
+      const canonical = canonicalizeArchiveEntry(path, entry);
+      if (canonical instanceof Error) {
+        validationError ??= canonical;
+        return false;
+      }
+      if (canonical.strippedPath === undefined) return false;
+      const outputPath = resolve(workDir, canonical.strippedPath);
       try {
         assertPathInside(workDir, outputPath, `archive entry escapes workDir after strip: ${path}`);
       } catch (error) {
@@ -135,24 +254,37 @@ async function extractArchive(archivePath: string, workDir: string): Promise<voi
   if (validationError) throw validationError;
 }
 
-function validateArchiveEntry(path: string, entry: unknown): Error | undefined {
-  if (isAbsolute(path)) return new Error(`archive entry uses an absolute path: ${path}`);
-  if (path.split('/').includes('..')) return new Error(`archive entry contains .. path segment: ${path}`);
+type CanonicalArchiveEntry = {
+  strippedPath: string | undefined;
+};
+
+function canonicalizeArchiveEntry(path: string, entry: unknown): CanonicalArchiveEntry | Error {
   const entryType = isObjectWithType(entry) ? entry.type : undefined;
+  if (posix.isAbsolute(path) || win32.isAbsolute(path) || /^[A-Za-z]:/.test(path)) {
+    return new Error(`archive entry uses an absolute path: ${path}`);
+  }
   if (entryType === 'SymbolicLink' || entryType === 'Link') {
     return new Error(`archive entry link type is not allowed: ${path}`);
   }
-  return undefined;
+
+  const segments = splitArchivePathSegments(path);
+  if (segments.includes('..')) {
+    return new Error(`archive entry contains .. path segment: ${path}`);
+  }
+  const strippedSegments = segments.slice(1);
+  if (strippedSegments.length === 0) {
+    if (entryType === 'Directory') return { strippedPath: undefined };
+    return new Error(`archive entry has no output path after strip: ${path}`);
+  }
+  return { strippedPath: strippedSegments.join('/') };
+}
+
+function splitArchivePathSegments(path: string): string[] {
+  return path.split(/[\\/]+/).filter((part) => part.length > 0);
 }
 
 function isObjectWithType(value: unknown): value is { type: unknown } {
   return typeof value === 'object' && value !== null && 'type' in value;
-}
-
-function stripFirstPathSegment(path: string): string | undefined {
-  const parts = path.split('/').filter((part) => part.length > 0);
-  if (parts.length <= 1) return undefined;
-  return parts.slice(1).join('/');
 }
 
 function assertPathInside(parent: string, target: string, message: string): void {

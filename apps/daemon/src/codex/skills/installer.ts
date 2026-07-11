@@ -126,11 +126,23 @@ function rollbackSkill(codexHome: string, request: { id: string; backupPath: str
     skillsPath,
     `.tmp-rollback-${request.id}-${process.pid}-${Date.now()}-${nextFileCounter()}`
   );
+  const currentTempPath = ensurePathInside(
+    skillsPath,
+    `.tmp-rollback-current-${request.id}-${process.pid}-${Date.now()}-${nextFileCounter()}`
+  );
+
+  rmSync(tempPath, { recursive: true, force: true });
+  rmSync(currentTempPath, { recursive: true, force: true });
+  if (request.backupPath === null) {
+    try {
+      rmSync(targetPath, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      throw wrapSkillWriteFailed(error, `rollback failed for skill: ${request.id}`);
+    }
+  }
 
   try {
-    rmSync(tempPath, { recursive: true, force: true });
-    rmSync(targetPath, { recursive: true, force: true });
-    if (request.backupPath === null) return;
     if (!existsSync(request.backupPath)) {
       throw new Error(`backupPath does not exist: ${request.backupPath}`);
     }
@@ -138,12 +150,43 @@ function rollbackSkill(codexHome: string, request: { id: string; backupPath: str
     if (backupStat.isSymbolicLink() || !backupStat.isDirectory()) {
       throw new Error(`backupPath must be a real directory: ${request.backupPath}`);
     }
+    assertNoSymlinks(request.backupPath);
     cpSync(request.backupPath, tempPath, { recursive: true, force: false, errorOnExist: true });
     assertNoSymlinks(tempPath);
-    renameSync(tempPath, targetPath);
   } catch (error) {
     rmSync(tempPath, { recursive: true, force: true });
     throw wrapSkillWriteFailed(error, `rollback failed for skill: ${request.id}`);
+  }
+
+  let currentSnapshotCreated = false;
+  try {
+    if (existsSync(targetPath)) {
+      cpSync(targetPath, currentTempPath, { recursive: true, force: false, errorOnExist: true });
+      currentSnapshotCreated = true;
+    }
+    rmSync(targetPath, { recursive: true, force: true });
+    renameSync(tempPath, targetPath);
+    rmSync(currentTempPath, { recursive: true, force: true });
+  } catch (error) {
+    const targetStillExists = existsSync(targetPath);
+    if (targetStillExists) {
+      rmSync(tempPath, { recursive: true, force: true });
+      rmSync(currentTempPath, { recursive: true, force: true });
+      currentSnapshotCreated = false;
+    }
+    if (currentSnapshotCreated && !targetStillExists && existsSync(currentTempPath)) {
+      try {
+        renameSync(currentTempPath, targetPath);
+        currentSnapshotCreated = false;
+      } catch {
+        // Preserve the snapshot path in the wrapped error below.
+      }
+    }
+    const tempMessage = existsSync(tempPath) ? `; prepared backup remains at ${tempPath}` : '';
+    const currentMessage = currentSnapshotCreated && existsSync(currentTempPath)
+      ? `; previous target remains at ${currentTempPath}`
+      : '';
+    throw wrapSkillWriteFailed(error, `rollback failed for skill: ${request.id}${tempMessage}${currentMessage}`);
   }
 }
 

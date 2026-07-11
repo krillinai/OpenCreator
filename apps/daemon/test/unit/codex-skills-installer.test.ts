@@ -82,6 +82,38 @@ describe('codex skills installer', () => {
     ).toContain('first');
   });
 
+  it('keeps the current skill when rollback backup is missing', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-rollback-'));
+    const current = createSourceSkill('writer-current', 'current');
+    const codexHome = join(tempDir, 'codex-home');
+    const installer = createSkillInstaller({ codexHome });
+
+    await installer.install({ sourcePath: current, id: 'writer' });
+    await expect(installer.rollback({
+      id: 'writer',
+      backupPath: join(tempDir, 'missing-backup')
+    })).rejects.toThrow(/CODEX_SKILL_WRITE_FAILED/);
+
+    expect(readFileSync(join(codexHome, 'skills', 'writer', 'SKILL.md'), 'utf8')).toContain('current');
+  });
+
+  it('keeps the current skill when rollback backup contains a symlink', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-rollback-'));
+    const current = createSourceSkill('writer-current', 'current');
+    const backup = createSourceSkill('writer-backup', 'backup');
+    const codexHome = join(tempDir, 'codex-home');
+    const installer = createSkillInstaller({ codexHome });
+    symlinkSync(join(backup, 'SKILL.md'), join(backup, 'linked.md'));
+
+    await installer.install({ sourcePath: current, id: 'writer' });
+    await expect(installer.rollback({
+      id: 'writer',
+      backupPath: backup
+    })).rejects.toThrow(/CODEX_SKILL_WRITE_FAILED/);
+
+    expect(readFileSync(join(codexHome, 'skills', 'writer', 'SKILL.md'), 'utf8')).toContain('current');
+  });
+
   it('rejects a sourcePath directory that is a symlink', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
     const source = createSourceSkill('writer', 'first');
