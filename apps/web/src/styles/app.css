@@ -2057,18 +2057,7 @@ textarea:focus-visible {
 .composer-wrap {
   position: relative;
   padding: 0 clamp(18px, 4vw, 52px) 37px;
-  background: linear-gradient(180deg, rgba(9, 13, 18, 0), rgba(9, 13, 18, 0.26) 46%, rgba(9, 13, 18, 0.52));
-}
-
-.composer-wrap::before {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% - 1px);
-  left: 0;
-  height: 132px;
-  pointer-events: none;
-  content: "";
-  background: linear-gradient(180deg, rgba(9, 13, 18, 0), rgba(9, 13, 18, 0.52) 58%, rgba(9, 13, 18, 0.88));
+  background: transparent;
 }
 
 .clawee-composer {

@@ -92,6 +92,7 @@ export type SkillMarketEntry = {
   id: string;
   name: string;
   title: string;
+  githubRepository: string;
   tagline: string;
   summary: string;
   category: string;

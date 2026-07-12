@@ -10,6 +10,8 @@ describe('skill market catalog', () => {
   it('contains the reviewed 55-entry snapshot with unique ids', () => {
     expect(skillMarketCatalog).toHaveLength(55);
     expect(new Set(skillMarketCatalog.map((entry) => entry.id)).size).toBe(55);
+    expect(skillMarketCatalog.every((entry) => /^[\w.-]+\/[\w.-]+$/.test(entry.githubRepository))).toBe(true);
+    expect(getSkillMarketEntry('invokeai')?.githubRepository).toBe('invoke-ai/InvokeAI');
   });
 
   it('only enables the six reviewed root skills', () => {

@@ -1,12 +1,11 @@
 import { ImageIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { SkillMarketViewEntry } from './skill-market-model.js';
 
-const fallbackCovers = [
-  '/skill-market/examples/gpt-image-2-info-poster.png',
-  '/skill-market/examples/nano-banana-pro-product-visual.png',
-  '/skill-market/examples/seedance-2-video-ad.png',
-] as const;
+const defaultCover = '/skill-market/skills-empty.png';
+
+const githubPreviewCacheKey =
+  '23d7b9595ae1f6dd0e2cdfe74393932763af58e35606729e825c6d65b2429725';
 
 export function SkillMarketCover({
   item,
@@ -14,13 +13,16 @@ export function SkillMarketCover({
 }: {
   item: SkillMarketViewEntry;
   compact?: boolean;
-}) {
+  }) {
   const approvedExample = item.entry.examples.find((example) => example.approved);
-  const fallbackCover = useMemo(() => {
-    const hash = [...item.id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
-    return fallbackCovers[hash % fallbackCovers.length];
-  }, [item.id]);
-  const sources = [approvedExample?.url, fallbackCover]
+  const usesDefaultCover = approvedExample?.url === defaultCover;
+  const sources = (usesDefaultCover
+    ? [defaultCover]
+    : [
+        approvedExample?.url,
+        githubSocialPreviewUrl(item.entry.githubRepository),
+        defaultCover,
+      ])
     .map((source) => (source ? normalizeSkillMarketAssetUrl(source) : undefined))
     .filter(Boolean) as string[];
   const [sourceIndex, setSourceIndex] = useState(sources.length > 0 ? 0 : -1);
@@ -46,7 +48,6 @@ export function SkillMarketCover({
 
   return (
     <span className="skill-market-cover__css" aria-label={`${item.title} 封面`}>
-      <span className="skill-market-cover__pill">{item.subcategory}</span>
       <span className="skill-market-cover__fallback-body">
         <ImageIcon size={compact ? 20 : 24} aria-hidden="true" />
         <strong>{item.title}</strong>
@@ -105,4 +106,12 @@ export function normalizeSkillMarketAssetUrl(value: string): string | undefined 
   } catch {
     return undefined;
   }
+}
+
+function githubSocialPreviewUrl(repository: string): string | undefined {
+  const segments = repository.trim().split('/');
+  if (segments.length !== 2) return undefined;
+  if (segments.some((segment) => !/^[a-zA-Z0-9_.-]+$/.test(segment))) return undefined;
+  if (segments.some((segment) => segment === '.' || segment === '..')) return undefined;
+  return `https://opengraph.githubassets.com/${githubPreviewCacheKey}/${segments[0]}/${segments[1]}`;
 }
