@@ -4,6 +4,7 @@ export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 export type WorkspaceMode = 'managed' | 'external';
 export type ReasoningEffort = 'default' | 'low' | 'medium' | 'high' | 'xhigh';
 export type ResumeMode = 'auto' | 'new_thread' | 'resume_thread';
+export type RunSubmissionMode = 'enqueue' | 'interrupt_and_enqueue';
 export type ThreadStatus = 'active' | 'archived';
 export type CodexHomeMode = 'global' | 'isolated';
 export type CodexHomeSource = 'env' | 'default' | 'isolated';
@@ -222,6 +223,7 @@ export type RunRequest = {
   threadId?: string;
   draftId?: string;
   attachmentIds?: string[];
+  submissionMode?: RunSubmissionMode;
   resumeMode?: ResumeMode;
   cwd?: string;
   profile?: string;
@@ -237,6 +239,8 @@ export type RunResponse = {
   status: PublicRunStatus;
   lastEventSeq?: number;
   attachments?: AttachmentResponse[];
+  submissionMode?: RunSubmissionMode;
+  queuePosition?: number;
 };
 
 export type CreateThreadRequest = {

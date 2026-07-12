@@ -752,6 +752,30 @@ describe('Timeline', () => {
     expect(onOpenRunDetail).toHaveBeenCalledWith('run_1');
   });
 
+  it('shows queued follow-up position and cancels it', async () => {
+    const user = userEvent.setup();
+    const onCancelQueuedRun = vi.fn();
+    render(
+      <Timeline
+        items={[{
+          kind: 'user_message',
+          id: 'queued_message',
+          text: '排队任务',
+          runId: 'run_queued',
+          runStatus: 'queued',
+          submissionMode: 'interrupt_and_enqueue',
+          queuePosition: 2,
+          source: 'runtime'
+        }]}
+        onCancelQueuedRun={onCancelQueuedRun}
+      />
+    );
+
+    expect(screen.getByText('等待打断后执行 · 第 2 位')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '取消排队' }));
+    expect(onCancelQueuedRun).toHaveBeenCalledWith('run_queued');
+  });
+
   it('groups consecutive file changes from the same run', async () => {
     const user = userEvent.setup();
     const onOpenFile = vi.fn();

@@ -247,7 +247,8 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /会话 A/ }));
 
     expect(await screen.findByRole('button', { name: '停止任务' })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeInTheDocument();
     expect(screen.getByLabelText('正在运行')).toBeInTheDocument();
     expect(runRequests).toEqual(['thread_a']);
 

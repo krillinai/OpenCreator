@@ -334,6 +334,7 @@ function makeRunRow(overrides: Partial<RunRow> & { id: string }): RunRow {
     codex_thread_id: null,
     resume_mode: 'independent',
     queue_state: 'none',
+    submission_mode: 'enqueue',
     public_status: 'succeeded',
     internal_status: 'succeeded',
     created_by: 'api',

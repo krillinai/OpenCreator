@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getRunCancelState,
   getThreadActiveRun,
+  getThreadQueuedRuns,
   initialRunRegistryState,
   isThreadRunBusy,
   runRegistryReducer
@@ -28,6 +29,9 @@ describe('run registry', () => {
     ]);
     expect(getThreadActiveRun(state, 'thread_1')).toEqual(running);
     expect(isThreadRunBusy(state, 'thread_1')).toBe(true);
+    expect(getThreadQueuedRuns(state, 'thread_1').map(run => run.id)).toEqual([
+      'run_queued'
+    ]);
   });
 
   it('keeps run state isolated by thread', () => {
@@ -75,6 +79,22 @@ describe('run registry', () => {
       runs: []
     });
 
+    expect(getThreadActiveRun(state, 'thread_1')).toBeUndefined();
+  });
+
+  it('does not let a stale query move a terminal run back to running', () => {
+    const completed = runRegistryReducer(initialRunRegistryState, {
+      type: 'upsert_run',
+      run: createRun({ id: 'run_completed', status: 'succeeded' })
+    });
+    const state = runRegistryReducer(completed, {
+      type: 'merge_thread_runs',
+      threadId: 'thread_1',
+      knownRunIdsAtRequestStart: ['run_completed'],
+      runs: [createRun({ id: 'run_completed', status: 'running' })]
+    });
+
+    expect(state.runsById.run_completed?.status).toBe('succeeded');
     expect(getThreadActiveRun(state, 'thread_1')).toBeUndefined();
   });
 

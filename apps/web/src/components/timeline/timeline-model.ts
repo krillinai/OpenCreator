@@ -1,4 +1,9 @@
-import type { AgentEventEnvelope, AttachmentResponse } from '@clawee/protocol';
+import type {
+  AgentEventEnvelope,
+  AttachmentResponse,
+  PublicRunStatus,
+  RunSubmissionMode
+} from '@clawee/protocol';
 
 export type TimelineItem =
   | {
@@ -8,6 +13,10 @@ export type TimelineItem =
       content?: string;
       attachments?: AttachmentResponse[];
       attachmentPreviewUrls?: Record<string, string>;
+      runId?: string;
+      runStatus?: PublicRunStatus;
+      submissionMode?: RunSubmissionMode;
+      queuePosition?: number;
       source: 'runtime' | 'mock';
     }
   | { kind: 'reasoning_summary'; id: string; runId?: string; text: string; content?: string; source: 'runtime' }

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, LoaderCircle } from 'lucide-react';
+import { ArrowDown, ArrowUp, LoaderCircle, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer.js';
@@ -401,7 +401,8 @@ function buildTimelineRenderItems(items: TimelineItem[]): TimelineRenderItem[] {
 
 function renderMessageContent(
   item: Extract<TimelineItem, { kind: 'user_message' | 'assistant_message' }>,
-  onOpenFile?: (path: string) => void
+  onOpenFile?: (path: string) => void,
+  onCancelQueuedRun?: (runId: string) => void
 ) {
   const canOpenWorkspaceFiles = item.kind === 'assistant_message' && onOpenFile !== undefined;
   return (
@@ -434,6 +435,23 @@ function renderMessageContent(
             }
           : undefined}
       />
+      {item.kind === 'user_message' && item.runStatus === 'queued' ? (
+        <div className="timeline-queue-state">
+          <span>
+            {item.submissionMode === 'interrupt_and_enqueue' ? '等待打断后执行' : '排队中'}
+            {item.queuePosition === undefined ? '' : ` · 第 ${item.queuePosition} 位`}
+          </span>
+          {item.runId !== undefined && onCancelQueuedRun !== undefined ? (
+            <button
+              type="button"
+              onClick={() => onCancelQueuedRun(item.runId!)}
+            >
+              <X aria-hidden="true" size={13} />
+              取消排队
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 }
@@ -512,11 +530,15 @@ function renderChangeBlock(
   );
 }
 
-function renderTimelineItemContent(item: TimelineItem, onOpenFile?: (path: string) => void) {
+function renderTimelineItemContent(
+  item: TimelineItem,
+  onOpenFile?: (path: string) => void,
+  onCancelQueuedRun?: (runId: string) => void
+) {
   switch (item.kind) {
     case 'user_message':
     case 'assistant_message':
-      return renderMessageContent(item, onOpenFile);
+      return renderMessageContent(item, onOpenFile, onCancelQueuedRun);
     case 'change_card':
       return renderChangeCard(item, onOpenFile);
     case 'diagnostic':
@@ -638,6 +660,7 @@ export function Timeline(props: {
   onLoadOlder?(): Promise<void> | void;
   onOpenRunDetail?(runId: string): void;
   onOpenFile?(path: string): void;
+  onCancelQueuedRun?(runId: string): void;
 }) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
@@ -780,7 +803,8 @@ export function Timeline(props: {
                   renderItem,
                   props.targetItemId,
                   props.onOpenRunDetail,
-                  props.onOpenFile
+                  props.onOpenFile,
+                  props.onCancelQueuedRun
                 )}
               </div>
             )}
@@ -805,7 +829,8 @@ function renderTimelineRenderItem(
   renderItem: TimelineRenderItem,
   targetItemId?: string,
   onOpenRunDetail?: (runId: string) => void,
-  onOpenFile?: (path: string) => void
+  onOpenFile?: (path: string) => void,
+  onCancelQueuedRun?: (runId: string) => void
 ) {
   if (renderItem.type === 'process') {
     return (
@@ -840,7 +865,9 @@ function renderTimelineRenderItem(
           <span className="timeline-kind">{getTimelineTitle(item)}</span>
         </div>
       ) : null}
-      <div className="timeline-bubble">{renderTimelineItemContent(item, onOpenFile)}</div>
+      <div className="timeline-bubble">
+        {renderTimelineItemContent(item, onOpenFile, onCancelQueuedRun)}
+      </div>
     </article>
   );
 }

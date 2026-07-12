@@ -43,6 +43,7 @@ describe('runtime storage', () => {
     const loaded = runs.getRun('run_1');
     expect(loaded?.public_status).toBe('queued');
     expect(loaded?.resume_mode).toBe('independent');
+    expect(loaded?.submission_mode).toBe('enqueue');
   });
 
   it('creates tables and enforces unique event sequence per run', () => {

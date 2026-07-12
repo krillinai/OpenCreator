@@ -71,7 +71,8 @@ export async function registerRunRoutes(
         model: thread.model ?? undefined,
         reasoning: thread.reasoning ?? undefined,
         imagePaths: attachments.imagePaths,
-        attachmentIds: body.attachmentIds
+        attachmentIds: body.attachmentIds,
+        submissionMode: body.submissionMode
       });
 
       try {
@@ -87,6 +88,11 @@ export async function registerRunRoutes(
       return reply
         .code(400)
         .send(apiError('VALIDATION_FAILED', 'threadId is required when attachmentIds are provided'));
+    }
+    if (body.submissionMode === 'interrupt_and_enqueue') {
+      return reply
+        .code(400)
+        .send(apiError('VALIDATION_FAILED', 'interrupt_and_enqueue requires threadId'));
     }
 
     if (body.profile !== undefined) {
@@ -104,7 +110,8 @@ export async function registerRunRoutes(
       threadId: body.threadId,
       resumeMode: body.resumeMode,
       model: body.model,
-      reasoning: body.reasoning
+      reasoning: body.reasoning,
+      submissionMode: body.submissionMode
     });
 
     return reply.code(202).send(withAttachments(run, []));
@@ -240,6 +247,18 @@ function parseRunRequest(body: unknown): ParseResult<RunRequest> {
     }
     value.reasoning = input.reasoning;
   }
+
+  if (
+    input.submissionMode !== undefined
+    && input.submissionMode !== 'enqueue'
+    && input.submissionMode !== 'interrupt_and_enqueue'
+  ) {
+    return {
+      ok: false,
+      message: 'submissionMode must be enqueue or interrupt_and_enqueue'
+    };
+  }
+  if (input.submissionMode !== undefined) value.submissionMode = input.submissionMode;
 
   if (input.attachmentIds !== undefined) {
     if (!Array.isArray(input.attachmentIds)) {

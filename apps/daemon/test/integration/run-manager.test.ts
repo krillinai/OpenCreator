@@ -931,6 +931,97 @@ describe('run manager', () => {
     expect(fake.readPrompt()).toBe('first');
   });
 
+  it('interrupts the active run and prioritizes the follow-up ahead of regular queued runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-interrupt-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager);
+
+    const active = manager.startRun(threadRun(thread, 'active'));
+    const regular = manager.startRun({
+      ...threadRun(thread, 'regular'),
+      submissionMode: 'enqueue'
+    });
+    const interrupting = manager.startRun({
+      ...threadRun(thread, 'interrupting'),
+      submissionMode: 'interrupt_and_enqueue'
+    });
+
+    expect(regular).toMatchObject({
+      status: 'queued',
+      submissionMode: 'enqueue',
+      queuePosition: 1
+    });
+    expect(interrupting).toMatchObject({
+      status: 'queued',
+      submissionMode: 'interrupt_and_enqueue',
+      queuePosition: 1
+    });
+    expect(manager.getRun(regular.id)).toMatchObject({ queuePosition: 2 });
+    await waitForRunStatus(manager, active.id, 'canceled');
+    await waitForRunStatus(manager, interrupting.id, 'running');
+    await expect.poll(
+      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : ''
+    ).toBe('interrupting');
+
+    expect(manager.cancelRun(interrupting.id)).toBe(true);
+    await waitForRunStatus(manager, interrupting.id, 'canceled');
+    await waitForRunStatus(manager, regular.id, 'running');
+    await expect.poll(
+      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : ''
+    ).toBe('regular');
+    expect(manager.listRunsByThread(thread.id).filter(run => run.status === 'running')).toHaveLength(1);
+    expect(manager.cancelRun(regular.id)).toBe(true);
+    await waitForRunStatus(manager, regular.id, 'canceled');
+  });
+
+  it('keeps multiple interrupting follow-ups in FIFO order', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-interrupt-fifo-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager);
+
+    const active = manager.startRun(threadRun(thread, 'active'));
+    const first = manager.startRun({
+      ...threadRun(thread, 'first interrupt'),
+      submissionMode: 'interrupt_and_enqueue'
+    });
+    const second = manager.startRun({
+      ...threadRun(thread, 'second interrupt'),
+      submissionMode: 'interrupt_and_enqueue'
+    });
+
+    expect(first.queuePosition).toBe(1);
+    expect(second.queuePosition).toBe(2);
+    await waitForRunStatus(manager, active.id, 'canceled');
+    await waitForRunStatus(manager, first.id, 'running');
+    await expect.poll(
+      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : ''
+    ).toBe('first interrupt');
+    manager.cancelRun(first.id);
+    await waitForRunStatus(manager, first.id, 'canceled');
+    await waitForRunStatus(manager, second.id, 'running');
+    await expect.poll(
+      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : ''
+    ).toBe('second interrupt');
+    expect(manager.cancelRun(second.id)).toBe(true);
+    await waitForRunStatus(manager, second.id, 'canceled');
+  });
+
   it('maps missing resume targets to a not found error code', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
     const fake = createFakeCodex(tempDir, {

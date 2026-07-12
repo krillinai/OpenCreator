@@ -78,7 +78,9 @@ export async function registerThreadRoutes(
         codexThreadId: run.codexThreadId,
         status: run.status,
         lastEventSeq: runManager.getLastEventSeq(run.id),
-        attachments: options.attachmentService?.listByRun(run.id) ?? []
+        attachments: options.attachmentService?.listByRun(run.id) ?? [],
+        submissionMode: run.submissionMode,
+        ...(run.queuePosition === undefined ? {} : { queuePosition: run.queuePosition })
       }))
     };
     return response;

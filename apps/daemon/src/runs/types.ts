@@ -1,4 +1,9 @@
-import type { PublicRunStatus, ReasoningEffort, SandboxMode } from '@clawee/protocol';
+import type {
+  PublicRunStatus,
+  ReasoningEffort,
+  RunSubmissionMode,
+  SandboxMode
+} from '@clawee/protocol';
 
 export type CreateRunInput = {
   prompt: string;
@@ -15,10 +20,13 @@ export type CreateRunInput = {
   timeoutMs?: number;
   imagePaths?: string[];
   attachmentIds?: string[];
+  submissionMode?: RunSubmissionMode;
 };
 
 export type CreatedRun = {
   id: string;
   threadId?: string;
   status: PublicRunStatus;
+  submissionMode: RunSubmissionMode;
+  queuePosition?: number;
 };

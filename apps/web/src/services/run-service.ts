@@ -1,4 +1,9 @@
-import type { ReasoningEffort, ResumeMode, RunResponse } from '@clawee/protocol';
+import type {
+  ReasoningEffort,
+  ResumeMode,
+  RunResponse,
+  RunSubmissionMode
+} from '@clawee/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 type ClientLike = Pick<RuntimeClient, 'post' | 'get'>;
@@ -13,6 +18,7 @@ export function createRunService(client: ClientLike) {
       reasoning?: ReasoningEffort;
       draftId?: string;
       attachmentIds?: string[];
+      submissionMode?: RunSubmissionMode;
     }): Promise<RunResponse> {
       const body: {
         threadId: string;
@@ -22,6 +28,7 @@ export function createRunService(client: ClientLike) {
         reasoning?: ReasoningEffort;
         draftId?: string;
         attachmentIds?: string[];
+        submissionMode?: RunSubmissionMode;
       } = {
         threadId: input.threadId,
         prompt: input.prompt,
@@ -31,6 +38,7 @@ export function createRunService(client: ClientLike) {
       if (input.reasoning !== undefined) body.reasoning = input.reasoning;
       if (input.draftId !== undefined) body.draftId = input.draftId;
       if (input.attachmentIds !== undefined) body.attachmentIds = input.attachmentIds;
+      if (input.submissionMode !== undefined) body.submissionMode = input.submissionMode;
       return client.post('/runs', body);
     },
     startStandaloneRun(input: { prompt: string; cwd?: string; profile?: string }): Promise<RunResponse> {

@@ -8,6 +8,7 @@ import type {
   CreateThreadRequest,
   RunDiagnosticsResponse,
   RunResponse,
+  RunSubmissionMode,
   SandboxMode,
   ThreadHistoryItem,
   ThreadResponse
@@ -903,6 +904,19 @@ export function AppController(props: AppControllerProps) {
     setTimelineItemsState(nextItems);
   }
 
+  function updateTimelineItemsForThread(
+    threadId: string,
+    update: (items: TimelineItem[]) => TimelineItem[]
+  ) {
+    const previousItems = timelineItemsByThreadIdRef.current[threadId]
+      ?? (timelineThreadIdRef.current === threadId ? timelineItemsRef.current : []);
+    const nextItems = update(previousItems);
+    timelineItemsByThreadIdRef.current[threadId] = nextItems;
+    if (timelineThreadIdRef.current !== threadId) return;
+    timelineItemsRef.current = nextItems;
+    setTimelineItemsState(nextItems);
+  }
+
   function getTimelineEventBatcher(threadId: string): FrameBatcher<TimelineItem> {
     const existing = timelineEventBatchersByThreadIdRef.current.get(threadId);
     if (existing !== undefined) return existing;
@@ -1004,7 +1018,8 @@ export function AppController(props: AppControllerProps) {
   async function submitPrompt(
     prompt: string,
     config?: ComposerRunConfig,
-    attachments: ComposerAttachment[] = []
+    attachments: ComposerAttachment[] = [],
+    submissionMode?: RunSubmissionMode
   ): Promise<boolean> {
     if (
       connectionState.status === 'connected'
@@ -1012,7 +1027,7 @@ export function AppController(props: AppControllerProps) {
       && threadService !== null
       && connectionConfigRef.current !== null
     ) {
-      return submitRuntimePrompt(prompt, config, attachments);
+      return submitRuntimePrompt(prompt, config, attachments, submissionMode);
     }
 
     setTimelineItems(previous => [
@@ -1402,14 +1417,14 @@ export function AppController(props: AppControllerProps) {
   async function submitRuntimePrompt(
     prompt: string,
     config?: ComposerRunConfig,
-    attachments: ComposerAttachment[] = []
+    attachments: ComposerAttachment[] = [],
+    submissionMode?: RunSubmissionMode
   ): Promise<boolean> {
     if (runService === null || threadService === null || connectionConfigRef.current === null) {
       return false;
     }
     if (
-      currentRunBusy
-      || findPendingRunStart(
+      findPendingRunStart(
         pendingRunStartsByIdRef.current,
         state.selectedThreadId
       ) !== undefined
@@ -1473,11 +1488,13 @@ export function AppController(props: AppControllerProps) {
         reasoning?: NonNullable<ComposerRunConfig['reasoning']>;
         draftId?: string;
         attachmentIds?: string[];
+        submissionMode?: RunSubmissionMode;
       } = {
         threadId: resolvedThread.threadId,
         prompt,
         resumeMode: 'auto'
       };
+      if (submissionMode !== undefined) runInput.submissionMode = submissionMode;
       if (resolvedThread.created) {
         if (effectiveConfig.model !== null) runInput.model = effectiveConfig.model;
         if (effectiveConfig.reasoning !== null) runInput.reasoning = effectiveConfig.reasoning;
@@ -1493,12 +1510,20 @@ export function AppController(props: AppControllerProps) {
         ...previous,
         [run.id]: run.attachments ?? attachmentMetadata
       }));
-      setTimelineItems(previous => previous.map(item =>
+      updateTimelineItemsForThread(resolvedThread.threadId, previous => previous.map(item =>
         item.id === userMessageId && item.kind === 'user_message'
-          ? { ...item, attachments: run.attachments ?? attachmentMetadata }
+          ? {
+              ...item,
+              attachments: run.attachments ?? attachmentMetadata,
+              runId: run.id,
+              runStatus: run.status,
+              submissionMode: run.submissionMode ?? submissionMode ?? 'enqueue',
+              queuePosition: run.queuePosition
+            }
           : item
       ));
       handleRunStarted(run);
+      void refreshThreadRunState(resolvedThread.threadId);
       const cancelRequested = pendingRunStartsByIdRef.current[pendingRunStartId]?.cancelRequested === true;
       removePendingRunStart(pendingRunStartId);
       if (cancelRequested) {
@@ -1630,6 +1655,44 @@ export function AppController(props: AppControllerProps) {
     else appendTimelineItemsForThread(run.threadId, [item]);
   }
 
+  async function refreshThreadRunState(threadId: string) {
+    if (threadService === null) return;
+    const knownRunIdsAtRequestStart = [
+      ...(runRegistryRef.current.runIdsByThreadId[threadId] ?? [])
+    ];
+    try {
+      const response = await threadService.listThreadRuns(threadId);
+      if (!mountedRef.current) return;
+      const runsById = new Map(response.runs.map(run => [run.id, run]));
+      dispatchRunRegistry({
+        type: 'merge_thread_runs',
+        threadId,
+        knownRunIdsAtRequestStart,
+        runs: response.runs
+      });
+      updateTimelineItemsForThread(threadId, items => items.map(item => {
+        if (item.kind !== 'user_message' || item.runId === undefined) return item;
+        const run = runsById.get(item.runId);
+        if (run === undefined) return item;
+        if (
+          item.runStatus !== undefined
+          && isTerminalRunStatus(item.runStatus)
+          && !isTerminalRunStatus(run.status)
+        ) {
+          return item;
+        }
+        return {
+          ...item,
+          runStatus: run.status,
+          submissionMode: run.submissionMode,
+          queuePosition: run.queuePosition
+        };
+      }));
+    } catch {
+      // SSE and the local registry remain the fallback when a refresh request fails.
+    }
+  }
+
   function stopAllRunEventSubscriptions(markDisconnected = true) {
     const activeControllers = [...runEventControllersRef.current.entries()];
     runEventControllersRef.current.clear();
@@ -1688,6 +1751,27 @@ export function AppController(props: AppControllerProps) {
       onEvent(event) {
         if (!isCurrentSubscription()) return;
         dispatchRunRegistry({ type: 'record_event', event });
+        if (event.type === 'status') {
+          updateTimelineItemsForThread(threadId, items => items.map(item =>
+            item.kind === 'user_message' && item.runId === event.runId
+              ? {
+                  ...item,
+                  runStatus: event.payload.label === 'queued' ? 'queued' : 'running',
+                  ...(event.payload.label === 'queued' ? {} : { queuePosition: undefined })
+                }
+              : item
+          ));
+        } else if (event.type === 'done') {
+          updateTimelineItemsForThread(threadId, items => items.map(item =>
+            item.kind === 'user_message' && item.runId === event.runId
+              ? {
+                  ...item,
+                  runStatus: event.payload.status,
+                  queuePosition: undefined
+                }
+              : item
+          ));
+        }
         const item = eventToTimelineItem(event);
         if (
           item !== null
@@ -1704,6 +1788,7 @@ export function AppController(props: AppControllerProps) {
           controller.stop();
           getTimelineEventBatcher(threadId).flush();
           void loadRunDiagnostics(event.runId);
+          void refreshThreadRunState(threadId);
         }
       },
       onError(error) {
@@ -1861,13 +1946,13 @@ export function AppController(props: AppControllerProps) {
   const detailPanel = createDetailPanel();
   const selectedRunsLoading = runsLoadingThreadId !== undefined
     && runsLoadingThreadId === state.selectedThreadId;
-  const composerDisabled = currentRunBusy
+  const composerDisabled = selectedPendingRunStart !== undefined
     || selectedRunsLoading
     || connectionState.status !== 'connected';
   const composerDisabledReason = currentRunCanceling
     ? '正在停止任务'
-    : currentRunBusy
-      ? '当前对话有任务运行中'
+    : selectedPendingRunStart !== undefined
+      ? '正在提交任务'
       : selectedRunsLoading
         ? '正在检查会话任务'
       : '正在连接本地运行内核';
@@ -1947,6 +2032,7 @@ export function AppController(props: AppControllerProps) {
             onLoadOlder={threadHistory.loadOlder}
             onOpenRunDetail={openRunDetail}
             onOpenFile={openTimelineFile}
+            onCancelQueuedRun={(runId) => void requestRunCancellation(runId)}
           />
         )}
         {showHistoryLoadingOverlay ? (

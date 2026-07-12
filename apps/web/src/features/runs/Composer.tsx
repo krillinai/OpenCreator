@@ -12,16 +12,23 @@ import {
   ArrowUp,
   Cable,
   Check,
+  ChevronDown,
   Circle,
   FileSliders,
+  ListPlus,
   Paperclip,
   Plus,
   ShieldCheck,
   Sparkles,
   Square,
-  Target
+  Target,
+  Zap
 } from 'lucide-react';
-import type { AttachmentResponse, ReasoningEffort } from '@clawee/protocol';
+import type {
+  AttachmentResponse,
+  ReasoningEffort,
+  RunSubmissionMode
+} from '@clawee/protocol';
 import type { ProjectPermission } from '../projects/project-model.js';
 import {
   AttachmentTray,
@@ -132,15 +139,19 @@ export function Composer(props: {
   onSubmit(
     prompt: string,
     config: ComposerRunConfig,
-    attachments: ComposerAttachment[]
+    attachments: ComposerAttachment[],
+    submissionMode?: RunSubmissionMode
   ): boolean | void | Promise<boolean | void>;
 }) {
   const [prompt, setPrompt] = useState('');
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(props.permission);
   const [selectedProfile, setSelectedProfile] = useState(props.profile);
   const [selectedModel, setSelectedModel] = useState(() => modelOptionForConfig(props.model, props.reasoning));
-  const [openMenu, setOpenMenu] = useState<'add' | 'permission' | 'profile' | 'model' | null>(null);
+  const [openMenu, setOpenMenu] = useState<
+    'add' | 'permission' | 'profile' | 'model' | 'submit' | null
+  >(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
+  const [submissionMode, setSubmissionMode] = useState<RunSubmissionMode>('enqueue');
   const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -241,12 +252,15 @@ export function Composer(props: {
     );
     let accepted: boolean | void;
     try {
-      accepted = await props.onSubmit(trimmedPrompt, {
+      const config = {
         permission: selectedPermission,
         profile: selectedProfile,
         model: selectedModel.model,
         reasoning: selectedModel.reasoning
-      }, attachments);
+      };
+      accepted = props.running
+        ? await props.onSubmit(trimmedPrompt, config, attachments, submissionMode)
+        : await props.onSubmit(trimmedPrompt, config, attachments);
     } finally {
       setSubmitting(false);
     }
@@ -662,16 +676,82 @@ export function Composer(props: {
             >
               <Square aria-hidden="true" size={13} fill="currentColor" />
             </button>
-          ) : (
+          ) : null}
+          <div className="composer-submit-wrap">
             <button
               className="composer-send"
               type="submit"
-              aria-label="发送"
+              aria-label={
+                props.running
+                  ? submissionMode === 'interrupt_and_enqueue'
+                    ? '立即打断并继续'
+                    : '排队发送'
+                  : '发送'
+              }
               disabled={!canSubmit}
             >
-              <ArrowUp aria-hidden="true" size={17} />
+              {props.running && submissionMode === 'enqueue' ? (
+                <ListPlus aria-hidden="true" size={16} />
+              ) : props.running ? (
+                <Zap aria-hidden="true" size={16} />
+              ) : (
+                <ArrowUp aria-hidden="true" size={17} />
+              )}
             </button>
-          )}
+            {props.running ? (
+              <>
+                <button
+                  className="composer-submit-menu-button"
+                  type="button"
+                  aria-label="选择发送方式"
+                  aria-expanded={openMenu === 'submit'}
+                  onClick={() => setOpenMenu(openMenu === 'submit' ? null : 'submit')}
+                >
+                  <ChevronDown aria-hidden="true" size={14} />
+                </button>
+                {openMenu === 'submit' ? (
+                  <div className="composer-popover composer-submit-menu" role="menu" aria-label="发送方式">
+                    <button
+                      className="composer-menu-item"
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={submissionMode === 'enqueue'}
+                      onClick={() => {
+                        setSubmissionMode('enqueue');
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <span className="composer-menu-icon" aria-hidden="true">
+                        <ListPlus size={15} />
+                      </span>
+                      <span>
+                        <strong>排队发送</strong>
+                        <small>当前任务继续，新任务按顺序等待</small>
+                      </span>
+                    </button>
+                    <button
+                      className="composer-menu-item"
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={submissionMode === 'interrupt_and_enqueue'}
+                      onClick={() => {
+                        setSubmissionMode('interrupt_and_enqueue');
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <span className="composer-menu-icon" aria-hidden="true">
+                        <Zap size={15} />
+                      </span>
+                      <span>
+                        <strong>立即打断并继续</strong>
+                        <small>停止当前任务，优先执行这条消息</small>
+                      </span>
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
     </form>

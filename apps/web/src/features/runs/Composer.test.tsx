@@ -111,30 +111,49 @@ describe('Composer', () => {
     expect(screen.getByPlaceholderText('当前对话有任务运行中')).toBeInTheDocument();
   });
 
-  it('shows an interrupt control while a task is running', async () => {
+  it('keeps input available while running and submits queued or interrupting follow-ups', async () => {
     const user = userEvent.setup();
     const onCancel = vi.fn();
+    const onSubmit = vi.fn();
     const { rerender } = render(
       <Composer
         {...defaultProps}
-        disabled
         running
-        disabledReason="当前对话有任务运行中"
         onCancel={onCancel}
+        onSubmit={onSubmit}
       />
     );
 
-    expect(screen.queryByRole('button', { name: '发送' })).not.toBeInTheDocument();
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    expect(textbox).toBeEnabled();
+    await user.type(textbox, '排队任务');
+    await user.click(screen.getByRole('button', { name: '排队发送' }));
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      '排队任务',
+      expect.any(Object),
+      [],
+      'enqueue'
+    );
+
+    await user.type(textbox, '打断任务');
+    await user.click(screen.getByRole('button', { name: '选择发送方式' }));
+    await user.click(screen.getByRole('menuitemradio', { name: /立即打断并继续/ }));
+    await user.click(screen.getByRole('button', { name: '立即打断并继续' }));
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      '打断任务',
+      expect.any(Object),
+      [],
+      'interrupt_and_enqueue'
+    );
+
     await user.click(screen.getByRole('button', { name: '停止任务' }));
     expect(onCancel).toHaveBeenCalledTimes(1);
 
     rerender(
       <Composer
         {...defaultProps}
-        disabled
         running
         canceling
-        disabledReason="正在停止任务"
         onCancel={onCancel}
       />
     );

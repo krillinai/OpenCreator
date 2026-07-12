@@ -84,6 +84,20 @@ export function isThreadRunBusy(
   return getThreadActiveRun(state, threadId) !== undefined;
 }
 
+export function getThreadQueuedRuns(
+  state: RunRegistryState,
+  threadId: string | undefined
+): RunResponse[] {
+  if (threadId === undefined) return [];
+  return (state.runIdsByThreadId[threadId] ?? [])
+    .map(runId => state.runsById[runId])
+    .filter((run): run is RunResponse => run?.status === 'queued')
+    .sort((left, right) =>
+      (left.queuePosition ?? Number.MAX_SAFE_INTEGER)
+      - (right.queuePosition ?? Number.MAX_SAFE_INTEGER)
+    );
+}
+
 export function getRunCancelState(
   state: RunRegistryState,
   runId: string | undefined
@@ -117,10 +131,15 @@ function mergeThreadRuns(
   const subscriptionStateByRunId = { ...state.subscriptionStateByRunId };
 
   for (const run of normalizedRuns) {
-    runsById[run.id] = run;
+    const existingRun = runsById[run.id];
+    runsById[run.id] = existingRun !== undefined
+      && isTerminal(existingRun.status)
+      && !isTerminal(run.status)
+      ? existingRun
+      : run;
     cancelStateByRunId[run.id] ??= 'idle';
     subscriptionStateByRunId[run.id] ??= 'idle';
-    if (isTerminal(run.status)) {
+    if (isTerminal(runsById[run.id]!.status)) {
       cancelStateByRunId[run.id] = 'idle';
       subscriptionStateByRunId[run.id] = 'idle';
     }

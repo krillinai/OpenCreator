@@ -1,4 +1,9 @@
-import type { AgentEventEnvelope, PublicRunStatus, TerminationReason } from '@clawee/protocol';
+import type {
+  AgentEventEnvelope,
+  PublicRunStatus,
+  RunSubmissionMode,
+  TerminationReason
+} from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -49,6 +54,8 @@ export type RuntimeRun = {
   threadId?: string;
   codexThreadId?: string;
   status: PublicRunStatus;
+  submissionMode: RunSubmissionMode;
+  queuePosition?: number;
   cwd: string;
   profile: string;
   sandbox: string;
@@ -181,9 +188,35 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         runCompletions.set(id, completion);
         queuedCompletionResolvers.set(id, resolveCompletion);
         const queue = threadQueues.get(input.threadId) ?? [];
-        queue.push({ id, input, runDir });
+        const queuedRun = { id, input, runDir };
+        const submissionMode = input.submissionMode ?? 'enqueue';
+        let queuePosition: number;
+        if (submissionMode === 'interrupt_and_enqueue') {
+          const firstRegularIndex = queue.findIndex(
+            item => (item.input.submissionMode ?? 'enqueue') === 'enqueue'
+          );
+          const insertIndex = firstRegularIndex === -1 ? queue.length : firstRegularIndex;
+          queue.splice(insertIndex, 0, queuedRun);
+          queuePosition = insertIndex + 1;
+        } else {
+          queue.push(queuedRun);
+          queuePosition = queue.length;
+        }
         threadQueues.set(input.threadId, queue);
-        return { id, threadId: input.threadId, status: 'queued' };
+        if (submissionMode === 'interrupt_and_enqueue') {
+          const activeRunId = runningThreadRun.get(input.threadId);
+          const activeRow = activeRunId === undefined ? undefined : runs.getRun(activeRunId);
+          if (activeRunId !== undefined && activeRow?.internal_status !== 'canceling') {
+            manager.cancelRun(activeRunId);
+          }
+        }
+        return {
+          id,
+          threadId: input.threadId,
+          status: 'queued',
+          submissionMode,
+          queuePosition
+        };
       }
 
       return startExistingRun({ id, input, runDir });
@@ -231,7 +264,12 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         await safePublish(doneWrite);
         const logWriter = await closeRunLog(id);
         writeQueuedCancelDiagnostics(queued, logWriter);
-        resolveRunCompletion(id, { id, threadId: queued.threadId, status: 'canceled' });
+        resolveRunCompletion(id, {
+          id,
+          threadId: queued.threadId,
+          status: 'canceled',
+          submissionMode: queued.input.submissionMode ?? 'enqueue'
+        });
       })().catch(error => {
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`Failed to finalize queued run ${id}: ${message}`);
@@ -241,7 +279,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
     getRun(id: string): RuntimeRun | undefined {
       const row = runs.getRun(id);
-      return row === undefined ? undefined : mapRunRow(row);
+      return row === undefined ? undefined : decorateQueuePosition(mapRunRow(row));
     },
 
     hasActiveRunForThread(threadId: string): boolean {
@@ -259,11 +297,12 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     },
 
     listRuns(limit?: number): RuntimeRun[] {
-      return runs.listRuns(limit).map(mapRunRow);
+      return runs.listRuns(limit).map(row => decorateQueuePosition(mapRunRow(row)));
     },
 
     listRunsByThread(threadId: string, limit?: number): RuntimeRun[] {
-      return (listRunsByThreadNewestFirst.all({ threadId, limit: limit ?? 50 }) as RunRow[]).map(mapRunRow);
+      return (listRunsByThreadNewestFirst.all({ threadId, limit: limit ?? 50 }) as RunRow[])
+        .map(row => decorateQueuePosition(mapRunRow(row)));
     },
 
     getLastEventSeq(runId: string): number {
@@ -437,7 +476,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     const createdRun = (status: PublicRunStatus): CreatedRun => ({
       id,
       ...(runInput.threadId === undefined ? {} : { threadId: runInput.threadId }),
-      status
+      status,
+      submissionMode: runInput.submissionMode ?? 'enqueue'
     });
 
     const failBeforeSpawnAndRelease = (failure: {
@@ -452,6 +492,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         message: failure.message,
         terminationReason: failure.terminationReason,
         threadId: runInput.threadId,
+        submissionMode: runInput.submissionMode ?? 'enqueue',
         diagnostics: buildThreadRunDiagnosticsMetadata({
           runInput,
           resumeMode: resolvedResumeMode,
@@ -513,6 +554,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       sandbox: runInput.sandbox,
       threadId: runInput.threadId,
       resumeMode: resolvedResumeMode,
+      submissionMode: runInput.submissionMode ?? 'enqueue',
       attachmentIds: runInput.attachmentIds ?? []
     });
     if (resolvedResumeMode === 'new_thread' && codexThreadId !== undefined) {
@@ -789,6 +831,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     message: string;
     terminationReason: TerminationReason;
     threadId?: string;
+    submissionMode: RunSubmissionMode;
     diagnostics?: Record<string, unknown>;
     publish: (event: AgentEventEnvelope) => Promise<void>;
   }): CreatedRun {
@@ -815,7 +858,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     return {
       id: input.id,
       ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
-      status: 'failed'
+      status: 'failed',
+      submissionMode: input.submissionMode
     };
   }
 
@@ -867,6 +911,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       codexBin: options.codexBin,
       codexHome: options.codexHome,
       resumeMode: resolvedResumeMode,
+      submissionMode: input.submissionMode ?? 'enqueue',
       normalizerVersion
     });
 
@@ -878,6 +923,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       sandbox: input.sandbox,
       threadId: input.threadId,
       resumeMode: resolvedResumeMode,
+      submissionMode: input.submissionMode ?? 'enqueue',
       attachmentIds: input.attachmentIds ?? []
     });
 
@@ -906,6 +952,13 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       return { ...queued, threadId };
     }
     return undefined;
+  }
+
+  function decorateQueuePosition(run: RuntimeRun): RuntimeRun {
+    if (run.status !== 'queued' || run.threadId === undefined) return run;
+    const queue = threadQueues.get(run.threadId) ?? [];
+    const index = queue.findIndex(item => item.id === run.id);
+    return index === -1 ? run : { ...run, queuePosition: index + 1 };
   }
 
   function writeQueuedCancelDiagnostics(
@@ -1306,6 +1359,7 @@ function mapRunRow(row: RunRow): RuntimeRun {
     ...(row.thread_id === null ? {} : { threadId: row.thread_id }),
     ...(row.codex_thread_id === null ? {} : { codexThreadId: row.codex_thread_id }),
     status: row.public_status as PublicRunStatus,
+    submissionMode: row.submission_mode,
     cwd: row.cwd,
     profile: row.profile,
     sandbox: row.sandbox,

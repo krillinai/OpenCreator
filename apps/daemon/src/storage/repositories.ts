@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope, RunSubmissionMode } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 
 export type ResolvedResumeMode = 'independent' | 'new_thread' | 'resume_thread';
@@ -10,6 +10,7 @@ export type InsertRunInput = {
   codexThreadId?: string;
   resumeMode?: ResolvedResumeMode;
   queueState?: RunQueueState;
+  submissionMode?: RunSubmissionMode;
   publicStatus: string;
   internalStatus: string;
   createdBy: string;
@@ -36,6 +37,7 @@ export type RunRow = {
   codex_thread_id: string | null;
   resume_mode: ResolvedResumeMode | null;
   queue_state: RunQueueState;
+  submission_mode: RunSubmissionMode;
   public_status: string;
   internal_status: string;
   created_by: string;
@@ -148,11 +150,11 @@ export type UpdateThreadSandboxInput = {
 export function createRunRepository(db: Database.Database): RunRepository {
   const insert = db.prepare(`
     INSERT INTO runs (
-      id, thread_id, codex_thread_id, resume_mode, queue_state, public_status, internal_status, created_by, source_id,
+      id, thread_id, codex_thread_id, resume_mode, queue_state, submission_mode, public_status, internal_status, created_by, source_id,
       profile, cwd, canonical_cwd, workspace_mode, prompt_hash, prompt_preview_redacted,
       model, reasoning, sandbox, codex_version, codex_bin, codex_home, normalizer_version, timeout_ms
     ) VALUES (
-      @id, @threadId, @codexThreadId, @resumeMode, @queueState, @publicStatus, @internalStatus, @createdBy, @sourceId,
+      @id, @threadId, @codexThreadId, @resumeMode, @queueState, @submissionMode, @publicStatus, @internalStatus, @createdBy, @sourceId,
       @profile, @cwd, @canonicalCwd, @workspaceMode, @promptHash, @promptPreviewRedacted,
       @model, @reasoning, @sandbox, @codexVersion, @codexBin, @codexHome, @normalizerVersion, @timeoutMs
     )
@@ -235,6 +237,7 @@ export function createRunRepository(db: Database.Database): RunRepository {
         codexThreadId: null,
         resumeMode: 'independent',
         queueState: 'none',
+        submissionMode: 'enqueue',
         sourceId: null,
         timeoutMs: null,
         promptHash: null,

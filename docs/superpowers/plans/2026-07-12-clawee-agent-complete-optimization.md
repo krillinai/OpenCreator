@@ -1726,7 +1726,7 @@ refactor(web): split app routes and feature controllers
 
 - [x] `P2-B1` 附件存储与安全 API
 - [x] `P2-B2` 多模态 Composer 与 Run
-- [ ] `P2-B3` 排队发送与立即打断并继续
+- [x] `P2-B3` 排队发送与立即打断并继续
 - [ ] `P2-B4` HTML 安全预览
 - [ ] `P2-B5` 真实审批闭环
 - [ ] `P2-B6` 通知、任务中心与 daemon 重启恢复
@@ -1908,7 +1908,7 @@ feat: support multimodal run attachments
 
 ## P2-B3：排队发送与立即打断并继续
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 当前会话正在运行时，用户可以选择排队新消息，或取消当前 Run 后立即继续新任务。
 
@@ -1971,7 +1971,25 @@ feat: add queued and interrupting follow-up prompts
 
 **回滚边界：** 回滚新请求模式和 Web 控件；保留原有 daemon 单线程队列能力。
 
-**执行结果：** 待填写。
+**执行结果：** `PASS`。
+
+- 协议和 SQLite Run 元数据新增 `submissionMode`，支持 `enqueue` 与 `interrupt_and_enqueue`，Run 查询动态返回队列位置。
+- daemon 保持同线程单进程约束；普通消息进入队尾，打断消息优先于普通队列且多个打断消息保持 FIFO，打断入队后自动取消当前活动 Run。
+- Composer 在运行中保持可输入，提供排队发送、立即打断并继续和停止当前任务；Timeline 展示排队类型、位置并支持取消排队项。
+- Run Registry 和 Timeline 增加终态单向保护，避免稍晚返回的旧查询把已完成 Run 恢复为运行中；提交后的队列刷新在请求发出前记录已知 Run，避免旧响应覆盖新提交。
+- daemon 重启时既有非终态 Run 会明确收敛为 `failed/daemon_restart`，不会保留未知或永久排队状态；更完整的重启恢复体验由 P2-B6 承接。
+- 自动化门禁：
+  - `pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts -t "interrupt|queue"` -> PASS，7 项。
+  - `pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "follow-up modes"` -> PASS，2 项。
+  - `pnpm --filter @clawee/daemon test` -> PASS，46 个测试文件、515 项；真实 Codex smoke 13 项按默认配置跳过。
+  - `pnpm --filter @clawee/web test` -> PASS，59 个测试文件、407 项。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS；Web 主入口 545.80KB / 158.56KB gzip，保留既有 chunk 大小提示。
+- 延后到 P2-B8 最终统一验收：
+  - 慢 Run 中连续排队两条消息并核对顺序执行。
+  - 使用“立即打断并继续”并确认当前 Run 收敛后新 Run 开始，期间同线程无并行 Codex。
+  - 取消尚未开始的排队项，并在切换会话、刷新和附件排队场景复核状态。
+  - 在 1440x900 与 390x844 检查 Composer 发送方式菜单和 Timeline 排队状态无溢出。
 
 ## P2-B4：HTML 安全预览
 
@@ -2455,6 +2473,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B10 | `NOT_STARTED -> PASS` | 本批提交 | 完成 HashRouter 稳定 URL、路由恢复、App 顶层编排、页面懒加载和 Files/CodeMirror 按需分包；Web 395 项及全项目测试、类型检查、构建全部通过；主入口降至 533.87KB / 155.20KB gzip | P1 门禁 `PASS`；下一批 `P2-B1`，最终阶段补路由和按需加载浏览器验收 |
 | 2026-07-12 | P2-B1 | `NOT_STARTED -> PASS` | 本批提交 | 完成附件协议、SQLite 元数据、受限二进制 API、MIME 嗅探、哈希去重、作用域访问、原子落盘、符号链接防护、7 天草稿清理和 Web 调用层；专项测试、全量测试、类型检查和构建通过 | 下一批 `P2-B2`；真实上传、删除和进程重启验收统一放到 P2-B8 |
 | 2026-07-12 | P2-B2 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Codex 图片能力检测、附件 ID 到受控路径解析、Run 附件归属与查询、Composer 选择/拖放/粘贴/重试/移除、Timeline 缩略图和 Run 详情；daemon 511 项、Web 405 项及全仓类型检查、构建通过 | 下一批 `P2-B3`；真实图片发送与桌面/移动布局验收统一放到 P2-B8 |
+| 2026-07-12 | P2-B3 | `NOT_STARTED -> PASS` | 本批提交 | 完成排队与打断发送协议、持久化模式、稳定优先级、单线程执行、队列位置、取消排队、运行中 Composer 和终态防倒退；daemon 515 项、Web 407 项、类型检查和构建通过 | 下一批 `P2-B4`；真实慢 Run、切换刷新和桌面/移动交互统一放到 P2-B8 |
 
 ## 14.1 单批次执行记录模板
 

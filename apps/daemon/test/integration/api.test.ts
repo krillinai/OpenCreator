@@ -2746,6 +2746,95 @@ describe('runtime api', () => {
     expect(events.body).toContain('event: done');
   });
 
+  it('accepts queued and interrupting follow-up modes and exposes queue positions', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-run-queue-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-queue' },
+        { type: 'turn.started' }
+      ],
+      hang: true
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+    const thread = await createThreadViaApi();
+
+    const active = (await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'active'
+    })).json();
+    await waitForRunStatus(active.id, 'running');
+
+    const regularResponse = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'regular',
+      submissionMode: 'enqueue'
+    });
+    expect(regularResponse.statusCode).toBe(202);
+    expect(regularResponse.json()).toMatchObject({
+      status: 'queued',
+      submissionMode: 'enqueue',
+      queuePosition: 1
+    });
+
+    const interruptingResponse = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: 'interrupting',
+      submissionMode: 'interrupt_and_enqueue'
+    });
+    expect(interruptingResponse.statusCode).toBe(202);
+    expect(interruptingResponse.json()).toMatchObject({
+      status: 'queued',
+      submissionMode: 'interrupt_and_enqueue',
+      queuePosition: 1
+    });
+
+    const runsResponse = await server.inject({
+      method: 'GET',
+      url: `/threads/${thread.id}/runs?limit=50`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(runsResponse.statusCode).toBe(200);
+    expect(runsResponse.json().runs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: regularResponse.json().id,
+        submissionMode: 'enqueue',
+        queuePosition: 2
+      }),
+      expect.objectContaining({
+        id: interruptingResponse.json().id,
+        submissionMode: 'interrupt_and_enqueue',
+        queuePosition: 1
+      })
+    ]));
+
+    await authPost(`/runs/${regularResponse.json().id}/cancel`, {});
+    await authPost(`/runs/${interruptingResponse.json().id}/cancel`, {});
+    await waitForRunStatus(active.id, 'canceled');
+  });
+
+  it('rejects invalid follow-up modes and interrupting runs without a thread', async () => {
+    server = await buildServer({ token: 'secret' });
+
+    const invalid = await authPost('/runs', {
+      prompt: 'invalid',
+      submissionMode: 'later'
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.code).toBe('VALIDATION_FAILED');
+
+    const missingThread = await authPost('/runs', {
+      prompt: 'interrupt',
+      submissionMode: 'interrupt_and_enqueue'
+    });
+    expect(missingThread.statusCode).toBe(400);
+    expect(missingThread.json().error.code).toBe('VALIDATION_FAILED');
+  });
+
   it('includes web app CORS headers on SSE event responses', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {

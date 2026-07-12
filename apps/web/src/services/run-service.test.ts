@@ -43,7 +43,8 @@ describe('RunService', () => {
       threadId: 'thread_1',
       prompt: '描述图片',
       draftId: 'draft_1',
-      attachmentIds: ['attachment_1']
+      attachmentIds: ['attachment_1'],
+      submissionMode: 'interrupt_and_enqueue'
     });
 
     expect(post).toHaveBeenCalledWith('/runs', {
@@ -51,7 +52,8 @@ describe('RunService', () => {
       prompt: '描述图片',
       resumeMode: 'auto',
       draftId: 'draft_1',
-      attachmentIds: ['attachment_1']
+      attachmentIds: ['attachment_1'],
+      submissionMode: 'interrupt_and_enqueue'
     });
   });
 });
