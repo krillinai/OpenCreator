@@ -362,7 +362,7 @@ fix(daemon): start scheduler in production
 
 ## P0-B2：建立 Web RunRegistry 与活动 Run 查询
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `BLOCKED_ENV`
 
 **目标：** 用按 `threadId`、`runId` 管理的 RunRegistry 替代全局运行状态，能够从 daemon 查询指定线程的活动和排队 Run。
 
@@ -423,7 +423,33 @@ refactor(web): manage runs with a per-thread registry
 
 **回滚边界：** 可整体回滚 RunRegistry 接线，daemon API 不变。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 代码提交：`adc8815 refactor(web): manage runs with a per-thread registry`
+- 新增 Web `RunRegistry`，按 `threadId` 和 `runId` 管理 Runs、活动 Run、最后事件序号、订阅状态和取消状态。
+- 当前只在进入可见会话时调用 `listThreadRuns(threadId)`，没有刷新时批量加载全部会话 Runs。
+- Composer 的运行中、停止中和禁用状态已改为从当前线程 Registry 派生，旧 `runtimeBusy`、`runCanceling` 和活动 Run 全局 ref 已删除。
+- Run POST 返回前的停止请求继续可用，并改为按 pending request 隔离；线程 A 的异步回调不会清除线程 B 的 pending start。
+- Runs 查询通过请求开始快照解决竞态：
+  - 查询期间新建并由 daemon 返回确认的本地活动 Run 不会被旧空响应覆盖。
+  - 查询开始前已知、但 daemon 后续明确不再返回的活动 Run 可以被清除。
+- 失败测试已先确认：
+  - 旧空查询无法清理查询开始前已知的活动 Run。
+  - 线程 A 的 Run 创建请求返回时会错误清除线程 B 的 pending start。
+- 自动化验证：
+  - `pnpm --filter @clawee/web test -- src/features/runs/run-registry.test.ts` -> PASS，6 个测试通过。
+  - `pnpm --filter @clawee/web test -- src/app/App.test.tsx` -> PASS，42 个测试通过。
+  - `pnpm --filter @clawee/web test` -> PASS，43 个测试文件、319 个测试通过。
+  - `pnpm --filter @clawee/web typecheck` -> PASS。
+  - `pnpm --filter @clawee/web build` -> PASS；主包约 1024.60 kB，gzip 326.49 kB，保留既有大 chunk 警告。
+- 真实服务验证：
+  - 已重启 `pnpm web:dev`，页面 `http://127.0.0.1:9000/` 返回 `200`。
+  - Vite runtime 代理和 daemon 直连 `/healthz` 均返回 `200`。
+- 浏览器验证：`BLOCKED_ENV`
+  - 浏览器控制运行时返回 `No browser is available`，可用浏览器列表为空，无法执行 1440x900 和 390x844 的交互验收。
+  - 解除阻塞后需验证：无 Run 会话可发送、活动 Run 会话显示停止、切换到空闲会话不受影响、刷新仅请求当前可见会话 Runs。
+  - 自动化 `App.test.tsx` 已覆盖当前可见线程按需查询、活动 Run 状态、线程切换和 pending start 隔离，但不能替代本文档要求的真实浏览器门禁。
+- 遗留边界：SSE 自动恢复、断线重连和按 Run 管理订阅仍由 `P0-B3` 实施；在 P0-B2 通过浏览器验收前不得进入 P0-B3。
 
 ## P0-B3：SSE 重连、事件去重与刷新恢复
 
@@ -1999,6 +2025,8 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | 计划制定 | `NOT_STARTED` | - | 已建立 P0/P1/P2 分批实施计划 | 从 `P0-B1` 开始 |
 | 2026-07-12 | P0-B1 | `NOT_STARTED -> IN_PROGRESS` | - | 开始验证生产入口 Scheduler autostart 接线 | 先补失败测试 |
 | 2026-07-12 | P0-B1 | `IN_PROGRESS -> PASS` | `485a808` | daemon 全量测试、类型检查、构建和真实定时触发通过 | 下一批 `P0-B2` |
+| 2026-07-12 | P0-B2 | `NOT_STARTED -> IN_PROGRESS` | - | 开始建立按线程隔离的 Web RunRegistry | 先补 Registry 和当前会话查询失败测试 |
+| 2026-07-12 | P0-B2 | `IN_PROGRESS -> BLOCKED_ENV` | `adc8815` | Web 319 个测试、类型检查、构建和真实服务健康检查通过；浏览器控制环境无可用浏览器 | 完成桌面/移动人工验收后改为 `PASS`，再进入 `P0-B3` |
 
 ## 14.1 单批次执行记录模板
 
