@@ -143,6 +143,8 @@ describe('App', () => {
       token: 'runtime-token'
     });
     let threadARunListRequests = 0;
+    let threadAHistoryRequests = 0;
+    let runCompleted = false;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
@@ -156,6 +158,34 @@ describe('App', () => {
         });
       }
       if (url.endsWith('/threads/thread_a/history')) {
+        threadAHistoryRequests += 1;
+        if (threadAHistoryRequests >= 3) {
+          return jsonResponse({
+            threadId: 'thread_a',
+            codexThreadId: null,
+            items: [
+              {
+                id: 'history_user_a',
+                type: 'user_message',
+                text: '执行长任务',
+                createdAt: new Date(0).toISOString()
+              },
+              {
+                id: 'history_assistant_a',
+                type: 'assistant_message',
+                text: '切换前的实时进度',
+                createdAt: new Date(0).toISOString()
+              },
+              {
+                id: 'history_done_a',
+                type: 'done',
+                status: 'succeeded',
+                terminationReason: 'completed',
+                createdAt: new Date(0).toISOString()
+              }
+            ]
+          });
+        }
         return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/threads/thread_b/history')) {
@@ -164,7 +194,7 @@ describe('App', () => {
       if (url.endsWith('/threads/thread_a/runs?limit=50')) {
         threadARunListRequests += 1;
         return jsonResponse({
-          runs: threadARunListRequests === 1
+          runs: threadARunListRequests === 1 || runCompleted
             ? []
             : [createRunResponse({ id: 'run_a', threadId: 'thread_a', status: 'running' })]
         });
@@ -229,6 +259,7 @@ describe('App', () => {
           'run_a'
         )
       );
+      runCompleted = true;
     };
 
     render(
@@ -267,8 +298,17 @@ describe('App', () => {
       expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
       expect(screen.queryByRole('button', { name: '停止任务' })).not.toBeInTheDocument();
       expect(screen.queryByLabelText('正在运行')).not.toBeInTheDocument();
-      expect(screen.queryByText('切换前的实时进度')).not.toBeInTheDocument();
     });
+    expect(await findTimelineUserMessage('执行长任务')).toBeInTheDocument();
+    expect(screen.getAllByText('切换前的实时进度')).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: /会话 B/ }));
+    await user.click(screen.getByRole('button', { name: /会话 A/ }));
+
+    expect(await findTimelineUserMessage('执行长任务')).toBeInTheDocument();
+    expect(document.querySelectorAll('.timeline-user_message')).toHaveLength(1);
+    expect(await screen.findAllByText('切换前的实时进度')).toHaveLength(1);
+    expect(subscriptions).toHaveLength(2);
   });
 
   it('keeps pending run starts isolated when switching threads', async () => {

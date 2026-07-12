@@ -116,7 +116,7 @@ export function App(props: AppProps = {}) {
   const subscribeRunEvents = props.subscribeRunEvents ?? defaultSubscribeRunEvents;
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
   const [treeLoadError, setTreeLoadError] = useState<string>();
-  const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
+  const [timelineItems, setTimelineItemsState] = useState<TimelineItem[]>([]);
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig | null>(null);
   const [runtimeThreads, setRuntimeThreads] = useState<ThreadResponse[]>([]);
   const [threadLoadError, setThreadLoadError] = useState<string>();
@@ -157,6 +157,9 @@ export function App(props: AppProps = {}) {
   const [threadHistoryReloadKey, setThreadHistoryReloadKey] = useState(0);
   const projectService = useMemo(() => createMockProjectService(), []);
   const timelineIdSequenceRef = useRef(0);
+  const timelineItemsRef = useRef<TimelineItem[]>([]);
+  const timelineItemsByThreadIdRef = useRef<Record<string, TimelineItem[] | undefined>>({});
+  const timelineThreadIdRef = useRef<string | undefined>(persistedNavigation?.selectedThreadId);
   const mountedRef = useRef(true);
   const selectedFilePathRef = useRef(state.selectedFilePath);
   const savedFileByPathRef = useRef<Record<string, WorkspaceFile>>({});
@@ -258,6 +261,11 @@ export function App(props: AppProps = {}) {
   useEffect(() => {
     selectedFilePathRef.current = state.selectedFilePath;
   }, [state.selectedFilePath]);
+
+  useEffect(() => {
+    if (timelineThreadIdRef.current === state.selectedThreadId) return;
+    showTimelineForThread(state.selectedThreadId, [], false);
+  }, [state.selectedThreadId]);
 
   useEffect(() => {
     if (!navigationPersistenceReadyRef.current) return;
@@ -520,7 +528,7 @@ export function App(props: AppProps = {}) {
 
     setHistoryLoadingThreadId(selectedThreadId);
     setHistoryLoadedThreadId(undefined);
-    setTimelineItems([]);
+    showTimelineForThread(selectedThreadId, [], false);
     setThreadHistoryLoadError(undefined);
 
     threadService
@@ -538,14 +546,24 @@ export function App(props: AppProps = {}) {
             return changed ? nextThreads : previous;
           });
         }
-        setTimelineItems(mapHistoryItemsToTimelineItems(response.items));
+        const historyItems = mapHistoryItemsToTimelineItems(response.items);
+        const cachedItems = timelineItemsByThreadIdRef.current[selectedThreadId] ?? [];
+        showTimelineForThread(
+          selectedThreadId,
+          mergeTimelineHistoryWithCache(historyItems, cachedItems),
+          true
+        );
         setThreadHistoryLoadError(undefined);
         setHistoryLoadingThreadId(undefined);
         setHistoryLoadedThreadId(selectedThreadId);
       })
       .catch(() => {
         if (canceled) return;
-        setTimelineItems([]);
+        showTimelineForThread(
+          selectedThreadId,
+          timelineItemsByThreadIdRef.current[selectedThreadId] ?? [],
+          true
+        );
         setThreadHistoryLoadError('无法加载聊天历史');
         setHistoryLoadingThreadId(undefined);
         setHistoryLoadedThreadId(selectedThreadId);
@@ -766,6 +784,38 @@ export function App(props: AppProps = {}) {
     return `${prefix}_${Date.now()}_${timelineIdSequenceRef.current}`;
   }
 
+  function setTimelineItems(
+    update: TimelineItem[] | ((previous: TimelineItem[]) => TimelineItem[])
+  ) {
+    const nextItems = typeof update === 'function'
+      ? update(timelineItemsRef.current)
+      : update;
+    const threadId = timelineThreadIdRef.current;
+    timelineItemsRef.current = nextItems;
+    if (threadId !== undefined) {
+      timelineItemsByThreadIdRef.current[threadId] = nextItems;
+    }
+    setTimelineItemsState(nextItems);
+  }
+
+  function showTimelineForThread(
+    threadId: string | undefined,
+    items: TimelineItem[],
+    cache: boolean
+  ) {
+    timelineThreadIdRef.current = threadId;
+    timelineItemsRef.current = items;
+    if (cache && threadId !== undefined) {
+      timelineItemsByThreadIdRef.current[threadId] = items;
+    }
+    setTimelineItemsState(items);
+  }
+
+  function adoptCurrentTimelineForThread(threadId: string) {
+    timelineThreadIdRef.current = threadId;
+    timelineItemsByThreadIdRef.current[threadId] = timelineItemsRef.current;
+  }
+
   function updatePendingRunStart(next: PendingRunStart) {
     const updated = {
       ...pendingRunStartsByIdRef.current,
@@ -834,10 +884,10 @@ export function App(props: AppProps = {}) {
   function startNewConversation() {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
+    timelineEventBatcherRef.current?.flush();
     abortCurrentRunEventSubscription();
     resumedSubscriptionKeyRef.current = undefined;
-    timelineEventBatcherRef.current?.clear();
-    setTimelineItems([]);
+    showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
@@ -848,10 +898,10 @@ export function App(props: AppProps = {}) {
   function selectProject(projectId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
+    timelineEventBatcherRef.current?.flush();
     abortCurrentRunEventSubscription();
     resumedSubscriptionKeyRef.current = undefined;
-    timelineEventBatcherRef.current?.clear();
-    setTimelineItems([]);
+    showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
@@ -862,9 +912,9 @@ export function App(props: AppProps = {}) {
   function selectConversation(conversationId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
+    timelineEventBatcherRef.current?.flush();
     abortCurrentRunEventSubscription();
     resumedSubscriptionKeyRef.current = undefined;
-    timelineEventBatcherRef.current?.clear();
     setThreadConfigUpdateError(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
     const alreadySelected = conversationId === state.selectedThreadId;
@@ -886,7 +936,7 @@ export function App(props: AppProps = {}) {
     setHistoryLoadingThreadId(conversationId);
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
-    setTimelineItems([]);
+    showTimelineForThread(conversationId, [], false);
     dispatch({ type: 'select_thread', threadId: conversationId });
   }
 
@@ -1054,11 +1104,11 @@ export function App(props: AppProps = {}) {
       const created = await activeThreadService.createThread(request);
       if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
 
+      timelineEventBatcherRef.current?.flush();
       abortCurrentRunEventSubscription();
       resumedSubscriptionKeyRef.current = undefined;
-      timelineEventBatcherRef.current?.clear();
       setRuntimeThreads(previous => upsertThread(previous, created.thread));
-      setTimelineItems([]);
+      showTimelineForThread(created.thread.id, [], true);
       setThreadHistoryLoadError(undefined);
       setHistoryLoadingThreadId(undefined);
       setHistoryLoadedThreadId(created.thread.id);
@@ -1247,6 +1297,7 @@ export function App(props: AppProps = {}) {
     setRuntimeThreads(previous => upsertThread(previous, created.thread));
     skipNextHistoryLoadForThreadRef.current = created.thread.id;
     navigationPersistenceReadyRef.current = true;
+    adoptCurrentTimelineForThread(created.thread.id);
     dispatch({ type: 'select_thread', threadId: created.thread.id });
     return { threadId: created.thread.id, created: true };
   }
@@ -2025,6 +2076,83 @@ function findPendingRunStart(
   threadId: string | undefined
 ): PendingRunStart | undefined {
   return Object.values(pendingRunStartsById).find(pending => pending?.threadId === threadId);
+}
+
+function mergeTimelineHistoryWithCache(
+  historyItems: TimelineItem[],
+  cachedItems: TimelineItem[]
+): TimelineItem[] {
+  const merged = [...historyItems];
+  const historyIds = new Set(historyItems.map(item => item.id));
+  const remainingHistoryKeys = new Map<string, number>();
+
+  for (const item of historyItems) {
+    const key = timelineMergeKey(item);
+    if (key !== undefined) {
+      remainingHistoryKeys.set(key, (remainingHistoryKeys.get(key) ?? 0) + 1);
+    }
+  }
+
+  function consumeHistoryKey(item: TimelineItem): boolean {
+    const key = timelineMergeKey(item);
+    if (key === undefined) return false;
+    const count = remainingHistoryKeys.get(key) ?? 0;
+    if (count === 0) return false;
+    if (count === 1) remainingHistoryKeys.delete(key);
+    else remainingHistoryKeys.set(key, count - 1);
+    return true;
+  }
+
+  for (const item of cachedItems) {
+    if (historyIds.has(item.id)) {
+      consumeHistoryKey(item);
+      continue;
+    }
+    if (consumeHistoryKey(item)) continue;
+    merged.push(item);
+    historyIds.add(item.id);
+  }
+
+  return merged;
+}
+
+function timelineMergeKey(item: TimelineItem): string | undefined {
+  switch (item.kind) {
+    case 'user_message':
+      return `user:${item.text}`;
+    case 'assistant_message':
+      return `assistant:${item.text}`;
+    case 'reasoning_summary':
+      return `reasoning:${item.text}`;
+    case 'tool_step':
+      return toolStepMergeKey(item);
+    case 'change_card':
+      return `change:${item.title}:${item.path}:${item.delta}`;
+    case 'done':
+      return `done:${item.status}`;
+    case 'diagnostic':
+    case 'run_status':
+      return undefined;
+  }
+}
+
+function toolStepMergeKey(item: Extract<TimelineItem, { kind: 'tool_step' }>): string {
+  try {
+    const parsed = JSON.parse(item.content) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) {
+      return `tool:${item.name}:${item.content}`;
+    }
+    const payload = parsed as Record<string, unknown>;
+    if (payload.type === 'tool_use') {
+      return `tool-use:${String(payload.name ?? item.name)}:${JSON.stringify(payload.input)}`;
+    }
+    if (payload.type === 'tool_result') {
+      return `tool-result:${JSON.stringify(payload.output)}:${String(payload.isError ?? false)}`;
+    }
+  } catch {
+    return `tool:${item.name}:${item.content}`;
+  }
+  return `tool:${item.name}:${item.content}`;
 }
 
 function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {
