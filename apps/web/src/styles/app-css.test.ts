@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const appCss = readFileSync('src/styles/app.css', 'utf8');
-const appTsx = readFileSync('src/app/App.tsx', 'utf8');
+const appControllerTsx = readFileSync('src/app/AppController.tsx', 'utf8');
 const skillMarketCss = readFileSync('src/features/plugins/skill-market.css', 'utf8');
 const tokensCss = readFileSync('src/styles/tokens.css', 'utf8');
 
@@ -197,12 +197,12 @@ describe('app CSS visual contracts', () => {
     expect(lightfallOverlay).toContain('rgba(173, 77, 31, 0.16)');
     expect(lightfallOverlay).toContain('rgba(5, 8, 12, 0.52)');
     expect(appCss).toMatch(/\.conversation-lightfall-bg \.lightfall-container\s*\{[^}]*z-index:\s*1;/);
-    expect(appTsx).toContain('streakCount={3}');
-    expect(appTsx).toContain('streakWidth={0.32}');
-    expect(appTsx).toContain('glow={0.48}');
-    expect(appTsx).toContain('density={0.12}');
-    expect(appTsx).toContain('backgroundGlow={0.34}');
-    expect(appTsx).toContain('opacity={0.72}');
+    expect(appControllerTsx).toContain('streakCount={3}');
+    expect(appControllerTsx).toContain('streakWidth={0.32}');
+    expect(appControllerTsx).toContain('glow={0.48}');
+    expect(appControllerTsx).toContain('density={0.12}');
+    expect(appControllerTsx).toContain('backgroundGlow={0.34}');
+    expect(appControllerTsx).toContain('opacity={0.72}');
   });
 
   it('keeps the conversation history loading state on the dark surface', () => {
@@ -221,7 +221,7 @@ describe('app CSS visual contracts', () => {
     expect(historyLoading).toContain('background: rgba(9, 13, 18, 0.72);');
     expect(historyLoading).toContain('backdrop-filter: blur(10px);');
     expect(historyLoading).toContain('color: var(--muted);');
-    expect(appTsx).toContain('data-background-mode={showConversationLightfall ? \'dynamic\' : \'solid\'}');
+    expect(appControllerTsx).toContain('data-background-mode={showConversationLightfall ? \'dynamic\' : \'solid\'}');
   });
 
   it('keeps the file workspace header compact and single-layered', () => {

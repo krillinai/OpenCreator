@@ -233,6 +233,14 @@ textarea:focus-visible {
   text-wrap: balance;
 }
 
+.page-loading {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--muted);
+}
+
 .button-secondary,
 .connection-summary button,
 .inline-action,

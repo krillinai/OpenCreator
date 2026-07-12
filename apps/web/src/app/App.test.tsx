@@ -23,6 +23,34 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
 
 describe('App', () => {
+  it('restores a primary page directly from its URL', async () => {
+    window.location.hash = '#/search';
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '搜索会话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '搜索' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('updates the copyable URL when navigating between primary pages', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '插件' }));
+
+    await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
+    expect(await screen.findByLabelText('Skill 功能目录')).toBeInTheDocument();
+  });
+
+  it('opens a workspace file directly from a copyable URL', async () => {
+    window.location.hash = '#/files?path=docs%2Fatoms.md';
+
+    render(<App fileService={createFileService()} />);
+
+    expect(await screen.findByRole('button', { name: '关闭文件工作区' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('#/files?path=docs%2Fatoms.md');
+  });
+
   it('closes mobile navigation after opening a view and when browser history goes back', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -73,7 +101,7 @@ describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     window.localStorage.clear();
-    window.history.replaceState(null, '');
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   });
 
   it('renders Clawee desktop app shell without Codex product branding', async () => {
@@ -1562,7 +1590,7 @@ describe('App', () => {
     expect(screen.getByText('codex-cli test')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置 账户' }));
-    await user.click(screen.getByRole('button', { name: '关于 Clawee' }));
+    await user.click(await screen.findByRole('button', { name: '关于 Clawee' }));
 
     expect(await screen.findByText('高级信息')).toBeInTheDocument();
     expect(screen.getAllByText('codex-cli test').length).toBeGreaterThan(0);

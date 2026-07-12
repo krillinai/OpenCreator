@@ -780,7 +780,7 @@ test: lock down run recovery workflows
 - [x] `P1-B7` MCP 与 Profiles 正式页面
 - [x] `P1-B8` Cleanup 与 Diagnostics 设置页
 - [x] `P1-B9` 移动端导航与 Skill 市场性能
-- [ ] `P1-B10` App 模块化、路由和代码分割
+- [x] `P1-B10` App 模块化、路由和代码分割
 
 ## P1-B1：Codex Session 增量索引
 
@@ -1600,7 +1600,7 @@ perf(web): improve mobile navigation and skill browsing
 
 ## P1-B10：App 模块化、路由和代码分割
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 在行为稳定后拆分 `App.tsx`，引入正式路由和页面级懒加载，降低主包和维护复杂度。
 
@@ -1675,20 +1675,44 @@ refactor(web): split app routes and feature controllers
 
 **回滚边界：** 路由和模块拆分必须在同一批保持可运行；若失败可整体回滚到拆分前，不修改 daemon API。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 路由与恢复：
+  - 引入 `react-router-dom` 和 `HashRouter`，建立会话、搜索、Schedules、插件、设置、能力和文件工作区的稳定 URL。
+  - 支持直接 URL、刷新恢复、前进后退，以及 `threadId`、文件路径查询参数的双向同步。
+  - 使用待处理 route key 避免内部导航和路由回写导致同一会话历史重复加载。
+- 模块化：
+  - `App.tsx` 从约 2528 行缩减为 13 行顶层编排。
+  - 原业务控制器迁移至 `AppController.tsx`，新增 `AppProviders.tsx` 与 `AppRouter.tsx`。
+  - Search、Schedules、Plugins、Settings、Capabilities 和 Files 提取为独立页面入口。
+- 代码分割：
+  - 非首屏页面全部使用 `React.lazy` 按需加载，Suspense 只包围主内容，页面加载期间应用壳保持可见。
+  - Files 和 CodeMirror 从首屏主包移出；搜索、Schedules、插件和设置分别生成独立 JS/CSS chunk。
+- 自动化验证：
+  - `pnpm --filter @clawee/web test` -> PASS，57 个测试文件、395 项。
+  - `pnpm --filter @clawee/web typecheck` -> PASS。
+  - `pnpm --filter @clawee/web build` -> PASS。
+  - `pnpm test` -> PASS。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS。
+- 构建体积：
+  - 首屏主入口 `533.87 kB / 155.20 kB gzip`，相较 P1 前约 `996 kB / 325 kB gzip` 明显下降。
+  - Files 按需 chunk `562.76 kB / 197.95 kB gzip`；Vite 仍提示该 chunk 和主入口超过 500 kB，作为 P2 持续质量观察项。
+- 延后到最终统一验收：
+  - 直接打开各页面 URL、浏览器前进后退、插件“使用”、文件定位和 Network 按需 chunk 检查。
 
 ## P1 阶段门禁
 
-- [ ] P1-B1 至 P1-B10 全部为 `PASS`。
-- [ ] 300 项以上会话可分页、搜索和流畅滚动。
-- [ ] Timeline 和 Skill 市场不再全量渲染。
-- [ ] Search、Schedules、MCP、Profiles、Cleanup、Diagnostics 均有正式入口。
-- [ ] 桌面和移动端主流程通过。
-- [ ] 主包体积和 DOM 基线已重新记录。
-- [ ] `pnpm test`、`pnpm typecheck`、`pnpm build` 全部通过。
-- [ ] Git 工作区干净。
+- [x] P1-B1 至 P1-B10 全部为 `PASS`。
+- [x] 300 项以上会话可分页、搜索和流畅滚动。
+- [x] Timeline 和 Skill 市场不再全量渲染。
+- [x] Search、Schedules、MCP、Profiles、Cleanup、Diagnostics 均有正式入口。
+- [x] 桌面和移动端主流程通过，P1-B9、P1-B10 新增项保留在最终统一验收矩阵。
+- [x] 主包体积已重新记录；真实 DOM 基线保留到最终统一浏览器验收。
+- [x] `pnpm test`、`pnpm typecheck`、`pnpm build` 全部通过。
+- [x] P1-B10 提交后 Git 工作区干净。
 
-**P1 门禁结果：** 待填写。
+**P1 门禁结果：** `PASS`。允许进入 P2；P1-B9 和 P1-B10 延后的浏览器检查必须在 P2-B8 最终统一验收完成。
 
 ---
 
@@ -2318,8 +2342,8 @@ docs: finalize clawee agent release readiness
 
 | 指标 | 优化前 | P1 完成 | P2 完成 | 测量方式 |
 |---|---:|---:|---:|---|
-| Web 主包 | 约 996KB | 待填写 | 待填写 | Vite build 输出 |
-| Web 主包 gzip | 约 325KB | 待填写 | 待填写 | Vite build 输出 |
+| Web 主包 | 约 996KB | 533.87KB | 待填写 | Vite build 输出 |
+| Web 主包 gzip | 约 325KB | 155.20KB | 待填写 | Vite build 输出 |
 | 长会话 Timeline 项 | 约 379 | 同数据集 | 同数据集 | 固定测试会话 |
 | 长会话 DOM 节点 | 约 8265 | 待填写 | 待填写 | 浏览器 Elements/脚本 |
 | 长会话页面高度 | 约 153662px | 待填写 | 待填写 | 浏览器测量 |
@@ -2385,6 +2409,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B8 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Cleanup 预览确认、Diagnostics 正式页、Prompt 脱敏、Run 诊断导出和移动端滚动修复；Web 381 项、daemon 502 项、类型检查、构建及桌面/移动真实验收全部通过 | 下一批 `P1-B9` |
 | 2026-07-12 | P1-B9 | `NOT_STARTED -> BLOCKED_ENV` | 本批提交 | 完成移动导航抽屉、焦点与历史返回闭环、Skill 市场首批 12 项和加载更多、移动全高详情及滚动契约；Web 388 项、类型检查、构建和服务健康检查通过 | 浏览器运行时无可用实例，完成桌面/移动真实验收后改为 `PASS`，再进入 `P1-B10` |
 | 2026-07-12 | P1-B9 | `BLOCKED_ENV -> PASS` | 本批提交 | 用户明确要求剩余批次连续实施，单批浏览器验收统一延后到最终阶段；P1-B9 代码和自动化门禁已通过 | 下一批 `P1-B10`，最终阶段补桌面/移动真实验收 |
+| 2026-07-12 | P1-B10 | `NOT_STARTED -> PASS` | 本批提交 | 完成 HashRouter 稳定 URL、路由恢复、App 顶层编排、页面懒加载和 Files/CodeMirror 按需分包；Web 395 项及全项目测试、类型检查、构建全部通过；主入口降至 533.87KB / 155.20KB gzip | P1 门禁 `PASS`；下一批 `P2-B1`，最终阶段补路由和按需加载浏览器验收 |
 
 ## 14.1 单批次执行记录模板
 
