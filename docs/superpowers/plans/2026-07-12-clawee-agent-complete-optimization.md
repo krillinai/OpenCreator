@@ -958,7 +958,7 @@ feat(runtime): add cursor pagination for thread history
 
 ## P1-B3：Timeline 向上加载与虚拟化
 
-- [ ] **状态：** `IN_PROGRESS`
+- [ ] **状态：** `BLOCKED_ENV`
 
 **目标：** 首屏只加载最新历史，向上滚动加载旧内容，并将长会话 DOM 数量控制在稳定范围。
 
@@ -1025,7 +1025,36 @@ perf(web): virtualize paged conversation history
 
 **回滚边界：** 可回滚虚拟列表和分页 hook，daemon 分页 API 保留。
 
-**执行结果：** 待填写。
+**执行结果：** `BLOCKED_ENV`。代码、自动化测试和构建已完成，当前执行环境没有可连接的浏览器实例，尚缺修复后的真实桌面与移动端验收：
+
+- 历史分页：
+  - 新增 `useThreadHistory`，首次只请求 `history?limit=50`，使用 `before` 游标向前加载。
+  - 历史页按稳定 item ID 去重并前插，实时缓存继续合并到末尾。
+  - 无 `turnId` 的历史 Run 改为基于用户消息 item ID 生成稳定身份，加载旧页后不会因页内序号变化而重建过程块。
+- Timeline：
+  - 引入 `react-virtuoso@4.18.10`，支持可变高度虚拟列表、顶部加载、底部自动跟随和“有新内容”入口。
+  - prepend 判断改为基于原始 Timeline item ID，而不是可能因跨页分组变化的渲染 key；新增回归测试验证已有可见项逻辑索引保持不变。
+  - 同一 Run 的连续文件变更聚合展示，减少重复卡片和 DOM。
+  - 移除 App 外层按 Timeline 长度强制滚到底部的逻辑，滚动所有权统一交给虚拟列表。
+- 自动化验证：
+  - `pnpm --filter @clawee/web test -- src/features/conversation/use-thread-history.test.ts` -> PASS，2 项。
+  - `pnpm --filter @clawee/web test -- src/components/timeline/Timeline.test.tsx` -> PASS，23 项。
+  - `pnpm --filter @clawee/web test -- src/app/App.test.tsx -t "history"` -> PASS，5 项。
+  - `pnpm --filter @clawee/web test` -> PASS，47 个测试文件、343 项。
+  - `pnpm test` -> PASS；daemon 477 项、Web 343 项、Skill Market 6 项，真实 Codex smoke 13 项按默认开关跳过。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS；仅保留既有 Vite 主包超过 500 kB 警告。
+- 浏览器验证记录：
+  - 修复前真实长会话首屏请求为 `history?limit=50`，第二页请求正确携带 `before`。
+  - 修复前首屏 Timeline DOM 后代节点约 76 个，第二页后约 88 个，显著低于 8265 节点基线。
+  - 修复前发现分页前插后 `scrollTop` 从 141 跳到 0，已通过原始 item ID prepend 判定和稳定 synthetic Run ID 修复，并补充失败后转绿的回归测试。
+  - 修复后浏览器连接返回“无可用浏览器”，无法完成 1440x900、390x844、连续多页锚点和控制台复测。
+- 解除阻塞后的验收步骤：
+  1. 打开 300 项以上真实会话，连续加载至少三页，确认加载前后的首个可见消息位置基本不变。
+  2. 记录首屏和多页后的 Timeline DOM 节点数量，确认保持有界。
+  3. 在旧历史位置等待新事件，确认不抢滚动并显示“有新内容”；回到底部后恢复自动跟随。
+  4. 在 1440x900 和 390x844 下确认滚动、加载按钮、展开过程和文件变更聚合正常。
+  5. 确认浏览器控制台无新增 error，历史请求无重复或持续失败。
 
 ## P1-B4：daemon NDJSON 异步有序写入
 
@@ -2181,6 +2210,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B2 | `NOT_STARTED -> IN_PROGRESS` | - | 开始设计线程绑定的稳定历史游标、旧响应兼容和 Web 服务分页契约 | 先补首屏最新页、连续向前遍历、非法/过期/跨线程游标测试 |
 | 2026-07-12 | P1-B2 | `IN_PROGRESS -> PASS` | `f908631` | daemon 477 项、Web 335 项、类型检查和构建通过；真实 23,101 条索引记录遍历 232 页，与 28,107 项完整历史逐项一致 | 下一批 `P1-B3` |
 | 2026-07-12 | P1-B3 | `NOT_STARTED -> IN_PROGRESS` | - | 开始抽取历史分页状态、引入可变高度虚拟列表并重构底部跟随规则 | 先补首屏分页、向上加载、实时去重和 DOM 上限失败测试 |
+| 2026-07-12 | P1-B3 | `IN_PROGRESS -> BLOCKED_ENV` | 待提交 | 全项目测试、类型检查和构建通过；首屏和第二页 DOM 约 76/88；已修复 prepend 锚点跳跃并补回归测试 | 当前无可连接浏览器，待完成桌面/移动真实验收后改为 `PASS` |
 
 ## 14.1 单批次执行记录模板
 

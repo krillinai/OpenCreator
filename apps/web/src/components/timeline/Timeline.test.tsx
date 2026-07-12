@@ -1,8 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Timeline } from './Timeline.js';
 import type { TimelineItem } from './timeline-model.js';
+
+vi.mock('react-virtuoso', async () => import('../../test/react-virtuoso-mock.js'));
 
 describe('Timeline', () => {
   it('defers rendering completed process steps until the process is expanded', async () => {
@@ -686,10 +688,166 @@ describe('Timeline', () => {
     expect(onOpenRunDetail).toHaveBeenCalledWith('run_1');
   });
 
+  it('groups consecutive file changes from the same run', async () => {
+    const user = userEvent.setup();
+    const onOpenFile = vi.fn();
+    const items: TimelineItem[] = [
+      {
+        kind: 'change_card',
+        id: 'change_1',
+        runId: 'run_1',
+        title: '修改 App.tsx',
+        path: 'apps/web/src/app/App.tsx',
+        delta: '1 项变更',
+        source: 'runtime'
+      },
+      {
+        kind: 'change_card',
+        id: 'change_2',
+        runId: 'run_1',
+        title: '修改 Timeline.tsx',
+        path: 'apps/web/src/components/timeline/Timeline.tsx',
+        delta: '1 项变更',
+        source: 'runtime'
+      },
+      {
+        kind: 'change_card',
+        id: 'change_3',
+        runId: 'run_1',
+        title: '再次修改 App.tsx',
+        path: 'apps/web/src/app/App.tsx',
+        delta: '1 项变更',
+        source: 'runtime'
+      }
+    ];
+
+    render(<Timeline items={items} onOpenFile={onOpenFile} />);
+
+    expect(screen.getByText('3 次连续文件变更')).toBeInTheDocument();
+    expect(screen.getByText('2 个文件')).toBeInTheDocument();
+    expect(screen.queryByText('修改 App.tsx')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', {
+      name: '打开文件 apps/web/src/app/App.tsx'
+    }));
+
+    expect(onOpenFile).toHaveBeenCalledWith('apps/web/src/app/App.tsx');
+  });
+
+  it('shows a new-content action when updates arrive while viewing older history', async () => {
+    const user = userEvent.setup();
+    const initialItems: TimelineItem[] = [
+      {
+        kind: 'user_message',
+        id: 'history_1',
+        text: '较早的内容',
+        source: 'runtime'
+      }
+    ];
+    const { rerender } = render(<Timeline items={initialItems} />);
+    const scroller = screen.getByTestId('virtuoso-scroller');
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 300 },
+      scrollHeight: { configurable: true, value: 1200 }
+    });
+
+    fireEvent.scroll(scroller, { target: { scrollTop: 200 } });
+    rerender(
+      <Timeline
+        items={[
+          ...initialItems,
+          {
+            kind: 'assistant_message',
+            id: 'latest_1',
+            text: '刚刚到达的新内容',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    const newContentButton = await screen.findByRole('button', { name: '有新内容' });
+    await user.click(newContentButton);
+
+    expect(screen.queryByRole('button', { name: '有新内容' })).not.toBeInTheDocument();
+  });
+
   it('renders the Clawee empty state', () => {
     render(<Timeline items={[]} />);
 
     expect(screen.getByText('暂无任务记录')).toBeInTheDocument();
     expect(screen.getByText('发送任务后，Clawee 会在这里展示处理过程和结果。')).toBeInTheDocument();
+  });
+
+  it('keeps long histories virtualized and exposes older-page loading', async () => {
+    const user = userEvent.setup();
+    const onLoadOlder = vi.fn(async () => undefined);
+    const items = Array.from({ length: 379 }, (_, index): TimelineItem => ({
+      kind: 'user_message',
+      id: `history_${index}`,
+      text: `历史消息 ${index}`,
+      source: 'runtime'
+    }));
+
+    const { container } = render(
+      <Timeline
+        items={items}
+        hasMore
+        loadingOlder={false}
+        onLoadOlder={onLoadOlder}
+      />
+    );
+
+    expect(container.querySelectorAll('.timeline-item').length).toBeLessThan(80);
+
+    await user.click(screen.getByRole('button', { name: '加载更早记录' }));
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the visible item anchored when prepending history changes a process block key', () => {
+    const initialItems: TimelineItem[] = [
+      {
+        kind: 'tool_step',
+        id: 'current_process_step',
+        name: 'exec_command',
+        content: '{"type":"tool_use","name":"exec_command","input":{"command":"pwd"}}',
+        source: 'runtime'
+      },
+      {
+        kind: 'user_message',
+        id: 'current_user_message',
+        text: '当前可见消息',
+        source: 'runtime'
+      }
+    ];
+    const { rerender } = render(<Timeline items={initialItems} />);
+    const currentMessage = screen.getByText('当前可见消息').closest('[data-item-index]');
+
+    expect(currentMessage).toHaveAttribute('data-item-index', '100001');
+
+    rerender(
+      <Timeline
+        items={[
+          {
+            kind: 'user_message',
+            id: 'older_user_message',
+            text: '更早的消息',
+            source: 'runtime'
+          },
+          {
+            kind: 'tool_step',
+            id: 'older_process_step',
+            name: 'exec_command',
+            content: '{"type":"tool_use","name":"exec_command","input":{"command":"ls"}}',
+            source: 'runtime'
+          },
+          ...initialItems
+        ]}
+      />
+    );
+
+    expect(screen.getByText('当前可见消息').closest('[data-item-index]'))
+      .toHaveAttribute('data-item-index', '100001');
   });
 });

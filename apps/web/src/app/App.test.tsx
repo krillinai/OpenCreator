@@ -19,6 +19,8 @@ import type { HostBridge } from '../host/bridge.js';
 import type { SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 
+vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
+
 describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -82,10 +84,10 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_a/history')) {
+      if (url.endsWith('/threads/thread_a/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
       }
-      if (url.endsWith('/threads/thread_b/history')) {
+      if (url.endsWith('/threads/thread_b/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_b', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/threads/thread_a/runs?limit=50')) {
@@ -154,10 +156,10 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_a/history')) {
+      if (url.endsWith('/threads/thread_a/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
       }
-      if (url.endsWith('/threads/thread_b/history')) {
+      if (url.endsWith('/threads/thread_b/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_b', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/threads/thread_a/runs?limit=50')) return jsonResponse({ runs: [] });
@@ -290,10 +292,10 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_a/history')) {
+      if (url.endsWith('/threads/thread_a/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
       }
-      if (url.endsWith('/threads/thread_b/history')) {
+      if (url.endsWith('/threads/thread_b/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_b', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/threads/thread_a/runs?limit=50')) {
@@ -360,7 +362,7 @@ describe('App', () => {
           threads: [createThreadResponse({ id: 'thread_a', title: '会话 A' })]
         });
       }
-      if (url.endsWith('/threads/thread_a/history')) {
+      if (url.endsWith('/threads/thread_a/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/threads/thread_a/runs?limit=50')) {
@@ -447,7 +449,7 @@ describe('App', () => {
           threads: [createThreadResponse({ id: 'thread_restore', title: '断线恢复会话' })]
         });
       }
-      if (url.endsWith('/threads/thread_restore/history')) {
+      if (url.endsWith('/threads/thread_restore/history?limit=50')) {
         return jsonResponse({
           threadId: 'thread_restore',
           codexThreadId: null,
@@ -588,10 +590,10 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_a/history')) {
+      if (url.endsWith('/threads/thread_a/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
       }
-      if (url.endsWith('/threads/thread_b/history')) {
+      if (url.endsWith('/threads/thread_b/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_b', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/threads/thread_a/runs?limit=50')) return jsonResponse({ runs: [] });
@@ -1909,7 +1911,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_playground/history')) {
+      if (url.endsWith('/threads/thread_playground/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_playground', codexThreadId: null, items: [] });
       }
       throw new Error(`Unexpected request ${url}`);
@@ -1963,7 +1965,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_playground/history')) {
+      if (url.endsWith('/threads/thread_playground/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_playground', codexThreadId: null, items: [] });
       }
       throw new Error(`Unexpected request ${url}`);
@@ -2169,7 +2171,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_bili_history/history')) {
+      if (url.endsWith('/threads/thread_bili_history/history?limit=50')) {
         return jsonResponse({
           threadId: 'thread_bili_history',
           codexThreadId: 'codex-bili-history',
@@ -2245,7 +2247,7 @@ describe('App', () => {
           })
         });
       }
-      if (url.endsWith('/threads/thread_older_history/history')) {
+      if (url.endsWith('/threads/thread_older_history/history?limit=50')) {
         return jsonResponse({
           threadId: 'thread_older_history',
           codexThreadId: 'codex-older-history',
@@ -2337,7 +2339,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_codex_history/history')) {
+      if (url.endsWith('/threads/thread_codex_history/history?limit=50')) {
         return jsonResponse({
           threadId: 'thread_codex_history',
           codexThreadId: 'codex-history-1',
@@ -2387,6 +2389,225 @@ describe('App', () => {
     expect(screen.getByText('这个 skill 用于分析选品资料。')).toBeInTheDocument();
   });
 
+  it('loads the latest history page first and prepends an older cursor page without duplicates', async () => {
+    const user = userEvent.setup();
+    const requestedUrls: string[] = [];
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_paged_history',
+              title: '分页历史会话',
+              codexThreadId: 'codex-paged-history',
+              cwd: '/Users/test/develop/clawee/clawee-agent',
+              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_paged_history/history?limit=50')) {
+        return jsonResponse({
+          threadId: 'thread_paged_history',
+          codexThreadId: 'codex-paged-history',
+          items: [
+            {
+              id: 'history_boundary',
+              type: 'user_message',
+              text: '分页边界消息',
+              createdAt: new Date(1).toISOString()
+            },
+            {
+              id: 'history_latest',
+              type: 'assistant_message',
+              text: '最新一页内容',
+              createdAt: new Date(2).toISOString()
+            }
+          ],
+          hasMore: true,
+          nextCursor: 'cursor_older'
+        });
+      }
+      if (url.endsWith('/threads/thread_paged_history/history?limit=50&before=cursor_older')) {
+        return jsonResponse({
+          threadId: 'thread_paged_history',
+          codexThreadId: 'codex-paged-history',
+          items: [
+            {
+              id: 'history_oldest',
+              type: 'user_message',
+              text: '更早的一页内容',
+              createdAt: new Date(0).toISOString()
+            },
+            {
+              id: 'history_boundary',
+              type: 'user_message',
+              text: '分页边界消息',
+              createdAt: new Date(1).toISOString()
+            }
+          ],
+          hasMore: false
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /分页历史会话/ }));
+
+    expect(await screen.findByText('最新一页内容')).toBeInTheDocument();
+    expect(requestedUrls.filter(url => (
+      url.includes('/threads/thread_paged_history/history')
+    ))).toEqual([
+      'http://127.0.0.1:60764/threads/thread_paged_history/history?limit=50'
+    ]);
+
+    await user.click(screen.getByRole('button', { name: '加载更早记录' }));
+
+    expect(await findTimelineUserMessage('更早的一页内容')).toBeInTheDocument();
+    expect(document.querySelectorAll('.timeline-user_message')).toHaveLength(2);
+    expect(screen.getAllByText('分页边界消息')).toHaveLength(1);
+    expect(requestedUrls.filter(url => (
+      url.includes('/threads/thread_paged_history/history')
+    ))).toEqual([
+      'http://127.0.0.1:60764/threads/thread_paged_history/history?limit=50',
+      'http://127.0.0.1:60764/threads/thread_paged_history/history?limit=50&before=cursor_older'
+    ]);
+  });
+
+  it('keeps an expanded synthetic history run open after prepending an older page', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_synthetic_history',
+              title: '无 Turn ID 的分页会话',
+              codexThreadId: 'codex-synthetic-history',
+              cwd: '/Users/test/develop/clawee/clawee-agent',
+              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_synthetic_history/history?limit=50')) {
+        return jsonResponse({
+          threadId: 'thread_synthetic_history',
+          codexThreadId: 'codex-synthetic-history',
+          items: [
+            {
+              id: 'current_user',
+              type: 'user_message',
+              text: '当前任务',
+              createdAt: new Date(4).toISOString()
+            },
+            {
+              id: 'current_reasoning',
+              type: 'reasoning_summary',
+              text: '当前任务的处理过程',
+              createdAt: new Date(5).toISOString()
+            },
+            {
+              id: 'current_assistant',
+              type: 'assistant_message',
+              text: '当前任务已完成',
+              createdAt: new Date(6).toISOString()
+            },
+            {
+              id: 'current_done',
+              type: 'done',
+              status: 'succeeded',
+              createdAt: new Date(7).toISOString()
+            }
+          ],
+          hasMore: true,
+          nextCursor: 'cursor_synthetic_older'
+        });
+      }
+      if (url.endsWith('/threads/thread_synthetic_history/history?limit=50&before=cursor_synthetic_older')) {
+        return jsonResponse({
+          threadId: 'thread_synthetic_history',
+          codexThreadId: 'codex-synthetic-history',
+          items: [
+            {
+              id: 'older_user',
+              type: 'user_message',
+              text: '更早的任务',
+              createdAt: new Date(0).toISOString()
+            },
+            {
+              id: 'older_reasoning',
+              type: 'reasoning_summary',
+              text: '更早任务的处理过程',
+              createdAt: new Date(1).toISOString()
+            },
+            {
+              id: 'older_assistant',
+              type: 'assistant_message',
+              text: '更早任务已完成',
+              createdAt: new Date(2).toISOString()
+            },
+            {
+              id: 'older_done',
+              type: 'done',
+              status: 'succeeded',
+              createdAt: new Date(3).toISOString()
+            },
+            {
+              id: 'current_user',
+              type: 'user_message',
+              text: '当前任务',
+              createdAt: new Date(4).toISOString()
+            }
+          ],
+          hasMore: false
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /无 Turn ID 的分页会话/ }));
+    await user.click(await screen.findByText('思考过程'));
+
+    expect(screen.getByText('当前任务的处理过程')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '加载更早记录' }));
+
+    expect(await findTimelineUserMessage('更早的任务')).toBeInTheDocument();
+    expect(screen.getByText('当前任务的处理过程')).toBeInTheDocument();
+  });
+
   it('loads selected conversation history even when the listed thread has no codexThreadId yet', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
@@ -2409,7 +2630,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_stale_codex_id/history')) {
+      if (url.endsWith('/threads/thread_stale_codex_id/history?limit=50')) {
         historyRequests += 1;
         return jsonResponse({
           threadId: 'thread_stale_codex_id',
@@ -2471,7 +2692,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_current_history/history')) {
+      if (url.endsWith('/threads/thread_current_history/history?limit=50')) {
         return jsonResponse({
           threadId: 'thread_current_history',
           codexThreadId: 'codex-current-history',
@@ -2546,7 +2767,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_content_history/history')) {
+      if (url.endsWith('/threads/thread_content_history/history?limit=50')) {
         return jsonResponse({
           threadId: 'thread_content_history',
           codexThreadId: 'codex-content-history',
@@ -2560,7 +2781,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_bili_history/history')) {
+      if (url.endsWith('/threads/thread_bili_history/history?limit=50')) {
         return new Promise<Response>((resolve) => {
           resolveNextHistory = resolve;
         });
@@ -2625,7 +2846,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_files/history')) {
+      if (url.endsWith('/threads/thread_files/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_files', codexThreadId: null, items: [] });
       }
       if (url.includes('/workspace/files/directory?')) {
@@ -2738,7 +2959,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_files/history')) {
+      if (url.endsWith('/threads/thread_files/history?limit=50')) {
         return jsonResponse({
           threadId: 'thread_files',
           codexThreadId: 'codex-thread-files',
@@ -2879,7 +3100,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_files/history')) {
+      if (url.endsWith('/threads/thread_files/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_files', codexThreadId: null, items: [] });
       }
       if (url.includes('/workspace/files/directory?')) {
@@ -3006,7 +3227,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_files/history')) {
+      if (url.endsWith('/threads/thread_files/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_files', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/threads/thread_files') && init?.method === 'PATCH') {
@@ -3133,7 +3354,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_files/history')) {
+      if (url.endsWith('/threads/thread_files/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_files', codexThreadId: null, items: [] });
       }
       if (url.includes('/workspace/files/directory?')) {
@@ -3425,7 +3646,7 @@ describe('App', () => {
           ]
         });
       }
-      if (url.endsWith('/threads/thread_existing/history')) {
+      if (url.endsWith('/threads/thread_existing/history?limit=50')) {
         return jsonResponse({ threadId: 'thread_existing', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', threadId: 'thread_existing', status: 'running' }, { status: 202 });

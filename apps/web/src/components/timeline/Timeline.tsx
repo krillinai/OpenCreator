@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, LoaderCircle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer.js';
 import { isWorkspaceFilePath } from '../markdown/markdown-inline.js';
 import type { TimelineItem } from './timeline-model.js';
@@ -19,7 +21,14 @@ type ProcessBlock = {
   items: ProcessTimelineItem[];
 };
 
-type TimelineRenderItem = { type: 'item'; item: TimelineItem } | ProcessBlock;
+type ChangeBlock = {
+  type: 'changes';
+  key: string;
+  runId: string;
+  items: Array<Extract<TimelineItem, { kind: 'change_card' }>>;
+};
+
+type TimelineRenderItem = { type: 'item'; item: TimelineItem } | ProcessBlock | ChangeBlock;
 
 function isProcessTimelineItem(item: TimelineItem, finalAssistantMessageIds: ReadonlySet<string>): item is ProcessTimelineItem {
   if (item.kind === 'assistant_message') {
@@ -347,6 +356,20 @@ function buildTimelineRenderItems(items: TimelineItem[]): TimelineRenderItem[] {
 
   for (const item of items) {
     if (!isProcessTimelineItem(item, finalAssistantMessageIds)) {
+      if (item.kind === 'change_card' && item.runId !== undefined) {
+        const previous = renderItems.at(-1);
+        if (previous?.type === 'changes' && previous.runId === item.runId) {
+          previous.items.push(item);
+          continue;
+        }
+        renderItems.push({
+          type: 'changes',
+          key: `changes:${item.runId}:${item.id}`,
+          runId: item.runId,
+          items: [item]
+        });
+        continue;
+      }
       renderItems.push({ type: 'item', item });
       continue;
     }
@@ -423,6 +446,44 @@ function renderChangeCard(item: Extract<TimelineItem, { kind: 'change_card' }>, 
   return (
     <div className="change-card-content">
       {content}
+    </div>
+  );
+}
+
+function renderChangeBlock(
+  block: ChangeBlock,
+  onOpenFile?: (path: string) => void
+) {
+  if (block.items.length === 1) {
+    return renderChangeCard(block.items[0]!, onOpenFile);
+  }
+
+  const paths = [...new Set(block.items.map(item => item.path))];
+  const visiblePaths = paths.slice(0, 3);
+  const hiddenCount = paths.length - visiblePaths.length;
+
+  return (
+    <div className="change-card-content change-card-group">
+      <strong>{block.items.length} 次连续文件变更</strong>
+      <span>{paths.length} 个文件</span>
+      <div className="change-card-paths">
+        {visiblePaths.map(path => (
+          onOpenFile ? (
+            <button
+              key={path}
+              type="button"
+              className="change-card-path-button"
+              aria-label={`打开文件 ${path}`}
+              onClick={() => onOpenFile(path)}
+            >
+              {path}
+            </button>
+          ) : (
+            <code key={path}>{path}</code>
+          )
+        ))}
+        {hiddenCount > 0 ? <span>另有 {hiddenCount} 个文件</span> : null}
+      </div>
     </div>
   );
 }
@@ -539,10 +600,70 @@ function ProcessBlockView(props: {
 
 export function Timeline(props: {
   items: TimelineItem[];
+  hasMore?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?(): Promise<void> | void;
   onOpenRunDetail?(runId: string): void;
   onOpenFile?(path: string): void;
 }) {
-  const renderItems = buildTimelineRenderItems(props.items);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const atBottomRef = useRef(true);
+  const userInteractedRef = useRef(false);
+  const previousItemIdsRef = useRef<string[]>([]);
+  const previousRenderItemCountRef = useRef(0);
+  const firstItemIndexRef = useRef(100_000);
+  const [atBottom, setAtBottom] = useState(true);
+  const [hasNewContent, setHasNewContent] = useState(false);
+  const renderItems = useMemo(
+    () => buildTimelineRenderItems(props.items).filter(item => (
+      item.type !== 'process' || shouldRenderProcess(item)
+    )),
+    [props.items]
+  );
+  const itemIds = props.items.map(item => item.id);
+  const previousItemIds = previousItemIdsRef.current;
+  const previousRenderItemCount = previousRenderItemCountRef.current;
+  if (
+    previousItemIds.length > 0
+    && itemIds.length > previousItemIds.length
+    && hasSuffix(itemIds, previousItemIds)
+  ) {
+    const prependedRenderItemCount = renderItems.length - previousRenderItemCount;
+    if (prependedRenderItemCount > 0) {
+      firstItemIndexRef.current -= prependedRenderItemCount;
+    }
+  } else if (
+    previousItemIds.length > 0
+    && itemIds.length > 0
+    && !hasPrefix(itemIds, previousItemIds)
+  ) {
+    firstItemIndexRef.current = 100_000;
+  }
+  previousItemIdsRef.current = itemIds;
+  previousRenderItemCountRef.current = renderItems.length;
+
+  useEffect(() => {
+    const appended =
+      previousItemIds.length > 0
+      && itemIds.length > previousItemIds.length
+      && hasPrefix(itemIds, previousItemIds);
+    if (appended && !atBottomRef.current) setHasNewContent(true);
+  }, [itemIds, previousItemIds]);
+
+  function loadOlder() {
+    if (!props.hasMore || props.loadingOlder || props.onLoadOlder === undefined) return;
+    void props.onLoadOlder();
+  }
+
+  function scrollToLatest() {
+    if (renderItems.length === 0) return;
+    virtuosoRef.current?.scrollToIndex({
+      index: renderItems.length - 1,
+      align: 'end',
+      behavior: 'smooth'
+    });
+    setHasNewContent(false);
+  }
 
   return (
     <div className="timeline-list">
@@ -552,34 +673,133 @@ export function Timeline(props: {
           <span>发送任务后，Clawee 会在这里展示处理过程和结果。</span>
         </div>
       ) : (
-        <div className="timeline-stack">
-          {renderItems.map(renderItem => {
-            if (renderItem.type === 'process') {
-              if (!shouldRenderProcess(renderItem)) return null;
-              return (
-                <ProcessBlockView
-                  key={renderItem.key}
-                  process={renderItem}
-                  onOpenRunDetail={props.onOpenRunDetail}
-                />
-              );
-            }
-
-            const item = renderItem.item;
-            return (
-              <article key={item.id} className={`timeline-item timeline-${item.kind}`}>
-                {shouldRenderTimelineHeader(item) ? (
-                  <div className="timeline-item-header">
-                    <span className="timeline-avatar">{renderTimelineAvatar(item)}</span>
-                    <span className="timeline-kind">{getTimelineTitle(item)}</span>
-                  </div>
-                ) : null}
-                <div className="timeline-bubble">{renderTimelineItemContent(item, props.onOpenFile)}</div>
-              </article>
-            );
-          })}
+        <div
+          className="timeline-virtual-shell"
+          onWheel={() => {
+            userInteractedRef.current = true;
+          }}
+          onTouchMove={() => {
+            userInteractedRef.current = true;
+          }}
+          onKeyDown={() => {
+            userInteractedRef.current = true;
+          }}
+        >
+          <Virtuoso
+            ref={virtuosoRef}
+            className="timeline-virtuoso"
+            data={renderItems}
+            firstItemIndex={firstItemIndexRef.current}
+            defaultItemHeight={120}
+            initialTopMostItemIndex={{
+              index: 'LAST',
+              align: 'end'
+            }}
+            computeItemKey={(_index, item) => getRenderItemKey(item)}
+            followOutput={isAtBottom => isAtBottom ? 'auto' : false}
+            atBottomStateChange={nextAtBottom => {
+              atBottomRef.current = nextAtBottom;
+              setAtBottom(nextAtBottom);
+              if (nextAtBottom) setHasNewContent(false);
+            }}
+            atTopStateChange={nextAtTop => {
+              if (nextAtTop && userInteractedRef.current) loadOlder();
+            }}
+            components={{
+              Header: () => (
+                <div className="timeline-load-older">
+                  {props.hasMore ? (
+                    <button
+                      type="button"
+                      className="inline-action"
+                      disabled={props.loadingOlder}
+                      onClick={loadOlder}
+                    >
+                      {props.loadingOlder ? (
+                        <LoaderCircle className="spin" aria-hidden="true" size={14} />
+                      ) : (
+                        <ArrowUp aria-hidden="true" size={14} />
+                      )}
+                      <span>{props.loadingOlder ? '正在加载更早记录' : '加载更早记录'}</span>
+                    </button>
+                  ) : null}
+                </div>
+              )
+            }}
+            itemContent={(_index, renderItem) => (
+              <div className="timeline-virtual-item">
+                {renderTimelineRenderItem(
+                  renderItem,
+                  props.onOpenRunDetail,
+                  props.onOpenFile
+                )}
+              </div>
+            )}
+          />
+          {!atBottom && hasNewContent ? (
+            <button
+              type="button"
+              className="timeline-new-content"
+              onClick={scrollToLatest}
+            >
+              <ArrowDown aria-hidden="true" size={15} />
+              <span>有新内容</span>
+            </button>
+          ) : null}
         </div>
       )}
     </div>
   );
+}
+
+function renderTimelineRenderItem(
+  renderItem: TimelineRenderItem,
+  onOpenRunDetail?: (runId: string) => void,
+  onOpenFile?: (path: string) => void
+) {
+  if (renderItem.type === 'process') {
+    return (
+      <ProcessBlockView
+        process={renderItem}
+        onOpenRunDetail={onOpenRunDetail}
+      />
+    );
+  }
+
+  if (renderItem.type === 'changes') {
+    return (
+      <article className="timeline-item timeline-change_card">
+        <div className="timeline-bubble">{renderChangeBlock(renderItem, onOpenFile)}</div>
+      </article>
+    );
+  }
+
+  const item = renderItem.item;
+  return (
+    <article className={`timeline-item timeline-${item.kind}`}>
+      {shouldRenderTimelineHeader(item) ? (
+        <div className="timeline-item-header">
+          <span className="timeline-avatar">{renderTimelineAvatar(item)}</span>
+          <span className="timeline-kind">{getTimelineTitle(item)}</span>
+        </div>
+      ) : null}
+      <div className="timeline-bubble">{renderTimelineItemContent(item, onOpenFile)}</div>
+    </article>
+  );
+}
+
+function getRenderItemKey(item: TimelineRenderItem): string {
+  if (item.type === 'item') return `item:${item.item.id}`;
+  return item.key;
+}
+
+function hasSuffix(values: string[], suffix: string[]): boolean {
+  const offset = values.length - suffix.length;
+  if (offset < 0) return false;
+  return suffix.every((value, index) => values[offset + index] === value);
+}
+
+function hasPrefix(values: string[], prefix: string[]): boolean {
+  if (values.length < prefix.length) return false;
+  return prefix.every((value, index) => values[index] === value);
 }

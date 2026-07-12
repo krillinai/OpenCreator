@@ -503,9 +503,9 @@ textarea:focus-visible {
 }
 
 .timeline-list {
+  height: 100%;
   min-height: 0;
-  overflow: auto;
-  padding: 32px clamp(18px, 5vw, 72px) 32px;
+  overflow: hidden;
   background: var(--conversation-bg);
 }
 
@@ -514,6 +514,65 @@ textarea:focus-visible {
   margin: 0 auto;
   display: grid;
   gap: 28px;
+}
+
+.timeline-virtual-shell,
+.timeline-virtuoso {
+  height: 100%;
+  min-height: 0;
+}
+
+.timeline-virtual-shell {
+  position: relative;
+}
+
+.timeline-virtual-item {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 14px clamp(18px, 5vw, 72px);
+}
+
+.timeline-load-older {
+  min-height: 52px;
+  display: grid;
+  place-items: center;
+  padding: 12px 18px 2px;
+}
+
+.timeline-load-older:empty {
+  min-height: 20px;
+  padding: 0;
+}
+
+.timeline-load-older .inline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.timeline-new-content {
+  position: absolute;
+  right: clamp(18px, 5vw, 72px);
+  bottom: 18px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: 0 12px 32px rgba(3, 6, 10, 0.36);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.timeline-new-content:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-strong));
+  background: var(--surface-3);
 }
 
 .timeline-item {
@@ -845,6 +904,38 @@ textarea:focus-visible {
   font-size: 13px;
   font-weight: 650;
   line-height: 1;
+}
+
+.change-card-group {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.change-card-paths {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.change-card-path-button,
+.change-card-paths code {
+  max-width: 100%;
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--success) 24%, var(--border));
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: 11.5px/1.4 var(--font-mono);
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.change-card-path-button {
+  cursor: pointer;
+}
+
+.change-card-path-button:hover {
+  border-color: color-mix(in srgb, var(--success) 46%, var(--border));
 }
 
 .timeline-item p {
@@ -1508,7 +1599,16 @@ textarea:focus-visible {
 
   .timeline-list,
   .file-editor-body {
-    padding: 12px;
+    padding: 0;
+  }
+
+  .timeline-virtual-item {
+    padding: 10px 12px;
+  }
+
+  .timeline-new-content {
+    right: 12px;
+    bottom: 12px;
   }
 
   .change-card-content {
@@ -1998,7 +2098,7 @@ textarea:focus-visible {
   position: relative;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   background: var(--conversation-bg);
 }
 

@@ -11,7 +11,7 @@ import type {
 } from '@clawee/protocol';
 import { skillMarketCatalog } from '@clawee/skill-market';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
 import Lightfall from '../components/effects/Lightfall.js';
 import { Timeline } from '../components/timeline/Timeline.js';
@@ -20,6 +20,7 @@ import { CapabilitiesView } from '../features/capabilities/CapabilitiesView.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
 import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
+import { useThreadHistory } from '../features/conversation/use-thread-history.js';
 import { DetailPanel } from '../features/details/DetailPanel.js';
 import { FileWorkspaceView } from '../features/files/FileWorkspaceView.js';
 import { getSkillMarketDisplayTitle } from '../features/plugins/skill-market-model.js';
@@ -183,7 +184,6 @@ export function App(props: AppProps = {}) {
   const timelineEventBatchersByThreadIdRef = useRef(new Map<string, FrameBatcher<TimelineItem>>());
   const runRegistryRef = useRef(runRegistry);
   const pendingRunStartsByIdRef = useRef<PendingRunStartsById>({});
-  const conversationBodyRef = useRef<HTMLDivElement | null>(null);
   const conversationFileLayoutRef = useRef<HTMLElement | null>(null);
   const allowInitialRuntimeProjectFocusRef = useRef(persistedNavigation === null);
   const navigationPersistenceReadyRef = useRef(persistedNavigation !== null);
@@ -247,6 +247,20 @@ export function App(props: AppProps = {}) {
   );
   const selectedThreadExists = state.selectedThreadId !== undefined
     && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
+  const consumeSkipInitialHistoryLoad = useCallback((threadId: string) => {
+    if (skipNextHistoryLoadForThreadRef.current !== threadId) return false;
+    skipNextHistoryLoadForThreadRef.current = undefined;
+    return true;
+  }, []);
+  const threadHistory = useThreadHistory({
+    threadId: state.selectedThreadId,
+    enabled:
+      connectionState.status === 'connected'
+      && selectedThreadExists,
+    service: threadService,
+    reloadKey: threadHistoryReloadKey,
+    consumeSkipInitialLoad: consumeSkipInitialHistoryLoad
+  });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -500,81 +514,67 @@ export function App(props: AppProps = {}) {
   }, [conversations, state.activeView, state.currentProjectId, state.selectedThreadId]);
 
   useEffect(() => {
-    let canceled = false;
     const selectedThreadId = state.selectedThreadId;
-
-    if (selectedThreadId === undefined || threadService === null || connectionState.status !== 'connected') {
+    if (selectedThreadId === undefined || threadHistory.threadId !== selectedThreadId) {
       setThreadHistoryLoadError(undefined);
       setHistoryLoadingThreadId(undefined);
       setHistoryLoadedThreadId(undefined);
-      return () => {
-        canceled = true;
-      };
+      return;
     }
 
-    if (!selectedThreadExists) {
+    if (threadHistory.initialLoading) {
+      setThreadHistoryLoadError(undefined);
+      setHistoryLoadingThreadId(selectedThreadId);
+      setHistoryLoadedThreadId(undefined);
+      showTimelineForThread(selectedThreadId, [], false);
+      return;
+    }
+
+    if (!threadHistory.loaded) {
       setHistoryLoadingThreadId(undefined);
       setHistoryLoadedThreadId(undefined);
-      return () => {
-        canceled = true;
-      };
-    }
-    if (skipNextHistoryLoadForThreadRef.current === selectedThreadId) {
-      skipNextHistoryLoadForThreadRef.current = undefined;
-      setHistoryLoadingThreadId(undefined);
-      setHistoryLoadedThreadId(selectedThreadId);
-      return () => {
-        canceled = true;
-      };
+      return;
     }
 
-    setHistoryLoadingThreadId(selectedThreadId);
-    setHistoryLoadedThreadId(undefined);
-    showTimelineForThread(selectedThreadId, [], false);
-    setThreadHistoryLoadError(undefined);
-
-    threadService
-      .getThreadHistory(selectedThreadId)
-      .then(response => {
-        if (canceled) return;
-        if (response.codexThreadId !== undefined && response.codexThreadId !== null) {
-          setRuntimeThreads(previous => {
-            let changed = false;
-            const nextThreads = previous.map(thread => {
-              if (thread.id !== response.threadId || thread.codexThreadId === response.codexThreadId) return thread;
-              changed = true;
-              return { ...thread, codexThreadId: response.codexThreadId };
-            });
-            return changed ? nextThreads : previous;
-          });
-        }
-        const historyItems = mapHistoryItemsToTimelineItems(response.items);
-        const cachedItems = timelineItemsByThreadIdRef.current[selectedThreadId] ?? [];
-        showTimelineForThread(
-          selectedThreadId,
-          mergeTimelineHistoryWithCache(historyItems, cachedItems),
-          true
-        );
-        setThreadHistoryLoadError(undefined);
-        setHistoryLoadingThreadId(undefined);
-        setHistoryLoadedThreadId(selectedThreadId);
-      })
-      .catch(() => {
-        if (canceled) return;
-        showTimelineForThread(
-          selectedThreadId,
-          timelineItemsByThreadIdRef.current[selectedThreadId] ?? [],
-          true
-        );
-        setThreadHistoryLoadError('无法加载聊天历史');
-        setHistoryLoadingThreadId(undefined);
-        setHistoryLoadedThreadId(selectedThreadId);
+    if (
+      threadHistory.codexThreadId !== undefined
+      && threadHistory.codexThreadId !== null
+    ) {
+      setRuntimeThreads(previous => {
+        let changed = false;
+        const nextThreads = previous.map(thread => {
+          if (
+            thread.id !== selectedThreadId
+            || thread.codexThreadId === threadHistory.codexThreadId
+          ) {
+            return thread;
+          }
+          changed = true;
+          return { ...thread, codexThreadId: threadHistory.codexThreadId };
+        });
+        return changed ? nextThreads : previous;
       });
+    }
 
-    return () => {
-      canceled = true;
-    };
-  }, [connectionState.status, state.selectedThreadId, selectedThreadExists, threadHistoryReloadKey, threadService]);
+    const historyItems = mapHistoryItemsToTimelineItems(threadHistory.items);
+    const cachedItems = timelineItemsByThreadIdRef.current[selectedThreadId] ?? [];
+    showTimelineForThread(
+      selectedThreadId,
+      mergeTimelineHistoryWithCache(historyItems, cachedItems),
+      true
+    );
+    setThreadHistoryLoadError(threadHistory.error);
+    setHistoryLoadingThreadId(undefined);
+    setHistoryLoadedThreadId(selectedThreadId);
+  }, [
+    state.selectedThreadId,
+    threadHistory.codexThreadId,
+    threadHistory.error,
+    threadHistory.initialLoading,
+    threadHistory.items,
+    threadHistory.loaded,
+    threadHistory.threadId
+  ]);
 
   useEffect(() => {
     let canceled = false;
@@ -657,25 +657,6 @@ export function App(props: AppProps = {}) {
       timelineEventBatchersByThreadIdRef.current.get(subscription.threadId)?.flush();
     }
   }, [runRegistry.runsById]);
-
-  useEffect(() => {
-    const body = conversationBodyRef.current;
-    if (body === null) return;
-    const scrollToBottom = () => {
-      body.scrollTop = body.scrollHeight;
-    };
-    const frame = typeof window.requestAnimationFrame === 'function'
-      ? window.requestAnimationFrame(scrollToBottom)
-      : window.setTimeout(scrollToBottom, 0);
-
-    return () => {
-      if (typeof window.cancelAnimationFrame === 'function') {
-        window.cancelAnimationFrame(frame);
-      } else {
-        window.clearTimeout(frame);
-      }
-    };
-  }, [timelineItems.length]);
 
   useEffect(() => {
     const path = state.selectedFilePath;
@@ -1622,7 +1603,7 @@ export function App(props: AppProps = {}) {
           dispatch({ type: 'close_detail' });
         }}
       />
-      <div className="conversation-body" ref={conversationBodyRef}>
+      <div className="conversation-body">
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
         {threadLoadError ? <p className="inline-error">{threadLoadError}</p> : null}
         {threadHistoryLoadError ? <p className="inline-error">{threadHistoryLoadError}</p> : null}
@@ -1630,7 +1611,15 @@ export function App(props: AppProps = {}) {
         {timelineItems.length === 0 ? (
           <ConversationEmptyState projectName={currentProjectName} />
         ) : (
-          <Timeline items={timelineItems} onOpenRunDetail={openRunDetail} onOpenFile={openTimelineFile} />
+          <Timeline
+            key={state.selectedThreadId ?? 'draft'}
+            items={timelineItems}
+            hasMore={threadHistory.hasMore}
+            loadingOlder={threadHistory.loadingOlder}
+            onLoadOlder={threadHistory.loadOlder}
+            onOpenRunDetail={openRunDetail}
+            onOpenFile={openTimelineFile}
+          />
         )}
         {showHistoryLoadingOverlay ? (
           <div className="conversation-history-loading" role="status" aria-label="正在加载会话历史">
@@ -2156,7 +2145,6 @@ function isTerminalRunStatus(status: RunResponse['status']): boolean {
 }
 
 function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {
-  let syntheticTurnSeq = 0;
   let currentRunId: string | undefined;
   let currentRunHasDone = false;
   const timelineItems: TimelineItem[] = [];
@@ -2177,8 +2165,7 @@ function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineIte
   for (const item of items) {
     if (item.type === 'user_message') {
       closeCurrentRun();
-      syntheticTurnSeq += 1;
-      currentRunId = item.turnId === undefined ? `history_turn_${syntheticTurnSeq}` : `history_${item.turnId}`;
+      currentRunId = item.turnId === undefined ? `history_item_${item.id}` : `history_${item.turnId}`;
       currentRunHasDone = false;
       timelineItems.push(mapHistoryItemToTimelineItem(item));
       continue;
