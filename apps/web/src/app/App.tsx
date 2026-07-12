@@ -72,6 +72,10 @@ type PendingRunStart = {
   cancelRequested: boolean;
 };
 type PendingRunStartsById = Record<string, PendingRunStart | undefined>;
+type RunEventSubscription = {
+  runId: string;
+  controller: AbortController;
+};
 
 const CONVERSATION_PANE_MIN_WIDTH = 320;
 const FILE_WORKSPACE_MIN_WIDTH = 520;
@@ -118,6 +122,7 @@ export function App(props: AppProps = {}) {
   const [threadLoadError, setThreadLoadError] = useState<string>();
   const [threadHistoryLoadError, setThreadHistoryLoadError] = useState<string>();
   const [historyLoadingThreadId, setHistoryLoadingThreadId] = useState<string>();
+  const [historyLoadedThreadId, setHistoryLoadedThreadId] = useState<string>();
   const [threadConfigUpdateError, setThreadConfigUpdateError] = useState<string>();
   const [connectionState, setConnectionState] = useState<ConnectionState>({
     status: 'disconnected',
@@ -139,6 +144,7 @@ export function App(props: AppProps = {}) {
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [pendingRunStartsById, setPendingRunStartsById] = useState<PendingRunStartsById>({});
   const [runsLoadingThreadId, setRunsLoadingThreadId] = useState<string>();
+  const [runsLoadedThreadId, setRunsLoadedThreadId] = useState<string>();
   const [savedFileByPath, setSavedFileByPath] = useState<Record<string, WorkspaceFile>>({});
   const [draftContentByPath, setDraftContentByPath] = useState<Record<string, string>>({});
   const [loadingFilePath, setLoadingFilePath] = useState<string>(state.selectedFilePath);
@@ -160,7 +166,8 @@ export function App(props: AppProps = {}) {
   const savingFilePathsRef = useRef(new Set<string>());
   const connectionConfigRef = useRef<ConnectionConfig | null>(null);
   const connectionConfigVersionRef = useRef(0);
-  const sseAbortControllerRef = useRef<AbortController | null>(null);
+  const runEventSubscriptionRef = useRef<RunEventSubscription | null>(null);
+  const resumedSubscriptionKeyRef = useRef<string>();
   const timelineEventBatcherRef = useRef<FrameBatcher<TimelineItem> | null>(null);
   const runRegistryRef = useRef(runRegistry);
   const pendingRunStartsByIdRef = useRef<PendingRunStartsById>({});
@@ -236,7 +243,7 @@ export function App(props: AppProps = {}) {
     return () => {
       mountedRef.current = false;
       timelineEventBatcherRef.current?.clear();
-      sseAbortControllerRef.current?.abort();
+      abortCurrentRunEventSubscription(false);
     };
   }, []);
 
@@ -258,8 +265,11 @@ export function App(props: AppProps = {}) {
 
   useEffect(() => {
     if (connectionState.status === 'connected') return;
+    abortCurrentRunEventSubscription(false);
+    resumedSubscriptionKeyRef.current = undefined;
     dispatchRunRegistry({ type: 'reset' });
     setRunsLoadingThreadId(undefined);
+    setRunsLoadedThreadId(undefined);
   }, [connectionState.status]);
 
   useEffect(() => {
@@ -478,6 +488,7 @@ export function App(props: AppProps = {}) {
     if (selectedThreadId === undefined || threadService === null || connectionState.status !== 'connected') {
       setThreadHistoryLoadError(undefined);
       setHistoryLoadingThreadId(undefined);
+      setHistoryLoadedThreadId(undefined);
       return () => {
         canceled = true;
       };
@@ -485,6 +496,7 @@ export function App(props: AppProps = {}) {
 
     if (!selectedThreadExists) {
       setHistoryLoadingThreadId(undefined);
+      setHistoryLoadedThreadId(undefined);
       return () => {
         canceled = true;
       };
@@ -492,12 +504,14 @@ export function App(props: AppProps = {}) {
     if (skipNextHistoryLoadForThreadRef.current === selectedThreadId) {
       skipNextHistoryLoadForThreadRef.current = undefined;
       setHistoryLoadingThreadId(undefined);
+      setHistoryLoadedThreadId(selectedThreadId);
       return () => {
         canceled = true;
       };
     }
 
     setHistoryLoadingThreadId(selectedThreadId);
+    setHistoryLoadedThreadId(undefined);
     setTimelineItems([]);
     setThreadHistoryLoadError(undefined);
 
@@ -519,12 +533,14 @@ export function App(props: AppProps = {}) {
         setTimelineItems(mapHistoryItemsToTimelineItems(response.items));
         setThreadHistoryLoadError(undefined);
         setHistoryLoadingThreadId(undefined);
+        setHistoryLoadedThreadId(selectedThreadId);
       })
       .catch(() => {
         if (canceled) return;
         setTimelineItems([]);
         setThreadHistoryLoadError('无法加载聊天历史');
         setHistoryLoadingThreadId(undefined);
+        setHistoryLoadedThreadId(selectedThreadId);
       });
 
     return () => {
@@ -543,12 +559,14 @@ export function App(props: AppProps = {}) {
       || !selectedThreadExists
     ) {
       setRunsLoadingThreadId(undefined);
+      setRunsLoadedThreadId(undefined);
       return () => {
         canceled = true;
       };
     }
 
     setRunsLoadingThreadId(selectedThreadId);
+    setRunsLoadedThreadId(undefined);
     const knownRunIdsAtRequestStart = [
       ...(runRegistryRef.current.runIdsByThreadId[selectedThreadId] ?? [])
     ];
@@ -569,6 +587,7 @@ export function App(props: AppProps = {}) {
           setRunsLoadingThreadId(current => (
             current === selectedThreadId ? undefined : current
           ));
+          setRunsLoadedThreadId(selectedThreadId);
         }
       });
 
@@ -576,6 +595,37 @@ export function App(props: AppProps = {}) {
       canceled = true;
     };
   }, [connectionState.status, state.selectedThreadId, selectedThreadExists, threadService]);
+
+  useEffect(() => {
+    const selectedThreadId = state.selectedThreadId;
+    if (
+      selectedThreadId === undefined
+      || connectionConfig === null
+      || connectionState.status !== 'connected'
+      || historyLoadedThreadId !== selectedThreadId
+      || runsLoadedThreadId !== selectedThreadId
+    ) return;
+
+    const activeRun = getThreadActiveRun(runRegistry, selectedThreadId);
+    if (activeRun === undefined) return;
+    const currentSubscription = runEventSubscriptionRef.current;
+    if (
+      currentSubscription?.runId === activeRun.id
+      && !currentSubscription.controller.signal.aborted
+    ) return;
+
+    const subscriptionKey = `${selectedThreadId}:${activeRun.id}`;
+    if (resumedSubscriptionKeyRef.current === subscriptionKey) return;
+    resumedSubscriptionKeyRef.current = subscriptionKey;
+    void subscribeToRunEvents(activeRun.id, connectionConfig);
+  }, [
+    connectionConfig,
+    connectionState.status,
+    historyLoadedThreadId,
+    runRegistry,
+    runsLoadedThreadId,
+    state.selectedThreadId
+  ]);
 
   useEffect(() => {
     const body = conversationBodyRef.current;
@@ -776,10 +826,13 @@ export function App(props: AppProps = {}) {
   function startNewConversation() {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
-    sseAbortControllerRef.current?.abort();
+    abortCurrentRunEventSubscription();
+    resumedSubscriptionKeyRef.current = undefined;
     timelineEventBatcherRef.current?.clear();
     setTimelineItems([]);
     setHistoryLoadingThreadId(undefined);
+    setHistoryLoadedThreadId(undefined);
+    setRunsLoadedThreadId(undefined);
     setThreadConfigUpdateError(undefined);
     dispatch({ type: 'new_conversation' });
   }
@@ -787,10 +840,13 @@ export function App(props: AppProps = {}) {
   function selectProject(projectId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
-    sseAbortControllerRef.current?.abort();
+    abortCurrentRunEventSubscription();
+    resumedSubscriptionKeyRef.current = undefined;
     timelineEventBatcherRef.current?.clear();
     setTimelineItems([]);
     setHistoryLoadingThreadId(undefined);
+    setHistoryLoadedThreadId(undefined);
+    setRunsLoadedThreadId(undefined);
     setThreadConfigUpdateError(undefined);
     dispatch({ type: 'select_project', projectId });
   }
@@ -798,7 +854,8 @@ export function App(props: AppProps = {}) {
   function selectConversation(conversationId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
-    sseAbortControllerRef.current?.abort();
+    abortCurrentRunEventSubscription();
+    resumedSubscriptionKeyRef.current = undefined;
     timelineEventBatcherRef.current?.clear();
     setThreadConfigUpdateError(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
@@ -812,12 +869,15 @@ export function App(props: AppProps = {}) {
       }
       if (timelineItems.length === 0) {
         setHistoryLoadingThreadId(conversationId);
+        setHistoryLoadedThreadId(undefined);
         setThreadHistoryReloadKey(previous => previous + 1);
       }
       return;
     }
 
     setHistoryLoadingThreadId(conversationId);
+    setHistoryLoadedThreadId(undefined);
+    setRunsLoadedThreadId(undefined);
     setTimelineItems([]);
     dispatch({ type: 'select_thread', threadId: conversationId });
   }
@@ -986,12 +1046,15 @@ export function App(props: AppProps = {}) {
       const created = await activeThreadService.createThread(request);
       if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
 
-      sseAbortControllerRef.current?.abort();
+      abortCurrentRunEventSubscription();
+      resumedSubscriptionKeyRef.current = undefined;
       timelineEventBatcherRef.current?.clear();
       setRuntimeThreads(previous => upsertThread(previous, created.thread));
       setTimelineItems([]);
       setThreadHistoryLoadError(undefined);
       setHistoryLoadingThreadId(undefined);
+      setHistoryLoadedThreadId(created.thread.id);
+      setRunsLoadedThreadId(undefined);
       setThreadConfigUpdateError(undefined);
       skipNextHistoryLoadForThreadRef.current = created.thread.id;
       allowInitialRuntimeProjectFocusRef.current = false;
@@ -1195,57 +1258,106 @@ export function App(props: AppProps = {}) {
     ]);
   }
 
+  function abortCurrentRunEventSubscription(markDisconnected = true) {
+    const subscription = runEventSubscriptionRef.current;
+    if (subscription === null) return;
+
+    runEventSubscriptionRef.current = null;
+    subscription.controller.abort();
+    if (!markDisconnected || !mountedRef.current) return;
+
+    const run = runRegistryRef.current.runsById[subscription.runId];
+    if (run?.status !== 'running' && run?.status !== 'queued') return;
+    dispatchRunRegistry({
+      type: 'set_subscription_state',
+      runId: subscription.runId,
+      state: 'disconnected'
+    });
+  }
+
   async function subscribeToRunEvents(runId: string, config: ConnectionConfig) {
-    sseAbortControllerRef.current?.abort();
-    timelineEventBatcherRef.current?.clear();
+    const existingSubscription = runEventSubscriptionRef.current;
+    if (
+      existingSubscription?.runId === runId
+      && !existingSubscription.controller.signal.aborted
+    ) return;
+
+    abortCurrentRunEventSubscription();
     const abortController = new AbortController();
-    sseAbortControllerRef.current = abortController;
+    const subscription: RunEventSubscription = {
+      runId,
+      controller: abortController
+    };
+    runEventSubscriptionRef.current = subscription;
     let sawDone = false;
+    let sawError = false;
+    let lastHandledSeq = runRegistryRef.current.lastSeqByRunId[runId] ?? 0;
     dispatchRunRegistry({
       type: 'set_subscription_state',
       runId,
       state: 'connecting'
     });
 
-    await subscribeRunEvents({
-      ...config,
-      runId,
-      fromSeq: 0,
-      fetchImpl: runtimeFetch,
-      signal: abortController.signal,
-      onEvent(event) {
-        if (!mountedRef.current || abortController.signal.aborted) return;
-        dispatchRunRegistry({ type: 'record_event', event });
-        const item = eventToTimelineItem(event);
-        if (item !== null) timelineEventBatcherRef.current?.push(item);
-        if (event.type === 'done') {
-          sawDone = true;
-          timelineEventBatcherRef.current?.flush();
-          void loadRunDiagnostics(event.runId);
-        }
-      },
-      onError(error) {
-        if (!mountedRef.current || abortController.signal.aborted) return;
-        dispatchRunRegistry({
-          type: 'set_subscription_state',
-          runId,
-          state: 'disconnected'
-        });
-        timelineEventBatcherRef.current?.push({
-          kind: 'diagnostic',
-          id: createTimelineId('sse_error'),
-          severity: 'error',
-          message: error.message,
-          content: error.message,
-          source: 'runtime'
-        });
-        timelineEventBatcherRef.current?.flush();
-      }
-    });
-
-    if (!abortController.signal.aborted) {
+    const isCurrentSubscription = () => (
+      mountedRef.current
+      && runEventSubscriptionRef.current === subscription
+      && !abortController.signal.aborted
+    );
+    const handleSubscriptionError = (error: Error) => {
+      if (!isCurrentSubscription() || sawDone || sawError) return;
+      sawError = true;
+      dispatchRunRegistry({
+        type: 'set_subscription_state',
+        runId,
+        state: 'disconnected'
+      });
+      timelineEventBatcherRef.current?.push({
+        kind: 'diagnostic',
+        id: createTimelineId('sse_error'),
+        severity: 'error',
+        message: error.message,
+        content: error.message,
+        source: 'runtime'
+      });
       timelineEventBatcherRef.current?.flush();
-      if (!sawDone) {
+    };
+
+    try {
+      await subscribeRunEvents({
+        ...config,
+        runId,
+        fromSeq: lastHandledSeq,
+        fetchImpl: runtimeFetch,
+        signal: abortController.signal,
+        onEvent(event) {
+          if (
+            !isCurrentSubscription()
+            || event.runId !== runId
+            || event.seq <= lastHandledSeq
+          ) return;
+
+          lastHandledSeq = event.seq;
+          dispatchRunRegistry({ type: 'record_event', event });
+          const item = eventToTimelineItem(event);
+          if (item !== null) timelineEventBatcherRef.current?.push(item);
+          if (event.type === 'done') {
+            sawDone = true;
+            timelineEventBatcherRef.current?.flush();
+            void loadRunDiagnostics(event.runId);
+          }
+        },
+        onError: handleSubscriptionError
+      });
+    } catch (error) {
+      handleSubscriptionError(
+        error instanceof Error ? error : new Error(String(error))
+      );
+    } finally {
+      if (!isCurrentSubscription()) return;
+
+      runEventSubscriptionRef.current = null;
+      timelineEventBatcherRef.current?.flush();
+      if (!sawDone && !sawError) {
         dispatchRunRegistry({
           type: 'set_subscription_state',
           runId,
