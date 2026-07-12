@@ -772,8 +772,8 @@ test: lock down run recovery workflows
 - [x] `P1-B2` 历史游标分页 API
 - [x] `P1-B3` Timeline 向上加载与虚拟化
 - [x] `P1-B4` daemon NDJSON 异步有序写入
-- [ ] `P1-B5` 会话全文搜索
-- [ ] `P1-B6` Schedules 正式页面
+- [x] `P1-B5` 会话全文搜索
+- [x] `P1-B6` Schedules 正式页面
 - [ ] `P1-B7` MCP 与 Profiles 正式页面
 - [ ] `P1-B8` Cleanup 与 Diagnostics 设置页
 - [ ] `P1-B9` 移动端导航与 Skill 市场性能
@@ -1263,7 +1263,7 @@ feat: add full-text conversation search
 
 ## P1-B6：Schedules 正式页面
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 将已有 Scheduler API 建设为完整的计划任务管理页面。
 
@@ -1320,7 +1320,35 @@ feat(web): complete the schedules workspace
 
 **回滚边界：** 回滚 Web 页面即可，Scheduler API 和数据不变。
 
-**执行结果：** 待填写。
+**执行结果：** `PASS`
+
+- 完成 Schedule Service 正式契约：
+  - 支持列表、详情、创建、更新、删除、立即运行和操作记录。
+  - 所有包含 Schedule ID 的路径统一进行 URL 编码。
+- 新增独立 `ScheduleEditor` 和正式 Schedules 工作区：
+  - 支持名称、执行指令、Cron、时区、项目目录、Profile、模型、推理级别、权限、超时、并发策略、misfire 策略和启用状态。
+  - 新建计划继承当前项目的目录、Profile、模型、推理级别和权限默认值。
+  - 编辑计划时单独加载完整详情，避免使用列表中的脱敏 Prompt 覆盖真实执行指令。
+  - 支持列表、创建、编辑、启停、立即运行、Run 跳转和删除。
+  - 支持本地字段校验，并将 daemon 的 Cron、目录、Profile、时区和超时错误映射到对应字段。
+  - 轮询刷新不会阻塞页面操作，连接断开、加载失败、空列表和操作失败均有明确状态。
+- App 正式接入：
+  - “已安排”不再显示占位页。
+  - Schedule Run 可切回会话视图并打开 Run Detail；没有 threadId 时仍可按 runId 查看。
+- 自动化验证：
+  - `pnpm --filter @clawee/web test` -> PASS，50 个测试文件、359 个测试通过。
+  - `pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts` -> PASS，19 个测试通过。
+  - `pnpm --filter @clawee/web typecheck` -> PASS。
+  - `pnpm build` -> PASS；仅保留既有 Web 大包 warning。
+  - `git diff --check` -> PASS。
+- 真实浏览器验证：
+  - 1440×900 和 390×844 均完成加载、创建、编辑、停用、启用、立即运行、Run 跳转和删除。
+  - 手动触发约 257 ms 返回 `run_FjSNdQUPGq`，列表显示“正在运行”，点击后立即打开运行详情。
+  - 修复移动端长表单把保存/取消操作推到页面末尾的问题；编辑器字段区独立滚动，底部操作栏保持可见。
+  - 桌面和移动端横向溢出均为 0，验证期间浏览器控制台无错误。
+- 提交：`61723d1`、`a56c541`。
+- 已知边界：
+  - 到期自动触发的正确性沿用 P0 Scheduler 门禁和 `scheduler-service` 回归测试，本批真实浏览器重点验证产品操作闭环和 Run 可追踪性。
 
 ## P1-B7：MCP 与 Profiles 正式页面
 
@@ -2216,7 +2244,7 @@ docs: finalize clawee agent release readiness
 | 历史 | 游标分页、向上加载、无重复 | 待执行 | 待执行 | `NOT_STARTED` |
 | Timeline | 300+ 项虚拟化和滚动稳定 | 待执行 | 待执行 | `NOT_STARTED` |
 | 搜索 | 中英文正文搜索和结果定位 | 待执行 | 待执行 | `NOT_STARTED` |
-| Schedules | 创建、编辑、启停、触发、删除 | 待执行 | 待执行 | `NOT_STARTED` |
+| Schedules | 创建、编辑、启停、触发、删除 | 通过 | 通过 | `PASS` |
 | MCP/Profile | 管理、能力判断、敏感值遮罩 | 待执行 | 待执行 | `NOT_STARTED` |
 | Cleanup/Diagnostics | 预览删除、脱敏导出 | 待执行 | 待执行 | `NOT_STARTED` |
 | Skill 市场 | 分页、安装、更新、使用 | 待执行 | 待执行 | `NOT_STARTED` |
@@ -2293,6 +2321,8 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B4 | `IN_PROGRESS -> PASS` | `4779b6b` | daemon 491 项测试、类型检查、构建、真实 Run 顺序核对和活动 Run 信号关闭验证全部通过 | 下一批 `P1-B5` |
 | 2026-07-12 | P1-B5 | `NOT_STARTED -> IN_PROGRESS` | - | 开始建立会话标题和规范化正文的本地全文索引、分页搜索 API 与目标消息历史窗口 | 先补 FTS 同步、筛选分页和目标定位失败测试 |
 | 2026-07-12 | P1-B5 | `IN_PROGRESS -> PASS` | `8eb06ce`, `f30bec4`, `384d525`, `0183d67` | daemon 499 项、Web 353 项、两端类型检查、构建、真实 3.44 GB 数据和桌面/移动浏览器验收全部通过 | 下一批 `P1-B6` |
+| 2026-07-12 | P1-B6 | `NOT_STARTED -> IN_PROGRESS` | `61723d1` | 完成 Schedule Service 契约并开始正式页面、字段校验和 App Run 跳转实现 | 先让 SchedulesView 组件契约转绿 |
+| 2026-07-12 | P1-B6 | `IN_PROGRESS -> PASS` | `61723d1`, `a56c541` | Web 359 项、Scheduler 19 项、类型检查、构建及桌面/移动真实创建、编辑、启停、触发、Run 跳转、删除验收全部通过 | 下一批 `P1-B7` |
 
 ## 14.1 单批次执行记录模板
 
