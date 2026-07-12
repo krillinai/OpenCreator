@@ -770,7 +770,7 @@ test: lock down run recovery workflows
 
 - [x] `P1-B1` Codex Session 增量索引
 - [x] `P1-B2` 历史游标分页 API
-- [ ] `P1-B3` Timeline 向上加载与虚拟化
+- [x] `P1-B3` Timeline 向上加载与虚拟化
 - [ ] `P1-B4` daemon NDJSON 异步有序写入
 - [ ] `P1-B5` 会话全文搜索
 - [ ] `P1-B6` Schedules 正式页面
@@ -958,7 +958,7 @@ feat(runtime): add cursor pagination for thread history
 
 ## P1-B3：Timeline 向上加载与虚拟化
 
-- [ ] **状态：** `BLOCKED_ENV`
+- [x] **状态：** `PASS`
 
 **目标：** 首屏只加载最新历史，向上滚动加载旧内容，并将长会话 DOM 数量控制在稳定范围。
 
@@ -1049,6 +1049,8 @@ perf(web): virtualize paged conversation history
   - 修复前首屏 Timeline DOM 后代节点约 76 个，第二页后约 88 个，显著低于 8265 节点基线。
   - 修复前发现分页前插后 `scrollTop` 从 141 跳到 0，已通过原始 item ID prepend 判定和稳定 synthetic Run ID 修复，并补充失败后转绿的回归测试。
   - 修复后浏览器连接返回“无可用浏览器”，无法完成 1440x900、390x844、连续多页锚点和控制台复测。
+- 用户验收：
+  - 用户已于 2026-07-12 完成真实页面验证并确认通过，P1-B3 从 `BLOCKED_ENV` 更新为 `PASS`。
 - 解除阻塞后的验收步骤：
   1. 打开 300 项以上真实会话，连续加载至少三页，确认加载前后的首个可见消息位置基本不变。
   2. 记录首屏和多页后的 Timeline DOM 节点数量，确认保持有界。
@@ -1058,7 +1060,7 @@ perf(web): virtualize paged conversation history
 
 ## P1-B4：daemon NDJSON 异步有序写入
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `IN_PROGRESS`
 
 **目标：** 移除 Run 热路径中的同步文件追加，保持日志顺序、可观测背压和安全关闭。
 
@@ -2211,6 +2213,8 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B2 | `IN_PROGRESS -> PASS` | `f908631` | daemon 477 项、Web 335 项、类型检查和构建通过；真实 23,101 条索引记录遍历 232 页，与 28,107 项完整历史逐项一致 | 下一批 `P1-B3` |
 | 2026-07-12 | P1-B3 | `NOT_STARTED -> IN_PROGRESS` | - | 开始抽取历史分页状态、引入可变高度虚拟列表并重构底部跟随规则 | 先补首屏分页、向上加载、实时去重和 DOM 上限失败测试 |
 | 2026-07-12 | P1-B3 | `IN_PROGRESS -> BLOCKED_ENV` | `9928c7c` | 全项目测试、类型检查和构建通过；首屏和第二页 DOM 约 76/88；已修复 prepend 锚点跳跃并补回归测试 | 当前无可连接浏览器，待完成桌面/移动真实验收后改为 `PASS` |
+| 2026-07-12 | P1-B3 | `BLOCKED_ENV -> PASS` | `9928c7c` | 用户已完成真实页面验证并确认通过 | 下一批 `P1-B4` |
+| 2026-07-12 | P1-B4 | `NOT_STARTED -> IN_PROGRESS` | - | 开始移除 Run 热路径同步 append，建立按 Run 隔离的有序异步日志写入与关闭 drain | 先补顺序、背压、失败和关闭行为测试 |
 
 ## 14.1 单批次执行记录模板
 
