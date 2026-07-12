@@ -569,9 +569,13 @@ function ProcessBlockView(props: {
     >
       <details
         open={expanded}
-        onToggle={event => setExpanded(event.currentTarget.open)}
       >
-        <summary>
+        <summary
+          onClick={event => {
+            event.preventDefault();
+            setExpanded(current => !current);
+          }}
+        >
           <span className="process-caret" aria-hidden="true">
             &gt;
           </span>
