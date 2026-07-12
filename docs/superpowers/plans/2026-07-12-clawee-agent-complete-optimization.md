@@ -1352,7 +1352,7 @@ feat(web): complete the schedules workspace
 
 ## P1-B7：MCP 与 Profiles 正式页面
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `IN_PROGRESS`
 
 **目标：** 为 MCP Server 和 Codex Profile 提供真实管理页面，并让会话配置能够引用它们。
 

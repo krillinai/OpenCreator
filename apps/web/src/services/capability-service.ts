@@ -1,22 +1,11 @@
-import type { CodexMcpListResponse, CodexSkillListResponse } from '@clawee/protocol';
+import type {
+  CodexMcpListResponse,
+  CodexProfileListResponse,
+  CodexSkillListResponse
+} from '@clawee/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
-export type CodexProfileListResponse = {
-  codexHome: string;
-  codexHomeMode: 'global' | 'isolated';
-  writable: boolean;
-  baseConfigValid: boolean;
-  profiles: Array<{
-    name: string;
-    status: 'valid' | 'invalid';
-    config: Record<string, unknown>;
-    diagnostics: string[];
-    source: string;
-    codexHomeMode: 'global' | 'isolated';
-    updatedAt?: string;
-  }>;
-  diagnostics: string[];
-};
+export type { CodexProfileListResponse } from '@clawee/protocol';
 
 export function createCapabilityService(client: RuntimeClient) {
   return {

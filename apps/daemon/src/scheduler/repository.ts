@@ -142,6 +142,19 @@ export class ScheduleRepository {
     return rows.map(mapSchedule);
   }
 
+  listProfileReferences(profile: string): Array<{ id: string; name: string }> {
+    return this.db
+      .prepare<string>(
+        `
+        SELECT id, name
+        FROM schedules
+        WHERE profile = ? AND deleted_at IS NULL
+        ORDER BY updated_at DESC, id DESC
+      `
+      )
+      .all(profile) as Array<{ id: string; name: string }>;
+  }
+
   update(id: string, input: UpdateScheduleInput): ScheduleRecord | null {
     const entries = updateEntries(input);
     if (entries.length === 0) return this.getById(id);

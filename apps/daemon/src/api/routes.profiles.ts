@@ -7,7 +7,14 @@ import { apiError } from './errors.js';
 
 export async function registerProfileRoutes(
   server: FastifyInstance,
-  input: { codexHome: ResolvedCodexHome; profileManager: ProfileManager }
+  input: {
+    codexHome: ResolvedCodexHome;
+    profileManager: ProfileManager;
+    getProfileUsage?(name: string): {
+      threads: Array<{ id: string; title: string | null }>;
+      schedules: Array<{ id: string; name: string }>;
+    };
+  }
 ): Promise<void> {
   server.get('/codex/profiles', async () => {
     const result = input.profileManager.listProfiles();
@@ -74,6 +81,15 @@ export async function registerProfileRoutes(
     }
 
     try {
+      const profile = input.profileManager.getProfile(request.params.name);
+      const usage = profile === undefined ? undefined : input.getProfileUsage?.(request.params.name);
+      if (usage !== undefined && (usage.threads.length > 0 || usage.schedules.length > 0)) {
+        return reply.code(409).send(apiError(
+          'CODEX_PROFILE_IN_USE',
+          'Profile is still referenced',
+          usage
+        ));
+      }
       await input.profileManager.deleteProfile(request.params.name);
       return { deleted: true };
     } catch (error) {

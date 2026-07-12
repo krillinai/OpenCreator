@@ -96,6 +96,7 @@ export async function buildServer(input: BuildServerInput) {
   const ownsDb = input.db === undefined;
   const runRepository = createRunRepository(db);
   const threadRepository = createThreadRepository(db);
+  const scheduleRepository = new ScheduleRepository(db);
   const codexSessionRepository = createCodexSessionIndexRepository(db);
   const codexSessionIndexer = createCodexSessionIndexer({
     codexHome,
@@ -130,7 +131,7 @@ export async function buildServer(input: BuildServerInput) {
   const scheduler =
     input.scheduler ??
     createSchedulerService({
-      repository: new ScheduleRepository(db),
+      repository: scheduleRepository,
       runManager,
       defaultCwd: process.cwd(),
       profileValidator: profileManager,
@@ -214,7 +215,13 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerProfileRoutes(server, {
     codexHome: resolvedCodexHome,
-    profileManager
+    profileManager,
+    getProfileUsage(name) {
+      return {
+        threads: threadRepository.listProfileReferences(name),
+        schedules: scheduleRepository.listProfileReferences(name)
+      };
+    }
   });
   await registerSkillRoutes(server, { skillManager });
   await registerSkillMarketRoutes(server, { skillMarketManager });

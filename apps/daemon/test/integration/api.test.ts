@@ -944,6 +944,60 @@ describe('runtime api', () => {
     expect(deleted.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
   });
 
+  it('rejects deleting a profile referenced by threads or schedules', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    expect((await authPost('/codex/profiles', {
+      name: 'review',
+      config: { model: 'gpt-5.3-codex' }
+    })).statusCode).toBe(201);
+    const thread = await authPost('/threads', {
+      title: '审查会话',
+      cwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'review',
+      sandbox: 'workspace-write'
+    });
+    const schedule = await authPost('/schedules', {
+      name: '每日审查',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: '检查项目',
+      cwd: tempDir,
+      profile: 'review'
+    });
+
+    expect(thread.statusCode).toBe(201);
+    expect(schedule.statusCode).toBe(201);
+
+    const deleted = await authDelete('/codex/profiles/review');
+
+    expect(deleted.statusCode).toBe(409);
+    expect(deleted.json()).toEqual({
+      error: {
+        code: 'CODEX_PROFILE_IN_USE',
+        message: 'Profile is still referenced',
+        details: {
+          threads: [
+            {
+              id: thread.json().thread.id,
+              title: '审查会话'
+            }
+          ],
+          schedules: [
+            {
+              id: schedule.json().id,
+              name: '每日审查'
+            }
+          ]
+        }
+      }
+    });
+    expect((await authGet('/codex/profiles/review')).statusCode).toBe(200);
+  });
+
   it('lists, installs, overwrites, deletes, and logs codex skills', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');

@@ -437,6 +437,68 @@ export type CodexMcpOperationListResponse = {
   operations: CodexMcpOperationResponse[];
 };
 
+export type CodexMcpServerDetailResponse = {
+  server: CodexMcpServerResponse;
+};
+
+export type CodexMcpAddResponse = {
+  server?: CodexMcpServerResponse;
+  operation: CodexMcpOperationResponse;
+};
+
+export type CodexMcpRemoveResponse = {
+  removed: true;
+};
+
+export type CodexMcpAuthResponse = {
+  operation: CodexMcpOperationResponse;
+};
+
+export type CodexProfileStatus = 'valid' | 'invalid';
+export type CodexProfilePrimitive = string | number | boolean;
+export type CodexProfileValue = CodexProfilePrimitive | CodexProfilePrimitive[];
+export type CodexProfileConfig = Record<string, CodexProfileValue>;
+
+export type CodexProfileResponse = {
+  name: string;
+  status: CodexProfileStatus;
+  config: CodexProfileConfig;
+  diagnostics: string[];
+  source: string;
+  codexHomeMode: CodexHomeMode;
+  updatedAt?: string;
+};
+
+export type CodexProfileListResponse = {
+  codexHome: string;
+  codexHomeMode: CodexHomeMode;
+  writable: boolean;
+  baseConfigValid: boolean;
+  profiles: CodexProfileResponse[];
+  diagnostics: string[];
+};
+
+export type CodexProfileDetailResponse = {
+  profile: CodexProfileResponse;
+};
+
+export type CreateCodexProfileRequest = {
+  name: string;
+  config: CodexProfileConfig;
+};
+
+export type UpdateCodexProfileRequest = {
+  config: CodexProfileConfig;
+};
+
+export type CodexProfileMutationResponse = {
+  profile: CodexProfileResponse;
+};
+
+export type CodexProfileDeleteResponse = {
+  deleted: true;
+};
+
 export type ScheduleConcurrencyPolicy = 'skip' | 'queue' | 'parallel';
 export type ScheduleMisfirePolicy = 'skip';
 export type ScheduleLastStatus = PublicRunStatus | 'skipped' | 'queued';

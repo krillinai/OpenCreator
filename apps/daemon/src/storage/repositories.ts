@@ -124,6 +124,7 @@ export type ThreadRepository = {
   getThread(id: string): ThreadRow | undefined;
   getThreadByCodexThreadId(codexThreadId: string): ThreadRow | undefined;
   listThreads(input?: { status?: 'active' | 'archived' | 'all'; limit?: number }): ThreadRow[];
+  listProfileReferences(profile: string): Array<{ id: string; title: string | null }>;
   archiveThread(id: string): void;
   updateImportedThread(input: UpdateImportedThreadInput): void;
   updateThreadSandbox(input: UpdateThreadSandboxInput): void;
@@ -324,6 +325,12 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     ORDER BY updated_at DESC, id DESC
     LIMIT @limit
   `);
+  const listProfileReferences = db.prepare<string>(`
+    SELECT id, title
+    FROM threads
+    WHERE profile = ?
+    ORDER BY updated_at DESC, id DESC
+  `);
   const archive = db.prepare(`
     UPDATE threads
     SET status = 'archived',
@@ -380,6 +387,9 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         status: input.status ?? 'active',
         limit: input.limit ?? 50
       }) as ThreadRow[];
+    },
+    listProfileReferences(profile: string): Array<{ id: string; title: string | null }> {
+      return listProfileReferences.all(profile) as Array<{ id: string; title: string | null }>;
     },
     archiveThread(id: string): void {
       archive.run(id);
