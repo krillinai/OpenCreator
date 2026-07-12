@@ -85,6 +85,57 @@ describe('runtime storage', () => {
     expect(runs.getLastRunEventSeq('run_1')).toBe(3);
   });
 
+  it('creates codex session index tables and indexes', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+
+    const tableRows = db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table'
+           AND name IN ('codex_sessions', 'codex_session_sources', 'codex_session_items')`
+      )
+      .all() as Array<{ name: string }>;
+    expect(tableRows.map(row => row.name).sort()).toEqual([
+      'codex_session_items',
+      'codex_session_sources',
+      'codex_sessions'
+    ]);
+
+    expect(columnNames(db, 'codex_session_sources')).toEqual(
+      expect.arrayContaining([
+        'path',
+        'file_id',
+        'file_size',
+        'mtime_ms',
+        'parsed_offset',
+        'parsed_line_count',
+        'parser_state_json',
+        'head_size',
+        'head_hash',
+        'last_error',
+        'index_version'
+      ])
+    );
+
+    const indexRows = db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'index'
+           AND name IN (
+             'idx_codex_sessions_updated_at',
+             'idx_codex_sessions_kind_updated_at',
+             'idx_codex_session_items_source_line'
+           )`
+      )
+      .all() as Array<{ name: string }>;
+    expect(indexRows.map(row => row.name).sort()).toEqual([
+      'idx_codex_session_items_source_line',
+      'idx_codex_sessions_kind_updated_at',
+      'idx_codex_sessions_updated_at'
+    ]);
+  });
+
   it('creates codex skill operation log table', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

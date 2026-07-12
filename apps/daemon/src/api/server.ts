@@ -11,6 +11,8 @@ import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { readCodexSessionHistory } from '../codex/sessions/history.js';
+import { createCodexSessionIndexRepository } from '../codex/sessions/index-repository.js';
+import { createCodexSessionIndexer } from '../codex/sessions/indexer.js';
 import { scanCodexSessionsWithMetadata } from '../codex/sessions/scanner.js';
 import { createSkillManager } from '../codex/skills/manager.js';
 import { MarketArchiveDownloader, type MarketArchiveDownloader as MarketArchiveDownloaderType } from '../codex/skills/market-downloader.js';
@@ -87,6 +89,10 @@ export async function buildServer(input: BuildServerInput) {
   const ownsDb = input.db === undefined;
   const runRepository = createRunRepository(db);
   const threadRepository = createThreadRepository(db);
+  const codexSessionIndexer = createCodexSessionIndexer({
+    codexHome,
+    repository: createCodexSessionIndexRepository(db)
+  });
   const threadManager = createThreadManager({ db, dataDir });
   const workspaceFileService = createWorkspaceFileService({
     getThread: (id) => threadManager.getThread(id),
@@ -182,7 +188,13 @@ export async function buildServer(input: BuildServerInput) {
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager,
     syncCodexSessions(limit) {
-      const scan = scanCodexSessionsWithMetadata({ codexHome, limit });
+      let scan;
+      try {
+        scan = codexSessionIndexer.sync({ limit });
+      } catch (error) {
+        console.warn(`Codex session index sync failed; using raw JSONL fallback: ${formatError(error)}`);
+        scan = scanCodexSessionsWithMetadata({ codexHome, limit });
+      }
       for (const codexThreadId of scan.excludedSubagentThreadIds) {
         threadManager.archiveCodexThread(codexThreadId);
       }
@@ -197,7 +209,13 @@ export async function buildServer(input: BuildServerInput) {
       }
     },
     readThreadHistory(codexThreadId) {
-      return readCodexSessionHistory({ codexHome, codexThreadId });
+      try {
+        codexSessionIndexer.sync();
+        return codexSessionIndexer.readHistory(codexThreadId);
+      } catch (error) {
+        console.warn(`Codex session history index failed; using raw JSONL fallback: ${formatError(error)}`);
+        return readCodexSessionHistory({ codexHome, codexThreadId });
+      }
     }
   });
 
@@ -256,4 +274,8 @@ function isAllowedWebOrigin(origin: string): boolean {
   } catch {
     return false;
   }
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

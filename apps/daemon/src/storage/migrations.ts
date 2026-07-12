@@ -154,6 +154,44 @@ export function migrate(db: Database.Database): void {
       FOREIGN KEY(schedule_id) REFERENCES schedules(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS codex_session_sources (
+      path TEXT PRIMARY KEY,
+      file_id TEXT NOT NULL,
+      file_size INTEGER NOT NULL,
+      mtime_ms REAL NOT NULL,
+      parsed_offset INTEGER NOT NULL DEFAULT 0,
+      parsed_line_count INTEGER NOT NULL DEFAULT 0,
+      parser_state_json TEXT NOT NULL DEFAULT '{}',
+      head_size INTEGER NOT NULL DEFAULT 0,
+      head_hash TEXT NOT NULL DEFAULT '',
+      last_error TEXT,
+      index_version INTEGER NOT NULL,
+      indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS codex_sessions (
+      codex_thread_id TEXT PRIMARY KEY,
+      source_path TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      cwd TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(source_path) REFERENCES codex_session_sources(path) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS codex_session_items (
+      source_path TEXT NOT NULL,
+      source_offset INTEGER NOT NULL,
+      line_number INTEGER NOT NULL,
+      item_id TEXT NOT NULL,
+      item_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(source_path, source_offset),
+      FOREIGN KEY(source_path) REFERENCES codex_session_sources(path) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status);
     CREATE INDEX IF NOT EXISTS idx_threads_codex_thread_id ON threads(codex_thread_id);
     CREATE INDEX IF NOT EXISTS idx_threads_updated_at ON threads(updated_at);
@@ -175,6 +213,12 @@ export function migrate(db: Database.Database): void {
       ON schedule_operations(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_schedule_operations_schedule_id
       ON schedule_operations(schedule_id);
+    CREATE INDEX IF NOT EXISTS idx_codex_sessions_updated_at
+      ON codex_sessions(updated_at DESC, codex_thread_id DESC);
+    CREATE INDEX IF NOT EXISTS idx_codex_sessions_kind_updated_at
+      ON codex_sessions(kind, updated_at DESC, codex_thread_id DESC);
+    CREATE INDEX IF NOT EXISTS idx_codex_session_items_source_line
+      ON codex_session_items(source_path, line_number ASC);
   `);
 
   ensureColumn(db, 'threads', 'title', 'title TEXT');
@@ -182,6 +226,8 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'runs', 'resume_mode', 'resume_mode TEXT');
   ensureColumn(db, 'runs', 'queue_state', "queue_state TEXT NOT NULL DEFAULT 'none'");
   ensureColumn(db, 'runs', 'timeout_ms', 'timeout_ms INTEGER');
+  ensureColumn(db, 'codex_session_sources', 'head_size', 'head_size INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'codex_session_sources', 'head_hash', "head_hash TEXT NOT NULL DEFAULT ''");
 }
 
 function ensureColumn(db: Database.Database, table: string, column: string, ddl: string): void {

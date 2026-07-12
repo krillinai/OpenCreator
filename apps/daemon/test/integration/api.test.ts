@@ -1,11 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  appendFileSync,
   chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync
@@ -1921,7 +1923,11 @@ describe('runtime api', () => {
 
   it('creates, lists, gets, and archives threads through the api', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
-    server = await buildServer({ token: 'secret', dataDir: tempDir });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home')
+    });
 
     const created = await server.inject({
       method: 'POST',
@@ -1981,8 +1987,9 @@ describe('runtime api', () => {
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '07');
     mkdirSync(sessionDir, { recursive: true });
+    const sessionPath = join(sessionDir, 'rollout-2026-07-07T10-00-00-codex-session-api.jsonl');
     writeFileSync(
-      join(sessionDir, 'rollout-2026-07-07T10-00-00-codex-session-api.jsonl'),
+      sessionPath,
       [
         JSON.stringify({
           timestamp: '2026-07-07T02:00:00.000Z',
@@ -2006,7 +2013,8 @@ describe('runtime api', () => {
         })
       ].join('\n')
     );
-    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome, db });
 
     const listed = await authGet('/threads');
     const listedAgain = await authGet('/threads');
@@ -2022,6 +2030,19 @@ describe('runtime api', () => {
       })
     ]);
     expect(listedAgain.json().threads).toHaveLength(1);
+    expect(
+      db.prepare(
+        'SELECT parsed_offset, parsed_line_count, last_error FROM codex_session_sources WHERE path = ?'
+      ).get(sessionPath)
+    ).toEqual({
+      parsed_offset: statSync(sessionPath).size,
+      parsed_line_count: 3,
+      last_error: null
+    });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM codex_session_items WHERE source_path = ?')
+        .get(sessionPath)
+    ).toEqual({ count: 2 });
   });
 
   it('hides subagent Codex sessions and keeps older user sessions visible within the list limit', async () => {
@@ -2088,8 +2109,12 @@ describe('runtime api', () => {
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '07');
     mkdirSync(sessionDir, { recursive: true });
+    const sessionPath = join(
+      sessionDir,
+      'rollout-2026-07-07T10-00-00-codex-session-history.jsonl'
+    );
     writeFileSync(
-      join(sessionDir, 'rollout-2026-07-07T10-00-00-codex-session-history.jsonl'),
+      sessionPath,
       [
         JSON.stringify({
           timestamp: '2026-07-07T02:00:00.000Z',
@@ -2130,10 +2155,19 @@ describe('runtime api', () => {
         })
       ].join('\n')
     );
-    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome, db });
 
     const listed = await authGet('/threads');
     const thread = listed.json().threads[0];
+    appendFileSync(
+      sessionPath,
+      `\n${JSON.stringify({
+        timestamp: '2026-07-07T02:00:05.000Z',
+        type: 'event_msg',
+        payload: { type: 'agent_message', message: '这是追加索引的回复。' }
+      })}\n`
+    );
     const history = await authGet(`/threads/${thread.id}/history`);
 
     expect(history.statusCode).toBe(200);
@@ -2143,10 +2177,20 @@ describe('runtime api', () => {
       items: [
         { type: 'user_message', text: '分析这个 skill 是干什么的' },
         { type: 'reasoning_summary', text: '先读取 skill 说明。' },
-        { type: 'assistant_message', text: '这个 skill 用于分析选品资料。' }
+        { type: 'assistant_message', text: '这个 skill 用于分析选品资料。' },
+        { type: 'assistant_message', text: '这是追加索引的回复。' }
       ]
     });
     expect(history.body).not.toContain('AGENTS.md instructions');
+    expect(
+      db.prepare(
+        'SELECT parsed_offset, parsed_line_count, last_error FROM codex_session_sources WHERE path = ?'
+      ).get(sessionPath)
+    ).toEqual({
+      parsed_offset: statSync(sessionPath).size,
+      parsed_line_count: 6,
+      last_error: null
+    });
   });
 
   it('rejects invalid thread list query parameters', async () => {
