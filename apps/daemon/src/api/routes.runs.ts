@@ -112,11 +112,16 @@ export async function registerRunRoutes(
 
   server.get('/runs/:id/events', async (request, reply) => {
     const { id } = request.params as { id: string };
-    if (manager.getRun(id) === undefined) {
+    const run = manager.getRun(id);
+    if (run === undefined) {
       return reply.code(404).send(apiError('RUN_NOT_FOUND', 'Run not found'));
     }
 
-    const afterSeq = getReplayAfterSeq(request.headers['last-event-id'], request.query);
+    const replayAfterSeq = getReplayAfterSeq(request.headers['last-event-id'], request.query);
+    if (!replayAfterSeq.ok) {
+      return reply.code(400).send(apiError('VALIDATION_FAILED', replayAfterSeq.message));
+    }
+
     for (const [header, value] of Object.entries(reply.getHeaders())) {
       if (value !== undefined) reply.raw.setHeader(header, value);
     }
@@ -132,8 +137,12 @@ export async function registerRunRoutes(
       if (event.type === 'done') closeSse(reply);
     };
 
-    for (const event of manager.listEvents(id, afterSeq)) writeEvent(event);
+    for (const event of manager.listEvents(id, replayAfterSeq.value)) writeEvent(event);
     if (reply.raw.destroyed || reply.raw.writableEnded) return reply;
+    if (isTerminalRunStatus(run.status)) {
+      closeSse(reply);
+      return reply;
+    }
 
     const unsubscribe = manager.subscribe(id, writeEvent);
     const heartbeat = setInterval(() => {
@@ -245,15 +254,34 @@ function sendProfileValidationError(
   return reply.code(422).send(apiError('CODEX_PROFILE_INVALID', validation.message));
 }
 
-function getReplayAfterSeq(lastEventId: string | string[] | undefined, query: unknown): number {
-  const queryValue = typeof query === 'object' && query !== null
-    ? Number((query as { afterSeq?: string; fromSeq?: string }).fromSeq ?? (query as { afterSeq?: string }).afterSeq)
-    : undefined;
-  if (typeof queryValue === 'number' && Number.isFinite(queryValue)) return queryValue;
-
+function getReplayAfterSeq(
+  lastEventId: string | string[] | undefined,
+  query: unknown
+): ParseResult<number> {
+  if (isPlainObject(query)) {
+    if (Object.hasOwn(query, 'fromSeq')) return parseReplaySeq(query.fromSeq, 'fromSeq');
+    if (Object.hasOwn(query, 'afterSeq')) return parseReplaySeq(query.afterSeq, 'afterSeq');
+  }
   const header = Array.isArray(lastEventId) ? lastEventId[0] : lastEventId;
-  const parsedHeader = header === undefined ? undefined : Number(header);
-  return typeof parsedHeader === 'number' && Number.isFinite(parsedHeader) ? parsedHeader : 0;
+  return header === undefined
+    ? { ok: true, value: 0 }
+    : parseReplaySeq(header, 'Last-Event-ID');
+}
+
+function parseReplaySeq(value: unknown, field: string): ParseResult<number> {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+    return { ok: false, message: `${field} must be a non-negative integer` };
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed)
+    ? { ok: true, value: parsed }
+    : { ok: false, message: `${field} must be a non-negative integer` };
+}
+
+function isTerminalRunStatus(
+  status: NonNullable<ReturnType<RunManager['getRun']>>['status']
+): boolean {
+  return status === 'succeeded' || status === 'failed' || status === 'canceled';
 }
 
 function closeSse(reply: FastifyReply): void {

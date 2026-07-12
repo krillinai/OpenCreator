@@ -2644,6 +2644,15 @@ describe('runtime api', () => {
 
     await waitForRunStatus(run.id, 'succeeded');
 
+    const fromStart = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events?fromSeq=0`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(fromStart.statusCode).toBe(200);
+    expect(fromStart.body).toContain('"seq":1');
+    expect(fromStart.body).toContain('event: done');
+
     const fromSeq = await server.inject({
       method: 'GET',
       url: `/runs/${run.id}/events?fromSeq=2`,
@@ -2654,6 +2663,19 @@ describe('runtime api', () => {
     expect(fromSeq.body).not.toContain('"seq":2');
     expect(fromSeq.body).toContain('"seq":3');
     expect(fromSeq.body).toContain('event: done');
+
+    const queryTakesPriority = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events?fromSeq=2`,
+      headers: {
+        authorization: 'Bearer secret',
+        'last-event-id': '0'
+      }
+    });
+    expect(queryTakesPriority.statusCode).toBe(200);
+    expect(queryTakesPriority.body).not.toContain('"seq":1');
+    expect(queryTakesPriority.body).not.toContain('"seq":2');
+    expect(queryTakesPriority.body).toContain('"seq":3');
 
     const lastEventId = await server.inject({
       method: 'GET',
@@ -2666,7 +2688,52 @@ describe('runtime api', () => {
     expect(lastEventId.statusCode).toBe(200);
     expect(lastEventId.body).not.toContain('"seq":3');
     expect(lastEventId.body).toContain('event: done');
+
+    const events = parseSseData(fromStart.body);
+    const lastSeq = events.at(-1)?.seq;
+    expect(lastSeq).toBeDefined();
+
+    const afterLast = await server.inject({
+      method: 'GET',
+      url: `/runs/${run.id}/events?fromSeq=${lastSeq}`,
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(afterLast.statusCode).toBe(200);
+    expect(afterLast.body).toBe('');
   });
+
+  it.each(['-1', '1.5', 'NaN', 'invalid', ''])(
+    'rejects invalid fromSeq value %j',
+    async fromSeq => {
+      tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+      db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+      server = await buildServer({ token: 'secret', dataDir: tempDir, db });
+      db.prepare(`
+        INSERT INTO runs (
+          id, public_status, internal_status, created_by, profile, cwd, canonical_cwd,
+          workspace_mode, sandbox, codex_version, codex_bin, codex_home, normalizer_version
+        ) VALUES (
+          'run_invalid_from_seq', 'succeeded', 'succeeded', 'api', 'default', @cwd, @cwd,
+          'managed', 'read-only', 'unknown', 'codex', @codexHome, 1
+        )
+      `).run({
+        cwd: tempDir,
+        codexHome: join(tempDir, 'codex-home')
+      });
+
+      const response = await server.inject({
+        method: 'GET',
+        url: `/runs/run_invalid_from_seq/events?fromSeq=${encodeURIComponent(fromSeq)}`,
+        headers: {
+          authorization: 'Bearer secret',
+          'last-event-id': '0'
+        }
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe('VALIDATION_FAILED');
+    }
+  );
 
   it('replays events after the legacy afterSeq query parameter', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
