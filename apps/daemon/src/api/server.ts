@@ -3,6 +3,11 @@ import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { join } from 'node:path';
 import {
+  ATTACHMENT_DRAFT_TTL_MS,
+  ATTACHMENT_MAX_SIZE_BYTES,
+  createAttachmentService
+} from '../attachments/service.js';
+import {
   isResumeExecutionSupported,
   withRuntimeSkillCapabilities,
   type RuntimeCapabilityMatrix
@@ -34,6 +39,7 @@ import { createDefaultRevealExecutor } from '../workspace-files/reveal.js';
 import { createWorkspaceFileService } from '../workspace-files/service.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
+import { registerAttachmentRoutes } from './routes.attachments.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerCleanupRoutes } from './routes.cleanup.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
@@ -60,9 +66,12 @@ export type BuildServerInput = {
   resumeCapabilityVerified?: boolean;
   capabilities?: RuntimeCapabilityMatrix;
   marketArchiveDownloader?: MarketArchiveDownloaderType;
+  attachmentMaxSizeBytes?: number;
+  attachmentDraftTtlMs?: number;
 };
 
 const SEARCH_SESSION_SYNC_INTERVAL_MS = 30_000;
+const ATTACHMENT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 export async function buildServer(input: BuildServerInput) {
   const server = Fastify({ logger: false });
@@ -143,6 +152,19 @@ export async function buildServer(input: BuildServerInput) {
     threads: threadRepository
   });
   const conversationSearchService = createConversationSearchService(db);
+  const attachmentService = createAttachmentService({
+    db,
+    dataDir,
+    maxSizeBytes: input.attachmentMaxSizeBytes ?? ATTACHMENT_MAX_SIZE_BYTES,
+    draftTtlMs: input.attachmentDraftTtlMs ?? ATTACHMENT_DRAFT_TTL_MS
+  });
+  await attachmentService.cleanupExpiredDrafts();
+  const attachmentCleanupTimer = setInterval(() => {
+    void attachmentService.cleanupExpiredDrafts().catch(error => {
+      console.warn(`Attachment cleanup failed: ${formatError(error)}`);
+    });
+  }, ATTACHMENT_CLEANUP_INTERVAL_MS);
+  attachmentCleanupTimer.unref();
   let lastCodexSessionSyncAt: number | undefined;
   function syncCodexSessions(limit?: number, minimumIntervalMs = 0) {
     const now = Date.now();
@@ -181,10 +203,16 @@ export async function buildServer(input: BuildServerInput) {
         .code(400)
         .send(apiError('VALIDATION_FAILED', 'body must be valid JSON'));
     }
+    if ((error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+      return reply
+        .code(413)
+        .send(apiError('ATTACHMENT_TOO_LARGE', 'Attachment exceeds the configured size limit'));
+    }
     throw error;
   });
 
   server.addHook('onClose', async () => {
+    clearInterval(attachmentCleanupTimer);
     scheduler.stop();
     try {
       await runManager.close({ timeoutMs: 5_000 });
@@ -233,6 +261,9 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerScheduleRoutes(server, scheduler);
   await registerCleanupRoutes(server, cleanupService);
+  await registerAttachmentRoutes(server, attachmentService, {
+    maxSizeBytes: input.attachmentMaxSizeBytes
+  });
   await registerDiagnosticsRoutes(server, {
     dataDir,
     runs: runRepository,

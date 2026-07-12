@@ -31,6 +31,11 @@ export class RuntimeClient {
     return this.request<T>(path, { method: 'POST', body });
   }
 
+  async postBinary<T = unknown>(path: string, body: BodyInit): Promise<T> {
+    const response = await this.rawRequest(path, { method: 'POST', binaryBody: body });
+    return await readJson(response) as T;
+  }
+
   async patch<T = unknown>(path: string, body: unknown): Promise<T> {
     return this.request<T>(path, { method: 'PATCH', body });
   }
@@ -45,15 +50,21 @@ export class RuntimeClient {
     return payload as T;
   }
 
-  async rawRequest(path: string, input: { method: string; body?: unknown }): Promise<Response> {
+  async rawRequest(
+    path: string,
+    input: { method: string; body?: unknown; binaryBody?: BodyInit }
+  ): Promise<Response> {
     const headers: Record<string, string> = {};
     if (path !== '/healthz') headers.Authorization = `Bearer ${this.token}`;
     if (input.body !== undefined) headers['Content-Type'] = 'application/json';
+    if (input.binaryBody !== undefined) headers['Content-Type'] = 'application/octet-stream';
 
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method: input.method,
       headers,
-      body: input.body === undefined ? undefined : JSON.stringify(input.body)
+      body: input.binaryBody ?? (
+        input.body === undefined ? undefined : JSON.stringify(input.body)
+      )
     });
 
     if (!response.ok) {

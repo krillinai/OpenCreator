@@ -116,4 +116,31 @@ describe('RuntimeClient', () => {
       })
     );
   });
+
+  it('postBinary sends authenticated bytes without JSON serialization', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 201,
+      headers: { 'content-type': 'application/json' }
+    }));
+    const client = new RuntimeClient({
+      baseUrl: 'http://127.0.0.1:60855',
+      token: 'tok',
+      fetchImpl: fetchMock
+    });
+    const payload = new Blob(['hello'], { type: 'text/plain' });
+
+    await client.postBinary('/attachments?draftId=draft-1', payload);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:60855/attachments?draftId=draft-1',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer tok',
+          'Content-Type': 'application/octet-stream'
+        }),
+        body: payload
+      })
+    );
+  });
 });

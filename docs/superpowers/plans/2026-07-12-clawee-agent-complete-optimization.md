@@ -1724,7 +1724,7 @@ refactor(web): split app routes and feature controllers
 
 ## P2 状态总览
 
-- [ ] `P2-B1` 附件存储与安全 API
+- [x] `P2-B1` 附件存储与安全 API
 - [ ] `P2-B2` 多模态 Composer 与 Run
 - [ ] `P2-B3` 排队发送与立即打断并继续
 - [ ] `P2-B4` HTML 安全预览
@@ -1735,7 +1735,7 @@ refactor(web): split app routes and feature controllers
 
 ## P2-B1：附件存储与安全 API
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 建立受控的附件导入、元数据、读取和清理能力，为多模态 Composer 提供安全基础。
 
@@ -1794,7 +1794,35 @@ feat(daemon): add secure attachment storage
 
 **回滚边界：** 附件表和目录为附加数据；回滚 API 时保留数据，后续由 Cleanup 清理。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 协议与存储：
+  - 新增附件协议模型、上传/元数据/读取/删除响应和专用错误码。
+  - SQLite 新增 `attachments` 表、同草稿哈希唯一索引和状态/创建时间清理索引。
+  - 实际文件使用生成 ID 和分片目录保存，原文件名只保留清理后的展示值。
+- 安全边界：
+  - 首版白名单支持 PNG、JPEG、GIF、WebP、纯文本、Markdown 和 JSON。
+  - 默认单文件上限 10 MiB；Fastify 在解析阶段限制二进制 body，服务层再次校验大小。
+  - 对图片签名、UTF-8 文本和 JSON 内容进行嗅探，声明 MIME 与实际内容不一致时拒绝。
+  - 读、删接口必须携带匹配的 `draftId` 或 `threadId`，所有接口继续受 daemon Bearer Token 保护。
+  - 写入使用临时文件和原子重命名，数据库失败时清理文件；读写删除均拒绝符号链接和真实路径逃逸。
+- 生命周期：
+  - 同一草稿内按 SHA-256 去重，不同草稿保持独立附件。
+  - 支持将草稿附件原子提交到线程。
+  - 默认清理 7 天前未提交草稿附件，daemon 启动时执行一次，之后每小时执行。
+  - 删除后元数据和文件均不可访问；诊断错误只包含路径状态和错误摘要，不记录原始内容。
+- Web 调用层：
+  - `RuntimeClient` 新增带鉴权的二进制 POST，避免 Blob 被 JSON 序列化。
+  - 新增附件上传、元数据、内容读取和删除服务。
+- 自动化验证：
+  - `pnpm --filter @clawee/daemon test -- test/unit/attachment-service.test.ts test/unit/storage.test.ts` -> PASS，16 项。
+  - `pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "attachment"` -> PASS。
+  - `pnpm --filter @clawee/daemon test` -> PASS，46 个测试文件、508 项；真实 Codex smoke 13 项按默认配置跳过。
+  - `pnpm --filter @clawee/web test` -> PASS，58 个测试文件、397 项。
+  - Protocol、daemon、Web 类型检查和两端构建 -> PASS。
+- 延后到最终统一验收：
+  - 通过真实页面上传图片、重复图片、超限文件、伪造 MIME 和路径型文件名。
+  - 删除后真实下载不可访问，并在 daemon 进程重启后复核附件元数据。
 
 ## P2-B2：多模态 Composer 与 Run
 
@@ -2410,6 +2438,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B9 | `NOT_STARTED -> BLOCKED_ENV` | 本批提交 | 完成移动导航抽屉、焦点与历史返回闭环、Skill 市场首批 12 项和加载更多、移动全高详情及滚动契约；Web 388 项、类型检查、构建和服务健康检查通过 | 浏览器运行时无可用实例，完成桌面/移动真实验收后改为 `PASS`，再进入 `P1-B10` |
 | 2026-07-12 | P1-B9 | `BLOCKED_ENV -> PASS` | 本批提交 | 用户明确要求剩余批次连续实施，单批浏览器验收统一延后到最终阶段；P1-B9 代码和自动化门禁已通过 | 下一批 `P1-B10`，最终阶段补桌面/移动真实验收 |
 | 2026-07-12 | P1-B10 | `NOT_STARTED -> PASS` | 本批提交 | 完成 HashRouter 稳定 URL、路由恢复、App 顶层编排、页面懒加载和 Files/CodeMirror 按需分包；Web 395 项及全项目测试、类型检查、构建全部通过；主入口降至 533.87KB / 155.20KB gzip | P1 门禁 `PASS`；下一批 `P2-B1`，最终阶段补路由和按需加载浏览器验收 |
+| 2026-07-12 | P2-B1 | `NOT_STARTED -> PASS` | 本批提交 | 完成附件协议、SQLite 元数据、受限二进制 API、MIME 嗅探、哈希去重、作用域访问、原子落盘、符号链接防护、7 天草稿清理和 Web 调用层；专项测试、全量测试、类型检查和构建通过 | 下一批 `P2-B2`；真实上传、删除和进程重启验收统一放到 P2-B8 |
 
 ## 14.1 单批次执行记录模板
 

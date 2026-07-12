@@ -296,6 +296,114 @@ describe('runtime api', () => {
     expect(readFileSync(join(tempDir, 'note.txt'), 'utf8')).toBe('updated');
   });
 
+  it('attachment routes enforce binary limits, content verification, scoped access, and persistence', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-attachment-api-'));
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wn6zkAAAAAASUVORK5CYII=',
+      'base64'
+    );
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      attachmentMaxSizeBytes: 128
+    });
+
+    const uploadUrl = `/attachments?${new URLSearchParams({
+      draftId: 'draft/1',
+      fileName: "../../设计's 图.png",
+      mime: 'image/png'
+    })}`;
+    const upload = await authUpload(uploadUrl, png);
+    expect(upload.statusCode).toBe(201);
+    expect(upload.json()).toMatchObject({
+      attachment: {
+        id: expect.any(String),
+        fileName: "设计's 图.png",
+        mime: 'image/png',
+        size: png.length,
+        draftId: 'draft/1',
+        status: 'draft'
+      },
+      deduplicated: false
+    });
+    const attachmentId = upload.json().attachment.id as string;
+
+    const duplicate = await authUpload(uploadUrl, png);
+    expect(duplicate.statusCode).toBe(200);
+    expect(duplicate.json()).toMatchObject({
+      attachment: { id: attachmentId },
+      deduplicated: true
+    });
+
+    const metadata = await authGet(
+      `/attachments/${attachmentId}?draftId=${encodeURIComponent('draft/1')}`
+    );
+    expect(metadata.statusCode).toBe(200);
+    expect(metadata.json()).toMatchObject({ attachment: { id: attachmentId } });
+
+    const content = await authGet(
+      `/attachments/${attachmentId}/content?draftId=${encodeURIComponent('draft/1')}`
+    );
+    expect(content.statusCode).toBe(200);
+    expect(content.headers['content-type']).toBe('image/png');
+    expect(content.headers['content-disposition']).toContain('attachment');
+    expect(content.headers['content-disposition']).toContain('%27');
+    expect(content.rawPayload).toEqual(png);
+
+    const unauthorized = await server.inject({
+      method: 'GET',
+      url: `/attachments/${attachmentId}/content?draftId=${encodeURIComponent('draft/1')}`
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const wrongDraft = await authGet(`/attachments/${attachmentId}?draftId=draft-2`);
+    expect(wrongDraft.statusCode).toBe(403);
+    expect(wrongDraft.json().error.code).toBe('ATTACHMENT_ACCESS_DENIED');
+
+    const spoofed = await authUpload(
+      `/attachments?${new URLSearchParams({
+        draftId: 'draft-2',
+        fileName: 'fake.png',
+        mime: 'image/png'
+      })}`,
+      Buffer.from('not a png')
+    );
+    expect(spoofed.statusCode).toBe(415);
+    expect(spoofed.json().error.code).toBe('ATTACHMENT_TYPE_MISMATCH');
+
+    const oversized = await authUpload(
+      `/attachments?${new URLSearchParams({
+        draftId: 'draft-2',
+        fileName: 'large.txt',
+        mime: 'text/plain'
+      })}`,
+      Buffer.alloc(129, 65)
+    );
+    expect(oversized.statusCode).toBe(413);
+    expect(oversized.json().error.code).toBe('ATTACHMENT_TOO_LARGE');
+
+    await server.close();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      attachmentMaxSizeBytes: 128
+    });
+    const persisted = await authGet(
+      `/attachments/${attachmentId}?draftId=${encodeURIComponent('draft/1')}`
+    );
+    expect(persisted.statusCode).toBe(200);
+
+    const deleted = await authDelete(
+      `/attachments/${attachmentId}?draftId=${encodeURIComponent('draft/1')}`
+    );
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toEqual({ deleted: true });
+    expect(
+      (await authGet(`/attachments/${attachmentId}?draftId=${encodeURIComponent('draft/1')}`))
+        .statusCode
+    ).toBe(404);
+  });
+
   it('creates, lists, gets, updates, deletes, and runs schedules', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const fake = createFakeCodex(tempDir, {
@@ -3263,6 +3371,18 @@ function authPost(url: string, payload: unknown) {
     url,
     headers: { authorization: 'Bearer secret' },
     payload: payload as TestInjectPayload
+  });
+}
+
+function authUpload(url: string, payload: Buffer) {
+  return server!.inject({
+    method: 'POST',
+    url,
+    headers: {
+      authorization: 'Bearer secret',
+      'content-type': 'application/octet-stream'
+    },
+    payload
   });
 }
 

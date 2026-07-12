@@ -154,6 +154,20 @@ export function migrate(db: Database.Database): void {
       FOREIGN KEY(schedule_id) REFERENCES schedules(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS attachments (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      storage_path TEXT NOT NULL UNIQUE,
+      draft_id TEXT,
+      thread_id TEXT,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS codex_session_sources (
       path TEXT PRIMARY KEY,
       file_id TEXT NOT NULL,
@@ -231,6 +245,11 @@ export function migrate(db: Database.Database): void {
       ON schedule_operations(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_schedule_operations_schedule_id
       ON schedule_operations(schedule_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_attachments_draft_hash
+      ON attachments(draft_id, sha256)
+      WHERE draft_id IS NOT NULL AND status = 'draft';
+    CREATE INDEX IF NOT EXISTS idx_attachments_status_created_at
+      ON attachments(status, created_at);
     CREATE INDEX IF NOT EXISTS idx_codex_sessions_updated_at
       ON codex_sessions(updated_at DESC, codex_thread_id DESC);
     CREATE INDEX IF NOT EXISTS idx_codex_sessions_kind_updated_at

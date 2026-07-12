@@ -85,6 +85,40 @@ describe('runtime storage', () => {
     expect(runs.getLastRunEventSeq('run_1')).toBe(3);
   });
 
+  it('creates attachment metadata and cleanup indexes', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+
+    expect(
+      db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'attachments'"
+      ).get()
+    ).toEqual({ name: 'attachments' });
+    expect(columnNames(db, 'attachments')).toEqual([
+      'id',
+      'file_name',
+      'mime',
+      'size',
+      'sha256',
+      'storage_path',
+      'draft_id',
+      'thread_id',
+      'status',
+      'created_at',
+      'updated_at'
+    ]);
+    expect(
+      db.prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'index'
+           AND name IN ('idx_attachments_draft_hash', 'idx_attachments_status_created_at')`
+      ).all()
+    ).toEqual(expect.arrayContaining([
+      { name: 'idx_attachments_draft_hash' },
+      { name: 'idx_attachments_status_created_at' }
+    ]));
+  });
+
   it('creates codex session index tables, full-text search state, and indexes', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

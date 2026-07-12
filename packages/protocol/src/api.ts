@@ -174,6 +174,48 @@ export type CleanupDeleteResponse = {
   warnings: string[];
 };
 
+export type AttachmentStatus = 'draft' | 'committed';
+
+export type AttachmentResponse = {
+  id: string;
+  fileName: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  storageKey: string;
+  draftId?: string;
+  threadId?: string;
+  status: AttachmentStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AttachmentUploadRequest = {
+  fileName: string;
+  mime: string;
+  draftId?: string;
+  threadId?: string;
+};
+
+export type AttachmentAccessRequest = {
+  id: string;
+  draftId?: string;
+  threadId?: string;
+};
+
+export type AttachmentUploadResponse = {
+  attachment: AttachmentResponse;
+  deduplicated: boolean;
+};
+
+export type AttachmentMetadataResponse = {
+  attachment: AttachmentResponse;
+};
+
+export type AttachmentDeleteResponse = {
+  deleted: true;
+};
+
 export type RunRequest = {
   prompt: string;
   threadId?: string;
