@@ -12,6 +12,7 @@ import type {
   CodexStatusResponse,
   RunDiagnosticsResponse,
   RunResponse,
+  ScheduleResponse,
   ThreadResponse
 } from '@clawee/protocol';
 import { App } from './App.js';
@@ -62,6 +63,52 @@ describe('App', () => {
     expect(screen.queryByText(prompt)).not.toBeInTheDocument();
     expect(screen.queryByText(/收到。我会先围绕/)).not.toBeInTheDocument();
     expect(screen.queryByText(/mock 文件变更/)).not.toBeInTheDocument();
+  });
+
+  it('opens the schedules workspace and shows a schedule run detail without loading a thread', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/schedules')) {
+        return jsonResponse({ schedules: [createScheduleResponse()] });
+      }
+      if (url.endsWith('/runs/run_schedule/diagnostics')) {
+        return jsonResponse({
+          ...createRunDiagnosticsResponse(createCodexStatusResponse()),
+          runId: 'run_schedule'
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '已安排' }));
+
+    expect(await screen.findByRole('heading', { name: '每日总结' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Clawee：已安排' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '查看上次运行' }));
+
+    expect(await screen.findByRole('heading', { name: '运行详情' })).toBeInTheDocument();
+    expect(screen.getByText('run_schedule')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeInTheDocument();
   });
 
   it('uses the selected thread run registry without loading runs for every thread', async () => {
@@ -3962,6 +4009,34 @@ function createRunResponse(overrides: Partial<RunResponse> = {}): RunResponse {
     id: 'run_1',
     threadId: 'thread_from_api',
     status: 'running',
+    ...overrides
+  };
+}
+
+function createScheduleResponse(overrides: Partial<ScheduleResponse> = {}): ScheduleResponse {
+  return {
+    id: 'schedule-1',
+    name: '每日总结',
+    cron: '0 18 * * *',
+    timezone: 'Asia/Shanghai',
+    enabled: true,
+    promptPreviewRedacted: '总结今天的项目进展',
+    profile: 'default',
+    cwd: '/Users/test/develop/content-design',
+    canonicalCwd: '/Users/test/develop/content-design',
+    model: null,
+    reasoning: null,
+    sandbox: 'workspace-write',
+    timeoutMs: null,
+    concurrencyPolicy: 'skip',
+    misfirePolicy: 'skip',
+    nextRunAt: '2026-07-13T10:00:00.000Z',
+    lastRunAt: '2026-07-12T10:00:00.000Z',
+    lastRunId: 'run_schedule',
+    lastStatus: 'succeeded',
+    pendingTrigger: false,
+    createdAt: '2026-07-07T00:00:00.000Z',
+    updatedAt: '2026-07-12T10:00:00.000Z',
     ...overrides
   };
 }

@@ -50,6 +50,7 @@ import {
 } from '../features/runs/run-event-replay.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
 import { SearchView } from '../features/search/SearchView.js';
+import { SchedulesView } from '../features/schedules/SchedulesView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
@@ -64,6 +65,7 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createMockProjectService } from '../services/project-service.js';
 import { createRunService } from '../services/run-service.js';
+import { createScheduleService } from '../services/schedule-service.js';
 import { createSearchService } from '../services/search-service.js';
 import { createSkillMarketService } from '../services/skill-market-service.js';
 import { createThreadService } from '../services/thread-service.js';
@@ -221,6 +223,10 @@ export function App(props: AppProps = {}) {
   );
   const searchService: SearchService | null = useMemo(
     () => runtimeClient === null ? null : createSearchService(runtimeClient),
+    [runtimeClient]
+  );
+  const scheduleService = useMemo(
+    () => runtimeClient === null ? null : createScheduleService(runtimeClient),
     [runtimeClient]
   );
   const diagnosticsService = useMemo(
@@ -1498,6 +1504,13 @@ export function App(props: AppProps = {}) {
     void loadRunDiagnostics(runId);
   }
 
+  function openScheduleRun(runId: string, threadId?: string) {
+    if (threadId !== undefined && conversations.some(conversation => conversation.id === threadId)) {
+      selectConversation(threadId);
+    }
+    openRunDetail(runId);
+  }
+
   function openTimelineFile(path: string) {
     dispatch({ type: 'select_workspace_file', path: toWorkspaceRelativePath(path, selectedThread) });
   }
@@ -1765,6 +1778,15 @@ export function App(props: AppProps = {}) {
       }
       onOpenResult={result => void openSearchResult(result)}
     />
+  ) : state.activeView === 'schedules' ? (
+    <SchedulesView
+      connected={connectionState.status === 'connected'}
+      service={scheduleService}
+      projects={projects}
+      currentProjectId={state.currentProjectId}
+      defaultTimezone={resolveDefaultTimezone()}
+      onOpenRun={openScheduleRun}
+    />
   ) : state.activeView === 'settings' ? (
     <ClaweeSettingsView
       runtimeStatus={runtimeStatus}
@@ -1896,6 +1918,14 @@ function readDynamicBackgroundPreference(): boolean {
     return window.localStorage.getItem(DYNAMIC_BACKGROUND_STORAGE_KEY) !== 'false';
   } catch {
     return true;
+  }
+}
+
+function resolveDefaultTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
   }
 }
 
