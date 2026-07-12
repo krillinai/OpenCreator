@@ -582,6 +582,220 @@
   color: #e1b98e;
 }
 
+.memory-toolbar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, auto) minmax(130px, auto) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.memory-toolbar label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.memory-toolbar input,
+.memory-toolbar select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.memory-search {
+  position: relative;
+}
+
+.memory-search svg {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.memory-search input {
+  padding-left: 32px;
+}
+
+.memory-block {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.memory-block__header {
+  min-width: 0;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.memory-block__header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.memory-block__header h2 {
+  padding: 0;
+  font-size: 15px;
+}
+
+.memory-block__header p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.memory-list,
+.summary-list {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-list > li,
+.summary-list > li {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.memory-list > li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.memory-item__main {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.memory-item__main > p,
+.summary-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.memory-item__main > code {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.memory-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.memory-item__meta span,
+.summary-list header span {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.memory-item__meta span[data-status="enabled"] {
+  border-color: rgba(93, 179, 125, 0.32);
+  color: #94d6aa;
+}
+
+.memory-item__meta span[data-status="sensitive"] {
+  border-color: rgba(239, 108, 108, 0.34);
+  color: #f0aaaa;
+}
+
+.memory-item__actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.memory-item__actions button,
+.summary-list header button {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.summary-list header {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-list header > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.summary-list strong,
+.summary-list small {
+  overflow-wrap: anywhere;
+}
+
+.summary-list small {
+  color: var(--muted);
+}
+
+.memory-sensitive-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memory-sensitive-warning span {
+  min-width: 0;
+  flex: 1;
+}
+
+.memory-sensitive-warning button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(225, 185, 142, 0.38);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+}
+
 @keyframes settings-spin {
   to {
     transform: rotate(360deg);
@@ -652,5 +866,17 @@
 
   .diagnostics-block dd + dt {
     margin-top: 7px;
+  }
+
+  .memory-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-list > li {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-item__actions {
+    justify-content: flex-end;
   }
 }

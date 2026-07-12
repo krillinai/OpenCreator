@@ -1,9 +1,12 @@
-import { Info, MapPin } from 'lucide-react';
+import { FileText, Info, MapPin } from 'lucide-react';
 
 export function ConversationHeader(props: {
   title: string;
   projectName: string;
   statusLabel?: string;
+  summaryStatus?: string;
+  summaryLoading?: boolean;
+  onCreateSummary?(): void;
   onOpenLocation(): void;
   onToggleDetail(): void;
 }) {
@@ -21,6 +24,22 @@ export function ConversationHeader(props: {
         <span className="conversation-project">{props.projectName}</span>
       </div>
       <div className="conversation-actions">
+        {props.onCreateSummary ? (
+          <button
+            className="toolbar-button"
+            type="button"
+            disabled={props.summaryLoading}
+            onClick={props.onCreateSummary}
+          >
+            <FileText aria-hidden="true" size={16} />
+            <span>{props.summaryLoading ? '生成中' : '生成摘要'}</span>
+          </button>
+        ) : null}
+        {props.summaryStatus ? (
+          <span className="conversation-summary-status" role="status" aria-label="摘要状态">
+            {props.summaryStatus}
+          </span>
+        ) : null}
         <button className="toolbar-button" type="button" onClick={props.onOpenLocation}>
           <MapPin aria-hidden="true" size={16} />
           <span>文件</span>

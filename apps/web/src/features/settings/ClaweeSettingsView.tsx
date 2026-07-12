@@ -8,6 +8,11 @@ import { McpSettingsView, type McpCapabilities, type McpSettingsService } from '
 import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
 import { CleanupSettingsView, type CleanupSettingsService } from './CleanupSettingsView.js';
 import { DiagnosticsSettingsView } from './DiagnosticsSettingsView.js';
+import {
+  MemorySettingsView,
+  type MemoryScopeOption,
+  type MemorySettingsService
+} from './MemorySettingsView.js';
 import './settings-management.css';
 
 export type RuntimeStatus = {
@@ -31,15 +36,19 @@ export type ClaweeSettingsViewProps = {
   profileData?: CodexProfileListResponse;
   onProfileDataChange?(data: CodexProfileListResponse): void;
   cleanupService?: CleanupSettingsService | null;
+  memoryService?: MemorySettingsService | null;
+  memoryProjects?: MemoryScopeOption[];
+  memoryThreads?: MemoryScopeOption[];
   codexStatus?: CodexStatusResponse;
   onBack(): void;
 };
 
-type SettingsTab = 'general' | 'plugins' | 'mcp' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
+type SettingsTab = 'general' | 'plugins' | 'memory' | 'mcp' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
 
 const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: 'general', label: '常规' },
   { id: 'plugins', label: '插件' },
+  { id: 'memory', label: '记忆' },
   { id: 'mcp', label: 'MCP 服务' },
   { id: 'profiles', label: 'Profiles' },
   { id: 'cleanup', label: '清理' },
@@ -82,6 +91,14 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
           />
         ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}
+        {activeTab === 'memory' ? (
+          <MemorySettingsView
+            connected={props.runtimeStatus.connected}
+            service={props.memoryService ?? null}
+            projects={props.memoryProjects ?? []}
+            threads={props.memoryThreads ?? []}
+          />
+        ) : null}
         {activeTab === 'mcp' ? (
           <McpSettingsView
             connected={props.runtimeStatus.connected}

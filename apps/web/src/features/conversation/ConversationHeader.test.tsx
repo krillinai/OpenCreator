@@ -42,4 +42,24 @@ describe('ConversationHeader', () => {
     expect(onOpenLocation).toHaveBeenCalledTimes(1);
     expect(onToggleDetail).toHaveBeenCalledTimes(1);
   });
+
+  it('creates a visible conversation summary when a thread is selected', async () => {
+    const user = userEvent.setup();
+    const onCreateSummary = vi.fn();
+
+    render(
+      <ConversationHeader
+        title="整理本周项目进展"
+        projectName="content-design"
+        summaryStatus="已生成摘要 v2"
+        onCreateSummary={onCreateSummary}
+        onOpenLocation={vi.fn()}
+        onToggleDetail={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '生成摘要' }));
+    expect(onCreateSummary).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status', { name: '摘要状态' })).toHaveTextContent('已生成摘要 v2');
+  });
 });

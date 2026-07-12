@@ -1730,7 +1730,7 @@ refactor(web): split app routes and feature controllers
 - [x] `P2-B4` HTML 安全预览
 - [x] `P2-B5` 真实审批闭环
 - [x] `P2-B6` 通知、任务中心与 daemon 重启恢复
-- [ ] `P2-B7` 用户显式长期记忆与上下文摘要
+- [x] `P2-B7` 用户显式长期记忆与上下文摘要
 - [ ] `P2-B8` 发布、文档和持续质量
 
 ## P2-B1：附件存储与安全 API
@@ -2258,7 +2258,7 @@ feat: add task center and restart recovery
 
 ## P2-B7：用户显式长期记忆与上下文摘要
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 提供用户可见、可编辑、可删除、可选择启用的长期记忆，并对长会话生成可控摘要。
 
@@ -2328,7 +2328,36 @@ feat: add user-managed memory and summaries
 
 **回滚边界：** 回滚记忆注入时保留用户数据；不得静默丢弃已保存记忆。
 
-**执行结果：** 待填写。
+**执行结果：** `PASS`。
+
+- 协议和持久化：
+  - 新增全局、项目、线程三种记忆范围，以及用户保存和 Agent 建议两种来源。
+  - SQLite 新增 `memories`、`conversation_summaries`、`run_context_items`，保存启用状态、敏感确认、摘要版本和每次 Run 的上下文内容快照。
+  - 单条记忆上限 2000 字符；每次 Run 最多 12 条记忆、6000 字符，最新摘要最多 3000 字符。
+- daemon：
+  - 完成记忆创建、搜索、筛选、编辑、启停、删除和全部停用 API。
+  - 敏感内容由 daemon 检测，未明确确认时返回 `MEMORY_SENSITIVE_CONFIRMATION_REQUIRED`，拒绝不落库。
+  - 按线程、项目 `canonicalCwd` 和全局范围选择启用记忆；原始 Prompt 继续保留在 Run 元数据中，只通过独立 `executionPrompt` 注入 Codex。
+  - Run `meta.json` 只记录上下文 source ID；`run_context_items` 保存不可变正文快照，后续删除记忆仍可审计历史 Run。
+  - 摘要采用本地确定性压缩，覆盖最近 24 条可读历史，记录首尾 item ID、条目数和递增版本；空历史返回 `SUMMARY_SOURCE_EMPTY`，不会创建记录或破坏 Timeline。
+- Web：
+  - 设置页新增“记忆”，支持搜索、范围和状态筛选、新建、编辑、启停、删除、全部停用以及版本化摘要查看和删除。
+  - 用户 Prompt 命中“记住、以后、偏好、始终、每次、默认”时只显示可编辑建议，默认线程范围；忽略不调用 API，保存和敏感二次确认均由用户显式触发。
+  - 会话头部新增“生成摘要”，显示生成中、成功和失败状态；失败不修改历史。
+  - Run Detail 新增“本次使用的上下文”，展示记忆范围、正文快照、摘要版本和空状态。
+  - App 集成测试确认 `/runs` 仍只发送原始 Prompt，记忆注入完全由 daemon 完成。
+- 自动化验证：
+  - P2-B7 daemon 专项 -> PASS，记忆、摘要和上下文注入共 9 项通过。
+  - P2-B7 Web 专项 -> PASS，service、设置页、建议、摘要、Run Context 和 App 集成共 19 项通过。
+  - `pnpm test` -> PASS；daemon 540 项通过、13 项真实 Codex smoke 按配置跳过，Web 442 项通过，Skill Market 6 项通过。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS；主入口 `563.80KB / 163.59KB gzip`，FilesPage `568.77KB / 200.10KB gzip`，保留既有大分块警告供 P2-B8 性能报告记录。
+  - `git diff --check` -> PASS。
+- 延后到 P2-B8 最终统一验收：
+  - 项目记忆只在匹配 `canonicalCwd` 的真实新会话生效，其他项目不生效。
+  - 真实 Codex Run 的注入内容和 Run Detail 快照一致。
+  - 长会话生成摘要、刷新后版本和覆盖范围仍可见。
+  - 1440x900 与 390x844 的记忆设置、建议卡片、摘要状态和 Run Detail 布局。
 
 ## P2-B8：发布、文档和持续质量
 
@@ -2458,7 +2487,7 @@ docs: finalize clawee agent release readiness
 | 多模态 | 上传图片并完成真实 Run | 待执行 | 待执行 | `NOT_STARTED` |
 | 审批 | 批准、拒绝、刷新恢复、重启安全 | 待执行 | 待执行 | `NOT_STARTED` |
 | 通知/任务中心 | 后台完成通知和任务跳转 | 待执行 | 待执行 | `NOT_STARTED` |
-| 记忆 | 显式保存、范围、编辑、停用、删除 | 待执行 | 待执行 | `NOT_STARTED` |
+| 记忆 | 显式保存、范围、编辑、停用、删除 | 通过 | 最终统一验收 | `PASS` |
 | 响应式 | 1440x900 与 390x844 主流程 | 待执行 | 待执行 | `NOT_STARTED` |
 | 性能 | 包体积、DOM、API、daemon 响应 | 待执行 | 待执行 | `NOT_STARTED` |
 
@@ -2540,6 +2569,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P2-B4 | `NOT_STARTED -> PASS` | 本批提交 | 完成无权限 sandbox、严格 CSP、危险 DOM 清理、受控相对资源 Blob 重写与上限、外链显式打开、HTML 默认预览和全高布局；daemon 515 项、Web 413 项、全仓测试、类型检查和构建通过 | 下一批 `P2-B5`；真实恶意 HTML、相对资源和桌面/移动布局统一放到 P2-B8 |
 | 2026-07-12 | P2-B5 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Codex app-server 双向审批、SQLite 状态机、幂等 API、脱敏 Timeline 卡片、刷新回放和异常退出收敛；daemon 527 项、Web 419 项、全仓类型检查和构建通过 | 下一批 `P2-B6`；真实 Codex 审批和桌面/移动验收统一放到 P2-B8 |
 | 2026-07-12 | P2-B6 | `NOT_STARTED -> PASS` | 本批提交 | 完成分页任务 API、全局任务中心、待审批处理、任务跳转、显式通知授权、前台抑制、未读持久化和 daemon 重启收敛验证；daemon 532 项、Web 431 项、全仓类型检查和构建通过 | 下一批 `P2-B7`；真实通知、重启和桌面/移动验收统一放到 P2-B8 |
+| 2026-07-12 | P2-B7 | `NOT_STARTED -> PASS` | 本批提交 | 完成显式记忆 CRUD、敏感二次确认、范围注入、Run 快照、版本化摘要、设置页、建议卡片和 Run Detail；daemon 540 项、Web 442 项、全仓类型检查和构建通过 | 下一批 `P2-B8`；真实记忆生效、摘要刷新和桌面/移动验收统一执行 |
 
 ## 14.1 单批次执行记录模板
 

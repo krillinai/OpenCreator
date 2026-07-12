@@ -325,6 +325,91 @@ export type TaskListResponse = {
   nextCursor?: string;
 };
 
+export type MemoryScope = 'global' | 'project' | 'thread';
+export type MemorySource = 'user' | 'agent_suggestion';
+
+export type MemoryEntry = {
+  id: string;
+  content: string;
+  scope: MemoryScope;
+  scopeKey?: string;
+  source: MemorySource;
+  enabled: boolean;
+  sensitive: boolean;
+  userConfirmedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MemoryListQuery = {
+  query?: string;
+  scope?: MemoryScope | 'all';
+  scopeKey?: string;
+  enabled?: boolean | 'all';
+  limit?: number;
+};
+
+export type MemoryListResponse = {
+  memories: MemoryEntry[];
+};
+
+export type CreateMemoryRequest = {
+  content: string;
+  scope: MemoryScope;
+  scopeKey?: string;
+  source: MemorySource;
+  acknowledgeSensitive?: boolean;
+};
+
+export type UpdateMemoryRequest = {
+  content?: string;
+  enabled?: boolean;
+  acknowledgeSensitive?: boolean;
+};
+
+export type MemoryResponse = {
+  memory: MemoryEntry;
+};
+
+export type MemoryDisableAllResponse = {
+  disabledCount: number;
+};
+
+export type ConversationSummary = {
+  id: string;
+  threadId: string;
+  content: string;
+  coveredFromCursor: string;
+  coveredToCursor: string;
+  itemCount: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ConversationSummaryResponse = {
+  summary: ConversationSummary;
+};
+
+export type ConversationSummaryListResponse = {
+  summaries: ConversationSummary[];
+};
+
+export type RunContextItem = {
+  kind: 'memory' | 'summary';
+  sourceId: string;
+  content: string;
+  order: number;
+  scope?: MemoryScope;
+  scopeKey?: string;
+  summaryVersion?: number;
+};
+
+export type RunContextResponse = {
+  runId: string;
+  items: RunContextItem[];
+};
+
 export type CreateThreadRequest = {
   title?: string;
   cwd?: string;

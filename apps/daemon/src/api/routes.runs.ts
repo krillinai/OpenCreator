@@ -11,6 +11,7 @@ import {
 } from '../codex/capabilities.js';
 import type { RunManager } from '../runs/manager.js';
 import type { RuntimeThread, ThreadManager } from '../threads/types.js';
+import type { MemoryService } from '../memory/service.js';
 import { apiError } from './errors.js';
 import { formatSseEvent } from './sse.js';
 
@@ -23,6 +24,7 @@ export async function registerRunRoutes(
     profileValidator?: ProfileValidator;
     attachmentService?: AttachmentService;
     capabilities?: RuntimeCapabilityMatrix;
+    memoryService?: MemoryService;
   } = {}
 ): Promise<void> {
   const sseHeartbeatMs = options.sseHeartbeatMs ?? 15_000;
@@ -60,9 +62,16 @@ export async function registerRunRoutes(
 
       const attachments = resolveRunAttachments(body, thread, options);
       if (!attachments.ok) return sendRunAttachmentError(reply, attachments.error);
+      const context = options.memoryService?.prepareRunContext({
+        prompt: body.prompt,
+        threadId: thread.id,
+        projectKey: thread.canonicalCwd
+      });
 
       const run = manager.startRun({
         prompt: body.prompt,
+        executionPrompt: context?.executionPrompt,
+        contextItems: context?.items,
         cwd: thread.cwd,
         profile: thread.profile,
         sandbox: thread.sandbox,

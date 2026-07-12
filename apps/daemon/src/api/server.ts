@@ -18,6 +18,7 @@ import {
 } from '../codex/capabilities.js';
 import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
+import { createMemoryService } from '../memory/service.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { readCodexSessionHistory } from '../codex/sessions/history.js';
 import {
@@ -50,6 +51,7 @@ import { registerCodexRoutes } from './routes.codex.js';
 import { registerCleanupRoutes } from './routes.cleanup.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
+import { registerMemoryRoutes } from './routes.memory.js';
 import { registerProfileRoutes } from './routes.profiles.js';
 import { registerRunRoutes } from './routes.runs.js';
 import { registerSearchRoutes } from './routes.search.js';
@@ -76,6 +78,7 @@ export type BuildServerInput = {
   attachmentMaxSizeBytes?: number;
   attachmentDraftTtlMs?: number;
   approvalManager?: ApprovalManager;
+  memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
 };
 
 const SEARCH_SESSION_SYNC_INTERVAL_MS = 30_000;
@@ -135,6 +138,7 @@ export async function buildServer(input: BuildServerInput) {
   });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const approvalManager = input.approvalManager ?? createApprovalManager({ db });
+  const memoryService = createMemoryService({ db });
   const runManager =
     input.runManager ??
     createRunManager({
@@ -146,7 +150,8 @@ export async function buildServer(input: BuildServerInput) {
       resumeCapabilityVerified,
       profileValidator: profileManager,
       runtimeTransport: capabilities.appServerApprovals === true ? 'app-server' : 'exec',
-      approvalManager
+      approvalManager,
+      recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items)
     });
   const taskService = createTaskService({
     db,
@@ -275,7 +280,8 @@ export async function buildServer(input: BuildServerInput) {
     threadManager,
     profileValidator: profileManager,
     attachmentService,
-    capabilities
+    capabilities,
+    memoryService
   });
   await registerScheduleRoutes(server, scheduler);
   await registerCleanupRoutes(server, cleanupService);
@@ -284,6 +290,33 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerApprovalRoutes(server, approvalManager);
   await registerTaskRoutes(server, taskService);
+  await registerMemoryRoutes(server, memoryService, {
+    readThreadHistory(threadId) {
+      if (input.memoryHistoryReader !== undefined) {
+        return input.memoryHistoryReader(threadId);
+      }
+      const thread = threadManager.getThread(threadId);
+      if (thread === undefined) return undefined;
+      if (thread.codexThreadId === undefined || thread.codexThreadId === null) {
+        return { items: [] };
+      }
+      try {
+        if (!codexSessionIndexer.isHistoryCurrent(thread.codexThreadId)) {
+          syncCodexSessions();
+        }
+        return {
+          items: codexSessionIndexer.readHistory(thread.codexThreadId)
+        };
+      } catch {
+        return {
+          items: readCodexSessionHistory({
+            codexHome,
+            codexThreadId: thread.codexThreadId
+          })
+        };
+      }
+    }
+  });
   await registerDiagnosticsRoutes(server, {
     dataDir,
     runs: runRepository,

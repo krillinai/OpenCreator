@@ -91,6 +91,51 @@ async function waitForRunStatus(
 }
 
 describe('run manager', () => {
+  it('uses the context-enriched execution prompt and records only context references in metadata', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-context-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex_thread_1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const recorded: Array<{ runId: string; sourceIds: string[] }> = [];
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      recordRunContext(runId, items) {
+        recorded.push({ runId, sourceIds: items.map(item => item.sourceId) });
+      }
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'original user prompt',
+      executionPrompt: 'managed context\noriginal user prompt',
+      contextItems: [{
+        kind: 'memory',
+        sourceId: 'mem_1',
+        content: 'managed context',
+        order: 0,
+        scope: 'global'
+      }],
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(fake.readPrompt()).toBe('managed context\noriginal user prompt');
+    expect(recorded).toEqual([{ runId: run.id, sourceIds: ['mem_1'] }]);
+    const meta = JSON.parse(
+      readFileSync(join(tempDir, 'runs', run.id, 'meta.json'), 'utf8')
+    ) as Record<string, unknown>;
+    expect(meta.contextItemIds).toEqual(['mem_1']);
+    expect(JSON.stringify(meta)).not.toContain('managed context');
+  });
+
   it('uses long-running friendly defaults for interactive codex runs', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
     const fake = createFakeCodex(tempDir, {

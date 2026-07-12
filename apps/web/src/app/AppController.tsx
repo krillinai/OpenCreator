@@ -6,8 +6,10 @@ import type {
   CodexSkillListResponse,
   CodexSkillMarketInstallRecordResponse,
   ConversationSearchResult,
+  CreateMemoryRequest,
   CreateThreadRequest,
   RunDiagnosticsResponse,
+  RunContextResponse,
   RunResponse,
   RunSubmissionMode,
   SandboxMode,
@@ -25,6 +27,7 @@ import { eventToTimelineItem, type TimelineItem } from '../components/timeline/t
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
 import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
+import { MemorySuggestion } from '../features/conversation/MemorySuggestion.js';
 import { useThreadHistory } from '../features/conversation/use-thread-history.js';
 import { DetailPanel } from '../features/details/DetailPanel.js';
 import { getSkillMarketDisplayTitle } from '../features/plugins/skill-market-model.js';
@@ -81,6 +84,7 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createMockProjectService } from '../services/project-service.js';
 import { createMcpService } from '../services/mcp-service.js';
+import { createMemoryService } from '../services/memory-service.js';
 import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
@@ -181,6 +185,13 @@ export function AppController(props: AppControllerProps) {
   });
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
+  const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
+  const [pendingMemorySuggestion, setPendingMemorySuggestion] = useState<{ id: number; content: string }>();
+  const [summaryOperation, setSummaryOperation] = useState<{
+    threadId: string;
+    phase: 'loading' | 'success' | 'error';
+    message?: string;
+  }>();
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
@@ -300,6 +311,10 @@ export function AppController(props: AppControllerProps) {
   );
   const cleanupService = useMemo(
     () => runtimeClient === null ? null : createCleanupService(runtimeClient),
+    [runtimeClient]
+  );
+  const memoryService = useMemo(
+    () => runtimeClient === null ? null : createMemoryService(runtimeClient),
     [runtimeClient]
   );
   const capabilityService = useMemo(
@@ -930,10 +945,14 @@ export function AppController(props: AppControllerProps) {
   const runDiagnostics = state.selectedRunId === undefined ? undefined : runDiagnosticsById[state.selectedRunId];
   const selectedRunAttachments =
     state.selectedRunId === undefined ? undefined : runAttachmentsById[state.selectedRunId];
+  const selectedRunContext =
+    state.selectedRunId === undefined ? undefined : runContextById[state.selectedRunId];
   const currentProject = findProjectById(projects, state.currentProjectId) ?? projects[0];
   const currentProjectName = currentProject?.name ?? 'content-design';
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
   const selectedThread = runtimeThreads.find(thread => thread.id === state.selectedThreadId);
+  const selectedSummaryOperation =
+    summaryOperation?.threadId === state.selectedThreadId ? summaryOperation : undefined;
   const selectedActiveRun = getThreadActiveRun(runRegistry, state.selectedThreadId);
   const selectedPendingRunStart = findPendingRunStart(
     pendingRunStartsById,
@@ -954,6 +973,19 @@ export function AppController(props: AppControllerProps) {
     composerAttachmentScope
   );
   const imageInputSupported = readImageInputSupported(connectionState, selectedThread);
+  const memoryProjectOptions = useMemo(
+    () => buildMemoryProjectOptions(visibleRuntimeThreads, projects),
+    [projects, visibleRuntimeThreads]
+  );
+  const memoryThreadOptions = useMemo(
+    () => visibleRuntimeThreads.map(thread => ({
+      key: thread.id,
+      label: thread.title?.trim() || thread.id
+    })),
+    [visibleRuntimeThreads]
+  );
+  const currentMemoryProjectKey = selectedThread?.canonicalCwd
+    ?? visibleRuntimeThreads.find(thread => projectIdForThread(thread, projects) === state.currentProjectId)?.canonicalCwd;
 
   function handleEditorContentChange(content: string) {
     const path = selectedFilePathRef.current;
@@ -1165,7 +1197,14 @@ export function AppController(props: AppControllerProps) {
       && threadService !== null
       && connectionConfigRef.current !== null
     ) {
-      return submitRuntimePrompt(prompt, config, attachments, submissionMode);
+      const submitted = await submitRuntimePrompt(prompt, config, attachments, submissionMode);
+      if (submitted && shouldSuggestMemory(prompt)) {
+        setPendingMemorySuggestion({
+          id: Date.now(),
+          content: prompt.trim().slice(0, 2000)
+        });
+      }
+      return submitted;
     }
 
     setTimelineItems(previous => [
@@ -1962,9 +2001,25 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
+  async function loadRunContext(runId: string) {
+    if (memoryService === null) return;
+    try {
+      const context = await memoryService.getRunContext(runId);
+      if (!mountedRef.current) return;
+      setRunContextById(previous => ({ ...previous, [runId]: context }));
+    } catch {
+      if (!mountedRef.current) return;
+      setRunContextById(previous => ({
+        ...previous,
+        [runId]: { runId, items: [] }
+      }));
+    }
+  }
+
   function openRunDetail(runId: string) {
     dispatch({ type: 'select_run_detail', runId });
     void loadRunDiagnostics(runId);
+    void loadRunContext(runId);
     void runService?.getRun(runId).then(run => {
       if (!mountedRef.current) return;
       setRunAttachmentsById(previous => ({
@@ -1972,6 +2027,33 @@ export function AppController(props: AppControllerProps) {
         [runId]: run.attachments ?? []
       }));
     }).catch(() => undefined);
+  }
+
+  async function saveMemorySuggestion(input: CreateMemoryRequest) {
+    if (memoryService === null) throw new Error('记忆服务暂不可用');
+    await memoryService.createMemory(input);
+  }
+
+  async function createConversationSummary() {
+    const threadId = state.selectedThreadId;
+    if (threadId === undefined || memoryService === null) return;
+    setSummaryOperation({ threadId, phase: 'loading' });
+    try {
+      const response = await memoryService.createSummary(threadId);
+      if (!mountedRef.current) return;
+      setSummaryOperation({
+        threadId,
+        phase: 'success',
+        message: `已生成摘要 v${response.summary.version}`
+      });
+    } catch (reason) {
+      if (!mountedRef.current) return;
+      setSummaryOperation({
+        threadId,
+        phase: 'error',
+        message: getRuntimeErrorMessage(reason, '生成摘要失败')
+      });
+    }
   }
 
   function openScheduleRun(runId: string, threadId?: string) {
@@ -2209,6 +2291,17 @@ export function AppController(props: AppControllerProps) {
         title={selectedConversation?.title ?? '新对话'}
         projectName={currentProjectName}
         statusLabel={getConnectionStatusLabel(connectionState)}
+        summaryLoading={
+          selectedSummaryOperation?.phase === 'loading'
+        }
+        summaryStatus={selectedSummaryOperation?.message}
+        onCreateSummary={
+          connectionState.status === 'connected'
+          && state.selectedThreadId !== undefined
+          && memoryService !== null
+            ? () => void createConversationSummary()
+            : undefined
+        }
         onOpenLocation={() => openPrimaryView('files')}
         onToggleDetail={() => {
           if (state.rightPanelMode === 'closed') return;
@@ -2251,6 +2344,16 @@ export function AppController(props: AppControllerProps) {
         ) : null}
       </div>
       <div className="composer-wrap">
+        {pendingMemorySuggestion !== undefined && memoryService !== null ? (
+          <MemorySuggestion
+            key={pendingMemorySuggestion.id}
+            content={pendingMemorySuggestion.content}
+            projectKey={currentMemoryProjectKey}
+            threadKey={state.selectedThreadId}
+            onSave={saveMemorySuggestion}
+            onDismiss={() => setPendingMemorySuggestion(undefined)}
+          />
+        ) : null}
         <Composer
           key={composerAttachmentScope}
           projectName={currentProjectName}
@@ -2392,6 +2495,9 @@ export function AppController(props: AppControllerProps) {
       profileData={codexProfiles}
       onProfileDataChange={setCodexProfiles}
       cleanupService={cleanupService}
+      memoryService={memoryService}
+      memoryProjects={memoryProjectOptions}
+      memoryThreads={memoryThreadOptions}
       codexStatus={connectionState.status === 'connected' ? connectionState.codexStatus : undefined}
       onBack={() => {
         dispatch({ type: 'back_to_app' });
@@ -2470,6 +2576,7 @@ export function AppController(props: AppControllerProps) {
               runId={state.selectedRunId}
               diagnostics={runDiagnostics}
               attachments={selectedRunAttachments}
+              context={selectedRunContext}
             />
           }
           onClose={() => dispatch({ type: 'close_detail' })}
@@ -2739,6 +2846,23 @@ function mapThreadToConversation(thread: ThreadResponse, projects: ClaweeProject
 function projectIdForThread(thread: ThreadResponse, projects: ClaweeProject[]): string {
   const matched = projects.find(project => pathsLookRelated(project.cwd, thread.cwd));
   return matched?.id ?? projectIdFromCwd(thread.cwd);
+}
+
+function buildMemoryProjectOptions(
+  threads: ThreadResponse[],
+  projects: ClaweeProject[]
+): Array<{ key: string; label: string }> {
+  const options = new Map<string, string>();
+  for (const thread of threads) {
+    const projectId = projectIdForThread(thread, projects);
+    const label = findProjectById(projects, projectId)?.name ?? formatProjectName(thread.cwd);
+    options.set(thread.canonicalCwd, label);
+  }
+  return Array.from(options, ([key, label]) => ({ key, label }));
+}
+
+function shouldSuggestMemory(prompt: string): boolean {
+  return /(记住|以后|偏好|始终|每次|默认)/.test(prompt);
 }
 
 function pathsLookRelated(left: string, right: string): boolean {

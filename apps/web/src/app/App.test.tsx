@@ -4143,6 +4143,169 @@ describe('App', () => {
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(window.localStorage.getItem('clawee.preferences.dynamicBackground')).toBe('false');
   });
+
+  it('connects memory management, summary creation, suggestions, and run context end to end', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const thread = createThreadResponse({ id: 'thread_memory', title: '记忆功能会话' });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [thread] });
+      if (url.endsWith('/threads/thread_memory/history?limit=50')) {
+        return jsonResponse({
+          threadId: thread.id,
+          codexThreadId: null,
+          items: [{
+            id: 'item_1',
+            type: 'user_message',
+            text: '继续开发',
+            createdAt: '2026-07-12T00:00:00.000Z'
+          }]
+        });
+      }
+      if (url.endsWith('/threads/thread_memory/runs?limit=50')) return jsonResponse({ runs: [] });
+      if (url.includes('/memories?')) {
+        return jsonResponse({
+          memories: [{
+            id: 'mem_1',
+            content: '提交前运行全部测试',
+            scope: 'project',
+            scopeKey: thread.canonicalCwd,
+            source: 'user',
+            enabled: true,
+            sensitive: false,
+            userConfirmedAt: '2026-07-12T00:00:00.000Z',
+            createdAt: '2026-07-12T00:00:00.000Z',
+            updatedAt: '2026-07-12T00:00:00.000Z'
+          }]
+        });
+      }
+      if (url.endsWith('/summaries?limit=100')) {
+        return jsonResponse({
+          summaries: [{
+            id: 'summary_1',
+            threadId: thread.id,
+            content: '用户：继续开发',
+            coveredFromCursor: 'item_1',
+            coveredToCursor: 'item_1',
+            itemCount: 1,
+            version: 1,
+            createdAt: '2026-07-12T00:00:00.000Z',
+            updatedAt: '2026-07-12T00:00:00.000Z'
+          }]
+        });
+      }
+      if (url.endsWith('/threads/thread_memory/summaries') && init?.method === 'POST') {
+        return jsonResponse({
+          summary: {
+            id: 'summary_2',
+            threadId: thread.id,
+            content: '用户：继续开发',
+            coveredFromCursor: 'item_1',
+            coveredToCursor: 'item_1',
+            itemCount: 1,
+            version: 2,
+            createdAt: '2026-07-12T00:01:00.000Z',
+            updatedAt: '2026-07-12T00:01:00.000Z'
+          }
+        }, { status: 201 });
+      }
+      if (url.endsWith('/runs') && init?.method === 'POST') {
+        return jsonResponse(createRunResponse({
+          id: 'run_memory',
+          threadId: thread.id,
+          status: 'running'
+        }), { status: 202 });
+      }
+      if (url.endsWith('/runs/run_memory/diagnostics')) {
+        return jsonResponse({
+          ...createRunDiagnosticsResponse(createCodexStatusResponse()),
+          runId: 'run_memory'
+        });
+      }
+      if (url.endsWith('/runs/run_memory/context')) {
+        return jsonResponse({
+          runId: 'run_memory',
+          items: [{
+            kind: 'memory',
+            sourceId: 'mem_1',
+            content: '提交前运行全部测试',
+            order: 0,
+            scope: 'project',
+            scopeKey: thread.canonicalCwd
+          }, {
+            kind: 'summary',
+            sourceId: 'summary_1',
+            content: '用户：继续开发',
+            order: 1,
+            summaryVersion: 1
+          }]
+        });
+      }
+      if (url.endsWith('/runs/run_memory')) {
+        return jsonResponse(createRunResponse({
+          id: 'run_memory',
+          threadId: thread.id,
+          status: 'succeeded'
+        }));
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      input.onEvent(createRuntimeEvent(
+        'done',
+        { type: 'done', status: 'succeeded', terminationReason: 'completed' },
+        1
+      ));
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: /记忆功能会话/ }));
+    await user.click(await screen.findByRole('button', { name: '生成摘要' }));
+    expect(await screen.findByRole('status', { name: '摘要状态' })).toHaveTextContent('已生成摘要 v2');
+
+    await user.click(screen.getByRole('button', { name: '设置 账户' }));
+    await user.click(await screen.findByRole('button', { name: '记忆' }));
+    expect(await screen.findByText('提交前运行全部测试')).toBeInTheDocument();
+    expect(screen.getByText('版本 1')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '返回应用' }));
+    const prompt = '以后默认运行全量测试';
+    await user.type(await screen.findByRole('textbox', { name: '输入任务' }), prompt);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    expect(await screen.findByRole('region', { name: '记忆建议' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '忽略记忆建议' }));
+    expect(fetchCalls.some(call => (
+      call.url.endsWith('/memories') && call.init?.method === 'POST'
+    ))).toBe(false);
+
+    const runDetailButton = await screen.findByRole('button', { name: '查看运行详情 run_memory' });
+    await user.click(runDetailButton);
+    expect(await screen.findByText('本次使用的上下文')).toBeInTheDocument();
+    expect(screen.getByText('会话摘要 v1')).toBeInTheDocument();
+    expect(screen.getAllByText('提交前运行全部测试').length).toBeGreaterThan(0);
+    expect(JSON.parse(String(findPostCall(fetchCalls, '/runs')?.init?.body))).toEqual({
+      threadId: thread.id,
+      prompt,
+      resumeMode: 'auto'
+    });
+  });
 });
 
 function createFileService(path = 'docs/atoms.md', content = '# Atoms') {

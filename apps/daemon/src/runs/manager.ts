@@ -58,6 +58,7 @@ export type RunManagerOptions = {
   };
   runtimeTransport?: 'exec' | 'app-server';
   approvalManager?: ApprovalManager;
+  recordRunContext?(runId: string, items: NonNullable<CreateRunInput['contextItems']>): void;
   logWriterFactory?(runDir: string): OrderedLogWriter;
 };
 
@@ -567,7 +568,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       threadId: runInput.threadId,
       resumeMode: resolvedResumeMode,
       submissionMode: runInput.submissionMode ?? 'enqueue',
-      attachmentIds: runInput.attachmentIds ?? []
+      attachmentIds: runInput.attachmentIds ?? [],
+      contextItemIds: runInput.contextItems?.map(item => item.sourceId) ?? []
     });
     if (resolvedResumeMode === 'new_thread' && codexThreadId !== undefined) {
       void publishDiagnostic(
@@ -589,7 +591,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         sandbox: runInput.sandbox,
         model: runInput.model,
         reasoning: runInput.reasoning,
-        prompt: runInput.prompt,
+        prompt: runInput.executionPrompt ?? runInput.prompt,
         imagePaths: runInput.imagePaths,
         codexThreadId: resolvedResumeMode === 'resume_thread' ? resolvedCodexThreadId : undefined,
         timeoutMs: runTimeouts.timeoutMs,
@@ -756,7 +758,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       codexHome: options.codexHome,
       cwd: runInput.cwd,
       args: codexArgs,
-      prompt: runInput.prompt,
+      prompt: runInput.executionPrompt ?? runInput.prompt,
       timeoutMs: runTimeouts.timeoutMs,
       spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
       inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
@@ -1097,6 +1099,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       submissionMode: input.submissionMode ?? 'enqueue',
       normalizerVersion
     });
+    if ((input.contextItems?.length ?? 0) > 0) {
+      options.recordRunContext?.(id, input.contextItems!);
+    }
 
     writeJson(join(runDir, 'meta.json'), {
       id,
@@ -1107,7 +1112,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       threadId: input.threadId,
       resumeMode: resolvedResumeMode,
       submissionMode: input.submissionMode ?? 'enqueue',
-      attachmentIds: input.attachmentIds ?? []
+      attachmentIds: input.attachmentIds ?? [],
+      contextItemIds: input.contextItems?.map(item => item.sourceId) ?? []
     });
 
     return id;

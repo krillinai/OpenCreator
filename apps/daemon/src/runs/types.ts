@@ -1,12 +1,15 @@
 import type {
   PublicRunStatus,
   ReasoningEffort,
+  RunContextItem,
   RunSubmissionMode,
   SandboxMode
 } from '@clawee/protocol';
 
 export type CreateRunInput = {
   prompt: string;
+  executionPrompt?: string;
+  contextItems?: RunContextItem[];
   cwd: string;
   profile: string;
   sandbox: SandboxMode;

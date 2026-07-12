@@ -194,6 +194,46 @@ export function migrate(db: Database.Database): void {
       UNIQUE(run_id, request_id)
     );
 
+    CREATE TABLE IF NOT EXISTS memories (
+      id TEXT PRIMARY KEY,
+      content TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      scope_key TEXT,
+      source TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      sensitive INTEGER NOT NULL DEFAULT 0,
+      user_confirmed_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS conversation_summaries (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      covered_from_cursor TEXT NOT NULL,
+      covered_to_cursor TEXT NOT NULL,
+      item_count INTEGER NOT NULL,
+      version INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(thread_id, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS run_context_items (
+      run_id TEXT NOT NULL,
+      item_order INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      content_snapshot TEXT NOT NULL,
+      scope TEXT,
+      scope_key TEXT,
+      summary_version INTEGER,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY(run_id, item_order),
+      FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS codex_session_sources (
       path TEXT PRIMARY KEY,
       file_id TEXT NOT NULL,
@@ -282,6 +322,12 @@ export function migrate(db: Database.Database): void {
       ON approvals(run_id, requested_at DESC);
     CREATE INDEX IF NOT EXISTS idx_approvals_thread_id
       ON approvals(thread_id, requested_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_memories_scope_enabled_updated
+      ON memories(scope, scope_key, enabled, updated_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_conversation_summaries_thread_version
+      ON conversation_summaries(thread_id, version DESC);
+    CREATE INDEX IF NOT EXISTS idx_run_context_items_source
+      ON run_context_items(kind, source_id);
     CREATE INDEX IF NOT EXISTS idx_codex_sessions_updated_at
       ON codex_sessions(updated_at DESC, codex_thread_id DESC);
     CREATE INDEX IF NOT EXISTS idx_codex_sessions_kind_updated_at

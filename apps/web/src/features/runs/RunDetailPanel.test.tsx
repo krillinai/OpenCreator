@@ -1,4 +1,4 @@
-import type { RunDiagnosticsResponse } from '@clawee/protocol';
+import type { RunContextResponse, RunDiagnosticsResponse } from '@clawee/protocol';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RunDetailPanel } from './RunDetailPanel.js';
@@ -57,6 +57,49 @@ describe('RunDetailPanel', () => {
     expect(screen.getByText('附件')).toBeInTheDocument();
     expect(screen.getByText('screen.png')).toBeInTheDocument();
     expect(screen.getByText('image/png · 2 KB')).toBeInTheDocument();
+  });
+
+  it('shows the exact memory and summary snapshots used by the run', () => {
+    const context: RunContextResponse = {
+      runId: 'run_2',
+      items: [
+        {
+          kind: 'memory',
+          sourceId: 'mem_1',
+          content: '提交前运行全部测试',
+          order: 0,
+          scope: 'project',
+          scopeKey: '/workspace/project'
+        },
+        {
+          kind: 'summary',
+          sourceId: 'summary_1',
+          content: '用户：继续开发',
+          order: 1,
+          summaryVersion: 3
+        }
+      ]
+    };
+
+    render(<RunDetailPanel runId="run_2" diagnostics={createDiagnostics()} context={context} />);
+
+    expect(screen.getByText('本次使用的上下文')).toBeInTheDocument();
+    expect(screen.getByText('项目记忆')).toBeInTheDocument();
+    expect(screen.getByText('提交前运行全部测试')).toBeInTheDocument();
+    expect(screen.getByText('会话摘要 v3')).toBeInTheDocument();
+    expect(screen.getByText('用户：继续开发')).toBeInTheDocument();
+  });
+
+  it('shows an explicit empty run context state', () => {
+    render(
+      <RunDetailPanel
+        runId="run_2"
+        diagnostics={createDiagnostics()}
+        context={{ runId: 'run_2', items: [] }}
+      />
+    );
+
+    expect(screen.getByText('本次运行未使用长期记忆或摘要')).toBeInTheDocument();
   });
 
   it('requires confirmation before exporting the redacted diagnostics bundle', async () => {

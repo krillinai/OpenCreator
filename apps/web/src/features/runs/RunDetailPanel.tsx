@@ -1,4 +1,9 @@
-import type { AttachmentResponse, RunDiagnosticsResponse } from '@clawee/protocol';
+import type {
+  AttachmentResponse,
+  RunContextItem,
+  RunContextResponse,
+  RunDiagnosticsResponse
+} from '@clawee/protocol';
 import { AlertTriangle, Download, Image, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { downloadRunDiagnosticsBundle } from './run-diagnostics-export.js';
@@ -15,6 +20,7 @@ export function RunDetailPanel(props: {
   runId?: string;
   diagnostics?: RunDiagnosticsResponse;
   attachments?: AttachmentResponse[];
+  context?: RunContextResponse;
   onExport?(diagnostics: RunDiagnosticsResponse): void | Promise<void>;
 }) {
   const [confirmingExport, setConfirmingExport] = useState(false);
@@ -104,6 +110,20 @@ export function RunDetailPanel(props: {
             </ul>
           </section>
         ) : null}
+        <section className="run-context">
+          <h3>本次使用的上下文</h3>
+          {props.context === undefined ? (
+            <p>正在加载上下文...</p>
+          ) : props.context.items.length === 0 ? (
+            <p>本次运行未使用长期记忆或摘要</p>
+          ) : (
+            <ul>
+              {props.context.items.map(item => (
+                <RunContextListItem key={`${item.kind}:${item.sourceId}`} item={item} />
+              ))}
+            </ul>
+          )}
+        </section>
         <section>
           <h3>Diagnostics</h3>
           {diagnosticFiles.length === 0 ? (
@@ -166,6 +186,27 @@ export function RunDetailPanel(props: {
       </div>
     </div>
   );
+}
+
+function RunContextListItem(props: { item: RunContextItem }) {
+  const label = props.item.kind === 'summary'
+    ? `会话摘要 v${props.item.summaryVersion ?? 1}`
+    : `${memoryScopeLabel(props.item.scope)}记忆`;
+  return (
+    <li className="run-context__item">
+      <div>
+        <strong>{label}</strong>
+        {props.item.scopeKey ? <code>{props.item.scopeKey}</code> : null}
+      </div>
+      <p>{props.item.content}</p>
+    </li>
+  );
+}
+
+function memoryScopeLabel(scope: RunContextItem['scope']): string {
+  if (scope === 'project') return '项目';
+  if (scope === 'thread') return '线程';
+  return '全局';
 }
 
 function formatAttachmentSize(size: number): string {
