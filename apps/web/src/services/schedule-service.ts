@@ -1,7 +1,9 @@
 import type {
   CreateScheduleRequest,
   RunScheduleNowResponse,
+  ScheduleDetailResponse,
   ScheduleListResponse,
+  ScheduleOperationListResponse,
   ScheduleResponse,
   UpdateScheduleRequest
 } from '@clawee/protocol';
@@ -11,6 +13,9 @@ export function createScheduleService(client: RuntimeClient) {
   return {
     listSchedules(): Promise<ScheduleListResponse> {
       return client.get('/schedules');
+    },
+    getSchedule(id: string): Promise<ScheduleDetailResponse> {
+      return client.get(`/schedules/${encodeURIComponent(id)}`);
     },
     createSchedule(input: CreateScheduleRequest): Promise<ScheduleResponse> {
       return client.post('/schedules', input);
@@ -23,6 +28,11 @@ export function createScheduleService(client: RuntimeClient) {
     },
     runNow(id: string): Promise<RunScheduleNowResponse> {
       return client.post(`/schedules/${encodeURIComponent(id)}/run-now`);
+    },
+    listOperations(id: string, limit = 50): Promise<ScheduleOperationListResponse> {
+      return client.get(
+        `/schedules/${encodeURIComponent(id)}/operations?limit=${limit}`
+      );
     }
   };
 }
