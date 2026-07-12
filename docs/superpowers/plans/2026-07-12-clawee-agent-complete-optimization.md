@@ -958,7 +958,7 @@ feat(runtime): add cursor pagination for thread history
 
 ## P1-B3：Timeline 向上加载与虚拟化
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `IN_PROGRESS`
 
 **目标：** 首屏只加载最新历史，向上滚动加载旧内容，并将长会话 DOM 数量控制在稳定范围。
 
@@ -2180,6 +2180,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B1 | `IN_PROGRESS -> PASS` | `423d8b8` | daemon 472 项测试、类型检查、构建通过；真实 3.44 GB 首次索引 9.44 秒，重复扫描 239 ms 且解析 0 行；追加和替换验证通过 | 下一批 `P1-B2` |
 | 2026-07-12 | P1-B2 | `NOT_STARTED -> IN_PROGRESS` | - | 开始设计线程绑定的稳定历史游标、旧响应兼容和 Web 服务分页契约 | 先补首屏最新页、连续向前遍历、非法/过期/跨线程游标测试 |
 | 2026-07-12 | P1-B2 | `IN_PROGRESS -> PASS` | `f908631` | daemon 477 项、Web 335 项、类型检查和构建通过；真实 23,101 条索引记录遍历 232 页，与 28,107 项完整历史逐项一致 | 下一批 `P1-B3` |
+| 2026-07-12 | P1-B3 | `NOT_STARTED -> IN_PROGRESS` | - | 开始抽取历史分页状态、引入可变高度虚拟列表并重构底部跟随规则 | 先补首屏分页、向上加载、实时去重和 DOM 上限失败测试 |
 
 ## 14.1 单批次执行记录模板
 
