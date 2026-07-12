@@ -768,7 +768,7 @@ test: lock down run recovery workflows
 
 ## P1 状态总览
 
-- [ ] `P1-B1` Codex Session 增量索引
+- [x] `P1-B1` Codex Session 增量索引
 - [ ] `P1-B2` 历史游标分页 API
 - [ ] `P1-B3` Timeline 向上加载与虚拟化
 - [ ] `P1-B4` daemon NDJSON 异步有序写入
@@ -781,7 +781,7 @@ test: lock down run recovery workflows
 
 ## P1-B1：Codex Session 增量索引
 
-- [ ] **状态：** `IN_PROGRESS`
+- [x] **状态：** `PASS`
 
 **目标：** 将 Codex JSONL session 的元数据和历史项增量索引到 SQLite，避免会话列表和历史请求反复全量扫描文件。
 
@@ -844,7 +844,42 @@ feat(daemon): index codex sessions incrementally
 
 **回滚边界：** 新表为附加数据，可回滚索引读取接线并保留旧扫描器；不得删除原始 JSONL。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 实现提交：`423d8b8 feat(daemon): index codex sessions incrementally`。
+- 数据模型：
+  - 新增 `codex_sessions`、`codex_session_sources`、`codex_session_items` 三张附加索引表。
+  - 来源状态记录路径、设备/inode 文件标识、文件大小、修改时间、已解析字节偏移、已解析行数、解析器状态、头部指纹、最后错误和索引版本。
+  - 原始 Codex JSONL 保持不变，可删除 SQLite 后完整重建。
+- 增量索引：
+  - 首次扫描分块导入元数据和历史项；重复扫描只遍历文件状态，不重新解析未变化内容。
+  - 文件追加从上次字节偏移继续，SQLite 事务批量写入且使用来源偏移防止重复历史项。
+  - 文件截断、设备/inode 变化、同 inode 原位重写、索引版本变化和解析状态损坏均只重建对应来源。
+  - 64 MB 单行上限采用分段累积和一次合并，避免超长行的二次方内存复制。
+- 解析兼容：
+  - 列表扫描、历史降级读取和索引器共用纯行解析器。
+  - 覆盖损坏 JSON、未知事件、超长行、UTF-8 分块边界、无尾换行追加和正在写入的末尾半行。
+  - 子 Agent 会话仍被过滤并归档；历史项去重、工具名称关联、文件变更和 turn 完成项行为保持一致。
+- 降级路径：
+  - server 默认使用 SQLite 索引；同步或读取异常时记录告警并回退到原始扫描器和历史读取器。
+- 自动化验证：
+  - `pnpm --filter @clawee/daemon test` -> PASS；41 个测试文件、472 项通过，13 项真实 smoke 按默认开关跳过。
+  - `pnpm --filter @clawee/daemon typecheck` -> PASS。
+  - `pnpm --filter @clawee/daemon build` -> PASS。
+  - 索引器、扫描器和存储专项共 21 项通过；API 专项验证索引表写入、重复列表不重复、历史请求只追加新行。
+- 真实 `$CODEX_HOME/sessions` 基准：
+  - 首次索引 2077 个 JSONL 文件、729859 行、约 3.44 GB，耗时 9438 ms。
+  - 第二次扫描同一数据耗时 239 ms，`filesParsed=0`、`linesParsed=0`、`bytesRead=0`。
+  - 临时数据库生成 2058 个 session、2077 个来源、380678 个历史项，索引错误为 0。
+- 真实文件副本验证：
+  - 追加事件只解析 1 行、没有重建，目标历史标记只出现 1 次。
+  - 原位替换后只重建该来源，并正确删除旧 session 历史、切换到新 session。
+- 实际服务验证：
+  - 运行库包含 2077 个来源、2058 个 session、380705 个历史项，错误为 0。
+  - 连续两次 `GET /threads?limit=50` 均返回 50 条，耗时约 61 至 70 ms。
+  - `http://127.0.0.1:9000/` 和 `/healthz` 均返回 `200`。
+- 遗留风险：
+  - 当前机器 3.44 GB 历史的首次全量建库约需 9.4 秒；后续扫描已降至约 0.24 秒。首次建库后台化不属于本批验收范围。
 
 ## P1-B2：历史游标分页 API
 
@@ -2133,6 +2168,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P0-B5 | `NOT_STARTED -> IN_PROGRESS` | - | 开始建立 P0 回归矩阵、真实 Codex smoke、daemon 重启验证和测试报告 | 先审计已有覆盖并补缺失测试 |
 | 2026-07-12 | P0-B5 | `IN_PROGRESS -> PASS` | `fb5afe1` | 804 项常规测试、类型检查、构建、13 项真实 Codex smoke、SSE 续传、双线程取消、daemon 重启、Scheduler 到期和用户页面验收全部通过 | P0 门禁 `PASS`；下一批 `P1-B1` |
 | 2026-07-12 | P1-B1 | `NOT_STARTED -> IN_PROGRESS` | - | 开始设计 Codex Session SQLite 增量索引、版本化来源状态和原始 JSONL 降级路径 | 先补迁移、增量追加、截断替换和损坏文件隔离测试 |
+| 2026-07-12 | P1-B1 | `IN_PROGRESS -> PASS` | `423d8b8` | daemon 472 项测试、类型检查、构建通过；真实 3.44 GB 首次索引 9.44 秒，重复扫描 239 ms 且解析 0 行；追加和替换验证通过 | 下一批 `P1-B2` |
 
 ## 14.1 单批次执行记录模板
 
