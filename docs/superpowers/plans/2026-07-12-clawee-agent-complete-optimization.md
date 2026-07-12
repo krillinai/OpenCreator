@@ -286,7 +286,7 @@ P2 完整 Agent 能力
 - [x] `P0-B2` 建立 Web RunRegistry 与活动 Run 查询
 - [x] `P0-B3` 实现 SSE 重连、事件去重与刷新恢复
 - [x] `P0-B4` 修复跨会话后台运行和取消竞态
-- [ ] `P0-B5` 完成 P0 端到端回归验收
+- [x] `P0-B5` 完成 P0 端到端回归验收
 
 ## P0-B1：Scheduler 在生产入口正式启动
 
@@ -665,7 +665,7 @@ fix(web): keep runs active across conversation switches
 
 ## P0-B5：P0 端到端回归验收
 
-- [ ] **状态：** `IN_PROGRESS`
+- [x] **状态：** `PASS`
 
 **目标：** 对 Scheduler、刷新恢复、跨会话运行、后台完成、失败、取消和 daemon 重启进行完整回归，并固化测试。
 
@@ -725,19 +725,38 @@ test: lock down run recovery workflows
 
 **回滚边界：** 本批原则上只增加测试和必要的小修复；若发现架构问题，应回到对应 P0 批次修复，不在本批引入新架构。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 测试报告已提交：`fb5afe1 test: lock down run recovery workflows`。
+- P0 回归矩阵全部通过，覆盖正常完成、失败、运行中取消、排队取消、切换会话、后台完成、刷新恢复、SSE 断流续传、事件去重、daemon 重启、Scheduler 到期和取消竞态。
+- 仓库门禁：
+  - `pnpm test` -> PASS；daemon 465 项、Web 333 项、Skill Market 6 项，常规测试合计 804 项通过，13 项真实 smoke 按默认开关跳过。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS；仅保留既有 Web 主包体积告警。
+- 真实 Codex smoke：
+  - `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts` -> PASS，13 项全部通过。
+- 真实服务验证：
+  - SSE 从 `fromSeq=2` 续传时只收到后续事件，最终成功且无重复。
+  - 双线程运行时定向取消 A 后，A 为 `canceled`，B 独立完成为 `succeeded`。
+  - daemon 重启后，原 `running` Run 确定性收敛为 `failed`，`terminationReason=daemon_restart`，并产生唯一 `error` 和 `done` 事件。
+  - Schedule 到期后自动创建 Run，最终输出 `P0-B5-SCHEDULER-OK`。
+- 浏览器验收：
+  - 用户已完成桌面和移动尺寸刷新恢复、跨会话后台运行、返回恢复、Timeline 隔离、侧栏状态和定向停止的真实页面手动验收。
+- 遗留风险：
+  - Web 主包代码分割、长会话历史扫描和 Timeline 大数据性能进入 P1。
+  - daemon 重启当前采用确定性失败收敛，不恢复底层 Codex 子进程；符合 P0 契约。
 
 ## P0 阶段门禁
 
-- [ ] P0-B1 至 P0-B5 全部为 `PASS`。
-- [ ] `pnpm test` 通过。
-- [ ] `pnpm typecheck` 通过。
-- [ ] `pnpm build` 通过。
-- [ ] 真实 Codex smoke 通过，或阻塞原因已被用户明确接受。
-- [ ] P0 测试报告存在并记录浏览器验证。
-- [ ] Git 工作区干净。
+- [x] P0-B1 至 P0-B5 全部为 `PASS`。
+- [x] `pnpm test` 通过。
+- [x] `pnpm typecheck` 通过。
+- [x] `pnpm build` 通过。
+- [x] 真实 Codex smoke 通过，或阻塞原因已被用户明确接受。
+- [x] P0 测试报告存在并记录浏览器验证。
+- [x] Git 工作区干净。
 
-**P0 门禁结果：** 待填写。
+**P0 门禁结果：** `PASS`。P0 运行正确性阶段于 2026-07-12 完成，下一批为 `P1-B1`。
 
 ---
 
@@ -2112,6 +2131,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P0-B4 | `IN_PROGRESS -> BLOCKED_ENV` | `75e5b9b` | Web 333 项测试、类型检查、构建和真实双线程运行/定向取消通过 | 等待用户完成真实页面跨会话后台运行验收 |
 | 2026-07-12 | P0-B4 | `BLOCKED_ENV -> PASS` | `75e5b9b` | 用户确认继续下一批，真实页面验收门禁解除 | 下一批 `P0-B5` |
 | 2026-07-12 | P0-B5 | `NOT_STARTED -> IN_PROGRESS` | - | 开始建立 P0 回归矩阵、真实 Codex smoke、daemon 重启验证和测试报告 | 先审计已有覆盖并补缺失测试 |
+| 2026-07-12 | P0-B5 | `IN_PROGRESS -> PASS` | `fb5afe1` | 804 项常规测试、类型检查、构建、13 项真实 Codex smoke、SSE 续传、双线程取消、daemon 重启、Scheduler 到期和用户页面验收全部通过 | P0 门禁 `PASS`；下一批 `P1-B1` |
 
 ## 14.1 单批次执行记录模板
 
