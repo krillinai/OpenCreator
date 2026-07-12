@@ -80,6 +80,7 @@ export type RunRepository = {
   setRunResumeMode(runId: string, resumeMode: ResolvedResumeMode): void;
   setRunQueueState(runId: string, queueState: RunQueueState): void;
   insertRunEvent(event: AgentEventEnvelope): void;
+  getLastRunEventSeq(runId: string): number;
   listRunEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
 };
 
@@ -220,6 +221,11 @@ export function createRunRepository(db: Database.Database): RunRepository {
     WHERE run_id = @runId AND seq > @afterSeq
     ORDER BY seq ASC
   `);
+  const lastEventSeq = db.prepare<{ runId: string }>(`
+    SELECT COALESCE(MAX(seq), 0) AS seq
+    FROM run_events
+    WHERE run_id = @runId
+  `);
 
   return {
     insertRun(input: InsertRunInput): void {
@@ -279,6 +285,9 @@ export function createRunRepository(db: Database.Database): RunRepository {
         payloadJson: JSON.stringify(event.payload),
         rawEventId: event.rawEventId ?? null
       });
+    },
+    getLastRunEventSeq(runId: string): number {
+      return (lastEventSeq.get({ runId }) as { seq: number }).seq;
     },
     listRunEvents(runId: string, afterSeq = 0): AgentEventEnvelope[] {
       const rows = listEvents.all({ runId, afterSeq }) as RunEventRow[];

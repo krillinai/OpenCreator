@@ -217,6 +217,7 @@ function recordEvent(
     const threadId = existingRun?.threadId ?? event.payload.threadId;
     if (threadId !== undefined) {
       next = upsertRun(next, {
+        ...existingRun,
         id: event.runId,
         threadId,
         codexThreadId: existingRun?.codexThreadId ?? event.payload.codexThreadId,
@@ -230,8 +231,18 @@ function recordEvent(
     });
   }
 
+  const updatedRun = next.runsById[event.runId];
   return {
     ...next,
+    runsById: updatedRun === undefined
+      ? next.runsById
+      : {
+          ...next.runsById,
+          [event.runId]: {
+            ...updatedRun,
+            lastEventSeq: Math.max(updatedRun.lastEventSeq ?? 0, event.seq)
+          }
+        },
     lastSeqByRunId: {
       ...next.lastSeqByRunId,
       [event.runId]: event.seq

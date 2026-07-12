@@ -77,9 +77,12 @@ describe('runtime storage', () => {
       INSERT INTO run_events (id, run_id, seq, type, payload_json)
       VALUES (?, ?, ?, ?, ?)
     `);
+    expect(runs.getLastRunEventSeq('run_1')).toBe(0);
     insertEvent.run('event_1', 'run_1', 1, 'status', '{}');
+    insertEvent.run('event_3', 'run_1', 3, 'done', '{}');
 
     expect(() => insertEvent.run('event_2', 'run_1', 1, 'status', '{}')).toThrow();
+    expect(runs.getLastRunEventSeq('run_1')).toBe(3);
   });
 
   it('creates codex skill operation log table', () => {

@@ -311,6 +311,144 @@ describe('App', () => {
     expect(subscriptions).toHaveLength(2);
   });
 
+  it('restores a running conversation after an unexpected SSE disconnect', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    let runCompleted = false;
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [createThreadResponse({ id: 'thread_restore', title: '断线恢复会话' })]
+        });
+      }
+      if (url.endsWith('/threads/thread_restore/history')) {
+        return jsonResponse({
+          threadId: 'thread_restore',
+          codexThreadId: null,
+          items: [
+            {
+              id: 'history_user_restore',
+              type: 'user_message',
+              text: '继续生成长内容',
+              createdAt: new Date(0).toISOString()
+            },
+            {
+              id: 'history_assistant_restore',
+              type: 'assistant_message',
+              text: '第一段内容',
+              createdAt: new Date(0).toISOString()
+            }
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_restore/runs?limit=50')) {
+        return jsonResponse({
+          runs: runCompleted
+            ? []
+            : [{
+                ...createRunResponse({
+                  id: 'run_restore',
+                  threadId: 'thread_restore',
+                  status: 'running'
+                }),
+                lastEventSeq: 1
+              }]
+        });
+      }
+      if (url.endsWith('/runs/run_restore/diagnostics')) {
+        return jsonResponse({
+          ...createRunDiagnosticsResponse(createCodexStatusResponse()),
+          runId: 'run_restore'
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const subscriptions: SubscribeRunEventsInput[] = [];
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      subscriptions.push(input);
+      input.onEvent(
+        createRuntimeEvent(
+          'assistant_message',
+          {
+            type: 'assistant_message',
+            text: '第一段内容',
+            format: 'plain_text',
+            delivery: 'message'
+          },
+          1,
+          'run_restore'
+        )
+      );
+      if (subscriptions.length === 1) return;
+
+      input.onEvent(
+        createRuntimeEvent(
+          'reasoning_summary',
+          {
+            type: 'reasoning_summary',
+            text: '继续生成后续内容',
+            format: 'plain_text',
+            delivery: 'summary'
+          },
+          2,
+          'run_restore'
+        )
+      );
+      input.onEvent(
+        createRuntimeEvent(
+          'assistant_message',
+          {
+            type: 'assistant_message',
+            text: '第二段内容',
+            format: 'plain_text',
+            delivery: 'message'
+          },
+          3,
+          'run_restore'
+        )
+      );
+      input.onEvent(
+        createRuntimeEvent(
+          'done',
+          { type: 'done', status: 'succeeded', terminationReason: 'completed' },
+          4,
+          'run_restore'
+        )
+      );
+      runCompleted = true;
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /断线恢复会话/ }));
+
+    await waitFor(() => expect(subscriptions).toHaveLength(2), { timeout: 2_000 });
+    expect(subscriptions[0]?.fromSeq).toBe(0);
+    expect(subscriptions[1]?.fromSeq).toBe(1);
+    expect(await screen.findByText('第二段内容')).toBeInTheDocument();
+    await user.click(await screen.findByText('思考过程'));
+    expect(await screen.findAllByText('第一段内容')).toHaveLength(1);
+    expect(screen.queryByText('SSE connection closed unexpectedly')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '停止任务' })).not.toBeInTheDocument();
+    });
+  });
+
   it('keeps pending run starts isolated when switching threads', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();

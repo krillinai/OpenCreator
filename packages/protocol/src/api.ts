@@ -191,6 +191,7 @@ export type RunResponse = {
   threadId?: string;
   codexThreadId?: string | null;
   status: PublicRunStatus;
+  lastEventSeq?: number;
 };
 
 export type CreateThreadRequest = {

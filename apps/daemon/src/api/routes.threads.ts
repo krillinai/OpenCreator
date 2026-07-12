@@ -7,7 +7,7 @@ import { apiError } from './errors.js';
 export async function registerThreadRoutes(
   server: FastifyInstance,
   manager: ThreadManager,
-  runManager: Pick<RunManager, 'hasActiveRunForThread' | 'listRunsByThread'>,
+  runManager: Pick<RunManager, 'getLastEventSeq' | 'hasActiveRunForThread' | 'listRunsByThread'>,
   options: { profileValidator?: ProfileValidator; syncCodexSessions?: SyncCodexSessions; readThreadHistory?: ReadThreadHistory } = {}
 ): Promise<void> {
   server.post<{ Body: unknown }>('/threads', async (request, reply) => {
@@ -59,7 +59,8 @@ export async function registerThreadRoutes(
         id: run.id,
         threadId: run.threadId,
         codexThreadId: run.codexThreadId,
-        status: run.status
+        status: run.status,
+        lastEventSeq: runManager.getLastEventSeq(run.id)
       }))
     };
     return response;

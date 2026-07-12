@@ -34,8 +34,18 @@ import {
   getRunCancelState,
   getThreadActiveRun,
   initialRunRegistryState,
-  runRegistryReducer
+  runRegistryReducer,
+  type RunSubscriptionState
 } from '../features/runs/run-registry.js';
+import {
+  createRunEventController,
+  type RunEventController,
+  type RunEventControllerState
+} from '../features/runs/run-event-controller.js';
+import {
+  createRunReplayDeduper,
+  timelineReplayMergeKey
+} from '../features/runs/run-event-replay.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
@@ -72,10 +82,6 @@ type PendingRunStart = {
   cancelRequested: boolean;
 };
 type PendingRunStartsById = Record<string, PendingRunStart | undefined>;
-type RunEventSubscription = {
-  runId: string;
-  controller: AbortController;
-};
 
 const CONVERSATION_PANE_MIN_WIDTH = 320;
 const FILE_WORKSPACE_MIN_WIDTH = 520;
@@ -169,7 +175,8 @@ export function App(props: AppProps = {}) {
   const savingFilePathsRef = useRef(new Set<string>());
   const connectionConfigRef = useRef<ConnectionConfig | null>(null);
   const connectionConfigVersionRef = useRef(0);
-  const runEventSubscriptionRef = useRef<RunEventSubscription | null>(null);
+  const runEventControllerRef = useRef<RunEventController | null>(null);
+  const activeRunEventControllerRunIdRef = useRef<string>();
   const resumedSubscriptionKeyRef = useRef<string>();
   const timelineEventBatcherRef = useRef<FrameBatcher<TimelineItem> | null>(null);
   const runRegistryRef = useRef(runRegistry);
@@ -189,6 +196,12 @@ export function App(props: AppProps = {}) {
   const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
   const nextComposerDraftIdRef = useRef(0);
   runRegistryRef.current = runRegistry;
+
+  if (runEventControllerRef.current === null) {
+    runEventControllerRef.current = createRunEventController({
+      subscribe: subscribeRunEvents
+    });
+  }
 
   if (timelineEventBatcherRef.current === null) {
     timelineEventBatcherRef.current = createFrameBatcher({
@@ -634,11 +647,7 @@ export function App(props: AppProps = {}) {
 
     const activeRun = getThreadActiveRun(runRegistry, selectedThreadId);
     if (activeRun === undefined) return;
-    const currentSubscription = runEventSubscriptionRef.current;
-    if (
-      currentSubscription?.runId === activeRun.id
-      && !currentSubscription.controller.signal.aborted
-    ) return;
+    if (activeRunEventControllerRunIdRef.current === activeRun.id) return;
 
     const subscriptionKey = `${selectedThreadId}:${activeRun.id}`;
     if (resumedSubscriptionKeyRef.current === subscriptionKey) return;
@@ -1318,112 +1327,92 @@ export function App(props: AppProps = {}) {
   }
 
   function abortCurrentRunEventSubscription(markDisconnected = true) {
-    const subscription = runEventSubscriptionRef.current;
-    if (subscription === null) return;
+    const runId = activeRunEventControllerRunIdRef.current;
+    if (runId === undefined) return;
 
-    runEventSubscriptionRef.current = null;
-    subscription.controller.abort();
+    activeRunEventControllerRunIdRef.current = undefined;
+    runEventControllerRef.current?.stop();
     if (!markDisconnected || !mountedRef.current) return;
 
-    const run = runRegistryRef.current.runsById[subscription.runId];
+    const run = runRegistryRef.current.runsById[runId];
     if (run?.status !== 'running' && run?.status !== 'queued') return;
     dispatchRunRegistry({
       type: 'set_subscription_state',
-      runId: subscription.runId,
+      runId,
       state: 'disconnected'
     });
   }
 
-  async function subscribeToRunEvents(runId: string, config: ConnectionConfig) {
-    const existingSubscription = runEventSubscriptionRef.current;
-    if (
-      existingSubscription?.runId === runId
-      && !existingSubscription.controller.signal.aborted
-    ) return;
+  function subscribeToRunEvents(runId: string, config: ConnectionConfig) {
+    if (activeRunEventControllerRunIdRef.current === runId) return;
 
     abortCurrentRunEventSubscription();
-    const abortController = new AbortController();
-    const subscription: RunEventSubscription = {
-      runId,
-      controller: abortController
-    };
-    runEventSubscriptionRef.current = subscription;
-    let sawDone = false;
-    let sawError = false;
-    let lastHandledSeq = runRegistryRef.current.lastSeqByRunId[runId] ?? 0;
-    dispatchRunRegistry({
-      type: 'set_subscription_state',
-      runId,
-      state: 'connecting'
-    });
-
+    activeRunEventControllerRunIdRef.current = runId;
+    const fromSeq = runRegistryRef.current.lastSeqByRunId[runId] ?? 0;
+    const replayUntilSeq = Math.max(
+      fromSeq,
+      runRegistryRef.current.runsById[runId]?.lastEventSeq ?? fromSeq
+    );
+    const replayDeduper = replayUntilSeq > fromSeq
+      ? createRunReplayDeduper(timelineItemsRef.current)
+      : undefined;
     const isCurrentSubscription = () => (
       mountedRef.current
-      && runEventSubscriptionRef.current === subscription
-      && !abortController.signal.aborted
+      && activeRunEventControllerRunIdRef.current === runId
     );
-    const handleSubscriptionError = (error: Error) => {
-      if (!isCurrentSubscription() || sawDone || sawError) return;
-      sawError = true;
-      dispatchRunRegistry({
-        type: 'set_subscription_state',
-        runId,
-        state: 'disconnected'
-      });
-      timelineEventBatcherRef.current?.push({
-        kind: 'diagnostic',
-        id: createTimelineId('sse_error'),
-        severity: 'error',
-        message: error.message,
-        content: error.message,
-        source: 'runtime'
-      });
-      timelineEventBatcherRef.current?.flush();
-    };
 
-    try {
-      await subscribeRunEvents({
-        ...config,
-        runId,
-        fromSeq: lastHandledSeq,
-        fetchImpl: runtimeFetch,
-        signal: abortController.signal,
-        onEvent(event) {
-          if (
-            !isCurrentSubscription()
-            || event.runId !== runId
-            || event.seq <= lastHandledSeq
-          ) return;
-
-          lastHandledSeq = event.seq;
-          dispatchRunRegistry({ type: 'record_event', event });
-          const item = eventToTimelineItem(event);
-          if (item !== null) timelineEventBatcherRef.current?.push(item);
-          if (event.type === 'done') {
-            sawDone = true;
-            timelineEventBatcherRef.current?.flush();
-            void loadRunDiagnostics(event.runId);
-          }
-        },
-        onError: handleSubscriptionError
-      });
-    } catch (error) {
-      handleSubscriptionError(
-        error instanceof Error ? error : new Error(String(error))
-      );
-    } finally {
-      if (!isCurrentSubscription()) return;
-
-      runEventSubscriptionRef.current = null;
-      timelineEventBatcherRef.current?.flush();
-      if (!sawDone && !sawError) {
+    runEventControllerRef.current?.start({
+      ...config,
+      runId,
+      fromSeq,
+      fetchImpl: runtimeFetch,
+      onStateChange(state) {
+        if (!isCurrentSubscription()) return;
+        dispatchRunRegistry({
+          type: 'set_subscription_state',
+          runId,
+          state: mapRunEventControllerState(state)
+        });
+      },
+      onEvent(event) {
+        if (!isCurrentSubscription()) return;
+        dispatchRunRegistry({ type: 'record_event', event });
+        const item = eventToTimelineItem(event);
+        if (
+          item !== null
+          && (
+            event.seq > replayUntilSeq
+            || replayDeduper === undefined
+            || replayDeduper.shouldAppend(item)
+          )
+        ) {
+          timelineEventBatcherRef.current?.push(item);
+        }
+        if (event.type === 'done') {
+          activeRunEventControllerRunIdRef.current = undefined;
+          timelineEventBatcherRef.current?.flush();
+          void loadRunDiagnostics(event.runId);
+        }
+      },
+      onError(error) {
+        if (!isCurrentSubscription()) return;
         dispatchRunRegistry({
           type: 'set_subscription_state',
           runId,
           state: 'disconnected'
         });
+        timelineEventBatcherRef.current?.push({
+          kind: 'diagnostic',
+          id: createTimelineId('sse_error'),
+          runId,
+          severity: 'error',
+          message: error.message,
+          content: error.message,
+          source: 'runtime'
+        });
+        timelineEventBatcherRef.current?.flush();
       }
-    }
+    });
   }
 
   async function loadRunDiagnostics(runId: string) {
@@ -2087,14 +2076,14 @@ function mergeTimelineHistoryWithCache(
   const remainingHistoryKeys = new Map<string, number>();
 
   for (const item of historyItems) {
-    const key = timelineMergeKey(item);
+    const key = timelineReplayMergeKey(item);
     if (key !== undefined) {
       remainingHistoryKeys.set(key, (remainingHistoryKeys.get(key) ?? 0) + 1);
     }
   }
 
   function consumeHistoryKey(item: TimelineItem): boolean {
-    const key = timelineMergeKey(item);
+    const key = timelineReplayMergeKey(item);
     if (key === undefined) return false;
     const count = remainingHistoryKeys.get(key) ?? 0;
     if (count === 0) return false;
@@ -2116,43 +2105,20 @@ function mergeTimelineHistoryWithCache(
   return merged;
 }
 
-function timelineMergeKey(item: TimelineItem): string | undefined {
-  switch (item.kind) {
-    case 'user_message':
-      return `user:${item.text}`;
-    case 'assistant_message':
-      return `assistant:${item.text}`;
-    case 'reasoning_summary':
-      return `reasoning:${item.text}`;
-    case 'tool_step':
-      return toolStepMergeKey(item);
-    case 'change_card':
-      return `change:${item.title}:${item.path}:${item.delta}`;
-    case 'done':
-      return `done:${item.status}`;
-    case 'diagnostic':
-    case 'run_status':
-      return undefined;
+function mapRunEventControllerState(
+  state: RunEventControllerState
+): RunSubscriptionState {
+  switch (state) {
+    case 'idle':
+      return 'idle';
+    case 'connecting':
+    case 'reconnecting':
+      return 'connecting';
+    case 'connected':
+      return 'connected';
+    case 'disconnected':
+      return 'disconnected';
   }
-}
-
-function toolStepMergeKey(item: Extract<TimelineItem, { kind: 'tool_step' }>): string {
-  try {
-    const parsed = JSON.parse(item.content) as unknown;
-    if (typeof parsed !== 'object' || parsed === null) {
-      return `tool:${item.name}:${item.content}`;
-    }
-    const payload = parsed as Record<string, unknown>;
-    if (payload.type === 'tool_use') {
-      return `tool-use:${String(payload.name ?? item.name)}:${JSON.stringify(payload.input)}`;
-    }
-    if (payload.type === 'tool_result') {
-      return `tool-result:${JSON.stringify(payload.output)}:${String(payload.isError ?? false)}`;
-    }
-  } catch {
-    return `tool:${item.name}:${item.content}`;
-  }
-  return `tool:${item.name}:${item.content}`;
 }
 
 function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {

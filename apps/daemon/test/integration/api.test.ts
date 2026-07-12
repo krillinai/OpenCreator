@@ -2442,6 +2442,12 @@ describe('runtime api', () => {
       second.json().id,
       first.json().id
     ]);
+    expect(history.json().runs).toEqual([
+      expect.objectContaining({ lastEventSeq: expect.any(Number) }),
+      expect.objectContaining({ lastEventSeq: expect.any(Number) })
+    ]);
+    expect(history.json().runs.every((run: { lastEventSeq: number }) => run.lastEventSeq > 0))
+      .toBe(true);
   });
 
   it('allows equivalent cwd paths when checking immutable thread config', async () => {

@@ -81,7 +81,7 @@ describe('run registry', () => {
   it('tracks subscription, cancellation, event sequence, and terminal status', () => {
     let state = runRegistryReducer(initialRunRegistryState, {
       type: 'upsert_run',
-      run: createRun({ id: 'run_1', status: 'running' })
+      run: createRun({ id: 'run_1', status: 'running', lastEventSeq: 3 })
     });
     state = runRegistryReducer(state, {
       type: 'set_subscription_state',
@@ -104,6 +104,7 @@ describe('run registry', () => {
 
     expect(state.subscriptionStateByRunId.run_1).toBe('connected');
     expect(state.lastSeqByRunId.run_1).toBe(4);
+    expect(state.runsById.run_1?.lastEventSeq).toBe(4);
     expect(getRunCancelState(state, 'run_1')).toBe('requested');
     expect(isThreadRunBusy(state, 'thread_1')).toBe(true);
 

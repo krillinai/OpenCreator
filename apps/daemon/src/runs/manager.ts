@@ -68,6 +68,7 @@ export type RunManager = {
   hasActiveRunForThread(threadId: string): boolean;
   listRuns(limit?: number): RuntimeRun[];
   listRunsByThread(threadId: string, limit?: number): RuntimeRun[];
+  getLastEventSeq(runId: string): number;
   listEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
   subscribe(runId: string, subscriber: RunEventSubscriber): () => void;
 };
@@ -220,6 +221,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
     listRunsByThread(threadId: string, limit?: number): RuntimeRun[] {
       return (listRunsByThreadNewestFirst.all({ threadId, limit: limit ?? 50 }) as RunRow[]).map(mapRunRow);
+    },
+
+    getLastEventSeq(runId: string): number {
+      return runs.getLastRunEventSeq(runId);
     },
 
     listEvents(runId: string, afterSeq?: number): AgentEventEnvelope[] {
@@ -688,7 +693,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   }
 
   function lastSeqForRun(runId: string): number {
-    return runs.listRunEvents(runId).at(-1)?.seq ?? 0;
+    return runs.getLastRunEventSeq(runId);
   }
 
   function nextSeqForRun(runId: string): number {
