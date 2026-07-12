@@ -457,7 +457,7 @@ refactor(web): manage runs with a per-thread registry
 
 ## P0-B3：SSE 重连、事件去重与刷新恢复
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `BLOCKED_ENV`
 
 **目标：** SSE 中断、页面刷新或重新进入运行中的会话后，从最后事件序号继续，且不重复渲染事件。
 
@@ -519,7 +519,51 @@ fix(web): resume run event streams after refresh
 
 **回滚边界：** 回滚 Run Event Controller 和重连逻辑；保留 P0-B2 Registry。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 代码提交：
+  - `cdd7a97 fix(web): resume active run events after thread switching`
+  - `648e11a fix(web): preserve live transcript across thread switching`
+  - `91df841 feat(web): show active run status in conversation list`
+  - `6364a64 fix(daemon): validate run event replay checkpoints`
+  - `76c1306 feat(web): add resilient run event controller`
+  - `bf35d8e fix(web): resume run event streams after refresh`
+- daemon 已收口事件重放契约：
+  - `fromSeq=0` 从首个事件重放。
+  - 中间序号只返回后续事件。
+  - 查询参数优先于 `Last-Event-ID`。
+  - 已到末尾的终态 Run 立即关闭空响应。
+  - 负数、小数、非数字和空值返回 `400 VALIDATION_FAILED`。
+- Web 已建立独立 Run Event Controller：
+  - 保存并使用最后已处理序号重连。
+  - 按 `runId + seq` 忽略重复和过期事件。
+  - 意外断流使用 `500/1000/2000/4000/8000ms` 有限退避。
+  - 主动停止、切换订阅和收到 `done` 后不重连。
+  - 旧订阅 generation 的迟到回调不会污染当前 Run。
+- 硬刷新和重新进入会话时：
+  - `ThreadRunsResponse` 提供持久化 `lastEventSeq`。
+  - 历史 Timeline 与事件重放按最新一轮计数去重，保留合法的重复文本。
+  - Registry 同步更新 Run 的 `lastEventSeq` 和终态。
+- 自动化验证：
+  - `pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "fromSeq|event replay|replays events"` -> PASS，8 个相关测试通过。
+  - `pnpm --filter @clawee/web test -- src/features/runs/run-event-controller.test.ts` -> PASS，4 个测试通过。
+  - `pnpm --filter @clawee/web test -- src/features/runs/run-event-replay.test.ts src/app/App.test.tsx -t "restore|disconnect|replay|refresh"` -> PASS，12 个相关测试通过。
+  - `pnpm test` -> PASS。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS；仅保留既有主包体积警告。
+- 真实服务验证：
+  - 发现 9000 服务仍使用 2026-07-12 11:52 启动的旧 daemon，先重启 `pnpm web:dev`，避免使用旧进程验收新代码。
+  - 通过 9000 同源代理创建临时线程并运行真实 Codex 任务。
+  - 首段收到事件 `1,2` 后主动断开；从 `fromSeq=2` 续传只收到 `3,4,5,6`，前后无重叠。
+  - 最终 Run 状态为 `succeeded`，续传流收到一次 `done`。
+  - `fromSeq=-1` 返回 `400 VALIDATION_FAILED`。
+  - 两个临时验收线程均已归档。
+- 浏览器验证：`BLOCKED_ENV`
+  - 浏览器运行时可用列表为空，无法执行 1440x900、390x844、页面刷新和网络离线交互验收。
+  - 解除阻塞后需验证：运行中硬刷新继续追加且无重复；断网 5 秒恢复后继续；终态刷新不再重连。
+- 遗留风险：
+  - 自动化和真实 API 已覆盖重放、断流和去重，但不能替代真实浏览器的组件生命周期与移动尺寸验收。
+  - 按实施协议，浏览器门禁解除前不得将本批标为 `PASS`。
 
 ## P0-B4：跨会话后台运行和取消竞态
 
@@ -2032,6 +2076,8 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P0-B2 | `NOT_STARTED -> IN_PROGRESS` | - | 开始建立按线程隔离的 Web RunRegistry | 先补 Registry 和当前会话查询失败测试 |
 | 2026-07-12 | P0-B2 | `IN_PROGRESS -> BLOCKED_ENV` | `adc8815` | Web 319 个测试、类型检查、构建和真实服务健康检查通过；浏览器控制环境无可用浏览器 | 完成桌面/移动人工验收后改为 `PASS`，再进入 `P0-B3` |
 | 2026-07-12 | P0-B2 回归修复 | `保持 BLOCKED_ENV` | `5afd460` | 修复首批 50 条之外的已选历史会话在刷新后被清空；Web 320 个测试通过 | 继续等待桌面/移动人工验收 |
+| 2026-07-12 | P0-B3 前置修复 | `NOT_STARTED -> IN_PROGRESS` | `cdd7a97`, `648e11a`, `91df841` | 已完成重新进入活动 Run 后续订、会话级实时 Timeline 保留和侧栏运行状态展示 | 继续实现独立 Run Event Controller、有限重连和硬刷新去重 |
+| 2026-07-12 | P0-B3 | `IN_PROGRESS -> BLOCKED_ENV` | `6364a64`, `76c1306`, `bf35d8e` | 全量测试、类型检查、构建和真实 daemon 断流续传通过；9000 已重启到当前代码 | 浏览器运行时无可用实例，等待桌面/移动刷新与离线恢复验收 |
 
 ## 14.1 单批次执行记录模板
 
