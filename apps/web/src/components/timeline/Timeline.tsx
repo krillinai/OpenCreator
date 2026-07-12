@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer.js';
 import { isWorkspaceFilePath } from '../markdown/markdown-inline.js';
+import { ApprovalPanel } from '../../features/approvals/ApprovalPanel.js';
 import type { TimelineItem } from './timeline-model.js';
 
 type ProcessTimelineItem = Extract<
@@ -55,6 +56,8 @@ function getTimelineTitle(item: TimelineItem): string {
       return 'Clawee';
     case 'change_card':
       return '文件变更';
+    case 'approval':
+      return '需要确认';
     case 'reasoning_summary':
     case 'tool_step':
     case 'diagnostic':
@@ -533,7 +536,13 @@ function renderChangeBlock(
 function renderTimelineItemContent(
   item: TimelineItem,
   onOpenFile?: (path: string) => void,
-  onCancelQueuedRun?: (runId: string) => void
+  onCancelQueuedRun?: (runId: string) => void,
+  approvalState?: {
+    resolving?: boolean;
+    error?: string;
+    onApprove(id: string): void;
+    onReject(id: string): void;
+  }
 ) {
   switch (item.kind) {
     case 'user_message':
@@ -541,6 +550,16 @@ function renderTimelineItemContent(
       return renderMessageContent(item, onOpenFile, onCancelQueuedRun);
     case 'change_card':
       return renderChangeCard(item, onOpenFile);
+    case 'approval':
+      return approvalState === undefined ? null : (
+        <ApprovalPanel
+          approval={item.approval}
+          resolving={approvalState.resolving}
+          error={approvalState.error}
+          onApprove={approvalState.onApprove}
+          onReject={approvalState.onReject}
+        />
+      );
     case 'diagnostic':
       return (
         <div className="timeline-diagnostic-content">
@@ -661,6 +680,10 @@ export function Timeline(props: {
   onOpenRunDetail?(runId: string): void;
   onOpenFile?(path: string): void;
   onCancelQueuedRun?(runId: string): void;
+  resolvingApprovalIds?: ReadonlySet<string>;
+  approvalErrors?: Readonly<Record<string, string | undefined>>;
+  onApproveApproval?(id: string): void;
+  onRejectApproval?(id: string): void;
 }) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
@@ -804,7 +827,11 @@ export function Timeline(props: {
                   props.targetItemId,
                   props.onOpenRunDetail,
                   props.onOpenFile,
-                  props.onCancelQueuedRun
+                  props.onCancelQueuedRun,
+                  props.resolvingApprovalIds,
+                  props.approvalErrors,
+                  props.onApproveApproval,
+                  props.onRejectApproval
                 )}
               </div>
             )}
@@ -830,7 +857,11 @@ function renderTimelineRenderItem(
   targetItemId?: string,
   onOpenRunDetail?: (runId: string) => void,
   onOpenFile?: (path: string) => void,
-  onCancelQueuedRun?: (runId: string) => void
+  onCancelQueuedRun?: (runId: string) => void,
+  resolvingApprovalIds?: ReadonlySet<string>,
+  approvalErrors?: Readonly<Record<string, string | undefined>>,
+  onApproveApproval?: (id: string) => void,
+  onRejectApproval?: (id: string) => void
 ) {
   if (renderItem.type === 'process') {
     return (
@@ -866,7 +897,21 @@ function renderTimelineRenderItem(
         </div>
       ) : null}
       <div className="timeline-bubble">
-        {renderTimelineItemContent(item, onOpenFile, onCancelQueuedRun)}
+        {renderTimelineItemContent(
+          item,
+          onOpenFile,
+          onCancelQueuedRun,
+          item.kind === 'approval'
+            && onApproveApproval !== undefined
+            && onRejectApproval !== undefined
+            ? {
+                resolving: resolvingApprovalIds?.has(item.approval.id),
+                error: approvalErrors?.[item.approval.id],
+                onApprove: onApproveApproval,
+                onReject: onRejectApproval
+              }
+            : undefined
+        )}
       </div>
     </article>
   );

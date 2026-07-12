@@ -60,6 +60,8 @@ export function timelineReplayMergeKey(item: TimelineItem): string | undefined {
       return `change:${item.title}:${item.path}:${item.delta}`;
     case 'done':
       return `done:${item.status}`;
+    case 'approval':
+      return `approval:${item.approval.id}`;
     case 'diagnostic':
     case 'run_status':
       return undefined;

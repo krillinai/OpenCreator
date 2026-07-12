@@ -1728,7 +1728,7 @@ refactor(web): split app routes and feature controllers
 - [x] `P2-B2` 多模态 Composer 与 Run
 - [x] `P2-B3` 排队发送与立即打断并继续
 - [x] `P2-B4` HTML 安全预览
-- [ ] `P2-B5` 真实审批闭环
+- [x] `P2-B5` 真实审批闭环
 - [ ] `P2-B6` 通知、任务中心与 daemon 重启恢复
 - [ ] `P2-B7` 用户显式长期记忆与上下文摘要
 - [ ] `P2-B8` 发布、文档和持续质量
@@ -2074,7 +2074,7 @@ security(web): sandbox html file previews
 
 ## P2-B5：真实审批闭环
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 将需要用户确认的高风险 Agent 操作从 daemon 传递到 Web，由用户批准或拒绝后继续执行。
 
@@ -2140,7 +2140,22 @@ feat: add recoverable runtime approvals
 
 **回滚边界：** 若审批链路不稳定，应回滚为阻止高风险操作，不得回滚为默认允许。
 
-**执行结果：** 待填写。
+**执行结果：** `PASS`。
+
+- daemon 改用 Codex `app-server --stdio` 双向 JSON-RPC 承载真实审批，覆盖命令执行、文件修改和权限扩大请求；批准/拒绝分别映射到官方协议响应，审批后同一 Turn 继续。
+- 新增 SQLite 审批状态机、TTL、幂等决策 API、Run 取消和 daemon 重启收敛；遗留 `pending` 不会被自动批准。
+- 审批摘要和结构化详情经过脱敏后写入 Run Event，Web Timeline 可展示命令、目录、写入范围和网络目标，并支持批准、拒绝、请求中禁用、错误重试和终态原位更新。
+- 修复 app-server 在等待审批时异常退出造成 stdout 链与关闭回调互相等待的问题；异常 Run 会失败并将遗留审批收敛为 `canceled/run_failed`。
+- 专项验证：
+  - daemon 审批管理器、app-server runner、API、Run 集成和能力检测共 17 项通过。
+  - Web ApprovalPanel、Timeline、App 和 ApprovalService 审批专项共 5 项通过。
+- 全局验证：
+  - `pnpm test` -> PASS；daemon `527 passed / 13 skipped`，Web `419 passed`，Skill Market `6 passed`。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS；主入口 `550.72KB / 159.86KB gzip`，FilesPage `568.81KB / 200.12KB gzip`，保留现有大分块警告供 P2-B8 性能报告记录。
+- 延后到 P2-B8 最终统一验收：
+  - 真实 Codex 登录环境下触发命令、文件和权限审批，核对批准、拒绝和 Turn 继续。
+  - 刷新、切换线程、daemon 重启以及 1440x900 / 390x844 页面交互和视觉验收。
 
 ## P2-B6：通知、任务中心与 daemon 重启恢复
 
@@ -2493,6 +2508,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P2-B2 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Codex 图片能力检测、附件 ID 到受控路径解析、Run 附件归属与查询、Composer 选择/拖放/粘贴/重试/移除、Timeline 缩略图和 Run 详情；daemon 511 项、Web 405 项及全仓类型检查、构建通过 | 下一批 `P2-B3`；真实图片发送与桌面/移动布局验收统一放到 P2-B8 |
 | 2026-07-12 | P2-B3 | `NOT_STARTED -> PASS` | 本批提交 | 完成排队与打断发送协议、持久化模式、稳定优先级、单线程执行、队列位置、取消排队、运行中 Composer 和终态防倒退；daemon 515 项、Web 407 项、类型检查和构建通过 | 下一批 `P2-B4`；真实慢 Run、切换刷新和桌面/移动交互统一放到 P2-B8 |
 | 2026-07-12 | P2-B4 | `NOT_STARTED -> PASS` | 本批提交 | 完成无权限 sandbox、严格 CSP、危险 DOM 清理、受控相对资源 Blob 重写与上限、外链显式打开、HTML 默认预览和全高布局；daemon 515 项、Web 413 项、全仓测试、类型检查和构建通过 | 下一批 `P2-B5`；真实恶意 HTML、相对资源和桌面/移动布局统一放到 P2-B8 |
+| 2026-07-12 | P2-B5 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Codex app-server 双向审批、SQLite 状态机、幂等 API、脱敏 Timeline 卡片、刷新回放和异常退出收敛；daemon 527 项、Web 419 项、全仓类型检查和构建通过 | 下一批 `P2-B6`；真实 Codex 审批和桌面/移动验收统一放到 P2-B8 |
 
 ## 14.1 单批次执行记录模板
 

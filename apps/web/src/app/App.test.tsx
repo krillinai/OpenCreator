@@ -1597,6 +1597,105 @@ describe('App', () => {
     expect(screen.getAllByText('codex-cli test').length).toBeGreaterThan(0);
   });
 
+  it('resolves a runtime approval in place through the daemon API', async () => {
+    const user = userEvent.setup();
+    const prompt = '清理构建目录';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    let releaseSse!: () => void;
+    const approval = {
+      id: 'approval_1',
+      runId: 'run_approval',
+      threadId: 'thread_from_api',
+      turnId: 'turn_1',
+      itemId: 'item_1',
+      requestId: 'rpc_1',
+      kind: 'command_execution' as const,
+      status: 'pending' as const,
+      risk: 'high' as const,
+      title: '允许执行命令',
+      summary: '删除构建目录',
+      details: { command: 'rm -rf build', cwd: '/workspace' },
+      requestedAt: '2026-07-12T10:00:00.000Z',
+      expiresAt: '2026-07-12T10:10:00.000Z'
+    };
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/threads')) {
+        return jsonResponse({
+          thread: createThreadResponse({ id: 'thread_from_api', title: prompt })
+        }, { status: 201 });
+      }
+      if (url.endsWith('/runs')) {
+        return jsonResponse({
+          id: 'run_approval',
+          threadId: 'thread_from_api',
+          status: 'running'
+        }, { status: 202 });
+      }
+      if (
+        url.endsWith('/approvals/approval_1/approve')
+        && init?.method === 'POST'
+      ) {
+        return jsonResponse({
+          approval: {
+            ...approval,
+            status: 'approved',
+            resolvedAt: '2026-07-12T10:01:00.000Z'
+          },
+          changed: true
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      input.onEvent(createRuntimeEvent(
+        'approval',
+        { type: 'approval', approval },
+        1,
+        'run_approval'
+      ));
+      await new Promise<void>(resolve => {
+        releaseSse = resolve;
+      });
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(await screen.findByText('rm -rf build')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '批准' }));
+
+    expect(await screen.findByText('已批准')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument();
+    expect(fetchCalls.some(call => (
+      call.url.endsWith('/approvals/approval_1/approve')
+      && call.init?.method === 'POST'
+    ))).toBe(true);
+
+    await act(async () => {
+      releaseSse();
+    });
+  });
+
   it('keeps the process button when a completed runtime turn has no process agent messages', async () => {
     const user = userEvent.setup();
     const prompt = '只回复 OK';

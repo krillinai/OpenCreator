@@ -1,6 +1,7 @@
 import type {
   AgentEventEnvelope,
   PublicRunStatus,
+  RuntimeApproval,
   RunSubmissionMode,
   TerminationReason
 } from '@clawee/protocol';
@@ -8,9 +9,18 @@ import type Database from 'better-sqlite3';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
+import type { ApprovalManager } from '../approvals/manager.js';
 import { buildCodexExecArgs, buildCodexResumeArgs } from '../codex/argv.js';
+import {
+  startCodexAppServer,
+  type AppServerRequest
+} from '../codex/app-server-runner.js';
 import { CodexExecError, startCodexExec } from '../codex/runner.js';
-import { normalizerVersion, normalizeCodexEvent } from '../events/normalizer.js';
+import {
+  normalizerVersion,
+  normalizeAppServerEvent,
+  normalizeCodexEvent
+} from '../events/normalizer.js';
 import { parseJsonLine } from '../events/parser.js';
 import { redactText } from '../security/redaction.js';
 import {
@@ -46,6 +56,8 @@ export type RunManagerOptions = {
   profileValidator?: {
     validateProfileForRun(name: string): { ok: true } | { ok: false; code: string; message: string };
   };
+  runtimeTransport?: 'exec' | 'app-server';
+  approvalManager?: ApprovalManager;
   logWriterFactory?(runDir: string): OrderedLogWriter;
 };
 
@@ -568,6 +580,177 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       ).catch(() => undefined);
     }
 
+    if (options.runtimeTransport === 'app-server') {
+      const process = startCodexAppServer({
+        codexBin: options.codexBin,
+        codexHome: options.codexHome,
+        cwd: runInput.cwd,
+        profile: runInput.profile,
+        sandbox: runInput.sandbox,
+        model: runInput.model,
+        reasoning: runInput.reasoning,
+        prompt: runInput.prompt,
+        imagePaths: runInput.imagePaths,
+        codexThreadId: resolvedResumeMode === 'resume_thread' ? resolvedCodexThreadId : undefined,
+        timeoutMs: runTimeouts.timeoutMs,
+        spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
+        inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
+        async onThreadStarted(parsedCodexThreadId) {
+          sawCodexThreadId = true;
+          resolvedCodexThreadId = parsedCodexThreadId;
+          runs.setRunCodexThreadId(id, parsedCodexThreadId);
+          if (runInput.threadId) {
+            options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
+          }
+          await publishStatus(id, ++seq, 'initializing', publish, {
+            threadId: runInput.threadId,
+            codexThreadId: parsedCodexThreadId
+          });
+        },
+        async onNotification(notification) {
+          const redactedLine = redactText(JSON.stringify(notification));
+          stdoutLines.push(redactedLine);
+          await appendRunLog(id, 'raw.redacted.ndjson', `${redactedLine}\n`);
+          if (
+            notification.method === 'turn/completed'
+            && isRecord(notification.params)
+          ) {
+            sawTurnCompleted = true;
+          }
+          await publish(normalizeAppServerEvent({
+            runId: id,
+            seq: ++seq,
+            raw: JSON.parse(redactedLine)
+          }));
+        },
+        async onApprovalRequest(request) {
+          if (options.approvalManager === undefined) return 'rejected';
+          const pending = options.approvalManager.request(
+            buildApprovalRequest({
+              runId: id,
+              threadId: runInput.threadId,
+              codexThreadId: resolvedCodexThreadId,
+              request
+            })
+          );
+          await publishApproval(id, ++seq, pending.approval, publish);
+          const decision = await pending.decision;
+          const resolved = options.approvalManager.get(pending.approval.id);
+          if (resolved !== undefined) {
+            await publishApproval(id, ++seq, resolved, publish);
+          }
+          return decision;
+        },
+        async onStderrChunk(chunk) {
+          const redactedChunk = redactText(chunk);
+          stderr += redactedChunk;
+          await appendRunLog(id, 'stderr.redacted.log', redactedChunk);
+        }
+      });
+
+      updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
+
+      const done = process.result.then(
+        async result => {
+          const publicStatus: 'succeeded' | 'failed' | 'canceled' =
+            result.terminationReason === 'canceled'
+              ? 'canceled'
+              : result.turnStatus === 'completed'
+                ? 'succeeded'
+                : 'failed';
+          const terminationReason: TerminationReason =
+            result.terminationReason === 'canceled'
+              ? 'user_canceled'
+              : result.turnStatus === 'completed'
+                ? 'completed'
+                : 'stream_error';
+          const diagnostics = {
+            ...buildThreadRunDiagnosticsMetadata({
+              runInput,
+              resumeMode: resolvedResumeMode,
+              codexThreadId: resolvedCodexThreadId,
+              argv: ['app-server', '--stdio'],
+              queueState: runs.getRun(id)?.queue_state,
+              errorCode: publicStatus === 'failed' ? 'CODEX_STREAM_ERROR' : null,
+              errorMessage: publicStatus === 'failed'
+                ? `Codex turn ended with status ${result.turnStatus}`
+                : null,
+              terminationReason
+            }),
+            runtimeTransport: 'app-server',
+            turnId: result.turnId,
+            turnStatus: result.turnStatus,
+            terminationReason,
+            ...runTimeouts
+          };
+          await finalizeRun({
+            id,
+            runDir,
+            runInput,
+            publicStatus,
+            terminationReason,
+            diagnostics,
+            statusExtra: publicStatus === 'failed'
+              ? {
+                  errorCode: 'CODEX_STREAM_ERROR',
+                  errorMessage: `Codex turn ended with status ${result.turnStatus}`
+                }
+              : {},
+            nextSeq: () => ++seq,
+            publish
+          });
+          return createdRun(publicStatus);
+        },
+        async error => {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const terminationReason = appServerErrorToTerminationReason(errorMessage);
+          const publicStatus: 'failed' | 'canceled' =
+            terminationReason === 'user_canceled' ? 'canceled' : 'failed';
+          const errorCode = errorCodeForTermination(terminationReason);
+          options.approvalManager?.cancelRun(id, 'run_failed');
+          await safePublish(publishError(id, ++seq, errorCode, errorMessage, publish));
+          await finalizeRun({
+            id,
+            runDir,
+            runInput,
+            publicStatus,
+            terminationReason,
+            diagnostics: {
+              ...buildThreadRunDiagnosticsMetadata({
+                runInput,
+                resumeMode: resolvedResumeMode,
+                codexThreadId: resolvedCodexThreadId,
+                argv: ['app-server', '--stdio'],
+                queueState: runs.getRun(id)?.queue_state,
+                errorCode,
+                errorMessage,
+                terminationReason
+              }),
+              runtimeTransport: 'app-server',
+              error: errorMessage,
+              ...runTimeouts
+            },
+            statusExtra: { errorCode, errorMessage },
+            nextSeq: () => ++seq,
+            publish
+          });
+          return createdRun(publicStatus);
+        }
+      );
+
+      activeRuns.set(id, {
+        cancel() {
+          updateStatus(id, 'running', 'canceling');
+          options.approvalManager?.cancelRun(id, 'run_canceled');
+          void publishStatus(id, ++seq, 'canceling', publish).catch(() => undefined);
+          process.cancel();
+        },
+        done
+      });
+      bridgeRunCompletion(id, done);
+      return createdRun('running');
+    }
+
     const process = startCodexExec({
       codexBin: options.codexBin,
       codexHome: options.codexHome,
@@ -1074,6 +1257,114 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   }
 
   return manager;
+}
+
+function buildApprovalRequest(input: {
+  runId: string;
+  threadId?: string;
+  codexThreadId?: string;
+  request: AppServerRequest;
+}) {
+  const params = input.request.params;
+  const reason = optionalString(params.reason);
+  const command = optionalString(params.command);
+  const cwd = optionalString(params.cwd);
+  const grantRoot = optionalString(params.grantRoot);
+  const networkContext = isRecord(params.networkApprovalContext)
+    ? params.networkApprovalContext
+    : undefined;
+  const host = optionalString(networkContext?.host);
+  const protocol = optionalString(networkContext?.protocol);
+  const port = typeof networkContext?.port === 'number' ? networkContext.port : undefined;
+  const kind = input.request.method === 'item/commandExecution/requestApproval'
+    ? 'command_execution' as const
+    : input.request.method === 'item/fileChange/requestApproval'
+      ? 'file_change' as const
+      : 'permissions' as const;
+  const title = kind === 'command_execution'
+    ? host === undefined ? '允许执行命令' : '允许网络访问'
+    : kind === 'file_change'
+      ? '允许修改文件'
+      : '允许扩大权限';
+  const summary = host !== undefined
+    ? `${protocol ?? 'network'}://${host}${port === undefined ? '' : `:${port}`}`
+    : command ?? grantRoot ?? reason ?? title;
+  const details = redactApprovalDetails({
+    ...(reason === undefined ? {} : { reason }),
+    ...(command === undefined ? {} : { command }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(grantRoot === undefined ? {} : { grantRoot }),
+    ...(host === undefined ? {} : {
+      network: {
+        host,
+        ...(protocol === undefined ? {} : { protocol }),
+        ...(port === undefined ? {} : { port })
+      }
+    }),
+    ...(Array.isArray(params.commandActions) ? { commandActions: params.commandActions } : {}),
+    ...(isRecord(params.permissions) ? { permissions: params.permissions } : {})
+  });
+
+  return {
+    runId: input.runId,
+    threadId: input.threadId,
+    codexThreadId: input.codexThreadId,
+    turnId: optionalString(params.turnId) ?? 'unknown',
+    itemId: optionalString(params.itemId) ?? 'unknown',
+    requestId: String(input.request.id),
+    kind,
+    risk: kind === 'file_change' ? 'medium' as const : 'high' as const,
+    title,
+    summary: redactText(summary),
+    details
+  };
+}
+
+function redactApprovalDetails(
+  details: Record<string, unknown>
+): Record<string, unknown> {
+  try {
+    const redacted = JSON.parse(redactText(JSON.stringify(details)));
+    return isRecord(redacted) ? redacted : {};
+  } catch {
+    return {};
+  }
+}
+
+function publishApproval(
+  runId: string,
+  seq: number,
+  approval: RuntimeApproval,
+  publish: (event: AgentEventEnvelope) => Promise<void>
+): Promise<void> {
+  return publish({
+    id: `evt_${runId}_${seq}`,
+    runId,
+    seq,
+    ts: new Date().toISOString(),
+    type: 'approval',
+    payload: {
+      type: 'approval',
+      approval
+    },
+    normalizerVersion
+  });
+}
+
+function appServerErrorToTerminationReason(message: string): TerminationReason {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('spawn timeout')) return 'spawn_timeout';
+  if (normalized.includes('inactivity timeout')) return 'inactivity_timeout';
+  if (normalized.includes(' timeout after')) return 'timeout';
+  return 'stream_error';
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 async function withTimeout<T>(

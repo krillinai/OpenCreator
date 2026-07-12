@@ -3,6 +3,44 @@ import { describe, expect, it } from 'vitest';
 import { eventToTimelineItem } from './timeline-model.js';
 
 describe('timeline model', () => {
+  it('maps approval events to actionable timeline approvals', () => {
+    const event: AgentEventEnvelope = {
+      id: 'evt_approval',
+      runId: 'run_1',
+      seq: 1,
+      ts: '2026-07-12T10:00:00.000Z',
+      type: 'approval',
+      normalizerVersion: 1,
+      payload: {
+        type: 'approval',
+        approval: {
+          id: 'approval_1',
+          runId: 'run_1',
+          threadId: 'thread_1',
+          turnId: 'turn_1',
+          itemId: 'item_1',
+          requestId: 'rpc_1',
+          kind: 'command_execution',
+          status: 'pending',
+          risk: 'high',
+          title: '允许执行命令',
+          summary: 'rm -rf build',
+          details: { command: 'rm -rf build' },
+          requestedAt: '2026-07-12T10:00:00.000Z',
+          expiresAt: '2026-07-12T10:10:00.000Z'
+        }
+      }
+    };
+
+    expect(eventToTimelineItem(event)).toMatchObject({
+      kind: 'approval',
+      approval: {
+        id: 'approval_1',
+        status: 'pending'
+      }
+    });
+  });
+
   it('maps assistant_message events', () => {
     const event: AgentEventEnvelope = {
       id: 'evt_1',

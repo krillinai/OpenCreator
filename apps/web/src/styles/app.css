@@ -759,6 +759,122 @@ textarea:focus-visible {
   background: var(--success-soft);
 }
 
+.timeline-approval .timeline-bubble {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--border));
+  background: color-mix(in srgb, var(--surface-2) 90%, var(--warning) 10%);
+}
+
+.approval-panel {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.approval-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.approval-heading > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--warning);
+}
+
+.approval-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.approval-heading strong,
+.approval-heading span,
+.approval-panel > p {
+  overflow-wrap: anywhere;
+}
+
+.approval-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.approval-panel > p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.approval-details {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.approval-details > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.approval-details dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.approval-details dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.approval-details code {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.approval-actions button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-weight: 650;
+}
+
+.approval-actions button:disabled {
+  opacity: 0.58;
+  cursor: wait;
+}
+
+.approval-reject {
+  background: var(--surface-3);
+  color: var(--text-secondary);
+}
+
+.approval-approve {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important;
+  background: var(--accent);
+  color: #fff;
+}
+
 .timeline-process {
   max-width: 820px;
   color: var(--muted);

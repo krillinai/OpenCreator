@@ -1,5 +1,6 @@
 import type {
   AttachmentResponse,
+  ApprovalDecisionResponse,
   CodexMcpListResponse,
   CodexProfileListResponse,
   CodexSkillListResponse,
@@ -66,6 +67,7 @@ import { subscribeRunEvents as defaultSubscribeRunEvents, type SubscribeRunEvent
 import type { ConnectionConfig } from '../runtime/types.js';
 import { createCapabilityService } from '../services/capability-service.js';
 import { createAttachmentService } from '../services/attachment-service.js';
+import { createApprovalService } from '../services/approval-service.js';
 import { createConnectionService, type ConnectionState } from '../services/connection-service.js';
 import { createCleanupService } from '../services/cleanup-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
@@ -153,6 +155,10 @@ export function AppController(props: AppControllerProps) {
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
   const [treeLoadError, setTreeLoadError] = useState<string>();
   const [timelineItems, setTimelineItemsState] = useState<TimelineItem[]>([]);
+  const [resolvingApprovalIds, setResolvingApprovalIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [approvalErrors, setApprovalErrors] = useState<Record<string, string | undefined>>({});
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig | null>(null);
   const [runtimeThreads, setRuntimeThreads] = useState<ThreadResponse[]>([]);
   const [threadLoadError, setThreadLoadError] = useState<string>();
@@ -249,6 +255,10 @@ export function AppController(props: AppControllerProps) {
   const runService = useMemo(() => runtimeClient === null ? null : createRunService(runtimeClient), [runtimeClient]);
   const attachmentService = useMemo(
     () => runtimeClient === null ? null : createAttachmentService(runtimeClient),
+    [runtimeClient]
+  );
+  const approvalService = useMemo(
+    () => runtimeClient === null ? null : createApprovalService(runtimeClient),
     [runtimeClient]
   );
   const threadService = useMemo(
@@ -897,11 +907,44 @@ export function AppController(props: AppControllerProps) {
     if (items.length === 0) return;
     const previousItems = timelineItemsByThreadIdRef.current[threadId]
       ?? (timelineThreadIdRef.current === threadId ? timelineItemsRef.current : []);
-    const nextItems = [...previousItems, ...items];
+    const nextItems = mergeTimelineItems(previousItems, items);
     timelineItemsByThreadIdRef.current[threadId] = nextItems;
     if (timelineThreadIdRef.current !== threadId) return;
     timelineItemsRef.current = nextItems;
     setTimelineItemsState(nextItems);
+  }
+
+  function replaceApproval(response: ApprovalDecisionResponse) {
+    const threadId = response.approval.threadId ?? undefined;
+    if (threadId === undefined) return;
+    updateTimelineItemsForThread(threadId, items => items.map(item => (
+      item.kind === 'approval' && item.approval.id === response.approval.id
+        ? { ...item, approval: response.approval }
+        : item
+    )));
+  }
+
+  async function resolveApproval(id: string, decision: 'approve' | 'reject') {
+    if (approvalService === null || resolvingApprovalIds.has(id)) return;
+    setResolvingApprovalIds(previous => new Set(previous).add(id));
+    setApprovalErrors(previous => ({ ...previous, [id]: undefined }));
+    try {
+      const response = decision === 'approve'
+        ? await approvalService.approve(id)
+        : await approvalService.reject(id);
+      replaceApproval(response);
+    } catch (error) {
+      setApprovalErrors(previous => ({
+        ...previous,
+        [id]: error instanceof Error ? error.message : '审批操作失败'
+      }));
+    } finally {
+      setResolvingApprovalIds(previous => {
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+    }
   }
 
   function updateTimelineItemsForThread(
@@ -2033,6 +2076,10 @@ export function AppController(props: AppControllerProps) {
             onOpenRunDetail={openRunDetail}
             onOpenFile={openTimelineFile}
             onCancelQueuedRun={(runId) => void requestRunCancellation(runId)}
+            resolvingApprovalIds={resolvingApprovalIds}
+            approvalErrors={approvalErrors}
+            onApproveApproval={(id) => void resolveApproval(id, 'approve')}
+            onRejectApproval={(id) => void resolveApproval(id, 'reject')}
           />
         )}
         {showHistoryLoadingOverlay ? (
@@ -2284,6 +2331,30 @@ export function AppController(props: AppControllerProps) {
       />
     );
   }
+}
+
+function mergeTimelineItems(
+  previousItems: TimelineItem[],
+  incomingItems: TimelineItem[]
+): TimelineItem[] {
+  let nextItems = previousItems;
+  for (const incoming of incomingItems) {
+    if (incoming.kind !== 'approval') {
+      nextItems = [...nextItems, incoming];
+      continue;
+    }
+    const index = nextItems.findIndex(item => (
+      item.kind === 'approval' && item.approval.id === incoming.approval.id
+    ));
+    if (index < 0) {
+      nextItems = [...nextItems, incoming];
+      continue;
+    }
+    nextItems = nextItems.map((item, itemIndex) => (
+      itemIndex === index ? incoming : item
+    ));
+  }
+  return nextItems;
 }
 
 function createInitialState(

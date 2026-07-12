@@ -264,6 +264,197 @@ export function normalizeCodexEvent(input: NormalizeInput): AgentEventEnvelope {
   };
 }
 
+export function normalizeAppServerEvent(input: NormalizeInput): AgentEventEnvelope {
+  const raw = isRecord(input.raw) ? input.raw : undefined;
+  const method = stringValue(raw?.method);
+  const params = isRecord(raw?.params) ? raw.params : undefined;
+  const item = isRecord(params?.item) ? params.item : undefined;
+  const itemType = stringValue(item?.type);
+  const rawEventId =
+    stringValue(item?.id)
+    ?? firstStringValue(params ?? {}, ['turnId', 'threadId'])
+    ?? fallbackEventId(input);
+  const base = baseEnvelope(input);
+
+  if (method === 'turn/started') {
+    return {
+      ...base,
+      type: 'status',
+      rawEventId,
+      payload: { type: 'status', label: 'running' }
+    };
+  }
+
+  if (method === 'turn/completed') {
+    return {
+      ...base,
+      type: 'status',
+      rawEventId,
+      payload: { type: 'status', label: 'finalizing' }
+    };
+  }
+
+  if (method === 'item/completed' && itemType === 'agentMessage') {
+    return {
+      ...base,
+      type: 'assistant_message',
+      rawEventId,
+      payload: {
+        type: 'assistant_message',
+        text: stringValue(item?.text) ?? '',
+        format: 'plain_text',
+        delivery: 'message'
+      }
+    };
+  }
+
+  if (method === 'item/completed' && itemType === 'reasoning') {
+    return {
+      ...base,
+      type: 'reasoning_summary',
+      rawEventId,
+      payload: {
+        type: 'reasoning_summary',
+        text: extractReasoningSummary(item?.summary) ?? '',
+        format: 'plain_text',
+        delivery: 'summary'
+      }
+    };
+  }
+
+  if (method === 'item/started' && itemType === 'commandExecution') {
+    const toolCallId = stringValue(item?.id) ?? fallbackEventId(input);
+    return {
+      ...base,
+      type: 'tool_use',
+      rawEventId,
+      payload: {
+        type: 'tool_use',
+        toolCallId,
+        name: 'command_execution',
+        input: {
+          ...(stringValue(item?.command) === undefined ? {} : { command: stringValue(item?.command) }),
+          raw: item
+        }
+      }
+    };
+  }
+
+  if (method === 'item/completed' && itemType === 'commandExecution') {
+    const toolCallId = stringValue(item?.id) ?? fallbackEventId(input);
+    const exitCode = numberValue(item?.exitCode) ?? null;
+    return {
+      ...base,
+      type: 'tool_result',
+      rawEventId,
+      payload: {
+        type: 'tool_result',
+        toolCallId,
+        output: stringValue(item?.aggregatedOutput) ?? '',
+        exitCode,
+        isError: exitCode !== 0
+      }
+    };
+  }
+
+  if (
+    (method === 'item/started' || method === 'item/completed')
+    && itemType === 'fileChange'
+  ) {
+    return {
+      ...base,
+      type: 'file_change',
+      rawEventId,
+      payload: {
+        type: 'file_change',
+        changes: extractAppServerFileChanges(item?.changes),
+        status: normalizeAppServerFileChangeStatus(item?.status)
+      }
+    };
+  }
+
+  if (method === 'thread/tokenUsage/updated') {
+    const tokenUsage = isRecord(params?.tokenUsage) ? params.tokenUsage : undefined;
+    const total = isRecord(tokenUsage?.total) ? tokenUsage.total : undefined;
+    return {
+      ...base,
+      type: 'usage',
+      rawEventId,
+      payload: {
+        type: 'usage',
+        inputTokens: numberValue(total?.inputTokens),
+        cachedInputTokens: numberValue(total?.cachedInputTokens),
+        outputTokens: numberValue(total?.outputTokens),
+        reasoningOutputTokens: numberValue(total?.reasoningOutputTokens),
+        source: 'stream_cumulative'
+      }
+    };
+  }
+
+  if (method === 'warning' || method === 'configWarning' || method === 'guardianWarning') {
+    return {
+      ...base,
+      type: 'diagnostic',
+      rawEventId,
+      payload: {
+        type: 'diagnostic',
+        code: 'CODEX_WARNING',
+        severity: 'warning',
+        message: firstStringValue(params ?? {}, ['message']) ?? 'Codex warning',
+        details: { raw: params }
+      }
+    };
+  }
+
+  if (method === 'error') {
+    return {
+      ...base,
+      type: 'error',
+      rawEventId,
+      payload: {
+        type: 'error',
+        code: 'CODEX_STREAM_ERROR',
+        message: firstStringValue(params ?? {}, ['message']) ?? 'Codex app-server error',
+        details: { raw: params }
+      }
+    };
+  }
+
+  return {
+    ...base,
+    type: 'unknown_event',
+    rawEventId,
+    payload: {
+      type: 'unknown_event',
+      rawEventId,
+      ...(method === undefined ? {} : { codexType: method })
+    }
+  };
+}
+
+function extractAppServerFileChanges(
+  value: unknown
+): Array<{ path: string; kind: 'add' | 'modify' | 'delete' | 'unknown' }> {
+  if (!Array.isArray(value)) return [];
+  return value.map(change => {
+    const record = isRecord(change) ? change : {};
+    const kind = stringValue(record.kind);
+    return {
+      path: firstStringValue(record, ['path', 'filePath']) ?? '',
+      kind: kind === 'add' || kind === 'modify' || kind === 'delete' ? kind : 'unknown'
+    };
+  });
+}
+
+function normalizeAppServerFileChangeStatus(
+  value: unknown
+): 'in_progress' | 'completed' | 'failed' | 'unknown' {
+  if (value === 'inProgress') return 'in_progress';
+  if (value === 'completed') return 'completed';
+  if (value === 'failed' || value === 'declined') return 'failed';
+  return 'unknown';
+}
+
 function isReasoningItemType(itemType: string | undefined): boolean {
   return itemType === 'reasoning'
     || itemType === 'reasoning_summary'

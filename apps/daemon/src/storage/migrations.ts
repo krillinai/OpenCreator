@@ -170,6 +170,30 @@ export function migrate(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS approvals (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      thread_id TEXT,
+      codex_thread_id TEXT,
+      turn_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      risk TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      details_json TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      resolved_at TEXT,
+      resolution_reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE,
+      UNIQUE(run_id, request_id)
+    );
+
     CREATE TABLE IF NOT EXISTS codex_session_sources (
       path TEXT PRIMARY KEY,
       file_id TEXT NOT NULL,
@@ -252,6 +276,12 @@ export function migrate(db: Database.Database): void {
       WHERE draft_id IS NOT NULL AND status = 'draft';
     CREATE INDEX IF NOT EXISTS idx_attachments_status_created_at
       ON attachments(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_approvals_status_requested_at
+      ON approvals(status, requested_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_approvals_run_id
+      ON approvals(run_id, requested_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_approvals_thread_id
+      ON approvals(thread_id, requested_at DESC);
     CREATE INDEX IF NOT EXISTS idx_codex_sessions_updated_at
       ON codex_sessions(updated_at DESC, codex_thread_id DESC);
     CREATE INDEX IF NOT EXISTS idx_codex_sessions_kind_updated_at

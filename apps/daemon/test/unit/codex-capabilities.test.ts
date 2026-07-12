@@ -50,6 +50,13 @@ Usage: codex mcp add [OPTIONS] <NAME> <COMMAND>...
   --oauth-resource <RESOURCE>
 `;
 
+const APP_SERVER_HELP_0144 = `
+Run the app server
+Commands:
+  generate-json-schema
+  generate-ts
+`;
+
 describe('codex capability parsing', () => {
   it('detects supported exec flags', () => {
     const parsed = parseCodexExecHelp(EXEC_HELP_01425);
@@ -105,6 +112,34 @@ describe('codex capability parsing', () => {
       mcpAddOAuth: true,
       mcpRuntimeDiscoveryVerified: false,
       mcpRuntimeBehaviorVerified: false
+    });
+  });
+
+  it('detects app-server approval protocol support only when schemas are available', () => {
+    const supported = parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.144.1',
+      execHelp: EXEC_HELP_01425,
+      resumeHelp: RESUME_HELP_01425,
+      mcpHelp: MCP_HELP_01425,
+      mcpAddHelp: MCP_ADD_HELP_01425,
+      appServerHelp: APP_SERVER_HELP_0144
+    });
+    const unsupported = parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.142.5',
+      execHelp: EXEC_HELP_01425,
+      resumeHelp: RESUME_HELP_01425,
+      mcpHelp: MCP_HELP_01425,
+      mcpAddHelp: MCP_ADD_HELP_01425,
+      appServerHelp: 'Run the app server'
+    });
+
+    expect(supported).toMatchObject({
+      appServer: true,
+      appServerApprovals: true
+    });
+    expect(unsupported).toMatchObject({
+      appServer: true,
+      appServerApprovals: false
     });
   });
 

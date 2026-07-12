@@ -5,6 +5,9 @@ export type WorkspaceMode = 'managed' | 'external';
 export type ReasoningEffort = 'default' | 'low' | 'medium' | 'high' | 'xhigh';
 export type ResumeMode = 'auto' | 'new_thread' | 'resume_thread';
 export type RunSubmissionMode = 'enqueue' | 'interrupt_and_enqueue';
+export type ApprovalKind = 'command_execution' | 'file_change' | 'permissions';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'canceled';
+export type ApprovalRisk = 'medium' | 'high';
 export type ThreadStatus = 'active' | 'archived';
 export type CodexHomeMode = 'global' | 'isolated';
 export type CodexHomeSource = 'env' | 'default' | 'isolated';
@@ -241,6 +244,42 @@ export type RunResponse = {
   attachments?: AttachmentResponse[];
   submissionMode?: RunSubmissionMode;
   queuePosition?: number;
+};
+
+export type RuntimeApproval = {
+  id: string;
+  runId: string;
+  threadId?: string | null;
+  codexThreadId?: string | null;
+  turnId: string;
+  itemId: string;
+  requestId: string;
+  kind: ApprovalKind;
+  status: ApprovalStatus;
+  risk: ApprovalRisk;
+  title: string;
+  summary: string;
+  details: Record<string, unknown>;
+  requestedAt: string;
+  expiresAt: string;
+  resolvedAt?: string | null;
+  resolutionReason?: string | null;
+};
+
+export type ApprovalListQuery = {
+  status?: ApprovalStatus | 'all';
+  runId?: string;
+  threadId?: string;
+  limit?: number;
+};
+
+export type ApprovalListResponse = {
+  approvals: RuntimeApproval[];
+};
+
+export type ApprovalDecisionResponse = {
+  approval: RuntimeApproval;
+  changed: boolean;
 };
 
 export type CreateThreadRequest = {

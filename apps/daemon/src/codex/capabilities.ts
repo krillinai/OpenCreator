@@ -29,6 +29,8 @@ export type RuntimeCapabilityMatrix = {
   execImages: boolean;
   resumeImages: boolean;
   resumeContextContinuityVerified: boolean;
+  appServer?: boolean;
+  appServerApprovals?: boolean;
   mcpList: boolean;
   mcpGet: boolean;
   mcpAdd: boolean;
@@ -91,6 +93,7 @@ export function parseCodexCapabilityMatrix(input: {
   resumeHelp: string;
   mcpHelp: string;
   mcpAddHelp: string;
+  appServerHelp?: string;
   resumeContextContinuityVerified?: boolean;
   checkedAt?: string;
 }): RuntimeCapabilityMatrix {
@@ -119,6 +122,10 @@ export function parseCodexCapabilityMatrix(input: {
     execImages: exec.supportsImages,
     resumeImages: input.resumeHelp.includes('--image') || input.resumeHelp.includes('-i,'),
     resumeContextContinuityVerified: input.resumeContextContinuityVerified ?? false,
+    appServer: input.appServerHelp?.includes('Run the app server') ?? false,
+    appServerApprovals:
+      input.appServerHelp?.includes('generate-json-schema')
+      && input.appServerHelp.includes('generate-ts'),
     mcpList: hasMcpCommand(input.mcpHelp, 'list'),
     mcpGet: hasMcpCommand(input.mcpHelp, 'get'),
     mcpAdd: hasMcpCommand(input.mcpHelp, 'add'),
@@ -152,6 +159,7 @@ export function collectCodexCapabilityMatrix(
   const resumeHelp = runCodexInfo(codexBin, ['exec', 'resume', '--help'], input.timeoutMs);
   const mcpHelp = runCodexInfo(codexBin, ['mcp', '--help'], input.timeoutMs);
   const mcpAddHelp = runCodexInfo(codexBin, ['mcp', 'add', '--help'], input.timeoutMs);
+  const appServerHelp = runCodexInfo(codexBin, ['app-server', '--help'], input.timeoutMs);
 
   const matrix = parseCodexCapabilityMatrix({
     versionOutput: version.output.trim() || 'unknown',
@@ -159,6 +167,7 @@ export function collectCodexCapabilityMatrix(
     resumeHelp: resumeHelp.output,
     mcpHelp: mcpHelp.output,
     mcpAddHelp: mcpAddHelp.output,
+    appServerHelp: appServerHelp.output,
     resumeContextContinuityVerified: input.resumeContextContinuityVerified,
     checkedAt: input.checkedAt
   });
@@ -168,7 +177,8 @@ export function collectCodexCapabilityMatrix(
     ...execHelp.warnings,
     ...resumeHelp.warnings,
     ...mcpHelp.warnings,
-    ...mcpAddHelp.warnings
+    ...mcpAddHelp.warnings,
+    ...appServerHelp.warnings
   );
   if (!isResumeExecutionSupported(matrix)) {
     matrix.warnings.push('Codex resume execution support was not verified from help output.');

@@ -16,6 +16,7 @@ export function assertKnownEventType(type: string): boolean {
     'tool_result',
     'usage',
     'diagnostic',
+    'approval',
     'error',
     'unknown_event',
     'done'

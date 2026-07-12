@@ -2,6 +2,7 @@ import type {
   AgentEventEnvelope,
   AttachmentResponse,
   PublicRunStatus,
+  RuntimeApproval,
   RunSubmissionMode
 } from '@clawee/protocol';
 
@@ -19,6 +20,7 @@ export type TimelineItem =
       queuePosition?: number;
       source: 'runtime' | 'mock';
     }
+  | { kind: 'approval'; id: string; runId: string; approval: RuntimeApproval; source: 'runtime' }
   | { kind: 'reasoning_summary'; id: string; runId?: string; text: string; content?: string; source: 'runtime' }
   | { kind: 'assistant_message'; id: string; runId?: string; text: string; content?: string; source: 'runtime' | 'mock' }
   | { kind: 'tool_step'; id: string; runId?: string; name: string; content: string; source: 'runtime' }
@@ -148,6 +150,14 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         severity: event.payload.severity,
         message: event.payload.message,
         content: safeStringify(event.payload),
+        source: 'runtime'
+      };
+    case 'approval':
+      return {
+        kind: 'approval',
+        id: event.id,
+        runId: event.runId,
+        approval: event.payload.approval,
         source: 'runtime'
       };
     case 'error':

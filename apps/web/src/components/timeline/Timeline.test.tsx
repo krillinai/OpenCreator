@@ -7,6 +7,47 @@ import type { TimelineItem } from './timeline-model.js';
 vi.mock('react-virtuoso', async () => import('../../test/react-virtuoso-mock.js'));
 
 describe('Timeline', () => {
+  it('renders a runtime approval and forwards the decision', async () => {
+    const user = userEvent.setup();
+    const onApproveApproval = vi.fn();
+    const onRejectApproval = vi.fn();
+
+    render(
+      <Timeline
+        items={[{
+          kind: 'approval',
+          id: 'event_approval_1',
+          runId: 'run_1',
+          approval: {
+            id: 'approval_1',
+            runId: 'run_1',
+            threadId: 'thread_1',
+            turnId: 'turn_1',
+            itemId: 'item_1',
+            requestId: 'rpc_1',
+            kind: 'command_execution',
+            status: 'pending',
+            risk: 'high',
+            title: '允许执行命令',
+            summary: '删除构建目录',
+            details: { command: 'rm -rf build', cwd: '/workspace' },
+            requestedAt: '2026-07-12T10:00:00.000Z',
+            expiresAt: '2026-07-12T10:10:00.000Z'
+          },
+          source: 'runtime'
+        }]}
+        onApproveApproval={onApproveApproval}
+        onRejectApproval={onRejectApproval}
+      />
+    );
+
+    expect(screen.getByText('需要确认')).toBeInTheDocument();
+    expect(screen.getByText('rm -rf build')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '批准' }));
+
+    expect(onApproveApproval).toHaveBeenCalledWith('approval_1');
+  });
+
   it('renders image metadata and a local preview with the user message', () => {
     render(
       <Timeline

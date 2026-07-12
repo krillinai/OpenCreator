@@ -8,6 +8,10 @@ import {
   createAttachmentService
 } from '../attachments/service.js';
 import {
+  createApprovalManager,
+  type ApprovalManager
+} from '../approvals/manager.js';
+import {
   isResumeExecutionSupported,
   withRuntimeSkillCapabilities,
   type RuntimeCapabilityMatrix
@@ -40,6 +44,7 @@ import { createWorkspaceFileService } from '../workspace-files/service.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerAttachmentRoutes } from './routes.attachments.js';
+import { registerApprovalRoutes } from './routes.approvals.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerCleanupRoutes } from './routes.cleanup.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
@@ -68,6 +73,7 @@ export type BuildServerInput = {
   marketArchiveDownloader?: MarketArchiveDownloaderType;
   attachmentMaxSizeBytes?: number;
   attachmentDraftTtlMs?: number;
+  approvalManager?: ApprovalManager;
 };
 
 const SEARCH_SESSION_SYNC_INTERVAL_MS = 30_000;
@@ -126,6 +132,7 @@ export async function buildServer(input: BuildServerInput) {
     downloader: input.marketArchiveDownloader ?? MarketArchiveDownloader
   });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
+  const approvalManager = input.approvalManager ?? createApprovalManager({ db });
   const runManager =
     input.runManager ??
     createRunManager({
@@ -135,7 +142,9 @@ export async function buildServer(input: BuildServerInput) {
       codexHome,
       threadAccess: threadManager,
       resumeCapabilityVerified,
-      profileValidator: profileManager
+      profileValidator: profileManager,
+      runtimeTransport: capabilities.appServerApprovals === true ? 'app-server' : 'exec',
+      approvalManager
     });
   const scheduler =
     input.scheduler ??
@@ -266,6 +275,7 @@ export async function buildServer(input: BuildServerInput) {
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });
+  await registerApprovalRoutes(server, approvalManager);
   await registerDiagnosticsRoutes(server, {
     dataDir,
     runs: runRepository,

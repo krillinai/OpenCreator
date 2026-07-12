@@ -21,6 +21,7 @@ export type AgentEventType =
   | 'file_change'
   | 'usage'
   | 'diagnostic'
+  | 'approval'
   | 'error'
   | 'unknown_event'
   | 'done';
@@ -50,6 +51,28 @@ export type AgentEventPayload =
       source: 'stream_cumulative' | 'rollout_best_effort';
     }
   | { type: 'diagnostic'; code: string; severity: 'info' | 'warning' | 'error'; message: string; details?: Record<string, unknown> }
+  | {
+      type: 'approval';
+      approval: {
+        id: string;
+        runId: string;
+        threadId?: string | null;
+        codexThreadId?: string | null;
+        turnId: string;
+        itemId: string;
+        requestId: string;
+        kind: 'command_execution' | 'file_change' | 'permissions';
+        status: 'pending' | 'approved' | 'rejected' | 'expired' | 'canceled';
+        risk: 'medium' | 'high';
+        title: string;
+        summary: string;
+        details: Record<string, unknown>;
+        requestedAt: string;
+        expiresAt: string;
+        resolvedAt?: string | null;
+        resolutionReason?: string | null;
+      };
+    }
   | { type: 'error'; code: string; message: string; details?: Record<string, unknown> }
   | { type: 'unknown_event'; rawEventId: string; codexType?: string }
   | { type: 'done'; status: 'succeeded' | 'failed' | 'canceled'; terminationReason: TerminationReason };
