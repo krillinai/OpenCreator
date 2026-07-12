@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type Database from 'better-sqlite3';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
 import type { MarketArchiveDownloader } from '../../src/codex/skills/market-downloader.js';
@@ -40,6 +40,45 @@ afterEach(async () => {
 });
 
 describe('runtime api', () => {
+  it('starts and stops an injected scheduler when autostart is enabled', async () => {
+    const scheduler = createFakeScheduler({
+      start: vi.fn(),
+      stop: vi.fn()
+    });
+
+    server = await buildServer({
+      token: 'secret',
+      scheduler,
+      schedulerAutostart: true
+    });
+
+    expect(scheduler.start).toHaveBeenCalledTimes(1);
+
+    await server.close();
+    server = undefined;
+
+    expect(scheduler.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves an injected scheduler stopped when autostart is not enabled', async () => {
+    const scheduler = createFakeScheduler({
+      start: vi.fn(),
+      stop: vi.fn()
+    });
+
+    server = await buildServer({
+      token: 'secret',
+      scheduler
+    });
+
+    expect(scheduler.start).not.toHaveBeenCalled();
+
+    await server.close();
+    server = undefined;
+
+    expect(scheduler.stop).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects unauthorized requests', async () => {
     server = await buildServer({ token: 'secret' });
     const response = await server.inject({ method: 'GET', url: '/codex/status' });

@@ -120,7 +120,7 @@ export async function buildServer(input: BuildServerInput) {
       runManager,
       defaultCwd: process.cwd(),
       profileValidator: profileManager,
-      autostart: input.schedulerAutostart ?? false
+      autostart: false
     });
   const cleanupService = createCleanupService({
     dataDir,
@@ -201,6 +201,7 @@ export async function buildServer(input: BuildServerInput) {
     }
   });
 
+  if (input.schedulerAutostart === true) scheduler.start();
   return server;
 }
 
