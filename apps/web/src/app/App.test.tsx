@@ -11,6 +11,7 @@ import type {
   CodexSkillResponse,
   CodexStatusResponse,
   RunDiagnosticsResponse,
+  RunResponse,
   ThreadResponse
 } from '@clawee/protocol';
 import { App } from './App.js';
@@ -59,6 +60,163 @@ describe('App', () => {
     expect(screen.queryByText(prompt)).not.toBeInTheDocument();
     expect(screen.queryByText(/收到。我会先围绕/)).not.toBeInTheDocument();
     expect(screen.queryByText(/mock 文件变更/)).not.toBeInTheDocument();
+  });
+
+  it('uses the selected thread run registry without loading runs for every thread', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const runRequests: string[] = [];
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({ id: 'thread_a', title: '会话 A' }),
+            createThreadResponse({ id: 'thread_b', title: '会话 B' })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_a/history')) {
+        return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_b/history')) {
+        return jsonResponse({ threadId: 'thread_b', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_a/runs?limit=50')) {
+        runRequests.push('thread_a');
+        return jsonResponse({
+          runs: [
+            createRunResponse({
+              id: 'run_a',
+              threadId: 'thread_a',
+              status: 'running'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_b/runs?limit=50')) {
+        runRequests.push('thread_b');
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    expect(runRequests).toEqual([]);
+
+    await user.click(await screen.findByRole('button', { name: /会话 A/ }));
+
+    expect(await screen.findByRole('button', { name: '停止任务' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeDisabled();
+    expect(runRequests).toEqual(['thread_a']);
+
+    await user.click(await screen.findByRole('button', { name: /会话 B/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    });
+    expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument();
+    expect(runRequests).toEqual(['thread_a', 'thread_b']);
+  });
+
+  it('keeps pending run starts isolated when switching threads', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const runResolvers = new Map<string, (response: Response) => void>();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({ id: 'thread_a', title: '会话 A' }),
+            createThreadResponse({ id: 'thread_b', title: '会话 B' })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_a/history')) {
+        return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_b/history')) {
+        return jsonResponse({ threadId: 'thread_b', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_a/runs?limit=50')) return jsonResponse({ runs: [] });
+      if (url.endsWith('/threads/thread_b/runs?limit=50')) return jsonResponse({ runs: [] });
+      if (url.endsWith('/runs') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { threadId: string };
+        return new Promise<Response>(resolve => {
+          runResolvers.set(body.threadId, resolve);
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /会话 A/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    });
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '任务 A');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    await user.click(await screen.findByRole('button', { name: /会话 B/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    });
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '任务 B');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(await screen.findByRole('button', { name: '停止任务' })).toBeInTheDocument();
+    await act(async () => {
+      runResolvers.get('thread_a')?.(
+        jsonResponse(
+          createRunResponse({ id: 'run_a', threadId: 'thread_a', status: 'running' }),
+          { status: 202 }
+        )
+      );
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('button', { name: '停止任务' })).toBeInTheDocument();
+
+    await act(async () => {
+      runResolvers.get('thread_b')?.(
+        jsonResponse(
+          createRunResponse({ id: 'run_b', threadId: 'thread_b', status: 'running' }),
+          { status: 202 }
+        )
+      );
+      await Promise.resolve();
+    });
   });
 
   it('loads runtime skills and MCP servers into the composer slash menu', async () => {
@@ -2959,6 +3117,15 @@ function createRunDiagnosticsResponse(codexStatus: CodexStatusResponse): RunDiag
     files: [],
     codexStatusSnapshot: codexStatus,
     warnings: []
+  };
+}
+
+function createRunResponse(overrides: Partial<RunResponse> = {}): RunResponse {
+  return {
+    id: 'run_1',
+    threadId: 'thread_from_api',
+    status: 'running',
+    ...overrides
   };
 }
 

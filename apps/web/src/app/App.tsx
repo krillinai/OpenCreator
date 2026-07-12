@@ -30,6 +30,12 @@ import {
 } from '../features/plugins/SkillMarketView.js';
 import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
 import { Composer, type ComposerDraftRequest, type ComposerRunConfig, type ComposerSlashCommand } from '../features/runs/Composer.js';
+import {
+  getRunCancelState,
+  getThreadActiveRun,
+  initialRunRegistryState,
+  runRegistryReducer
+} from '../features/runs/run-registry.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
@@ -60,6 +66,12 @@ type AppFileService = {
 type CapabilityService = ReturnType<typeof createCapabilityService>;
 type SkillMarketService = ReturnType<typeof createSkillMarketService>;
 type ThreadService = ReturnType<typeof createThreadService>;
+type PendingRunStart = {
+  id: string;
+  threadId?: string;
+  cancelRequested: boolean;
+};
+type PendingRunStartsById = Record<string, PendingRunStart | undefined>;
 
 const CONVERSATION_PANE_MIN_WIDTH = 320;
 const FILE_WORKSPACE_MIN_WIDTH = 520;
@@ -88,6 +100,10 @@ export function App(props: AppProps = {}) {
     currentProjectId: persistedNavigation?.currentProjectId ?? initialAppState.currentProjectId,
     selectedThreadId: persistedNavigation?.selectedThreadId
   });
+  const [runRegistry, dispatchRunRegistry] = useReducer(
+    runRegistryReducer,
+    initialRunRegistryState
+  );
   const baseProjects = useMemo(() => createDefaultProjects(), []);
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
@@ -121,8 +137,8 @@ export function App(props: AppProps = {}) {
   >();
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
-  const [runtimeBusy, setRuntimeBusy] = useState(false);
-  const [runCanceling, setRunCanceling] = useState(false);
+  const [pendingRunStartsById, setPendingRunStartsById] = useState<PendingRunStartsById>({});
+  const [runsLoadingThreadId, setRunsLoadingThreadId] = useState<string>();
   const [savedFileByPath, setSavedFileByPath] = useState<Record<string, WorkspaceFile>>({});
   const [draftContentByPath, setDraftContentByPath] = useState<Record<string, string>>({});
   const [loadingFilePath, setLoadingFilePath] = useState<string>(state.selectedFilePath);
@@ -146,8 +162,8 @@ export function App(props: AppProps = {}) {
   const connectionConfigVersionRef = useRef(0);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
   const timelineEventBatcherRef = useRef<FrameBatcher<TimelineItem> | null>(null);
-  const activeRunIdRef = useRef<string>();
-  const cancelRequestedRef = useRef(false);
+  const runRegistryRef = useRef(runRegistry);
+  const pendingRunStartsByIdRef = useRef<PendingRunStartsById>({});
   const conversationBodyRef = useRef<HTMLDivElement | null>(null);
   const conversationFileLayoutRef = useRef<HTMLElement | null>(null);
   const allowInitialRuntimeProjectFocusRef = useRef(persistedNavigation === null);
@@ -162,6 +178,7 @@ export function App(props: AppProps = {}) {
   const threadServiceRef = useRef<ThreadService | null>(null);
   const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
   const nextComposerDraftIdRef = useRef(0);
+  runRegistryRef.current = runRegistry;
 
   if (timelineEventBatcherRef.current === null) {
     timelineEventBatcherRef.current = createFrameBatcher({
@@ -238,6 +255,12 @@ export function App(props: AppProps = {}) {
   useEffect(() => {
     connectionConfigRef.current = connectionConfig;
   }, [connectionConfig]);
+
+  useEffect(() => {
+    if (connectionState.status === 'connected') return;
+    dispatchRunRegistry({ type: 'reset' });
+    setRunsLoadingThreadId(undefined);
+  }, [connectionState.status]);
 
   useEffect(() => {
     let canceled = false;
@@ -488,6 +511,51 @@ export function App(props: AppProps = {}) {
   }, [connectionState.status, state.selectedThreadId, selectedThreadExists, threadHistoryReloadKey, threadService]);
 
   useEffect(() => {
+    let canceled = false;
+    const selectedThreadId = state.selectedThreadId;
+
+    if (
+      selectedThreadId === undefined
+      || threadService === null
+      || connectionState.status !== 'connected'
+      || !selectedThreadExists
+    ) {
+      setRunsLoadingThreadId(undefined);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    setRunsLoadingThreadId(selectedThreadId);
+    const knownRunIdsAtRequestStart = [
+      ...(runRegistryRef.current.runIdsByThreadId[selectedThreadId] ?? [])
+    ];
+    threadService
+      .listThreadRuns(selectedThreadId)
+      .then(response => {
+        if (canceled) return;
+        dispatchRunRegistry({
+          type: 'merge_thread_runs',
+          threadId: selectedThreadId,
+          knownRunIdsAtRequestStart,
+          runs: response.runs
+        });
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!canceled) {
+          setRunsLoadingThreadId(current => (
+            current === selectedThreadId ? undefined : current
+          ));
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [connectionState.status, state.selectedThreadId, selectedThreadExists, threadService]);
+
+  useEffect(() => {
     const body = conversationBodyRef.current;
     if (body === null) return;
     const scrollToBottom = () => {
@@ -574,6 +642,15 @@ export function App(props: AppProps = {}) {
   const currentProjectName = currentProject?.name ?? 'content-design';
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
   const selectedThread = runtimeThreads.find(thread => thread.id === state.selectedThreadId);
+  const selectedActiveRun = getThreadActiveRun(runRegistry, state.selectedThreadId);
+  const selectedPendingRunStart = findPendingRunStart(
+    pendingRunStartsById,
+    state.selectedThreadId
+  );
+  const currentRunBusy = selectedActiveRun !== undefined || selectedPendingRunStart !== undefined;
+  const currentRunCanceling = selectedActiveRun === undefined
+    ? selectedPendingRunStart?.cancelRequested === true
+    : getRunCancelState(runRegistry, selectedActiveRun.id) === 'requested';
   const runtimeStatus = mapRuntimeStatus(connectionState);
   const slashCommands = useMemo(
     () => buildComposerSlashCommands(codexSkills, codexMcp),
@@ -607,6 +684,23 @@ export function App(props: AppProps = {}) {
   function createTimelineId(prefix: string) {
     timelineIdSequenceRef.current += 1;
     return `${prefix}_${Date.now()}_${timelineIdSequenceRef.current}`;
+  }
+
+  function updatePendingRunStart(next: PendingRunStart) {
+    const updated = {
+      ...pendingRunStartsByIdRef.current,
+      [next.id]: next
+    };
+    pendingRunStartsByIdRef.current = updated;
+    if (mountedRef.current) setPendingRunStartsById(updated);
+  }
+
+  function removePendingRunStart(id: string) {
+    if (pendingRunStartsByIdRef.current[id] === undefined) return;
+    const updated = { ...pendingRunStartsByIdRef.current };
+    delete updated[id];
+    pendingRunStartsByIdRef.current = updated;
+    if (mountedRef.current) setPendingRunStartsById(updated);
   }
 
   function readHostRuntimeConfig(loadVersion: number, isCanceled: () => boolean) {
@@ -664,7 +758,6 @@ export function App(props: AppProps = {}) {
     timelineEventBatcherRef.current?.clear();
     setTimelineItems([]);
     setHistoryLoadingThreadId(undefined);
-    setRuntimeBusy(false);
     setThreadConfigUpdateError(undefined);
     dispatch({ type: 'new_conversation' });
   }
@@ -676,7 +769,6 @@ export function App(props: AppProps = {}) {
     timelineEventBatcherRef.current?.clear();
     setTimelineItems([]);
     setHistoryLoadingThreadId(undefined);
-    setRuntimeBusy(false);
     setThreadConfigUpdateError(undefined);
     dispatch({ type: 'select_project', projectId });
   }
@@ -686,7 +778,6 @@ export function App(props: AppProps = {}) {
     navigationPersistenceReadyRef.current = true;
     sseAbortControllerRef.current?.abort();
     timelineEventBatcherRef.current?.clear();
-    setRuntimeBusy(false);
     setThreadConfigUpdateError(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
     const alreadySelected = conversationId === state.selectedThreadId;
@@ -879,7 +970,6 @@ export function App(props: AppProps = {}) {
       setTimelineItems([]);
       setThreadHistoryLoadError(undefined);
       setHistoryLoadingThreadId(undefined);
-      setRuntimeBusy(false);
       setThreadConfigUpdateError(undefined);
       skipNextHistoryLoadForThreadRef.current = created.thread.id;
       allowInitialRuntimeProjectFocusRef.current = false;
@@ -908,14 +998,26 @@ export function App(props: AppProps = {}) {
 
   async function submitRuntimePrompt(prompt: string, config?: ComposerRunConfig) {
     if (runService === null || threadService === null || connectionConfigRef.current === null) return;
-    if (runtimeBusy) return;
+    if (
+      currentRunBusy
+      || findPendingRunStart(
+        pendingRunStartsByIdRef.current,
+        state.selectedThreadId
+      ) !== undefined
+      || (
+        runsLoadingThreadId !== undefined
+        && runsLoadingThreadId === state.selectedThreadId
+      )
+    ) return;
 
     const effectiveConfig = config ?? composerRunConfig ?? defaultComposerRunConfig(currentProject);
     setComposerRunConfig(effectiveConfig);
-    activeRunIdRef.current = undefined;
-    cancelRequestedRef.current = false;
-    setRunCanceling(false);
-    setRuntimeBusy(true);
+    const pendingRunStartId = createTimelineId('pending_start');
+    updatePendingRunStart({
+      id: pendingRunStartId,
+      threadId: state.selectedThreadId,
+      cancelRequested: false
+    });
     setTimelineItems(previous => [
       ...previous,
       { kind: 'user_message', id: createTimelineId('user'), text: prompt, source: 'runtime' }
@@ -934,6 +1036,12 @@ export function App(props: AppProps = {}) {
         }
       ]);
       const resolvedThread = await resolveThreadIdForPrompt(prompt, effectiveConfig);
+      const pendingRunStart = pendingRunStartsByIdRef.current[pendingRunStartId];
+      updatePendingRunStart({
+        id: pendingRunStartId,
+        threadId: resolvedThread.threadId,
+        cancelRequested: pendingRunStart?.cancelRequested ?? false
+      });
       const runInput: {
         threadId: string;
         prompt: string;
@@ -950,9 +1058,15 @@ export function App(props: AppProps = {}) {
         if (effectiveConfig.reasoning !== null) runInput.reasoning = effectiveConfig.reasoning;
       }
       const run = await runService.startThreadRun(runInput);
-      activeRunIdRef.current = run.id;
       handleRunStarted(run);
-      if (cancelRequestedRef.current) {
+      const cancelRequested = pendingRunStartsByIdRef.current[pendingRunStartId]?.cancelRequested === true;
+      removePendingRunStart(pendingRunStartId);
+      if (cancelRequested) {
+        dispatchRunRegistry({
+          type: 'set_cancel_state',
+          runId: run.id,
+          state: 'requested'
+        });
         await requestRunCancellation(run.id);
       }
       await subscribeToRunEvents(run.id, connectionConfigRef.current);
@@ -971,24 +1085,32 @@ export function App(props: AppProps = {}) {
         ]);
       }
     } finally {
-      activeRunIdRef.current = undefined;
-      cancelRequestedRef.current = false;
-      if (mountedRef.current) {
-        setRunCanceling(false);
-        setRuntimeBusy(false);
-      }
+      removePendingRunStart(pendingRunStartId);
     }
   }
 
   async function cancelActiveRun() {
-    if (!runtimeBusy || cancelRequestedRef.current) return;
-
-    cancelRequestedRef.current = true;
-    setRunCanceling(true);
-    const activeRunId = activeRunIdRef.current;
-    if (activeRunId !== undefined) {
-      await requestRunCancellation(activeRunId);
+    const pendingStart = findPendingRunStart(
+      pendingRunStartsByIdRef.current,
+      state.selectedThreadId
+    );
+    if (pendingStart !== undefined) {
+      if (!pendingStart.cancelRequested) {
+        updatePendingRunStart({ ...pendingStart, cancelRequested: true });
+      }
+      return;
     }
+
+    const activeRun = getThreadActiveRun(runRegistry, state.selectedThreadId);
+    if (activeRun === undefined) return;
+    if (getRunCancelState(runRegistry, activeRun.id) === 'requested') return;
+
+    dispatchRunRegistry({
+      type: 'set_cancel_state',
+      runId: activeRun.id,
+      state: 'requested'
+    });
+    await requestRunCancellation(activeRun.id);
   }
 
   async function requestRunCancellation(runId: string) {
@@ -1001,9 +1123,12 @@ export function App(props: AppProps = {}) {
     }
     if (cancellationError === undefined) return;
 
-    cancelRequestedRef.current = false;
     if (!mountedRef.current) return;
-    setRunCanceling(false);
+    dispatchRunRegistry({
+      type: 'set_cancel_state',
+      runId,
+      state: 'failed'
+    });
     const message = getRuntimeErrorMessage(cancellationError, '停止任务失败，请重试');
     setTimelineItems(previous => [
       ...previous,
@@ -1034,6 +1159,7 @@ export function App(props: AppProps = {}) {
   }
 
   function handleRunStarted(run: RunResponse) {
+    dispatchRunRegistry({ type: 'upsert_run', run });
     setTimelineItems(previous => [
       ...previous,
       {
@@ -1052,6 +1178,12 @@ export function App(props: AppProps = {}) {
     timelineEventBatcherRef.current?.clear();
     const abortController = new AbortController();
     sseAbortControllerRef.current = abortController;
+    let sawDone = false;
+    dispatchRunRegistry({
+      type: 'set_subscription_state',
+      runId,
+      state: 'connecting'
+    });
 
     await subscribeRunEvents({
       ...config,
@@ -1061,15 +1193,22 @@ export function App(props: AppProps = {}) {
       signal: abortController.signal,
       onEvent(event) {
         if (!mountedRef.current || abortController.signal.aborted) return;
+        dispatchRunRegistry({ type: 'record_event', event });
         const item = eventToTimelineItem(event);
         if (item !== null) timelineEventBatcherRef.current?.push(item);
         if (event.type === 'done') {
+          sawDone = true;
           timelineEventBatcherRef.current?.flush();
           void loadRunDiagnostics(event.runId);
         }
       },
       onError(error) {
         if (!mountedRef.current || abortController.signal.aborted) return;
+        dispatchRunRegistry({
+          type: 'set_subscription_state',
+          runId,
+          state: 'disconnected'
+        });
         timelineEventBatcherRef.current?.push({
           kind: 'diagnostic',
           id: createTimelineId('sse_error'),
@@ -1084,6 +1223,13 @@ export function App(props: AppProps = {}) {
 
     if (!abortController.signal.aborted) {
       timelineEventBatcherRef.current?.flush();
+      if (!sawDone) {
+        dispatchRunRegistry({
+          type: 'set_subscription_state',
+          runId,
+          state: 'disconnected'
+        });
+      }
     }
   }
 
@@ -1199,11 +1345,17 @@ export function App(props: AppProps = {}) {
   }
 
   const detailPanel = createDetailPanel();
-  const composerDisabled = runtimeBusy || connectionState.status !== 'connected';
-  const composerDisabledReason = runCanceling
+  const selectedRunsLoading = runsLoadingThreadId !== undefined
+    && runsLoadingThreadId === state.selectedThreadId;
+  const composerDisabled = currentRunBusy
+    || selectedRunsLoading
+    || connectionState.status !== 'connected';
+  const composerDisabledReason = currentRunCanceling
     ? '正在停止任务'
-    : runtimeBusy
+    : currentRunBusy
       ? '当前对话有任务运行中'
+      : selectedRunsLoading
+        ? '正在检查会话任务'
       : '正在连接本地运行内核';
   const fileWorkspaceOpen = state.activeView === 'conversation' && state.rightPanelMode === 'file';
   const effectiveComposerConfig = selectedThread === undefined
@@ -1282,8 +1434,8 @@ export function App(props: AppProps = {}) {
           reasoning={effectiveComposerConfig.reasoning}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
-          running={runtimeBusy}
-          canceling={runCanceling}
+          running={currentRunBusy}
+          canceling={currentRunCanceling}
           slashCommands={slashCommands}
           slashCommandsLoading={capabilitiesLoading}
           slashCommandsError={capabilitiesLoadError}
@@ -1723,6 +1875,13 @@ function fromRuntimeSandbox(sandbox: SandboxMode): ClaweeProject['sandbox'] {
 function upsertThread(threads: ThreadResponse[], thread: ThreadResponse): ThreadResponse[] {
   const withoutThread = threads.filter(item => item.id !== thread.id);
   return [thread, ...withoutThread];
+}
+
+function findPendingRunStart(
+  pendingRunStartsById: PendingRunStartsById,
+  threadId: string | undefined
+): PendingRunStart | undefined {
+  return Object.values(pendingRunStartsById).find(pending => pending?.threadId === threadId);
 }
 
 function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {
