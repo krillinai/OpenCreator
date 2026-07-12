@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -402,6 +403,133 @@ describe('runtime api', () => {
       (await authGet(`/attachments/${attachmentId}?draftId=${encodeURIComponent('draft/1')}`))
         .statusCode
     ).toBe(404);
+  });
+
+  it('runs accept attachment ids, pass controlled image paths to codex, and expose attachment metadata', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-images-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-images' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      capabilities: makeResumeCapableMatrix({
+        execImages: true,
+        resumeImages: true
+      })
+    });
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread as { id: string };
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wn6zkAAAAAASUVORK5CYII=',
+      'base64'
+    );
+    const uploaded = await authUpload(
+      `/attachments?${new URLSearchParams({
+        draftId: 'draft-images',
+        fileName: 'screen.png',
+        mime: 'image/png'
+      })}`,
+      png
+    );
+    const attachment = uploaded.json().attachment as {
+      id: string;
+      storageKey: string;
+    };
+
+    const created = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: '描述这张图片',
+      draftId: 'draft-images',
+      attachmentIds: [attachment.id]
+    });
+    expect(created.statusCode).toBe(202);
+    expect(created.json()).toMatchObject({
+      id: expect.any(String),
+      threadId: thread.id,
+      attachments: [
+        {
+          id: attachment.id,
+          threadId: thread.id,
+          runId: expect.any(String),
+          status: 'committed'
+        }
+      ]
+    });
+    const runId = created.json().id as string;
+    await waitForRunStatus(runId, 'succeeded');
+
+    expect(fake.readArgv()).toEqual(expect.arrayContaining([
+      '--image',
+      realpathSync(join(tempDir, 'attachments', attachment.storageKey))
+    ]));
+    expect(fake.readArgv()).not.toContain(attachment.id);
+
+    expect((await authGet(`/runs/${runId}`)).json()).toMatchObject({
+      id: runId,
+      attachments: [{ id: attachment.id, runId }]
+    });
+    expect((await authGet(`/threads/${thread.id}/runs`)).json()).toMatchObject({
+      runs: [{ id: runId, attachments: [{ id: attachment.id, runId }] }]
+    });
+  });
+
+  it('rejects run images when codex image input is unsupported and keeps the draft reusable', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-images-unsupported-'));
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      capabilities: makeResumeCapableMatrix({
+        execImages: false,
+        resumeImages: false
+      })
+    });
+    const thread = (await authPost('/threads', {
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    })).json().thread as { id: string };
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wn6zkAAAAAASUVORK5CYII=',
+      'base64'
+    );
+    const uploaded = await authUpload(
+      `/attachments?${new URLSearchParams({
+        draftId: 'draft-images',
+        fileName: 'screen.png',
+        mime: 'image/png'
+      })}`,
+      png
+    );
+    const attachmentId = uploaded.json().attachment.id as string;
+
+    const rejected = await authPost('/runs', {
+      threadId: thread.id,
+      prompt: '描述这张图片',
+      draftId: 'draft-images',
+      attachmentIds: [attachmentId]
+    });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error.code).toBe('CODEX_IMAGE_INPUT_UNSUPPORTED');
+    expect(
+      (await authGet(`/attachments/${attachmentId}?draftId=draft-images`)).json()
+    ).toMatchObject({
+      attachment: {
+        id: attachmentId,
+        draftId: 'draft-images',
+        status: 'draft'
+      }
+    });
   });
 
   it('creates, lists, gets, updates, deletes, and runs schedules', async () => {
@@ -3341,6 +3469,8 @@ function makeResumeCapableMatrix(overrides: Partial<RuntimeCapabilityMatrix> = {
     resumeCwdOverride: false,
     resumeProfileOverride: false,
     resumeSandboxOverride: false,
+    execImages: true,
+    resumeImages: true,
     resumeContextContinuityVerified: false,
     mcpList: true,
     mcpGet: true,

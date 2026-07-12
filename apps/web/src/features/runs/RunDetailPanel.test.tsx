@@ -32,6 +32,33 @@ describe('RunDetailPanel', () => {
     expect(screen.getByText('暂无诊断文件')).toBeInTheDocument();
   });
 
+  it('shows attachments associated with the selected run', () => {
+    const diagnostics = createDiagnostics();
+    render(
+      <RunDetailPanel
+        runId="run_2"
+        diagnostics={diagnostics}
+        attachments={[{
+          id: 'attachment_1',
+          fileName: 'screen.png',
+          mime: 'image/png',
+          size: 2048,
+          sha256: 'a'.repeat(64),
+          storageKey: 'at/attachment_1.bin',
+          threadId: 'thread_1',
+          runId: 'run_2',
+          status: 'committed',
+          createdAt: '2026-07-12T00:00:00.000Z',
+          updatedAt: '2026-07-12T00:00:00.000Z'
+        }]}
+      />
+    );
+
+    expect(screen.getByText('附件')).toBeInTheDocument();
+    expect(screen.getByText('screen.png')).toBeInTheDocument();
+    expect(screen.getByText('image/png · 2 KB')).toBeInTheDocument();
+  });
+
   it('requires confirmation before exporting the redacted diagnostics bundle', async () => {
     const diagnostics = createDiagnostics();
     const onExport = vi.fn();

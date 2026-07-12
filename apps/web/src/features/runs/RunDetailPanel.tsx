@@ -1,5 +1,5 @@
-import type { RunDiagnosticsResponse } from '@clawee/protocol';
-import { AlertTriangle, Download, ShieldCheck } from 'lucide-react';
+import type { AttachmentResponse, RunDiagnosticsResponse } from '@clawee/protocol';
+import { AlertTriangle, Download, Image, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { downloadRunDiagnosticsBundle } from './run-diagnostics-export.js';
 
@@ -14,6 +14,7 @@ function stringifyDiagnosticValue(value: unknown): string {
 export function RunDetailPanel(props: {
   runId?: string;
   diagnostics?: RunDiagnosticsResponse;
+  attachments?: AttachmentResponse[];
   onExport?(diagnostics: RunDiagnosticsResponse): void | Promise<void>;
 }) {
   const [confirmingExport, setConfirmingExport] = useState(false);
@@ -87,6 +88,22 @@ export function RunDetailPanel(props: {
             </div>
           </section>
         ) : null}
+        {(props.attachments?.length ?? 0) > 0 ? (
+          <section>
+            <h3>附件</h3>
+            <ul className="run-detail-attachments">
+              {props.attachments?.map(attachment => (
+                <li key={attachment.id}>
+                  <Image aria-hidden="true" size={15} />
+                  <span>
+                    <strong>{attachment.fileName}</strong>
+                    <small>{attachment.mime} · {formatAttachmentSize(attachment.size)}</small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <section>
           <h3>Diagnostics</h3>
           {diagnosticFiles.length === 0 ? (
@@ -149,4 +166,10 @@ export function RunDetailPanel(props: {
       </div>
     </div>
   );
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }

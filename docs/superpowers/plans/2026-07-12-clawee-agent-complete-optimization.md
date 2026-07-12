@@ -1725,7 +1725,7 @@ refactor(web): split app routes and feature controllers
 ## P2 状态总览
 
 - [x] `P2-B1` 附件存储与安全 API
-- [ ] `P2-B2` 多模态 Composer 与 Run
+- [x] `P2-B2` 多模态 Composer 与 Run
 - [ ] `P2-B3` 排队发送与立即打断并继续
 - [ ] `P2-B4` HTML 安全预览
 - [ ] `P2-B5` 真实审批闭环
@@ -1826,7 +1826,7 @@ feat(daemon): add secure attachment storage
 
 ## P2-B2：多模态 Composer 与 Run
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 用户可以在 Composer 添加图片等附件，预览后随 Run 一起发送。
 
@@ -1889,7 +1889,22 @@ feat: support multimodal run attachments
 
 **回滚边界：** 回滚 Composer 和 Run 接线，保留附件基础 API。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- Codex CLI `0.144.1` 的 `exec` 与 `exec resume` 均确认支持重复 `--image <FILE>` 参数；能力矩阵新增 `execImages` 与 `resumeImages`，不支持时 Composer 禁用图片入口并提示更新 Codex。
+- Run 协议改为只接收 `draftId + attachmentIds`。daemon 校验附件作用域、数量、类型和图片能力，将附件 ID 解析为规范化受控绝对路径后再传给 Codex，Web 无法注入任意本地路径。
+- Run 创建成功后附件提交到 `threadId + runId`；Run 创建响应、详情、全局列表和线程 Run 列表都返回附件元数据，`meta.json` 记录附件 ID。
+- Composer 已支持文件选择、粘贴、拖放、缩略图、上传中状态、失败重试、移除和最多 8 张图片；存在上传中或失败项时禁止发送。
+- Timeline 用户消息展示本次发送的图片缩略图和文件元数据；Run 详情展示持久化附件名称、类型和大小。
+- 自动化验证：
+  - `pnpm --filter @clawee/daemon test` -> PASS，46 个测试文件、511 项；真实 Codex smoke 13 项按默认配置跳过。
+  - `pnpm --filter @clawee/web test` -> PASS，59 个测试文件、405 项。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS；Web 主入口 541.72KB / 157.58KB gzip，保留既有 chunk 大小提示。
+- 延后到 P2-B8 最终统一验收：
+  - 通过选择、拖放和粘贴分别发送真实图片，并让真实 Codex 描述图片内容。
+  - 在 1440x900 与 390x844 验证附件托盘、系统文件选择器、Timeline 缩略图和 Run 详情布局。
+  - 刷新和切换会话后复核已提交附件的 Run 详情追踪；未发送草稿按删除操作或 7 天 TTL 清理。
 
 ## P2-B3：排队发送与立即打断并继续
 
@@ -2439,6 +2454,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B9 | `BLOCKED_ENV -> PASS` | 本批提交 | 用户明确要求剩余批次连续实施，单批浏览器验收统一延后到最终阶段；P1-B9 代码和自动化门禁已通过 | 下一批 `P1-B10`，最终阶段补桌面/移动真实验收 |
 | 2026-07-12 | P1-B10 | `NOT_STARTED -> PASS` | 本批提交 | 完成 HashRouter 稳定 URL、路由恢复、App 顶层编排、页面懒加载和 Files/CodeMirror 按需分包；Web 395 项及全项目测试、类型检查、构建全部通过；主入口降至 533.87KB / 155.20KB gzip | P1 门禁 `PASS`；下一批 `P2-B1`，最终阶段补路由和按需加载浏览器验收 |
 | 2026-07-12 | P2-B1 | `NOT_STARTED -> PASS` | 本批提交 | 完成附件协议、SQLite 元数据、受限二进制 API、MIME 嗅探、哈希去重、作用域访问、原子落盘、符号链接防护、7 天草稿清理和 Web 调用层；专项测试、全量测试、类型检查和构建通过 | 下一批 `P2-B2`；真实上传、删除和进程重启验收统一放到 P2-B8 |
+| 2026-07-12 | P2-B2 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Codex 图片能力检测、附件 ID 到受控路径解析、Run 附件归属与查询、Composer 选择/拖放/粘贴/重试/移除、Timeline 缩略图和 Run 详情；daemon 511 项、Web 405 项及全仓类型检查、构建通过 | 下一批 `P2-B3`；真实图片发送与桌面/移动布局验收统一放到 P2-B8 |
 
 ## 14.1 单批次执行记录模板
 

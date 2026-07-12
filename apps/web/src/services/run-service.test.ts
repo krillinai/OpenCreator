@@ -23,4 +23,35 @@ describe('RunService', () => {
       resumeMode: 'auto'
     });
   });
+
+  it('sends attachment ids with their draft scope', async () => {
+    const post = vi.fn(async (_path: string, _body?: unknown) => ({
+      id: 'run_1',
+      threadId: 'thread_1',
+      status: 'running'
+    }));
+    const client = {
+      post<T>(path: string, body?: unknown): Promise<T> {
+        return post(path, body) as Promise<T>;
+      },
+      get<T>(): Promise<T> {
+        throw new Error('Unexpected get');
+      }
+    } satisfies Pick<RuntimeClient, 'post' | 'get'>;
+
+    await createRunService(client).startThreadRun({
+      threadId: 'thread_1',
+      prompt: '描述图片',
+      draftId: 'draft_1',
+      attachmentIds: ['attachment_1']
+    });
+
+    expect(post).toHaveBeenCalledWith('/runs', {
+      threadId: 'thread_1',
+      prompt: '描述图片',
+      resumeMode: 'auto',
+      draftId: 'draft_1',
+      attachmentIds: ['attachment_1']
+    });
+  });
 });

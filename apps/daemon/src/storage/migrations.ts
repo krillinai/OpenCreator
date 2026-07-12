@@ -163,6 +163,7 @@ export function migrate(db: Database.Database): void {
       storage_path TEXT NOT NULL UNIQUE,
       draft_id TEXT,
       thread_id TEXT,
+      run_id TEXT,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -263,8 +264,13 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'runs', 'resume_mode', 'resume_mode TEXT');
   ensureColumn(db, 'runs', 'queue_state', "queue_state TEXT NOT NULL DEFAULT 'none'");
   ensureColumn(db, 'runs', 'timeout_ms', 'timeout_ms INTEGER');
+  ensureColumn(db, 'attachments', 'run_id', 'run_id TEXT');
   ensureColumn(db, 'codex_session_sources', 'head_size', 'head_size INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'codex_session_sources', 'head_hash', "head_hash TEXT NOT NULL DEFAULT ''");
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_attachments_run_id
+      ON attachments(run_id);
+  `);
 }
 
 function ensureColumn(db: Database.Database, table: string, column: string, ddl: string): void {

@@ -26,6 +26,8 @@ export type RuntimeCapabilityMatrix = {
   resumeCwdOverride: boolean;
   resumeProfileOverride: boolean;
   resumeSandboxOverride: boolean;
+  execImages: boolean;
+  resumeImages: boolean;
   resumeContextContinuityVerified: boolean;
   mcpList: boolean;
   mcpGet: boolean;
@@ -114,6 +116,8 @@ export function parseCodexCapabilityMatrix(input: {
     resumeProfileOverride:
       input.resumeHelp.includes('--profile') || input.resumeHelp.includes('-p,'),
     resumeSandboxOverride: input.resumeHelp.includes('--sandbox'),
+    execImages: exec.supportsImages,
+    resumeImages: input.resumeHelp.includes('--image') || input.resumeHelp.includes('-i,'),
     resumeContextContinuityVerified: input.resumeContextContinuityVerified ?? false,
     mcpList: hasMcpCommand(input.mcpHelp, 'list'),
     mcpGet: hasMcpCommand(input.mcpHelp, 'get'),

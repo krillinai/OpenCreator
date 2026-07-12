@@ -185,6 +185,7 @@ export type AttachmentResponse = {
   storageKey: string;
   draftId?: string;
   threadId?: string;
+  runId?: string;
   status: AttachmentStatus;
   createdAt: string;
   updatedAt: string;
@@ -219,13 +220,14 @@ export type AttachmentDeleteResponse = {
 export type RunRequest = {
   prompt: string;
   threadId?: string;
+  draftId?: string;
+  attachmentIds?: string[];
   resumeMode?: ResumeMode;
   cwd?: string;
   profile?: string;
   model?: string;
   reasoning?: ReasoningEffort;
   sandbox?: SandboxMode;
-  images?: string[];
 };
 
 export type RunResponse = {
@@ -234,6 +236,7 @@ export type RunResponse = {
   codexThreadId?: string | null;
   status: PublicRunStatus;
   lastEventSeq?: number;
+  attachments?: AttachmentResponse[];
 };
 
 export type CreateThreadRequest = {

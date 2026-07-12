@@ -1,4 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
+  type KeyboardEvent
+} from 'react';
 import {
   ArrowUp,
   Cable,
@@ -12,8 +21,12 @@ import {
   Square,
   Target
 } from 'lucide-react';
-import type { ReasoningEffort } from '@clawee/protocol';
+import type { AttachmentResponse, ReasoningEffort } from '@clawee/protocol';
 import type { ProjectPermission } from '../projects/project-model.js';
+import {
+  AttachmentTray,
+  type AttachmentTrayItem
+} from './AttachmentTray.js';
 
 export type ComposerRunConfig = {
   permission: ProjectPermission;
@@ -33,6 +46,16 @@ export type ComposerSlashCommand = {
   label: string;
   description: string;
   insertText: string;
+};
+
+export type ComposerAttachment = {
+  attachment: AttachmentResponse;
+  previewUrl: string;
+};
+
+type ComposerAttachmentDraft = AttachmentTrayItem & {
+  file: File;
+  attachment?: AttachmentResponse;
 };
 
 type ComposerModelOption = {
@@ -99,10 +122,18 @@ export function Composer(props: {
   slashCommandsLoading?: boolean;
   slashCommandsError?: string;
   draftRequest?: ComposerDraftRequest;
+  imageInputSupported?: boolean;
+  imageInputUnsupportedReason?: string;
   onPermissionChange?(permission: ProjectPermission): void;
   onDraftApplied?(id: number): void;
   onCancel?(): void;
-  onSubmit(prompt: string, config: ComposerRunConfig): void;
+  onUploadAttachment?(file: File): Promise<AttachmentResponse>;
+  onDeleteAttachment?(attachment: AttachmentResponse): Promise<void>;
+  onSubmit(
+    prompt: string,
+    config: ComposerRunConfig,
+    attachments: ComposerAttachment[]
+  ): boolean | void | Promise<boolean | void>;
 }) {
   const [prompt, setPrompt] = useState('');
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(props.permission);
@@ -110,10 +141,21 @@ export function Composer(props: {
   const [selectedModel, setSelectedModel] = useState(() => modelOptionForConfig(props.model, props.reasoning));
   const [openMenu, setOpenMenu] = useState<'add' | 'permission' | 'profile' | 'model' | null>(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
+  const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentDraftsRef = useRef<ComposerAttachmentDraft[]>([]);
+  const nextAttachmentIdRef = useRef(0);
   const scheduledDraftIdRef = useRef<number>();
   const appliedDraftIdRef = useRef<number>();
   const trimmedPrompt = prompt.trim();
+
+  attachmentDraftsRef.current = attachmentDrafts;
+
+  useEffect(() => () => {
+    for (const item of attachmentDraftsRef.current) URL.revokeObjectURL(item.previewUrl);
+  }, []);
 
   useEffect(() => {
     setSelectedPermission(props.permission);
@@ -181,17 +223,37 @@ export function Composer(props: {
     [filteredSlashCommands]
   );
   const slashMenuOpen = slashTrigger !== null;
-  const canSubmit = !props.disabled && trimmedPrompt.length > 0;
-  const submitPrompt = () => {
+  const attachmentsSettled =
+    attachmentDrafts.length === 0
+    || attachmentDrafts.every(item => item.status === 'ready');
+  const canSubmit =
+    !props.disabled
+    && !submitting
+    && trimmedPrompt.length > 0
+    && attachmentsSettled;
+  const submitPrompt = async () => {
     if (!canSubmit) return;
-    props.onSubmit(trimmedPrompt, {
-      permission: selectedPermission,
-      profile: selectedProfile,
-      model: selectedModel.model,
-      reasoning: selectedModel.reasoning
-    });
+    setSubmitting(true);
+    const attachments = attachmentDrafts.flatMap(item =>
+      item.status === 'ready' && item.attachment !== undefined
+        ? [{ attachment: item.attachment, previewUrl: item.previewUrl }]
+        : []
+    );
+    let accepted: boolean | void;
+    try {
+      accepted = await props.onSubmit(trimmedPrompt, {
+        permission: selectedPermission,
+        profile: selectedProfile,
+        model: selectedModel.model,
+        reasoning: selectedModel.reasoning
+      }, attachments);
+    } finally {
+      setSubmitting(false);
+    }
+    if (accepted === false) return;
     setPrompt('');
     setSlashTrigger(null);
+    setAttachmentDrafts([]);
   };
 
   useEffect(() => {
@@ -263,17 +325,102 @@ export function Composer(props: {
 
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
     event.preventDefault();
-    submitPrompt();
+    void submitPrompt();
   };
+
+  async function uploadAttachment(localId: string) {
+    const item = attachmentDraftsRef.current.find(candidate => candidate.localId === localId);
+    if (item === undefined || props.onUploadAttachment === undefined) return;
+    setAttachmentDrafts(current => current.map(candidate =>
+      candidate.localId === localId
+        ? { ...candidate, status: 'uploading', error: undefined }
+        : candidate
+    ));
+    try {
+      const attachment = await props.onUploadAttachment(item.file);
+      setAttachmentDrafts(current => current.map(candidate =>
+        candidate.localId === localId
+          ? { ...candidate, status: 'ready', attachment, error: undefined }
+          : candidate
+      ));
+    } catch (error) {
+      setAttachmentDrafts(current => current.map(candidate =>
+        candidate.localId === localId
+          ? {
+              ...candidate,
+              status: 'error',
+              error: error instanceof Error ? error.message : '上传失败'
+            }
+          : candidate
+      ));
+    }
+  }
+
+  function addFiles(files: Iterable<File>) {
+    if (props.imageInputSupported !== true || props.onUploadAttachment === undefined) return;
+    const available = Math.max(0, 8 - attachmentDraftsRef.current.length);
+    const images = Array.from(files)
+      .filter(file => file.type.startsWith('image/'))
+      .slice(0, available);
+    for (const file of images) {
+      nextAttachmentIdRef.current += 1;
+      const localId = `attachment-${nextAttachmentIdRef.current}`;
+      const draft: ComposerAttachmentDraft = {
+        localId,
+        file,
+        fileName: file.name,
+        mime: file.type,
+        previewUrl: URL.createObjectURL(file),
+        status: 'uploading'
+      };
+      setAttachmentDrafts(current => [...current, draft]);
+      attachmentDraftsRef.current = [...attachmentDraftsRef.current, draft];
+      void uploadAttachment(localId);
+    }
+  }
+
+  async function removeAttachment(localId: string) {
+    const item = attachmentDraftsRef.current.find(candidate => candidate.localId === localId);
+    if (item === undefined) return;
+    setAttachmentDrafts(current => current.filter(candidate => candidate.localId !== localId));
+    attachmentDraftsRef.current = attachmentDraftsRef.current.filter(
+      candidate => candidate.localId !== localId
+    );
+    URL.revokeObjectURL(item.previewUrl);
+    if (item.attachment !== undefined) await props.onDeleteAttachment?.(item.attachment);
+  }
+
+  function handlePaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData.files);
+    if (files.length === 0) return;
+    event.preventDefault();
+    addFiles(files);
+  }
+
+  function handleDrop(event: ReactDragEvent<HTMLFormElement>) {
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length === 0) return;
+    event.preventDefault();
+    addFiles(files);
+  }
 
   return (
     <form
       className="clawee-composer"
       onSubmit={(event) => {
         event.preventDefault();
-        submitPrompt();
+        void submitPrompt();
       }}
+      onDragOver={(event) => {
+        if (props.imageInputSupported === true) event.preventDefault();
+      }}
+      onDrop={handleDrop}
     >
+      <AttachmentTray
+        items={attachmentDrafts}
+        onRemove={(localId) => void removeAttachment(localId)}
+        onRetry={(localId) => void uploadAttachment(localId)}
+      />
       <div className="composer-input-wrap">
         <textarea
           ref={textareaRef}
@@ -287,6 +434,7 @@ export function Composer(props: {
           onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
           onClick={(event) => updatePrompt(prompt, event.currentTarget.selectionStart)}
           onKeyDown={handlePromptKeyDown}
+          onPaste={handlePaste}
           placeholder={props.disabled ? props.disabledReason ?? '当前对话不可用' : '随心输入'}
         />
         {slashMenuOpen ? (
@@ -346,12 +494,37 @@ export function Composer(props: {
             </button>
             {openMenu === 'add' ? (
               <div className="composer-popover composer-popover-compact" role="menu" aria-label="添加上下文">
-                <button className="composer-menu-item" type="button" role="menuitem" onClick={() => setOpenMenu(null)}>
+                <button
+                  className="composer-menu-item"
+                  type="button"
+                  role="menuitem"
+                  disabled={props.imageInputSupported !== true}
+                  onClick={() => {
+                    setOpenMenu(null);
+                    fileInputRef.current?.click();
+                  }}
+                >
                   <Paperclip aria-hidden="true" size={15} />
-                  <span>添加文件</span>
+                  <span>添加图片</span>
                 </button>
+                {props.imageInputSupported !== true && props.imageInputUnsupportedReason ? (
+                  <p className="composer-menu-notice">{props.imageInputUnsupportedReason}</p>
+                ) : null}
               </div>
             ) : null}
+            <input
+              ref={fileInputRef}
+              className="composer-file-input"
+              type="file"
+              aria-label="选择图片"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              multiple
+              disabled={props.imageInputSupported !== true}
+              onChange={(event) => {
+                addFiles(event.currentTarget.files ?? []);
+                event.currentTarget.value = '';
+              }}
+            />
           </div>
 
           <div className="composer-control-wrap">

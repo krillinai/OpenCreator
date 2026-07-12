@@ -19,6 +19,7 @@ const RESUME_HELP_01425 = `
 Usage: codex exec resume [OPTIONS] [SESSION_ID] [PROMPT]
       --last
       --all
+  -i, --image <FILE>
   -c, --config <key=value>
   -m, --model <MODEL>
       --skip-git-repo-check
@@ -77,6 +78,8 @@ describe('codex capability parsing', () => {
     expect(matrix.resumeCwdOverride).toBe(false);
     expect(matrix.resumeProfileOverride).toBe(false);
     expect(matrix.resumeSandboxOverride).toBe(false);
+    expect(matrix.execImages).toBe(true);
+    expect(matrix.resumeImages).toBe(true);
     expect(isResumeExecutionSupported(matrix)).toBe(true);
   });
 

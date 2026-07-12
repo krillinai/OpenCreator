@@ -6,6 +6,7 @@ export type BuildCodexExecArgsInput = {
   sandbox: SandboxMode;
   model?: string;
   reasoning?: ReasoningEffort;
+  imagePaths?: string[];
 };
 
 export type BuildCodexResumeArgsInput = {
@@ -15,6 +16,7 @@ export type BuildCodexResumeArgsInput = {
   sandbox: SandboxMode;
   model?: string;
   reasoning?: ReasoningEffort;
+  imagePaths?: string[];
 };
 
 export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
@@ -27,6 +29,7 @@ export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
   if (input.reasoning && input.reasoning !== 'default') {
     args.push('-c', `model_reasoning_effort="${input.reasoning}"`);
   }
+  for (const imagePath of input.imagePaths ?? []) args.push('--image', imagePath);
 
   return args;
 }
@@ -39,6 +42,7 @@ export function buildCodexResumeArgs(input: BuildCodexResumeArgsInput): string[]
   if (input.reasoning && input.reasoning !== 'default') {
     args.push('-c', `model_reasoning_effort="${input.reasoning}"`);
   }
+  for (const imagePath of input.imagePaths ?? []) args.push('--image', imagePath);
   args.push(input.codexThreadId);
 
   return args;

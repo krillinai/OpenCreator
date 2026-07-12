@@ -1,6 +1,14 @@
-import type { RunRequest } from '@clawee/protocol';
+import type { AttachmentResponse, RunRequest, RunResponse } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { realpathSync } from 'node:fs';
+import {
+  AttachmentServiceError,
+  type AttachmentService
+} from '../attachments/service.js';
+import {
+  isResumeExecutionSupported,
+  type RuntimeCapabilityMatrix
+} from '../codex/capabilities.js';
 import type { RunManager } from '../runs/manager.js';
 import type { RuntimeThread, ThreadManager } from '../threads/types.js';
 import { apiError } from './errors.js';
@@ -13,6 +21,8 @@ export async function registerRunRoutes(
     sseHeartbeatMs?: number;
     threadManager?: ThreadManager;
     profileValidator?: ProfileValidator;
+    attachmentService?: AttachmentService;
+    capabilities?: RuntimeCapabilityMatrix;
   } = {}
 ): Promise<void> {
   const sseHeartbeatMs = options.sseHeartbeatMs ?? 15_000;
@@ -23,9 +33,10 @@ export async function registerRunRoutes(
     }
     const body = parsedBody.value;
 
+    let thread: RuntimeThread | undefined;
     if (body.threadId !== undefined) {
       const threadManager = options.threadManager;
-      const thread = threadManager?.getThread(body.threadId);
+      thread = threadManager?.getThread(body.threadId);
       if (thread === undefined) {
         return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
       }
@@ -47,6 +58,9 @@ export async function registerRunRoutes(
         return sendProfileValidationError(reply, validation);
       }
 
+      const attachments = resolveRunAttachments(body, thread, options);
+      if (!attachments.ok) return sendRunAttachmentError(reply, attachments.error);
+
       const run = manager.startRun({
         prompt: body.prompt,
         cwd: thread.cwd,
@@ -55,10 +69,24 @@ export async function registerRunRoutes(
         threadId: thread.id,
         resumeMode: body.resumeMode ?? 'auto',
         model: thread.model ?? undefined,
-        reasoning: thread.reasoning ?? undefined
+        reasoning: thread.reasoning ?? undefined,
+        imagePaths: attachments.imagePaths,
+        attachmentIds: body.attachmentIds
       });
 
-      return reply.code(202).send(run);
+      try {
+        const committed = await commitRunAttachments(body, thread.id, run.id, options);
+        return reply.code(202).send(withAttachments(run, committed));
+      } catch (error) {
+        manager.cancelRun(run.id);
+        return sendRunAttachmentError(reply, error);
+      }
+    }
+
+    if ((body.attachmentIds?.length ?? 0) > 0) {
+      return reply
+        .code(400)
+        .send(apiError('VALIDATION_FAILED', 'threadId is required when attachmentIds are provided'));
     }
 
     if (body.profile !== undefined) {
@@ -79,20 +107,24 @@ export async function registerRunRoutes(
       reasoning: body.reasoning
     });
 
-    return reply.code(202).send(run);
+    return reply.code(202).send(withAttachments(run, []));
   });
 
   server.get('/runs', async request => {
     const query = request.query as { limit?: string } | undefined;
     const limit = query?.limit === undefined ? undefined : Number(query.limit);
-    return { runs: manager.listRuns(Number.isFinite(limit) ? limit : undefined) };
+    return {
+      runs: manager.listRuns(Number.isFinite(limit) ? limit : undefined).map(run =>
+        withAttachments(run, options.attachmentService?.listByRun(run.id) ?? [])
+      )
+    };
   });
 
   server.get('/runs/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const run = manager.getRun(id);
     if (run === undefined) return reply.code(404).send(apiError('RUN_NOT_FOUND', 'Run not found'));
-    return run;
+    return withAttachments(run, options.attachmentService?.listByRun(run.id) ?? []);
   });
 
   server.post('/runs/:id/cancel', async (request, reply) => {
@@ -181,7 +213,7 @@ function parseRunRequest(body: unknown): ParseResult<RunRequest> {
   }
 
   const value: RunRequest = { prompt };
-  for (const key of ['threadId', 'cwd', 'profile', 'model'] as const) {
+  for (const key of ['threadId', 'draftId', 'cwd', 'profile', 'model'] as const) {
     const field = input[key];
     if (field === undefined) continue;
     if (typeof field !== 'string') return { ok: false, message: `${key} must be a string` };
@@ -209,7 +241,134 @@ function parseRunRequest(body: unknown): ParseResult<RunRequest> {
     value.reasoning = input.reasoning;
   }
 
+  if (input.attachmentIds !== undefined) {
+    if (!Array.isArray(input.attachmentIds)) {
+      return { ok: false, message: 'attachmentIds must be an array' };
+    }
+    if (input.attachmentIds.length > 8) {
+      return { ok: false, message: 'attachmentIds must contain at most 8 items' };
+    }
+    if (
+      input.attachmentIds.some(
+        id => typeof id !== 'string' || id.trim().length === 0
+      )
+    ) {
+      return { ok: false, message: 'attachmentIds must contain non-empty strings' };
+    }
+    value.attachmentIds = input.attachmentIds as string[];
+    if (value.attachmentIds.length > 0 && value.draftId === undefined) {
+      return { ok: false, message: 'draftId is required when attachmentIds are provided' };
+    }
+  }
+
   return { ok: true, value };
+}
+
+function resolveRunAttachments(
+  body: RunRequest,
+  thread: RuntimeThread,
+  options: {
+    attachmentService?: AttachmentService;
+    capabilities?: RuntimeCapabilityMatrix;
+  }
+):
+  | { ok: true; imagePaths: string[] }
+  | { ok: false; error: unknown } {
+  const ids = body.attachmentIds ?? [];
+  if (ids.length === 0) return { ok: true, imagePaths: [] };
+  if (body.draftId === undefined) {
+    return {
+      ok: false,
+      error: new AttachmentServiceError(
+        'VALIDATION_FAILED',
+        'draftId is required when attachmentIds are provided',
+        400
+      )
+    };
+  }
+  if (options.attachmentService === undefined) {
+    return {
+      ok: false,
+      error: new AttachmentServiceError(
+        'ATTACHMENT_STORAGE_FAILED',
+        'Attachment service is unavailable',
+        503
+      )
+    };
+  }
+
+  const usesResume = body.resumeMode === 'resume_thread'
+    || (
+      (body.resumeMode === undefined || body.resumeMode === 'auto')
+      && thread.codexThreadId !== undefined
+      && thread.codexThreadId !== null
+      && options.capabilities !== undefined
+      && isResumeExecutionSupported(options.capabilities)
+    );
+  const supported = usesResume
+    ? options.capabilities?.resumeImages === true
+    : options.capabilities?.execImages === true;
+  if (!supported) {
+    return {
+      ok: false,
+      error: new AttachmentServiceError(
+        'CODEX_IMAGE_INPUT_UNSUPPORTED',
+        'Current Codex version does not support image input',
+        409
+      )
+    };
+  }
+
+  try {
+    return {
+      ok: true,
+      imagePaths: options.attachmentService.resolveImagesForRun({
+        ids,
+        draftId: body.draftId
+      }).map(item => item.path)
+    };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+async function commitRunAttachments(
+  body: RunRequest,
+  threadId: string,
+  runId: string,
+  options: { attachmentService?: AttachmentService }
+): Promise<AttachmentResponse[]> {
+  const ids = body.attachmentIds ?? [];
+  if (ids.length === 0) return [];
+  if (body.draftId === undefined || options.attachmentService === undefined) {
+    throw new AttachmentServiceError(
+      'ATTACHMENT_STORAGE_FAILED',
+      'Attachment service is unavailable',
+      503
+    );
+  }
+  return options.attachmentService.commit({
+    ids,
+    draftId: body.draftId,
+    threadId,
+    runId
+  });
+}
+
+function withAttachments<T extends RunResponse>(
+  run: T,
+  attachments: AttachmentResponse[]
+): T & { attachments: AttachmentResponse[] } {
+  return { ...run, attachments };
+}
+
+function sendRunAttachmentError(reply: FastifyReply, error: unknown) {
+  if (error instanceof AttachmentServiceError) {
+    return reply
+      .code(error.statusCode)
+      .send(apiError(error.code, error.message, error.details));
+  }
+  throw error;
 }
 
 function overridesThreadConfig(body: RunRequest, thread: RuntimeThread): ParseResult<boolean> {

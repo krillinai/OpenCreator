@@ -11,6 +11,7 @@ import {
   ThreadHistoryCursorError,
   type ThreadHistoryPageOptions
 } from '../codex/sessions/index-repository.js';
+import type { AttachmentService } from '../attachments/service.js';
 import type { RunManager } from '../runs/manager.js';
 import type { CreateRuntimeThreadInput, RuntimeThread, ThreadManager } from '../threads/types.js';
 import { apiError } from './errors.js';
@@ -19,7 +20,12 @@ export async function registerThreadRoutes(
   server: FastifyInstance,
   manager: ThreadManager,
   runManager: Pick<RunManager, 'getLastEventSeq' | 'hasActiveRunForThread' | 'listRunsByThread'>,
-  options: { profileValidator?: ProfileValidator; syncCodexSessions?: SyncCodexSessions; readThreadHistory?: ReadThreadHistory } = {}
+  options: {
+    profileValidator?: ProfileValidator;
+    attachmentService?: AttachmentService;
+    syncCodexSessions?: SyncCodexSessions;
+    readThreadHistory?: ReadThreadHistory;
+  } = {}
 ): Promise<void> {
   server.post<{ Body: unknown }>('/threads', async (request, reply) => {
     const body = parseCreateThreadRequest(request.body);
@@ -71,7 +77,8 @@ export async function registerThreadRoutes(
         threadId: run.threadId,
         codexThreadId: run.codexThreadId,
         status: run.status,
-        lastEventSeq: runManager.getLastEventSeq(run.id)
+        lastEventSeq: runManager.getLastEventSeq(run.id),
+        attachments: options.attachmentService?.listByRun(run.id) ?? []
       }))
     };
     return response;

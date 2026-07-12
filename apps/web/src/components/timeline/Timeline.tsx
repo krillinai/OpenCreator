@@ -405,19 +405,43 @@ function renderMessageContent(
 ) {
   const canOpenWorkspaceFiles = item.kind === 'assistant_message' && onOpenFile !== undefined;
   return (
-    <MarkdownRenderer
-      text={item.text}
-      variant={item.kind === 'user_message' ? 'user' : 'assistant'}
-      linkifyWorkspaceFiles={canOpenWorkspaceFiles}
-      onLinkClick={canOpenWorkspaceFiles
-        ? (href, event) => {
-            if (!isWorkspaceFilePath(href)) return;
-            event.preventDefault();
-            onOpenFile(href);
-          }
-        : undefined}
-    />
+    <>
+      {item.kind === 'user_message' && (item.attachments?.length ?? 0) > 0 ? (
+        <div className="timeline-message-attachments">
+          {item.attachments?.map(attachment => {
+            const previewUrl = item.attachmentPreviewUrls?.[attachment.id];
+            return (
+              <figure key={attachment.id}>
+                {previewUrl ? <img src={previewUrl} alt={attachment.fileName} /> : null}
+                <figcaption>
+                  <strong>{attachment.fileName}</strong>
+                  <span>{formatAttachmentSize(attachment.size)}</span>
+                </figcaption>
+              </figure>
+            );
+          })}
+        </div>
+      ) : null}
+      <MarkdownRenderer
+        text={item.text}
+        variant={item.kind === 'user_message' ? 'user' : 'assistant'}
+        linkifyWorkspaceFiles={canOpenWorkspaceFiles}
+        onLinkClick={canOpenWorkspaceFiles
+          ? (href, event) => {
+              if (!isWorkspaceFilePath(href)) return;
+              event.preventDefault();
+              onOpenFile(href);
+            }
+          : undefined}
+      />
+    </>
   );
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function renderChangeCard(item: Extract<TimelineItem, { kind: 'change_card' }>, onOpenFile?: (path: string) => void) {

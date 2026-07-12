@@ -64,4 +64,37 @@ describe('codex argv', () => {
     expect(args).not.toContain('--sandbox');
     expect(args).toContain('sandbox_mode="workspace-write"');
   });
+
+  it('passes controlled image paths to exec and resume before the session id', () => {
+    expect(
+      buildCodexExecArgs({
+        cwd: '/repo',
+        sandbox: 'read-only',
+        imagePaths: ['/data/attachments/a.png', '/data/attachments/b.webp']
+      })
+    ).toEqual([
+      'exec',
+      '--json',
+      '--skip-git-repo-check',
+      '-C',
+      '/repo',
+      '--sandbox',
+      'read-only',
+      '--image',
+      '/data/attachments/a.png',
+      '--image',
+      '/data/attachments/b.webp'
+    ]);
+
+    const resume = buildCodexResumeArgs({
+      codexThreadId: '019f-thread',
+      sandbox: 'read-only',
+      imagePaths: ['/data/attachments/a.png']
+    });
+    expect(resume.slice(-3)).toEqual([
+      '--image',
+      '/data/attachments/a.png',
+      '019f-thread'
+    ]);
+  });
 });

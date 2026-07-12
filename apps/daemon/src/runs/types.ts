@@ -13,6 +13,8 @@ export type CreateRunInput = {
   createdBy?: 'api' | 'schedule';
   sourceId?: string;
   timeoutMs?: number;
+  imagePaths?: string[];
+  attachmentIds?: string[];
 };
 
 export type CreatedRun = {

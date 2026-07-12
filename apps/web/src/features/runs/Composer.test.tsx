@@ -52,7 +52,7 @@ describe('Composer', () => {
       profile: 'default',
       model: null,
       reasoning: 'xhigh'
-    });
+    }, []);
     expect(textbox).toHaveValue('');
   });
 
@@ -77,7 +77,7 @@ describe('Composer', () => {
       profile: 'review',
       model: null,
       reasoning: null
-    });
+    }, []);
   });
 
   it('locks the Profile selector for an existing conversation', () => {
@@ -100,7 +100,7 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: '添加上下文' }));
 
     expect(screen.getByRole('menu', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: '添加文件' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '添加图片' })).toBeInTheDocument();
   });
 
   it('is disabled when current thread has an active run', () => {
@@ -163,7 +163,7 @@ describe('Composer', () => {
       profile: 'default',
       model: null,
       reasoning: null
-    });
+    }, []);
     expect(textbox).toHaveValue('');
   });
 
@@ -194,7 +194,7 @@ describe('Composer', () => {
       profile: 'default',
       model: null,
       reasoning: null
-    });
+    }, []);
     await waitFor(() => expect(textbox.style.height).toBe('28px'));
   });
 
@@ -252,7 +252,7 @@ describe('Composer', () => {
       profile: 'default',
       model: null,
       reasoning: null
-    });
+    }, []);
     expect(textbox).toHaveValue('');
   });
 
@@ -293,6 +293,116 @@ describe('Composer', () => {
 
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('uploads a selected image, blocks submit while uploading, and submits attachment metadata', async () => {
+    const user = userEvent.setup();
+    let resolveUpload!: (value: ReturnType<typeof attachment>) => void;
+    const onUploadAttachment = vi.fn(() => new Promise<ReturnType<typeof attachment>>(resolve => {
+      resolveUpload = resolve;
+    }));
+    const onSubmit = vi.fn(async () => true);
+    mockObjectUrls();
+    render(
+      <Composer
+        {...defaultProps}
+        imageInputSupported
+        onUploadAttachment={onUploadAttachment}
+        onSubmit={onSubmit}
+      />
+    );
+    const file = new File(['png'], 'screen.png', { type: 'image/png' });
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.upload(screen.getByLabelText('选择图片'), file);
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '描述图片');
+
+    expect(screen.getByText('正在上传 screen.png')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
+
+    resolveUpload(attachment());
+    expect(await screen.findByRole('img', { name: 'screen.png' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(
+      '描述图片',
+      expect.objectContaining({ permission: 'danger-full-access' }),
+      [{
+        attachment: attachment(),
+        previewUrl: 'blob:screen.png'
+      }]
+    ));
+    await waitFor(() => expect(screen.queryByText('screen.png')).not.toBeInTheDocument());
+  });
+
+  it('supports pasted and dropped images through the same upload path', async () => {
+    const onUploadAttachment = vi.fn(async (file: File) => attachment(file.name));
+    mockObjectUrls();
+    render(
+      <Composer
+        {...defaultProps}
+        imageInputSupported
+        onUploadAttachment={onUploadAttachment}
+      />
+    );
+    const pasted = new File(['one'], 'pasted.png', { type: 'image/png' });
+    const dropped = new File(['two'], 'dropped.webp', { type: 'image/webp' });
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+
+    fireEvent.paste(textbox, {
+      clipboardData: { files: [pasted] }
+    });
+    fireEvent.drop(textbox.closest('form')!, {
+      dataTransfer: { files: [dropped] }
+    });
+
+    await waitFor(() => expect(onUploadAttachment).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('pasted.png')).toBeInTheDocument();
+    expect(await screen.findByText('dropped.webp')).toBeInTheDocument();
+  });
+
+  it('removes uploaded attachments and retries failed uploads', async () => {
+    const user = userEvent.setup();
+    const onUploadAttachment = vi.fn()
+      .mockRejectedValueOnce(new Error('上传失败'))
+      .mockResolvedValueOnce(attachment());
+    const onDeleteAttachment = vi.fn(async () => undefined);
+    mockObjectUrls();
+    render(
+      <Composer
+        {...defaultProps}
+        imageInputSupported
+        onUploadAttachment={onUploadAttachment}
+        onDeleteAttachment={onDeleteAttachment}
+      />
+    );
+    const file = new File(['png'], 'screen.png', { type: 'image/png' });
+
+    await user.upload(screen.getByLabelText('选择图片'), file);
+    expect(await screen.findByRole('alert')).toHaveTextContent('上传失败');
+    await user.click(screen.getByRole('button', { name: '重试上传 screen.png' }));
+    expect(await screen.findByRole('img', { name: 'screen.png' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '移除附件 screen.png' }));
+
+    await waitFor(() => expect(onDeleteAttachment).toHaveBeenCalledWith(attachment()));
+    expect(screen.queryByText('screen.png')).not.toBeInTheDocument();
+  });
+
+  it('disables image input and prompts for a Codex update when unsupported', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        imageInputSupported={false}
+        imageInputUnsupportedReason="当前 Codex 版本不支持图片输入，请更新 Codex"
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+
+    expect(screen.getByRole('menuitem', { name: /添加图片/ })).toBeDisabled();
+    expect(screen.getByText('当前 Codex 版本不支持图片输入，请更新 Codex')).toBeInTheDocument();
+    expect(screen.getByLabelText('选择图片')).toBeDisabled();
   });
 
   it('applies an external draft once and focuses the textarea', async () => {
@@ -481,3 +591,29 @@ describe('Composer', () => {
     expect(textbox).toHaveValue('使用 MCP：github ');
   });
 });
+
+function attachment(fileName = 'screen.png') {
+  return {
+    id: 'attachment-1',
+    fileName,
+    mime: fileName.endsWith('.webp') ? 'image/webp' : 'image/png',
+    size: 3,
+    sha256: 'a'.repeat(64),
+    storageKey: 'at/attachment-1.bin',
+    draftId: 'draft-1',
+    status: 'draft' as const,
+    createdAt: '2026-07-12T00:00:00.000Z',
+    updatedAt: '2026-07-12T00:00:00.000Z'
+  };
+}
+
+function mockObjectUrls() {
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: vi.fn((file: File) => `blob:${file.name}`)
+  });
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: vi.fn()
+  });
+}

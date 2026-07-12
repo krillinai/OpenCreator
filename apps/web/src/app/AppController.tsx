@@ -1,4 +1,5 @@
 import type {
+  AttachmentResponse,
   CodexMcpListResponse,
   CodexProfileListResponse,
   CodexSkillListResponse,
@@ -29,7 +30,13 @@ import type {
   SkillMarketUseError
 } from '../features/plugins/SkillMarketView.js';
 import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
-import { Composer, type ComposerDraftRequest, type ComposerRunConfig, type ComposerSlashCommand } from '../features/runs/Composer.js';
+import {
+  Composer,
+  type ComposerAttachment,
+  type ComposerDraftRequest,
+  type ComposerRunConfig,
+  type ComposerSlashCommand
+} from '../features/runs/Composer.js';
 import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
 import {
   getRunCancelState,
@@ -57,6 +64,7 @@ import { createFrameBatcher, type FrameBatcher } from '../runtime/frame-batcher.
 import { subscribeRunEvents as defaultSubscribeRunEvents, type SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { ConnectionConfig } from '../runtime/types.js';
 import { createCapabilityService } from '../services/capability-service.js';
+import { createAttachmentService } from '../services/attachment-service.js';
 import { createConnectionService, type ConnectionState } from '../services/connection-service.js';
 import { createCleanupService } from '../services/cleanup-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
@@ -156,6 +164,7 @@ export function AppController(props: AppControllerProps) {
     message: '正在等待本地服务'
   });
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
+  const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
@@ -225,6 +234,7 @@ export function AppController(props: AppControllerProps) {
   const threadServiceRef = useRef<ThreadService | null>(null);
   const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
   const nextComposerDraftIdRef = useRef(0);
+  const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   runRegistryRef.current = runRegistry;
 
   const runtimeClient = useMemo(
@@ -236,6 +246,10 @@ export function AppController(props: AppControllerProps) {
     [runtimeClient]
   );
   const runService = useMemo(() => runtimeClient === null ? null : createRunService(runtimeClient), [runtimeClient]);
+  const attachmentService = useMemo(
+    () => runtimeClient === null ? null : createAttachmentService(runtimeClient),
+    [runtimeClient]
+  );
   const threadService = useMemo(
     () => runtimeClient === null ? null : createThreadService(runtimeClient),
     [runtimeClient]
@@ -683,6 +697,11 @@ export function AppController(props: AppControllerProps) {
       .listThreadRuns(selectedThreadId)
       .then(response => {
         if (canceled) return;
+        setRunAttachmentsById(previous => {
+          const next = { ...previous };
+          for (const run of response.runs) next[run.id] = run.attachments ?? [];
+          return next;
+        });
         dispatchRunRegistry({
           type: 'merge_thread_runs',
           threadId: selectedThreadId,
@@ -803,6 +822,8 @@ export function AppController(props: AppControllerProps) {
   const loadError = loadErrorByPath[selectedFilePath];
   const saveError = saveErrorByPath[selectedFilePath];
   const runDiagnostics = state.selectedRunId === undefined ? undefined : runDiagnosticsById[state.selectedRunId];
+  const selectedRunAttachments =
+    state.selectedRunId === undefined ? undefined : runAttachmentsById[state.selectedRunId];
   const currentProject = findProjectById(projects, state.currentProjectId) ?? projects[0];
   const currentProjectName = currentProject?.name ?? 'content-design';
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
@@ -821,6 +842,12 @@ export function AppController(props: AppControllerProps) {
     () => buildComposerSlashCommands(codexSkills, codexMcp),
     [codexSkills, codexMcp]
   );
+  const composerAttachmentScope = `${state.currentProjectId}:${state.selectedThreadId ?? 'new'}`;
+  const composerAttachmentDraftId = getOrCreateComposerAttachmentDraftId(
+    composerAttachmentDraftIdsRef.current,
+    composerAttachmentScope
+  );
+  const imageInputSupported = readImageInputSupported(connectionState, selectedThread);
 
   function handleEditorContentChange(content: string) {
     const path = selectedFilePathRef.current;
@@ -974,15 +1001,18 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
-  function submitPrompt(prompt: string, config?: ComposerRunConfig) {
+  async function submitPrompt(
+    prompt: string,
+    config?: ComposerRunConfig,
+    attachments: ComposerAttachment[] = []
+  ): Promise<boolean> {
     if (
       connectionState.status === 'connected'
       && runService !== null
       && threadService !== null
       && connectionConfigRef.current !== null
     ) {
-      void submitRuntimePrompt(prompt, config);
-      return;
+      return submitRuntimePrompt(prompt, config, attachments);
     }
 
     setTimelineItems(previous => [
@@ -996,6 +1026,7 @@ export function AppController(props: AppControllerProps) {
         source: 'runtime'
       }
     ]);
+    return false;
   }
 
   function startNewConversation(options: { updateRoute?: boolean } = {}) {
@@ -1368,8 +1399,14 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
-  async function submitRuntimePrompt(prompt: string, config?: ComposerRunConfig) {
-    if (runService === null || threadService === null || connectionConfigRef.current === null) return;
+  async function submitRuntimePrompt(
+    prompt: string,
+    config?: ComposerRunConfig,
+    attachments: ComposerAttachment[] = []
+  ): Promise<boolean> {
+    if (runService === null || threadService === null || connectionConfigRef.current === null) {
+      return false;
+    }
     if (
       currentRunBusy
       || findPendingRunStart(
@@ -1380,7 +1417,7 @@ export function AppController(props: AppControllerProps) {
         runsLoadingThreadId !== undefined
         && runsLoadingThreadId === state.selectedThreadId
       )
-    ) return;
+    ) return false;
 
     const effectiveConfig = config ?? composerRunConfig ?? defaultComposerRunConfig(currentProject);
     setComposerRunConfig(effectiveConfig);
@@ -1391,9 +1428,21 @@ export function AppController(props: AppControllerProps) {
       cancelRequested: false
     });
     let runThreadId = state.selectedThreadId;
+    const userMessageId = createTimelineId('user');
+    const attachmentMetadata = attachments.map(item => item.attachment);
+    const attachmentPreviewUrls = Object.fromEntries(
+      attachments.map(item => [item.attachment.id, item.previewUrl])
+    );
     setTimelineItems(previous => [
       ...previous,
-      { kind: 'user_message', id: createTimelineId('user'), text: prompt, source: 'runtime' }
+      {
+        kind: 'user_message',
+        id: userMessageId,
+        text: prompt,
+        attachments: attachmentMetadata,
+        attachmentPreviewUrls,
+        source: 'runtime'
+      }
     ]);
 
     try {
@@ -1422,6 +1471,8 @@ export function AppController(props: AppControllerProps) {
         resumeMode: 'auto';
         model?: string;
         reasoning?: NonNullable<ComposerRunConfig['reasoning']>;
+        draftId?: string;
+        attachmentIds?: string[];
       } = {
         threadId: resolvedThread.threadId,
         prompt,
@@ -1431,7 +1482,22 @@ export function AppController(props: AppControllerProps) {
         if (effectiveConfig.model !== null) runInput.model = effectiveConfig.model;
         if (effectiveConfig.reasoning !== null) runInput.reasoning = effectiveConfig.reasoning;
       }
+      if (attachments.length > 0) {
+        const draftId = attachments[0]!.attachment.draftId;
+        if (draftId === undefined) throw new Error('附件缺少草稿归属，无法发送');
+        runInput.draftId = draftId;
+        runInput.attachmentIds = attachments.map(item => item.attachment.id);
+      }
       const run = await runService.startThreadRun(runInput);
+      setRunAttachmentsById(previous => ({
+        ...previous,
+        [run.id]: run.attachments ?? attachmentMetadata
+      }));
+      setTimelineItems(previous => previous.map(item =>
+        item.id === userMessageId && item.kind === 'user_message'
+          ? { ...item, attachments: run.attachments ?? attachmentMetadata }
+          : item
+      ));
       handleRunStarted(run);
       const cancelRequested = pendingRunStartsByIdRef.current[pendingRunStartId]?.cancelRequested === true;
       removePendingRunStart(pendingRunStartId);
@@ -1444,6 +1510,8 @@ export function AppController(props: AppControllerProps) {
         await requestRunCancellation(run.id);
       }
       subscribeToRunEvents(run.id, resolvedThread.threadId, connectionConfigRef.current);
+      composerAttachmentDraftIdsRef.current.delete(composerAttachmentScope);
+      return true;
     } catch (error) {
       if (mountedRef.current) {
         const item: TimelineItem = {
@@ -1457,6 +1525,7 @@ export function AppController(props: AppControllerProps) {
         if (runThreadId === undefined) setTimelineItems(previous => [...previous, item]);
         else appendTimelineItemsForThread(runThreadId, [item]);
       }
+      return true;
     } finally {
       removePendingRunStart(pendingRunStartId);
     }
@@ -1672,6 +1741,13 @@ export function AppController(props: AppControllerProps) {
   function openRunDetail(runId: string) {
     dispatch({ type: 'select_run_detail', runId });
     void loadRunDiagnostics(runId);
+    void runService?.getRun(runId).then(run => {
+      if (!mountedRef.current) return;
+      setRunAttachmentsById(previous => ({
+        ...previous,
+        [runId]: run.attachments ?? []
+      }));
+    }).catch(() => undefined);
   }
 
   function openScheduleRun(runId: string, threadId?: string) {
@@ -1881,6 +1957,7 @@ export function AppController(props: AppControllerProps) {
       </div>
       <div className="composer-wrap">
         <Composer
+          key={composerAttachmentScope}
           projectName={currentProjectName}
           permission={effectiveComposerConfig.permission}
           profile={effectiveComposerConfig.profile}
@@ -1900,6 +1977,12 @@ export function AppController(props: AppControllerProps) {
           slashCommands={slashCommands}
           slashCommandsLoading={capabilitiesLoading}
           slashCommandsError={capabilitiesLoadError}
+          imageInputSupported={imageInputSupported}
+          imageInputUnsupportedReason={
+            imageInputSupported
+              ? undefined
+              : '当前 Codex 版本不支持图片输入，请更新 Codex'
+          }
           draftRequest={
             pendingComposerDraft !== undefined && pendingComposerDraft.threadId === state.selectedThreadId
               ? pendingComposerDraft.request
@@ -1916,6 +1999,21 @@ export function AppController(props: AppControllerProps) {
             );
           }}
           onCancel={() => void cancelActiveRun()}
+          onUploadAttachment={async file => {
+            if (attachmentService === null) throw new Error('附件服务暂不可用');
+            const response = await attachmentService.upload({
+              file,
+              draftId: composerAttachmentDraftId
+            });
+            return response.attachment;
+          }}
+          onDeleteAttachment={async attachment => {
+            if (attachmentService === null || attachment.draftId === undefined) return;
+            await attachmentService.delete({
+              id: attachment.id,
+              draftId: attachment.draftId
+            });
+          }}
           onSubmit={submitPrompt}
         />
       </div>
@@ -2058,7 +2156,13 @@ export function AppController(props: AppControllerProps) {
           mode="run"
           title="运行详情"
           subtitle={state.selectedRunId}
-          content={<RunDetailPanel runId={state.selectedRunId} diagnostics={runDiagnostics} />}
+          content={
+            <RunDetailPanel
+              runId={state.selectedRunId}
+              diagnostics={runDiagnostics}
+              attachments={selectedRunAttachments}
+            />
+          }
           onClose={() => dispatch({ type: 'close_detail' })}
         />
       );
@@ -2392,6 +2496,34 @@ function defaultComposerRunConfig(project?: ClaweeProject): ComposerRunConfig {
     model: project?.model ?? null,
     reasoning: (project?.reasoning ?? null) as ComposerRunConfig['reasoning']
   };
+}
+
+function getOrCreateComposerAttachmentDraftId(
+  draftIds: Map<string, string>,
+  scope: string
+): string {
+  const existing = draftIds.get(scope);
+  if (existing !== undefined) return existing;
+  const created = `draft_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+  draftIds.set(scope, created);
+  return created;
+}
+
+function readImageInputSupported(
+  connectionState: ConnectionState,
+  thread?: ThreadResponse
+): boolean {
+  if (connectionState.status !== 'connected') return false;
+  const capabilities = connectionState.codexStatus.capabilities;
+  if (typeof capabilities !== 'object' || capabilities === null || Array.isArray(capabilities)) {
+    return false;
+  }
+  const record = capabilities as Record<string, unknown>;
+  const resumesExistingThread =
+    thread?.codexThreadId !== undefined && thread.codexThreadId !== null;
+  return resumesExistingThread
+    ? record.resumeImages === true
+    : record.execImages === true;
 }
 
 function readMcpCapabilities(connectionState: ConnectionState): McpCapabilities | undefined {

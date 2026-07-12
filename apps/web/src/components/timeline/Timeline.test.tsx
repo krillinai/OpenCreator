@@ -7,6 +7,44 @@ import type { TimelineItem } from './timeline-model.js';
 vi.mock('react-virtuoso', async () => import('../../test/react-virtuoso-mock.js'));
 
 describe('Timeline', () => {
+  it('renders image metadata and a local preview with the user message', () => {
+    render(
+      <Timeline
+        items={[
+          {
+            kind: 'user_message',
+            id: 'user_with_image',
+            text: '描述图片',
+            attachments: [{
+              id: 'attachment_1',
+              fileName: 'screen.png',
+              mime: 'image/png',
+              size: 2048,
+              sha256: 'a'.repeat(64),
+              storageKey: 'at/attachment_1.bin',
+              threadId: 'thread_1',
+              runId: 'run_1',
+              status: 'committed',
+              createdAt: '2026-07-12T00:00:00.000Z',
+              updatedAt: '2026-07-12T00:00:00.000Z'
+            }],
+            attachmentPreviewUrls: {
+              attachment_1: 'blob:screen.png'
+            },
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByRole('img', { name: 'screen.png' })).toHaveAttribute(
+      'src',
+      'blob:screen.png'
+    );
+    expect(screen.getByText('2 KB')).toBeInTheDocument();
+    expect(screen.getByText('描述图片')).toBeInTheDocument();
+  });
+
   it('marks the virtual item that contains a search target', () => {
     const items: TimelineItem[] = [
       {

@@ -44,6 +44,7 @@ type AttachmentRow = {
   storage_path: string;
   draft_id: string | null;
   thread_id: string | null;
+  run_id: string | null;
   status: 'draft' | 'committed';
   created_at: string;
   updated_at: string;
@@ -96,10 +97,10 @@ export function createAttachmentService(input: CreateAttachmentServiceInput) {
   const insertAttachment = input.db.prepare(`
     INSERT INTO attachments (
       id, file_name, mime, size, sha256, storage_path,
-      draft_id, thread_id, status, created_at, updated_at
+      draft_id, thread_id, run_id, status, created_at, updated_at
     ) VALUES (
       @id, @file_name, @mime, @size, @sha256, @storage_path,
-      @draft_id, @thread_id, @status, @created_at, @updated_at
+      @draft_id, @thread_id, @run_id, @status, @created_at, @updated_at
     )
   `);
   const deleteAttachment = input.db.prepare('DELETE FROM attachments WHERE id = ?');
@@ -108,10 +109,16 @@ export function createAttachmentService(input: CreateAttachmentServiceInput) {
     WHERE status = 'draft' AND created_at < ?
     ORDER BY created_at ASC, id ASC
   `);
+  const selectByRun = input.db.prepare(`
+    SELECT * FROM attachments
+    WHERE run_id = ?
+    ORDER BY created_at ASC, id ASC
+  `);
   const updateCommitted = input.db.prepare(`
     UPDATE attachments
     SET draft_id = NULL,
         thread_id = ?,
+        run_id = ?,
         status = 'committed',
         updated_at = ?
     WHERE id = ? AND draft_id = ? AND status = 'draft'
@@ -156,6 +163,7 @@ export function createAttachmentService(input: CreateAttachmentServiceInput) {
         storage_path: storagePath,
         draft_id: owner.draftId ?? null,
         thread_id: owner.threadId ?? null,
+        run_id: null,
         status,
         created_at: timestamp,
         updated_at: timestamp
@@ -255,14 +263,22 @@ export function createAttachmentService(input: CreateAttachmentServiceInput) {
     ids: string[];
     draftId: string;
     threadId: string;
+    runId: string;
   }): Promise<AttachmentResponse[]> {
     validateNonEmpty(request.draftId, 'draftId');
     validateNonEmpty(request.threadId, 'threadId');
+    validateNonEmpty(request.runId, 'runId');
     const timestamp = now().toISOString();
     const transaction = input.db.transaction(() => {
       for (const id of request.ids) {
         validateNonEmpty(id, 'attachment id');
-        const result = updateCommitted.run(request.threadId, timestamp, id, request.draftId);
+        const result = updateCommitted.run(
+          request.threadId,
+          request.runId,
+          timestamp,
+          id,
+          request.draftId
+        );
         if (result.changes !== 1) {
           const row = selectById.get(id) as AttachmentRow | undefined;
           if (row === undefined) throw notFound(id);
@@ -272,6 +288,47 @@ export function createAttachmentService(input: CreateAttachmentServiceInput) {
     });
     transaction();
     return request.ids.map(id => mapAttachment(selectRequiredRow(id)));
+  }
+
+  function resolveImagesForRun(request: {
+    ids: string[];
+    draftId?: string;
+    threadId?: string;
+  }): Array<{ attachment: AttachmentResponse; path: string }> {
+    const seen = new Set<string>();
+    return request.ids.map(id => {
+      if (seen.has(id)) {
+        throw new AttachmentServiceError(
+          'VALIDATION_FAILED',
+          `Duplicate attachment id: ${id}`,
+          400,
+          { id }
+        );
+      }
+      seen.add(id);
+      const row = authorize({
+        id,
+        ...(request.draftId === undefined ? {} : { draftId: request.draftId }),
+        ...(request.threadId === undefined ? {} : { threadId: request.threadId })
+      });
+      if (!row.mime.startsWith('image/')) {
+        throw new AttachmentServiceError(
+          'ATTACHMENT_TYPE_UNSUPPORTED',
+          `Attachment is not a supported image: ${row.file_name}`,
+          415,
+          { id, mime: row.mime }
+        );
+      }
+      return {
+        attachment: mapAttachment(row),
+        path: resolveExistingStorageFile(rootDir, canonicalRootDir, row.storage_path)
+      };
+    });
+  }
+
+  function listByRun(runId: string): AttachmentResponse[] {
+    validateNonEmpty(runId, 'runId');
+    return (selectByRun.all(runId) as AttachmentRow[]).map(mapAttachment);
   }
 
   async function cleanupExpiredDrafts(): Promise<{ deletedIds: string[] }> {
@@ -316,6 +373,8 @@ export function createAttachmentService(input: CreateAttachmentServiceInput) {
     read,
     delete: deleteStored,
     commit,
+    resolveImagesForRun,
+    listByRun,
     cleanupExpiredDrafts,
     listStorageFiles: () => listStoredFiles(rootDir)
   };
@@ -475,6 +534,7 @@ function mapAttachment(row: AttachmentRow): AttachmentResponse {
     storageKey: row.storage_path,
     ...(row.draft_id === null ? {} : { draftId: row.draft_id }),
     ...(row.thread_id === null ? {} : { threadId: row.thread_id }),
+    ...(row.run_id === null ? {} : { runId: row.run_id }),
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at

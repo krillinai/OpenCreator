@@ -512,7 +512,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       profile: runInput.profile,
       sandbox: runInput.sandbox,
       threadId: runInput.threadId,
-      resumeMode: resolvedResumeMode
+      resumeMode: resolvedResumeMode,
+      attachmentIds: runInput.attachmentIds ?? []
     });
     if (resolvedResumeMode === 'new_thread' && codexThreadId !== undefined) {
       void publishDiagnostic(
@@ -831,14 +832,16 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           codexThreadId,
           sandbox: input.sandbox,
           model: input.model,
-          reasoning: input.reasoning
+          reasoning: input.reasoning,
+          imagePaths: input.imagePaths
         })
       : buildCodexExecArgs({
           profile: input.profile,
           cwd: input.cwd,
           sandbox: input.sandbox,
           model: input.model,
-          reasoning: input.reasoning
+          reasoning: input.reasoning,
+          imagePaths: input.imagePaths
         });
 
     mkdirSync(runDir, { recursive: true });
@@ -874,7 +877,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       profile: input.profile,
       sandbox: input.sandbox,
       threadId: input.threadId,
-      resumeMode: resolvedResumeMode
+      resumeMode: resolvedResumeMode,
+      attachmentIds: input.attachmentIds ?? []
     });
 
     return id;
@@ -1052,7 +1056,8 @@ function buildRunArgv(
       codexThreadId,
       sandbox: input.sandbox,
       model: input.model,
-      reasoning: input.reasoning
+      reasoning: input.reasoning,
+      imagePaths: input.imagePaths
     });
   }
 
@@ -1061,7 +1066,8 @@ function buildRunArgv(
     cwd: input.cwd,
     sandbox: input.sandbox,
     model: input.model,
-    reasoning: input.reasoning
+    reasoning: input.reasoning,
+    imagePaths: input.imagePaths
   });
 }
 
@@ -1082,6 +1088,7 @@ function buildThreadRunDiagnosticsMetadata(input: {
     codexThreadId: input.codexThreadId ?? null,
     resumeMode: input.resumeMode,
     argv: input.argv ?? null,
+    attachmentIds: input.runInput.attachmentIds ?? [],
     cwd: input.runInput.cwd,
     profile: input.runInput.profile,
     sandbox: input.runInput.sandbox,

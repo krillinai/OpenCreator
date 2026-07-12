@@ -170,7 +170,8 @@ describe('attachment service', () => {
     await service.commit({
       ids: [committed.attachment.id],
       draftId: 'draft-committed',
-      threadId: 'thread-1'
+      threadId: 'thread-1',
+      runId: 'run-1'
     });
     now = new Date('2026-07-09T00:00:00.000Z');
     const cleanup = await service.cleanupExpiredDrafts();
@@ -182,8 +183,21 @@ describe('attachment service', () => {
     })).toMatchObject({
       id: committed.attachment.id,
       threadId: 'thread-1',
+      runId: 'run-1',
       status: 'committed'
     });
+    expect(service.listByRun('run-1')).toEqual([
+      expect.objectContaining({ id: committed.attachment.id, runId: 'run-1' })
+    ]);
+    expect(service.resolveImagesForRun({
+      ids: [committed.attachment.id],
+      threadId: 'thread-1'
+    })).toEqual([
+      expect.objectContaining({
+        attachment: expect.objectContaining({ id: committed.attachment.id }),
+        path: expect.stringContaining(committed.attachment.storageKey)
+      })
+    ]);
     await expect(
       service.getMetadata({ id: expired.attachment.id, draftId: 'draft-expired' })
     ).rejects.toMatchObject({ code: 'ATTACHMENT_NOT_FOUND', statusCode: 404 });

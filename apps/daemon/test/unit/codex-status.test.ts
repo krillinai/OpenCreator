@@ -21,6 +21,8 @@ describe('codex status response builder', () => {
       resumeCwdOverride: true,
       resumeProfileOverride: true,
       resumeSandboxOverride: true,
+      execImages: true,
+      resumeImages: true,
       resumeContextContinuityVerified: true,
       mcpList: true,
       mcpGet: true,

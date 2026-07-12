@@ -257,7 +257,9 @@ export async function buildServer(input: BuildServerInput) {
   await registerRunRoutes(server, runManager, {
     sseHeartbeatMs: input.sseHeartbeatMs,
     threadManager,
-    profileValidator: profileManager
+    profileValidator: profileManager,
+    attachmentService,
+    capabilities
   });
   await registerScheduleRoutes(server, scheduler);
   await registerCleanupRoutes(server, cleanupService);
@@ -283,6 +285,7 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager,
+    attachmentService,
     syncCodexSessions,
     readThreadHistory(codexThreadId, options) {
       try {
@@ -323,6 +326,8 @@ function createUnknownCapabilityMatrix(): RuntimeCapabilityMatrix {
     resumeCwdOverride: false,
     resumeProfileOverride: false,
     resumeSandboxOverride: false,
+    execImages: false,
+    resumeImages: false,
     resumeContextContinuityVerified: false,
     mcpList: false,
     mcpGet: false,

@@ -1,7 +1,15 @@
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope, AttachmentResponse } from '@clawee/protocol';
 
 export type TimelineItem =
-  | { kind: 'user_message'; id: string; text: string; content?: string; source: 'runtime' | 'mock' }
+  | {
+      kind: 'user_message';
+      id: string;
+      text: string;
+      content?: string;
+      attachments?: AttachmentResponse[];
+      attachmentPreviewUrls?: Record<string, string>;
+      source: 'runtime' | 'mock';
+    }
   | { kind: 'reasoning_summary'; id: string; runId?: string; text: string; content?: string; source: 'runtime' }
   | { kind: 'assistant_message'; id: string; runId?: string; text: string; content?: string; source: 'runtime' | 'mock' }
   | { kind: 'tool_step'; id: string; runId?: string; name: string; content: string; source: 'runtime' }
