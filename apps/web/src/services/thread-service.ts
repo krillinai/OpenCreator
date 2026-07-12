@@ -1,5 +1,6 @@
 import type {
   CreateThreadRequest,
+  ThreadHistoryQuery,
   ThreadHistoryResponse,
   ThreadListResponse,
   ThreadResponse,
@@ -25,8 +26,15 @@ export function createThreadService(client: RuntimeClient) {
     listThreadRuns(threadId: string): Promise<ThreadRunsResponse> {
       return client.get(`/threads/${encodeURIComponent(threadId)}/runs?limit=50`);
     },
-    getThreadHistory(threadId: string): Promise<ThreadHistoryResponse> {
-      return client.get(`/threads/${encodeURIComponent(threadId)}/history`);
+    getThreadHistory(
+      threadId: string,
+      query: ThreadHistoryQuery = {}
+    ): Promise<ThreadHistoryResponse> {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set('limit', String(query.limit));
+      if (query.before !== undefined) params.set('before', query.before);
+      const suffix = params.size === 0 ? '' : `?${params.toString()}`;
+      return client.get(`/threads/${encodeURIComponent(threadId)}/history${suffix}`);
     }
   };
 }

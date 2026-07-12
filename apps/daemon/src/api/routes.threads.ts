@@ -1,5 +1,16 @@
-import type { RunResponse, ThreadHistoryResponse, ThreadResponse, ThreadRunsResponse, UpdateThreadRequest } from '@clawee/protocol';
+import type {
+  RunResponse,
+  ThreadHistoryQuery,
+  ThreadHistoryResponse,
+  ThreadResponse,
+  ThreadRunsResponse,
+  UpdateThreadRequest
+} from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import {
+  ThreadHistoryCursorError,
+  type ThreadHistoryPageOptions
+} from '../codex/sessions/index-repository.js';
 import type { RunManager } from '../runs/manager.js';
 import type { CreateRuntimeThreadInput, RuntimeThread, ThreadManager } from '../threads/types.js';
 import { apiError } from './errors.js';
@@ -73,12 +84,46 @@ export async function registerThreadRoutes(
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
 
+    const query = parseThreadHistoryQuery(request.query);
+    if (!query.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', query.message));
+
+    const paginationRequested =
+      query.value.limit !== undefined || query.value.before !== undefined;
+    let history: ThreadHistoryReadResult;
+    try {
+      history = thread.codexThreadId === undefined || thread.codexThreadId === null
+        ? {
+            items: [],
+            ...(paginationRequested ? { hasMore: false } : {})
+          }
+        : options.readThreadHistory?.(
+            thread.codexThreadId,
+            paginationRequested
+              ? {
+                  limit: query.value.limit ?? DEFAULT_HISTORY_LIMIT,
+                  ...(query.value.before === undefined ? {} : { before: query.value.before })
+                }
+              : undefined
+          ) ?? {
+            items: [],
+            ...(paginationRequested ? { hasMore: false } : {})
+          };
+    } catch (error) {
+      if (error instanceof ThreadHistoryCursorError) {
+        const statusCode = error.code === 'THREAD_HISTORY_CURSOR_INVALID'
+          ? 400
+          : error.code === 'THREAD_HISTORY_CURSOR_MISMATCH'
+            ? 409
+            : 410;
+        return reply.code(statusCode).send(apiError(error.code, error.message));
+      }
+      throw error;
+    }
+
     const response: ThreadHistoryResponse = {
       threadId: thread.id,
       codexThreadId: thread.codexThreadId,
-      items: thread.codexThreadId === undefined || thread.codexThreadId === null
-        ? []
-        : options.readThreadHistory?.(thread.codexThreadId) ?? []
+      ...history
     };
     return response;
   });
@@ -155,7 +200,14 @@ type ProfileValidator = {
   validateProfileForRun(name: string): ProfileValidationResult;
 };
 type SyncCodexSessions = (limit?: number) => void;
-type ReadThreadHistory = (codexThreadId: string) => ThreadHistoryResponse['items'];
+type ThreadHistoryReadResult = Pick<
+  ThreadHistoryResponse,
+  'items' | 'hasMore' | 'nextCursor' | 'oldestItemAt'
+>;
+type ReadThreadHistory = (
+  codexThreadId: string,
+  options?: ThreadHistoryPageOptions
+) => ThreadHistoryReadResult;
 
 const WORKSPACE_MODES = ['managed', 'external'] as const;
 const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;
@@ -163,6 +215,7 @@ const REASONING_EFFORTS = ['default', 'low', 'medium', 'high', 'xhigh'] as const
 const THREAD_STATUSES = ['active', 'archived', 'all'] as const;
 const LIMIT_PATTERN = /^[1-9]\d*$/;
 const MAX_LIMIT = 100;
+const DEFAULT_HISTORY_LIMIT = 50;
 
 function parseCreateThreadRequest(body: unknown): ParseResult<CreateRuntimeThreadInput> {
   if (body === undefined) return { ok: true, value: {} };
@@ -232,6 +285,21 @@ function parseThreadListQuery(
     value: {
       ...(status.value === undefined ? {} : { status: status.value }),
       ...(limit.value === undefined ? {} : { limit: limit.value })
+    }
+  };
+}
+
+function parseThreadHistoryQuery(query: unknown): ParseResult<ThreadHistoryQuery> {
+  const limit = parseLimitQuery(query);
+  if (!limit.ok) return limit;
+  const before = getQueryString(query, 'before');
+  if (!before.ok) return before;
+
+  return {
+    ok: true,
+    value: {
+      ...(limit.value === undefined ? {} : { limit: limit.value }),
+      ...(before.value === undefined ? {} : { before: before.value })
     }
   };
 }

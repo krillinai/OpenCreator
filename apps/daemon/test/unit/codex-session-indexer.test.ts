@@ -267,6 +267,92 @@ describe('codex session indexer', () => {
       })
     ]);
   });
+
+  it('paginates history from newest to oldest with stable ordering and rebuild-safe cursors', () => {
+    const setup = createSetup();
+    writeSession(setup.sessionDir, 'pagination-session', [
+      sessionMeta('pagination-session', setup.cwd, '2026-07-12T06:00:00.000Z'),
+      userMessage('第一条需求', '2026-07-12T06:00:01.000Z', 'turn_1'),
+      agentMessage('第一条回复', '2026-07-12T06:00:01.000Z', 'turn_1'),
+      userMessage('第二条需求', '2026-07-12T06:00:01.000Z', 'turn_2'),
+      reasoningSummary('同时间戳推理', '2026-07-12T06:00:01.000Z', 'turn_2'),
+      agentMessage('第二条回复', '2026-07-12T06:00:01.000Z', 'turn_2')
+    ]);
+    const indexer = createCodexSessionIndexer({
+      codexHome: setup.codexHome,
+      repository: setup.repository
+    });
+    indexer.sync();
+
+    const fullHistory = setup.repository.listHistory('pagination-session');
+    const latest = setup.repository.listHistoryPage('pagination-session', { limit: 2 });
+
+    expect(latest.items).toEqual([
+      expect.objectContaining({ type: 'reasoning_summary', text: '同时间戳推理' }),
+      expect.objectContaining({ type: 'assistant_message', text: '第二条回复' }),
+      expect.objectContaining({ type: 'done', turnId: 'turn_2' })
+    ]);
+    expect(latest.hasMore).toBe(true);
+    expect(latest.nextCursor).toEqual(expect.any(String));
+    expect(latest.oldestItemAt).toBe('2026-07-12T06:00:01.000Z');
+    expect(latest.nextCursor).not.toContain(setup.sessionDir);
+
+    const middle = setup.repository.listHistoryPage('pagination-session', {
+      limit: 2,
+      before: latest.nextCursor
+    });
+
+    db?.close();
+    db = undefined;
+    rmSync(setup.dbPath, { force: true });
+    rmSync(`${setup.dbPath}-wal`, { force: true });
+    rmSync(`${setup.dbPath}-shm`, { force: true });
+    db = openRuntimeDatabase(setup.dbPath);
+    const rebuiltRepository = createCodexSessionIndexRepository(db);
+    createCodexSessionIndexer({
+      codexHome: setup.codexHome,
+      repository: rebuiltRepository
+    }).sync();
+
+    const oldest = rebuiltRepository.listHistoryPage('pagination-session', {
+      limit: 2,
+      before: middle.nextCursor
+    });
+    const combined = [...oldest.items, ...middle.items, ...latest.items];
+
+    expect(oldest.hasMore).toBe(false);
+    expect(oldest.nextCursor).toBeUndefined();
+    expect(combined).toEqual(fullHistory);
+  });
+
+  it('deduplicates adjacent messages across history page boundaries', () => {
+    const setup = createSetup();
+    writeSession(setup.sessionDir, 'pagination-dedup-session', [
+      sessionMeta('pagination-dedup-session', setup.cwd, '2026-07-12T06:10:00.000Z'),
+      userMessage('更早的消息', '2026-07-12T06:10:01.000Z', 'turn_1'),
+      userMessage('跨页重复消息', '2026-07-12T06:10:02.000Z', 'turn_2'),
+      userMessage('跨页重复消息', '2026-07-12T06:10:03.000Z', 'turn_2'),
+      userMessage('最新消息', '2026-07-12T06:10:04.000Z', 'turn_3')
+    ]);
+    const indexer = createCodexSessionIndexer({
+      codexHome: setup.codexHome,
+      repository: setup.repository
+    });
+    indexer.sync();
+
+    const latest = setup.repository.listHistoryPage('pagination-dedup-session', { limit: 2 });
+    const previous = setup.repository.listHistoryPage('pagination-dedup-session', {
+      limit: 2,
+      before: latest.nextCursor
+    });
+
+    expect(latest.items).toEqual([
+      expect.objectContaining({ type: 'user_message', text: '最新消息' })
+    ]);
+    expect([...previous.items, ...latest.items]).toEqual(
+      setup.repository.listHistory('pagination-dedup-session')
+    );
+  });
 });
 
 function createSetup() {
@@ -340,6 +426,18 @@ function agentMessage(message: string, timestamp: string, turnId?: string) {
     payload: {
       type: 'agent_message',
       message,
+      ...(turnId === undefined ? {} : { turn_id: turnId })
+    }
+  };
+}
+
+function reasoningSummary(message: string, timestamp: string, turnId?: string) {
+  return {
+    timestamp,
+    type: 'response_item',
+    payload: {
+      type: 'reasoning',
+      summary: [{ type: 'summary_text', text: message }],
       ...(turnId === undefined ? {} : { turn_id: turnId })
     }
   };

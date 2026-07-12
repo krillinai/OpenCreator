@@ -11,6 +11,8 @@ import type {
   RunRequest,
   RunScheduleNowResponse,
   RuntimeErrorCode,
+  ThreadHistoryQuery,
+  ThreadHistoryResponse,
   WorkspaceDirectoryListRequest,
   WorkspaceDirectoryResponse,
   WorkspaceFileBlobRequest,
@@ -58,6 +60,34 @@ describe('protocol shape', () => {
   it('keeps error codes as closed string literals', () => {
     const code: RuntimeErrorCode = 'CODEX_NOT_FOUND';
     expect(code).toBe('CODEX_NOT_FOUND');
+  });
+
+  it('allows optional thread history pagination fields', () => {
+    const query: ThreadHistoryQuery = {
+      limit: 50,
+      before: 'cursor'
+    };
+    const response: ThreadHistoryResponse = {
+      threadId: 'thread_1',
+      codexThreadId: 'codex_thread_1',
+      items: [],
+      hasMore: true,
+      nextCursor: 'next',
+      oldestItemAt: '2026-07-12T00:00:00.000Z'
+    };
+
+    expect(query.limit).toBe(50);
+    expect(response.nextCursor).toBe('next');
+  });
+
+  it('includes stable thread history cursor error codes', () => {
+    const codes: RuntimeErrorCode[] = [
+      'THREAD_HISTORY_CURSOR_INVALID',
+      'THREAD_HISTORY_CURSOR_EXPIRED',
+      'THREAD_HISTORY_CURSOR_MISMATCH'
+    ];
+
+    expect(codes).toHaveLength(3);
   });
 
   it('allows schedule request and response shapes', () => {

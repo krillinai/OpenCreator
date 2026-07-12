@@ -2193,6 +2193,93 @@ describe('runtime api', () => {
     });
   });
 
+  it('supports stable thread history pagination and cursor errors', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-history-pagination-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '12');
+    mkdirSync(sessionDir, { recursive: true });
+    writeHistorySession(sessionDir, 'pagination-a', tempDir, [
+      '第一条',
+      '第二条',
+      '第三条',
+      '第四条',
+      '第五条'
+    ]);
+    writeHistorySession(sessionDir, 'pagination-b', tempDir, [
+      '另一个会话第一条',
+      '另一个会话第二条'
+    ]);
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome, db });
+
+    const listed = await authGet('/threads?status=all&limit=10');
+    const threads = listed.json().threads as Array<{ id: string; codexThreadId: string }>;
+    const threadA = threads.find(thread => thread.codexThreadId === 'pagination-a')!;
+    const threadB = threads.find(thread => thread.codexThreadId === 'pagination-b')!;
+
+    const legacy = await authGet(`/threads/${threadA.id}/history`);
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.json().items.map((item: { text: string }) => item.text)).toEqual([
+      '第一条',
+      '第二条',
+      '第三条',
+      '第四条',
+      '第五条'
+    ]);
+    expect(legacy.json()).not.toHaveProperty('hasMore');
+    expect(legacy.json()).not.toHaveProperty('nextCursor');
+
+    const latest = await authGet(`/threads/${threadA.id}/history?limit=2`);
+    expect(latest.statusCode).toBe(200);
+    expect(latest.json()).toMatchObject({
+      hasMore: true,
+      oldestItemAt: '2026-07-12T07:00:04.000Z'
+    });
+    expect(latest.json().items.map((item: { text: string }) => item.text)).toEqual([
+      '第四条',
+      '第五条'
+    ]);
+    const cursor = latest.json().nextCursor as string;
+    expect(cursor).toEqual(expect.any(String));
+    expect(cursor).not.toContain(tempDir);
+
+    const previous = await authGet(
+      `/threads/${threadA.id}/history?limit=2&before=${encodeURIComponent(cursor)}`
+    );
+    expect(previous.statusCode).toBe(200);
+    expect(previous.json().items.map((item: { text: string }) => item.text)).toEqual([
+      '第二条',
+      '第三条'
+    ]);
+
+    const invalid = await authGet(`/threads/${threadA.id}/history?limit=2&before=not-a-cursor`);
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.code).toBe('THREAD_HISTORY_CURSOR_INVALID');
+
+    const mismatch = await authGet(
+      `/threads/${threadB.id}/history?limit=2&before=${encodeURIComponent(cursor)}`
+    );
+    expect(mismatch.statusCode).toBe(409);
+    expect(mismatch.json().error.code).toBe('THREAD_HISTORY_CURSOR_MISMATCH');
+
+    const anchorId = latest.json().items[0].id as string;
+    db.prepare('DELETE FROM codex_session_items WHERE item_id = ?').run(anchorId);
+    const expired = await authGet(
+      `/threads/${threadA.id}/history?limit=2&before=${encodeURIComponent(cursor)}`
+    );
+    expect(expired.statusCode).toBe(410);
+    expect(expired.json().error.code).toBe('THREAD_HISTORY_CURSOR_EXPIRED');
+
+    for (const url of [
+      `/threads/${threadA.id}/history?limit=0`,
+      `/threads/${threadA.id}/history?limit=101`
+    ]) {
+      const response = await authGet(url);
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe('VALIDATION_FAILED');
+    }
+  });
+
   it('rejects invalid thread list query parameters', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
@@ -3164,6 +3251,38 @@ function writeCodexSession(
       })
     ].join('\n')
   );
+  return path;
+}
+
+function writeHistorySession(
+  sessionDir: string,
+  id: string,
+  cwd: string,
+  messages: string[]
+): string {
+  const path = join(sessionDir, `rollout-${id}.jsonl`);
+  const lines = [
+    {
+      timestamp: '2026-07-12T07:00:00.000Z',
+      type: 'session_meta',
+      payload: {
+        id,
+        session_id: id,
+        timestamp: '2026-07-12T07:00:00.000Z',
+        cwd
+      }
+    },
+    ...messages.map((message, index) => ({
+      timestamp: `2026-07-12T07:00:0${index + 1}.000Z`,
+      type: 'event_msg',
+      payload: {
+        type: 'user_message',
+        message,
+        turn_id: `turn_${index + 1}`
+      }
+    }))
+  ];
+  writeFileSync(path, `${lines.map(line => JSON.stringify(line)).join('\n')}\n`);
   return path;
 }
 

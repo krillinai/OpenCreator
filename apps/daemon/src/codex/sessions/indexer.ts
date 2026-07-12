@@ -26,6 +26,10 @@ export type CodexSessionIndexSyncResult = CodexSessionScanResult & {
 export type CodexSessionIndexer = {
   sync(input?: { limit?: number }): CodexSessionIndexSyncResult;
   readHistory(codexThreadId: string): ReturnType<CodexSessionIndexRepository['listHistory']>;
+  readHistoryPage(
+    codexThreadId: string,
+    options: Parameters<CodexSessionIndexRepository['listHistoryPage']>[1]
+  ): ReturnType<CodexSessionIndexRepository['listHistoryPage']>;
 };
 
 export type CreateCodexSessionIndexerInput = {
@@ -139,6 +143,9 @@ export function createCodexSessionIndexer(
     },
     readHistory(codexThreadId) {
       return input.repository.listHistory(codexThreadId);
+    },
+    readHistoryPage(codexThreadId, options) {
+      return input.repository.listHistoryPage(codexThreadId, options);
     }
   };
 }

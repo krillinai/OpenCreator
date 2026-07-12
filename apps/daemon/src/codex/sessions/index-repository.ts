@@ -40,6 +40,33 @@ export type IndexedCodexSessionItem = {
   item: ThreadHistoryItem;
 };
 
+export type ThreadHistoryPageOptions = {
+  limit: number;
+  before?: string;
+};
+
+export type ThreadHistoryPage = {
+  items: ThreadHistoryItem[];
+  hasMore: boolean;
+  nextCursor?: string;
+  oldestItemAt?: string;
+};
+
+export type ThreadHistoryCursorErrorCode =
+  | 'THREAD_HISTORY_CURSOR_INVALID'
+  | 'THREAD_HISTORY_CURSOR_EXPIRED'
+  | 'THREAD_HISTORY_CURSOR_MISMATCH';
+
+export class ThreadHistoryCursorError extends Error {
+  constructor(
+    readonly code: ThreadHistoryCursorErrorCode,
+    message: string
+  ) {
+    super(message);
+    this.name = 'ThreadHistoryCursorError';
+  }
+}
+
 export type ApplyCodexSessionFileIndexInput = {
   path: string;
   fileId: string;
@@ -64,6 +91,22 @@ export type CodexSessionIndexRepository = {
   listSessions(limit?: number): CodexSessionSummary[];
   listExcludedSubagentThreadIds(): string[];
   listHistory(codexThreadId: string): ThreadHistoryItem[];
+  listHistoryPage(codexThreadId: string, options: ThreadHistoryPageOptions): ThreadHistoryPage;
+};
+
+type HistoryCursor = {
+  v: 1;
+  codexThreadId: string;
+  lineNumber: number;
+  sourceOffset: number;
+  itemId: string;
+};
+
+type IndexedHistoryRow = {
+  line_number: number;
+  source_offset: number;
+  item_id: string;
+  item_json: string;
 };
 
 export function createCodexSessionIndexRepository(
@@ -145,6 +188,53 @@ export function createCodexSessionIndexRepository(
     WHERE session.codex_thread_id = ?
     ORDER BY item.line_number ASC, item.source_offset ASC
   `);
+  const listLatestHistoryItems = db.prepare<{ codexThreadId: string; limit: number }>(`
+    SELECT item.line_number, item.source_offset, item.item_id, item.item_json
+    FROM codex_session_items item
+    INNER JOIN codex_sessions session ON session.source_path = item.source_path
+    WHERE session.codex_thread_id = @codexThreadId
+    ORDER BY item.line_number DESC, item.source_offset DESC, item.item_id DESC
+    LIMIT @limit
+  `);
+  const listHistoryItemsBefore = db.prepare<{
+    codexThreadId: string;
+    lineNumber: number;
+    sourceOffset: number;
+    itemId: string;
+    limit: number;
+  }>(`
+    SELECT item.line_number, item.source_offset, item.item_id, item.item_json
+    FROM codex_session_items item
+    INNER JOIN codex_sessions session ON session.source_path = item.source_path
+    WHERE session.codex_thread_id = @codexThreadId
+      AND (
+        item.line_number < @lineNumber
+        OR (
+          item.line_number = @lineNumber
+          AND (
+            item.source_offset < @sourceOffset
+            OR (item.source_offset = @sourceOffset AND item.item_id < @itemId)
+          )
+        )
+      )
+    ORDER BY item.line_number DESC, item.source_offset DESC, item.item_id DESC
+    LIMIT @limit
+  `);
+  const findHistoryCursorAnchor = db.prepare<{
+    codexThreadId: string;
+    lineNumber: number;
+    sourceOffset: number;
+    itemId: string;
+  }>(`
+    SELECT 1
+    FROM codex_session_items item
+    INNER JOIN codex_sessions session ON session.source_path = item.source_path
+    WHERE session.codex_thread_id = @codexThreadId
+      AND item.line_number = @lineNumber
+      AND item.source_offset = @sourceOffset
+      AND item.item_id = @itemId
+    LIMIT 1
+  `);
 
   const applyFileIndex = db.transaction((input: ApplyCodexSessionFileIndexInput) => {
     if (input.rebuild) deleteSource.run(input.path);
@@ -225,14 +315,125 @@ export function createCodexSessionIndexRepository(
     },
     listHistory(codexThreadId: string): ThreadHistoryItem[] {
       const rows = listHistoryItems.all(codexThreadId) as Array<{ item_json: string }>;
-      const items = rows.flatMap(row => {
-        try {
-          return [JSON.parse(row.item_json) as ThreadHistoryItem];
-        } catch {
-          return [];
-        }
-      });
+      const items = rows.flatMap(row => parseHistoryItem(row.item_json));
       return materializeCodexSessionHistory(items);
+    },
+    listHistoryPage(codexThreadId, options): ThreadHistoryPage {
+      const cursor = options.before === undefined
+        ? undefined
+        : decodeHistoryCursor(options.before);
+      if (cursor !== undefined && cursor.codexThreadId !== codexThreadId) {
+        throw new ThreadHistoryCursorError(
+          'THREAD_HISTORY_CURSOR_MISMATCH',
+          'History cursor belongs to another thread'
+        );
+      }
+      if (
+        cursor !== undefined
+        && findHistoryCursorAnchor.get({
+          codexThreadId,
+          lineNumber: cursor.lineNumber,
+          sourceOffset: cursor.sourceOffset,
+          itemId: cursor.itemId
+        }) === undefined
+      ) {
+        throw new ThreadHistoryCursorError(
+          'THREAD_HISTORY_CURSOR_EXPIRED',
+          'History cursor is no longer available'
+        );
+      }
+
+      const queryLimit = options.limit + 1;
+      const rows = (
+        cursor === undefined
+          ? listLatestHistoryItems.all({ codexThreadId, limit: queryLimit })
+          : listHistoryItemsBefore.all({
+              codexThreadId,
+              lineNumber: cursor.lineNumber,
+              sourceOffset: cursor.sourceOffset,
+              itemId: cursor.itemId,
+              limit: queryLimit
+            })
+      ) as IndexedHistoryRow[];
+      const selectedDescending = rows.slice(0, options.limit);
+      const selectedAscending = [...selectedDescending].reverse();
+      const boundary = rows[options.limit];
+      const selectedItems = selectedAscending.flatMap(row => parseHistoryItem(row.item_json));
+      const boundaryItem = boundary === undefined
+        ? undefined
+        : parseHistoryItem(boundary.item_json)[0];
+      const items = materializeHistoryPage(selectedItems, boundaryItem);
+      const hasMore = boundary !== undefined;
+      const anchor = selectedDescending.at(-1);
+
+      return {
+        items,
+        hasMore,
+        ...(hasMore && anchor !== undefined
+          ? {
+              nextCursor: encodeHistoryCursor({
+                v: 1,
+                codexThreadId,
+                lineNumber: anchor.line_number,
+                sourceOffset: anchor.source_offset,
+                itemId: anchor.item_id
+              })
+            }
+          : {}),
+        ...(items[0] === undefined ? {} : { oldestItemAt: items[0].createdAt })
+      };
     }
   };
+}
+
+function parseHistoryItem(value: string): ThreadHistoryItem[] {
+  try {
+    return [JSON.parse(value) as ThreadHistoryItem];
+  } catch {
+    return [];
+  }
+}
+
+function materializeHistoryPage(
+  items: ThreadHistoryItem[],
+  boundaryItem?: ThreadHistoryItem
+): ThreadHistoryItem[] {
+  if (boundaryItem === undefined) return materializeCodexSessionHistory(items);
+  const boundaryLength = materializeCodexSessionHistory([boundaryItem]).length;
+  return materializeCodexSessionHistory([boundaryItem, ...items]).slice(boundaryLength);
+}
+
+function encodeHistoryCursor(cursor: HistoryCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeHistoryCursor(value: string): HistoryCursor {
+  try {
+    if (value.length === 0 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+      throw new Error('invalid encoding');
+    }
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as unknown;
+    if (
+      typeof parsed !== 'object'
+      || parsed === null
+      || Array.isArray(parsed)
+      || (parsed as Record<string, unknown>).v !== 1
+      || typeof (parsed as Record<string, unknown>).codexThreadId !== 'string'
+      || !Number.isSafeInteger((parsed as Record<string, unknown>).lineNumber)
+      || !Number.isSafeInteger((parsed as Record<string, unknown>).sourceOffset)
+      || typeof (parsed as Record<string, unknown>).itemId !== 'string'
+      || ((parsed as Record<string, unknown>).codexThreadId as string).length === 0
+      || ((parsed as Record<string, unknown>).itemId as string).length === 0
+      || ((parsed as Record<string, unknown>).lineNumber as number) < 0
+      || ((parsed as Record<string, unknown>).sourceOffset as number) < 0
+    ) {
+      throw new Error('invalid payload');
+    }
+    return parsed as HistoryCursor;
+  } catch {
+    throw new ThreadHistoryCursorError(
+      'THREAD_HISTORY_CURSOR_INVALID',
+      'History cursor is invalid'
+    );
+  }
 }

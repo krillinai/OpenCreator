@@ -11,7 +11,10 @@ import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { readCodexSessionHistory } from '../codex/sessions/history.js';
-import { createCodexSessionIndexRepository } from '../codex/sessions/index-repository.js';
+import {
+  createCodexSessionIndexRepository,
+  ThreadHistoryCursorError
+} from '../codex/sessions/index-repository.js';
 import { createCodexSessionIndexer } from '../codex/sessions/indexer.js';
 import { scanCodexSessionsWithMetadata } from '../codex/sessions/scanner.js';
 import { createSkillManager } from '../codex/skills/manager.js';
@@ -208,13 +211,17 @@ export async function buildServer(input: BuildServerInput) {
         });
       }
     },
-    readThreadHistory(codexThreadId) {
+    readThreadHistory(codexThreadId, options) {
       try {
         codexSessionIndexer.sync();
-        return codexSessionIndexer.readHistory(codexThreadId);
+        return options === undefined
+          ? { items: codexSessionIndexer.readHistory(codexThreadId) }
+          : codexSessionIndexer.readHistoryPage(codexThreadId, options);
       } catch (error) {
+        if (error instanceof ThreadHistoryCursorError) throw error;
         console.warn(`Codex session history index failed; using raw JSONL fallback: ${formatError(error)}`);
-        return readCodexSessionHistory({ codexHome, codexThreadId });
+        if (options !== undefined) throw error;
+        return { items: readCodexSessionHistory({ codexHome, codexThreadId }) };
       }
     }
   });

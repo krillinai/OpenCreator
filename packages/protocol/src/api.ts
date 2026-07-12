@@ -253,6 +253,14 @@ export type ThreadHistoryResponse = {
   threadId: string;
   codexThreadId?: string | null;
   items: ThreadHistoryItem[];
+  hasMore?: boolean;
+  nextCursor?: string;
+  oldestItemAt?: string;
+};
+
+export type ThreadHistoryQuery = {
+  limit?: number;
+  before?: string;
 };
 
 export type CodexSkillResponse = {
