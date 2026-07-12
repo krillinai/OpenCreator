@@ -563,7 +563,7 @@ fix(web): resume run event streams after refresh
 
 ## P0-B4：跨会话后台运行和取消竞态
 
-- [ ] **状态：** `IN_PROGRESS`
+- [ ] **状态：** `BLOCKED_ENV`
 
 **目标：** 切换会话不停止后台 Run；用户回到原会话可立即看到真实状态并取消正确的 Run。
 
@@ -628,7 +628,41 @@ fix(web): keep runs active across conversation switches
 
 **回滚边界：** 回滚会话切换和取消接线；保留 Registry 和 SSE 恢复基础。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 代码提交：`75e5b9b fix(web): keep runs active across conversation switches`
+- Web 事件订阅由单个当前会话控制器改为按 `runId` 管理的后台控制器集合：
+  - 切换会话、项目或新对话不再中止其他线程的 Run。
+  - 每个 Run 固定绑定所属 `threadId`，后台事件只写入该线程的 Timeline 缓存。
+  - 当前可见 Timeline 与后台 Run 生命周期已解耦，不会将 A 的内容短暂显示到 B。
+  - 后台收到 `done` 时立即更新 Registry、清除侧栏运行状态并收尾控制器。
+  - 连接断开和组件卸载时统一停止全部控制器。
+- Timeline 批处理改为按线程隔离：
+  - 同时运行多个线程时各自维护事件批次。
+  - 返回后台线程时直接显示已缓存的实时事件，并与历史响应继续去重合并。
+- Run 启动和取消竞态已收口：
+  - Run POST 在切换会话后才返回时，状态和后续事件仍写入发起线程。
+  - 取消失败的诊断写回 Run 所属线程，不污染当前会话。
+  - 取消失败后先查询最新 Run；若 Run 已终态，则忽略迟到的 `RUN_ALREADY_TERMINAL`。
+  - Run ID 返回前点击停止的既有流程继续保留。
+- 失败测试已先确认：
+  - 切换到 B 会中止 A 的 SSE。
+  - A 的迟到取消失败会显示在 B。
+- 自动化验证：
+  - `pnpm --filter @clawee/web test` -> PASS，45 个测试文件、333 个测试通过。
+  - `pnpm --filter @clawee/web typecheck` -> PASS。
+  - `pnpm --filter @clawee/web build` -> PASS；仅保留既有主包体积警告。
+- 真实服务验证：
+  - 页面 `http://127.0.0.1:9000/` 返回 `200`。
+  - 同时创建并启动 A、B 两个真实 Codex 线程。
+  - 只取消 A：取消 API 返回 `202`，A 最终状态为 `canceled`。
+  - B 不受影响，最终状态为 `succeeded`，并输出预期文本 `P0-B4-B-SUCCEEDED`。
+  - 两个临时线程均已归档。
+- 浏览器验证：`BLOCKED_ENV`
+  - 浏览器控制环境仍无可用实例，无法代替用户完成真实页面切换和视觉验收。
+  - 解除阻塞后需验证：A 运行时切换 B；A 继续显示侧栏转圈；A 后台完成后转圈自动消失；B 不出现 A 内容；返回 A 可直接看到最终内容；在 A 停止只取消 A。
+- 遗留风险：
+  - 自动化已覆盖后台完成、跨会话 Timeline 隔离、迟到取消失败和终态取消竞态，但仍需真实页面确认交互时序。
 
 ## P0-B5：P0 端到端回归验收
 
@@ -2076,6 +2110,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P0-B3 | `IN_PROGRESS -> BLOCKED_ENV` | `6364a64`, `76c1306`, `bf35d8e` | 全量测试、类型检查、构建和真实 daemon 断流续传通过；9000 已重启到当前代码 | 浏览器运行时无可用实例，等待桌面/移动刷新与离线恢复验收 |
 | 2026-07-12 | P0-B2 / P0-B3 | `BLOCKED_ENV -> PASS` | `adc8815` 至 `bf35d8e` | 用户已完成真实页面手动验收，确认运行状态隔离、刷新恢复、切换恢复和移动尺寸无问题 | 下一批 `P0-B4` |
 | 2026-07-12 | P0-B4 | `NOT_STARTED -> IN_PROGRESS` | - | 开始拆分当前会话 Timeline 订阅与后台 Run 生命周期，并收口取消竞态 | 先补后台完成、跨会话隔离和迟到取消响应失败测试 |
+| 2026-07-12 | P0-B4 | `IN_PROGRESS -> BLOCKED_ENV` | `75e5b9b` | Web 333 项测试、类型检查、构建和真实双线程运行/定向取消通过 | 等待用户完成真实页面跨会话后台运行验收 |
 
 ## 14.1 单批次执行记录模板
 
