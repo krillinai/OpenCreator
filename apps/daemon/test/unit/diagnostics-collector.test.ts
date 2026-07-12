@@ -64,6 +64,35 @@ describe('diagnostics collector', () => {
     ]);
   });
 
+  it('surfaces recorded log writer failures as diagnostic warnings', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    writeRunFiles(tempDir, 'run_1', {
+      'diagnostics.json': JSON.stringify({
+        logWriter: {
+          failureCount: 2,
+          backpressureRejects: 1,
+          failures: [
+            { file: 'events.ndjson', message: 'disk unavailable' },
+            { file: 'raw.redacted.ndjson', message: 'queue limit exceeded' }
+          ]
+        }
+      })
+    });
+
+    const result = collectRunDiagnostics({
+      dataDir: tempDir,
+      runs: makeRunRepository(['run_1']),
+      runId: 'run_1'
+    });
+
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        'Run log writer recorded 2 failed writes.',
+        'Run log writer rejected 1 writes because the queue limit was exceeded.'
+      ])
+    );
+  });
+
   it('rejects invalid run ids before filesystem access', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
 

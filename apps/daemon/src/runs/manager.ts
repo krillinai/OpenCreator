@@ -1,6 +1,6 @@
 import type { AgentEventEnvelope, PublicRunStatus, TerminationReason } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import { buildCodexExecArgs, buildCodexResumeArgs } from '../codex/argv.js';
@@ -15,6 +15,11 @@ import {
   type RunRow
 } from '../storage/repositories.js';
 import type { RuntimeThread } from '../threads/types.js';
+import {
+  createOrderedLogWriter,
+  type OrderedLogWriter,
+  type OrderedLogWriterMetrics
+} from './ordered-log-writer.js';
 import type { CreatedRun, CreateRunInput } from './types.js';
 
 export type ThreadAccess = {
@@ -36,6 +41,7 @@ export type RunManagerOptions = {
   profileValidator?: {
     validateProfileForRun(name: string): { ok: true } | { ok: false; code: string; message: string };
   };
+  logWriterFactory?(runDir: string): OrderedLogWriter;
 };
 
 export type RuntimeRun = {
@@ -71,6 +77,7 @@ export type RunManager = {
   getLastEventSeq(runId: string): number;
   listEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
   subscribe(runId: string, subscriber: RunEventSubscriber): () => void;
+  close(options?: { timeoutMs?: number }): Promise<void>;
 };
 
 const INTERACTIVE_RUN_TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -104,11 +111,25 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   const threadQueues = new Map<string, QueuedRun[]>();
   const runningThreadRun = new Map<string, string>();
   const subscribers = new Map<string, Set<RunEventSubscriber>>();
+  const logWriters = new Map<string, OrderedLogWriter>();
+  let closing = false;
+  let closeWork: Promise<void> | undefined;
 
-  const publish = (event: AgentEventEnvelope) => {
+  const publish = (event: AgentEventEnvelope): Promise<void> => {
     runs.insertRunEvent(event);
-    appendFileSync(join(options.dataDir, 'runs', event.runId, 'events.ndjson'), `${JSON.stringify(event)}\n`);
-    for (const subscriber of subscribers.get(event.runId) ?? []) subscriber(event);
+    const logWrite = appendRunLog(
+      event.runId,
+      'events.ndjson',
+      `${JSON.stringify(event)}\n`
+    );
+    for (const subscriber of subscribers.get(event.runId) ?? []) {
+      try {
+        subscriber(event);
+      } catch {
+        // Subscriber failures must not affect durable Run processing.
+      }
+    }
+    return logWrite;
   };
 
   const updateStatus = (
@@ -137,6 +158,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
   const manager: RunManager = {
     startRun(input: CreateRunInput): CreatedRun {
+      if (closing) throw new Error('Run manager is closing');
       const thread = input.threadId === undefined
         ? undefined
         : options.threadAccess?.getThread(input.threadId);
@@ -148,10 +170,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       if (input.threadId !== undefined && runningThreadRun.has(input.threadId)) {
         updateStatus(id, 'queued', 'queued');
         runs.setRunQueueState(id, 'queued');
-        publishStatus(id, 1, 'queued', publish, {
+        void publishStatus(id, 1, 'queued', publish, {
           threadId: input.threadId,
           codexThreadId
-        });
+        }).catch(() => undefined);
         let resolveCompletion!: (run: CreatedRun) => void;
         const completion = new Promise<CreatedRun>(resolve => {
           resolveCompletion = resolve;
@@ -190,9 +212,30 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         endedAt
       });
       runs.setRunQueueState(id, 'none');
-      publishStatus(id, seq, 'canceling', publish, { threadId: queued.threadId });
-      publishDone(id, seq + 1, 'canceled', 'user_canceled', publish);
-      resolveRunCompletion(id, { id, threadId: queued.threadId, status: 'canceled' });
+      void (async () => {
+        const statusWrite = publishStatus(
+          id,
+          seq,
+          'canceling',
+          publish,
+          { threadId: queued.threadId }
+        );
+        const doneWrite = publishDone(
+          id,
+          seq + 1,
+          'canceled',
+          'user_canceled',
+          publish
+        );
+        await safePublish(statusWrite);
+        await safePublish(doneWrite);
+        const logWriter = await closeRunLog(id);
+        writeQueuedCancelDiagnostics(queued, logWriter);
+        resolveRunCompletion(id, { id, threadId: queued.threadId, status: 'canceled' });
+      })().catch(error => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`Failed to finalize queued run ${id}: ${message}`);
+      });
       return true;
     },
 
@@ -239,8 +282,142 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         set.delete(subscriber);
         if (set.size === 0) subscribers.delete(runId);
       };
+    },
+
+    async close(closeOptions = {}) {
+      if (closeWork === undefined) {
+        closing = true;
+        for (const active of activeRuns.values()) active.cancel();
+        for (const queue of threadQueues.values()) {
+          for (const queued of [...queue]) manager.cancelRun(queued.id);
+        }
+
+        closeWork = (async () => {
+          const completions = [
+            ...[...activeRuns.values()].map(active => active.done),
+            ...runCompletions.values()
+          ];
+          await Promise.allSettled(completions);
+          await Promise.all([...logWriters.values()].map(writer => writer.close()));
+          logWriters.clear();
+        })();
+      }
+      if (closeOptions.timeoutMs === undefined) {
+        await closeWork;
+        return;
+      }
+      await withTimeout(
+        closeWork,
+        closeOptions.timeoutMs,
+        'Timed out waiting for run log writers to close'
+      );
     }
   };
+
+  function getLogWriter(runId: string): OrderedLogWriter {
+    const existing = logWriters.get(runId);
+    if (existing !== undefined) return existing;
+    const runDir = join(options.dataDir, 'runs', runId);
+    const writer = options.logWriterFactory?.(runDir) ?? createOrderedLogWriter({
+      directory: runDir
+    });
+    logWriters.set(runId, writer);
+    return writer;
+  }
+
+  function appendRunLog(runId: string, file: string, content: string): Promise<void> {
+    return getLogWriter(runId).append(file, content);
+  }
+
+  async function safeAppendRunLog(runId: string, file: string, content: string): Promise<void> {
+    try {
+      await appendRunLog(runId, file, content);
+    } catch {
+      // The writer metrics retain the failure for diagnostics.
+    }
+  }
+
+  async function safePublish(work: Promise<void>): Promise<void> {
+    try {
+      await work;
+    } catch {
+      // The writer metrics retain the failure for diagnostics.
+    }
+  }
+
+  async function closeRunLog(runId: string): Promise<OrderedLogWriterMetrics> {
+    const writer = getLogWriter(runId);
+    await writer.close();
+    const metrics = writer.getMetrics();
+    logWriters.delete(runId);
+    return metrics;
+  }
+
+  function closeDetachedRunLog(runId: string, writes: Promise<void>[]): void {
+    const writer = getLogWriter(runId);
+    void Promise.allSettled(writes)
+      .then(() => writer.close())
+      .finally(() => {
+        if (logWriters.get(runId) === writer) logWriters.delete(runId);
+      })
+      .catch(() => undefined);
+  }
+
+  async function finalizeRun(input: {
+    id: string;
+    runDir: string;
+    runInput: CreateRunInput;
+    publicStatus: 'succeeded' | 'failed' | 'canceled';
+    terminationReason: TerminationReason;
+    diagnostics: Record<string, unknown>;
+    statusExtra: {
+      exitCode?: number | null;
+      signal?: string | null;
+      errorCode?: string | null;
+      errorMessage?: string | null;
+    };
+    nextSeq(): number;
+    publish: (event: AgentEventEnvelope) => Promise<void>;
+  }): Promise<void> {
+    const writer = getLogWriter(input.id);
+    const beforeCloseMetrics = writer.getMetrics();
+    if (beforeCloseMetrics.failureCount > 0) {
+      await safePublish(publishDiagnostic(
+        input.id,
+        input.nextSeq(),
+        'RUN_LOG_WRITE_FAILED',
+        'One or more run log writes failed',
+        input.publish,
+        {
+          failureCount: beforeCloseMetrics.failureCount,
+          failures: beforeCloseMetrics.failures
+        }
+      ));
+    }
+    if (!hasDoneEvent(input.id)) {
+      await safePublish(publishDone(
+        input.id,
+        input.nextSeq(),
+        input.publicStatus,
+        input.terminationReason,
+        input.publish
+      ));
+    }
+
+    const logWriter = await closeRunLog(input.id);
+    writeJson(join(input.runDir, 'diagnostics.json'), {
+      ...input.diagnostics,
+      logWriter
+    });
+    updateStatus(input.id, input.publicStatus, input.publicStatus, {
+      terminationReason: input.terminationReason,
+      ...input.statusExtra,
+      endedAt: new Date().toISOString()
+    });
+    activeRuns.delete(input.id);
+    if (input.runInput.threadId !== undefined) runs.setRunQueueState(input.id, 'none');
+    completeThreadRun(input.runInput.threadId, input.id);
+  }
 
   function startExistingRun(input: QueuedRun): CreatedRun {
     const { id, runDir } = input;
@@ -338,14 +515,14 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       resumeMode: resolvedResumeMode
     });
     if (resolvedResumeMode === 'new_thread' && codexThreadId !== undefined) {
-      publishDiagnostic(
+      void publishDiagnostic(
         id,
         ++seq,
         'THREAD_CODEX_SESSION_RESET',
         'Starting a new Codex session for a thread that already had a Codex session',
         publish,
         { previousCodexThreadId: codexThreadId }
-      );
+      ).catch(() => undefined);
     }
 
     const process = startCodexExec({
@@ -357,15 +534,15 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       timeoutMs: runTimeouts.timeoutMs,
       spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
       inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
-      onStdoutLine(line) {
+      async onStdoutLine(line) {
         const redactedLine = redactText(line);
         stdoutLines.push(redactedLine);
-        appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactedLine}\n`);
+        await appendRunLog(id, 'raw.redacted.ndjson', `${redactedLine}\n`);
 
         const parsed = parseJsonLine(redactedLine);
         seq += 1;
         if (!parsed.ok) {
-          publishDiagnostic(id, seq, 'CODEX_STREAM_ERROR', parsed.error, publish, {
+          await publishDiagnostic(id, seq, 'CODEX_STREAM_ERROR', parsed.error, publish, {
             line: redactedLine
           });
           return;
@@ -377,32 +554,32 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           resolvedCodexThreadId = parsedCodexThreadId;
           runs.setRunCodexThreadId(id, parsedCodexThreadId);
           if (runInput.threadId) options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
-          publishStatus(id, seq, 'initializing', publish, {
+          await publishStatus(id, seq, 'initializing', publish, {
             threadId: runInput.threadId,
             codexThreadId: parsedCodexThreadId
           });
           return;
         }
         if (isTurnCompleted(parsed.value)) sawTurnCompleted = true;
-        publish(normalizeCodexEvent({ runId: id, seq, raw: parsed.value }));
+        await publish(normalizeCodexEvent({ runId: id, seq, raw: parsed.value }));
       },
-      onStderrChunk(chunk) {
+      async onStderrChunk(chunk) {
         const redactedChunk = redactText(chunk);
         stderr += redactedChunk;
-        appendFileSync(join(runDir, 'stderr.redacted.log'), redactedChunk);
+        await appendRunLog(id, 'stderr.redacted.log', redactedChunk);
       }
     });
 
     updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
 
-    const done = process.result
-      .then(result => {
+    const done = process.result.then(
+      async result => {
         const exitedSuccessfully =
           result.exitCode === 0 && result.terminationReason !== 'canceled';
         const missingCodexThreadId =
           exitedSuccessfully && runInput.threadId !== undefined && !sawCodexThreadId;
         const streamError = exitedSuccessfully && (!sawTurnCompleted || missingCodexThreadId);
-        const publicStatus: PublicRunStatus = result.terminationReason === 'canceled'
+        const publicStatus: 'succeeded' | 'failed' | 'canceled' = result.terminationReason === 'canceled'
           ? 'canceled'
           : result.exitCode === 0 && !streamError
             ? 'succeeded'
@@ -425,7 +602,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
               ? 'Codex stream ended without turn.completed'
               : undefined
             : 'Codex resume failed';
-        writeJson(join(runDir, 'diagnostics.json'), {
+        const diagnostics = {
           ...buildThreadRunDiagnosticsMetadata({
             runInput,
             resumeMode: resolvedResumeMode,
@@ -442,40 +619,43 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           ...runTimeouts,
           ...(errorCode === undefined ? {} : { errorCode }),
           ...(errorMessage === undefined ? {} : { error: errorMessage, errorMessage })
-        });
+        };
         if (missingCodexThreadId) {
-          publishError(
+          await safePublish(publishError(
             id,
             ++seq,
             'CODEX_THREAD_ID_MISSING',
             CODEX_THREAD_ID_MISSING_MESSAGE,
             publish
-          );
+          ));
         } else if (streamError) {
-          publishDiagnostic(
+          await safePublish(publishDiagnostic(
             id,
             ++seq,
             'CODEX_STREAM_ERROR',
             'Codex stream ended without turn.completed',
             publish
-          );
+          ));
         }
-        updateStatus(id, publicStatus, publicStatus, {
+        await finalizeRun({
+          id,
+          runDir,
+          runInput,
+          publicStatus,
           terminationReason,
-          exitCode: result.exitCode,
-          signal: result.signal,
-          ...(errorCode === undefined ? {} : { errorCode }),
-          ...(errorMessage === undefined ? {} : { errorMessage }),
-          endedAt: new Date().toISOString()
+          diagnostics,
+          statusExtra: {
+            exitCode: result.exitCode,
+            signal: result.signal,
+            ...(errorCode === undefined ? {} : { errorCode }),
+            ...(errorMessage === undefined ? {} : { errorMessage })
+          },
+          nextSeq: () => ++seq,
+          publish
         });
-
-        if (!hasDoneEvent(id)) publishDone(id, ++seq, publicStatus, terminationReason, publish);
-        activeRuns.delete(id);
-        if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
-        completeThreadRun(runInput.threadId, id);
         return createdRun(publicStatus);
-      })
-      .catch(error => {
+      },
+      async error => {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const shutdownTimeoutAfterCompletedTurn = isShutdownTimeoutAfterCompletedTurn({
           error,
@@ -485,7 +665,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         });
         if (shutdownTimeoutAfterCompletedTurn) {
           const terminationReason: TerminationReason = 'completed';
-          writeJson(join(runDir, 'diagnostics.json'), {
+          const diagnostics = {
             ...buildThreadRunDiagnosticsMetadata({
               runInput,
               resumeMode: resolvedResumeMode,
@@ -504,29 +684,32 @@ export function createRunManager(options: RunManagerOptions): RunManager {
                 message: errorMessage
               }
             ]
-          });
-          updateStatus(id, 'succeeded', 'succeeded', {
-            terminationReason,
-            endedAt: new Date().toISOString()
-          });
+          };
           if (error instanceof CodexExecError) {
             for (const line of error.stdoutLines.slice(stdoutLines.length)) {
-              appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactText(line)}\n`);
+              await safeAppendRunLog(id, 'raw.redacted.ndjson', `${redactText(line)}\n`);
             }
             if (stderr.length === 0 && error.stderr.length > 0) {
-              appendFileSync(join(runDir, 'stderr.redacted.log'), redactText(error.stderr));
+              await safeAppendRunLog(id, 'stderr.redacted.log', redactText(error.stderr));
             }
           }
-          if (!hasDoneEvent(id)) publishDone(id, ++seq, 'succeeded', terminationReason, publish);
-          activeRuns.delete(id);
-          if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
-          completeThreadRun(runInput.threadId, id);
+          await finalizeRun({
+            id,
+            runDir,
+            runInput,
+            publicStatus: 'succeeded',
+            terminationReason,
+            diagnostics,
+            statusExtra: {},
+            nextSeq: () => ++seq,
+            publish
+          });
           return createdRun('succeeded');
         }
 
         const missingCodexThreadId = runInput.threadId !== undefined && sawTurnCompleted && !sawCodexThreadId;
         const terminationReason = missingCodexThreadId ? 'stream_error' : errorToTerminationReason(error);
-        const publicStatus: PublicRunStatus =
+        const publicStatus: 'failed' | 'canceled' =
           terminationReason === 'user_canceled' ? 'canceled' : 'failed';
         const errorCode = missingCodexThreadId
           ? 'CODEX_THREAD_ID_MISSING'
@@ -534,7 +717,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         const finalErrorMessage = missingCodexThreadId
           ? CODEX_THREAD_ID_MISSING_MESSAGE
           : errorMessage;
-        writeJson(join(runDir, 'diagnostics.json'), {
+        const diagnostics = {
           ...buildThreadRunDiagnosticsMetadata({
             runInput,
             resumeMode: resolvedResumeMode,
@@ -549,41 +732,46 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           errorMessage: finalErrorMessage,
           terminationReason,
           ...runTimeouts
-        });
-        updateStatus(id, publicStatus, publicStatus, {
-          terminationReason,
-          errorCode,
-          errorMessage: finalErrorMessage,
-          endedAt: new Date().toISOString()
-        });
+        };
         if (missingCodexThreadId) {
-          publishError(
+          await safePublish(publishError(
             id,
             ++seq,
             'CODEX_THREAD_ID_MISSING',
             CODEX_THREAD_ID_MISSING_MESSAGE,
             publish
-          );
+          ));
         }
         if (error instanceof CodexExecError) {
           for (const line of error.stdoutLines.slice(stdoutLines.length)) {
-            appendFileSync(join(runDir, 'raw.redacted.ndjson'), `${redactText(line)}\n`);
+            await safeAppendRunLog(id, 'raw.redacted.ndjson', `${redactText(line)}\n`);
           }
           if (stderr.length === 0 && error.stderr.length > 0) {
-            appendFileSync(join(runDir, 'stderr.redacted.log'), redactText(error.stderr));
+            await safeAppendRunLog(id, 'stderr.redacted.log', redactText(error.stderr));
           }
         }
-        if (!hasDoneEvent(id)) publishDone(id, ++seq, publicStatus, terminationReason, publish);
-        activeRuns.delete(id);
-        if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'none');
-        completeThreadRun(runInput.threadId, id);
+        await finalizeRun({
+          id,
+          runDir,
+          runInput,
+          publicStatus,
+          terminationReason,
+          diagnostics,
+          statusExtra: {
+            errorCode,
+            errorMessage: finalErrorMessage
+          },
+          nextSeq: () => ++seq,
+          publish
+        });
         return createdRun(publicStatus);
-      });
+      }
+    );
 
     activeRuns.set(id, {
       cancel() {
         updateStatus(id, 'running', 'canceling');
-        publishStatus(id, ++seq, 'canceling', publish);
+        void publishStatus(id, ++seq, 'canceling', publish).catch(() => undefined);
         process.cancel();
       },
       done
@@ -601,16 +789,17 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     terminationReason: TerminationReason;
     threadId?: string;
     diagnostics?: Record<string, unknown>;
-    publish: (event: AgentEventEnvelope) => void;
+    publish: (event: AgentEventEnvelope) => Promise<void>;
   }): CreatedRun {
     const endedAt = new Date().toISOString();
-    writeJson(join(input.runDir, 'diagnostics.json'), {
+    const diagnostics = {
       ...input.diagnostics,
       error: input.message,
       errorMessage: input.message,
       errorCode: input.code,
       terminationReason: input.terminationReason
-    });
+    };
+    writeJson(join(input.runDir, 'diagnostics.json'), diagnostics);
     updateStatus(input.id, 'failed', 'failed', {
       terminationReason: input.terminationReason,
       errorCode: input.code,
@@ -618,8 +807,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       endedAt
     });
     const seq = nextSeqForRun(input.id);
-    publishError(input.id, seq, input.code, input.message, input.publish);
-    publishDone(input.id, seq + 1, 'failed', input.terminationReason, input.publish);
+    closeDetachedRunLog(input.id, [
+      publishError(input.id, seq, input.code, input.message, input.publish),
+      publishDone(input.id, seq + 1, 'failed', input.terminationReason, input.publish)
+    ]);
     return {
       id: input.id,
       ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
@@ -654,6 +845,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     writeFileSync(join(runDir, 'raw.redacted.ndjson'), '');
     writeFileSync(join(runDir, 'events.ndjson'), '');
     writeFileSync(join(runDir, 'stderr.redacted.log'), '');
+    getLogWriter(id);
     runs.insertRun({
       id,
       publicStatus: 'queued',
@@ -712,7 +904,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     return undefined;
   }
 
-  function writeQueuedCancelDiagnostics(queued: QueuedRun & { threadId: string }): void {
+  function writeQueuedCancelDiagnostics(
+    queued: QueuedRun & { threadId: string },
+    logWriter?: OrderedLogWriterMetrics
+  ): void {
     const row = runs.getRun(queued.id);
     const resumeMode = row?.resume_mode ?? resolveResumeMode(
       queued.input,
@@ -732,7 +927,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         errorMessage: null,
         terminationReason: 'user_canceled'
       }),
-      terminationReason: 'user_canceled'
+      terminationReason: 'user_canceled',
+      ...(logWriter === undefined ? {} : { logWriter })
     });
   }
 
@@ -766,6 +962,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   }
 
   function startNextQueuedThreadRun(threadId: string): void {
+    if (closing) return;
     if (runningThreadRun.has(threadId)) return;
     const queue = threadQueues.get(threadId);
     const next = queue?.shift();
@@ -789,7 +986,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         errorMessage: orphanErrorMessage,
         endedAt: new Date().toISOString()
       });
-      writeJson(join(options.dataDir, 'runs', run.id, 'diagnostics.json'), {
+      const diagnostics = {
         ...buildThreadRunDiagnosticsMetadataFromRow(run, {
           errorCode: orphanErrorCode,
           errorMessage: orphanErrorMessage,
@@ -799,24 +996,45 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         errorMessage: orphanErrorMessage,
         errorCode: orphanErrorCode,
         terminationReason: 'daemon_restart'
-      });
+      };
+      writeJson(join(options.dataDir, 'runs', run.id, 'diagnostics.json'), diagnostics);
+      const writes: Promise<void>[] = [];
       if (!existingEvents.some(event => event.type === 'error')) {
-        publishError(
+        writes.push(publishError(
           run.id,
           nextSeq,
           orphanErrorCode,
           orphanErrorMessage,
           publish
-        );
+        ));
       }
       if (!existingEvents.some(event => event.type === 'done')) {
         const doneSeq = existingEvents.some(event => event.type === 'error') ? nextSeq : nextSeq + 1;
-        publishDone(run.id, doneSeq, 'failed', 'daemon_restart', publish);
+        writes.push(publishDone(run.id, doneSeq, 'failed', 'daemon_restart', publish));
       }
+      if (writes.length > 0) closeDetachedRunLog(run.id, writes);
     }
   }
 
   return manager;
+}
+
+async function withTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -903,10 +1121,10 @@ function publishStatus(
   runId: string,
   seq: number,
   label: 'queued' | 'initializing' | 'running' | 'canceling' | 'finalizing',
-  publish: (event: AgentEventEnvelope) => void,
+  publish: (event: AgentEventEnvelope) => Promise<void>,
   metadata: { threadId?: string; codexThreadId?: string } = {}
-): void {
-  publish({
+): Promise<void> {
+  return publish({
     id: `evt_${runId}_${seq}`,
     runId,
     seq,
@@ -922,10 +1140,10 @@ function publishDiagnostic(
   seq: number,
   code: string,
   message: string,
-  publish: (event: AgentEventEnvelope) => void,
+  publish: (event: AgentEventEnvelope) => Promise<void>,
   details?: Record<string, unknown>
-): void {
-  publish({
+): Promise<void> {
+  return publish({
     id: `evt_${runId}_${seq}`,
     runId,
     seq,
@@ -947,10 +1165,10 @@ function publishError(
   seq: number,
   code: string,
   message: string,
-  publish: (event: AgentEventEnvelope) => void,
+  publish: (event: AgentEventEnvelope) => Promise<void>,
   details?: Record<string, unknown>
-): void {
-  publish({
+): Promise<void> {
+  return publish({
     id: `evt_${runId}_${seq}`,
     runId,
     seq,
@@ -971,9 +1189,9 @@ function publishDone(
   seq: number,
   status: 'succeeded' | 'failed' | 'canceled',
   terminationReason: TerminationReason,
-  publish: (event: AgentEventEnvelope) => void
-): void {
-  publish({
+  publish: (event: AgentEventEnvelope) => Promise<void>
+): Promise<void> {
+  return publish({
     id: `evt_${runId}_${seq}`,
     runId,
     seq,

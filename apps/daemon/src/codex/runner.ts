@@ -10,8 +10,8 @@ export type RunCodexExecInput = {
   spawnTimeoutMs?: number;
   inactivityTimeoutMs?: number;
   forceKillGraceMs?: number;
-  onStdoutLine?: (line: string) => void;
-  onStderrChunk?: (chunk: string) => void;
+  onStdoutLine?: (line: string) => Promise<void> | void;
+  onStderrChunk?: (chunk: string) => Promise<void> | void;
 };
 
 export type RunCodexExecResult = {
@@ -29,7 +29,8 @@ export type CodexExecTerminationReason =
   | 'spawn_timeout'
   | 'inactivity_timeout'
   | 'spawn_failed'
-  | 'stdin_error';
+  | 'stdin_error'
+  | 'stream_handler_failed';
 
 export class CodexExecError extends Error {
   readonly terminationReason: CodexExecTerminationReason;
@@ -80,6 +81,8 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
     let spawnTimeout: NodeJS.Timeout | undefined;
     let inactivityTimeout: NodeJS.Timeout | undefined;
     let sawActivity = false;
+    let stdoutWork = Promise.resolve();
+    let stderrWork = Promise.resolve();
 
     const clearTimers = () => {
       if (timeout) clearTimeout(timeout);
@@ -171,19 +174,39 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
 
     child.stdout.on('data', (chunk: string) => {
       markActivity();
-      stdoutBuffer += chunk;
-      const lines = stdoutBuffer.split(/\r?\n/);
-      stdoutBuffer = lines.pop() ?? '';
-      for (const line of lines) {
-        stdoutLines.push(line);
-        input.onStdoutLine?.(line);
-      }
+      child.stdout.pause();
+      stdoutWork = stdoutWork
+        .then(async () => {
+          stdoutBuffer += chunk;
+          const lines = stdoutBuffer.split(/\r?\n/);
+          stdoutBuffer = lines.pop() ?? '';
+          for (const line of lines) {
+            stdoutLines.push(line);
+            await input.onStdoutLine?.(line);
+          }
+        })
+        .catch(error => {
+          killAndRejectOnClose(streamHandlerError('stdout', error, stdoutLines, stderr));
+        })
+        .finally(() => {
+          if (!settled && pendingError === undefined) child.stdout.resume();
+        });
     });
 
     child.stderr.on('data', (chunk: string) => {
       markActivity();
-      stderr += chunk;
-      input.onStderrChunk?.(chunk);
+      child.stderr.pause();
+      stderrWork = stderrWork
+        .then(async () => {
+          stderr += chunk;
+          await input.onStderrChunk?.(chunk);
+        })
+        .catch(error => {
+          killAndRejectOnClose(streamHandlerError('stderr', error, stdoutLines, stderr));
+        })
+        .finally(() => {
+          if (!settled && pendingError === undefined) child.stderr.resume();
+        });
     });
 
     child.on('error', (error) => {
@@ -200,23 +223,30 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
 
     child.on('close', (exitCode, signal) => {
       if (settled) return;
-      settled = true;
       clearTimers();
-      if (stdoutBuffer.length > 0) {
-        stdoutLines.push(stdoutBuffer);
-        input.onStdoutLine?.(stdoutBuffer);
-      }
-      if (pendingError !== undefined) {
-        reject(pendingError);
-        return;
-      }
-      resolve({
-        exitCode,
-        signal,
-        stdoutLines,
-        stderr,
-        terminationReason: cancelRequested ? 'canceled' : 'completed'
-      });
+      void Promise.all([stdoutWork, stderrWork])
+        .then(async () => {
+          if (stdoutBuffer.length > 0) {
+            stdoutLines.push(stdoutBuffer);
+            await input.onStdoutLine?.(stdoutBuffer);
+          }
+          settled = true;
+          if (pendingError !== undefined) {
+            reject(pendingError);
+            return;
+          }
+          resolve({
+            exitCode,
+            signal,
+            stdoutLines,
+            stderr,
+            terminationReason: cancelRequested ? 'canceled' : 'completed'
+          });
+        })
+        .catch(error => {
+          settled = true;
+          reject(streamHandlerError('stdout', error, stdoutLines, stderr));
+        });
     });
 
     child.stdin.on('error', (error) => {
@@ -244,6 +274,22 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
     cancel: () => cancelProcess(),
     result
   };
+}
+
+function streamHandlerError(
+  stream: 'stdout' | 'stderr',
+  error: unknown,
+  stdoutLines: string[],
+  stderr: string
+): CodexExecError {
+  const message = error instanceof Error ? error.message : String(error);
+  return new CodexExecError({
+    message: `Codex ${stream} handler failed: ${message}`,
+    terminationReason: 'stream_handler_failed',
+    stdoutLines,
+    stderr,
+    cause: error
+  });
 }
 
 export function runCodexExec(input: RunCodexExecInput): Promise<RunCodexExecResult> {

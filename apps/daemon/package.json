@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "predev": "pnpm --filter @clawee/skill-market build",
-    "dev": "tsx src/main.ts",
+    "dev": "node --import tsx src/main.ts",
     "prebuild": "pnpm --filter @clawee/skill-market build",
     "build": "tsc -p tsconfig.json",
     "pretypecheck": "pnpm --filter @clawee/skill-market build",

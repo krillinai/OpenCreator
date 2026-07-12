@@ -1,5 +1,6 @@
 import type { SandboxMode } from '@clawee/protocol';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -7,6 +8,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunManager } from '../../src/runs/manager.js';
+import {
+  createOrderedLogWriter,
+  type OrderedLogWriter
+} from '../../src/runs/ordered-log-writer.js';
 import { createThreadManager } from '../../src/threads/manager.js';
 
 let tempDir = '';
@@ -24,6 +29,7 @@ function createTestRunManager(input: {
   tempDir?: string;
   codexBin?: string;
   resumeCapabilityVerified?: boolean;
+  logWriterFactory?(runDir: string): OrderedLogWriter;
 } = {}) {
   tempDir = input.tempDir ?? mkdtempSync(join(tmpdir(), 'clawee-manager-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -40,7 +46,8 @@ function createTestRunManager(input: {
     }).bin,
     codexHome: join(tempDir, 'codex-home'),
     threadAccess: threadManager,
-    resumeCapabilityVerified: input.resumeCapabilityVerified ?? true
+    resumeCapabilityVerified: input.resumeCapabilityVerified ?? true,
+    logWriterFactory: input.logWriterFactory
   });
   return { manager, threadManager };
 }
@@ -339,6 +346,268 @@ describe('run manager', () => {
       | undefined;
     expect(row?.public_status).toBe('succeeded');
   });
+
+  it('keeps high-frequency event logs ordered and records writer metrics', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex_thread_1' },
+        { type: 'turn.started' },
+        ...Array.from({ length: 120 }, (_, index) => ({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: `event ${index}` }
+        })),
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'generate many events',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('succeeded');
+    const fileEvents = readFileSync(
+      join(tempDir, 'runs', run.id, 'events.ndjson'),
+      'utf8'
+    )
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(line => JSON.parse(line) as { seq: number });
+    expect(fileEvents.map(event => event.seq)).toEqual(
+      manager.listEvents(run.id).map(event => event.seq)
+    );
+
+    const diagnostics = JSON.parse(
+      readFileSync(join(tempDir, 'runs', run.id, 'diagnostics.json'), 'utf8')
+    ) as {
+      logWriter?: {
+        writesAttempted: number;
+        writesCompleted: number;
+        failureCount: number;
+        drainCount: number;
+        peakQueuedBytes: number;
+      };
+    };
+    expect(diagnostics.logWriter).toMatchObject({
+      failureCount: 0
+    });
+    expect(diagnostics.logWriter?.writesAttempted).toBeGreaterThan(120);
+    expect(diagnostics.logWriter?.writesCompleted).toBe(
+      diagnostics.logWriter?.writesAttempted
+    );
+    expect(diagnostics.logWriter?.drainCount).toBeGreaterThan(0);
+    expect(diagnostics.logWriter?.peakQueuedBytes).toBeGreaterThan(0);
+  });
+
+  it('isolates subscriber failures from run execution and event log persistence', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      initialDelayMs: 100,
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin
+    });
+
+    const run = manager.startRun({
+      prompt: 'subscriber failure',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+    manager.subscribe(run.id, () => {
+      throw new Error('simulated subscriber failure');
+    });
+
+    await waitForRunStatus(manager, run.id, 'succeeded');
+
+    const databaseSeqs = manager.listEvents(run.id).map(event => event.seq);
+    const fileSeqs = readFileSync(
+      join(tempDir, 'runs', run.id, 'events.ndjson'),
+      'utf8'
+    )
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(line => (JSON.parse(line) as { seq: number }).seq);
+    expect(fileSeqs).toEqual(databaseSeqs);
+    expect(manager.listEvents(run.id).some(event => event.type === 'done')).toBe(true);
+  });
+
+  it('records a run diagnostic when asynchronous log writes fail', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      logWriterFactory(runDir) {
+        return createOrderedLogWriter({
+          directory: runDir,
+          appendFile: async (path, content) => {
+            if (path.endsWith('raw.redacted.ndjson')) {
+              throw new Error('simulated disk failure');
+            }
+            await appendFile(path, content);
+          }
+        });
+      }
+    });
+
+    const run = await manager.createAndRun({
+      prompt: 'trigger log failure',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(manager.listEvents(run.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'diagnostic',
+          payload: expect.objectContaining({
+            type: 'diagnostic',
+            code: 'RUN_LOG_WRITE_FAILED'
+          })
+        })
+      ])
+    );
+    const diagnostics = JSON.parse(
+      readFileSync(join(tempDir, 'runs', run.id, 'diagnostics.json'), 'utf8')
+    ) as {
+      logWriter?: {
+        failureCount: number;
+        failures: Array<{ file: string; message: string }>;
+      };
+    };
+    expect(diagnostics.logWriter?.failureCount).toBeGreaterThan(0);
+    expect(diagnostics.logWriter?.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          file: 'raw.redacted.ndjson',
+          message: 'simulated disk failure'
+        })
+      ])
+    );
+  });
+
+  it('waits for active runs and queued log writes during close', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    let releaseWrite!: () => void;
+    const blockedWrite = new Promise<void>(resolve => {
+      releaseWrite = resolve;
+    });
+    let writeStarted = false;
+    const { manager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      logWriterFactory(runDir) {
+        return createOrderedLogWriter({
+          directory: runDir,
+          appendFile: async (path, content) => {
+            writeStarted = true;
+            await blockedWrite;
+            await appendFile(path, content);
+          }
+        });
+      }
+    });
+
+    const run = manager.startRun({
+      prompt: 'close with pending logs',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+    await expect.poll(() => writeStarted, { timeout: 5_000 }).toBe(true);
+
+    let closed = false;
+    const close = manager.close({ timeoutMs: 2_000 }).then(() => {
+      closed = true;
+    });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(closed).toBe(false);
+
+    releaseWrite();
+    await close;
+
+    expect(manager.getRun(run.id)?.status).toMatch(/canceled|failed/);
+  }, 10_000);
+
+  it('shares in-flight close work after an earlier close call times out', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    let releaseWrite!: () => void;
+    const blockedWrite = new Promise<void>(resolve => {
+      releaseWrite = resolve;
+    });
+    let writeStarted = false;
+    const { manager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      logWriterFactory(runDir) {
+        return createOrderedLogWriter({
+          directory: runDir,
+          appendFile: async (path, content) => {
+            writeStarted = true;
+            await blockedWrite;
+            await appendFile(path, content);
+          }
+        });
+      }
+    });
+
+    manager.startRun({
+      prompt: 'retry close after timeout',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+    await expect.poll(() => writeStarted, { timeout: 5_000 }).toBe(true);
+
+    const firstClose = manager.close({ timeoutMs: 25 });
+    let secondCloseSettled = false;
+    const secondClose = manager.close({ timeoutMs: 2_000 }).finally(() => {
+      secondCloseSettled = true;
+    });
+
+    await expect(firstClose).rejects.toThrow('Timed out waiting for run log writers to close');
+    expect(secondCloseSettled).toBe(false);
+
+    releaseWrite();
+    await secondClose;
+  }, 10_000);
 
   it('marks a run failed and writes diagnostics when codex exits non-zero', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
@@ -747,10 +1016,15 @@ describe('run manager', () => {
         { type: 'turn.completed' }
       ]
     });
+    let logWriter: OrderedLogWriter | undefined;
     const { manager, threadManager } = createTestRunManager({
       tempDir,
       codexBin: fake.bin,
-      resumeCapabilityVerified: false
+      resumeCapabilityVerified: false,
+      logWriterFactory(runDir) {
+        logWriter = createOrderedLogWriter({ directory: runDir });
+        return logWriter;
+      }
     });
     const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-1' });
 
@@ -765,6 +1039,7 @@ describe('run manager', () => {
       errorCode: 'RESUME_CAPABILITY_UNVERIFIED'
     });
     expect(existsSync(join(tempDir, 'argv.json'))).toBe(false);
+    await expect.poll(() => logWriter?.getMetrics().closed).toBe(true);
   });
 
   it('marks a thread run failed when codex emits an empty thread id', async () => {

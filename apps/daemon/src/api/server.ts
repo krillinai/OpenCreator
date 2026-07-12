@@ -148,7 +148,19 @@ export async function buildServer(input: BuildServerInput) {
 
   server.addHook('onClose', async () => {
     scheduler.stop();
-    if (ownsDb) db.close();
+    try {
+      await runManager.close({ timeoutMs: 5_000 });
+      if (ownsDb) db.close();
+    } catch (error) {
+      if (ownsDb) {
+        void runManager.close()
+          .finally(() => {
+            if (db.open) db.close();
+          })
+          .catch(() => undefined);
+      }
+      throw error;
+    }
   });
 
   server.get('/healthz', async () => ({ ok: true }));

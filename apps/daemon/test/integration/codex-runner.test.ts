@@ -64,6 +64,51 @@ describe('codex runner', () => {
     expect(result.stdoutLines).toEqual(['{"type":"turn.completed"}']);
   });
 
+  it('waits for asynchronous stdout handlers before resolving the process result', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    let releaseFirst!: () => void;
+    const firstBlocked = new Promise<void>(resolve => {
+      releaseFirst = resolve;
+    });
+    const handled: string[] = [];
+    let resultSettled = false;
+
+    const result = runCodexExec({
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      args: ['exec', '--json'],
+      prompt: 'hello',
+      timeoutMs: 5000,
+      inactivityTimeoutMs: 5000,
+      async onStdoutLine(line) {
+        handled.push(line);
+        if (handled.length === 1) await firstBlocked;
+      }
+    }).finally(() => {
+      resultSettled = true;
+    });
+
+    await expect.poll(() => handled, { timeout: 5_000 }).toHaveLength(1);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(handled).toHaveLength(1);
+    expect(resultSettled).toBe(false);
+
+    releaseFirst();
+    await result;
+
+    expect(handled).toEqual([
+      '{"type":"turn.started"}',
+      '{"type":"turn.completed"}'
+    ]);
+  }, 10_000);
+
   it('rejects with timeout when codex hangs', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
     const fake = createFakeCodex(tempDir, {

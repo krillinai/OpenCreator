@@ -25,6 +25,7 @@ import { SchedulerError, type SchedulerService } from '../../src/scheduler/servi
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
+import { createRunManager } from '../../src/runs/manager.js';
 
 let server: FastifyInstance | undefined;
 let tempDir = '';
@@ -79,6 +80,30 @@ describe('runtime api', () => {
     server = undefined;
 
     expect(scheduler.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the run manager before server shutdown completes', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const runManager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: join(tempDir, 'codex'),
+      codexHome: join(tempDir, 'codex-home')
+    });
+    const close = vi.spyOn(runManager, 'close');
+
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      db,
+      runManager
+    });
+
+    await server.close();
+    server = undefined;
+
+    expect(close).toHaveBeenCalledWith({ timeoutMs: 5_000 });
   });
 
   it('rejects unauthorized requests', async () => {

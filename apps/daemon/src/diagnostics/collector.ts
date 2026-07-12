@@ -119,7 +119,37 @@ export function collectRunDiagnostics(
     }
   }
 
+  appendLogWriterWarnings(files, warnings);
   return { runId, files: redactDiagnosticFiles(files), warnings };
+}
+
+function appendLogWriterWarnings(
+  files: DiagnosticFileResponse[],
+  warnings: string[]
+): void {
+  const diagnostics = files.find(file => file.name === 'diagnostics.json');
+  if (diagnostics === undefined) return;
+
+  try {
+    const parsed = JSON.parse(diagnostics.content) as unknown;
+    if (!isRecord(parsed) || !isRecord(parsed.logWriter)) return;
+    const failureCount = parsed.logWriter.failureCount;
+    if (typeof failureCount === 'number' && failureCount > 0) {
+      warnings.push(`Run log writer recorded ${failureCount} failed writes.`);
+    }
+    const backpressureRejects = parsed.logWriter.backpressureRejects;
+    if (typeof backpressureRejects === 'number' && backpressureRejects > 0) {
+      warnings.push(
+        `Run log writer rejected ${backpressureRejects} writes because the queue limit was exceeded.`
+      );
+    }
+  } catch {
+    // The diagnostics file remains available to the caller even when it is not valid JSON.
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isPathInside(parent: string, child: string): boolean {
