@@ -97,6 +97,33 @@ describe('useThreadHistory', () => {
     expect(result.current.threadId).toBe('thread_b');
     expect(result.current.items.map(item => item.id)).toEqual(['thread_b_message']);
   });
+
+  it('loads a bounded window around a search target item', async () => {
+    const getThreadHistory = vi.fn(async (
+      threadId: string
+    ): Promise<ThreadHistoryResponse> => ({
+      threadId,
+      items: [historyMessage('target-item', '目标消息')],
+      hasMore: true,
+      nextCursor: 'older-cursor',
+      targetItemId: 'target-item'
+    }));
+    const { result } = renderHook(() => useThreadHistory({
+      threadId: 'thread_1',
+      targetItemId: 'target-item',
+      enabled: true,
+      service: { getThreadHistory }
+    }));
+
+    await waitFor(() => expect(result.current.initialLoading).toBe(false));
+
+    expect(getThreadHistory).toHaveBeenCalledWith('thread_1', {
+      limit: 50,
+      targetItemId: 'target-item'
+    });
+    expect(result.current.items.map(item => item.id)).toEqual(['target-item']);
+    expect(result.current.hasMore).toBe(true);
+  });
 });
 
 function historyMessage(id: string, text: string) {

@@ -2,6 +2,7 @@ import type {
   CodexMcpListResponse,
   CodexSkillListResponse,
   CodexSkillMarketInstallRecordResponse,
+  ConversationSearchResult,
   CreateThreadRequest,
   RunDiagnosticsResponse,
   RunResponse,
@@ -48,6 +49,7 @@ import {
   timelineReplayMergeKey
 } from '../features/runs/run-event-replay.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
+import { SearchView } from '../features/search/SearchView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
@@ -62,6 +64,7 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createMockProjectService } from '../services/project-service.js';
 import { createRunService } from '../services/run-service.js';
+import { createSearchService } from '../services/search-service.js';
 import { createSkillMarketService } from '../services/skill-market-service.js';
 import { createThreadService } from '../services/thread-service.js';
 import { createWorkspaceFileService } from '../services/workspace-file-service.js';
@@ -77,6 +80,7 @@ type AppFileService = {
 type CapabilityService = ReturnType<typeof createCapabilityService>;
 type SkillMarketService = ReturnType<typeof createSkillMarketService>;
 type ThreadService = ReturnType<typeof createThreadService>;
+type SearchService = ReturnType<typeof createSearchService>;
 type PendingRunStart = {
   id: string;
   threadId?: string;
@@ -166,6 +170,9 @@ export function App(props: AppProps = {}) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [dynamicBackgroundEnabled, setDynamicBackgroundEnabled] = useState(readDynamicBackgroundPreference);
   const [threadHistoryReloadKey, setThreadHistoryReloadKey] = useState(0);
+  const [searchHistoryTarget, setSearchHistoryTarget] = useState<
+    { threadId: string; itemId: string } | undefined
+  >();
   const projectService = useMemo(() => createMockProjectService(), []);
   const timelineIdSequenceRef = useRef(0);
   const timelineItemsRef = useRef<TimelineItem[]>([]);
@@ -212,6 +219,10 @@ export function App(props: AppProps = {}) {
     () => runtimeClient === null ? null : createThreadService(runtimeClient),
     [runtimeClient]
   );
+  const searchService: SearchService | null = useMemo(
+    () => runtimeClient === null ? null : createSearchService(runtimeClient),
+    [runtimeClient]
+  );
   const diagnosticsService = useMemo(
     () => runtimeClient === null ? null : createDiagnosticsService(runtimeClient),
     [runtimeClient]
@@ -254,6 +265,11 @@ export function App(props: AppProps = {}) {
   }, []);
   const threadHistory = useThreadHistory({
     threadId: state.selectedThreadId,
+    targetItemId:
+      searchHistoryTarget !== undefined
+      && searchHistoryTarget.threadId === state.selectedThreadId
+        ? searchHistoryTarget.itemId
+        : undefined,
     enabled:
       connectionState.status === 'connected'
       && selectedThreadExists,
@@ -899,6 +915,7 @@ export function App(props: AppProps = {}) {
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
     setThreadConfigUpdateError(undefined);
+    setSearchHistoryTarget(undefined);
     dispatch({ type: 'new_conversation' });
   }
 
@@ -910,6 +927,7 @@ export function App(props: AppProps = {}) {
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
     setThreadConfigUpdateError(undefined);
+    setSearchHistoryTarget(undefined);
     dispatch({ type: 'select_project', projectId });
   }
 
@@ -917,6 +935,7 @@ export function App(props: AppProps = {}) {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
     setThreadConfigUpdateError(undefined);
+    setSearchHistoryTarget(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
     const alreadySelected = conversationId === state.selectedThreadId;
     if (conversation !== undefined && conversation.projectId !== state.currentProjectId) {
@@ -939,6 +958,43 @@ export function App(props: AppProps = {}) {
     setRunsLoadedThreadId(undefined);
     showTimelineForThread(conversationId, [], false);
     dispatch({ type: 'select_thread', threadId: conversationId });
+  }
+
+  async function openSearchResult(result: ConversationSearchResult) {
+    if (threadService === null) return;
+    let thread = runtimeThreads.find(item => item.id === result.threadId);
+    if (thread === undefined) {
+      try {
+        const response = await threadService.getThread(result.threadId);
+        if (!mountedRef.current) return;
+        thread = response.thread;
+        setRuntimeThreads(previous => upsertThread(previous, response.thread));
+      } catch {
+        if (mountedRef.current) setThreadLoadError('无法打开搜索结果对应的会话');
+        return;
+      }
+    }
+
+    allowInitialRuntimeProjectFocusRef.current = false;
+    navigationPersistenceReadyRef.current = true;
+    setThreadLoadError(undefined);
+    setThreadConfigUpdateError(undefined);
+    setHistoryLoadingThreadId(thread.id);
+    setHistoryLoadedThreadId(undefined);
+    setRunsLoadedThreadId(undefined);
+    setSearchHistoryTarget(
+      result.itemId === undefined
+        ? undefined
+        : { threadId: thread.id, itemId: result.itemId }
+    );
+    showTimelineForThread(thread.id, [], false);
+
+    const projectId = projectIdForThread(thread, projects);
+    if (projectId !== state.currentProjectId) {
+      dispatch({ type: 'select_project', projectId });
+    }
+    dispatch({ type: 'select_thread', threadId: thread.id });
+    setThreadHistoryReloadKey(previous => previous + 1);
   }
 
   async function handleComposerPermissionChange(permission: ComposerRunConfig['permission']) {
@@ -1616,6 +1672,12 @@ export function App(props: AppProps = {}) {
             items={timelineItems}
             hasMore={threadHistory.hasMore}
             loadingOlder={threadHistory.loadingOlder}
+            targetItemId={
+              searchHistoryTarget !== undefined
+              && searchHistoryTarget.threadId === state.selectedThreadId
+                ? searchHistoryTarget.itemId
+                : undefined
+            }
             onLoadOlder={threadHistory.loadOlder}
             onOpenRunDetail={openRunDetail}
             onOpenFile={openTimelineFile}
@@ -1690,6 +1752,19 @@ export function App(props: AppProps = {}) {
   ) : conversationPage;
   const main = props.capabilitiesView !== undefined ? (
     <CapabilitiesView {...props.capabilitiesView} />
+  ) : state.activeView === 'search' ? (
+    <SearchView
+      connected={connectionState.status === 'connected'}
+      service={searchService}
+      projects={projects}
+      currentProjectId={state.currentProjectId}
+      currentProjectCwd={
+        visibleRuntimeThreads.find(thread => (
+          projectIdForThread(thread, projects) === state.currentProjectId
+        ))?.cwd
+      }
+      onOpenResult={result => void openSearchResult(result)}
+    />
   ) : state.activeView === 'settings' ? (
     <ClaweeSettingsView
       runtimeStatus={runtimeStatus}
@@ -1840,10 +1915,8 @@ function PlaceholderView(props: { label: string }) {
   );
 }
 
-function getPlaceholderLabel(activeView: 'search' | 'schedules' | 'plugins' | 'files') {
+function getPlaceholderLabel(activeView: 'schedules' | 'plugins' | 'files') {
   switch (activeView) {
-    case 'search':
-      return '搜索';
     case 'schedules':
       return '已安排';
     case 'plugins':

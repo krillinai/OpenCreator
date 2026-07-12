@@ -28,6 +28,7 @@ type ThreadHistoryState = {
 
 export function useThreadHistory(input: {
   threadId?: string;
+  targetItemId?: string;
   enabled: boolean;
   service: ThreadHistoryService | null;
   reloadKey?: number;
@@ -69,7 +70,10 @@ export function useThreadHistory(input: {
     setState(loading);
 
     let canceled = false;
-    void getThreadHistory(threadId, { limit: HISTORY_PAGE_SIZE })
+    void getThreadHistory(threadId, {
+      limit: HISTORY_PAGE_SIZE,
+      ...(input.targetItemId === undefined ? {} : { targetItemId: input.targetItemId })
+    })
       .then(response => {
         if (
           canceled
@@ -112,7 +116,8 @@ export function useThreadHistory(input: {
     input.consumeSkipInitialLoad,
     input.enabled,
     input.reloadKey,
-    input.threadId
+    input.threadId,
+    input.targetItemId
   ]);
 
   const loadOlder = useCallback(async () => {

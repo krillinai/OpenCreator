@@ -2671,6 +2671,115 @@ describe('App', () => {
     expect(historyRequests).toBe(1);
   });
 
+  it('opens a search result outside the initial thread page with a target history window', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const requestedUrls: string[] = [];
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      if (url.includes('/search/conversations?')) {
+        return jsonResponse({
+          results: [
+            {
+              threadId: 'thread_search_target',
+              codexThreadId: 'codex-search-target',
+              title: '搜索命中的会话',
+              cwd: '/Users/test/develop/content-design',
+              itemId: 'search-target-item',
+              itemType: 'user_message',
+              createdAt: '2026-07-12T12:00:00.000Z',
+              snippet: [
+                { text: '目标位于 ', highlighted: false },
+                { text: 'App.tsx', highlighted: true }
+              ]
+            }
+          ],
+          hasMore: false
+        });
+      }
+      if (url.endsWith('/threads/thread_search_target')) {
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_search_target',
+            title: '搜索命中的会话',
+            codexThreadId: 'codex-search-target'
+          })
+        });
+      }
+      if (url.endsWith(
+        '/threads/thread_search_target/history?limit=50&targetItemId=search-target-item'
+      )) {
+        return jsonResponse({
+          threadId: 'thread_search_target',
+          codexThreadId: 'codex-search-target',
+          targetItemId: 'search-target-item',
+          items: [
+            {
+              id: 'search-before-item',
+              type: 'assistant_message',
+              text: '目标之前的回复',
+              createdAt: '2026-07-12T11:59:59.000Z'
+            },
+            {
+              id: 'search-target-item',
+              type: 'user_message',
+              text: '目标位于 App.tsx',
+              createdAt: '2026-07-12T12:00:00.000Z'
+            },
+            {
+              id: 'search-after-item',
+              type: 'assistant_message',
+              text: '目标之后的回复',
+              createdAt: '2026-07-12T12:00:01.000Z'
+            }
+          ],
+          hasMore: true,
+          nextCursor: 'search-older-cursor'
+        });
+      }
+      if (url.endsWith('/threads/thread_search_target/runs?limit=50')) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索会话' }), 'App.tsx');
+    const result = await screen.findByTestId('search-result-search-target-item');
+    await user.click(within(result).getByRole('button'));
+
+    expect(await findTimelineUserMessage('目标位于 App.tsx')).toBeInTheDocument();
+    expect(document.querySelector('[data-search-target="true"]')).toHaveTextContent('目标位于 App.tsx');
+    expect(requestedUrls).toEqual(expect.arrayContaining([
+      expect.stringContaining(
+        '/threads/thread_search_target/history?limit=50&targetItemId=search-target-item'
+      )
+    ]));
+    expect(requestedUrls.some(url => (
+      url.includes('/threads/thread_search_target/history?limit=50&before=')
+    ))).toBe(false);
+  });
+
   it('keeps the visible transcript when selecting the currently open conversation again', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();

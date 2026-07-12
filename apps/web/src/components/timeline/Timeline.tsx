@@ -545,6 +545,7 @@ function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<strin
 
 function ProcessBlockView(props: {
   process: ProcessBlock;
+  targeted?: boolean;
   onOpenRunDetail?: (runId: string) => void;
 }) {
   const { process, onOpenRunDetail } = props;
@@ -562,7 +563,10 @@ function ProcessBlockView(props: {
   const toolNameByCallId = expanded ? buildToolNameByCallId(process.items) : new Map<string, string>();
 
   return (
-    <article className="timeline-item timeline-process">
+    <article
+      className="timeline-item timeline-process"
+      data-search-target={props.targeted ? 'true' : undefined}
+    >
       <details
         open={expanded}
         onToggle={event => setExpanded(event.currentTarget.open)}
@@ -600,6 +604,7 @@ function ProcessBlockView(props: {
 
 export function Timeline(props: {
   items: TimelineItem[];
+  targetItemId?: string;
   hasMore?: boolean;
   loadingOlder?: boolean;
   onLoadOlder?(): Promise<void> | void;
@@ -619,6 +624,12 @@ export function Timeline(props: {
       item.type !== 'process' || shouldRenderProcess(item)
     )),
     [props.items]
+  );
+  const targetRenderItemIndex = useMemo(
+    () => props.targetItemId === undefined
+      ? -1
+      : renderItems.findIndex(item => renderItemContainsId(item, props.targetItemId!)),
+    [props.targetItemId, renderItems]
   );
   const itemIds = props.items.map(item => item.id);
   const previousItemIds = previousItemIdsRef.current;
@@ -649,6 +660,15 @@ export function Timeline(props: {
       && hasPrefix(itemIds, previousItemIds);
     if (appended && !atBottomRef.current) setHasNewContent(true);
   }, [itemIds, previousItemIds]);
+
+  useEffect(() => {
+    if (targetRenderItemIndex < 0) return;
+    virtuosoRef.current?.scrollToIndex({
+      index: targetRenderItemIndex,
+      align: 'center',
+      behavior: 'auto'
+    });
+  }, [props.targetItemId, targetRenderItemIndex]);
 
   function loadOlder() {
     if (!props.hasMore || props.loadingOlder || props.onLoadOlder === undefined) return;
@@ -692,8 +712,8 @@ export function Timeline(props: {
             firstItemIndex={firstItemIndexRef.current}
             defaultItemHeight={120}
             initialTopMostItemIndex={{
-              index: 'LAST',
-              align: 'end'
+              index: targetRenderItemIndex < 0 ? 'LAST' : targetRenderItemIndex,
+              align: targetRenderItemIndex < 0 ? 'end' : 'center'
             }}
             computeItemKey={(_index, item) => getRenderItemKey(item)}
             followOutput={isAtBottom => isAtBottom ? 'auto' : false}
@@ -730,6 +750,7 @@ export function Timeline(props: {
               <div className="timeline-virtual-item">
                 {renderTimelineRenderItem(
                   renderItem,
+                  props.targetItemId,
                   props.onOpenRunDetail,
                   props.onOpenFile
                 )}
@@ -754,6 +775,7 @@ export function Timeline(props: {
 
 function renderTimelineRenderItem(
   renderItem: TimelineRenderItem,
+  targetItemId?: string,
   onOpenRunDetail?: (runId: string) => void,
   onOpenFile?: (path: string) => void
 ) {
@@ -761,6 +783,7 @@ function renderTimelineRenderItem(
     return (
       <ProcessBlockView
         process={renderItem}
+        targeted={targetItemId !== undefined && renderItemContainsId(renderItem, targetItemId)}
         onOpenRunDetail={onOpenRunDetail}
       />
     );
@@ -768,7 +791,10 @@ function renderTimelineRenderItem(
 
   if (renderItem.type === 'changes') {
     return (
-      <article className="timeline-item timeline-change_card">
+      <article
+        className="timeline-item timeline-change_card"
+        data-search-target={targetItemId !== undefined && renderItemContainsId(renderItem, targetItemId) ? 'true' : undefined}
+      >
         <div className="timeline-bubble">{renderChangeBlock(renderItem, onOpenFile)}</div>
       </article>
     );
@@ -776,7 +802,10 @@ function renderTimelineRenderItem(
 
   const item = renderItem.item;
   return (
-    <article className={`timeline-item timeline-${item.kind}`}>
+    <article
+      className={`timeline-item timeline-${item.kind}`}
+      data-search-target={item.id === targetItemId ? 'true' : undefined}
+    >
       {shouldRenderTimelineHeader(item) ? (
         <div className="timeline-item-header">
           <span className="timeline-avatar">{renderTimelineAvatar(item)}</span>
@@ -791,6 +820,11 @@ function renderTimelineRenderItem(
 function getRenderItemKey(item: TimelineRenderItem): string {
   if (item.type === 'item') return `item:${item.item.id}`;
   return item.key;
+}
+
+function renderItemContainsId(item: TimelineRenderItem, itemId: string): boolean {
+  if (item.type === 'item') return item.item.id === itemId;
+  return item.items.some(child => child.id === itemId);
 }
 
 function hasSuffix(values: string[], suffix: string[]): boolean {

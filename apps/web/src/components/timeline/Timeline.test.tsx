@@ -7,6 +7,32 @@ import type { TimelineItem } from './timeline-model.js';
 vi.mock('react-virtuoso', async () => import('../../test/react-virtuoso-mock.js'));
 
 describe('Timeline', () => {
+  it('marks the virtual item that contains a search target', () => {
+    const items: TimelineItem[] = [
+      {
+        kind: 'user_message',
+        id: 'message-before',
+        text: '前一条',
+        source: 'runtime'
+      },
+      {
+        kind: 'assistant_message',
+        id: 'target-message',
+        text: '目标回复',
+        content: '{"type":"assistant_message","text":"目标回复"}',
+        source: 'runtime'
+      }
+    ];
+
+    const { container } = render(
+      <Timeline items={items} targetItemId="target-message" />
+    );
+
+    expect(
+      container.querySelector('[data-search-target="true"]')
+    ).toHaveTextContent('目标回复');
+  });
+
   it('defers rendering completed process steps until the process is expanded', async () => {
     const user = userEvent.setup();
     const items: TimelineItem[] = [

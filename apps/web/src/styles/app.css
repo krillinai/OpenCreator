@@ -581,6 +581,12 @@ textarea:focus-visible {
   gap: 8px;
 }
 
+.timeline-item[data-search-target="true"] {
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .timeline-item-header {
   display: flex;
   align-items: center;

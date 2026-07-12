@@ -27,6 +27,20 @@ describe('ThreadService', () => {
       '/threads/thread_1/history?limit=50&before=cursor%2B%2F%3D'
     );
   });
+
+  it('encodes a target history item without loading all previous pages', async () => {
+    const get = vi.fn(async (_path: string) => ({ threadId: 'thread_1', items: [] }));
+    const service = createThreadService(createClient(get));
+
+    await service.getThreadHistory('thread_1', {
+      limit: 50,
+      targetItemId: 'item/中文'
+    });
+
+    expect(get).toHaveBeenCalledWith(
+      '/threads/thread_1/history?limit=50&targetItemId=item%2F%E4%B8%AD%E6%96%87'
+    );
+  });
 });
 
 function createClient(get: (path: string) => Promise<unknown>): RuntimeClient {
