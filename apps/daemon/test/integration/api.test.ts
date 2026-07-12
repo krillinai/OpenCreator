@@ -1838,8 +1838,9 @@ describe('runtime api', () => {
     expect(response.json().error.code).toBe('CODEX_PROFILE_INVALID');
   });
 
-  it('rejects thread runs when the stored profile is deleted before run start', async () => {
+  it('rejects thread runs when the stored profile is externally deleted before run start', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1850,7 +1851,7 @@ describe('runtime api', () => {
       token: 'secret',
       dataDir: tempDir,
       codexBin: fake.bin,
-      codexHome: join(tempDir, 'codex-home')
+      codexHome
     });
 
     const createdProfile = await authPost('/codex/profiles', {
@@ -1867,8 +1868,7 @@ describe('runtime api', () => {
     });
     expect(thread.statusCode).toBe(201);
 
-    const deletedProfile = await authDelete('/codex/profiles/review');
-    expect(deletedProfile.statusCode).toBe(200);
+    rmSync(join(codexHome, 'review.config.toml'));
 
     const run = await authPost('/runs', {
       threadId: thread.json().thread.id,
@@ -1881,8 +1881,9 @@ describe('runtime api', () => {
     expect(existsSync(join(tempDir, 'argv.json'))).toBe(false);
   });
 
-  it('fails queued thread runs when the stored profile is deleted before dequeue', async () => {
+  it('fails queued thread runs when the stored profile is externally deleted before dequeue', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1895,7 +1896,7 @@ describe('runtime api', () => {
       token: 'secret',
       dataDir: tempDir,
       codexBin: fake.bin,
-      codexHome: join(tempDir, 'codex-home'),
+      codexHome,
       resumeCapabilityVerified: true
     });
 
@@ -1926,8 +1927,7 @@ describe('runtime api', () => {
     expect(second.statusCode).toBe(202);
     expect(second.json().status).toBe('queued');
 
-    const deletedProfile = await authDelete('/codex/profiles/review');
-    expect(deletedProfile.statusCode).toBe(200);
+    rmSync(join(codexHome, 'review.config.toml'));
 
     await waitForRunStatus(first.json().id, 'succeeded');
     await waitForRunStatus(second.json().id, 'failed');

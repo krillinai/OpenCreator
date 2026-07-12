@@ -22,6 +22,8 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'MCP 服务' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Profiles' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '清理' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '诊断' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '关于 Clawee' })).toBeInTheDocument();
 
     expect(screen.getByText('默认权限')).toBeInTheDocument();
@@ -108,6 +110,32 @@ describe('ClaweeSettingsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Profiles' }));
     expect(screen.getByRole('heading', { name: 'Profiles' })).toBeInTheDocument();
     expect(screen.getByText('本地服务连接后可以管理 Profile。')).toBeInTheDocument();
+  });
+
+  it('opens Cleanup and Diagnostics pages from settings navigation', () => {
+    render(
+      <ClaweeSettingsView
+        runtimeStatus={runtimeStatus}
+        codexStatus={{
+          codexBin: runtimeStatus.codexPath,
+          codexVersion: runtimeStatus.codexVersion,
+          codexHome: runtimeStatus.codexHome,
+          codexHomeMode: 'global',
+          codexHomeSource: 'default',
+          codexHomeWritable: true,
+          capabilities: { cleanup: true },
+          diagnostics: []
+        }}
+        onBack={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '清理' }));
+    expect(screen.getByRole('heading', { name: '运行数据清理' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '诊断' }));
+    expect(screen.getByRole('heading', { name: '诊断' })).toBeInTheDocument();
+    expect(screen.getByText(runtimeStatus.codexPath)).toBeInTheDocument();
   });
 
   it('shows disconnected local runtime status in about advanced information', () => {

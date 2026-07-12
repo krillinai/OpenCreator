@@ -43,4 +43,19 @@ describe('diagnostics redactor', () => {
       'Diagnostics are redacted on a best-effort basis.'
     );
   });
+
+  it('removes prompt fields from JSON and NDJSON diagnostics', () => {
+    const content = [
+      JSON.stringify({ type: 'meta', prompt: 'private task', nested: { userPrompt: 'private nested task' } }),
+      JSON.stringify({ type: 'status', message: 'running' })
+    ].join('\n');
+
+    const redacted = redactDiagnosticContent(content);
+
+    expect(redacted).not.toContain('private task');
+    expect(redacted).not.toContain('private nested task');
+    expect(redacted).toContain('"prompt":"[REDACTED]"');
+    expect(redacted).toContain('"userPrompt":"[REDACTED]"');
+    expect(redacted).toContain('"message":"running"');
+  });
 });

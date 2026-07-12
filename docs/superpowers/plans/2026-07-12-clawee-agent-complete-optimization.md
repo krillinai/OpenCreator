@@ -775,7 +775,7 @@ test: lock down run recovery workflows
 - [x] `P1-B5` 会话全文搜索
 - [x] `P1-B6` Schedules 正式页面
 - [x] `P1-B7` MCP 与 Profiles 正式页面
-- [ ] `P1-B8` Cleanup 与 Diagnostics 设置页
+- [x] `P1-B8` Cleanup 与 Diagnostics 设置页
 - [ ] `P1-B9` 移动端导航与 Skill 市场性能
 - [ ] `P1-B10` App 模块化、路由和代码分割
 
@@ -1428,7 +1428,7 @@ feat(web): add mcp and profile management
 
 ## P1-B8：Cleanup 与 Diagnostics 设置页
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 提供可预览、可确认的清理流程和可导出的诊断信息。
 
@@ -1487,7 +1487,21 @@ feat(web): expose cleanup and diagnostics tools
 
 **回滚边界：** 回滚 Web 页面，不改变 daemon 清理规则。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 新增独立 Cleanup Web service 与正式设置页，支持按保留天数预览候选项，显示数量、总大小、类型、路径、修改时间和保留规则。
+- 删除前提供页面内二次确认；结果明确区分已删除、失败和跳过数量，失败项保留路径与错误明细，daemon 断线、空结果和告警均有独立状态。
+- 新增 Diagnostics 设置页，展示 Runtime/Codex 版本、CLI 路径、CODEX_HOME、可写状态、配置来源、Capabilities 和诊断告警。
+- Run 详情由原始 JSON 文本升级为结构化诊断面板，可查看诊断文件、告警和 Codex 状态，并在再次确认后下载 `*.diagnostics.redacted.json`。
+- daemon 诊断 redactor 在既有 Token、Secret、Authorization 遮罩基础上增加 JSON/NDJSON Prompt 字段移除；未包含 Prompt 的诊断文件保持原始格式不变。
+- 修复移动端设置分类导航被内容区遮挡的问题；分类改为横向滚动，内容区独立纵向滚动，59 项长路径清理预览可滚动到底且横向溢出为 0。
+- Web 全量 381 项、daemon 全量 502 项测试通过；Web/daemon 类型检查和 `pnpm build` 通过。
+- 1440×900 和 390×844 真实验证通过：
+  - 清理页完成 0 项预览、59 项预览和取消二次确认，未执行真实删除。
+  - 诊断页展示真实 `codex-cli 0.144.1` 状态和完整 Capabilities。
+  - 创建短 Run `run_0nOnoV96nd` 并成功下载脱敏诊断包；人工检查不包含本次 Prompt 或未遮罩 Token/Secret。
+  - 桌面和移动端均无横向溢出、控制台错误或页面异常。
+- 部分删除失败、跳过计数和失败明细由组件测试覆盖，避免为真实环境注入破坏性删除故障。
 
 ## P1-B9：移动端导航与 Skill 市场性能
 
@@ -2257,7 +2271,7 @@ docs: finalize clawee agent release readiness
 | 搜索 | 中英文正文搜索和结果定位 | 待执行 | 待执行 | `NOT_STARTED` |
 | Schedules | 创建、编辑、启停、触发、删除 | 通过 | 通过 | `PASS` |
 | MCP/Profile | 管理、能力判断、敏感值遮罩 | 通过 | 通过 | `PASS` |
-| Cleanup/Diagnostics | 预览删除、脱敏导出 | 待执行 | 待执行 | `NOT_STARTED` |
+| Cleanup/Diagnostics | 预览删除、脱敏导出 | 通过 | 通过 | `PASS` |
 | Skill 市场 | 分页、安装、更新、使用 | 待执行 | 待执行 | `NOT_STARTED` |
 | 文件预览 | HTML、图片、PDF、文本 | 待执行 | 待执行 | `NOT_STARTED` |
 | HTML 安全 | 脚本、导航、弹窗默认阻止 | 待执行 | 待执行 | `NOT_STARTED` |
@@ -2336,6 +2350,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B6 | `IN_PROGRESS -> PASS` | `61723d1`, `a56c541` | Web 359 项、Scheduler 19 项、类型检查、构建及桌面/移动真实创建、编辑、启停、触发、Run 跳转、删除验收全部通过 | 下一批 `P1-B7` |
 | 2026-07-12 | P1-B7 | `NOT_STARTED -> IN_PROGRESS` | `aa7ab94` | 完成 Profile 管理协议、CRUD、敏感值遮罩和引用冲突服务契约 | 继续实现 MCP/Profile 正式页面和 Agent 工作流共用 |
 | 2026-07-12 | P1-B7 | `IN_PROGRESS -> PASS` | `aa7ab94`, `8f668b1`, `c83e8fc` | Web 371 项、MCP/Profile 专项 11 项、类型检查、构建及桌面/移动真实管理、共用、脱敏和引用冲突验收全部通过 | 下一批 `P1-B8` |
+| 2026-07-12 | P1-B8 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Cleanup 预览确认、Diagnostics 正式页、Prompt 脱敏、Run 诊断导出和移动端滚动修复；Web 381 项、daemon 502 项、类型检查、构建及桌面/移动真实验收全部通过 | 下一批 `P1-B9` |
 
 ## 14.1 单批次执行记录模板
 

@@ -1,11 +1,12 @@
 import { Check, RotateCcw, X } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer.js';
 
 type DetailPanelProps = {
   mode: 'file' | 'change' | 'run';
   title: string;
   subtitle?: string;
-  content: string;
+  content: ReactNode;
   onClose(): void;
   onApprove?(): void;
   onRevert?(): void;
@@ -27,25 +28,28 @@ function formatJson(content: string): string {
 }
 
 function DetailContent(props: Pick<DetailPanelProps, 'mode' | 'title' | 'subtitle' | 'content'>) {
-  if (props.mode !== 'file') return <pre>{props.content}</pre>;
+  if (props.mode !== 'file') {
+    return typeof props.content === 'string' ? <pre>{props.content}</pre> : props.content;
+  }
 
+  const content = typeof props.content === 'string' ? props.content : '';
   const ext = fileExtension(props.title, props.subtitle);
 
   if (ext === 'md' || ext === 'markdown') {
-    return <MarkdownRenderer text={props.content} variant="document" />;
+    return <MarkdownRenderer text={content} variant="document" />;
   }
 
   if (ext === 'json') {
     return (
       <pre className="detail-code-block">
-        <code>{formatJson(props.content)}</code>
+        <code>{formatJson(content)}</code>
       </pre>
     );
   }
 
   return (
     <pre className={ext === 'html' || ext === 'htm' ? 'detail-code-block detail-html-source' : 'detail-code-block'}>
-      <code>{props.content}</code>
+      <code>{content}</code>
     </pre>
   );
 }

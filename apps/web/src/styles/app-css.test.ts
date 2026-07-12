@@ -143,6 +143,21 @@ describe('app CSS visual contracts', () => {
     expect(staticConversation).toContain('background: var(--conversation-bg);');
   });
 
+  it('keeps mobile settings navigation above content without pointer overlap', () => {
+    expect(appCss).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.settings-page\s*\{[^}]*height:\s*100%;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.settings-nav\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;/
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.settings-nav button\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.settings-content\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/
+    );
+  });
+
   it('keeps the empty-state dynamic background stable during resize', () => {
     const conversationPage = cssBlock('.conversation-page');
     const lightfallBg = cssBlock('.conversation-lightfall-bg');

@@ -1502,7 +1502,8 @@ textarea:focus-visible {
 
 .run-detail {
   min-height: 0;
-  padding: 16px;
+  display: grid;
+  gap: 12px;
 }
 
 .run-detail-card {
@@ -1512,6 +1513,48 @@ textarea:focus-visible {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
+}
+
+.run-detail__header {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-detail__header > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.run-detail__header .toolbar-button {
+  flex: 0 0 auto;
+}
+
+.run-diagnostics-confirm {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 8px;
+  background: var(--accent-soft);
+}
+
+.run-diagnostics-confirm > div:first-of-type {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.run-diagnostics-confirm > div:last-child {
+  grid-column: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
 }
 
 .run-detail h2,
@@ -1547,6 +1590,74 @@ textarea:focus-visible {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.detail-run .detail-content > .run-detail {
+  min-height: 100%;
+}
+
+.detail-run .run-detail pre {
+  min-height: 0;
+}
+
+.run-detail details {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.run-detail summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.run-detail section > ul {
+  display: grid;
+  gap: 6px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.run-detail section > ul li {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  overflow-wrap: anywhere;
+}
+
+.run-detail section > ul svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #e1b98e;
+}
+
+@media (max-width: 720px) {
+  .run-detail__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .run-detail__header .toolbar-button {
+    align-self: flex-start;
+  }
+
+  .run-diagnostics-confirm {
+    grid-template-columns: 1fr;
+  }
+
+  .run-diagnostics-confirm > div:last-child {
+    grid-column: 1;
+  }
+
+  .run-detail dl {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .run-detail dd + dt {
+    margin-top: 6px;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -3133,7 +3244,10 @@ textarea:focus-visible {
 
 @media (max-width: 720px) {
   .settings-page {
+    height: 100%;
+    min-height: 0;
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .settings-sidebar {
@@ -3142,7 +3256,23 @@ textarea:focus-visible {
     border-bottom: 1px solid rgba(252, 253, 255, 0.08);
   }
 
+  .settings-nav {
+    display: flex;
+    gap: 4px;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .settings-nav button {
+    width: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
   .settings-content {
+    min-height: 0;
+    overflow: auto;
     padding: 24px 16px;
   }
 

@@ -1509,8 +1509,9 @@ describe('App', () => {
     await user.click(runDetailButton);
 
     expect(await screen.findByRole('heading', { name: '运行详情' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(/"runId": "run_1"/)).toBeInTheDocument());
-    expect(screen.queryByText('codex-cli test')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Run run_1' })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: '导出脱敏诊断包' })).toBeInTheDocument();
+    expect(screen.getByText('codex-cli test')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置 账户' }));
     await user.click(screen.getByRole('button', { name: '关于 Clawee' }));

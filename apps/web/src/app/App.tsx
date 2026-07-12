@@ -33,6 +33,7 @@ import {
 } from '../features/plugins/SkillMarketView.js';
 import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
 import { Composer, type ComposerDraftRequest, type ComposerRunConfig, type ComposerSlashCommand } from '../features/runs/Composer.js';
+import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
 import {
   getRunCancelState,
   getThreadActiveRun,
@@ -62,6 +63,7 @@ import { subscribeRunEvents as defaultSubscribeRunEvents, type SubscribeRunEvent
 import type { ConnectionConfig } from '../runtime/types.js';
 import { createCapabilityService } from '../services/capability-service.js';
 import { createConnectionService, type ConnectionState } from '../services/connection-service.js';
+import { createCleanupService } from '../services/cleanup-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
 import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
@@ -244,6 +246,10 @@ export function App(props: AppProps = {}) {
   );
   const diagnosticsService = useMemo(
     () => runtimeClient === null ? null : createDiagnosticsService(runtimeClient),
+    [runtimeClient]
+  );
+  const cleanupService = useMemo(
+    () => runtimeClient === null ? null : createCleanupService(runtimeClient),
     [runtimeClient]
   );
   const capabilityService = useMemo(
@@ -1827,6 +1833,8 @@ export function App(props: AppProps = {}) {
       profileService={profileService}
       profileData={codexProfiles}
       onProfileDataChange={setCodexProfiles}
+      cleanupService={cleanupService}
+      codexStatus={connectionState.status === 'connected' ? connectionState.codexStatus : undefined}
       onBack={() => dispatch({ type: 'back_to_app' })}
     />
   ) : state.activeView === 'plugins' ? (
@@ -1884,7 +1892,7 @@ export function App(props: AppProps = {}) {
           mode="run"
           title="运行详情"
           subtitle={state.selectedRunId}
-          content={formatRunDiagnostics(runDiagnostics)}
+          content={<RunDetailPanel runId={state.selectedRunId} diagnostics={runDiagnostics} />}
           onClose={() => dispatch({ type: 'close_detail' })}
         />
       );
@@ -2456,20 +2464,6 @@ function mapRuntimeStatus(connectionState: ConnectionState): RuntimeStatus {
     codexHome: connectionState.codexStatus.codexHome,
     lastCheckedAt: '2026-07-07 10:00'
   };
-}
-
-function formatRunDiagnostics(diagnostics: RunDiagnosticsResponse | undefined): string {
-  if (diagnostics === undefined) return '正在加载运行详情...';
-
-  return JSON.stringify(
-    {
-      runId: diagnostics.runId,
-      files: diagnostics.files,
-      warnings: diagnostics.warnings
-    },
-    null,
-    2
-  );
 }
 
 function hasOwnPath<T>(record: Record<string, T>, path: string): boolean {
