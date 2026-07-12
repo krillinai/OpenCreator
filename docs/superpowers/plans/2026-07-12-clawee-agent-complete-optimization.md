@@ -426,6 +426,10 @@ refactor(web): manage runs with a per-thread registry
 **执行结果：**
 
 - 代码提交：`adc8815 refactor(web): manage runs with a per-thread registry`
+- 刷新恢复回归修复：`5afd460 fix(web): restore selected history outside initial thread page`
+  - active 会话共有 117 条，而首屏列表只请求最新 50 条；刷新前选中的旧会话不在首批结果时，旧逻辑会直接切换为新对话。
+  - 修复后继续只加载 50 条列表元数据，并通过 `GET /threads/:id` 额外补取刷新前选中的单个会话，再按需加载其历史。
+  - 不会因为恢复旧会话而一次性加载全部会话或其他会话正文。
 - 新增 Web `RunRegistry`，按 `threadId` 和 `runId` 管理 Runs、活动 Run、最后事件序号、订阅状态和取消状态。
 - 当前只在进入可见会话时调用 `listThreadRuns(threadId)`，没有刷新时批量加载全部会话 Runs。
 - Composer 的运行中、停止中和禁用状态已改为从当前线程 Registry 派生，旧 `runtimeBusy`、`runCanceling` 和活动 Run 全局 ref 已删除。
@@ -2027,6 +2031,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P0-B1 | `IN_PROGRESS -> PASS` | `485a808` | daemon 全量测试、类型检查、构建和真实定时触发通过 | 下一批 `P0-B2` |
 | 2026-07-12 | P0-B2 | `NOT_STARTED -> IN_PROGRESS` | - | 开始建立按线程隔离的 Web RunRegistry | 先补 Registry 和当前会话查询失败测试 |
 | 2026-07-12 | P0-B2 | `IN_PROGRESS -> BLOCKED_ENV` | `adc8815` | Web 319 个测试、类型检查、构建和真实服务健康检查通过；浏览器控制环境无可用浏览器 | 完成桌面/移动人工验收后改为 `PASS`，再进入 `P0-B3` |
+| 2026-07-12 | P0-B2 回归修复 | `保持 BLOCKED_ENV` | `5afd460` | 修复首批 50 条之外的已选历史会话在刷新后被清空；Web 320 个测试通过 | 继续等待桌面/移动人工验收 |
 
 ## 14.1 单批次执行记录模板
 
