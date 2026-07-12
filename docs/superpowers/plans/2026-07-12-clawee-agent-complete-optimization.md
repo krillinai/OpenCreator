@@ -1165,7 +1165,7 @@ perf(daemon): write run logs asynchronously in order
 
 ## P1-B5：会话全文搜索
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `IN_PROGRESS`
 
 **目标：** 提供覆盖会话正文的本地全文搜索，并能从结果跳转到对应会话和消息。
 
@@ -2260,6 +2260,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B3 | `BLOCKED_ENV -> PASS` | `9928c7c` | 用户已完成真实页面验证并确认通过 | 下一批 `P1-B4` |
 | 2026-07-12 | P1-B4 | `NOT_STARTED -> IN_PROGRESS` | - | 开始移除 Run 热路径同步 append，建立按 Run 隔离的有序异步日志写入与关闭 drain | 先补顺序、背压、失败和关闭行为测试 |
 | 2026-07-12 | P1-B4 | `IN_PROGRESS -> PASS` | `4779b6b` | daemon 491 项测试、类型检查、构建、真实 Run 顺序核对和活动 Run 信号关闭验证全部通过 | 下一批 `P1-B5` |
+| 2026-07-12 | P1-B5 | `NOT_STARTED -> IN_PROGRESS` | - | 开始建立会话标题和规范化正文的本地全文索引、分页搜索 API 与目标消息历史窗口 | 先补 FTS 同步、筛选分页和目标定位失败测试 |
 
 ## 14.1 单批次执行记录模板
 

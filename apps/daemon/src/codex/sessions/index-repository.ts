@@ -7,7 +7,7 @@ import {
   type CodexSessionParserState
 } from './parser.js';
 
-export const CODEX_SESSION_INDEX_VERSION = 1;
+export const CODEX_SESSION_INDEX_VERSION = 2;
 
 export type CodexSessionSourceRow = {
   path: string;
@@ -43,6 +43,7 @@ export type IndexedCodexSessionItem = {
 export type ThreadHistoryPageOptions = {
   limit: number;
   before?: string;
+  targetItemId?: string;
 };
 
 export type ThreadHistoryPage = {
@@ -50,12 +51,14 @@ export type ThreadHistoryPage = {
   hasMore: boolean;
   nextCursor?: string;
   oldestItemAt?: string;
+  targetItemId?: string;
 };
 
 export type ThreadHistoryCursorErrorCode =
   | 'THREAD_HISTORY_CURSOR_INVALID'
   | 'THREAD_HISTORY_CURSOR_EXPIRED'
-  | 'THREAD_HISTORY_CURSOR_MISMATCH';
+  | 'THREAD_HISTORY_CURSOR_MISMATCH'
+  | 'THREAD_HISTORY_TARGET_NOT_FOUND';
 
 export class ThreadHistoryCursorError extends Error {
   constructor(
@@ -115,6 +118,9 @@ export function createCodexSessionIndexRepository(
   const getSource = db.prepare<string>('SELECT * FROM codex_session_sources WHERE path = ?');
   const listSourcePaths = db.prepare('SELECT path FROM codex_session_sources');
   const deleteSource = db.prepare<string>('DELETE FROM codex_session_sources WHERE path = ?');
+  const deleteSearchSource = db.prepare<string>(
+    'DELETE FROM codex_session_search WHERE source_path = ?'
+  );
   const insertSource = db.prepare(`
     INSERT INTO codex_session_sources (
       path, file_id, file_size, mtime_ms, parsed_offset, parsed_line_count,
@@ -167,6 +173,17 @@ export function createCodexSessionIndexRepository(
       item_id = excluded.item_id,
       item_json = excluded.item_json,
       created_at = excluded.created_at
+  `);
+  const deleteSearchItem = db.prepare(`
+    DELETE FROM codex_session_search
+    WHERE source_path = @sourcePath AND item_id = @itemId
+  `);
+  const insertSearchItem = db.prepare(`
+    INSERT INTO codex_session_search (
+      codex_thread_id, source_path, item_id, item_type, created_at, title, cwd, content
+    ) VALUES (
+      @codexThreadId, @sourcePath, @itemId, @itemType, @createdAt, @title, @cwd, @content
+    )
   `);
   const listSessions = db.prepare<{ limit: number }>(`
     SELECT codex_thread_id, title, cwd, created_at, updated_at, source_path
@@ -235,9 +252,71 @@ export function createCodexSessionIndexRepository(
       AND item.item_id = @itemId
     LIMIT 1
   `);
+  const findHistoryTarget = db.prepare<{
+    codexThreadId: string;
+    itemId: string;
+  }>(`
+    SELECT item.line_number, item.source_offset, item.item_id, item.item_json
+    FROM codex_session_items item
+    INNER JOIN codex_sessions session ON session.source_path = item.source_path
+    WHERE session.codex_thread_id = @codexThreadId
+      AND item.item_id = @itemId
+    LIMIT 1
+  `);
+  const listHistoryItemsBeforeTarget = db.prepare<{
+    codexThreadId: string;
+    lineNumber: number;
+    sourceOffset: number;
+    itemId: string;
+    limit: number;
+  }>(`
+    SELECT item.line_number, item.source_offset, item.item_id, item.item_json
+    FROM codex_session_items item
+    INNER JOIN codex_sessions session ON session.source_path = item.source_path
+    WHERE session.codex_thread_id = @codexThreadId
+      AND (
+        item.line_number < @lineNumber
+        OR (
+          item.line_number = @lineNumber
+          AND (
+            item.source_offset < @sourceOffset
+            OR (item.source_offset = @sourceOffset AND item.item_id < @itemId)
+          )
+        )
+      )
+    ORDER BY item.line_number DESC, item.source_offset DESC, item.item_id DESC
+    LIMIT @limit
+  `);
+  const listHistoryItemsAfterTarget = db.prepare<{
+    codexThreadId: string;
+    lineNumber: number;
+    sourceOffset: number;
+    itemId: string;
+    limit: number;
+  }>(`
+    SELECT item.line_number, item.source_offset, item.item_id, item.item_json
+    FROM codex_session_items item
+    INNER JOIN codex_sessions session ON session.source_path = item.source_path
+    WHERE session.codex_thread_id = @codexThreadId
+      AND (
+        item.line_number > @lineNumber
+        OR (
+          item.line_number = @lineNumber
+          AND (
+            item.source_offset > @sourceOffset
+            OR (item.source_offset = @sourceOffset AND item.item_id > @itemId)
+          )
+        )
+      )
+    ORDER BY item.line_number ASC, item.source_offset ASC, item.item_id ASC
+    LIMIT @limit
+  `);
 
   const applyFileIndex = db.transaction((input: ApplyCodexSessionFileIndexInput) => {
-    if (input.rebuild) deleteSource.run(input.path);
+    if (input.rebuild) {
+      deleteSearchSource.run(input.path);
+      deleteSource.run(input.path);
+    }
 
     insertSource.run({
       path: input.path,
@@ -259,6 +338,20 @@ export function createCodexSessionIndexRepository(
         codexThreadId: input.session.codexThreadId
       });
       insertSession.run(input.session);
+      deleteSearchItem.run({
+        sourcePath: input.path,
+        itemId: SEARCH_TITLE_ITEM_ID
+      });
+      insertSearchItem.run({
+        codexThreadId: input.session.codexThreadId,
+        sourcePath: input.path,
+        itemId: SEARCH_TITLE_ITEM_ID,
+        itemType: 'title',
+        createdAt: input.session.updatedAt,
+        title: normalizeSearchText(input.session.title),
+        cwd: normalizeSearchText(input.session.cwd ?? ''),
+        content: ''
+      });
     }
 
     for (const indexed of input.items) {
@@ -270,6 +363,23 @@ export function createCodexSessionIndexRepository(
         itemJson: JSON.stringify(indexed.item),
         createdAt: indexed.item.createdAt
       });
+      deleteSearchItem.run({
+        sourcePath: input.path,
+        itemId: indexed.item.id
+      });
+      const content = searchContentForHistoryItem(indexed.item);
+      if (content !== undefined && input.session !== undefined) {
+        insertSearchItem.run({
+          codexThreadId: input.session.codexThreadId,
+          sourcePath: input.path,
+          itemId: indexed.item.id,
+          itemType: indexed.item.type,
+          createdAt: indexed.item.createdAt,
+          title: '',
+          cwd: '',
+          content
+        });
+      }
     }
   });
 
@@ -277,7 +387,10 @@ export function createCodexSessionIndexRepository(
     const existingPaths = listSourcePaths.all() as Array<{ path: string }>;
     const present = new Set(paths);
     for (const row of existingPaths) {
-      if (!present.has(row.path)) deleteSource.run(row.path);
+      if (!present.has(row.path)) {
+        deleteSearchSource.run(row.path);
+        deleteSource.run(row.path);
+      }
     }
   });
 
@@ -319,6 +432,9 @@ export function createCodexSessionIndexRepository(
       return materializeCodexSessionHistory(items);
     },
     listHistoryPage(codexThreadId, options): ThreadHistoryPage {
+      if (options.targetItemId !== undefined) {
+        return listHistoryTargetWindow(codexThreadId, options.targetItemId, options.limit);
+      }
       const cursor = options.before === undefined
         ? undefined
         : decodeHistoryCursor(options.before);
@@ -384,6 +500,114 @@ export function createCodexSessionIndexRepository(
       };
     }
   };
+
+  function listHistoryTargetWindow(
+    codexThreadId: string,
+    targetItemId: string,
+    limit: number
+  ): ThreadHistoryPage {
+    const target = findHistoryTarget.get({
+      codexThreadId,
+      itemId: targetItemId
+    }) as IndexedHistoryRow | undefined;
+    if (target === undefined) {
+      throw new ThreadHistoryCursorError(
+        'THREAD_HISTORY_TARGET_NOT_FOUND',
+        'History target is no longer available'
+      );
+    }
+
+    const beforeLimit = Math.floor((limit - 1) / 2);
+    const afterLimit = Math.max(0, limit - beforeLimit - 1);
+    const beforeRows = listHistoryItemsBeforeTarget.all({
+      codexThreadId,
+      lineNumber: target.line_number,
+      sourceOffset: target.source_offset,
+      itemId: target.item_id,
+      limit: beforeLimit + 1
+    }) as IndexedHistoryRow[];
+    const selectedBeforeDescending = beforeRows.slice(0, beforeLimit);
+    const selectedBefore = [...selectedBeforeDescending].reverse();
+    const afterRows = listHistoryItemsAfterTarget.all({
+      codexThreadId,
+      lineNumber: target.line_number,
+      sourceOffset: target.source_offset,
+      itemId: target.item_id,
+      limit: afterLimit
+    }) as IndexedHistoryRow[];
+    const selectedRows = [...selectedBefore, target, ...afterRows];
+    const items = materializeCodexSessionHistory(
+      selectedRows.flatMap(row => parseHistoryItem(row.item_json))
+    );
+    const hasMore = beforeRows.length > beforeLimit;
+    const oldest = selectedRows[0];
+
+    return {
+      items,
+      hasMore,
+      targetItemId,
+      ...(hasMore && oldest !== undefined
+        ? {
+            nextCursor: encodeHistoryCursor({
+              v: 1,
+              codexThreadId,
+              lineNumber: oldest.line_number,
+              sourceOffset: oldest.source_offset,
+              itemId: oldest.item_id
+            })
+          }
+        : {}),
+      ...(items[0] === undefined ? {} : { oldestItemAt: items[0].createdAt })
+    };
+  }
+}
+
+const SEARCH_TITLE_ITEM_ID = '__title__';
+const MAX_SEARCHABLE_TEXT_LENGTH = 128_000;
+const MAX_SEARCHABLE_TOOL_OUTPUT_LENGTH = 8_192;
+
+function searchContentForHistoryItem(item: ThreadHistoryItem): string | undefined {
+  let value: string | undefined;
+  switch (item.type) {
+    case 'user_message':
+    case 'assistant_message':
+    case 'reasoning_summary':
+      value = item.text;
+      break;
+    case 'tool_use':
+      value = item.name;
+      break;
+    case 'tool_result':
+      if (item.output.length > MAX_SEARCHABLE_TOOL_OUTPUT_LENGTH) return undefined;
+      value = `${item.name} ${item.output}`;
+      break;
+    case 'file_change':
+      value = item.changes.map(change => change.path).join(' ');
+      break;
+    case 'done':
+      return undefined;
+  }
+
+  if (looksBinary(value) || value.length > MAX_SEARCHABLE_TEXT_LENGTH) return undefined;
+  const normalized = normalizeSearchText(value);
+  return normalized.length === 0 ? undefined : normalized;
+}
+
+function normalizeSearchText(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/gu, ' ').trim();
+}
+
+function looksBinary(value: string): boolean {
+  if (value.includes('\0')) return true;
+  const sample = value.slice(0, 4_096);
+  let controlCount = 0;
+  for (const character of sample) {
+    const code = character.charCodeAt(0);
+    if (code < 32 && character !== '\n' && character !== '\r' && character !== '\t') {
+      controlCount += 1;
+    }
+  }
+  return sample.length > 0 && controlCount / sample.length > 0.02;
 }
 
 function parseHistoryItem(value: string): ThreadHistoryItem[] {

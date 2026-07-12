@@ -256,11 +256,54 @@ export type ThreadHistoryResponse = {
   hasMore?: boolean;
   nextCursor?: string;
   oldestItemAt?: string;
+  targetItemId?: string;
 };
 
 export type ThreadHistoryQuery = {
   limit?: number;
   before?: string;
+  targetItemId?: string;
+};
+
+export type ConversationSearchItemType =
+  | 'title'
+  | 'user_message'
+  | 'assistant_message'
+  | 'reasoning_summary'
+  | 'tool_use'
+  | 'tool_result'
+  | 'file_change';
+
+export type ConversationSearchQuery = {
+  query: string;
+  limit?: number;
+  cursor?: string;
+  cwd?: string;
+  itemTypes?: ConversationSearchItemType[];
+  createdAfter?: string;
+  createdBefore?: string;
+};
+
+export type ConversationSearchSnippetSegment = {
+  text: string;
+  highlighted: boolean;
+};
+
+export type ConversationSearchResult = {
+  threadId: string;
+  codexThreadId: string;
+  title: string;
+  cwd: string;
+  itemId?: string;
+  itemType: ConversationSearchItemType;
+  createdAt: string;
+  snippet: ConversationSearchSnippetSegment[];
+};
+
+export type ConversationSearchResponse = {
+  results: ConversationSearchResult[];
+  hasMore: boolean;
+  nextCursor?: string;
 };
 
 export type CodexSkillResponse = {

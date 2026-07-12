@@ -88,7 +88,9 @@ export async function registerThreadRoutes(
     if (!query.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', query.message));
 
     const paginationRequested =
-      query.value.limit !== undefined || query.value.before !== undefined;
+      query.value.limit !== undefined
+      || query.value.before !== undefined
+      || query.value.targetItemId !== undefined;
     let history: ThreadHistoryReadResult;
     try {
       history = thread.codexThreadId === undefined || thread.codexThreadId === null
@@ -101,7 +103,10 @@ export async function registerThreadRoutes(
             paginationRequested
               ? {
                   limit: query.value.limit ?? DEFAULT_HISTORY_LIMIT,
-                  ...(query.value.before === undefined ? {} : { before: query.value.before })
+                  ...(query.value.before === undefined ? {} : { before: query.value.before }),
+                  ...(query.value.targetItemId === undefined
+                    ? {}
+                    : { targetItemId: query.value.targetItemId })
                 }
               : undefined
           ) ?? {
@@ -114,7 +119,9 @@ export async function registerThreadRoutes(
           ? 400
           : error.code === 'THREAD_HISTORY_CURSOR_MISMATCH'
             ? 409
-            : 410;
+            : error.code === 'THREAD_HISTORY_TARGET_NOT_FOUND'
+              ? 404
+              : 410;
         return reply.code(statusCode).send(apiError(error.code, error.message));
       }
       throw error;
@@ -202,7 +209,7 @@ type ProfileValidator = {
 type SyncCodexSessions = (limit?: number) => void;
 type ThreadHistoryReadResult = Pick<
   ThreadHistoryResponse,
-  'items' | 'hasMore' | 'nextCursor' | 'oldestItemAt'
+  'items' | 'hasMore' | 'nextCursor' | 'oldestItemAt' | 'targetItemId'
 >;
 type ReadThreadHistory = (
   codexThreadId: string,
@@ -294,12 +301,18 @@ function parseThreadHistoryQuery(query: unknown): ParseResult<ThreadHistoryQuery
   if (!limit.ok) return limit;
   const before = getQueryString(query, 'before');
   if (!before.ok) return before;
+  const targetItemId = getQueryString(query, 'targetItemId');
+  if (!targetItemId.ok) return targetItemId;
+  if (before.value !== undefined && targetItemId.value !== undefined) {
+    return { ok: false, message: 'before and targetItemId cannot be used together' };
+  }
 
   return {
     ok: true,
     value: {
       ...(limit.value === undefined ? {} : { limit: limit.value }),
-      ...(before.value === undefined ? {} : { before: before.value })
+      ...(before.value === undefined ? {} : { before: before.value }),
+      ...(targetItemId.value === undefined ? {} : { targetItemId: targetItemId.value })
     }
   };
 }

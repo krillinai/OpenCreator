@@ -192,6 +192,18 @@ export function migrate(db: Database.Database): void {
       FOREIGN KEY(source_path) REFERENCES codex_session_sources(path) ON DELETE CASCADE
     );
 
+    CREATE VIRTUAL TABLE IF NOT EXISTS codex_session_search USING fts5(
+      codex_thread_id UNINDEXED,
+      source_path UNINDEXED,
+      item_id UNINDEXED,
+      item_type UNINDEXED,
+      created_at UNINDEXED,
+      title,
+      cwd,
+      content,
+      tokenize = 'trigram'
+    );
+
     CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status);
     CREATE INDEX IF NOT EXISTS idx_threads_codex_thread_id ON threads(codex_thread_id);
     CREATE INDEX IF NOT EXISTS idx_threads_updated_at ON threads(updated_at);

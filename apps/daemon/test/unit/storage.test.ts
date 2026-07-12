@@ -85,7 +85,7 @@ describe('runtime storage', () => {
     expect(runs.getLastRunEventSeq('run_1')).toBe(3);
   });
 
-  it('creates codex session index tables and indexes', () => {
+  it('creates codex session index tables, full-text search table, and indexes', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
 
@@ -101,6 +101,14 @@ describe('runtime storage', () => {
       'codex_session_sources',
       'codex_sessions'
     ]);
+    expect(
+      db.prepare(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name = 'codex_session_search'"
+      ).get()
+    ).toMatchObject({
+      name: 'codex_session_search',
+      sql: expect.stringContaining('fts5')
+    });
 
     expect(columnNames(db, 'codex_session_sources')).toEqual(
       expect.arrayContaining([

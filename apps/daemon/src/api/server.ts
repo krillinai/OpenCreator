@@ -28,6 +28,7 @@ import { ScheduleRepository } from '../scheduler/repository.js';
 import { createSchedulerService, type SchedulerService } from '../scheduler/service.js';
 import { openRuntimeDatabase } from '../storage/database.js';
 import { createRunRepository, createThreadRepository } from '../storage/repositories.js';
+import { createConversationSearchService } from '../search/service.js';
 import { createThreadManager } from '../threads/manager.js';
 import { createDefaultRevealExecutor } from '../workspace-files/reveal.js';
 import { createWorkspaceFileService } from '../workspace-files/service.js';
@@ -39,6 +40,7 @@ import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
 import { registerProfileRoutes } from './routes.profiles.js';
 import { registerRunRoutes } from './routes.runs.js';
+import { registerSearchRoutes } from './routes.search.js';
 import { registerScheduleRoutes } from './routes.schedules.js';
 import { registerSkillMarketRoutes } from './routes.skill-market.js';
 import { registerSkillRoutes } from './routes.skills.js';
@@ -92,9 +94,10 @@ export async function buildServer(input: BuildServerInput) {
   const ownsDb = input.db === undefined;
   const runRepository = createRunRepository(db);
   const threadRepository = createThreadRepository(db);
+  const codexSessionRepository = createCodexSessionIndexRepository(db);
   const codexSessionIndexer = createCodexSessionIndexer({
     codexHome,
-    repository: createCodexSessionIndexRepository(db)
+    repository: codexSessionRepository
   });
   const threadManager = createThreadManager({ db, dataDir });
   const workspaceFileService = createWorkspaceFileService({
@@ -136,6 +139,28 @@ export async function buildServer(input: BuildServerInput) {
     runs: runRepository,
     threads: threadRepository
   });
+  const conversationSearchService = createConversationSearchService(db);
+  function syncCodexSessions(limit?: number) {
+    let scan;
+    try {
+      scan = codexSessionIndexer.sync({ limit });
+    } catch (error) {
+      console.warn(`Codex session index sync failed; using raw JSONL fallback: ${formatError(error)}`);
+      scan = scanCodexSessionsWithMetadata({ codexHome, limit });
+    }
+    for (const codexThreadId of scan.excludedSubagentThreadIds) {
+      threadManager.archiveCodexThread(codexThreadId);
+    }
+    for (const session of scan.sessions) {
+      threadManager.importCodexThread({
+        codexThreadId: session.codexThreadId,
+        title: session.title,
+        cwd: session.cwd,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt
+      });
+    }
+  }
 
   server.setErrorHandler((error, _request, reply) => {
     if ((error as { code?: string }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
@@ -200,29 +225,12 @@ export async function buildServer(input: BuildServerInput) {
       })
   });
   await registerWorkspaceFileRoutes(server, workspaceFileService);
+  await registerSearchRoutes(server, conversationSearchService, {
+    syncCodexSessions
+  });
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager,
-    syncCodexSessions(limit) {
-      let scan;
-      try {
-        scan = codexSessionIndexer.sync({ limit });
-      } catch (error) {
-        console.warn(`Codex session index sync failed; using raw JSONL fallback: ${formatError(error)}`);
-        scan = scanCodexSessionsWithMetadata({ codexHome, limit });
-      }
-      for (const codexThreadId of scan.excludedSubagentThreadIds) {
-        threadManager.archiveCodexThread(codexThreadId);
-      }
-      for (const session of scan.sessions) {
-        threadManager.importCodexThread({
-          codexThreadId: session.codexThreadId,
-          title: session.title,
-          cwd: session.cwd,
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt
-        });
-      }
-    },
+    syncCodexSessions,
     readThreadHistory(codexThreadId, options) {
       try {
         codexSessionIndexer.sync();

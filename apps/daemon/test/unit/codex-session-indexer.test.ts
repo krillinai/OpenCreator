@@ -353,6 +353,39 @@ describe('codex session indexer', () => {
       setup.repository.listHistory('pagination-dedup-session')
     );
   });
+
+  it('loads a bounded history window around a target item', () => {
+    const setup = createSetup();
+    writeSession(setup.sessionDir, 'target-window-session', [
+      sessionMeta('target-window-session', setup.cwd, '2026-07-12T06:20:00.000Z'),
+      userMessage('第一条', '2026-07-12T06:20:01.000Z'),
+      userMessage('第二条', '2026-07-12T06:20:02.000Z'),
+      userMessage('目标消息', '2026-07-12T06:20:03.000Z'),
+      userMessage('第四条', '2026-07-12T06:20:04.000Z'),
+      userMessage('第五条', '2026-07-12T06:20:05.000Z')
+    ]);
+    createCodexSessionIndexer({
+      codexHome: setup.codexHome,
+      repository: setup.repository
+    }).sync();
+    const target = setup.repository
+      .listHistory('target-window-session')
+      .find(item => item.type === 'user_message' && item.text === '目标消息')!;
+
+    const page = setup.repository.listHistoryPage('target-window-session', {
+      limit: 3,
+      targetItemId: target.id
+    });
+
+    expect(page.items.map(item => 'text' in item ? item.text : item.type)).toEqual([
+      '第二条',
+      '目标消息',
+      '第四条'
+    ]);
+    expect(page.targetItemId).toBe(target.id);
+    expect(page.hasMore).toBe(true);
+    expect(page.nextCursor).toEqual(expect.any(String));
+  });
 });
 
 function createSetup() {
