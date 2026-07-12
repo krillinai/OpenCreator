@@ -1,9 +1,13 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HtmlPreview, resolveWorkspacePreviewPath } from './HtmlPreview.js';
 
 describe('HtmlPreview', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('removes executable and navigational content and uses a permissionless sandbox', async () => {
     render(
       <HtmlPreview
@@ -37,6 +41,14 @@ describe('HtmlPreview', () => {
   });
 
   it('loads relative images and stylesheets through controlled workspace resources', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const bytes = url.includes('cover.png')
+        ? Uint8Array.from([1, 2, 3, 4])
+        : Uint8Array.from([5, 6, 7, 8]);
+      return new Response(bytes, {
+        headers: { 'content-type': 'image/png' }
+      });
+    }));
     const openBlob = vi.fn(async (path: string) => ({
       objectUrl: `blob:${path}`,
       mime: 'image/png',
@@ -63,16 +75,17 @@ describe('HtmlPreview', () => {
 
     const frame = await screen.findByTitle('index.html HTML 预览');
     await waitFor(() => {
-      expect(frame.getAttribute('srcdoc')).toContain('blob:pages/images/cover.png');
-      expect(frame.getAttribute('srcdoc')).toContain('blob:pages/images/bg.png');
+      expect(frame.getAttribute('srcdoc')).toContain('data:image/png;base64,AQIDBA==');
+      expect(frame.getAttribute('srcdoc')).toContain('data:image/png;base64,BQYHCA==');
     });
     expect(openText).toHaveBeenCalledWith('pages/styles/site.css');
     expect(openBlob).toHaveBeenCalledWith('pages/images/cover.png');
     expect(openBlob).toHaveBeenCalledWith('pages/images/bg.png');
-
-    unmount();
     expect(revokeBlob).toHaveBeenCalledWith('blob:pages/images/cover.png');
     expect(revokeBlob).toHaveBeenCalledWith('blob:pages/images/bg.png');
+
+    unmount();
+    expect(revokeBlob).toHaveBeenCalledTimes(2);
   });
 
   it('blocks workspace traversal and external subresources', async () => {
@@ -150,5 +163,36 @@ describe('HtmlPreview', () => {
 
     await screen.findByTitle('many.html HTML 预览');
     await waitFor(() => expect(openBlob).toHaveBeenCalledTimes(128));
+  });
+
+  it('caps the total bytes embedded into a preview document', async () => {
+    const fetchMock = vi.fn(async () => new Response(Uint8Array.from([1])));
+    vi.stubGlobal('fetch', fetchMock);
+    const openBlob = vi.fn(async (path: string) => ({
+      objectUrl: `blob:${path}`,
+      mime: 'image/png',
+      size: 6 * 1024 * 1024
+    }));
+    const revokeBlob = vi.fn();
+    render(
+      <HtmlPreview
+        name="large.html"
+        path="large.html"
+        content='<img src="./first.png"><img src="./second.png">'
+        resources={{
+          openBlob,
+          openText: vi.fn(),
+          revokeBlob
+        }}
+      />
+    );
+
+    const frame = await screen.findByTitle('large.html HTML 预览');
+    await waitFor(() => {
+      expect(frame.getAttribute('srcdoc')).toContain('data:image/png;base64,AQ==');
+    });
+    expect(openBlob).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(revokeBlob).toHaveBeenCalledTimes(2);
   });
 });

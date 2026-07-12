@@ -157,6 +157,7 @@ export function Composer(props: {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentDraftsRef = useRef<ComposerAttachmentDraft[]>([]);
+  const transferredPreviewUrlsRef = useRef(new Set<string>());
   const nextAttachmentIdRef = useRef(0);
   const scheduledDraftIdRef = useRef<number>();
   const appliedDraftIdRef = useRef<number>();
@@ -165,7 +166,11 @@ export function Composer(props: {
   attachmentDraftsRef.current = attachmentDrafts;
 
   useEffect(() => () => {
-    for (const item of attachmentDraftsRef.current) URL.revokeObjectURL(item.previewUrl);
+    for (const item of attachmentDraftsRef.current) {
+      if (!transferredPreviewUrlsRef.current.has(item.previewUrl)) {
+        URL.revokeObjectURL(item.previewUrl);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -250,6 +255,7 @@ export function Composer(props: {
         ? [{ attachment: item.attachment, previewUrl: item.previewUrl }]
         : []
     );
+    for (const item of attachments) transferredPreviewUrlsRef.current.add(item.previewUrl);
     let accepted: boolean | void;
     try {
       const config = {
@@ -261,12 +267,19 @@ export function Composer(props: {
       accepted = props.running
         ? await props.onSubmit(trimmedPrompt, config, attachments, submissionMode)
         : await props.onSubmit(trimmedPrompt, config, attachments);
+      if (accepted === false) {
+        for (const item of attachments) transferredPreviewUrlsRef.current.delete(item.previewUrl);
+      }
+    } catch (error) {
+      for (const item of attachments) transferredPreviewUrlsRef.current.delete(item.previewUrl);
+      throw error;
     } finally {
       setSubmitting(false);
     }
     if (accepted === false) return;
     setPrompt('');
     setSlashTrigger(null);
+    attachmentDraftsRef.current = [];
     setAttachmentDrafts([]);
   };
 

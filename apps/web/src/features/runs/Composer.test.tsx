@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from './Composer.js';
 
@@ -352,6 +352,36 @@ describe('Composer', () => {
       }]
     ));
     await waitFor(() => expect(screen.queryByText('screen.png')).not.toBeInTheDocument());
+  });
+
+  it('keeps an accepted attachment preview alive when submission changes the composer key', async () => {
+    const user = userEvent.setup();
+    mockObjectUrls();
+
+    function Harness() {
+      const [composerKey, setComposerKey] = useState('draft');
+      return (
+        <Composer
+          key={composerKey}
+          {...defaultProps}
+          imageInputSupported
+          onUploadAttachment={async () => attachment()}
+          onSubmit={() => {
+            setComposerKey('thread');
+            return true;
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+    const file = new File(['png'], 'screen.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('选择图片'), file);
+    await screen.findByRole('img', { name: 'screen.png' });
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '描述图片');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:screen.png');
   });
 
   it('supports pasted and dropped images through the same upload path', async () => {

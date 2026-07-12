@@ -266,6 +266,7 @@ export function AppController(props: AppControllerProps) {
   const taskBaselineReadyRef = useRef(false);
   const nextComposerDraftIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
+  const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
   runRegistryRef.current = runRegistry;
 
   const runtimeClient = useMemo(
@@ -397,6 +398,10 @@ export function AppController(props: AppControllerProps) {
       }
       timelineEventBatchersByThreadIdRef.current.clear();
       stopAllRunEventSubscriptions(false);
+      for (const url of retainedAttachmentPreviewUrlsRef.current.values()) {
+        URL.revokeObjectURL(url);
+      }
+      retainedAttachmentPreviewUrlsRef.current.clear();
     };
   }, []);
 
@@ -1626,6 +1631,13 @@ export function AppController(props: AppControllerProps) {
     const attachmentPreviewUrls = Object.fromEntries(
       attachments.map(item => [item.attachment.id, item.previewUrl])
     );
+    for (const item of attachments) {
+      const previousUrl = retainedAttachmentPreviewUrlsRef.current.get(item.attachment.id);
+      if (previousUrl !== undefined && previousUrl !== item.previewUrl) {
+        URL.revokeObjectURL(previousUrl);
+      }
+      retainedAttachmentPreviewUrlsRef.current.set(item.attachment.id, item.previewUrl);
+    }
     setTimelineItems(previous => [
       ...previous,
       {

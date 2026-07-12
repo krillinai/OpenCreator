@@ -67,7 +67,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     const lines = result.stdout.trim().split(/\r?\n/).filter(Boolean);
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
-  });
+  }, 240_000);
 
   it('verifies isolated CODEX_HOME profile config shape', () => {
     const home = join(fixtureDir, `profile-smoke-${Date.now()}`);
@@ -453,7 +453,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
       .filter(Boolean)
       .map(line => JSON.parse(line) as { type?: string; item?: { type?: string } });
     expect(events.some(event => event.item?.type === 'command_execution')).toBe(true);
-  });
+  }, 240_000);
 
   it('verifies codex exec resume context continuity', async () => {
     const result = await runRealCodexResumeSmoke({

@@ -6,8 +6,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档状态 | `APPROVED_FOR_EXECUTION` |
-| 总体实施状态 | `IN_PROGRESS` |
+| 文档状态 | `COMPLETE` |
+| 总体实施状态 | `COMPLETE` |
 | 制定日期 | 2026-07-12 |
 | 当前基线分支 | `codex-native-runtime-kernel` |
 | 当前基线提交 | `6899f8d feat(web): support interrupting active runs` |
@@ -1731,7 +1731,7 @@ refactor(web): split app routes and feature controllers
 - [x] `P2-B5` 真实审批闭环
 - [x] `P2-B6` 通知、任务中心与 daemon 重启恢复
 - [x] `P2-B7` 用户显式长期记忆与上下文摘要
-- [ ] `P2-B8` 发布、文档和持续质量
+- [x] `P2-B8` 发布、文档和持续质量
 
 ## P2-B1：附件存储与安全 API
 
@@ -2361,7 +2361,7 @@ feat: add user-managed memory and summaries
 
 ## P2-B8：发布、文档和持续质量
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 完成最终发布准备，建立真实 smoke、性能回归、依赖维护和用户文档门禁。
 
@@ -2431,21 +2431,31 @@ docs: finalize clawee agent release readiness
 
 **回滚边界：** 文档和 CI 可独立回滚；发布前发现功能问题必须回到对应批次修复。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 新增中文 README、用户指南、备份恢复和故障排查文档，补齐 Runtime API 的分页、搜索、附件、队列、审批、任务中心、记忆和摘要契约。
+- 新增 GitHub Actions CI、`smoke:ci` 和构建产物性能预算；根级 Vitest 升级到 `3.2.7`，高危依赖审计无已知漏洞。
+- 最终验收发现并修复图片提交后 Blob URL 提前释放、HTML sandbox 无法读取父页面 Blob URL 两个真实浏览器回归，均补回归测试。
+- `pnpm test` -> PASS：daemon 540 项通过、13 项按设计跳过；Web 444 项通过；Skill Market 6 项通过。
+- `pnpm typecheck`、`pnpm build`、`pnpm smoke:ci`、`pnpm perf:check`、`pnpm audit --audit-level high` 和 `git diff --check` -> PASS。
+- 真实 Codex smoke -> PASS：13 项，98.62 秒。
+- 1440x900 与 390x844 的文本、多模态、排队、打断、审批、任务中心、搜索、文件、HTML 安全预览、设置、记忆和响应式验收通过。
+- daemon 真实重启后活动 Run 收敛为失败，并在任务中心显示明确恢复原因。
+- 最终报告：`docs/superpowers/test-reports/2026-07-12-clawee-agent-final-acceptance.md`。
 
 ## P2 阶段门禁
 
-- [ ] P2-B1 至 P2-B8 全部为 `PASS`。
-- [ ] 文本、多模态、排队、打断、审批和后台通知主流程通过。
-- [ ] HTML 默认安全预览通过安全测试。
-- [ ] daemon 重启后所有非终态任务最终收敛。
-- [ ] 用户可完整管理长期记忆。
-- [ ] 全局测试、类型检查、构建和真实 smoke 通过。
-- [ ] 最终测试报告已提交。
-- [ ] README 和 API 文档已更新。
-- [ ] Git 工作区干净。
+- [x] P2-B1 至 P2-B8 全部为 `PASS`。
+- [x] 文本、多模态、排队、打断、审批和后台通知主流程通过。
+- [x] HTML 默认安全预览通过安全测试。
+- [x] daemon 重启后所有非终态任务最终收敛。
+- [x] 用户可完整管理长期记忆。
+- [x] 全局测试、类型检查、构建和真实 smoke 通过。
+- [x] 最终测试报告已提交。
+- [x] README 和 API 文档已更新。
+- [x] Git 工作区干净。
 
-**P2 门禁结果：** 待填写。
+**P2 门禁结果：** `PASS`。P0、P1、P2 全部完成，允许发布当前本地 Agent 工作流。
 
 ---
 
@@ -2470,40 +2480,40 @@ docs: finalize clawee agent release readiness
 
 | 领域 | 核心场景 | 自动化 | 真实环境 | 结果 |
 |---|---|---:|---:|---|
-| Scheduler | 到期自动触发且只触发一次 | 待执行 | 待执行 | `NOT_STARTED` |
-| Run 恢复 | 刷新后恢复运行中 Run | 待执行 | 待执行 | `NOT_STARTED` |
-| 会话切换 | 后台运行、返回恢复、无内容污染 | 待执行 | 待执行 | `NOT_STARTED` |
-| 取消与队列 | 取消当前 Run、排队、打断继续 | 待执行 | 待执行 | `NOT_STARTED` |
-| daemon 重启 | 非终态 Run 最终收敛 | 待执行 | 待执行 | `NOT_STARTED` |
-| 历史 | 游标分页、向上加载、无重复 | 待执行 | 待执行 | `NOT_STARTED` |
-| Timeline | 300+ 项虚拟化和滚动稳定 | 待执行 | 待执行 | `NOT_STARTED` |
-| 搜索 | 中英文正文搜索和结果定位 | 待执行 | 待执行 | `NOT_STARTED` |
+| Scheduler | 到期自动触发且只触发一次 | 通过 | 通过 | `PASS` |
+| Run 恢复 | 刷新后恢复运行中 Run | 通过 | 通过 | `PASS` |
+| 会话切换 | 后台运行、返回恢复、无内容污染 | 通过 | 通过 | `PASS` |
+| 取消与队列 | 取消当前 Run、排队、打断继续 | 通过 | 通过 | `PASS` |
+| daemon 重启 | 非终态 Run 最终收敛 | 通过 | 通过 | `PASS` |
+| 历史 | 游标分页、向上加载、无重复 | 通过 | 通过 | `PASS` |
+| Timeline | 300+ 项虚拟化和滚动稳定 | 通过 | 通过 | `PASS` |
+| 搜索 | 中英文正文搜索和结果定位 | 通过 | 通过 | `PASS` |
 | Schedules | 创建、编辑、启停、触发、删除 | 通过 | 通过 | `PASS` |
 | MCP/Profile | 管理、能力判断、敏感值遮罩 | 通过 | 通过 | `PASS` |
 | Cleanup/Diagnostics | 预览删除、脱敏导出 | 通过 | 通过 | `PASS` |
-| Skill 市场 | 分页、安装、更新、使用 | 通过 | 最终统一验收 | `PASS` |
-| 文件预览 | HTML、图片、PDF、文本 | 待执行 | 待执行 | `NOT_STARTED` |
-| HTML 安全 | 脚本、导航、弹窗默认阻止 | 待执行 | 待执行 | `NOT_STARTED` |
-| 多模态 | 上传图片并完成真实 Run | 待执行 | 待执行 | `NOT_STARTED` |
-| 审批 | 批准、拒绝、刷新恢复、重启安全 | 待执行 | 待执行 | `NOT_STARTED` |
-| 通知/任务中心 | 后台完成通知和任务跳转 | 待执行 | 待执行 | `NOT_STARTED` |
-| 记忆 | 显式保存、范围、编辑、停用、删除 | 通过 | 最终统一验收 | `PASS` |
-| 响应式 | 1440x900 与 390x844 主流程 | 待执行 | 待执行 | `NOT_STARTED` |
-| 性能 | 包体积、DOM、API、daemon 响应 | 待执行 | 待执行 | `NOT_STARTED` |
+| Skill 市场 | 分页、安装、更新、使用 | 通过 | 通过 | `PASS` |
+| 文件预览 | HTML、图片、PDF、文本 | 通过 | 通过 | `PASS` |
+| HTML 安全 | 脚本、导航、弹窗默认阻止 | 通过 | 通过 | `PASS` |
+| 多模态 | 上传图片并完成真实 Run | 通过 | 通过 | `PASS` |
+| 审批 | 批准、拒绝、刷新恢复、重启安全 | 通过 | 通过 | `PASS` |
+| 通知/任务中心 | 后台完成通知和任务跳转 | 通过 | 通过 | `PASS` |
+| 记忆 | 显式保存、范围、编辑、停用、删除 | 通过 | 通过 | `PASS` |
+| 响应式 | 1440x900 与 390x844 主流程 | 通过 | 通过 | `PASS` |
+| 性能 | 包体积、DOM、API、daemon 响应 | 通过 | 通过 | `PASS` |
 
 ## 12.2 性能基线记录模板
 
 | 指标 | 优化前 | P1 完成 | P2 完成 | 测量方式 |
 |---|---:|---:|---:|---|
-| Web 主包 | 约 996KB | 533.87KB | 待填写 | Vite build 输出 |
-| Web 主包 gzip | 约 325KB | 155.20KB | 待填写 | Vite build 输出 |
-| 长会话 Timeline 项 | 约 379 | 同数据集 | 同数据集 | 固定测试会话 |
-| 长会话 DOM 节点 | 约 8265 | 待填写 | 待填写 | 浏览器 Elements/脚本 |
-| 长会话页面高度 | 约 153662px | 待填写 | 待填写 | 浏览器测量 |
-| 移动插件市场高度 | 约 27578px | 待填写 | 待填写 | 390x844 |
-| 历史首屏响应 | 待补测 | 待填写 | 待填写 | daemon 计时 |
-| 搜索 P95 | 不适用 | 待填写 | 待填写 | 固定索引数据集 |
-| 高频事件 healthz 响应 | 待补测 | 待填写 | 待填写 | 并发 smoke |
+| Web 主包 | 约 996KB | 533.87KB | 564.28KB | Vite build 输出 |
+| Web 主包 gzip | 约 325KB | 155.20KB | 163.78KB | Vite build 输出 |
+| 长会话 Timeline 项 | 约 379 | 同数据集 | 首屏 4 个虚拟项 | 固定测试会话 |
+| 长会话 DOM 节点 | 约 8265 | 待填写 | Timeline 84 个后代 | 浏览器脚本 |
+| 长会话页面高度 | 约 153662px | 待填写 | 外层固定 900px，内部虚拟滚动 | 浏览器测量 |
+| 移动插件市场高度 | 约 27578px | 待填写 | 6213px | 390x844 |
+| 历史首屏响应 | 待补测 | 待填写 | P95 3.4ms | 30 次已认证请求 |
+| 搜索 P95 | 不适用 | 待填写 | 322.7ms | 30 次固定查询 |
+| 高频事件 healthz 响应 | 待补测 | 待填写 | P95 25.5ms | 100 并发请求 |
 
 ---
 
@@ -2570,6 +2580,8 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P2-B5 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Codex app-server 双向审批、SQLite 状态机、幂等 API、脱敏 Timeline 卡片、刷新回放和异常退出收敛；daemon 527 项、Web 419 项、全仓类型检查和构建通过 | 下一批 `P2-B6`；真实 Codex 审批和桌面/移动验收统一放到 P2-B8 |
 | 2026-07-12 | P2-B6 | `NOT_STARTED -> PASS` | 本批提交 | 完成分页任务 API、全局任务中心、待审批处理、任务跳转、显式通知授权、前台抑制、未读持久化和 daemon 重启收敛验证；daemon 532 项、Web 431 项、全仓类型检查和构建通过 | 下一批 `P2-B7`；真实通知、重启和桌面/移动验收统一放到 P2-B8 |
 | 2026-07-12 | P2-B7 | `NOT_STARTED -> PASS` | 本批提交 | 完成显式记忆 CRUD、敏感二次确认、范围注入、Run 快照、版本化摘要、设置页、建议卡片和 Run Detail；daemon 540 项、Web 442 项、全仓类型检查和构建通过 | 下一批 `P2-B8`；真实记忆生效、摘要刷新和桌面/移动验收统一执行 |
+| 2026-07-12 | P2-B8 | `NOT_STARTED -> IN_PROGRESS` | - | 开始补齐 README、Runtime API、用户故障排查、CI、依赖审计、性能预算和最终统一验收 | 完成安全依赖升级后执行真实 Codex 与桌面/移动验收 |
+| 2026-07-12 | P2-B8 | `IN_PROGRESS -> PASS` | 本批提交 | README、API、故障排查、CI、依赖审计、性能预算和最终报告完成；全量测试、构建、类型检查、13 项真实 Codex smoke、桌面/移动、多模态、排队、打断、审批、HTML 安全预览和 daemon 重启验收通过 | P0/P1/P2 全部完成；推送远端并保持 9000 服务运行 |
 
 ## 14.1 单批次执行记录模板
 

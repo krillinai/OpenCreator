@@ -6,7 +6,7 @@
 
 当前 protocol 包版本为 `0.1.0`。前端实现应优先复用 `@clawee/protocol` 导出的类型；本文用于说明真实路由行为、产品边界和 UI 接入约束。
 
-第一版 UI 可以接入：
+当前 UI 已接入：
 
 1. Codex 状态和能力检测。
 2. Run 创建、取消、历史、详情和 SSE 事件流。
@@ -15,18 +15,19 @@
 5. Skills 扫描、安装、删除和操作日志。
 6. MCP server 管理和操作日志。
 7. Schedules CRUD、run-now 和操作日志。
-8. Run diagnostics 导出。
+8. Run diagnostics 导出和受控工作区文件 API。
 9. Runtime cleanup preview/delete。
+10. 历史游标分页、全文搜索、附件和多模态 Run。
+11. 排队发送、立即打断并继续、双向审批和全局任务中心。
+12. 用户显式长期记忆、版本化摘要和 Run 上下文快照。
 
 当前 Runtime 不提供：
 
-1. 文件树浏览 API。
-2. 文件读取/保存 API。
-3. git diff、patch review、回滚 API。
-4. 权限审批 API。
-5. UI 专用项目管理 API。
-6. Profile 全局写入确认能力。当前全局 profile 写入会返回 `CODEX_HOME_READ_ONLY`，UI 第一版应只做读取和选择。
-7. 图片输入能力。`RunRequest.images` 在 protocol 中有预留，但当前 `/runs` 路由不会解析或传递图片。
+1. 云账号、云同步、多人协作和团队权限。
+2. UI 专用项目管理 API；项目仍由线程工作目录聚合。
+3. 原生桌面打包。
+4. HTML 预览中的任意脚本执行。
+5. 未经用户确认的永久记忆提取。
 
 ## 2. 连接和认证
 
@@ -123,11 +124,14 @@ type RunRequest = {
   prompt: string;
   threadId?: string;
   resumeMode?: "auto" | "new_thread" | "resume_thread";
+  submissionMode?: "enqueue" | "interrupt_and_enqueue";
   cwd?: string;
   profile?: string;
   model?: string;
   reasoning?: "default" | "low" | "medium" | "high" | "xhigh";
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
+  draftId?: string;
+  attachmentIds?: string[];
 };
 ```
 
@@ -1025,11 +1029,84 @@ UI 注意：
 
 ## 14. 当前 UI 不应承诺的能力
 
-1. 文件树来自真实工作区。
-2. 保存右侧编辑器会写入磁盘。
-3. Agent 写文件前会出现 Runtime 权限审批。
-4. MCP 工具调用过程可完整可视化。
-5. Profile 可在全局 Codex 环境中创建/编辑/删除。
-6. Scheduler 在睡眠后补跑错过任务。
+1. 云端同步、多人协作或团队级权限。
+2. Scheduler 在睡眠后补跑错过任务；当前 misfire policy 为 `skip`。
+3. HTML 预览执行任意脚本、弹窗或顶层导航。
+4. Agent 在后台自动永久保存用户隐私或偏好。
+5. MCP 工具调用的所有供应商私有事件都能被标准化展示。
 
-这些能力需要后续 API 或明确产品设计后再接入。
+## 15. 历史分页和搜索
+
+### `GET /threads/:id/history`
+
+查询参数：
+
+- `limit`：1 到 100，默认 50。
+- `before`：上一页返回的不透明游标。
+- `targetItemId`：加载包含目标消息的窗口，用于搜索跳转。
+
+响应包含 `items`、`hasMore`、`nextCursor` 和可选 `targetItemId`。前端不得解析或拼接游标内容。
+
+### `GET /search/conversations`
+
+支持 `query`、`limit`、`cursor`、`cwd`、`types`、`createdAfter` 和 `createdBefore`。`types` 使用逗号分隔的内容类型。响应返回高亮片段、线程 ID、item ID、类型、时间和下一页游标。
+
+## 16. 附件和多模态
+
+### `POST /attachments`
+
+请求体为受限二进制，`fileName`、`mime`、`draftId` 或 `threadId` 通过查询参数传入。成功返回附件 ID、真实 MIME、大小、SHA-256、草稿归属和状态。
+
+### `GET /attachments/:id/content`
+
+只返回当前授权范围可访问的受控附件内容。
+
+### `DELETE /attachments/:id`
+
+只允许删除未提交草稿附件；已绑定 Run 的附件不可被草稿删除流程移除。
+
+提交多模态 Run 时，`draftId` 和 `attachmentIds` 必须同时传入。daemon 会验证归属、状态和 MIME，并只把受控本地路径传给 Codex。
+
+## 17. 排队、打断和任务中心
+
+- `submissionMode = "enqueue"`：同线程 FIFO 排队。
+- `submissionMode = "interrupt_and_enqueue"`：请求取消当前 Run，并把后续任务放到普通队列之前。
+- `GET /tasks?status=all&limit=50&cursor=...`：聚合 Run 和待审批状态，支持分页。
+- Run 响应包含 `submissionMode` 和可选 `queuePosition`。
+
+SSE 和持久化状态是增量与真相源的组合：刷新后先查询线程 Run，再从最后事件序号续订，不能只依赖页面内布尔值。
+
+## 18. 审批
+
+- `GET /approvals`
+- `GET /approvals/:id`
+- `POST /approvals/:id/approve`
+- `POST /approvals/:id/reject`
+
+审批请求包含脱敏后的命令、工作目录、原因、Run 和线程归属。批准或拒绝是幂等状态转换；Run 取消或 app-server 异常退出时，待审批必须收敛为终态。
+
+## 19. 记忆、摘要和 Run 上下文
+
+### 记忆
+
+- `GET /memories`
+- `POST /memories`
+- `PATCH /memories/:id`
+- `DELETE /memories/:id`
+- `POST /memories/disable-all`
+
+范围为 `global`、`project` 或 `thread`。项目范围的 `scopeKey` 必须使用线程 `canonicalCwd`；线程范围使用 `threadId`。
+
+敏感内容未确认时返回 `409 MEMORY_SENSITIVE_CONFIRMATION_REQUIRED`。前端必须展示明确警告，并仅在用户再次确认后传 `acknowledgeSensitive: true`。
+
+### 摘要
+
+- `GET /summaries`
+- `POST /threads/:id/summaries`
+- `DELETE /summaries/:id`
+
+摘要记录版本、覆盖首尾 item ID 和条目数。空历史返回 `422 SUMMARY_SOURCE_EMPTY`，不会创建摘要或修改原始历史。
+
+### Run 上下文
+
+`GET /runs/:id/context` 返回该次 Run 实际使用的记忆和摘要正文快照。Run 元数据只保存 source ID；快照独立持久化，因此之后删除记忆也不会破坏历史审计。

@@ -14,17 +14,16 @@ type ExternalPreviewLink = {
 
 type SafePreviewDocument = {
   html: string;
-  objectUrls: string[];
   externalLinks: ExternalPreviewLink[];
 };
 
 const PREVIEW_CSP = [
   "default-src 'none'",
   "script-src 'none'",
-  "style-src 'unsafe-inline' blob:",
-  'img-src blob: data:',
-  'font-src blob: data:',
-  'media-src blob: data:',
+  "style-src 'unsafe-inline'",
+  'img-src data:',
+  'font-src data:',
+  'media-src data:',
   "connect-src 'none'",
   "frame-src 'none'",
   "object-src 'none'",
@@ -32,7 +31,13 @@ const PREVIEW_CSP = [
   "base-uri 'none'"
 ].join('; ');
 const MAX_PREVIEW_RESOURCES = 128;
+const MAX_PREVIEW_RESOURCE_BYTES = 10 * 1024 * 1024;
 const MAX_EXTERNAL_LINKS = 20;
+
+type ResourceBudget = {
+  remaining: number;
+  remainingBytes: number;
+};
 
 export function HtmlPreview(props: {
   name: string;
@@ -43,27 +48,19 @@ export function HtmlPreview(props: {
 }) {
   const [document, setDocument] = useState<SafePreviewDocument>(() => ({
     html: loadingDocument(),
-    objectUrls: [],
     externalLinks: []
   }));
 
   useEffect(() => {
     let canceled = false;
-    let activeObjectUrls: string[] = [];
 
     void buildSafePreviewDocument(props.content, props.path, props.resources)
       .then(nextDocument => {
-        if (canceled) {
-          revokeObjectUrls(nextDocument.objectUrls, props.resources);
-          return;
-        }
-        activeObjectUrls = nextDocument.objectUrls;
-        setDocument(nextDocument);
+        if (!canceled) setDocument(nextDocument);
       });
 
     return () => {
       canceled = true;
-      revokeObjectUrls(activeObjectUrls, props.resources);
     };
   }, [props.content, props.path, props.resources]);
 
@@ -102,19 +99,20 @@ async function buildSafePreviewDocument(
 ): Promise<SafePreviewDocument> {
   const parsed = new DOMParser().parseFromString(content, 'text/html');
   const externalLinks = collectAndDisableLinks(parsed);
-  const objectUrls = new Set<string>();
   const blobCache = new Map<string, Promise<string | undefined>>();
-  const resourceBudget = { remaining: MAX_PREVIEW_RESOURCES };
+  const resourceBudget: ResourceBudget = {
+    remaining: MAX_PREVIEW_RESOURCES,
+    remainingBytes: MAX_PREVIEW_RESOURCE_BYTES
+  };
 
   removeDangerousContent(parsed);
-  await rewriteInlineStyles(parsed, documentPath, resources, objectUrls, blobCache, resourceBudget);
-  await inlineStylesheets(parsed, documentPath, resources, objectUrls, blobCache, resourceBudget);
-  await rewriteMediaSources(parsed, documentPath, resources, objectUrls, blobCache, resourceBudget);
+  await rewriteInlineStyles(parsed, documentPath, resources, blobCache, resourceBudget);
+  await inlineStylesheets(parsed, documentPath, resources, blobCache, resourceBudget);
+  await rewriteMediaSources(parsed, documentPath, resources, blobCache, resourceBudget);
   installContentSecurityPolicy(parsed);
 
   return {
     html: `<!doctype html>\n${parsed.documentElement.outerHTML}`,
-    objectUrls: [...objectUrls],
     externalLinks
   };
 }
@@ -179,9 +177,8 @@ async function inlineStylesheets(
   document: Document,
   documentPath: string,
   resources: HtmlPreviewResources | undefined,
-  objectUrls: Set<string>,
   blobCache: Map<string, Promise<string | undefined>>,
-  resourceBudget: { remaining: number }
+  resourceBudget: ResourceBudget
 ): Promise<void> {
   const stylesheets = [...document.querySelectorAll('link[rel~="stylesheet"][href]')];
   await Promise.all(stylesheets.map(async link => {
@@ -207,7 +204,6 @@ async function inlineStylesheets(
         stylesheet.content,
         path,
         resources,
-        objectUrls,
         blobCache,
         resourceBudget
       );
@@ -222,9 +218,8 @@ async function rewriteInlineStyles(
   document: Document,
   documentPath: string,
   resources: HtmlPreviewResources | undefined,
-  objectUrls: Set<string>,
   blobCache: Map<string, Promise<string | undefined>>,
-  resourceBudget: { remaining: number }
+  resourceBudget: ResourceBudget
 ): Promise<void> {
   const styles = [...document.querySelectorAll('style')];
   await Promise.all(styles.map(async style => {
@@ -232,7 +227,6 @@ async function rewriteInlineStyles(
       style.textContent ?? '',
       documentPath,
       resources,
-      objectUrls,
       blobCache,
       resourceBudget
     );
@@ -244,7 +238,6 @@ async function rewriteInlineStyles(
       element.getAttribute('style') ?? '',
       documentPath,
       resources,
-      objectUrls,
       blobCache,
       resourceBudget
     ));
@@ -255,9 +248,8 @@ async function rewriteMediaSources(
   document: Document,
   documentPath: string,
   resources: HtmlPreviewResources | undefined,
-  objectUrls: Set<string>,
   blobCache: Map<string, Promise<string | undefined>>,
-  resourceBudget: { remaining: number }
+  resourceBudget: ResourceBudget
 ): Promise<void> {
   document.querySelectorAll('[srcset]').forEach(element => element.removeAttribute('srcset'));
   const sources = [
@@ -272,9 +264,9 @@ async function rewriteMediaSources(
       element.removeAttribute(attribute);
       return;
     }
-    const objectUrl = await loadBlobUrl(path, resources, objectUrls, blobCache, resourceBudget);
-    if (objectUrl === undefined) element.removeAttribute(attribute);
-    else element.setAttribute(attribute, objectUrl);
+    const dataUrl = await loadBlobUrl(path, resources, blobCache, resourceBudget);
+    if (dataUrl === undefined) element.removeAttribute(attribute);
+    else element.setAttribute(attribute, dataUrl);
   }));
 }
 
@@ -282,9 +274,8 @@ async function rewriteCssUrls(
   css: string,
   stylesheetPath: string,
   resources: HtmlPreviewResources | undefined,
-  objectUrls: Set<string>,
   blobCache: Map<string, Promise<string | undefined>>,
-  resourceBudget: { remaining: number }
+  resourceBudget: ResourceBudget
 ): Promise<string> {
   const withoutImports = css.replace(/@import\s+(?:url\()?[^;]+;?/gi, '');
   const matches = [...withoutImports.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gi)];
@@ -300,10 +291,10 @@ async function rewriteCssUrls(
       result += match[0];
     } else {
       const path = resolveWorkspacePreviewPath(stylesheetPath, reference);
-      const objectUrl = path === undefined || resources === undefined
+      const dataUrl = path === undefined || resources === undefined
         ? undefined
-        : await loadBlobUrl(path, resources, objectUrls, blobCache, resourceBudget);
-      result += objectUrl === undefined ? 'url("")' : `url("${objectUrl}")`;
+        : await loadBlobUrl(path, resources, blobCache, resourceBudget);
+      result += dataUrl === undefined ? 'url("")' : `url("${dataUrl}")`;
     }
     cursor = index + match[0].length;
   }
@@ -313,9 +304,8 @@ async function rewriteCssUrls(
 async function loadBlobUrl(
   path: string,
   resources: HtmlPreviewResources,
-  objectUrls: Set<string>,
   blobCache: Map<string, Promise<string | undefined>>,
-  resourceBudget: { remaining: number }
+  resourceBudget: ResourceBudget
 ): Promise<string | undefined> {
   const existing = blobCache.get(path);
   if (existing !== undefined) return existing;
@@ -323,9 +313,21 @@ async function loadBlobUrl(
   resourceBudget.remaining -= 1;
 
   const pending = resources.openBlob(path)
-    .then(resource => {
-      objectUrls.add(resource.objectUrl);
-      return resource.objectUrl;
+    .then(async resource => {
+      const mime = normalizePreviewResourceMime(resource.mime);
+      if (
+        mime === undefined
+        || resource.size > resourceBudget.remainingBytes
+      ) {
+        resources.revokeBlob(resource.objectUrl);
+        return undefined;
+      }
+      resourceBudget.remainingBytes -= resource.size;
+      try {
+        return await objectUrlToDataUrl(resource.objectUrl, mime);
+      } finally {
+        resources.revokeBlob(resource.objectUrl);
+      }
     })
     .catch(() => undefined);
   blobCache.set(path, pending);
@@ -352,7 +354,25 @@ function parseExternalUrl(value: string): string | undefined {
 function isSafeEmbeddedResource(value: string): boolean {
   const normalized = value.trim().toLowerCase();
   return normalized.startsWith('data:image/')
-    || normalized.startsWith('data:font/');
+    || normalized.startsWith('data:font/')
+    || normalized.startsWith('data:audio/')
+    || normalized.startsWith('data:video/');
+}
+
+function normalizePreviewResourceMime(value: string): string | undefined {
+  const mime = value.toLowerCase().split(';', 1)[0]?.trim() ?? '';
+  return /^(image|font|audio|video)\/[a-z0-9.+-]+$/.test(mime) ? mime : undefined;
+}
+
+async function objectUrlToDataUrl(objectUrl: string, mime: string): Promise<string> {
+  const response = await fetch(objectUrl);
+  if (!response.ok) throw new Error('无法读取预览资源');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return `data:${mime};base64,${btoa(binary)}`;
 }
 
 export function resolveWorkspacePreviewPath(
@@ -399,14 +419,6 @@ export function resolveWorkspacePreviewPath(
     baseSegments.push(segment);
   }
   return baseSegments.length === 0 ? undefined : baseSegments.join('/');
-}
-
-function revokeObjectUrls(
-  objectUrls: string[],
-  resources: HtmlPreviewResources | undefined
-): void {
-  if (resources === undefined) return;
-  for (const objectUrl of objectUrls) resources.revokeBlob(objectUrl);
 }
 
 function loadingDocument(): string {
