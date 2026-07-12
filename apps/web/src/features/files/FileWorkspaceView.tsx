@@ -30,6 +30,7 @@ type FileWorkspaceViewProps = {
   workspaceFileService?: WorkspaceFileService | null;
   onClose(): void;
   onSelectPath?(path: string): void;
+  onOpenExternal?(url: string): void;
 };
 
 const RECENT_PATH_STORAGE_PREFIX = 'clawee.file-workspace.recent.';
@@ -87,6 +88,22 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     };
   }, [meta, threadReadonly]);
   const recentPathStorageKey = thread ? `${RECENT_PATH_STORAGE_PREFIX}${workspaceKey(thread.canonicalCwd)}` : undefined;
+  const htmlPreviewResources = useMemo(() => (
+    thread && service
+      ? {
+          async openText(path: string) {
+            const response = await service.openText(thread.id, path);
+            return { content: response.content, mime: response.meta.mime };
+          },
+          openBlob(path: string) {
+            return service.openBlob(thread.id, path);
+          },
+          revokeBlob(objectUrl: string) {
+            service.revokeBlob(objectUrl);
+          }
+        }
+      : undefined
+  ), [service, thread]);
 
   useEffect(() => {
     setFileMode(defaultModeForMeta(effectiveMeta));
@@ -211,6 +228,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
 
       replaceObjectUrl(nextObjectUrl);
       setActivePath(path);
+      setFileMode(defaultModeForMeta(nextMeta));
       setMeta(nextMeta);
       setSavedContent(nextContent);
       setDraftContent(nextContent);
@@ -493,6 +511,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
             meta={effectiveMeta}
             content={draftContent}
             objectUrl={objectUrl}
+            htmlPreviewResources={htmlPreviewResources}
             dirty={dirty}
             saving={saving}
             loadError={loading ? '正在加载文件...' : loadError}
@@ -502,6 +521,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
             onChange={setDraftContent}
             onSave={() => void handleSave(false)}
             onModeChange={setFileMode}
+            onOpenExternal={props.onOpenExternal}
           />
         </div>
 

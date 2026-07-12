@@ -2129,6 +2129,7 @@ export function AppController(props: AppControllerProps) {
         workspaceFileService={workspaceFileService}
         onClose={closeFileWorkspace}
         onSelectPath={selectWorkspaceFile}
+        onOpenExternal={(url) => void hostBridge.openExternal(url)}
       />
     </section>
   ) : conversationPage;

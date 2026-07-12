@@ -1502,22 +1502,58 @@ textarea:focus-visible {
 }
 
 .file-preview-html {
-  position: relative;
-  height: auto;
+  height: 100%;
   align-self: stretch;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
   padding: 0;
   background: #fff;
 }
 
 .file-preview-html iframe {
-  position: absolute;
-  inset: 0;
   width: 100%;
   height: 100%;
+  min-height: 0;
   display: block;
   border: 0;
   background: #fff;
+}
+
+.html-preview-external-links {
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.html-preview-external-links button {
+  min-width: 0;
+  max-width: 240px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.html-preview-external-links button:hover {
+  color: var(--text);
+}
+
+.html-preview-external-links span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-preview-note {

@@ -279,12 +279,9 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
-    expect(await screen.findByRole('textbox', { name: 'business-cover.html 编辑器' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '预览' }));
-
-    const preview = screen.getByTitle('business-cover.html HTML 预览');
-    expect(preview).toHaveAttribute('srcdoc', html);
+    const preview = await screen.findByTitle('business-cover.html HTML 预览');
+    expect(screen.getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
+    expect(preview).toHaveAttribute('sandbox', '');
     expect(screen.queryByRole('textbox', { name: 'business-cover.html 编辑器' })).not.toBeInTheDocument();
   });
 

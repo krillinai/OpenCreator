@@ -85,11 +85,11 @@ describe('app CSS visual contracts', () => {
     const preview = cssBlock('.file-preview-html');
     const frame = cssBlock('.file-preview-html iframe');
 
-    expect(preview).toContain('position: relative;');
-    expect(preview).toContain('height: auto;');
+    expect(preview).toContain('height: 100%;');
     expect(preview).toContain('align-self: stretch;');
-    expect(frame).toContain('position: absolute;');
-    expect(frame).toContain('inset: 0;');
+    expect(preview).toContain('grid-template-rows: minmax(0, 1fr) auto;');
+    expect(frame).toContain('height: 100%;');
+    expect(frame).toContain('min-height: 0;');
   });
 
   it('keeps the desktop skill market scrollable inside the fixed app shell', () => {

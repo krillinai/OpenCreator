@@ -41,8 +41,7 @@ describe('FileEditorPane', () => {
     expect(screen.getByText('正文')).toBeInTheDocument();
   });
 
-  it('HTML 预览使用隔离 iframe 渲染页面而不是显示源码', async () => {
-    const user = userEvent.setup();
+  it('HTML 默认使用无脚本隔离 iframe 渲染页面而不是显示源码', async () => {
     const html = '<!doctype html><html><body><main>商务封面</main><script>document.body.dataset.ready = "true"</script></body></html>';
 
     const { container } = render(
@@ -57,14 +56,12 @@ describe('FileEditorPane', () => {
       />
     );
 
-    expect(screen.getByRole('textbox', { name: 'business-cover.html 编辑器' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '预览' }));
-
-    const preview = screen.getByTitle('business-cover.html HTML 预览');
-    expect(preview).toHaveAttribute('srcdoc', html);
-    expect(preview).toHaveAttribute('sandbox', 'allow-scripts');
+    const preview = await screen.findByTitle('business-cover.html HTML 预览');
+    expect(screen.getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('textbox', { name: 'business-cover.html 编辑器' })).not.toBeInTheDocument();
+    expect(preview).toHaveAttribute('sandbox', '');
     expect(preview).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(preview.getAttribute('srcdoc')).not.toContain('<script');
     expect(container.querySelector('.file-preview-html pre')).not.toBeInTheDocument();
   });
 

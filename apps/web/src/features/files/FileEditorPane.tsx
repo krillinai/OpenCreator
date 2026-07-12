@@ -2,6 +2,7 @@ import type { WorkspaceFileMeta } from '@clawee/protocol';
 import { FileCode2, FileImage, FileText, Image as ImageIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer.js';
+import { HtmlPreview, type HtmlPreviewResources } from './HtmlPreview.js';
 import { TextFileEditor } from './TextFileEditor.js';
 
 export type FileEditorPaneProps = {
@@ -14,6 +15,8 @@ export type FileEditorPaneProps = {
   saveError?: string;
   mode?: FileEditorMode;
   toolbar?: 'inline' | 'hidden';
+  htmlPreviewResources?: HtmlPreviewResources;
+  onOpenExternal?(url: string): void;
   onChange?(value: string): void;
   onSave?(): void;
   onModeChange?(mode: FileEditorMode): void;
@@ -23,7 +26,9 @@ export type FileEditorMode = 'edit' | 'preview';
 
 export function FileEditorPane(props: FileEditorPaneProps) {
   const meta = props.meta;
-  const [uncontrolledMode, setUncontrolledMode] = useState<FileEditorMode>('edit');
+  const [uncontrolledMode, setUncontrolledMode] = useState<FileEditorMode>(
+    () => defaultModeForMeta(props.meta)
+  );
   const errors = [props.loadError, props.saveError].filter((error): error is string => error !== undefined);
   const toolbar = props.toolbar ?? 'inline';
   const defaultMode = useMemo(() => defaultModeForMeta(meta), [
@@ -119,6 +124,8 @@ export function FileEditorPane(props: FileEditorPaneProps) {
         mode: currentMode,
         content: props.content ?? '',
         objectUrl: props.objectUrl,
+        htmlPreviewResources: props.htmlPreviewResources,
+        onOpenExternal: props.onOpenExternal,
         onChange: props.onChange,
         onSave: props.onSave
       })}
@@ -131,6 +138,8 @@ type RenderContentArgs = {
   mode: FileEditorMode;
   content: string;
   objectUrl?: string;
+  htmlPreviewResources?: HtmlPreviewResources;
+  onOpenExternal?: (url: string) => void;
   onChange?: (value: string) => void;
   onSave?: () => void;
 };
@@ -158,7 +167,12 @@ function renderContent(args: RenderContentArgs) {
 
   if (isTextLike(args.meta)) {
     if (args.mode === 'preview') {
-      return renderTextPreview(args.meta, args.content);
+      return renderTextPreview(
+        args.meta,
+        args.content,
+        args.htmlPreviewResources,
+        args.onOpenExternal
+      );
     }
 
     return (
@@ -176,17 +190,21 @@ function renderContent(args: RenderContentArgs) {
   return renderUnsupported(args.meta);
 }
 
-function renderTextPreview(meta: WorkspaceFileMeta, content: string) {
+function renderTextPreview(
+  meta: WorkspaceFileMeta,
+  content: string,
+  htmlPreviewResources?: HtmlPreviewResources,
+  onOpenExternal?: (url: string) => void
+) {
   if (meta.kind === 'html') {
     return (
-      <div className="file-preview file-preview-html">
-        <iframe
-          title={`${meta.name} HTML 预览`}
-          srcDoc={content}
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-        />
-      </div>
+      <HtmlPreview
+        name={meta.name}
+        path={meta.path}
+        content={content}
+        resources={htmlPreviewResources}
+        onOpenExternal={onOpenExternal}
+      />
     );
   }
 
@@ -303,6 +321,10 @@ export function defaultModeForMeta(meta?: WorkspaceFileMeta): FileEditorMode {
 
   if (isSvgSource(meta) && meta.editable) {
     return 'edit';
+  }
+
+  if (meta.kind === 'html') {
+    return 'preview';
   }
 
   if (!meta.editable || meta.kind === 'image' || meta.kind === 'pdf') {

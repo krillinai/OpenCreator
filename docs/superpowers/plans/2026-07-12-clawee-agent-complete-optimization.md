@@ -1727,7 +1727,7 @@ refactor(web): split app routes and feature controllers
 - [x] `P2-B1` 附件存储与安全 API
 - [x] `P2-B2` 多模态 Composer 与 Run
 - [x] `P2-B3` 排队发送与立即打断并继续
-- [ ] `P2-B4` HTML 安全预览
+- [x] `P2-B4` HTML 安全预览
 - [ ] `P2-B5` 真实审批闭环
 - [ ] `P2-B6` 通知、任务中心与 daemon 重启恢复
 - [ ] `P2-B7` 用户显式长期记忆与上下文摘要
@@ -1993,7 +1993,7 @@ feat: add queued and interrupting follow-up prompts
 
 ## P2-B4：HTML 安全预览
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** HTML 文件默认以完整页面预览展示，但脚本、顶层导航和高风险能力默认禁用。
 
@@ -2052,7 +2052,25 @@ security(web): sandbox html file previews
 
 **回滚边界：** 回滚 HtmlPreview 到源码模式，不能以放宽 sandbox 作为临时修复。
 
-**执行结果：** 待填写。
+**执行结果：** `PASS`。
+
+- 新增独立 `HtmlPreview`，HTML 文件默认进入预览且仍可随时切换源码编辑。
+- iframe 使用空权限 `sandbox`，不启用脚本、同源、表单、弹窗、下载或顶层导航；同时注入严格 CSP，禁用脚本、网络连接、嵌套 frame、object 和 form action。
+- 预览构建时移除 `script`、`iframe`、`object`、`embed`、`portal`、刷新 meta、事件处理属性和表单导航，并阻止源码自带的外部、`javascript:`、任意 `blob:` 和越界资源地址。
+- 相对图片、媒体和 CSS 继续通过现有鉴权 workspace 文件服务读取，转换为当前预览会话的 Blob URL；CSS 内相对 `url(...)` 同步受工作区路径约束，切换文件或卸载时统一回收，单页最多加载 128 个受控资源。
+- iframe 内外链默认失效，提取为预览底部的明确“外部打开”动作，通过 HostBridge 打开，不允许预览自行导航。
+- 预览区域使用文件编辑器完整可用高度；直接打开 HTML 时立即进入预览，不再短暂闪现源码。
+- 自动化门禁：
+  - `pnpm --filter @clawee/web test -- src/features/files/HtmlPreview.test.tsx` -> PASS，6 项。
+  - `pnpm --filter @clawee/daemon test -- test/unit/workspace-files.test.ts` -> PASS，65 项。
+  - `pnpm test` -> PASS；daemon 515 项、Web 413 项、Skill Market 6 项，真实 Codex smoke 13 项按默认配置跳过。
+  - `pnpm typecheck` -> PASS。
+  - `pnpm build` -> PASS；Web 主入口 546.02KB / 158.67KB gzip，Files chunk 568.81KB / 200.12KB gzip，保留既有 chunk 大小提示。
+- 延后到 P2-B8 最终统一验收：
+  - 打开包含布局、相对图片、外部 CSS 和 CSS 背景图的真实 HTML，核对完整页面效果。
+  - 用真实 `<script>`、`window.top`、弹窗、表单、下载和嵌套 iframe 验证无法执行或逃逸。
+  - 验证外链只可通过显式外部打开按钮访问。
+  - 在 1440x900 与 390x844 检查预览高度、源码切换和外链条无溢出。
 
 ## P2-B5：真实审批闭环
 
@@ -2474,6 +2492,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P2-B1 | `NOT_STARTED -> PASS` | 本批提交 | 完成附件协议、SQLite 元数据、受限二进制 API、MIME 嗅探、哈希去重、作用域访问、原子落盘、符号链接防护、7 天草稿清理和 Web 调用层；专项测试、全量测试、类型检查和构建通过 | 下一批 `P2-B2`；真实上传、删除和进程重启验收统一放到 P2-B8 |
 | 2026-07-12 | P2-B2 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Codex 图片能力检测、附件 ID 到受控路径解析、Run 附件归属与查询、Composer 选择/拖放/粘贴/重试/移除、Timeline 缩略图和 Run 详情；daemon 511 项、Web 405 项及全仓类型检查、构建通过 | 下一批 `P2-B3`；真实图片发送与桌面/移动布局验收统一放到 P2-B8 |
 | 2026-07-12 | P2-B3 | `NOT_STARTED -> PASS` | 本批提交 | 完成排队与打断发送协议、持久化模式、稳定优先级、单线程执行、队列位置、取消排队、运行中 Composer 和终态防倒退；daemon 515 项、Web 407 项、类型检查和构建通过 | 下一批 `P2-B4`；真实慢 Run、切换刷新和桌面/移动交互统一放到 P2-B8 |
+| 2026-07-12 | P2-B4 | `NOT_STARTED -> PASS` | 本批提交 | 完成无权限 sandbox、严格 CSP、危险 DOM 清理、受控相对资源 Blob 重写与上限、外链显式打开、HTML 默认预览和全高布局；daemon 515 项、Web 413 项、全仓测试、类型检查和构建通过 | 下一批 `P2-B5`；真实恶意 HTML、相对资源和桌面/移动布局统一放到 P2-B8 |
 
 ## 14.1 单批次执行记录模板
 
