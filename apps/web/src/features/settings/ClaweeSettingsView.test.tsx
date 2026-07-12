@@ -20,6 +20,8 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByText('搜索暂不可用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '常规' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'MCP 服务' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Profiles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '关于 Clawee' })).toBeInTheDocument();
 
     expect(screen.getByText('默认权限')).toBeInTheDocument();
@@ -94,6 +96,18 @@ describe('ClaweeSettingsView', () => {
     expect(within(advanced).getByText('正常')).toBeInTheDocument();
     expect(within(advanced).getByText('最近一次检测时间')).toBeInTheDocument();
     expect(within(advanced).getByText(runtimeStatus.lastCheckedAt)).toBeInTheDocument();
+  });
+
+  it('opens MCP and Profiles management pages from settings navigation', () => {
+    render(<ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'MCP 服务' }));
+    expect(screen.getByRole('heading', { name: 'MCP 服务' })).toBeInTheDocument();
+    expect(screen.getByText('本地服务连接后可以管理 MCP。')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Profiles' }));
+    expect(screen.getByRole('heading', { name: 'Profiles' })).toBeInTheDocument();
+    expect(screen.getByText('本地服务连接后可以管理 Profile。')).toBeInTheDocument();
   });
 
   it('shows disconnected local runtime status in about advanced information', () => {

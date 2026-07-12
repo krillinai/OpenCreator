@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import type { CodexMcpListResponse, CodexProfileListResponse } from '@clawee/protocol';
+import { McpSettingsView, type McpCapabilities, type McpSettingsService } from './McpSettingsView.js';
+import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
+import './settings-management.css';
 
 export type RuntimeStatus = {
   connected: boolean;
@@ -13,14 +17,23 @@ export type ClaweeSettingsViewProps = {
   runtimeStatus: RuntimeStatus;
   dynamicBackgroundEnabled?: boolean;
   onDynamicBackgroundChange?(enabled: boolean): void;
+  mcpService?: McpSettingsService | null;
+  mcpData?: CodexMcpListResponse;
+  mcpCapabilities?: McpCapabilities;
+  onMcpDataChange?(data: CodexMcpListResponse): void;
+  profileService?: ProfileSettingsService | null;
+  profileData?: CodexProfileListResponse;
+  onProfileDataChange?(data: CodexProfileListResponse): void;
   onBack(): void;
 };
 
-type SettingsTab = 'general' | 'plugins' | 'about';
+type SettingsTab = 'general' | 'plugins' | 'mcp' | 'profiles' | 'about';
 
 const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: 'general', label: '常规' },
   { id: 'plugins', label: '插件' },
+  { id: 'mcp', label: 'MCP 服务' },
+  { id: 'profiles', label: 'Profiles' },
   { id: 'about', label: '关于 Clawee' }
 ];
 
@@ -59,6 +72,23 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
           />
         ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}
+        {activeTab === 'mcp' ? (
+          <McpSettingsView
+            connected={props.runtimeStatus.connected}
+            service={props.mcpService ?? null}
+            data={props.mcpData}
+            capabilities={props.mcpCapabilities}
+            onDataChange={props.onMcpDataChange}
+          />
+        ) : null}
+        {activeTab === 'profiles' ? (
+          <ProfileSettingsView
+            connected={props.runtimeStatus.connected}
+            service={props.profileService ?? null}
+            data={props.profileData}
+            onDataChange={props.onProfileDataChange}
+          />
+        ) : null}
         {activeTab === 'about' ? <AboutSettings runtimeStatus={props.runtimeStatus} /> : null}
       </main>
     </div>

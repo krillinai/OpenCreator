@@ -1,0 +1,341 @@
+.settings-management {
+  width: min(920px, 100%);
+}
+
+.settings-management__header {
+  min-width: 0;
+  display: flex !important;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.settings-management__header > div {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.settings-primary-button,
+.settings-secondary-button,
+.settings-text-button,
+.settings-item__actions button,
+.settings-editor header > button,
+.settings-env-editor > div > button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.settings-primary-button {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  border-color: rgba(240, 168, 102, 0.45);
+  background: rgba(173, 77, 31, 0.88);
+}
+
+.settings-secondary-button {
+  padding: 0 12px;
+  background: var(--surface-2);
+}
+
+.settings-text-button {
+  justify-self: start;
+  padding: 0 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.settings-primary-button:disabled,
+.settings-secondary-button:disabled,
+.settings-item__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.settings-notice,
+.settings-error,
+.settings-inline-warning {
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+
+.settings-error {
+  border-color: rgba(239, 108, 108, 0.35);
+  color: #f0aaaa !important;
+}
+
+.settings-inline-warning {
+  color: #e1b98e !important;
+}
+
+.settings-state {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-item-list {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.settings-item__main {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.settings-item__title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-item__title h2 {
+  min-width: 0;
+  padding: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.settings-item__title span {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settings-item__title span[data-status="configured"],
+.settings-item__title span[data-status="valid"] {
+  border-color: rgba(93, 179, 125, 0.32);
+  color: #94d6aa;
+}
+
+.settings-item__main > p {
+  overflow-wrap: anywhere;
+}
+
+.settings-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.settings-item__actions button,
+.settings-editor header > button,
+.settings-env-editor > div > button {
+  width: 32px;
+  padding: 0;
+  background: rgba(252, 253, 255, 0.04);
+}
+
+.settings-tags {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.settings-tags code {
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(252, 253, 255, 0.06);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.settings-editor {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.settings-editor header,
+.settings-editor footer {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-editor header > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-editor header h2 {
+  padding: 0;
+  font-size: 16px;
+}
+
+.settings-editor footer {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.settings-form-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-form-grid label {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.settings-form-grid input,
+.settings-form-grid select,
+.settings-form-grid textarea,
+.settings-env-editor input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+
+.settings-form-grid input,
+.settings-form-grid select,
+.settings-env-editor input {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.settings-form-grid textarea {
+  resize: vertical;
+  padding: 9px 10px;
+  line-height: 1.5;
+}
+
+.settings-form-grid small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.settings-form-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-env-editor {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-env-editor legend {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.settings-env-editor > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(180px, 1fr) auto;
+  gap: 8px;
+}
+
+.settings-spin {
+  animation: settings-spin 900ms linear infinite;
+}
+
+@keyframes settings-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .settings-management__header,
+  .settings-editor header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-primary-button {
+    align-self: flex-start;
+  }
+
+  .settings-item {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-item__actions {
+    justify-content: flex-end;
+  }
+
+  .settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-form-wide {
+    grid-column: auto;
+  }
+
+  .settings-env-editor > div {
+    grid-template-columns: 1fr auto;
+  }
+
+  .settings-env-editor > div input:first-child {
+    grid-column: 1 / -1;
+  }
+}
