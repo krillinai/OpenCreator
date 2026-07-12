@@ -883,7 +883,7 @@ feat(daemon): index codex sessions incrementally
 
 ## P1-B2：历史游标分页 API
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `IN_PROGRESS`
 
 **目标：** 为会话历史提供稳定的向前游标分页，同时保持旧调用兼容。
 
@@ -2169,6 +2169,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P0-B5 | `IN_PROGRESS -> PASS` | `fb5afe1` | 804 项常规测试、类型检查、构建、13 项真实 Codex smoke、SSE 续传、双线程取消、daemon 重启、Scheduler 到期和用户页面验收全部通过 | P0 门禁 `PASS`；下一批 `P1-B1` |
 | 2026-07-12 | P1-B1 | `NOT_STARTED -> IN_PROGRESS` | - | 开始设计 Codex Session SQLite 增量索引、版本化来源状态和原始 JSONL 降级路径 | 先补迁移、增量追加、截断替换和损坏文件隔离测试 |
 | 2026-07-12 | P1-B1 | `IN_PROGRESS -> PASS` | `423d8b8` | daemon 472 项测试、类型检查、构建通过；真实 3.44 GB 首次索引 9.44 秒，重复扫描 239 ms 且解析 0 行；追加和替换验证通过 | 下一批 `P1-B2` |
+| 2026-07-12 | P1-B2 | `NOT_STARTED -> IN_PROGRESS` | - | 开始设计线程绑定的稳定历史游标、旧响应兼容和 Web 服务分页契约 | 先补首屏最新页、连续向前遍历、非法/过期/跨线程游标测试 |
 
 ## 14.1 单批次执行记录模板
 
