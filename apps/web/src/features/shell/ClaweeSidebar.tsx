@@ -3,6 +3,7 @@ import {
   Clock3,
   Folder,
   FolderOpen,
+  LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
   Plug,
@@ -17,6 +18,7 @@ import type { ClaweeConversation, ClaweeProject } from '../projects/project-mode
 export function ClaweeSidebar(props: {
   projects: ClaweeProject[];
   conversations: ClaweeConversation[];
+  runningConversationIds?: ReadonlySet<string>;
   currentProjectId: string;
   selectedConversationId?: string;
   activeView: ActiveView;
@@ -136,18 +138,31 @@ export function ClaweeSidebar(props: {
                         {projectConversations.length === 0 ? (
                           <p className="sidebar-empty">暂无聊天</p>
                         ) : (
-                          projectConversations.map((conversation) => (
-                            <button
-                              key={conversation.id}
-                              type="button"
-                              className="conversation-row nested-conversation-row"
-                              aria-current={conversation.id === props.selectedConversationId ? 'page' : undefined}
-                              onClick={() => props.onSelectConversation(conversation.id)}
-                            >
-                              <strong>{conversation.title}</strong>
-                              <span>{conversation.updatedLabel}</span>
-                            </button>
-                          ))
+                          projectConversations.map((conversation) => {
+                            const isRunning = props.runningConversationIds?.has(conversation.id) === true;
+                            return (
+                              <button
+                                key={conversation.id}
+                                type="button"
+                                className="conversation-row nested-conversation-row"
+                                aria-current={conversation.id === props.selectedConversationId ? 'page' : undefined}
+                                onClick={() => props.onSelectConversation(conversation.id)}
+                              >
+                                <strong>{conversation.title}</strong>
+                                <span className="conversation-row-meta">
+                                  {isRunning ? (
+                                    <LoaderCircle
+                                      className="conversation-run-spinner"
+                                      size={13}
+                                      strokeWidth={2}
+                                      aria-label="正在运行"
+                                    />
+                                  ) : null}
+                                  <span className="conversation-updated-label">{conversation.updatedLabel}</span>
+                                </span>
+                              </button>
+                            );
+                          })
                         )}
                       </div>
                     ) : null}

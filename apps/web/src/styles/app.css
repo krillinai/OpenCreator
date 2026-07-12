@@ -2663,10 +2663,35 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.conversation-row-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.conversation-run-spinner {
+  flex: 0 0 auto;
+  color: var(--accent);
+  animation: conversation-run-spin 900ms linear infinite;
+}
+
 .conversation-row span,
 .sidebar-empty {
   color: var(--subtle);
   font-size: 12px;
+}
+
+@keyframes conversation-run-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-run-spinner {
+    animation: none;
+  }
 }
 
 .sidebar-empty {

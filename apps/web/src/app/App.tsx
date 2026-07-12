@@ -234,6 +234,14 @@ export function App(props: AppProps = {}) {
     () => visibleRuntimeThreads.map(thread => mapThreadToConversation(thread, projects)),
     [visibleRuntimeThreads, projects]
   );
+  const runningConversationIds = useMemo(
+    () => new Set(
+      Object.entries(runRegistry.activeRunIdByThreadId)
+        .filter(([, runId]) => runId !== undefined)
+        .map(([threadId]) => threadId)
+    ),
+    [runRegistry.activeRunIdByThreadId]
+  );
   const selectedThreadExists = state.selectedThreadId !== undefined
     && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
 
@@ -1655,6 +1663,7 @@ export function App(props: AppProps = {}) {
         <ClaweeSidebar
           projects={projects}
           conversations={conversations}
+          runningConversationIds={runningConversationIds}
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}

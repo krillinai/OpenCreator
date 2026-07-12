@@ -44,6 +44,21 @@ describe('app CSS visual contracts', () => {
     expect(settingsButton).toContain('padding: 0 6px;');
   });
 
+  it('keeps the conversation run indicator compact and motion-aware', () => {
+    const meta = cssBlock('.conversation-row-meta');
+    const spinner = cssBlock('.conversation-run-spinner');
+
+    expect(meta).toContain('display: inline-flex;');
+    expect(meta).toContain('gap: 6px;');
+    expect(spinner).toContain('flex: 0 0 auto;');
+    expect(spinner).toContain('color: var(--accent);');
+    expect(spinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
+    expect(appCss).toMatch(/@keyframes conversation-run-spin\s*\{[^}]*transform:\s*rotate\(360deg\);/);
+    expect(appCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.conversation-run-spinner\s*\{[^}]*animation:\s*none;/
+    );
+  });
+
   it('keeps global scrollbars darker and trackless', () => {
     const webkitScrollbar = cssBlock('*::-webkit-scrollbar');
     const webkitScrollbarTrack = cssBlock('*::-webkit-scrollbar-track,\n*::-webkit-scrollbar-track-piece,\n*::-webkit-scrollbar-corner');

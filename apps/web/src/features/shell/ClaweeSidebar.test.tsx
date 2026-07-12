@@ -133,6 +133,15 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('shows a spinning status for conversations with an active run', () => {
+    renderSidebar({
+      runningConversationIds: new Set(['weekly-progress-brief'])
+    });
+
+    expect(screen.getByLabelText('正在运行')).toHaveClass('conversation-run-spinner');
+    expect(screen.getByRole('button', { name: /整理本周项目进展.*正在运行.*4天/ })).toBeInTheDocument();
+  });
+
   it('collapses the selected project when clicking it again', async () => {
     const user = userEvent.setup();
 
