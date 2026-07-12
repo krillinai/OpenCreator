@@ -16,6 +16,9 @@ export function createThreadService(client: RuntimeClient) {
     createThread(input: CreateThreadRequest = {}): Promise<{ thread: ThreadResponse }> {
       return client.post('/threads', input);
     },
+    getThread(threadId: string): Promise<{ thread: ThreadResponse }> {
+      return client.get(`/threads/${encodeURIComponent(threadId)}`);
+    },
     updateThread(threadId: string, input: UpdateThreadRequest): Promise<{ thread: ThreadResponse }> {
       return client.patch(`/threads/${encodeURIComponent(threadId)}`, input);
     },

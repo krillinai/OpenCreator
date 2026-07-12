@@ -1772,6 +1772,79 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'bili' })).toHaveAttribute('data-current-project', 'true');
   });
 
+  it('restores a selected historical conversation that is outside the initial thread page', async () => {
+    window.localStorage.setItem('clawee.navigation.v2', JSON.stringify({
+      currentProjectId: 'bili',
+      selectedThreadId: 'thread_older_history'
+    }));
+    const hostBridge = createHostBridge();
+    const requestedUrls: string[] = [];
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_recent',
+              title: '最近会话',
+              cwd: '/Users/test/develop/content-design',
+              canonicalCwd: '/Users/test/develop/content-design'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_older_history')) {
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_older_history',
+            title: '分页外的历史会话',
+            codexThreadId: 'codex-older-history',
+            cwd: '/Users/test/develop/clawee/bili',
+            canonicalCwd: '/Users/test/develop/clawee/bili'
+          })
+        });
+      }
+      if (url.endsWith('/threads/thread_older_history/history')) {
+        return jsonResponse({
+          threadId: 'thread_older_history',
+          codexThreadId: 'codex-older-history',
+          items: [
+            {
+              id: 'older_history_user_1',
+              type: 'user_message',
+              text: '这条历史会话不在首批 50 条中',
+              createdAt: new Date(0).toISOString()
+            }
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_older_history/runs?limit=50')) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await findTimelineUserMessage('这条历史会话不在首批 50 条中')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /分页外的历史会话/ })).toBeInTheDocument();
+    expect(requestedUrls.some(url => url.endsWith('/threads/thread_older_history'))).toBe(true);
+  });
+
   it('loads conversation history from runtime threads instead of mock conversations', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });

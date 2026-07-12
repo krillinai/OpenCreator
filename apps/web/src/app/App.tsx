@@ -40,7 +40,7 @@ import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/Cla
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
-import { RuntimeClient } from '../runtime/client.js';
+import { ApiClientError, RuntimeClient } from '../runtime/client.js';
 import { createFrameBatcher, type FrameBatcher } from '../runtime/frame-batcher.js';
 import { subscribeRunEvents as defaultSubscribeRunEvents, type SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { ConnectionConfig } from '../runtime/types.js';
@@ -333,22 +333,44 @@ export function App(props: AppProps = {}) {
       };
     }
 
-    threadService
-      .listActiveThreads()
-      .then(response => {
+    const activeThreadService = threadService;
+    async function loadThreads() {
+      try {
+        const response = await activeThreadService.listActiveThreads();
         if (canceled) return;
         setRuntimeThreads(response.threads);
         setThreadLoadError(undefined);
+
         const restoredThreadId = restoredThreadIdRef.current;
         restoredThreadIdRef.current = undefined;
-        if (restoredThreadId !== undefined && !response.threads.some(thread => thread.id === restoredThreadId)) {
-          dispatch({ type: 'new_conversation' });
+        if (
+          restoredThreadId === undefined
+          || response.threads.some(thread => thread.id === restoredThreadId)
+        ) return;
+
+        try {
+          const restored = await activeThreadService.getThread(restoredThreadId);
+          if (canceled) return;
+          if (restored.thread.status !== 'active' || !shouldShowThreadInSidebar(restored.thread)) {
+            dispatch({ type: 'new_conversation' });
+            return;
+          }
+          setRuntimeThreads(previous => upsertThread(previous, restored.thread));
+        } catch (error) {
+          if (canceled) return;
+          if (error instanceof ApiClientError && error.status === 404) {
+            dispatch({ type: 'new_conversation' });
+            return;
+          }
+          setThreadLoadError('无法恢复上次打开的历史会话');
         }
-      })
-      .catch(() => {
+      } catch {
         if (canceled) return;
         setThreadLoadError('无法加载历史会话');
-      });
+      }
+    }
+
+    void loadThreads();
 
     return () => {
       canceled = true;
