@@ -774,7 +774,7 @@ test: lock down run recovery workflows
 - [x] `P1-B4` daemon NDJSON 异步有序写入
 - [x] `P1-B5` 会话全文搜索
 - [x] `P1-B6` Schedules 正式页面
-- [ ] `P1-B7` MCP 与 Profiles 正式页面
+- [x] `P1-B7` MCP 与 Profiles 正式页面
 - [ ] `P1-B8` Cleanup 与 Diagnostics 设置页
 - [ ] `P1-B9` 移动端导航与 Skill 市场性能
 - [ ] `P1-B10` App 模块化、路由和代码分割
@@ -1352,7 +1352,7 @@ feat(web): complete the schedules workspace
 
 ## P1-B7：MCP 与 Profiles 正式页面
 
-- [ ] **状态：** `IN_PROGRESS`
+- [x] **状态：** `PASS`
 
 **目标：** 为 MCP Server 和 Codex Profile 提供真实管理页面，并让会话配置能够引用它们。
 
@@ -1413,7 +1413,18 @@ feat(web): add mcp and profile management
 
 **回滚边界：** 回滚 Web 页面和 service；daemon 既有接口不变。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 新增 MCP list/get/add/remove/login/logout Web service 与正式设置页，并按 capability 控制登录、退出和删除操作。
+- MCP 环境变量值使用密码输入，保存后不回填；Profile API 对 secret、token、password、bearer 等敏感键统一返回 `[REDACTED]`。
+- 新增 Profile CRUD、基础配置诊断和模型、推理级别、Sandbox、高级 primitive JSON 配置编辑。
+- Composer 与 Schedule Editor 共用 App 级 Profile 数据源；新会话可选择 Profile，已有会话锁定 Profile。
+- Profile 被 Thread 或 Schedule 引用时返回 `CODEX_PROFILE_IN_USE`；真实页面验证计划任务引用提示为“仍被 0 个会话和 1 个计划任务使用”，删除引用后可正常清理 Profile。
+- Web 设置专项 16 项、Web 全量 371 项、daemon MCP/Profile 专项 11 项测试通过；Web 与 daemon 类型检查、`pnpm build` 通过。
+- 1440×900 和 390×844 均完成 MCP/Profile 页面、Profile 创建编辑、Composer 选择、Schedule 共用、引用冲突和删除清理验证；无横向溢出、滚动或布局重叠，页面无未捕获异常。
+- 提交：`aa7ab94`、`8f668b1`、`c83e8fc`。
+- 已知边界：
+  - 当前真实 Codex 的部分 `mcp get` 输出格式尚未被 parser 完整识别，页面会显示 `unknown` 和诊断信息，但不影响 MCP 添加、删除、敏感值保护和错误反馈闭环；后续兼容性修正应补充对应 fixture。
 
 ## P1-B8：Cleanup 与 Diagnostics 设置页
 
@@ -2245,7 +2256,7 @@ docs: finalize clawee agent release readiness
 | Timeline | 300+ 项虚拟化和滚动稳定 | 待执行 | 待执行 | `NOT_STARTED` |
 | 搜索 | 中英文正文搜索和结果定位 | 待执行 | 待执行 | `NOT_STARTED` |
 | Schedules | 创建、编辑、启停、触发、删除 | 通过 | 通过 | `PASS` |
-| MCP/Profile | 管理、能力判断、敏感值遮罩 | 待执行 | 待执行 | `NOT_STARTED` |
+| MCP/Profile | 管理、能力判断、敏感值遮罩 | 通过 | 通过 | `PASS` |
 | Cleanup/Diagnostics | 预览删除、脱敏导出 | 待执行 | 待执行 | `NOT_STARTED` |
 | Skill 市场 | 分页、安装、更新、使用 | 待执行 | 待执行 | `NOT_STARTED` |
 | 文件预览 | HTML、图片、PDF、文本 | 待执行 | 待执行 | `NOT_STARTED` |
@@ -2323,6 +2334,8 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B5 | `IN_PROGRESS -> PASS` | `8eb06ce`, `f30bec4`, `384d525`, `0183d67` | daemon 499 项、Web 353 项、两端类型检查、构建、真实 3.44 GB 数据和桌面/移动浏览器验收全部通过 | 下一批 `P1-B6` |
 | 2026-07-12 | P1-B6 | `NOT_STARTED -> IN_PROGRESS` | `61723d1` | 完成 Schedule Service 契约并开始正式页面、字段校验和 App Run 跳转实现 | 先让 SchedulesView 组件契约转绿 |
 | 2026-07-12 | P1-B6 | `IN_PROGRESS -> PASS` | `61723d1`, `a56c541` | Web 359 项、Scheduler 19 项、类型检查、构建及桌面/移动真实创建、编辑、启停、触发、Run 跳转、删除验收全部通过 | 下一批 `P1-B7` |
+| 2026-07-12 | P1-B7 | `NOT_STARTED -> IN_PROGRESS` | `aa7ab94` | 完成 Profile 管理协议、CRUD、敏感值遮罩和引用冲突服务契约 | 继续实现 MCP/Profile 正式页面和 Agent 工作流共用 |
+| 2026-07-12 | P1-B7 | `IN_PROGRESS -> PASS` | `aa7ab94`, `8f668b1`, `c83e8fc` | Web 371 项、MCP/Profile 专项 11 项、类型检查、构建及桌面/移动真实管理、共用、脱敏和引用冲突验收全部通过 | 下一批 `P1-B8` |
 
 ## 14.1 单批次执行记录模板
 
