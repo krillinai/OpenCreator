@@ -177,6 +177,7 @@ export function App(props: AppProps = {}) {
   const [savingFilePaths, setSavingFilePaths] = useState<Set<string>>(() => new Set());
   const [conversationPaneWidth, setConversationPaneWidth] = useState<number>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [dynamicBackgroundEnabled, setDynamicBackgroundEnabled] = useState(readDynamicBackgroundPreference);
   const [threadHistoryReloadKey, setThreadHistoryReloadKey] = useState(0);
   const [searchHistoryTarget, setSearchHistoryTarget] = useState<
@@ -208,6 +209,7 @@ export function App(props: AppProps = {}) {
   const skillMarketMutationInFlightRef = useRef(false);
   const skillMarketUseInFlightRef = useRef(false);
   const skillMarketRuntimeGenerationRef = useRef(0);
+  const mobileSidebarHistoryEntryRef = useRef(false);
   const capabilityServiceRef = useRef<CapabilityService | null>(null);
   const skillMarketServiceRef = useRef<SkillMarketService | null>(null);
   const threadServiceRef = useRef<ThreadService | null>(null);
@@ -314,6 +316,16 @@ export function App(props: AppProps = {}) {
       timelineEventBatchersByThreadIdRef.current.clear();
       stopAllRunEventSubscriptions(false);
     };
+  }, []);
+
+  useEffect(() => {
+    function handleBrowserBack() {
+      mobileSidebarHistoryEntryRef.current = false;
+      setMobileSidebarOpen(false);
+    }
+
+    window.addEventListener('popstate', handleBrowserBack);
+    return () => window.removeEventListener('popstate', handleBrowserBack);
   }, []);
 
   useEffect(() => {
@@ -913,6 +925,32 @@ export function App(props: AppProps = {}) {
     writeDynamicBackgroundPreference(enabled);
   }
 
+  function openMobileSidebar() {
+    setSidebarCollapsed(false);
+    if (
+      isMobileNavigationViewport()
+      && !mobileSidebarHistoryEntryRef.current
+    ) {
+      window.history.pushState(
+        { ...window.history.state, claweeMobileNavigation: true },
+        ''
+      );
+      mobileSidebarHistoryEntryRef.current = true;
+    }
+    setMobileSidebarOpen(true);
+  }
+
+  function closeMobileSidebar() {
+    setMobileSidebarOpen(false);
+    if (
+      mobileSidebarHistoryEntryRef.current
+      && window.history.state?.claweeMobileNavigation === true
+    ) {
+      mobileSidebarHistoryEntryRef.current = false;
+      window.history.back();
+    }
+  }
+
   function submitPrompt(prompt: string, config?: ComposerRunConfig) {
     if (
       connectionState.status === 'connected'
@@ -938,6 +976,7 @@ export function App(props: AppProps = {}) {
   }
 
   function startNewConversation() {
+    closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
     showTimelineForThread(undefined, [], false);
@@ -950,6 +989,7 @@ export function App(props: AppProps = {}) {
   }
 
   function selectProject(projectId: string) {
+    closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
     showTimelineForThread(undefined, [], false);
@@ -962,6 +1002,7 @@ export function App(props: AppProps = {}) {
   }
 
   function selectConversation(conversationId: string) {
+    closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
     setThreadConfigUpdateError(undefined);
@@ -991,6 +1032,7 @@ export function App(props: AppProps = {}) {
   }
 
   async function openSearchResult(result: ConversationSearchResult) {
+    closeMobileSidebar();
     if (threadService === null) return;
     let thread = runtimeThreads.find(item => item.id === result.threadId);
     if (thread === undefined) {
@@ -1870,8 +1912,14 @@ export function App(props: AppProps = {}) {
           onNewConversation={startNewConversation}
           onSelectProject={selectProject}
           onSelectConversation={selectConversation}
-          onOpenView={(activeView) => dispatch({ type: 'set_active_view', activeView })}
-          onOpenSettings={() => dispatch({ type: 'open_settings' })}
+          onOpenView={(activeView) => {
+            closeMobileSidebar();
+            dispatch({ type: 'set_active_view', activeView });
+          }}
+          onOpenSettings={() => {
+            closeMobileSidebar();
+            dispatch({ type: 'open_settings' });
+          }}
           onToggleCollapsed={() => setSidebarCollapsed((currentValue) => !currentValue)}
         />
       }
@@ -1879,6 +1927,9 @@ export function App(props: AppProps = {}) {
       detail={detailPanel}
       detailOpen={detailPanel !== null && state.activeView === 'conversation'}
       sidebarCollapsed={sidebarCollapsed}
+      mobileSidebarOpen={mobileSidebarOpen}
+      onOpenMobileSidebar={openMobileSidebar}
+      onCloseMobileSidebar={closeMobileSidebar}
     />
   );
 
@@ -1997,6 +2048,11 @@ function getPlaceholderLabel(activeView: 'schedules' | 'plugins' | 'files') {
     case 'files':
       return '文件';
   }
+}
+
+function isMobileNavigationViewport(): boolean {
+  return typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 920px)').matches;
 }
 
 function getSkillMarketEntry(skillId: string): (typeof skillMarketCatalog)[number] | undefined {

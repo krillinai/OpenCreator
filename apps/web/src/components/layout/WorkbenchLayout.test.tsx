@@ -1,4 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { WorkbenchLayout } from './WorkbenchLayout.js';
 
@@ -48,4 +50,35 @@ describe('WorkbenchLayout', () => {
     expect(screen.getByRole('main')).toHaveClass('clawee-shell', 'sidebar-collapsed');
     expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-collapsed', 'true');
   });
+
+  it('opens the mobile navigation as a focus-managed drawer and restores focus after closing', async () => {
+    const user = userEvent.setup();
+
+    render(<MobileLayoutHarness />);
+
+    const trigger = screen.getByRole('button', { name: '打开导航' });
+    await user.click(trigger);
+
+    expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'true');
+    expect(screen.getByRole('button', { name: '关闭导航' })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'false');
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
 });
+
+function MobileLayoutHarness() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <WorkbenchLayout
+      sidebar={<button type="button">导航操作</button>}
+      main={<div>工作区</div>}
+      mobileSidebarOpen={open}
+      onOpenMobileSidebar={() => setOpen(true)}
+      onCloseMobileSidebar={() => setOpen(false)}
+    />
+  );
+}

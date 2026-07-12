@@ -18,11 +18,18 @@ describe('SkillMarketView', () => {
     window.localStorage.clear();
   });
 
-  it('渲染 55 条目录和分类计数', () => {
+  it('首屏只渲染一批目录卡片，并可继续加载剩余结果', async () => {
+    const user = userEvent.setup();
     renderSkillMarket();
 
     expect(screen.getByText('55 个 Skill')).toBeInTheDocument();
-    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55);
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
+    expect(screen.getByText('已显示 12 / 55')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '加载更多 Skill' }));
+
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(24);
+    expect(screen.getByText('已显示 24 / 55')).toBeInTheDocument();
 
     const videoCategory = skillMarketCatalog.filter(
       (entry) => entry.category === 'video-subtitle'
@@ -50,8 +57,27 @@ describe('SkillMarketView', () => {
       .getAllByTestId('skill-market-card')
       .map((card) => card.getAttribute('data-skill-id'));
 
-    expect(visibleIds).toEqual(expectedIds);
+    expect(visibleIds).toEqual(expectedIds.slice(0, 12));
     expect(visibleIds.length).toBeGreaterThan(0);
+  });
+
+  it('筛选变化后重置首屏批次，加载更多后收藏和安装状态仍保持正确', async () => {
+    const user = userEvent.setup();
+    const onInstall = vi.fn();
+    renderSkillMarket({ onInstall });
+
+    await user.click(screen.getByRole('button', { name: '加载更多 Skill' }));
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(24);
+
+    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(1);
+
+    const card = getSkillCard('frontend-slides');
+    await user.click(within(card).getByRole('button', { name: '收藏 网页演示稿生成' }));
+    expect(screen.getByRole('button', { name: /我的收藏\s+1/ })).toBeInTheDocument();
+
+    await user.click(within(card).getByRole('button', { name: '安装' }));
+    expect(onInstall).toHaveBeenCalledWith('frontend-slides');
   });
 
   it('点击卡片打开 role="dialog" 的详情弹窗', async () => {
@@ -287,7 +313,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket({ connected: false });
 
-    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55);
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
     expect(screen.getByText('Runtime 未连接，目录可浏览，安装、更新和使用需连接后操作。')).toBeInTheDocument();
 
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
@@ -328,7 +354,7 @@ describe('SkillMarketView', () => {
       />
     );
 
-    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55);
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     const action = within(getSkillCard('frontend-slides')).getByRole('button', {
       name: '状态未知',
@@ -616,11 +642,11 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     const { rerender } = renderSkillMarket({ loading: true });
     expect(screen.getByRole('status')).toHaveTextContent('正在加载 Skills 目录');
-    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55);
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
 
     rerender(<SkillMarketView {...createProps({ loadError: '目录加载失败' })} />);
     expect(screen.getByRole('alert')).toHaveTextContent('目录加载失败');
-    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55);
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
 
     rerender(<SkillMarketView {...createProps({ catalogOverride: [] })} />);
     expect(screen.getByRole('status')).toHaveTextContent('目录暂时为空');

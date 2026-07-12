@@ -2651,10 +2651,24 @@ textarea:focus-visible {
 }
 
 .clawee-main-pane {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
   background: var(--conversation-bg);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.clawee-main-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mobile-navigation-toolbar,
+.mobile-navigation-backdrop,
+.mobile-navigation-close {
+  display: none;
 }
 
 .clawee-detail-pane {
@@ -3384,42 +3398,98 @@ textarea:focus-visible {
   .clawee-shell,
   .clawee-shell.has-detail {
     width: 100%;
-    height: auto;
-    min-height: 100vh;
+    height: 100dvh;
+    min-height: 0;
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(620px, calc(100vh - 180px));
-    overflow-x: hidden;
-    overflow-y: visible;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
   }
 
-  .clawee-sidebar-pane,
   .clawee-main-pane {
-    overflow: visible;
+    height: 100dvh;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
   }
 
   .clawee-sidebar-pane {
-    border-right: 0;
-    border-bottom: 1px solid rgba(252, 253, 255, 0.08);
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 72;
+    width: min(320px, calc(100vw - 48px));
+    border-right: 1px solid rgba(252, 253, 255, 0.1);
+    border-bottom: 0;
+    box-shadow: 18px 0 44px rgba(0, 0, 0, 0.38);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 180ms ease,
+      visibility 180ms ease;
+  }
+
+  .clawee-sidebar-pane[data-mobile-open="true"] {
+    transform: translateX(0);
+    visibility: visible;
   }
 
   .clawee-sidebar {
-    height: auto;
-    grid-template-rows: auto auto auto;
-    gap: 10px;
+    height: 100%;
+    padding-top: 18px;
   }
 
-  .sidebar-primary,
-  .sidebar-section-list {
+  .sidebar-collapse-button {
+    display: none;
+  }
+
+  .mobile-navigation-toolbar {
+    min-width: 0;
+    min-height: 50px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding-bottom: 2px;
+    align-items: center;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(252, 253, 255, 0.08);
+    background: var(--conversation-bg);
   }
 
-  .sidebar-row,
-  .conversation-row {
+  .mobile-navigation-trigger,
+  .mobile-navigation-close {
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
+  .mobile-navigation-trigger {
+    display: inline-grid;
+  }
+
+  .mobile-navigation-close {
+    position: absolute;
+    top: 18px;
+    right: 12px;
+    z-index: 1;
+    display: grid;
+  }
+
+  .mobile-navigation-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 71;
+    display: block;
     width: 100%;
-    flex: 1 1 auto;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(3, 6, 10, 0.66);
+  }
+
+  .clawee-main-content {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
 
   .sidebar-conversations {
@@ -3530,7 +3600,8 @@ textarea:focus-visible {
 
   .clawee-shell,
   .clawee-shell.has-detail {
-    grid-template-rows: auto minmax(620px, calc(100vh - 220px));
+    height: 100dvh;
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .clawee-sidebar {

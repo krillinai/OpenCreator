@@ -23,9 +23,57 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
 
 describe('App', () => {
+  it('closes mobile navigation after opening a view and when browser history goes back', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const navigation = await screen.findByLabelText('Clawee 导航');
+    await user.click(screen.getByRole('button', { name: '打开导航' }));
+    expect(navigation).toHaveAttribute('data-mobile-open', 'true');
+
+    await user.click(screen.getByRole('button', { name: '插件' }));
+    expect(navigation).toHaveAttribute('data-mobile-open', 'false');
+
+    await user.click(screen.getByRole('button', { name: '打开导航' }));
+    expect(navigation).toHaveAttribute('data-mobile-open', 'true');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+
+    await waitFor(() => expect(navigation).toHaveAttribute('data-mobile-open', 'false'));
+  });
+
+  it('adds a mobile history entry and consumes it when the drawer closes', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true,
+      media: '(max-width: 920px)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '打开导航' }));
+    expect(pushState).toHaveBeenCalledWith(
+      expect.objectContaining({ claweeMobileNavigation: true }),
+      ''
+    );
+
+    await user.click(screen.getByRole('button', { name: '关闭导航' }));
+
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'false');
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     window.localStorage.clear();
+    window.history.replaceState(null, '');
   });
 
   it('renders Clawee desktop app shell without Codex product branding', async () => {
@@ -850,7 +898,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '插件' }));
     expect(screen.queryByRole('heading', { name: 'Clawee：插件' })).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55));
+    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
 
     const frontendCard = getSkillMarketCard('frontend-slides');
     expect(within(frontendCard).getByText('网页演示稿生成')).toBeInTheDocument();
@@ -950,7 +998,7 @@ describe('App', () => {
     await user.keyboard('{Escape}');
 
     await user.click(screen.getByRole('button', { name: '插件' }));
-    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55));
+    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     expect(screen.getByRole('alert')).toHaveTextContent('安装记录加载失败');
     const card = getSkillMarketCard('frontend-slides');
     expect(within(card).getByText('版本未知')).toBeInTheDocument();
@@ -990,7 +1038,7 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '插件' }));
-    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55));
+    await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     expect(screen.getByRole('alert')).toHaveTextContent('Skill 状态加载失败');
     const action = within(getSkillMarketCard('frontend-slides')).getByRole('button', {
       name: '状态未知'

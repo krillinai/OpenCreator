@@ -158,6 +158,30 @@ describe('app CSS visual contracts', () => {
     );
   });
 
+  it('uses an overlay drawer and stable scroll container for mobile navigation', () => {
+    expect(appCss).toMatch(
+      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.clawee-sidebar-pane\s*\{[^}]*position:\s*fixed;[^}]*transform:\s*translateX\(-100%\);/
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.clawee-sidebar-pane\[data-mobile-open="true"\]\s*\{[^}]*transform:\s*translateX\(0\);/
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.clawee-main-content\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.mobile-navigation-trigger\s*\{[^}]*display:\s*inline-grid;/
+    );
+  });
+
+  it('uses a full-height unframed Skill detail panel on mobile', () => {
+    expect(skillMarketCss).toMatch(
+      /@media \(max-width: 760px\)\s*\{[\s\S]*?\.skill-market-modal-backdrop\s*\{[^}]*padding:\s*0;/
+    );
+    expect(skillMarketCss).toMatch(
+      /@media \(max-width: 760px\)\s*\{[\s\S]*?\.skill-market-modal\s*\{[^}]*width:\s*100%;[^}]*height:\s*100dvh;[^}]*border-radius:\s*0;/
+    );
+  });
+
   it('keeps the empty-state dynamic background stable during resize', () => {
     const conversationPage = cssBlock('.conversation-page');
     const lightfallBg = cssBlock('.conversation-lightfall-bg');

@@ -7,10 +7,42 @@ import type { SkillMarketEntry } from '@clawee/skill-market';
 import { describe, expect, it } from 'vitest';
 import {
   filterAndSortSkillMarketEntries,
+  paginateSkillMarketEntries,
   resolveSkillMarketStatus,
 } from './skill-market-model.js';
 
 describe('skill market model', () => {
+  it('paginates a stable prefix and reports whether more entries remain', () => {
+    const result = filterAndSortSkillMarketEntries({
+      entries: [
+        createEntry({ id: 'skill-a', title: 'A' }),
+        createEntry({ id: 'skill-b', title: 'B' }),
+        createEntry({ id: 'skill-c', title: 'C' }),
+      ],
+      skills: createSkillsResponse([]),
+      records: [],
+    });
+
+    const firstPage = paginateSkillMarketEntries(result.entries, 2);
+    expect(firstPage.entries.map(entry => entry.id)).toEqual(
+      result.entries.slice(0, 2).map(entry => entry.id)
+    );
+    expect(firstPage.visibleCount).toBe(2);
+    expect(firstPage.totalCount).toBe(3);
+    expect(firstPage.hasMore).toBe(true);
+
+    expect(paginateSkillMarketEntries(result.entries, 20)).toMatchObject({
+      visibleCount: 3,
+      totalCount: 3,
+      hasMore: false,
+    });
+    expect(paginateSkillMarketEntries(result.entries, Number.NaN)).toMatchObject({
+      visibleCount: 0,
+      totalCount: 3,
+      hasMore: true,
+    });
+  });
+
   it('resolves unavailable when the skill is absent and the catalog source is not installable', () => {
     expect(
       resolveSkillMarketStatus(

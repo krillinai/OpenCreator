@@ -71,6 +71,9 @@ export type SkillMarketFilterResult = {
   subcategories: SkillMarketSubcategorySummary[];
 };
 
+export const skillMarketInitialVisibleCount = 12;
+export const skillMarketLoadMoreCount = 12;
+
 const categoryById = new Map(
   skillMarketCategories.map((category) => [category.id, category])
 );
@@ -141,6 +144,27 @@ export function filterAndSortSkillMarketEntries(
     entries: filtered,
     categories,
     subcategories,
+  };
+}
+
+export function paginateSkillMarketEntries(
+  entries: readonly SkillMarketViewEntry[],
+  requestedCount: number
+): {
+  entries: SkillMarketViewEntry[];
+  visibleCount: number;
+  totalCount: number;
+  hasMore: boolean;
+} {
+  const normalizedCount = Number.isFinite(requestedCount)
+    ? Math.max(Math.floor(requestedCount), 0)
+    : 0;
+  const visibleCount = Math.min(normalizedCount, entries.length);
+  return {
+    entries: entries.slice(0, visibleCount),
+    visibleCount,
+    totalCount: entries.length,
+    hasMore: visibleCount < entries.length
   };
 }
 

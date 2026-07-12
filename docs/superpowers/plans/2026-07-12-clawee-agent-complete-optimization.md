@@ -1505,7 +1505,7 @@ feat(web): expose cleanup and diagnostics tools
 
 ## P1-B9：移动端导航与 Skill 市场性能
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `BLOCKED_ENV`
 
 **目标：** 让移动端主要工作流可用，并避免 Skill 市场完整渲染造成超长页面和滚动成本。
 
@@ -1564,7 +1564,36 @@ perf(web): improve mobile navigation and skill browsing
 
 **回滚边界：** 移动导航和 Skill 列表优化可分别回滚，市场数据与安装 API 不变。
 
-**执行结果：** 待填写。
+**执行结果：** `BLOCKED_ENV`。代码、自动化测试、类型检查、构建和真实服务健康检查已完成；当前执行环境没有可连接的浏览器实例，尚缺 1440x900 与 390x844 的真实交互和视觉验收：
+
+- 移动端导航：
+  - `920px` 以下将侧栏改为固定遮罩抽屉，主工作区保持独立、稳定的纵向滚动容器，不再与项目/会话列表上下并排。
+  - 新增移动导航触发按钮、关闭按钮和遮罩关闭；打开后焦点进入抽屉，`Tab` 保持在抽屉内，`Escape` 关闭后焦点返回触发按钮。
+  - 会话、项目、新对话、搜索、Schedules、插件和设置等导航动作统一关闭抽屉。
+  - 移动端打开抽屉时写入同 URL 历史记录；浏览器返回关闭抽屉，页面内关闭会消费该历史记录。
+- Skill 市场：
+  - 首批只渲染 12 张卡片，每次“加载更多”增加 12 张，55 条目录不再一次性进入 DOM。
+  - 搜索、状态、分类、细分场景和排序变化时重置首批；收藏、安装、更新和使用状态继续基于完整筛选结果计算，不因分页失效。
+  - 新增分页纯函数和边界保护，异常数量不会产生无界渲染。
+  - 移动详情改为 `100dvh` 全高无边框面板；长标题、状态提示、操作区和分页按钮增加窄屏换行与防溢出规则。
+- 滚动与响应式：
+  - `clawee-main-content` 成为移动端统一滚动容器；会话 Timeline、搜索、Schedules、设置和 Skill 市场继续保留各自已有的内部滚动语义。
+  - CSS 契约测试覆盖抽屉定位、打开状态、主内容滚动容器和移动 Skill 全高详情。
+- 自动化验证：
+  - `pnpm --filter @clawee/web test -- src/app/App.test.tsx src/components/layout src/features/shell src/features/plugins src/styles/app-css.test.ts` -> PASS，7 个测试文件、134 项。
+  - `pnpm --filter @clawee/web test` -> PASS，57 个测试文件、388 项。
+  - `pnpm --filter @clawee/web typecheck` -> PASS。
+  - `pnpm --filter @clawee/web build` -> PASS；仅保留既有 Vite 主包超过 500 kB 警告。
+  - `http://127.0.0.1:9000/` 与 `/healthz` 均返回 200，Vite HMR 日志无编译错误。
+- 环境阻塞：
+  - 浏览器运行时选择 `http://127.0.0.1:9000/` 返回 `No browser is available`。
+  - 浏览器列表返回空数组 `[]`，无法执行截图、控制台、真实 DOM 数量和触摸滚动验收。
+- 解除阻塞后的验收步骤：
+  1. 在 390x844 打开抽屉，使用 `Tab`、`Shift+Tab`、`Escape`、遮罩和浏览器返回，确认焦点闭环与返回语义。
+  2. 从抽屉依次打开会话、搜索、Schedules、插件和设置，确认每次都自动关闭且主页面可纵向滚动。
+  3. 打开 Skill 市场，确认首屏只有 12 张卡片；加载更多后为 24 张，筛选后重置，收藏、安装、更新和使用仍正确。
+  4. 打开长标题 Skill 详情，确认全高展示、底部操作可见、无嵌套卡片和横向溢出。
+  5. 在 1440x900 复测桌面侧栏收起、Skill 三列布局、详情弹窗和页面滚动，并确认控制台无错误。
 
 ## P1-B10：App 模块化、路由和代码分割
 
@@ -2272,7 +2301,7 @@ docs: finalize clawee agent release readiness
 | Schedules | 创建、编辑、启停、触发、删除 | 通过 | 通过 | `PASS` |
 | MCP/Profile | 管理、能力判断、敏感值遮罩 | 通过 | 通过 | `PASS` |
 | Cleanup/Diagnostics | 预览删除、脱敏导出 | 通过 | 通过 | `PASS` |
-| Skill 市场 | 分页、安装、更新、使用 | 待执行 | 待执行 | `NOT_STARTED` |
+| Skill 市场 | 分页、安装、更新、使用 | 通过 | 浏览器不可用 | `BLOCKED_ENV` |
 | 文件预览 | HTML、图片、PDF、文本 | 待执行 | 待执行 | `NOT_STARTED` |
 | HTML 安全 | 脚本、导航、弹窗默认阻止 | 待执行 | 待执行 | `NOT_STARTED` |
 | 多模态 | 上传图片并完成真实 Run | 待执行 | 待执行 | `NOT_STARTED` |
@@ -2351,6 +2380,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B7 | `NOT_STARTED -> IN_PROGRESS` | `aa7ab94` | 完成 Profile 管理协议、CRUD、敏感值遮罩和引用冲突服务契约 | 继续实现 MCP/Profile 正式页面和 Agent 工作流共用 |
 | 2026-07-12 | P1-B7 | `IN_PROGRESS -> PASS` | `aa7ab94`, `8f668b1`, `c83e8fc` | Web 371 项、MCP/Profile 专项 11 项、类型检查、构建及桌面/移动真实管理、共用、脱敏和引用冲突验收全部通过 | 下一批 `P1-B8` |
 | 2026-07-12 | P1-B8 | `NOT_STARTED -> PASS` | 本批提交 | 完成 Cleanup 预览确认、Diagnostics 正式页、Prompt 脱敏、Run 诊断导出和移动端滚动修复；Web 381 项、daemon 502 项、类型检查、构建及桌面/移动真实验收全部通过 | 下一批 `P1-B9` |
+| 2026-07-12 | P1-B9 | `NOT_STARTED -> BLOCKED_ENV` | 本批提交 | 完成移动导航抽屉、焦点与历史返回闭环、Skill 市场首批 12 项和加载更多、移动全高详情及滚动契约；Web 388 项、类型检查、构建和服务健康检查通过 | 浏览器运行时无可用实例，完成桌面/移动真实验收后改为 `PASS`，再进入 `P1-B10` |
 
 ## 14.1 单批次执行记录模板
 
