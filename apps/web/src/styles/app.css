@@ -2487,6 +2487,7 @@ textarea:focus-visible {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
+  padding: 0;
   border: 1px solid rgba(252, 253, 255, 0.08);
   border-radius: 10px;
   color: rgba(252, 253, 255, 0.68);

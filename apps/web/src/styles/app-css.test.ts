@@ -107,6 +107,12 @@ describe('app CSS visual contracts', () => {
     expect(skillMarketCss).not.toContain('.skill-market-chip-row');
   });
 
+  it('centers the collapsed sidebar logo inside its square button', () => {
+    const brandButton = cssBlock('.sidebar-brand-button');
+
+    expect(brandButton).toContain('padding: 0;');
+  });
+
   it('uses a complete 2:1 cover and one compact metadata flow for skill cards', () => {
     const cardOpen = skillMarketCssBlock('.skill-market-card__open');
     const cover = skillMarketCssBlock('.skill-market-card__cover');
