@@ -7,7 +7,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档状态 | `APPROVED_FOR_EXECUTION` |
-| 总体实施状态 | `NOT_STARTED` |
+| 总体实施状态 | `IN_PROGRESS` |
 | 制定日期 | 2026-07-12 |
 | 当前基线分支 | `codex-native-runtime-kernel` |
 | 当前基线提交 | `6899f8d feat(web): support interrupting active runs` |
@@ -282,7 +282,7 @@ P2 完整 Agent 能力
 
 ## P0 状态总览
 
-- [ ] `P0-B1` Scheduler 在生产入口正式启动
+- [x] `P0-B1` Scheduler 在生产入口正式启动
 - [ ] `P0-B2` 建立 Web RunRegistry 与活动 Run 查询
 - [ ] `P0-B3` 实现 SSE 重连、事件去重与刷新恢复
 - [ ] `P0-B4` 修复跨会话后台运行和取消竞态
@@ -290,7 +290,7 @@ P2 完整 Agent 能力
 
 ## P0-B1：Scheduler 在生产入口正式启动
 
-- [ ] **状态：** `NOT_STARTED`
+- [x] **状态：** `PASS`
 
 **目标：** 正常运行 `pnpm daemon:dev` 时自动启动 Scheduler；测试和显式嵌入场景仍可关闭自动启动。
 
@@ -342,7 +342,23 @@ fix(daemon): start scheduler in production
 
 **回滚边界：** 仅回滚生产入口 autostart 接线和对应测试，不改 Scheduler 数据模型或 API。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 代码提交：`485a808 fix(daemon): start scheduler in production`
+- 新增生产启动参数构造函数，生产入口固定传入 `schedulerAutostart: true`。
+- `buildServer()` 统一负责 Scheduler 启停，默认仍不自动启动，server close 时调用 `stop()`。
+- 失败测试已先确认：
+  - 缺少生产启动参数模块。
+  - autostart 模式未调用 Scheduler `start()`。
+- 自动化验证：
+  - `pnpm --filter @clawee/daemon test` -> PASS，460 个测试通过，13 个真实 smoke 测试按环境开关跳过。
+  - `pnpm --filter @clawee/daemon typecheck` -> PASS。
+  - `pnpm --filter @clawee/daemon build` -> PASS。
+- 真实生产入口验证：
+  - 使用 `pnpm daemon:dev` 启动真实 daemon。
+  - 创建下一分钟到期的 Schedule，未调用手动触发 API。
+  - Scheduler 自动创建 Run `run_oyCIthqvZ7`，最终状态为 `succeeded`。
+  - 测试 Schedule 已删除，daemon 收到退出信号后无卡住。
 
 ## P0-B2：建立 Web RunRegistry 与活动 Run 查询
 
@@ -1981,6 +1997,8 @@ docs: finalize clawee agent release readiness
 | 日期 | 批次 | 状态变化 | 提交 SHA | 验证摘要 | 遗留问题 / 下一步 |
 |---|---|---|---|---|---|
 | 2026-07-12 | 计划制定 | `NOT_STARTED` | - | 已建立 P0/P1/P2 分批实施计划 | 从 `P0-B1` 开始 |
+| 2026-07-12 | P0-B1 | `NOT_STARTED -> IN_PROGRESS` | - | 开始验证生产入口 Scheduler autostart 接线 | 先补失败测试 |
+| 2026-07-12 | P0-B1 | `IN_PROGRESS -> PASS` | `485a808` | daemon 全量测试、类型检查、构建和真实定时触发通过 | 下一批 `P0-B2` |
 
 ## 14.1 单批次执行记录模板
 
