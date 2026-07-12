@@ -1,10 +1,23 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowUp, Cable, Check, Circle, Paperclip, Plus, ShieldCheck, Sparkles, Square, Target } from 'lucide-react';
+import {
+  ArrowUp,
+  Cable,
+  Check,
+  Circle,
+  FileSliders,
+  Paperclip,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  Target
+} from 'lucide-react';
 import type { ReasoningEffort } from '@clawee/protocol';
 import type { ProjectPermission } from '../projects/project-model.js';
 
 export type ComposerRunConfig = {
   permission: ProjectPermission;
+  profile: string;
   model: string | null;
   reasoning: ReasoningEffort | null;
 };
@@ -77,6 +90,9 @@ export function Composer(props: {
   canceling?: boolean;
   projectName: string;
   permission: ProjectPermission;
+  profile: string;
+  profileOptions?: string[];
+  profileLocked?: boolean;
   model: string | null;
   reasoning: ReasoningEffort | null;
   slashCommands?: ComposerSlashCommand[];
@@ -90,8 +106,9 @@ export function Composer(props: {
 }) {
   const [prompt, setPrompt] = useState('');
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(props.permission);
+  const [selectedProfile, setSelectedProfile] = useState(props.profile);
   const [selectedModel, setSelectedModel] = useState(() => modelOptionForConfig(props.model, props.reasoning));
-  const [openMenu, setOpenMenu] = useState<'add' | 'permission' | 'model' | null>(null);
+  const [openMenu, setOpenMenu] = useState<'add' | 'permission' | 'profile' | 'model' | null>(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scheduledDraftIdRef = useRef<number>();
@@ -101,6 +118,10 @@ export function Composer(props: {
   useEffect(() => {
     setSelectedPermission(props.permission);
   }, [props.permission, props.projectName]);
+
+  useEffect(() => {
+    setSelectedProfile(props.profile);
+  }, [props.profile, props.projectName]);
 
   useEffect(() => {
     setSelectedModel(modelOptionForConfig(props.model, props.reasoning));
@@ -165,6 +186,7 @@ export function Composer(props: {
     if (!canSubmit) return;
     props.onSubmit(trimmedPrompt, {
       permission: selectedPermission,
+      profile: selectedProfile,
       model: selectedModel.model,
       reasoning: selectedModel.reasoning
     });
@@ -185,6 +207,11 @@ export function Composer(props: {
     setSlashTrigger(nextTrigger);
     if (nextTrigger !== null) setOpenMenu(null);
   };
+  const profileOptions = Array.from(new Set([
+    props.profile,
+    'default',
+    ...(props.profileOptions ?? [])
+  ])).filter(Boolean);
 
   const applySlashCommand = (command: ComposerSlashCommand) => {
     if (slashTrigger === null) return;
@@ -363,6 +390,46 @@ export function Composer(props: {
                       <strong>{option.label}</strong>
                       <small>{option.description}</small>
                     </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="composer-control-wrap">
+            <button
+              className="composer-select"
+              type="button"
+              aria-label={props.profileLocked ? `当前 Profile ${selectedProfile}` : `选择 Profile ${selectedProfile}`}
+              aria-expanded={!props.profileLocked && openMenu === 'profile'}
+              disabled={props.profileLocked}
+              title={props.profileLocked ? '已有会话的 Profile 不可修改' : '选择 Profile'}
+              onClick={() => {
+                setSlashTrigger(null);
+                setOpenMenu(openMenu === 'profile' ? null : 'profile');
+              }}
+            >
+              <FileSliders aria-hidden="true" size={15} />
+              <span>{selectedProfile}</span>
+            </button>
+            {!props.profileLocked && openMenu === 'profile' ? (
+              <div className="composer-popover composer-profile-menu" role="menu" aria-label="Profile">
+                {profileOptions.map(profile => (
+                  <button
+                    key={profile}
+                    className="composer-menu-item"
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={selectedProfile === profile}
+                    onClick={() => {
+                      setSelectedProfile(profile);
+                      setOpenMenu(null);
+                    }}
+                  >
+                    <span className="composer-menu-icon" aria-hidden="true">
+                      {selectedProfile === profile ? <Check size={15} /> : null}
+                    </span>
+                    <span><strong>{profile}</strong></span>
                   </button>
                 ))}
               </div>

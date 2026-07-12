@@ -3,6 +3,7 @@ import type { ResolvedCodexHome } from '../codex/home.js';
 import type { ProfileManager } from '../codex/profiles/manager.js';
 import { isValidProfileName, validateProfileConfig } from '../codex/profiles/config.js';
 import type { TomlProfileConfig } from '../codex/profiles/types.js';
+import type { CodexProfile } from '../codex/profiles/types.js';
 import { apiError } from './errors.js';
 
 export async function registerProfileRoutes(
@@ -23,7 +24,7 @@ export async function registerProfileRoutes(
       codexHomeMode: input.codexHome.mode,
       writable: input.codexHome.writable,
       baseConfigValid: result.baseConfigValid,
-      profiles: result.profiles,
+      profiles: result.profiles.map(toProfileResponse),
       diagnostics: result.diagnostics
     };
   });
@@ -41,7 +42,7 @@ export async function registerProfileRoutes(
       return reply.code(404).send(apiError('CODEX_PROFILE_NOT_FOUND', 'Profile not found'));
     }
 
-    return { profile };
+    return { profile: toProfileResponse(profile) };
   });
 
   server.post<{ Body: unknown }>('/codex/profiles', async (request, reply) => {
@@ -52,7 +53,7 @@ export async function registerProfileRoutes(
       await input.profileManager.createProfile(body.value.name, body.value.config);
       const profile = input.profileManager.getProfile(body.value.name);
       if (profile === undefined) return sendProfileWriteFailed(reply);
-      return reply.code(201).send({ profile });
+      return reply.code(201).send({ profile: toProfileResponse(profile) });
     } catch (error) {
       return sendProfileWriteError(error, reply);
     }
@@ -68,7 +69,7 @@ export async function registerProfileRoutes(
         await input.profileManager.updateProfile(body.value.name, body.value.config);
         const profile = input.profileManager.getProfile(body.value.name);
         if (profile === undefined) return sendProfileWriteFailed(reply);
-        return { profile };
+        return { profile: toProfileResponse(profile) };
       } catch (error) {
         return sendProfileWriteError(error, reply);
       }
@@ -175,4 +176,20 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toProfileResponse(profile: CodexProfile): CodexProfile {
+  return {
+    ...profile,
+    config: Object.fromEntries(
+      Object.entries(profile.config).map(([key, value]) => [
+        key,
+        isSensitiveProfileKey(key) ? '[REDACTED]' : value
+      ])
+    )
+  };
+}
+
+function isSensitiveProfileKey(key: string): boolean {
+  return /(?:secret|token|password|api[_-]?key|bearer|credential)/i.test(key);
 }

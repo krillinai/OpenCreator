@@ -57,6 +57,7 @@ describe('SchedulesView', () => {
     });
 
     await user.click(await screen.findByRole('button', { name: '新建计划' }));
+    expect(screen.getByRole('option', { name: 'review' })).toBeInTheDocument();
     await user.type(screen.getByLabelText('名称'), '每日总结');
     await user.type(screen.getByLabelText('执行指令'), '总结今天的项目进展');
     await user.type(screen.getByLabelText('Cron 表达式'), '0 18 * * *');
@@ -224,6 +225,16 @@ function createView(overrides: {
         }
       ]}
       currentProjectId="current"
+      profiles={[
+        {
+          name: 'review',
+          status: 'valid',
+          config: {},
+          diagnostics: [],
+          source: 'review.config.toml',
+          codexHomeMode: 'isolated'
+        }
+      ]}
       defaultTimezone="Asia/Shanghai"
       pollIntervalMs={0}
       onOpenRun={overrides.onOpenRun ?? vi.fn()}

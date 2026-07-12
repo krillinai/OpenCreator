@@ -3726,12 +3726,32 @@ describe('App', () => {
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/profiles')) {
+        return jsonResponse({
+          codexHome: '/Users/test/.codex',
+          codexHomeMode: 'isolated',
+          writable: true,
+          baseConfigValid: true,
+          profiles: [
+            {
+              name: 'review',
+              status: 'valid',
+              config: { model_reasoning_effort: 'high' },
+              diagnostics: [],
+              source: 'review.config.toml',
+              codexHomeMode: 'isolated'
+            }
+          ],
+          diagnostics: []
+        });
+      }
       if (url.endsWith('/threads')) {
         return jsonResponse(
           {
             thread: createThreadResponse({
               id: 'thread_configured_from_chat',
               title: prompt,
+              profile: 'review',
               sandbox: 'danger-full-access',
               reasoning: 'xhigh'
             })
@@ -3754,6 +3774,8 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
 
+    await user.click(await screen.findByRole('button', { name: '选择 Profile default' }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'review' }));
     await user.click(screen.getByRole('button', { name: '选择访问权限 完全访问' }));
     await user.click(screen.getByRole('menuitemradio', { name: /工作区读写/ }));
     await user.click(screen.getByRole('button', { name: '选择访问权限 工作区读写' }));
@@ -3767,6 +3789,7 @@ describe('App', () => {
     const createThreadBody = JSON.parse(String(findPostCall(fetchCalls, '/threads')?.init?.body)) as Record<string, unknown>;
     expect(createThreadBody).toMatchObject({
       title: prompt,
+      profile: 'review',
       sandbox: 'danger-full-access',
       reasoning: 'xhigh'
     });

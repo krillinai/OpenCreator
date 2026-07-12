@@ -1,5 +1,6 @@
 import type {
   CodexMcpListResponse,
+  CodexProfileListResponse,
   CodexSkillListResponse,
   CodexSkillMarketInstallRecordResponse,
   ConversationSearchResult,
@@ -49,6 +50,7 @@ import {
   timelineReplayMergeKey
 } from '../features/runs/run-event-replay.js';
 import { ClaweeSettingsView, type RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
+import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
 import { SearchView } from '../features/search/SearchView.js';
 import { SchedulesView } from '../features/schedules/SchedulesView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
@@ -64,6 +66,8 @@ import { createDiagnosticsService } from '../services/diagnostics-service.js';
 import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createMockProjectService } from '../services/project-service.js';
+import { createMcpService } from '../services/mcp-service.js';
+import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
 import { createScheduleService } from '../services/schedule-service.js';
 import { createSearchService } from '../services/search-service.js';
@@ -149,6 +153,7 @@ export function App(props: AppProps = {}) {
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
+  const [codexProfiles, setCodexProfiles] = useState<CodexProfileListResponse>();
   const [skillMarketInstallRecords, setSkillMarketInstallRecords] = useState<CodexSkillMarketInstallRecordResponse[]>();
   const [skillMarketLoading, setSkillMarketLoading] = useState(false);
   const [skillMarketLoadError, setSkillMarketLoadError] = useState<string>();
@@ -227,6 +232,14 @@ export function App(props: AppProps = {}) {
   );
   const scheduleService = useMemo(
     () => runtimeClient === null ? null : createScheduleService(runtimeClient),
+    [runtimeClient]
+  );
+  const mcpService = useMemo(
+    () => runtimeClient === null ? null : createMcpService(runtimeClient),
+    [runtimeClient]
+  );
+  const profileService = useMemo(
+    () => runtimeClient === null ? null : createProfileService(runtimeClient),
     [runtimeClient]
   );
   const diagnosticsService = useMemo(
@@ -461,6 +474,7 @@ export function App(props: AppProps = {}) {
       skillMarketUseInFlightRef.current = false;
       setCodexSkills(undefined);
       setCodexMcp(undefined);
+      setCodexProfiles(undefined);
       setSkillMarketInstallRecords(undefined);
       setCapabilitiesLoading(false);
       setSkillMarketLoading(false);
@@ -476,6 +490,7 @@ export function App(props: AppProps = {}) {
     setCapabilitiesLoading(true);
     setSkillMarketLoading(true);
     setCodexSkills(undefined);
+    setCodexProfiles(undefined);
     setSkillMarketInstallRecords(undefined);
     setCapabilitiesLoadError(undefined);
     setSkillMarketLoadError(undefined);
@@ -486,15 +501,18 @@ export function App(props: AppProps = {}) {
     Promise.allSettled([
       Promise.resolve().then(() => activeCapabilityService.listSkills()),
       Promise.resolve().then(() => activeCapabilityService.listMcp()),
+      Promise.resolve().then(() => activeCapabilityService.listProfiles()),
       Promise.resolve().then(() => activeSkillMarketService.listInstallRecords())
     ])
       .then(results => {
         if (canceled || !isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) return;
-        const [skillsResult, mcpResult, recordsResult] = results;
+        const [skillsResult, mcpResult, profilesResult, recordsResult] = results;
         if (skillsResult?.status === 'fulfilled') setCodexSkills(skillsResult.value);
         else setCodexSkills(undefined);
         if (mcpResult?.status === 'fulfilled') setCodexMcp(mcpResult.value);
         else setCodexMcp(undefined);
+        if (profilesResult?.status === 'fulfilled') setCodexProfiles(profilesResult.value);
+        else setCodexProfiles(undefined);
         if (recordsResult?.status === 'fulfilled') setSkillMarketInstallRecords(recordsResult.value.records);
         else setSkillMarketInstallRecords(undefined);
         if (skillsResult?.status === 'rejected' || mcpResult?.status === 'rejected') {
@@ -1624,6 +1642,7 @@ export function App(props: AppProps = {}) {
     ? composerRunConfig ?? defaultComposerRunConfig(currentProject)
     : {
         permission: fromRuntimeSandbox(selectedThread.sandbox),
+        profile: selectedThread.profile,
         model: selectedThread.model ?? null,
         reasoning: (selectedThread.reasoning ?? null) as ComposerRunConfig['reasoning']
       };
@@ -1706,6 +1725,14 @@ export function App(props: AppProps = {}) {
         <Composer
           projectName={currentProjectName}
           permission={effectiveComposerConfig.permission}
+          profile={effectiveComposerConfig.profile}
+          profileOptions={[
+            'default',
+            ...(codexProfiles?.profiles ?? [])
+              .filter(profile => profile.status === 'valid')
+              .map(profile => profile.name)
+          ]}
+          profileLocked={selectedThread !== undefined}
           model={effectiveComposerConfig.model}
           reasoning={effectiveComposerConfig.reasoning}
           disabled={composerDisabled}
@@ -1784,6 +1811,7 @@ export function App(props: AppProps = {}) {
       service={scheduleService}
       projects={projects}
       currentProjectId={state.currentProjectId}
+      profiles={codexProfiles?.profiles}
       defaultTimezone={resolveDefaultTimezone()}
       onOpenRun={openScheduleRun}
     />
@@ -1792,6 +1820,13 @@ export function App(props: AppProps = {}) {
       runtimeStatus={runtimeStatus}
       dynamicBackgroundEnabled={dynamicBackgroundEnabled}
       onDynamicBackgroundChange={handleDynamicBackgroundChange}
+      mcpService={mcpService}
+      mcpData={codexMcp}
+      mcpCapabilities={readMcpCapabilities(connectionState)}
+      onMcpDataChange={setCodexMcp}
+      profileService={profileService}
+      profileData={codexProfiles}
+      onProfileDataChange={setCodexProfiles}
       onBack={() => dispatch({ type: 'back_to_app' })}
     />
   ) : state.activeView === 'plugins' ? (
@@ -2085,7 +2120,7 @@ function buildThreadRequest(prompt: string, project: ClaweeProject | undefined, 
     title: prompt.trim().slice(0, 80) || '新对话',
     cwd: project?.cwd,
     workspaceMode: 'external',
-    profile: project?.profile,
+    profile: config.profile,
     sandbox: toRuntimeSandbox(config.permission)
   };
   if (config.model !== null) request.model = config.model;
@@ -2098,8 +2133,28 @@ function buildThreadRequest(prompt: string, project: ClaweeProject | undefined, 
 function defaultComposerRunConfig(project?: ClaweeProject): ComposerRunConfig {
   return {
     permission: project?.sandbox ?? 'follow-global',
+    profile: project?.profile ?? 'default',
     model: project?.model ?? null,
     reasoning: (project?.reasoning ?? null) as ComposerRunConfig['reasoning']
+  };
+}
+
+function readMcpCapabilities(connectionState: ConnectionState): McpCapabilities | undefined {
+  if (connectionState.status !== 'connected') return undefined;
+  const capabilities = connectionState.codexStatus.capabilities;
+  if (typeof capabilities !== 'object' || capabilities === null || Array.isArray(capabilities)) {
+    return undefined;
+  }
+  const record = capabilities as Record<string, unknown>;
+  return {
+    mcpAdd: record.mcpAdd === true,
+    mcpRemove: record.mcpRemove === true,
+    mcpLogin: record.mcpLogin === true,
+    mcpLogout: record.mcpLogout === true,
+    mcpAddEnv: record.mcpAddEnv === true,
+    mcpAddUrl: record.mcpAddUrl === true,
+    mcpAddBearerTokenEnvVar: record.mcpAddBearerTokenEnvVar === true,
+    mcpAddOAuth: record.mcpAddOAuth === true
   };
 }
 

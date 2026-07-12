@@ -1,5 +1,6 @@
 import type {
   CreateScheduleRequest,
+  CodexProfileResponse,
   RunScheduleNowResponse,
   ScheduleDetailResponse,
   ScheduleListResponse,
@@ -49,6 +50,7 @@ export type SchedulesViewProps = {
   service: ScheduleViewService | null;
   projects: ClaweeProject[];
   currentProjectId: string;
+  profiles?: CodexProfileResponse[];
   defaultTimezone: string;
   pollIntervalMs?: number;
   onOpenRun(runId: string, threadId?: string): void;
@@ -282,6 +284,7 @@ export function SchedulesView(props: SchedulesViewProps) {
             mode={editor.mode}
             initialValues={editor.values}
             projects={props.projects}
+            profiles={props.profiles}
             loading={editor.mode === 'edit' && editor.loading}
             saving={saving}
             errors={editorErrors}

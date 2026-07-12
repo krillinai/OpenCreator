@@ -1,5 +1,6 @@
 import type {
   CreateScheduleRequest,
+  CodexProfileResponse,
   ReasoningEffort,
   SandboxMode,
   ScheduleConcurrencyPolicy,
@@ -33,6 +34,7 @@ export function ScheduleEditor(props: {
   mode: 'create' | 'edit';
   initialValues: ScheduleEditorValues;
   projects: ClaweeProject[];
+  profiles?: CodexProfileResponse[];
   loading?: boolean;
   saving?: boolean;
   errors?: ScheduleEditorErrors;
@@ -46,6 +48,11 @@ export function ScheduleEditor(props: {
   }, [props.initialValues]);
 
   const formLabel = props.mode === 'create' ? '新建计划任务' : `编辑${values.name || '计划任务'}`;
+  const profileOptions = Array.from(new Set([
+    'default',
+    values.profile,
+    ...(props.profiles ?? []).filter(profile => profile.status === 'valid').map(profile => profile.name)
+  ])).filter(Boolean);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -142,13 +149,14 @@ export function ScheduleEditor(props: {
             </Field>
 
             <Field label="Profile" error={props.errors?.profile}>
-              <input
+              <select
                 aria-label="Profile"
                 value={values.profile}
-                spellCheck={false}
                 aria-invalid={props.errors?.profile ? 'true' : undefined}
                 onChange={event => update('profile', event.target.value)}
-              />
+              >
+                {profileOptions.map(profile => <option key={profile} value={profile}>{profile}</option>)}
+              </select>
             </Field>
 
             <Field label="模型" error={props.errors?.model}>

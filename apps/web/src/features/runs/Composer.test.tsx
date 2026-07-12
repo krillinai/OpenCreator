@@ -7,6 +7,7 @@ import { Composer } from './Composer.js';
 const defaultProps = {
   projectName: 'content-design',
   permission: 'danger-full-access' as const,
+  profile: 'default',
   model: null,
   reasoning: null,
   onSubmit: vi.fn()
@@ -22,6 +23,7 @@ describe('Composer', () => {
 
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 工作区读写' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择 Profile default' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     expect(screen.queryByText('跟随全局配置')).not.toBeInTheDocument();
@@ -47,10 +49,48 @@ describe('Composer', () => {
 
     expect(onSubmit).toHaveBeenCalledWith('hello', {
       permission: 'danger-full-access',
+      profile: 'default',
       model: null,
       reasoning: 'xhigh'
     });
     expect(textbox).toHaveValue('');
+  });
+
+  it('selects a shared Profile for a new conversation', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <Composer
+        {...defaultProps}
+        profileOptions={['default', 'review', 'writer']}
+        onSubmit={onSubmit}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '选择 Profile default' }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'review' }));
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '检查改动');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(onSubmit).toHaveBeenCalledWith('检查改动', {
+      permission: 'danger-full-access',
+      profile: 'review',
+      model: null,
+      reasoning: null
+    });
+  });
+
+  it('locks the Profile selector for an existing conversation', () => {
+    render(
+      <Composer
+        {...defaultProps}
+        profile="review"
+        profileOptions={['default', 'review']}
+        profileLocked
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '当前 Profile review' })).toBeDisabled();
   });
 
   it('opens the add context menu', async () => {
@@ -120,6 +160,7 @@ describe('Composer', () => {
 
     expect(onSubmit).toHaveBeenCalledWith('hello', {
       permission: 'danger-full-access',
+      profile: 'default',
       model: null,
       reasoning: null
     });
@@ -150,6 +191,7 @@ describe('Composer', () => {
 
     expect(onSubmit).toHaveBeenCalledWith('first line\nsecond line', {
       permission: 'danger-full-access',
+      profile: 'default',
       model: null,
       reasoning: null
     });
@@ -207,6 +249,7 @@ describe('Composer', () => {
 
     expect(onSubmit).toHaveBeenCalledWith('hello\nworld', {
       permission: 'danger-full-access',
+      profile: 'default',
       model: null,
       reasoning: null
     });

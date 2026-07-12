@@ -739,6 +739,36 @@ describe('runtime api', () => {
     ]);
   });
 
+  it('redacts sensitive profile values from list and detail responses', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    writeFileSync(
+      join(codexHome, 'review.config.toml'),
+      [
+        'model = "gpt-5.3-codex"',
+        'api_token = "super-secret-value"',
+        'service_password = "another-secret-value"',
+        ''
+      ].join('\n')
+    );
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
+
+    const listed = await authGet('/codex/profiles');
+    const detail = await authGet('/codex/profiles/review');
+
+    expect(listed.statusCode).toBe(200);
+    expect(detail.statusCode).toBe(200);
+    expect(listed.json().profiles[0].config).toEqual({
+      model: 'gpt-5.3-codex',
+      api_token: '[REDACTED]',
+      service_password: '[REDACTED]'
+    });
+    expect(detail.json().profile.config).toEqual(listed.json().profiles[0].config);
+    expect(JSON.stringify(listed.json())).not.toContain('super-secret-value');
+    expect(JSON.stringify(detail.json())).not.toContain('another-secret-value');
+  });
+
   it('returns diagnostics instead of crashing when base config is invalid', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');
