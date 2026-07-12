@@ -5,6 +5,8 @@ export type HostBridgeResult = { ok: true } | { ok: false; code: 'UNSUPPORTED' |
 export type HostNotification = {
   title: string;
   body: string;
+  threadId?: string;
+  runId?: string;
 };
 
 export type HostBridge = {

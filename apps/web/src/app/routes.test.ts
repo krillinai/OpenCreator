@@ -9,6 +9,7 @@ describe('app routes', () => {
   it('parses every primary page route', () => {
     expect(parseRoute('#/search')).toEqual({ view: 'search' });
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });
+    expect(parseRoute('#/tasks')).toEqual({ view: 'tasks' });
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
@@ -29,6 +30,7 @@ describe('app routes', () => {
     expect(formatRoute({ view: 'thread', threadId: 'thread 1' })).toBe('#/thread/thread%201');
     expect(formatRoute({ view: 'search' })).toBe('#/search');
     expect(formatRoute({ view: 'schedules' })).toBe('#/schedules');
+    expect(formatRoute({ view: 'tasks' })).toBe('#/tasks');
     expect(formatRoute({ view: 'plugins' })).toBe('#/plugins');
     expect(formatRoute({ view: 'settings' })).toBe('#/settings');
     expect(formatRoute({ view: 'capabilities' })).toBe('#/capabilities');

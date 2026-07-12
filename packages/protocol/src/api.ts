@@ -282,6 +282,49 @@ export type ApprovalDecisionResponse = {
   changed: boolean;
 };
 
+export type TaskStatusFilter =
+  | 'all'
+  | 'active'
+  | 'terminal'
+  | 'waiting_approval'
+  | PublicRunStatus;
+
+export type TaskItemStatus = PublicRunStatus | 'waiting_approval';
+
+export type TaskListQuery = {
+  status?: TaskStatusFilter;
+  limit?: number;
+  cursor?: string;
+};
+
+export type TaskItem = {
+  id: string;
+  runId: string;
+  threadId?: string;
+  title: string;
+  status: TaskItemStatus;
+  runStatus: PublicRunStatus;
+  cwd: string;
+  profile: string;
+  createdBy: string;
+  submissionMode: RunSubmissionMode;
+  queuePosition?: number;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  terminationReason?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  pendingApproval?: RuntimeApproval;
+};
+
+export type TaskListResponse = {
+  tasks: TaskItem[];
+  hasMore: boolean;
+  nextCursor?: string;
+};
+
 export type CreateThreadRequest = {
   title?: string;
   cwd?: string;

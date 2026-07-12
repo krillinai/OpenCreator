@@ -1,7 +1,7 @@
 import type { PublicRunStatus } from '@clawee/protocol';
 
 export type RightPanelMode = 'closed' | 'file' | 'change' | 'run_detail';
-export type ActiveView = 'conversation' | 'search' | 'schedules' | 'plugins' | 'settings' | 'files';
+export type ActiveView = 'conversation' | 'search' | 'schedules' | 'tasks' | 'plugins' | 'settings' | 'files';
 
 export type AppState = {
   activeView: ActiveView;

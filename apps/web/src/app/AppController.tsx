@@ -11,6 +11,7 @@ import type {
   RunResponse,
   RunSubmissionMode,
   SandboxMode,
+  TaskItem,
   ThreadHistoryItem,
   ThreadResponse
 } from '@clawee/protocol';
@@ -27,6 +28,11 @@ import { ConversationHeader } from '../features/conversation/ConversationHeader.
 import { useThreadHistory } from '../features/conversation/use-thread-history.js';
 import { DetailPanel } from '../features/details/DetailPanel.js';
 import { getSkillMarketDisplayTitle } from '../features/plugins/skill-market-model.js';
+import {
+  collectTaskTransitions,
+  createTaskNotification,
+  shouldSendSystemNotification
+} from '../features/tasks/task-monitor.js';
 import type {
   SkillMarketOperation,
   SkillMarketUseError
@@ -75,11 +81,13 @@ import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createMockProjectService } from '../services/project-service.js';
 import { createMcpService } from '../services/mcp-service.js';
+import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
 import { createScheduleService } from '../services/schedule-service.js';
 import { createSearchService } from '../services/search-service.js';
 import { createSkillMarketService } from '../services/skill-market-service.js';
+import { createTaskService } from '../services/task-service.js';
 import { createThreadService } from '../services/thread-service.js';
 import { createWorkspaceFileService } from '../services/workspace-file-service.js';
 import { readJsonFromStorage, writeJsonToStorage } from '../storage/browser-storage.js';
@@ -119,6 +127,7 @@ const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
 const SchedulesPage = lazy(() => import('../features/schedules/SchedulesPage.js'));
 const SearchPage = lazy(() => import('../features/search/SearchPage.js'));
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage.js'));
+const TaskCenterPage = lazy(() => import('../features/tasks/TaskCenterPage.js'));
 
 type PersistedNavigation = {
   currentProjectId: string;
@@ -240,6 +249,10 @@ export function AppController(props: AppControllerProps) {
   const skillMarketServiceRef = useRef<SkillMarketService | null>(null);
   const threadServiceRef = useRef<ThreadService | null>(null);
   const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
+  const activeViewRef = useRef(state.activeView);
+  const selectedThreadIdRef = useRef(state.selectedThreadId);
+  const taskStatusesRef = useRef(new Map<string, TaskItem['status']>());
+  const taskBaselineReadyRef = useRef(false);
   const nextComposerDraftIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   runRegistryRef.current = runRegistry;
@@ -301,6 +314,23 @@ export function AppController(props: AppControllerProps) {
     () => runtimeClient === null ? null : createWorkspaceFileService(runtimeClient),
     [runtimeClient]
   );
+  const taskService = useMemo(
+    () => runtimeClient === null ? null : createTaskService(runtimeClient),
+    [runtimeClient]
+  );
+  const notificationService = useMemo(
+    () => createNotificationService({
+      hostBridge,
+      ...(typeof Notification === 'undefined' ? {} : { notificationApi: Notification })
+    }),
+    [hostBridge]
+  );
+  const [notificationSettings, setNotificationSettings] = useState(
+    () => notificationService.getSettings()
+  );
+  const [unreadTaskIds, setUnreadTaskIds] = useState<Set<string>>(
+    () => notificationService.getUnreadIds()
+  );
   const visibleRuntimeThreads = useMemo(
     () => runtimeThreads.filter(shouldShowThreadInSidebar),
     [runtimeThreads]
@@ -320,6 +350,8 @@ export function AppController(props: AppControllerProps) {
   );
   const selectedThreadExists = state.selectedThreadId !== undefined
     && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
+  activeViewRef.current = state.activeView;
+  selectedThreadIdRef.current = state.selectedThreadId;
   const consumeSkipInitialHistoryLoad = useCallback((threadId: string) => {
     if (skipNextHistoryLoadForThreadRef.current !== threadId) return false;
     skipNextHistoryLoadForThreadRef.current = undefined;
@@ -396,6 +428,69 @@ export function AppController(props: AppControllerProps) {
   useEffect(() => {
     connectionConfigRef.current = connectionConfig;
   }, [connectionConfig]);
+
+  useEffect(() => {
+    setNotificationSettings(notificationService.getSettings());
+    setUnreadTaskIds(notificationService.getUnreadIds());
+  }, [notificationService]);
+
+  useEffect(() => {
+    let canceled = false;
+    taskStatusesRef.current = new Map();
+    taskBaselineReadyRef.current = false;
+
+    if (connectionState.status !== 'connected' || taskService === null) {
+      return () => {
+        canceled = true;
+      };
+    }
+    const activeTaskService = taskService;
+
+    async function refreshTasks() {
+      try {
+        const response = await activeTaskService.list({ status: 'all', limit: 50 });
+        if (canceled) return;
+        const result = collectTaskTransitions(
+          taskStatusesRef.current,
+          response.tasks,
+          taskBaselineReadyRef.current
+        );
+        taskStatusesRef.current = result.statuses;
+        taskBaselineReadyRef.current = true;
+        if (result.transitions.length === 0) return;
+
+        setUnreadTaskIds(current => {
+          const next = new Set(current);
+          for (const task of result.transitions) next.add(task.id);
+          notificationService.setUnreadIds(next);
+          return next;
+        });
+
+        for (const task of result.transitions) {
+          if (!shouldSendSystemNotification(
+            task,
+            activeViewRef.current,
+            selectedThreadIdRef.current
+          )) continue;
+          const message = createTaskNotification(task);
+          void notificationService.notify({
+            ...message,
+            threadId: task.threadId,
+            runId: task.runId
+          }).catch(() => undefined);
+        }
+      } catch {
+        return;
+      }
+    }
+
+    void refreshTasks();
+    const interval = window.setInterval(() => void refreshTasks(), 5_000);
+    return () => {
+      canceled = true;
+      window.clearInterval(interval);
+    };
+  }, [connectionState.status, notificationService, taskService]);
 
   useEffect(() => {
     if (connectionState.status === 'connected') return;
@@ -1168,6 +1263,7 @@ export function AppController(props: AppControllerProps) {
         return;
       case 'search':
       case 'schedules':
+      case 'tasks':
       case 'plugins':
       case 'settings':
         closeMobileSidebar();
@@ -1885,6 +1981,72 @@ export function AppController(props: AppControllerProps) {
     openRunDetail(runId);
   }
 
+  async function openTask(task: TaskItem) {
+    markTaskRead(task.id);
+    const threadId = task.threadId;
+    if (threadId === undefined) {
+      openRunDetail(task.runId);
+      return;
+    }
+
+    let thread = runtimeThreads.find(item => item.id === threadId);
+    if (thread === undefined && threadService !== null) {
+      try {
+        const response = await threadService.getThread(threadId);
+        if (!mountedRef.current) return;
+        thread = response.thread;
+        setRuntimeThreads(previous => upsertThread(previous, response.thread));
+      } catch {
+        setThreadLoadError('无法打开任务对应的会话');
+        return;
+      }
+    }
+    if (thread === undefined) return;
+
+    closeMobileSidebar();
+    allowInitialRuntimeProjectFocusRef.current = false;
+    navigationPersistenceReadyRef.current = true;
+    setThreadLoadError(undefined);
+    setThreadConfigUpdateError(undefined);
+    setSearchHistoryTarget(undefined);
+    setHistoryLoadingThreadId(thread.id);
+    setHistoryLoadedThreadId(undefined);
+    setRunsLoadedThreadId(undefined);
+    showTimelineForThread(thread.id, [], false);
+    const projectId = projectIdForThread(thread, projects);
+    if (projectId !== state.currentProjectId) {
+      dispatch({ type: 'select_project', projectId });
+    }
+    dispatch({ type: 'select_thread', threadId: thread.id });
+    navigateToRoute({ view: 'thread', threadId: thread.id });
+    setThreadHistoryReloadKey(previous => previous + 1);
+    openRunDetail(task.runId);
+  }
+
+  function markTaskRead(taskId: string) {
+    setUnreadTaskIds(current => {
+      if (!current.has(taskId)) return current;
+      const next = new Set(current);
+      next.delete(taskId);
+      notificationService.setUnreadIds(next);
+      return next;
+    });
+  }
+
+  function clearUnreadTasks() {
+    const next = new Set<string>();
+    notificationService.setUnreadIds(next);
+    setUnreadTaskIds(next);
+  }
+
+  async function enableTaskNotifications() {
+    setNotificationSettings(await notificationService.enable());
+  }
+
+  function disableTaskNotifications() {
+    setNotificationSettings(notificationService.disable());
+  }
+
   function openTimelineFile(path: string) {
     const workspacePath = toWorkspaceRelativePath(path, selectedThread);
     dispatch({ type: 'select_workspace_file', path: workspacePath });
@@ -2205,6 +2367,18 @@ export function AppController(props: AppControllerProps) {
       defaultTimezone={resolveDefaultTimezone()}
       onOpenRun={openScheduleRun}
     />
+  ) : state.activeView === 'tasks' ? (
+    <TaskCenterPage
+      service={taskService}
+      approvalService={approvalService}
+      notificationSettings={notificationSettings}
+      unreadIds={unreadTaskIds}
+      onEnableNotifications={enableTaskNotifications}
+      onDisableNotifications={disableTaskNotifications}
+      onClearUnread={clearUnreadTasks}
+      onOpenTask={task => void openTask(task)}
+      onMarkRead={markTaskRead}
+    />
   ) : state.activeView === 'settings' ? (
     <SettingsPage
       runtimeStatus={runtimeStatus}
@@ -2253,6 +2427,7 @@ export function AppController(props: AppControllerProps) {
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
+          unreadTaskCount={unreadTaskIds.size}
           collapsed={sidebarCollapsed}
           onNewConversation={startNewConversation}
           onSelectProject={selectProject}
@@ -2378,6 +2553,7 @@ function createInitialState(
       };
     case 'search':
     case 'schedules':
+    case 'tasks':
     case 'plugins':
     case 'settings':
       return {
@@ -2407,6 +2583,8 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
       return { view: 'search' };
     case 'schedules':
       return { view: 'schedules' };
+    case 'tasks':
+      return { view: 'tasks' };
     case 'plugins':
       return { view: 'plugins' };
     case 'settings':

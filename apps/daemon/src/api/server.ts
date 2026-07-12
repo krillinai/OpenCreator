@@ -39,6 +39,7 @@ import { openRuntimeDatabase } from '../storage/database.js';
 import { createRunRepository, createThreadRepository } from '../storage/repositories.js';
 import { createConversationSearchService } from '../search/service.js';
 import { createThreadManager } from '../threads/manager.js';
+import { createTaskService } from '../tasks/service.js';
 import { createDefaultRevealExecutor } from '../workspace-files/reveal.js';
 import { createWorkspaceFileService } from '../workspace-files/service.js';
 import { requireAuth } from './auth.js';
@@ -55,6 +56,7 @@ import { registerSearchRoutes } from './routes.search.js';
 import { registerScheduleRoutes } from './routes.schedules.js';
 import { registerSkillMarketRoutes } from './routes.skill-market.js';
 import { registerSkillRoutes } from './routes.skills.js';
+import { registerTaskRoutes } from './routes.tasks.js';
 import { registerThreadRoutes } from './routes.threads.js';
 import { registerWorkspaceFileRoutes } from './routes.workspace-files.js';
 
@@ -146,6 +148,11 @@ export async function buildServer(input: BuildServerInput) {
       runtimeTransport: capabilities.appServerApprovals === true ? 'app-server' : 'exec',
       approvalManager
     });
+  const taskService = createTaskService({
+    db,
+    approvals: approvalManager,
+    runs: runManager
+  });
   const scheduler =
     input.scheduler ??
     createSchedulerService({
@@ -276,6 +283,7 @@ export async function buildServer(input: BuildServerInput) {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });
   await registerApprovalRoutes(server, approvalManager);
+  await registerTaskRoutes(server, taskService);
   await registerDiagnosticsRoutes(server, {
     dataDir,
     runs: runRepository,

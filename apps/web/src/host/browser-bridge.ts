@@ -17,8 +17,21 @@ export const browserBridge: HostBridge = {
   async revealPath(_path: string): Promise<HostBridgeResult> {
     return { ok: false, code: 'UNSUPPORTED', message: '浏览器版不支持在系统文件管理器中显示路径' };
   },
-  async notify(_message: HostNotification): Promise<void> {
-    return;
+  async notify(message: HostNotification): Promise<void> {
+    if (
+      typeof Notification === 'undefined'
+      || Notification.permission !== 'granted'
+    ) {
+      return;
+    }
+    const notification = new Notification(message.title, { body: message.body });
+    notification.onclick = () => {
+      window.focus();
+      if (message.threadId !== undefined) {
+        window.location.hash = `#/thread/${encodeURIComponent(message.threadId)}`;
+      }
+      notification.close();
+    };
   }
 };
 

@@ -3,6 +3,7 @@ import {
   Clock3,
   Folder,
   FolderOpen,
+  ListTodo,
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,6 +23,7 @@ export function ClaweeSidebar(props: {
   currentProjectId: string;
   selectedConversationId?: string;
   activeView: ActiveView;
+  unreadTaskCount?: number;
   collapsed?: boolean;
   onNewConversation(): void;
   onSelectProject(projectId: string): void;
@@ -32,10 +34,23 @@ export function ClaweeSidebar(props: {
 }) {
   const [expandedProjectId, setExpandedProjectId] = useState<string | undefined>(props.currentProjectId);
   const collapsed = props.collapsed === true;
-  const globalActions: Array<{ label: string; icon: LucideIcon; view?: ActiveView; onClick(): void }> = [
+  const globalActions: Array<{
+    label: string;
+    icon: LucideIcon;
+    view?: ActiveView;
+    unreadCount?: number;
+    onClick(): void;
+  }> = [
     { label: '新对话', icon: SquarePen, onClick: props.onNewConversation },
     { label: '搜索', icon: Search, view: 'search', onClick: () => props.onOpenView('search') },
     { label: '已安排', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') },
+    {
+      label: '任务',
+      icon: ListTodo,
+      view: 'tasks',
+      unreadCount: props.unreadTaskCount,
+      onClick: () => props.onOpenView('tasks')
+    },
     { label: '插件', icon: Plug, view: 'plugins', onClick: () => props.onOpenView('plugins') }
   ];
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
@@ -91,11 +106,21 @@ export function ClaweeSidebar(props: {
               type="button"
               className="sidebar-row"
               title={collapsed ? action.label : undefined}
+              aria-label={
+                action.unreadCount !== undefined && action.unreadCount > 0
+                  ? `${action.label} ${action.unreadCount} 条未读`
+                  : undefined
+              }
               aria-current={action.view && props.activeView === action.view ? 'page' : undefined}
               onClick={action.onClick}
             >
               <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
               <span>{action.label}</span>
+              {action.unreadCount !== undefined && action.unreadCount > 0 ? (
+                <span className="sidebar-task-badge" aria-hidden="true">
+                  {action.unreadCount > 99 ? '99+' : action.unreadCount}
+                </span>
+              ) : null}
             </button>
           );
         })}

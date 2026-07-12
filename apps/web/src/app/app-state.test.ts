@@ -70,6 +70,16 @@ describe('app state', () => {
     expect(state.rightPanelMode).toBe('closed');
   });
 
+  it('opens the global task center as a primary view', () => {
+    const state = reduceAppState(initialAppState, {
+      type: 'set_active_view',
+      activeView: 'tasks'
+    });
+
+    expect(state.activeView).toBe('tasks');
+    expect(state.rightPanelMode).toBe('closed');
+  });
+
   it('opens the file workspace inside the conversation view and closes other detail panels', () => {
     const state = reduceAppState(
       { ...initialAppState, activeView: 'conversation', rightPanelMode: 'run_detail' },

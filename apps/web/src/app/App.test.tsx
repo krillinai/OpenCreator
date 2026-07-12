@@ -13,6 +13,7 @@ import type {
   RunDiagnosticsResponse,
   RunResponse,
   ScheduleResponse,
+  TaskItem,
   ThreadResponse
 } from '@clawee/protocol';
 import { App } from './App.js';
@@ -40,6 +41,83 @@ describe('App', () => {
 
     await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
     expect(await screen.findByLabelText('Skill 功能目录')).toBeInTheDocument();
+  });
+
+  it('opens the global task center and jumps from a task to its run detail', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const task: TaskItem = {
+      id: 'run_task',
+      runId: 'run_task',
+      threadId: 'thread_task',
+      title: '后台整理任务',
+      status: 'succeeded',
+      runStatus: 'succeeded',
+      cwd: '/workspace/tasks',
+      profile: 'default',
+      createdBy: 'api',
+      submissionMode: 'enqueue',
+      createdAt: '2026-07-12T10:00:00.000Z',
+      updatedAt: '2026-07-12T10:01:00.000Z',
+      startedAt: '2026-07-12T10:00:10.000Z',
+      endedAt: '2026-07-12T10:01:00.000Z'
+    };
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [createThreadResponse({ id: 'thread_task', title: '后台整理任务' })]
+        });
+      }
+      if (url.includes('/tasks?')) return jsonResponse({ tasks: [task], hasMore: false });
+      if (url.endsWith('/threads/thread_task/history?limit=50')) {
+        return jsonResponse({ threadId: 'thread_task', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_task/runs?limit=50')) {
+        return jsonResponse({
+          runs: [createRunResponse({ id: 'run_task', threadId: 'thread_task', status: 'succeeded' })]
+        });
+      }
+      if (url.endsWith('/runs/run_task/diagnostics')) {
+        return jsonResponse({
+          ...createRunDiagnosticsResponse(createCodexStatusResponse()),
+          runId: 'run_task'
+        });
+      }
+      if (url.endsWith('/runs/run_task')) {
+        return jsonResponse(createRunResponse({
+          id: 'run_task',
+          threadId: 'thread_task',
+          status: 'succeeded'
+        }));
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: '任务' }));
+    expect(await screen.findByRole('heading', { name: '任务中心' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('#/tasks');
+
+    await user.click(await within(screen.getByRole('list')).findByRole('button', { name: /后台整理任务/ }));
+
+    expect(await screen.findByRole('heading', { name: '运行详情' })).toBeInTheDocument();
+    expect(screen.getByText('run_task')).toBeInTheDocument();
+    expect(window.location.hash).toBe('#/thread/thread_task');
   });
 
   it('opens a workspace file directly from a copyable URL', async () => {

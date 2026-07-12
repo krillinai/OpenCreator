@@ -3219,7 +3219,7 @@ textarea:focus-visible {
   height: 40px;
   min-height: 40px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
   padding: 0 6px;
@@ -3260,6 +3260,20 @@ textarea:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-task-badge {
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1;
 }
 
 .conversation-row {
@@ -3384,13 +3398,23 @@ textarea:focus-visible {
   border-radius: 12px;
 }
 
-.clawee-sidebar[data-collapsed="true"] .sidebar-row span {
+.clawee-sidebar[data-collapsed="true"] .sidebar-row > span:not(.sidebar-task-badge) {
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+.clawee-sidebar[data-collapsed="true"] .sidebar-task-badge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-size: 9px;
 }
 
 .clawee-sidebar[data-collapsed="true"] .sidebar-bottom {

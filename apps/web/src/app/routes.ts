@@ -3,6 +3,7 @@ export type AppRoute =
   | { view: 'thread'; threadId: string }
   | { view: 'search' }
   | { view: 'schedules' }
+  | { view: 'tasks' }
   | { view: 'plugins' }
   | { view: 'capabilities' }
   | { view: 'settings' }
@@ -18,6 +19,7 @@ export function parseRoute(hash: string): AppRoute {
   }
   if (path === '#/search') return { view: 'search' };
   if (path === '#/schedules') return { view: 'schedules' };
+  if (path === '#/tasks') return { view: 'tasks' };
   if (path === '#/plugins') return { view: 'plugins' };
   if (path === '#/capabilities') return { view: 'capabilities' };
   if (path === '#/settings') return { view: 'settings' };
@@ -42,6 +44,8 @@ export function formatRoute(route: AppRoute): string {
       return '#/search';
     case 'schedules':
       return '#/schedules';
+    case 'tasks':
+      return '#/tasks';
     case 'plugins':
       return '#/plugins';
     case 'capabilities':
