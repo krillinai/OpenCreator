@@ -12,6 +12,12 @@ function cssBlock(selector: string) {
   return match?.groups?.body ?? '';
 }
 
+function skillMarketCssBlock(selector: string) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = skillMarketCss.match(new RegExp(`${escapedSelector}\\s*\\{(?<body>[^}]*)\\}`));
+  return match?.groups?.body ?? '';
+}
+
 describe('app CSS visual contracts', () => {
   it('uses the warm brand color as the accent token', () => {
     expect(tokensCss).toContain('--accent: #AD4D1F;');
@@ -98,17 +104,91 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('keeps the composer compact near the bottom edge', () => {
+  it('uses a compact toolbar and two flat visible filter rows', () => {
+    const toolbar = skillMarketCssBlock('.skill-market__toolbar');
+    const filterRow = skillMarketCssBlock('.skill-market-filter-row');
+    const statusControls = skillMarketCssBlock('.skill-market-status-controls');
+    const searchFocus = skillMarketCssBlock('.skill-market-search input:focus-visible');
+
+    expect(toolbar).toContain('display: flex;');
+    expect(toolbar).toContain('flex-wrap: wrap;');
+    expect(filterRow).toContain('display: flex;');
+    expect(filterRow).toContain('flex-wrap: wrap;');
+    expect(statusControls).toContain('padding: 3px;');
+    expect(searchFocus).toContain('outline: none;');
+    expect(skillMarketCss).not.toContain('.skill-market-sort');
+    expect(skillMarketCss).not.toContain('.skill-market-filter-selects');
+    expect(skillMarketCss).not.toContain('.skill-market-filter-shell');
+    expect(skillMarketCss).not.toContain('.skill-market-chip-row');
+  });
+
+  it('centers the collapsed sidebar logo inside its square button', () => {
+    const brandButton = cssBlock('.sidebar-brand-button');
+
+    expect(brandButton).toContain('padding: 0;');
+  });
+
+  it('uses a complete 2:1 cover and one compact metadata flow for skill cards', () => {
+    const cardOpen = skillMarketCssBlock('.skill-market-card__open');
+    const cover = skillMarketCssBlock('.skill-market-card__cover');
+    const image = skillMarketCssBlock('.skill-market-cover__image');
+    const body = skillMarketCssBlock('.skill-market-card__body');
+    const tags = skillMarketCssBlock('.skill-market-card__tags');
+    const tagline = skillMarketCssBlock('.skill-market-card__tagline');
+
+    expect(cardOpen).toContain('grid-template-rows: auto minmax(0, 1fr);');
+    expect(cover).toContain('aspect-ratio: 2 / 1;');
+    expect(image).toContain('object-fit: contain;');
+    expect(body).toContain('gap: 9px;');
+    expect(tags).toContain('flex-wrap: wrap;');
+    expect(tagline).toContain('-webkit-line-clamp: 2;');
+    expect(skillMarketCss).not.toContain('.skill-market-card__cover-top');
+    expect(skillMarketCss).not.toContain('.skill-market-task-row');
+  });
+
+  it('scales the skill market grid from five columns down to one', () => {
+    const grid = skillMarketCssBlock('.skill-market-grid');
+
+    expect(grid).toContain('grid-template-columns: repeat(5, minmax(0, 1fr));');
+    expect(skillMarketCss).toMatch(
+      /@media \(max-width: 1920px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(4, minmax\(0, 1fr\)\)/
+    );
+    expect(skillMarketCss).toMatch(
+      /@media \(max-width: 1560px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/
+    );
+    expect(skillMarketCss).toMatch(
+      /@media \(max-width: 1220px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/
+    );
+    expect(skillMarketCss).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.skill-market-grid[^}]*grid-template-columns: minmax\(0, 1fr\)/
+    );
+  });
+
+  it('uses a hierarchy-led skill detail layout without equal nested panels', () => {
+    const modal = skillMarketCssBlock('.skill-market-modal');
+    const body = skillMarketCssBlock('.skill-market-modal__body');
+    const head = skillMarketCssBlock('.skill-market-detail-head');
+    const layout = skillMarketCssBlock('.skill-market-detail-layout');
+    const block = skillMarketCssBlock('.skill-market-detail-block');
+
+    expect(modal).toContain('width: min(1040px, 100%);');
+    expect(body).toContain('padding: 24px 28px 28px;');
+    expect(head).toContain('grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);');
+    expect(layout).toContain('grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.8fr);');
+    expect(block).toContain('border-top: 1px solid var(--border);');
+    expect(skillMarketCss).not.toContain('.skill-market-detail-grid');
+    expect(skillMarketCss).not.toContain('.skill-market-modal__bar');
+  });
+
+  it('keeps the composer compact over one continuous conversation background', () => {
     const composerWrap = cssBlock('.composer-wrap');
-    const composerFade = cssBlock('.composer-wrap::before');
     const composer = cssBlock('.clawee-composer');
     const composerTextarea = cssBlock('.clawee-composer textarea');
 
     expect(composerWrap).toContain('position: relative;');
     expect(composerWrap).toContain('padding: 0 clamp(18px, 4vw, 52px) 37px;');
-    expect(composerFade).toContain('height: 132px;');
-    expect(composerFade).toContain('bottom: calc(100% - 1px);');
-    expect(composerFade).toContain('linear-gradient(180deg, rgba(9, 13, 18, 0), rgba(9, 13, 18, 0.52) 58%, rgba(9, 13, 18, 0.88));');
+    expect(composerWrap).toContain('background: transparent;');
+    expect(appCss).not.toContain('.composer-wrap::before');
     expect(composer).toContain('position: relative;');
     expect(composer).toContain('z-index: 1;');
     expect(composer).toContain('gap: 8px;');

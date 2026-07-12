@@ -1,3 +1,4 @@
+import type { SkillMarketEntry } from '@clawee/skill-market';
 import {
   Bookmark,
   CheckCircle2,
@@ -30,8 +31,7 @@ export function SkillMarketCard({
   onUpdate(skillId: string): void;
   onUse(skillId: string): void;
 }) {
-  const statusLabel = getStatusLabel(item.status);
-  const statusTone = getStatusTone(item.status);
+  const tags = getCardTags(item);
   const actionReasonId = action.reason ? `skill-market-action-reason-${sanitizeId(item.id)}` : undefined;
 
   function handleAction(event: MouseEvent<HTMLButtonElement>) {
@@ -58,30 +58,17 @@ export function SkillMarketCard({
       >
         <span className="skill-market-card__cover">
           <SkillMarketCover item={item} />
-          <span className="skill-market-card__cover-top">
-            <span className="skill-market-cover-label">{item.subcategory}</span>
-            <span className={`skill-market-status skill-market-status--${statusTone}`}>
-              {statusLabel}
-            </span>
-          </span>
         </span>
 
         <span className="skill-market-card__body">
-          <span className="skill-market-tag-list" aria-label="分类与平台">
-            <span>{item.category.name}</span>
-            {item.entry.platforms.slice(0, 2).map((platform) => (
-              <span key={platform}>{platform}</span>
-            ))}
-          </span>
-
           <span className="skill-market-card__title">{item.title}</span>
           <span className="skill-market-card__tagline" title={item.entry.tagline}>
             {item.entry.tagline}
           </span>
 
-          <span className="skill-market-task-row">
-            {item.entry.tasks.slice(0, 3).map((task) => (
-              <span key={task}>{task}</span>
+          <span className="skill-market-card__tags" aria-label="标签">
+            {tags.map((tag) => (
+              <span key={tag}>{tag}</span>
             ))}
           </span>
 
@@ -90,9 +77,14 @@ export function SkillMarketCard({
               <SkillAuthorAvatar name={item.entry.creator.name} src={item.entry.creator.avatarUrl} />
               <span>{item.entry.creator.name}</span>
             </span>
-            <span className="skill-market-users" title="使用人数" aria-label="使用人数">
-              <Users size={14} aria-hidden="true" />
-              {formatUsers(item.users)}
+            <span className="skill-market-card__metrics">
+              {item.status === 'installed_unknown_version' ? (
+                <span className="skill-market-version-note">版本未知</span>
+              ) : null}
+              <span className="skill-market-users" title="使用人数" aria-label="使用人数">
+                <Users size={14} aria-hidden="true" />
+                {formatUsers(item.users)}
+              </span>
             </span>
           </span>
         </span>
@@ -139,8 +131,16 @@ export function SkillMarketCard({
 export function getSkillMarketAction(
   status: SkillMarketStatus,
   connected: boolean,
-  options: { mutationLocked?: boolean; skillsKnown?: boolean } = {}
+  options: { mutationLocked?: boolean; skillsKnown?: boolean; unavailableReason?: string } = {}
 ): SkillMarketAction {
+  if (status === 'unavailable') {
+    return {
+      label: '暂不可安装',
+      kind: 'disabled',
+      disabled: true,
+      reason: options.unavailableReason ?? '当前目录条目没有可安装来源',
+    };
+  }
   if (!connected) {
     if (status === 'update_available') {
       return { label: '连接后更新', kind: 'update', disabled: true, reason: '需要连接 Runtime' };
@@ -157,9 +157,6 @@ export function getSkillMarketAction(
       disabled: true,
       reason: 'Skill 安装状态未知',
     };
-  }
-  if (status === 'unavailable') {
-    return { label: '暂不可安装', kind: 'disabled', disabled: true };
   }
   if (status === 'invalid') {
     return { label: '不可使用', kind: 'disabled', disabled: true, reason: '本地 Skill 状态异常' };
@@ -197,32 +194,33 @@ function getActionIcon(kind: SkillMarketAction['kind']) {
   return <Download size={15} aria-hidden="true" />;
 }
 
-function getStatusLabel(status: SkillMarketStatus): string {
-  switch (status) {
-    case 'unavailable':
-      return '暂不可安装';
-    case 'not_installed':
-      return '可安装';
-    case 'invalid':
-      return '异常';
-    case 'installed_unknown_version':
-      return '版本未知';
-    case 'installed':
-      return '已安装';
-    case 'update_available':
-      return '可更新';
-    case 'installing':
-      return '安装中';
-    case 'updating':
-      return '更新中';
-  }
+export function getSkillMarketUnavailableReason(
+  install: SkillMarketEntry['install']
+): string | undefined {
+  if (install.available) return undefined;
+  if (install.reason === 'unsafe_archive') return '仓库包结构未通过安全校验';
+  return '仓库未提供标准 SKILL.md';
 }
 
-function getStatusTone(status: SkillMarketStatus): string {
-  if (status === 'installed' || status === 'installed_unknown_version') return 'success';
-  if (status === 'update_available' || status === 'installing' || status === 'updating') return 'accent';
-  if (status === 'invalid' || status === 'unavailable') return 'muted';
-  return 'neutral';
+function getCardTags(item: SkillMarketViewEntry): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  const candidates = [
+    item.category.name,
+    item.subcategory,
+    ...item.entry.platforms,
+    ...item.entry.tasks,
+  ];
+
+  for (const candidate of candidates) {
+    const tag = candidate.trim();
+    const key = tag.toLocaleLowerCase();
+    if (tag.length === 0 || seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length === 6) break;
+  }
+  return tags;
 }
 
 function sanitizeId(value: string): string {

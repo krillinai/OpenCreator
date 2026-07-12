@@ -22,6 +22,9 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
+    const heading = screen.getByRole('heading', { level: 1, name: '插件' });
+    expect(heading).toBeInTheDocument();
+    expect(heading.querySelector('.lucide-plug')).toBeInTheDocument();
     expect(screen.getByText('55 个 Skill')).toBeInTheDocument();
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
     expect(screen.getByText('已显示 12 / 55')).toBeInTheDocument();
@@ -35,10 +38,54 @@ describe('SkillMarketView', () => {
       (entry) => entry.category === 'video-subtitle'
     ).length;
     expect(
-      screen.getByRole('button', {
-        name: new RegExp(`做视频与字幕\\s+${videoCategory}`),
+      within(screen.getByRole('group', { name: '分类' })).getByRole('button', {
+        name: `做视频与字幕 ${videoCategory}`,
       })
     ).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: '场景' })).getByRole('button', {
+      name: '全部场景',
+    })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('group', { name: '目录状态' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: '排序' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: '分类' })).not.toBeInTheDocument();
+  });
+
+  it('通过平铺的分类和场景联动筛选并可一次重置', async () => {
+    const user = userEvent.setup();
+    renderSkillMarket();
+
+    const categoryResult = filterAndSortSkillMarketEntries({
+      entries: skillMarketCatalog,
+      skills: createSkillsResponse([]),
+      records: [],
+      category: 'video-subtitle',
+    });
+    await user.click(screen.getByRole('button', {
+      name: `做视频与字幕 ${categoryResult.entries.length}`,
+    }));
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(
+      Math.min(categoryResult.entries.length, 12)
+    );
+    expect(categoryResult.subcategories.length).toBeGreaterThan(0);
+
+    const firstSubcategory = categoryResult.subcategories[0]!;
+    await user.click(screen.getByRole('button', {
+      name: `${firstSubcategory.label} ${firstSubcategory.count}`,
+    }));
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(
+      Math.min(firstSubcategory.count, 12)
+    );
+
+    await user.click(screen.getByRole('button', { name: '重置筛选' }));
+    expect(screen.getByRole('button', { name: '全部分类 55' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: '全部场景' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
   });
 
   it('搜索“字幕”后只显示匹配卡片', async () => {
@@ -89,11 +136,17 @@ describe('SkillMarketView', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
-    expect(screen.getByText('适合做什么')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '适合场景' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '输入与产出' })).toBeInTheDocument();
     expect(screen.getByText('需要输入')).toBeInTheDocument();
     expect(screen.getByText('会产出')).toBeInTheDocument();
     expect(screen.getByText('精选案例')).toBeInTheDocument();
     expect(screen.getByText('使用前注意')).toBeInTheDocument();
+    expect(dialog.querySelector('.skill-market-detail-layout')).toBeInTheDocument();
+    expect(dialog.querySelector('.skill-market-modal__bar')).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('button', { name: '收藏 网页演示稿生成' }).closest('footer')
+    ).toBeInTheDocument();
   });
 
   it('Escape 和关闭按钮关闭弹窗', async () => {
@@ -120,10 +173,8 @@ describe('SkillMarketView', () => {
 
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = screen.getByRole('dialog');
-    const favoriteButton = within(dialog).getByRole('button', {
-      name: '收藏 网页演示稿生成',
-    });
-    favoriteButton.focus();
+    const closeButton = within(dialog).getByRole('button', { name: '关闭详情' });
+    closeButton.focus();
 
     await user.tab({ shift: true });
 
@@ -156,6 +207,7 @@ describe('SkillMarketView', () => {
       onInstall,
       onUse,
     });
+    expect(screen.getByRole('button', { name: /已安装\s+1/ })).toBeInTheDocument();
 
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     const card = getSkillCard('frontend-slides');
@@ -187,7 +239,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
     await user.click(
       within(getSkillCard('frontend-slides')).getByRole('button', {
         name: '收藏 网页演示稿生成',
@@ -198,6 +250,11 @@ describe('SkillMarketView', () => {
     expect(JSON.parse(window.localStorage.getItem(savedSkillIdsStorageKey) ?? 'null')).toEqual([
       'frontend-slides',
     ]);
+
+    await user.click(screen.getByRole('button', { name: /我的收藏\s+1/ }));
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: /我的收藏\s+1/ }));
+    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
   });
 
   it('收藏写入失败时保持原状态，恢复后可重试成功并清除错误', async () => {
@@ -209,7 +266,7 @@ describe('SkillMarketView', () => {
         throw new Error('blocked storage');
       });
 
-    expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
     await user.click(
       within(getSkillCard('frontend-slides')).getByRole('button', {
         name: '收藏 网页演示稿生成',
@@ -217,7 +274,7 @@ describe('SkillMarketView', () => {
     );
 
     expect(setItemSpy).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
     expect(
       within(getSkillCard('frontend-slides')).getByRole('button', {
         name: '收藏 网页演示稿生成',
@@ -241,12 +298,45 @@ describe('SkillMarketView', () => {
     expect(screen.queryByText('收藏保存失败，请检查浏览器存储权限')).not.toBeInTheDocument();
   });
 
-  it('未安装不可安装条目显示禁用的“暂不可安装”', async () => {
+  it('不可安装条目只显示一个状态并解释具体原因', async () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'GStack');
-    expect(screen.getByRole('button', { name: '暂不可安装' })).toBeDisabled();
+    const unsafeCard = getSkillCard('garrytan-gstack');
+    const unsafeAction = within(unsafeCard).getByRole('button', { name: '暂不可安装' });
+    expect(unsafeAction).toBeDisabled();
+    expect(unsafeAction).toHaveAccessibleDescription('仓库包结构未通过安全校验');
+    expect(within(unsafeCard).getAllByText('暂不可安装')).toHaveLength(1);
+
+    await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '卡卡字幕助手');
+    const manifestAction = within(getSkillCard('videocaptioner')).getByRole('button', {
+      name: '暂不可安装',
+    });
+    expect(manifestAction).toHaveAccessibleDescription('仓库未提供标准 SKILL.md');
+  });
+
+  it('把分类、平台和任务标签去重汇总在一个区域', () => {
+    const entry = createMarketEntry({
+      category: 'video-subtitle',
+      subcategory: '字幕生成',
+      platforms: ['YouTube', 'B站'],
+      tasks: ['字幕生成', '转录', 'YouTube'],
+    });
+
+    renderSkillMarket({ catalogOverride: [entry] });
+
+    const card = getSkillCard('test-skill');
+    const tags = within(card).getByLabelText('标签');
+    expect([...tags.querySelectorAll(':scope > span')].map((tag) => tag.textContent)).toEqual([
+      '做视频与字幕',
+      '字幕生成',
+      'YouTube',
+      'B站',
+      '转录',
+    ]);
+    expect(within(card).queryByLabelText('分类与平台')).not.toBeInTheDocument();
   });
 
   it('外部安装同名有效 Skill 显示“使用”和“版本未知”', async () => {
@@ -505,6 +595,7 @@ describe('SkillMarketView', () => {
     const invalid = createMarketEntry({
       id: 'invalid-media',
       title: '非法媒体',
+      githubRepository: 'invalid/repository/extra',
       creator: {
         name: 'Bad Avatar',
         avatarUrl: 'javascript:alert(1)',
@@ -555,7 +646,7 @@ describe('SkillMarketView', () => {
 
     expect(screen.getByRole('img', { name: 'bad cover' })).toHaveAttribute(
       'src',
-      expect.stringContaining('/skill-market/examples/')
+      '/skill-market/skills-empty.png'
     );
     expect(screen.queryByRole('img', { name: 'Bad Avatar' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Bad Avatar')).toHaveTextContent('B');
@@ -596,6 +687,34 @@ describe('SkillMarketView', () => {
     );
   });
 
+  it('没有审核示例图时使用对应 GitHub 仓库的 Social Preview', () => {
+    const entry = createMarketEntry({
+      id: 'github-cover',
+      title: 'GitHub 封面',
+      githubRepository: 'openai/codex',
+      examples: [],
+    });
+
+    renderSkillMarket({ catalogOverride: [entry] });
+
+    expect(screen.getByRole('img', { name: 'GitHub 封面 封面' })).toHaveAttribute(
+      'src',
+      'https://opengraph.githubassets.com/23d7b9595ae1f6dd0e2cdfe74393932763af58e35606729e825c6d65b2429725/openai/codex'
+    );
+  });
+
+  it('仓库不可访问的目录条目直接使用统一默认封面', () => {
+    const entry = skillMarketCatalog.find((item) => item.id === 'beili-sensor-mini-class');
+    expect(entry).toBeDefined();
+
+    renderSkillMarket({ catalogOverride: [entry!] });
+
+    expect(screen.getByRole('img', { name: 'Skill 默认封面' })).toHaveAttribute(
+      'src',
+      '/skill-market/skills-empty.png'
+    );
+  });
+
   it('详情主图 eager 加载并异步解码', async () => {
     const user = userEvent.setup();
     renderSkillMarket();
@@ -609,7 +728,7 @@ describe('SkillMarketView', () => {
     expect(cover).toHaveAttribute('decoding', 'async');
   });
 
-  it('approved 图片和本地回退都失败后在详情按钮内显示 CSS fallback 且没有 div', async () => {
+  it('approved 图片、GitHub 封面和统一默认封面都失败后显示 CSS fallback', async () => {
     const entry = createMarketEntry({
       id: 'fallback-media',
       title: '失败封面',
@@ -629,8 +748,15 @@ describe('SkillMarketView', () => {
 
     fireEvent.error(firstImage);
 
+    const githubImage = within(detailButton).getByRole('img', { name: 'failing approved cover' });
+    expect(githubImage).toHaveAttribute(
+      'src',
+      'https://opengraph.githubassets.com/23d7b9595ae1f6dd0e2cdfe74393932763af58e35606729e825c6d65b2429725/test/test-skill'
+    );
+    fireEvent.error(githubImage);
+
     const fallbackImage = within(detailButton).getByRole('img', { name: 'failing approved cover' });
-    expect(fallbackImage).toHaveAttribute('src', expect.stringContaining('/skill-market/examples/'));
+    expect(fallbackImage).toHaveAttribute('src', '/skill-market/skills-empty.png');
     fireEvent.error(fallbackImage);
 
     expect(await within(detailButton).findByLabelText('失败封面 封面')).toBeInTheDocument();
@@ -753,6 +879,7 @@ function createMarketEntry(overrides: Partial<SkillMarketEntry> = {}): SkillMark
     id: 'test-skill',
     name: 'test-skill',
     title: '测试 Skill',
+    githubRepository: 'test/test-skill',
     tagline: '用于测试市场卡片',
     summary: '用于测试市场卡片。',
     category: 'content-planning',

@@ -38,6 +38,7 @@ export const skillMarketCatalog: readonly SkillMarketEntry[] = deepFreeze(
         id: skill.id,
         name: skill.name,
         title: skill.titleZh,
+        githubRepository: skill.github.repo,
         tagline: skill.tagline,
         summary: skill.summary,
         category: skill.category,

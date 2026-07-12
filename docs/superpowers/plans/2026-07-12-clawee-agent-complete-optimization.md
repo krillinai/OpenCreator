@@ -2436,7 +2436,7 @@ docs: finalize clawee agent release readiness
 - 新增中文 README、用户指南、备份恢复和故障排查文档，补齐 Runtime API 的分页、搜索、附件、队列、审批、任务中心、记忆和摘要契约。
 - 新增 GitHub Actions CI、`smoke:ci` 和构建产物性能预算；根级 Vitest 升级到 `3.2.7`，高危依赖审计无已知漏洞。
 - 最终验收发现并修复图片提交后 Blob URL 提前释放、HTML sandbox 无法读取父页面 Blob URL 两个真实浏览器回归，均补回归测试。
-- `pnpm test` -> PASS：daemon 540 项通过、13 项按设计跳过；Web 444 项通过；Skill Market 6 项通过。
+- `pnpm test` -> PASS：daemon 540 项通过、13 项按设计跳过；Web 453 项通过；Skill Market 6 项通过。
 - `pnpm typecheck`、`pnpm build`、`pnpm smoke:ci`、`pnpm perf:check`、`pnpm audit --audit-level high` 和 `git diff --check` -> PASS。
 - 真实 Codex smoke -> PASS：13 项，98.62 秒。
 - 1440x900 与 390x844 的文本、多模态、排队、打断、审批、任务中心、搜索、文件、HTML 安全预览、设置、记忆和响应式验收通过。
@@ -2505,12 +2505,12 @@ docs: finalize clawee agent release readiness
 
 | 指标 | 优化前 | P1 完成 | P2 完成 | 测量方式 |
 |---|---:|---:|---:|---|
-| Web 主包 | 约 996KB | 533.87KB | 564.28KB | Vite build 输出 |
-| Web 主包 gzip | 约 325KB | 155.20KB | 163.78KB | Vite build 输出 |
+| Web 主包 | 约 996KB | 533.87KB | 564.59KB | Vite build 输出 |
+| Web 主包 gzip | 约 325KB | 155.20KB | 163.86KB | Vite build 输出 |
 | 长会话 Timeline 项 | 约 379 | 同数据集 | 首屏 4 个虚拟项 | 固定测试会话 |
 | 长会话 DOM 节点 | 约 8265 | 待填写 | Timeline 84 个后代 | 浏览器脚本 |
 | 长会话页面高度 | 约 153662px | 待填写 | 外层固定 900px，内部虚拟滚动 | 浏览器测量 |
-| 移动插件市场高度 | 约 27578px | 待填写 | 6213px | 390x844 |
+| 移动插件市场高度 | 约 27578px | 待填写 | 5970px | 390x844 |
 | 历史首屏响应 | 待补测 | 待填写 | P95 3.4ms | 30 次已认证请求 |
 | 搜索 P95 | 不适用 | 待填写 | 322.7ms | 30 次固定查询 |
 | 高频事件 healthz 响应 | 待补测 | 待填写 | P95 25.5ms | 100 并发请求 |

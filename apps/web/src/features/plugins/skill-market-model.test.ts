@@ -351,6 +351,7 @@ function createEntry(
     id: 'frontend-slides',
     name: 'frontend-slides',
     title: '网页演示稿生成',
+    githubRepository: 'zarazhangrui/frontend-slides',
     tagline: '把演示稿生成网页',
     summary: '生成可以浏览的 HTML 幻灯片。',
     category: 'content-planning',
