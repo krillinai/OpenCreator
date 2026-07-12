@@ -781,7 +781,7 @@ test: lock down run recovery workflows
 
 ## P1-B1：Codex Session 增量索引
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `IN_PROGRESS`
 
 **目标：** 将 Codex JSONL session 的元数据和历史项增量索引到 SQLite，避免会话列表和历史请求反复全量扫描文件。
 
@@ -2132,6 +2132,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P0-B4 | `BLOCKED_ENV -> PASS` | `75e5b9b` | 用户确认继续下一批，真实页面验收门禁解除 | 下一批 `P0-B5` |
 | 2026-07-12 | P0-B5 | `NOT_STARTED -> IN_PROGRESS` | - | 开始建立 P0 回归矩阵、真实 Codex smoke、daemon 重启验证和测试报告 | 先审计已有覆盖并补缺失测试 |
 | 2026-07-12 | P0-B5 | `IN_PROGRESS -> PASS` | `fb5afe1` | 804 项常规测试、类型检查、构建、13 项真实 Codex smoke、SSE 续传、双线程取消、daemon 重启、Scheduler 到期和用户页面验收全部通过 | P0 门禁 `PASS`；下一批 `P1-B1` |
+| 2026-07-12 | P1-B1 | `NOT_STARTED -> IN_PROGRESS` | - | 开始设计 Codex Session SQLite 增量索引、版本化来源状态和原始 JSONL 降级路径 | 先补迁移、增量追加、截断替换和损坏文件隔离测试 |
 
 ## 14.1 单批次执行记录模板
 
