@@ -771,7 +771,7 @@ test: lock down run recovery workflows
 - [x] `P1-B1` Codex Session 增量索引
 - [x] `P1-B2` 历史游标分页 API
 - [x] `P1-B3` Timeline 向上加载与虚拟化
-- [ ] `P1-B4` daemon NDJSON 异步有序写入
+- [x] `P1-B4` daemon NDJSON 异步有序写入
 - [ ] `P1-B5` 会话全文搜索
 - [ ] `P1-B6` Schedules 正式页面
 - [ ] `P1-B7` MCP 与 Profiles 正式页面
@@ -1060,7 +1060,7 @@ perf(web): virtualize paged conversation history
 
 ## P1-B4：daemon NDJSON 异步有序写入
 
-- [ ] **状态：** `IN_PROGRESS`
+- [x] **状态：** `PASS`
 
 **目标：** 移除 Run 热路径中的同步文件追加，保持日志顺序、可观测背压和安全关闭。
 
@@ -1070,9 +1070,15 @@ perf(web): virtualize paged conversation history
 
 - 新增 `apps/daemon/src/runs/ordered-log-writer.ts`
 - 新增 `apps/daemon/test/unit/ordered-log-writer.test.ts`
+- 新增 `apps/daemon/src/shutdown.ts`
+- 新增 `apps/daemon/test/unit/shutdown.test.ts`
+- `apps/daemon/package.json`
+- `apps/daemon/src/codex/runner.ts`
+- `apps/daemon/src/main.ts`
 - `apps/daemon/src/runs/manager.ts`
 - `apps/daemon/src/api/server.ts`
 - `apps/daemon/src/diagnostics/collector.ts`
+- `apps/daemon/test/integration/codex-runner.test.ts`
 - `apps/daemon/test/integration/run-manager.test.ts`
 
 **实施步骤：**
@@ -1117,7 +1123,45 @@ perf(daemon): write run logs asynchronously in order
 
 **回滚边界：** 回滚 writer 接线可恢复同步写入；SQLite Run Event 持久化不变。
 
-**执行结果：** 待填写。
+**执行结果：**
+
+- 代码提交：`4779b6b perf(daemon): write run logs asynchronously in order`。
+- 新增按 Run 隔离的 `OrderedLogWriter`：
+  - append 按调用顺序串行执行，stdout、stderr 和事件文件不会并发打乱。
+  - 默认高水位为 1 MiB，硬队列上限为 8 MiB；超过上限抛出明确背压错误，不静默丢弃。
+  - 记录队列峰值、高水位命中、背压拒绝、写入数量、字节数、写入耗时、drain 耗时和失败明细。
+  - `close()` 会阻止新 append 并等待已排队写入完成。
+- Codex runner 的 stdout/stderr handler 支持异步返回：
+  - 同一流严格串行处理，处理期间暂停流并在完成后恢复，形成真实背压。
+  - 子进程退出后等待全部异步 handler 完成。
+  - handler 失败映射为 `stream_handler_failed`，不会形成未处理 Promise。
+- RunManager 已将 `raw.redacted.ndjson`、`events.ndjson` 和 `stderr.redacted.log` 迁移到异步 writer：
+  - Run 发布终态、关闭 writer、写入 diagnostics 后才更新终态并完成 Promise。
+  - SQLite 事件、文件事件和订阅通知顺序明确；订阅者异常不会影响持久化和 Run 执行。
+  - 写入失败产生 `RUN_LOG_WRITE_FAILED` Run diagnostic，并在 `diagnostics.json` 保存 writer 指标。
+  - 预启动失败和孤儿恢复的 detached writer 会在事件写入完成后关闭，不长期滞留。
+  - `close()` 会阻止新 Run、取消活动和排队 Run、共享同一在途关闭 Promise，并支持每次调用独立设置等待超时。
+- daemon 关闭链路已补全：
+  - Fastify `onClose` 在关闭自有 SQLite 前等待 RunManager。
+  - `SIGINT`、`SIGTERM` 会触发 `server.close()`，关闭完成前保留事件循环句柄。
+  - daemon 开发入口改为 `node --import tsx src/main.ts`，避免 `tsx` CLI 信号代理提前终止应用。
+- Diagnostics 收集器会展示 writer 写入失败和背压拒绝警告。
+- `meta.json` 和 `diagnostics.json` 继续使用完整文件写入，没有机械替换所有同步元数据写入。
+- 自动化验证：
+  - `pnpm --filter @clawee/daemon test` -> PASS，43 个测试文件、491 个测试通过，13 个真实 Codex smoke 按配置跳过。
+  - `pnpm --filter @clawee/daemon typecheck` -> PASS。
+  - `pnpm --filter @clawee/daemon build` -> PASS。
+  - `git diff --check` -> PASS。
+  - Run 热路径源码中不存在 `appendFileSync`。
+- 真实服务验证：
+  - 已重启 `pnpm web:dev`，页面和 daemon `/healthz` 均返回 `200`。
+  - 真实 Run `run_GiMHjcA8HF` 执行期间健康检查持续 `200`；完成后 `events.ndjson` 与 SQLite 序号均为 `1..9`。
+  - 该 Run 共完成 64 次异步写入，队列峰值 841 字节，失败和背压拒绝均为 0，终态后队列为 0 且 writer 已关闭。
+  - 对活动 Run `run_Y1t5yUsk1H` 通过开发服务真实父子进程路径发送 `SIGTERM`，daemon 在 131 ms 内退出。
+  - 关闭时 Run 收敛为 `canceled`，写入 `canceling` 和 `done`；SQLite 与 NDJSON 序号均为 `1..6`，45 次写入全部完成，writer 已关闭且无失败。
+- 已知边界：
+  - 预启动失败和孤儿恢复会关闭 detached writer，但不二次重写 diagnostics 追加最终 writer 指标，避免恢复和测试清理阶段延长后台文件生命周期。
+  - 硬队列上限触发时会明确失败当前 Run，而不是丢弃日志后继续伪装成功。
 
 ## P1-B5：会话全文搜索
 
@@ -2215,6 +2259,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B3 | `IN_PROGRESS -> BLOCKED_ENV` | `9928c7c` | 全项目测试、类型检查和构建通过；首屏和第二页 DOM 约 76/88；已修复 prepend 锚点跳跃并补回归测试 | 当前无可连接浏览器，待完成桌面/移动真实验收后改为 `PASS` |
 | 2026-07-12 | P1-B3 | `BLOCKED_ENV -> PASS` | `9928c7c` | 用户已完成真实页面验证并确认通过 | 下一批 `P1-B4` |
 | 2026-07-12 | P1-B4 | `NOT_STARTED -> IN_PROGRESS` | - | 开始移除 Run 热路径同步 append，建立按 Run 隔离的有序异步日志写入与关闭 drain | 先补顺序、背压、失败和关闭行为测试 |
+| 2026-07-12 | P1-B4 | `IN_PROGRESS -> PASS` | `4779b6b` | daemon 491 项测试、类型检查、构建、真实 Run 顺序核对和活动 Run 信号关闭验证全部通过 | 下一批 `P1-B5` |
 
 ## 14.1 单批次执行记录模板
 
