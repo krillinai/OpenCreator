@@ -769,7 +769,7 @@ test: lock down run recovery workflows
 ## P1 状态总览
 
 - [x] `P1-B1` Codex Session 增量索引
-- [ ] `P1-B2` 历史游标分页 API
+- [x] `P1-B2` 历史游标分页 API
 - [ ] `P1-B3` Timeline 向上加载与虚拟化
 - [ ] `P1-B4` daemon NDJSON 异步有序写入
 - [ ] `P1-B5` 会话全文搜索
@@ -883,7 +883,7 @@ feat(daemon): index codex sessions incrementally
 
 ## P1-B2：历史游标分页 API
 
-- [ ] **状态：** `IN_PROGRESS`
+- [x] **状态：** `PASS`
 
 **目标：** 为会话历史提供稳定的向前游标分页，同时保持旧调用兼容。
 
@@ -945,7 +945,16 @@ feat(runtime): add cursor pagination for thread history
 
 **回滚边界：** 回滚分页参数和字段即可；旧无参数历史接口仍可使用。
 
-**执行结果：** 待填写。
+**执行结果：** `PASS`。实现提交 `f908631`：
+
+- `GET /threads/:id/history` 已支持可选 `limit`、`before`，仅在请求分页参数时返回分页元数据；无参数调用继续返回完整历史。
+- 游标使用 Base64URL 编码的版本、Codex Thread ID、行号、源偏移和 item ID，不包含本地路径；非法、过期、跨线程游标分别返回稳定错误码。
+- 分页查询以稳定复合键倒序取最新基础项，再按旧到新返回；读取前一条边界项处理相邻重复消息跨页去重，assistant 派生的 `done` 不会破坏遍历完整性。
+- daemon 最大分页大小为 100，仅传 `before` 时默认 50；Web ThreadService 已支持安全编码分页参数。
+- daemon 全量 `477` 项通过，Web 全量 `335` 项通过；协议、daemon、Web 类型检查和构建全部通过。
+- 真实会话以 `23,101` 条索引记录连续读取 `232` 页，拼接得到 `28,107` 个最终历史项，与完整历史逐项一致，无重复、无缺失；单页最大 `133` 项（包含派生 `done`）。
+
+**下一批：** `P1-B3` Timeline 向上加载与虚拟化。
 
 ## P1-B3：Timeline 向上加载与虚拟化
 
@@ -2170,6 +2179,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P1-B1 | `NOT_STARTED -> IN_PROGRESS` | - | 开始设计 Codex Session SQLite 增量索引、版本化来源状态和原始 JSONL 降级路径 | 先补迁移、增量追加、截断替换和损坏文件隔离测试 |
 | 2026-07-12 | P1-B1 | `IN_PROGRESS -> PASS` | `423d8b8` | daemon 472 项测试、类型检查、构建通过；真实 3.44 GB 首次索引 9.44 秒，重复扫描 239 ms 且解析 0 行；追加和替换验证通过 | 下一批 `P1-B2` |
 | 2026-07-12 | P1-B2 | `NOT_STARTED -> IN_PROGRESS` | - | 开始设计线程绑定的稳定历史游标、旧响应兼容和 Web 服务分页契约 | 先补首屏最新页、连续向前遍历、非法/过期/跨线程游标测试 |
+| 2026-07-12 | P1-B2 | `IN_PROGRESS -> PASS` | `f908631` | daemon 477 项、Web 335 项、类型检查和构建通过；真实 23,101 条索引记录遍历 232 页，与 28,107 项完整历史逐项一致 | 下一批 `P1-B3` |
 
 ## 14.1 单批次执行记录模板
 
