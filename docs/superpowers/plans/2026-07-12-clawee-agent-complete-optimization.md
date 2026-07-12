@@ -563,7 +563,7 @@ fix(web): resume run event streams after refresh
 
 ## P0-B4：跨会话后台运行和取消竞态
 
-- [ ] **状态：** `NOT_STARTED`
+- [ ] **状态：** `IN_PROGRESS`
 
 **目标：** 切换会话不停止后台 Run；用户回到原会话可立即看到真实状态并取消正确的 Run。
 
@@ -2075,6 +2075,7 @@ docs: finalize clawee agent release readiness
 | 2026-07-12 | P0-B3 前置修复 | `NOT_STARTED -> IN_PROGRESS` | `cdd7a97`, `648e11a`, `91df841` | 已完成重新进入活动 Run 后续订、会话级实时 Timeline 保留和侧栏运行状态展示 | 继续实现独立 Run Event Controller、有限重连和硬刷新去重 |
 | 2026-07-12 | P0-B3 | `IN_PROGRESS -> BLOCKED_ENV` | `6364a64`, `76c1306`, `bf35d8e` | 全量测试、类型检查、构建和真实 daemon 断流续传通过；9000 已重启到当前代码 | 浏览器运行时无可用实例，等待桌面/移动刷新与离线恢复验收 |
 | 2026-07-12 | P0-B2 / P0-B3 | `BLOCKED_ENV -> PASS` | `adc8815` 至 `bf35d8e` | 用户已完成真实页面手动验收，确认运行状态隔离、刷新恢复、切换恢复和移动尺寸无问题 | 下一批 `P0-B4` |
+| 2026-07-12 | P0-B4 | `NOT_STARTED -> IN_PROGRESS` | - | 开始拆分当前会话 Timeline 订阅与后台 Run 生命周期，并收口取消竞态 | 先补后台完成、跨会话隔离和迟到取消响应失败测试 |
 
 ## 14.1 单批次执行记录模板
 
