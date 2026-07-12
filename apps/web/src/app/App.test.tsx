@@ -135,16 +135,13 @@ describe('App', () => {
     expect(runRequests).toEqual(['thread_a', 'thread_b']);
   });
 
-  it('resubscribes to a running conversation after switching away and back', async () => {
+  it('keeps a run subscribed in the background without leaking events into another conversation', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    let threadARunListRequests = 0;
-    let threadAHistoryRequests = 0;
-    let runCompleted = false;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
@@ -158,47 +155,12 @@ describe('App', () => {
         });
       }
       if (url.endsWith('/threads/thread_a/history')) {
-        threadAHistoryRequests += 1;
-        if (threadAHistoryRequests >= 3) {
-          return jsonResponse({
-            threadId: 'thread_a',
-            codexThreadId: null,
-            items: [
-              {
-                id: 'history_user_a',
-                type: 'user_message',
-                text: '执行长任务',
-                createdAt: new Date(0).toISOString()
-              },
-              {
-                id: 'history_assistant_a',
-                type: 'assistant_message',
-                text: '切换前的实时进度',
-                createdAt: new Date(0).toISOString()
-              },
-              {
-                id: 'history_done_a',
-                type: 'done',
-                status: 'succeeded',
-                terminationReason: 'completed',
-                createdAt: new Date(0).toISOString()
-              }
-            ]
-          });
-        }
         return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
       }
       if (url.endsWith('/threads/thread_b/history')) {
         return jsonResponse({ threadId: 'thread_b', codexThreadId: null, items: [] });
       }
-      if (url.endsWith('/threads/thread_a/runs?limit=50')) {
-        threadARunListRequests += 1;
-        return jsonResponse({
-          runs: threadARunListRequests === 1 || runCompleted
-            ? []
-            : [createRunResponse({ id: 'run_a', threadId: 'thread_a', status: 'running' })]
-        });
-      }
+      if (url.endsWith('/threads/thread_a/runs?limit=50')) return jsonResponse({ runs: [] });
       if (url.endsWith('/threads/thread_b/runs?limit=50')) return jsonResponse({ runs: [] });
       if (url.endsWith('/runs') && init?.method === 'POST') {
         return jsonResponse(
@@ -216,28 +178,10 @@ describe('App', () => {
     };
 
     const subscriptions: SubscribeRunEventsInput[] = [];
+    let activeSubscription: SubscribeRunEventsInput | undefined;
     const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
       subscriptions.push(input);
-      if (subscriptions.length === 1) {
-        input.onEvent(
-          createRuntimeEvent(
-            'assistant_message',
-            {
-              type: 'assistant_message',
-              text: '切换前的实时进度',
-              format: 'plain_text',
-              delivery: 'message'
-            },
-            1,
-            'run_a'
-          )
-        );
-        await new Promise<void>(resolve => {
-          input.signal?.addEventListener('abort', () => resolve(), { once: true });
-        });
-        return;
-      }
-
+      activeSubscription = input;
       input.onEvent(
         createRuntimeEvent(
           'assistant_message',
@@ -251,15 +195,9 @@ describe('App', () => {
           'run_a'
         )
       );
-      input.onEvent(
-        createRuntimeEvent(
-          'done',
-          { type: 'done', status: 'succeeded', terminationReason: 'completed' },
-          2,
-          'run_a'
-        )
-      );
-      runCompleted = true;
+      await new Promise<void>(resolve => {
+        input.signal?.addEventListener('abort', () => resolve(), { once: true });
+      });
     };
 
     render(
@@ -286,29 +224,210 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: /会话 B/ }));
     await waitFor(() => {
-      expect(subscriptions[0]?.signal?.aborted).toBe(true);
       expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
     });
+    expect(activeSubscription?.signal?.aborted).toBe(false);
+    expect(screen.queryByText('切换前的实时进度')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /会话 A.*正在运行/ })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /会话 A/ }));
+    await act(async () => {
+      activeSubscription?.onEvent(
+        createRuntimeEvent(
+          'assistant_message',
+          {
+            type: 'assistant_message',
+            text: '后台完成后的内容',
+            format: 'plain_text',
+            delivery: 'message'
+          },
+          2,
+          'run_a'
+        )
+      );
+      activeSubscription?.onEvent(
+        createRuntimeEvent(
+          'done',
+          { type: 'done', status: 'succeeded', terminationReason: 'completed' },
+          3,
+          'run_a'
+        )
+      );
+      await Promise.resolve();
+    });
 
-    await waitFor(() => expect(subscriptions).toHaveLength(2));
-    expect(subscriptions[1]?.fromSeq).toBe(1);
     await waitFor(() => {
-      expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
-      expect(screen.queryByRole('button', { name: '停止任务' })).not.toBeInTheDocument();
-      expect(screen.queryByLabelText('正在运行')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /会话 A/ })).not.toHaveAccessibleName(/正在运行/);
     });
-    expect(await findTimelineUserMessage('执行长任务')).toBeInTheDocument();
-    expect(screen.getAllByText('切换前的实时进度')).toHaveLength(1);
+    expect(screen.queryByText('后台完成后的内容')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /会话 B/ }));
     await user.click(screen.getByRole('button', { name: /会话 A/ }));
 
     expect(await findTimelineUserMessage('执行长任务')).toBeInTheDocument();
     expect(document.querySelectorAll('.timeline-user_message')).toHaveLength(1);
-    expect(await screen.findAllByText('切换前的实时进度')).toHaveLength(1);
-    expect(subscriptions).toHaveLength(2);
+    expect(await screen.findByText('后台完成后的内容')).toBeInTheDocument();
+    await user.click(screen.getByText('思考过程'));
+    expect(screen.getAllByText('切换前的实时进度')).toHaveLength(1);
+    expect(subscriptions).toHaveLength(1);
+  });
+
+  it('routes a late cancellation failure back to the run conversation after switching away', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const cancelResponse = createDeferred<Response>();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({ id: 'thread_a', title: '会话 A' }),
+            createThreadResponse({ id: 'thread_b', title: '会话 B' })
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread_a/history')) {
+        return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_b/history')) {
+        return jsonResponse({ threadId: 'thread_b', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_a/runs?limit=50')) {
+        return jsonResponse({
+          runs: [createRunResponse({ id: 'run_a', threadId: 'thread_a', status: 'running' })]
+        });
+      }
+      if (url.endsWith('/threads/thread_b/runs?limit=50')) return jsonResponse({ runs: [] });
+      if (url.endsWith('/runs/run_a/cancel') && init?.method === 'POST') {
+        return cancelResponse.promise;
+      }
+      if (url.endsWith('/runs/run_a')) {
+        return jsonResponse(createRunResponse({ id: 'run_a', threadId: 'thread_a', status: 'running' }));
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async input => {
+          await new Promise<void>(resolve => {
+            input.signal?.addEventListener('abort', () => resolve(), { once: true });
+          });
+        }}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /会话 A/ }));
+    await user.click(await screen.findByRole('button', { name: '停止任务' }));
+    await user.click(screen.getByRole('button', { name: /会话 B/ }));
+
+    await act(async () => {
+      cancelResponse.resolve(jsonResponse(
+        { error: { code: 'CANCEL_FAILED', message: '停止任务失败' } },
+        { status: 500 }
+      ));
+      await cancelResponse.promise;
+    });
+
+    expect(screen.queryByText('停止任务失败')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /会话 A/ }));
+    expect(await screen.findByText('停止任务失败')).toBeInTheDocument();
+  });
+
+  it('ignores a late already-terminal cancellation response after the run has completed', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const cancelResponse = createDeferred<Response>();
+    let subscription: SubscribeRunEventsInput | undefined;
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [createThreadResponse({ id: 'thread_a', title: '会话 A' })]
+        });
+      }
+      if (url.endsWith('/threads/thread_a/history')) {
+        return jsonResponse({ threadId: 'thread_a', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_a/runs?limit=50')) {
+        return jsonResponse({
+          runs: [createRunResponse({ id: 'run_a', threadId: 'thread_a', status: 'running' })]
+        });
+      }
+      if (url.endsWith('/runs/run_a/cancel') && init?.method === 'POST') {
+        return cancelResponse.promise;
+      }
+      if (url.endsWith('/runs/run_a/diagnostics')) {
+        return jsonResponse({
+          ...createRunDiagnosticsResponse(createCodexStatusResponse()),
+          runId: 'run_a'
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async input => {
+          subscription = input;
+          await new Promise<void>(resolve => {
+            input.signal?.addEventListener('abort', () => resolve(), { once: true });
+          });
+        }}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /会话 A/ }));
+    await user.click(await screen.findByRole('button', { name: '停止任务' }));
+
+    await act(async () => {
+      subscription?.onEvent(
+        createRuntimeEvent(
+          'done',
+          { type: 'done', status: 'succeeded', terminationReason: 'completed' },
+          1,
+          'run_a'
+        )
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      cancelResponse.resolve(jsonResponse(
+        {
+          error: {
+            code: 'RUN_ALREADY_TERMINAL',
+            message: 'Run is already terminal'
+          }
+        },
+        { status: 409 }
+      ));
+      await cancelResponse.promise;
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: '停止任务' })).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Run is already terminal|停止任务失败/)).not.toBeInTheDocument();
   });
 
   it('restores a running conversation after an unexpected SSE disconnect', async () => {

@@ -82,6 +82,10 @@ type PendingRunStart = {
   cancelRequested: boolean;
 };
 type PendingRunStartsById = Record<string, PendingRunStart | undefined>;
+type ActiveRunEventController = {
+  threadId: string;
+  controller: RunEventController;
+};
 
 const CONVERSATION_PANE_MIN_WIDTH = 320;
 const FILE_WORKSPACE_MIN_WIDTH = 520;
@@ -175,10 +179,8 @@ export function App(props: AppProps = {}) {
   const savingFilePathsRef = useRef(new Set<string>());
   const connectionConfigRef = useRef<ConnectionConfig | null>(null);
   const connectionConfigVersionRef = useRef(0);
-  const runEventControllerRef = useRef<RunEventController | null>(null);
-  const activeRunEventControllerRunIdRef = useRef<string>();
-  const resumedSubscriptionKeyRef = useRef<string>();
-  const timelineEventBatcherRef = useRef<FrameBatcher<TimelineItem> | null>(null);
+  const runEventControllersRef = useRef(new Map<string, ActiveRunEventController>());
+  const timelineEventBatchersByThreadIdRef = useRef(new Map<string, FrameBatcher<TimelineItem>>());
   const runRegistryRef = useRef(runRegistry);
   const pendingRunStartsByIdRef = useRef<PendingRunStartsById>({});
   const conversationBodyRef = useRef<HTMLDivElement | null>(null);
@@ -196,21 +198,6 @@ export function App(props: AppProps = {}) {
   const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
   const nextComposerDraftIdRef = useRef(0);
   runRegistryRef.current = runRegistry;
-
-  if (runEventControllerRef.current === null) {
-    runEventControllerRef.current = createRunEventController({
-      subscribe: subscribeRunEvents
-    });
-  }
-
-  if (timelineEventBatcherRef.current === null) {
-    timelineEventBatcherRef.current = createFrameBatcher({
-      onFlush(items) {
-        if (!mountedRef.current) return;
-        setTimelineItems(previous => [...previous, ...items]);
-      }
-    });
-  }
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -266,8 +253,11 @@ export function App(props: AppProps = {}) {
 
     return () => {
       mountedRef.current = false;
-      timelineEventBatcherRef.current?.clear();
-      abortCurrentRunEventSubscription(false);
+      for (const batcher of timelineEventBatchersByThreadIdRef.current.values()) {
+        batcher.clear();
+      }
+      timelineEventBatchersByThreadIdRef.current.clear();
+      stopAllRunEventSubscriptions(false);
     };
   }, []);
 
@@ -294,8 +284,7 @@ export function App(props: AppProps = {}) {
 
   useEffect(() => {
     if (connectionState.status === 'connected') return;
-    abortCurrentRunEventSubscription(false);
-    resumedSubscriptionKeyRef.current = undefined;
+    stopAllRunEventSubscriptions(false);
     dispatchRunRegistry({ type: 'reset' });
     setRunsLoadingThreadId(undefined);
     setRunsLoadedThreadId(undefined);
@@ -647,12 +636,9 @@ export function App(props: AppProps = {}) {
 
     const activeRun = getThreadActiveRun(runRegistry, selectedThreadId);
     if (activeRun === undefined) return;
-    if (activeRunEventControllerRunIdRef.current === activeRun.id) return;
+    if (runEventControllersRef.current.has(activeRun.id)) return;
 
-    const subscriptionKey = `${selectedThreadId}:${activeRun.id}`;
-    if (resumedSubscriptionKeyRef.current === subscriptionKey) return;
-    resumedSubscriptionKeyRef.current = subscriptionKey;
-    void subscribeToRunEvents(activeRun.id, connectionConfig);
+    subscribeToRunEvents(activeRun.id, selectedThreadId, connectionConfig);
   }, [
     connectionConfig,
     connectionState.status,
@@ -661,6 +647,16 @@ export function App(props: AppProps = {}) {
     runsLoadedThreadId,
     state.selectedThreadId
   ]);
+
+  useEffect(() => {
+    for (const [runId, subscription] of runEventControllersRef.current.entries()) {
+      const run = runRegistry.runsById[runId];
+      if (run === undefined || !isTerminalRunStatus(run.status)) continue;
+      runEventControllersRef.current.delete(runId);
+      subscription.controller.stop();
+      timelineEventBatchersByThreadIdRef.current.get(subscription.threadId)?.flush();
+    }
+  }, [runRegistry.runsById]);
 
   useEffect(() => {
     const body = conversationBodyRef.current;
@@ -807,6 +803,30 @@ export function App(props: AppProps = {}) {
     setTimelineItemsState(nextItems);
   }
 
+  function appendTimelineItemsForThread(threadId: string, items: TimelineItem[]) {
+    if (items.length === 0) return;
+    const previousItems = timelineItemsByThreadIdRef.current[threadId]
+      ?? (timelineThreadIdRef.current === threadId ? timelineItemsRef.current : []);
+    const nextItems = [...previousItems, ...items];
+    timelineItemsByThreadIdRef.current[threadId] = nextItems;
+    if (timelineThreadIdRef.current !== threadId) return;
+    timelineItemsRef.current = nextItems;
+    setTimelineItemsState(nextItems);
+  }
+
+  function getTimelineEventBatcher(threadId: string): FrameBatcher<TimelineItem> {
+    const existing = timelineEventBatchersByThreadIdRef.current.get(threadId);
+    if (existing !== undefined) return existing;
+    const batcher = createFrameBatcher<TimelineItem>({
+      onFlush(items) {
+        if (!mountedRef.current) return;
+        appendTimelineItemsForThread(threadId, items);
+      }
+    });
+    timelineEventBatchersByThreadIdRef.current.set(threadId, batcher);
+    return batcher;
+  }
+
   function showTimelineForThread(
     threadId: string | undefined,
     items: TimelineItem[],
@@ -893,9 +913,6 @@ export function App(props: AppProps = {}) {
   function startNewConversation() {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
-    timelineEventBatcherRef.current?.flush();
-    abortCurrentRunEventSubscription();
-    resumedSubscriptionKeyRef.current = undefined;
     showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
@@ -907,9 +924,6 @@ export function App(props: AppProps = {}) {
   function selectProject(projectId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
-    timelineEventBatcherRef.current?.flush();
-    abortCurrentRunEventSubscription();
-    resumedSubscriptionKeyRef.current = undefined;
     showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
@@ -921,9 +935,6 @@ export function App(props: AppProps = {}) {
   function selectConversation(conversationId: string) {
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
-    timelineEventBatcherRef.current?.flush();
-    abortCurrentRunEventSubscription();
-    resumedSubscriptionKeyRef.current = undefined;
     setThreadConfigUpdateError(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
     const alreadySelected = conversationId === state.selectedThreadId;
@@ -1113,9 +1124,6 @@ export function App(props: AppProps = {}) {
       const created = await activeThreadService.createThread(request);
       if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
 
-      timelineEventBatcherRef.current?.flush();
-      abortCurrentRunEventSubscription();
-      resumedSubscriptionKeyRef.current = undefined;
       setRuntimeThreads(previous => upsertThread(previous, created.thread));
       showTimelineForThread(created.thread.id, [], true);
       setThreadHistoryLoadError(undefined);
@@ -1170,6 +1178,7 @@ export function App(props: AppProps = {}) {
       threadId: state.selectedThreadId,
       cancelRequested: false
     });
+    let runThreadId = state.selectedThreadId;
     setTimelineItems(previous => [
       ...previous,
       { kind: 'user_message', id: createTimelineId('user'), text: prompt, source: 'runtime' }
@@ -1188,6 +1197,7 @@ export function App(props: AppProps = {}) {
         }
       ]);
       const resolvedThread = await resolveThreadIdForPrompt(prompt, effectiveConfig);
+      runThreadId = resolvedThread.threadId;
       const pendingRunStart = pendingRunStartsByIdRef.current[pendingRunStartId];
       updatePendingRunStart({
         id: pendingRunStartId,
@@ -1221,20 +1231,19 @@ export function App(props: AppProps = {}) {
         });
         await requestRunCancellation(run.id);
       }
-      await subscribeToRunEvents(run.id, connectionConfigRef.current);
+      subscribeToRunEvents(run.id, resolvedThread.threadId, connectionConfigRef.current);
     } catch (error) {
       if (mountedRef.current) {
-        setTimelineItems(previous => [
-          ...previous,
-          {
-            kind: 'diagnostic',
-            id: createTimelineId('runtime_error'),
-            severity: 'error',
-            message: error instanceof Error ? error.message : 'Runtime run failed',
-            content: error instanceof Error ? error.message : String(error),
-            source: 'runtime'
-          }
-        ]);
+        const item: TimelineItem = {
+          kind: 'diagnostic',
+          id: createTimelineId('runtime_error'),
+          severity: 'error',
+          message: error instanceof Error ? error.message : 'Runtime run failed',
+          content: error instanceof Error ? error.message : String(error),
+          source: 'runtime'
+        };
+        if (runThreadId === undefined) setTimelineItems(previous => [...previous, item]);
+        else appendTimelineItemsForThread(runThreadId, [item]);
       }
     } finally {
       removePendingRunStart(pendingRunStartId);
@@ -1276,23 +1285,37 @@ export function App(props: AppProps = {}) {
     if (cancellationError === undefined) return;
 
     if (!mountedRef.current) return;
+    const currentRun = runRegistryRef.current.runsById[runId];
+    if (currentRun !== undefined && isTerminalRunStatus(currentRun.status)) return;
+    if (runService !== null) {
+      try {
+        const latestRun = await runService.getRun(runId);
+        if (!mountedRef.current) return;
+        dispatchRunRegistry({ type: 'upsert_run', run: latestRun });
+        if (isTerminalRunStatus(latestRun.status)) return;
+      } catch {
+        // Preserve the original cancellation error when status reconciliation fails.
+      }
+    }
+
     dispatchRunRegistry({
       type: 'set_cancel_state',
       runId,
       state: 'failed'
     });
     const message = getRuntimeErrorMessage(cancellationError, '停止任务失败，请重试');
-    setTimelineItems(previous => [
-      ...previous,
-      {
-        kind: 'diagnostic',
-        id: createTimelineId('cancel_error'),
-        severity: 'error',
-        message,
-        content: message,
-        source: 'runtime'
-      }
-    ]);
+    const item: TimelineItem = {
+      kind: 'diagnostic',
+      id: createTimelineId('cancel_error'),
+      runId,
+      severity: 'error',
+      message,
+      content: message,
+      source: 'runtime'
+    };
+    const threadId = runRegistryRef.current.runsById[runId]?.threadId;
+    if (threadId === undefined) setTimelineItems(previous => [...previous, item]);
+    else appendTimelineItemsForThread(threadId, [item]);
   }
 
   async function resolveThreadIdForPrompt(
@@ -1313,55 +1336,61 @@ export function App(props: AppProps = {}) {
 
   function handleRunStarted(run: RunResponse) {
     dispatchRunRegistry({ type: 'upsert_run', run });
-    setTimelineItems(previous => [
-      ...previous,
-      {
-        kind: 'run_status',
-        id: createTimelineId('run'),
-        runId: run.id,
-        label: run.status,
-        content: JSON.stringify(run),
-        source: 'runtime'
-      }
-    ]);
+    const item: TimelineItem = {
+      kind: 'run_status',
+      id: createTimelineId('run'),
+      runId: run.id,
+      label: run.status,
+      content: JSON.stringify(run),
+      source: 'runtime'
+    };
+    if (run.threadId === undefined) setTimelineItems(previous => [...previous, item]);
+    else appendTimelineItemsForThread(run.threadId, [item]);
   }
 
-  function abortCurrentRunEventSubscription(markDisconnected = true) {
-    const runId = activeRunEventControllerRunIdRef.current;
-    if (runId === undefined) return;
-
-    activeRunEventControllerRunIdRef.current = undefined;
-    runEventControllerRef.current?.stop();
-    if (!markDisconnected || !mountedRef.current) return;
-
-    const run = runRegistryRef.current.runsById[runId];
-    if (run?.status !== 'running' && run?.status !== 'queued') return;
-    dispatchRunRegistry({
-      type: 'set_subscription_state',
-      runId,
-      state: 'disconnected'
-    });
+  function stopAllRunEventSubscriptions(markDisconnected = true) {
+    const activeControllers = [...runEventControllersRef.current.entries()];
+    runEventControllersRef.current.clear();
+    for (const [runId, subscription] of activeControllers) {
+      subscription.controller.stop();
+      if (!markDisconnected || !mountedRef.current) continue;
+      const run = runRegistryRef.current.runsById[runId];
+      if (run?.status !== 'running' && run?.status !== 'queued') continue;
+      dispatchRunRegistry({
+        type: 'set_subscription_state',
+        runId,
+        state: 'disconnected'
+      });
+    }
   }
 
-  function subscribeToRunEvents(runId: string, config: ConnectionConfig) {
-    if (activeRunEventControllerRunIdRef.current === runId) return;
+  function subscribeToRunEvents(
+    runId: string,
+    threadId: string,
+    config: ConnectionConfig
+  ) {
+    if (runEventControllersRef.current.has(runId)) return;
 
-    abortCurrentRunEventSubscription();
-    activeRunEventControllerRunIdRef.current = runId;
     const fromSeq = runRegistryRef.current.lastSeqByRunId[runId] ?? 0;
     const replayUntilSeq = Math.max(
       fromSeq,
       runRegistryRef.current.runsById[runId]?.lastEventSeq ?? fromSeq
     );
+    const cachedTimelineItems = timelineItemsByThreadIdRef.current[threadId]
+      ?? (timelineThreadIdRef.current === threadId ? timelineItemsRef.current : []);
     const replayDeduper = replayUntilSeq > fromSeq
-      ? createRunReplayDeduper(timelineItemsRef.current)
+      ? createRunReplayDeduper(cachedTimelineItems)
       : undefined;
+    const controller = createRunEventController({
+      subscribe: subscribeRunEvents
+    });
+    runEventControllersRef.current.set(runId, { threadId, controller });
     const isCurrentSubscription = () => (
       mountedRef.current
-      && activeRunEventControllerRunIdRef.current === runId
+      && runEventControllersRef.current.get(runId)?.controller === controller
     );
 
-    runEventControllerRef.current?.start({
+    controller.start({
       ...config,
       runId,
       fromSeq,
@@ -1386,11 +1415,12 @@ export function App(props: AppProps = {}) {
             || replayDeduper.shouldAppend(item)
           )
         ) {
-          timelineEventBatcherRef.current?.push(item);
+          getTimelineEventBatcher(threadId).push(item);
         }
         if (event.type === 'done') {
-          activeRunEventControllerRunIdRef.current = undefined;
-          timelineEventBatcherRef.current?.flush();
+          runEventControllersRef.current.delete(runId);
+          controller.stop();
+          getTimelineEventBatcher(threadId).flush();
           void loadRunDiagnostics(event.runId);
         }
       },
@@ -1401,7 +1431,7 @@ export function App(props: AppProps = {}) {
           runId,
           state: 'disconnected'
         });
-        timelineEventBatcherRef.current?.push({
+        getTimelineEventBatcher(threadId).push({
           kind: 'diagnostic',
           id: createTimelineId('sse_error'),
           runId,
@@ -1410,7 +1440,7 @@ export function App(props: AppProps = {}) {
           content: error.message,
           source: 'runtime'
         });
-        timelineEventBatcherRef.current?.flush();
+        getTimelineEventBatcher(threadId).flush();
       }
     });
   }
@@ -2119,6 +2149,10 @@ function mapRunEventControllerState(
     case 'disconnected':
       return 'disconnected';
   }
+}
+
+function isTerminalRunStatus(status: RunResponse['status']): boolean {
+  return status === 'succeeded' || status === 'failed' || status === 'canceled';
 }
 
 function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {

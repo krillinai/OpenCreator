@@ -33,7 +33,7 @@ export function createRunService(client: ClientLike) {
     cancelRun(id: string): Promise<{ id: string; canceled: boolean }> {
       return client.post(`/runs/${encodeURIComponent(id)}/cancel`);
     },
-    getRun(id: string): Promise<unknown> {
+    getRun(id: string): Promise<RunResponse> {
       return client.get(`/runs/${encodeURIComponent(id)}`);
     }
   };
