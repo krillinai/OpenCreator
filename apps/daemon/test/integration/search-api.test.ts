@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 
 let server: FastifyInstance | undefined;
@@ -13,6 +13,7 @@ afterEach(async () => {
   server = undefined;
   if (tempDir) rmSync(tempDir, { recursive: true, force: true });
   tempDir = '';
+  vi.restoreAllMocks();
 });
 
 describe('conversation search api', () => {
@@ -127,6 +128,48 @@ describe('conversation search api', () => {
       expect(response.statusCode).toBe(400);
     }
   });
+
+  it('reuses a recent thread-list sync while typing and refreshes after the interval', async () => {
+    let now = Date.parse('2026-07-12T12:00:00.000Z');
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-search-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '12');
+    const cwd = join(tempDir, 'workspace');
+    mkdirSync(sessionDir, { recursive: true });
+    writeSession(sessionDir, 'search-first', cwd, [
+      eventMessage('user_message', 'first-search-token', '2026-07-12T12:00:01.000Z')
+    ]);
+    server = await buildServer({
+      token: 'secret',
+      dataDir: join(tempDir, 'runtime'),
+      codexHome
+    });
+
+    expect((await authGet('/threads?status=active&limit=50')).statusCode).toBe(200);
+    expect(
+      (await authGet('/search/conversations?query=first-search-token&types=user_message'))
+        .json().results
+    )
+      .toHaveLength(1);
+
+    writeSession(sessionDir, 'search-second', cwd, [
+      eventMessage('user_message', 'second-search-token', '2026-07-12T12:00:02.000Z')
+    ]);
+    expect(
+      (await authGet('/search/conversations?query=second-search-token&types=user_message'))
+        .json().results
+    )
+      .toEqual([]);
+
+    now += 30_000;
+    expect(
+      (await authGet('/search/conversations?query=second-search-token&types=user_message'))
+        .json().results
+    )
+      .toHaveLength(1);
+  });
+
 });
 
 function writeSession(

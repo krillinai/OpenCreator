@@ -62,6 +62,8 @@ export type BuildServerInput = {
   marketArchiveDownloader?: MarketArchiveDownloaderType;
 };
 
+const SEARCH_SESSION_SYNC_INTERVAL_MS = 30_000;
+
 export async function buildServer(input: BuildServerInput) {
   const server = Fastify({ logger: false });
   await server.register(cors, {
@@ -140,7 +142,16 @@ export async function buildServer(input: BuildServerInput) {
     threads: threadRepository
   });
   const conversationSearchService = createConversationSearchService(db);
-  function syncCodexSessions(limit?: number) {
+  let lastCodexSessionSyncAt: number | undefined;
+  function syncCodexSessions(limit?: number, minimumIntervalMs = 0) {
+    const now = Date.now();
+    if (
+      lastCodexSessionSyncAt !== undefined
+      && now - lastCodexSessionSyncAt < minimumIntervalMs
+    ) {
+      return;
+    }
+
     let scan;
     try {
       scan = codexSessionIndexer.sync({ limit });
@@ -160,6 +171,7 @@ export async function buildServer(input: BuildServerInput) {
         updatedAt: session.updatedAt
       });
     }
+    lastCodexSessionSyncAt = Date.now();
   }
 
   server.setErrorHandler((error, _request, reply) => {
@@ -226,14 +238,19 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerWorkspaceFileRoutes(server, workspaceFileService);
   await registerSearchRoutes(server, conversationSearchService, {
-    syncCodexSessions
+    syncCodexSessions() {
+      syncCodexSessions(undefined, SEARCH_SESSION_SYNC_INTERVAL_MS);
+    },
+    ensureSearchIndex: () => codexSessionRepository.ensureSearchIndex()
   });
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager,
     syncCodexSessions,
     readThreadHistory(codexThreadId, options) {
       try {
-        codexSessionIndexer.sync();
+        if (!codexSessionIndexer.isHistoryCurrent(codexThreadId)) {
+          syncCodexSessions();
+        }
         return options === undefined
           ? { items: codexSessionIndexer.readHistory(codexThreadId) }
           : codexSessionIndexer.readHistoryPage(codexThreadId, options);

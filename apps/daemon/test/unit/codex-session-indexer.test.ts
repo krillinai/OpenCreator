@@ -44,11 +44,14 @@ describe('codex session indexer', () => {
 
     const first = indexer.sync();
     const second = indexer.sync();
+    expect(indexer.isHistoryCurrent('incremental-session')).toBe(true);
     appendFileSync(
       sessionPath,
       `\n${JSON.stringify(agentMessage('追加的中文回复', '2026-07-12T01:00:03.000Z', 'turn_2'))}\n`
     );
+    expect(indexer.isHistoryCurrent('incremental-session')).toBe(false);
     const appended = indexer.sync();
+    expect(indexer.isHistoryCurrent('incremental-session')).toBe(true);
 
     expect(first).toMatchObject({
       filesParsed: 1,
@@ -266,6 +269,52 @@ describe('codex session indexer', () => {
         title: '从原始 JSONL 重建'
       })
     ]);
+  });
+
+  it('backfills a missing search index without reparsing or rewriting existing session items', () => {
+    const setup = createSetup();
+    const sessionPath = writeSession(setup.sessionDir, 'search-upgrade-session', [
+      sessionMeta('search-upgrade-session', setup.cwd, '2026-07-12T05:10:00.000Z'),
+      userMessage('保留现有会话索引', '2026-07-12T05:10:01.000Z'),
+      agentMessage('只回填全文搜索内容', '2026-07-12T05:10:02.000Z')
+    ]);
+    createCodexSessionIndexer({
+      codexHome: setup.codexHome,
+      repository: setup.repository
+    }).sync();
+    db!.prepare('DELETE FROM codex_session_search').run();
+    db!.prepare('DELETE FROM codex_session_search_state').run();
+    db!.prepare('UPDATE codex_session_sources SET index_version = 99 WHERE path = ?')
+      .run(sessionPath);
+    const itemCountBefore = db!.prepare(
+      'SELECT COUNT(*) AS count FROM codex_session_items WHERE source_path = ?'
+    ).get(sessionPath);
+    const upgradedRepository = createCodexSessionIndexRepository(db!);
+
+    const sync = createCodexSessionIndexer({
+      codexHome: setup.codexHome,
+      repository: upgradedRepository
+    }).sync();
+    upgradedRepository.ensureSearchIndex();
+
+    expect(sync).toMatchObject({
+      filesParsed: 0,
+      filesRebuilt: 0,
+      linesParsed: 0,
+      bytesRead: 0
+    });
+    expect(
+      db!.prepare('SELECT COUNT(*) AS count FROM codex_session_items WHERE source_path = ?')
+        .get(sessionPath)
+    ).toEqual(itemCountBefore);
+    expect(
+      db!.prepare(
+        "SELECT COUNT(*) AS count FROM codex_session_search WHERE source_path = ?"
+      ).get(sessionPath)
+    ).toEqual({ count: 3 });
+    expect(
+      db!.prepare('SELECT id, version FROM codex_session_search_state').get()
+    ).toEqual({ id: 1, version: 1 });
   });
 
   it('paginates history from newest to oldest with stable ordering and rebuild-safe cursors', () => {

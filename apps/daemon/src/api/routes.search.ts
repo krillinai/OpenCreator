@@ -24,7 +24,10 @@ const MAX_SEARCH_LIMIT = 50;
 export async function registerSearchRoutes(
   server: FastifyInstance,
   service: ConversationSearchService,
-  options: { syncCodexSessions?(): void } = {}
+  options: {
+    syncCodexSessions?(): void;
+    ensureSearchIndex?(): void;
+  } = {}
 ): Promise<void> {
   server.get('/search/conversations', async (request, reply) => {
     const parsed = parseConversationSearchQuery(request.query);
@@ -32,7 +35,10 @@ export async function registerSearchRoutes(
       return reply.code(400).send(apiError('VALIDATION_FAILED', parsed.message));
     }
 
-    options.syncCodexSessions?.();
+    if (parsed.value.cursor === undefined) {
+      options.syncCodexSessions?.();
+    }
+    options.ensureSearchIndex?.();
     try {
       return service.search(parsed.value);
     } catch (error) {

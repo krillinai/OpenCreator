@@ -25,6 +25,7 @@ export type CodexSessionIndexSyncResult = CodexSessionScanResult & {
 
 export type CodexSessionIndexer = {
   sync(input?: { limit?: number }): CodexSessionIndexSyncResult;
+  isHistoryCurrent(codexThreadId: string): boolean;
   readHistory(codexThreadId: string): ReturnType<CodexSessionIndexRepository['listHistory']>;
   readHistoryPage(
     codexThreadId: string,
@@ -77,7 +78,7 @@ export function createCodexSessionIndexer(
           && hashFilePrefix(file.path, source.head_size) !== source.head_hash;
         const rebuild =
           source === undefined
-          || source.index_version !== CODEX_SESSION_INDEX_VERSION
+          || source.index_version < CODEX_SESSION_INDEX_VERSION
           || source.file_id !== fileId
           || file.size < source.parsed_offset
           || sourceHeadChanged
@@ -140,6 +141,18 @@ export function createCodexSessionIndexer(
         excludedSubagentThreadIds: input.repository.listExcludedSubagentThreadIds(),
         ...totals
       };
+    },
+    isHistoryCurrent(codexThreadId): boolean {
+      const source = input.repository.getSessionSource(codexThreadId);
+      if (source === undefined || source.parsed_offset !== source.file_size) return false;
+      try {
+        const stat = statSync(source.path);
+        return `${stat.dev}:${stat.ino}` === source.file_id
+          && stat.size === source.file_size
+          && stat.mtimeMs === source.mtime_ms;
+      } catch {
+        return false;
+      }
     },
     readHistory(codexThreadId) {
       return input.repository.listHistory(codexThreadId);

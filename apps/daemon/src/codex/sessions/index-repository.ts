@@ -7,7 +7,8 @@ import {
   type CodexSessionParserState
 } from './parser.js';
 
-export const CODEX_SESSION_INDEX_VERSION = 2;
+export const CODEX_SESSION_INDEX_VERSION = 1;
+const CODEX_SESSION_SEARCH_INDEX_VERSION = 1;
 
 export type CodexSessionSourceRow = {
   path: string;
@@ -89,7 +90,9 @@ export type ApplyCodexSessionFileIndexInput = {
 
 export type CodexSessionIndexRepository = {
   getSource(path: string): CodexSessionSourceRow | undefined;
+  getSessionSource(codexThreadId: string): CodexSessionSourceRow | undefined;
   applyFileIndex(input: ApplyCodexSessionFileIndexInput): void;
+  ensureSearchIndex(): void;
   removeMissingSources(paths: string[]): void;
   listSessions(limit?: number): CodexSessionSummary[];
   listExcludedSubagentThreadIds(): string[];
@@ -116,11 +119,54 @@ export function createCodexSessionIndexRepository(
   db: Database.Database
 ): CodexSessionIndexRepository {
   const getSource = db.prepare<string>('SELECT * FROM codex_session_sources WHERE path = ?');
+  const getSessionSource = db.prepare<string>(`
+    SELECT source.*
+    FROM codex_session_sources source
+    INNER JOIN codex_sessions session ON session.source_path = source.path
+    WHERE session.codex_thread_id = ?
+  `);
   const listSourcePaths = db.prepare('SELECT path FROM codex_session_sources');
   const deleteSource = db.prepare<string>('DELETE FROM codex_session_sources WHERE path = ?');
   const deleteSearchSource = db.prepare<string>(
     'DELETE FROM codex_session_search WHERE source_path = ?'
   );
+  const deleteAllSearch = db.prepare('DELETE FROM codex_session_search');
+  const countIndexedSessions = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM codex_sessions
+  `);
+  const countSearchTitleSources = db.prepare(`
+    SELECT COUNT(DISTINCT source_path) AS count
+    FROM codex_session_search
+    WHERE item_type = 'title'
+  `);
+  const getSearchIndexState = db.prepare(`
+    SELECT version
+    FROM codex_session_search_state
+    WHERE id = 1
+  `);
+  const markSearchIndexReady = db.prepare(`
+    INSERT INTO codex_session_search_state (id, version, completed_at)
+    VALUES (1, @version, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      version = excluded.version,
+      completed_at = CURRENT_TIMESTAMP
+  `);
+  const listSearchSessions = db.prepare(`
+    SELECT codex_thread_id, source_path, title, cwd, updated_at
+    FROM codex_sessions
+    ORDER BY source_path ASC
+  `);
+  const listSearchBackfillItems = db.prepare<{ maxItemJsonLength: number }>(`
+    SELECT
+      session.codex_thread_id,
+      item.source_path,
+      item.item_json
+    FROM codex_session_items item
+    INNER JOIN codex_sessions session ON session.source_path = item.source_path
+    WHERE length(item.item_json) <= @maxItemJsonLength
+    ORDER BY item.source_path ASC, item.line_number ASC, item.source_offset ASC
+  `);
   const insertSource = db.prepare(`
     INSERT INTO codex_session_sources (
       path, file_id, file_size, mtime_ms, parsed_offset, parsed_line_count,
@@ -393,13 +439,83 @@ export function createCodexSessionIndexRepository(
       }
     }
   });
+  const rebuildSearchIndex = db.transaction(() => {
+    deleteAllSearch.run();
+    const sessions = listSearchSessions.all() as Array<{
+      codex_thread_id: string;
+      source_path: string;
+      title: string;
+      cwd: string | null;
+      updated_at: string;
+    }>;
+    for (const session of sessions) {
+      insertSearchItem.run({
+        codexThreadId: session.codex_thread_id,
+        sourcePath: session.source_path,
+        itemId: SEARCH_TITLE_ITEM_ID,
+        itemType: 'title',
+        createdAt: session.updated_at,
+        title: normalizeSearchText(session.title),
+        cwd: normalizeSearchText(session.cwd ?? ''),
+        content: ''
+      });
+    }
+
+    const rows = listSearchBackfillItems.all({
+      maxItemJsonLength: MAX_SEARCH_BACKFILL_ITEM_JSON_LENGTH
+    }) as Array<{
+      codex_thread_id: string;
+      source_path: string;
+      item_json: string;
+    }>;
+    for (const row of rows) {
+      const item = parseHistoryItem(row.item_json)[0];
+      if (item === undefined) continue;
+      const content = searchContentForHistoryItem(item);
+      if (content === undefined) continue;
+      insertSearchItem.run({
+        codexThreadId: row.codex_thread_id,
+        sourcePath: row.source_path,
+        itemId: item.id,
+        itemType: item.type,
+        createdAt: item.createdAt,
+        title: '',
+        cwd: '',
+        content
+      });
+    }
+    markSearchIndexReady.run({ version: CODEX_SESSION_SEARCH_INDEX_VERSION });
+  });
 
   return {
     getSource(path: string): CodexSessionSourceRow | undefined {
       return getSource.get(path) as CodexSessionSourceRow | undefined;
     },
+    getSessionSource(codexThreadId: string): CodexSessionSourceRow | undefined {
+      return getSessionSource.get(codexThreadId) as CodexSessionSourceRow | undefined;
+    },
     applyFileIndex(input: ApplyCodexSessionFileIndexInput): void {
       applyFileIndex(input);
+    },
+    ensureSearchIndex(): void {
+      const state = getSearchIndexState.get() as { version: number } | undefined;
+      if (state !== undefined && state.version >= CODEX_SESSION_SEARCH_INDEX_VERSION) return;
+      if (state !== undefined) {
+        rebuildSearchIndex();
+        return;
+      }
+
+      const indexedSessionCount = (
+        countIndexedSessions.get() as { count: number }
+      ).count;
+      const searchTitleSourceCount = (
+        countSearchTitleSources.get() as { count: number }
+      ).count;
+      if (indexedSessionCount === searchTitleSourceCount) {
+        markSearchIndexReady.run({ version: CODEX_SESSION_SEARCH_INDEX_VERSION });
+        return;
+      }
+      rebuildSearchIndex();
     },
     removeMissingSources(paths: string[]): void {
       removeMissingSources(paths);
@@ -565,6 +681,7 @@ export function createCodexSessionIndexRepository(
 const SEARCH_TITLE_ITEM_ID = '__title__';
 const MAX_SEARCHABLE_TEXT_LENGTH = 128_000;
 const MAX_SEARCHABLE_TOOL_OUTPUT_LENGTH = 8_192;
+const MAX_SEARCH_BACKFILL_ITEM_JSON_LENGTH = MAX_SEARCHABLE_TEXT_LENGTH + 4_096;
 
 function searchContentForHistoryItem(item: ThreadHistoryItem): string | undefined {
   let value: string | undefined;

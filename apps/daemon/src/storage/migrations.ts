@@ -192,6 +192,12 @@ export function migrate(db: Database.Database): void {
       FOREIGN KEY(source_path) REFERENCES codex_session_sources(path) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS codex_session_search_state (
+      id INTEGER PRIMARY KEY CHECK(id = 1),
+      version INTEGER NOT NULL,
+      completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE VIRTUAL TABLE IF NOT EXISTS codex_session_search USING fts5(
       codex_thread_id UNINDEXED,
       source_path UNINDEXED,

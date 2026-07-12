@@ -132,6 +132,12 @@ describe('conversation search service', () => {
     expect(service.search({ query: 'unique-old-token' }).results).toHaveLength(1);
     expect(service.search({ query: 'oversized-secret-token' }).results).toEqual([]);
 
+    setup.db.prepare('DELETE FROM codex_session_search').run();
+    setup.db.prepare('DELETE FROM codex_session_search_state').run();
+    setup.repository.ensureSearchIndex();
+    expect(service.search({ query: 'unique-old-token' }).results).toHaveLength(1);
+    expect(service.search({ query: 'oversized-secret-token' }).results).toEqual([]);
+
     indexSession(setup.repository, {
       codexThreadId: 'codex-replace',
       sourcePath,
