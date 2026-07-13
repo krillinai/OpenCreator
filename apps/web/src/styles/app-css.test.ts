@@ -209,6 +209,10 @@ describe('app CSS visual contracts', () => {
     expect(composerTextarea).not.toContain('resize: vertical;');
     expect(appCss).toMatch(/\.composer-select,\n\.composer-model-button\s*\{[^}]*padding:\s*0 2px;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/);
     expect(appCss).toMatch(/\.composer-send\s*\{[^}]*width:\s*38px;[^}]*height:\s*38px;/);
+    expect(appCss).toMatch(
+      /@media \(max-height: 560px\) and \(min-width: 921px\)\s*\{[\s\S]*?\.composer-wrap\s*\{[^}]*padding:\s*0 clamp\(18px, 4vw, 52px\) 10px;/
+    );
+    expect(cssBlock('.timeline-end-spacer')).toContain('min-height: 32px;');
   });
 
   it('keeps the empty-state title centered without the large decorative logo', () => {

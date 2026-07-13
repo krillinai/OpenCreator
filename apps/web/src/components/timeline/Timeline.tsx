@@ -1,5 +1,12 @@
 import { ArrowDown, ArrowUp, LoaderCircle, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer.js';
 import { isWorkspaceFilePath } from '../markdown/markdown-inline.js';
@@ -671,7 +678,11 @@ function ProcessBlockView(props: {
   );
 }
 
-export function Timeline(props: {
+export type TimelineHandle = {
+  scrollBy(deltaY: number): boolean;
+};
+
+type TimelineProps = {
   items: TimelineItem[];
   targetItemId?: string;
   hasMore?: boolean;
@@ -684,7 +695,9 @@ export function Timeline(props: {
   approvalErrors?: Readonly<Record<string, string | undefined>>;
   onApproveApproval?(id: string): void;
   onRejectApproval?(id: string): void;
-}) {
+};
+
+export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timeline(props, ref) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const atBottomRef = useRef(true);
   const userInteractedRef = useRef(false);
@@ -693,6 +706,17 @@ export function Timeline(props: {
   const firstItemIndexRef = useRef(100_000);
   const [atBottom, setAtBottom] = useState(true);
   const [hasNewContent, setHasNewContent] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    scrollBy(deltaY) {
+      const virtuoso = virtuosoRef.current;
+      if (virtuoso === null) return false;
+      userInteractedRef.current = true;
+      virtuoso.scrollBy({ top: deltaY, behavior: 'auto' });
+      return true;
+    }
+  }), []);
+
   const renderItems = useMemo(
     () => buildTimelineRenderItems(props.items).filter(item => (
       item.type !== 'process' || shouldRenderProcess(item)
@@ -818,7 +842,8 @@ export function Timeline(props: {
                     </button>
                   ) : null}
                 </div>
-              )
+              ),
+              Footer: () => <div className="timeline-end-spacer" aria-hidden="true" />
             }}
             itemContent={(_index, renderItem) => (
               <div className="timeline-virtual-item">
@@ -850,7 +875,7 @@ export function Timeline(props: {
       )}
     </div>
   );
-}
+});
 
 function renderTimelineRenderItem(
   renderItem: TimelineRenderItem,

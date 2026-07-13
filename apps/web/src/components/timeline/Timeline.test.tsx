@@ -43,6 +43,7 @@ describe('Timeline', () => {
 
     expect(screen.getByText('需要确认')).toBeInTheDocument();
     expect(screen.getByText('rm -rf build')).toBeInTheDocument();
+    expect(document.querySelector('.timeline-end-spacer')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '批准' }));
 
     expect(onApproveApproval).toHaveBeenCalledWith('approval_1');

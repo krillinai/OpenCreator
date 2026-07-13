@@ -2,6 +2,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useRef,
   useState,
   type ComponentType,
   type Key,
@@ -14,6 +15,7 @@ type MockVirtuosoProps = {
   atTopStateChange?(atTop: boolean): void;
   className?: string;
   components?: {
+    Footer?: ComponentType;
     Header?: ComponentType;
   };
   computeItemKey?(index: number, item: unknown): Key;
@@ -30,9 +32,16 @@ export const Virtuoso = forwardRef(function MockVirtuoso(
   const firstVisibleIndex = Math.max(0, data.length - 30);
   const visibleData = data.slice(firstVisibleIndex);
   const [atBottom, setAtBottom] = useState(true);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const Header = props.components?.Header;
+  const Footer = props.components?.Footer;
 
   useImperativeHandle(ref, () => ({
+    scrollBy(location: ScrollToOptions) {
+      const scroller = scrollerRef.current;
+      if (scroller === null) return;
+      scroller.scrollTop += location.top ?? 0;
+    },
     scrollToIndex() {
       setAtBottom(true);
       props.atBottomStateChange?.(true);
@@ -57,6 +66,7 @@ export const Virtuoso = forwardRef(function MockVirtuoso(
 
   return (
     <div
+      ref={scrollerRef}
       className={props.className}
       data-testid="virtuoso-scroller"
       onScroll={handleScroll}
@@ -76,6 +86,7 @@ export const Virtuoso = forwardRef(function MockVirtuoso(
           );
         })}
       </div>
+      {Footer ? <Footer /> : null}
     </div>
   );
 });

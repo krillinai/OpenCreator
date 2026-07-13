@@ -18,11 +18,16 @@ import type {
   ThreadResponse
 } from '@clawee/protocol';
 import { skillMarketCatalog } from '@clawee/skill-market';
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  WheelEvent as ReactWheelEvent
+} from 'react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
 import Lightfall from '../components/effects/Lightfall.js';
-import { Timeline } from '../components/timeline/Timeline.js';
+import { Timeline, type TimelineHandle } from '../components/timeline/Timeline.js';
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
 import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
@@ -123,6 +128,37 @@ const CONVERSATION_PANE_MIN_WIDTH = 320;
 const FILE_WORKSPACE_MIN_WIDTH = 520;
 const RESIZE_KEY_STEP = 32;
 const CONVERSATION_LIGHTFALL_COLORS = ['#AD4D1F', '#D86532', '#F0A866'];
+
+function canScrollVertically(
+  target: EventTarget | null,
+  boundary: HTMLElement,
+  deltaY: number
+): boolean {
+  if (!(target instanceof Element) || deltaY === 0) return false;
+
+  let element: Element | null = target;
+  while (element !== null && boundary.contains(element)) {
+    if (element instanceof HTMLElement) {
+      const overflowY = window.getComputedStyle(element).overflowY;
+      const scrollableOverflow =
+        overflowY === 'auto'
+        || overflowY === 'scroll'
+        || overflowY === 'overlay';
+      if (scrollableOverflow && element.scrollHeight > element.clientHeight) {
+        if (deltaY < 0 && element.scrollTop > 0) return true;
+        if (
+          deltaY > 0
+          && element.scrollTop + element.clientHeight < element.scrollHeight - 1
+        ) {
+          return true;
+        }
+      }
+    }
+    element = element.parentElement;
+  }
+
+  return false;
+}
 const DYNAMIC_BACKGROUND_STORAGE_KEY = 'clawee.preferences.dynamicBackground';
 const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v2';
 const SCHEDULE_CREATION_TITLE = '创建已安排任务';
@@ -229,6 +265,7 @@ export function AppController(props: AppControllerProps) {
   const projectService = useMemo(() => createMockProjectService(), []);
   const timelineIdSequenceRef = useRef(0);
   const timelineItemsRef = useRef<TimelineItem[]>([]);
+  const timelineRef = useRef<TimelineHandle>(null);
   const timelineItemsByThreadIdRef = useRef<Record<string, TimelineItem[] | undefined>>({});
   const timelineThreadIdRef = useRef<string | undefined>(initialState.selectedThreadId);
   const mountedRef = useRef(true);
@@ -2318,6 +2355,11 @@ export function AppController(props: AppControllerProps) {
     dynamicBackgroundEnabled && state.selectedThreadId === undefined && timelineItems.length === 0;
   const showHistoryLoadingOverlay =
     historyLoadingThreadId !== undefined && historyLoadingThreadId === state.selectedThreadId;
+  function handleComposerWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (canScrollVertically(event.target, event.currentTarget, event.deltaY)) return;
+    if (timelineRef.current?.scrollBy(event.deltaY) !== true) return;
+    event.preventDefault();
+  }
   const conversationPage = (
     <section
       className="conversation-page"
@@ -2376,6 +2418,7 @@ export function AppController(props: AppControllerProps) {
           <ConversationEmptyState projectName={currentProjectName} />
         ) : (
           <Timeline
+            ref={timelineRef}
             key={state.selectedThreadId ?? 'draft'}
             items={timelineItems}
             hasMore={threadHistory.hasMore}
@@ -2402,7 +2445,7 @@ export function AppController(props: AppControllerProps) {
           </div>
         ) : null}
       </div>
-      <div className="composer-wrap">
+      <div className="composer-wrap" onWheel={handleComposerWheel}>
         {pendingMemorySuggestion !== undefined && memoryService !== null ? (
           <MemorySuggestion
             key={pendingMemorySuggestion.id}

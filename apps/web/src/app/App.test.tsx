@@ -1832,6 +1832,23 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(await screen.findByText('rm -rf build')).toBeInTheDocument();
+    const timelineScroller = screen.getByTestId('virtuoso-scroller');
+    const composerWrap = document.querySelector<HTMLElement>('.composer-wrap');
+    const composerInput = screen.getByRole('textbox', { name: '输入任务' });
+    if (composerWrap === null) throw new Error('Expected composer wrapper');
+
+    fireEvent.wheel(composerWrap, { deltaY: 160 });
+    expect(timelineScroller.scrollTop).toBe(160);
+
+    Object.defineProperties(composerInput, {
+      clientHeight: { configurable: true, value: 76 },
+      scrollHeight: { configurable: true, value: 240 },
+      scrollTop: { configurable: true, value: 0, writable: true }
+    });
+    composerInput.style.overflowY = 'auto';
+    fireEvent.wheel(composerInput, { deltaY: 80 });
+    expect(timelineScroller.scrollTop).toBe(160);
+
     await user.click(screen.getByRole('button', { name: '批准' }));
 
     expect(await screen.findByText('已批准')).toBeInTheDocument();
