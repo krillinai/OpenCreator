@@ -451,8 +451,7 @@
   color: #22c55e;
 }
 
-.schedule-editor,
-.schedule-assistant {
+.schedule-editor {
   min-height: 0;
   height: 100%;
   display: grid;
@@ -472,24 +471,10 @@
   font-size: 14px;
 }
 
-.schedule-editor__scroll,
-.schedule-assistant__body {
+.schedule-editor__scroll {
   min-height: 0;
   overflow: auto;
   padding: 28px 0 36px;
-}
-
-.schedule-assistant-result {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 18px;
-  padding: 9px 11px;
-  border: 1px solid color-mix(in srgb, var(--accent-strong) 32%, var(--border));
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-size: 12px;
 }
 
 .schedule-form-error {
@@ -509,8 +494,7 @@
 }
 
 .schedule-title-field > span,
-.schedule-editor-group > h2,
-.schedule-assistant__prompt > span {
+.schedule-editor-group > h2 {
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
@@ -537,8 +521,7 @@
   margin-top: 22px;
 }
 
-.schedule-prompt-field textarea,
-.schedule-assistant__prompt textarea {
+.schedule-prompt-field textarea {
   width: 100%;
   min-height: 126px;
   resize: vertical;
@@ -551,8 +534,7 @@
   line-height: 1.6;
 }
 
-.schedule-prompt-field textarea:focus,
-.schedule-assistant__prompt textarea:focus {
+.schedule-prompt-field textarea:focus {
   border-color: color-mix(in srgb, var(--accent-strong) 58%, var(--border));
 }
 
@@ -769,65 +751,6 @@
   color: var(--muted);
 }
 
-.schedule-assistant__body {
-  display: grid;
-  align-content: start;
-}
-
-.schedule-assistant__intro {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding: 18px 0 24px;
-  text-align: center;
-}
-
-.schedule-assistant__intro svg {
-  color: var(--accent-strong);
-}
-
-.schedule-assistant__intro h1,
-.schedule-assistant__intro p {
-  margin: 0;
-}
-
-.schedule-assistant__intro h1 {
-  font-size: 22px;
-  font-weight: 650;
-}
-
-.schedule-assistant__intro p {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.schedule-assistant__prompt {
-  display: grid;
-  gap: 7px;
-}
-
-.schedule-assistant__examples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 11px;
-}
-
-.schedule-assistant__examples button {
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--muted);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
-.schedule-assistant__examples button:hover {
-  border-color: color-mix(in srgb, var(--accent-strong) 45%, var(--border));
-  color: var(--text);
-}
-
 .schedule-spin {
   animation: schedule-spin 850ms linear infinite;
 }
@@ -887,8 +810,7 @@
     white-space: normal;
   }
 
-  .schedule-editor__scroll,
-  .schedule-assistant__body {
+  .schedule-editor__scroll {
     padding-top: 20px;
   }
 
@@ -906,14 +828,6 @@
     justify-content: space-between;
     padding-right: 10px;
     padding-left: 10px;
-  }
-
-  .schedule-assistant__intro {
-    padding-top: 8px;
-  }
-
-  .schedule-assistant__examples {
-    display: grid;
   }
 
   .schedule-editor__actions {

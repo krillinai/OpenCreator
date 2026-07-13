@@ -2007,7 +2007,7 @@ textarea:focus-visible {
 .clawee-shell {
   width: 100vw;
   height: 100vh;
-  min-height: 640px;
+  min-height: 0;
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
   overflow: hidden;

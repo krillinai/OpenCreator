@@ -22,9 +22,7 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Sparkles,
   Trash2,
-  X,
 } from 'lucide-react';
 import {
   useCallback,
@@ -34,7 +32,6 @@ import {
   useState,
 } from 'react';
 import { ApiClientError } from '../../runtime/errors.js';
-import type { ScheduleAssistantService } from '../../services/schedule-assistant.js';
 import type { ClaweeProject } from '../projects/project-model.js';
 import {
   createScheduleRequest,
@@ -67,7 +64,7 @@ export type ScheduleViewService = {
 type EditorState =
   | {
       mode: 'create';
-      source: 'manual' | 'assistant' | 'suggestion';
+      source: 'manual' | 'suggestion';
       values: ScheduleEditorValues;
     }
   | {
@@ -82,12 +79,12 @@ type ScheduleFilter = 'all' | 'enabled' | 'paused';
 export type SchedulesViewProps = {
   connected: boolean;
   service: ScheduleViewService | null;
-  assistant?: ScheduleAssistantService | null;
   projects: ClaweeProject[];
   currentProjectId: string;
   profiles?: CodexProfileResponse[];
   defaultTimezone: string;
   pollIntervalMs?: number;
+  onCreateWithClawee(): Promise<void> | void;
   onOpenRun(runId: string, threadId?: string): void;
   confirmDelete?(schedule: ScheduleResponse): boolean;
 };
@@ -103,10 +100,8 @@ export function SchedulesView(props: SchedulesViewProps) {
   const [saving, setSaving] = useState(false);
   const [latestRun, setLatestRun] = useState<{ runId: string; threadId?: string }>();
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [assistantDescription, setAssistantDescription] = useState('');
-  const [assistantGenerating, setAssistantGenerating] = useState(false);
-  const [assistantError, setAssistantError] = useState<string>();
+  const [creatingWithClawee, setCreatingWithClawee] = useState(false);
+  const [createWithClaweeError, setCreateWithClaweeError] = useState<string>();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ScheduleFilter>('all');
   const createMenuRef = useRef<HTMLDivElement>(null);
@@ -137,7 +132,6 @@ export function SchedulesView(props: SchedulesViewProps) {
   useEffect(() => {
     requestGenerationRef.current += 1;
     setEditor(undefined);
-    setAssistantOpen(false);
     setLatestRun(undefined);
     if (!props.connected || props.service === null) {
       setSchedules([]);
@@ -200,11 +194,10 @@ export function SchedulesView(props: SchedulesViewProps) {
   }
 
   function openCreateEditor(
-    source: 'manual' | 'assistant' | 'suggestion' = 'manual',
+    source: 'manual' | 'suggestion' = 'manual',
     override?: Partial<ScheduleEditorValues>
   ) {
     setCreateMenuOpen(false);
-    setAssistantOpen(false);
     setEditorErrors({});
     setLatestRun(undefined);
     setEditor({
@@ -217,41 +210,17 @@ export function SchedulesView(props: SchedulesViewProps) {
     });
   }
 
-  function openAssistant() {
+  async function openClaweeConversation() {
+    if (creatingWithClawee) return;
     setCreateMenuOpen(false);
-    setEditor(undefined);
-    setAssistantError(undefined);
-    setAssistantOpen(true);
-  }
-
-  async function generateWithAssistant() {
-    if (props.assistant === null || props.assistant === undefined || currentProject === undefined) {
-      setAssistantError('Clawee 创建功能暂不可用');
-      return;
-    }
-    if (assistantDescription.trim().length === 0) {
-      setAssistantError('先描述你希望 Clawee 定期完成什么');
-      return;
-    }
-
-    setAssistantGenerating(true);
-    setAssistantError(undefined);
+    setCreateWithClaweeError(undefined);
+    setCreatingWithClawee(true);
     try {
-      const draft = await props.assistant.generate({
-        description: assistantDescription,
-        cwd: currentProject.cwd,
-        profile: currentProject.profile,
-        timezone: props.defaultTimezone,
-      });
-      openCreateEditor('assistant', {
-        name: draft.name,
-        prompt: draft.prompt,
-        frequency: draft.frequency,
-      });
+      await props.onCreateWithClawee();
     } catch (error) {
-      setAssistantError(errorMessage(error, 'Clawee 无法生成计划，请重试'));
+      setCreateWithClaweeError(errorMessage(error, '无法创建 Clawee 对话，请重试'));
     } finally {
-      setAssistantGenerating(false);
+      setCreatingWithClawee(false);
     }
   }
 
@@ -303,7 +272,6 @@ export function SchedulesView(props: SchedulesViewProps) {
         : await props.service.updateSchedule(editor.scheduleId, createScheduleUpdate(values));
       setSchedules(current => upsertSchedule(current, saved));
       setEditor(undefined);
-      setAssistantDescription('');
     } catch (error) {
       setEditorErrors(mapScheduleError(error));
     } finally {
@@ -400,7 +368,7 @@ export function SchedulesView(props: SchedulesViewProps) {
     <section className="schedules-view">
       <div
         className={`schedules-view__inner${
-          editor || assistantOpen ? ' schedules-view__inner--editing' : ''
+          editor ? ' schedules-view__inner--editing' : ''
         }`}
       >
         {editor ? (
@@ -411,81 +379,10 @@ export function SchedulesView(props: SchedulesViewProps) {
             profiles={props.profiles}
             loading={editor.mode === 'edit' && editor.loading}
             saving={saving}
-            generatedByAssistant={
-              editor.mode === 'create' && editor.source === 'assistant'
-            }
             errors={editorErrors}
             onCancel={closeEditor}
             onSubmit={values => void saveEditor(values)}
           />
-        ) : assistantOpen ? (
-          <section className="schedule-assistant" aria-label="使用 Clawee 创建计划任务">
-            <header className="schedule-editor__topbar">
-              <strong>使用 Clawee 创建</strong>
-              <button
-                className="schedule-icon-button schedule-icon-button--plain"
-                type="button"
-                aria-label="关闭 Clawee 创建"
-                title="关闭"
-                onClick={() => setAssistantOpen(false)}
-              >
-                <X size={18} />
-              </button>
-            </header>
-            <div className="schedule-assistant__body">
-              <div className="schedule-assistant__intro">
-                <Sparkles size={22} aria-hidden="true" />
-                <h1>描述你想自动完成的事</h1>
-                <p>用一句话说明任务内容和执行时间，Clawee 会帮你生成设置。</p>
-              </div>
-              <label className="schedule-assistant__prompt">
-                <span>任务描述</span>
-                <textarea
-                  aria-label="告诉 Clawee 要安排什么"
-                  rows={7}
-                  value={assistantDescription}
-                  placeholder="例如：每个工作日早上 8 点，总结当前项目的进展、阻塞和今天最重要的三件事"
-                  onChange={event => setAssistantDescription(event.target.value)}
-                />
-              </label>
-              <div className="schedule-assistant__examples" aria-label="示例">
-                {assistantExamples.map(example => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => setAssistantDescription(example)}
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
-              {assistantError ? (
-                <p className="schedule-form-error" role="alert">{assistantError}</p>
-              ) : null}
-            </div>
-            <footer className="schedule-editor__actions">
-              <button
-                className="schedule-button schedule-button--secondary"
-                type="button"
-                onClick={() => setAssistantOpen(false)}
-              >
-                取消
-              </button>
-              <button
-                className="schedule-button schedule-button--primary"
-                type="button"
-                disabled={assistantGenerating}
-                onClick={() => void generateWithAssistant()}
-              >
-                {assistantGenerating ? (
-                  <LoaderCircle size={16} className="schedule-spin" />
-                ) : (
-                  <Sparkles size={16} />
-                )}
-                {assistantGenerating ? 'Clawee 正在生成' : '生成计划'}
-              </button>
-            </footer>
-          </section>
         ) : (
           <>
             <header className="schedules-view__header">
@@ -507,11 +404,16 @@ export function SchedulesView(props: SchedulesViewProps) {
                 </button>
                 {createMenuOpen ? (
                   <div className="schedule-create-menu__popover" role="menu">
-                    <button type="button" role="menuitem" onClick={openAssistant}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={creatingWithClawee}
+                      onClick={() => void openClaweeConversation()}
+                    >
                       <MessageCircle size={17} />
                       <span>
                         <strong>使用 Clawee 创建</strong>
-                        <small>用自然语言描述任务</small>
+                        <small>在新对话中设置任务</small>
                       </span>
                     </button>
                     <button
@@ -554,6 +456,12 @@ export function SchedulesView(props: SchedulesViewProps) {
                 </button>
               ))}
             </div>
+
+            {createWithClaweeError ? (
+              <p className="schedule-form-error" role="alert">
+                {createWithClaweeError}
+              </p>
+            ) : null}
 
             {loading ? (
               <div className="schedules-state" role="status">
@@ -857,12 +765,6 @@ const scheduleFilterOptions: Array<{ value: ScheduleFilter; label: string }> = [
   { value: 'all', label: '全部' },
   { value: 'enabled', label: '已启用' },
   { value: 'paused', label: '已暂停' },
-];
-
-const assistantExamples = [
-  '每个工作日早上 8 点总结当前项目进展',
-  '每周五下午 4 点整理本周完成情况和下周计划',
-  '每天上午 9 点检查项目里需要关注的更新',
 ];
 
 const scheduleSuggestions: Array<{

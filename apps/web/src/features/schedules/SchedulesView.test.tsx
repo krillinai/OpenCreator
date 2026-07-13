@@ -9,7 +9,6 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '../../runtime/errors.js';
-import type { ScheduleAssistantService } from '../../services/schedule-assistant.js';
 import {
   SchedulesView,
   type ScheduleViewService,
@@ -116,54 +115,16 @@ describe('SchedulesView', () => {
     expect(await screen.findByRole('heading', { name: '每日简报' })).toBeInTheDocument();
   });
 
-  it('uses Clawee to generate a draft and requires review before creating', async () => {
+  it('opens Clawee schedule creation in a new conversation', async () => {
     const user = userEvent.setup();
-    const generate = vi.fn(async () => ({
-      name: '每周回顾',
-      prompt: '整理本周工作进展和下周计划',
-      frequency: {
-        repeat: 'weekly' as const,
-        time: '16:00',
-        days: [5],
-      },
-    }));
-    const createSchedule = vi.fn(async (input: CreateScheduleRequest) => schedule({
-      name: input.name,
-      cron: input.cron,
-      promptPreviewRedacted: input.prompt,
-    }));
-    renderView({
-      assistant: { generate },
-      service: createService({
-        listSchedules: vi.fn(async () => ({ schedules: [] })),
-        createSchedule,
-      }),
-    });
+    const onCreateWithClawee = vi.fn();
+    renderView({ onCreateWithClawee });
 
     await openCreateMenu(user, '使用 Clawee 创建');
-    await user.type(
-      screen.getByLabelText('告诉 Clawee 要安排什么'),
-      '每周五下午四点整理本周工作'
-    );
-    await user.click(screen.getByRole('button', { name: '生成计划' }));
 
-    expect(generate).toHaveBeenCalledWith({
-      description: '每周五下午四点整理本周工作',
-      cwd: '/workspace/current',
-      profile: 'default',
-      timezone: 'Asia/Shanghai',
-    });
-    expect(await screen.findByText('Clawee 已生成计划草稿，请确认后创建')).toBeInTheDocument();
-    expect(screen.getByLabelText('已安排任务标题')).toHaveValue('每周回顾');
-    expect(screen.getByLabelText('任务内容')).toHaveValue('整理本周工作进展和下周计划');
-    expect(screen.getByLabelText('重复')).toHaveValue('weekly');
-    expect(screen.getByLabelText('执行时间')).toHaveValue('16:00');
-
-    await user.click(screen.getByRole('button', { name: '创建任务' }));
-    expect(createSchedule).toHaveBeenCalledWith(expect.objectContaining({
-      name: '每周回顾',
-      cron: '0 16 * * 5',
-    }));
+    expect(onCreateWithClawee).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('使用 Clawee 创建计划任务')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('告诉 Clawee 要安排什么')).not.toBeInTheDocument();
   });
 
   it('prefills suggested tasks without creating them immediately', async () => {
@@ -317,7 +278,7 @@ function renderView(overrides: Partial<Parameters<typeof createView>[0]> = {}) {
 function createView(overrides: {
   connected?: boolean;
   service?: ScheduleViewService | null;
-  assistant?: ScheduleAssistantService | null;
+  onCreateWithClawee?(): Promise<void> | void;
   onOpenRun?(runId: string, threadId?: string): void;
   confirmDelete?(schedule: ScheduleResponse): boolean;
 } = {}) {
@@ -325,7 +286,6 @@ function createView(overrides: {
     <SchedulesView
       connected={overrides.connected ?? true}
       service={overrides.service ?? createService()}
-      assistant={overrides.assistant ?? { generate: vi.fn() }}
       projects={[
         {
           id: 'current',
@@ -350,6 +310,7 @@ function createView(overrides: {
       ]}
       defaultTimezone="Asia/Shanghai"
       pollIntervalMs={0}
+      onCreateWithClawee={overrides.onCreateWithClawee ?? vi.fn()}
       onOpenRun={overrides.onOpenRun ?? vi.fn()}
       confirmDelete={overrides.confirmDelete}
     />

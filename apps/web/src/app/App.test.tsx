@@ -268,6 +268,75 @@ describe('App', () => {
     expect(screen.getByRole('textbox', { name: '输入任务' })).toBeInTheDocument();
   });
 
+  it('opens Clawee schedule creation as a new draft conversation', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/schedules')) return jsonResponse({ schedules: [] });
+      if (url.endsWith('/threads') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_schedule_builder',
+            title: String(body.title),
+            cwd: String(body.cwd),
+            canonicalCwd: String(body.cwd)
+          })
+        }, { status: 201 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '已安排' }));
+    expect(await screen.findByRole('heading', { name: '已安排的任务' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^创建$/ }));
+    await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
+
+    const createThreadCall = await waitFor(() => {
+      const call = fetchCalls.find(item => item.url.endsWith('/threads') && item.init?.method === 'POST');
+      expect(call).toBeDefined();
+      return call!;
+    });
+    expect(JSON.parse(String(createThreadCall.init?.body))).toMatchObject({
+      title: '创建已安排任务',
+      cwd: '~/develop/content-design',
+      profile: 'default',
+      sandbox: 'danger-full-access'
+    });
+    expect(window.location.hash).toBe('#/thread/thread_schedule_builder');
+    expect(await screen.findByRole('heading', { name: '创建已安排任务' })).toBeInTheDocument();
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await waitFor(() => {
+      expect(textbox).toHaveValue(
+        '我们一起来设置一个已安排任务吧。首先，说明已安排任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。'
+      );
+      expect(textbox).toHaveFocus();
+    });
+    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
+    expect(fetchCalls.some(call => call.url.endsWith('/runs'))).toBe(false);
+  });
+
   it('uses the selected thread run registry without loading runs for every thread', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();

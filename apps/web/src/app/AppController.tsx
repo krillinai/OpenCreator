@@ -88,7 +88,6 @@ import { createMemoryService } from '../services/memory-service.js';
 import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
-import { createScheduleAssistant } from '../services/schedule-assistant.js';
 import { createScheduleService } from '../services/schedule-service.js';
 import { createSearchService } from '../services/search-service.js';
 import { createSkillMarketService } from '../services/skill-market-service.js';
@@ -126,6 +125,9 @@ const RESIZE_KEY_STEP = 32;
 const CONVERSATION_LIGHTFALL_COLORS = ['#AD4D1F', '#D86532', '#F0A866'];
 const DYNAMIC_BACKGROUND_STORAGE_KEY = 'clawee.preferences.dynamicBackground';
 const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v2';
+const SCHEDULE_CREATION_TITLE = '创建已安排任务';
+const SCHEDULE_CREATION_DRAFT =
+  '我们一起来设置一个已安排任务吧。首先，说明已安排任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。';
 const CapabilitiesPage = lazy(() => import('../features/capabilities/CapabilitiesPage.js'));
 const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
@@ -299,19 +301,6 @@ export function AppController(props: AppControllerProps) {
     () => runtimeClient === null ? null : createScheduleService(runtimeClient),
     [runtimeClient]
   );
-  const scheduleAssistant = useMemo(
-    () => (
-      runService === null || connectionConfig === null
-        ? null
-        : createScheduleAssistant({
-            runService,
-            subscribeRunEvents,
-            connection: connectionConfig,
-            fetchImpl: runtimeFetch,
-          })
-    ),
-    [connectionConfig, runService, runtimeFetch, subscribeRunEvents]
-  );
   const mcpService = useMemo(
     () => runtimeClient === null ? null : createMcpService(runtimeClient),
     [runtimeClient]
@@ -386,6 +375,15 @@ export function AppController(props: AppControllerProps) {
     if (skipNextHistoryLoadForThreadRef.current !== threadId) return false;
     skipNextHistoryLoadForThreadRef.current = undefined;
     return true;
+  }, []);
+  const handleComposerDraftApplied = useCallback((draftId: number) => {
+    setPendingComposerDraft(currentDraft =>
+      currentDraft !== undefined
+        && currentDraft.threadId === selectedThreadIdRef.current
+        && currentDraft.request.id === draftId
+        ? undefined
+        : currentDraft
+    );
   }, []);
   const threadHistory = useThreadHistory({
     threadId: state.selectedThreadId,
@@ -2090,6 +2088,40 @@ export function AppController(props: AppControllerProps) {
     openRunDetail(runId);
   }
 
+  async function openScheduleCreationConversation() {
+    const activeThreadService = threadService;
+    if (activeThreadService === null) {
+      throw new Error('本地服务暂不可用，无法创建对话');
+    }
+
+    const generation = skillMarketRuntimeGenerationRef.current;
+    const created = await activeThreadService.createThread(
+      buildThreadRequest(SCHEDULE_CREATION_TITLE, currentProject, effectiveComposerConfig)
+    );
+    if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
+
+    closeMobileSidebar();
+    setRuntimeThreads(previous => upsertThread(previous, created.thread));
+    showTimelineForThread(created.thread.id, [], true);
+    setThreadHistoryLoadError(undefined);
+    setHistoryLoadingThreadId(undefined);
+    setHistoryLoadedThreadId(created.thread.id);
+    setRunsLoadedThreadId(undefined);
+    setThreadConfigUpdateError(undefined);
+    skipNextHistoryLoadForThreadRef.current = created.thread.id;
+    allowInitialRuntimeProjectFocusRef.current = false;
+    dispatch({ type: 'select_thread', threadId: created.thread.id });
+    navigateToRoute({ view: 'thread', threadId: created.thread.id });
+    nextComposerDraftIdRef.current += 1;
+    setPendingComposerDraft({
+      threadId: created.thread.id,
+      request: {
+        id: nextComposerDraftIdRef.current,
+        text: SCHEDULE_CREATION_DRAFT
+      }
+    });
+  }
+
   async function openTask(task: TaskItem) {
     markTaskRead(task.id);
     const threadId = task.threadId;
@@ -2410,15 +2442,7 @@ export function AppController(props: AppControllerProps) {
           }
           onSelectProject={selectProject}
           onPermissionChange={(permission) => void handleComposerPermissionChange(permission)}
-          onDraftApplied={(draftId) => {
-            setPendingComposerDraft(currentDraft =>
-              currentDraft !== undefined
-                && currentDraft.threadId === state.selectedThreadId
-                && currentDraft.request.id === draftId
-                ? undefined
-                : currentDraft
-            );
-          }}
+          onDraftApplied={handleComposerDraftApplied}
           onCancel={() => void cancelActiveRun()}
           onUploadAttachment={async file => {
             if (attachmentService === null) throw new Error('附件服务暂不可用');
@@ -2482,11 +2506,11 @@ export function AppController(props: AppControllerProps) {
     <SchedulesPage
       connected={connectionState.status === 'connected'}
       service={scheduleService}
-      assistant={scheduleAssistant}
       projects={projects}
       currentProjectId={state.currentProjectId}
       profiles={codexProfiles?.profiles}
       defaultTimezone={resolveDefaultTimezone()}
+      onCreateWithClawee={openScheduleCreationConversation}
       onOpenRun={openScheduleRun}
     />
   ) : state.activeView === 'tasks' ? (

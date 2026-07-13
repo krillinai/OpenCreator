@@ -87,6 +87,14 @@ describe('app CSS visual contracts', () => {
     expect(mainPane).toContain('overflow: hidden;');
   });
 
+  it('keeps the desktop shell inside short viewports', () => {
+    const shell = cssBlock('.clawee-shell');
+
+    expect(shell).toContain('height: 100vh;');
+    expect(shell).toContain('min-height: 0;');
+    expect(shell).not.toContain('min-height: 640px;');
+  });
+
   it('stretches HTML previews across the full editor area', () => {
     const preview = cssBlock('.file-preview-html');
     const frame = cssBlock('.file-preview-html iframe');

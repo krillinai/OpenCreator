@@ -7,7 +7,7 @@ import type {
   ScheduleDetailResponse,
   UpdateScheduleRequest,
 } from '@clawee/protocol';
-import { ChevronDown, LoaderCircle, Save, Sparkles, X } from 'lucide-react';
+import { ChevronDown, LoaderCircle, Save, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { ClaweeProject } from '../projects/project-model.js';
 import {
@@ -50,7 +50,6 @@ export function ScheduleEditor(props: {
   profiles?: CodexProfileResponse[];
   loading?: boolean;
   saving?: boolean;
-  generatedByAssistant?: boolean;
   errors?: ScheduleEditorErrors;
   onCancel(): void;
   onSubmit(values: ScheduleEditorValues): void;
@@ -158,12 +157,6 @@ export function ScheduleEditor(props: {
       ) : (
         <>
           <div className="schedule-editor__scroll">
-            {props.generatedByAssistant ? (
-              <p className="schedule-assistant-result" role="status">
-                <Sparkles size={16} aria-hidden="true" />
-                Clawee 已生成计划草稿，请确认后创建
-              </p>
-            ) : null}
             {props.errors?.form ? (
               <p className="schedule-form-error" role="alert">
                 {props.errors.form}
