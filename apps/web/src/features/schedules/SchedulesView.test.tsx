@@ -16,6 +16,21 @@ import {
 } from './SchedulesView.js';
 
 describe('SchedulesView', () => {
+  it('closes the create menu on outside pointer presses and Escape', async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByRole('button', { name: /创建/ }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole('searchbox', { name: '搜索已安排任务' }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /创建/ }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
   it('renders a simple searchable list with friendly schedules and status filters', async () => {
     const user = userEvent.setup();
     renderView({

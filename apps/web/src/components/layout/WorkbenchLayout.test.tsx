@@ -66,6 +66,11 @@ describe('WorkbenchLayout', () => {
 
     expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'false');
     await waitFor(() => expect(trigger).toHaveFocus());
+
+    await user.click(trigger);
+    await user.click(screen.getByRole('button', { name: '关闭导航遮罩' }));
+
+    expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'false');
   });
 });
 

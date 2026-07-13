@@ -6,7 +6,7 @@ import {
   useState,
   type ClipboardEvent as ReactClipboardEvent,
   type DragEvent as ReactDragEvent,
-  type KeyboardEvent
+  type KeyboardEvent as ReactKeyboardEvent
 } from 'react';
 import {
   ArrowUp,
@@ -156,9 +156,9 @@ export function Composer(props: {
   const [submissionMode, setSubmissionMode] = useState<RunSubmissionMode>('enqueue');
   const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const composerRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const projectSearchRef = useRef<HTMLInputElement | null>(null);
-  const projectControlRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentDraftsRef = useRef<ComposerAttachmentDraft[]>([]);
   const transferredPreviewUrlsRef = useRef(new Set<string>());
@@ -166,6 +166,7 @@ export function Composer(props: {
   const scheduledDraftIdRef = useRef<number>();
   const appliedDraftIdRef = useRef<number>();
   const trimmedPrompt = prompt.trim();
+  const activeFloatingMenu = openMenu ?? (slashTrigger === null ? null : 'slash');
 
   attachmentDraftsRef.current = attachmentDrafts;
 
@@ -186,18 +187,34 @@ export function Composer(props: {
   }, [props.model, props.reasoning, props.projectName]);
 
   useEffect(() => {
-    if (openMenu !== 'project') return;
+    if (activeFloatingMenu === null) return;
 
+    const closeFloatingMenu = () => {
+      setOpenMenu(null);
+      setSlashTrigger(null);
+      setProjectQuery('');
+    };
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
-      if (target !== null && projectControlRef.current?.contains(target as Node)) return;
-      setOpenMenu(null);
-      setProjectQuery('');
+      const activeRoot = composerRef.current?.querySelector(
+        `[data-composer-menu-root="${activeFloatingMenu}"]`
+      );
+      if (target !== null && activeRoot?.contains(target as Node)) return;
+      closeFloatingMenu();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeFloatingMenu();
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [openMenu]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeFloatingMenu]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -353,7 +370,7 @@ export function Composer(props: {
     });
   };
 
-  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handlePromptKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (slashTrigger !== null) {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -469,6 +486,7 @@ export function Composer(props: {
 
   return (
     <form
+      ref={composerRef}
       className="clawee-composer"
       onSubmit={(event) => {
         event.preventDefault();
@@ -481,8 +499,8 @@ export function Composer(props: {
     >
       <div className="composer-project-context">
         <div
-          ref={projectControlRef}
           className="composer-control-wrap composer-project-control"
+          data-composer-menu-root="project"
         >
           <button
             className="composer-project-button"
@@ -510,9 +528,6 @@ export function Composer(props: {
                   placeholder="搜索项目"
                   value={projectQuery}
                   onChange={event => setProjectQuery(event.currentTarget.value)}
-                  onKeyDown={event => {
-                    if (event.key === 'Escape') closeProjectMenu();
-                  }}
                 />
               </label>
               <div className="composer-project-list" role="listbox" aria-label="项目列表">
@@ -548,7 +563,7 @@ export function Composer(props: {
         onRemove={(localId) => void removeAttachment(localId)}
         onRetry={(localId) => void uploadAttachment(localId)}
       />
-      <div className="composer-input-wrap">
+      <div className="composer-input-wrap" data-composer-menu-root="slash">
         <textarea
           ref={textareaRef}
           aria-label="输入任务"
@@ -606,7 +621,7 @@ export function Composer(props: {
       </div>
       <div className="composer-toolbar">
         <div className="composer-left-actions">
-          <div className="composer-control-wrap">
+          <div className="composer-control-wrap" data-composer-menu-root="add">
             <button
               className="composer-icon-button"
               type="button"
@@ -654,7 +669,7 @@ export function Composer(props: {
             />
           </div>
 
-          <div className="composer-control-wrap">
+          <div className="composer-control-wrap" data-composer-menu-root="permission">
             <button
               className={`composer-select composer-select-${selectedPermission}`}
               type="button"
@@ -699,7 +714,7 @@ export function Composer(props: {
         </div>
 
         <div className="composer-right-actions">
-          <div className="composer-control-wrap">
+          <div className="composer-control-wrap" data-composer-menu-root="model">
             <button
               className="composer-model-button"
               type="button"
@@ -751,7 +766,7 @@ export function Composer(props: {
               <Square aria-hidden="true" size={13} fill="currentColor" />
             </button>
           ) : null}
-          <div className="composer-submit-wrap">
+          <div className="composer-submit-wrap" data-composer-menu-root="submit">
             <button
               className="composer-send"
               type="submit"

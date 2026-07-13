@@ -167,6 +167,18 @@ describe('SkillMarketView', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('点击详情遮罩关闭弹窗', async () => {
+    const user = userEvent.setup();
+    renderSkillMarket();
+
+    await user.click(getSkillDetailButton('frontend-slides'));
+    const dialog = screen.getByRole('dialog');
+
+    fireEvent.mouseDown(dialog.parentElement!);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('Shift+Tab 在详情弹窗内从首个焦点回到最后一个焦点', async () => {
     const user = userEvent.setup();
     renderSkillMarket();

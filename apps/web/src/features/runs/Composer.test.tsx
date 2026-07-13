@@ -116,6 +116,44 @@ describe('Composer', () => {
     expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['添加上下文', '添加上下文'],
+    ['选择访问权限 完全访问', '访问权限'],
+    ['选择模型 默认模型', '模型']
+  ])('closes the %s menu on outside pointer presses', async (triggerName, menuName) => {
+    const user = userEvent.setup();
+    render(<Composer {...defaultProps} />);
+
+    await user.click(screen.getByRole('button', { name: triggerName }));
+    expect(screen.getByRole('menu', { name: menuName })).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole('textbox', { name: '输入任务' }));
+
+    expect(screen.queryByRole('menu', { name: menuName })).not.toBeInTheDocument();
+  });
+
+  it('closes the running submission menu on outside pointer presses', async () => {
+    const user = userEvent.setup();
+    render(<Composer {...defaultProps} running />);
+
+    await user.click(screen.getByRole('button', { name: '选择发送方式' }));
+    expect(screen.getByRole('menu', { name: '发送方式' })).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole('textbox', { name: '输入任务' }));
+
+    expect(screen.queryByRole('menu', { name: '发送方式' })).not.toBeInTheDocument();
+  });
+
+  it('closes the active composer menu with Escape', async () => {
+    const user = userEvent.setup();
+    render(<Composer {...defaultProps} />);
+
+    await user.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('menu', { name: '模型' })).not.toBeInTheDocument();
+  });
+
   it('opens menus and submits selected permission and model config', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
@@ -720,6 +758,31 @@ describe('Composer', () => {
     await user.keyboard('{Enter}');
 
     expect(textbox).toHaveValue('使用 MCP：github ');
+  });
+
+  it('closes the slash command list on outside pointer presses', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[
+          {
+            id: 'skill:brainstorming',
+            category: 'skill',
+            label: 'brainstorming',
+            description: '需求梳理和方案发散',
+            insertText: '$brainstorming '
+          }
+        ]}
+      />
+    );
+
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '/');
+    expect(screen.getByRole('listbox', { name: '能力菜单' })).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: '选择项目 content-design' }));
+
+    expect(screen.queryByRole('listbox', { name: '能力菜单' })).not.toBeInTheDocument();
   });
 });
 
