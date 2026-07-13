@@ -67,7 +67,7 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '已安排' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '任务' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
@@ -199,21 +199,10 @@ describe('ClaweeSidebar', () => {
     expect(onOpenView).toHaveBeenCalledWith('search');
   });
 
-  it('opens the task center and shows its unread count', async () => {
-    const user = userEvent.setup();
-    const onOpenView = vi.fn();
+  it('does not expose the internal task center in primary navigation', () => {
+    renderSidebar({ activeView: 'tasks' });
 
-    renderSidebar({
-      activeView: 'tasks',
-      unreadTaskCount: 3,
-      onOpenView
-    });
-
-    const taskButton = screen.getByRole('button', { name: '任务 3 条未读' });
-    expect(taskButton).toHaveAttribute('aria-current', 'page');
-    await user.click(taskButton);
-
-    expect(onOpenView).toHaveBeenCalledWith('tasks');
+    expect(screen.queryByRole('button', { name: /^任务/ })).not.toBeInTheDocument();
   });
 
   it('collapses from the header action', async () => {

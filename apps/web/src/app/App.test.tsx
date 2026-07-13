@@ -48,6 +48,7 @@ describe('App', () => {
 
   it('opens the global task center and jumps from a task to its run detail', async () => {
     const user = userEvent.setup();
+    window.location.hash = '#/tasks';
     const hostBridge = createHostBridge();
     const task: TaskItem = {
       id: 'run_task',
@@ -112,7 +113,6 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('button', { name: '任务' }));
     expect(await screen.findByRole('heading', { name: '任务中心' })).toBeInTheDocument();
     expect(window.location.hash).toBe('#/tasks');
 

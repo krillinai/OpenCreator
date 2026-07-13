@@ -2552,7 +2552,6 @@ export function AppController(props: AppControllerProps) {
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
-          unreadTaskCount={unreadTaskIds.size}
           collapsed={sidebarCollapsed}
           onNewConversation={startNewConversation}
           onSelectProject={selectProject}
