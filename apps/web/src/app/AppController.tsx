@@ -2478,12 +2478,7 @@ export function AppController(props: AppControllerProps) {
       connected={connectionState.status === 'connected'}
       service={searchService}
       projects={projects}
-      currentProjectId={state.currentProjectId}
-      currentProjectCwd={
-        visibleRuntimeThreads.find(thread => (
-          projectIdForThread(thread, projects) === state.currentProjectId
-        ))?.cwd
-      }
+      recentThreads={visibleRuntimeThreads}
       onOpenResult={result => void openSearchResult(result)}
     />
   ) : state.activeView === 'schedules' ? (

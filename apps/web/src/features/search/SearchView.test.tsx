@@ -1,7 +1,8 @@
 import type {
   ConversationSearchQuery,
   ConversationSearchResponse,
-  ConversationSearchResult
+  ConversationSearchResult,
+  ThreadResponse,
 } from '@clawee/protocol';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +14,44 @@ describe('SearchView', () => {
     vi.restoreAllMocks();
   });
 
-  it('debounces input and renders highlighted results', async () => {
+  it('shows recent conversations before the user starts searching', () => {
+    const searchConversations = vi.fn();
+    const onOpenResult = vi.fn();
+    renderSearch({
+      onOpenResult,
+      recentThreads: [
+        thread({
+          id: 'thread-recent-1',
+          title: '重新详细梳理 AI 任务创建逻辑',
+          cwd: '/workspace/customer-agent',
+        }),
+        thread({
+          id: 'thread-recent-2',
+          title: '启动服务',
+          cwd: '/workspace/clawee-agent',
+        }),
+      ],
+      service: { searchConversations },
+    });
+
+    expect(screen.getByRole('heading', { name: '最近会话' })).toBeInTheDocument();
+    expect(screen.getByText('重新详细梳理 AI 任务创建逻辑')).toBeInTheDocument();
+    expect(screen.getByText('customer-agent')).toBeInTheDocument();
+    expect(screen.queryByLabelText('项目范围')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('内容类型')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('时间范围')).not.toBeInTheDocument();
+    expect(searchConversations).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', {
+      name: /重新详细梳理 AI 任务创建逻辑/,
+    }));
+    expect(onOpenResult).toHaveBeenCalledWith(expect.objectContaining({
+      threadId: 'thread-recent-1',
+      itemType: 'title',
+    }));
+  });
+
+  it('debounces input and renders a compact highlighted conversation result', async () => {
     vi.useFakeTimers();
     const searchConversations = vi.fn(async (): Promise<ConversationSearchResponse> => ({
       results: [
@@ -21,16 +59,16 @@ describe('SearchView', () => {
           itemId: 'item-1',
           snippet: [
             { text: '刷新后', highlighted: false },
-            { text: '页面卡住', highlighted: true }
-          ]
-        })
+            { text: '页面卡住', highlighted: true },
+          ],
+        }),
       ],
-      hasMore: false
+      hasMore: false,
     }));
     renderSearch({ service: { searchConversations } });
 
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索会话' }), {
-      target: { value: '页面卡住' }
+      target: { value: '页面卡住' },
     });
     expect(searchConversations).not.toHaveBeenCalled();
 
@@ -41,20 +79,24 @@ describe('SearchView', () => {
 
     expect(searchConversations).toHaveBeenCalledWith({
       query: '页面卡住',
-      limit: 20
+      limit: 20,
     });
-    expect(screen.getByText('刷新后')).toBeInTheDocument();
     expect(screen.getByText('页面卡住').tagName).toBe('MARK');
+    expect(screen.getByText('当前项目')).toBeInTheDocument();
+    expect(screen.queryByText('我的消息')).not.toBeInTheDocument();
+    expect(screen.queryByText('/workspace/current')).not.toBeInTheDocument();
   });
 
   it('ignores a slower response from an older query', async () => {
     vi.useFakeTimers();
     let resolveOld: ((response: ConversationSearchResponse) => void) | undefined;
     let resolveNew: ((response: ConversationSearchResponse) => void) | undefined;
-    const searchConversations = vi.fn((query: ConversationSearchQuery) => new Promise<ConversationSearchResponse>(resolve => {
-      if (query.query === '旧查询') resolveOld = resolve;
-      else resolveNew = resolve;
-    }));
+    const searchConversations = vi.fn((query: ConversationSearchQuery) => (
+      new Promise<ConversationSearchResponse>(resolve => {
+        if (query.query === '旧查询') resolveOld = resolve;
+        else resolveNew = resolve;
+      })
+    ));
     renderSearch({ service: { searchConversations } });
     const input = screen.getByRole('searchbox', { name: '搜索会话' });
 
@@ -66,14 +108,14 @@ describe('SearchView', () => {
     await act(async () => {
       resolveNew?.({
         results: [result({ title: '新结果', itemId: 'new-item' })],
-        hasMore: false
+        hasMore: false,
       });
       await Promise.resolve();
     });
     await act(async () => {
       resolveOld?.({
         results: [result({ title: '旧结果', itemId: 'old-item' })],
-        hasMore: false
+        hasMore: false,
       });
       await Promise.resolve();
     });
@@ -82,42 +124,38 @@ describe('SearchView', () => {
     expect(screen.queryByText('旧结果')).not.toBeInTheDocument();
   });
 
-  it('applies project and type filters, then appends the next page', async () => {
+  it('deduplicates conversations and appends the next page', async () => {
     vi.useFakeTimers();
-    const searchConversations = vi.fn(async (query: ConversationSearchQuery): Promise<ConversationSearchResponse> => (
+    const searchConversations = vi.fn(async (
+      query: ConversationSearchQuery
+    ): Promise<ConversationSearchResponse> => (
       query.cursor === undefined
         ? {
-            results: [result({ title: '第一页', itemId: 'first-item' })],
+            results: [
+              result({ threadId: 'thread-1', title: '第一页', itemId: 'first-item' }),
+              result({ threadId: 'thread-1', title: '第一页', itemId: 'duplicate-item' }),
+            ],
             hasMore: true,
-            nextCursor: 'next-page'
+            nextCursor: 'next-page',
           }
         : {
-            results: [result({ title: '第二页', itemId: 'second-item' })],
-            hasMore: false
+            results: [
+              result({ threadId: 'thread-2', title: '第二页', itemId: 'second-item' }),
+            ],
+            hasMore: false,
           }
     ));
     renderSearch({ service: { searchConversations } });
 
-    fireEvent.change(screen.getByLabelText('项目范围'), {
-      target: { value: 'current' }
-    });
-    fireEvent.change(screen.getByLabelText('内容类型'), {
-      target: { value: 'assistant_message' }
-    });
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索会话' }), {
-      target: { value: '共同关键词' }
+      target: { value: '共同关键词' },
     });
     await act(async () => {
       vi.advanceTimersByTime(250);
       await Promise.resolve();
     });
 
-    expect(searchConversations).toHaveBeenLastCalledWith({
-      query: '共同关键词',
-      limit: 20,
-      cwd: '/workspace/current',
-      itemTypes: ['assistant_message']
-    });
+    expect(screen.getAllByText('第一页')).toHaveLength(1);
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '加载更多结果' }));
       await Promise.resolve();
@@ -127,10 +165,7 @@ describe('SearchView', () => {
       query: '共同关键词',
       limit: 20,
       cursor: 'next-page',
-      cwd: '/workspace/current',
-      itemTypes: ['assistant_message']
     });
-    expect(screen.getByText('第一页')).toBeInTheDocument();
     expect(screen.getByText('第二页')).toBeInTheDocument();
   });
 
@@ -138,14 +173,14 @@ describe('SearchView', () => {
     vi.useFakeTimers();
     const onOpenResult = vi.fn();
     const results = [
-      result({ title: '第一条结果', itemId: 'first-item' }),
-      result({ title: '第二条结果', itemId: 'second-item' })
+      result({ threadId: 'thread-1', title: '第一条结果', itemId: 'first-item' }),
+      result({ threadId: 'thread-2', title: '第二条结果', itemId: 'second-item' }),
     ];
     renderSearch({
       onOpenResult,
       service: {
-        searchConversations: vi.fn(async () => ({ results, hasMore: false }))
-      }
+        searchConversations: vi.fn(async () => ({ results, hasMore: false })),
+      },
     });
     const input = screen.getByRole('searchbox', { name: '搜索会话' });
     fireEvent.change(input, { target: { value: '结果' } });
@@ -167,17 +202,17 @@ describe('SearchView', () => {
 
   it('shows disconnected, error, and empty states', async () => {
     const { rerender } = renderSearch({ connected: false, service: null });
-    expect(screen.getByText('本地服务连接后可以搜索会话')).toBeInTheDocument();
+    expect(screen.getByText('连接本地服务后可以搜索会话')).toBeInTheDocument();
 
     vi.useFakeTimers();
     const service: SearchViewService = {
       searchConversations: vi.fn(async () => {
         throw new Error('failed');
-      })
+      }),
     };
     rerender(createView({ connected: true, service }));
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索会话' }), {
-      target: { value: '没有结果' }
+      target: { value: '没有结果' },
     });
     await act(async () => {
       vi.advanceTimersByTime(250);
@@ -194,13 +229,14 @@ function renderSearch(overrides: Partial<Parameters<typeof createView>[0]> = {})
 function createView(overrides: {
   connected?: boolean;
   service?: SearchViewService | null;
+  recentThreads?: ThreadResponse[];
   onOpenResult?(result: ConversationSearchResult): void;
 } = {}) {
   return (
     <SearchView
       connected={overrides.connected ?? true}
       service={overrides.service ?? {
-        searchConversations: async () => ({ results: [], hasMore: false })
+        searchConversations: async () => ({ results: [], hasMore: false }),
       }}
       projects={[
         {
@@ -210,16 +246,53 @@ function createView(overrides: {
           sandbox: 'follow-global',
           profile: 'default',
           model: null,
-          reasoning: null
-        }
+          reasoning: null,
+        },
+        {
+          id: 'customer-agent',
+          name: 'customer-agent',
+          cwd: '/workspace/customer-agent',
+          sandbox: 'follow-global',
+          profile: 'default',
+          model: null,
+          reasoning: null,
+        },
+        {
+          id: 'clawee-agent',
+          name: 'clawee-agent',
+          cwd: '/workspace/clawee-agent',
+          sandbox: 'follow-global',
+          profile: 'default',
+          model: null,
+          reasoning: null,
+        },
       ]}
-      currentProjectId="current"
+      recentThreads={overrides.recentThreads ?? []}
       onOpenResult={overrides.onOpenResult ?? vi.fn()}
     />
   );
 }
 
-function result(overrides: Partial<ConversationSearchResult> = {}): ConversationSearchResult {
+function thread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
+  return {
+    id: 'thread-recent',
+    title: '最近会话',
+    codexThreadId: 'codex-recent',
+    cwd: '/workspace/current',
+    canonicalCwd: '/workspace/current',
+    workspaceMode: 'external',
+    profile: 'default',
+    sandbox: 'workspace-write',
+    status: 'active',
+    createdAt: '2026-07-12T10:00:00.000Z',
+    updatedAt: '2026-07-12T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function result(
+  overrides: Partial<ConversationSearchResult> = {}
+): ConversationSearchResult {
   return {
     threadId: 'thread-1',
     codexThreadId: 'codex-thread-1',
@@ -229,6 +302,6 @@ function result(overrides: Partial<ConversationSearchResult> = {}): Conversation
     itemType: 'user_message',
     createdAt: '2026-07-12T12:00:00.000Z',
     snippet: [{ text: '结果片段', highlighted: false }],
-    ...overrides
+    ...overrides,
   };
 }

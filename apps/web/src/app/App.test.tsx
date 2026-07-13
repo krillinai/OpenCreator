@@ -29,7 +29,10 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: '搜索会话' })).toBeInTheDocument();
+    expect(await screen.findByRole('searchbox', { name: '搜索会话' })).toHaveAttribute(
+      'placeholder',
+      '搜索会话内容'
+    );
     expect(screen.getByRole('button', { name: '搜索' })).toHaveAttribute('aria-current', 'page');
   });
 
