@@ -102,6 +102,20 @@ describe('Composer', () => {
     expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
   });
 
+  it('keeps the project menu open for inside clicks and closes it on outside pointer presses', async () => {
+    const user = userEvent.setup();
+    render(<Composer {...defaultProps} />);
+
+    await user.click(screen.getByRole('button', { name: '选择项目 content-design' }));
+    fireEvent.pointerDown(screen.getByRole('searchbox', { name: '搜索项目' }));
+
+    expect(screen.getByRole('dialog', { name: '选择项目' })).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole('textbox', { name: '输入任务' }));
+
+    expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
+  });
+
   it('opens menus and submits selected permission and model config', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();

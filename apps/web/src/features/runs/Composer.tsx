@@ -158,6 +158,7 @@ export function Composer(props: {
   const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const projectSearchRef = useRef<HTMLInputElement | null>(null);
+  const projectControlRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentDraftsRef = useRef<ComposerAttachmentDraft[]>([]);
   const transferredPreviewUrlsRef = useRef(new Set<string>());
@@ -183,6 +184,20 @@ export function Composer(props: {
   useEffect(() => {
     setSelectedModel(modelOptionForConfig(props.model, props.reasoning));
   }, [props.model, props.reasoning, props.projectName]);
+
+  useEffect(() => {
+    if (openMenu !== 'project') return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target !== null && projectControlRef.current?.contains(target as Node)) return;
+      setOpenMenu(null);
+      setProjectQuery('');
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [openMenu]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -465,7 +480,10 @@ export function Composer(props: {
       onDrop={handleDrop}
     >
       <div className="composer-project-context">
-        <div className="composer-control-wrap composer-project-control">
+        <div
+          ref={projectControlRef}
+          className="composer-control-wrap composer-project-control"
+        >
           <button
             className="composer-project-button"
             type="button"
