@@ -14,9 +14,11 @@ import {
   Check,
   ChevronDown,
   Circle,
+  Folder,
   ListPlus,
   Paperclip,
   Plus,
+  Search,
   ShieldCheck,
   Sparkles,
   Square,
@@ -28,7 +30,7 @@ import type {
   ReasoningEffort,
   RunSubmissionMode
 } from '@clawee/protocol';
-import type { ProjectPermission } from '../projects/project-model.js';
+import type { ClaweeProject, ProjectPermission } from '../projects/project-model.js';
 import {
   AttachmentTray,
   type AttachmentTrayItem
@@ -117,7 +119,9 @@ export function Composer(props: {
   disabledReason?: string;
   running?: boolean;
   canceling?: boolean;
+  projectId: string;
   projectName: string;
+  projects: ClaweeProject[];
   permission: ProjectPermission;
   profile: string;
   model: string | null;
@@ -128,6 +132,7 @@ export function Composer(props: {
   draftRequest?: ComposerDraftRequest;
   imageInputSupported?: boolean;
   imageInputUnsupportedReason?: string;
+  onSelectProject(projectId: string): void;
   onPermissionChange?(permission: ProjectPermission): void;
   onDraftApplied?(id: number): void;
   onCancel?(): void;
@@ -141,16 +146,18 @@ export function Composer(props: {
   ): boolean | void | Promise<boolean | void>;
 }) {
   const [prompt, setPrompt] = useState('');
+  const [projectQuery, setProjectQuery] = useState('');
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(props.permission);
   const [selectedModel, setSelectedModel] = useState(() => modelOptionForConfig(props.model, props.reasoning));
   const [openMenu, setOpenMenu] = useState<
-    'add' | 'permission' | 'model' | 'submit' | null
+    'project' | 'add' | 'permission' | 'model' | 'submit' | null
   >(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
   const [submissionMode, setSubmissionMode] = useState<RunSubmissionMode>('enqueue');
   const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const projectSearchRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentDraftsRef = useRef<ComposerAttachmentDraft[]>([]);
   const transferredPreviewUrlsRef = useRef(new Set<string>());
@@ -221,6 +228,12 @@ export function Composer(props: {
   }, [props.draftRequest, props.onDraftApplied]);
 
   const selectedPermissionOption = permissionOptions.find(option => option.value === selectedPermission) ?? permissionOptions[0]!;
+  const normalizedProjectQuery = projectQuery.trim().toLocaleLowerCase();
+  const filteredProjects = props.projects.filter(project =>
+    normalizedProjectQuery.length === 0
+    || project.name.toLocaleLowerCase().includes(normalizedProjectQuery)
+    || project.cwd.toLocaleLowerCase().includes(normalizedProjectQuery)
+  );
   const slashCommands = props.slashCommands ?? [];
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, slashTrigger?.query ?? ''),
@@ -288,6 +301,28 @@ export function Composer(props: {
     setSlashTrigger(nextTrigger);
     if (nextTrigger !== null) setOpenMenu(null);
   };
+
+  const closeProjectMenu = () => {
+    setOpenMenu(null);
+    setProjectQuery('');
+  };
+
+  const selectProject = (projectId: string) => {
+    closeProjectMenu();
+    if (projectId !== props.projectId) props.onSelectProject(projectId);
+  };
+
+  const toggleProjectMenu = () => {
+    setSlashTrigger(null);
+    if (openMenu === 'project') {
+      closeProjectMenu();
+      return;
+    }
+    setProjectQuery('');
+    setOpenMenu('project');
+    window.requestAnimationFrame(() => projectSearchRef.current?.focus());
+  };
+
   const applySlashCommand = (command: ComposerSlashCommand) => {
     if (slashTrigger === null) return;
 
@@ -429,6 +464,67 @@ export function Composer(props: {
       }}
       onDrop={handleDrop}
     >
+      <div className="composer-project-context">
+        <div className="composer-control-wrap composer-project-control">
+          <button
+            className="composer-project-button"
+            type="button"
+            aria-label={`选择项目 ${props.projectName}`}
+            aria-expanded={openMenu === 'project'}
+            onClick={toggleProjectMenu}
+          >
+            <Folder aria-hidden="true" size={15} />
+            <span>{props.projectName}</span>
+            <ChevronDown aria-hidden="true" size={14} />
+          </button>
+          {openMenu === 'project' ? (
+            <div
+              className="composer-popover composer-project-popover"
+              role="dialog"
+              aria-label="选择项目"
+            >
+              <label className="composer-project-search">
+                <Search aria-hidden="true" size={15} />
+                <input
+                  ref={projectSearchRef}
+                  type="search"
+                  aria-label="搜索项目"
+                  placeholder="搜索项目"
+                  value={projectQuery}
+                  onChange={event => setProjectQuery(event.currentTarget.value)}
+                  onKeyDown={event => {
+                    if (event.key === 'Escape') closeProjectMenu();
+                  }}
+                />
+              </label>
+              <div className="composer-project-list" role="listbox" aria-label="项目列表">
+                {filteredProjects.length === 0 ? (
+                  <p className="composer-project-empty">没有匹配的项目</p>
+                ) : (
+                  filteredProjects.map(project => (
+                    <button
+                      key={project.id}
+                      className="composer-project-option"
+                      type="button"
+                      role="option"
+                      aria-label={project.name}
+                      aria-selected={project.id === props.projectId}
+                      title={project.cwd}
+                      onClick={() => selectProject(project.id)}
+                    >
+                      <Folder aria-hidden="true" size={16} />
+                      <span>{project.name}</span>
+                      {project.id === props.projectId ? (
+                        <Check className="composer-project-check" aria-hidden="true" size={15} />
+                      ) : null}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
       <AttachmentTray
         items={attachmentDrafts}
         onRemove={(localId) => void removeAttachment(localId)}

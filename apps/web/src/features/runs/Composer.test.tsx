@@ -4,12 +4,45 @@ import { StrictMode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from './Composer.js';
 
+const projects = [
+  {
+    id: 'content-design',
+    name: 'content-design',
+    cwd: '~/develop/content-design',
+    sandbox: 'danger-full-access' as const,
+    profile: 'default',
+    model: null,
+    reasoning: null
+  },
+  {
+    id: 'playground',
+    name: 'Playground',
+    cwd: '~/develop/clawee/playground',
+    sandbox: 'follow-global' as const,
+    profile: 'default',
+    model: null,
+    reasoning: null
+  },
+  {
+    id: 'cover',
+    name: 'cover',
+    cwd: '~/develop/clawee/cover',
+    sandbox: 'follow-global' as const,
+    profile: 'default',
+    model: null,
+    reasoning: null
+  }
+];
+
 const defaultProps = {
+  projectId: 'content-design',
   projectName: 'content-design',
+  projects,
   permission: 'danger-full-access' as const,
   profile: 'default',
   model: null,
   reasoning: null,
+  onSelectProject: vi.fn(),
   onSubmit: vi.fn()
 };
 
@@ -21,6 +54,7 @@ describe('Composer', () => {
   it('shows codex-style composer controls', () => {
     render(<Composer {...defaultProps} permission="workspace-write" />);
 
+    expect(screen.getByRole('button', { name: '选择项目 content-design' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 工作区读写' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
@@ -30,6 +64,42 @@ describe('Composer', () => {
     expect(screen.queryByText('本地模式')).not.toBeInTheDocument();
     expect(screen.queryByText('open-clawee')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('随心输入')).toBeInTheDocument();
+  });
+
+  it('searches projects and switches the conversation workspace', async () => {
+    const user = userEvent.setup();
+    const onSelectProject = vi.fn();
+    render(<Composer {...defaultProps} onSelectProject={onSelectProject} />);
+
+    await user.click(screen.getByRole('button', { name: '选择项目 content-design' }));
+
+    expect(screen.getByRole('dialog', { name: '选择项目' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'content-design' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+
+    await user.type(screen.getByRole('searchbox', { name: '搜索项目' }), 'play');
+
+    expect(screen.getByRole('option', { name: 'Playground' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'cover' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('option', { name: 'Playground' }));
+
+    expect(onSelectProject).toHaveBeenCalledWith('playground');
+    expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
+  });
+
+  it('closes the project menu without resetting the current project', async () => {
+    const user = userEvent.setup();
+    const onSelectProject = vi.fn();
+    render(<Composer {...defaultProps} onSelectProject={onSelectProject} />);
+
+    await user.click(screen.getByRole('button', { name: '选择项目 content-design' }));
+    await user.click(screen.getByRole('option', { name: 'content-design' }));
+
+    expect(onSelectProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
   });
 
   it('opens menus and submits selected permission and model config', async () => {

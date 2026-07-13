@@ -2576,6 +2576,133 @@ textarea:focus-visible {
   box-shadow: none;
 }
 
+.composer-project-context {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.composer-project-control {
+  max-width: min(360px, 100%);
+}
+
+.composer-project-button {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(252, 253, 255, 0.78);
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1;
+}
+
+.composer-project-button:hover {
+  background: rgba(252, 253, 255, 0.06);
+  color: var(--text);
+}
+
+.composer-project-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-project-button svg:last-child {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.composer-project-popover {
+  width: min(312px, calc(100vw - 40px));
+  padding: 8px;
+}
+
+.composer-project-search {
+  height: 36px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(7, 10, 14, 0.52);
+  color: var(--muted);
+}
+
+.composer-project-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent-strong) 48%, var(--border));
+}
+
+.composer-project-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.composer-project-search input::placeholder {
+  color: var(--subtle);
+}
+
+.composer-project-list {
+  max-height: min(280px, 42vh);
+  margin-top: 6px;
+  overflow-y: auto;
+}
+
+.composer-project-option {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.composer-project-option:hover,
+.composer-project-option[aria-selected="true"] {
+  background: var(--surface-3);
+}
+
+.composer-project-option span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-project-check {
+  justify-self: end;
+}
+
+.composer-project-empty {
+  margin: 0;
+  padding: 12px 9px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .composer-input-wrap {
   position: relative;
   min-width: 0;

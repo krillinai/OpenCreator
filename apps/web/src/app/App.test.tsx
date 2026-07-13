@@ -2184,7 +2184,9 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Playground' }));
+    await user.click(screen.getByRole('button', { name: '选择项目 content-design' }));
+    await user.click(screen.getByRole('option', { name: 'Playground' }));
+    expect(screen.getByRole('button', { name: '选择项目 Playground' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));
 

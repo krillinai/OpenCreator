@@ -1258,6 +1258,7 @@ export function AppController(props: AppControllerProps) {
     closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
+    setComposerRunConfig(null);
     showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
@@ -2382,7 +2383,9 @@ export function AppController(props: AppControllerProps) {
         ) : null}
         <Composer
           key={composerAttachmentScope}
+          projectId={currentProject?.id ?? state.currentProjectId}
           projectName={currentProjectName}
+          projects={projects}
           permission={effectiveComposerConfig.permission}
           profile={effectiveComposerConfig.profile}
           model={effectiveComposerConfig.model}
@@ -2405,6 +2408,7 @@ export function AppController(props: AppControllerProps) {
               ? pendingComposerDraft.request
               : undefined
           }
+          onSelectProject={selectProject}
           onPermissionChange={(permission) => void handleComposerPermissionChange(permission)}
           onDraftApplied={(draftId) => {
             setPendingComposerDraft(currentDraft =>
