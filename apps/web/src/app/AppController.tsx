@@ -2958,7 +2958,7 @@ function getRuntimeErrorMessage(error: unknown, fallback: string): string {
 
 function buildThreadRequest(prompt: string, project: ClaweeProject | undefined, config: ComposerRunConfig): CreateThreadRequest {
   const request: CreateThreadRequest = {
-    title: prompt.trim().slice(0, 80) || '新对话',
+    title: prompt.trim() || '新对话',
     cwd: project?.cwd,
     workspaceMode: 'external',
     profile: config.profile,

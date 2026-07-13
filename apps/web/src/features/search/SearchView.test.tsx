@@ -22,7 +22,7 @@ describe('SearchView', () => {
       recentThreads: [
         thread({
           id: 'thread-recent-1',
-          title: '重新详细梳理 AI 任务创建逻辑',
+          title: '梳理 AI 任务创建逻辑',
           cwd: '/workspace/customer-agent',
         }),
         thread({
@@ -35,7 +35,7 @@ describe('SearchView', () => {
     });
 
     expect(screen.getByRole('heading', { name: '最近会话' })).toBeInTheDocument();
-    expect(screen.getByText('重新详细梳理 AI 任务创建逻辑')).toBeInTheDocument();
+    expect(screen.getByText('梳理 AI 任务创建逻辑')).toBeInTheDocument();
     expect(screen.getByText('customer-agent')).toBeInTheDocument();
     expect(screen.queryByLabelText('项目范围')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('内容类型')).not.toBeInTheDocument();
@@ -43,7 +43,7 @@ describe('SearchView', () => {
     expect(searchConversations).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', {
-      name: /重新详细梳理 AI 任务创建逻辑/,
+      name: /梳理 AI 任务创建逻辑/,
     }));
     expect(onOpenResult).toHaveBeenCalledWith(expect.objectContaining({
       threadId: 'thread-recent-1',

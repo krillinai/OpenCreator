@@ -7,6 +7,7 @@ import type {
 } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
+import { createConversationTitle } from '../threads/conversation-title.js';
 
 export class SearchCursorError extends Error {
   constructor(message: string) {
@@ -190,7 +191,7 @@ function mapSearchRow(row: SearchRow, query: string): ConversationSearchResult {
   return {
     threadId: row.thread_id,
     codexThreadId: row.codex_thread_id,
-    title: row.session_title,
+    title: createConversationTitle(row.session_title, '未命名对话'),
     cwd: row.session_cwd,
     ...(row.item_id === TITLE_ITEM_ID ? {} : { itemId: row.item_id }),
     itemType: row.item_type,

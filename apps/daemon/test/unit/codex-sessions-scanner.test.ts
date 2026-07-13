@@ -69,6 +69,32 @@ describe('codex sessions scanner', () => {
     ]);
   });
 
+  it('summarizes long assistant prompts into concise imported thread titles', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '13');
+    mkdirSync(sessionDir, { recursive: true });
+    writeSession(sessionDir, 'schedule-assistant', {
+      id: 'schedule-assistant',
+      cwd: tempDir,
+      timestamp: '2026-07-13T01:00:00.000Z',
+      userMessage: [
+        '你是 Clawee 的计划任务配置助手。',
+        '不要调用工具，不要修改文件，只根据用户描述生成一个计划任务草稿。',
+        '用户所在时区：Asia/Shanghai',
+        '只输出一个 JSON 对象，不要输出 Markdown 或解释。',
+        '用户描述：每个工作日上午九点总结当前项目最近的进展和需要跟进的事项',
+      ].join('\n'),
+    });
+
+    expect(scanCodexSessions({ codexHome, limit: 20 })).toEqual([
+      expect.objectContaining({
+        codexThreadId: 'schedule-assistant',
+        title: '工作日总结项目进展',
+      }),
+    ]);
+  });
+
   it('filters subagent Codex sessions before applying the list limit', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
     const codexHome = join(tempDir, 'codex-home');

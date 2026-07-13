@@ -29,20 +29,27 @@ describe('conversation search service', () => {
     indexSession(setup.repository, {
       codexThreadId: 'codex-search-a',
       sourcePath: join(tempDir, 'search-a.jsonl'),
-      title: '刷新后页面卡住',
+      title: '请帮我重新详细分析下刷新后页面卡住的问题，确认原因并完成修复',
       cwd: setup.cwd,
       items: [
         message('user-1', 'user_message', '请分析 refresh race condition', '2026-07-12T08:00:01.000Z'),
         message('assistant-1', 'assistant_message', '问题位于 apps/web/src/app/App.tsx', '2026-07-12T08:00:02.000Z')
       ]
     });
-    insertThread(setup.db, 'thread-a', 'codex-search-a', setup.cwd, '刷新后页面卡住');
+    insertThread(
+      setup.db,
+      'thread-a',
+      'codex-search-a',
+      setup.cwd,
+      '请帮我重新详细分析下刷新后页面卡住的问题，确认原因并完成修复'
+    );
 
     const service = createConversationSearchService(setup.db);
 
     expect(service.search({ query: '页面卡住' }).results[0]).toMatchObject({
       threadId: 'thread-a',
       codexThreadId: 'codex-search-a',
+      title: '分析刷新后页面卡住的问题',
       itemType: 'title'
     });
     expect(service.search({ query: 'race condition' }).results[0]).toMatchObject({

@@ -1,4 +1,5 @@
 import type { ThreadHistoryItem } from '@clawee/protocol';
+import { createConversationTitle } from '../../threads/conversation-title.js';
 
 export type CodexSessionKind = 'user' | 'subagent';
 
@@ -18,8 +19,6 @@ export type ParsedCodexSessionLine = {
   item?: ThreadHistoryItem;
   error?: 'invalid_json';
 };
-
-const MAX_TITLE_LENGTH = 80;
 
 export function createCodexSessionParserState(): CodexSessionParserState {
   return { callNameById: {} };
@@ -60,7 +59,7 @@ export function parseCodexSessionLine(input: {
     && userMessage !== undefined
     && !isInjectedUserMessage(userMessage)
   ) {
-    state.title = formatTitle(userMessage);
+    state.title = createConversationTitle(userMessage, '未命名对话');
   }
 
   if (entry.type === 'event_msg' && payload?.type === 'user_message') {
@@ -270,12 +269,6 @@ function isSubagentSession(payload: Record<string, unknown>): boolean {
 
   const source = isRecord(payload.source) ? payload.source : undefined;
   return source !== undefined && isRecord(source.subagent);
-}
-
-function formatTitle(text: string): string {
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= MAX_TITLE_LENGTH) return normalized;
-  return `${normalized.slice(0, MAX_TITLE_LENGTH - 1)}…`;
 }
 
 function extractText(value: unknown): string | undefined {

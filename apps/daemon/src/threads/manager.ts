@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { nanoid } from 'nanoid';
 import { expandHome } from '../platform/paths.js';
 import { createThreadRepository, type ThreadRow } from '../storage/repositories.js';
+import { createConversationTitle } from './conversation-title.js';
 import type { CreateRuntimeThreadInput, ImportCodexThreadInput, RuntimeThread, ThreadManager, UpdateRuntimeThreadInput } from './types.js';
 
 export type CreateThreadManagerInput = {
@@ -26,7 +27,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
           : normalizeExternalCwd(request.cwd ?? process.cwd(), input.homeDir ?? homedir());
       mkdirSync(cwd, { recursive: true });
       const canonicalCwd = realpathSync(cwd);
-      const title = request.title ?? null;
+      const title = request.title === undefined ? null : createConversationTitle(request.title);
       const profile = request.profile ?? 'default';
       const sandbox = request.sandbox ?? 'read-only';
       const status = 'active';
@@ -69,7 +70,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       if (existing !== undefined) {
         threads.updateImportedThread({
           id: existing.id,
-          title: request.title,
+          title: createConversationTitle(request.title, '未命名对话'),
           cwd,
           canonicalCwd,
           updatedAt
@@ -81,7 +82,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
 
       threads.insertThread({
         id,
-        title: request.title,
+        title: createConversationTitle(request.title, '未命名对话'),
         codexThreadId: request.codexThreadId,
         cwd,
         canonicalCwd,
@@ -145,7 +146,7 @@ function toSqliteTimestamp(iso: string): string {
 function mapThreadRow(row: ThreadRow): RuntimeThread {
   return {
     id: row.id,
-    title: row.title,
+    title: row.title === null ? null : createConversationTitle(row.title),
     codexThreadId: row.codex_thread_id,
     cwd: row.cwd,
     canonicalCwd: row.canonical_cwd,
