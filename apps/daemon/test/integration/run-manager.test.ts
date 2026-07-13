@@ -28,6 +28,7 @@ afterEach(() => {
 function createTestRunManager(input: {
   tempDir?: string;
   codexBin?: string;
+  homeDir?: string;
   resumeCapabilityVerified?: boolean;
   logWriterFactory?(runDir: string): OrderedLogWriter;
 } = {}) {
@@ -45,6 +46,7 @@ function createTestRunManager(input: {
       ]
     }).bin,
     codexHome: join(tempDir, 'codex-home'),
+    homeDir: input.homeDir,
     threadAccess: threadManager,
     resumeCapabilityVerified: input.resumeCapabilityVerified ?? true,
     logWriterFactory: input.logWriterFactory
@@ -91,6 +93,28 @@ async function waitForRunStatus(
 }
 
 describe('run manager', () => {
+  it('expands a home-relative cwd before starting a standalone run', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-home-cwd-'));
+    const workspace = join(tempDir, 'workspace');
+    mkdirSync(workspace);
+    const { manager } = createTestRunManager({ tempDir, homeDir: tempDir });
+
+    const run = await manager.createAndRun({
+      prompt: 'home-relative workspace',
+      cwd: '~/workspace',
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+
+    expect(run.status).toBe('succeeded');
+    expect(manager.getRun(run.id)?.cwd).toBe(workspace);
+    const meta = JSON.parse(
+      readFileSync(join(tempDir, 'runs', run.id, 'meta.json'), 'utf8')
+    ) as { cwd?: string; args?: string[] };
+    expect(meta.cwd).toBe(workspace);
+    expect(meta.args).toContain(workspace);
+  });
+
   it('uses the context-enriched execution prompt and records only context references in metadata', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-context-'));
     const fake = createFakeCodex(tempDir, {

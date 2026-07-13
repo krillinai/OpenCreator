@@ -7,6 +7,7 @@ import type {
 } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import type { ApprovalManager } from '../approvals/manager.js';
@@ -30,6 +31,7 @@ import {
   type RunRow
 } from '../storage/repositories.js';
 import type { RuntimeThread } from '../threads/types.js';
+import { expandHome } from '../platform/paths.js';
 import {
   createOrderedLogWriter,
   type OrderedLogWriter,
@@ -48,6 +50,7 @@ export type RunManagerOptions = {
   dataDir: string;
   codexBin: string;
   codexHome: string;
+  homeDir?: string;
   timeoutMs?: number;
   spawnTimeoutMs?: number;
   inactivityTimeoutMs?: number;
@@ -179,6 +182,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   const manager: RunManager = {
     startRun(input: CreateRunInput): CreatedRun {
       if (closing) throw new Error('Run manager is closing');
+      input = {
+        ...input,
+        cwd: expandHome(input.cwd, options.homeDir ?? homedir())
+      };
       const thread = input.threadId === undefined
         ? undefined
         : options.threadAccess?.getThread(input.threadId);

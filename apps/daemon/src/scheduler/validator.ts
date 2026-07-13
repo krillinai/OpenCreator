@@ -1,6 +1,8 @@
 import type { ReasoningEffort, SandboxMode, ScheduleConcurrencyPolicy } from '@clawee/protocol';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { expandHome } from '../platform/paths.js';
 import { redactText } from '../security/redaction.js';
 import { computeNextRunAt, getDefaultTimezone, isValidTimezone, validateCronExpression } from './cron.js';
 import type { ProfileValidator } from './types.js';
@@ -48,6 +50,7 @@ export type NormalizedUpdateScheduleInput = Partial<
 export type ParseScheduleOptions = {
   now: string;
   defaultCwd: string;
+  homeDir?: string;
   profileValidator: ProfileValidator;
 };
 
@@ -185,9 +188,10 @@ function parseCommonFields(
     if (typeof cwd !== 'string' || cwd.length === 0) {
       return { ok: false, code: 'VALIDATION_FAILED', message: 'cwd must be a non-empty string' };
     }
+    const normalizedCwd = expandHome(cwd, options.homeDir ?? homedir());
     try {
-      value.cwd = cwd;
-      value.canonicalCwd = realpathSync(cwd);
+      value.cwd = normalizedCwd;
+      value.canonicalCwd = realpathSync(normalizedCwd);
     } catch (error) {
       return { ok: false, code: 'SCHEDULE_INVALID', message: `cwd must exist: ${formatError(error)}` };
     }

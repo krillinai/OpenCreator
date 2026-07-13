@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -20,6 +20,35 @@ const profileValidator = {
 };
 
 describe('scheduler validator', () => {
+  it('expands a home-relative cwd before validating a schedule', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-home-cwd-'));
+    const workspace = join(tempDir, 'workspace');
+    mkdirSync(workspace);
+
+    const result = parseCreateScheduleRequest(
+      {
+        name: 'daily status',
+        cron: '0 9 * * *',
+        prompt: 'Summarize status',
+        cwd: '~/workspace'
+      },
+      {
+        now: '2026-07-06T00:00:00.000Z',
+        defaultCwd: tempDir,
+        homeDir: tempDir,
+        profileValidator
+      }
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        cwd: workspace,
+        canonicalCwd: realpathSync(workspace)
+      }
+    });
+  });
+
   it('normalizes a create request with defaults', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
     const result = parseCreateScheduleRequest(

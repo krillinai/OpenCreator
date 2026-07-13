@@ -3,34 +3,55 @@ import type {
   RunScheduleNowResponse,
   ScheduleDetailResponse,
   ScheduleResponse,
-  UpdateScheduleRequest
+  UpdateScheduleRequest,
 } from '@clawee/protocol';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '../../runtime/errors.js';
+import type { ScheduleAssistantService } from '../../services/schedule-assistant.js';
 import {
   SchedulesView,
-  type ScheduleViewService
+  type ScheduleViewService,
 } from './SchedulesView.js';
 
 describe('SchedulesView', () => {
-  it('loads schedules and renders operational status', async () => {
+  it('renders a simple searchable list with friendly schedules and status filters', async () => {
+    const user = userEvent.setup();
     renderView({
       service: createService({
-        listSchedules: vi.fn(async () => ({ schedules: [schedule()] }))
-      })
+        listSchedules: vi.fn(async () => ({
+          schedules: [
+            schedule(),
+            schedule({
+              id: 'paused',
+              name: '每周回顾',
+              cron: '0 16 * * 5',
+              enabled: false,
+              promptPreviewRedacted: '整理本周工作',
+            }),
+          ],
+        })),
+      }),
     });
 
-    expect(await screen.findByRole('heading', { name: '每日总结' })).toBeInTheDocument();
-    expect(screen.getByText('0 18 * * *')).toBeInTheDocument();
-    expect(screen.getByText('Asia/Shanghai')).toBeInTheDocument();
-    expect(screen.getByText('/workspace/current')).toBeInTheDocument();
-    expect(screen.getByText('已启用')).toBeInTheDocument();
-    expect(screen.getByText('上次成功')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '已安排的任务' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '每日总结' })).toBeInTheDocument();
+    expect(screen.getByText('每天 18:00')).toBeInTheDocument();
+    expect(screen.queryByText('0 18 * * *')).not.toBeInTheDocument();
+    expect(screen.getByText('建议')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('searchbox', { name: '搜索已安排任务' }), '每周');
+    expect(screen.getByRole('heading', { name: '每周回顾' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '每日总结' })).not.toBeInTheDocument();
+
+    await user.clear(screen.getByRole('searchbox', { name: '搜索已安排任务' }));
+    await user.click(screen.getByRole('button', { name: '已暂停' }));
+    expect(screen.getByRole('heading', { name: '每周回顾' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '每日总结' })).not.toBeInTheDocument();
   });
 
-  it('creates a schedule with current project defaults', async () => {
+  it('creates a schedule manually with friendly frequency controls', async () => {
     const user = userEvent.setup();
     const createSchedule = vi.fn(async (input: CreateScheduleRequest) => schedule({
       id: 'schedule-created',
@@ -47,25 +68,27 @@ describe('SchedulesView', () => {
       sandbox: input.sandbox ?? 'workspace-write',
       timeoutMs: input.timeoutMs ?? null,
       concurrencyPolicy: input.concurrencyPolicy ?? 'skip',
-      misfirePolicy: input.misfirePolicy ?? 'skip'
+      misfirePolicy: input.misfirePolicy ?? 'skip',
     }));
     renderView({
       service: createService({
         listSchedules: vi.fn(async () => ({ schedules: [] })),
-        createSchedule
-      })
+        createSchedule,
+      }),
     });
 
-    await user.click(await screen.findByRole('button', { name: '新建计划' }));
+    await openCreateMenu(user, '手动设置');
+    expect(screen.queryByLabelText('Cron 表达式')).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'review' })).toBeInTheDocument();
-    await user.type(screen.getByLabelText('名称'), '每日总结');
-    await user.type(screen.getByLabelText('执行指令'), '总结今天的项目进展');
-    await user.type(screen.getByLabelText('Cron 表达式'), '0 18 * * *');
-    await user.click(screen.getByRole('button', { name: '保存计划' }));
+    await user.type(screen.getByLabelText('已安排任务标题'), '每日简报');
+    await user.type(screen.getByLabelText('任务内容'), '总结今天的项目进展');
+    await user.selectOptions(screen.getByLabelText('重复'), 'weekdays');
+    fireEvent.change(screen.getByLabelText('执行时间'), { target: { value: '08:00' } });
+    await user.click(screen.getByRole('button', { name: '创建任务' }));
 
     expect(createSchedule).toHaveBeenCalledWith({
-      name: '每日总结',
-      cron: '0 18 * * *',
+      name: '每日简报',
+      cron: '0 8 * * 1-5',
       timezone: 'Asia/Shanghai',
       enabled: true,
       prompt: '总结今天的项目进展',
@@ -73,75 +96,140 @@ describe('SchedulesView', () => {
       cwd: '/workspace/current',
       sandbox: 'workspace-write',
       concurrencyPolicy: 'skip',
-      misfirePolicy: 'skip'
+      misfirePolicy: 'skip',
     });
-    expect(await screen.findByRole('heading', { name: '每日总结' })).toBeInTheDocument();
-    expect(screen.queryByRole('form', { name: '新建计划任务' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '每日简报' })).toBeInTheDocument();
   });
 
-  it('validates fields locally and maps daemon errors to the matching field', async () => {
+  it('uses Clawee to generate a draft and requires review before creating', async () => {
+    const user = userEvent.setup();
+    const generate = vi.fn(async () => ({
+      name: '每周回顾',
+      prompt: '整理本周工作进展和下周计划',
+      frequency: {
+        repeat: 'weekly' as const,
+        time: '16:00',
+        days: [5],
+      },
+    }));
+    const createSchedule = vi.fn(async (input: CreateScheduleRequest) => schedule({
+      name: input.name,
+      cron: input.cron,
+      promptPreviewRedacted: input.prompt,
+    }));
+    renderView({
+      assistant: { generate },
+      service: createService({
+        listSchedules: vi.fn(async () => ({ schedules: [] })),
+        createSchedule,
+      }),
+    });
+
+    await openCreateMenu(user, '使用 Clawee 创建');
+    await user.type(
+      screen.getByLabelText('告诉 Clawee 要安排什么'),
+      '每周五下午四点整理本周工作'
+    );
+    await user.click(screen.getByRole('button', { name: '生成计划' }));
+
+    expect(generate).toHaveBeenCalledWith({
+      description: '每周五下午四点整理本周工作',
+      cwd: '/workspace/current',
+      profile: 'default',
+      timezone: 'Asia/Shanghai',
+    });
+    expect(await screen.findByText('Clawee 已生成计划草稿，请确认后创建')).toBeInTheDocument();
+    expect(screen.getByLabelText('已安排任务标题')).toHaveValue('每周回顾');
+    expect(screen.getByLabelText('任务内容')).toHaveValue('整理本周工作进展和下周计划');
+    expect(screen.getByLabelText('重复')).toHaveValue('weekly');
+    expect(screen.getByLabelText('执行时间')).toHaveValue('16:00');
+
+    await user.click(screen.getByRole('button', { name: '创建任务' }));
+    expect(createSchedule).toHaveBeenCalledWith(expect.objectContaining({
+      name: '每周回顾',
+      cron: '0 16 * * 5',
+    }));
+  });
+
+  it('prefills suggested tasks without creating them immediately', async () => {
+    const user = userEvent.setup();
+    const createSchedule = vi.fn(async () => schedule());
+    renderView({
+      service: createService({
+        listSchedules: vi.fn(async () => ({ schedules: [] })),
+        createSchedule,
+      }),
+    });
+
+    await user.click(await screen.findByRole('button', { name: /每日简报/ }));
+    expect(screen.getByLabelText('已安排任务标题')).toHaveValue('每日简报');
+    expect(screen.getByLabelText('重复')).toHaveValue('weekdays');
+    expect(createSchedule).not.toHaveBeenCalled();
+  });
+
+  it('validates the simple fields and maps daemon errors to project selection', async () => {
     const user = userEvent.setup();
     const createSchedule = vi.fn(async () => {
       throw new ApiClientError({
         status: 422,
         code: 'SCHEDULE_INVALID',
-        message: 'cwd must exist: path not found'
+        message: 'cwd must exist: path not found',
       });
     });
     renderView({
       service: createService({
         listSchedules: vi.fn(async () => ({ schedules: [] })),
-        createSchedule
-      })
+        createSchedule,
+      }),
     });
 
-    await user.click(await screen.findByRole('button', { name: '新建计划' }));
-    await user.click(screen.getByRole('button', { name: '保存计划' }));
-    expect(screen.getByText('请输入计划名称')).toBeInTheDocument();
-    expect(screen.getByText('请输入执行指令')).toBeInTheDocument();
-    expect(screen.getByText('Cron 表达式需要包含 5 个字段')).toBeInTheDocument();
+    await openCreateMenu(user, '手动设置');
+    await user.click(screen.getByRole('button', { name: '创建任务' }));
+    expect(screen.getByText('请输入任务标题')).toBeInTheDocument();
+    expect(screen.getByText('请描述 Clawee 应该做什么')).toBeInTheDocument();
     expect(createSchedule).not.toHaveBeenCalled();
 
-    await user.type(screen.getByLabelText('名称'), '目录检查');
-    await user.type(screen.getByLabelText('执行指令'), '检查项目状态');
-    await user.type(screen.getByLabelText('Cron 表达式'), '0 9 * * *');
-    await user.clear(screen.getByLabelText('项目目录'));
-    await user.type(screen.getByLabelText('项目目录'), '/missing/workspace');
-    await user.click(screen.getByRole('button', { name: '保存计划' }));
+    await user.type(screen.getByLabelText('已安排任务标题'), '目录检查');
+    await user.type(screen.getByLabelText('任务内容'), '检查项目状态');
+    await user.click(screen.getByRole('button', { name: '创建任务' }));
 
     expect(await screen.findByText('项目目录不存在或无法访问')).toBeInTheDocument();
-    expect(screen.getByLabelText('项目目录')).toHaveAttribute('aria-invalid', 'true');
   });
 
-  it('loads full schedule details and saves edits', async () => {
+  it('loads full details, preserves legacy schedules, and saves advanced edits', async () => {
     const user = userEvent.setup();
     const updateSchedule = vi.fn(async (_id: string, input: UpdateScheduleRequest) => (
       schedule({ name: input.name ?? '每日总结', enabled: input.enabled ?? true })
     ));
     renderView({
       service: createService({
-        listSchedules: vi.fn(async () => ({ schedules: [schedule()] })),
-        getSchedule: vi.fn(async () => scheduleDetail()),
-        updateSchedule
-      })
+        listSchedules: vi.fn(async () => ({
+          schedules: [schedule({ cron: '0 9 1 * *' })],
+        })),
+        getSchedule: vi.fn(async () => scheduleDetail({ cron: '0 9 1 * *' })),
+        updateSchedule,
+      }),
     });
 
     await user.click(await screen.findByRole('button', { name: '编辑每日总结' }));
     expect(await screen.findByDisplayValue('完整的每日总结执行指令')).toBeInTheDocument();
-    await user.clear(screen.getByLabelText('名称'));
-    await user.type(screen.getByLabelText('名称'), '工作日总结');
-    await user.selectOptions(screen.getByLabelText('并发策略'), 'queue');
-    await user.click(screen.getByRole('button', { name: '保存计划' }));
+    expect(screen.getByLabelText('重复')).toHaveValue('advanced');
+    expect(screen.getByText(/旧版高级计划/)).toBeInTheDocument();
+    await user.clear(screen.getByLabelText('已安排任务标题'));
+    await user.type(screen.getByLabelText('已安排任务标题'), '每月总结');
+    await user.click(screen.getByText('更多运行设置'));
+    await user.selectOptions(screen.getByLabelText('任务重叠时'), 'queue');
+    await user.click(screen.getByRole('button', { name: '保存更改' }));
 
     expect(updateSchedule).toHaveBeenCalledWith('schedule-1', expect.objectContaining({
-      name: '工作日总结',
+      name: '每月总结',
       prompt: '完整的每日总结执行指令',
+      cron: '0 9 1 * *',
       concurrencyPolicy: 'queue',
       model: null,
       reasoning: null,
-      timeoutMs: null
+      timeoutMs: null,
     }));
-    expect(await screen.findByRole('heading', { name: '工作日总结' })).toBeInTheDocument();
   });
 
   it('toggles, runs, opens the run, and deletes a schedule', async () => {
@@ -153,7 +241,7 @@ describe('SchedulesView', () => {
       run: { id: 'run-1', threadId: 'thread-1', status: 'queued' },
       schedule: schedule({ lastRunId: 'run-1', lastStatus: 'queued' }),
       skipped: false,
-      queued: false
+      queued: false,
     }));
     const deleteSchedule = vi.fn(async () => ({ deleted: true as const }));
     const onOpenRun = vi.fn();
@@ -164,11 +252,11 @@ describe('SchedulesView', () => {
         listSchedules: vi.fn(async () => ({ schedules: [schedule()] })),
         updateSchedule,
         runNow,
-        deleteSchedule
-      })
+        deleteSchedule,
+      }),
     });
 
-    const toggle = await screen.findByRole('switch', { name: '停用每日总结' });
+    const toggle = await screen.findByRole('switch', { name: '暂停每日总结' });
     await user.click(toggle);
     expect(updateSchedule).toHaveBeenCalledWith('schedule-1', { enabled: false });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
@@ -185,19 +273,27 @@ describe('SchedulesView', () => {
 
   it('shows disconnected and load error states', async () => {
     const { rerender } = renderView({ connected: false, service: null });
-    expect(screen.getByText('本地服务连接后可以管理计划任务')).toBeInTheDocument();
+    expect(screen.getByText('连接本地运行内核后可以创建和管理任务')).toBeInTheDocument();
 
     rerender(createView({
       service: createService({
         listSchedules: vi.fn(async () => {
           throw new Error('failed');
-        })
-      })
+        }),
+      }),
     }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载计划任务');
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载已安排的任务');
     expect(screen.getByRole('button', { name: '重新加载' })).toBeInTheDocument();
   });
 });
+
+async function openCreateMenu(
+  user: ReturnType<typeof userEvent.setup>,
+  item: '手动设置' | '使用 Clawee 创建'
+) {
+  await user.click(await screen.findByRole('button', { name: /创建/ }));
+  await user.click(screen.getByRole('menuitem', { name: new RegExp(item) }));
+}
 
 function renderView(overrides: Partial<Parameters<typeof createView>[0]> = {}) {
   return render(createView(overrides));
@@ -206,6 +302,7 @@ function renderView(overrides: Partial<Parameters<typeof createView>[0]> = {}) {
 function createView(overrides: {
   connected?: boolean;
   service?: ScheduleViewService | null;
+  assistant?: ScheduleAssistantService | null;
   onOpenRun?(runId: string, threadId?: string): void;
   confirmDelete?(schedule: ScheduleResponse): boolean;
 } = {}) {
@@ -213,6 +310,7 @@ function createView(overrides: {
     <SchedulesView
       connected={overrides.connected ?? true}
       service={overrides.service ?? createService()}
+      assistant={overrides.assistant ?? { generate: vi.fn() }}
       projects={[
         {
           id: 'current',
@@ -221,8 +319,8 @@ function createView(overrides: {
           sandbox: 'workspace-write',
           profile: 'default',
           model: null,
-          reasoning: null
-        }
+          reasoning: null,
+        },
       ]}
       currentProjectId="current"
       profiles={[
@@ -232,8 +330,8 @@ function createView(overrides: {
           config: {},
           diagnostics: [],
           source: 'review.config.toml',
-          codexHomeMode: 'isolated'
-        }
+          codexHomeMode: 'isolated',
+        },
       ]}
       defaultTimezone="Asia/Shanghai"
       pollIntervalMs={0}
@@ -256,10 +354,10 @@ function createService(
       run: null,
       schedule: schedule(),
       skipped: true,
-      queued: false
+      queued: false,
     }),
     listOperations: async () => ({ operations: [] }),
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -287,13 +385,16 @@ function schedule(overrides: Partial<ScheduleResponse> = {}): ScheduleResponse {
     pendingTrigger: false,
     createdAt: '2026-07-07T00:00:00.000Z',
     updatedAt: '2026-07-12T10:00:00.000Z',
-    ...overrides
+    ...overrides,
   };
 }
 
-function scheduleDetail(): ScheduleDetailResponse {
+function scheduleDetail(
+  overrides: Partial<ScheduleDetailResponse> = {}
+): ScheduleDetailResponse {
   return {
-    ...schedule(),
-    prompt: '完整的每日总结执行指令'
+    ...schedule(overrides),
+    prompt: '完整的每日总结执行指令',
+    ...overrides,
   };
 }

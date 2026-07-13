@@ -88,6 +88,7 @@ import { createMemoryService } from '../services/memory-service.js';
 import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
+import { createScheduleAssistant } from '../services/schedule-assistant.js';
 import { createScheduleService } from '../services/schedule-service.js';
 import { createSearchService } from '../services/search-service.js';
 import { createSkillMarketService } from '../services/skill-market-service.js';
@@ -297,6 +298,19 @@ export function AppController(props: AppControllerProps) {
   const scheduleService = useMemo(
     () => runtimeClient === null ? null : createScheduleService(runtimeClient),
     [runtimeClient]
+  );
+  const scheduleAssistant = useMemo(
+    () => (
+      runService === null || connectionConfig === null
+        ? null
+        : createScheduleAssistant({
+            runService,
+            subscribeRunEvents,
+            connection: connectionConfig,
+            fetchImpl: runtimeFetch,
+          })
+    ),
+    [connectionConfig, runService, runtimeFetch, subscribeRunEvents]
   );
   const mcpService = useMemo(
     () => runtimeClient === null ? null : createMcpService(runtimeClient),
@@ -2476,6 +2490,7 @@ export function AppController(props: AppControllerProps) {
     <SchedulesPage
       connected={connectionState.status === 'connected'}
       service={scheduleService}
+      assistant={scheduleAssistant}
       projects={projects}
       currentProjectId={state.currentProjectId}
       profiles={codexProfiles?.profiles}
