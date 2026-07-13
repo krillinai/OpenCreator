@@ -14,7 +14,6 @@ import {
   Check,
   ChevronDown,
   Circle,
-  FileSliders,
   ListPlus,
   Paperclip,
   Plus,
@@ -121,8 +120,6 @@ export function Composer(props: {
   projectName: string;
   permission: ProjectPermission;
   profile: string;
-  profileOptions?: string[];
-  profileLocked?: boolean;
   model: string | null;
   reasoning: ReasoningEffort | null;
   slashCommands?: ComposerSlashCommand[];
@@ -145,10 +142,9 @@ export function Composer(props: {
 }) {
   const [prompt, setPrompt] = useState('');
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(props.permission);
-  const [selectedProfile, setSelectedProfile] = useState(props.profile);
   const [selectedModel, setSelectedModel] = useState(() => modelOptionForConfig(props.model, props.reasoning));
   const [openMenu, setOpenMenu] = useState<
-    'add' | 'permission' | 'profile' | 'model' | 'submit' | null
+    'add' | 'permission' | 'model' | 'submit' | null
   >(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
   const [submissionMode, setSubmissionMode] = useState<RunSubmissionMode>('enqueue');
@@ -176,10 +172,6 @@ export function Composer(props: {
   useEffect(() => {
     setSelectedPermission(props.permission);
   }, [props.permission, props.projectName]);
-
-  useEffect(() => {
-    setSelectedProfile(props.profile);
-  }, [props.profile, props.projectName]);
 
   useEffect(() => {
     setSelectedModel(modelOptionForConfig(props.model, props.reasoning));
@@ -260,7 +252,7 @@ export function Composer(props: {
     try {
       const config = {
         permission: selectedPermission,
-        profile: selectedProfile,
+        profile: props.profile,
         model: selectedModel.model,
         reasoning: selectedModel.reasoning
       };
@@ -296,12 +288,6 @@ export function Composer(props: {
     setSlashTrigger(nextTrigger);
     if (nextTrigger !== null) setOpenMenu(null);
   };
-  const profileOptions = Array.from(new Set([
-    props.profile,
-    'default',
-    ...(props.profileOptions ?? [])
-  ])).filter(Boolean);
-
   const applySlashCommand = (command: ComposerSlashCommand) => {
     if (slashTrigger === null) return;
 
@@ -596,45 +582,6 @@ export function Composer(props: {
             ) : null}
           </div>
 
-          <div className="composer-control-wrap">
-            <button
-              className="composer-select"
-              type="button"
-              aria-label={props.profileLocked ? `当前 Profile ${selectedProfile}` : `选择 Profile ${selectedProfile}`}
-              aria-expanded={!props.profileLocked && openMenu === 'profile'}
-              disabled={props.profileLocked}
-              title={props.profileLocked ? '已有会话的 Profile 不可修改' : '选择 Profile'}
-              onClick={() => {
-                setSlashTrigger(null);
-                setOpenMenu(openMenu === 'profile' ? null : 'profile');
-              }}
-            >
-              <FileSliders aria-hidden="true" size={15} />
-              <span>{selectedProfile}</span>
-            </button>
-            {!props.profileLocked && openMenu === 'profile' ? (
-              <div className="composer-popover composer-profile-menu" role="menu" aria-label="Profile">
-                {profileOptions.map(profile => (
-                  <button
-                    key={profile}
-                    className="composer-menu-item"
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selectedProfile === profile}
-                    onClick={() => {
-                      setSelectedProfile(profile);
-                      setOpenMenu(null);
-                    }}
-                  >
-                    <span className="composer-menu-icon" aria-hidden="true">
-                      {selectedProfile === profile ? <Check size={15} /> : null}
-                    </span>
-                    <span><strong>{profile}</strong></span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
         </div>
 
         <div className="composer-right-actions">

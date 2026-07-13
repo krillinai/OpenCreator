@@ -2385,13 +2385,6 @@ export function AppController(props: AppControllerProps) {
           projectName={currentProjectName}
           permission={effectiveComposerConfig.permission}
           profile={effectiveComposerConfig.profile}
-          profileOptions={[
-            'default',
-            ...(codexProfiles?.profiles ?? [])
-              .filter(profile => profile.status === 'valid')
-              .map(profile => profile.name)
-          ]}
-          profileLocked={selectedThread !== undefined}
           model={effectiveComposerConfig.model}
           reasoning={effectiveComposerConfig.reasoning}
           disabled={composerDisabled}

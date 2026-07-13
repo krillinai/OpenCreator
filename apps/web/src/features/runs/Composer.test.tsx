@@ -23,7 +23,7 @@ describe('Composer', () => {
 
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 工作区读写' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择 Profile default' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     expect(screen.queryByText('跟随全局配置')).not.toBeInTheDocument();
@@ -56,19 +56,19 @@ describe('Composer', () => {
     expect(textbox).toHaveValue('');
   });
 
-  it('selects a shared Profile for a new conversation', async () => {
+  it('hides Profile controls while preserving the configured Profile', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
       <Composer
         {...defaultProps}
-        profileOptions={['default', 'review', 'writer']}
+        profile="review"
         onSubmit={onSubmit}
       />
     );
 
-    await user.click(screen.getByRole('button', { name: '选择 Profile default' }));
-    await user.click(screen.getByRole('menuitemradio', { name: 'review' }));
+    expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu', { name: 'Profile' })).not.toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), '检查改动');
     await user.click(screen.getByRole('button', { name: '发送' }));
 
@@ -80,17 +80,15 @@ describe('Composer', () => {
     }, []);
   });
 
-  it('locks the Profile selector for an existing conversation', () => {
+  it('does not expose the Profile for an existing conversation', () => {
     render(
       <Composer
         {...defaultProps}
         profile="review"
-        profileOptions={['default', 'review']}
-        profileLocked
       />
     );
 
-    expect(screen.getByRole('button', { name: '当前 Profile review' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
   });
 
   it('opens the add context menu', async () => {

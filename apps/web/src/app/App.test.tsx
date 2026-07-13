@@ -4009,7 +4009,7 @@ describe('App', () => {
             thread: createThreadResponse({
               id: 'thread_configured_from_chat',
               title: prompt,
-              profile: 'review',
+              profile: 'default',
               sandbox: 'danger-full-access',
               reasoning: 'xhigh'
             })
@@ -4032,8 +4032,7 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
 
-    await user.click(await screen.findByRole('button', { name: '选择 Profile default' }));
-    await user.click(screen.getByRole('menuitemradio', { name: 'review' }));
+    expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '选择访问权限 完全访问' }));
     await user.click(screen.getByRole('menuitemradio', { name: /工作区读写/ }));
     await user.click(screen.getByRole('button', { name: '选择访问权限 工作区读写' }));
@@ -4047,7 +4046,7 @@ describe('App', () => {
     const createThreadBody = JSON.parse(String(findPostCall(fetchCalls, '/threads')?.init?.body)) as Record<string, unknown>;
     expect(createThreadBody).toMatchObject({
       title: prompt,
-      profile: 'review',
+      profile: 'default',
       sandbox: 'danger-full-access',
       reasoning: 'xhigh'
     });
