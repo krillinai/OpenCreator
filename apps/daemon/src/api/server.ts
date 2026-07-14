@@ -12,6 +12,16 @@ import {
   type ApprovalManager
 } from '../approvals/manager.js';
 import {
+  createAgentCapabilityTokenStore,
+  type AgentCapabilityTokenStore
+} from '../agent-tools/capability-token.js';
+import {
+  createDefaultAgentScheduleOperations,
+  isAgentToolInternalRequest,
+  registerAgentToolRoutes,
+  type AgentScheduleOperations
+} from '../agent-tools/internal-routes.js';
+import {
   isResumeExecutionSupported,
   withRuntimeSkillCapabilities,
   type RuntimeCapabilityMatrix
@@ -85,6 +95,8 @@ export type BuildServerInput = {
   attachmentMaxSizeBytes?: number;
   attachmentDraftTtlMs?: number;
   approvalManager?: ApprovalManager;
+  agentCapabilityTokens?: AgentCapabilityTokenStore;
+  agentScheduleOperations?: AgentScheduleOperations;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
 };
 
@@ -146,6 +158,8 @@ export async function buildServer(input: BuildServerInput) {
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const approvalManager = input.approvalManager ?? createApprovalManager({ db });
   const memoryService = createMemoryService({ db });
+  const agentCapabilityTokens =
+    input.agentCapabilityTokens ?? createAgentCapabilityTokenStore();
   const runManager =
     input.runManager ??
     createRunManager({
@@ -158,7 +172,8 @@ export async function buildServer(input: BuildServerInput) {
       profileValidator: profileManager,
       runtimeTransport: capabilities.appServerApprovals === true ? 'app-server' : 'exec',
       approvalManager,
-      recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items)
+      recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items),
+      onRunTerminal: runId => agentCapabilityTokens.revokeRun(runId)
     });
   let lastCodexSessionSyncAt: number | undefined;
   function syncCodexSessions(
@@ -229,6 +244,12 @@ export async function buildServer(input: BuildServerInput) {
     runManager,
     autostart: false
   });
+  const agentScheduleOperations =
+    input.agentScheduleOperations
+    ?? createDefaultAgentScheduleOperations({
+      coordinator: scheduleCoordinator,
+      scheduler
+    });
   const taskService = createTaskService({
     db,
     approvals: approvalManager,
@@ -271,6 +292,7 @@ export async function buildServer(input: BuildServerInput) {
   server.addHook('onClose', async () => {
     clearInterval(attachmentCleanupTimer);
     scheduler.stop();
+    agentCapabilityTokens.close();
     try {
       await runManager.close({ timeoutMs: 5_000 });
       if (ownsDb) db.close();
@@ -290,6 +312,7 @@ export async function buildServer(input: BuildServerInput) {
 
   server.addHook('preHandler', async (request, reply) => {
     if (request.url === '/healthz') return;
+    if (isAgentToolInternalRequest(request.url)) return;
     await auth(request, reply);
   });
 
@@ -320,6 +343,10 @@ export async function buildServer(input: BuildServerInput) {
     memoryService
   });
   await registerScheduleRoutes(server, scheduleCoordinator, scheduler);
+  await registerAgentToolRoutes(server, {
+    capabilities: agentCapabilityTokens,
+    schedules: agentScheduleOperations
+  });
   await registerCleanupRoutes(server, cleanupService);
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes

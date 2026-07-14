@@ -66,6 +66,7 @@ export type RunManagerOptions = {
   runtimeTransport?: 'exec' | 'app-server';
   approvalManager?: ApprovalManager;
   recordRunContext?(runId: string, items: NonNullable<CreateRunInput['contextItems']>): void;
+  onRunTerminal?(runId: string): void;
   logWriterFactory?(runDir: string): OrderedLogWriter;
 };
 
@@ -265,6 +266,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         terminationReason: 'user_canceled',
         endedAt
       });
+      notifyRunTerminal(id);
       runs.setRunQueueState(id, 'none');
       void (async () => {
         const statusWrite = publishStatus(
@@ -474,6 +476,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       ...input.statusExtra,
       endedAt: new Date().toISOString()
     });
+    notifyRunTerminal(input.id);
     activeRuns.delete(input.id);
     if (input.runInput.threadId !== undefined) runs.setRunQueueState(input.id, 'none');
     completeThreadRun(input.runInput.threadId, input.id);
@@ -1043,6 +1046,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       errorMessage: input.message,
       endedAt
     });
+    notifyRunTerminal(input.id);
     const seq = nextSeqForRun(input.id);
     closeDetachedRunLog(input.id, [
       publishError(input.id, seq, input.code, input.message, input.publish),
@@ -1266,6 +1270,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         errorMessage: orphanErrorMessage,
         endedAt: new Date().toISOString()
       });
+      notifyRunTerminal(run.id);
       const diagnostics = {
         ...buildThreadRunDiagnosticsMetadataFromRow(run, {
           errorCode: orphanErrorCode,
@@ -1293,6 +1298,15 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         writes.push(publishDone(run.id, doneSeq, 'failed', 'daemon_restart', publish));
       }
       if (writes.length > 0) closeDetachedRunLog(run.id, writes);
+    }
+  }
+
+  function notifyRunTerminal(runId: string): void {
+    try {
+      options.onRunTerminal?.(runId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Run terminal callback failed for ${runId}: ${message}`);
     }
   }
 

@@ -12,7 +12,8 @@ describe('diagnostics redactor', () => {
       'MCP_TOKEN=mcp-secret-value',
       'PASSWORD=db-password',
       'Authorization: Bearer bearer-secret-value',
-      'auth=lowercase-secret'
+      'auth=lowercase-secret',
+      'tool token clwcap_VerySecretCapabilityValue'
     ].join('\n');
 
     const redacted = redactDiagnosticContent(content);
@@ -27,6 +28,7 @@ describe('diagnostics redactor', () => {
     expect(redacted).not.toContain('db-password');
     expect(redacted).not.toContain('bearer-secret-value');
     expect(redacted).not.toContain('lowercase-secret');
+    expect(redacted).not.toContain('clwcap_VerySecretCapabilityValue');
   });
 
   it('redacts every exported diagnostic file and exposes a fixed warning', () => {

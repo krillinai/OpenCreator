@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B4`，已通过（2026-07-14 18:56 CST）；下一批 `P1-B5` |
+| 当前批次 | `P1-B5`，已通过（2026-07-14 19:33 CST）；下一批 `P1-B6` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -336,7 +336,7 @@ P2-B1 审批和连续失败体验
 | P1-B2 | 左侧“任务”区域 | `PASS` |
 | P1-B3 | “已安排”与任务会话互跳 | `PASS` |
 | P1-B4 | 任务会话头部 | `PASS` |
-| P1-B5 | 能力令牌和内部路由 | `NOT_STARTED` |
+| P1-B5 | 能力令牌和内部路由 | `PASS` |
 | P1-B6 | Schedule MCP 工具和逐 Run 注入 | `NOT_STARTED` |
 | P1-B7 | Agent 创建和管理任务协调 | `NOT_STARTED` |
 | P1-B8 | 删除正则创建流程 | `NOT_STARTED` |
@@ -1282,7 +1282,7 @@ feat(web): 增加任务会话状态与管理工具栏
 
 ### P1-B5：能力令牌和内部路由
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P1-B4`
 
@@ -1326,6 +1326,25 @@ pnpm --filter @clawee/daemon typecheck
 ```
 
 **验收标准：** 内部 Schedule Tool 具备可测试的最小权限边界，令牌没有持久化或泄露。
+
+**执行结果：**
+
+- 新增内存能力令牌仓库，令牌使用 32 字节加密安全随机值和 `clwcap_` 前缀，仓库只保存
+  SHA-256 摘要、Run/Thread 绑定、来源、作用域和过期时间，不持久化原始令牌。
+- 定义 get/create/update/pause/resume/run-now 六类最小作用域；`createdBy='schedule'`
+  只能签发只读 get scope，不能获得任何 mutation scope。
+- 内部 `/internal/agent-tools` 路由完全绕开公开 Bearer Token，并逐路由执行 capability
+  auth；公开 token、缺失/过期/撤销 token、错误 scope 和跨 Thread 访问均被拒绝。
+- actor 的 `runId/threadId` 只来自能力令牌；请求体中任何层级的 actor 覆盖字段都会返回
+  400，现有任务操作还会校验 Schedule 绑定 Thread 与令牌 Thread 一致。
+- Run 正常完成、失败、启动前失败、主动取消和 orphan 收敛都会触发终态撤销；daemon
+  关闭时清空全部令牌并停止 unref 过期清理定时器。
+- 默认 get/update/pause/resume/run-now 复用 Scheduler/Coordinator；create 路由保留
+  注入接口并在 P1-B7 前返回明确 501，避免提前创建一个未绑定当前 actor Thread 的任务。
+- 通用文本和诊断脱敏新增 `clwcap_` 令牌识别；内部鉴权错误使用固定消息，不回显原始
+  token，也没有写入事件、meta 或普通日志。
+- P1-B5 专项 12 项、daemon 全量 599 项通过，13 项真实 Codex smoke 按既有开关跳过；
+  daemon typecheck、生产 build 和 `git diff --check` 通过。
 
 **回滚边界：** 回滚内部路由和令牌签发；未完成 P1-B6 前不会影响普通 Run。
 
@@ -2307,6 +2326,21 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：生产 build 继续报告两个既有主 chunk 超过 500 kB；真实 Chrome 使用
   受控本地 Runtime 响应完成 UI 验收，不替代 P2-B7 的最终真实环境闭环。
 - 下一步：执行 P1-B5，建立按 Run、Thread 和最小作用域绑定的短期能力令牌与内部路由。
+
+### 2026-07-14 19:33 CST - P1-B5
+
+- 状态：`PASS`
+- 提交：`feat(agent-tools): 增加按 Run 绑定的短期能力令牌`
+  （SHA 以包含本日志的提交为准）
+- 已完成：摘要存储的短期能力令牌、六类最小作用域、独立内部路由鉴权、Thread 绑定校验、
+  actor 覆盖防护、Run 终态撤销、daemon 关闭清理和 `clwcap_` 全局脱敏。
+- 验证：P1-B5 专项 12 项、daemon 全量 599 项、daemon typecheck、生产 build 和
+  `git diff --check` 通过；常规全量中的 13 项真实 Codex smoke 按既有开关跳过。
+- 未完成：能力令牌尚未注入 Codex 子进程，MCP stdio 工具和 timing 转换留到 P1-B6；
+  Agent create 业务在 P1-B7 接入当前 draft/普通 Thread 的原子协调前保持 501。
+- 风险或偏差：首次全量测试前，浏览器验收触发的 Vite daemon 残留占用默认 SQLite，
+  清理该本次产生的进程并单独重跑后全量通过；没有修改数据库锁或测试并发策略。
+- 下一步：执行 P1-B6，使用官方 MCP SDK 实现 Schedule 工具并逐 Run 注入临时配置。
 
 ### 日志模板
 
