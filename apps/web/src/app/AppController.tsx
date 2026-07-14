@@ -54,6 +54,7 @@ import {
   type ComposerSlashCommand
 } from '../features/runs/Composer.js';
 import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
+import { createNaturalLanguageScheduleRequest } from '../features/schedules/schedule-natural-language.js';
 import {
   getRunCancelState,
   getThreadActiveRun,
@@ -304,6 +305,7 @@ export function AppController(props: AppControllerProps) {
   const selectedThreadIdRef = useRef(state.selectedThreadId);
   const taskStatusesRef = useRef(new Map<string, TaskItem['status']>());
   const taskBaselineReadyRef = useRef(false);
+  const scheduleCreationInFlightThreadIdsRef = useRef(new Set<string>());
   const nextComposerDraftIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
@@ -1239,12 +1241,115 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
+  function isSelectedScheduleCreationConversation(): boolean {
+    return selectedThread?.title?.trim() === SCHEDULE_CREATION_TITLE
+      || selectedConversation?.title.trim() === SCHEDULE_CREATION_TITLE;
+  }
+
+  async function submitScheduleCreationPrompt(
+    prompt: string,
+    config?: ComposerRunConfig,
+    attachments: ComposerAttachment[] = []
+  ): Promise<boolean> {
+    const threadId = state.selectedThreadId;
+    if (threadId === undefined || scheduleService === null) return false;
+    if (scheduleCreationInFlightThreadIdsRef.current.has(threadId)) return false;
+
+    scheduleCreationInFlightThreadIdsRef.current.add(threadId);
+    const userMessageId = createTimelineId('schedule_user');
+    appendTimelineItemsForThread(threadId, [
+      {
+        kind: 'user_message',
+        id: userMessageId,
+        text: prompt,
+        attachments: attachments.map(item => item.attachment),
+        attachmentPreviewUrls: Object.fromEntries(
+          attachments.map(item => [item.attachment.id, item.previewUrl])
+        ),
+        source: 'runtime'
+      }
+    ]);
+
+    try {
+      if (attachments.length > 0) {
+        appendTimelineItemsForThread(threadId, [
+          {
+            kind: 'assistant_message',
+            id: createTimelineId('schedule_attachment_unsupported'),
+            text: '创建已安排任务暂不支持附件。请直接描述提醒内容和时间，或使用“已安排”里的手动设置。',
+            source: 'runtime'
+          }
+        ]);
+        return true;
+      }
+
+      const effectiveConfig = config ?? composerRunConfig ?? defaultComposerRunConfig(currentProject);
+      setComposerRunConfig(effectiveConfig);
+      const parsed = createNaturalLanguageScheduleRequest(prompt, {
+        cwd: currentProject?.cwd,
+        profile: effectiveConfig.profile,
+        sandbox: toRuntimeSandbox(effectiveConfig.permission),
+        model: effectiveConfig.model,
+        reasoning: effectiveConfig.reasoning,
+        timezone: resolveDefaultTimezone()
+      });
+      if (!parsed.ok) {
+        appendTimelineItemsForThread(threadId, [
+          {
+            kind: 'assistant_message',
+            id: createTimelineId('schedule_parse_failed'),
+            text: `${parsed.message}\n\n也可以在“已安排”中点“手动设置”创建。`,
+            source: 'runtime'
+          }
+        ]);
+        return true;
+      }
+
+      if (!notificationSettings.enabled && notificationSettings.permission !== 'denied') {
+        try {
+          setNotificationSettings(await notificationService.enable());
+        } catch {
+          // Schedule creation should still succeed if the browser rejects notification setup.
+        }
+      }
+
+      const schedule = await scheduleService.createSchedule(parsed.request);
+      appendTimelineItemsForThread(threadId, [
+        {
+          kind: 'assistant_message',
+          id: createTimelineId('schedule_created'),
+          text: `已创建已安排任务：${schedule.name}\n\n- ${parsed.description}\n- 任务内容：${parsed.request.prompt}\n- 可在“已安排”中查看、暂停或编辑。`,
+          source: 'runtime'
+        }
+      ]);
+      return true;
+    } catch (error) {
+      appendTimelineItemsForThread(threadId, [
+        {
+          kind: 'diagnostic',
+          id: createTimelineId('schedule_create_failed'),
+          severity: 'error',
+          message: getRuntimeErrorMessage(error, '创建已安排任务失败'),
+          content: getRuntimeErrorMessage(error, '创建已安排任务失败'),
+          source: 'runtime'
+        }
+      ]);
+      return true;
+    } finally {
+      scheduleCreationInFlightThreadIdsRef.current.delete(threadId);
+    }
+  }
+
   async function submitPrompt(
     prompt: string,
     config?: ComposerRunConfig,
     attachments: ComposerAttachment[] = [],
     submissionMode?: RunSubmissionMode
   ): Promise<boolean> {
+    if (connectionState.status === 'connected' && isSelectedScheduleCreationConversation()) {
+      return submitScheduleCreationPrompt(prompt, config, attachments);
+    }
+
     if (
       connectionState.status === 'connected'
       && runService !== null

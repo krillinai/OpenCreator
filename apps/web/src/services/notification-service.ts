@@ -30,8 +30,11 @@ export function createNotificationService(input: {
   function readSettings(): NotificationSettings {
     const stored = readJsonFromStorage<NotificationSettings>(SETTINGS_KEY);
     const permission = readPermission(input);
+    const enabled = input.hostBridge.kind === 'desktop'
+      ? stored?.enabled !== false && permission === 'granted'
+      : stored?.enabled === true && permission === 'granted';
     return {
-      enabled: stored?.enabled === true && permission === 'granted',
+      enabled,
       permission
     };
   }

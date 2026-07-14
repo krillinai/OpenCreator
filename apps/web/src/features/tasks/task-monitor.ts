@@ -32,6 +32,13 @@ export function createTaskNotification(task: TaskItem): {
   title: string;
   body: string;
 } {
+  if (task.createdBy === 'schedule' && task.status === 'succeeded') {
+    return {
+      title: '已安排提醒',
+      body: task.title
+    };
+  }
+
   const title = task.status === 'waiting_approval'
     ? '任务等待审批'
     : task.status === 'succeeded'

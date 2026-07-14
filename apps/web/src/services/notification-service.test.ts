@@ -56,11 +56,40 @@ describe('NotificationService', () => {
     service.setUnreadIds(new Set());
     expect(service.getUnreadIds()).toEqual(new Set());
   });
+
+  it('enables desktop notifications by default and honors manual disable', async () => {
+    const notify = vi.fn(async () => undefined);
+    const service = createNotificationService({
+      hostBridge: hostBridge(notify, 'desktop')
+    });
+
+    expect(service.getSettings()).toEqual({
+      enabled: true,
+      permission: 'granted'
+    });
+    await expect(service.notify({
+      title: '已安排提醒',
+      body: '喝水提醒'
+    })).resolves.toBe(true);
+
+    expect(service.disable()).toEqual({
+      enabled: false,
+      permission: 'granted'
+    });
+    await expect(service.notify({
+      title: '已安排提醒',
+      body: '喝水提醒'
+    })).resolves.toBe(false);
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
 });
 
-function hostBridge(notify: HostBridge['notify']): HostBridge {
+function hostBridge(
+  notify: HostBridge['notify'],
+  kind: HostBridge['kind'] = 'browser'
+): HostBridge {
   return {
-    kind: 'browser',
+    kind,
     readConnectionConfig: async () => null,
     openExternal: async () => undefined,
     revealPath: async () => ({ ok: false, code: 'UNSUPPORTED', message: 'test' }),

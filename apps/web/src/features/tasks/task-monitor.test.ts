@@ -67,6 +67,21 @@ describe('task monitor', () => {
     });
   });
 
+  it('uses reminder copy for completed scheduled tasks', () => {
+    expect(createTaskNotification(
+      createTask({
+        createdBy: 'schedule',
+        status: 'succeeded',
+        runStatus: 'succeeded',
+        title: '喝水提醒',
+        cwd: '/workspace'
+      })
+    )).toEqual({
+      title: '已安排提醒',
+      body: '喝水提醒'
+    });
+  });
+
   it('suppresses system notifications only for the visible current conversation', () => {
     const task = createTask();
 

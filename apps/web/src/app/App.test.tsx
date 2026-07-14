@@ -10,6 +10,7 @@ import type {
   CodexSkillMarketInstallRecordResponse,
   CodexSkillResponse,
   CodexStatusResponse,
+  CreateScheduleRequest,
   RunDiagnosticsResponse,
   RunResponse,
   ScheduleResponse,
@@ -335,6 +336,102 @@ describe('App', () => {
     });
     expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
     expect(fetchCalls.some(call => call.url.endsWith('/runs'))).toBe(false);
+  });
+
+  it('creates a real schedule from the Clawee schedule creation conversation', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const notificationApi = {
+      permission: 'default' as NotificationPermission,
+      requestPermission: vi.fn(async () => {
+        notificationApi.permission = 'granted';
+        return 'granted' as NotificationPermission;
+      })
+    };
+    vi.stubGlobal('Notification', notificationApi);
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/schedules') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as CreateScheduleRequest;
+        return jsonResponse(createScheduleResponse({
+          id: 'schedule-water',
+          name: body.name,
+          cron: body.cron,
+          timezone: body.timezone ?? 'Asia/Shanghai',
+          promptPreviewRedacted: body.prompt,
+          cwd: body.cwd ?? '~/develop/content-design',
+          canonicalCwd: body.cwd ?? '~/develop/content-design',
+          profile: body.profile ?? 'default',
+          sandbox: body.sandbox ?? 'danger-full-access',
+          concurrencyPolicy: body.concurrencyPolicy ?? 'skip',
+          misfirePolicy: body.misfirePolicy ?? 'skip'
+        }), { status: 201 });
+      }
+      if (url.endsWith('/schedules')) return jsonResponse({ schedules: [] });
+      if (url.endsWith('/threads') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_schedule_builder',
+            title: String(body.title),
+            cwd: String(body.cwd),
+            canonicalCwd: String(body.cwd),
+            profile: String(body.profile),
+            sandbox: body.sandbox === 'danger-full-access' ? 'danger-full-access' : 'workspace-write'
+          })
+        }, { status: 201 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '已安排' }));
+    await user.click(await screen.findByRole('button', { name: /^创建$/ }));
+    await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
+
+    const textbox = await screen.findByRole('textbox', { name: '输入任务' });
+    await waitFor(() => expect(textbox).toHaveFocus());
+    await user.clear(textbox);
+    await user.type(textbox, '设置一个5分钟的定时任务，提醒我喝水，工作时间8:00~18:00');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    const createScheduleCall = await waitFor(() => {
+      const call = findPostCall(fetchCalls, '/schedules');
+      expect(call).toBeDefined();
+      return call!;
+    });
+    expect(JSON.parse(String(createScheduleCall.init?.body))).toMatchObject({
+      name: '喝水提醒',
+      cron: '*/5 8-17 * * *',
+      prompt: '提醒我喝水',
+      cwd: '~/develop/content-design',
+      profile: 'default',
+      sandbox: 'danger-full-access',
+      enabled: true,
+      concurrencyPolicy: 'skip',
+      misfirePolicy: 'skip'
+    });
+    expect(notificationApi.requestPermission).toHaveBeenCalledTimes(1);
+    expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
+    expect(await screen.findByText(/已创建已安排任务：喝水提醒/)).toBeInTheDocument();
   });
 
   it('uses the selected thread run registry without loading runs for every thread', async () => {
