@@ -552,6 +552,18 @@ export function AppController(props: AppControllerProps) {
   }, [notificationService]);
 
   useEffect(() => {
+    const connection = connectionState.status === 'connected'
+      ? connectionConfig
+      : null;
+    void notificationService.syncBackground(connection);
+  }, [
+    connectionConfig,
+    connectionState.status,
+    notificationService,
+    notificationSettings.enabled
+  ]);
+
+  useEffect(() => {
     if (timelineApprovalTarget === undefined) return;
     const task = runtimeTasks.find(item => (
       item.threadId === timelineApprovalTarget.threadId
@@ -603,6 +615,7 @@ export function AppController(props: AppControllerProps) {
         });
 
         for (const task of result.transitions) {
+          if (!notificationService.shouldNotifyInForeground(task.createdBy)) continue;
           if (!shouldSendSystemNotification(
             task,
             activeViewRef.current,

@@ -1,4 +1,5 @@
 import type { HostBridge, HostNotification } from '../host/bridge.js';
+import type { ConnectionConfig } from '../runtime/types.js';
 import {
   readJsonFromStorage,
   writeJsonToStorage
@@ -27,6 +28,8 @@ export function createNotificationService(input: {
   hostBridge: HostBridge;
   notificationApi?: NotificationApi;
 }) {
+  let backgroundActive = false;
+
   function readSettings(): NotificationSettings {
     const stored = readJsonFromStorage<NotificationSettings>(SETTINGS_KEY);
     const permission = readPermission(input);
@@ -73,6 +76,28 @@ export function createNotificationService(input: {
       if (!settings.enabled) return false;
       await input.hostBridge.notify(message);
       return true;
+    },
+
+    async syncBackground(connection: ConnectionConfig | null): Promise<boolean> {
+      const configure = input.hostBridge.configureBackgroundNotifications;
+      if (input.hostBridge.kind !== 'desktop' || configure === undefined) {
+        backgroundActive = false;
+        return false;
+      }
+      const enabled = readSettings().enabled && connection !== null;
+      try {
+        const result = await configure(enabled
+          ? { enabled: true, connection }
+          : { enabled: false });
+        backgroundActive = enabled && result.ok;
+      } catch {
+        backgroundActive = false;
+      }
+      return backgroundActive;
+    },
+
+    shouldNotifyInForeground(createdBy: string): boolean {
+      return createdBy !== 'schedule' || !backgroundActive;
     },
 
     getUnreadIds(): Set<string> {

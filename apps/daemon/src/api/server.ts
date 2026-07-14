@@ -33,6 +33,7 @@ import {
 import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createMemoryService } from '../memory/service.js';
+import { createNotificationService } from '../notifications/service.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import { readCodexSessionHistory } from '../codex/sessions/history.js';
 import {
@@ -71,6 +72,7 @@ import { registerCleanupRoutes } from './routes.cleanup.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
 import { registerMemoryRoutes } from './routes.memory.js';
+import { registerNotificationRoutes } from './routes.notifications.js';
 import { registerProfileRoutes } from './routes.profiles.js';
 import { registerRunRoutes } from './routes.runs.js';
 import { registerSearchRoutes } from './routes.search.js';
@@ -162,7 +164,13 @@ export async function buildServer(input: BuildServerInput) {
     downloader: input.marketArchiveDownloader ?? MarketArchiveDownloader
   });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
+  const notificationService = createNotificationService({ db });
   const approvalManager = input.approvalManager ?? createApprovalManager({ db });
+  const unsubscribeApprovalNotifications = approvalManager.subscribe(approval => {
+    if (approval.status === 'pending') {
+      notificationService.enqueueApproval(approval.id);
+    }
+  });
   const memoryService = createMemoryService({ db });
   const agentCapabilityTokens =
     input.agentCapabilityTokens ?? createAgentCapabilityTokenStore();
@@ -195,7 +203,10 @@ export async function buildServer(input: BuildServerInput) {
             args: agentToolCommand.args
           }),
       recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items),
-      onRunTerminal: runId => agentCapabilityTokens.revokeRun(runId)
+      onRunTerminal(runId) {
+        agentCapabilityTokens.revokeRun(runId);
+        notificationService.enqueueRunTerminal(runId);
+      }
     });
   let lastCodexSessionSyncAt: number | undefined;
   function syncCodexSessions(
@@ -314,6 +325,7 @@ export async function buildServer(input: BuildServerInput) {
 
   server.addHook('onClose', async () => {
     clearInterval(attachmentCleanupTimer);
+    unsubscribeApprovalNotifications();
     scheduler.stop();
     agentCapabilityTokens.close();
     try {
@@ -375,6 +387,7 @@ export async function buildServer(input: BuildServerInput) {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });
   await registerApprovalRoutes(server, approvalManager);
+  await registerNotificationRoutes(server, notificationService);
   await registerTaskRoutes(server, taskService);
   await registerMemoryRoutes(server, memoryService, {
     readThreadHistory(threadId) {

@@ -332,6 +332,37 @@ export type TaskListResponse = {
   nextCursor?: string;
 };
 
+export type NotificationOutboxKind =
+  | 'schedule_succeeded'
+  | 'schedule_failed'
+  | 'schedule_canceled'
+  | 'schedule_waiting_approval';
+
+export type NotificationOutboxItem = {
+  id: string;
+  cursor: string;
+  kind: NotificationOutboxKind;
+  title: string;
+  body: string;
+  threadId: string;
+  runId: string;
+  approvalId?: string;
+  createdAt: string;
+};
+
+export type NotificationOutboxListResponse = {
+  notifications: NotificationOutboxItem[];
+  nextCursor: string;
+};
+
+export type NotificationAcknowledgeRequest = {
+  ids: string[];
+};
+
+export type NotificationAcknowledgeResponse = {
+  acknowledged: number;
+};
+
 export type MemoryScope = 'global' | 'project' | 'thread';
 export type MemorySource = 'user' | 'agent_suggestion';
 

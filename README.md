@@ -39,6 +39,17 @@ CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD=100 pnpm daemon:dev
 该自动恢复只用于 `resumeMode: "auto"` 的计划任务；普通会话或显式
 `resumeMode: "resume_thread"` 仍按原错误语义失败，不会静默新建上下文。
 
+计划任务完成、失败、取消或等待审批时，daemon 会把脱敏通知写入持久 outbox。支持
+`configureBackgroundNotifications` 的 Desktop Host 可在页面关闭后继续读取并确认通知；
+浏览器版仍受页面存活和 Notification 权限限制。可用 harness 验证 outbox 消费：
+
+```bash
+pnpm harness notifications \
+  --base-url http://127.0.0.1:<port> \
+  --token <runtime-token> \
+  --watch
+```
+
 ## 主要能力
 
 - 会话分页、长列表虚拟化、正文搜索和目标消息定位。
@@ -52,7 +63,7 @@ CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD=100 pnpm daemon:dev
 
 默认 Runtime 数据位于仓库根目录的 `.runtime/`：
 
-- `.runtime/app.sqlite`：线程、Run、事件、任务、附件元数据、审批、记忆和摘要。
+- `.runtime/app.sqlite`：线程、Run、事件、任务、通知 outbox、附件元数据、审批、记忆和摘要。
 - `.runtime/runs/`：每次 Run 的脱敏日志、诊断和元数据。
 - `.runtime/attachments/`：受控附件文件。
 - `.runtime/workspaces/`：Runtime 托管工作区。

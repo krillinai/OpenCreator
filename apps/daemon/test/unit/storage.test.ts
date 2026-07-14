@@ -94,6 +94,35 @@ describe('runtime storage', () => {
     expect(runs.getLastRunEventSeq('run_1')).toBe(3);
   });
 
+  it('creates the persistent notification outbox and pending cursor index', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+
+    expect(
+      db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notification_outbox'"
+      ).get()
+    ).toEqual({ name: 'notification_outbox' });
+    expect(columnNames(db, 'notification_outbox')).toEqual([
+      'sequence',
+      'id',
+      'dedupe_key',
+      'kind',
+      'title',
+      'body',
+      'thread_id',
+      'run_id',
+      'approval_id',
+      'created_at',
+      'acknowledged_at'
+    ]);
+    expect(
+      db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_notification_outbox_pending'"
+      ).get()
+    ).toEqual({ name: 'idx_notification_outbox_pending' });
+  });
+
   it('creates attachment metadata and cleanup indexes', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

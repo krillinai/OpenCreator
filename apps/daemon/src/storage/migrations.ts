@@ -198,6 +198,20 @@ export function migrate(db: Database.Database): void {
       UNIQUE(run_id, request_id)
     );
 
+    CREATE TABLE IF NOT EXISTS notification_outbox (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      id TEXT NOT NULL UNIQUE,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      approval_id TEXT,
+      created_at TEXT NOT NULL,
+      acknowledged_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS memories (
       id TEXT PRIMARY KEY,
       content TEXT NOT NULL,
@@ -326,6 +340,8 @@ export function migrate(db: Database.Database): void {
       ON approvals(run_id, requested_at DESC);
     CREATE INDEX IF NOT EXISTS idx_approvals_thread_id
       ON approvals(thread_id, requested_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notification_outbox_pending
+      ON notification_outbox(acknowledged_at, sequence);
     CREATE INDEX IF NOT EXISTS idx_memories_scope_enabled_updated
       ON memories(scope, scope_key, enabled, updated_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_conversation_summaries_thread_version

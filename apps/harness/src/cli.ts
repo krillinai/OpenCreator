@@ -1,5 +1,12 @@
-import type { AgentEventEnvelope, RunRequest } from '@clawee/protocol';
+import type {
+  AgentEventEnvelope,
+  NotificationAcknowledgeResponse,
+  NotificationOutboxListResponse,
+  RunRequest
+} from '@clawee/protocol';
 import { writeFileSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
+import { consumeNotificationBatch, notificationRoute } from './notification-host.js';
 
 type ParsedArgs = {
   command: string;
@@ -77,6 +84,11 @@ async function dispatch(input: ParsedArgs): Promise<void> {
       writeFileSync(output, `${JSON.stringify(diagnostics, null, 2)}\n`);
       console.log(output);
     }
+    return;
+  }
+
+  if (input.command === 'notifications') {
+    await consumeNotifications(options, input.flags);
     return;
   }
 
@@ -181,6 +193,66 @@ async function streamEvents(options: RequestOptions, runId: string, afterSeq: nu
   if (buffer.trim().length > 0) printSseFrame(buffer);
 }
 
+async function consumeNotifications(
+  options: RequestOptions,
+  flags: Record<string, string | boolean>
+): Promise<void> {
+  let after = stringFlag(flags, 'after') ?? '0';
+  if (!/^\d+$/.test(after)) throw new Error('--after must be a non-negative integer');
+  const limit = numberFlag(flags, 'limit') ?? 50;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error('--limit must be an integer between 1 and 100');
+  }
+  const intervalMs = numberFlag(flags, 'interval-ms') ?? 5_000;
+  if (!Number.isInteger(intervalMs) || intervalMs < 100) {
+    throw new Error('--interval-ms must be an integer of at least 100');
+  }
+  const watch = flags.watch === true;
+  const click = flags.click === true;
+  const client = {
+    async list(cursor: string, pageLimit: number): Promise<NotificationOutboxListResponse> {
+      return await apiFetch(
+        options,
+        `/notifications?after=${encodeURIComponent(cursor)}&limit=${pageLimit}`
+      ) as NotificationOutboxListResponse;
+    },
+    async acknowledge(ids: string[]): Promise<NotificationAcknowledgeResponse> {
+      return await apiFetch(options, '/notifications/acknowledge', {
+        method: 'POST',
+        body: { ids }
+      }) as NotificationAcknowledgeResponse;
+    }
+  };
+  const adapter = {
+    async show(
+      notification: NotificationOutboxListResponse['notifications'][number],
+      onClick: () => Promise<void>
+    ) {
+      console.log(JSON.stringify({
+        type: 'notification',
+        notification,
+        route: notificationRoute(notification)
+      }));
+      if (click) await onClick();
+    },
+    async openRoute(route: string) {
+      console.log(JSON.stringify({ type: 'open_route', route }));
+    }
+  };
+
+  do {
+    const result = await consumeNotificationBatch({
+      after,
+      limit,
+      client,
+      adapter
+    });
+    after = result.nextCursor;
+    if (!watch) return;
+    await delay(intervalMs);
+  } while (true);
+}
+
 function printSseFrame(frame: string): void {
   const dataLines = frame
     .split(/\n/)
@@ -254,6 +326,7 @@ function printUsage(): void {
   pnpm harness cancel --base-url <url> --token <token> <run_id>
   pnpm harness history --base-url <url> --token <token> [--limit <n>]
   pnpm harness diagnostics --base-url <url> --token <token> <run_id> [--output <file>]
+  pnpm harness notifications --base-url <url> --token <token> [--after <cursor>] [--watch]
 
 Environment:
   CLAWEE_DAEMON_URL, CLAWEE_DAEMON_TOKEN

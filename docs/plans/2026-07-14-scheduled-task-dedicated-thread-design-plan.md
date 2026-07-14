@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P2-B2`，已通过（2026-07-15 00:10 CST）；下一批 `P2-B3` |
+| 当前批次 | `P2-B3`，已通过（2026-07-15 00:41 CST）；下一批 `P2-B4` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -344,7 +344,7 @@ P2-B1 审批和连续失败体验
 | P1-B10 | Schedule Run 公开时间线和 P1 门禁 | `PASS` |
 | P2-B1 | 等待审批和连续失败体验 | `PASS` |
 | P2-B2 | Codex thread 轮换和摘要恢复 | `PASS` |
-| P2-B3 | 后台 Host 通知 | `NOT_STARTED` |
+| P2-B3 | 后台 Host 通知 | `PASS` |
 | P2-B4 | actor 审计和诊断事件 | `NOT_STARTED` |
 | P2-B5 | Playwright 端到端测试 | `NOT_STARTED` |
 | P2-B6 | 100 个任务性能门禁 | `NOT_STARTED` |
@@ -1796,7 +1796,7 @@ feat(runtime): 使用会话摘要轮换 Codex thread
 
 ### P2-B3：后台 Host 通知
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`（2026-07-15 00:23 - 00:41 CST）
 
 **依赖：** `P2-B2`
 
@@ -2472,6 +2472,28 @@ docs(release): 完成任务专属会话发布与回滚说明
   14/14 通过，产品路径仍复用已持久化 ConversationSummary。Web build 继续只有两个
   既有主 chunk 超过 500 kB 的警告。
 - 下一步：执行 P2-B3，新增持久 notification outbox、读取/确认协议和 Host adapter。
+
+### 2026-07-15 00:41 CST - P2-B3
+
+- 状态：`PASS`
+- 提交：`feat(notifications): 增加任务后台通知 outbox`
+  （SHA 以包含本日志的提交为准）
+- 已完成：新增 SQLite `notification_outbox`、游标读取和幂等批量确认 API；计划任务成功、
+  失败、取消和待审批状态写入脱敏且去重的通知；未确认项跨 daemon 重启保留，已确认项
+  不再返回；Web `HostBridge` 增加可选 `configureBackgroundNotifications` 契约，
+  Desktop 后台订阅成功时停止页面内重复计划任务通知，Browser 继续使用页面存活期间的
+  Notification API；harness 增加单次/持续消费参考 adapter、完整确认后推进游标和点击
+  Thread/Run/Approval 路由。
+- 验证：daemon 通知 API/存储专项 17 项、Web 通知/Browser Bridge 专项 9 项、
+  harness 3 项通过；daemon 全量 644 项通过、14 项 gated smoke 按预期跳过；Web 全量
+  518 项通过；全仓 typecheck、根 build 和 `git diff --check` 通过。
+- 未完成：真实原生 Desktop Host 不在本仓库，页面关闭后的系统通知展示和点击实机验收
+  延后到 P2-B7；本批已完成 outbox、bridge contract 和 harness 自动化替代验证。
+- 风险或偏差：首次把 fake Codex 终态流程放入新增 integration 文件后，加重 Vitest 并发
+  子进程负载并触发既有毫秒级时序测试抖动；已改为直接构造持久终态 Run/事件验证 outbox，
+  daemon 全量恢复稳定通过。Web build 继续只有两个既有主 chunk 超过 500 kB 的警告。
+- 下一步：执行 P2-B4，为 Schedule 操作增加 actor 审计字段和 Trigger 到
+  Schedule/Thread/Run 的诊断链路。
 
 ### 日志模板
 

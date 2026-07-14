@@ -1098,7 +1098,70 @@ SSE 和持久化状态是增量与真相源的组合：刷新后先查询线程 
 
 审批请求包含脱敏后的命令、工作目录、原因、Run 和线程归属。批准或拒绝是幂等状态转换；Run 取消或 app-server 异常退出时，待审批必须收敛为终态。
 
-## 19. 记忆、摘要和 Run 上下文
+## 19. 后台通知 outbox
+
+daemon 为计划任务终态和待审批状态写入持久 outbox。通知只包含脱敏后的标题、正文和
+稳定路由 ID，不包含完整 Prompt、错误堆栈、能力令牌或原始结果。
+
+### `GET /notifications?after=0&limit=50`
+
+```ts
+type NotificationOutboxItem = {
+  id: string;
+  cursor: string;
+  kind:
+    | "schedule_succeeded"
+    | "schedule_failed"
+    | "schedule_canceled"
+    | "schedule_waiting_approval";
+  title: string;
+  body: string;
+  threadId: string;
+  runId: string;
+  approvalId?: string;
+  createdAt: string;
+};
+
+type NotificationOutboxListResponse = {
+  notifications: NotificationOutboxItem[];
+  nextCursor: string;
+};
+```
+
+`after` 是非负整数游标，`limit` 范围为 `1..100`。只返回尚未确认且游标更大的通知。
+
+### `POST /notifications/acknowledge`
+
+请求：
+
+```ts
+{ ids: string[] }
+```
+
+响应：
+
+```ts
+{ acknowledged: number }
+```
+
+确认操作幂等。Host 必须先把整批通知交给系统通知中心，再确认并推进游标；若确认未完整
+成功，应保留旧游标重试。已确认通知不会被重复订阅再次返回，未确认通知在 daemon 重启
+后继续存在。
+
+Desktop `HostBridge.configureBackgroundNotifications` 接收 `{ enabled, connection }`，
+由原生 Host 在页面关闭后继续消费 outbox，并根据 `threadId/runId/approvalId` 打开目标
+路由。Browser Host 不注册该能力，继续使用页面存活期间的 Notification API 和显式权限。
+
+参考消费者：
+
+```bash
+pnpm harness notifications \
+  --base-url http://127.0.0.1:60764 \
+  --token <runtime-token> \
+  --watch
+```
+
+## 20. 记忆、摘要和 Run 上下文
 
 ### 记忆
 

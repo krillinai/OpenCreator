@@ -90,6 +90,40 @@ describe('NotificationService', () => {
     })).resolves.toBe(false);
     expect(notify).toHaveBeenCalledTimes(1);
   });
+
+  it('hands the daemon connection to a desktop background subscriber and avoids duplicate schedule notifications', async () => {
+    const configureBackgroundNotifications = vi.fn(async () => ({ ok: true as const }));
+    const service = createNotificationService({
+      hostBridge: {
+        ...hostBridge(vi.fn(), 'desktop'),
+        configureBackgroundNotifications
+      }
+    });
+
+    await expect(service.syncBackground({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    })).resolves.toBe(true);
+    expect(configureBackgroundNotifications).toHaveBeenCalledWith({
+      enabled: true,
+      connection: {
+        baseUrl: 'http://127.0.0.1:60764',
+        token: 'runtime-token'
+      }
+    });
+    expect(service.shouldNotifyInForeground('schedule')).toBe(false);
+    expect(service.shouldNotifyInForeground('api')).toBe(true);
+
+    service.disable();
+    await expect(service.syncBackground({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    })).resolves.toBe(false);
+    expect(configureBackgroundNotifications).toHaveBeenLastCalledWith({
+      enabled: false
+    });
+    expect(service.shouldNotifyInForeground('schedule')).toBe(true);
+  });
 });
 
 function hostBridge(
