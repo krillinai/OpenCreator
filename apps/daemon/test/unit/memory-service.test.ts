@@ -165,4 +165,35 @@ describe('memory service', () => {
       .toThrowError(MemoryServiceError);
     expect(service.listSummaries({ threadId: 'thread_2' }).summaries).toEqual([]);
   });
+
+  it('builds a redacted rotation prompt from the latest summary and current public input', () => {
+    const service = createService();
+    const summary = service.createSummary({
+      threadId: 'thread_1',
+      items: [{
+        id: 'item_1',
+        type: 'assistant_message',
+        text: '上一轮结论已保存，TOKEN=sk-sensitive-value',
+        createdAt: '2026-07-14T12:00:00.000Z'
+      }]
+    });
+
+    const prepared = service.prepareThreadRotationContext({
+      prompt: '继续生成公开日报，API_KEY=sk-current-value',
+      threadId: 'thread_1'
+    });
+
+    expect(prepared.executionPrompt).toContain('执行上下文恢复摘要');
+    expect(prepared.executionPrompt).toContain('上一轮结论已保存');
+    expect(prepared.executionPrompt).toContain('继续生成公开日报');
+    expect(prepared.executionPrompt).not.toContain('sk-sensitive-value');
+    expect(prepared.executionPrompt).not.toContain('sk-current-value');
+    expect(prepared.items).toEqual([
+      expect.objectContaining({
+        kind: 'summary',
+        sourceId: summary.id,
+        content: expect.stringContaining('[REDACTED]')
+      })
+    ]);
+  });
 });

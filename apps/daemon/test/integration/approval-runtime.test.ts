@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -8,6 +8,7 @@ import {
   createRunManager,
   type RunManager
 } from '../../src/runs/manager.js';
+import { createMemoryService } from '../../src/memory/service.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createThreadManager } from '../../src/threads/manager.js';
 
@@ -133,6 +134,77 @@ describe('approval runtime integration', () => {
       errorCode: 'CODEX_THREAD_ID_MISSING'
     });
   });
+
+  it('rotates an automatic schedule run when app-server cannot resume the previous thread', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-rotation-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threadManager = createThreadManager({ db, dataDir: tempDir });
+    const thread = threadManager.createThread({
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+    threadManager.setCodexThreadId(thread.id, 'codex-thread-old');
+    const memoryService = createMemoryService({ db });
+    memoryService.createSummary({
+      threadId: thread.id,
+      items: [{
+        id: 'item_summary',
+        type: 'assistant_message',
+        text: 'app-server 恢复摘要',
+        createdAt: '2026-07-14T12:00:00.000Z'
+      }]
+    });
+    const fake = createFakeRotationAppServer(tempDir);
+    const createdRunManager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      threadAccess: threadManager,
+      resumeCapabilityVerified: true,
+      runtimeTransport: 'app-server',
+      prepareThreadRotationContext: input => memoryService.prepareThreadRotationContext(input)
+    });
+    runManager = createdRunManager;
+
+    const run = await createdRunManager.createAndRun({
+      threadId: thread.id,
+      prompt: '内部执行提示',
+      publicPrompt: '生成公开结果',
+      createdBy: 'schedule',
+      sourceId: 'schedule_1'
+    });
+
+    expect(run.status).toBe('succeeded');
+    expect(fake.readInvocationCount()).toBe(2);
+    expect(threadManager.getThread(thread.id)?.codexThreadId).toBe('codex-thread-new');
+    expect(fake.readMessages()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ invocation: 0, method: 'thread/resume' }),
+      expect.objectContaining({ invocation: 1, method: 'thread/start' }),
+      expect.objectContaining({
+        invocation: 1,
+        method: 'turn/start',
+        params: expect.objectContaining({
+          input: [
+            expect.objectContaining({
+              text: expect.stringContaining('app-server 恢复摘要')
+            })
+          ]
+        })
+      })
+    ]));
+    expect(createdRunManager.listEvents(run.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'diagnostic',
+        payload: expect.objectContaining({
+          code: 'THREAD_CODEX_SESSION_ROTATED',
+          message: '执行上下文已重新连接'
+        })
+      })
+    ]));
+  });
 });
 
 function setup(expectedDecision: 'accept' | 'decline' | 'close') {
@@ -195,4 +267,49 @@ rl.on('line', line => {
 `, 'utf8');
   chmodSync(bin, 0o755);
   return bin;
+}
+
+function createFakeRotationAppServer(dir: string) {
+  const bin = join(dir, 'fake-rotation-app-server.js');
+  const countPath = join(dir, 'app-server-invocation-count.txt');
+  const messagesPath = join(dir, 'app-server-messages.ndjson');
+  writeFileSync(bin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const readline = require('node:readline');
+const countPath = ${JSON.stringify(countPath)};
+const messagesPath = ${JSON.stringify(messagesPath)};
+const invocation = fs.existsSync(countPath) ? Number(fs.readFileSync(countPath, 'utf8')) : 0;
+fs.writeFileSync(countPath, String(invocation + 1));
+const rl = readline.createInterface({ input: process.stdin });
+const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
+rl.on('line', line => {
+  const message = JSON.parse(line);
+  fs.appendFileSync(messagesPath, JSON.stringify({ invocation, ...message }) + '\\n');
+  if (message.method === 'initialize') {
+    send({ id: message.id, result: { userAgent: 'fake', codexHome: process.env.CODEX_HOME, platformFamily: 'unix', platformOs: 'test' } });
+  } else if (message.method === 'thread/resume') {
+    send({ id: message.id, error: { code: -32001, message: 'No session found for codex-thread-old' } });
+  } else if (message.method === 'thread/start') {
+    send({ id: message.id, result: { thread: { id: 'codex-thread-new' } } });
+  } else if (message.method === 'turn/start') {
+    send({ id: message.id, result: { turn: { id: 'turn-rotation', status: 'inProgress' } } });
+    send({ method: 'turn/started', params: { threadId: 'codex-thread-new', turn: { id: 'turn-rotation', status: 'inProgress' } } });
+    send({ method: 'turn/completed', params: { threadId: 'codex-thread-new', turn: { id: 'turn-rotation', status: 'completed' } } });
+  }
+});
+`, 'utf8');
+  chmodSync(bin, 0o755);
+  return {
+    bin,
+    readInvocationCount(): number {
+      return Number(readFileSync(countPath, 'utf8'));
+    },
+    readMessages(): Array<Record<string, unknown>> {
+      return readFileSync(messagesPath, 'utf8')
+        .trim()
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map(line => JSON.parse(line) as Record<string, unknown>);
+    }
+  };
 }

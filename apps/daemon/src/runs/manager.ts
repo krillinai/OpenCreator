@@ -23,6 +23,7 @@ import {
 import {
   buildCodexAppServerArgs,
   startCodexAppServer,
+  type CodexAppServerResult,
   type AppServerRequest
 } from '../codex/app-server-runner.js';
 import { CodexExecError, startCodexExec } from '../codex/runner.js';
@@ -75,6 +76,14 @@ export type RunManagerOptions = {
   runtimeTransport?: 'exec' | 'app-server';
   approvalManager?: ApprovalManager;
   recordRunContext?(runId: string, items: NonNullable<CreateRunInput['contextItems']>): void;
+  prepareThreadRotationContext?(input: {
+    prompt: string;
+    threadId: string;
+  }): {
+    executionPrompt: string;
+    items: NonNullable<CreateRunInput['contextItems']>;
+  };
+  codexThreadRotationRunThreshold?: number;
   onRunTerminal?(runId: string): void;
   logWriterFactory?(runDir: string): OrderedLogWriter;
   agentToolInjector?: AgentScheduleRunInjector;
@@ -124,6 +133,7 @@ const INTERACTIVE_RUN_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const SCHEDULED_RUN_TIMEOUT_MS = 30 * 60 * 1000;
 const EXEC_INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
 const EXEC_SPAWN_TIMEOUT_MS = 30_000;
+export const DEFAULT_CODEX_THREAD_ROTATION_RUN_THRESHOLD = 50;
 const CODEX_THREAD_ID_MISSING_MESSAGE = 'Codex stream ended without thread.started thread_id';
 
 type ActiveRun = {
@@ -137,13 +147,33 @@ type QueuedRun = {
   runDir: string;
 };
 
+type CodexThreadRotation = {
+  reason: 'resume_failed' | 'run_threshold';
+  previousCodexThreadId: string;
+  nextCodexThreadId?: string;
+  announced: boolean;
+};
+
 export function createRunManager(options: RunManagerOptions): RunManager {
   const runs = createRunRepository(options.db);
+  const codexThreadRotationRunThreshold = normalizeRotationRunThreshold(
+    options.codexThreadRotationRunThreshold
+  );
   const listRunsByThreadNewestFirst = options.db.prepare<{ threadId: string; limit: number }>(`
     SELECT * FROM runs
     WHERE thread_id = @threadId
     ORDER BY created_at DESC, rowid DESC
     LIMIT @limit
+  `);
+  const countTerminalRunsByCodexThread = options.db.prepare<{
+    threadId: string;
+    codexThreadId: string;
+  }>(`
+    SELECT COUNT(*) AS count
+    FROM runs
+    WHERE thread_id = @threadId
+      AND codex_thread_id = @codexThreadId
+      AND public_status IN ('succeeded', 'failed', 'canceled')
   `);
   const activeRuns = new Map<string, ActiveRun>();
   const runCompletions = new Map<string, Promise<CreatedRun>>();
@@ -515,11 +545,34 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     const thread = runInput.threadId === undefined
       ? undefined
       : options.threadAccess?.getThread(runInput.threadId);
-    const resolvedResumeMode = resolveResumeMode(runInput, thread);
+    let resolvedResumeMode = resolveResumeMode(runInput, thread);
     const codexThreadId = thread?.codexThreadId ?? undefined;
     let resolvedCodexThreadId = resolvedResumeMode === 'resume_thread' ? codexThreadId : undefined;
+    let executionRunInput = runInput;
+    let rotation: CodexThreadRotation | undefined;
+    if (
+      resolvedResumeMode === 'resume_thread'
+      && codexThreadId !== undefined
+      && shouldAutomaticallyRotate(runInput)
+      && codexThreadRotationRunThreshold > 0
+      && (
+        (countTerminalRunsByCodexThread.get({
+          threadId: runInput.threadId!,
+          codexThreadId
+        }) as { count: number }).count
+      ) >= codexThreadRotationRunThreshold
+    ) {
+      rotation = {
+        reason: 'run_threshold',
+        previousCodexThreadId: codexThreadId,
+        announced: false
+      };
+      resolvedResumeMode = 'new_thread';
+      resolvedCodexThreadId = undefined;
+      executionRunInput = prepareRotationRunInput(runInput);
+    }
     const plannedArgv = buildRuntimeArgv(
-      runInput,
+      executionRunInput,
       resolvedResumeMode,
       resolvedCodexThreadId,
       options.runtimeTransport
@@ -618,8 +671,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     let seq = lastSeqForRun(id);
     let sawTurnCompleted = false;
     let sawCodexThreadId = resolvedResumeMode === 'resume_thread';
-    const codexArgs = buildRuntimeArgv(
-      runInput,
+    let codexArgs = buildRuntimeArgv(
+      executionRunInput,
       resolvedResumeMode,
       resolvedCodexThreadId,
       options.runtimeTransport,
@@ -639,16 +692,20 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     writeJson(join(runDir, 'meta.json'), {
       id,
       args: codexArgs,
-      cwd: runInput.cwd,
-      profile: runInput.profile,
-      sandbox: runInput.sandbox,
+      cwd: executionRunInput.cwd,
+      profile: executionRunInput.profile,
+      sandbox: executionRunInput.sandbox,
       threadId: runInput.threadId,
       resumeMode: resolvedResumeMode,
       submissionMode: runInput.submissionMode ?? 'enqueue',
-      attachmentIds: runInput.attachmentIds ?? [],
-      contextItemIds: runInput.contextItems?.map(item => item.sourceId) ?? []
+      attachmentIds: executionRunInput.attachmentIds ?? [],
+      contextItemIds: executionRunInput.contextItems?.map(item => item.sourceId) ?? []
     });
-    if (resolvedResumeMode === 'new_thread' && codexThreadId !== undefined) {
+    if (
+      resolvedResumeMode === 'new_thread'
+      && codexThreadId !== undefined
+      && rotation === undefined
+    ) {
       void publishDiagnostic(
         id,
         ++seq,
@@ -659,257 +716,214 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       ).catch(() => undefined);
     }
 
-    if (options.runtimeTransport === 'app-server') {
-      const process = startCodexAppServer({
-        codexBin: options.codexBin,
-        codexHome: options.codexHome,
-        cwd: runInput.cwd,
-        profile: runInput.profile,
-        sandbox: runInput.sandbox,
-        model: runInput.model,
-        reasoning: runInput.reasoning,
-        prompt: runInput.executionPrompt ?? runInput.prompt,
-        imagePaths: runInput.imagePaths,
-        mcpServers: agentToolInjection?.mcpServers,
-        env: agentToolInjection?.env,
-        codexThreadId: resolvedResumeMode === 'resume_thread' ? resolvedCodexThreadId : undefined,
-        timeoutMs: runTimeouts.timeoutMs,
-        spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
-        inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
-        async onThreadStarted(parsedCodexThreadId) {
-          sawCodexThreadId = true;
-          resolvedCodexThreadId = parsedCodexThreadId;
-          runs.setRunCodexThreadId(id, parsedCodexThreadId);
-          if (runInput.threadId) {
-            options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
-          }
-          await publishStatus(id, ++seq, 'initializing', publish, {
-            threadId: runInput.threadId,
-            codexThreadId: parsedCodexThreadId
-          });
-        },
-        async onNotification(notification) {
-          const redactedLine = redactText(JSON.stringify(notification));
-          stdoutLines.push(redactedLine);
-          await appendRunLog(id, 'raw.redacted.ndjson', `${redactedLine}\n`);
-          if (
-            notification.method === 'turn/completed'
-            && isRecord(notification.params)
-          ) {
-            sawTurnCompleted = true;
-          }
-          await publish(normalizeAppServerEvent({
-            runId: id,
-            seq: ++seq,
-            raw: JSON.parse(redactedLine)
-          }));
-        },
-        async onApprovalRequest(request) {
-          if (options.approvalManager === undefined) return 'rejected';
-          const pending = options.approvalManager.request(
-            buildApprovalRequest({
-              runId: id,
-              threadId: runInput.threadId,
-              codexThreadId: resolvedCodexThreadId,
-              request
-            })
-          );
-          await publishApproval(id, ++seq, pending.approval, publish);
-          const decision = await pending.decision;
-          const resolved = options.approvalManager.get(pending.approval.id);
-          if (resolved !== undefined) {
-            await publishApproval(id, ++seq, resolved, publish);
-          }
-          return decision;
-        },
-        async onStderrChunk(chunk) {
-          const redactedChunk = redactText(chunk);
-          stderr += redactedChunk;
-          await appendRunLog(id, 'stderr.redacted.log', redactedChunk);
+    async function announceRotation(parsedCodexThreadId: string): Promise<void> {
+      if (rotation === undefined || rotation.announced) return;
+      rotation.nextCodexThreadId = parsedCodexThreadId;
+      rotation.announced = true;
+      await safePublish(publishDiagnostic(
+        id,
+        ++seq,
+        'THREAD_CODEX_SESSION_ROTATED',
+        '执行上下文已重新连接',
+        publish,
+        {
+          reason: rotation.reason,
+          previousCodexThreadId: rotation.previousCodexThreadId,
+          nextCodexThreadId: parsedCodexThreadId
         }
-      });
-
-      updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
-
-      const done = process.result.then(
-        async result => {
-          const publicStatus: 'succeeded' | 'failed' | 'canceled' =
-            result.terminationReason === 'canceled'
-              ? 'canceled'
-              : result.turnStatus === 'completed'
-                ? 'succeeded'
-                : 'failed';
-          const terminationReason: TerminationReason =
-            result.terminationReason === 'canceled'
-              ? 'user_canceled'
-              : result.turnStatus === 'completed'
-                ? 'completed'
-                : 'stream_error';
-          const diagnostics = {
-            ...buildThreadRunDiagnosticsMetadata({
-              runInput,
-              resumeMode: resolvedResumeMode,
-              codexThreadId: resolvedCodexThreadId,
-              argv: codexArgs,
-              queueState: runs.getRun(id)?.queue_state,
-              errorCode: publicStatus === 'failed' ? 'CODEX_STREAM_ERROR' : null,
-              errorMessage: publicStatus === 'failed'
-                ? `Codex turn ended with status ${result.turnStatus}`
-                : null,
-              terminationReason
-            }),
-            runtimeTransport: 'app-server',
-            turnId: result.turnId,
-            turnStatus: result.turnStatus,
-            terminationReason,
-            ...runTimeouts
-          };
-          await finalizeRun({
-            id,
-            runDir,
-            runInput,
-            publicStatus,
-            terminationReason,
-            diagnostics,
-            statusExtra: publicStatus === 'failed'
-              ? {
-                  errorCode: 'CODEX_STREAM_ERROR',
-                  errorMessage: `Codex turn ended with status ${result.turnStatus}`
-                }
-              : {},
-            nextSeq: () => ++seq,
-            publish
-          });
-          return createdRun(publicStatus);
-        },
-        async error => {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          const terminationReason = appServerErrorToTerminationReason(errorMessage);
-          const publicStatus: 'failed' | 'canceled' =
-            terminationReason === 'user_canceled' ? 'canceled' : 'failed';
-          const errorCode = errorCodeForTermination(terminationReason);
-          options.approvalManager?.cancelRun(id, 'run_failed');
-          await safePublish(publishError(id, ++seq, errorCode, errorMessage, publish));
-          await finalizeRun({
-            id,
-            runDir,
-            runInput,
-            publicStatus,
-            terminationReason,
-            diagnostics: {
-              ...buildThreadRunDiagnosticsMetadata({
-                runInput,
-                resumeMode: resolvedResumeMode,
-                codexThreadId: resolvedCodexThreadId,
-                argv: codexArgs,
-                queueState: runs.getRun(id)?.queue_state,
-                errorCode,
-                errorMessage,
-                terminationReason
-              }),
-              runtimeTransport: 'app-server',
-              error: errorMessage,
-              ...runTimeouts
-            },
-            statusExtra: { errorCode, errorMessage },
-            nextSeq: () => ++seq,
-            publish
-          });
-          return createdRun(publicStatus);
-        }
-      );
-
-      activeRuns.set(id, {
-        cancel() {
-          updateStatus(id, 'running', 'canceling');
-          options.approvalManager?.cancelRun(id, 'run_canceled');
-          void publishStatus(id, ++seq, 'canceling', publish).catch(() => undefined);
-          process.cancel();
-        },
-        done
-      });
-      bridgeRunCompletion(id, done);
-      return createdRun('running');
+      ));
     }
 
-    const process = startCodexExec({
-      codexBin: options.codexBin,
-      codexHome: options.codexHome,
-      cwd: runInput.cwd,
-      args: codexArgs,
-      prompt: runInput.executionPrompt ?? runInput.prompt,
-      env: agentToolInjection?.env,
-      timeoutMs: runTimeouts.timeoutMs,
-      spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
-      inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
-      async onStdoutLine(line) {
-        const redactedLine = redactText(line);
-        stdoutLines.push(redactedLine);
-        await appendRunLog(id, 'raw.redacted.ndjson', `${redactedLine}\n`);
-
-        const parsed = parseJsonLine(redactedLine);
-        seq += 1;
-        if (!parsed.ok) {
-          await publishDiagnostic(id, seq, 'CODEX_STREAM_ERROR', parsed.error, publish, {
-            line: redactedLine
-          });
-          return;
-        }
-
-        if (isThreadStarted(parsed.value)) {
-          const parsedCodexThreadId = parsed.value.thread_id;
-          sawCodexThreadId = true;
-          resolvedCodexThreadId = parsedCodexThreadId;
-          runs.setRunCodexThreadId(id, parsedCodexThreadId);
-          if (runInput.threadId) options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
-          await publishStatus(id, seq, 'initializing', publish, {
-            threadId: runInput.threadId,
-            codexThreadId: parsedCodexThreadId
-          });
-          return;
-        }
-        if (isTurnCompleted(parsed.value)) sawTurnCompleted = true;
-        await publish(normalizeCodexEvent({ runId: id, seq, raw: parsed.value }));
-      },
-      async onStderrChunk(chunk) {
-        const redactedChunk = redactText(chunk);
-        stderr += redactedChunk;
-        await appendRunLog(id, 'stderr.redacted.log', redactedChunk);
+    function prepareRotationRunInput(
+      input: ResolvedCreateRunInput
+    ): ResolvedCreateRunInput {
+      const prompt = redactText(input.publicPrompt ?? input.prompt);
+      let prepared: ReturnType<NonNullable<
+        RunManagerOptions['prepareThreadRotationContext']
+      >> | undefined;
+      try {
+        prepared = input.threadId === undefined
+          ? undefined
+          : options.prepareThreadRotationContext?.({
+              prompt,
+              threadId: input.threadId
+            });
+      } catch (error) {
+        void publishDiagnostic(
+          id,
+          ++seq,
+          'THREAD_ROTATION_CONTEXT_UNAVAILABLE',
+          '会话摘要暂不可用，已使用本次公开任务输入重新连接',
+          publish,
+          { error: redactText(error instanceof Error ? error.message : String(error)) }
+        ).catch(() => undefined);
       }
-    });
+      const contextItems = prepared?.items.map(item => ({
+        ...item,
+        content: redactText(item.content)
+      })) ?? [];
+      if (contextItems.length > 0) {
+        try {
+          options.recordRunContext?.(id, contextItems);
+        } catch {
+          // Context persistence failure must not prevent the bounded recovery attempt.
+        }
+      }
+      return {
+        ...input,
+        executionPrompt: redactText(prepared?.executionPrompt ?? prompt),
+        contextItems
+      };
+    }
 
-    updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
+    function writeCurrentRunMeta(): void {
+      writeJson(join(runDir, 'meta.json'), {
+        id,
+        args: codexArgs,
+        cwd: executionRunInput.cwd,
+        profile: executionRunInput.profile,
+        sandbox: executionRunInput.sandbox,
+        threadId: runInput.threadId,
+        resumeMode: resolvedResumeMode,
+        submissionMode: runInput.submissionMode ?? 'enqueue',
+        attachmentIds: executionRunInput.attachmentIds ?? [],
+        contextItemIds: executionRunInput.contextItems?.map(item => item.sourceId) ?? []
+      });
+    }
 
-    const done = process.result.then(
-      async result => {
-        const exitedSuccessfully =
-          result.exitCode === 0 && result.terminationReason !== 'canceled';
-        const missingCodexThreadId =
-          exitedSuccessfully && runInput.threadId !== undefined && !sawCodexThreadId;
-        const streamError = exitedSuccessfully && (!sawTurnCompleted || missingCodexThreadId);
-        const publicStatus: 'succeeded' | 'failed' | 'canceled' = result.terminationReason === 'canceled'
-          ? 'canceled'
-          : result.exitCode === 0 && !streamError
-            ? 'succeeded'
-            : 'failed';
-        const terminationReason = streamError ? 'stream_error' : resultToTerminationReason(result);
-        const resumeFailureCode =
-          resolvedResumeMode === 'resume_thread'
-            && result.terminationReason !== 'canceled'
-            && result.exitCode !== 0
-            && !streamError
-            ? classifyResumeFailure(stdoutLines, stderr)
-            : undefined;
-        const errorCode = missingCodexThreadId
-          ? 'CODEX_THREAD_ID_MISSING'
-          : resumeFailureCode;
-        const errorMessage = missingCodexThreadId
-          ? CODEX_THREAD_ID_MISSING_MESSAGE
-          : resumeFailureCode === undefined
-            ? streamError
-              ? 'Codex stream ended without turn.completed'
-              : undefined
-            : 'Codex resume failed';
+    function rotationDiagnostics(): Record<string, unknown> {
+      return rotation === undefined
+        ? {}
+        : {
+            rotation: {
+              reason: rotation.reason,
+              previousCodexThreadId: rotation.previousCodexThreadId,
+              nextCodexThreadId: rotation.nextCodexThreadId ?? null
+            }
+          };
+    }
+
+    if (options.runtimeTransport === 'app-server') {
+      let appServerThreadEstablished = false;
+      let appServerTurnStarted = false;
+
+      function startAppServerAttempt() {
+        return startCodexAppServer({
+          codexBin: options.codexBin,
+          codexHome: options.codexHome,
+          cwd: executionRunInput.cwd,
+          profile: executionRunInput.profile,
+          sandbox: executionRunInput.sandbox,
+          model: executionRunInput.model,
+          reasoning: executionRunInput.reasoning,
+          prompt: executionRunInput.executionPrompt ?? executionRunInput.prompt,
+          imagePaths: executionRunInput.imagePaths,
+          mcpServers: agentToolInjection?.mcpServers,
+          env: agentToolInjection?.env,
+          codexThreadId: resolvedResumeMode === 'resume_thread' ? resolvedCodexThreadId : undefined,
+          timeoutMs: runTimeouts.timeoutMs,
+          spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
+          inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
+          async onThreadStarted(parsedCodexThreadId) {
+            appServerThreadEstablished = true;
+            sawCodexThreadId = true;
+            resolvedCodexThreadId = parsedCodexThreadId;
+            runs.setRunCodexThreadId(id, parsedCodexThreadId);
+            if (runInput.threadId) {
+              options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
+            }
+            await publishStatus(id, ++seq, 'initializing', publish, {
+              threadId: runInput.threadId,
+              codexThreadId: parsedCodexThreadId
+            });
+            await announceRotation(parsedCodexThreadId);
+          },
+          async onNotification(notification) {
+            const redactedLine = redactText(JSON.stringify(notification));
+            stdoutLines.push(redactedLine);
+            await appendRunLog(id, 'raw.redacted.ndjson', `${redactedLine}\n`);
+            if (notification.method === 'turn/started') appServerTurnStarted = true;
+            if (
+              notification.method === 'turn/completed'
+              && isRecord(notification.params)
+            ) {
+              sawTurnCompleted = true;
+            }
+            await publish(normalizeAppServerEvent({
+              runId: id,
+              seq: ++seq,
+              raw: JSON.parse(redactedLine)
+            }));
+          },
+          async onApprovalRequest(request) {
+            if (options.approvalManager === undefined) return 'rejected';
+            const pending = options.approvalManager.request(
+              buildApprovalRequest({
+                runId: id,
+                threadId: runInput.threadId,
+                codexThreadId: resolvedCodexThreadId,
+                request
+              })
+            );
+            await publishApproval(id, ++seq, pending.approval, publish);
+            const decision = await pending.decision;
+            const resolved = options.approvalManager.get(pending.approval.id);
+            if (resolved !== undefined) {
+              await publishApproval(id, ++seq, resolved, publish);
+            }
+            return decision;
+          },
+          async onStderrChunk(chunk) {
+            const redactedChunk = redactText(chunk);
+            stderr += redactedChunk;
+            await appendRunLog(id, 'stderr.redacted.log', redactedChunk);
+          }
+        });
+      }
+
+      async function rotateAppServerAfterResumeFailure(): Promise<CreatedRun> {
+        rotation = {
+          reason: 'resume_failed',
+          previousCodexThreadId: codexThreadId!,
+          announced: false
+        };
+        resolvedResumeMode = 'new_thread';
+        resolvedCodexThreadId = undefined;
+        executionRunInput = prepareRotationRunInput(runInput);
+        codexArgs = buildRuntimeArgv(
+          executionRunInput,
+          resolvedResumeMode,
+          resolvedCodexThreadId,
+          options.runtimeTransport,
+          agentToolInjection?.mcpServers
+        );
+        stdoutLines.length = 0;
+        stderr = '';
+        sawTurnCompleted = false;
+        sawCodexThreadId = false;
+        appServerThreadEstablished = false;
+        appServerTurnStarted = false;
+        runs.setRunResumeMode(id, resolvedResumeMode);
+        writeCurrentRunMeta();
+        currentProcess = startAppServerAttempt();
+        return currentProcess.result.then(handleAppServerResult, handleAppServerError);
+      }
+
+      async function handleAppServerResult(
+        result: CodexAppServerResult
+      ): Promise<CreatedRun> {
+        const publicStatus: 'succeeded' | 'failed' | 'canceled' =
+          result.terminationReason === 'canceled'
+            ? 'canceled'
+            : result.turnStatus === 'completed'
+              ? 'succeeded'
+              : 'failed';
+        const terminationReason: TerminationReason =
+          result.terminationReason === 'canceled'
+            ? 'user_canceled'
+            : result.turnStatus === 'completed'
+              ? 'completed'
+              : 'stream_error';
         const diagnostics = {
           ...buildThreadRunDiagnosticsMetadata({
             runInput,
@@ -917,34 +931,19 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             codexThreadId: resolvedCodexThreadId,
             argv: codexArgs,
             queueState: runs.getRun(id)?.queue_state,
-            errorCode: errorCode ?? null,
-            errorMessage: errorMessage ?? null,
+            errorCode: publicStatus === 'failed' ? 'CODEX_STREAM_ERROR' : null,
+            errorMessage: publicStatus === 'failed'
+              ? `Codex turn ended with status ${result.turnStatus}`
+              : null,
             terminationReason
           }),
-          exitCode: result.exitCode,
-          signal: result.signal,
+          ...rotationDiagnostics(),
+          runtimeTransport: 'app-server',
+          turnId: result.turnId,
+          turnStatus: result.turnStatus,
           terminationReason,
-          ...runTimeouts,
-          ...(errorCode === undefined ? {} : { errorCode }),
-          ...(errorMessage === undefined ? {} : { error: errorMessage, errorMessage })
+          ...runTimeouts
         };
-        if (missingCodexThreadId) {
-          await safePublish(publishError(
-            id,
-            ++seq,
-            'CODEX_THREAD_ID_MISSING',
-            CODEX_THREAD_ID_MISSING_MESSAGE,
-            publish
-          ));
-        } else if (streamError) {
-          await safePublish(publishDiagnostic(
-            id,
-            ++seq,
-            'CODEX_STREAM_ERROR',
-            'Codex stream ended without turn.completed',
-            publish
-          ));
-        }
         await finalizeRun({
           id,
           runDir,
@@ -952,79 +951,280 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           publicStatus,
           terminationReason,
           diagnostics,
-          statusExtra: {
-            exitCode: result.exitCode,
-            signal: result.signal,
-            ...(errorCode === undefined ? {} : { errorCode }),
-            ...(errorMessage === undefined ? {} : { errorMessage })
-          },
+          statusExtra: publicStatus === 'failed'
+            ? {
+                errorCode: 'CODEX_STREAM_ERROR',
+                errorMessage: `Codex turn ended with status ${result.turnStatus}`
+              }
+            : {},
           nextSeq: () => ++seq,
           publish
         });
         return createdRun(publicStatus);
-      },
-      async error => {
+      }
+
+      async function handleAppServerError(error: unknown): Promise<CreatedRun> {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        const shutdownTimeoutAfterCompletedTurn = isShutdownTimeoutAfterCompletedTurn({
-          error,
-          sawTurnCompleted,
-          sawCodexThreadId,
-          threadId: runInput.threadId
-        });
-        if (shutdownTimeoutAfterCompletedTurn) {
-          const terminationReason: TerminationReason = 'completed';
-          const diagnostics = {
+        if (
+          resolvedResumeMode === 'resume_thread'
+          && rotation === undefined
+          && shouldAutomaticallyRotate(runInput)
+          && !appServerThreadEstablished
+          && !appServerTurnStarted
+          && isAppServerResumeFailure(errorMessage)
+        ) {
+          return rotateAppServerAfterResumeFailure();
+        }
+
+        const terminationReason = appServerErrorToTerminationReason(errorMessage);
+        const publicStatus: 'failed' | 'canceled' =
+          terminationReason === 'user_canceled' ? 'canceled' : 'failed';
+        const errorCode = rotation === undefined
+          ? errorCodeForTermination(terminationReason)
+          : 'THREAD_CODEX_ROTATION_FAILED';
+        options.approvalManager?.cancelRun(id, 'run_failed');
+        await safePublish(publishError(id, ++seq, errorCode, errorMessage, publish));
+        await finalizeRun({
+          id,
+          runDir,
+          runInput,
+          publicStatus,
+          terminationReason,
+          diagnostics: {
             ...buildThreadRunDiagnosticsMetadata({
               runInput,
               resumeMode: resolvedResumeMode,
               codexThreadId: resolvedCodexThreadId,
               argv: codexArgs,
               queueState: runs.getRun(id)?.queue_state,
-              errorCode: null,
-              errorMessage: null,
+              errorCode,
+              errorMessage,
               terminationReason
             }),
-            terminationReason,
-            ...runTimeouts,
-            warnings: [
-              {
-                code: 'CODEX_PROCESS_EXIT_TIMEOUT_AFTER_TURN_COMPLETED',
-                message: errorMessage
-              }
-            ]
-          };
-          if (error instanceof CodexExecError) {
-            for (const line of error.stdoutLines.slice(stdoutLines.length)) {
-              await safeAppendRunLog(id, 'raw.redacted.ndjson', `${redactText(line)}\n`);
-            }
-            if (stderr.length === 0 && error.stderr.length > 0) {
-              await safeAppendRunLog(id, 'stderr.redacted.log', redactText(error.stderr));
-            }
-          }
-          await finalizeRun({
-            id,
-            runDir,
-            runInput,
-            publicStatus: 'succeeded',
-            terminationReason,
-            diagnostics,
-            statusExtra: {},
-            nextSeq: () => ++seq,
-            publish
-          });
-          return createdRun('succeeded');
-        }
+            ...rotationDiagnostics(),
+            runtimeTransport: 'app-server',
+            error: errorMessage,
+            ...runTimeouts
+          },
+          statusExtra: { errorCode, errorMessage },
+          nextSeq: () => ++seq,
+          publish
+        });
+        return createdRun(publicStatus);
+      }
 
-        const missingCodexThreadId = runInput.threadId !== undefined && sawTurnCompleted && !sawCodexThreadId;
-        const terminationReason = missingCodexThreadId ? 'stream_error' : errorToTerminationReason(error);
-        const publicStatus: 'failed' | 'canceled' =
-          terminationReason === 'user_canceled' ? 'canceled' : 'failed';
-        const errorCode = missingCodexThreadId
-          ? 'CODEX_THREAD_ID_MISSING'
-          : errorCodeForTermination(terminationReason);
-        const finalErrorMessage = missingCodexThreadId
-          ? CODEX_THREAD_ID_MISSING_MESSAGE
-          : errorMessage;
+      let currentProcess = startAppServerAttempt();
+      updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
+      const done = currentProcess.result.then(handleAppServerResult, handleAppServerError);
+
+      activeRuns.set(id, {
+        cancel() {
+          updateStatus(id, 'running', 'canceling');
+          options.approvalManager?.cancelRun(id, 'run_canceled');
+          void publishStatus(id, ++seq, 'canceling', publish).catch(() => undefined);
+          currentProcess.cancel();
+        },
+        done
+      });
+      bridgeRunCompletion(id, done);
+      return createdRun('running');
+    }
+
+    async function onExecStdoutLine(line: string): Promise<void> {
+      const redactedLine = redactText(line);
+      stdoutLines.push(redactedLine);
+      await appendRunLog(id, 'raw.redacted.ndjson', `${redactedLine}\n`);
+
+      const parsed = parseJsonLine(redactedLine);
+      seq += 1;
+      if (!parsed.ok) {
+        await publishDiagnostic(id, seq, 'CODEX_STREAM_ERROR', parsed.error, publish, {
+          line: redactedLine
+        });
+        return;
+      }
+
+      if (isThreadStarted(parsed.value)) {
+        const parsedCodexThreadId = parsed.value.thread_id;
+        sawCodexThreadId = true;
+        resolvedCodexThreadId = parsedCodexThreadId;
+        runs.setRunCodexThreadId(id, parsedCodexThreadId);
+        if (runInput.threadId) {
+          options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
+        }
+        await publishStatus(id, seq, 'initializing', publish, {
+          threadId: runInput.threadId,
+          codexThreadId: parsedCodexThreadId
+        });
+        await announceRotation(parsedCodexThreadId);
+        return;
+      }
+      if (isTurnCompleted(parsed.value)) sawTurnCompleted = true;
+      await publish(normalizeCodexEvent({ runId: id, seq, raw: parsed.value }));
+    }
+
+    async function onExecStderrChunk(chunk: string): Promise<void> {
+      const redactedChunk = redactText(chunk);
+      stderr += redactedChunk;
+      await appendRunLog(id, 'stderr.redacted.log', redactedChunk);
+    }
+
+    function startExecAttempt() {
+      return startCodexExec({
+        codexBin: options.codexBin,
+        codexHome: options.codexHome,
+        cwd: executionRunInput.cwd,
+        args: codexArgs!,
+        prompt: executionRunInput.executionPrompt ?? executionRunInput.prompt,
+        env: agentToolInjection?.env,
+        timeoutMs: runTimeouts.timeoutMs,
+        spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
+        inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
+        onStdoutLine: onExecStdoutLine,
+        onStderrChunk: onExecStderrChunk
+      });
+    }
+
+    async function rotateExecAfterResumeFailure(): Promise<CreatedRun> {
+      rotation = {
+        reason: 'resume_failed',
+        previousCodexThreadId: codexThreadId!,
+        announced: false
+      };
+      resolvedResumeMode = 'new_thread';
+      resolvedCodexThreadId = undefined;
+      executionRunInput = prepareRotationRunInput(runInput);
+      codexArgs = buildRuntimeArgv(
+        executionRunInput,
+        resolvedResumeMode,
+        resolvedCodexThreadId,
+        options.runtimeTransport,
+        agentToolInjection?.mcpServers
+      );
+      if (codexArgs === undefined) {
+        throw new Error('Unable to build Codex arguments for thread rotation');
+      }
+      stdoutLines.length = 0;
+      stderr = '';
+      sawTurnCompleted = false;
+      sawCodexThreadId = false;
+      runs.setRunResumeMode(id, resolvedResumeMode);
+      writeCurrentRunMeta();
+      currentProcess = startExecAttempt();
+      return currentProcess.result.then(handleExecResult, handleExecError);
+    }
+
+    async function handleExecResult(result: {
+      exitCode: number | null;
+      signal: NodeJS.Signals | null;
+      terminationReason: string;
+    }): Promise<CreatedRun> {
+      const exitedSuccessfully =
+        result.exitCode === 0 && result.terminationReason !== 'canceled';
+      const missingCodexThreadId =
+        exitedSuccessfully && runInput.threadId !== undefined && !sawCodexThreadId;
+      const streamError = exitedSuccessfully && (!sawTurnCompleted || missingCodexThreadId);
+      const resumeFailureCode =
+        resolvedResumeMode === 'resume_thread'
+          && result.terminationReason !== 'canceled'
+          && result.exitCode !== 0
+          && !streamError
+          ? classifyResumeFailure(stdoutLines, stderr)
+          : undefined;
+      if (
+        resumeFailureCode !== undefined
+        && rotation === undefined
+        && shouldAutomaticallyRotate(runInput)
+      ) {
+        return rotateExecAfterResumeFailure();
+      }
+
+      const publicStatus: 'succeeded' | 'failed' | 'canceled' = result.terminationReason === 'canceled'
+        ? 'canceled'
+        : result.exitCode === 0 && !streamError
+          ? 'succeeded'
+          : 'failed';
+      const terminationReason = streamError ? 'stream_error' : resultToTerminationReason(result);
+      const errorCode = missingCodexThreadId
+        ? 'CODEX_THREAD_ID_MISSING'
+        : resumeFailureCode
+          ?? (rotation === undefined || publicStatus !== 'failed'
+            ? undefined
+            : 'THREAD_CODEX_ROTATION_FAILED');
+      const errorMessage = missingCodexThreadId
+        ? CODEX_THREAD_ID_MISSING_MESSAGE
+        : resumeFailureCode !== undefined
+          ? 'Codex resume failed'
+          : streamError
+            ? 'Codex stream ended without turn.completed'
+            : errorCode === 'THREAD_CODEX_ROTATION_FAILED'
+              ? 'Codex thread rotation failed'
+              : undefined;
+      const diagnostics = {
+        ...buildThreadRunDiagnosticsMetadata({
+          runInput,
+          resumeMode: resolvedResumeMode,
+          codexThreadId: resolvedCodexThreadId,
+          argv: codexArgs,
+          queueState: runs.getRun(id)?.queue_state,
+          errorCode: errorCode ?? null,
+          errorMessage: errorMessage ?? null,
+          terminationReason
+        }),
+        ...rotationDiagnostics(),
+        exitCode: result.exitCode,
+        signal: result.signal,
+        terminationReason,
+        ...runTimeouts,
+        ...(errorCode === undefined ? {} : { errorCode }),
+        ...(errorMessage === undefined ? {} : { error: errorMessage, errorMessage })
+      };
+      if (missingCodexThreadId) {
+        await safePublish(publishError(
+          id,
+          ++seq,
+          'CODEX_THREAD_ID_MISSING',
+          CODEX_THREAD_ID_MISSING_MESSAGE,
+          publish
+        ));
+      } else if (streamError) {
+        await safePublish(publishDiagnostic(
+          id,
+          ++seq,
+          'CODEX_STREAM_ERROR',
+          'Codex stream ended without turn.completed',
+          publish
+        ));
+      }
+      await finalizeRun({
+        id,
+        runDir,
+        runInput,
+        publicStatus,
+        terminationReason,
+        diagnostics,
+        statusExtra: {
+          exitCode: result.exitCode,
+          signal: result.signal,
+          ...(errorCode === undefined ? {} : { errorCode }),
+          ...(errorMessage === undefined ? {} : { errorMessage })
+        },
+        nextSeq: () => ++seq,
+        publish
+      });
+      return createdRun(publicStatus);
+    }
+
+    async function handleExecError(error: unknown): Promise<CreatedRun> {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const shutdownTimeoutAfterCompletedTurn = isShutdownTimeoutAfterCompletedTurn({
+        error,
+        sawTurnCompleted,
+        sawCodexThreadId,
+        threadId: runInput.threadId
+      });
+      if (shutdownTimeoutAfterCompletedTurn) {
+        const terminationReason: TerminationReason = 'completed';
         const diagnostics = {
           ...buildThreadRunDiagnosticsMetadata({
             runInput,
@@ -1032,24 +1232,20 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             codexThreadId: resolvedCodexThreadId,
             argv: codexArgs,
             queueState: runs.getRun(id)?.queue_state,
-            errorCode,
-            errorMessage: finalErrorMessage,
+            errorCode: null,
+            errorMessage: null,
             terminationReason
           }),
-          error: finalErrorMessage,
-          errorMessage: finalErrorMessage,
+          ...rotationDiagnostics(),
           terminationReason,
-          ...runTimeouts
+          ...runTimeouts,
+          warnings: [
+            {
+              code: 'CODEX_PROCESS_EXIT_TIMEOUT_AFTER_TURN_COMPLETED',
+              message: errorMessage
+            }
+          ]
         };
-        if (missingCodexThreadId) {
-          await safePublish(publishError(
-            id,
-            ++seq,
-            'CODEX_THREAD_ID_MISSING',
-            CODEX_THREAD_ID_MISSING_MESSAGE,
-            publish
-          ));
-        }
         if (error instanceof CodexExecError) {
           for (const line of error.stdoutLines.slice(stdoutLines.length)) {
             await safeAppendRunLog(id, 'raw.redacted.ndjson', `${redactText(line)}\n`);
@@ -1062,25 +1258,88 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           id,
           runDir,
           runInput,
-          publicStatus,
+          publicStatus: 'succeeded',
           terminationReason,
           diagnostics,
-          statusExtra: {
-            errorCode,
-            errorMessage: finalErrorMessage
-          },
+          statusExtra: {},
           nextSeq: () => ++seq,
           publish
         });
-        return createdRun(publicStatus);
+        return createdRun('succeeded');
       }
-    );
+
+      const missingCodexThreadId = runInput.threadId !== undefined && sawTurnCompleted && !sawCodexThreadId;
+      const terminationReason = missingCodexThreadId ? 'stream_error' : errorToTerminationReason(error);
+      const publicStatus: 'failed' | 'canceled' =
+        terminationReason === 'user_canceled' ? 'canceled' : 'failed';
+      const errorCode = missingCodexThreadId
+        ? 'CODEX_THREAD_ID_MISSING'
+        : rotation === undefined
+          ? errorCodeForTermination(terminationReason)
+          : 'THREAD_CODEX_ROTATION_FAILED';
+      const finalErrorMessage = missingCodexThreadId
+        ? CODEX_THREAD_ID_MISSING_MESSAGE
+        : errorMessage;
+      const diagnostics = {
+        ...buildThreadRunDiagnosticsMetadata({
+          runInput,
+          resumeMode: resolvedResumeMode,
+          codexThreadId: resolvedCodexThreadId,
+          argv: codexArgs,
+          queueState: runs.getRun(id)?.queue_state,
+          errorCode,
+          errorMessage: finalErrorMessage,
+          terminationReason
+        }),
+        ...rotationDiagnostics(),
+        error: finalErrorMessage,
+        errorMessage: finalErrorMessage,
+        terminationReason,
+        ...runTimeouts
+      };
+      if (missingCodexThreadId) {
+        await safePublish(publishError(
+          id,
+          ++seq,
+          'CODEX_THREAD_ID_MISSING',
+          CODEX_THREAD_ID_MISSING_MESSAGE,
+          publish
+        ));
+      }
+      if (error instanceof CodexExecError) {
+        for (const line of error.stdoutLines.slice(stdoutLines.length)) {
+          await safeAppendRunLog(id, 'raw.redacted.ndjson', `${redactText(line)}\n`);
+        }
+        if (stderr.length === 0 && error.stderr.length > 0) {
+          await safeAppendRunLog(id, 'stderr.redacted.log', redactText(error.stderr));
+        }
+      }
+      await finalizeRun({
+        id,
+        runDir,
+        runInput,
+        publicStatus,
+        terminationReason,
+        diagnostics,
+        statusExtra: {
+          errorCode,
+          errorMessage: finalErrorMessage
+        },
+        nextSeq: () => ++seq,
+        publish
+      });
+      return createdRun(publicStatus);
+    }
+
+    let currentProcess = startExecAttempt();
+    updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
+    const done = currentProcess.result.then(handleExecResult, handleExecError);
 
     activeRuns.set(id, {
       cancel() {
         updateStatus(id, 'running', 'canceling');
         void publishStatus(id, ++seq, 'canceling', publish).catch(() => undefined);
-        process.cancel();
+        currentProcess.cancel();
       },
       done
     });
@@ -1776,6 +2035,14 @@ function classifyResumeFailure(stdoutLines: string[], stderr: string): 'RESUME_T
     : 'RESUME_FAILED';
 }
 
+function isAppServerResumeFailure(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes('not found')
+    || normalized.includes('no session')
+    || normalized.includes('unknown session')
+    || normalized.includes('thread/resume');
+}
+
 function isShutdownTimeoutAfterCompletedTurn(input: {
   error: unknown;
   sawTurnCompleted: boolean;
@@ -1804,6 +2071,18 @@ function errorCodeForTermination(reason: TerminationReason): string {
   if (reason === 'spawn_timeout') return 'CODEX_EXEC_SPAWN_TIMEOUT';
   if (reason === 'spawn_failed') return 'SPAWN_FAILED';
   return 'CODEX_STREAM_ERROR';
+}
+
+function shouldAutomaticallyRotate(input: CreateRunInput): boolean {
+  return input.threadId !== undefined
+    && input.createdBy === 'schedule'
+    && (input.resumeMode === undefined || input.resumeMode === 'auto');
+}
+
+function normalizeRotationRunThreshold(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_CODEX_THREAD_ROTATION_RUN_THRESHOLD;
+  if (!Number.isFinite(value)) return DEFAULT_CODEX_THREAD_ROTATION_RUN_THRESHOLD;
+  return Math.max(0, Math.floor(value));
 }
 
 function resolveRunTimeouts(

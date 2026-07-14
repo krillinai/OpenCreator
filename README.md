@@ -27,6 +27,18 @@ pnpm daemon:dev
 
 daemon 会监听随机本机端口，并在 stdout 输出一次连接地址和临时 token。
 
+长期计划任务默认在同一个底层 Codex thread 完成 50 次终态 Run 后，使用最新
+ConversationSummary 建立新 Codex thread；resume 目标失效时也会自动尝试一次相同恢复。
+Clawee Thread、Schedule 绑定和页面路由保持不变。可通过环境变量调整阈值，设为 `0`
+可关闭按次数主动轮换：
+
+```bash
+CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD=100 pnpm daemon:dev
+```
+
+该自动恢复只用于 `resumeMode: "auto"` 的计划任务；普通会话或显式
+`resumeMode: "resume_thread"` 仍按原错误语义失败，不会静默新建上下文。
+
 ## 主要能力
 
 - 会话分页、长列表虚拟化、正文搜索和目标消息定位。

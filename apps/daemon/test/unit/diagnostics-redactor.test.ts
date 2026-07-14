@@ -13,6 +13,8 @@ describe('diagnostics redactor', () => {
       'PASSWORD=db-password',
       'Authorization: Bearer bearer-secret-value',
       'auth=lowercase-secret',
+      'API token: sk-labeled-secret-value',
+      'standalone credential sk-standalone-secret-value',
       'tool token clwcap_VerySecretCapabilityValue'
     ].join('\n');
 
@@ -28,6 +30,8 @@ describe('diagnostics redactor', () => {
     expect(redacted).not.toContain('db-password');
     expect(redacted).not.toContain('bearer-secret-value');
     expect(redacted).not.toContain('lowercase-secret');
+    expect(redacted).not.toContain('sk-labeled-secret-value');
+    expect(redacted).not.toContain('sk-standalone-secret-value');
     expect(redacted).not.toContain('clwcap_VerySecretCapabilityValue');
   });
 

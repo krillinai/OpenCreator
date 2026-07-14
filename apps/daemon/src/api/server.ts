@@ -102,6 +102,7 @@ export type BuildServerInput = {
   agentCapabilityTokens?: AgentCapabilityTokenStore;
   agentScheduleOperations?: AgentScheduleOperations;
   agentToolsEnabled?: boolean;
+  codexThreadRotationRunThreshold?: number;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
 };
 
@@ -180,6 +181,11 @@ export async function buildServer(input: BuildServerInput) {
       profileValidator: profileManager,
       runtimeTransport: capabilities.appServerApprovals === true ? 'app-server' : 'exec',
       approvalManager,
+      codexThreadRotationRunThreshold:
+        input.codexThreadRotationRunThreshold
+        ?? parseNonNegativeInteger(process.env.CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD),
+      prepareThreadRotationContext: context =>
+        memoryService.prepareThreadRotationContext(context),
       agentToolInjector: agentToolCommand === undefined
         ? undefined
         : createAgentScheduleRunInjector({
@@ -496,6 +502,12 @@ function isAllowedWebOrigin(origin: string): boolean {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function parseNonNegativeInteger(value: string | undefined): number | undefined {
+  if (value === undefined || !/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 function resolveListeningOrigin(

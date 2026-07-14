@@ -1014,6 +1014,19 @@ UI 注意：
 1. 使用已有 `threadId`。
 2. `POST /runs`，body 包含 `threadId`、`prompt`、`resumeMode: "auto"`。
 3. 如果返回 `RESUME_CAPABILITY_UNVERIFIED` 或 `RESUME_TARGET_NOT_FOUND`，UI 提供“开启新上下文继续”，重试 `resumeMode: "new_thread"`。
+4. 上述 UI 降级规则继续适用于普通会话；只有 `createdBy = "schedule"` 且
+   `resumeMode = "auto"` 的内部计划任务 Run 会在 resume 目标失效时自动尝试一次
+   ConversationSummary 恢复。
+
+### 计划任务 Codex thread 轮换
+
+1. Clawee `threadId`、Schedule `threadId` 和页面路由不会因底层 Codex thread 变化。
+2. 自动计划任务 resume 失败时，只尝试一次 `summary reseed -> new thread`。
+3. 新 Codex thread 建立前不覆盖 `threads.codex_thread_id`。
+4. 成功建立后产生一次 `THREAD_CODEX_SESSION_ROTATED` 非阻断诊断，显示“执行上下文已重新连接”。
+5. 默认每个 Codex thread 完成 50 个终态 Run 后主动轮换。
+6. `CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD` 可设置非负整数；`0` 关闭按次数主动轮换，
+   但不关闭 resume 目标失效后的单次恢复。
 
 ### 独立一次性任务
 

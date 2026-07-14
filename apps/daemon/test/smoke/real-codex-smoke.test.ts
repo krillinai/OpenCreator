@@ -1,3 +1,4 @@
+import type { ThreadHistoryItem } from '@clawee/protocol';
 import type { SmokeCommandResult } from '../../src/codex/smoke.js';
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,6 +12,8 @@ const runRealCodex = process.env.CLAWEE_RUN_REAL_CODEX_SMOKE === '1';
 const fixtureDir = join(process.cwd(), 'test', 'fixtures', 'real-codex', 'generated');
 const SCHEDULER_FIRST_MARKER = 'P0_SCHEDULE_FIRST_MARKER';
 const SCHEDULER_SECOND_MARKER = 'P0_SCHEDULE_SECOND_MARKER';
+const ROTATION_FIRST_MARKER = 'P2_ROTATION_FIRST_MARKER';
+const ROTATION_SECOND_MARKER = 'P2_ROTATION_SECOND_MARKER';
 
 describe.runIf(runRealCodex)('real codex smoke', () => {
   it('captures codex version', () => {
@@ -437,6 +440,99 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     }
   }, 240_000);
 
+  it('rotates a scheduled Codex thread and restores context from ConversationSummary', async () => {
+    const dataDir = join(fixtureDir, `rotation-data-${Date.now()}`);
+    const workspace = join(fixtureDir, `rotation-workspace-${Date.now()}`);
+    mkdirSync(dataDir, { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+    let rotationSummaryItems: ThreadHistoryItem[] = [];
+
+    const server = await buildServer({
+      token: 'secret',
+      dataDir,
+      codexBin: 'codex',
+      capabilities: collectCodexCapabilityMatrix({ codexBin: 'codex' }),
+      schedulerAutostart: false,
+      codexThreadRotationRunThreshold: 1,
+      memoryHistoryReader: () => ({ items: rotationSummaryItems })
+    });
+
+    try {
+      const created = await server.inject({
+        method: 'POST',
+        url: '/schedules',
+        headers: { authorization: 'Bearer secret' },
+        payload: {
+          name: 'real codex rotation smoke',
+          cron: '0 9 * * *',
+          timezone: 'UTC',
+          prompt: [
+            'This scheduled task validates context restoration after a Codex thread rotation.',
+            'Do not run tools and do not modify files.',
+            `If the restored summary does not contain ${ROTATION_FIRST_MARKER}, reply with ${ROTATION_FIRST_MARKER} only.`,
+            `If the restored summary contains ${ROTATION_FIRST_MARKER}, reply with ${ROTATION_SECOND_MARKER} only.`
+          ].join(' '),
+          cwd: workspace,
+          sandbox: 'read-only',
+          timeoutMs: 180_000
+        }
+      });
+      if (created.statusCode !== 201) {
+        throwIfBlockedResponse(created, 'create rotation schedule');
+      }
+
+      const scheduleId = created.json<{ id: string }>().id;
+      const threadId = created.json<{ threadId: string }>().threadId;
+      const first = await runScheduleNow(server, scheduleId, dataDir);
+      const firstRun = first.finished.json<{
+        status: string;
+        threadId?: string | null;
+        codexThreadId?: string | null;
+        errorCode?: string | null;
+        errorMessage?: string | null;
+      }>();
+      if (firstRun.status !== 'succeeded') throwIfBlockedRun(firstRun, first);
+      expect(first.events.body).toContain(ROTATION_FIRST_MARKER);
+      rotationSummaryItems = [readAssistantHistoryItem(dataDir, first.runId)];
+
+      const summary = await server.inject({
+        method: 'POST',
+        url: `/threads/${encodeURIComponent(threadId)}/summaries`,
+        headers: { authorization: 'Bearer secret' }
+      });
+      expect(summary.statusCode).toBe(201);
+      expect(summary.body).toContain(ROTATION_FIRST_MARKER);
+
+      const second = await runScheduleNow(server, scheduleId, dataDir);
+      const secondRun = second.finished.json<typeof firstRun>();
+      const fixture = {
+        created: responseFixture(created),
+        first: {
+          finished: responseFixture(first.finished),
+          events: first.events
+        },
+        summary: responseFixture(summary),
+        second: {
+          finished: responseFixture(second.finished),
+          events: second.events
+        }
+      };
+      writeSchedulerFixture('scheduler-thread-rotation', fixture);
+      if (secondRun.status !== 'succeeded') throwIfBlockedRun(secondRun, fixture);
+
+      expect(firstRun).toMatchObject({ status: 'succeeded', threadId });
+      expect(secondRun).toMatchObject({ status: 'succeeded', threadId });
+      expect(secondRun.codexThreadId).not.toBe(firstRun.codexThreadId);
+      expect(second.events.body).toContain(ROTATION_SECOND_MARKER);
+      expect(second.events.body).toContain('THREAD_CODEX_SESSION_ROTATED');
+      expect(second.events.body).toContain('执行上下文已重新连接');
+    } finally {
+      await server.close();
+      rmSync(dataDir, { recursive: true, force: true });
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  }, 240_000);
+
   it('captures a command execution jsonl fixture', () => {
     const result = runSmokeCommand([
       'codex',
@@ -575,6 +671,39 @@ function readRunEventsFixture(
     .map(line => (JSON.parse(line) as { type?: string }).type)
     .filter((type): type is string => type !== undefined);
   return { body, eventTypes };
+}
+
+function readAssistantHistoryItem(dataDir: string, runId: string): ThreadHistoryItem {
+  const events = readFileSync(join(dataDir, 'runs', runId, 'events.ndjson'), 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as {
+      id: string;
+      ts: string;
+      type?: string;
+      payload?: { type?: string; text?: string };
+    });
+  let event: (typeof events)[number] | undefined;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const candidate = events[index];
+    if (
+      candidate?.type === 'assistant_message'
+      && candidate.payload?.type === 'assistant_message'
+      && typeof candidate.payload.text === 'string'
+    ) {
+      event = candidate;
+      break;
+    }
+  }
+  if (event?.payload?.text === undefined) {
+    throw new Error(`Run ${runId} did not persist an assistant message for summary creation`);
+  }
+  return {
+    id: event.id,
+    type: 'assistant_message',
+    text: event.payload.text,
+    createdAt: event.ts
+  };
 }
 
 function throwIfBlockedEnvironment(result: SmokeCommandResult): void {

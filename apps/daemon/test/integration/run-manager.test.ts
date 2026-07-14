@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 import { createAgentCapabilityTokenStore } from '../../src/agent-tools/capability-token.js';
 import { createAgentScheduleRunInjector } from '../../src/agent-tools/run-injection.js';
+import { createMemoryService } from '../../src/memory/service.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunManager } from '../../src/runs/manager.js';
 import {
@@ -1290,6 +1291,290 @@ describe('run manager', () => {
 
     expect(run.status).toBe('failed');
     expect(manager.getRun(run.id)?.errorCode).toBe('RESUME_FAILED');
+  });
+
+  it('rotates an automatic schedule run once after resume fails and reseeds from the latest summary', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-rotation-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      invocations: [
+        {
+          stdoutLines: [],
+          stderrLines: ['No session found for codex-thread-old'],
+          exitCode: 1
+        },
+        {
+          initialDelayMs: 150,
+          stdoutLines: [
+            { type: 'thread.started', thread_id: 'codex-thread-new' },
+            { type: 'turn.started' },
+            { type: 'item.completed', item: { type: 'agent_message', text: 'rotated' } },
+            { type: 'turn.completed' }
+          ]
+        }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threadManager = createThreadManager({ db, dataDir: tempDir });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-old' });
+    const memoryService = createMemoryService({ db });
+    memoryService.createSummary({
+      threadId: thread.id,
+      items: [{
+        id: 'item_summary',
+        type: 'assistant_message',
+        text: '上一轮已经整理项目状态，TOKEN=sk-private-value',
+        createdAt: '2026-07-14T12:00:00.000Z'
+      }]
+    });
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      threadAccess: threadManager,
+      resumeCapabilityVerified: true,
+      prepareThreadRotationContext: input => memoryService.prepareThreadRotationContext(input),
+      recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items)
+    });
+
+    const run = manager.startRun({
+      ...threadRun(thread, '内部执行提示不应进入恢复输入'),
+      publicPrompt: '生成本次公开日报',
+      createdBy: 'schedule',
+      sourceId: 'schedule_1'
+    });
+
+    await expect.poll(() => fake.readInvocationCount()).toBe(2);
+    expect(threadManager.getThread(thread.id)?.codexThreadId).toBe('codex-thread-old');
+    await waitForRunStatus(manager, run.id, 'succeeded');
+
+    expect(manager.getRun(run.id)).toMatchObject({
+      threadId: thread.id,
+      codexThreadId: 'codex-thread-new',
+      status: 'succeeded',
+      sourceId: 'schedule_1'
+    });
+    expect(threadManager.getThread(thread.id)?.codexThreadId).toBe('codex-thread-new');
+    expect(fake.readArgvs()[0]?.slice(0, 2)).toEqual(['exec', 'resume']);
+    expect(fake.readArgvs()[1]).not.toContain('resume');
+    expect(fake.readPrompts()[1]).toContain('上一轮已经整理项目状态');
+    expect(fake.readPrompts()[1]).toContain('生成本次公开日报');
+    expect(fake.readPrompts()[1]).not.toContain('内部执行提示不应进入恢复输入');
+    expect(fake.readPrompts()[1]).not.toContain('sk-private-value');
+    expect(memoryService.listRunContext(run.id).items).toEqual([
+      expect.objectContaining({ kind: 'summary', content: expect.stringContaining('[REDACTED]') })
+    ]);
+    const rotationDiagnostics = manager.listEvents(run.id).filter(event =>
+      event.type === 'diagnostic'
+      && event.payload.type === 'diagnostic'
+      && event.payload.code === 'THREAD_CODEX_SESSION_ROTATED'
+    );
+    expect(rotationDiagnostics).toHaveLength(1);
+    expect(rotationDiagnostics[0]).toMatchObject({
+      payload: {
+        message: '执行上下文已重新连接',
+        details: {
+          reason: 'resume_failed',
+          previousCodexThreadId: 'codex-thread-old',
+          nextCodexThreadId: 'codex-thread-new'
+        }
+      }
+    });
+  });
+
+  it('fails after one rotation attempt without replacing the previous Codex thread id', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-rotation-failed-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      invocations: [
+        { stdoutLines: [], stderrLines: ['resume failed unexpectedly'], exitCode: 1 },
+        { stdoutLines: [], stderrLines: ['new thread failed unexpectedly'], exitCode: 1 }
+      ]
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-old' });
+
+    const run = await manager.createAndRun({
+      ...threadRun(thread, '执行任务'),
+      publicPrompt: '执行任务',
+      createdBy: 'schedule',
+      sourceId: 'schedule_1'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(fake.readInvocationCount()).toBe(2);
+    expect(threadManager.getThread(thread.id)?.codexThreadId).toBe('codex-thread-old');
+    expect(manager.listEvents(run.id).filter(event =>
+      event.type === 'diagnostic'
+      && event.payload.type === 'diagnostic'
+      && event.payload.code === 'THREAD_CODEX_SESSION_ROTATED'
+    )).toHaveLength(0);
+  });
+
+  it('does not rotate an explicit schedule resume failure', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-explicit-resume-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      invocations: [
+        { stdoutLines: [], stderrLines: ['resume failed unexpectedly'], exitCode: 1 },
+        {
+          stdoutLines: [
+            { type: 'thread.started', thread_id: 'codex-thread-new' },
+            { type: 'turn.started' },
+            { type: 'turn.completed' }
+          ]
+        }
+      ]
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-old' });
+
+    const run = await manager.createAndRun({
+      ...threadRun(thread, '执行任务'),
+      resumeMode: 'resume_thread',
+      publicPrompt: '执行任务',
+      createdBy: 'schedule'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(fake.readInvocationCount()).toBe(1);
+    expect(manager.getRun(run.id)?.errorCode).toBe('RESUME_FAILED');
+  });
+
+  it('rotates before resume when the configured Codex thread run threshold is reached', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-rotation-threshold-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      invocations: [
+        {
+          stdoutLines: [
+            { type: 'thread.started', thread_id: 'codex-thread-old' },
+            { type: 'turn.started' },
+            { type: 'turn.completed' }
+          ]
+        },
+        {
+          stdoutLines: [
+            { type: 'thread.started', thread_id: 'codex-thread-new' },
+            { type: 'turn.started' },
+            { type: 'turn.completed' }
+          ]
+        }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threadManager = createThreadManager({ db, dataDir: tempDir });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-old' });
+    const memoryService = createMemoryService({ db });
+    memoryService.createSummary({
+      threadId: thread.id,
+      items: [{
+        id: 'item_summary',
+        type: 'assistant_message',
+        text: '阈值轮换摘要',
+        createdAt: '2026-07-14T12:00:00.000Z'
+      }]
+    });
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      threadAccess: threadManager,
+      resumeCapabilityVerified: true,
+      codexThreadRotationRunThreshold: 1,
+      prepareThreadRotationContext: input => memoryService.prepareThreadRotationContext(input)
+    });
+
+    expect((await manager.createAndRun({
+      ...threadRun(thread, '第一次'),
+      publicPrompt: '第一次',
+      createdBy: 'schedule'
+    })).status).toBe('succeeded');
+    const second = await manager.createAndRun({
+      ...threadRun(thread, '第二次'),
+      publicPrompt: '第二次',
+      createdBy: 'schedule'
+    });
+
+    expect(second.status).toBe('succeeded');
+    expect(fake.readArgvs()[0]?.slice(0, 2)).toEqual(['exec', 'resume']);
+    expect(fake.readArgvs()[1]).not.toContain('resume');
+    expect(fake.readPrompts()[1]).toContain('阈值轮换摘要');
+    expect(manager.listEvents(second.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'diagnostic',
+        payload: expect.objectContaining({
+          code: 'THREAD_CODEX_SESSION_ROTATED',
+          details: expect.objectContaining({ reason: 'run_threshold' })
+        })
+      })
+    ]));
+  });
+
+  it('keeps automatic schedule resumes unchanged when threshold rotation is disabled', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-rotation-disabled-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      invocations: [
+        {
+          stdoutLines: [
+            { type: 'thread.started', thread_id: 'codex-thread-old' },
+            { type: 'turn.started' },
+            { type: 'turn.completed' }
+          ]
+        },
+        {
+          stdoutLines: [
+            { type: 'thread.started', thread_id: 'codex-thread-old' },
+            { type: 'turn.started' },
+            { type: 'turn.completed' }
+          ]
+        }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threadManager = createThreadManager({ db, dataDir: tempDir });
+    const thread = createPersistedThread(threadManager, { codexThreadId: 'codex-thread-old' });
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      threadAccess: threadManager,
+      resumeCapabilityVerified: true,
+      codexThreadRotationRunThreshold: 0
+    });
+
+    await manager.createAndRun({
+      ...threadRun(thread, '第一次'),
+      publicPrompt: '第一次',
+      createdBy: 'schedule'
+    });
+    const second = await manager.createAndRun({
+      ...threadRun(thread, '第二次'),
+      publicPrompt: '第二次',
+      createdBy: 'schedule'
+    });
+
+    expect(second.status).toBe('succeeded');
+    expect(fake.readArgvs()).toHaveLength(2);
+    expect(fake.readArgvs()[0]?.slice(0, 2)).toEqual(['exec', 'resume']);
+    expect(fake.readArgvs()[1]?.slice(0, 2)).toEqual(['exec', 'resume']);
+    expect(manager.listEvents(second.id).some(event =>
+      event.type === 'diagnostic'
+      && event.payload.type === 'diagnostic'
+      && event.payload.code === 'THREAD_CODEX_SESSION_ROTATED'
+    )).toBe(false);
   });
 
   it('runs explicit resume_thread without a thread id as an independent exec', async () => {

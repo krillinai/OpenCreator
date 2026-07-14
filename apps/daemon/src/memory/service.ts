@@ -11,6 +11,7 @@ import type {
 } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
+import { redactText } from '../security/redaction.js';
 import { createMemoryRepository } from './repository.js';
 
 const MEMORY_CONTENT_LIMIT = 2_000;
@@ -145,6 +146,28 @@ export function createMemoryService(input: { db: Database.Database }) {
         items: selected
       };
     },
+    prepareThreadRotationContext(context: {
+      prompt: string;
+      threadId: string;
+    }): {
+      executionPrompt: string;
+      items: RunContextItem[];
+    } {
+      const summary = repository.latestSummary(context.threadId);
+      const items: RunContextItem[] = summary === undefined
+        ? []
+        : [{
+            kind: 'summary',
+            sourceId: summary.id,
+            content: redactText(summary.content.slice(0, RUN_SUMMARY_CHAR_LIMIT)),
+            order: 0,
+            summaryVersion: summary.version
+          }];
+      return {
+        executionPrompt: buildThreadRotationPrompt(redactText(context.prompt), items[0]),
+        items
+      };
+    },
     recordRunContext(runId: string, items: RunContextItem[]): void {
       repository.replaceRunContext(runId, items);
     },
@@ -243,6 +266,19 @@ function buildExecutionPrompt(prompt: string, items: RunContextItem[]): string {
     prompt
   ];
   return lines.join('\n');
+}
+
+function buildThreadRotationPrompt(prompt: string, summary?: RunContextItem): string {
+  return [
+    '[Clawee 执行上下文恢复摘要]',
+    summary === undefined
+      ? '- 暂无可用会话摘要，请仅依据本次公开任务输入继续。'
+      : `- 会话摘要 v${summary.summaryVersion ?? 1}：${summary.content}`,
+    '[恢复摘要结束]',
+    '',
+    '本次公开任务输入：',
+    prompt
+  ].join('\n');
 }
 
 function toSummaryLine(item: ThreadHistoryItem): { id: string; line: string } | undefined {

@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B10`，已通过（2026-07-14 22:29 CST）；下一批 `P2-B1` |
+| 当前批次 | `P2-B2`，已通过（2026-07-15 00:10 CST）；下一批 `P2-B3` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -342,8 +342,8 @@ P2-B1 审批和连续失败体验
 | P1-B8 | 删除正则创建流程 | `PASS` |
 | P1-B9 | 通知深链接和结果摘要 | `PASS` |
 | P1-B10 | Schedule Run 公开时间线和 P1 门禁 | `PASS` |
-| P2-B1 | 等待审批和连续失败体验 | `NOT_STARTED` |
-| P2-B2 | Codex thread 轮换和摘要恢复 | `NOT_STARTED` |
+| P2-B1 | 等待审批和连续失败体验 | `PASS` |
+| P2-B2 | Codex thread 轮换和摘要恢复 | `PASS` |
 | P2-B3 | 后台 Host 通知 | `NOT_STARTED` |
 | P2-B4 | actor 审计和诊断事件 | `NOT_STARTED` |
 | P2-B5 | Playwright 端到端测试 | `NOT_STARTED` |
@@ -1738,7 +1738,7 @@ feat(tasks): 完善任务审批和连续失败体验
 
 ### P2-B2：Codex thread 轮换和摘要恢复
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`（2026-07-14 23:22 - 2026-07-15 00:10 CST）
 
 **依赖：** `P2-B1`
 
@@ -2448,6 +2448,30 @@ docs(release): 完成任务专属会话发布与回滚说明
   脱敏中文摘要。Web build 继续报告两个既有主 chunk 超过 500 kB。
 - 下一步：执行 P2-B2，复用 ConversationSummary 实现有限的 resume、摘要 reseed 和
   新 Codex thread 恢复流程。
+
+### 2026-07-15 00:10 CST - P2-B2
+
+- 状态：`PASS`
+- 提交：`feat(runtime): 使用会话摘要轮换 Codex thread`
+  （SHA 以包含本日志的提交为准）
+- 已完成：自动 Schedule 且 `resumeMode=auto` 时，exec 和 app-server 均支持一次
+  `resume -> ConversationSummary reseed -> new thread` 有限恢复；显式 `resume_thread`
+  和普通会话保持原失败语义；新 Codex thread 建立前不覆盖 Thread 绑定，建立后只写入
+  一次“执行上下文已重新连接”诊断；轮换 Prompt 只使用最新摘要和本次公开任务输入并
+  强制脱敏；同一 Codex thread 默认完成 50 个终态 Run 后主动轮换，环境变量
+  `CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD` 可调整，`0` 可关闭主动阈值轮换；
+  轮换失败只结束本 Run，不修改 Schedule enabled 和 Clawee/Schedule threadId。
+- 验证：RunManager、审批 app-server、Memory API/Service 和脱敏专项共 61 项通过；
+  daemon 全量 641 项通过、14 项 gated smoke 在普通全量测试中按预期跳过；
+  Protocol/Daemon typecheck、Daemon build、根 `pnpm build` 和 `git diff --check`
+  通过；显式启用真实 Codex smoke 后 14/14 通过，其中新增真实摘要轮换场景验证同一
+  Clawee Thread、不同 Codex thread 和摘要恢复。
+- 未完成：后台 Host 通知 outbox 和页面关闭后的系统通知留到 P2-B3。
+- 风险或偏差：第一次真实轮换 smoke 通过公开摘要接口读取真实 `$CODEX_HOME` 历史时，
+  本机会话索引扫描持续占满单核；测试已改为从本次 Run 的持久事件构造摘要源并重新
+  14/14 通过，产品路径仍复用已持久化 ConversationSummary。Web build 继续只有两个
+  既有主 chunk 超过 500 kB 的警告。
+- 下一步：执行 P2-B3，新增持久 notification outbox、读取/确认协议和 Host adapter。
 
 ### 日志模板
 
