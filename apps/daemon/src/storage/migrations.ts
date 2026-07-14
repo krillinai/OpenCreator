@@ -16,6 +16,8 @@ export function migrate(db: Database.Database): void {
       internal_status TEXT NOT NULL,
       created_by TEXT NOT NULL,
       source_id TEXT,
+      public_prompt TEXT,
+      triggered_at TEXT,
       profile TEXT NOT NULL,
       cwd TEXT NOT NULL,
       canonical_cwd TEXT NOT NULL,
@@ -345,6 +347,8 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'runs', 'queue_state', "queue_state TEXT NOT NULL DEFAULT 'none'");
   ensureColumn(db, 'runs', 'submission_mode', "submission_mode TEXT NOT NULL DEFAULT 'enqueue'");
   ensureColumn(db, 'runs', 'timeout_ms', 'timeout_ms INTEGER');
+  ensureColumn(db, 'runs', 'public_prompt', 'public_prompt TEXT');
+  ensureColumn(db, 'runs', 'triggered_at', 'triggered_at TEXT');
   ensureColumn(db, 'attachments', 'run_id', 'run_id TEXT');
   ensureColumn(db, 'codex_session_sources', 'head_size', 'head_size INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'codex_session_sources', 'head_hash', "head_hash TEXT NOT NULL DEFAULT ''");

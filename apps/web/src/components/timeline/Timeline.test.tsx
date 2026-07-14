@@ -7,6 +7,30 @@ import type { TimelineItem } from './timeline-model.js';
 vi.mock('react-virtuoso', async () => import('../../test/react-virtuoso-mock.js'));
 
 describe('Timeline', () => {
+  it('renders and targets a public schedule trigger without exposing execution rules', () => {
+    const { container } = render(
+      <Timeline
+        items={[{
+          kind: 'schedule_trigger',
+          id: 'schedule-trigger-1',
+          runId: 'run_schedule',
+          prompt: '生成每日项目摘要',
+          triggeredAt: '2026-07-14T14:05:00.000Z',
+          source: 'runtime'
+        }]}
+        targetRunId="run_schedule"
+      />
+    );
+
+    expect(screen.getByText('定时执行')).toBeInTheDocument();
+    expect(screen.getByText('生成每日项目摘要')).toBeInTheDocument();
+    expect(screen.getByText(/2026/)).toBeInTheDocument();
+    expect(screen.queryByText(/立即完成本次任务/)).not.toBeInTheDocument();
+    expect(container.querySelector('[data-search-target="true"]')).toHaveTextContent(
+      '生成每日项目摘要'
+    );
+  });
+
   it('renders a runtime approval and forwards the decision', async () => {
     const user = userEvent.setup();
     const onApproveApproval = vi.fn();

@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B9`，已通过（2026-07-14 21:48 CST）；下一批 `P1-B10` |
+| 当前批次 | `P1-B10`，已通过（2026-07-14 22:29 CST）；下一批 `P2-B1` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -341,7 +341,7 @@ P2-B1 审批和连续失败体验
 | P1-B7 | Agent 创建和管理任务协调 | `PASS` |
 | P1-B8 | 删除正则创建流程 | `PASS` |
 | P1-B9 | 通知深链接和结果摘要 | `PASS` |
-| P1-B10 | Schedule Run 公开时间线和 P1 门禁 | `NOT_STARTED` |
+| P1-B10 | Schedule Run 公开时间线和 P1 门禁 | `PASS` |
 | P2-B1 | 等待审批和连续失败体验 | `NOT_STARTED` |
 | P2-B2 | Codex thread 轮换和摘要恢复 | `NOT_STARTED` |
 | P2-B3 | 后台 Host 通知 | `NOT_STARTED` |
@@ -1598,7 +1598,7 @@ feat(notifications): 深链接任务会话并展示结果摘要
 
 ### P1-B10：Schedule Run 公开时间线和 P1 门禁
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`（2026-07-14 22:01-22:29 CST）
 
 **依赖：** `P1-B9`
 
@@ -2408,6 +2408,26 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：Web 生产 build 继续报告两个既有主 chunk 超过 500 kB；等待审批当前按
   `runId` 定位，精确审批卡片定位按计划留到 P2-B1。
 - 下一步：执行 P1-B10，持久化并展示 Schedule Run 的公开输入，完成 P1 门禁。
+
+### 2026-07-14 22:29 CST - P1-B10
+
+- 状态：`PASS`
+- 提交：`feat(history): 展示任务执行公开输入`
+  （SHA 以包含本日志的提交为准）
+- 已完成：`runs` 持久化 Schedule Run 的 `public_prompt/triggered_at`；Run 创建时发布
+  `schedule_trigger` 公开事件；Codex 历史解析器将固定执行包装转换为公开触发项并把
+  索引版本提升到 2；搜索仅索引公开任务内容；Thread 历史使用 Run 元数据补齐真实
+  `runId`；Web 历史和实时事件共用独立 Schedule trigger 模型、展示触发时间并支持
+  Run 深链接定位和刷新去重。
+- 验证：P1-B10 Daemon 专项 123 项、Web 专项 114 项通过；Daemon 全量 633 项通过、
+  13 项真实 Codex smoke 按既有开关跳过；Web 全量 512 项通过；Protocol/Daemon/Web
+  typecheck、根 `pnpm build` 和 `git diff --check` 通过。
+- 未完成：P1 最终验收待办中的真实 Agent 创建、连续立即执行、会话内改时和通知点击
+  场景已登记到 P2-B7，尚未执行最终真实环境验收。
+- 风险或偏差：Daemon 首次与 Web 并行全量运行时，既有 MCP 超时测试未及时捕获
+  stderr；单文件复跑和无并行竞争的 Daemon 全量复跑均通过。Web build 继续报告两个
+  既有主 chunk 超过 500 kB。
+- 下一步：执行 P2-B1，完善等待审批定位和连续失败体验。
 
 ### 日志模板
 

@@ -253,6 +253,10 @@ function toSummaryLine(item: ThreadHistoryItem): { id: string; line: string } | 
       prefix = '用户';
       rawText = item.text;
       break;
+    case 'schedule_trigger':
+      prefix = '定时任务';
+      rawText = item.prompt;
+      break;
     case 'assistant_message':
       prefix = '助手';
       rawText = item.text;

@@ -54,17 +54,33 @@ export function parseCodexSessionLine(input: {
   if (turnId !== undefined) state.currentTurnId = turnId;
 
   const userMessage = extractUserMessage(entry, payload);
+  const scheduleTrigger = userMessage === undefined
+    ? undefined
+    : parseScheduleExecutionPrompt(userMessage);
   if (
     state.title === undefined
     && userMessage !== undefined
     && !isInjectedUserMessage(userMessage)
   ) {
-    state.title = createConversationTitle(userMessage, '未命名对话');
+    state.title = createConversationTitle(scheduleTrigger?.prompt ?? userMessage, '未命名对话');
   }
 
   if (entry.type === 'event_msg' && payload?.type === 'user_message') {
     const text = getString(payload, 'message');
     if (text !== undefined && !isInjectedUserMessage(text)) {
+      if (scheduleTrigger !== undefined) {
+        return {
+          state,
+          item: {
+            id: createHistoryId('schedule_trigger', timestamp, input.lineNumber),
+            type: 'schedule_trigger',
+            prompt: scheduleTrigger.prompt,
+            triggeredAt: scheduleTrigger.triggeredAt,
+            createdAt: timestamp ?? scheduleTrigger.triggeredAt,
+            ...(turnId === undefined ? {} : { turnId })
+          }
+        };
+      }
       return {
         state,
         item: {
@@ -261,6 +277,33 @@ function isInjectedUserMessage(text: string): boolean {
   return trimmed.startsWith('# AGENTS.md instructions')
     || trimmed.startsWith('<environment_context>')
     || trimmed.startsWith('Another language model started to solve this problem');
+}
+
+const SCHEDULE_EXECUTION_PREFIX = '这是 Clawee 已经触发的一次计划任务执行。';
+const SCHEDULE_TRIGGER_MARKER = '\n本次触发时间：';
+const SCHEDULE_CONTENT_MARKER = '\n任务内容：\n';
+
+function parseScheduleExecutionPrompt(
+  text: string
+): { prompt: string; triggeredAt: string } | undefined {
+  const normalized = text.trimEnd();
+  if (!normalized.startsWith(`${SCHEDULE_EXECUTION_PREFIX}\n\n执行规则：\n`)) return undefined;
+
+  const contentIndex = normalized.lastIndexOf(SCHEDULE_CONTENT_MARKER);
+  if (contentIndex < 0) return undefined;
+  const metadata = normalized.slice(0, contentIndex);
+  const triggerIndex = metadata.lastIndexOf(SCHEDULE_TRIGGER_MARKER);
+  if (triggerIndex < 0) return undefined;
+
+  const triggeredAt = metadata
+    .slice(triggerIndex + SCHEDULE_TRIGGER_MARKER.length)
+    .trim();
+  const prompt = normalized
+    .slice(contentIndex + SCHEDULE_CONTENT_MARKER.length)
+    .trimEnd();
+  if (triggeredAt.length === 0 || prompt.trim().length === 0) return undefined;
+
+  return { prompt, triggeredAt };
 }
 
 function isSubagentSession(payload: Record<string, unknown>): boolean {

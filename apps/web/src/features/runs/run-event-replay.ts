@@ -10,11 +10,19 @@ export function createRunReplayDeduper(
   const existingIds = new Set(timelineItems.map(item => item.id));
   let lastUserIndex = -1;
   for (let index = timelineItems.length - 1; index >= 0; index -= 1) {
-    if (timelineItems[index]?.kind !== 'user_message') continue;
+    if (
+      timelineItems[index]?.kind !== 'user_message'
+      && timelineItems[index]?.kind !== 'schedule_trigger'
+    ) {
+      continue;
+    }
     lastUserIndex = index;
     break;
   }
-  const latestTurnItems = timelineItems.slice(lastUserIndex + 1);
+  const latestInput = timelineItems[lastUserIndex];
+  const latestTurnItems = timelineItems.slice(
+    lastUserIndex + (latestInput?.kind === 'schedule_trigger' ? 0 : 1)
+  );
   const remainingHistoryKeys = new Map<string, number>();
 
   for (const item of latestTurnItems) {
@@ -50,6 +58,8 @@ export function timelineReplayMergeKey(item: TimelineItem): string | undefined {
   switch (item.kind) {
     case 'user_message':
       return `user:${item.text}`;
+    case 'schedule_trigger':
+      return `schedule:${item.prompt}:${item.triggeredAt}`;
     case 'assistant_message':
       return `assistant:${item.text}`;
     case 'reasoning_summary':

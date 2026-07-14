@@ -256,7 +256,14 @@ describe('App', () => {
         return jsonResponse({
           threadId: 'thread-schedule-1',
           codexThreadId: null,
-          items: []
+          items: [{
+            id: 'history-schedule-trigger',
+            type: 'schedule_trigger',
+            prompt: '生成每日项目摘要',
+            triggeredAt: '2026-07-14T14:05:00.000Z',
+            createdAt: '2026-07-14T14:05:00.000Z',
+            runId: 'run_schedule'
+          }]
         });
       }
       if (url.endsWith('/threads/thread-schedule-1/runs?limit=50')) {
@@ -286,6 +293,8 @@ describe('App', () => {
     expect(window.location.hash).toBe('#/thread/thread-schedule-1?runId=run_schedule');
     expect(screen.queryByRole('heading', { name: '运行详情' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '输入任务' })).toBeInTheDocument();
+    expect(screen.getByText('定时执行')).toBeInTheDocument();
+    expect(screen.getByText('生成每日项目摘要')).toBeInTheDocument();
   });
 
   it('shows task management only inside a bound schedule thread', async () => {

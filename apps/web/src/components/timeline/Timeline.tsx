@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, LoaderCircle, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Clock3, LoaderCircle, X } from 'lucide-react';
 import {
   forwardRef,
   useEffect,
@@ -59,6 +59,8 @@ function getTimelineTitle(item: TimelineItem): string {
   switch (item.kind) {
     case 'user_message':
       return '你';
+    case 'schedule_trigger':
+      return '定时执行';
     case 'assistant_message':
       return 'Clawee';
     case 'change_card':
@@ -79,6 +81,7 @@ function getTimelineTitle(item: TimelineItem): string {
 
 function getTimelineAvatar(item: TimelineItem): string {
   if (item.kind === 'user_message') return '你';
+  if (item.kind === 'schedule_trigger') return '定';
   if (item.kind === 'change_card') return 'Δ';
   if (item.kind === 'assistant_message') return 'C';
   return '·';
@@ -87,6 +90,9 @@ function getTimelineAvatar(item: TimelineItem): string {
 function renderTimelineAvatar(item: TimelineItem) {
   if (item.kind === 'assistant_message') {
     return <img className="timeline-avatar-logo" src="/logo-cor.png" alt="" />;
+  }
+  if (item.kind === 'schedule_trigger') {
+    return <Clock3 aria-hidden="true" size={14} />;
   }
 
   return getTimelineAvatar(item);
@@ -466,6 +472,30 @@ function renderMessageContent(
   );
 }
 
+function renderScheduleTrigger(
+  item: Extract<TimelineItem, { kind: 'schedule_trigger' }>
+) {
+  return (
+    <div className="timeline-schedule-trigger-content">
+      <time dateTime={item.triggeredAt}>{formatScheduleTriggerTime(item.triggeredAt)}</time>
+      <MarkdownRenderer text={item.prompt} variant="user" />
+    </div>
+  );
+}
+
+function formatScheduleTriggerTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(date);
+}
+
 function formatAttachmentSize(size: number): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
@@ -555,6 +585,8 @@ function renderTimelineItemContent(
     case 'user_message':
     case 'assistant_message':
       return renderMessageContent(item, onOpenFile, onCancelQueuedRun);
+    case 'schedule_trigger':
+      return renderScheduleTrigger(item);
     case 'change_card':
       return renderChangeCard(item, onOpenFile);
     case 'approval':

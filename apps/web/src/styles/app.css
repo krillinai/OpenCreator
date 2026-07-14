@@ -669,6 +669,27 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--surface-3) 86%, var(--accent) 14%);
 }
 
+.timeline-schedule_trigger .timeline-avatar {
+  color: var(--warning);
+}
+
+.timeline-schedule_trigger .timeline-bubble {
+  border-color: color-mix(in srgb, var(--warning) 28%, var(--border));
+  border-top-left-radius: 0;
+  background: color-mix(in srgb, var(--surface-2) 92%, var(--warning) 8%);
+}
+
+.timeline-schedule-trigger-content {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.timeline-schedule-trigger-content time {
+  color: var(--muted);
+  font: 500 12px/1.4 var(--font-mono);
+}
+
 .timeline-message-attachments {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(128px, 220px));

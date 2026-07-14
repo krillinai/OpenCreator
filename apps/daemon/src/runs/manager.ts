@@ -92,6 +92,8 @@ export type RuntimeRun = {
   sandbox: string;
   createdBy: string;
   sourceId?: string | null;
+  publicPrompt?: string;
+  triggeredAt?: string;
   timeoutMs?: number | null;
   createdAt: string;
   updatedAt: string;
@@ -205,11 +207,24 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       const codexThreadId = thread?.codexThreadId ?? undefined;
       const id = insertInitialRun(runInput, resolvedResumeMode, codexThreadId);
       const runDir = join(options.dataDir, 'runs', id);
+      if (
+        runInput.createdBy === 'schedule'
+        && runInput.publicPrompt !== undefined
+        && runInput.triggeredAt !== undefined
+      ) {
+        void publishScheduleTrigger(
+          id,
+          1,
+          runInput.publicPrompt,
+          runInput.triggeredAt,
+          publish
+        ).catch(() => undefined);
+      }
 
       if (runInput.threadId !== undefined && runningThreadRun.has(runInput.threadId)) {
         updateStatus(id, 'queued', 'queued');
         runs.setRunQueueState(id, 'queued');
-        void publishStatus(id, 1, 'queued', publish, {
+        void publishStatus(id, nextSeqForRun(id), 'queued', publish, {
           threadId: runInput.threadId,
           codexThreadId
         }).catch(() => undefined);
@@ -1140,6 +1155,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       internalStatus: 'created',
       createdBy: input.createdBy ?? 'api',
       sourceId: input.sourceId,
+      publicPrompt: input.createdBy === 'schedule' ? input.publicPrompt : null,
+      triggeredAt: input.createdBy === 'schedule' ? input.triggeredAt : null,
       timeoutMs: input.timeoutMs ?? null,
       threadId: input.threadId,
       codexThreadId: resolvedResumeMode === 'resume_thread' ? codexThreadId : undefined,
@@ -1176,12 +1193,24 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   }
 
   function resolveCreateRunInput(input: CreateRunInput): ResolvedCreateRunInput {
-    if (input.threadId !== undefined && options.threadAccess !== undefined) {
-      const thread = options.threadAccess.getThread(input.threadId);
-      if (thread === undefined) throw new Error(`Thread not found: ${input.threadId}`);
-      if (thread.status === 'archived') throw new Error(`Thread is archived: ${input.threadId}`);
+    const normalizedInput: CreateRunInput = input.createdBy === 'schedule'
+      ? {
+          ...input,
+          publicPrompt: input.publicPrompt ?? input.prompt,
+          triggeredAt: input.triggeredAt ?? new Date().toISOString()
+        }
+      : {
+          ...input,
+          publicPrompt: undefined,
+          triggeredAt: undefined
+        };
+
+    if (normalizedInput.threadId !== undefined && options.threadAccess !== undefined) {
+      const thread = options.threadAccess.getThread(normalizedInput.threadId);
+      if (thread === undefined) throw new Error(`Thread not found: ${normalizedInput.threadId}`);
+      if (thread.status === 'archived') throw new Error(`Thread is archived: ${normalizedInput.threadId}`);
       return {
-        ...input,
+        ...normalizedInput,
         cwd: expandHome(thread.cwd, options.homeDir ?? homedir()),
         profile: thread.profile,
         sandbox: thread.sandbox,
@@ -1190,14 +1219,18 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       };
     }
 
-    if (input.cwd === undefined || input.profile === undefined || input.sandbox === undefined) {
+    if (
+      normalizedInput.cwd === undefined
+      || normalizedInput.profile === undefined
+      || normalizedInput.sandbox === undefined
+    ) {
       throw new Error('Run execution configuration is required when thread access is unavailable');
     }
     return {
-      ...input,
-      cwd: expandHome(input.cwd, options.homeDir ?? homedir()),
-      profile: input.profile,
-      sandbox: input.sandbox
+      ...normalizedInput,
+      cwd: expandHome(normalizedInput.cwd, options.homeDir ?? homedir()),
+      profile: normalizedInput.profile,
+      sandbox: normalizedInput.sandbox
     };
   }
 
@@ -1608,6 +1641,28 @@ function publishStatus(
   });
 }
 
+function publishScheduleTrigger(
+  runId: string,
+  seq: number,
+  prompt: string,
+  triggeredAt: string,
+  publish: (event: AgentEventEnvelope) => Promise<void>
+): Promise<void> {
+  return publish({
+    id: `evt_${runId}_${seq}`,
+    runId,
+    seq,
+    ts: triggeredAt,
+    type: 'schedule_trigger',
+    payload: {
+      type: 'schedule_trigger',
+      prompt,
+      triggeredAt
+    },
+    normalizerVersion
+  });
+}
+
 function publishDiagnostic(
   runId: string,
   seq: number,
@@ -1778,6 +1833,8 @@ function mapRunRow(row: RunRow): RuntimeRun {
     sandbox: row.sandbox,
     createdBy: row.created_by,
     sourceId: row.source_id,
+    ...(row.public_prompt === null ? {} : { publicPrompt: row.public_prompt }),
+    ...(row.triggered_at === null ? {} : { triggeredAt: row.triggered_at }),
     timeoutMs: row.timeout_ms,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

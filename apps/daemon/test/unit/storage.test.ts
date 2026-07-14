@@ -29,6 +29,8 @@ describe('runtime storage', () => {
       publicStatus: 'queued',
       internalStatus: 'created',
       createdBy: 'api',
+      publicPrompt: '公开任务输入',
+      triggeredAt: '2026-07-14T14:01:00.000Z',
       profile: 'default',
       cwd: tempDir,
       canonicalCwd: tempDir,
@@ -44,6 +46,12 @@ describe('runtime storage', () => {
     expect(loaded?.public_status).toBe('queued');
     expect(loaded?.resume_mode).toBe('independent');
     expect(loaded?.submission_mode).toBe('enqueue');
+    expect(loaded?.public_prompt).toBe('公开任务输入');
+    expect(loaded?.triggered_at).toBe('2026-07-14T14:01:00.000Z');
+    expect(columnNames(db, 'runs')).toEqual(expect.arrayContaining([
+      'public_prompt',
+      'triggered_at'
+    ]));
   });
 
   it('creates tables and enforces unique event sequence per run', () => {

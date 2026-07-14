@@ -14,6 +14,7 @@ export type TerminationReason =
 
 export type AgentEventType =
   | 'status'
+  | 'schedule_trigger'
   | 'reasoning_summary'
   | 'assistant_message'
   | 'tool_use'
@@ -33,6 +34,7 @@ export type AgentEventPayload =
       threadId?: string;
       codexThreadId?: string;
     }
+  | { type: 'schedule_trigger'; prompt: string; triggeredAt: string }
   | { type: 'reasoning_summary'; text: string; format: 'plain_text'; delivery: 'summary' | 'delta' }
   | { type: 'assistant_message'; text: string; format: 'plain_text'; delivery: 'message' | 'delta' }
   | { type: 'tool_use'; toolCallId: string; name: string; input: { command?: string; args?: string[]; raw?: unknown } }

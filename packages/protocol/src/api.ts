@@ -457,6 +457,15 @@ export type ThreadRunsResponse = {
 
 export type ThreadHistoryItem =
   | { id: string; type: 'user_message'; text: string; createdAt: string; turnId?: string }
+  | {
+      id: string;
+      type: 'schedule_trigger';
+      prompt: string;
+      triggeredAt: string;
+      createdAt: string;
+      runId?: string;
+      turnId?: string;
+    }
   | { id: string; type: 'assistant_message'; text: string; createdAt: string; turnId?: string }
   | { id: string; type: 'reasoning_summary'; text: string; createdAt: string; turnId?: string }
   | { id: string; type: 'tool_use'; name: string; input: Record<string, unknown>; createdAt: string; turnId?: string }

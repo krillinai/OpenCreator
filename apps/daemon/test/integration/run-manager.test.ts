@@ -1004,6 +1004,8 @@ describe('run manager', () => {
       threadId: thread.id,
       prompt: 'public schedule prompt',
       executionPrompt: 'internal schedule prompt',
+      publicPrompt: 'public schedule prompt',
+      triggeredAt: '2026-07-14T14:05:00.000Z',
       createdBy: 'schedule',
       sourceId: 'sch_one'
     });
@@ -1015,9 +1017,51 @@ describe('run manager', () => {
       profile: thread.profile,
       sandbox: thread.sandbox,
       createdBy: 'schedule',
-      sourceId: 'sch_one'
+      sourceId: 'sch_one',
+      publicPrompt: 'public schedule prompt',
+      triggeredAt: '2026-07-14T14:05:00.000Z'
+    });
+    expect(manager.listEvents(run.id)[0]).toMatchObject({
+      runId: run.id,
+      seq: 1,
+      type: 'schedule_trigger',
+      payload: {
+        type: 'schedule_trigger',
+        prompt: 'public schedule prompt',
+        triggeredAt: '2026-07-14T14:05:00.000Z'
+      }
     });
     expect(fake.readPrompt()).toBe('internal schedule prompt');
+  });
+
+  it('does not persist schedule-only public metadata for ordinary runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-ordinary' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin
+    });
+
+    const run = await manager.createAndRun({
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      prompt: 'ordinary prompt',
+      publicPrompt: 'must not persist',
+      triggeredAt: '2026-07-14T14:06:00.000Z'
+    });
+
+    const stored = manager.getRun(run.id);
+    expect(stored?.createdBy).toBe('api');
+    expect(stored?.publicPrompt).toBeUndefined();
+    expect(stored?.triggeredAt).toBeUndefined();
+    expect(manager.listEvents(run.id).some(event => event.type === 'schedule_trigger')).toBe(false);
   });
 
   it('queues same-thread runs and starts the second after the first completes', async () => {

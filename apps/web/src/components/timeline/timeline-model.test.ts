@@ -3,6 +3,31 @@ import { describe, expect, it } from 'vitest';
 import { eventToTimelineItem } from './timeline-model.js';
 
 describe('timeline model', () => {
+  it('maps schedule trigger events to public timeline input', () => {
+    const event: AgentEventEnvelope = {
+      id: 'evt_schedule_trigger',
+      runId: 'run_schedule',
+      seq: 1,
+      ts: '2026-07-14T14:05:00.000Z',
+      type: 'schedule_trigger',
+      payload: {
+        type: 'schedule_trigger',
+        prompt: '生成每日项目摘要',
+        triggeredAt: '2026-07-14T14:05:00.000Z'
+      },
+      normalizerVersion: 1
+    };
+
+    expect(eventToTimelineItem(event)).toEqual({
+      kind: 'schedule_trigger',
+      id: 'evt_schedule_trigger',
+      runId: 'run_schedule',
+      prompt: '生成每日项目摘要',
+      triggeredAt: '2026-07-14T14:05:00.000Z',
+      source: 'runtime'
+    });
+  });
+
   it('maps approval events to actionable timeline approvals', () => {
     const event: AgentEventEnvelope = {
       id: 'evt_approval',

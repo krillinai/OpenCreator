@@ -3527,6 +3527,7 @@ function isTerminalRunStatus(status: RunResponse['status']): boolean {
 function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineItem[] {
   let currentRunId: string | undefined;
   let currentRunHasDone = false;
+  let currentRunHasPersistedId = false;
   const timelineItems: TimelineItem[] = [];
 
   function closeCurrentRun() {
@@ -3543,11 +3544,16 @@ function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineIte
   }
 
   for (const item of items) {
-    if (item.type === 'user_message') {
+    if (item.type === 'user_message' || item.type === 'schedule_trigger') {
       closeCurrentRun();
-      currentRunId = item.turnId === undefined ? `history_item_${item.id}` : `history_${item.turnId}`;
+      currentRunId = item.type === 'schedule_trigger' && item.runId !== undefined
+        ? item.runId
+        : item.turnId === undefined
+          ? `history_item_${item.id}`
+          : `history_${item.turnId}`;
       currentRunHasDone = false;
-      timelineItems.push(mapHistoryItemToTimelineItem(item));
+      currentRunHasPersistedId = item.type === 'schedule_trigger' && item.runId !== undefined;
+      timelineItems.push(mapHistoryItemToTimelineItem(item, currentRunId));
       continue;
     }
 
@@ -3555,10 +3561,14 @@ function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineIte
       timelineItems.push(mapHistoryItemToTimelineItem(item, currentRunId));
       currentRunHasDone = true;
       currentRunId = undefined;
+      currentRunHasPersistedId = false;
       continue;
     }
 
-    timelineItems.push(mapHistoryItemToTimelineItem(item, item.turnId === undefined ? currentRunId : undefined));
+    timelineItems.push(mapHistoryItemToTimelineItem(
+      item,
+      item.turnId === undefined || currentRunHasPersistedId ? currentRunId : undefined
+    ));
   }
 
   closeCurrentRun();
@@ -3566,7 +3576,10 @@ function mapHistoryItemsToTimelineItems(items: ThreadHistoryItem[]): TimelineIte
 }
 
 function mapHistoryItemToTimelineItem(item: ThreadHistoryItem, fallbackRunId?: string): TimelineItem {
-  const runId = item.turnId === undefined ? fallbackRunId : `history_${item.turnId}`;
+  const runId = item.type === 'schedule_trigger' && item.runId !== undefined
+    ? item.runId
+    : fallbackRunId
+      ?? (item.turnId === undefined ? undefined : `history_${item.turnId}`);
   const base = {
     id: item.id,
     ...(runId === undefined ? {} : { runId })
@@ -3578,6 +3591,15 @@ function mapHistoryItemToTimelineItem(item: ThreadHistoryItem, fallbackRunId?: s
         ...base,
         kind: 'user_message',
         text: item.text,
+        source: 'runtime'
+      };
+    case 'schedule_trigger':
+      return {
+        ...base,
+        kind: 'schedule_trigger',
+        runId: item.runId ?? runId ?? `history_item_${item.id}`,
+        prompt: item.prompt,
+        triggeredAt: item.triggeredAt,
         source: 'runtime'
       };
     case 'assistant_message':

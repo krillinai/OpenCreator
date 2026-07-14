@@ -183,8 +183,13 @@ describe('conversation search api', () => {
     const cwd = join(tempDir, 'workspace');
     mkdirSync(sessionDir, { recursive: true });
     mkdirSync(cwd, { recursive: true });
+    const triggeredAt = '2026-07-14T12:00:01.000Z';
     writeSession(sessionDir, 'search-task-session', cwd, [
-      eventMessage('user_message', '任务历史可搜索标记', '2026-07-14T12:00:01.000Z')
+      eventMessage(
+        'user_message',
+        scheduleExecutionPrompt('任务历史可搜索标记', triggeredAt),
+        triggeredAt
+      )
     ]);
     writeSession(sessionDir, 'search-legacy-session', cwd, [
       eventMessage('user_message', '旧孤立历史隐藏标记', '2026-07-14T12:10:01.000Z')
@@ -208,6 +213,8 @@ describe('conversation search api', () => {
       threadId: 'thread_search_task',
       codexThreadId: 'search-task-session',
       sourceId: 'sch_search_task',
+      publicPrompt: '任务历史可搜索标记',
+      triggeredAt,
       cwd,
       codexHome
     }));
@@ -231,6 +238,10 @@ describe('conversation search api', () => {
     const legacy = await authGet(
       `/search/conversations?query=${encodeURIComponent('旧孤立历史隐藏标记')}`
     );
+    const internalRule = await authGet(
+      `/search/conversations?query=${encodeURIComponent('立即完成本次任务')}`
+    );
+    const history = await authGet('/threads/thread_search_task/history');
 
     expect(task.statusCode).toBe(200);
     expect(task.json().results.length).toBeGreaterThan(0);
@@ -249,6 +260,18 @@ describe('conversation search api', () => {
     )).toBe(true);
     expect(legacy.statusCode).toBe(200);
     expect(legacy.json().results).toEqual([]);
+    expect(internalRule.statusCode).toBe(200);
+    expect(internalRule.json().results).toEqual([]);
+    expect(history.statusCode).toBe(200);
+    expect(history.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'schedule_trigger',
+        prompt: '任务历史可搜索标记',
+        triggeredAt,
+        runId: 'run_search_task'
+      })
+    ]));
+    expect(history.body).not.toContain('立即完成本次任务');
   });
 
 });
@@ -289,6 +312,21 @@ function eventMessage(
   };
 }
 
+function scheduleExecutionPrompt(prompt: string, triggeredAt: string): string {
+  return [
+    '这是 Clawee 已经触发的一次计划任务执行。',
+    '',
+    '执行规则：',
+    '1. 立即完成本次任务，不要重新创建或修改计划任务。',
+    '2. 只输出本次执行结果。',
+    '',
+    '任务名称：可搜索任务',
+    `本次触发时间：${triggeredAt}`,
+    '任务内容：',
+    prompt
+  ].join('\n');
+}
+
 async function authGet(url: string) {
   return server!.inject({
     method: 'GET',
@@ -302,6 +340,8 @@ function scheduleRunInput(input: {
   threadId?: string;
   codexThreadId: string;
   sourceId: string;
+  publicPrompt?: string;
+  triggeredAt?: string;
   cwd: string;
   codexHome: string;
 }) {

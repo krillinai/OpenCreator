@@ -20,6 +20,14 @@ export type TimelineItem =
       queuePosition?: number;
       source: 'runtime' | 'mock';
     }
+  | {
+      kind: 'schedule_trigger';
+      id: string;
+      runId: string;
+      prompt: string;
+      triggeredAt: string;
+      source: 'runtime';
+    }
   | { kind: 'approval'; id: string; runId: string; approval: RuntimeApproval; source: 'runtime' }
   | { kind: 'reasoning_summary'; id: string; runId?: string; text: string; content?: string; source: 'runtime' }
   | { kind: 'assistant_message'; id: string; runId?: string; text: string; content?: string; source: 'runtime' | 'mock' }
@@ -94,6 +102,15 @@ function formatFileChangeTitle(changes: Array<{ kind: 'add' | 'modify' | 'delete
 
 export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | null {
   switch (event.type) {
+    case 'schedule_trigger':
+      return {
+        kind: 'schedule_trigger',
+        id: event.id,
+        runId: event.runId,
+        prompt: event.payload.prompt,
+        triggeredAt: event.payload.triggeredAt,
+        source: 'runtime'
+      };
     case 'assistant_message':
       return {
         kind: 'assistant_message',

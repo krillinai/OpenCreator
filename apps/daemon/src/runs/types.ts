@@ -9,6 +9,8 @@ import type {
 type CreateRunBase = {
   prompt: string;
   executionPrompt?: string;
+  publicPrompt?: string;
+  triggeredAt?: string;
   contextItems?: RunContextItem[];
   resumeMode?: 'auto' | 'new_thread' | 'resume_thread';
   codexThreadId?: string;

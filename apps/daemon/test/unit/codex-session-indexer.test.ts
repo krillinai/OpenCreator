@@ -30,6 +30,10 @@ afterEach(() => {
 });
 
 describe('codex session indexer', () => {
+  it('rebuilds existing sources for the schedule trigger parser version', () => {
+    expect(CODEX_SESSION_INDEX_VERSION).toBe(2);
+  });
+
   it('parses unchanged files once and indexes only appended lines', () => {
     const setup = createSetup();
     const sessionPath = writeSession(setup.sessionDir, 'incremental-session', [

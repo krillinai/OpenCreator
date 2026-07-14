@@ -140,6 +140,8 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         threadId: schedule.threadId,
         prompt: schedule.prompt,
         executionPrompt: createScheduleExecutionPrompt(schedule, ranAt),
+        publicPrompt: schedule.prompt,
+        triggeredAt: ranAt,
         createdBy: 'schedule',
         sourceId: schedule.id,
         timeoutMs: schedule.timeoutMs ?? undefined

@@ -1,5 +1,6 @@
 import type {
   RunResponse,
+  ThreadHistoryItem,
   ThreadHistoryQuery,
   ThreadHistoryResponse,
   ThreadResponse,
@@ -12,7 +13,7 @@ import {
   type ThreadHistoryPageOptions
 } from '../codex/sessions/index-repository.js';
 import type { AttachmentService } from '../attachments/service.js';
-import type { RunManager } from '../runs/manager.js';
+import type { RunManager, RuntimeRun } from '../runs/manager.js';
 import type { CreateRuntimeThreadInput, RuntimeThread, ThreadManager } from '../threads/types.js';
 import { apiError } from './errors.js';
 
@@ -135,6 +136,13 @@ export async function registerThreadRoutes(
       }
       throw error;
     }
+    history = {
+      ...history,
+      items: attachScheduleRunMetadata(
+        history.items,
+        runManager.listRunsByThread(id, 10_000)
+      )
+    };
 
     const response: ThreadHistoryResponse = {
       threadId: thread.id,
@@ -247,6 +255,39 @@ type ReadThreadHistory = (
   codexThreadId: string,
   options?: ThreadHistoryPageOptions
 ) => ThreadHistoryReadResult;
+
+function attachScheduleRunMetadata(
+  items: ThreadHistoryItem[],
+  runs: RuntimeRun[]
+): ThreadHistoryItem[] {
+  const runsByTriggeredAt = new Map<string, RuntimeRun[]>();
+  for (const run of runs) {
+    if (
+      run.createdBy !== 'schedule'
+      || run.publicPrompt === undefined
+      || run.triggeredAt === undefined
+    ) {
+      continue;
+    }
+    const matches = runsByTriggeredAt.get(run.triggeredAt) ?? [];
+    matches.push(run);
+    runsByTriggeredAt.set(run.triggeredAt, matches);
+  }
+
+  return items.map(item => {
+    if (item.type !== 'schedule_trigger') return item;
+    const candidates = runsByTriggeredAt.get(item.triggeredAt) ?? [];
+    const run = candidates.find(candidate => candidate.publicPrompt === item.prompt)
+      ?? candidates[0];
+    if (run === undefined) return item;
+    return {
+      ...item,
+      prompt: run.publicPrompt!,
+      triggeredAt: run.triggeredAt!,
+      runId: run.id
+    };
+  });
+}
 
 const WORKSPACE_MODES = ['managed', 'external'] as const;
 const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;

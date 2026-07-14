@@ -15,6 +15,8 @@ export type InsertRunInput = {
   internalStatus: string;
   createdBy: string;
   sourceId?: string;
+  publicPrompt?: string | null;
+  triggeredAt?: string | null;
   timeoutMs?: number | null;
   profile: string;
   cwd: string;
@@ -42,6 +44,8 @@ export type RunRow = {
   internal_status: string;
   created_by: string;
   source_id: string | null;
+  public_prompt: string | null;
+  triggered_at: string | null;
   profile: string;
   cwd: string;
   canonical_cwd: string;
@@ -169,10 +173,12 @@ export function createRunRepository(db: Database.Database): RunRepository {
   const insert = db.prepare(`
     INSERT INTO runs (
       id, thread_id, codex_thread_id, resume_mode, queue_state, submission_mode, public_status, internal_status, created_by, source_id,
+      public_prompt, triggered_at,
       profile, cwd, canonical_cwd, workspace_mode, prompt_hash, prompt_preview_redacted,
       model, reasoning, sandbox, codex_version, codex_bin, codex_home, normalizer_version, timeout_ms
     ) VALUES (
       @id, @threadId, @codexThreadId, @resumeMode, @queueState, @submissionMode, @publicStatus, @internalStatus, @createdBy, @sourceId,
+      @publicPrompt, @triggeredAt,
       @profile, @cwd, @canonicalCwd, @workspaceMode, @promptHash, @promptPreviewRedacted,
       @model, @reasoning, @sandbox, @codexVersion, @codexBin, @codexHome, @normalizerVersion, @timeoutMs
     )
@@ -265,6 +271,8 @@ export function createRunRepository(db: Database.Database): RunRepository {
         queueState: 'none',
         submissionMode: 'enqueue',
         sourceId: null,
+        publicPrompt: null,
+        triggeredAt: null,
         timeoutMs: null,
         promptHash: null,
         promptPreviewRedacted: null,

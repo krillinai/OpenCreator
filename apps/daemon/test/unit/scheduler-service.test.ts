@@ -133,6 +133,8 @@ describe('scheduler service', () => {
       executionPrompt: expect.stringMatching(
         /Clawee 已经触发[\s\S]*任务名称：daily status[\s\S]*本次触发时间：2026-07-06T00:00:00.000Z[\s\S]*Summarize project status/
       ),
+      publicPrompt: 'Summarize project status',
+      triggeredAt: '2026-07-06T00:00:00.000Z',
       createdBy: 'schedule',
       sourceId: schedule.id,
       timeoutMs: 2500
@@ -168,6 +170,8 @@ describe('scheduler service', () => {
       threadId: schedule.threadId,
       prompt: 'Summarize project status',
       executionPrompt: expect.stringContaining('Summarize project status'),
+      publicPrompt: 'Summarize project status',
+      triggeredAt: '2026-07-06T00:00:00.000Z',
       createdBy: 'schedule',
       sourceId: schedule.id,
       timeoutMs: undefined

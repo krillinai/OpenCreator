@@ -7,7 +7,7 @@ import {
   type CodexSessionParserState
 } from './parser.js';
 
-export const CODEX_SESSION_INDEX_VERSION = 1;
+export const CODEX_SESSION_INDEX_VERSION = 2;
 const CODEX_SESSION_SEARCH_INDEX_VERSION = 1;
 
 export type CodexSessionSourceRow = {
@@ -451,7 +451,7 @@ export function createCodexSessionIndexRepository(
           codexThreadId: input.session.codexThreadId,
           sourcePath: input.path,
           itemId: indexed.item.id,
-          itemType: indexed.item.type,
+          itemType: searchItemTypeForHistoryItem(indexed.item),
           createdAt: indexed.item.createdAt,
           title: '',
           cwd: '',
@@ -509,7 +509,7 @@ export function createCodexSessionIndexRepository(
         codexThreadId: row.codex_thread_id,
         sourcePath: row.source_path,
         itemId: item.id,
-        itemType: item.type,
+        itemType: searchItemTypeForHistoryItem(item),
         createdAt: item.createdAt,
         title: '',
         cwd: '',
@@ -723,9 +723,10 @@ function searchContentForHistoryItem(item: ThreadHistoryItem): string | undefine
   let value: string | undefined;
   switch (item.type) {
     case 'user_message':
+    case 'schedule_trigger':
     case 'assistant_message':
     case 'reasoning_summary':
-      value = item.text;
+      value = item.type === 'schedule_trigger' ? item.prompt : item.text;
       break;
     case 'tool_use':
       value = item.name;
@@ -744,6 +745,12 @@ function searchContentForHistoryItem(item: ThreadHistoryItem): string | undefine
   if (looksBinary(value) || value.length > MAX_SEARCHABLE_TEXT_LENGTH) return undefined;
   const normalized = normalizeSearchText(value);
   return normalized.length === 0 ? undefined : normalized;
+}
+
+function searchItemTypeForHistoryItem(
+  item: ThreadHistoryItem
+): Exclude<ThreadHistoryItem['type'], 'schedule_trigger'> {
+  return item.type === 'schedule_trigger' ? 'user_message' : item.type;
 }
 
 function normalizeSearchText(value: string): string {
