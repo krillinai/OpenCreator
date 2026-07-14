@@ -12,6 +12,7 @@ import type {
   RunRequest,
   RunScheduleNowResponse,
   RuntimeErrorCode,
+  ScheduleOperationType,
   ThreadPurpose,
   ThreadResponse,
   ThreadHistoryQuery,
@@ -204,6 +205,15 @@ describe('protocol shape', () => {
     ];
 
     expect(codes).toHaveLength(3);
+  });
+
+  it('includes schedule binding repair operations as closed operation types', () => {
+    const operations: ScheduleOperationType[] = [
+      'binding_repair',
+      'binding_repair_failed'
+    ];
+
+    expect(operations).toHaveLength(2);
   });
 
   it('includes schedule-managed thread conflicts as a closed error code', () => {

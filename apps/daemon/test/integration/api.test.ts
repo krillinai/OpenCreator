@@ -23,6 +23,8 @@ import { buildServer } from '../../src/api/server.js';
 import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
 import type { MarketArchiveDownloader } from '../../src/codex/skills/market-downloader.js';
 import { SchedulerError, type SchedulerService } from '../../src/scheduler/service.js';
+import type { ScheduleCoordinator } from '../../src/scheduler/coordinator.js';
+import { ScheduleRepository } from '../../src/scheduler/repository.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
 import { createThreadManager } from '../../src/threads/manager.js';
@@ -46,23 +48,93 @@ afterEach(async () => {
 
 describe('runtime api', () => {
   it('starts and stops an injected scheduler when autostart is enabled', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const steps: string[] = [];
     const scheduler = createFakeScheduler({
-      start: vi.fn(),
+      start: vi.fn(() => {
+        steps.push('start');
+      }),
       stop: vi.fn()
+    });
+    const coordinator = createFakeScheduleCoordinator({
+      ensureBindings() {
+        steps.push('repair');
+        return { scanned: 0, repaired: 0, failed: 0, unchanged: 0 };
+      }
     });
 
     server = await buildServer({
       token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
       scheduler,
+      scheduleCoordinator: coordinator,
+      startupSessionClassifier() {
+        steps.push('classify');
+      },
       schedulerAutostart: true
     });
 
     expect(scheduler.start).toHaveBeenCalledTimes(1);
+    expect(steps).toEqual(['repair', 'classify', 'start']);
 
     await server.close();
     server = undefined;
 
     expect(scheduler.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('repairs legacy schedules before exposing them through the API', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const repository = new ScheduleRepository(db, {
+      idFactory: () => 'sch_legacy',
+      operationIdFactory: () => 'schop_repair',
+      now: () => '2026-07-14T00:00:00.000Z'
+    });
+    repository.create({
+      name: 'Legacy task',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      enabled: true,
+      prompt: 'Summarize project status',
+      promptHash: 'hash',
+      promptPreviewRedacted: 'Summarize project status',
+      profile: 'default',
+      cwd: tempDir,
+      canonicalCwd: realpathSync(tempDir),
+      model: null,
+      reasoning: null,
+      sandbox: 'workspace-write',
+      timeoutMs: null,
+      concurrencyPolicy: 'queue',
+      misfirePolicy: 'skip',
+      nextRunAt: '2026-07-15T09:00:00.000Z'
+    });
+
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      db
+    });
+
+    const schedule = (await authGet('/schedules/sch_legacy')).json();
+    expect(schedule).toMatchObject({
+      id: 'sch_legacy',
+      threadId: expect.stringMatching(/^thread_/)
+    });
+    expect((await authGet(`/threads/${schedule.threadId}`)).json().thread).toMatchObject({
+      id: schedule.threadId,
+      scheduleId: 'sch_legacy',
+      title: 'Legacy task',
+      purpose: 'schedule_task',
+      status: 'active'
+    });
+    expect(repository.listOperations('sch_legacy')[0]).toMatchObject({
+      operation: 'binding_repair',
+      status: 'succeeded'
+    });
   });
 
   it('leaves an injected scheduler stopped when autostart is not enabled', async () => {
@@ -4057,6 +4129,26 @@ function createFakeScheduler(overrides: Partial<SchedulerService> = {}): Schedul
     start() {},
     stop() {},
     refreshTimer() {},
+    ...overrides
+  };
+}
+
+function createFakeScheduleCoordinator(
+  overrides: Partial<ScheduleCoordinator> = {}
+): ScheduleCoordinator {
+  return {
+    createManual() {
+      throw new Error('unexpected createManual');
+    },
+    update() {
+      throw new Error('unexpected update');
+    },
+    delete() {
+      throw new Error('unexpected delete');
+    },
+    ensureBindings() {
+      return { scanned: 0, repaired: 0, failed: 0, unchanged: 0 };
+    },
     ...overrides
   };
 }

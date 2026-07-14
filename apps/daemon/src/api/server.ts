@@ -34,7 +34,10 @@ import { createSkillMarketRecordRepository } from '../codex/skills/market-record
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
-import { createScheduleCoordinator } from '../scheduler/coordinator.js';
+import {
+  createScheduleCoordinator,
+  type ScheduleCoordinator
+} from '../scheduler/coordinator.js';
 import { ScheduleRepository } from '../scheduler/repository.js';
 import { createSchedulerService, type SchedulerService } from '../scheduler/service.js';
 import { openRuntimeDatabase } from '../storage/database.js';
@@ -44,6 +47,7 @@ import { createThreadManager } from '../threads/manager.js';
 import { createTaskService } from '../tasks/service.js';
 import { createDefaultRevealExecutor } from '../workspace-files/reveal.js';
 import { createWorkspaceFileService } from '../workspace-files/service.js';
+import { prepareSchedulerStartup } from '../startup.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerAttachmentRoutes } from './routes.attachments.js';
@@ -71,7 +75,9 @@ export type BuildServerInput = {
   codexHome?: string;
   runManager?: RunManager;
   scheduler?: SchedulerService;
+  scheduleCoordinator?: ScheduleCoordinator;
   schedulerAutostart?: boolean;
+  startupSessionClassifier?(): void;
   sseHeartbeatMs?: number;
   resumeCapabilityVerified?: boolean;
   capabilities?: RuntimeCapabilityMatrix;
@@ -154,26 +160,77 @@ export async function buildServer(input: BuildServerInput) {
       approvalManager,
       recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items)
     });
-  const taskService = createTaskService({
-    db,
-    approvals: approvalManager,
-    runs: runManager
-  });
-  const scheduler =
-    input.scheduler ??
-    createSchedulerService({
-      repository: scheduleRepository,
-      runManager,
-      autostart: false
-    });
-  const scheduleCoordinator = createScheduleCoordinator({
+  let lastCodexSessionSyncAt: number | undefined;
+  function syncCodexSessions(
+    limit?: number,
+    minimumIntervalMs = 0,
+    reconcileLegacyScheduleSessions = true
+  ) {
+    const now = Date.now();
+    if (
+      lastCodexSessionSyncAt !== undefined
+      && now - lastCodexSessionSyncAt < minimumIntervalMs
+    ) {
+      return;
+    }
+
+    let scan;
+    let usedSessionIndex = true;
+    try {
+      scan = codexSessionIndexer.sync({ limit });
+    } catch (error) {
+      usedSessionIndex = false;
+      console.warn(`Codex session index sync failed; using raw JSONL fallback: ${formatError(error)}`);
+      scan = scanCodexSessionsWithMetadata({ codexHome, limit });
+    }
+    if (reconcileLegacyScheduleSessions) {
+      codexSessionRepository.markScheduledSessions();
+      threadRepository.archiveThreadsCreatedBy('schedule');
+    }
+    for (const codexThreadId of scan.excludedSubagentThreadIds) {
+      threadManager.archiveCodexThread(codexThreadId);
+    }
+    const sessions = usedSessionIndex
+      ? codexSessionRepository.listSessions(limit)
+      : scan.sessions;
+    for (const session of sessions) {
+      if (runRepository.isCodexThreadCreatedBy(session.codexThreadId, 'schedule')) continue;
+      threadManager.importCodexThread({
+        codexThreadId: session.codexThreadId,
+        title: session.title,
+        cwd: session.cwd,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt
+      });
+    }
+    lastCodexSessionSyncAt = Date.now();
+  }
+
+  let scheduler = input.scheduler;
+  const scheduleCoordinator = input.scheduleCoordinator ?? createScheduleCoordinator({
     db,
     repository: scheduleRepository,
     threadManager,
     runManager,
     defaultCwd: process.cwd(),
     profileValidator: profileManager,
-    onSchedulesChanged: () => scheduler.refreshTimer()
+    onSchedulesChanged: () => scheduler?.refreshTimer()
+  });
+  prepareSchedulerStartup({
+    coordinator: scheduleCoordinator,
+    classifySessions: input.schedulerAutostart === true
+      ? (input.startupSessionClassifier ?? (() => syncCodexSessions(undefined, 0, false)))
+      : undefined
+  });
+  scheduler ??= createSchedulerService({
+    repository: scheduleRepository,
+    runManager,
+    autostart: false
+  });
+  const taskService = createTaskService({
+    db,
+    approvals: approvalManager,
+    runs: runManager
   });
   const cleanupService = createCleanupService({
     dataDir,
@@ -194,45 +251,6 @@ export async function buildServer(input: BuildServerInput) {
     });
   }, ATTACHMENT_CLEANUP_INTERVAL_MS);
   attachmentCleanupTimer.unref();
-  let lastCodexSessionSyncAt: number | undefined;
-  function syncCodexSessions(limit?: number, minimumIntervalMs = 0) {
-    const now = Date.now();
-    if (
-      lastCodexSessionSyncAt !== undefined
-      && now - lastCodexSessionSyncAt < minimumIntervalMs
-    ) {
-      return;
-    }
-
-    let scan;
-    let usedSessionIndex = true;
-    try {
-      scan = codexSessionIndexer.sync({ limit });
-    } catch (error) {
-      usedSessionIndex = false;
-      console.warn(`Codex session index sync failed; using raw JSONL fallback: ${formatError(error)}`);
-      scan = scanCodexSessionsWithMetadata({ codexHome, limit });
-    }
-    codexSessionRepository.markScheduledSessions();
-    threadRepository.archiveThreadsCreatedBy('schedule');
-    for (const codexThreadId of scan.excludedSubagentThreadIds) {
-      threadManager.archiveCodexThread(codexThreadId);
-    }
-    const sessions = usedSessionIndex
-      ? codexSessionRepository.listSessions(limit)
-      : scan.sessions;
-    for (const session of sessions) {
-      if (runRepository.isCodexThreadCreatedBy(session.codexThreadId, 'schedule')) continue;
-      threadManager.importCodexThread({
-        codexThreadId: session.codexThreadId,
-        title: session.title,
-        cwd: session.cwd,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt
-      });
-    }
-    lastCodexSessionSyncAt = Date.now();
-  }
 
   server.setErrorHandler((error, _request, reply) => {
     if ((error as { code?: string }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {

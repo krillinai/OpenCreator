@@ -25,6 +25,14 @@ export type ScheduleCoordinator = {
   createManual(input: CreateScheduleRequest): ScheduleResponse;
   update(id: string, input: UpdateScheduleRequest): ScheduleResponse;
   delete(id: string): void;
+  ensureBindings(): ScheduleBindingRepairResult;
+};
+
+export type ScheduleBindingRepairResult = {
+  scanned: number;
+  repaired: number;
+  failed: number;
+  unchanged: number;
 };
 
 export type ScheduleCoordinatorOptions = {
@@ -158,6 +166,41 @@ export function createScheduleCoordinator(
       status: 'succeeded'
     });
   });
+  const repairBindingTransaction = options.db.transaction((schedule: ScheduleRecord): void => {
+    const thread = options.threadManager.createThread({
+      purpose: 'schedule_task',
+      title: schedule.name,
+      cwd: schedule.cwd,
+      workspaceMode: 'external',
+      profile: schedule.profile,
+      model: schedule.model ?? undefined,
+      reasoning: schedule.reasoning ?? undefined,
+      sandbox: schedule.sandbox
+    });
+    const updated = options.repository.update(schedule.id, { threadId: thread.id });
+    if (updated === null) throw notFound();
+    options.repository.insertOperation({
+      scheduleId: schedule.id,
+      operation: 'binding_repair',
+      status: 'succeeded'
+    });
+  });
+  const recordBindingRepairFailureTransaction = options.db.transaction(
+    (schedule: ScheduleRecord, error: unknown): void => {
+      const updated = options.repository.update(schedule.id, {
+        enabled: false,
+        nextRunAt: null
+      });
+      if (updated === null) throw notFound();
+      options.repository.insertOperation({
+        scheduleId: schedule.id,
+        operation: 'binding_repair_failed',
+        status: 'failed',
+        errorCode: bindingRepairErrorCode(error),
+        errorMessage: formatError(error)
+      });
+    }
+  );
 
   return {
     createManual(input: CreateScheduleRequest): ScheduleResponse {
@@ -175,6 +218,33 @@ export function createScheduleCoordinator(
     delete(id: string): void {
       deleteTransaction(id);
       options.onSchedulesChanged?.();
+    },
+
+    ensureBindings(): ScheduleBindingRepairResult {
+      const schedules = options.repository.list();
+      const result: ScheduleBindingRepairResult = {
+        scanned: schedules.length,
+        repaired: 0,
+        failed: 0,
+        unchanged: 0
+      };
+
+      for (const schedule of schedules) {
+        if (hasValidScheduleThread(schedule, options.threadManager)) {
+          result.unchanged += 1;
+          continue;
+        }
+        try {
+          repairBindingTransaction(schedule);
+          result.repaired += 1;
+        } catch (error) {
+          recordBindingRepairFailureTransaction(schedule, error);
+          result.failed += 1;
+        }
+      }
+
+      if (result.repaired > 0 || result.failed > 0) options.onSchedulesChanged?.();
+      return result;
     }
   };
 }
@@ -221,6 +291,17 @@ function requireScheduleThread(
   return thread;
 }
 
+function hasValidScheduleThread(
+  schedule: ScheduleRecord,
+  threadManager: Pick<ThreadManager, 'getThread'>
+): boolean {
+  if (schedule.threadId === null) return false;
+  const thread = threadManager.getThread(schedule.threadId);
+  return thread !== undefined
+    && thread.purpose === 'schedule_task'
+    && thread.status === 'active';
+}
+
 function touchesExecutionConfiguration(input: NormalizedUpdateScheduleInput): boolean {
   return hasAnyOwnProperty(input, [
     'cwd',
@@ -255,4 +336,20 @@ function requiresNextRunRecompute(input: NormalizedUpdateScheduleInput): boolean
 
 function notFound(): SchedulerError {
   return new SchedulerError('SCHEDULE_NOT_FOUND', 'Schedule not found');
+}
+
+function bindingRepairErrorCode(error: unknown): string {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && typeof error.code === 'string'
+  ) {
+    return error.code;
+  }
+  return 'INTERNAL_ERROR';
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

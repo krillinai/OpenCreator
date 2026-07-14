@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P0-B6`，等待开始 |
+| 当前批次 | `P0-B7`，等待开始 |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -329,7 +329,7 @@ P2-B1 审批和连续失败体验
 | P0-B3 | ScheduleCoordinator 手动创建事务 | `PASS` |
 | P0-B4 | 原子更新、暂停恢复和删除 | `PASS` |
 | P0-B5 | 固定 Thread 触发与 Thread 级并发 | `PASS` |
-| P0-B6 | 旧绑定修复和启动顺序 | `NOT_STARTED` |
+| P0-B6 | 旧绑定修复和启动顺序 | `PASS` |
 | P0-B7 | legacy Schedule session 分类 | `NOT_STARTED` |
 | P0-B8 | P0 集成、重启和真实 smoke | `NOT_STARTED` |
 | P1-B1 | 前端模型、服务和任务摘要模型 | `NOT_STARTED` |
@@ -774,7 +774,7 @@ feat(scheduler): 使用固定任务会话串行触发
 
 ### P0-B6：旧绑定修复和启动顺序
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P0-B5`
 
@@ -829,6 +829,22 @@ pnpm --filter @clawee/daemon typecheck
 - 重启不重复建 Thread。
 - 单条坏数据不会阻止 daemon 启动和其他任务修复。
 - Scheduler 永远不会在修复前触发。
+
+**执行结果：**
+
+- `ensureBindings()` 已按活动 Schedule 逐条独立 transaction 修复空绑定、失效绑定和异常
+  Thread；重复调用只统计 unchanged，不重复创建 Thread。
+- 单条绑定写入失败会回滚同事务内新建的 Thread，再禁用 Schedule、清空 `nextRunAt`，
+  记录 `binding_repair_failed` 和底层错误码，并继续处理其他记录。
+- Server 支持注入 fake Coordinator/Scheduler；生产自动启动顺序已固定为
+  `ensureBindings -> session 索引/分类 -> Scheduler 构造 -> API 注册 -> start`。
+- 为避免在 P0-B7 前扩大既有误归档问题，启动前 session 同步暂不执行 legacy Schedule
+  标记/归档；普通路由同步行为保持不变，下一批统一收窄 legacy 分类 SQL。
+- P0-B6 四文件专项测试：133 项通过。
+- daemon 全量测试：587 项通过，13 项真实 Codex smoke 按环境开关跳过。
+- Web 全量测试：479 项通过。
+- Protocol、daemon、Web typecheck、全仓 build 和 `git diff --check` 均通过；
+  Vite 仅保留既有大 chunk 警告。
 
 **回滚边界：** 停止新版 Scheduler 后可以回滚应用代码；保留新增 Thread 和绑定，不执行
 反向删除。
@@ -2094,6 +2110,21 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：真实 Codex smoke 13 项按环境开关跳过，继续登记到最终统一验收；构建仅有
   既有 Vite 大 chunk 警告。
 - 下一步：执行 P0-B6，在 Scheduler 启动前幂等修复旧 Schedule 的任务 Thread 绑定。
+
+### 2026-07-14 15:36 CST - P0-B6
+
+- 状态：`PASS`
+- 提交：`feat(scheduler): 启动时修复旧任务会话绑定`
+  （SHA 以包含本日志的提交为准）
+- 已完成：幂等旧绑定修复、失效 Thread 替换、逐条事务、失败禁用与诊断操作、Server
+  Coordinator 注入，以及修复/分类/启动顺序编排。
+- 验证：P0-B6 四文件专项测试 133 项、daemon 全量 587 项、Web 全量 479 项通过；
+  Protocol/daemon/Web typecheck、全仓 build 和 `git diff --check` 均通过。
+- 未完成：legacy Schedule session 的精确 SQL 分类、任务 Thread 防误归档和搜索可见性留到
+  P0-B7。
+- 风险或偏差：启动前 session 同步暂不执行旧的 Schedule 标记/归档，避免误伤
+  `schedule_task`；真实 Codex smoke 13 项继续登记到最终统一验收。
+- 下一步：执行 P0-B7，只隐藏无 Clawee Thread 的旧孤立 Schedule session。
 
 ### 日志模板
 

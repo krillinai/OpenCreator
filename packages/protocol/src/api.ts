@@ -727,6 +727,8 @@ export type ScheduleOperationType =
   | 'create'
   | 'update'
   | 'delete'
+  | 'binding_repair'
+  | 'binding_repair_failed'
   | 'run_now'
   | 'timer_trigger'
   | 'skip_misfire'
