@@ -58,7 +58,12 @@ export type ThreadManager = {
   createThread(request: CreateRuntimeThreadInput): RuntimeThread;
   getThread(id: string): RuntimeThread | undefined;
   getThreadByCodexThreadId(codexThreadId: string): RuntimeThread | undefined;
-  listThreads(filter?: { status?: 'active' | 'archived' | 'all'; limit?: number }): RuntimeThread[];
+  listThreads(filter?: {
+    status?: 'active' | 'archived' | 'all';
+    purpose?: ThreadPurpose;
+    excludePurpose?: ThreadPurpose;
+    limit?: number;
+  }): RuntimeThread[];
   importCodexThread(input: ImportCodexThreadInput): RuntimeThread;
   updateThread(id: string, input: UpdateRuntimeThreadInput): RuntimeThread;
   updateScheduleThread(id: string, input: UpdateScheduleThreadInput): RuntimeThread;

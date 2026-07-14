@@ -47,9 +47,14 @@ export async function registerThreadRoutes(
     const query = parseThreadListQuery(request.query);
     if (!query.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', query.message));
 
-    const { status, limit } = query.value;
-    options.syncCodexSessions?.(limit);
-    const threads = manager.listThreads({ status, limit }).map(toThreadResponse);
+    const { status, purpose, excludePurpose, limit } = query.value;
+    if (purpose !== 'schedule_task') options.syncCodexSessions?.(limit);
+    const threads = manager.listThreads({
+      status,
+      purpose,
+      excludePurpose,
+      limit
+    }).map(toThreadResponse);
     return { threads };
   });
 
@@ -293,6 +298,7 @@ const WORKSPACE_MODES = ['managed', 'external'] as const;
 const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;
 const REASONING_EFFORTS = ['default', 'low', 'medium', 'high', 'xhigh'] as const;
 const PUBLIC_THREAD_PURPOSES = ['conversation', 'schedule_draft'] as const;
+const THREAD_PURPOSES = ['conversation', 'schedule_draft', 'schedule_task'] as const;
 const THREAD_STATUSES = ['active', 'archived', 'all'] as const;
 const LIMIT_PATTERN = /^[1-9]\d*$/;
 const MAX_LIMIT = 100;
@@ -358,11 +364,37 @@ function parseUpdateThreadRequest(body: unknown): ParseResult<Required<UpdateThr
 
 function parseThreadListQuery(
   query: unknown
-): ParseResult<{ status?: 'active' | 'archived' | 'all'; limit?: number }> {
+): ParseResult<{
+  status?: 'active' | 'archived' | 'all';
+  purpose?: RuntimeThread['purpose'];
+  excludePurpose?: RuntimeThread['purpose'];
+  limit?: number;
+}> {
   const status = getQueryString(query, 'status');
   if (!status.ok) return status;
   if (status.value !== undefined && !isOneOf(status.value, THREAD_STATUSES)) {
     return { ok: false, message: 'status must be active, archived, or all' };
+  }
+
+  const purpose = getQueryString(query, 'purpose');
+  if (!purpose.ok) return purpose;
+  if (purpose.value !== undefined && !isOneOf(purpose.value, THREAD_PURPOSES)) {
+    return { ok: false, message: 'purpose must be a valid thread purpose' };
+  }
+
+  const excludePurpose = getQueryString(query, 'excludePurpose');
+  if (!excludePurpose.ok) return excludePurpose;
+  if (
+    excludePurpose.value !== undefined
+    && !isOneOf(excludePurpose.value, THREAD_PURPOSES)
+  ) {
+    return { ok: false, message: 'excludePurpose must be a valid thread purpose' };
+  }
+  if (purpose.value !== undefined && excludePurpose.value !== undefined) {
+    return {
+      ok: false,
+      message: 'purpose and excludePurpose cannot be used together'
+    };
   }
 
   const limit = parseLimitQuery(query);
@@ -372,6 +404,10 @@ function parseThreadListQuery(
     ok: true,
     value: {
       ...(status.value === undefined ? {} : { status: status.value }),
+      ...(purpose.value === undefined ? {} : { purpose: purpose.value }),
+      ...(excludePurpose.value === undefined
+        ? {}
+        : { excludePurpose: excludePurpose.value }),
       ...(limit.value === undefined ? {} : { limit: limit.value })
     }
   };

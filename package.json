@@ -7,6 +7,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "e2e": "playwright test",
+    "perf:measure": "playwright test apps/web/e2e/scheduled-task-performance.spec.ts",
     "typecheck": "pnpm -r typecheck",
     "smoke:ci": "pnpm --filter @clawee/daemon test -- test/unit/codex-smoke.test.ts",
     "perf:check": "node scripts/check-performance-baseline.mjs",

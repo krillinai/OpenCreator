@@ -2646,6 +2646,12 @@ describe('runtime api', () => {
       cwd: tempDir,
       purpose: 'schedule_task'
     });
+    const conversation = manager.createThread({
+      title: 'Conversation',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'conversation'
+    });
     db.prepare(`
       INSERT INTO schedules (
         id, thread_id, name, cron, timezone, prompt, prompt_hash, prompt_preview_redacted,
@@ -2676,6 +2682,10 @@ describe('runtime api', () => {
 
     const detail = await authGet(`/threads/${task.id}`);
     const listed = await authGet('/threads');
+    const taskThreads = await authGet('/threads?status=active&purpose=schedule_task&limit=100');
+    const interactiveThreads = await authGet(
+      '/threads?status=active&excludePurpose=schedule_task&limit=50'
+    );
     const updated = await authPatch(`/threads/${task.id}`, {
       sandbox: 'danger-full-access'
     });
@@ -2690,6 +2700,15 @@ describe('runtime api', () => {
       id: task.id,
       scheduleId: 'sch_one'
     }));
+    expect(taskThreads.json().threads).toEqual([
+      expect.objectContaining({ id: task.id, purpose: 'schedule_task' })
+    ]);
+    expect(interactiveThreads.json().threads).toContainEqual(
+      expect.objectContaining({ id: conversation.id, purpose: 'conversation' })
+    );
+    expect(interactiveThreads.json().threads).not.toContainEqual(
+      expect.objectContaining({ id: task.id })
+    );
     expect(updated.statusCode).toBe(409);
     expect(updated.json().error.code).toBe('THREAD_MANAGED_BY_SCHEDULE');
     expect(archived.statusCode).toBe(409);
@@ -3160,7 +3179,14 @@ describe('runtime api', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
 
-    for (const url of ['/threads?limit=-1', '/threads?limit=1.5', '/threads?status=paused']) {
+    for (const url of [
+      '/threads?limit=-1',
+      '/threads?limit=1.5',
+      '/threads?status=paused',
+      '/threads?purpose=invalid',
+      '/threads?excludePurpose=invalid',
+      '/threads?purpose=conversation&excludePurpose=schedule_task'
+    ]) {
       const response = await server.inject({
         method: 'GET',
         url,

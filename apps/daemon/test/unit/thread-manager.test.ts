@@ -113,6 +113,48 @@ describe('thread manager', () => {
     expect(manager.listThreads().find(thread => thread.id === task.id)?.scheduleId).toBe('sch_one');
   });
 
+  it('filters bounded thread summaries by included or excluded purpose', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({ db: database, dataDir: tempDir });
+    const conversation = manager.createThread({
+      title: 'Conversation',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'conversation'
+    });
+    const draft = manager.createThread({
+      title: 'Draft',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_draft'
+    });
+    const task = manager.createThread({
+      title: 'Task',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_task'
+    });
+
+    expect(manager.listThreads({
+      status: 'active',
+      purpose: 'schedule_task',
+      limit: 100
+    }).map(thread => thread.id)).toEqual([task.id]);
+    expect(manager.listThreads({
+      status: 'active',
+      excludePurpose: 'schedule_task',
+      limit: 50
+    }).map(thread => thread.id)).toEqual(
+      expect.arrayContaining([conversation.id, draft.id])
+    );
+    expect(manager.listThreads({
+      status: 'active',
+      excludePurpose: 'schedule_task',
+      limit: 50
+    }).map(thread => thread.id)).not.toContain(task.id);
+  });
+
   it('uses explicit internal methods to manage schedule task configuration and lifecycle', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
     const database = openTestDatabase(tempDir);

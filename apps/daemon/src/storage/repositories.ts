@@ -133,7 +133,12 @@ export type ThreadRepository = {
   insertThread(input: InsertThreadInput): void;
   getThread(id: string): ThreadRow | undefined;
   getThreadByCodexThreadId(codexThreadId: string): ThreadRow | undefined;
-  listThreads(input?: { status?: 'active' | 'archived' | 'all'; limit?: number }): ThreadRow[];
+  listThreads(input?: {
+    status?: 'active' | 'archived' | 'all';
+    purpose?: ThreadPurpose;
+    excludePurpose?: ThreadPurpose;
+    limit?: number;
+  }): ThreadRow[];
   listProfileReferences(profile: string): Array<{ id: string; title: string | null }>;
   archiveLegacyScheduleThreads(): void;
   archiveThread(id: string): void;
@@ -374,9 +379,16 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     ORDER BY threads.updated_at DESC, threads.id DESC
     LIMIT 1
   `);
-  const list = db.prepare<{ status: 'active' | 'archived' | 'all'; limit: number }>(`
+  const list = db.prepare<{
+    status: 'active' | 'archived' | 'all';
+    purpose: ThreadPurpose | null;
+    excludePurpose: ThreadPurpose | null;
+    limit: number;
+  }>(`
     ${threadSelect}
     WHERE (@status = 'all' OR threads.status = @status)
+      AND (@purpose IS NULL OR threads.purpose = @purpose)
+      AND (@excludePurpose IS NULL OR threads.purpose <> @excludePurpose)
     ORDER BY threads.updated_at DESC, threads.id DESC
     LIMIT @limit
   `);
@@ -475,6 +487,8 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     listThreads(input = {}): ThreadRow[] {
       return list.all({
         status: input.status ?? 'active',
+        purpose: input.purpose ?? null,
+        excludePurpose: input.excludePurpose ?? null,
         limit: input.limit ?? 50
       }) as ThreadRow[];
     },

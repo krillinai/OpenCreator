@@ -23,5 +23,9 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm smoke:ci
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm perf:measure
       - run: pnpm perf:check
+        env:
+          CLAWEE_PERFORMANCE_RESULTS_REQUIRED: '1'
       - run: pnpm audit --audit-level high

@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "scenario": "scheduled-task-100",
+  "seedCount": 100,
+  "thresholds": {
+    "maxRuntimeRequestsPerLoad": 12,
+    "maxThreadListRequestsPerLoad": 2,
+    "maxScheduleViewRequests": 3,
+    "maxSearchViewRequests": 2,
+    "maxTaskHistoryRequestsBeforeSelection": 0,
+    "maxTaskHistoryRequestsAfterSelection": 1,
+    "maxDomNodes": 4500,
+    "maxLongTaskCount": 10,
+    "maxLongTaskDurationMs": 500,
+    "maxLongTaskTotalMs": 1500,
+    "maxTaskOpenLatencyMs": 1500
+  },
+  "baselines": {
+    "chromium-desktop": {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "measurements": {
+        "initialRuntimeRequests": 11,
+        "refreshRuntimeRequests": 10,
+        "initialThreadListRequests": 2,
+        "refreshThreadListRequests": 2,
+        "scheduleViewRequests": 2,
+        "searchViewRequests": 1,
+        "taskHistoryRequestsBeforeSelection": 0,
+        "taskHistoryRequestsAfterSelection": 1,
+        "maxDomNodes": 3868,
+        "longTaskCount": 0,
+        "maxLongTaskDurationMs": 0,
+        "totalLongTaskDurationMs": 0,
+        "taskOpenLatencyMs": 71
+      }
+    },
+    "chromium-mobile": {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "measurements": {
+        "initialRuntimeRequests": 10,
+        "refreshRuntimeRequests": 10,
+        "initialThreadListRequests": 2,
+        "refreshThreadListRequests": 2,
+        "scheduleViewRequests": 2,
+        "searchViewRequests": 1,
+        "taskHistoryRequestsBeforeSelection": 0,
+        "taskHistoryRequestsAfterSelection": 1,
+        "maxDomNodes": 3868,
+        "longTaskCount": 0,
+        "maxLongTaskDurationMs": 0,
+        "totalLongTaskDurationMs": 0,
+        "taskOpenLatencyMs": 249
+      }
+    }
+  }
+}

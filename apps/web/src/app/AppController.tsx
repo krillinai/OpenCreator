@@ -62,7 +62,6 @@ import {
 } from '../features/runs/Composer.js';
 import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
 import { createScheduleTaskSummaries } from '../features/schedules/schedule-task-model.js';
-import { ScheduleThreadHeader } from '../features/schedules/ScheduleThreadHeader.js';
 import {
   getRunCancelState,
   getThreadActiveRun,
@@ -178,6 +177,10 @@ const SCHEDULE_CREATION_DRAFT =
 const CapabilitiesPage = lazy(() => import('../features/capabilities/CapabilitiesPage.js'));
 const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
+const ScheduleThreadHeader = lazy(async () => {
+  const module = await import('../features/schedules/ScheduleThreadHeader.js');
+  return { default: module.ScheduleThreadHeader };
+});
 const SchedulesPage = lazy(() => import('../features/schedules/SchedulesPage.js'));
 const SearchPage = lazy(() => import('../features/search/SearchPage.js'));
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage.js'));
@@ -2787,16 +2790,18 @@ export function AppController(props: AppControllerProps) {
           && selectedSchedule !== undefined
           && selectedSidebarTask !== undefined
           && scheduleService !== null ? (
-            <ScheduleThreadHeader
-              schedule={selectedSchedule}
-              status={selectedSidebarTask.status}
-              nextRunLabel={selectedSidebarTask.nextRunLabel}
-              service={scheduleService}
-              projects={projects}
-              profiles={codexProfiles?.profiles}
-              onRunNow={runScheduleNow}
-              onScheduleChanged={handleScheduleChanged}
-            />
+            <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
+              <ScheduleThreadHeader
+                schedule={selectedSchedule}
+                status={selectedSidebarTask.status}
+                nextRunLabel={selectedSidebarTask.nextRunLabel}
+                service={scheduleService}
+                projects={projects}
+                profiles={codexProfiles?.profiles}
+                onRunNow={runScheduleNow}
+                onScheduleChanged={handleScheduleChanged}
+              />
+            </Suspense>
           ) : undefined
         }
         summaryLoading={

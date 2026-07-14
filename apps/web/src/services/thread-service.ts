@@ -11,8 +11,25 @@ import type { RuntimeClient } from '../runtime/client.js';
 
 export function createThreadService(client: RuntimeClient) {
   return {
-    listActiveThreads(): Promise<ThreadListResponse> {
-      return client.get('/threads?status=active&limit=50');
+    async listActiveThreads(): Promise<ThreadListResponse> {
+      try {
+        const [interactive, scheduleTasks] = await Promise.all([
+          client.get<ThreadListResponse>(
+            '/threads?status=active&excludePurpose=schedule_task&limit=50'
+          ),
+          client.get<ThreadListResponse>(
+            '/threads?status=active&purpose=schedule_task&limit=100'
+          )
+        ]);
+        if (!hasExpectedPurposePartitions(interactive, scheduleTasks)) {
+          return client.get('/threads?status=active&limit=50');
+        }
+        return {
+          threads: mergeThreadLists(interactive.threads, scheduleTasks.threads)
+        };
+      } catch {
+        return client.get('/threads?status=active&limit=50');
+      }
     },
     createThread(input: CreateThreadRequest = {}): Promise<{ thread: ThreadResponse }> {
       return client.post('/threads', input);
@@ -38,4 +55,26 @@ export function createThreadService(client: RuntimeClient) {
       return client.get(`/threads/${encodeURIComponent(threadId)}/history${suffix}`);
     }
   };
+}
+
+function hasExpectedPurposePartitions(
+  interactive: ThreadListResponse,
+  scheduleTasks: ThreadListResponse
+): boolean {
+  return interactive.threads.every(thread => thread.purpose !== 'schedule_task')
+    && scheduleTasks.threads.every(thread => thread.purpose === 'schedule_task');
+}
+
+function mergeThreadLists(
+  first: ThreadResponse[],
+  second: ThreadResponse[]
+): ThreadResponse[] {
+  const threads = [...first];
+  const knownIds = new Set(first.map(thread => thread.id));
+  for (const thread of second) {
+    if (knownIds.has(thread.id)) continue;
+    knownIds.add(thread.id);
+    threads.push(thread);
+  }
+  return threads;
 }

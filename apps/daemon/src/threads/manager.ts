@@ -1,3 +1,4 @@
+import type { ThreadPurpose } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -66,7 +67,12 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       return row === undefined ? undefined : mapThreadRow(row);
     },
 
-    listThreads(filter?: { status?: 'active' | 'archived' | 'all'; limit?: number }): RuntimeThread[] {
+    listThreads(filter?: {
+      status?: 'active' | 'archived' | 'all';
+      purpose?: ThreadPurpose;
+      excludePurpose?: ThreadPurpose;
+      limit?: number;
+    }): RuntimeThread[] {
       return threads.listThreads(filter).map(mapThreadRow);
     },
 
