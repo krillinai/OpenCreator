@@ -685,6 +685,7 @@ export type TimelineHandle = {
 type TimelineProps = {
   items: TimelineItem[];
   targetItemId?: string;
+  targetRunId?: string;
   hasMore?: boolean;
   loadingOlder?: boolean;
   onLoadOlder?(): Promise<void> | void;
@@ -724,10 +725,12 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     [props.items]
   );
   const targetRenderItemIndex = useMemo(
-    () => props.targetItemId === undefined
-      ? -1
-      : renderItems.findIndex(item => renderItemContainsId(item, props.targetItemId!)),
-    [props.targetItemId, renderItems]
+    () => renderItems.findIndex(item => renderItemMatchesTarget(
+      item,
+      props.targetItemId,
+      props.targetRunId
+    )),
+    [props.targetItemId, props.targetRunId, renderItems]
   );
   const itemIds = props.items.map(item => item.id);
   const previousItemIds = previousItemIdsRef.current;
@@ -766,7 +769,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       align: 'center',
       behavior: 'auto'
     });
-  }, [props.targetItemId, targetRenderItemIndex]);
+  }, [props.targetItemId, props.targetRunId, targetRenderItemIndex]);
 
   function loadOlder() {
     if (!props.hasMore || props.loadingOlder || props.onLoadOlder === undefined) return;
@@ -850,6 +853,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                 {renderTimelineRenderItem(
                   renderItem,
                   props.targetItemId,
+                  props.targetRunId,
                   props.onOpenRunDetail,
                   props.onOpenFile,
                   props.onCancelQueuedRun,
@@ -880,6 +884,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
 function renderTimelineRenderItem(
   renderItem: TimelineRenderItem,
   targetItemId?: string,
+  targetRunId?: string,
   onOpenRunDetail?: (runId: string) => void,
   onOpenFile?: (path: string) => void,
   onCancelQueuedRun?: (runId: string) => void,
@@ -892,7 +897,7 @@ function renderTimelineRenderItem(
     return (
       <ProcessBlockView
         process={renderItem}
-        targeted={targetItemId !== undefined && renderItemContainsId(renderItem, targetItemId)}
+        targeted={renderItemMatchesTarget(renderItem, targetItemId, targetRunId)}
         onOpenRunDetail={onOpenRunDetail}
       />
     );
@@ -902,7 +907,7 @@ function renderTimelineRenderItem(
     return (
       <article
         className="timeline-item timeline-change_card"
-        data-search-target={targetItemId !== undefined && renderItemContainsId(renderItem, targetItemId) ? 'true' : undefined}
+        data-search-target={renderItemMatchesTarget(renderItem, targetItemId, targetRunId) ? 'true' : undefined}
       >
         <div className="timeline-bubble">{renderChangeBlock(renderItem, onOpenFile)}</div>
       </article>
@@ -913,7 +918,7 @@ function renderTimelineRenderItem(
   return (
     <article
       className={`timeline-item timeline-${item.kind}`}
-      data-search-target={item.id === targetItemId ? 'true' : undefined}
+      data-search-target={renderItemMatchesTarget(renderItem, targetItemId, targetRunId) ? 'true' : undefined}
     >
       {shouldRenderTimelineHeader(item) ? (
         <div className="timeline-item-header">
@@ -950,6 +955,21 @@ function getRenderItemKey(item: TimelineRenderItem): string {
 function renderItemContainsId(item: TimelineRenderItem, itemId: string): boolean {
   if (item.type === 'item') return item.item.id === itemId;
   return item.items.some(child => child.id === itemId);
+}
+
+function renderItemContainsRunId(item: TimelineRenderItem, runId: string): boolean {
+  if (item.type === 'item') return getRunId(item.item) === runId;
+  if (item.runId === runId) return true;
+  return item.items.some(child => getRunId(child) === runId);
+}
+
+function renderItemMatchesTarget(
+  item: TimelineRenderItem,
+  targetItemId?: string,
+  targetRunId?: string
+): boolean {
+  if (targetItemId !== undefined && renderItemContainsId(item, targetItemId)) return true;
+  return targetRunId !== undefined && renderItemContainsRunId(item, targetRunId);
 }
 
 function hasSuffix(values: string[], suffix: string[]): boolean {

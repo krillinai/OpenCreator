@@ -1,6 +1,5 @@
 import type {
   CreateScheduleRequest,
-  RunScheduleNowResponse,
   ScheduleDetailResponse,
   ScheduleResponse,
   UpdateScheduleRequest,
@@ -67,8 +66,11 @@ describe('SchedulesView', () => {
 
   it('creates a schedule manually with friendly frequency controls', async () => {
     const user = userEvent.setup();
+    const onOpenTask = vi.fn();
+    const onScheduleChanged = vi.fn();
     const createSchedule = vi.fn(async (input: CreateScheduleRequest) => schedule({
       id: 'schedule-created',
+      threadId: 'thread-created',
       name: input.name,
       cron: input.cron,
       timezone: input.timezone ?? 'Asia/Shanghai',
@@ -85,6 +87,8 @@ describe('SchedulesView', () => {
       misfirePolicy: input.misfirePolicy ?? 'skip',
     }));
     renderView({
+      onOpenTask,
+      onScheduleChanged,
       service: createService({
         listSchedules: vi.fn(async () => ({ schedules: [] })),
         createSchedule,
@@ -113,6 +117,11 @@ describe('SchedulesView', () => {
       misfirePolicy: 'skip',
     });
     expect(await screen.findByRole('heading', { name: '每日简报' })).toBeInTheDocument();
+    expect(onScheduleChanged).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'schedule-created',
+      threadId: 'thread-created'
+    }));
+    expect(onOpenTask).toHaveBeenCalledWith('thread-created');
   });
 
   it('opens Clawee schedule creation in a new conversation', async () => {
@@ -174,10 +183,12 @@ describe('SchedulesView', () => {
 
   it('loads full details, preserves legacy schedules, and saves advanced edits', async () => {
     const user = userEvent.setup();
+    const onScheduleChanged = vi.fn();
     const updateSchedule = vi.fn(async (_id: string, input: UpdateScheduleRequest) => (
       schedule({ name: input.name ?? '每日总结', enabled: input.enabled ?? true })
     ));
     renderView({
+      onScheduleChanged,
       service: createService({
         listSchedules: vi.fn(async () => ({
           schedules: [schedule({ cron: '0 9 1 * *' })],
@@ -206,28 +217,44 @@ describe('SchedulesView', () => {
       reasoning: null,
       timeoutMs: null,
     }));
+    expect(onScheduleChanged).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'schedule-1',
+      name: '每月总结'
+    }));
   });
 
-  it('toggles, runs, opens the run, and deletes a schedule', async () => {
+  it('opens task titles and previous runs in the bound task thread', async () => {
+    const user = userEvent.setup();
+    const onOpenTask = vi.fn();
+    renderView({
+      onOpenTask,
+      service: createService({
+        listSchedules: vi.fn(async () => ({ schedules: [schedule()] })),
+      }),
+    });
+
+    await user.click(await screen.findByRole('button', { name: '打开任务会话 每日总结' }));
+    expect(onOpenTask).toHaveBeenLastCalledWith('thread-schedule-1');
+
+    await user.click(screen.getByRole('button', { name: '查看上次运行' }));
+    expect(onOpenTask).toHaveBeenLastCalledWith('thread-schedule-1', 'run-previous');
+  });
+
+  it('toggles, starts a run in the task thread, and deletes a schedule', async () => {
     const user = userEvent.setup();
     const updateSchedule = vi.fn(async (_id: string, input: UpdateScheduleRequest) => (
       schedule({ enabled: input.enabled ?? true })
     ));
-    const runNow = vi.fn(async (): Promise<RunScheduleNowResponse> => ({
-      run: { id: 'run-1', threadId: 'thread-1', status: 'queued' },
-      schedule: schedule({ lastRunId: 'run-1', lastStatus: 'queued' }),
-      skipped: false,
-      queued: false,
-    }));
+    const onRunNow = vi.fn(async (_schedule: ScheduleResponse): Promise<void> => undefined);
+    const onScheduleChanged = vi.fn();
     const deleteSchedule = vi.fn(async () => ({ deleted: true as const }));
-    const onOpenRun = vi.fn();
     renderView({
-      onOpenRun,
+      onRunNow,
+      onScheduleChanged,
       confirmDelete: () => true,
       service: createService({
         listSchedules: vi.fn(async () => ({ schedules: [schedule()] })),
         updateSchedule,
-        runNow,
         deleteSchedule,
       }),
     });
@@ -236,11 +263,16 @@ describe('SchedulesView', () => {
     await user.click(toggle);
     expect(updateSchedule).toHaveBeenCalledWith('schedule-1', { enabled: false });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(onScheduleChanged).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'schedule-1',
+      enabled: false
+    }));
 
     await user.click(screen.getByRole('button', { name: '立即运行每日总结' }));
-    expect(runNow).toHaveBeenCalledWith('schedule-1');
-    await user.click(await screen.findByRole('button', { name: '查看运行' }));
-    expect(onOpenRun).toHaveBeenCalledWith('run-1', 'thread-1');
+    expect(onRunNow).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'schedule-1',
+      threadId: 'thread-schedule-1'
+    }));
 
     await user.click(screen.getByRole('button', { name: '删除每日总结' }));
     expect(deleteSchedule).toHaveBeenCalledWith('schedule-1');
@@ -279,7 +311,9 @@ function createView(overrides: {
   connected?: boolean;
   service?: ScheduleViewService | null;
   onCreateWithClawee?(): Promise<void> | void;
-  onOpenRun?(runId: string, threadId?: string): void;
+  onOpenTask?(threadId: string, runId?: string): void;
+  onRunNow?(schedule: ScheduleResponse): Promise<void> | void;
+  onScheduleChanged?(schedule: ScheduleResponse): void;
   confirmDelete?(schedule: ScheduleResponse): boolean;
 } = {}) {
   return (
@@ -311,7 +345,9 @@ function createView(overrides: {
       defaultTimezone="Asia/Shanghai"
       pollIntervalMs={0}
       onCreateWithClawee={overrides.onCreateWithClawee ?? vi.fn()}
-      onOpenRun={overrides.onOpenRun ?? vi.fn()}
+      onOpenTask={overrides.onOpenTask ?? vi.fn()}
+      onRunNow={overrides.onRunNow ?? vi.fn()}
+      onScheduleChanged={overrides.onScheduleChanged ?? vi.fn()}
       confirmDelete={overrides.confirmDelete}
     />
   );
@@ -326,12 +362,6 @@ function createService(
     createSchedule: async () => schedule(),
     updateSchedule: async () => schedule(),
     deleteSchedule: async () => ({ deleted: true }),
-    runNow: async () => ({
-      run: null,
-      schedule: schedule(),
-      skipped: true,
-      queued: false,
-    }),
     listOperations: async () => ({ operations: [] }),
     ...overrides,
   };

@@ -223,7 +223,7 @@ describe('App', () => {
     expect(screen.queryByText(/mock 文件变更/)).not.toBeInTheDocument();
   });
 
-  it('opens the schedules workspace and shows a schedule run detail without loading a thread', async () => {
+  it('opens a previous schedule run in its task thread without opening diagnostics', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
@@ -234,15 +234,33 @@ describe('App', () => {
       const url = String(input);
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread-schedule-1',
+              title: '每日总结',
+              purpose: 'schedule_task',
+              scheduleId: 'schedule-1'
+            })
+          ]
+        });
+      }
       if (url.endsWith('/schedules')) {
         return jsonResponse({ schedules: [createScheduleResponse()] });
       }
-      if (url.endsWith('/runs/run_schedule/diagnostics')) {
+      if (url.endsWith('/tasks?status=all&limit=50')) {
+        return jsonResponse({ tasks: [], hasMore: false });
+      }
+      if (url.endsWith('/threads/thread-schedule-1/history?limit=50')) {
         return jsonResponse({
-          ...createRunDiagnosticsResponse(createCodexStatusResponse()),
-          runId: 'run_schedule'
+          threadId: 'thread-schedule-1',
+          codexThreadId: null,
+          items: []
         });
+      }
+      if (url.endsWith('/threads/thread-schedule-1/runs?limit=50')) {
+        return jsonResponse({ runs: [] });
       }
       throw new Error(`Unexpected request ${url}`);
     };
@@ -264,9 +282,111 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '查看上次运行' }));
 
-    expect(await screen.findByRole('heading', { name: '运行详情' })).toBeInTheDocument();
-    expect(screen.getByText('run_schedule')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '每日总结' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('#/thread/thread-schedule-1?runId=run_schedule');
+    expect(screen.queryByRole('heading', { name: '运行详情' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '输入任务' })).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      label: 'starts',
+      response: {
+        run: { id: 'run-now', threadId: 'thread-schedule-1', status: 'running' as const },
+        schedule: createScheduleResponse({
+          lastRunId: 'run-now',
+          lastStatus: 'running'
+        }),
+        skipped: false,
+        queued: false
+      },
+      expectedMessage: undefined
+    },
+    {
+      label: 'queues',
+      response: {
+        run: null,
+        schedule: createScheduleResponse({ pendingTrigger: true }),
+        skipped: false,
+        queued: true
+      },
+      expectedMessage: '本次运行已排队，会在当前任务结束后执行'
+    },
+    {
+      label: 'skips',
+      response: {
+        run: null,
+        schedule: createScheduleResponse(),
+        skipped: true,
+        queued: false
+      },
+      expectedMessage: '已有任务在运行，本次已跳过'
+    }
+  ])('$label a schedule from its task thread', async ({ response, expectedMessage }) => {
+    const user = userEvent.setup();
+    const runNow = createDeferred<Response>();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread-schedule-1',
+              title: '每日总结',
+              purpose: 'schedule_task',
+              scheduleId: 'schedule-1'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/schedules')) {
+        return jsonResponse({ schedules: [createScheduleResponse()] });
+      }
+      if (url.endsWith('/tasks?status=all&limit=50')) {
+        return jsonResponse({ tasks: [], hasMore: false });
+      }
+      if (url.endsWith('/schedules/schedule-1/run-now') && init?.method === 'POST') {
+        return runNow.promise;
+      }
+      if (url.endsWith('/threads/thread-schedule-1/history?limit=50')) {
+        return jsonResponse({
+          threadId: 'thread-schedule-1',
+          codexThreadId: null,
+          items: []
+        });
+      }
+      if (url.endsWith('/threads/thread-schedule-1/runs?limit=50')) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: '已安排' }));
+    await user.click(await screen.findByRole('button', { name: '立即运行每日总结' }));
+
+    expect(window.location.hash).toBe('#/thread/thread-schedule-1');
+    runNow.resolve(jsonResponse(response));
+
+    expect(await screen.findByRole('heading', { name: '每日总结' })).toBeInTheDocument();
+    if (expectedMessage !== undefined) {
+      expect(await screen.findByText(expectedMessage)).toBeInTheDocument();
+    }
   });
 
   it('opens Clawee schedule creation as a new draft conversation', async () => {

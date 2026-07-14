@@ -1,7 +1,6 @@
 import type {
   CreateScheduleRequest,
   CodexProfileResponse,
-  RunScheduleNowResponse,
   ScheduleDetailResponse,
   ScheduleListResponse,
   ScheduleOperationListResponse,
@@ -57,7 +56,6 @@ export type ScheduleViewService = {
   createSchedule(input: CreateScheduleRequest): Promise<ScheduleResponse>;
   updateSchedule(id: string, input: UpdateScheduleRequest): Promise<ScheduleResponse>;
   deleteSchedule(id: string): Promise<{ deleted: true }>;
-  runNow(id: string): Promise<RunScheduleNowResponse>;
   listOperations(id: string, limit?: number): Promise<ScheduleOperationListResponse>;
 };
 
@@ -85,7 +83,9 @@ export type SchedulesViewProps = {
   defaultTimezone: string;
   pollIntervalMs?: number;
   onCreateWithClawee(): Promise<void> | void;
-  onOpenRun(runId: string, threadId?: string): void;
+  onOpenTask(threadId: string, runId?: string): void;
+  onRunNow(schedule: ScheduleResponse): Promise<void> | void;
+  onScheduleChanged(schedule: ScheduleResponse): void;
   confirmDelete?(schedule: ScheduleResponse): boolean;
 };
 
@@ -98,7 +98,6 @@ export function SchedulesView(props: SchedulesViewProps) {
   const [editor, setEditor] = useState<EditorState>();
   const [editorErrors, setEditorErrors] = useState<ScheduleEditorErrors>({});
   const [saving, setSaving] = useState(false);
-  const [latestRun, setLatestRun] = useState<{ runId: string; threadId?: string }>();
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [creatingWithClawee, setCreatingWithClawee] = useState(false);
   const [createWithClaweeError, setCreateWithClaweeError] = useState<string>();
@@ -132,7 +131,6 @@ export function SchedulesView(props: SchedulesViewProps) {
   useEffect(() => {
     requestGenerationRef.current += 1;
     setEditor(undefined);
-    setLatestRun(undefined);
     if (!props.connected || props.service === null) {
       setSchedules([]);
       setLoading(false);
@@ -199,7 +197,6 @@ export function SchedulesView(props: SchedulesViewProps) {
   ) {
     setCreateMenuOpen(false);
     setEditorErrors({});
-    setLatestRun(undefined);
     setEditor({
       mode: 'create',
       source,
@@ -227,7 +224,6 @@ export function SchedulesView(props: SchedulesViewProps) {
   async function openEditEditor(schedule: ScheduleResponse) {
     if (props.service === null) return;
     setEditorErrors({});
-    setLatestRun(undefined);
     setEditor({
       mode: 'edit',
       scheduleId: schedule.id,
@@ -271,7 +267,9 @@ export function SchedulesView(props: SchedulesViewProps) {
         ? await props.service.createSchedule(createScheduleRequest(values))
         : await props.service.updateSchedule(editor.scheduleId, createScheduleUpdate(values));
       setSchedules(current => upsertSchedule(current, saved));
+      props.onScheduleChanged(saved);
       setEditor(undefined);
+      if (editor.mode === 'create') props.onOpenTask(saved.threadId);
     } catch (error) {
       setEditorErrors(mapScheduleError(error));
     } finally {
@@ -288,6 +286,7 @@ export function SchedulesView(props: SchedulesViewProps) {
     try {
       const updated = await props.service.updateSchedule(schedule.id, { enabled });
       setSchedules(current => replaceSchedule(current, updated));
+      props.onScheduleChanged(updated);
     } catch (error) {
       setSchedules(current => replaceSchedule(current, schedule));
       setActionError(schedule.id, errorMessage(error, '无法更新任务状态'));
@@ -297,23 +296,11 @@ export function SchedulesView(props: SchedulesViewProps) {
   }
 
   async function runSchedule(schedule: ScheduleResponse) {
-    if (props.service === null || busyIds.has(schedule.id)) return;
+    if (busyIds.has(schedule.id)) return;
     setBusy(schedule.id, true);
     clearActionError(schedule.id);
-    setLatestRun(undefined);
     try {
-      const response = await props.service.runNow(schedule.id);
-      setSchedules(current => replaceSchedule(current, response.schedule));
-      if (response.run !== null) {
-        setLatestRun({
-          runId: response.run.id,
-          ...(response.run.threadId ? { threadId: response.run.threadId } : {}),
-        });
-      } else if (response.queued) {
-        setActionError(schedule.id, '本次运行已排队，会在当前任务结束后执行');
-      } else if (response.skipped) {
-        setActionError(schedule.id, '已有任务在运行，本次已跳过');
-      }
+      await props.onRunNow(schedule);
     } catch (error) {
       setActionError(schedule.id, errorMessage(error, '无法立即运行任务'));
     } finally {
@@ -331,7 +318,6 @@ export function SchedulesView(props: SchedulesViewProps) {
     try {
       await props.service.deleteSchedule(schedule.id);
       setSchedules(current => current.filter(item => item.id !== schedule.id));
-      setLatestRun(undefined);
       if (editor?.mode === 'edit' && editor.scheduleId === schedule.id) {
         setEditor(undefined);
       }
@@ -500,8 +486,6 @@ export function SchedulesView(props: SchedulesViewProps) {
                     schedule.nextRunAt,
                     schedule.timezone
                   );
-                  const showLatestRun =
-                    latestRun !== undefined && schedule.lastRunId === latestRun.runId;
                   return (
                     <li className="schedule-row" key={schedule.id}>
                       <div className="schedule-row__icon" aria-hidden="true">
@@ -509,7 +493,16 @@ export function SchedulesView(props: SchedulesViewProps) {
                       </div>
                       <div className="schedule-row__content">
                         <div className="schedule-row__title">
-                          <h2>{schedule.name}</h2>
+                          <h2>
+                            <button
+                              className="schedule-row__title-button"
+                              type="button"
+                              aria-label={`打开任务会话 ${schedule.name}`}
+                              onClick={() => props.onOpenTask(schedule.threadId)}
+                            >
+                              {schedule.name}
+                            </button>
+                          </h2>
                           {schedule.lastStatus === 'running'
                             || schedule.lastStatus === 'queued' ? (
                               <span className="schedule-running-label">
@@ -524,23 +517,14 @@ export function SchedulesView(props: SchedulesViewProps) {
                           {nextRun ? <span>下次 {nextRun}</span> : null}
                           {!schedule.enabled ? <span>已暂停</span> : null}
                         </div>
-                        {showLatestRun ? (
+                        {schedule.lastRunId ? (
                           <button
                             className="schedule-row__run-link"
                             type="button"
-                            onClick={() => props.onOpenRun(
-                              latestRun.runId,
-                              latestRun.threadId
+                            onClick={() => props.onOpenTask(
+                              schedule.threadId,
+                              schedule.lastRunId!
                             )}
-                          >
-                            <ExternalLink size={14} />
-                            查看运行
-                          </button>
-                        ) : schedule.lastRunId ? (
-                          <button
-                            className="schedule-row__run-link"
-                            type="button"
-                            onClick={() => props.onOpenRun(schedule.lastRunId!)}
                           >
                             <ExternalLink size={14} />
                             查看上次运行

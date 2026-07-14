@@ -274,6 +274,13 @@ export function AppController(props: AppControllerProps) {
   const [searchHistoryTarget, setSearchHistoryTarget] = useState<
     { threadId: string; itemId: string } | undefined
   >();
+  const [timelineRunTarget, setTimelineRunTarget] = useState<
+    { threadId: string; runId: string } | undefined
+  >(() => (
+    props.route.view === 'thread' && props.route.runId !== undefined
+      ? { threadId: props.route.threadId, runId: props.route.runId }
+      : undefined
+  ));
   const projectService = useMemo(() => createMockProjectService(), []);
   const timelineIdSequenceRef = useRef(0);
   const timelineItemsRef = useRef<TimelineItem[]>([]);
@@ -1449,6 +1456,7 @@ export function AppController(props: AppControllerProps) {
     setRunsLoadedThreadId(undefined);
     setThreadConfigUpdateError(undefined);
     setSearchHistoryTarget(undefined);
+    setTimelineRunTarget(undefined);
     dispatch({ type: 'new_conversation' });
     if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
   }
@@ -1464,6 +1472,7 @@ export function AppController(props: AppControllerProps) {
     setRunsLoadedThreadId(undefined);
     setThreadConfigUpdateError(undefined);
     setSearchHistoryTarget(undefined);
+    setTimelineRunTarget(undefined);
     dispatch({ type: 'select_project', projectId });
     if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
   }
@@ -1474,6 +1483,7 @@ export function AppController(props: AppControllerProps) {
     navigationPersistenceReadyRef.current = true;
     setThreadConfigUpdateError(undefined);
     setSearchHistoryTarget(undefined);
+    setTimelineRunTarget(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
     const alreadySelected = conversationId === state.selectedThreadId;
     if (conversation !== undefined && conversation.projectId !== state.currentProjectId) {
@@ -1528,7 +1538,7 @@ export function AppController(props: AppControllerProps) {
         startNewConversation({ updateRoute: false });
         return;
       case 'thread':
-        selectConversation(route.threadId, { updateRoute: false });
+        void openScheduleTask(route.threadId, route.runId, { updateRoute: false });
         return;
       case 'search':
       case 'schedules':
@@ -1606,6 +1616,7 @@ export function AppController(props: AppControllerProps) {
     navigationPersistenceReadyRef.current = true;
     setThreadLoadError(undefined);
     setThreadConfigUpdateError(undefined);
+    setTimelineRunTarget(undefined);
     setHistoryLoadingThreadId(thread.id);
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
@@ -2293,11 +2304,110 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
-  function openScheduleRun(runId: string, threadId?: string) {
-    if (threadId !== undefined && conversations.some(conversation => conversation.id === threadId)) {
-      selectConversation(threadId);
+  async function openScheduleTask(
+    threadId: string,
+    runId?: string,
+    options: { updateRoute?: boolean } = {}
+  ): Promise<boolean> {
+    let thread = runtimeThreads.find(item => item.id === threadId);
+    if (thread === undefined && threadService !== null) {
+      try {
+        const response = await threadService.getThread(threadId);
+        if (!mountedRef.current) return false;
+        thread = response.thread;
+        setRuntimeThreads(previous => upsertThread(previous, response.thread));
+      } catch {
+        if (mountedRef.current) setThreadLoadError('无法打开任务对应的会话');
+        return false;
+      }
     }
-    openRunDetail(runId);
+    if (thread === undefined) return false;
+
+    closeMobileSidebar();
+    allowInitialRuntimeProjectFocusRef.current = false;
+    navigationPersistenceReadyRef.current = true;
+    setThreadLoadError(undefined);
+    setThreadConfigUpdateError(undefined);
+    setSearchHistoryTarget(undefined);
+    setTimelineRunTarget(
+      runId === undefined ? undefined : { threadId: thread.id, runId }
+    );
+    setHistoryLoadingThreadId(thread.id);
+    setHistoryLoadedThreadId(undefined);
+    setRunsLoadedThreadId(undefined);
+    showTimelineForThread(thread.id, [], false);
+    const projectId = projectIdForThread(thread, projects);
+    if (projectId !== state.currentProjectId) {
+      dispatch({ type: 'select_project', projectId });
+    }
+    dispatch({ type: 'select_thread', threadId: thread.id });
+    if (options.updateRoute !== false) {
+      navigateToRoute({
+        view: 'thread',
+        threadId: thread.id,
+        ...(runId === undefined ? {} : { runId })
+      });
+    }
+    setThreadHistoryReloadKey(previous => previous + 1);
+    return true;
+  }
+
+  function handleScheduleChanged(schedule: ScheduleResponse) {
+    setRuntimeSchedules(previous => upsertSchedule(previous, schedule));
+  }
+
+  async function runScheduleNow(schedule: ScheduleResponse) {
+    const opened = await openScheduleTask(schedule.threadId);
+    if (!opened) throw new Error('无法打开任务对应的会话');
+
+    try {
+      if (scheduleService === null) {
+        throw new Error('本地服务暂不可用，无法立即运行任务');
+      }
+      const response = await scheduleService.runNow(schedule.id);
+      handleScheduleChanged(response.schedule);
+      if (response.run !== null) {
+        const run: RunResponse = {
+          ...response.run,
+          threadId: response.run.threadId ?? schedule.threadId
+        };
+        handleRunStarted(run);
+        void refreshThreadRunState(schedule.threadId);
+        if (connectionConfigRef.current !== null) {
+          subscribeToRunEvents(run.id, schedule.threadId, connectionConfigRef.current);
+        }
+        return;
+      }
+
+      const message = response.queued
+        ? '本次运行已排队，会在当前任务结束后执行'
+        : response.skipped
+          ? '已有任务在运行，本次已跳过'
+          : undefined;
+      if (message !== undefined) {
+        appendTimelineItemsForThread(schedule.threadId, [
+          {
+            kind: 'assistant_message',
+            id: createTimelineId('schedule_run_status'),
+            text: message,
+            source: 'runtime'
+          }
+        ]);
+      }
+    } catch (error) {
+      const message = getRuntimeErrorMessage(error, '无法立即运行任务');
+      appendTimelineItemsForThread(schedule.threadId, [
+        {
+          kind: 'diagnostic',
+          id: createTimelineId('schedule_run_failed'),
+          severity: 'error',
+          message,
+          content: message,
+          source: 'runtime'
+        }
+      ]);
+      throw error;
+    }
   }
 
   async function openScheduleCreationConversation() {
@@ -2628,6 +2738,12 @@ export function AppController(props: AppControllerProps) {
                 ? searchHistoryTarget.itemId
                 : undefined
             }
+            targetRunId={
+              timelineRunTarget !== undefined
+              && timelineRunTarget.threadId === state.selectedThreadId
+                ? timelineRunTarget.runId
+                : undefined
+            }
             onLoadOlder={threadHistory.loadOlder}
             onOpenRunDetail={openRunDetail}
             onOpenFile={openTimelineFile}
@@ -2753,7 +2869,9 @@ export function AppController(props: AppControllerProps) {
       profiles={codexProfiles?.profiles}
       defaultTimezone={resolveDefaultTimezone()}
       onCreateWithClawee={openScheduleCreationConversation}
-      onOpenRun={openScheduleRun}
+      onOpenTask={(threadId, runId) => void openScheduleTask(threadId, runId)}
+      onRunNow={runScheduleNow}
+      onScheduleChanged={handleScheduleChanged}
     />
   ) : state.activeView === 'tasks' ? (
     <TaskCenterPage

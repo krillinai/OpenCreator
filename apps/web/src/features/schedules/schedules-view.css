@@ -291,6 +291,23 @@
   letter-spacing: 0;
 }
 
+.schedule-row__title-button {
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-align: left;
+  text-overflow: inherit;
+  white-space: inherit;
+}
+
+.schedule-row__title-button:hover {
+  color: var(--accent-strong);
+}
+
 .schedule-running-label {
   display: inline-flex;
   flex: 0 0 auto;

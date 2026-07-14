@@ -113,6 +113,34 @@ describe('Timeline', () => {
     ).toHaveTextContent('目标回复');
   });
 
+  it('marks the process block that matches a run target', () => {
+    const items: TimelineItem[] = [
+      {
+        kind: 'assistant_message',
+        id: 'run-message',
+        runId: 'run-target',
+        text: '目标运行结果',
+        source: 'runtime'
+      },
+      {
+        kind: 'done',
+        id: 'run-done',
+        runId: 'run-target',
+        status: 'succeeded',
+        content: '{"type":"done","status":"succeeded"}',
+        source: 'runtime'
+      }
+    ];
+
+    const { container } = render(
+      <Timeline items={items} targetRunId="run-target" />
+    );
+
+    expect(
+      container.querySelector('[data-search-target="true"]')
+    ).toHaveTextContent('目标运行结果');
+  });
+
   it('defers rendering completed process steps until the process is expanded', async () => {
     const user = userEvent.setup();
     const items: TimelineItem[] = [

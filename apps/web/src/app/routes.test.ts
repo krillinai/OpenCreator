@@ -6,6 +6,17 @@ describe('app routes', () => {
     expect(parseRoute('#/thread/thread%201')).toEqual({ view: 'thread', threadId: 'thread 1' });
   });
 
+  it('round-trips an optional run target on thread routes', () => {
+    const route = {
+      view: 'thread' as const,
+      threadId: 'thread/task',
+      runId: 'run 1'
+    };
+
+    expect(formatRoute(route)).toBe('#/thread/thread%2Ftask?runId=run+1');
+    expect(parseRoute(formatRoute(route))).toEqual(route);
+  });
+
   it('parses every primary page route', () => {
     expect(parseRoute('#/search')).toEqual({ view: 'search' });
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });

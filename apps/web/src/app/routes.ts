@@ -1,6 +1,6 @@
 export type AppRoute =
   | { view: 'home' }
-  | { view: 'thread'; threadId: string }
+  | { view: 'thread'; threadId: string; runId?: string }
   | { view: 'search' }
   | { view: 'schedules' }
   | { view: 'tasks' }
@@ -13,9 +13,14 @@ export function parseRoute(hash: string): AppRoute {
   const [path = '', query = ''] = hash.split('?', 2);
   if (path.startsWith('#/thread/')) {
     const threadId = safeDecodeURIComponent(path.slice('#/thread/'.length));
+    const fields = parseQuery(query);
     return threadId === undefined || threadId.length === 0
       ? { view: 'home' }
-      : { view: 'thread', threadId };
+      : {
+          view: 'thread',
+          threadId,
+          ...(fields.runId === undefined ? {} : { runId: fields.runId })
+        };
   }
   if (path === '#/search') return { view: 'search' };
   if (path === '#/schedules') return { view: 'schedules' };
@@ -38,8 +43,13 @@ export function formatRoute(route: AppRoute): string {
   switch (route.view) {
     case 'home':
       return '#/';
-    case 'thread':
-      return `#/thread/${encodeURIComponent(route.threadId)}`;
+    case 'thread': {
+      const query = new URLSearchParams();
+      if (route.runId !== undefined) query.set('runId', route.runId);
+      const suffix = query.toString();
+      const path = `#/thread/${encodeURIComponent(route.threadId)}`;
+      return suffix.length === 0 ? path : `${path}?${suffix}`;
+    }
     case 'search':
       return '#/search';
     case 'schedules':
@@ -62,8 +72,8 @@ export function formatRoute(route: AppRoute): string {
   }
 }
 
-function parseQuery(query: string): { threadId?: string; path?: string } {
-  const fields: { threadId?: string; path?: string } = {};
+function parseQuery(query: string): { threadId?: string; path?: string; runId?: string } {
+  const fields: { threadId?: string; path?: string; runId?: string } = {};
   for (const pair of query.split('&')) {
     if (pair.length === 0) continue;
     const [rawKey = '', rawValue = ''] = pair.split('=', 2);
@@ -72,6 +82,7 @@ function parseQuery(query: string): { threadId?: string; path?: string } {
     if (key === undefined || value === undefined || value.length === 0) continue;
     if (key === 'threadId') fields.threadId = value;
     if (key === 'path') fields.path = value;
+    if (key === 'runId') fields.runId = value;
   }
   return fields;
 }

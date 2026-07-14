@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B3`，等待开始 |
+| 当前批次 | `P1-B3`，已通过（2026-07-14 18:19 CST）；下一批 `P1-B4` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -334,7 +334,7 @@ P2-B1 审批和连续失败体验
 | P0-B8 | P0 集成、重启和真实 smoke | `PASS` |
 | P1-B1 | 前端模型、服务和任务摘要模型 | `PASS` |
 | P1-B2 | 左侧“任务”区域 | `PASS` |
-| P1-B3 | “已安排”与任务会话互跳 | `NOT_STARTED` |
+| P1-B3 | “已安排”与任务会话互跳 | `PASS` |
 | P1-B4 | 任务会话头部 | `NOT_STARTED` |
 | P1-B5 | 能力令牌和内部路由 | `NOT_STARTED` |
 | P1-B6 | Schedule MCP 工具和逐 Run 注入 | `NOT_STARTED` |
@@ -1142,7 +1142,7 @@ feat(web): 在侧栏增加任务会话区域
 
 ### P1-B3：“已安排”与任务会话互跳
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P1-B2`
 
@@ -1184,6 +1184,19 @@ pnpm --filter @clawee/web typecheck
 ```
 
 **验收标准：** “已安排”负责管理，任务会话负责查看结果，两者能稳定互跳。
+
+**执行结果：**
+
+- Thread 路由支持可选 `runId`；Timeline 可按 Run 定位并复用现有目标高亮和滚动机制。
+- 手动创建后同步 Schedule 摘要并进入响应 `threadId`；编辑和暂停恢复同步全局摘要。
+- 任务标题、查看上次运行和立即执行统一进入绑定任务 Thread，诊断详情保留为时间线内
+  二级入口。
+- run-now 的 started、queued 和 skipped 状态均在任务会话中收敛；started 更新
+  RunRegistry 并订阅事件，queued/skipped 写入用户可见时间线消息。
+- P1-B3 专项测试 111 项、Web 全量 498 项、Web typecheck、生产 build 和
+  `git diff --check` 通过。
+- 受控 Chrome 验证桌面端互跳和 queued 提示，390px 移动端无横向溢出；控制台无错误
+  或警告。build 仅保留既有大 chunk 提示。
 
 **回滚边界：** 回滚导航接线和路由扩展，不改变已创建 Schedule。
 
@@ -2245,6 +2258,20 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：任务区状态依赖 `/tasks?status=all&limit=50` 提供全局活动状态，终态失败
   仍以 Schedule 摘要为准；build 继续报告两个既有主 chunk 超过 500 kB。
 - 下一步：执行 P1-B3，统一“已安排”页面到任务会话的导航和 Run 定位行为。
+
+### 2026-07-14 18:19 CST - P1-B3
+
+- 状态：`PASS`
+- 提交：`feat(web): 从已安排进入任务专属会话`
+  （SHA 以包含本日志的提交为准）
+- 已完成：Schedule 创建/编辑/暂停摘要同步、任务标题导航、上次 Run 路由定位、
+  run-now started/queued/skipped 收敛和 Timeline Run 高亮。
+- 验证：P1-B3 专项测试 111 项、Web 全量 498 项、Web typecheck、生产 build 和
+  `git diff --check` 通过；受控 Chrome 桌面和 390px 移动视口无溢出或控制台错误。
+- 未完成：任务会话头部的状态、下次运行时间和管理操作留到 P1-B4。
+- 风险或偏差：持久历史尚未公开 Clawee `runId`，因此当前 Run 定位覆盖活动/缓存 Run；
+  Schedule Run 公开时间线批次将在 P1-B10 补齐历史定位。build 继续报告既有大 chunk。
+- 下一步：执行 P1-B4，在任务会话头部接入状态、下次运行和管理操作。
 
 ### 日志模板
 
