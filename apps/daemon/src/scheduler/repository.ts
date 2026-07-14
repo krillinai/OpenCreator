@@ -271,6 +271,34 @@ export class ScheduleRepository {
     return this.update(input.id, { lastStatus: input.status });
   }
 
+  reconcileLastRunStatuses(): number {
+    const result = this.db
+      .prepare<{ updatedAt: string }>(
+        `
+        UPDATE schedules
+        SET last_status = (
+              SELECT runs.public_status
+              FROM runs
+              WHERE runs.id = schedules.last_run_id
+            ),
+            updated_at = @updatedAt
+        WHERE deleted_at IS NULL
+          AND last_run_id IS NOT NULL
+          AND last_status IN ('queued', 'running')
+          AND EXISTS (
+            SELECT 1
+            FROM runs
+            WHERE runs.id = schedules.last_run_id
+              AND runs.created_by = 'schedule'
+              AND runs.source_id = schedules.id
+              AND runs.public_status IN ('succeeded', 'failed', 'canceled')
+          )
+      `
+      )
+      .run({ updatedAt: this.now() });
+    return result.changes;
+  }
+
   insertOperation(input: InsertScheduleOperationInput): ScheduleOperationRecord {
     const id = this.operationIdFactory();
     const createdAt = this.now();

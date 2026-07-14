@@ -307,10 +307,12 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     },
 
     listSchedules() {
+      options.repository.reconcileLastRunStatuses();
       return { schedules: options.repository.list().map(toScheduleResponse) };
     },
 
     getSchedule(id) {
+      options.repository.reconcileLastRunStatuses();
       const schedule = options.repository.getById(id);
       return schedule === null ? undefined : toScheduleDetailResponse(schedule);
     },

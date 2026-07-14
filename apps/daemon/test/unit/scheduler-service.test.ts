@@ -152,6 +152,30 @@ describe('scheduler service', () => {
     });
   });
 
+  it('reconciles the latest run terminal status when reading schedules', () => {
+    const { service } = createFixture();
+    const schedule = service.createSchedule({
+      name: 'daily status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status'
+    });
+    service.runNow(schedule.id);
+    insertRun('run_0', {
+      sourceId: schedule.id,
+      publicStatus: 'succeeded',
+      internalStatus: 'succeeded'
+    });
+
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      lastRunId: 'run_0',
+      lastStatus: 'succeeded'
+    });
+    expect(service.listSchedules().schedules[0]).toMatchObject({
+      lastRunId: 'run_0',
+      lastStatus: 'succeeded'
+    });
+  });
+
   it('skips run-now when skip policy has an active run', () => {
     const { runManager, service } = createFixture();
     const schedule = service.createSchedule({
