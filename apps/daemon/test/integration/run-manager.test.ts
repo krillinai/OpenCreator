@@ -911,6 +911,42 @@ describe('run manager', () => {
     expect(completed).toMatchObject({ threadId: thread.id, status: 'succeeded' });
   });
 
+  it('resolves execution configuration from the thread when the caller only provides threadId', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-1' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager);
+
+    const run = await manager.createAndRun({
+      threadId: thread.id,
+      prompt: 'public schedule prompt',
+      executionPrompt: 'internal schedule prompt',
+      createdBy: 'schedule',
+      sourceId: 'sch_one'
+    });
+
+    expect(run).toMatchObject({ threadId: thread.id, status: 'succeeded' });
+    expect(manager.getRun(run.id)).toMatchObject({
+      threadId: thread.id,
+      cwd: thread.cwd,
+      profile: thread.profile,
+      sandbox: thread.sandbox,
+      createdBy: 'schedule',
+      sourceId: 'sch_one'
+    });
+    expect(fake.readPrompt()).toBe('internal schedule prompt');
+  });
+
   it('queues same-thread runs and starts the second after the first completes', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
     const fake = createFakeCodex(tempDir, {
@@ -1023,6 +1059,7 @@ describe('run manager', () => {
       submissionMode: 'interrupt_and_enqueue'
     });
 
+    expect(manager.hasActiveRunForThread(thread.id)).toBe(true);
     expect(regular).toMatchObject({
       status: 'queued',
       submissionMode: 'enqueue',
@@ -1049,6 +1086,7 @@ describe('run manager', () => {
     expect(manager.listRunsByThread(thread.id).filter(run => run.status === 'running')).toHaveLength(1);
     expect(manager.cancelRun(regular.id)).toBe(true);
     await waitForRunStatus(manager, regular.id, 'canceled');
+    expect(manager.hasActiveRunForThread(thread.id)).toBe(false);
   });
 
   it('keeps multiple interrupting follow-ups in FIFO order', async () => {

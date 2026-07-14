@@ -263,40 +263,6 @@ describe('schedule repository', () => {
     ]);
   });
 
-  it('detects active runs only for matching schedule source', () => {
-    const repository = createRepository();
-    insertRun('run_created', {
-      createdBy: 'schedule',
-      sourceId: 'sch_created',
-      publicStatus: 'failed',
-      internalStatus: 'created'
-    });
-    insertRun('run_spawning', {
-      createdBy: 'schedule',
-      sourceId: 'sch_spawning',
-      publicStatus: 'failed',
-      internalStatus: 'spawning'
-    });
-    insertRun('run_queued', { createdBy: 'schedule', sourceId: 'sch_queued', publicStatus: 'queued' });
-    insertRun('run_running', { createdBy: 'schedule', sourceId: 'sch_running', publicStatus: 'running' });
-    insertRun('run_canceling', {
-      createdBy: 'schedule',
-      sourceId: 'sch_canceling',
-      publicStatus: 'canceled',
-      internalStatus: 'canceling'
-    });
-    insertRun('run_done', { createdBy: 'schedule', sourceId: 'sch_done', publicStatus: 'succeeded' });
-    insertRun('run_api', { createdBy: 'api', sourceId: 'sch_one', publicStatus: 'running' });
-
-    expect(repository.hasActiveRunForSource('schedule', 'sch_created')).toBe(true);
-    expect(repository.hasActiveRunForSource('schedule', 'sch_spawning')).toBe(true);
-    expect(repository.hasActiveRunForSource('schedule', 'sch_queued')).toBe(true);
-    expect(repository.hasActiveRunForSource('schedule', 'sch_running')).toBe(true);
-    expect(repository.hasActiveRunForSource('schedule', 'sch_canceling')).toBe(true);
-    expect(repository.hasActiveRunForSource('schedule', 'sch_done')).toBe(false);
-    expect(repository.hasActiveRunForSource('schedule', 'sch_one')).toBe(false);
-    expect(repository.hasActiveRunForSource('schedule', 'missing')).toBe(false);
-  });
 });
 
 function createRepository(input: {
@@ -338,29 +304,4 @@ function scheduleInput(overrides: Partial<InsertScheduleInput> = {}): InsertSche
     nextRunAt: '2026-07-06T09:00:00.000Z',
     ...overrides
   };
-}
-
-function insertRun(
-  id: string,
-  input: { createdBy: string; sourceId: string; publicStatus: string; internalStatus?: string }
-): void {
-  db
-    ?.prepare(
-      `
-      INSERT INTO runs (
-        id, public_status, internal_status, created_by, source_id, profile, cwd, canonical_cwd,
-        workspace_mode, sandbox, codex_version, codex_bin, codex_home, normalizer_version
-      ) VALUES (
-        @id, @publicStatus, @internalStatus, @createdBy, @sourceId, 'default', @cwd, @cwd,
-        'external', 'read-only', 'test', 'codex', @codexHome, 1
-      )
-    `
-    )
-    .run({
-      id,
-      ...input,
-      internalStatus: input.internalStatus ?? input.publicStatus,
-      cwd: tempDir,
-      codexHome: join(tempDir, 'codex-home')
-    });
 }

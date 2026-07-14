@@ -352,24 +352,6 @@ export class ScheduleRepository {
     return rows.map(mapOperation);
   }
 
-  hasActiveRunForSource(createdBy: 'schedule', sourceId: string): boolean {
-    const row = this.db
-      .prepare<{ createdBy: 'schedule'; sourceId: string }>(
-        `
-        SELECT 1 AS active
-        FROM runs
-        WHERE created_by = @createdBy
-          AND source_id = @sourceId
-          AND (
-            public_status IN ('queued', 'running')
-            OR internal_status IN ('created', 'queued', 'spawning', 'running', 'canceling')
-          )
-        LIMIT 1
-      `
-      )
-      .get({ createdBy, sourceId }) as { active: number } | undefined;
-    return row !== undefined;
-  }
 }
 
 function mapSchedule(row: ScheduleRow): ScheduleRecord {

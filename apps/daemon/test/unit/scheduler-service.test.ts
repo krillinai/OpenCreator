@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RunManager } from '../../src/runs/manager.js';
+import type { CreateRunInput } from '../../src/runs/types.js';
 import { createScheduleCoordinator } from '../../src/scheduler/coordinator.js';
 import { ScheduleRepository } from '../../src/scheduler/repository.js';
 import { createSchedulerService, SchedulerError } from '../../src/scheduler/service.js';
@@ -122,20 +123,16 @@ describe('scheduler service', () => {
     const response = service.runNow(schedule.id);
 
     expect(response).toMatchObject({
-      run: { id: 'run_0', status: 'running' },
+      run: { id: 'run_0', threadId: schedule.threadId, status: 'running' },
       skipped: false,
       queued: false
     });
     expect(runManager.startRun).toHaveBeenCalledWith({
+      threadId: schedule.threadId,
       prompt: 'Summarize project status',
       executionPrompt: expect.stringMatching(
-        /已经到达执行时间[\s\S]*不要询问执行时间[\s\S]*Summarize project status/
+        /Clawee 已经触发[\s\S]*任务名称：daily status[\s\S]*本次触发时间：2026-07-06T00:00:00.000Z[\s\S]*Summarize project status/
       ),
-      cwd: tempDir,
-      profile: 'default',
-      sandbox: 'workspace-write',
-      model: undefined,
-      reasoning: undefined,
       createdBy: 'schedule',
       sourceId: schedule.id,
       timeoutMs: 2500
@@ -168,13 +165,9 @@ describe('scheduler service', () => {
     service.runNow(schedule.id);
 
     expect(runManager.startRun).toHaveBeenCalledWith({
+      threadId: schedule.threadId,
       prompt: 'Summarize project status',
       executionPrompt: expect.stringContaining('Summarize project status'),
-      cwd: tempDir,
-      profile: 'default',
-      sandbox: 'workspace-write',
-      model: undefined,
-      reasoning: undefined,
       createdBy: 'schedule',
       sourceId: schedule.id,
       timeoutMs: undefined
@@ -213,11 +206,7 @@ describe('scheduler service', () => {
       prompt: 'Summarize project status',
       concurrencyPolicy: 'skip'
     });
-    insertRun('active_run', {
-      sourceId: schedule.id,
-      publicStatus: 'running',
-      internalStatus: 'running'
-    });
+    runManager.hasActiveRunForThread.mockReturnValue(true);
 
     const response = service.runNow(schedule.id);
 
@@ -227,6 +216,7 @@ describe('scheduler service', () => {
       queued: false
     });
     expect(runManager.startRun).not.toHaveBeenCalled();
+    expect(runManager.hasActiveRunForThread).toHaveBeenCalledWith(schedule.threadId);
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'skip_concurrency',
       status: 'skipped'
@@ -245,11 +235,7 @@ describe('scheduler service', () => {
       prompt: 'Summarize project status',
       concurrencyPolicy: 'queue'
     });
-    insertRun('active_run', {
-      sourceId: schedule.id,
-      publicStatus: 'running',
-      internalStatus: 'running'
-    });
+    runManager.hasActiveRunForThread.mockReturnValue(true);
 
     const first = service.runNow(schedule.id);
     const second = service.runNow(schedule.id);
@@ -265,17 +251,13 @@ describe('scheduler service', () => {
       2
     );
 
-    db?.prepare(
-      `
-      UPDATE runs
-      SET public_status = 'succeeded',
-          internal_status = 'succeeded'
-      WHERE id = 'active_run'
-    `
-    ).run();
+    runManager.hasActiveRunForThread.mockReturnValue(false);
     service.processPendingTriggersForTest?.();
 
     expect(runManager.startRun).toHaveBeenCalledTimes(1);
+    expect(runManager.startRun).toHaveBeenLastCalledWith(
+      expect.objectContaining({ threadId: schedule.threadId })
+    );
     expect(service.getSchedule(schedule.id)).toMatchObject({
       pendingTrigger: false,
       lastStatus: 'running',
@@ -284,6 +266,27 @@ describe('scheduler service', () => {
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'run_queued',
       status: 'succeeded'
+    });
+  });
+
+  it('keeps a coalesced pending trigger while an interrupting user run still owns the thread', () => {
+    const { runManager, service } = createFixture();
+    const schedule = service.createSchedule({
+      name: 'daily status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status',
+      concurrencyPolicy: 'queue'
+    });
+    runManager.hasActiveRunForThread.mockReturnValue(true);
+
+    service.runNow(schedule.id);
+    service.processPendingTriggersForTest?.();
+
+    expect(runManager.hasActiveRunForThread).toHaveBeenLastCalledWith(schedule.threadId);
+    expect(runManager.startRun).not.toHaveBeenCalled();
+    expect(service.getSchedule(schedule.id)).toMatchObject({
+      pendingTrigger: true,
+      lastStatus: 'queued'
     });
   });
 
@@ -364,28 +367,29 @@ describe('scheduler service', () => {
     expect(cleared).toContain(queueTimer?.handle);
   });
 
-  it('allows parallel policy to create overlapping runs', () => {
-    const { runManager, service } = createFixture();
+  it('treats a surviving legacy parallel policy as queue and records a diagnostic', () => {
+    const warn = vi.fn();
+    const { repository, runManager, service } = createFixture({ warn });
     const schedule = service.createSchedule({
       name: 'daily status',
       cron: '0 9 * * *',
       prompt: 'Summarize project status',
-      concurrencyPolicy: 'parallel'
+      concurrencyPolicy: 'queue'
     });
-    insertRun('active_run', {
-      sourceId: schedule.id,
-      publicStatus: 'running',
-      internalStatus: 'running'
-    });
+    repository.update(schedule.id, { concurrencyPolicy: 'parallel' });
+    runManager.hasActiveRunForThread.mockReturnValue(true);
 
     const response = service.runNow(schedule.id);
 
     expect(response).toMatchObject({
-      run: { id: 'run_0', status: 'running' },
+      run: null,
       skipped: false,
-      queued: false
+      queued: true
     });
-    expect(runManager.startRun).toHaveBeenCalledTimes(1);
+    expect(runManager.startRun).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      `Schedule ${schedule.id} still uses legacy parallel concurrency; treating it as queue`
+    );
   });
 
   it('records failed run-now operations when run manager throws', () => {
@@ -463,11 +467,7 @@ describe('scheduler service', () => {
       cwd: tempDir,
       concurrencyPolicy: 'skip'
     });
-    insertRun('active_run', {
-      sourceId: schedule.id,
-      publicStatus: 'running',
-      internalStatus: 'running'
-    });
+    runManager.hasActiveRunForThread.mockReturnValue(true);
 
     setNow('2026-07-06T09:00:00.000Z');
     timers[0]?.callback();
@@ -637,7 +637,7 @@ describe('scheduler service', () => {
   });
 });
 
-function createFixture(options: { autostart?: boolean } = {}) {
+function createFixture(options: { autostart?: boolean; warn?(message: string): void } = {}) {
   tempDir = mkdtempSync(join(tmpdir(), 'clawee-scheduler-service-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const repository = new ScheduleRepository(db, {
@@ -653,7 +653,12 @@ function createFixture(options: { autostart?: boolean } = {}) {
   });
   let runCount = 0;
   const runManager = {
-    startRun: vi.fn(() => ({ id: `run_${runCount++}`, status: 'running' as const })),
+    startRun: vi.fn((input: CreateRunInput) => ({
+      id: `run_${runCount++}`,
+      threadId: input.threadId,
+      status: 'running' as const,
+      submissionMode: input.submissionMode ?? 'enqueue'
+    })),
     getRun: vi.fn(),
     hasActiveRunForThread: vi.fn(),
     createAndRun: vi.fn(),
@@ -667,7 +672,8 @@ function createFixture(options: { autostart?: boolean } = {}) {
     repository,
     runManager: runManager as unknown as RunManager,
     clock: { now: () => new Date('2026-07-06T00:00:00.000Z') },
-    autostart: options.autostart ?? false
+    autostart: options.autostart ?? false,
+    warn: options.warn
   });
   const threadManager = createThreadManager({ db, dataDir: tempDir });
   const coordinator = createScheduleCoordinator({

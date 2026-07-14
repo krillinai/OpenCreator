@@ -6,24 +6,35 @@ import type {
   SandboxMode
 } from '@clawee/protocol';
 
-export type CreateRunInput = {
+type CreateRunBase = {
   prompt: string;
   executionPrompt?: string;
   contextItems?: RunContextItem[];
-  cwd: string;
-  profile: string;
-  sandbox: SandboxMode;
-  threadId?: string;
   resumeMode?: 'auto' | 'new_thread' | 'resume_thread';
   codexThreadId?: string;
-  model?: string;
-  reasoning?: ReasoningEffort;
   createdBy?: 'api' | 'schedule';
   sourceId?: string;
   timeoutMs?: number;
   imagePaths?: string[];
   attachmentIds?: string[];
   submissionMode?: RunSubmissionMode;
+};
+
+type RunExecutionConfig = {
+  cwd: string;
+  profile: string;
+  sandbox: SandboxMode;
+  model?: string;
+  reasoning?: ReasoningEffort;
+};
+
+export type CreateRunInput = CreateRunBase & (
+  | ({ threadId: string } & Partial<RunExecutionConfig>)
+  | ({ threadId?: undefined } & RunExecutionConfig)
+);
+
+export type ResolvedCreateRunInput = CreateRunBase & RunExecutionConfig & {
+  threadId?: string;
 };
 
 export type CreatedRun = {

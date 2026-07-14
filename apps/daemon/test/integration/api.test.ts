@@ -563,7 +563,7 @@ describe('runtime api', () => {
       name: 'daily status',
       promptPreviewRedacted: 'Summarize status',
       timeoutMs: 5000,
-      concurrencyPolicy: 'skip',
+      concurrencyPolicy: 'queue',
       misfirePolicy: 'skip'
     });
     expect(created.json()).not.toHaveProperty('prompt');
@@ -618,8 +618,16 @@ describe('runtime api', () => {
 
     const runNow = await authPost(`/schedules/${id}/run-now`, {});
     expect(runNow.statusCode).toBe(202);
-    expect(runNow.json().run).toMatchObject({ status: 'running' });
+    expect(runNow.json().run).toMatchObject({ threadId, status: 'running' });
     await waitForRunStatus(runNow.json().run.id, 'succeeded');
+    expect((await authGet(`/runs/${runNow.json().run.id}`)).json()).toMatchObject({
+      threadId,
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      createdBy: 'schedule',
+      sourceId: id
+    });
 
     const operations = await authGet(`/schedules/${id}/operations`);
     expect(operations.statusCode).toBe(200);
@@ -748,6 +756,17 @@ describe('runtime api', () => {
     });
     expect(invalidCron.statusCode).toBe(422);
     expect(invalidCron.json().error.code).toBe('SCHEDULE_INVALID');
+
+    const invalidParallel = await authPost('/schedules', {
+      name: 'parallel status',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'Summarize status',
+      cwd: tempDir,
+      concurrencyPolicy: 'parallel'
+    });
+    expect(invalidParallel.statusCode).toBe(422);
+    expect(invalidParallel.json().error.code).toBe('SCHEDULE_INVALID');
 
     const missing = await authGet('/schedules/sch_missing');
     expect(missing.statusCode).toBe(404);

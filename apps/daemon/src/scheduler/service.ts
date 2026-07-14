@@ -59,6 +59,7 @@ export type SchedulerServiceOptions = {
   timers?: SchedulerTimers;
   triggerGraceMs?: number;
   autostart?: boolean;
+  warn?(message: string): void;
 };
 
 const DEFAULT_TRIGGER_GRACE_MS = 30_000;
@@ -76,6 +77,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     clearTimeout: (handle: TimerHandle | unknown) => clearTimeout(handle as TimerHandle)
   };
   const triggerGraceMs = options.triggerGraceMs ?? DEFAULT_TRIGGER_GRACE_MS;
+  const warn = options.warn ?? (message => console.warn(message));
   let timer: TimerHandle | unknown;
   let queueTimer: TimerHandle | unknown;
   let started = false;
@@ -85,9 +87,11 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     operation: 'run_now' | 'timer_trigger' | 'run_queued',
     ranAt: string
   ): RunScheduleNowResponse {
-    if (operation !== 'run_queued' && schedule.concurrencyPolicy !== 'parallel') {
-      const active = options.repository.hasActiveRunForSource('schedule', schedule.id);
-      if (active && schedule.concurrencyPolicy === 'skip') {
+    const bound = requireBoundSchedule(schedule);
+    const concurrencyPolicy = resolveConcurrencyPolicy(bound);
+    if (operation !== 'run_queued') {
+      const active = options.runManager.hasActiveRunForThread(bound.threadId);
+      if (active && concurrencyPolicy === 'skip') {
         const skipped = options.repository.recordSkipped({ id: schedule.id, status: 'skipped' });
         if (skipped === null) throw notFound();
         options.repository.insertOperation({
@@ -102,7 +106,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
           queued: false
         };
       }
-      if (active && schedule.concurrencyPolicy === 'queue') {
+      if (active && concurrencyPolicy === 'queue') {
         const queued = options.repository.setPendingTrigger(schedule.id, true);
         if (queued === null) throw notFound();
         const updated = options.repository.recordSkipped({ id: schedule.id, status: 'queued' });
@@ -122,24 +126,20 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
       }
     }
 
-    return triggerSchedule(schedule, operation, ranAt);
+    return triggerSchedule(bound, operation, ranAt);
   }
 
   function triggerSchedule(
-    schedule: ScheduleRecord,
+    schedule: BoundScheduleRecord,
     operation: 'run_now' | 'timer_trigger' | 'run_queued',
     ranAt: string
   ): RunScheduleNowResponse {
     let run;
     try {
       run = options.runManager.startRun({
+        threadId: schedule.threadId,
         prompt: schedule.prompt,
-        executionPrompt: createScheduleExecutionPrompt(schedule.prompt),
-        cwd: schedule.cwd,
-        profile: schedule.profile,
-        sandbox: schedule.sandbox,
-        model: schedule.model ?? undefined,
-        reasoning: schedule.reasoning ?? undefined,
+        executionPrompt: createScheduleExecutionPrompt(schedule, ranAt),
         createdBy: 'schedule',
         sourceId: schedule.id,
         timeoutMs: schedule.timeoutMs ?? undefined
@@ -260,8 +260,9 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
   function processPendingTriggers(): void {
     try {
       for (const schedule of options.repository.listPendingTriggers()) {
-        if (options.repository.hasActiveRunForSource('schedule', schedule.id)) continue;
         try {
+          const bound = requireBoundSchedule(schedule);
+          if (options.runManager.hasActiveRunForThread(bound.threadId)) continue;
           handleTrigger(schedule, 'run_queued', clock.now().toISOString());
         } catch (error) {
           recordQueuedTriggerFailure(schedule, error);
@@ -286,6 +287,14 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
       errorCode: 'INTERNAL_ERROR',
       errorMessage: formatError(error)
     });
+  }
+
+  function resolveConcurrencyPolicy(schedule: BoundScheduleRecord): 'skip' | 'queue' {
+    if (schedule.concurrencyPolicy !== 'parallel') return schedule.concurrencyPolicy;
+    warn(
+      `Schedule ${schedule.id} still uses legacy parallel concurrency; treating it as queue`
+    );
+    return 'queue';
   }
 
   const service: SchedulerService = {
@@ -430,13 +439,23 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function createScheduleExecutionPrompt(prompt: string): string {
+function createScheduleExecutionPrompt(
+  schedule: Pick<BoundScheduleRecord, 'name' | 'prompt'>,
+  ranAt: string
+): string {
   return [
-    '这是一个已经到达执行时间的计划任务。',
-    '请立即执行任务，不要重新创建、修改计划任务，也不要询问执行时间。',
-    '如果任务内容是提醒，请直接输出此刻应发给用户的简短提醒；如果是其他任务，请直接完成并返回结果。',
+    '这是 Clawee 已经触发的一次计划任务执行。',
     '',
+    '执行规则：',
+    '1. 立即完成本次任务，不要重新创建或修改计划任务。',
+    '2. 不要询问执行时间，也不要只解释如何完成。',
+    '3. 可以使用当前会话可用的文件、Shell、Skills 和 MCP。',
+    '4. 如果需要用户审批，正常发起审批并等待。',
+    '5. 完成后直接给出本次结果；如果生成了文件，给出可点击的文件路径。',
+    '',
+    `任务名称：${schedule.name}`,
+    `本次触发时间：${ranAt}`,
     '任务内容：',
-    prompt
+    schedule.prompt
   ].join('\n');
 }

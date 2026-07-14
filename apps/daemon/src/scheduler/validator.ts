@@ -56,7 +56,7 @@ export type ParseScheduleOptions = {
 
 const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;
 const REASONING_EFFORTS = ['default', 'low', 'medium', 'high', 'xhigh'] as const;
-const CONCURRENCY_POLICIES = ['skip', 'queue', 'parallel'] as const;
+const CONCURRENCY_POLICIES = ['skip', 'queue'] as const;
 const MIN_TIMEOUT_MS = 1_000;
 const MAX_TIMEOUT_MS = 86_400_000;
 
@@ -240,9 +240,9 @@ function parseCommonFields(
   }
 
   if (applyDefaults || body.concurrencyPolicy !== undefined) {
-    const policy = body.concurrencyPolicy === undefined ? 'skip' : body.concurrencyPolicy;
+    const policy = body.concurrencyPolicy === undefined ? 'queue' : body.concurrencyPolicy;
     if (!isOneOf(policy, CONCURRENCY_POLICIES)) {
-      return { ok: false, code: 'SCHEDULE_INVALID', message: 'concurrencyPolicy must be skip, queue, or parallel' };
+      return { ok: false, code: 'SCHEDULE_INVALID', message: 'concurrencyPolicy must be skip or queue' };
     }
     value.concurrencyPolicy = policy;
   }

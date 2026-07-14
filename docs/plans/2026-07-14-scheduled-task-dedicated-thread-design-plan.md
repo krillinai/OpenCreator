@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P0-B5`，等待开始 |
+| 当前批次 | `P0-B6`，等待开始 |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -328,7 +328,7 @@ P2-B1 审批和连续失败体验
 | P0-B2 | Thread purpose、scheduleId 和配置保护 | `PASS` |
 | P0-B3 | ScheduleCoordinator 手动创建事务 | `PASS` |
 | P0-B4 | 原子更新、暂停恢复和删除 | `PASS` |
-| P0-B5 | 固定 Thread 触发与 Thread 级并发 | `NOT_STARTED` |
+| P0-B5 | 固定 Thread 触发与 Thread 级并发 | `PASS` |
 | P0-B6 | 旧绑定修复和启动顺序 | `NOT_STARTED` |
 | P0-B7 | legacy Schedule session 分类 | `NOT_STARTED` |
 | P0-B8 | P0 集成、重启和真实 smoke | `NOT_STARTED` |
@@ -694,7 +694,7 @@ feat(scheduler): 原子同步任务配置和会话生命周期
 
 ### P0-B5：固定 Thread 触发与 Thread 级并发
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P0-B4`
 
@@ -749,6 +749,20 @@ pnpm --filter @clawee/daemon typecheck
 - 同一任务会话不存在两个并行写入 Run。
 - queue 合并、skip 记录和用户打断行为符合规格。
 - RunManager 仍是唯一执行和排队系统。
+
+**执行结果：**
+
+- Scheduler 自动触发、立即执行和 pending 补执行均只向 RunManager 传固定 `threadId`、
+  公开 prompt、内部 executionPrompt 和 Schedule 来源元数据；执行配置统一从 Thread 解析。
+- 并发判断已改为 Thread 级活动/排队 Run。`queue` 重复触发合并为一个 pending 标记，
+  `skip` 不创建 Run，用户 `interrupt_and_enqueue` 期间 pending 保持不变。
+- 新 Schedule 默认使用 `queue`，创建和更新均拒绝 `parallel`；异常遗留 `parallel`
+  记录按 `queue` 执行并输出不含任务内容的诊断警告。
+- P0-B5 六文件专项测试：197 项通过。
+- daemon 全量测试：582 项通过，13 项真实 Codex smoke 按环境开关跳过。
+- Web 全量测试：479 项通过。
+- Protocol、daemon、Web typecheck、全仓 build 和 `git diff --check` 均通过；
+  Vite 仅保留既有大 chunk 警告。
 
 **回滚边界：** 可回滚 Scheduler 触发逻辑；不得重新开放 `parallel`，不得删除已生成 Run。
 
@@ -2066,6 +2080,20 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：真实 Codex smoke 13 项按环境开关跳过，继续登记到最终统一验收；构建仅有
   既有 Vite 大 chunk 警告。
 - 下一步：执行 P0-B5，使自动触发和立即执行复用固定任务 Thread，并按 Thread 串行。
+
+### 2026-07-14 14:57 CST - P0-B5
+
+- 状态：`PASS`
+- 提交：`feat(scheduler): 使用固定任务会话串行触发`
+  （SHA 以包含本日志的提交为准）
+- 已完成：Schedule Run 固定 Thread 触发、RunManager Thread 配置解析、Thread 级
+  queue/skip、pending 合并、用户打断期间 pending 保留、默认 queue 和 parallel 禁用。
+- 验证：P0-B5 六文件专项测试 197 项、daemon 全量 582 项、Web 全量 479 项通过；
+  Protocol/daemon/Web typecheck、全仓 build 和 `git diff --check` 均通过。
+- 未完成：旧 Schedule 自动绑定修复和 Scheduler 启动顺序留到 P0-B6。
+- 风险或偏差：真实 Codex smoke 13 项按环境开关跳过，继续登记到最终统一验收；构建仅有
+  既有 Vite 大 chunk 警告。
+- 下一步：执行 P0-B6，在 Scheduler 启动前幂等修复旧 Schedule 的任务 Thread 绑定。
 
 ### 日志模板
 

@@ -75,7 +75,7 @@ describe('scheduler validator', () => {
         cwd: tempDir,
         canonicalCwd: realpathSync(tempDir),
         sandbox: 'workspace-write',
-        concurrencyPolicy: 'skip',
+        concurrencyPolicy: 'queue',
         misfirePolicy: 'skip',
         nextRunAt: expect.any(String)
       }
@@ -171,6 +171,32 @@ describe('scheduler validator', () => {
         reasoning: null,
         timeoutMs: null
       }
+    });
+  });
+
+  it('rejects creating or updating schedules with parallel concurrency', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    const options = {
+      now: '2026-07-06T00:00:00.000Z',
+      defaultCwd: tempDir,
+      profileValidator
+    };
+
+    expect(parseCreateScheduleRequest({
+      name: 'parallel status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize status',
+      cwd: tempDir,
+      concurrencyPolicy: 'parallel'
+    }, options)).toMatchObject({
+      ok: false,
+      code: 'SCHEDULE_INVALID'
+    });
+    expect(parseUpdateScheduleRequest({
+      concurrencyPolicy: 'parallel'
+    }, options)).toMatchObject({
+      ok: false,
+      code: 'SCHEDULE_INVALID'
     });
   });
 });

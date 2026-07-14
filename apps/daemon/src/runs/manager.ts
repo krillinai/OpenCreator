@@ -37,7 +37,11 @@ import {
   type OrderedLogWriter,
   type OrderedLogWriterMetrics
 } from './ordered-log-writer.js';
-import type { CreatedRun, CreateRunInput } from './types.js';
+import type {
+  CreatedRun,
+  CreateRunInput,
+  ResolvedCreateRunInput
+} from './types.js';
 
 export type ThreadAccess = {
   getThread(id: string): RuntimeThread | undefined;
@@ -116,7 +120,7 @@ type ActiveRun = {
 
 type QueuedRun = {
   id: string;
-  input: CreateRunInput;
+  input: ResolvedCreateRunInput;
   runDir: string;
 };
 
@@ -182,23 +186,20 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   const manager: RunManager = {
     startRun(input: CreateRunInput): CreatedRun {
       if (closing) throw new Error('Run manager is closing');
-      input = {
-        ...input,
-        cwd: expandHome(input.cwd, options.homeDir ?? homedir())
-      };
-      const thread = input.threadId === undefined
+      const runInput = resolveCreateRunInput(input);
+      const thread = runInput.threadId === undefined
         ? undefined
-        : options.threadAccess?.getThread(input.threadId);
-      const resolvedResumeMode = resolveResumeMode(input, thread);
+        : options.threadAccess?.getThread(runInput.threadId);
+      const resolvedResumeMode = resolveResumeMode(runInput, thread);
       const codexThreadId = thread?.codexThreadId ?? undefined;
-      const id = insertInitialRun(input, resolvedResumeMode, codexThreadId);
+      const id = insertInitialRun(runInput, resolvedResumeMode, codexThreadId);
       const runDir = join(options.dataDir, 'runs', id);
 
-      if (input.threadId !== undefined && runningThreadRun.has(input.threadId)) {
+      if (runInput.threadId !== undefined && runningThreadRun.has(runInput.threadId)) {
         updateStatus(id, 'queued', 'queued');
         runs.setRunQueueState(id, 'queued');
         void publishStatus(id, 1, 'queued', publish, {
-          threadId: input.threadId,
+          threadId: runInput.threadId,
           codexThreadId
         }).catch(() => undefined);
         let resolveCompletion!: (run: CreatedRun) => void;
@@ -207,9 +208,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         });
         runCompletions.set(id, completion);
         queuedCompletionResolvers.set(id, resolveCompletion);
-        const queue = threadQueues.get(input.threadId) ?? [];
-        const queuedRun = { id, input, runDir };
-        const submissionMode = input.submissionMode ?? 'enqueue';
+        const queue = threadQueues.get(runInput.threadId) ?? [];
+        const queuedRun = { id, input: runInput, runDir };
+        const submissionMode = runInput.submissionMode ?? 'enqueue';
         let queuePosition: number;
         if (submissionMode === 'interrupt_and_enqueue') {
           const firstRegularIndex = queue.findIndex(
@@ -222,9 +223,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           queue.push(queuedRun);
           queuePosition = queue.length;
         }
-        threadQueues.set(input.threadId, queue);
+        threadQueues.set(runInput.threadId, queue);
         if (submissionMode === 'interrupt_and_enqueue') {
-          const activeRunId = runningThreadRun.get(input.threadId);
+          const activeRunId = runningThreadRun.get(runInput.threadId);
           const activeRow = activeRunId === undefined ? undefined : runs.getRun(activeRunId);
           if (activeRunId !== undefined && activeRow?.internal_status !== 'canceling') {
             manager.cancelRun(activeRunId);
@@ -232,14 +233,14 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         }
         return {
           id,
-          threadId: input.threadId,
+          threadId: runInput.threadId,
           status: 'queued',
           submissionMode,
           queuePosition
         };
       }
 
-      return startExistingRun({ id, input, runDir });
+      return startExistingRun({ id, input: runInput, runDir });
     },
 
     async createAndRun(input: CreateRunInput): Promise<CreatedRun> {
@@ -1056,7 +1057,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   }
 
   function insertInitialRun(
-    input: CreateRunInput,
+    input: ResolvedCreateRunInput,
     resolvedResumeMode: 'independent' | 'new_thread' | 'resume_thread',
     codexThreadId?: string
   ): string {
@@ -1126,6 +1127,32 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     return id;
   }
 
+  function resolveCreateRunInput(input: CreateRunInput): ResolvedCreateRunInput {
+    if (input.threadId !== undefined && options.threadAccess !== undefined) {
+      const thread = options.threadAccess.getThread(input.threadId);
+      if (thread === undefined) throw new Error(`Thread not found: ${input.threadId}`);
+      if (thread.status === 'archived') throw new Error(`Thread is archived: ${input.threadId}`);
+      return {
+        ...input,
+        cwd: expandHome(thread.cwd, options.homeDir ?? homedir()),
+        profile: thread.profile,
+        sandbox: thread.sandbox,
+        model: thread.model ?? undefined,
+        reasoning: thread.reasoning ?? undefined
+      };
+    }
+
+    if (input.cwd === undefined || input.profile === undefined || input.sandbox === undefined) {
+      throw new Error('Run execution configuration is required when thread access is unavailable');
+    }
+    return {
+      ...input,
+      cwd: expandHome(input.cwd, options.homeDir ?? homedir()),
+      profile: input.profile,
+      sandbox: input.sandbox
+    };
+  }
+
   function hasDoneEvent(runId: string): boolean {
     return runs.listRunEvents(runId).some(event => event.type === 'done');
   }
@@ -1167,7 +1194,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       options.threadAccess?.getThread(queued.threadId)
     );
     const codexThreadId = row?.codex_thread_id ?? undefined;
-    const runInput: CreateRunInput = { ...queued.input, threadId: queued.threadId };
+    const runInput: ResolvedCreateRunInput = { ...queued.input, threadId: queued.threadId };
 
     writeJson(join(queued.runDir, 'diagnostics.json'), {
       ...buildThreadRunDiagnosticsMetadata({
@@ -1403,7 +1430,7 @@ function writeJson(path: string, value: unknown): void {
 }
 
 function buildRunArgv(
-  input: CreateRunInput,
+  input: ResolvedCreateRunInput,
   resumeMode: ResolvedResumeMode,
   codexThreadId?: string
 ): string[] | undefined {
@@ -1429,7 +1456,7 @@ function buildRunArgv(
 }
 
 function buildThreadRunDiagnosticsMetadata(input: {
-  runInput: CreateRunInput;
+  runInput: ResolvedCreateRunInput;
   resumeMode: ResolvedResumeMode;
   codexThreadId?: string;
   argv?: string[];
