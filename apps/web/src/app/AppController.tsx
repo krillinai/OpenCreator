@@ -61,7 +61,6 @@ import {
   type ComposerSlashCommand
 } from '../features/runs/Composer.js';
 import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
-import { createNaturalLanguageScheduleRequest } from '../features/schedules/schedule-natural-language.js';
 import { createScheduleTaskSummaries } from '../features/schedules/schedule-task-model.js';
 import { ScheduleThreadHeader } from '../features/schedules/ScheduleThreadHeader.js';
 import {
@@ -123,6 +122,7 @@ type AppFileService = {
 type CapabilityService = ReturnType<typeof createCapabilityService>;
 type SkillMarketService = ReturnType<typeof createSkillMarketService>;
 type ThreadService = ReturnType<typeof createThreadService>;
+type ScheduleService = ReturnType<typeof createScheduleService>;
 type SearchService = ReturnType<typeof createSearchService>;
 type PendingRunStart = {
   id: string;
@@ -172,7 +172,7 @@ function canScrollVertically(
 }
 const DYNAMIC_BACKGROUND_STORAGE_KEY = 'clawee.preferences.dynamicBackground';
 const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v2';
-const SCHEDULE_CREATION_TITLE = '创建已安排任务';
+const SCHEDULE_DRAFT_TITLE = '任务草稿';
 const SCHEDULE_CREATION_DRAFT =
   '我们一起来设置一个已安排任务吧。首先，说明已安排任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。';
 const CapabilitiesPage = lazy(() => import('../features/capabilities/CapabilitiesPage.js'));
@@ -319,16 +319,18 @@ export function AppController(props: AppControllerProps) {
   const capabilityServiceRef = useRef<CapabilityService | null>(null);
   const skillMarketServiceRef = useRef<SkillMarketService | null>(null);
   const threadServiceRef = useRef<ThreadService | null>(null);
+  const scheduleServiceRef = useRef<ScheduleService | null>(null);
+  const runtimeThreadsRef = useRef(runtimeThreads);
   const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
   const activeViewRef = useRef(state.activeView);
   const selectedThreadIdRef = useRef(state.selectedThreadId);
   const taskStatusesRef = useRef(new Map<string, TaskItem['status']>());
   const taskBaselineReadyRef = useRef(false);
-  const scheduleCreationInFlightThreadIdsRef = useRef(new Set<string>());
   const nextComposerDraftIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
   runRegistryRef.current = runRegistry;
+  runtimeThreadsRef.current = runtimeThreads;
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -754,12 +756,19 @@ export function AppController(props: AppControllerProps) {
     capabilityServiceRef.current = capabilityService;
     skillMarketServiceRef.current = skillMarketService;
     threadServiceRef.current = threadService;
+    scheduleServiceRef.current = scheduleService;
     skillMarketRuntimeGenerationRef.current += 1;
     skillMarketMutationInFlightRef.current = false;
     skillMarketUseInFlightRef.current = false;
     setSkillMarketOperation(undefined);
     setSkillMarketUseError(undefined);
-  }, [capabilityService, connectionState.status, skillMarketService, threadService]);
+  }, [
+    capabilityService,
+    connectionState.status,
+    scheduleService,
+    skillMarketService,
+    threadService
+  ]);
 
   useEffect(() => {
     let canceled = false;
@@ -1313,116 +1322,12 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
-  function isSelectedScheduleCreationConversation(): boolean {
-    return selectedThread?.title?.trim() === SCHEDULE_CREATION_TITLE
-      || selectedConversation?.title.trim() === SCHEDULE_CREATION_TITLE;
-  }
-
-  async function submitScheduleCreationPrompt(
-    prompt: string,
-    config?: ComposerRunConfig,
-    attachments: ComposerAttachment[] = []
-  ): Promise<boolean> {
-    const threadId = state.selectedThreadId;
-    if (threadId === undefined || scheduleService === null) return false;
-    if (scheduleCreationInFlightThreadIdsRef.current.has(threadId)) return false;
-
-    scheduleCreationInFlightThreadIdsRef.current.add(threadId);
-    const userMessageId = createTimelineId('schedule_user');
-    appendTimelineItemsForThread(threadId, [
-      {
-        kind: 'user_message',
-        id: userMessageId,
-        text: prompt,
-        attachments: attachments.map(item => item.attachment),
-        attachmentPreviewUrls: Object.fromEntries(
-          attachments.map(item => [item.attachment.id, item.previewUrl])
-        ),
-        source: 'runtime'
-      }
-    ]);
-
-    try {
-      if (attachments.length > 0) {
-        appendTimelineItemsForThread(threadId, [
-          {
-            kind: 'assistant_message',
-            id: createTimelineId('schedule_attachment_unsupported'),
-            text: '创建已安排任务暂不支持附件。请直接描述提醒内容和时间，或使用“已安排”里的手动设置。',
-            source: 'runtime'
-          }
-        ]);
-        return true;
-      }
-
-      const effectiveConfig = config ?? composerRunConfig ?? defaultComposerRunConfig(currentProject);
-      setComposerRunConfig(effectiveConfig);
-      const parsed = createNaturalLanguageScheduleRequest(prompt, {
-        cwd: currentProject?.cwd,
-        profile: effectiveConfig.profile,
-        sandbox: toRuntimeSandbox(effectiveConfig.permission),
-        model: effectiveConfig.model,
-        reasoning: effectiveConfig.reasoning,
-        timezone: resolveDefaultTimezone()
-      });
-      if (!parsed.ok) {
-        appendTimelineItemsForThread(threadId, [
-          {
-            kind: 'assistant_message',
-            id: createTimelineId('schedule_parse_failed'),
-            text: `${parsed.message}\n\n也可以在“已安排”中点“手动设置”创建。`,
-            source: 'runtime'
-          }
-        ]);
-        return true;
-      }
-
-      if (!notificationSettings.enabled && notificationSettings.permission !== 'denied') {
-        try {
-          setNotificationSettings(await notificationService.enable());
-        } catch {
-          // Schedule creation should still succeed if the browser rejects notification setup.
-        }
-      }
-
-      const schedule = await scheduleService.createSchedule(parsed.request);
-      setRuntimeSchedules(previous => upsertSchedule(previous, schedule));
-      appendTimelineItemsForThread(threadId, [
-        {
-          kind: 'assistant_message',
-          id: createTimelineId('schedule_created'),
-          text: `已创建已安排任务：${schedule.name}\n\n- ${parsed.description}\n- 任务内容：${parsed.request.prompt}\n- 可在“已安排”中查看、暂停或编辑。`,
-          source: 'runtime'
-        }
-      ]);
-      return true;
-    } catch (error) {
-      appendTimelineItemsForThread(threadId, [
-        {
-          kind: 'diagnostic',
-          id: createTimelineId('schedule_create_failed'),
-          severity: 'error',
-          message: getRuntimeErrorMessage(error, '创建已安排任务失败'),
-          content: getRuntimeErrorMessage(error, '创建已安排任务失败'),
-          source: 'runtime'
-        }
-      ]);
-      return true;
-    } finally {
-      scheduleCreationInFlightThreadIdsRef.current.delete(threadId);
-    }
-  }
-
   async function submitPrompt(
     prompt: string,
     config?: ComposerRunConfig,
     attachments: ComposerAttachment[] = [],
     submissionMode?: RunSubmissionMode
   ): Promise<boolean> {
-    if (connectionState.status === 'connected' && isSelectedScheduleCreationConversation()) {
-      return submitScheduleCreationPrompt(prompt, config, attachments);
-    }
-
     if (
       connectionState.status === 'connected'
       && runService !== null
@@ -2126,6 +2031,33 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
+  async function refreshScheduleDraftBinding(threadId: string) {
+    const current = runtimeThreadsRef.current.find(thread => thread.id === threadId);
+    if (current?.purpose !== 'schedule_draft') return;
+
+    const activeThreadService = threadServiceRef.current;
+    const activeScheduleService = scheduleServiceRef.current;
+    if (activeThreadService === null || activeScheduleService === null) return;
+
+    try {
+      const [threadResponse, scheduleResponse] = await Promise.all([
+        activeThreadService.getThread(threadId),
+        activeScheduleService.listSchedules()
+      ]);
+      if (
+        !mountedRef.current
+        || threadServiceRef.current !== activeThreadService
+        || scheduleServiceRef.current !== activeScheduleService
+      ) {
+        return;
+      }
+      setRuntimeThreads(previous => upsertThread(previous, threadResponse.thread));
+      setRuntimeSchedules(scheduleResponse.schedules);
+    } catch {
+      // The draft stays usable when terminal-state reconciliation is unavailable.
+    }
+  }
+
   function stopAllRunEventSubscriptions(markDisconnected = true) {
     const activeControllers = [...runEventControllersRef.current.entries()];
     runEventControllersRef.current.clear();
@@ -2222,6 +2154,7 @@ export function AppController(props: AppControllerProps) {
           getTimelineEventBatcher(threadId).flush();
           void loadRunDiagnostics(event.runId);
           void refreshThreadRunState(threadId);
+          void refreshScheduleDraftBinding(threadId);
         }
       },
       onError(error) {
@@ -2432,7 +2365,10 @@ export function AppController(props: AppControllerProps) {
 
     const generation = skillMarketRuntimeGenerationRef.current;
     const created = await activeThreadService.createThread(
-      buildThreadRequest(SCHEDULE_CREATION_TITLE, currentProject, effectiveComposerConfig)
+      {
+        ...buildThreadRequest(SCHEDULE_DRAFT_TITLE, currentProject, effectiveComposerConfig),
+        purpose: 'schedule_draft'
+      }
     );
     if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
 

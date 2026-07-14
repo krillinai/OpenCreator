@@ -477,7 +477,10 @@ describe('App', () => {
             id: 'thread_schedule_builder',
             title: String(body.title),
             cwd: String(body.cwd),
-            canonicalCwd: String(body.cwd)
+            canonicalCwd: String(body.cwd),
+            purpose: body.purpose === 'schedule_draft'
+              ? 'schedule_draft'
+              : 'conversation'
           })
         }, { status: 201 });
       }
@@ -506,13 +509,14 @@ describe('App', () => {
       return call!;
     });
     expect(JSON.parse(String(createThreadCall.init?.body))).toMatchObject({
-      title: '创建已安排任务',
+      title: '任务草稿',
       cwd: '~/develop/content-design',
       profile: 'default',
-      sandbox: 'danger-full-access'
+      sandbox: 'danger-full-access',
+      purpose: 'schedule_draft'
     });
     expect(window.location.hash).toBe('#/thread/thread_schedule_builder');
-    expect(await screen.findByRole('heading', { name: '创建已安排任务' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '任务草稿' })).toBeInTheDocument();
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     await waitFor(() => {
       expect(textbox).toHaveValue(
@@ -524,18 +528,11 @@ describe('App', () => {
     expect(fetchCalls.some(call => call.url.endsWith('/runs'))).toBe(false);
   });
 
-  it('creates a real schedule from the Clawee schedule creation conversation', async () => {
+  it('runs schedule draft prompts through the normal Agent flow and keeps incomplete drafts', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
-    const notificationApi = {
-      permission: 'default' as NotificationPermission,
-      requestPermission: vi.fn(async () => {
-        notificationApi.permission = 'granted';
-        return 'granted' as NotificationPermission;
-      })
-    };
-    vi.stubGlobal('Notification', notificationApi);
+    let scheduleListCalls = 0;
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
@@ -546,23 +543,10 @@ describe('App', () => {
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
-      if (url.endsWith('/schedules') && init?.method === 'POST') {
-        const body = JSON.parse(String(init.body)) as CreateScheduleRequest;
-        return jsonResponse(createScheduleResponse({
-          id: 'schedule-water',
-          name: body.name,
-          cron: body.cron,
-          timezone: body.timezone ?? 'Asia/Shanghai',
-          promptPreviewRedacted: body.prompt,
-          cwd: body.cwd ?? '~/develop/content-design',
-          canonicalCwd: body.cwd ?? '~/develop/content-design',
-          profile: body.profile ?? 'default',
-          sandbox: body.sandbox ?? 'danger-full-access',
-          concurrencyPolicy: body.concurrencyPolicy ?? 'skip',
-          misfirePolicy: body.misfirePolicy ?? 'skip'
-        }), { status: 201 });
+      if (url.endsWith('/schedules') && init?.method !== 'POST') {
+        scheduleListCalls += 1;
+        return jsonResponse({ schedules: [] });
       }
-      if (url.endsWith('/schedules')) return jsonResponse({ schedules: [] });
       if (url.endsWith('/threads') && init?.method === 'POST') {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
         return jsonResponse({
@@ -572,11 +556,59 @@ describe('App', () => {
             cwd: String(body.cwd),
             canonicalCwd: String(body.cwd),
             profile: String(body.profile),
-            sandbox: body.sandbox === 'danger-full-access' ? 'danger-full-access' : 'workspace-write'
+            sandbox: body.sandbox === 'danger-full-access' ? 'danger-full-access' : 'workspace-write',
+            purpose: 'schedule_draft'
           })
         }, { status: 201 });
       }
+      if (url.endsWith('/runs') && init?.method === 'POST') {
+        return jsonResponse(createRunResponse({
+          id: 'run_schedule_draft',
+          threadId: 'thread_schedule_builder',
+          status: 'running'
+        }), { status: 202 });
+      }
+      if (url.endsWith('/threads/thread_schedule_builder/runs?limit=50')) {
+        return jsonResponse({
+          runs: [createRunResponse({
+            id: 'run_schedule_draft',
+            threadId: 'thread_schedule_builder',
+            status: 'succeeded'
+          })]
+        });
+      }
+      if (url.endsWith('/threads/thread_schedule_builder')) {
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_schedule_builder',
+            title: '任务草稿',
+            purpose: 'schedule_draft'
+          })
+        });
+      }
+      if (url.endsWith('/runs/run_schedule_draft/diagnostics')) {
+        return jsonResponse(createRunDiagnosticsResponse(createCodexStatusResponse()));
+      }
       throw new Error(`Unexpected request ${url}`);
+    };
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      input.onEvent(createRuntimeEvent(
+        'assistant_message',
+        {
+          type: 'assistant_message',
+          text: '你希望每天几点执行这项任务？',
+          format: 'plain_text',
+          delivery: 'message'
+        },
+        1,
+        'run_schedule_draft'
+      ));
+      input.onEvent(createRuntimeEvent(
+        'done',
+        { type: 'done', status: 'succeeded', terminationReason: 'completed' },
+        2,
+        'run_schedule_draft'
+      ));
     };
 
     render(
@@ -584,7 +616,7 @@ describe('App', () => {
         fileService={createFileService()}
         hostBridge={hostBridge}
         runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
+        subscribeRunEvents={subscribeRunEvents}
       />
     );
 
@@ -596,28 +628,120 @@ describe('App', () => {
     const textbox = await screen.findByRole('textbox', { name: '输入任务' });
     await waitFor(() => expect(textbox).toHaveFocus());
     await user.clear(textbox);
-    await user.type(textbox, '设置一个5分钟的定时任务，提醒我喝水，工作时间8:00~18:00');
+    await user.type(textbox, '每天生成 100 字文稿');
     await user.click(screen.getByRole('button', { name: '发送' }));
 
-    const createScheduleCall = await waitFor(() => {
-      const call = findPostCall(fetchCalls, '/schedules');
+    const createRunCall = await waitFor(() => {
+      const call = findPostCall(fetchCalls, '/runs');
       expect(call).toBeDefined();
       return call!;
     });
-    expect(JSON.parse(String(createScheduleCall.init?.body))).toMatchObject({
-      name: '喝水提醒',
-      cron: '*/5 8-17 * * *',
-      prompt: '提醒我喝水',
-      cwd: '~/develop/content-design',
-      profile: 'default',
-      sandbox: 'danger-full-access',
-      enabled: true,
-      concurrencyPolicy: 'skip',
-      misfirePolicy: 'skip'
+    expect(JSON.parse(String(createRunCall.init?.body))).toMatchObject({
+      threadId: 'thread_schedule_builder',
+      prompt: '每天生成 100 字文稿',
+      resumeMode: 'auto'
     });
-    expect(notificationApi.requestPermission).toHaveBeenCalledTimes(1);
-    expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
-    expect(await screen.findByText(/已创建已安排任务：喝水提醒/)).toBeInTheDocument();
+    expect(findPostCall(fetchCalls, '/schedules')).toBeUndefined();
+    expect(await screen.findByText('你希望每天几点执行这项任务？')).toBeInTheDocument();
+    await waitFor(() => expect(scheduleListCalls).toBeGreaterThanOrEqual(2));
+    expect(await screen.findByRole('heading', { name: '任务草稿' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
+  });
+
+  it('refreshes a draft into its bound task thread after the Agent creates a schedule', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    let scheduleListCalls = 0;
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const schedule = createScheduleResponse({
+      id: 'schedule-manuscript',
+      threadId: 'thread_schedule_builder',
+      name: '每日文稿'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/schedules') && init?.method !== 'POST') {
+        scheduleListCalls += 1;
+        return jsonResponse({
+          schedules: scheduleListCalls === 1 ? [] : [schedule]
+        });
+      }
+      if (url.endsWith('/threads') && init?.method === 'POST') {
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_schedule_builder',
+            title: '任务草稿',
+            purpose: 'schedule_draft'
+          })
+        }, { status: 201 });
+      }
+      if (url.endsWith('/runs') && init?.method === 'POST') {
+        return jsonResponse(createRunResponse({
+          id: 'run_schedule_create',
+          threadId: 'thread_schedule_builder',
+          status: 'running'
+        }), { status: 202 });
+      }
+      if (url.endsWith('/threads/thread_schedule_builder/runs?limit=50')) {
+        return jsonResponse({
+          runs: [createRunResponse({
+            id: 'run_schedule_create',
+            threadId: 'thread_schedule_builder',
+            status: 'succeeded'
+          })]
+        });
+      }
+      if (url.endsWith('/threads/thread_schedule_builder')) {
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_schedule_builder',
+            title: '每日文稿',
+            purpose: 'schedule_task',
+            scheduleId: 'schedule-manuscript'
+          })
+        });
+      }
+      if (url.endsWith('/runs/run_schedule_create/diagnostics')) {
+        return jsonResponse(createRunDiagnosticsResponse(createCodexStatusResponse()));
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
+      input.onEvent(createRuntimeEvent(
+        'done',
+        { type: 'done', status: 'succeeded', terminationReason: 'completed' },
+        1,
+        'run_schedule_create'
+      ));
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '已安排' }));
+    await user.click(await screen.findByRole('button', { name: /^创建$/ }));
+    await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
+    const textbox = await screen.findByRole('textbox', { name: '输入任务' });
+    await user.clear(textbox);
+    await user.type(textbox, '每天 18:00 生成 100 字文稿');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    expect(await screen.findByRole('heading', { name: '每日文稿' })).toBeInTheDocument();
+    expect(await screen.findByLabelText('任务管理')).toBeInTheDocument();
+    expect(scheduleListCalls).toBeGreaterThanOrEqual(2);
   });
 
   it('uses the selected thread run registry without loading runs for every thread', async () => {

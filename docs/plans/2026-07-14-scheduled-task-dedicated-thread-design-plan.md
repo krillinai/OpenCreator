@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B7`，已通过（2026-07-14 21:04 CST）；下一批 `P1-B8` |
+| 当前批次 | `P1-B8`，已通过（2026-07-14 21:30 CST）；下一批 `P1-B9` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -339,7 +339,7 @@ P2-B1 审批和连续失败体验
 | P1-B5 | 能力令牌和内部路由 | `PASS` |
 | P1-B6 | Schedule MCP 工具和逐 Run 注入 | `PASS` |
 | P1-B7 | Agent 创建和管理任务协调 | `PASS` |
-| P1-B8 | 删除正则创建流程 | `NOT_STARTED` |
+| P1-B8 | 删除正则创建流程 | `PASS` |
 | P1-B9 | 通知深链接和结果摘要 | `NOT_STARTED` |
 | P1-B10 | Schedule Run 公开时间线和 P1 门禁 | `NOT_STARTED` |
 | P2-B1 | 等待审批和连续失败体验 | `NOT_STARTED` |
@@ -1477,7 +1477,7 @@ feat(scheduler): 支持 Agent 创建和管理任务
 
 ### P1-B8：删除正则创建流程
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`（2026-07-14 21:30 CST）
 
 **依赖：** `P1-B7`
 
@@ -2376,6 +2376,21 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：普通会话的隐式候选限定为同一 `canonicalCwd` 的未删除 Schedule；
   多候选返回 `SCHEDULE_SELECTION_REQUIRED`，显式 ID 也必须处于相同作用域。
 - 下一步：执行 P1-B8，删除正则提醒解析和标题判断，统一走 Agent Tool 创建流程。
+
+### 2026-07-14 21:30 CST - P1-B8
+
+- 状态：`PASS`
+- 提交：`refactor(web): 使用 Agent Tool 替换任务创建正则`
+  （SHA 以包含本日志的提交为准）
+- 已完成：“使用 Clawee 创建”改为 `schedule_draft` Thread、Composer 统一普通 Run
+  提交、Run 终态刷新 Thread/Schedule 绑定、未创建任务时保留可继续对话的草稿，以及删除
+  标题判断、附件拒绝分支和 `schedule-natural-language` 正则解析器。
+- 验证：P1-B8 专项 78 项、Web 全量 508 项、Web typecheck、生产 build、
+  `git diff --check` 通过；旧标题、解析函数和源文件引用 `rg` 零命中。
+- 未完成：通知仍主要打开任务会话或旧目标，任务结果摘要和稳定深链接留到 P1-B9。
+- 风险或偏差：生产 build 继续报告两个既有主 chunk 超过 500 kB；草稿终态刷新是
+  best-effort，失败时保留草稿可继续对话，下次页面加载会从 Runtime 重新同步。
+- 下一步：执行 P1-B9，补齐通知深链接和任务结果摘要。
 
 ### 日志模板
 
