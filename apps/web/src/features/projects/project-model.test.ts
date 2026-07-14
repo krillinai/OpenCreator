@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultProjects, findProjectById, listRecentConversations } from './project-model.js';
+import type { ThreadResponse } from '@clawee/protocol';
+import {
+  createDefaultProjects,
+  findProjectById,
+  groupThreadsByPurpose,
+  listRecentConversations
+} from './project-model.js';
 
 describe('project model', () => {
   it('creates default projects in the expected order with default runtime settings', () => {
@@ -58,4 +64,40 @@ describe('project model', () => {
     expect(conversations.map((conversation) => conversation.updatedLabel)).toEqual(['4天', '5天', '1周', '1周', '3周']);
     expect(conversations.every((conversation) => conversation.projectId === 'content-design')).toBe(true);
   });
+
+  it('groups conversations, schedule drafts, and schedule tasks by thread purpose', () => {
+    const conversation = createThread({ id: 'thread-conversation', purpose: 'conversation' });
+    const draft = createThread({ id: 'thread-draft', purpose: 'schedule_draft' });
+    const task = createThread({
+      id: 'thread-task',
+      purpose: 'schedule_task',
+      scheduleId: 'schedule-1'
+    });
+
+    expect(groupThreadsByPurpose([conversation, draft, task])).toEqual({
+      conversationThreads: [conversation, draft],
+      scheduleTaskThreads: [task]
+    });
+  });
 });
+
+function createThread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
+  return {
+    id: 'thread-1',
+    title: '会话',
+    codexThreadId: null,
+    cwd: '/workspace/project',
+    canonicalCwd: '/workspace/project',
+    workspaceMode: 'external',
+    profile: 'default',
+    model: null,
+    reasoning: null,
+    sandbox: 'workspace-write',
+    status: 'active',
+    purpose: 'conversation',
+    createdAt: '2026-07-14T00:00:00.000Z',
+    updatedAt: '2026-07-14T00:00:00.000Z',
+    archivedAt: null,
+    ...overrides
+  };
+}

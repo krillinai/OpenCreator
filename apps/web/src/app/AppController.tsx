@@ -13,6 +13,7 @@ import type {
   RunResponse,
   RunSubmissionMode,
   SandboxMode,
+  ScheduleResponse,
   TaskItem,
   ThreadHistoryItem,
   ThreadResponse
@@ -45,7 +46,13 @@ import type {
   SkillMarketOperation,
   SkillMarketUseError
 } from '../features/plugins/SkillMarketView.js';
-import { createDefaultProjects, findProjectById, type ClaweeConversation, type ClaweeProject } from '../features/projects/project-model.js';
+import {
+  createDefaultProjects,
+  findProjectById,
+  groupThreadsByPurpose,
+  type ClaweeConversation,
+  type ClaweeProject
+} from '../features/projects/project-model.js';
 import {
   Composer,
   type ComposerAttachment,
@@ -55,6 +62,7 @@ import {
 } from '../features/runs/Composer.js';
 import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
 import { createNaturalLanguageScheduleRequest } from '../features/schedules/schedule-natural-language.js';
+import { createScheduleTaskSummaries } from '../features/schedules/schedule-task-model.js';
 import {
   getRunCancelState,
   getThreadActiveRun,
@@ -214,6 +222,7 @@ export function AppController(props: AppControllerProps) {
   const [approvalErrors, setApprovalErrors] = useState<Record<string, string | undefined>>({});
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig | null>(null);
   const [runtimeThreads, setRuntimeThreads] = useState<ThreadResponse[]>([]);
+  const [runtimeSchedules, setRuntimeSchedules] = useState<ScheduleResponse[]>([]);
   const [threadLoadError, setThreadLoadError] = useState<string>();
   const [threadHistoryLoadError, setThreadHistoryLoadError] = useState<string>();
   const [historyLoadingThreadId, setHistoryLoadingThreadId] = useState<string>();
@@ -393,10 +402,20 @@ export function AppController(props: AppControllerProps) {
     () => runtimeThreads.filter(shouldShowThreadInSidebar),
     [runtimeThreads]
   );
+  const visibleThreadGroups = useMemo(
+    () => groupThreadsByPurpose(visibleRuntimeThreads),
+    [visibleRuntimeThreads]
+  );
   const projects = useMemo(() => createProjectsForThreads(baseProjects, visibleRuntimeThreads), [baseProjects, visibleRuntimeThreads]);
   const conversations = useMemo(
-    () => visibleRuntimeThreads.map(thread => mapThreadToConversation(thread, projects)),
-    [visibleRuntimeThreads, projects]
+    () => visibleThreadGroups.conversationThreads.map(
+      thread => mapThreadToConversation(thread, projects)
+    ),
+    [projects, visibleThreadGroups.conversationThreads]
+  );
+  const scheduleTaskSummaries = useMemo(
+    () => createScheduleTaskSummaries(runtimeSchedules, runtimeThreads, runRegistry),
+    [runRegistry, runtimeSchedules, runtimeThreads]
   );
   const runningConversationIds = useMemo(
     () => new Set(
@@ -685,6 +704,30 @@ export function AppController(props: AppControllerProps) {
       canceled = true;
     };
   }, [connectionState.status, threadService]);
+
+  useEffect(() => {
+    let canceled = false;
+
+    if (connectionState.status !== 'connected' || scheduleService === null) {
+      if (connectionState.status !== 'connected') setRuntimeSchedules([]);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    scheduleService
+      .listSchedules()
+      .then(response => {
+        if (!canceled) setRuntimeSchedules(response.schedules);
+      })
+      .catch(() => {
+        if (!canceled) setRuntimeSchedules([]);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [connectionState.status, scheduleService]);
 
   useEffect(() => {
     connectionStatusRef.current = connectionState.status;
@@ -1006,6 +1049,9 @@ export function AppController(props: AppControllerProps) {
   const currentProject = findProjectById(projects, state.currentProjectId) ?? projects[0];
   const currentProjectName = currentProject?.name ?? 'content-design';
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
+  const selectedScheduleTask = scheduleTaskSummaries.find(
+    task => task.threadId === state.selectedThreadId
+  );
   const selectedThread = runtimeThreads.find(thread => thread.id === state.selectedThreadId);
   const selectedSummaryOperation =
     summaryOperation?.threadId === state.selectedThreadId ? summaryOperation : undefined;
@@ -1314,6 +1360,7 @@ export function AppController(props: AppControllerProps) {
       }
 
       const schedule = await scheduleService.createSchedule(parsed.request);
+      setRuntimeSchedules(previous => upsertSchedule(previous, schedule));
       appendTimelineItemsForThread(threadId, [
         {
           kind: 'assistant_message',
@@ -2494,7 +2541,12 @@ export function AppController(props: AppControllerProps) {
         </div>
       ) : null}
       <ConversationHeader
-        title={selectedConversation?.title ?? '新对话'}
+        title={
+          selectedConversation?.title
+          ?? selectedScheduleTask?.name
+          ?? selectedThread?.title
+          ?? '新对话'
+        }
         projectName={currentProjectName}
         statusLabel={getConnectionStatusLabel(connectionState)}
         summaryLoading={
@@ -3272,6 +3324,14 @@ function fromRuntimeSandbox(sandbox: SandboxMode): ClaweeProject['sandbox'] {
 function upsertThread(threads: ThreadResponse[], thread: ThreadResponse): ThreadResponse[] {
   const withoutThread = threads.filter(item => item.id !== thread.id);
   return [thread, ...withoutThread];
+}
+
+function upsertSchedule(
+  schedules: ScheduleResponse[],
+  schedule: ScheduleResponse
+): ScheduleResponse[] {
+  const withoutSchedule = schedules.filter(item => item.id !== schedule.id);
+  return [schedule, ...withoutSchedule];
 }
 
 function findPendingRunStart(

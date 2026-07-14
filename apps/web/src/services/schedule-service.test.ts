@@ -1,18 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ScheduleResponse } from '@clawee/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 import { createScheduleService } from './schedule-service.js';
 
 describe('ScheduleService', () => {
   it('maps schedule CRUD and detail requests to runtime endpoints', async () => {
+    const schedule = createScheduleResponse();
     const get = vi.fn(async (_path: string) => ({ schedules: [] }));
-    const post = vi.fn(async (_path: string, _body?: unknown) => ({ id: 'schedule-1' }));
-    const patch = vi.fn(async (_path: string, _body: unknown) => ({ id: 'schedule-1' }));
+    const post = vi.fn(async (_path: string, _body?: unknown) => schedule);
+    const patch = vi.fn(async (_path: string, _body: unknown) => schedule);
     const remove = vi.fn(async (_path: string) => ({ deleted: true }));
     const service = createScheduleService(createClient({ get, post, patch, remove }));
 
     await service.listSchedules();
     await service.getSchedule('schedule/中文');
-    await service.createSchedule({
+    const created = await service.createSchedule({
       name: '每日总结',
       cron: '0 18 * * *',
       prompt: '总结今天的工作'
@@ -30,6 +32,7 @@ describe('ScheduleService', () => {
       cron: '0 18 * * *',
       prompt: '总结今天的工作'
     });
+    expect(created.threadId).toBe('thread-schedule-1');
     expect(patch).toHaveBeenCalledWith(
       '/schedules/schedule%2F%E4%B8%AD%E6%96%87',
       { enabled: false }
@@ -65,6 +68,34 @@ describe('ScheduleService', () => {
     );
   });
 });
+
+function createScheduleResponse(): ScheduleResponse {
+  return {
+    id: 'schedule-1',
+    threadId: 'thread-schedule-1',
+    name: '每日总结',
+    cron: '0 18 * * *',
+    timezone: 'Asia/Shanghai',
+    enabled: true,
+    promptPreviewRedacted: '总结今天的工作',
+    profile: 'default',
+    cwd: '/workspace/project',
+    canonicalCwd: '/workspace/project',
+    model: null,
+    reasoning: null,
+    sandbox: 'workspace-write',
+    timeoutMs: null,
+    concurrencyPolicy: 'queue',
+    misfirePolicy: 'skip',
+    nextRunAt: null,
+    lastRunAt: null,
+    lastRunId: null,
+    lastStatus: null,
+    pendingTrigger: false,
+    createdAt: '2026-07-14T00:00:00.000Z',
+    updatedAt: '2026-07-14T00:00:00.000Z'
+  };
+}
 
 function createClient(input: {
   get: (path: string) => Promise<unknown>;

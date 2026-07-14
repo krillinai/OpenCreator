@@ -2808,6 +2808,72 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: '整理本周项目进展 4天' })).not.toBeInTheDocument();
   });
 
+  it('loads task summaries without preloading task history or listing task threads as conversations', async () => {
+    const requestedUrls: string[] = [];
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread-conversation',
+              title: '普通会话',
+              purpose: 'conversation'
+            }),
+            createThreadResponse({
+              id: 'thread-draft',
+              title: '任务草稿',
+              purpose: 'schedule_draft'
+            }),
+            createThreadResponse({
+              id: 'thread-task',
+              title: '任务线程旧标题',
+              purpose: 'schedule_task',
+              scheduleId: 'schedule-1'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/schedules')) {
+        return jsonResponse({
+          schedules: [
+            createScheduleResponse({
+              id: 'schedule-1',
+              threadId: 'thread-task',
+              name: '每日总结'
+            })
+          ]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: /普通会话/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /任务草稿/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /任务线程旧标题/ })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(requestedUrls.some(url => url.endsWith('/schedules'))).toBe(true);
+    });
+    expect(requestedUrls.some(url => url.includes('/history'))).toBe(false);
+  });
+
   it('loads the selected Codex history transcript into the conversation surface', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();

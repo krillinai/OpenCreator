@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B1`，等待开始 |
+| 当前批次 | `P1-B2`，等待开始 |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -332,7 +332,7 @@ P2-B1 审批和连续失败体验
 | P0-B6 | 旧绑定修复和启动顺序 | `PASS` |
 | P0-B7 | legacy Schedule session 分类 | `PASS` |
 | P0-B8 | P0 集成、重启和真实 smoke | `PASS` |
-| P1-B1 | 前端模型、服务和任务摘要模型 | `NOT_STARTED` |
+| P1-B1 | 前端模型、服务和任务摘要模型 | `PASS` |
 | P1-B2 | 左侧“任务”区域 | `NOT_STARTED` |
 | P1-B3 | “已安排”与任务会话互跳 | `NOT_STARTED` |
 | P1-B4 | 任务会话头部 | `NOT_STARTED` |
@@ -1005,7 +1005,7 @@ test(scheduler): 覆盖任务专属会话后端闭环
 
 ### P1-B1：前端模型、服务和任务摘要模型
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P0-B8`
 
@@ -1047,6 +1047,20 @@ pnpm --filter @clawee/web typecheck
 ```
 
 **验收标准：** Web 类型模型与 daemon 一致，任务列表数据不依赖 cron 文本或标题推断。
+
+**执行结果：**
+
+- 前端按 `ThreadResponse.purpose` 将 `conversation`、`schedule_draft` 与
+  `schedule_task` 稳定分组，任务 Thread 不再进入项目普通会话列表。
+- 新增任务摘要模型，由 Schedule、绑定 Thread 和 RunRegistry 合并 name、threadId、
+  enabled、nextRunAt、lastStatus、pendingTrigger 和当前 Run 状态，不读取会话历史。
+- 对旧 daemon 空 `threadId`、绑定 Thread 缺失、purpose 不匹配和 scheduleId 不匹配
+  返回 `repair_required` 与“任务会话需要修复”，不创建伪 Thread。
+- AppController 连接后独立加载 Schedule 摘要和活动 Thread；普通会话仍按既有懒加载
+  规则工作，任务历史只在选中 Thread 后加载。
+- Schedule/Thread service 测试固定必填 `threadId`、purpose 和 scheduleId 字段。
+- P1-B1 专项测试 76 项、Web 全量测试 486 项、最终相关回归 70 项通过。
+- Web typecheck、生产 build 和 `git diff --check` 通过；build 仅有既有大 chunk 警告。
 
 **回滚边界：** 回滚前端模型和选择器，不改变后端 Protocol。
 
@@ -2186,6 +2200,21 @@ docs(release): 完成任务专属会话发布与回滚说明
   矩阵而触发 `RESUME_CAPABILITY_UNVERIFIED`；改为按生产路径收集能力后，目标用例和
   全部 13 项真实 smoke 均通过。
 - 下一步：执行 P1-B1，收敛前端 Schedule/Thread 模型并建立不加载历史的任务摘要模型。
+
+### 2026-07-14 17:12 CST - P1-B1
+
+- 状态：`PASS`
+- 提交：`feat(web): 接入任务会话绑定模型`
+  （SHA 以包含本日志的提交为准）
+- 已完成：Thread purpose 分组、Schedule 任务摘要模型、四类绑定修复状态、
+  AppController Schedule/Thread 首屏加载和任务 Thread 普通会话过滤。
+- 验证：P1-B1 专项测试 76 项、Web 全量测试 486 项、最终相关回归 70 项通过；
+  Web typecheck、生产 build 和 `git diff --check` 通过。
+- 未完成：任务摘要尚未渲染为侧栏“任务”区域，交互和视觉状态留到 P1-B2。
+- 风险或偏差：Schedules 页面仍保留自己的按需列表请求，AppController 的请求只服务于
+  全局任务摘要；build 继续报告两个既有主 chunk 超过 500 kB。
+- 下一步：执行 P1-B2，在侧栏底部接入任务摘要，并覆盖运行、排队、审批、失败、暂停和
+  未读状态。
 
 ### 日志模板
 

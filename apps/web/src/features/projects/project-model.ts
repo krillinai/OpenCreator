@@ -1,3 +1,5 @@
+import type { ThreadResponse } from '@clawee/protocol';
+
 export type ProjectPermission = 'follow-global' | 'workspace-write' | 'danger-full-access';
 
 export type ClaweeProject = {
@@ -36,6 +38,21 @@ export function createDefaultProjects(): ClaweeProject[] {
 
 export function findProjectById(projects: ClaweeProject[], projectId: string): ClaweeProject | undefined {
   return projects.find((project) => project.id === projectId);
+}
+
+export function groupThreadsByPurpose(threads: ThreadResponse[]): {
+  conversationThreads: ThreadResponse[];
+  scheduleTaskThreads: ThreadResponse[];
+} {
+  const conversationThreads: ThreadResponse[] = [];
+  const scheduleTaskThreads: ThreadResponse[] = [];
+
+  for (const thread of threads) {
+    if (thread.purpose === 'schedule_task') scheduleTaskThreads.push(thread);
+    else conversationThreads.push(thread);
+  }
+
+  return { conversationThreads, scheduleTaskThreads };
 }
 
 export function listRecentConversations(): ClaweeConversation[] {
