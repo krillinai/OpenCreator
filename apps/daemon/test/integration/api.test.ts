@@ -2747,7 +2747,7 @@ describe('runtime api', () => {
     );
   });
 
-  it('hides scheduled Codex sessions and archives previously imported scheduled threads', async () => {
+  it('hides only legacy scheduled Codex sessions and preserves dedicated task threads', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const cwd = join(tempDir, 'playground');
@@ -2757,6 +2757,11 @@ describe('runtime api', () => {
       timestamp: '2026-07-14T01:00:00.000Z',
       cwd,
       userMessage: '提醒我起来活动'
+    });
+    writeCodexSession(sessionDir, 'dedicated-task-session', {
+      timestamp: '2026-07-14T01:05:00.000Z',
+      cwd,
+      userMessage: '生成新版任务会话内容'
     });
     writeCodexSession(sessionDir, 'normal-user-session', {
       timestamp: '2026-07-14T00:55:00.000Z',
@@ -2781,7 +2786,8 @@ describe('runtime api', () => {
       codexHome,
       normalizerVersion: 1
     });
-    createThreadRepository(db).insertThread({
+    const threads = createThreadRepository(db);
+    threads.insertThread({
       id: 'thread_codex_scheduledremindersession',
       title: '提醒我起来活动',
       codexThreadId: 'scheduled-reminder-session',
@@ -2792,18 +2798,89 @@ describe('runtime api', () => {
       sandbox: 'read-only',
       status: 'active'
     });
+    threads.insertThread({
+      id: 'thread_schedule_task',
+      title: '每日生成任务',
+      codexThreadId: 'dedicated-task-session',
+      cwd,
+      canonicalCwd: cwd,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active',
+      purpose: 'schedule_task'
+    });
+    db.prepare(`
+      INSERT INTO schedules (
+        id, thread_id, name, cron, timezone, prompt, prompt_hash, prompt_preview_redacted,
+        profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'sch_dedicated',
+      'thread_schedule_task',
+      '每日生成任务',
+      '0 9 * * *',
+      'Asia/Shanghai',
+      '生成新版任务会话内容',
+      'hash',
+      '生成新版任务会话内容',
+      'default',
+      cwd,
+      cwd,
+      'read-only',
+      'queue',
+      'skip'
+    );
+    createRunRepository(db).insertRun({
+      id: 'run_dedicated_task',
+      threadId: 'thread_schedule_task',
+      codexThreadId: 'dedicated-task-session',
+      publicStatus: 'succeeded',
+      internalStatus: 'succeeded',
+      createdBy: 'schedule',
+      sourceId: 'sch_dedicated',
+      profile: 'default',
+      cwd,
+      canonicalCwd: cwd,
+      workspaceMode: 'external',
+      sandbox: 'read-only',
+      codexVersion: 'test',
+      codexBin: 'codex',
+      codexHome,
+      normalizerVersion: 1
+    });
     server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome, db });
 
-    const listed = await authGet('/threads?status=active&limit=1');
+    const listed = await authGet('/threads?status=active&limit=10');
     const all = await authGet('/threads?status=all&limit=10');
 
     expect(listed.statusCode).toBe(200);
-    expect(listed.json().threads).toEqual([
-      expect.objectContaining({
-        codexThreadId: 'normal-user-session',
-        title: '整理今天的工作记录'
-      })
-    ]);
+    expect(listed.json().threads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'thread_schedule_task',
+          title: '每日生成任务',
+          codexThreadId: 'dedicated-task-session',
+          purpose: 'schedule_task',
+          status: 'active'
+        }),
+        expect.objectContaining({
+          codexThreadId: 'normal-user-session',
+          title: '整理今天的工作记录'
+        })
+      ])
+    );
+    expect(listed.json().threads).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codexThreadId: 'scheduled-reminder-session'
+        })
+      ])
+    );
+    expect(listed.json().threads.filter(
+      (thread: { codexThreadId: string | null }) =>
+        thread.codexThreadId === 'dedicated-task-session'
+    )).toHaveLength(1);
     expect(all.json().threads).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -2813,9 +2890,23 @@ describe('runtime api', () => {
       ])
     );
     expect(
-      db.prepare('SELECT kind FROM codex_sessions WHERE codex_thread_id = ?')
-        .get('scheduled-reminder-session')
-    ).toEqual({ kind: 'schedule' });
+      db.prepare(
+        'SELECT codex_thread_id, kind FROM codex_sessions ORDER BY codex_thread_id'
+      ).all()
+    ).toEqual([
+      {
+        codex_thread_id: 'dedicated-task-session',
+        kind: 'user'
+      },
+      {
+        codex_thread_id: 'normal-user-session',
+        kind: 'user'
+      },
+      {
+        codex_thread_id: 'scheduled-reminder-session',
+        kind: 'schedule'
+      }
+    ]);
   });
 
   it('returns Codex session chat history for imported runtime threads', async () => {

@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P0-B7`，等待开始 |
+| 当前批次 | `P0-B8`，等待开始 |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -330,7 +330,7 @@ P2-B1 审批和连续失败体验
 | P0-B4 | 原子更新、暂停恢复和删除 | `PASS` |
 | P0-B5 | 固定 Thread 触发与 Thread 级并发 | `PASS` |
 | P0-B6 | 旧绑定修复和启动顺序 | `PASS` |
-| P0-B7 | legacy Schedule session 分类 | `NOT_STARTED` |
+| P0-B7 | legacy Schedule session 分类 | `PASS` |
 | P0-B8 | P0 集成、重启和真实 smoke | `NOT_STARTED` |
 | P1-B1 | 前端模型、服务和任务摘要模型 | `NOT_STARTED` |
 | P1-B2 | 左侧“任务”区域 | `NOT_STARTED` |
@@ -857,7 +857,7 @@ feat(scheduler): 启动时修复旧任务会话绑定
 
 ### P0-B7：legacy Schedule session 分类
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P0-B6`
 
@@ -904,6 +904,21 @@ pnpm --filter @clawee/daemon typecheck
 - 新任务会话保持 active，并可加载历史和参与搜索。
 - 旧孤立 Schedule session 继续隐藏。
 - session 同步不会创建重复任务会话。
+
+**执行结果：**
+
+- session 分类改为双向收敛：只有 `created_by='schedule' AND thread_id IS NULL` 的旧 Run
+  对应 session 标记为 `schedule`；曾被旧逻辑误标、但已有绑定 Run 的 session 恢复为
+  `user`。
+- legacy Thread 归档只命中无 `thread_id` 的旧 Schedule Run，并显式排除
+  `purpose='schedule_task'`，不再归档任务专属会话。
+- session 同步在导入前检查现有 Codex thread 绑定；已有 `schedule_task` Thread 时保持
+  Schedule 配置真相源，不更新标题、工作目录，也不创建重复 Thread。
+- 索引、Thread 列表和搜索集成用例覆盖：新任务历史保持可见且可搜索，旧孤立 session
+  不进入普通列表或搜索结果。
+- P0-B7 四文件专项测试：126 项通过。
+- daemon 全量测试：589 项通过，13 项真实 Codex smoke 按环境开关跳过。
+- Protocol/daemon typecheck、daemon build 和 `git diff --check` 均通过。
 
 **回滚边界：** 只回滚分类 SQL 和同步流程；不得批量恢复或归档 Thread，避免再次误伤。
 
@@ -2125,6 +2140,21 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：启动前 session 同步暂不执行旧的 Schedule 标记/归档，避免误伤
   `schedule_task`；真实 Codex smoke 13 项继续登记到最终统一验收。
 - 下一步：执行 P0-B7，只隐藏无 Clawee Thread 的旧孤立 Schedule session。
+
+### 2026-07-14 16:07 CST - P0-B7
+
+- 状态：`PASS`
+- 提交：`fix(sessions): 仅隐藏旧版孤立 Schedule 会话`
+  （SHA 以包含本日志的提交为准）
+- 已完成：legacy Schedule session 精确分类、误标恢复、任务 Thread 防误归档、已有绑定
+  导入去重，以及任务历史搜索可见性。
+- 验证：P0-B7 四文件专项测试 126 项、daemon 全量 589 项通过；13 项真实 Codex smoke
+  按环境开关跳过；Protocol/daemon typecheck、daemon build 和 `git diff --check` 通过。
+- 未完成：P0 固定 Thread 多次执行、重启、SQL 不变量和真实 Codex 上下文连续性统一门禁
+  留到 P0-B8。
+- 风险或偏差：本批没有修改原始 JSONL scanner；索引不可用时仍由数据库中的 legacy Run
+  判定过滤，真实 Codex smoke 继续登记到最终统一验收。
+- 下一步：执行 P0-B8，补齐后端闭环、重启和真实 Codex smoke 门禁。
 
 ### 日志模板
 

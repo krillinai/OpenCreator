@@ -2,15 +2,21 @@ import type { FastifyInstance } from 'fastify';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
+import { openRuntimeDatabase } from '../../src/storage/database.js';
+import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
 
 let server: FastifyInstance | undefined;
 let tempDir = '';
+let db: Database.Database | undefined;
 
 afterEach(async () => {
   await server?.close();
   server = undefined;
+  db?.close();
+  db = undefined;
   if (tempDir) rmSync(tempDir, { recursive: true, force: true });
   tempDir = '';
   vi.restoreAllMocks();
@@ -170,6 +176,81 @@ describe('conversation search api', () => {
       .toHaveLength(1);
   });
 
+  it('searches dedicated task history while excluding legacy orphan schedule sessions', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-search-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '14');
+    const cwd = join(tempDir, 'workspace');
+    mkdirSync(sessionDir, { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    writeSession(sessionDir, 'search-task-session', cwd, [
+      eventMessage('user_message', '任务历史可搜索标记', '2026-07-14T12:00:01.000Z')
+    ]);
+    writeSession(sessionDir, 'search-legacy-session', cwd, [
+      eventMessage('user_message', '旧孤立历史隐藏标记', '2026-07-14T12:10:01.000Z')
+    ]);
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    createThreadRepository(db).insertThread({
+      id: 'thread_search_task',
+      title: '可搜索任务',
+      codexThreadId: 'search-task-session',
+      cwd,
+      canonicalCwd: cwd,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active',
+      purpose: 'schedule_task'
+    });
+    const runs = createRunRepository(db);
+    runs.insertRun(scheduleRunInput({
+      id: 'run_search_task',
+      threadId: 'thread_search_task',
+      codexThreadId: 'search-task-session',
+      sourceId: 'sch_search_task',
+      cwd,
+      codexHome
+    }));
+    runs.insertRun(scheduleRunInput({
+      id: 'run_search_legacy',
+      codexThreadId: 'search-legacy-session',
+      sourceId: 'sch_search_legacy',
+      cwd,
+      codexHome
+    }));
+    server = await buildServer({
+      token: 'secret',
+      dataDir: join(tempDir, 'runtime'),
+      codexHome,
+      db
+    });
+
+    const task = await authGet(
+      `/search/conversations?query=${encodeURIComponent('任务历史可搜索标记')}`
+    );
+    const legacy = await authGet(
+      `/search/conversations?query=${encodeURIComponent('旧孤立历史隐藏标记')}`
+    );
+
+    expect(task.statusCode).toBe(200);
+    expect(task.json().results.length).toBeGreaterThan(0);
+    expect(task.json().results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          threadId: 'thread_search_task',
+          codexThreadId: 'search-task-session'
+        })
+      ])
+    );
+    expect(task.json().results.every(
+      (result: { threadId: string; codexThreadId: string }) =>
+        result.threadId === 'thread_search_task'
+        && result.codexThreadId === 'search-task-session'
+    )).toBe(true);
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.json().results).toEqual([]);
+  });
+
 });
 
 function writeSession(
@@ -214,4 +295,27 @@ async function authGet(url: string) {
     url,
     headers: { authorization: 'Bearer secret' }
   });
+}
+
+function scheduleRunInput(input: {
+  id: string;
+  threadId?: string;
+  codexThreadId: string;
+  sourceId: string;
+  cwd: string;
+  codexHome: string;
+}) {
+  return {
+    publicStatus: 'succeeded',
+    internalStatus: 'succeeded',
+    createdBy: 'schedule',
+    profile: 'default',
+    canonicalCwd: input.cwd,
+    workspaceMode: 'external',
+    sandbox: 'read-only',
+    codexVersion: 'test',
+    codexBin: 'codex',
+    normalizerVersion: 1,
+    ...input
+  };
 }

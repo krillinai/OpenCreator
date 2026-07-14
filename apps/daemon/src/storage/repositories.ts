@@ -76,7 +76,7 @@ export type RunRepository = {
   getRun(id: string): RunRow | undefined;
   listRuns(limit?: number): RunRow[];
   listRunsByThread(threadId: string, limit?: number): RunRow[];
-  isCodexThreadCreatedBy(codexThreadId: string, createdBy: 'schedule'): boolean;
+  isLegacyScheduleCodexThread(codexThreadId: string): boolean;
   listNonTerminalRuns(): RunRow[];
   updateRunStatus(input: UpdateRunStatusInput): void;
   setRunCodexThreadId(runId: string, codexThreadId: string): void;
@@ -131,7 +131,7 @@ export type ThreadRepository = {
   getThreadByCodexThreadId(codexThreadId: string): ThreadRow | undefined;
   listThreads(input?: { status?: 'active' | 'archived' | 'all'; limit?: number }): ThreadRow[];
   listProfileReferences(profile: string): Array<{ id: string; title: string | null }>;
-  archiveThreadsCreatedBy(createdBy: 'schedule'): void;
+  archiveLegacyScheduleThreads(): void;
   archiveThread(id: string): void;
   updateImportedThread(input: UpdateImportedThreadInput): void;
   updateThreadSandbox(input: UpdateThreadSandboxInput): void;
@@ -190,14 +190,12 @@ export function createRunRepository(db: Database.Database): RunRepository {
     ORDER BY created_at DESC, id DESC
     LIMIT @limit
   `);
-  const findCodexThreadByCreator = db.prepare<{
-    codexThreadId: string;
-    createdBy: 'schedule';
-  }>(`
+  const findLegacyScheduleCodexThread = db.prepare<{ codexThreadId: string }>(`
     SELECT 1
     FROM runs
     WHERE codex_thread_id = @codexThreadId
-      AND created_by = @createdBy
+      AND created_by = 'schedule'
+      AND thread_id IS NULL
     LIMIT 1
   `);
   const listNonTerminal = db.prepare(`
@@ -284,8 +282,8 @@ export function createRunRepository(db: Database.Database): RunRepository {
     listRunsByThread(threadId: string, limit = 50): RunRow[] {
       return listByThread.all({ threadId, limit }) as RunRow[];
     },
-    isCodexThreadCreatedBy(codexThreadId: string, createdBy: 'schedule'): boolean {
-      return findCodexThreadByCreator.get({ codexThreadId, createdBy }) !== undefined;
+    isLegacyScheduleCodexThread(codexThreadId: string): boolean {
+      return findLegacyScheduleCodexThread.get({ codexThreadId }) !== undefined;
     },
     listNonTerminalRuns(): RunRow[] {
       return listNonTerminal.all() as RunRow[];
@@ -387,16 +385,18 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `);
-  const archiveThreadsCreatedByStatement = db.prepare<{ createdBy: 'schedule' }>(`
+  const archiveLegacyScheduleThreadsStatement = db.prepare(`
     UPDATE threads
     SET status = 'archived',
         archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP),
         updated_at = CURRENT_TIMESTAMP
     WHERE status <> 'archived'
+      AND purpose <> 'schedule_task'
       AND codex_thread_id IN (
         SELECT codex_thread_id
         FROM runs
-        WHERE created_by = @createdBy
+        WHERE created_by = 'schedule'
+          AND thread_id IS NULL
           AND codex_thread_id IS NOT NULL
       )
   `);
@@ -473,8 +473,8 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     listProfileReferences(profile: string): Array<{ id: string; title: string | null }> {
       return listProfileReferences.all(profile) as Array<{ id: string; title: string | null }>;
     },
-    archiveThreadsCreatedBy(createdBy: 'schedule'): void {
-      archiveThreadsCreatedByStatement.run({ createdBy });
+    archiveLegacyScheduleThreads(): void {
+      archiveLegacyScheduleThreadsStatement.run();
     },
     archiveThread(id: string): void {
       archive.run(id);

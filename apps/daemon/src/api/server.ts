@@ -184,8 +184,8 @@ export async function buildServer(input: BuildServerInput) {
       scan = scanCodexSessionsWithMetadata({ codexHome, limit });
     }
     if (reconcileLegacyScheduleSessions) {
-      codexSessionRepository.markScheduledSessions();
-      threadRepository.archiveThreadsCreatedBy('schedule');
+      codexSessionRepository.classifyScheduledSessions();
+      threadRepository.archiveLegacyScheduleThreads();
     }
     for (const codexThreadId of scan.excludedSubagentThreadIds) {
       threadManager.archiveCodexThread(codexThreadId);
@@ -194,7 +194,9 @@ export async function buildServer(input: BuildServerInput) {
       ? codexSessionRepository.listSessions(limit)
       : scan.sessions;
     for (const session of sessions) {
-      if (runRepository.isCodexThreadCreatedBy(session.codexThreadId, 'schedule')) continue;
+      const existingThread = threadManager.getThreadByCodexThreadId(session.codexThreadId);
+      if (existingThread?.purpose === 'schedule_task') continue;
+      if (runRepository.isLegacyScheduleCodexThread(session.codexThreadId)) continue;
       threadManager.importCodexThread({
         codexThreadId: session.codexThreadId,
         title: session.title,

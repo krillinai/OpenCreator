@@ -94,7 +94,7 @@ export type CodexSessionIndexRepository = {
   applyFileIndex(input: ApplyCodexSessionFileIndexInput): void;
   ensureSearchIndex(): void;
   removeMissingSources(paths: string[]): void;
-  markScheduledSessions(): void;
+  classifyScheduledSessions(): void;
   listSessions(limit?: number): CodexSessionSummary[];
   listExcludedSubagentThreadIds(): string[];
   listHistory(codexThreadId: string): ThreadHistoryItem[];
@@ -239,14 +239,34 @@ export function createCodexSessionIndexRepository(
     ORDER BY updated_at DESC, codex_thread_id DESC
     LIMIT @limit
   `);
-  const markScheduledSessionsStatement = db.prepare(`
+  const restoreBoundScheduledSessions = db.prepare(`
     UPDATE codex_sessions
-    SET kind = 'schedule'
-    WHERE kind <> 'schedule'
+    SET kind = 'user'
+    WHERE kind = 'schedule'
       AND codex_thread_id IN (
         SELECT codex_thread_id
         FROM runs
         WHERE created_by = 'schedule'
+          AND thread_id IS NOT NULL
+          AND codex_thread_id IS NOT NULL
+      )
+      AND codex_thread_id NOT IN (
+        SELECT codex_thread_id
+        FROM runs
+        WHERE created_by = 'schedule'
+          AND thread_id IS NULL
+          AND codex_thread_id IS NOT NULL
+      )
+  `);
+  const markLegacyScheduledSessions = db.prepare(`
+    UPDATE codex_sessions
+    SET kind = 'schedule'
+    WHERE kind = 'user'
+      AND codex_thread_id IN (
+        SELECT codex_thread_id
+        FROM runs
+        WHERE created_by = 'schedule'
+          AND thread_id IS NULL
           AND codex_thread_id IS NOT NULL
       )
   `);
@@ -532,8 +552,9 @@ export function createCodexSessionIndexRepository(
     removeMissingSources(paths: string[]): void {
       removeMissingSources(paths);
     },
-    markScheduledSessions(): void {
-      markScheduledSessionsStatement.run();
+    classifyScheduledSessions(): void {
+      restoreBoundScheduledSessions.run();
+      markLegacyScheduledSessions.run();
     },
     listSessions(limit = 50): CodexSessionSummary[] {
       const rows = listSessions.all({ limit }) as Array<{

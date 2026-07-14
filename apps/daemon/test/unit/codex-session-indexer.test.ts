@@ -17,6 +17,7 @@ import {
 } from '../../src/codex/sessions/index-repository.js';
 import { createCodexSessionIndexer } from '../../src/codex/sessions/indexer.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
+import { createRunRepository } from '../../src/storage/repositories.js';
 
 let tempDir = '';
 let db: Database.Database | undefined;
@@ -317,6 +318,46 @@ describe('codex session indexer', () => {
     ).toEqual({ id: 1, version: 1 });
   });
 
+  it('classifies only unbound schedule sessions as legacy and restores bound task sessions', () => {
+    const setup = createSetup();
+    writeSession(setup.sessionDir, 'legacy-schedule-session', [
+      sessionMeta('legacy-schedule-session', setup.cwd, '2026-07-12T05:20:00.000Z'),
+      userMessage('旧版孤立任务', '2026-07-12T05:20:01.000Z')
+    ]);
+    writeSession(setup.sessionDir, 'bound-schedule-session', [
+      sessionMeta('bound-schedule-session', setup.cwd, '2026-07-12T05:30:00.000Z'),
+      userMessage('新版任务会话', '2026-07-12T05:30:01.000Z')
+    ]);
+    createCodexSessionIndexer({
+      codexHome: setup.codexHome,
+      repository: setup.repository
+    }).sync();
+    const runs = createRunRepository(db!);
+    runs.insertRun(runInput({
+      id: 'run_legacy_schedule',
+      codexThreadId: 'legacy-schedule-session'
+    }));
+    runs.insertRun(runInput({
+      id: 'run_bound_schedule',
+      threadId: 'thread_schedule_task',
+      codexThreadId: 'bound-schedule-session'
+    }));
+    db!.prepare(
+      "UPDATE codex_sessions SET kind = 'schedule' WHERE codex_thread_id = ?"
+    ).run('bound-schedule-session');
+
+    setup.repository.classifyScheduledSessions();
+
+    expect(
+      db!.prepare(
+        'SELECT codex_thread_id, kind FROM codex_sessions ORDER BY codex_thread_id'
+      ).all()
+    ).toEqual([
+      { codex_thread_id: 'bound-schedule-session', kind: 'user' },
+      { codex_thread_id: 'legacy-schedule-session', kind: 'schedule' }
+    ]);
+  });
+
   it('paginates history from newest to oldest with stable ordering and rebuild-safe cursors', () => {
     const setup = createSetup();
     writeSession(setup.sessionDir, 'pagination-session', [
@@ -522,5 +563,28 @@ function reasoningSummary(message: string, timestamp: string, turnId?: string) {
       summary: [{ type: 'summary_text', text: message }],
       ...(turnId === undefined ? {} : { turn_id: turnId })
     }
+  };
+}
+
+function runInput(overrides: {
+  id: string;
+  threadId?: string;
+  codexThreadId: string;
+}) {
+  return {
+    publicStatus: 'succeeded',
+    internalStatus: 'succeeded',
+    createdBy: 'schedule',
+    sourceId: 'sch_test',
+    profile: 'default',
+    cwd: tempDir,
+    canonicalCwd: tempDir,
+    workspaceMode: 'external',
+    sandbox: 'read-only',
+    codexVersion: 'test',
+    codexBin: 'codex',
+    codexHome: join(tempDir, 'codex-home'),
+    normalizerVersion: 1,
+    ...overrides
   };
 }
