@@ -88,6 +88,7 @@ export type SchedulesViewProps = {
   onOpenTask(threadId: string, runId?: string): void;
   onRunNow(schedule: ScheduleResponse): Promise<void> | void;
   onScheduleChanged(schedule: ScheduleResponse): void;
+  onScheduleDeleted(schedule: ScheduleResponse): void;
   confirmDelete?(schedule: ScheduleResponse): boolean;
 };
 
@@ -334,6 +335,7 @@ export function SchedulesView(props: SchedulesViewProps) {
     try {
       await props.service.deleteSchedule(schedule.id);
       setSchedules(current => current.filter(item => item.id !== schedule.id));
+      props.onScheduleDeleted(schedule);
       if (editor?.mode === 'edit' && editor.scheduleId === schedule.id) {
         setEditor(undefined);
       }

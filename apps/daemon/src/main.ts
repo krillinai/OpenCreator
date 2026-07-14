@@ -2,11 +2,19 @@ import { buildServer } from './api/server.js';
 import { collectCodexCapabilityMatrix } from './codex/capabilities.js';
 import { createRuntimeToken } from './security/token.js';
 import { installGracefulShutdown } from './shutdown.js';
-import { createProductionServerInput } from './startup.js';
+import {
+  createProductionServerInput,
+  resolveProductionServerEnvironment
+} from './startup.js';
 
 const token = createRuntimeToken();
-const capabilities = collectCodexCapabilityMatrix();
-const server = await buildServer(createProductionServerInput({ token, capabilities }));
+const environment = resolveProductionServerEnvironment();
+const capabilities = collectCodexCapabilityMatrix({ codexBin: environment.codexBin });
+const server = await buildServer(createProductionServerInput({
+  token,
+  capabilities,
+  ...environment
+}));
 const address = await server.listen({ host: '127.0.0.1', port: 0 });
 
 installGracefulShutdown({

@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P2-B4`，已通过（2026-07-15 01:10 CST）；下一批 `P2-B5` |
+| 当前批次 | `P2-B5`，已通过（2026-07-15 02:00 CST）；下一批 `P2-B6` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -346,7 +346,7 @@ P2-B1 审批和连续失败体验
 | P2-B2 | Codex thread 轮换和摘要恢复 | `PASS` |
 | P2-B3 | 后台 Host 通知 | `PASS` |
 | P2-B4 | actor 审计和诊断事件 | `PASS` |
-| P2-B5 | Playwright 端到端测试 | `NOT_STARTED` |
+| P2-B5 | Playwright 端到端测试 | `PASS` |
 | P2-B6 | 100 个任务性能门禁 | `NOT_STARTED` |
 | P2-B7 | 发布、回滚和最终验收 | `NOT_STARTED` |
 
@@ -1914,7 +1914,7 @@ feat(diagnostics): 增加任务操作 actor 和触发链路
 
 ### P2-B5：Playwright 端到端测试
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`（2026-07-15 01:15 CST 开始，02:00 CST 完成）
 
 **依赖：** `P2-B4`
 
@@ -1927,6 +1927,7 @@ feat(diagnostics): 增加任务操作 actor 和触发链路
 - 新增 `playwright.config.ts`
 - 新增 `apps/web/e2e/scheduled-task-thread.spec.ts`
 - 新增 E2E fixture、启动脚本和 fake Codex 支持文件
+- `apps/web/vitest.config.ts`
 - 必要的稳定 `data-testid`，仅用于无法稳定语义定位的元素
 
 **测试场景：**
@@ -2515,6 +2516,33 @@ docs(release): 完成任务专属会话发布与回滚说明
   Run public prompt、审批正文、能力令牌、结果或原始错误正文；Web build 继续只有两个
   既有主 chunk 超过 500 kB 的警告。
 - 下一步：执行 P2-B5，补齐连续运行、会话切换和刷新恢复的 Playwright 端到端测试。
+
+### 2026-07-15 02:00 CST - P2-B5
+
+- 状态：`PASS`
+- 提交：`test(e2e): 覆盖任务专属会话完整工作流`
+  （SHA 以包含本日志的提交为准）
+- 已完成：新增 Playwright 桌面 `1440x900` 和移动 `390x844` 两个项目；每条测试使用
+  独立临时 SQLite、daemon、Vite 端口、Codex Home 和 fake Codex app-server，真实访问
+  daemon API/SSE，仅替换浏览器 Notification API；覆盖手动创建和管理、连续 queue 运行、
+  同一 Thread 追加结果、普通会话隔离、运行中刷新恢复、Agent Tool 草稿原位转任务、
+  审批通知和批准续跑、成功/失败深链、HTML 预览，共 6 条纵向场景、12 个浏览器用例；
+  失败时保留截图、视频、trace、服务日志、控制台错误和 HTTP 5xx。
+- 已完成：E2E 发现并修复四个产品回归：删除 Schedule 后左侧任务摘要残留；后台排队
+  Run 不会自动进入已打开任务会话；通知打开终态 Run 时未重放持久事件；移动抽屉通过
+  `history.back()` 关闭临时记录时与目标路由跳转竞争，导致内容已切换但 URL 仍指向旧
+  Thread。另将 Web Vitest 收集范围限制为 `src/**/*.test.*`，避免误执行 Playwright
+  规范。
+- 验证：`pnpm e2e` 桌面和移动 12/12 通过；Web 全量 74 个测试文件、520/520 通过；
+  daemon 串行全量 64 个测试文件、650/650 通过，14 项 gated real Codex smoke 按预期
+  跳过；`pnpm typecheck`、`pnpm build` 和 `git diff --check` 通过。
+- 未完成：P2-B6 的 100 个任务性能采样和阈值门禁尚未执行；P2-B7 仍负责真实 Desktop
+  Host、真实 Codex smoke、发布和回滚统一验收。
+- 风险或偏差：daemon 与 Web 两套全量测试同时执行时，一个 3 秒超时子进程用例因机器
+  调度压力未及时写出 stderr；该用例单独复跑和 daemon 串行全量均通过，因此门禁改为
+  串行记录。Web build 继续只有两个既有主 chunk 超过 500 kB 的警告。
+- 下一步：执行 P2-B6，建立 100 个任务的摘要加载、历史懒加载、交互延迟和主线程性能
+  门禁。
 
 ### 日志模板
 

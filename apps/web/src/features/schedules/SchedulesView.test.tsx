@@ -261,10 +261,12 @@ describe('SchedulesView', () => {
     ));
     const onRunNow = vi.fn(async (_schedule: ScheduleResponse): Promise<void> => undefined);
     const onScheduleChanged = vi.fn();
+    const onScheduleDeleted = vi.fn();
     const deleteSchedule = vi.fn(async () => ({ deleted: true as const }));
     renderView({
       onRunNow,
       onScheduleChanged,
+      onScheduleDeleted,
       confirmDelete: () => true,
       service: createService({
         listSchedules: vi.fn(async () => ({ schedules: [schedule()] })),
@@ -290,6 +292,10 @@ describe('SchedulesView', () => {
 
     await user.click(screen.getByRole('button', { name: '删除每日总结' }));
     expect(deleteSchedule).toHaveBeenCalledWith('schedule-1');
+    expect(onScheduleDeleted).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'schedule-1',
+      threadId: 'thread-schedule-1'
+    }));
     expect(screen.queryByRole('heading', { name: '每日总结' })).not.toBeInTheDocument();
   });
 
@@ -329,6 +335,7 @@ function createView(overrides: {
   onOpenTask?(threadId: string, runId?: string): void;
   onRunNow?(schedule: ScheduleResponse): Promise<void> | void;
   onScheduleChanged?(schedule: ScheduleResponse): void;
+  onScheduleDeleted?(schedule: ScheduleResponse): void;
   confirmDelete?(schedule: ScheduleResponse): boolean;
 } = {}) {
   return (
@@ -364,6 +371,7 @@ function createView(overrides: {
       onOpenTask={overrides.onOpenTask ?? vi.fn()}
       onRunNow={overrides.onRunNow ?? vi.fn()}
       onScheduleChanged={overrides.onScheduleChanged ?? vi.fn()}
+      onScheduleDeleted={overrides.onScheduleDeleted ?? vi.fn()}
       confirmDelete={overrides.confirmDelete}
     />
   );

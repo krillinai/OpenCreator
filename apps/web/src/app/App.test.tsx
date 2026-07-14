@@ -277,6 +277,31 @@ describe('App', () => {
     expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'false');
   });
 
+  it('replaces the temporary mobile drawer entry when navigating from the drawer', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: true,
+      media: '(max-width: 920px)',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+    const back = vi.spyOn(window.history, 'back');
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: '打开导航' }));
+    await user.click(screen.getByRole('button', { name: '插件' }));
+
+    await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
+    expect(back).not.toHaveBeenCalled();
+    expect(window.history.state?.claweeMobileNavigation).not.toBe(true);
+    expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'false');
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     window.localStorage.clear();

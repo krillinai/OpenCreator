@@ -6,6 +6,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
+    "e2e": "playwright test",
     "typecheck": "pnpm -r typecheck",
     "smoke:ci": "pnpm --filter @clawee/daemon test -- test/unit/codex-smoke.test.ts",
     "perf:check": "node scripts/check-performance-baseline.mjs",
@@ -14,6 +15,7 @@
     "harness": "pnpm --filter @clawee/harness start"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.10.7",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",

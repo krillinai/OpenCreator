@@ -305,6 +305,7 @@ export function AppController(props: AppControllerProps) {
   const connectionConfigRef = useRef<ConnectionConfig | null>(null);
   const connectionConfigVersionRef = useRef(0);
   const runEventControllersRef = useRef(new Map<string, ActiveRunEventController>());
+  const replayedTargetRunKeyRef = useRef<string>();
   const timelineEventBatchersByThreadIdRef = useRef(new Map<string, FrameBatcher<TimelineItem>>());
   const runRegistryRef = useRef(runRegistry);
   const pendingRunStartsByIdRef = useRef<PendingRunStartsById>({});
@@ -598,6 +599,27 @@ export function AppController(props: AppControllerProps) {
         const response = await activeTaskService.list({ status: 'all', limit: 50 });
         if (canceled) return;
         setRuntimeTasks(response.tasks);
+        const selectedThreadId = selectedThreadIdRef.current;
+        const unseenSelectedTask = selectedThreadId === undefined
+          ? undefined
+          : response.tasks.find(task => (
+              task.threadId === selectedThreadId
+              && runRegistryRef.current.runsById[task.runId] === undefined
+            ));
+        if (
+          unseenSelectedTask !== undefined
+          && unseenSelectedTask.threadId !== undefined
+        ) {
+          void refreshThreadRunState(unseenSelectedTask.threadId);
+          const config = connectionConfigRef.current;
+          if (config !== null) {
+            subscribeToRunEvents(
+              unseenSelectedTask.runId,
+              unseenSelectedTask.threadId,
+              config
+            );
+          }
+        }
         const result = collectTaskTransitions(
           taskStatusesRef.current,
           response.tasks,
@@ -1031,9 +1053,40 @@ export function AppController(props: AppControllerProps) {
   ]);
 
   useEffect(() => {
+    const target = timelineRunTarget;
+    if (target === undefined) {
+      replayedTargetRunKeyRef.current = undefined;
+      return;
+    }
+    const targetKey = `${target.threadId}:${target.runId}`;
+    if (
+      target.threadId !== state.selectedThreadId
+      || connectionConfig === null
+      || connectionState.status !== 'connected'
+      || runsLoadedThreadId !== target.threadId
+      || runRegistry.runsById[target.runId] === undefined
+      || replayedTargetRunKeyRef.current === targetKey
+    ) {
+      return;
+    }
+
+    replayedTargetRunKeyRef.current = targetKey;
+    subscribeToRunEvents(target.runId, target.threadId, connectionConfig);
+  }, [
+    connectionConfig,
+    connectionState.status,
+    runRegistry,
+    runsLoadedThreadId,
+    state.selectedThreadId,
+    timelineRunTarget
+  ]);
+
+  useEffect(() => {
     for (const [runId, subscription] of runEventControllersRef.current.entries()) {
       const run = runRegistry.runsById[runId];
       if (run === undefined || !isTerminalRunStatus(run.status)) continue;
+      const consumedSeq = runRegistry.lastSeqByRunId[runId] ?? 0;
+      if (consumedSeq < (run.lastEventSeq ?? 0)) continue;
       runEventControllersRef.current.delete(runId);
       subscription.controller.stop();
       timelineEventBatchersByThreadIdRef.current.get(subscription.threadId)?.flush();
@@ -1346,6 +1399,13 @@ export function AppController(props: AppControllerProps) {
 
   function closeMobileSidebar() {
     setMobileSidebarOpen(false);
+    if (window.history.state?.claweeMobileNavigation !== true) {
+      mobileSidebarHistoryEntryRef.current = false;
+    }
+  }
+
+  function dismissMobileSidebar() {
+    setMobileSidebarOpen(false);
     if (
       mobileSidebarHistoryEntryRef.current
       && window.history.state?.claweeMobileNavigation === true
@@ -1475,9 +1535,19 @@ export function AppController(props: AppControllerProps) {
 
   function navigateToRoute(route: AppRoute, options?: { replace?: boolean }) {
     const routeKey = formatRoute(route);
-    if (routeKey === formatRoute(props.route)) return;
+    const replaceMobileSidebarEntry =
+      mobileSidebarHistoryEntryRef.current
+      && window.history.state?.claweeMobileNavigation === true;
+    if (replaceMobileSidebarEntry) {
+      mobileSidebarHistoryEntryRef.current = false;
+      setMobileSidebarOpen(false);
+    }
+    if (routeKey === formatRoute(props.route) && !replaceMobileSidebarEntry) return;
     pendingRouteKeyRef.current = routeKey;
-    props.onNavigate(route, options);
+    props.onNavigate(route, {
+      ...options,
+      replace: options?.replace === true || replaceMobileSidebarEntry
+    });
   }
 
   function applyRouteFromLocation(route: AppRoute) {
@@ -2344,6 +2414,11 @@ export function AppController(props: AppControllerProps) {
     setRuntimeSchedules(previous => upsertSchedule(previous, schedule));
   }
 
+  function handleScheduleDeleted(schedule: ScheduleResponse) {
+    setRuntimeSchedules(previous => previous.filter(item => item.id !== schedule.id));
+    setRuntimeThreads(previous => previous.filter(item => item.id !== schedule.threadId));
+  }
+
   async function runScheduleNow(schedule: ScheduleResponse) {
     const alreadyOpen =
       state.activeView === 'conversation'
@@ -2904,6 +2979,7 @@ export function AppController(props: AppControllerProps) {
       onOpenTask={(threadId, runId) => void openScheduleTask(threadId, runId)}
       onRunNow={runScheduleNow}
       onScheduleChanged={handleScheduleChanged}
+      onScheduleDeleted={handleScheduleDeleted}
     />
   ) : state.activeView === 'tasks' ? (
     <TaskCenterPage
@@ -3001,7 +3077,7 @@ export function AppController(props: AppControllerProps) {
       sidebarCollapsed={sidebarCollapsed}
       mobileSidebarOpen={mobileSidebarOpen}
       onOpenMobileSidebar={openMobileSidebar}
-      onCloseMobileSidebar={closeMobileSidebar}
+      onCloseMobileSidebar={dismissMobileSidebar}
     />
   );
 

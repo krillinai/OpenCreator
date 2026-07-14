@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createProductionServerInput,
-  prepareSchedulerStartup
+  prepareSchedulerStartup,
+  resolveProductionServerEnvironment
 } from '../../src/startup.js';
 
 describe('daemon production startup', () => {
@@ -34,5 +35,23 @@ describe('daemon production startup', () => {
 
     expect(steps).toEqual(['repair', 'classify']);
     expect(result).toEqual({ scanned: 2, repaired: 1, failed: 0, unchanged: 1 });
+  });
+
+  it('maps isolated runtime paths from non-empty environment variables', () => {
+    expect(resolveProductionServerEnvironment({
+      CLAWEE_DATA_DIR: ' /tmp/clawee-data ',
+      CLAWEE_CODEX_BIN: ' /tmp/fake-codex ',
+      CLAWEE_CODEX_HOME: ' /tmp/clawee-codex-home '
+    })).toEqual({
+      dataDir: '/tmp/clawee-data',
+      codexBin: '/tmp/fake-codex',
+      codexHome: '/tmp/clawee-codex-home'
+    });
+
+    expect(resolveProductionServerEnvironment({
+      CLAWEE_DATA_DIR: ' ',
+      CLAWEE_CODEX_BIN: '',
+      CLAWEE_CODEX_HOME: '\t'
+    })).toEqual({});
   });
 });
