@@ -4302,8 +4302,14 @@ function createFakeScheduleCoordinator(
     createManual() {
       throw new Error('unexpected createManual');
     },
+    createFromAgent() {
+      throw new Error('unexpected createFromAgent');
+    },
     update() {
       throw new Error('unexpected update');
+    },
+    updateFromAgent() {
+      throw new Error('unexpected updateFromAgent');
     },
     delete() {
       throw new Error('unexpected delete');

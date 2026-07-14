@@ -4,7 +4,7 @@ import type {
   ScheduleResponse
 } from '@clawee/protocol';
 import type { FastifyInstance } from 'fastify';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,6 +23,7 @@ import { buildServer } from '../../src/api/server.js';
 import { createRunManager } from '../../src/runs/manager.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createThreadManager } from '../../src/threads/manager.js';
+import type { RuntimeThread } from '../../src/threads/types.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 
 let server: FastifyInstance | undefined;
@@ -43,6 +44,211 @@ afterEach(async () => {
 });
 
 describe('agent tool internal api', () => {
+  it('binds draft creation to the actor thread and ignores forged execution configuration', async () => {
+    const fixture = await createRealServerFixture();
+    const draft = fixture.threadManager.createThread({
+      purpose: 'schedule_draft',
+      title: '任务草稿',
+      cwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      model: 'gpt-5',
+      reasoning: 'high',
+      sandbox: 'read-only'
+    });
+    const token = fixture.tokens.issue({
+      runId: 'run-draft-create',
+      threadId: draft.id,
+      createdBy: 'api',
+      scopes: ['schedule:create']
+    }).token;
+
+    const response = await capabilityRequest(
+      'POST',
+      '/internal/agent-tools/schedules',
+      token,
+      {
+        name: '每日总结',
+        cron: '0 18 * * *',
+        timezone: 'Asia/Shanghai',
+        prompt: '总结当天进展',
+        cwd: join(tempDir, 'forged'),
+        profile: 'forged-profile',
+        model: 'forged-model',
+        reasoning: 'low',
+        sandbox: 'danger-full-access'
+      }
+    );
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      threadId: draft.id,
+      cwd: draft.cwd,
+      canonicalCwd: draft.canonicalCwd,
+      profile: draft.profile,
+      model: draft.model,
+      reasoning: draft.reasoning,
+      sandbox: draft.sandbox
+    });
+    expect(fixture.threadManager.getThread(draft.id)).toMatchObject({
+      purpose: 'schedule_task',
+      scheduleId: response.json().id,
+      title: '每日总结'
+    });
+    expect(readLatestScheduleOperation()).toMatchObject({
+      operation: 'create',
+      run_id: 'run-draft-create'
+    });
+  });
+
+  it('creates a dedicated inherited task thread from a conversation', async () => {
+    const fixture = await createRealServerFixture();
+    const conversation = fixture.threadManager.createThread({
+      purpose: 'conversation',
+      title: '普通会话',
+      cwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      model: 'gpt-5',
+      reasoning: 'medium',
+      sandbox: 'workspace-write'
+    });
+    const token = fixture.tokens.issue({
+      runId: 'run-conversation-create',
+      threadId: conversation.id,
+      createdBy: 'api',
+      scopes: ['schedule:create']
+    }).token;
+
+    const response = await capabilityRequest(
+      'POST',
+      '/internal/agent-tools/schedules',
+      token,
+      {
+        name: '每周复盘',
+        cron: '0 17 * * 5',
+        timezone: 'Asia/Shanghai',
+        prompt: '复盘本周工作'
+      }
+    );
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json().threadId).not.toBe(conversation.id);
+    expect(fixture.threadManager.getThread(conversation.id)?.purpose).toBe('conversation');
+    expect(fixture.threadManager.getThread(response.json().threadId)).toMatchObject({
+      purpose: 'schedule_task',
+      cwd: conversation.cwd,
+      canonicalCwd: conversation.canonicalCwd,
+      profile: conversation.profile,
+      model: conversation.model,
+      reasoning: conversation.reasoning,
+      sandbox: conversation.sandbox
+    });
+  });
+
+  it('resolves current task bindings and returns same-project candidates without guessing', async () => {
+    const fixture = await createRealServerFixture();
+    const conversation = fixture.threadManager.createThread({
+      purpose: 'conversation',
+      cwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+    const first = await createPublicSchedule('每日总结', tempDir);
+    const second = await createPublicSchedule('每周复盘', tempDir);
+    const otherProject = join(tempDir, 'other-project');
+    mkdirSync(otherProject);
+    const third = await createPublicSchedule('其他项目任务', otherProject);
+    const conversationToken = fixture.tokens.issue({
+      runId: 'run-select',
+      threadId: conversation.id,
+      createdBy: 'api',
+      scopes: ['schedule:update']
+    }).token;
+
+    const ambiguous = await capabilityRequest(
+      'PATCH',
+      '/internal/agent-tools/schedules/current',
+      conversationToken,
+      { name: '不能猜测' }
+    );
+
+    expect(ambiguous.statusCode).toBe(409);
+    expect(ambiguous.json()).toEqual({
+      error: {
+        code: 'SCHEDULE_SELECTION_REQUIRED',
+        message: 'Multiple schedules are available'
+      },
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ scheduleId: first.id, name: '每日总结' }),
+        expect.objectContaining({ scheduleId: second.id, name: '每周复盘' })
+      ])
+    });
+    expect(ambiguous.json().candidates).toHaveLength(2);
+
+    const explicit = await capabilityRequest(
+      'PATCH',
+      `/internal/agent-tools/schedules/${first.id}`,
+      conversationToken,
+      { name: '已明确选择' }
+    );
+    expect(explicit.statusCode).toBe(200);
+    expect(explicit.json().name).toBe('已明确选择');
+
+    const crossProject = await capabilityRequest(
+      'PATCH',
+      `/internal/agent-tools/schedules/${third.id}`,
+      conversationToken,
+      { name: '越权更新' }
+    );
+    expect(crossProject.statusCode).toBe(403);
+
+    const otherConversation = fixture.threadManager.createThread({
+      purpose: 'conversation',
+      cwd: otherProject,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+    const singleCandidateToken = fixture.tokens.issue({
+      runId: 'run-single-candidate',
+      threadId: otherConversation.id,
+      createdBy: 'api',
+      scopes: ['schedule:update']
+    }).token;
+    const singleCandidate = await capabilityRequest(
+      'PATCH',
+      '/internal/agent-tools/schedules/current',
+      singleCandidateToken,
+      { name: '唯一候选任务' }
+    );
+    expect(singleCandidate.statusCode).toBe(200);
+    expect(singleCandidate.json()).toMatchObject({
+      id: third.id,
+      name: '唯一候选任务'
+    });
+
+    const taskToken = fixture.tokens.issue({
+      runId: 'run-task-current',
+      threadId: first.threadId,
+      createdBy: 'api',
+      scopes: ['schedule:update']
+    }).token;
+    const currentTask = await capabilityRequest(
+      'PATCH',
+      '/internal/agent-tools/schedules/current',
+      taskToken,
+      { name: '任务会话更新' }
+    );
+    expect(currentTask.statusCode).toBe(200);
+    expect(currentTask.json()).toMatchObject({
+      id: first.id,
+      threadId: first.threadId,
+      name: '任务会话更新'
+    });
+  });
+
   it('uses capability auth without falling back to the public bearer token', async () => {
     const fixture = await createServerFixture();
     const token = fixture.tokens.issue({
@@ -95,6 +301,51 @@ describe('agent tool internal api', () => {
       forbiddenScope.body,
       crossThread.body
     ].join('\n')).not.toContain(token);
+  });
+
+  it('rejects mutation routes for automatic schedule runs even with a forged scope grant', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-agent-tool-automatic-'));
+    const operations = createOperations();
+    const automaticGrantStore = {
+      issue: vi.fn(() => ({
+        token: 'clwcap_automatic',
+        expiresAt: '2026-07-14T00:05:00.000Z'
+      })),
+      authorize: vi.fn(() => ({
+        runId: 'run-automatic',
+        threadId: 'thread-1',
+        createdBy: 'schedule' as const,
+        scopes: ['schedule:update' as const],
+        issuedAt: '2026-07-14T00:00:00.000Z',
+        expiresAt: '2026-07-14T00:05:00.000Z'
+      })),
+      revokeRun: vi.fn(() => 0),
+      cleanupExpired: vi.fn(() => 0),
+      close: vi.fn()
+    } satisfies AgentCapabilityTokenStore;
+    server = await buildServer({
+      token: 'public-secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      agentCapabilityTokens: automaticGrantStore,
+      agentScheduleOperations: operations
+    });
+
+    const response = await capabilityRequest(
+      'PATCH',
+      '/internal/agent-tools/schedules/schedule-1',
+      'clwcap_automatic',
+      { name: '自动任务越权更新' }
+    );
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: {
+        code: 'CAPABILITY_SCOPE_FORBIDDEN',
+        message: 'Automatic schedule runs cannot mutate schedules'
+      }
+    });
+    expect(operations.updateSchedule).not.toHaveBeenCalled();
   });
 
   it('passes the token actor to scoped operations and rejects identity overrides', async () => {
@@ -382,7 +633,13 @@ function createOperations() {
     ['schedule-1', scheduleDetail({ id: 'schedule-1', threadId: 'thread-1' })],
     ['schedule-2', scheduleDetail({ id: 'schedule-2', threadId: 'thread-2' })]
   ]);
+  const threads = new Map<string, RuntimeThread>([
+    ['thread-1', runtimeThread({ id: 'thread-1', scheduleId: 'schedule-1' })],
+    ['thread-2', runtimeThread({ id: 'thread-2', scheduleId: 'schedule-2' })]
+  ]);
   return {
+    getActorThread: vi.fn((actor: AgentScheduleActor) => threads.get(actor.threadId)),
+    listSchedules: vi.fn(() => [...schedules.values()]),
     getSchedule: vi.fn((id: string) => schedules.get(id)),
     createSchedule: vi.fn(async (_input: unknown, actor: AgentScheduleActor) => (
       schedule({ id: 'schedule-created', threadId: actor.threadId })
@@ -403,6 +660,60 @@ function createOperations() {
       queued: true
     }))
   } satisfies AgentScheduleOperations;
+}
+
+async function createRealServerFixture(): Promise<{
+  tokens: AgentCapabilityTokenStore;
+  threadManager: ReturnType<typeof createThreadManager>;
+}> {
+  tempDir = mkdtempSync(join(tmpdir(), 'clawee-agent-tool-real-'));
+  db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+  const tokens = createAgentCapabilityTokenStore();
+  const threadManager = createThreadManager({ db, dataDir: tempDir });
+  server = await buildServer({
+    token: 'public-secret',
+    dataDir: tempDir,
+    db,
+    codexHome: join(tempDir, 'codex-home'),
+    agentCapabilityTokens: tokens,
+    schedulerAutostart: false
+  });
+  return { tokens, threadManager };
+}
+
+async function createPublicSchedule(name: string, cwd: string): Promise<ScheduleResponse> {
+  const response = await server!.inject({
+    method: 'POST',
+    url: '/schedules',
+    headers: {
+      authorization: 'Bearer public-secret',
+      'content-type': 'application/json'
+    },
+    payload: {
+      name,
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: `${name}内容`,
+      cwd
+    }
+  });
+  expect(response.statusCode).toBe(201);
+  return response.json() as ScheduleResponse;
+}
+
+function readLatestScheduleOperation(): {
+  operation: string;
+  run_id: string | null;
+} {
+  return db!.prepare(`
+    SELECT operation, run_id
+    FROM schedule_operations
+    ORDER BY created_at DESC, rowid DESC
+    LIMIT 1
+  `).get() as {
+    operation: string;
+    run_id: string | null;
+  };
 }
 
 function scheduleDetail(
@@ -440,6 +751,28 @@ function schedule(overrides: Partial<ScheduleResponse> = {}): ScheduleResponse {
     pendingTrigger: false,
     createdAt: '2026-07-14T00:00:00.000Z',
     updatedAt: '2026-07-14T00:00:00.000Z',
+    ...overrides
+  };
+}
+
+function runtimeThread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
+  return {
+    id: 'thread-1',
+    scheduleId: 'schedule-1',
+    title: '每日总结',
+    codexThreadId: null,
+    cwd: '/workspace/current',
+    canonicalCwd: '/workspace/current',
+    workspaceMode: 'external',
+    profile: 'default',
+    model: null,
+    reasoning: null,
+    sandbox: 'workspace-write',
+    status: 'active',
+    purpose: 'schedule_task',
+    createdAt: '2026-07-14T00:00:00.000Z',
+    updatedAt: '2026-07-14T00:00:00.000Z',
+    archivedAt: null,
     ...overrides
   };
 }

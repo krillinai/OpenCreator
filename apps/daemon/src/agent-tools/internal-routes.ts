@@ -6,8 +6,12 @@ import type {
   UpdateScheduleRequest
 } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { ScheduleCoordinator } from '../scheduler/coordinator.js';
+import type {
+  ScheduleAgentActor,
+  ScheduleCoordinator
+} from '../scheduler/coordinator.js';
 import { SchedulerError, type SchedulerService } from '../scheduler/service.js';
+import type { RuntimeThread, ThreadManager } from '../threads/types.js';
 import { apiError } from '../api/errors.js';
 import {
   AgentCapabilityTokenError,
@@ -18,14 +22,13 @@ import {
 
 export const AGENT_TOOL_ROUTE_PREFIX = '/internal/agent-tools';
 
-export type AgentScheduleActor = Pick<
-  AgentCapabilityGrant,
-  'runId' | 'threadId' | 'createdBy'
->;
+export type AgentScheduleActor = ScheduleAgentActor;
 
 type MaybePromise<T> = T | Promise<T>;
 
 export type AgentScheduleOperations = {
+  getActorThread(actor: AgentScheduleActor): MaybePromise<RuntimeThread | undefined>;
+  listSchedules(actor: AgentScheduleActor): MaybePromise<ScheduleResponse[]>;
   getSchedule(
     id: string,
     actor: AgentScheduleActor
@@ -56,22 +59,33 @@ export function isAgentToolInternalRequest(url: string): boolean {
 export function createDefaultAgentScheduleOperations(input: {
   coordinator: ScheduleCoordinator;
   scheduler: SchedulerService;
+  threadManager: Pick<ThreadManager, 'getThread'>;
 }): AgentScheduleOperations {
   return {
+    getActorThread(actor) {
+      return input.threadManager.getThread(actor.threadId);
+    },
+    listSchedules() {
+      return input.scheduler.listSchedules().schedules;
+    },
     getSchedule(id) {
       return input.scheduler.getSchedule(id);
     },
-    createSchedule() {
-      throw new AgentScheduleOperationUnavailableError();
+    createSchedule(create, actor) {
+      return input.coordinator.createFromAgent(create, actor);
     },
-    updateSchedule(id, update) {
-      return input.coordinator.update(id, update as UpdateScheduleRequest);
+    updateSchedule(id, update, actor) {
+      return input.coordinator.updateFromAgent(
+        id,
+        update as UpdateScheduleRequest,
+        actor
+      );
     },
-    pauseSchedule(id) {
-      return input.coordinator.update(id, { enabled: false });
+    pauseSchedule(id, actor) {
+      return input.coordinator.updateFromAgent(id, { enabled: false }, actor);
     },
-    resumeSchedule(id) {
-      return input.coordinator.update(id, { enabled: true });
+    resumeSchedule(id, actor) {
+      return input.coordinator.updateFromAgent(id, { enabled: true }, actor);
     },
     runScheduleNow(id) {
       return input.scheduler.runNow(id);
@@ -93,7 +107,7 @@ export async function registerAgentToolRoutes(
       if (grant === undefined) return;
       const actor = toActor(grant);
       try {
-        const schedule = await requireBoundSchedule(
+        const schedule = await resolveAccessibleSchedule(
           request.params.id,
           actor,
           input.schedules,
@@ -132,14 +146,14 @@ export async function registerAgentToolRoutes(
       if (body === undefined) return;
       const actor = toActor(grant);
       try {
-        const existing = await requireBoundSchedule(
+        const existing = await resolveAccessibleSchedule(
           request.params.id,
           actor,
           input.schedules,
           reply
         );
         if (existing === undefined) return;
-        return await input.schedules.updateSchedule(request.params.id, body, actor);
+        return await input.schedules.updateSchedule(existing.id, body, actor);
       } catch (error) {
         return sendAgentScheduleError(error, reply);
       }
@@ -196,14 +210,14 @@ async function registerBoundActionRoute(
       }
       const actor = toActor(grant);
       try {
-        const existing = await requireBoundSchedule(
+        const existing = await resolveAccessibleSchedule(
           request.params.id,
           actor,
           input.schedules,
           reply
         );
         if (existing === undefined) return;
-        return reply.code(successStatus).send(await operation(request.params.id, actor));
+        return reply.code(successStatus).send(await operation(existing.id, actor));
       } catch (error) {
         return sendAgentScheduleError(error, reply);
       }
@@ -218,7 +232,18 @@ function authorizeRequest(
   scope: AgentCapabilityScope
 ): AgentCapabilityGrant | undefined {
   try {
-    return capabilities.authorize(readBearerToken(request.headers.authorization), { scope });
+    const grant = capabilities.authorize(
+      readBearerToken(request.headers.authorization),
+      { scope }
+    );
+    if (grant.createdBy === 'schedule' && scope !== 'schedule:get') {
+      reply.code(403).send(internalApiError(
+        'CAPABILITY_SCOPE_FORBIDDEN',
+        'Automatic schedule runs cannot mutate schedules'
+      ));
+      return undefined;
+    }
+    return grant;
   } catch (error) {
     if (!(error instanceof AgentCapabilityTokenError)) throw error;
     reply.code(error.statusCode).send(
@@ -228,18 +253,62 @@ function authorizeRequest(
   }
 }
 
-async function requireBoundSchedule(
+async function resolveAccessibleSchedule(
   id: string,
   actor: AgentScheduleActor,
   schedules: AgentScheduleOperations,
   reply: FastifyReply
 ): Promise<ScheduleDetailResponse | undefined> {
-  const schedule = await schedules.getSchedule(id, actor);
+  const actorThread = await schedules.getActorThread(actor);
+  if (actorThread === undefined || actorThread.status !== 'active') {
+    reply.code(403).send(internalApiError(
+      'CAPABILITY_THREAD_FORBIDDEN',
+      'Capability thread is unavailable'
+    ));
+    return undefined;
+  }
+
+  let resolvedId = id;
+  if (id === 'current') {
+    if (actorThread.purpose === 'schedule_task') {
+      if (actorThread.scheduleId === undefined) {
+        reply.code(409).send(apiError(
+          'SCHEDULE_THREAD_MISSING',
+          'Current task thread is not bound to a schedule'
+        ));
+        return undefined;
+      }
+      resolvedId = actorThread.scheduleId;
+    } else {
+      const candidates = (await schedules.listSchedules(actor))
+        .filter(schedule => schedule.canonicalCwd === actorThread.canonicalCwd);
+      if (candidates.length === 0) {
+        reply.code(404).send(apiError('SCHEDULE_NOT_FOUND', 'Schedule not found'));
+        return undefined;
+      }
+      if (candidates.length > 1) {
+        reply.code(409).send({
+          ...internalApiError(
+            'SCHEDULE_SELECTION_REQUIRED',
+            'Multiple schedules are available'
+          ),
+          candidates: candidates.map(toScheduleCandidate)
+        });
+        return undefined;
+      }
+      resolvedId = candidates[0]!.id;
+    }
+  }
+
+  const schedule = await schedules.getSchedule(resolvedId, actor);
   if (schedule === undefined) {
     reply.code(404).send(apiError('SCHEDULE_NOT_FOUND', 'Schedule not found'));
     return undefined;
   }
-  if (schedule.threadId !== actor.threadId) {
+  const allowed = actorThread.purpose === 'schedule_task'
+    ? schedule.threadId === actorThread.id
+    : schedule.canonicalCwd === actorThread.canonicalCwd;
+  if (!allowed) {
     reply.code(403).send(internalApiError(
       'CAPABILITY_THREAD_FORBIDDEN',
       'Capability does not allow access to this schedule'
@@ -247,6 +316,16 @@ async function requireBoundSchedule(
     return undefined;
   }
   return schedule;
+}
+
+function toScheduleCandidate(schedule: ScheduleResponse) {
+  return {
+    scheduleId: schedule.id,
+    threadId: schedule.threadId,
+    name: schedule.name,
+    enabled: schedule.enabled,
+    nextRunAt: schedule.nextRunAt ?? null
+  };
 }
 
 function parseBody(
@@ -310,9 +389,6 @@ function capabilityErrorMessage(code: AgentCapabilityTokenError['code']): string
 }
 
 function sendAgentScheduleError(error: unknown, reply: FastifyReply) {
-  if (error instanceof AgentScheduleOperationUnavailableError) {
-    return reply.code(501).send(internalApiError(error.code, error.message));
-  }
   if (!(error instanceof SchedulerError)) {
     return reply.code(500).send(apiError('INTERNAL_ERROR', 'Internal error'));
   }
@@ -336,15 +412,6 @@ function sendAgentScheduleError(error: unknown, reply: FastifyReply) {
     return reply.code(422).send(apiError(error.code, error.message));
   }
   return reply.code(500).send(apiError('INTERNAL_ERROR', 'Internal error'));
-}
-
-class AgentScheduleOperationUnavailableError extends Error {
-  readonly code = 'AGENT_SCHEDULE_CREATE_NOT_READY';
-
-  constructor() {
-    super('Agent schedule creation is not available yet');
-    this.name = 'AgentScheduleOperationUnavailableError';
-  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

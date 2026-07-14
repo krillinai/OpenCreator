@@ -5,7 +5,7 @@ import type {
 } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import type { RunManager } from '../runs/manager.js';
-import type { ThreadManager } from '../threads/types.js';
+import type { RuntimeThread, ThreadManager } from '../threads/types.js';
 import { computeNextRunAt } from './cron.js';
 import type { ScheduleRepository } from './repository.js';
 import { SchedulerError, toScheduleResponse } from './service.js';
@@ -23,9 +23,24 @@ import {
 
 export type ScheduleCoordinator = {
   createManual(input: CreateScheduleRequest): ScheduleResponse;
+  createFromAgent(
+    input: CreateScheduleRequest | Record<string, unknown>,
+    actor: ScheduleAgentActor
+  ): ScheduleResponse;
   update(id: string, input: UpdateScheduleRequest): ScheduleResponse;
+  updateFromAgent(
+    id: string,
+    input: UpdateScheduleRequest,
+    actor: ScheduleAgentActor
+  ): ScheduleResponse;
   delete(id: string): void;
   ensureBindings(): ScheduleBindingRepairResult;
+};
+
+export type ScheduleAgentActor = {
+  runId: string;
+  threadId: string;
+  createdBy: 'api' | 'schedule';
 };
 
 export type ScheduleBindingRepairResult = {
@@ -40,7 +55,11 @@ export type ScheduleCoordinatorOptions = {
   repository: ScheduleRepository;
   threadManager: Pick<
     ThreadManager,
-    'createThread' | 'getThread' | 'updateScheduleThread' | 'archiveScheduleThread'
+    | 'createThread'
+    | 'getThread'
+    | 'updateScheduleThread'
+    | 'setPurpose'
+    | 'archiveScheduleThread'
   >;
   runManager: Pick<RunManager, 'hasActiveRunForThread'>;
   defaultCwd: string;
@@ -88,8 +107,74 @@ export function createScheduleCoordinator(
       return toScheduleResponse(schedule);
     }
   );
+  const createFromAgentTransaction = options.db.transaction(
+    (
+      input: CreateScheduleRequest | Record<string, unknown>,
+      actor: ScheduleAgentActor
+    ): ScheduleResponse => {
+      const actorThread = requireAgentCreationThread(actor, options.threadManager);
+      const parsed = parseCreateScheduleRequest(
+        agentCreateRequest(input, actorThread),
+        {
+          now: clock.now().toISOString(),
+          defaultCwd: actorThread.cwd,
+          profileValidator: options.profileValidator
+        }
+      );
+      if (!parsed.ok) throw new SchedulerError(parsed.code, parsed.message);
+
+      if (actorThread.purpose === 'schedule_draft') {
+        const created = requireBoundSchedule(options.repository.create({
+          ...parsed.value,
+          threadId: actorThread.id
+        }));
+        options.threadManager.setPurpose(actorThread.id, 'schedule_task');
+        options.threadManager.updateScheduleThread(actorThread.id, {
+          title: parsed.value.name,
+          cwd: parsed.value.cwd,
+          profile: parsed.value.profile,
+          model: parsed.value.model,
+          reasoning: parsed.value.reasoning,
+          sandbox: parsed.value.sandbox
+        });
+        options.repository.insertOperation({
+          scheduleId: created.id,
+          operation: 'create',
+          status: 'succeeded',
+          runId: actor.runId
+        });
+        return toScheduleResponse(created);
+      }
+
+      const thread = options.threadManager.createThread({
+        purpose: 'schedule_task',
+        title: parsed.value.name,
+        cwd: parsed.value.cwd,
+        workspaceMode: 'external',
+        profile: parsed.value.profile,
+        model: parsed.value.model ?? undefined,
+        reasoning: parsed.value.reasoning ?? undefined,
+        sandbox: parsed.value.sandbox
+      });
+      const schedule = requireBoundSchedule(options.repository.create({
+        ...parsed.value,
+        threadId: thread.id
+      }));
+      options.repository.insertOperation({
+        scheduleId: schedule.id,
+        operation: 'create',
+        status: 'succeeded',
+        runId: actor.runId
+      });
+      return toScheduleResponse(schedule);
+    }
+  );
   const updateTransaction = options.db.transaction(
-    (id: string, input: UpdateScheduleRequest): ScheduleResponse => {
+    (
+      id: string,
+      input: UpdateScheduleRequest,
+      actorRunId?: string
+    ): ScheduleResponse => {
       const existing = requireSchedule(options.repository, id);
       const thread = requireScheduleThread(existing, options.threadManager);
       const parsed = parseUpdateScheduleRequest(input, {
@@ -138,7 +223,8 @@ export function createScheduleCoordinator(
       options.repository.insertOperation({
         scheduleId: id,
         operation: 'update',
-        status: 'succeeded'
+        status: 'succeeded',
+        runId: actorRunId
       });
       return toScheduleResponse(bound);
     }
@@ -209,8 +295,27 @@ export function createScheduleCoordinator(
       return schedule;
     },
 
+    createFromAgent(
+      input: CreateScheduleRequest | Record<string, unknown>,
+      actor: ScheduleAgentActor
+    ): ScheduleResponse {
+      const schedule = createFromAgentTransaction(input, actor);
+      options.onSchedulesChanged?.();
+      return schedule;
+    },
+
     update(id: string, input: UpdateScheduleRequest): ScheduleResponse {
       const schedule = updateTransaction(id, input);
+      options.onSchedulesChanged?.();
+      return schedule;
+    },
+
+    updateFromAgent(
+      id: string,
+      input: UpdateScheduleRequest,
+      actor: ScheduleAgentActor
+    ): ScheduleResponse {
+      const schedule = updateTransaction(id, input, actor.runId);
       options.onSchedulesChanged?.();
       return schedule;
     },
@@ -247,6 +352,56 @@ export function createScheduleCoordinator(
       return result;
     }
   };
+}
+
+function requireAgentCreationThread(
+  actor: ScheduleAgentActor,
+  threadManager: Pick<ThreadManager, 'getThread'>
+): RuntimeThread {
+  const thread = threadManager.getThread(actor.threadId);
+  if (thread === undefined) {
+    throw new SchedulerError(
+      'SCHEDULE_THREAD_MISSING',
+      `Agent thread is missing: ${actor.threadId}`
+    );
+  }
+  if (thread.status === 'archived') {
+    throw new SchedulerError(
+      'SCHEDULE_THREAD_ARCHIVED',
+      `Agent thread is archived: ${actor.threadId}`
+    );
+  }
+  if (thread.purpose === 'schedule_task') {
+    throw new SchedulerError(
+      'VALIDATION_FAILED',
+      'A schedule task thread cannot create another schedule'
+    );
+  }
+  return thread;
+}
+
+function agentCreateRequest(
+  input: CreateScheduleRequest | Record<string, unknown>,
+  thread: RuntimeThread
+): Record<string, unknown> {
+  if (!isPlainObject(input)) return {};
+  return {
+    name: input.name,
+    cron: input.cron,
+    timezone: input.timezone,
+    enabled: input.enabled,
+    prompt: input.prompt,
+    concurrencyPolicy: input.concurrencyPolicy,
+    cwd: thread.cwd,
+    profile: thread.profile,
+    model: thread.model ?? null,
+    reasoning: thread.reasoning ?? null,
+    sandbox: thread.sandbox
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function requireBoundSchedule(schedule: ScheduleRecord): BoundScheduleRecord {

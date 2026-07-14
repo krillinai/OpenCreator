@@ -264,7 +264,8 @@ export async function buildServer(input: BuildServerInput) {
     input.agentScheduleOperations
     ?? createDefaultAgentScheduleOperations({
       coordinator: scheduleCoordinator,
-      scheduler
+      scheduler,
+      threadManager
     });
   const taskService = createTaskService({
     db,

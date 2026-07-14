@@ -20,6 +20,119 @@ afterEach(() => {
 });
 
 describe('schedule coordinator', () => {
+  it('atomically binds an agent-created schedule to the current draft thread', () => {
+    const { coordinator, repository, threadManager } = createFixture();
+    const draft = threadManager.createThread({
+      purpose: 'schedule_draft',
+      title: '任务草稿',
+      cwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      model: 'gpt-5',
+      reasoning: 'high',
+      sandbox: 'read-only'
+    });
+
+    const schedule = coordinator.createFromAgent({
+      ...scheduleRequest(),
+      cwd: join(tempDir, 'forged-cwd'),
+      profile: 'forged-profile',
+      model: 'forged-model',
+      reasoning: 'low',
+      sandbox: 'danger-full-access'
+    }, {
+      runId: 'run-agent-create',
+      threadId: draft.id,
+      createdBy: 'api'
+    });
+
+    expect(schedule).toMatchObject({
+      id: 'sch_one',
+      threadId: draft.id,
+      cwd: draft.cwd,
+      canonicalCwd: draft.canonicalCwd,
+      profile: draft.profile,
+      model: draft.model,
+      reasoning: draft.reasoning,
+      sandbox: draft.sandbox
+    });
+    expect(threadManager.getThread(draft.id)).toMatchObject({
+      id: draft.id,
+      scheduleId: schedule.id,
+      purpose: 'schedule_task',
+      title: schedule.name,
+      cwd: draft.cwd,
+      profile: draft.profile,
+      model: draft.model,
+      reasoning: draft.reasoning,
+      sandbox: draft.sandbox
+    });
+    expect(repository.listOperations(schedule.id)[0]).toMatchObject({
+      operation: 'create',
+      status: 'succeeded',
+      runId: 'run-agent-create'
+    });
+  });
+
+  it('creates a new task thread for an agent request from a conversation', () => {
+    const { coordinator, threadManager } = createFixture();
+    const conversation = threadManager.createThread({
+      purpose: 'conversation',
+      title: '普通对话',
+      cwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      model: 'gpt-5',
+      reasoning: 'medium',
+      sandbox: 'workspace-write'
+    });
+
+    const schedule = coordinator.createFromAgent(scheduleRequest(), {
+      runId: 'run-agent-create',
+      threadId: conversation.id,
+      createdBy: 'api'
+    });
+
+    expect(schedule.threadId).not.toBe(conversation.id);
+    expect(threadManager.getThread(conversation.id)?.purpose).toBe('conversation');
+    expect(threadManager.getThread(schedule.threadId)).toMatchObject({
+      purpose: 'schedule_task',
+      title: schedule.name,
+      cwd: conversation.cwd,
+      canonicalCwd: conversation.canonicalCwd,
+      profile: conversation.profile,
+      model: conversation.model,
+      reasoning: conversation.reasoning,
+      sandbox: conversation.sandbox
+    });
+  });
+
+  it('rolls back an agent draft binding when thread synchronization fails', () => {
+    const { coordinator, threadManager } = createFixture();
+    const draft = threadManager.createThread({
+      purpose: 'schedule_draft',
+      cwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+    vi.spyOn(threadManager, 'updateScheduleThread').mockImplementationOnce(() => {
+      throw new Error('thread synchronization failed');
+    });
+
+    expect(() => coordinator.createFromAgent(scheduleRequest(), {
+      runId: 'run-agent-create',
+      threadId: draft.id,
+      createdBy: 'api'
+    })).toThrow('thread synchronization failed');
+    expect(threadManager.getThread(draft.id)).toMatchObject({
+      purpose: 'schedule_draft'
+    });
+    expect(threadManager.getThread(draft.id)).not.toHaveProperty('scheduleId');
+    expect(countRows('schedules')).toBe(0);
+    expect(countRows('schedule_operations')).toBe(0);
+  });
+
   it('atomically creates a bound schedule and dedicated task thread with matching configuration', () => {
     const { coordinator, repository, threadManager } = createFixture();
 
@@ -225,6 +338,39 @@ describe('schedule coordinator', () => {
       expect.objectContaining({ code: 'SCHEDULE_HAS_ACTIVE_RUN' })
     );
     expect(hasActiveRunForThread).toHaveBeenCalledWith(created.threadId);
+  });
+
+  it('records the actor run for agent updates and preserves active-run conflict protection', () => {
+    let active = false;
+    const { coordinator, repository, threadManager } = createFixture({
+      hasActiveRunForThread: () => active
+    });
+    const created = coordinator.createManual(scheduleRequest());
+
+    const updated = coordinator.updateFromAgent(created.id, {
+      name: 'Agent renamed report'
+    }, {
+      runId: 'run-agent-update',
+      threadId: created.threadId,
+      createdBy: 'api'
+    });
+
+    expect(updated.name).toBe('Agent renamed report');
+    expect(repository.listOperations(created.id)[0]).toMatchObject({
+      operation: 'update',
+      runId: 'run-agent-update'
+    });
+
+    active = true;
+    expect(() => coordinator.updateFromAgent(created.id, {
+      sandbox: 'danger-full-access'
+    }, {
+      runId: 'run-agent-update-active',
+      threadId: created.threadId,
+      createdBy: 'api'
+    })).toThrow(expect.objectContaining({ code: 'SCHEDULE_HAS_ACTIVE_RUN' }));
+    expect(threadManager.getThread(created.threadId)?.sandbox).toBe('workspace-write');
+    expect(repository.listOperations(created.id)).toHaveLength(2);
   });
 
   it('soft deletes the schedule and archives its task thread while preserving the binding', () => {

@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B6`，已通过（2026-07-14 20:38 CST）；下一批 `P1-B7` |
+| 当前批次 | `P1-B7`，已通过（2026-07-14 21:04 CST）；下一批 `P1-B8` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -338,7 +338,7 @@ P2-B1 审批和连续失败体验
 | P1-B4 | 任务会话头部 | `PASS` |
 | P1-B5 | 能力令牌和内部路由 | `PASS` |
 | P1-B6 | Schedule MCP 工具和逐 Run 注入 | `PASS` |
-| P1-B7 | Agent 创建和管理任务协调 | `NOT_STARTED` |
+| P1-B7 | Agent 创建和管理任务协调 | `PASS` |
 | P1-B8 | 删除正则创建流程 | `NOT_STARTED` |
 | P1-B9 | 通知深链接和结果摘要 | `NOT_STARTED` |
 | P1-B10 | Schedule Run 公开时间线和 P1 门禁 | `NOT_STARTED` |
@@ -1419,7 +1419,7 @@ feat(agent-tools): 注入内置 Schedule MCP 工具
 
 ### P1-B7：Agent 创建和管理任务协调
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`（2026-07-14 21:04 CST）
 
 **依赖：** `P1-B6`
 
@@ -2359,6 +2359,23 @@ docs(release): 完成任务专属会话发布与回滚说明
   起止且间隔整除 60；更复杂的自然语言间隔会返回明确校验错误，由 Agent 继续澄清。
 - 下一步：执行 P1-B7，把六个工具接到 ScheduleCoordinator，并实现 draft/普通/任务会话
   的 actor 绑定语义。
+
+### 2026-07-14 21:04 CST - P1-B7
+
+- 状态：`PASS`
+- 提交：`feat(scheduler): 支持 Agent 创建和管理任务`
+  （SHA 以包含本日志的提交为准）
+- 已完成：`createFromAgent()` 与 `updateFromAgent()`、草稿 Thread 原子绑定和 purpose
+  转换、普通会话继承执行配置创建任务 Thread、`current` 绑定解析、同
+  `canonicalCwd` 候选筛选、显式 ID 作用域校验、结构化候选 Tool 结果，以及自动
+  Schedule Run 的路由级 mutation 防御。
+- 验证：P1-B7 专项 75 项、daemon 全量 630 项、daemon typecheck、生产 build 和
+  `git diff --check` 通过；常规全量中的 13 项真实 Codex smoke 按既有开关跳过。
+- 未完成：Web 的“使用 Clawee 创建”仍走旧正则特殊分支，留到 P1-B8 删除并改为
+  `schedule_draft` 普通 Agent Run。
+- 风险或偏差：普通会话的隐式候选限定为同一 `canonicalCwd` 的未删除 Schedule；
+  多候选返回 `SCHEDULE_SELECTION_REQUIRED`，显式 ID 也必须处于相同作用域。
+- 下一步：执行 P1-B8，删除正则提醒解析和标题判断，统一走 Agent Tool 创建流程。
 
 ### 日志模板
 

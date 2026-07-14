@@ -221,6 +221,12 @@ export function createAgentScheduleHttpClient(input: {
           });
           const body = await readJsonResponse(response);
           if (!response.ok) {
+            if (
+              response.status === 409
+              && scheduleSelectionSummary(body) !== undefined
+            ) {
+              return body;
+            }
             const apiError = extractApiError(body);
             throw new AgentScheduleToolError(
               apiError?.code ?? 'AGENT_TOOL_REQUEST_FAILED',
@@ -283,6 +289,8 @@ function compactObject(
 }
 
 function scheduleSummary(value: unknown): Record<string, unknown> {
+  const selection = scheduleSelectionSummary(value);
+  if (selection !== undefined) return selection;
   const schedule = requireRecord(value, 'schedule response');
   return {
     scheduleId: requireString(schedule, 'id'),
@@ -294,6 +302,8 @@ function scheduleSummary(value: unknown): Record<string, unknown> {
 }
 
 function runNowSummary(value: unknown): Record<string, unknown> {
+  const selection = scheduleSelectionSummary(value);
+  if (selection !== undefined) return selection;
   const response = requireRecord(value, 'run-now response');
   const schedule = scheduleSummary(response.schedule);
   const run = isRecord(response.run) ? response.run : undefined;
@@ -303,6 +313,52 @@ function runNowSummary(value: unknown): Record<string, unknown> {
     runStatus: run === undefined ? null : requireString(run, 'status'),
     skipped: response.skipped === true,
     queued: response.queued === true
+  };
+}
+
+function scheduleSelectionSummary(
+  value: unknown
+): Record<string, unknown> | undefined {
+  if (!isRecord(value) || !isRecord(value.error)) return undefined;
+  if (
+    value.error.code !== 'SCHEDULE_SELECTION_REQUIRED'
+    || typeof value.error.message !== 'string'
+    || !Array.isArray(value.candidates)
+    || value.candidates.length === 0
+  ) {
+    return undefined;
+  }
+
+  const candidates = [];
+  for (const candidate of value.candidates) {
+    if (
+      !isRecord(candidate)
+      || typeof candidate.scheduleId !== 'string'
+      || typeof candidate.threadId !== 'string'
+      || typeof candidate.name !== 'string'
+      || typeof candidate.enabled !== 'boolean'
+      || (
+        candidate.nextRunAt !== null
+        && candidate.nextRunAt !== undefined
+        && typeof candidate.nextRunAt !== 'string'
+      )
+    ) {
+      return undefined;
+    }
+    candidates.push({
+      scheduleId: candidate.scheduleId,
+      threadId: candidate.threadId,
+      name: candidate.name,
+      enabled: candidate.enabled,
+      nextRunAt: candidate.nextRunAt ?? null
+    });
+  }
+
+  return {
+    selectionRequired: true,
+    code: 'SCHEDULE_SELECTION_REQUIRED',
+    message: value.error.message,
+    candidates
   };
 }
 

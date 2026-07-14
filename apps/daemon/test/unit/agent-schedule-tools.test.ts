@@ -152,6 +152,81 @@ describe('agent schedule tools', () => {
     });
   });
 
+  it('returns schedule candidates as a structured tool result', async () => {
+    const selection = {
+      error: {
+        code: 'SCHEDULE_SELECTION_REQUIRED',
+        message: 'Multiple schedules are available'
+      },
+      candidates: [
+        {
+          scheduleId: 'schedule-1',
+          threadId: 'thread-1',
+          name: '每日总结',
+          enabled: true,
+          nextRunAt: '2026-07-15T10:00:00.000Z'
+        },
+        {
+          scheduleId: 'schedule-2',
+          threadId: 'thread-2',
+          name: '每周复盘',
+          enabled: false,
+          nextRunAt: null
+        }
+      ]
+    };
+    const request = vi.fn(async () => selection);
+    const tools = createAgentScheduleToolDefinitions({
+      request,
+      defaultTimezone: 'UTC'
+    });
+
+    await expect(tools.clawee_schedule_update.execute({
+      name: '需要先选择'
+    })).resolves.toEqual({
+      selectionRequired: true,
+      code: 'SCHEDULE_SELECTION_REQUIRED',
+      message: 'Multiple schedules are available',
+      candidates: selection.candidates
+    });
+    await expect(tools.clawee_schedule_run_now.execute({})).resolves.toEqual({
+      selectionRequired: true,
+      code: 'SCHEDULE_SELECTION_REQUIRED',
+      message: 'Multiple schedules are available',
+      candidates: selection.candidates
+    });
+  });
+
+  it('preserves a valid schedule-selection response from the internal api', async () => {
+    const selection = {
+      error: {
+        code: 'SCHEDULE_SELECTION_REQUIRED',
+        message: 'Multiple schedules are available'
+      },
+      candidates: [{
+        scheduleId: 'schedule-1',
+        threadId: 'thread-1',
+        name: '每日总结',
+        enabled: true,
+        nextRunAt: null
+      }]
+    };
+    const client = createAgentScheduleHttpClient({
+      baseUrl: 'http://127.0.0.1:3000',
+      token: 'clwcap_test',
+      fetch: vi.fn(async () => new Response(JSON.stringify(selection), {
+        status: 409,
+        headers: { 'content-type': 'application/json' }
+      })) as typeof fetch
+    });
+
+    await expect(client.request({
+      method: 'PATCH',
+      path: '/internal/agent-tools/schedules/current',
+      body: { name: '需要先选择' }
+    })).resolves.toEqual(selection);
+  });
+
   it('reports daemon unavailability, timeout and api failures without exposing the token', async () => {
     const token = 'clwcap_VerySecretCapabilityValue';
     const unavailable = createAgentScheduleHttpClient({
