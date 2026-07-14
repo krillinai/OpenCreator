@@ -410,6 +410,8 @@ export type RunContextResponse = {
   items: RunContextItem[];
 };
 
+export type ThreadPurpose = 'conversation' | 'schedule_draft' | 'schedule_task';
+
 export type CreateThreadRequest = {
   title?: string;
   cwd?: string;
@@ -418,9 +420,8 @@ export type CreateThreadRequest = {
   model?: string;
   reasoning?: ReasoningEffort;
   sandbox?: SandboxMode;
+  purpose?: Extract<ThreadPurpose, 'conversation' | 'schedule_draft'>;
 };
-
-export type ThreadPurpose = 'conversation' | 'schedule_draft' | 'schedule_task';
 
 export type UpdateThreadRequest = {
   sandbox?: SandboxMode;

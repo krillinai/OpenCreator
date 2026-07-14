@@ -106,6 +106,7 @@ export type InsertThreadInput = {
 
 export type ThreadRow = {
   id: string;
+  schedule_id: string | null;
   title: string | null;
   codex_thread_id: string | null;
   cwd: string;
@@ -134,6 +135,8 @@ export type ThreadRepository = {
   archiveThread(id: string): void;
   updateImportedThread(input: UpdateImportedThreadInput): void;
   updateThreadSandbox(input: UpdateThreadSandboxInput): void;
+  updateScheduleThread(input: UpdateScheduleThreadRowInput): void;
+  setThreadPurpose(input: { id: string; purpose: ThreadPurpose }): void;
   setCodexThreadId(threadId: string, codexThreadId: string): void;
   touchThread(threadId: string): void;
 };
@@ -148,6 +151,17 @@ export type UpdateImportedThreadInput = {
 
 export type UpdateThreadSandboxInput = {
   id: string;
+  sandbox: string;
+};
+
+export type UpdateScheduleThreadRowInput = {
+  id: string;
+  title: string;
+  cwd: string;
+  canonicalCwd: string;
+  profile: string;
+  model: string | null;
+  reasoning: string | null;
   sandbox: string;
 };
 
@@ -327,6 +341,13 @@ export function createRunRepository(db: Database.Database): RunRepository {
 }
 
 export function createThreadRepository(db: Database.Database): ThreadRepository {
+  const threadSelect = `
+    SELECT threads.*, schedules.id AS schedule_id
+    FROM threads
+    LEFT JOIN schedules
+      ON schedules.thread_id = threads.id
+      AND schedules.deleted_at IS NULL
+  `;
   const insert = db.prepare(`
     INSERT INTO threads (
       id, title, codex_thread_id, cwd, canonical_cwd, workspace_mode,
@@ -337,12 +358,20 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
       COALESCE(@createdAt, CURRENT_TIMESTAMP), COALESCE(@updatedAt, CURRENT_TIMESTAMP)
     )
   `);
-  const get = db.prepare<string>('SELECT * FROM threads WHERE id = ?');
-  const getByCodexThreadId = db.prepare<string>('SELECT * FROM threads WHERE codex_thread_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1');
+  const get = db.prepare<string>(`
+    ${threadSelect}
+    WHERE threads.id = ?
+  `);
+  const getByCodexThreadId = db.prepare<string>(`
+    ${threadSelect}
+    WHERE threads.codex_thread_id = ?
+    ORDER BY threads.updated_at DESC, threads.id DESC
+    LIMIT 1
+  `);
   const list = db.prepare<{ status: 'active' | 'archived' | 'all'; limit: number }>(`
-    SELECT * FROM threads
-    WHERE (@status = 'all' OR status = @status)
-    ORDER BY updated_at DESC, id DESC
+    ${threadSelect}
+    WHERE (@status = 'all' OR threads.status = @status)
+    ORDER BY threads.updated_at DESC, threads.id DESC
     LIMIT @limit
   `);
   const listProfileReferences = db.prepare<string>(`
@@ -382,6 +411,25 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   const updateSandbox = db.prepare(`
     UPDATE threads
     SET sandbox = @sandbox,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @id
+  `);
+  const updateScheduleThread = db.prepare(`
+    UPDATE threads
+    SET title = @title,
+        cwd = @cwd,
+        canonical_cwd = @canonicalCwd,
+        workspace_mode = 'external',
+        profile = @profile,
+        model = @model,
+        reasoning = @reasoning,
+        sandbox = @sandbox,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @id
+  `);
+  const setPurpose = db.prepare(`
+    UPDATE threads
+    SET purpose = @purpose,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = @id
   `);
@@ -436,6 +484,12 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     },
     updateThreadSandbox(input: UpdateThreadSandboxInput): void {
       updateSandbox.run(input);
+    },
+    updateScheduleThread(input: UpdateScheduleThreadRowInput): void {
+      updateScheduleThread.run(input);
+    },
+    setThreadPurpose(input: { id: string; purpose: ThreadPurpose }): void {
+      setPurpose.run(input);
     },
     setCodexThreadId(threadId: string, codexThreadId: string): void {
       setCodexThreadId.run({ threadId, codexThreadId });

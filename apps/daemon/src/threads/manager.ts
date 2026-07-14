@@ -6,7 +6,14 @@ import { nanoid } from 'nanoid';
 import { expandHome } from '../platform/paths.js';
 import { createThreadRepository, type ThreadRow } from '../storage/repositories.js';
 import { createConversationTitle } from './conversation-title.js';
-import type { CreateRuntimeThreadInput, ImportCodexThreadInput, RuntimeThread, ThreadManager, UpdateRuntimeThreadInput } from './types.js';
+import type {
+  CreateRuntimeThreadInput,
+  ImportCodexThreadInput,
+  RuntimeThread,
+  ThreadManager,
+  UpdateRuntimeThreadInput,
+  UpdateScheduleThreadInput
+} from './types.js';
 
 export type CreateThreadManagerInput = {
   db: Database.Database;
@@ -43,7 +50,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
         reasoning: request.reasoning ?? null,
         sandbox,
         status,
-        purpose: 'conversation'
+        purpose: request.purpose ?? 'conversation'
       });
 
       return mapThreadRow(threads.getThread(id)!);
@@ -102,13 +109,46 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     },
 
     updateThread(id: string, request: UpdateRuntimeThreadInput): RuntimeThread {
-      if (threads.getThread(id) === undefined) throw new Error('THREAD_NOT_FOUND');
+      const existing = getRequiredThread(id);
+      if (existing.purpose === 'schedule_task') throw new Error('THREAD_MANAGED_BY_SCHEDULE');
       threads.updateThreadSandbox({ id, sandbox: request.sandbox });
       return mapThreadRow(threads.getThread(id)!);
     },
 
+    updateScheduleThread(id: string, request: UpdateScheduleThreadInput): RuntimeThread {
+      const existing = getRequiredThread(id);
+      if (existing.purpose !== 'schedule_task') throw new Error('THREAD_NOT_SCHEDULE_TASK');
+      const cwd = normalizeExternalCwd(request.cwd, input.homeDir ?? homedir());
+      mkdirSync(cwd, { recursive: true });
+      threads.updateScheduleThread({
+        id,
+        title: createConversationTitle(request.title),
+        cwd,
+        canonicalCwd: realpathSync(cwd),
+        profile: request.profile,
+        model: request.model ?? null,
+        reasoning: request.reasoning ?? null,
+        sandbox: request.sandbox
+      });
+      return mapThreadRow(threads.getThread(id)!);
+    },
+
+    setPurpose(id: string, purpose: RuntimeThread['purpose']): RuntimeThread {
+      getRequiredThread(id);
+      threads.setThreadPurpose({ id, purpose });
+      return mapThreadRow(threads.getThread(id)!);
+    },
+
     archiveThread(id: string): RuntimeThread {
-      if (threads.getThread(id) === undefined) throw new Error('THREAD_NOT_FOUND');
+      const existing = getRequiredThread(id);
+      if (existing.purpose === 'schedule_task') throw new Error('THREAD_MANAGED_BY_SCHEDULE');
+      threads.archiveThread(id);
+      return mapThreadRow(threads.getThread(id)!);
+    },
+
+    archiveScheduleThread(id: string): RuntimeThread {
+      const existing = getRequiredThread(id);
+      if (existing.purpose !== 'schedule_task') throw new Error('THREAD_NOT_SCHEDULE_TASK');
       threads.archiveThread(id);
       return mapThreadRow(threads.getThread(id)!);
     },
@@ -128,6 +168,12 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       threads.touchThread(threadId);
     }
   };
+
+  function getRequiredThread(id: string): ThreadRow {
+    const thread = threads.getThread(id);
+    if (thread === undefined) throw new Error('THREAD_NOT_FOUND');
+    return thread;
+  }
 }
 
 function normalizeExternalCwd(cwd: string, homeDir: string): string {
@@ -148,6 +194,7 @@ function toSqliteTimestamp(iso: string): string {
 function mapThreadRow(row: ThreadRow): RuntimeThread {
   return {
     id: row.id,
+    ...(row.schedule_id === null ? {} : { scheduleId: row.schedule_id }),
     title: row.title === null ? null : createConversationTitle(row.title),
     codexThreadId: row.codex_thread_id,
     cwd: row.cwd,

@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P0-B2`，等待开始 |
+| 当前批次 | `P0-B3`，等待开始 |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -325,7 +325,7 @@ P2-B1 审批和连续失败体验
 | 批次 | 目标 | 状态 |
 |---|---|---|
 | P0-B1 | 收敛 Schema、Protocol 和当前 WIP | `PASS` |
-| P0-B2 | Thread purpose、scheduleId 和配置保护 | `NOT_STARTED` |
+| P0-B2 | Thread purpose、scheduleId 和配置保护 | `PASS` |
 | P0-B3 | ScheduleCoordinator 手动创建事务 | `NOT_STARTED` |
 | P0-B4 | 原子更新、暂停恢复和删除 | `NOT_STARTED` |
 | P0-B5 | 固定 Thread 触发与 Thread 级并发 | `NOT_STARTED` |
@@ -449,7 +449,7 @@ feat(runtime): 建立 Schedule 与 Thread 绑定基础模型
 
 ### P0-B2：Thread purpose、scheduleId 和配置保护
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P0-B1`
 
@@ -499,6 +499,23 @@ pnpm --filter @clawee/daemon typecheck
 - 任务 Thread 可被稳定识别，不依赖标题。
 - `scheduleId` 由数据库绑定关系返回。
 - 普通 Thread API 无法破坏 Schedule Thread 配置或生命周期。
+
+**执行结果（2026-07-14）：**
+
+- `CreateThreadRequest` 对外只允许 `conversation` 和 `schedule_draft`，内部
+  `CreateRuntimeThreadInput` 可显式创建 `schedule_task`。
+- Thread Repository 通过活动 Schedule 的 `LEFT JOIN` 返回 `scheduleId`，Thread get/list
+  无需额外逐条查询。
+- ThreadManager 已增加 `updateScheduleThread()`、`setPurpose()` 和
+  `archiveScheduleThread()` 内部接口。
+- 普通 Thread 更新和归档对 `schedule_task` 抛出 `THREAD_MANAGED_BY_SCHEDULE`，公开路由
+  返回 409；普通会话行为保持不变。
+- P0-B2 专项测试：4 个文件、145 项通过。
+- daemon 全量测试：564 项通过，13 项真实 Codex smoke 按环境开关跳过。
+- Web 全量测试：479 项通过。
+- Protocol、daemon、Web typecheck 均通过。
+- daemon build 和 `pnpm build` 均通过；Vite 仅保留既有大 chunk 警告。
+- `git diff --check`：通过。
 
 **回滚边界：** 仅回滚 Thread 内部接口、路由保护和查询装饰，不回滚 P0-B1 Schema。
 
@@ -1975,6 +1992,22 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：真实 Codex smoke 13 项按环境开关跳过，不属于 P0-B1 完成门禁。
 - 下一步：执行 P0-B2，补 Thread purpose 创建能力、scheduleId 查询和 Schedule Thread
   配置保护。
+
+### 2026-07-14 13:38 CST - P0-B2
+
+- 状态：`PASS`
+- 提交：`feat(threads): 支持任务会话类型和绑定保护`
+  （SHA 以包含本日志的提交为准）
+- 已完成：内部 Thread purpose 创建、公开 draft 创建、活动 Schedule 绑定查询、任务会话
+  配置更新接口，以及公开更新和归档保护。
+- 验证：Protocol/daemon/Web typecheck、P0-B2 专项测试、daemon/Web 全量测试、daemon
+  build、全仓 build 和 `git diff --check` 均通过。
+- 未完成：Schedule 与任务 Thread 的原子创建、对外必填 `ScheduleResponse.threadId` 和
+  `BoundScheduleRecord` 留到 P0-B3。
+- 风险或偏差：daemon 首次与 Web 测试并行运行时，一个既有 MCP 子进程超时用例未及时
+  捕获 stderr；该用例隔离重跑通过，daemon 在无并行负载下全量重跑通过。
+- 下一步：执行 P0-B3，新增 ScheduleCoordinator 并在同一 SQLite transaction 中创建
+  Schedule 与 `schedule_task` Thread。
 
 ### 日志模板
 

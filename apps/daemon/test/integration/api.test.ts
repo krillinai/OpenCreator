@@ -25,6 +25,7 @@ import type { MarketArchiveDownloader } from '../../src/codex/skills/market-down
 import { SchedulerError, type SchedulerService } from '../../src/scheduler/service.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
+import { createThreadManager } from '../../src/threads/manager.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
 import { createRunManager } from '../../src/runs/manager.js';
 
@@ -2325,6 +2326,89 @@ describe('runtime api', () => {
 
     const detail = await authGet(`/threads/${thread.id}`);
     expect(detail.json().thread.sandbox).toBe('danger-full-access');
+  });
+
+  it('creates schedule drafts but rejects direct public schedule task creation', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const draft = await authPost('/threads', {
+      title: 'Create schedule',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_draft'
+    });
+    const task = await authPost('/threads', {
+      title: 'Bypass coordinator',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_task'
+    });
+
+    expect(draft.statusCode).toBe(201);
+    expect(draft.json().thread.purpose).toBe('schedule_draft');
+    expect(task.statusCode).toBe(400);
+    expect(task.json().error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('returns schedule bindings and blocks public mutation of schedule task threads', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const manager = createThreadManager({ db, dataDir: tempDir });
+    const task = manager.createThread({
+      title: 'Daily report',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_task'
+    });
+    db.prepare(`
+      INSERT INTO schedules (
+        id, thread_id, name, cron, timezone, prompt, prompt_hash, prompt_preview_redacted,
+        profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'sch_one',
+      task.id,
+      'Daily report',
+      '0 9 * * *',
+      'Asia/Shanghai',
+      'Summarize project status',
+      'hash',
+      'Summarize project status',
+      'default',
+      tempDir,
+      tempDir,
+      'workspace-write',
+      'queue',
+      'skip'
+    );
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      db
+    });
+
+    const detail = await authGet(`/threads/${task.id}`);
+    const listed = await authGet('/threads');
+    const updated = await authPatch(`/threads/${task.id}`, {
+      sandbox: 'danger-full-access'
+    });
+    const archived = await authPost(`/threads/${task.id}/archive`, {});
+
+    expect(detail.json().thread).toMatchObject({
+      id: task.id,
+      purpose: 'schedule_task',
+      scheduleId: 'sch_one'
+    });
+    expect(listed.json().threads).toContainEqual(expect.objectContaining({
+      id: task.id,
+      scheduleId: 'sch_one'
+    }));
+    expect(updated.statusCode).toBe(409);
+    expect(updated.json().error.code).toBe('THREAD_MANAGED_BY_SCHEDULE');
+    expect(archived.statusCode).toBe(409);
+    expect(archived.json().error.code).toBe('THREAD_MANAGED_BY_SCHEDULE');
   });
 
   it('imports global Codex sessions into the thread list', async () => {

@@ -8,6 +8,7 @@ import type {
 
 export type RuntimeThread = {
   id: string;
+  scheduleId?: string;
   title: string | null;
   codexThreadId?: string | null;
   cwd: string;
@@ -24,9 +25,20 @@ export type RuntimeThread = {
   archivedAt?: string | null;
 };
 
-export type CreateRuntimeThreadInput = CreateThreadRequest;
+export type CreateRuntimeThreadInput = Omit<CreateThreadRequest, 'purpose'> & {
+  purpose?: ThreadPurpose;
+};
 
 export type UpdateRuntimeThreadInput = {
+  sandbox: SandboxMode;
+};
+
+export type UpdateScheduleThreadInput = {
+  title: string;
+  cwd: string;
+  profile: string;
+  model?: string | null;
+  reasoning?: ReasoningEffort | null;
   sandbox: SandboxMode;
 };
 
@@ -49,7 +61,10 @@ export type ThreadManager = {
   listThreads(filter?: { status?: 'active' | 'archived' | 'all'; limit?: number }): RuntimeThread[];
   importCodexThread(input: ImportCodexThreadInput): RuntimeThread;
   updateThread(id: string, input: UpdateRuntimeThreadInput): RuntimeThread;
+  updateScheduleThread(id: string, input: UpdateScheduleThreadInput): RuntimeThread;
+  setPurpose(id: string, purpose: ThreadPurpose): RuntimeThread;
   archiveThread(id: string): RuntimeThread;
+  archiveScheduleThread(id: string): RuntimeThread;
   archiveCodexThread(codexThreadId: string): RuntimeThread | undefined;
   setCodexThreadId(threadId: string, codexThreadId: string): void;
   touchThread(threadId: string): void;

@@ -75,6 +75,83 @@ describe('thread manager', () => {
     });
   });
 
+  it('creates schedule drafts and schedule tasks only through explicit internal purposes', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({ db: database, dataDir: tempDir });
+
+    const draft = manager.createThread({
+      title: 'Draft',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_draft'
+    });
+    const task = manager.createThread({
+      title: 'Task',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_task'
+    });
+
+    expect(draft.purpose).toBe('schedule_draft');
+    expect(task.purpose).toBe('schedule_task');
+  });
+
+  it('returns the active schedule binding with task thread queries', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({ db: database, dataDir: tempDir });
+    const task = manager.createThread({
+      title: 'Task',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_task'
+    });
+    insertScheduleBinding(database, 'sch_one', task.id, tempDir);
+
+    expect(manager.getThread(task.id)?.scheduleId).toBe('sch_one');
+    expect(manager.listThreads().find(thread => thread.id === task.id)?.scheduleId).toBe('sch_one');
+  });
+
+  it('uses explicit internal methods to manage schedule task configuration and lifecycle', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({ db: database, dataDir: tempDir });
+    const draft = manager.createThread({
+      title: 'Draft',
+      workspaceMode: 'external',
+      cwd: tempDir,
+      purpose: 'schedule_draft'
+    });
+
+    expect(manager.setPurpose(draft.id, 'schedule_task').purpose).toBe('schedule_task');
+    expect(() => manager.updateThread(draft.id, { sandbox: 'danger-full-access' }))
+      .toThrow(/THREAD_MANAGED_BY_SCHEDULE/);
+
+    const nextCwd = join(tempDir, 'next-project');
+    const updated = manager.updateScheduleThread(draft.id, {
+      title: 'Daily report',
+      cwd: nextCwd,
+      profile: 'review',
+      model: 'gpt-5',
+      reasoning: 'high',
+      sandbox: 'workspace-write'
+    });
+
+    expect(updated).toMatchObject({
+      title: 'Daily report',
+      cwd: nextCwd,
+      canonicalCwd: realpathSync(nextCwd),
+      profile: 'review',
+      model: 'gpt-5',
+      reasoning: 'high',
+      sandbox: 'workspace-write',
+      purpose: 'schedule_task'
+    });
+    expect(() => manager.archiveThread(draft.id)).toThrow(/THREAD_MANAGED_BY_SCHEDULE/);
+    expect(manager.archiveScheduleThread(draft.id).status).toBe('archived');
+  });
+
   it('expands home-relative cwd for external threads', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
     const database = openTestDatabase(tempDir);
@@ -145,3 +222,32 @@ describe('thread manager', () => {
     expect(refreshed.updatedAt).toBe('2026-07-07 01:00:00');
   });
 });
+
+function insertScheduleBinding(
+  database: Database.Database,
+  scheduleId: string,
+  threadId: string,
+  cwd: string
+): void {
+  database.prepare(`
+    INSERT INTO schedules (
+      id, thread_id, name, cron, timezone, prompt, prompt_hash, prompt_preview_redacted,
+      profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    scheduleId,
+    threadId,
+    'Daily report',
+    '0 9 * * *',
+    'Asia/Shanghai',
+    'Summarize project status',
+    'hash',
+    'Summarize project status',
+    'default',
+    cwd,
+    cwd,
+    'workspace-write',
+    'queue',
+    'skip'
+  );
+}

@@ -374,6 +374,7 @@ function makeThreadRow(overrides: Partial<ThreadRow> & { id: string }): ThreadRo
   const { id, ...rest } = overrides;
   return {
     id,
+    schedule_id: null,
     title: null,
     codex_thread_id: null,
     cwd: tempDir,

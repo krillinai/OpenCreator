@@ -153,6 +153,11 @@ export async function registerThreadRoutes(
     if (existing === undefined) {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
+    if (existing.purpose === 'schedule_task') {
+      return reply
+        .code(409)
+        .send(apiError('THREAD_MANAGED_BY_SCHEDULE', 'Thread is managed by a schedule'));
+    }
     if (existing.status === 'archived') {
       return reply.code(409).send(apiError('THREAD_ARCHIVED', 'Thread is archived'));
     }
@@ -167,14 +172,25 @@ export async function registerThreadRoutes(
       if (error instanceof Error && error.message === 'THREAD_NOT_FOUND') {
         return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
       }
+      if (error instanceof Error && error.message === 'THREAD_MANAGED_BY_SCHEDULE') {
+        return reply
+          .code(409)
+          .send(apiError('THREAD_MANAGED_BY_SCHEDULE', 'Thread is managed by a schedule'));
+      }
       throw error;
     }
   });
 
   server.post('/threads/:id/archive', async (request, reply) => {
     const { id } = request.params as { id: string };
-    if (manager.getThread(id) === undefined) {
+    const existing = manager.getThread(id);
+    if (existing === undefined) {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+    }
+    if (existing.purpose === 'schedule_task') {
+      return reply
+        .code(409)
+        .send(apiError('THREAD_MANAGED_BY_SCHEDULE', 'Thread is managed by a schedule'));
     }
     if (runManager.hasActiveRunForThread(id)) {
       return reply.code(409).send(apiError('THREAD_HAS_ACTIVE_RUN', 'Thread has active run'));
@@ -185,6 +201,11 @@ export async function registerThreadRoutes(
     } catch (error) {
       if (error instanceof Error && error.message === 'THREAD_NOT_FOUND') {
         return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+      }
+      if (error instanceof Error && error.message === 'THREAD_MANAGED_BY_SCHEDULE') {
+        return reply
+          .code(409)
+          .send(apiError('THREAD_MANAGED_BY_SCHEDULE', 'Thread is managed by a schedule'));
       }
       throw error;
     }
@@ -205,6 +226,7 @@ function toThreadResponse(thread: RuntimeThread): ThreadResponse {
     sandbox: thread.sandbox,
     status: thread.status,
     purpose: thread.purpose,
+    ...(thread.scheduleId === undefined ? {} : { scheduleId: thread.scheduleId }),
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     archivedAt: thread.archivedAt
@@ -229,6 +251,7 @@ type ReadThreadHistory = (
 const WORKSPACE_MODES = ['managed', 'external'] as const;
 const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;
 const REASONING_EFFORTS = ['default', 'low', 'medium', 'high', 'xhigh'] as const;
+const PUBLIC_THREAD_PURPOSES = ['conversation', 'schedule_draft'] as const;
 const THREAD_STATUSES = ['active', 'archived', 'all'] as const;
 const LIMIT_PATTERN = /^[1-9]\d*$/;
 const MAX_LIMIT = 100;
@@ -267,6 +290,13 @@ function parseCreateThreadRequest(body: unknown): ParseResult<CreateRuntimeThrea
       return { ok: false, message: 'reasoning must be a valid reasoning effort' };
     }
     value.reasoning = input.reasoning;
+  }
+
+  if (input.purpose !== undefined) {
+    if (!isOneOf(input.purpose, PUBLIC_THREAD_PURPOSES)) {
+      return { ok: false, message: 'purpose must be conversation or schedule_draft' };
+    }
+    value.purpose = input.purpose;
   }
 
   return { ok: true, value };

@@ -6,6 +6,7 @@ import type {
   CleanupPreviewResponse,
   CodexSkillMarketInstallRecordResponse,
   CodexSkillMarketMutationResponse,
+  CreateThreadRequest,
   CreateScheduleRequest,
   RunDiagnosticsResponse,
   RunRequest,
@@ -104,6 +105,15 @@ describe('protocol shape', () => {
     expect(response.purpose).toBe('conversation');
   });
 
+  it('allows clients to create schedule draft threads', () => {
+    const request: CreateThreadRequest = {
+      title: 'Create scheduled task',
+      purpose: 'schedule_draft'
+    };
+
+    expect(request.purpose).toBe('schedule_draft');
+  });
+
   it('includes stable thread history cursor error codes', () => {
     const codes: RuntimeErrorCode[] = [
       'THREAD_HISTORY_CURSOR_INVALID',
@@ -181,6 +191,11 @@ describe('protocol shape', () => {
   it('includes schedule not found as a closed error code', () => {
     const code: RuntimeErrorCode = 'SCHEDULE_NOT_FOUND';
     expect(code).toBe('SCHEDULE_NOT_FOUND');
+  });
+
+  it('includes schedule-managed thread conflicts as a closed error code', () => {
+    const code: RuntimeErrorCode = 'THREAD_MANAGED_BY_SCHEDULE';
+    expect(code).toBe('THREAD_MANAGED_BY_SCHEDULE');
   });
 
   it('allows skill market install record and mutation response shapes', () => {
