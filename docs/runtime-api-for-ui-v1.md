@@ -14,7 +14,7 @@
 4. Profiles 读取和 run/thread 绑定校验。
 5. Skills 扫描、安装、删除和操作日志。
 6. MCP server 管理和操作日志。
-7. Schedules CRUD、run-now 和操作日志。
+7. Schedule 与专属任务 Thread 的原子创建、CRUD、run-now、绑定修复和操作审计。
 8. Run diagnostics 导出和受控工作区文件 API。
 9. Runtime cleanup preview/delete。
 10. 历史游标分页、全文搜索、附件和多模态 Run。
@@ -390,6 +390,8 @@ type ThreadResponse = {
   reasoning?: "default" | "low" | "medium" | "high" | "xhigh" | null;
   sandbox: "read-only" | "workspace-write" | "danger-full-access";
   status: "active" | "archived";
+  purpose: "conversation" | "schedule_draft" | "schedule_task";
+  scheduleId?: string;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;
@@ -404,6 +406,11 @@ query：
 
 1. `status`: `active | archived | all`
 2. `limit`: 1 到 100
+3. `purpose`: `conversation | schedule_draft | schedule_task`
+4. `excludePurpose`: `conversation | schedule_draft | schedule_task`
+
+`purpose` 和 `excludePurpose` 不能同时使用。查询 `purpose=schedule_task` 时 daemon 不扫描
+Codex session 目录，只返回 SQLite 中的任务 Thread 摘要。
 
 响应：
 
@@ -450,6 +457,10 @@ UI 建议：
 2. 同一 thread 下发送下一条消息时传同一个 `threadId` 和默认 `resumeMode = "auto"`。
 3. 如果用户想重开上下文，传 `resumeMode = "new_thread"`。
 4. thread 的 cwd/profile/sandbox 在创建后不可被 run 覆盖，UI 应把这些设置放在创建 thread 前。
+5. `schedule_task` 只能通过 Schedule API 修改或归档；普通 Thread 更新和归档接口返回
+   `409 THREAD_MANAGED_BY_SCHEDULE`。
+6. `schedule_draft` 用于“使用 Clawee 创建”流程，Agent 成功创建任务后会原位转换为
+   `schedule_task`。
 
 ## 7. Profiles API
 
@@ -762,6 +773,7 @@ UI 注意：
 ```ts
 type ScheduleResponse = {
   id: string;
+  threadId: string;
   name: string;
   cron: string;
   timezone: string;
@@ -774,7 +786,7 @@ type ScheduleResponse = {
   reasoning?: "default" | "low" | "medium" | "high" | "xhigh" | null;
   sandbox: "read-only" | "workspace-write" | "danger-full-access";
   timeoutMs?: number | null;
-  concurrencyPolicy: "skip" | "queue" | "parallel";
+  concurrencyPolicy: "skip" | "queue";
   misfirePolicy: "skip";
   nextRunAt?: string | null;
   lastRunAt?: string | null;
@@ -807,7 +819,7 @@ type CreateScheduleRequest = {
   reasoning?: "default" | "low" | "medium" | "high" | "xhigh";
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   timeoutMs?: number;
-  concurrencyPolicy?: "skip" | "queue" | "parallel";
+  concurrencyPolicy?: "skip" | "queue";
   misfirePolicy?: "skip";
 };
 ```
@@ -819,10 +831,14 @@ type CreateScheduleRequest = {
 3. `cwd`: daemon 当前目录
 4. `sandbox`: `"workspace-write"`
 5. `timeoutMs`: `null`
-6. `concurrencyPolicy`: `"skip"`
+6. `concurrencyPolicy`: `"queue"`
 7. `misfirePolicy`: `"skip"`
 
-响应：`ScheduleResponse`，HTTP `201`。
+响应：`ScheduleResponse`，HTTP `201`。Schedule 和 `schedule_task` Thread 在同一
+SQLite transaction 内创建，成功响应中的 `threadId` 可以直接用于任务会话导航。
+
+Protocol 为兼容旧持久数据仍保留 `"parallel"` 联合类型，但创建和更新请求只接受
+`"queue"` 或 `"skip"`；启动迁移会把旧 `"parallel"` 转换为 `"queue"`。
 
 ### `GET /schedules/:id`
 
@@ -864,7 +880,7 @@ type UpdateScheduleRequest = Partial<CreateScheduleRequest> & {
 type RunScheduleNowResponse = {
   run: {
     id: string;
-    threadId?: string;
+    threadId: string;
     status: "queued" | "running" | "succeeded" | "failed" | "canceled";
   } | null;
   schedule: ScheduleResponse;
@@ -884,6 +900,8 @@ type ScheduleOperationResponse = {
     | "create"
     | "update"
     | "delete"
+    | "binding_repair"
+    | "binding_repair_failed"
     | "run_now"
     | "timer_trigger"
     | "skip_misfire"
@@ -893,6 +911,17 @@ type ScheduleOperationResponse = {
   scheduleId: string;
   status: "succeeded" | "failed" | "skipped" | "queued";
   runId?: string | null;
+  actorType?: "user" | "agent" | "timer" | "migration" | null;
+  actorRunId?: string | null;
+  diagnosticEvent?:
+    | "SCHEDULE_TRIGGERED"
+    | "SCHEDULE_TRIGGER_QUEUED"
+    | "SCHEDULE_TRIGGER_SKIPPED"
+    | "SCHEDULE_THREAD_REPAIRED"
+    | "SCHEDULE_THREAD_REPAIR_FAILED"
+    | "SCHEDULE_RUN_STARTED"
+    | "SCHEDULE_RUN_COMPLETED"
+    | "SCHEDULE_RUN_WAITING_APPROVAL";
   errorCode?: string | null;
   errorMessage?: string | null;
   createdAt: string;
@@ -908,6 +937,11 @@ UI 注意：
 1. 睡眠/离线错过触发按 `skip` 处理，不补跑。
 2. `run-now` 创建的 run 可继续用 `/runs/:id/events` 订阅。
 3. `queue` policy 下可能返回 `queued: true` 且 `run: null`。
+4. 创建、更新和删除由 ScheduleCoordinator 同步任务 Thread；UI 不应直接修改
+   `schedule_task` Thread。
+5. 同一任务 Thread 的用户 Run、立即执行和定时触发共用 RunManager 串行队列。
+6. 删除 Schedule 会归档 Thread 并保留历史；已删除任务不再出现在公开 Schedule 列表。
+7. `actorRunId` 表示发起 Schedule 操作的 Agent Run，不等同于本次触发创建的 `runId`。
 
 ## 11. Diagnostics API
 
@@ -1031,7 +1065,17 @@ UI 注意：
 ### 独立一次性任务
 
 1. 直接 `POST /runs`，不传 `threadId`。
-2. 适合 status 检查、计划任务 run-now 或一次性命令。
+2. 适合 status 检查或一次性命令；Schedule run-now 必须进入 Schedule 的专属 Thread。
+
+### 创建和进入任务会话
+
+1. 手动创建调用 `POST /schedules`，使用响应中的必填 `threadId` 进入会话。
+2. Agent 创建先建立 `purpose = "schedule_draft"` 的 Thread，再在普通 Run 中调用内置
+   Schedule MCP 工具；成功后同一 Thread 原位转换为 `schedule_task`。
+3. 左侧任务列表使用
+   `GET /threads?status=active&purpose=schedule_task&limit=100`，不得按标题或 cron 推断。
+4. “已安排”负责 Schedule 管理；任务会话使用 `/threads/:id/history` 和
+   `/threads/:id/runs` 展示公开触发输入、审批、结果和后续对话。
 
 ### Skills/MCP 写入
 
@@ -1151,6 +1195,9 @@ type NotificationOutboxListResponse = {
 Desktop `HostBridge.configureBackgroundNotifications` 接收 `{ enabled, connection }`，
 由原生 Host 在页面关闭后继续消费 outbox，并根据 `threadId/runId/approvalId` 打开目标
 路由。Browser Host 不注册该能力，继续使用页面存活期间的 Notification API 和显式权限。
+
+仓库当前不包含真实原生 Desktop Host。outbox、Bridge 契约和 harness 是自动化参考实现，
+不能替代目标 Host 的页面关闭通知与深链接实机验收。
 
 参考消费者：
 

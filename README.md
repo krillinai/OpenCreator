@@ -39,6 +39,10 @@ CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD=100 pnpm daemon:dev
 该自动恢复只用于 `resumeMode: "auto"` 的计划任务；普通会话或显式
 `resumeMode: "resume_thread"` 仍按原错误语义失败，不会静默新建上下文。
 
+每条计划任务都有唯一的长期任务会话。“已安排”用于创建、编辑、暂停、恢复、立即运行
+和删除；侧栏“任务”用于查看每次触发、审批、结果和后续对话。同一任务的自动触发、
+立即运行和用户消息都复用同一个 Clawee Thread，并按 `queue` 或 `skip` 串行处理。
+
 计划任务完成、失败、取消或等待审批时，daemon 会把脱敏通知写入持久 outbox。支持
 `configureBackgroundNotifications` 的 Desktop Host 可在页面关闭后继续读取并确认通知；
 浏览器版仍受页面存活和 Notification 权限限制。可用 harness 验证 outbox 消费：
@@ -77,6 +81,7 @@ pnpm test
 pnpm typecheck
 pnpm build
 pnpm smoke:ci
+pnpm release:verify-scheduled-task-upgrade
 pnpm perf:check
 pnpm audit --audit-level high
 ```
@@ -99,5 +104,9 @@ pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
 
 - [用户指南与故障排查](docs/clawee-user-guide-and-troubleshooting.md)
 - [Runtime API v1](docs/runtime-api-for-ui-v1.md)
+- [定时任务专属会话规格](docs/specs/2026-07-14-scheduled-task-dedicated-thread-design.md)
+- [定时任务专属会话执行计划](docs/plans/2026-07-14-scheduled-task-dedicated-thread-design-plan.md)
+- [定时任务发布、迁移与回滚运行手册](docs/operations/2026-07-15-scheduled-task-dedicated-thread-release-runbook.md)
+- [定时任务专属会话最终验收报告](docs/test-reports/2026-07-15-scheduled-task-dedicated-thread-final-acceptance.md)
 - [完整优化实施计划](docs/superpowers/plans/2026-07-12-clawee-agent-complete-optimization.md)
 - [最终验收报告](docs/superpowers/test-reports/2026-07-12-clawee-agent-final-acceptance.md)

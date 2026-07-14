@@ -10,7 +10,8 @@
     "pretypecheck": "pnpm --filter @clawee/skill-market build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "pretest": "pnpm --filter @clawee/skill-market build",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "verify:schedule-upgrade": "node --import tsx scripts/verify-scheduled-task-upgrade.ts"
   },
   "dependencies": {
     "@clawee/protocol": "workspace:*",

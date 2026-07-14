@@ -4,14 +4,27 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档状态 | 待确认 |
-| 版本 | 1.0 |
+| 文档状态 | 已实施；真实原生 Desktop Host 验收阻塞 |
+| 版本 | 1.1 |
 | 创建日期 | 2026-07-14 |
-| 最近更新 | 2026-07-14 |
+| 最近更新 | 2026-07-15 |
 | 适用范围 | Clawee Web、Local Runtime Daemon、Protocol、Scheduler、Thread、Run、通知 |
 | 规格优先级 | 本文档覆盖并替代 `docs/2026-07-03-codex-native-agent-runtime-design.md` 中 Scheduler 的旧会话模型 |
+| 执行计划 | `docs/plans/2026-07-14-scheduled-task-dedicated-thread-design-plan.md` |
+| 发布运行手册 | `docs/operations/2026-07-15-scheduled-task-dedicated-thread-release-runbook.md` |
+| 最终验收报告 | `docs/test-reports/2026-07-15-scheduled-task-dedicated-thread-final-acceptance.md` |
 
 本文是可直接实施的产品和技术规格。后续开发应按本文的 P0、P1、P2 顺序执行。实现过程中如需改变数据模型、接口或关键交互，必须先更新本文，再修改代码。
+
+### 0.1 实施结果
+
+- P0、P1 和 P2 的 24 个实现批次为 `PASS`。
+- 全仓测试、类型检查、构建、14 个桌面/移动 Playwright、100 任务性能门禁、旧库升级
+  与回滚演练、真实 Codex 14/14 smoke 均通过。
+- 最终批次 P2-B7 为 `BLOCKED_ENV`，总体状态为 `PARTIAL`。
+- 仓库没有真实原生 Desktop Host，页面关闭后的系统通知展示和点击深链无法在当前环境
+  实机验收。outbox、Bridge 契约和 harness 已通过，但不替代 Host 实机证据。
+- 下文未勾选项保留为原始验收清单；实际执行证据以最终验收报告为准。
 
 ## 1. 一句话定义
 
@@ -1815,18 +1828,18 @@ P2 目标：让任务适合长期运行、后台通知和故障恢复。
 
 **验收**
 
-- [ ] 100 个任务时侧栏不预加载全部历史
-- [ ] 页面刷新只加载任务摘要
-- [ ] 点击后按需加载会话
-- [ ] 不出现主线程长时间卡死
+- [x] 100 个任务时侧栏不预加载全部历史
+- [x] 页面刷新只加载任务摘要
+- [x] 点击后按需加载会话
+- [x] 不出现主线程长时间卡死
 
 ### P2 检查点
 
-- [ ] 完整自动化测试通过
+- [x] 完整自动化测试通过
 - [ ] 手动验收矩阵通过
-- [ ] 升级旧数据库通过
-- [ ] 回滚演练通过
-- [ ] 文档和 API 文档更新完成
+- [x] 升级旧数据库通过
+- [x] 回滚演练通过
+- [x] 文档和 API 文档更新完成
 
 ## 28. 手动验收矩阵
 

@@ -9,8 +9,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档状态 | `READY` |
-| 总体实施状态 | `IN_PROGRESS` |
+| 文档状态 | `EXECUTED` |
+| 总体实施状态 | `PARTIAL` |
 | 制定日期 | 2026-07-14 |
 | 来源规格 | `docs/specs/2026-07-14-scheduled-task-dedicated-thread-design.md` |
 | 当前分支 | `codex-native-runtime-kernel` |
@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P2-B6`，已通过（2026-07-15 02:26 CST）；下一批 `P2-B7` |
+| 当前批次 | `P2-B7`，`BLOCKED_ENV`（2026-07-15 02:53 CST） |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -347,8 +347,8 @@ P2-B1 审批和连续失败体验
 | P2-B3 | 后台 Host 通知 | `PASS` |
 | P2-B4 | actor 审计和诊断事件 | `PASS` |
 | P2-B5 | Playwright 端到端测试 | `PASS` |
-| P2-B6 | 100 个任务性能门禁 | `NOT_STARTED` |
-| P2-B7 | 发布、回滚和最终验收 | `NOT_STARTED` |
+| P2-B6 | 100 个任务性能门禁 | `PASS` |
+| P2-B7 | 发布、回滚和最终验收 | `BLOCKED_ENV` |
 
 ---
 
@@ -2030,7 +2030,11 @@ perf(tasks): 建立百任务列表性能门禁
 
 ### P2-B7：发布、回滚和最终统一验收
 
-**状态：** `NOT_STARTED`
+**状态：** `BLOCKED_ENV`
+
+**开始时间：** 2026-07-15 02:30 CST
+
+**结束时间：** 2026-07-15 02:53 CST
 
 **依赖：** `P2-B6`
 
@@ -2104,6 +2108,16 @@ git diff --check
 - 旧数据库升级无 Schedule 丢失、无重复绑定。
 - 回滚演练不删除或合并历史。
 - API、迁移、运维和用户行为文档已更新。
+
+**执行结果：**
+
+- 24 个前序批次为 `PASS`；P2-B7 的仓库内工作和全部可执行门禁通过。
+- 真实 Codex smoke 14/14 通过，耗时 98.13 秒，Codex 版本为 `codex-cli 0.144.1`。
+- 临时旧数据库升级、旧列读取、代码回滚兼容和新版恢复幂等演练通过。
+- 桌面与移动 Playwright 14/14 通过；当前 100 任务性能结果和构建资源均低于硬阈值。
+- 发布运行手册、README、用户指南、Runtime API、来源规格和最终验收报告已更新。
+- 真实原生 Desktop Host 不在仓库中，页面关闭后的系统通知展示和点击实机验收无法
+  执行，因此“25 个批次全部 PASS”和“手动验收矩阵全部通过”未满足。
 
 **回滚边界：** 数据库迁移只向前兼容，不做破坏性降级；回滚以停止新版 Scheduler 和
 回滚应用代码为主。
@@ -2578,6 +2592,31 @@ docs(release): 完成任务专属会话发布与回滚说明
   时间；交互延迟和 Long Task 阈值保留共享 runner 调度余量，请求数与历史加载数量保持
   硬上限。Web build 仍有两个既有 chunk 超过 500 kB 的警告，但均在字节预算内。
 - 下一步：执行 P2-B7，完成发布、回滚和最终统一验收。
+
+### 2026-07-15 02:53 CST - P2-B7
+
+- 状态：`BLOCKED_ENV`
+- 提交：`docs(release): 完成任务专属会话发布与回滚说明`
+  （SHA 以包含本日志的提交为准）
+- 已完成：新增只使用临时 SQLite 的发布演练命令和 CI 门禁，覆盖旧 Schema、旧
+  `parallel -> queue`、绑定修复、Schedule/Thread 配置一致性、两条 SQL 不变量、旧列
+  读取兼容、旧孤立 Run 保留和恢复新版后的二次幂等。
+- 已完成：新增发布、迁移与回滚运行手册；更新 README、用户指南、Runtime API、来源
+  规格和最终验收报告。
+- 已完成：修正一个既有 MCP timeout 测试夹具在根级并行负载下的时序抖动；只改同步
+  stderr 写入和测试超时余量，未改生产 runner 或默认超时。
+- 验证：`pnpm test` 通过，daemon 651 项、Web 521 项、Skill Market 6 项、harness
+  3 项；`pnpm release:verify-scheduled-task-upgrade`、`pnpm typecheck`、`pnpm build`、
+  `pnpm e2e` 14/14、`CLAWEE_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check`、
+  真实 Codex smoke 14/14 和 `git diff --check` 通过。
+- 性能：当前桌面/移动首屏 runtime 请求均为 10，Thread 列表请求均为 2，选中任务前
+  历史请求为 0、选中后为 1，DOM 峰值 3868，Long Task 为 0，任务打开延迟分别为
+  65ms 和 231ms。
+- 未完成：真实原生 Desktop Host 不在仓库中，无法验证页面关闭后的系统通知展示和
+  点击后打开正确 Thread/Run/Approval。
+- 风险或偏差：Vite 仍提示主入口和 FilesPage 超过 500 kB，但两者均低于仓库硬预算；
+  Host 验收完成前不得将 P2-B7 改为 `PASS`，总体状态不得改为 `COMPLETE`。
+- 下一步：在目标原生 Desktop Host 上按运行手册执行后台通知实机验收并补充证据。
 
 ### 日志模板
 
