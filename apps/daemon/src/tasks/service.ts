@@ -1,10 +1,12 @@
 import type {
   PublicRunStatus,
+  TaskFailureKind,
   TaskItem,
   TaskListQuery,
   TaskListResponse,
   TaskStatusFilter
 } from '@clawee/protocol';
+import { existsSync } from 'node:fs';
 import type Database from 'better-sqlite3';
 import type { ApprovalManager } from '../approvals/manager.js';
 import type { RunManager } from '../runs/manager.js';
@@ -15,6 +17,27 @@ type TaskRow = RunRow & {
   thread_title: string | null;
   schedule_name: string | null;
   result_event_payload_json: string | null;
+};
+
+type ScheduleFailureRow = Pick<
+  RunRow,
+  | 'id'
+  | 'source_id'
+  | 'public_status'
+  | 'error_code'
+  | 'error_message'
+  | 'termination_reason'
+  | 'cwd'
+  | 'canonical_cwd'
+> & {
+  run_position: number;
+};
+
+type FailureSummary = {
+  kind: TaskFailureKind;
+  summary: string;
+  consecutiveCount: number;
+  suggestPause: boolean;
 };
 
 type TaskCursor = {
@@ -125,7 +148,12 @@ export function createTaskService(options: {
       }) as TaskRow[];
       const hasMore = rows.length > limit;
       const pageRows = rows.slice(0, limit);
-      const tasks = pageRows.map(row => mapTask(row, options));
+      const failureSummaries = loadScheduleFailureSummaries(options.db, pageRows);
+      const tasks = pageRows.map(row => mapTask(
+        row,
+        options,
+        failureSummaries.get(row.id)
+      ));
       const last = pageRows.at(-1);
       return {
         tasks,
@@ -143,7 +171,8 @@ function mapTask(
   options: {
     approvals: ApprovalManager;
     runs: Pick<RunManager, 'getRun'>;
-  }
+  },
+  failure: FailureSummary | undefined
 ): TaskItem {
   const pendingApproval = options.approvals.list({
     runId: row.id,
@@ -179,8 +208,155 @@ function mapTask(
     ...(row.error_code === null ? {} : { errorCode: row.error_code }),
     ...(row.error_message === null ? {} : { errorMessage: row.error_message }),
     ...(resultSummary === undefined ? {} : { resultSummary }),
-    ...(pendingApproval === undefined ? {} : { pendingApproval })
+    ...(pendingApproval === undefined ? {} : { pendingApproval }),
+    ...(row.created_by !== 'schedule' || row.source_id === null
+      ? {}
+      : { scheduleId: row.source_id }),
+    ...(failure === undefined
+      ? {}
+      : {
+          failureKind: failure.kind,
+          failureSummary: failure.summary,
+          consecutiveFailureCount: failure.consecutiveCount,
+          ...(failure.suggestPause ? { suggestPause: true } : {})
+        })
   };
+}
+
+function loadScheduleFailureSummaries(
+  db: Database.Database,
+  rows: TaskRow[]
+): Map<string, FailureSummary> {
+  const scheduleIds = [...new Set(rows.flatMap(row => (
+    row.created_by === 'schedule'
+    && row.source_id !== null
+    && row.public_status === 'failed'
+      ? [row.source_id]
+      : []
+  )))];
+  if (scheduleIds.length === 0) return new Map();
+
+  const placeholders = scheduleIds.map(() => '?').join(', ');
+  const failureRows = db.prepare(`
+    SELECT
+      id,
+      source_id,
+      public_status,
+      error_code,
+      error_message,
+      termination_reason,
+      cwd,
+      canonical_cwd,
+      run_position
+    FROM (
+      SELECT
+        id,
+        source_id,
+        public_status,
+        error_code,
+        error_message,
+        termination_reason,
+        cwd,
+        canonical_cwd,
+        ROW_NUMBER() OVER (
+          PARTITION BY source_id
+          ORDER BY created_at DESC, id DESC
+        ) AS run_position
+      FROM runs
+      WHERE created_by = 'schedule'
+        AND source_id IN (${placeholders})
+    )
+    WHERE run_position <= 100
+    ORDER BY source_id ASC, run_position ASC
+  `).all(...scheduleIds) as ScheduleFailureRow[];
+
+  const rowsBySchedule = new Map<string, ScheduleFailureRow[]>();
+  for (const row of failureRows) {
+    if (row.source_id === null) continue;
+    const scheduleRows = rowsBySchedule.get(row.source_id) ?? [];
+    scheduleRows.push(row);
+    rowsBySchedule.set(row.source_id, scheduleRows);
+  }
+
+  const summaries = new Map<string, FailureSummary>();
+  for (const scheduleRows of rowsBySchedule.values()) {
+    let previousFailureKey: string | undefined;
+    let consecutiveCount = 0;
+    for (let index = scheduleRows.length - 1; index >= 0; index -= 1) {
+      const row = scheduleRows[index];
+      if (row === undefined || row.public_status !== 'failed') {
+        previousFailureKey = undefined;
+        consecutiveCount = 0;
+        continue;
+      }
+      const failure = classifyFailure(row);
+      const currentFailureKey = failureKey(failure, row);
+      consecutiveCount = currentFailureKey === previousFailureKey
+        ? consecutiveCount + 1
+        : 1;
+      previousFailureKey = currentFailureKey;
+      summaries.set(row.id, {
+        kind: failure.kind,
+        summary: failure.summary,
+        consecutiveCount,
+        suggestPause: failure.kind === 'project_directory' && consecutiveCount >= 3
+      });
+    }
+  }
+  return summaries;
+}
+
+function classifyFailure(
+  row: Pick<
+    RunRow,
+    'error_code' | 'error_message' | 'termination_reason' | 'cwd'
+  >
+): Pick<FailureSummary, 'kind' | 'summary'> {
+  const errorText = `${row.error_code ?? ''} ${row.error_message ?? ''}`.toLowerCase();
+  const missingCwd = !existsSync(row.cwd);
+  const directoryMessage = (
+    errorText.includes('cwd must exist')
+    || errorText.includes('working directory')
+    || errorText.includes('project directory')
+    || errorText.includes('chdir')
+  ) && (
+    errorText.includes('enoent')
+    || errorText.includes('not exist')
+    || errorText.includes('no such file or directory')
+    || errorText.includes('not found')
+  );
+  if (
+    (row.error_code === 'SPAWN_FAILED' && missingCwd)
+    || directoryMessage
+  ) {
+    return {
+      kind: 'project_directory',
+      summary: '项目目录不存在或无法访问，请编辑项目后重试。'
+    };
+  }
+
+  switch (row.termination_reason) {
+    case 'timeout':
+      return { kind: 'other', summary: '任务运行时间过长，已自动停止。' };
+    case 'inactivity_timeout':
+      return { kind: 'other', summary: '任务长时间没有响应，已自动停止。' };
+    case 'daemon_restart':
+      return { kind: 'other', summary: '本地服务重启中断了本次任务，可以稍后重试。' };
+    case 'spawn_failed':
+      return { kind: 'other', summary: '任务无法启动，请检查项目和运行配置。' };
+    default:
+      return { kind: 'other', summary: '任务未完成，请打开会话查看详情。' };
+  }
+}
+
+function failureKey(
+  failure: Pick<FailureSummary, 'kind'>,
+  row: Pick<RunRow, 'canonical_cwd' | 'error_code' | 'termination_reason'>
+): string {
+  if (failure.kind === 'project_directory') {
+    return `${failure.kind}:${row.canonical_cwd}`;
+  }
+  return `${failure.kind}:${row.error_code ?? row.termination_reason ?? 'unknown'}`;
 }
 
 function parseResultSummary(payloadJson: string | null): string | undefined {

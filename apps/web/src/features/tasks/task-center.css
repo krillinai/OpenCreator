@@ -48,7 +48,8 @@
 
 .task-center__header-actions button,
 .task-center__load-more,
-.task-row__approval button {
+.task-row__approval button,
+.task-row__failure-guidance button {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
@@ -62,7 +63,8 @@
 }
 
 .task-center__header-actions button:disabled,
-.task-row__approval button:disabled {
+.task-row__approval button:disabled,
+.task-row__failure-guidance button:disabled {
   opacity: 0.55;
 }
 
@@ -235,6 +237,37 @@
   background: var(--accent);
 }
 
+.task-row__failure-guidance {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px 12px 120px;
+  background: var(--danger-soft);
+}
+
+.task-row__failure-guidance > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.task-row__failure-guidance strong {
+  font-size: 12px;
+}
+
+.task-row__failure-guidance span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-row__failure-guidance > div:last-child {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 7px;
+}
+
 .task-center__load-more {
   justify-self: center;
   min-width: 120px;
@@ -282,12 +315,15 @@
     grid-row: 1 / span 3;
   }
 
-  .task-row__approval {
+  .task-row__approval,
+  .task-row__failure-guidance {
     display: grid;
     padding: 10px 12px 12px;
   }
 
-  .task-row__approval > div:last-child {
+  .task-row__approval > div:last-child,
+  .task-row__failure-guidance > div:last-child {
+    flex-wrap: wrap;
     justify-content: flex-end;
   }
 }

@@ -54,7 +54,7 @@ describe('sidebar task model', () => {
       ['approval', 'waiting_approval'],
       ['running', 'running'],
       ['queued', 'queued'],
-      ['paused', 'paused'],
+      ['paused', 'failed'],
       ['failed', 'failed']
     ]);
   });

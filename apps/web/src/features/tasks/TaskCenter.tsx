@@ -11,7 +11,9 @@ import {
   ChevronRight,
   CircleAlert,
   Clock3,
+  FolderOpen,
   LoaderCircle,
+  PauseCircle,
   RefreshCw,
   X
 } from 'lucide-react';
@@ -50,6 +52,8 @@ export function TaskCenter(props: {
   onClearUnread(): void;
   onOpenTask(task: TaskItem): void;
   onMarkRead(id: string): void;
+  onEditSchedule?(scheduleId: string): void;
+  onPauseSchedule?(scheduleId: string): Promise<void> | void;
 }) {
   const [filter, setFilter] = useState<TaskStatusFilter>('all');
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -123,6 +127,17 @@ export function TaskCenter(props: {
         next.delete(task.id);
         return next;
       });
+    }
+  }
+
+  async function pauseSchedule(scheduleId: string) {
+    if (props.onPauseSchedule === undefined) return;
+    setError(undefined);
+    try {
+      await props.onPauseSchedule(scheduleId);
+      await loadTasks(true);
+    } catch (pauseError) {
+      setError(pauseError instanceof Error ? pauseError.message : '无法暂停任务');
     }
   }
 
@@ -206,6 +221,16 @@ export function TaskCenter(props: {
                 }}
                 onApprove={() => void resolveApproval(task, 'approve')}
                 onReject={() => void resolveApproval(task, 'reject')}
+                onEditSchedule={
+                  task.scheduleId === undefined || props.onEditSchedule === undefined
+                    ? undefined
+                    : () => props.onEditSchedule?.(task.scheduleId!)
+                }
+                onPauseSchedule={
+                  task.scheduleId === undefined || props.onPauseSchedule === undefined
+                    ? undefined
+                    : () => pauseSchedule(task.scheduleId!)
+                }
               />
             ))}
           </ul>
@@ -234,6 +259,8 @@ function TaskRow(props: {
   onOpen(): void;
   onApprove(): void;
   onReject(): void;
+  onEditSchedule?(): void;
+  onPauseSchedule?(): Promise<void> | void;
 }) {
   const approval = props.task.pendingApproval?.status === 'pending'
     ? props.task.pendingApproval
@@ -278,6 +305,36 @@ function TaskRow(props: {
           </div>
         </div>
       ) : null}
+      {props.task.failureKind === 'project_directory' ? (
+        <div className="task-row__failure-guidance">
+          <div>
+            <strong>
+              {props.task.consecutiveFailureCount === undefined
+                ? '项目目录需要更新'
+                : `已连续失败 ${props.task.consecutiveFailureCount} 次`}
+            </strong>
+            <span>
+              {props.task.suggestPause
+                ? '建议先暂停任务，更新项目目录后再恢复。'
+                : '更新项目目录后可以重新执行。'}
+            </span>
+          </div>
+          <div>
+            {props.onEditSchedule === undefined ? null : (
+              <button type="button" onClick={props.onEditSchedule}>
+                <FolderOpen size={14} aria-hidden="true" />
+                编辑项目
+              </button>
+            )}
+            {!props.task.suggestPause || props.onPauseSchedule === undefined ? null : (
+              <button type="button" onClick={() => void props.onPauseSchedule?.()}>
+                <PauseCircle size={14} aria-hidden="true" />
+                暂停任务
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -306,10 +363,14 @@ function formatStatus(status: TaskItem['status']): string {
 }
 
 function taskSummary(task: TaskItem): string {
-  if (task.errorMessage) return task.errorMessage;
+  if (task.failureSummary) return task.failureSummary;
+  if (task.status === 'waiting_approval' && task.pendingApproval !== undefined) {
+    return task.pendingApproval.summary;
+  }
   if (task.status === 'queued' && task.queuePosition !== undefined) {
     return `队列第 ${task.queuePosition} 位 · ${task.cwd}`;
   }
+  if (task.status === 'failed') return '任务未完成，请打开会话查看详情。';
   return `${task.profile} · ${task.cwd}`;
 }
 

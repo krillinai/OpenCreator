@@ -80,6 +80,7 @@ export type SchedulesViewProps = {
   service: ScheduleViewService | null;
   projects: ClaweeProject[];
   currentProjectId: string;
+  editScheduleId?: string;
   profiles?: CodexProfileResponse[];
   defaultTimezone: string;
   pollIntervalMs?: number;
@@ -106,6 +107,7 @@ export function SchedulesView(props: SchedulesViewProps) {
   const [filter, setFilter] = useState<ScheduleFilter>('all');
   const createMenuRef = useRef<HTMLDivElement>(null);
   const requestGenerationRef = useRef(0);
+  const openedExternalEditIdRef = useRef<string>();
 
   const currentProject = useMemo(
     () => props.projects.find(project => project.id === props.currentProjectId) ?? props.projects[0],
@@ -165,6 +167,19 @@ export function SchedulesView(props: SchedulesViewProps) {
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [createMenuOpen]);
+
+  useEffect(() => {
+    const scheduleId = props.editScheduleId;
+    if (scheduleId === undefined) {
+      openedExternalEditIdRef.current = undefined;
+      return;
+    }
+    if (openedExternalEditIdRef.current === scheduleId) return;
+    const schedule = schedules.find(item => item.id === scheduleId);
+    if (schedule === undefined) return;
+    openedExternalEditIdRef.current = scheduleId;
+    void openEditEditor(schedule);
+  }, [props.editScheduleId, schedules]);
 
   const filteredSchedules = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();

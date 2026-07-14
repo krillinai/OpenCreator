@@ -34,10 +34,14 @@ export function createTaskNotification(task: TaskItem): {
   body: HostNotification['body'];
   threadId?: HostNotification['threadId'];
   runId: HostNotification['runId'];
+  approvalId?: HostNotification['approvalId'];
 } {
   const target = {
     ...(task.threadId === undefined ? {} : { threadId: task.threadId }),
-    runId: task.runId
+    runId: task.runId,
+    ...(task.pendingApproval?.id === undefined
+      ? {}
+      : { approvalId: task.pendingApproval.id })
   };
   const detail = notificationDetail(task);
 
@@ -76,7 +80,7 @@ function notificationDetail(task: TaskItem): string {
     case 'succeeded':
       return task.resultSummary ?? '任务已完成。';
     case 'failed':
-      return '本次任务未完成。';
+      return task.failureSummary ?? '任务未完成，请打开会话查看详情。';
     case 'canceled':
       return '本次任务已取消。';
     case 'queued':

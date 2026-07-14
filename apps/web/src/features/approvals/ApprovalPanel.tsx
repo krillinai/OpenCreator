@@ -27,6 +27,16 @@ export function ApprovalPanel(props: {
       </div>
       {showSummary ? <p>{props.approval.summary}</p> : null}
       <ApprovalDetails details={props.approval.details} />
+      {props.approval.status === 'expired' ? (
+        <p className="approval-resolution">
+          审批已过期，本次任务不会继续执行。
+        </p>
+      ) : null}
+      {props.approval.status === 'rejected' ? (
+        <p className="approval-resolution">
+          你已拒绝这项操作，本次任务不会继续执行。
+        </p>
+      ) : null}
       {props.error ? <p className="inline-error">{props.error}</p> : null}
       {pending ? (
         <div className="approval-actions">

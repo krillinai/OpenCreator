@@ -55,4 +55,22 @@ describe('ApprovalPanel', () => {
     expect(screen.getByText('已拒绝')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument();
   });
+
+  it('explains an expired approval without exposing technical codes', () => {
+    render(
+      <ApprovalPanel
+        approval={{
+          ...approval,
+          status: 'expired',
+          resolvedAt: '2026-07-12T10:10:00.000Z',
+          resolutionReason: 'approval_timeout'
+        }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('审批已过期，本次任务不会继续执行。')).toBeInTheDocument();
+    expect(screen.queryByText('approval_timeout')).not.toBeInTheDocument();
+  });
 });

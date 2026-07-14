@@ -60,10 +60,15 @@ describe('task monitor', () => {
 
   it('creates concise Chinese notification copy for each transition', () => {
     expect(createTaskNotification(
-      createTask({ status: 'failed', runStatus: 'failed', errorMessage: '模型连接失败' })
+      createTask({
+        status: 'failed',
+        runStatus: 'failed',
+        errorMessage: 'spawn ENOENT /private/path',
+        failureSummary: '项目目录不存在或无法访问，请编辑项目后重试。'
+      })
     )).toEqual({
       title: '任务失败',
-      body: '整理发布说明：本次任务未完成。',
+      body: '整理发布说明：项目目录不存在或无法访问，请编辑项目后重试。',
       threadId: 'thread_1',
       runId: 'run_1'
     });
@@ -98,7 +103,7 @@ describe('task monitor', () => {
       })
     )).toEqual({
       title: '每日总结失败',
-      body: '本次任务未完成。',
+      body: '任务未完成，请打开会话查看详情。',
       threadId: 'thread_1',
       runId: 'run_1'
     });
@@ -133,7 +138,8 @@ describe('task monitor', () => {
       title: '每日总结等待审批',
       body: '需要允许写入 docs/daily',
       threadId: 'thread_1',
-      runId: 'run_1'
+      runId: 'run_1',
+      approvalId: 'approval_1'
     });
   });
 

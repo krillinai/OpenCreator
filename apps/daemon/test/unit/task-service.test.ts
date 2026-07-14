@@ -58,7 +58,12 @@ describe('task service', () => {
         id: 'run_pending',
         title: '任务线程',
         status: 'waiting_approval',
-        pendingApproval: { status: 'pending' }
+        pendingApproval: {
+          id: expect.any(String),
+          runId: 'run_pending',
+          threadId: 'thread_1',
+          status: 'pending'
+        }
       }]
     });
     expect(second).toMatchObject({
@@ -172,6 +177,51 @@ describe('task service', () => {
     expect(fixture.service.list().tasks[0]).not.toHaveProperty('resultSummary');
   });
 
+  it('classifies consecutive project directory failures without disabling the schedule', () => {
+    const fixture = setup();
+    fixture.db.prepare(`
+      INSERT INTO schedules (
+        id, thread_id, name, cron, timezone, enabled, prompt, prompt_hash, prompt_preview_redacted,
+        profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+      ) VALUES (
+        'sch_missing_project', 'thread_1', '目录检查', '0 9 * * *', 'Asia/Shanghai', 1,
+        '检查项目状态', 'hash', '检查项目状态',
+        'default', '/missing/project', '/missing/project', 'read-only', 'skip', 'skip'
+      )
+    `).run();
+
+    insertScheduledFailure(
+      fixture.runs,
+      'run_directory_1',
+      'sch_missing_project',
+      '2026-07-14T10:00:00.000Z'
+    );
+    insertScheduledFailure(
+      fixture.runs,
+      'run_directory_2',
+      'sch_missing_project',
+      '2026-07-14T10:01:00.000Z'
+    );
+    insertScheduledFailure(
+      fixture.runs,
+      'run_directory_3',
+      'sch_missing_project',
+      '2026-07-14T10:02:00.000Z'
+    );
+
+    expect(fixture.service.list().tasks[0]).toMatchObject({
+      id: 'run_directory_3',
+      scheduleId: 'sch_missing_project',
+      failureKind: 'project_directory',
+      failureSummary: '项目目录不存在或无法访问，请编辑项目后重试。',
+      consecutiveFailureCount: 3,
+      suggestPause: true
+    });
+    expect(
+      fixture.db.prepare(`SELECT enabled FROM schedules WHERE id = 'sch_missing_project'`).get()
+    ).toEqual({ enabled: 1 });
+  });
+
   it('rejects malformed cursors', () => {
     const fixture = setup();
     expect(() => fixture.service.list({ cursor: 'not-a-cursor' }))
@@ -267,4 +317,44 @@ function insertAssistantMessage(
     },
     normalizerVersion: 1
   });
+}
+
+function insertScheduledFailure(
+  runs: ReturnType<typeof createRunRepository>,
+  id: string,
+  sourceId: string,
+  createdAt: string
+) {
+  runs.insertRun({
+    id,
+    threadId: 'thread_1',
+    publicStatus: 'failed',
+    internalStatus: 'failed',
+    createdBy: 'schedule',
+    sourceId,
+    profile: 'default',
+    cwd: '/missing/project',
+    canonicalCwd: '/missing/project',
+    workspaceMode: 'external',
+    sandbox: 'read-only',
+    codexVersion: 'test',
+    codexBin: 'codex',
+    codexHome: tempDir,
+    normalizerVersion: 1
+  });
+  runs.updateRunStatus({
+    id,
+    publicStatus: 'failed',
+    internalStatus: 'failed',
+    terminationReason: 'spawn_failed',
+    errorCode: 'SPAWN_FAILED',
+    errorMessage: 'spawn codex ENOENT: no such file or directory, chdir /missing/project',
+    endedAt: createdAt
+  });
+  db?.prepare(`
+    UPDATE runs
+    SET created_at = @createdAt,
+        updated_at = @createdAt
+    WHERE id = @id
+  `).run({ id, createdAt });
 }

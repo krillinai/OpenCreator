@@ -290,6 +290,7 @@ export type TaskStatusFilter =
   | PublicRunStatus;
 
 export type TaskItemStatus = PublicRunStatus | 'waiting_approval';
+export type TaskFailureKind = 'project_directory' | 'other';
 
 export type TaskListQuery = {
   status?: TaskStatusFilter;
@@ -318,6 +319,11 @@ export type TaskItem = {
   errorMessage?: string;
   resultSummary?: string;
   pendingApproval?: RuntimeApproval;
+  scheduleId?: string;
+  failureKind?: TaskFailureKind;
+  failureSummary?: string;
+  consecutiveFailureCount?: number;
+  suggestPause?: boolean;
 };
 
 export type TaskListResponse = {

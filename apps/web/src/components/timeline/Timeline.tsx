@@ -718,6 +718,7 @@ type TimelineProps = {
   items: TimelineItem[];
   targetItemId?: string;
   targetRunId?: string;
+  targetApprovalId?: string;
   hasMore?: boolean;
   loadingOlder?: boolean;
   onLoadOlder?(): Promise<void> | void;
@@ -760,9 +761,10 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     () => renderItems.findIndex(item => renderItemMatchesTarget(
       item,
       props.targetItemId,
-      props.targetRunId
+      props.targetRunId,
+      props.targetApprovalId
     )),
-    [props.targetItemId, props.targetRunId, renderItems]
+    [props.targetApprovalId, props.targetItemId, props.targetRunId, renderItems]
   );
   const itemIds = props.items.map(item => item.id);
   const previousItemIds = previousItemIdsRef.current;
@@ -801,7 +803,12 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       align: 'center',
       behavior: 'auto'
     });
-  }, [props.targetItemId, props.targetRunId, targetRenderItemIndex]);
+  }, [
+    props.targetApprovalId,
+    props.targetItemId,
+    props.targetRunId,
+    targetRenderItemIndex
+  ]);
 
   function loadOlder() {
     if (!props.hasMore || props.loadingOlder || props.onLoadOlder === undefined) return;
@@ -886,6 +893,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                   renderItem,
                   props.targetItemId,
                   props.targetRunId,
+                  props.targetApprovalId,
                   props.onOpenRunDetail,
                   props.onOpenFile,
                   props.onCancelQueuedRun,
@@ -917,6 +925,7 @@ function renderTimelineRenderItem(
   renderItem: TimelineRenderItem,
   targetItemId?: string,
   targetRunId?: string,
+  targetApprovalId?: string,
   onOpenRunDetail?: (runId: string) => void,
   onOpenFile?: (path: string) => void,
   onCancelQueuedRun?: (runId: string) => void,
@@ -929,7 +938,12 @@ function renderTimelineRenderItem(
     return (
       <ProcessBlockView
         process={renderItem}
-        targeted={renderItemMatchesTarget(renderItem, targetItemId, targetRunId)}
+        targeted={renderItemMatchesTarget(
+          renderItem,
+          targetItemId,
+          targetRunId,
+          targetApprovalId
+        )}
         onOpenRunDetail={onOpenRunDetail}
       />
     );
@@ -939,7 +953,12 @@ function renderTimelineRenderItem(
     return (
       <article
         className="timeline-item timeline-change_card"
-        data-search-target={renderItemMatchesTarget(renderItem, targetItemId, targetRunId) ? 'true' : undefined}
+        data-search-target={renderItemMatchesTarget(
+          renderItem,
+          targetItemId,
+          targetRunId,
+          targetApprovalId
+        ) ? 'true' : undefined}
       >
         <div className="timeline-bubble">{renderChangeBlock(renderItem, onOpenFile)}</div>
       </article>
@@ -950,7 +969,12 @@ function renderTimelineRenderItem(
   return (
     <article
       className={`timeline-item timeline-${item.kind}`}
-      data-search-target={renderItemMatchesTarget(renderItem, targetItemId, targetRunId) ? 'true' : undefined}
+      data-search-target={renderItemMatchesTarget(
+        renderItem,
+        targetItemId,
+        targetRunId,
+        targetApprovalId
+      ) ? 'true' : undefined}
     >
       {shouldRenderTimelineHeader(item) ? (
         <div className="timeline-item-header">
@@ -998,10 +1022,22 @@ function renderItemContainsRunId(item: TimelineRenderItem, runId: string): boole
 function renderItemMatchesTarget(
   item: TimelineRenderItem,
   targetItemId?: string,
-  targetRunId?: string
+  targetRunId?: string,
+  targetApprovalId?: string
 ): boolean {
   if (targetItemId !== undefined && renderItemContainsId(item, targetItemId)) return true;
+  if (targetApprovalId !== undefined && renderItemContainsApprovalId(item, targetApprovalId)) {
+    return true;
+  }
   return targetRunId !== undefined && renderItemContainsRunId(item, targetRunId);
+}
+
+function renderItemContainsApprovalId(
+  item: TimelineRenderItem,
+  approvalId: string
+): boolean {
+  if (item.type !== 'item' || item.item.kind !== 'approval') return false;
+  return item.item.approval.id === approvalId;
 }
 
 function hasSuffix(values: string[], suffix: string[]): boolean {

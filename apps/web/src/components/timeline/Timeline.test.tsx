@@ -36,7 +36,7 @@ describe('Timeline', () => {
     const onApproveApproval = vi.fn();
     const onRejectApproval = vi.fn();
 
-    render(
+    const { container } = render(
       <Timeline
         items={[{
           kind: 'approval',
@@ -60,6 +60,7 @@ describe('Timeline', () => {
           },
           source: 'runtime'
         }]}
+        targetApprovalId="approval_1"
         onApproveApproval={onApproveApproval}
         onRejectApproval={onRejectApproval}
       />
@@ -71,6 +72,9 @@ describe('Timeline', () => {
     await user.click(screen.getByRole('button', { name: '批准' }));
 
     expect(onApproveApproval).toHaveBeenCalledWith('approval_1');
+    expect(container.querySelector('[data-search-target="true"]')).toHaveTextContent(
+      '允许执行命令'
+    );
   });
 
   it('renders image metadata and a local preview with the user message', () => {

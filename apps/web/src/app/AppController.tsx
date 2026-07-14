@@ -282,6 +282,13 @@ export function AppController(props: AppControllerProps) {
       ? { threadId: props.route.threadId, runId: props.route.runId }
       : undefined
   ));
+  const [timelineApprovalTarget, setTimelineApprovalTarget] = useState<
+    { threadId: string; approvalId: string } | undefined
+  >(() => (
+    props.route.view === 'thread' && props.route.approvalId !== undefined
+      ? { threadId: props.route.threadId, approvalId: props.route.approvalId }
+      : undefined
+  ));
   const projectService = useMemo(() => createMockProjectService(), []);
   const timelineIdSequenceRef = useRef(0);
   const timelineItemsRef = useRef<TimelineItem[]>([]);
@@ -543,6 +550,23 @@ export function AppController(props: AppControllerProps) {
     setNotificationSettings(notificationService.getSettings());
     setUnreadTaskIds(notificationService.getUnreadIds());
   }, [notificationService]);
+
+  useEffect(() => {
+    if (timelineApprovalTarget === undefined) return;
+    const task = runtimeTasks.find(item => (
+      item.threadId === timelineApprovalTarget.threadId
+      && item.pendingApproval?.id === timelineApprovalTarget.approvalId
+    ));
+    const approval = task?.pendingApproval;
+    if (approval === undefined) return;
+    appendTimelineItemsForThread(timelineApprovalTarget.threadId, [{
+      kind: 'approval',
+      id: `restored_${approval.id}`,
+      runId: approval.runId,
+      approval,
+      source: 'runtime'
+    }]);
+  }, [runtimeTasks, timelineApprovalTarget]);
 
   useEffect(() => {
     let canceled = false;
@@ -1365,6 +1389,7 @@ export function AppController(props: AppControllerProps) {
     setThreadConfigUpdateError(undefined);
     setSearchHistoryTarget(undefined);
     setTimelineRunTarget(undefined);
+    setTimelineApprovalTarget(undefined);
     dispatch({ type: 'new_conversation' });
     if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
   }
@@ -1381,6 +1406,7 @@ export function AppController(props: AppControllerProps) {
     setThreadConfigUpdateError(undefined);
     setSearchHistoryTarget(undefined);
     setTimelineRunTarget(undefined);
+    setTimelineApprovalTarget(undefined);
     dispatch({ type: 'select_project', projectId });
     if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
   }
@@ -1392,6 +1418,7 @@ export function AppController(props: AppControllerProps) {
     setThreadConfigUpdateError(undefined);
     setSearchHistoryTarget(undefined);
     setTimelineRunTarget(undefined);
+    setTimelineApprovalTarget(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
     const alreadySelected = conversationId === state.selectedThreadId;
     if (conversation !== undefined && conversation.projectId !== state.currentProjectId) {
@@ -1446,7 +1473,10 @@ export function AppController(props: AppControllerProps) {
         startNewConversation({ updateRoute: false });
         return;
       case 'thread':
-        void openScheduleTask(route.threadId, route.runId, { updateRoute: false });
+        void openScheduleTask(route.threadId, route.runId, {
+          updateRoute: false,
+          approvalId: route.approvalId
+        });
         return;
       case 'search':
       case 'schedules':
@@ -1525,6 +1555,7 @@ export function AppController(props: AppControllerProps) {
     setThreadLoadError(undefined);
     setThreadConfigUpdateError(undefined);
     setTimelineRunTarget(undefined);
+    setTimelineApprovalTarget(undefined);
     setHistoryLoadingThreadId(thread.id);
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
@@ -2243,7 +2274,7 @@ export function AppController(props: AppControllerProps) {
   async function openScheduleTask(
     threadId: string,
     runId?: string,
-    options: { updateRoute?: boolean } = {}
+    options: { updateRoute?: boolean; approvalId?: string } = {}
   ): Promise<boolean> {
     let thread = runtimeThreads.find(item => item.id === threadId);
     if (thread === undefined && threadService !== null) {
@@ -2268,6 +2299,11 @@ export function AppController(props: AppControllerProps) {
     setTimelineRunTarget(
       runId === undefined ? undefined : { threadId: thread.id, runId }
     );
+    setTimelineApprovalTarget(
+      options.approvalId === undefined
+        ? undefined
+        : { threadId: thread.id, approvalId: options.approvalId }
+    );
     setHistoryLoadingThreadId(thread.id);
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
@@ -2281,7 +2317,10 @@ export function AppController(props: AppControllerProps) {
       navigateToRoute({
         view: 'thread',
         threadId: thread.id,
-        ...(runId === undefined ? {} : { runId })
+        ...(runId === undefined ? {} : { runId }),
+        ...(options.approvalId === undefined
+          ? {}
+          : { approvalId: options.approvalId })
       });
     }
     setThreadHistoryReloadKey(previous => previous + 1);
@@ -2300,6 +2339,7 @@ export function AppController(props: AppControllerProps) {
     if (!opened) throw new Error('无法打开任务对应的会话');
     if (alreadyOpen) {
       setTimelineRunTarget(undefined);
+      setTimelineApprovalTarget(undefined);
       navigateToRoute({ view: 'thread', threadId: schedule.threadId });
     }
 
@@ -2397,6 +2437,12 @@ export function AppController(props: AppControllerProps) {
       openRunDetail(task.runId);
       return;
     }
+    if (task.pendingApproval?.status === 'pending') {
+      await openScheduleTask(threadId, task.runId, {
+        approvalId: task.pendingApproval.id
+      });
+      return;
+    }
 
     let thread = runtimeThreads.find(item => item.id === threadId);
     if (thread === undefined && threadService !== null) {
@@ -2418,6 +2464,7 @@ export function AppController(props: AppControllerProps) {
     setThreadLoadError(undefined);
     setThreadConfigUpdateError(undefined);
     setSearchHistoryTarget(undefined);
+    setTimelineApprovalTarget(undefined);
     setHistoryLoadingThreadId(thread.id);
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
@@ -2707,6 +2754,12 @@ export function AppController(props: AppControllerProps) {
                 ? timelineRunTarget.runId
                 : undefined
             }
+            targetApprovalId={
+              timelineApprovalTarget !== undefined
+              && timelineApprovalTarget.threadId === state.selectedThreadId
+                ? timelineApprovalTarget.approvalId
+                : undefined
+            }
             onLoadOlder={threadHistory.loadOlder}
             onOpenRunDetail={openRunDetail}
             onOpenFile={openTimelineFile}
@@ -2829,6 +2882,9 @@ export function AppController(props: AppControllerProps) {
       service={scheduleService}
       projects={projects}
       currentProjectId={state.currentProjectId}
+      editScheduleId={
+        props.route.view === 'schedules' ? props.route.scheduleId : undefined
+      }
       profiles={codexProfiles?.profiles}
       defaultTimezone={resolveDefaultTimezone()}
       onCreateWithClawee={openScheduleCreationConversation}
@@ -2847,6 +2903,14 @@ export function AppController(props: AppControllerProps) {
       onClearUnread={clearUnreadTasks}
       onOpenTask={task => void openTask(task)}
       onMarkRead={markTaskRead}
+      onEditSchedule={scheduleId => {
+        navigateToRoute({ view: 'schedules', scheduleId });
+      }}
+      onPauseSchedule={async scheduleId => {
+        if (scheduleService === null) throw new Error('本地运行内核未连接');
+        const updated = await scheduleService.updateSchedule(scheduleId, { enabled: false });
+        handleScheduleChanged(updated);
+      }}
     />
   ) : state.activeView === 'settings' ? (
     <SettingsPage

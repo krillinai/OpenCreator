@@ -1681,7 +1681,7 @@ feat(history): 展示任务执行公开输入
 
 ### P2-B1：等待审批和连续失败体验
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`（2026-07-14 22:41-23:13 CST）
 
 **依赖：** `P1-B10`
 
@@ -2428,6 +2428,26 @@ docs(release): 完成任务专属会话发布与回滚说明
   stderr；单文件复跑和无并行竞争的 Daemon 全量复跑均通过。Web build 继续报告两个
   既有主 chunk 超过 500 kB。
 - 下一步：执行 P2-B1，完善等待审批定位和连续失败体验。
+
+### 2026-07-14 23:13 CST - P2-B1
+
+- 状态：`PASS`
+- 提交：`feat(tasks): 完善任务审批和连续失败体验`
+  （SHA 以包含本日志的提交为准）
+- 已完成：通知、Browser Host 和 Thread 路由增加 `approvalId`；任务入口和刷新后的
+  Task 摘要可恢复审批卡片并精确定位；拒绝和过期状态增加用户可理解文案；TaskItem
+  增加 Schedule 关联、脱敏失败分类、同类连续失败次数和暂停建议；项目目录连续三次
+  失败后提供“编辑项目”和“暂停任务”，编辑操作深链到对应 Schedule 编辑器；侧栏状态
+  优先级统一为修复、等待审批、运行、排队、失败、暂停、空闲。
+- 验证：审批运行集成和 TaskService 共 10 项通过；Web 审批、任务中心、侧栏、通知、
+  路由、Schedule 编辑、Timeline 和 App 共 152 项通过；Protocol/Daemon/Web
+  typecheck、根 `pnpm build` 和 `git diff --check` 通过。
+- 未完成：Codex resume 失败后的底层 thread 轮换和摘要恢复留到 P2-B2。
+- 风险或偏差：连续失败摘要最多回看同一 Schedule 最近 100 次 Run，足以覆盖三次建议
+  阈值并限制查询规模；失败原始错误仍保留在 Run 详情 API，普通任务列表和通知只展示
+  脱敏中文摘要。Web build 继续报告两个既有主 chunk 超过 500 kB。
+- 下一步：执行 P2-B2，复用 ConversationSummary 实现有限的 resume、摘要 reseed 和
+  新 Codex thread 恢复流程。
 
 ### 日志模板
 

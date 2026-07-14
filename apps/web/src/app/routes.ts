@@ -1,8 +1,8 @@
 export type AppRoute =
   | { view: 'home' }
-  | { view: 'thread'; threadId: string; runId?: string }
+  | { view: 'thread'; threadId: string; runId?: string; approvalId?: string }
   | { view: 'search' }
-  | { view: 'schedules' }
+  | { view: 'schedules'; scheduleId?: string }
   | { view: 'tasks' }
   | { view: 'plugins' }
   | { view: 'capabilities' }
@@ -19,11 +19,18 @@ export function parseRoute(hash: string): AppRoute {
       : {
           view: 'thread',
           threadId,
-          ...(fields.runId === undefined ? {} : { runId: fields.runId })
+          ...(fields.runId === undefined ? {} : { runId: fields.runId }),
+          ...(fields.approvalId === undefined ? {} : { approvalId: fields.approvalId })
         };
   }
   if (path === '#/search') return { view: 'search' };
-  if (path === '#/schedules') return { view: 'schedules' };
+  if (path === '#/schedules') {
+    const fields = parseQuery(query);
+    return {
+      view: 'schedules',
+      ...(fields.scheduleId === undefined ? {} : { scheduleId: fields.scheduleId })
+    };
+  }
   if (path === '#/tasks') return { view: 'tasks' };
   if (path === '#/plugins') return { view: 'plugins' };
   if (path === '#/capabilities') return { view: 'capabilities' };
@@ -46,14 +53,19 @@ export function formatRoute(route: AppRoute): string {
     case 'thread': {
       const query = new URLSearchParams();
       if (route.runId !== undefined) query.set('runId', route.runId);
+      if (route.approvalId !== undefined) query.set('approvalId', route.approvalId);
       const suffix = query.toString();
       const path = `#/thread/${encodeURIComponent(route.threadId)}`;
       return suffix.length === 0 ? path : `${path}?${suffix}`;
     }
     case 'search':
       return '#/search';
-    case 'schedules':
-      return '#/schedules';
+    case 'schedules': {
+      const query = new URLSearchParams();
+      if (route.scheduleId !== undefined) query.set('scheduleId', route.scheduleId);
+      const suffix = query.toString();
+      return suffix.length === 0 ? '#/schedules' : `#/schedules?${suffix}`;
+    }
     case 'tasks':
       return '#/tasks';
     case 'plugins':
@@ -72,8 +84,20 @@ export function formatRoute(route: AppRoute): string {
   }
 }
 
-function parseQuery(query: string): { threadId?: string; path?: string; runId?: string } {
-  const fields: { threadId?: string; path?: string; runId?: string } = {};
+function parseQuery(query: string): {
+  threadId?: string;
+  path?: string;
+  runId?: string;
+  approvalId?: string;
+  scheduleId?: string;
+} {
+  const fields: {
+    threadId?: string;
+    path?: string;
+    runId?: string;
+    approvalId?: string;
+    scheduleId?: string;
+  } = {};
   for (const pair of query.split('&')) {
     if (pair.length === 0) continue;
     const [rawKey = '', rawValue = ''] = pair.split('=', 2);
@@ -83,6 +107,8 @@ function parseQuery(query: string): { threadId?: string; path?: string; runId?: 
     if (key === 'threadId') fields.threadId = value;
     if (key === 'path') fields.path = value;
     if (key === 'runId') fields.runId = value;
+    if (key === 'approvalId') fields.approvalId = value;
+    if (key === 'scheduleId') fields.scheduleId = value;
   }
   return fields;
 }

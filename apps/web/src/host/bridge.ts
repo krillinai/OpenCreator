@@ -7,6 +7,7 @@ export type HostNotification = {
   body: string;
   threadId?: string;
   runId?: string;
+  approvalId?: string;
 };
 
 export type HostBridge = {

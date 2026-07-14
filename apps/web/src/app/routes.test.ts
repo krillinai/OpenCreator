@@ -6,14 +6,17 @@ describe('app routes', () => {
     expect(parseRoute('#/thread/thread%201')).toEqual({ view: 'thread', threadId: 'thread 1' });
   });
 
-  it('round-trips an optional run target on thread routes', () => {
+  it('round-trips optional run and approval targets on thread routes', () => {
     const route = {
       view: 'thread' as const,
       threadId: 'thread/task',
-      runId: 'run 1'
+      runId: 'run 1',
+      approvalId: 'approval 1'
     };
 
-    expect(formatRoute(route)).toBe('#/thread/thread%2Ftask?runId=run+1');
+    expect(formatRoute(route)).toBe(
+      '#/thread/thread%2Ftask?runId=run+1&approvalId=approval+1'
+    );
     expect(parseRoute(formatRoute(route))).toEqual(route);
   });
 
@@ -24,6 +27,16 @@ describe('app routes', () => {
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
+  });
+
+  it('round-trips a schedule editor target', () => {
+    const route = {
+      view: 'schedules' as const,
+      scheduleId: 'schedule 1'
+    };
+
+    expect(formatRoute(route)).toBe('#/schedules?scheduleId=schedule+1');
+    expect(parseRoute(formatRoute(route))).toEqual(route);
   });
 
   it('round-trips file routes with thread and workspace paths', () => {

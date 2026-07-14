@@ -86,11 +86,14 @@ describe('browserBridge', () => {
       title: '喝水提醒',
       body: '该喝水了。',
       threadId: 'thread/task',
-      runId: 'run 1'
+      runId: 'run 1',
+      approvalId: 'approval 1'
     });
     NotificationMock.latest?.onclick?.();
 
-    expect(window.location.hash).toBe('#/thread/thread%2Ftask?runId=run+1');
+    expect(window.location.hash).toBe(
+      '#/thread/thread%2Ftask?runId=run+1&approvalId=approval+1'
+    );
     expect(focus).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
   });

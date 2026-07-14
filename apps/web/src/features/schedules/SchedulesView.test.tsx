@@ -223,6 +223,20 @@ describe('SchedulesView', () => {
     }));
   });
 
+  it('opens the targeted schedule editor from an external task action', async () => {
+    const getSchedule = vi.fn(async () => scheduleDetail());
+    renderView({
+      editScheduleId: 'schedule-1',
+      service: createService({
+        listSchedules: vi.fn(async () => ({ schedules: [schedule()] })),
+        getSchedule
+      })
+    });
+
+    expect(await screen.findByDisplayValue('完整的每日总结执行指令')).toBeInTheDocument();
+    expect(getSchedule).toHaveBeenCalledWith('schedule-1');
+  });
+
   it('opens task titles and previous runs in the bound task thread', async () => {
     const user = userEvent.setup();
     const onOpenTask = vi.fn();
@@ -310,6 +324,7 @@ function renderView(overrides: Partial<Parameters<typeof createView>[0]> = {}) {
 function createView(overrides: {
   connected?: boolean;
   service?: ScheduleViewService | null;
+  editScheduleId?: string;
   onCreateWithClawee?(): Promise<void> | void;
   onOpenTask?(threadId: string, runId?: string): void;
   onRunNow?(schedule: ScheduleResponse): Promise<void> | void;
@@ -332,6 +347,7 @@ function createView(overrides: {
         },
       ]}
       currentProjectId="current"
+      editScheduleId={overrides.editScheduleId}
       profiles={[
         {
           name: 'review',

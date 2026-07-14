@@ -32,7 +32,8 @@ export const browserBridge: HostBridge = {
         window.location.hash = formatRoute({
           view: 'thread',
           threadId: message.threadId,
-          ...(message.runId === undefined ? {} : { runId: message.runId })
+          ...(message.runId === undefined ? {} : { runId: message.runId }),
+          ...(message.approvalId === undefined ? {} : { approvalId: message.approvalId })
         });
       }
       notification.close();

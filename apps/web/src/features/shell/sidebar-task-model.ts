@@ -68,8 +68,8 @@ function resolveSidebarTaskStatus(
   ) {
     return 'queued';
   }
-  if (!schedule.enabled) return 'paused';
   if (schedule.lastStatus === 'failed') return 'failed';
+  if (!schedule.enabled) return 'paused';
   return 'idle';
 }
 

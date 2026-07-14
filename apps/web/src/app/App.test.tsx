@@ -124,6 +124,103 @@ describe('App', () => {
     expect(window.location.hash).toBe('#/thread/thread_task');
   });
 
+  it('restores a pending approval card from the task entry and targets it in the thread', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/tasks';
+    const hostBridge = createHostBridge();
+    const approval = {
+      id: 'approval_task',
+      runId: 'run_approval_task',
+      threadId: 'thread_approval_task',
+      turnId: 'turn_approval_task',
+      itemId: 'item_approval_task',
+      requestId: 'request_approval_task',
+      kind: 'file_change' as const,
+      status: 'pending' as const,
+      risk: 'medium' as const,
+      title: '允许写入文件',
+      summary: '需要允许写入 docs/daily',
+      details: { grantRoot: '/workspace/docs/daily' },
+      requestedAt: '2026-07-14T10:00:00.000Z',
+      expiresAt: '2026-07-14T10:10:00.000Z'
+    };
+    const task: TaskItem = {
+      id: 'run_approval_task',
+      runId: 'run_approval_task',
+      threadId: 'thread_approval_task',
+      title: '每日总结',
+      status: 'waiting_approval',
+      runStatus: 'running',
+      cwd: '/workspace',
+      profile: 'default',
+      createdBy: 'schedule',
+      submissionMode: 'enqueue',
+      createdAt: '2026-07-14T10:00:00.000Z',
+      updatedAt: '2026-07-14T10:01:00.000Z',
+      pendingApproval: approval
+    };
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [createThreadResponse({
+            id: 'thread_approval_task',
+            title: '每日总结',
+            purpose: 'schedule_task',
+            scheduleId: 'schedule_approval_task'
+          })]
+        });
+      }
+      if (url.includes('/tasks?')) return jsonResponse({ tasks: [task], hasMore: false });
+      if (url.endsWith('/threads/thread_approval_task/history?limit=50')) {
+        return jsonResponse({
+          threadId: 'thread_approval_task',
+          codexThreadId: null,
+          items: []
+        });
+      }
+      if (url.endsWith('/threads/thread_approval_task/runs?limit=50')) {
+        return jsonResponse({
+          runs: [createRunResponse({
+            id: 'run_approval_task',
+            threadId: 'thread_approval_task',
+            status: 'running'
+          })]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('heading', { name: '任务中心' })).toBeInTheDocument();
+    await user.click(await within(await screen.findByRole('list')).findByRole('button', {
+      name: /每日总结/
+    }));
+
+    expect(await screen.findByText('允许写入文件')).toBeInTheDocument();
+    expect(document.querySelector('[data-search-target="true"]')).toHaveTextContent(
+      '允许写入文件'
+    );
+    expect(screen.queryByRole('heading', { name: '运行详情' })).not.toBeInTheDocument();
+    expect(window.location.hash).toBe(
+      '#/thread/thread_approval_task?runId=run_approval_task&approvalId=approval_task'
+    );
+  });
+
   it('opens a workspace file directly from a copyable URL', async () => {
     window.location.hash = '#/files?path=docs%2Fatoms.md';
 

@@ -95,4 +95,53 @@ describe('TaskCenter', () => {
     await user.click(await screen.findByRole('button', { name: '批准' }));
     expect(approve).toHaveBeenCalledWith('approval_1');
   });
+
+  it('shows actionable guidance after three project directory failures', async () => {
+    const user = userEvent.setup();
+    const onEditSchedule = vi.fn();
+    const onPauseSchedule = vi.fn(async () => undefined);
+    render(
+      <TaskCenter
+        service={{
+          list: vi.fn(async () => ({
+            tasks: [{
+              ...pendingTask,
+              id: 'run_failed',
+              runId: 'run_failed',
+              status: 'failed' as const,
+              runStatus: 'failed' as const,
+              createdBy: 'schedule',
+              scheduleId: 'schedule_1',
+              pendingApproval: undefined,
+              failureKind: 'project_directory' as const,
+              failureSummary: '项目目录不存在或无法访问，请编辑项目后重试。',
+              consecutiveFailureCount: 3,
+              suggestPause: true
+            }],
+            hasMore: false
+          }))
+        }}
+        approvalService={null}
+        notificationSettings={{ enabled: false, permission: 'default' }}
+        unreadIds={new Set()}
+        onEnableNotifications={vi.fn()}
+        onDisableNotifications={vi.fn()}
+        onClearUnread={vi.fn()}
+        onOpenTask={vi.fn()}
+        onMarkRead={vi.fn()}
+        onEditSchedule={onEditSchedule}
+        onPauseSchedule={onPauseSchedule}
+      />
+    );
+
+    expect(await screen.findByText('项目目录不存在或无法访问，请编辑项目后重试。'))
+      .toBeInTheDocument();
+    expect(screen.queryByText('/workspace')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '编辑项目' }));
+    await user.click(screen.getByRole('button', { name: '暂停任务' }));
+
+    expect(onEditSchedule).toHaveBeenCalledWith('schedule_1');
+    expect(onPauseSchedule).toHaveBeenCalledWith('schedule_1');
+  });
 });
