@@ -221,7 +221,7 @@ describe('schedule repository', () => {
     });
   });
 
-  it('inserts and lists operations newest first with nullable fields mapped', () => {
+  it('persists operation actors and keeps legacy actor-less rows readable', () => {
     const repository = createRepository({
       ids: ['sch_one'],
       operationIds: ['schop_old', 'schop_new'],
@@ -237,7 +237,10 @@ describe('schedule repository', () => {
       scheduleId: 'sch_one',
       operation: 'run_queued',
       status: 'queued',
-      runId: 'run_one'
+      runId: 'run_triggered'
+    }, {
+      type: 'agent',
+      runId: 'run_actor'
     });
     const newOperation = repository.insertOperation({
       scheduleId: 'sch_one',
@@ -245,22 +248,138 @@ describe('schedule repository', () => {
       status: 'failed',
       errorCode: 'SCHEDULE_INVALID',
       errorMessage: 'bad cron'
+    }, {
+      type: 'user'
     });
+    db?.prepare(`
+      INSERT INTO schedule_operations (
+        id, schedule_id, operation, status, created_at
+      ) VALUES (
+        'schop_legacy', 'sch_one', 'create', 'succeeded', '2026-07-06T00:00:30.000Z'
+      )
+    `).run();
 
     expect(repository.listOperations('sch_one')).toEqual([
       {
         ...newOperation,
         runId: null,
+        actorType: 'user',
+        actorRunId: null,
         errorCode: 'SCHEDULE_INVALID',
         errorMessage: 'bad cron'
       },
       {
         ...oldOperation,
-        runId: 'run_one',
+        runId: 'run_triggered',
+        actorType: 'agent',
+        actorRunId: 'run_actor',
         errorCode: null,
         errorMessage: null
+      },
+      {
+        id: 'schop_legacy',
+        scheduleId: 'sch_one',
+        operation: 'create',
+        status: 'succeeded',
+        runId: null,
+        actorType: null,
+        actorRunId: null,
+        errorCode: null,
+        errorMessage: null,
+        createdAt: '2026-07-06T00:00:30.000Z',
+        diagnosticEvent: undefined
       }
     ]);
+  });
+
+  it('builds a safe trigger-to-thread-and-run trace without prompt or result content', () => {
+    const repository = createRepository({
+      ids: ['sch_one'],
+      operationIds: ['schop_trigger'],
+      nowValues: [
+        '2026-07-06T00:00:00.000Z',
+        '2026-07-06T01:00:00.000Z'
+      ]
+    });
+    repository.create(scheduleInput({
+      threadId: 'thread_task',
+      prompt: 'TOKEN=private-schedule-prompt'
+    }));
+    db?.prepare(`
+      INSERT INTO runs (
+        id, thread_id, public_status, internal_status, created_by, source_id,
+        public_prompt, triggered_at, profile, cwd, canonical_cwd, workspace_mode,
+        sandbox, codex_version, codex_bin, codex_home, normalizer_version,
+        started_at, ended_at, error_code, error_message
+      ) VALUES (
+        'run_schedule', 'thread_task', 'failed', 'failed', 'schedule', 'sch_one',
+        'TOKEN=private-public-prompt', '2026-07-06T01:00:00.000Z',
+        'default', @cwd, @cwd, 'external', 'read-only', 'test', 'codex',
+        @codexHome, 1, '2026-07-06T01:00:01.000Z', '2026-07-06T01:00:03.000Z',
+        'RUN_FAILED', 'TOKEN=private-error-result'
+      )
+    `).run({
+      cwd: tempDir,
+      codexHome: join(tempDir, 'codex-home')
+    });
+    repository.insertOperation({
+      scheduleId: 'sch_one',
+      operation: 'run_queued',
+      status: 'succeeded',
+      runId: 'run_schedule'
+    }, {
+      type: 'timer'
+    });
+    db?.prepare(`
+      INSERT INTO approvals (
+        id, run_id, thread_id, turn_id, item_id, request_id, kind, status, risk,
+        title, summary, details_json, requested_at, expires_at, resolved_at
+      ) VALUES (
+        'approval_schedule', 'run_schedule', 'thread_task', 'turn_1', 'item_1',
+        'request_1', 'command_execution', 'approved', 'medium', 'Approve command',
+        'TOKEN=private-summary', '{"result":"TOKEN=private-result"}',
+        '2026-07-06T01:00:02.000Z', '2026-07-06T01:10:00.000Z',
+        '2026-07-06T01:00:02.500Z'
+      )
+    `).run();
+
+    const trace = repository.getRunTrace('run_schedule');
+
+    expect(trace).toEqual({
+      scheduleId: 'sch_one',
+      threadId: 'thread_task',
+      runId: 'run_schedule',
+      triggerType: 'run_queued',
+      actorType: 'timer',
+      actorRunId: null,
+      scheduledAt: '2026-07-06T01:00:00.000Z',
+      startedAt: '2026-07-06T01:00:01.000Z',
+      endedAt: '2026-07-06T01:00:03.000Z',
+      status: 'failed',
+      queueReason: 'thread_active',
+      errorCode: 'RUN_FAILED',
+      events: [
+        {
+          type: 'SCHEDULE_TRIGGERED',
+          occurredAt: '2026-07-06T01:00:00.000Z',
+          operationId: 'schop_trigger'
+        },
+        {
+          type: 'SCHEDULE_RUN_STARTED',
+          occurredAt: '2026-07-06T01:00:01.000Z'
+        },
+        {
+          type: 'SCHEDULE_RUN_WAITING_APPROVAL',
+          occurredAt: '2026-07-06T01:00:02.000Z'
+        },
+        {
+          type: 'SCHEDULE_RUN_COMPLETED',
+          occurredAt: '2026-07-06T01:00:03.000Z',
+          errorCode: 'RUN_FAILED'
+        }
+      ]
+    });
+    expect(JSON.stringify(trace)).not.toMatch(/private|prompt|result/i);
   });
 
 });

@@ -332,6 +332,8 @@ describe('runtime storage', () => {
         'operation',
         'status',
         'run_id',
+        'actor_type',
+        'actor_run_id',
         'error_code',
         'error_message',
         'created_at'
@@ -349,17 +351,113 @@ describe('runtime storage', () => {
              'idx_schedules_thread_id',
              'idx_schedule_operations_created_at',
              'idx_schedule_operations_schedule_id',
+             'idx_schedule_operations_run_id',
+             'idx_schedule_operations_actor_run_id',
              'idx_runs_schedule_source'
            )`
       )
       .all() as Array<{ name: string }>;
     expect(indexRows.map(row => row.name).sort()).toEqual([
       'idx_runs_schedule_source',
+      'idx_schedule_operations_actor_run_id',
       'idx_schedule_operations_created_at',
+      'idx_schedule_operations_run_id',
       'idx_schedule_operations_schedule_id',
       'idx_schedules_deleted_at',
       'idx_schedules_enabled_next_run_at',
       'idx_schedules_thread_id'
+    ]);
+  });
+
+  it('migrates legacy schedule operations without changing existing actor-less rows', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    const dbPath = join(tempDir, 'app.sqlite');
+    const legacyDb = new Database(dbPath);
+    legacyDb.exec(`
+      CREATE TABLE schedules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        cron TEXT NOT NULL,
+        timezone TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        prompt TEXT NOT NULL,
+        prompt_hash TEXT NOT NULL,
+        prompt_preview_redacted TEXT NOT NULL,
+        profile TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        canonical_cwd TEXT NOT NULL,
+        model TEXT,
+        reasoning TEXT,
+        sandbox TEXT NOT NULL,
+        timeout_ms INTEGER,
+        concurrency_policy TEXT NOT NULL,
+        misfire_policy TEXT NOT NULL,
+        next_run_at TEXT,
+        last_run_at TEXT,
+        last_run_id TEXT,
+        last_status TEXT,
+        pending_trigger INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT
+      );
+
+      CREATE TABLE schedule_operations (
+        id TEXT PRIMARY KEY,
+        schedule_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        status TEXT NOT NULL,
+        run_id TEXT,
+        error_code TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      INSERT INTO schedules (
+        id, name, cron, timezone, prompt, prompt_hash, prompt_preview_redacted,
+        profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+      ) VALUES (
+        'sch_legacy', 'legacy task', '0 9 * * *', 'UTC', 'private prompt',
+        'hash', 'private prompt', 'default', '/tmp', '/tmp', 'read-only', 'queue', 'skip'
+      );
+
+      INSERT INTO schedule_operations (
+        id, schedule_id, operation, status, run_id
+      ) VALUES (
+        'schop_legacy', 'sch_legacy', 'run_now', 'succeeded', 'run_legacy'
+      );
+    `);
+    legacyDb.close();
+
+    db = openRuntimeDatabase(dbPath);
+
+    expect(columnNames(db, 'schedule_operations')).toEqual(
+      expect.arrayContaining(['actor_type', 'actor_run_id'])
+    );
+    expect(
+      db.prepare(`
+        SELECT actor_type, actor_run_id
+        FROM schedule_operations
+        WHERE id = 'schop_legacy'
+      `).get()
+    ).toEqual({
+      actor_type: null,
+      actor_run_id: null
+    });
+    expect(
+      db.prepare(`
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'index'
+          AND name IN (
+            'idx_schedule_operations_run_id',
+            'idx_schedule_operations_actor_run_id'
+          )
+        ORDER BY name
+      `).all()
+    ).toEqual([
+      { name: 'idx_schedule_operations_actor_run_id' },
+      { name: 'idx_schedule_operations_run_id' }
     ]);
   });
 

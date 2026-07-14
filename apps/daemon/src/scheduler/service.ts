@@ -10,10 +10,12 @@ import { computeNextRunAt } from './cron.js';
 import type { ScheduleRepository } from './repository.js';
 import type {
   BoundScheduleRecord,
+  ScheduleOperationActor,
   ScheduleOperationRecord,
   ScheduleRecord,
   SchedulerClock
 } from './types.js';
+import { scheduleOperationActors } from './types.js';
 import type { ScheduleValidationErrorCode } from './validator.js';
 
 export type SchedulerErrorCode =
@@ -37,7 +39,7 @@ export class SchedulerError extends Error {
 export type SchedulerService = {
   listSchedules(): ScheduleListResponse;
   getSchedule(id: string): ScheduleDetailResponse | undefined;
-  runNow(id: string): RunScheduleNowResponse;
+  runNow(id: string, actor?: ScheduleOperationActor): RunScheduleNowResponse;
   listOperations(id: string, limit?: number): ScheduleOperationListResponse;
   start(): void;
   stop(): void;
@@ -85,7 +87,8 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
   function handleTrigger(
     schedule: ScheduleRecord,
     operation: 'run_now' | 'timer_trigger' | 'run_queued',
-    ranAt: string
+    ranAt: string,
+    actor: ScheduleOperationActor
   ): RunScheduleNowResponse {
     const bound = requireBoundSchedule(schedule);
     const concurrencyPolicy = resolveConcurrencyPolicy(bound);
@@ -98,7 +101,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
           scheduleId: schedule.id,
           operation: 'skip_concurrency',
           status: 'skipped'
-        });
+        }, actor);
         return {
           run: null,
           schedule: toScheduleResponse(requireBoundSchedule(skipped)),
@@ -115,7 +118,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
           scheduleId: schedule.id,
           operation: 'queue_trigger',
           status: 'queued'
-        });
+        }, actor);
         refreshQueueTimerIfStarted();
         return {
           run: null,
@@ -126,13 +129,14 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
       }
     }
 
-    return triggerSchedule(bound, operation, ranAt);
+    return triggerSchedule(bound, operation, ranAt, actor);
   }
 
   function triggerSchedule(
     schedule: BoundScheduleRecord,
     operation: 'run_now' | 'timer_trigger' | 'run_queued',
-    ranAt: string
+    ranAt: string,
+    actor: ScheduleOperationActor
   ): RunScheduleNowResponse {
     let run;
     try {
@@ -154,7 +158,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         status: 'failed',
         errorCode: 'INTERNAL_ERROR',
         errorMessage: message
-      });
+      }, actor);
       throw new SchedulerError('INTERNAL_ERROR', message);
     }
     const updated = options.repository.recordRun({
@@ -169,7 +173,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
       operation,
       status: 'succeeded',
       runId: run.id
-    });
+    }, actor);
     return {
       run,
       schedule: toScheduleResponse(requireBoundSchedule(updated)),
@@ -207,13 +211,13 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         scheduleId: schedule.id,
         operation: 'skip_misfire',
         status: 'skipped'
-      });
+      }, scheduleOperationActors.timer);
       return;
     }
 
     const updated = options.repository.update(schedule.id, { nextRunAt });
     if (updated === null) throw notFound();
-    handleTrigger(updated, 'timer_trigger', now);
+    handleTrigger(updated, 'timer_trigger', now, scheduleOperationActors.timer);
   }
 
   function recordUnexpectedTimerFailure(schedule: ScheduleRecord, error: unknown): void {
@@ -225,7 +229,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
       status: 'failed',
       errorCode: 'INTERNAL_ERROR',
       errorMessage: formatError(error)
-    });
+    }, scheduleOperationActors.timer);
   }
 
   function refreshTimerIfStarted(): void {
@@ -265,7 +269,12 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         try {
           const bound = requireBoundSchedule(schedule);
           if (options.runManager.hasActiveRunForThread(bound.threadId)) continue;
-          handleTrigger(schedule, 'run_queued', clock.now().toISOString());
+          handleTrigger(
+            schedule,
+            'run_queued',
+            clock.now().toISOString(),
+            scheduleOperationActors.timer
+          );
         } catch (error) {
           recordQueuedTriggerFailure(schedule, error);
         }
@@ -288,7 +297,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
       status: 'failed',
       errorCode: 'INTERNAL_ERROR',
       errorMessage: formatError(error)
-    });
+    }, scheduleOperationActors.timer);
   }
 
   function resolveConcurrencyPolicy(schedule: BoundScheduleRecord): 'skip' | 'queue' {
@@ -317,9 +326,14 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         : toScheduleDetailResponse(requireBoundSchedule(schedule));
     },
 
-    runNow(id) {
+    runNow(id, actor = scheduleOperationActors.user) {
       const schedule = requireSchedule(options.repository, id);
-      const response = handleTrigger(schedule, 'run_now', clock.now().toISOString());
+      const response = handleTrigger(
+        schedule,
+        'run_now',
+        clock.now().toISOString(),
+        actor
+      );
       refreshTimerIfStarted();
       return response;
     },

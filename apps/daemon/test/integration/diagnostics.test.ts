@@ -73,6 +73,71 @@ describe('diagnostics', () => {
     ]);
   });
 
+  it('exports a safe schedule trigger trace without prompt, token, or result content', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    db = database;
+    insertScheduleRunTrace(database);
+    writeRunFiles(tempDir, 'run_schedule', {
+      'meta.json': JSON.stringify({
+        id: 'run_schedule',
+        prompt: 'TOKEN=private-file-prompt',
+        result: 'TOKEN=private-file-result'
+      })
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      db: database,
+      codexHome: join(tempDir, 'codex-home')
+    });
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/runs/run_schedule/diagnostics',
+      headers: { authorization: 'Bearer secret' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().scheduleTrace).toEqual({
+      scheduleId: 'sch_trace',
+      threadId: 'thread_trace',
+      runId: 'run_schedule',
+      triggerType: 'timer_trigger',
+      actorType: 'timer',
+      actorRunId: null,
+      scheduledAt: '2026-07-14T09:00:00.000Z',
+      startedAt: '2026-07-14T09:00:01.000Z',
+      endedAt: '2026-07-14T09:00:03.000Z',
+      status: 'failed',
+      queueReason: null,
+      errorCode: 'RUN_FAILED',
+      events: [
+        {
+          type: 'SCHEDULE_TRIGGERED',
+          occurredAt: '2026-07-14T09:00:00.000Z',
+          operationId: 'schop_trace'
+        },
+        {
+          type: 'SCHEDULE_RUN_STARTED',
+          occurredAt: '2026-07-14T09:00:01.000Z'
+        },
+        {
+          type: 'SCHEDULE_RUN_WAITING_APPROVAL',
+          occurredAt: '2026-07-14T09:00:02.000Z'
+        },
+        {
+          type: 'SCHEDULE_RUN_COMPLETED',
+          occurredAt: '2026-07-14T09:00:03.000Z',
+          errorCode: 'RUN_FAILED'
+        }
+      ]
+    });
+    expect(JSON.stringify(response.json())).not.toMatch(
+      /private-schedule|private-public|private-error|private-approval|private-file/i
+    );
+  });
+
   it('includes raw.redacted.ndjson only when includeRawRedacted is true', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
     const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -270,6 +335,56 @@ function insertFinishedRun(database: Database.Database, id: string): void {
     codexHome: join(tempDir, 'codex-home'),
     normalizerVersion: 1
   });
+}
+
+function insertScheduleRunTrace(database: Database.Database): void {
+  database.prepare(`
+    INSERT INTO schedules (
+      id, thread_id, name, cron, timezone, prompt, prompt_hash, prompt_preview_redacted,
+      profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+    ) VALUES (
+      'sch_trace', 'thread_trace', 'trace task', '0 9 * * *', 'UTC',
+      'TOKEN=private-schedule-prompt', 'hash', '[REDACTED]', 'default',
+      @cwd, @cwd, 'read-only', 'queue', 'skip'
+    )
+  `).run({ cwd: tempDir });
+  database.prepare(`
+    INSERT INTO runs (
+      id, thread_id, public_status, internal_status, created_by, source_id,
+      public_prompt, triggered_at, profile, cwd, canonical_cwd, workspace_mode,
+      sandbox, codex_version, codex_bin, codex_home, normalizer_version,
+      started_at, ended_at, error_code, error_message
+    ) VALUES (
+      'run_schedule', 'thread_trace', 'failed', 'failed', 'schedule', 'sch_trace',
+      'TOKEN=private-public-prompt', '2026-07-14T09:00:00.000Z', 'default',
+      @cwd, @cwd, 'external', 'read-only', 'test', 'codex', @codexHome, 1,
+      '2026-07-14T09:00:01.000Z', '2026-07-14T09:00:03.000Z',
+      'RUN_FAILED', 'TOKEN=private-error-result'
+    )
+  `).run({
+    cwd: tempDir,
+    codexHome: join(tempDir, 'codex-home')
+  });
+  database.prepare(`
+    INSERT INTO schedule_operations (
+      id, schedule_id, operation, status, run_id, actor_type, created_at
+    ) VALUES (
+      'schop_trace', 'sch_trace', 'timer_trigger', 'succeeded', 'run_schedule',
+      'timer', '2026-07-14T09:00:00.000Z'
+    )
+  `).run();
+  database.prepare(`
+    INSERT INTO approvals (
+      id, run_id, thread_id, turn_id, item_id, request_id, kind, status, risk,
+      title, summary, details_json, requested_at, expires_at, resolved_at
+    ) VALUES (
+      'approval_trace', 'run_schedule', 'thread_trace', 'turn_1', 'item_1',
+      'request_1', 'command_execution', 'approved', 'medium', 'Approve command',
+      'TOKEN=private-approval-summary', '{"result":"TOKEN=private-approval-result"}',
+      '2026-07-14T09:00:02.000Z', '2026-07-14T09:10:00.000Z',
+      '2026-07-14T09:00:02.500Z'
+    )
+  `).run();
 }
 
 function writeRunFiles(root: string, runId: string, files: Record<string, string>): void {

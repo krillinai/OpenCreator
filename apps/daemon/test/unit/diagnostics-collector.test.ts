@@ -145,11 +145,33 @@ describe('diagnostics collector', () => {
     const result = collectRunDiagnostics({
       dataDir: tempDir,
       runs: makeRunRepository(['run_1']),
-      runId: 'run_1'
+      runId: 'run_1',
+      schedules: {
+        getRunTrace: () => ({
+          scheduleId: 'sch_1',
+          threadId: 'thread_1',
+          runId: 'run_1',
+          triggerType: 'run_now',
+          actorType: 'user',
+          actorRunId: null,
+          scheduledAt: '2026-07-14T09:00:00.000Z',
+          startedAt: null,
+          endedAt: null,
+          status: 'queued',
+          queueReason: 'thread_active',
+          errorCode: null,
+          events: []
+        })
+      }
     });
 
     expect(result.files).toEqual([]);
     expect(result.warnings).toContain('Run diagnostics directory is missing.');
+    expect(result.scheduleTrace).toMatchObject({
+      scheduleId: 'sch_1',
+      threadId: 'thread_1',
+      runId: 'run_1'
+    });
   });
 
   it('returns empty files when the run diagnostics directory is missing', () => {

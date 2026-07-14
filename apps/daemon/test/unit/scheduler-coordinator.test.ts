@@ -70,7 +70,9 @@ describe('schedule coordinator', () => {
     expect(repository.listOperations(schedule.id)[0]).toMatchObject({
       operation: 'create',
       status: 'succeeded',
-      runId: 'run-agent-create'
+      runId: null,
+      actorType: 'agent',
+      actorRunId: 'run-agent-create'
     });
   });
 
@@ -178,7 +180,9 @@ describe('schedule coordinator', () => {
       expect.objectContaining({
         scheduleId: schedule.id,
         operation: 'create',
-        status: 'succeeded'
+        status: 'succeeded',
+        actorType: 'user',
+        actorRunId: null
       })
     ]);
   });
@@ -358,7 +362,9 @@ describe('schedule coordinator', () => {
     expect(updated.name).toBe('Agent renamed report');
     expect(repository.listOperations(created.id)[0]).toMatchObject({
       operation: 'update',
-      runId: 'run-agent-update'
+      runId: null,
+      actorType: 'agent',
+      actorRunId: 'run-agent-update'
     });
 
     active = true;
@@ -403,7 +409,9 @@ describe('schedule coordinator', () => {
     });
     expect(repository.listOperations(created.id)[0]).toMatchObject({
       operation: 'delete',
-      status: 'succeeded'
+      status: 'succeeded',
+      actorType: 'user',
+      actorRunId: null
     });
   });
 

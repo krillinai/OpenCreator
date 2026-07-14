@@ -419,6 +419,7 @@ export async function buildServer(input: BuildServerInput) {
   await registerDiagnosticsRoutes(server, {
     dataDir,
     runs: runRepository,
+    schedules: scheduleRepository,
     getCodexStatusSnapshot: () =>
       buildCodexStatusResponse({
         codexBin,

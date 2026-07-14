@@ -2,6 +2,8 @@ import type {
   ReasoningEffort,
   SandboxMode,
   ScheduleConcurrencyPolicy,
+  ScheduleActorType,
+  ScheduleDiagnosticEventType,
   ScheduleLastStatus,
   ScheduleMisfirePolicy,
   ScheduleOperationStatus,
@@ -96,6 +98,9 @@ export type ScheduleOperationRecord = {
   scheduleId: string;
   status: ScheduleOperationStatus;
   runId?: string | null;
+  actorType?: ScheduleActorType | null;
+  actorRunId?: string | null;
+  diagnosticEvent?: ScheduleDiagnosticEventType;
   errorCode?: string | null;
   errorMessage?: string | null;
   createdAt: string;
@@ -108,6 +113,19 @@ export type InsertScheduleOperationInput = {
   runId?: string | null;
   errorCode?: string | null;
   errorMessage?: string | null;
+};
+
+export type ScheduleOperationActor =
+  | { type: Exclude<ScheduleActorType, 'agent'> }
+  | { type: 'agent'; runId: string };
+
+export const scheduleOperationActors = {
+  user: { type: 'user' } as const,
+  timer: { type: 'timer' } as const,
+  migration: { type: 'migration' } as const,
+  agent(runId: string): ScheduleOperationActor {
+    return { type: 'agent', runId };
+  }
 };
 
 export type ProfileValidator = {

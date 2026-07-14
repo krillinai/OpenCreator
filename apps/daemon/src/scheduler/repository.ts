@@ -1,8 +1,16 @@
+import type {
+  ScheduleActorType,
+  ScheduleDiagnosticEvent,
+  ScheduleDiagnosticEventType,
+  ScheduleRunTrace,
+  ScheduleTriggerType
+} from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type {
   InsertScheduleInput,
   InsertScheduleOperationInput,
+  ScheduleOperationActor,
   ScheduleOperationRecord,
   ScheduleRecord,
   UpdateScheduleInput
@@ -43,9 +51,32 @@ type ScheduleOperationRow = {
   operation: ScheduleOperationRecord['operation'];
   status: ScheduleOperationRecord['status'];
   run_id: string | null;
+  actor_type: string | null;
+  actor_run_id: string | null;
   error_code: string | null;
   error_message: string | null;
   created_at: string;
+};
+
+type ScheduleRunTraceRow = {
+  operation_id: string;
+  schedule_id: string;
+  operation: ScheduleTriggerType;
+  actor_type: string | null;
+  actor_run_id: string | null;
+  operation_created_at: string;
+  operation_error_code: string | null;
+  schedule_thread_id: string | null;
+  run_id: string;
+  run_thread_id: string | null;
+  triggered_at: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  run_updated_at: string;
+  public_status: ScheduleRunTrace['status'];
+  queue_state: string;
+  run_error_code: string | null;
+  approval_requested_at: string | null;
 };
 
 type ScheduleRepositoryOptions = {
@@ -301,16 +332,22 @@ export class ScheduleRepository {
     return result.changes;
   }
 
-  insertOperation(input: InsertScheduleOperationInput): ScheduleOperationRecord {
+  insertOperation(
+    input: InsertScheduleOperationInput,
+    actor: ScheduleOperationActor
+  ): ScheduleOperationRecord {
     const id = this.operationIdFactory();
     const createdAt = this.now();
+    const actorRunId = actor.type === 'agent' ? actor.runId : null;
     this.db
       .prepare(
         `
         INSERT INTO schedule_operations (
-          id, schedule_id, operation, status, run_id, error_code, error_message, created_at
+          id, schedule_id, operation, status, run_id, actor_type, actor_run_id,
+          error_code, error_message, created_at
         ) VALUES (
-          @id, @scheduleId, @operation, @status, @runId, @errorCode, @errorMessage, @createdAt
+          @id, @scheduleId, @operation, @status, @runId, @actorType, @actorRunId,
+          @errorCode, @errorMessage, @createdAt
         )
       `
       )
@@ -320,6 +357,8 @@ export class ScheduleRepository {
         operation: input.operation,
         status: input.status,
         runId: input.runId ?? null,
+        actorType: actor.type,
+        actorRunId,
         errorCode: input.errorCode ?? null,
         errorMessage: input.errorMessage ?? null,
         createdAt
@@ -331,6 +370,9 @@ export class ScheduleRepository {
       operation: input.operation,
       status: input.status,
       runId: input.runId ?? null,
+      actorType: actor.type,
+      actorRunId,
+      diagnosticEvent: diagnosticEventForOperation(input.operation),
       errorCode: input.errorCode ?? null,
       errorMessage: input.errorMessage ?? null,
       createdAt
@@ -341,7 +383,8 @@ export class ScheduleRepository {
     const rows = this.db
       .prepare<{ scheduleId: string; limit: number }>(
         `
-        SELECT id, schedule_id, operation, status, run_id, error_code, error_message, created_at
+        SELECT id, schedule_id, operation, status, run_id, actor_type, actor_run_id,
+               error_code, error_message, created_at
         FROM schedule_operations
         WHERE schedule_id = @scheduleId
         ORDER BY created_at DESC, rowid DESC
@@ -350,6 +393,52 @@ export class ScheduleRepository {
       )
       .all({ scheduleId, limit }) as ScheduleOperationRow[];
     return rows.map(mapOperation);
+  }
+
+  getRunTrace(runId: string): ScheduleRunTrace | undefined {
+    const row = this.db
+      .prepare<string>(
+        `
+        SELECT
+          operation.id AS operation_id,
+          operation.schedule_id,
+          operation.operation,
+          operation.actor_type,
+          operation.actor_run_id,
+          operation.created_at AS operation_created_at,
+          operation.error_code AS operation_error_code,
+          schedule.thread_id AS schedule_thread_id,
+          run.id AS run_id,
+          run.thread_id AS run_thread_id,
+          run.triggered_at,
+          run.started_at,
+          run.ended_at,
+          run.updated_at AS run_updated_at,
+          run.public_status,
+          run.queue_state,
+          run.error_code AS run_error_code,
+          (
+            SELECT MAX(approval.requested_at)
+            FROM approvals approval
+            WHERE approval.run_id = run.id
+          ) AS approval_requested_at
+        FROM schedule_operations operation
+        JOIN schedules schedule ON schedule.id = operation.schedule_id
+        JOIN runs run ON run.id = operation.run_id
+        WHERE operation.run_id = ?
+          AND operation.operation IN ('run_now', 'timer_trigger', 'run_queued')
+          AND run.created_by = 'schedule'
+          AND run.source_id = operation.schedule_id
+        ORDER BY operation.created_at DESC, operation.rowid DESC
+        LIMIT 1
+      `
+      )
+      .get(runId) as ScheduleRunTraceRow | undefined;
+    if (row === undefined) return undefined;
+
+    const threadId = row.run_thread_id ?? row.schedule_thread_id;
+    if (threadId === null) return undefined;
+    return mapRunTrace(row, threadId);
   }
 
 }
@@ -392,10 +481,97 @@ function mapOperation(row: ScheduleOperationRow): ScheduleOperationRecord {
     operation: row.operation,
     status: row.status,
     runId: row.run_id,
+    actorType: parseActorType(row.actor_type),
+    actorRunId: row.actor_run_id,
+    diagnosticEvent: diagnosticEventForOperation(row.operation),
     errorCode: row.error_code,
     errorMessage: row.error_message,
     createdAt: row.created_at
   };
+}
+
+function mapRunTrace(row: ScheduleRunTraceRow, threadId: string): ScheduleRunTrace {
+  const errorCode = row.run_error_code ?? row.operation_error_code;
+  const events: ScheduleDiagnosticEvent[] = [];
+  const triggerEvent = diagnosticEventForOperation(row.operation);
+  if (triggerEvent !== undefined) {
+    events.push({
+      type: triggerEvent,
+      occurredAt: row.operation_created_at,
+      operationId: row.operation_id
+    });
+  }
+  if (row.started_at !== null) {
+    events.push({
+      type: 'SCHEDULE_RUN_STARTED',
+      occurredAt: row.started_at
+    });
+  }
+  if (row.approval_requested_at !== null) {
+    events.push({
+      type: 'SCHEDULE_RUN_WAITING_APPROVAL',
+      occurredAt: row.approval_requested_at
+    });
+  }
+  if (isTerminalRunStatus(row.public_status)) {
+    events.push({
+      type: 'SCHEDULE_RUN_COMPLETED',
+      occurredAt: row.ended_at ?? row.run_updated_at,
+      ...(errorCode === null ? {} : { errorCode })
+    });
+  }
+  events.sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+
+  return {
+    scheduleId: row.schedule_id,
+    threadId,
+    runId: row.run_id,
+    triggerType: row.operation,
+    actorType: parseActorType(row.actor_type),
+    actorRunId: row.actor_run_id,
+    scheduledAt: row.triggered_at ?? row.operation_created_at,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    status: row.public_status,
+    queueReason:
+      row.operation === 'run_queued'
+      || row.queue_state === 'queued'
+      || row.public_status === 'queued'
+        ? 'thread_active'
+        : null,
+    errorCode,
+    events
+  };
+}
+
+function diagnosticEventForOperation(
+  operation: ScheduleOperationRecord['operation']
+): ScheduleDiagnosticEventType | undefined {
+  if (
+    operation === 'run_now'
+    || operation === 'timer_trigger'
+    || operation === 'run_queued'
+  ) {
+    return 'SCHEDULE_TRIGGERED';
+  }
+  if (operation === 'queue_trigger') return 'SCHEDULE_TRIGGER_QUEUED';
+  if (operation === 'skip_misfire' || operation === 'skip_concurrency') {
+    return 'SCHEDULE_TRIGGER_SKIPPED';
+  }
+  if (operation === 'binding_repair') return 'SCHEDULE_THREAD_REPAIRED';
+  if (operation === 'binding_repair_failed') return 'SCHEDULE_THREAD_REPAIR_FAILED';
+  return undefined;
+}
+
+function parseActorType(value: string | null): ScheduleActorType | null {
+  if (value === 'user' || value === 'agent' || value === 'timer' || value === 'migration') {
+    return value;
+  }
+  return null;
+}
+
+function isTerminalRunStatus(status: ScheduleRunTrace['status']): boolean {
+  return status === 'succeeded' || status === 'failed' || status === 'canceled';
 }
 
 function updateEntries(input: UpdateScheduleInput): Array<[string, string | number | null]> {

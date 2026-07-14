@@ -11,6 +11,7 @@ import type {
   ScheduleCoordinator
 } from '../scheduler/coordinator.js';
 import { SchedulerError, type SchedulerService } from '../scheduler/service.js';
+import { scheduleOperationActors } from '../scheduler/types.js';
 import type { RuntimeThread, ThreadManager } from '../threads/types.js';
 import { apiError } from '../api/errors.js';
 import {
@@ -87,8 +88,11 @@ export function createDefaultAgentScheduleOperations(input: {
     resumeSchedule(id, actor) {
       return input.coordinator.updateFromAgent(id, { enabled: true }, actor);
     },
-    runScheduleNow(id) {
-      return input.scheduler.runNow(id);
+    runScheduleNow(id, actor) {
+      return input.scheduler.runNow(
+        id,
+        scheduleOperationActors.agent(actor.runId)
+      );
     }
   };
 }

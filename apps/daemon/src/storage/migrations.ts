@@ -153,6 +153,8 @@ export function migrate(db: Database.Database): void {
       operation TEXT NOT NULL,
       status TEXT NOT NULL,
       run_id TEXT,
+      actor_type TEXT,
+      actor_run_id TEXT,
       error_code TEXT,
       error_message TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -369,6 +371,8 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'codex_session_sources', 'head_size', 'head_size INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'codex_session_sources', 'head_hash', "head_hash TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'schedules', 'thread_id', 'thread_id TEXT');
+  ensureColumn(db, 'schedule_operations', 'actor_type', 'actor_type TEXT');
+  ensureColumn(db, 'schedule_operations', 'actor_run_id', 'actor_run_id TEXT');
   db.prepare(`
     UPDATE schedules
     SET concurrency_policy = 'queue'
@@ -380,6 +384,10 @@ export function migrate(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_thread_id
       ON schedules(thread_id)
       WHERE thread_id IS NOT NULL AND deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_schedule_operations_run_id
+      ON schedule_operations(run_id);
+    CREATE INDEX IF NOT EXISTS idx_schedule_operations_actor_run_id
+      ON schedule_operations(actor_run_id);
   `);
 }
 

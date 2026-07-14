@@ -1,15 +1,7 @@
 import type { RunDiagnosticsResponse } from '@clawee/protocol';
 
 export function downloadRunDiagnosticsBundle(diagnostics: RunDiagnosticsResponse): void {
-  const bundle = JSON.stringify({
-    format: 'clawee-run-diagnostics',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    runId: diagnostics.runId,
-    warnings: diagnostics.warnings,
-    codexStatusSnapshot: diagnostics.codexStatusSnapshot,
-    files: diagnostics.files
-  }, null, 2);
+  const bundle = serializeRunDiagnosticsBundle(diagnostics);
   const blob = new Blob([bundle], { type: 'application/json;charset=utf-8' });
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -20,6 +12,21 @@ export function downloadRunDiagnosticsBundle(diagnostics: RunDiagnosticsResponse
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(objectUrl);
+}
+
+export function serializeRunDiagnosticsBundle(
+  diagnostics: RunDiagnosticsResponse
+): string {
+  return JSON.stringify({
+    format: 'clawee-run-diagnostics',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    runId: diagnostics.runId,
+    warnings: diagnostics.warnings,
+    codexStatusSnapshot: diagnostics.codexStatusSnapshot,
+    scheduleTrace: diagnostics.scheduleTrace,
+    files: diagnostics.files
+  }, null, 2);
 }
 
 function safeFilename(value: string): string {

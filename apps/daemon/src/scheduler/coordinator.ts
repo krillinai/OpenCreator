@@ -13,8 +13,10 @@ import type {
   BoundScheduleRecord,
   ProfileValidator,
   ScheduleRecord,
-  SchedulerClock
+  SchedulerClock,
+  ScheduleOperationActor
 } from './types.js';
+import { scheduleOperationActors } from './types.js';
 import {
   parseCreateScheduleRequest,
   parseUpdateScheduleRequest,
@@ -103,7 +105,7 @@ export function createScheduleCoordinator(
         scheduleId: schedule.id,
         operation: 'create',
         status: 'succeeded'
-      });
+      }, scheduleOperationActors.user);
       return toScheduleResponse(schedule);
     }
   );
@@ -140,9 +142,8 @@ export function createScheduleCoordinator(
         options.repository.insertOperation({
           scheduleId: created.id,
           operation: 'create',
-          status: 'succeeded',
-          runId: actor.runId
-        });
+          status: 'succeeded'
+        }, scheduleOperationActors.agent(actor.runId));
         return toScheduleResponse(created);
       }
 
@@ -163,9 +164,8 @@ export function createScheduleCoordinator(
       options.repository.insertOperation({
         scheduleId: schedule.id,
         operation: 'create',
-        status: 'succeeded',
-        runId: actor.runId
-      });
+        status: 'succeeded'
+      }, scheduleOperationActors.agent(actor.runId));
       return toScheduleResponse(schedule);
     }
   );
@@ -173,7 +173,7 @@ export function createScheduleCoordinator(
     (
       id: string,
       input: UpdateScheduleRequest,
-      actorRunId?: string
+      actor: ScheduleOperationActor
     ): ScheduleResponse => {
       const existing = requireSchedule(options.repository, id);
       const thread = requireScheduleThread(existing, options.threadManager);
@@ -223,9 +223,8 @@ export function createScheduleCoordinator(
       options.repository.insertOperation({
         scheduleId: id,
         operation: 'update',
-        status: 'succeeded',
-        runId: actorRunId
-      });
+        status: 'succeeded'
+      }, actor);
       return toScheduleResponse(bound);
     }
   );
@@ -250,7 +249,7 @@ export function createScheduleCoordinator(
       scheduleId: id,
       operation: 'delete',
       status: 'succeeded'
-    });
+    }, scheduleOperationActors.user);
   });
   const repairBindingTransaction = options.db.transaction((schedule: ScheduleRecord): void => {
     const thread = options.threadManager.createThread({
@@ -269,7 +268,7 @@ export function createScheduleCoordinator(
       scheduleId: schedule.id,
       operation: 'binding_repair',
       status: 'succeeded'
-    });
+    }, scheduleOperationActors.migration);
   });
   const recordBindingRepairFailureTransaction = options.db.transaction(
     (schedule: ScheduleRecord, error: unknown): void => {
@@ -284,7 +283,7 @@ export function createScheduleCoordinator(
         status: 'failed',
         errorCode: bindingRepairErrorCode(error),
         errorMessage: formatError(error)
-      });
+      }, scheduleOperationActors.migration);
     }
   );
 
@@ -305,7 +304,7 @@ export function createScheduleCoordinator(
     },
 
     update(id: string, input: UpdateScheduleRequest): ScheduleResponse {
-      const schedule = updateTransaction(id, input);
+      const schedule = updateTransaction(id, input, scheduleOperationActors.user);
       options.onSchedulesChanged?.();
       return schedule;
     },
@@ -315,7 +314,11 @@ export function createScheduleCoordinator(
       input: UpdateScheduleRequest,
       actor: ScheduleAgentActor
     ): ScheduleResponse {
-      const schedule = updateTransaction(id, input, actor.runId);
+      const schedule = updateTransaction(
+        id,
+        input,
+        scheduleOperationActors.agent(actor.runId)
+      );
       options.onSchedulesChanged?.();
       return schedule;
     },

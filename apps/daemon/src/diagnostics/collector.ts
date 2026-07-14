@@ -1,4 +1,7 @@
-import type { DiagnosticFileResponse } from '@clawee/protocol';
+import type {
+  DiagnosticFileResponse,
+  ScheduleRunTrace
+} from '@clawee/protocol';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import {
@@ -22,6 +25,9 @@ export class DiagnosticsError extends Error {
 export type CollectRunDiagnosticsInput = {
   dataDir: string;
   runs: Pick<RunRepository, 'getRun'>;
+  schedules?: {
+    getRunTrace(runId: string): ScheduleRunTrace | undefined;
+  };
   runId: string;
   includeRawRedacted?: boolean;
 };
@@ -30,6 +36,7 @@ export type CollectRunDiagnosticsResult = {
   runId: string;
   files: DiagnosticFileResponse[];
   warnings: string[];
+  scheduleTrace?: ScheduleRunTrace;
 };
 
 const defaultDiagnosticFiles = [
@@ -44,7 +51,7 @@ const runIdPattern = /^run_[A-Za-z0-9_-]+$/;
 export function collectRunDiagnostics(
   input: CollectRunDiagnosticsInput
 ): CollectRunDiagnosticsResult {
-  const { dataDir, runs, runId, includeRawRedacted = false } = input;
+  const { dataDir, runs, schedules, runId, includeRawRedacted = false } = input;
   if (!runIdPattern.test(runId)) {
     throw new DiagnosticsError('VALIDATION_FAILED', 'run id is invalid');
   }
@@ -54,11 +61,12 @@ export function collectRunDiagnostics(
   }
 
   const warnings = [DIAGNOSTICS_REDACTION_WARNING];
+  const scheduleTrace = schedules?.getRunTrace(runId);
   const runsDir = resolve(dataDir, 'runs');
   const runDir = resolve(runsDir, runId);
   if (!isPathInside(runsDir, runDir)) {
     warnings.push('Run diagnostics directory was skipped because it is unsafe.');
-    return { runId, files: [], warnings };
+    return buildResult(runId, [], warnings, scheduleTrace);
   }
 
   let realRunDir: string;
@@ -66,25 +74,25 @@ export function collectRunDiagnostics(
     const runsDirStat = lstatSync(runsDir);
     if (!runsDirStat.isDirectory() || runsDirStat.isSymbolicLink()) {
       warnings.push('Run diagnostics root was skipped because it is unsafe.');
-      return { runId, files: [], warnings };
+      return buildResult(runId, [], warnings, scheduleTrace);
     }
 
     const runDirStat = lstatSync(runDir);
     if (!runDirStat.isDirectory() || runDirStat.isSymbolicLink()) {
       warnings.push('Run diagnostics directory was skipped because it is unsafe.');
-      return { runId, files: [], warnings };
+      return buildResult(runId, [], warnings, scheduleTrace);
     }
 
     const realRunsDir = realpathSync(runsDir);
     realRunDir = realpathSync(runDir);
     if (!isPathInside(realRunsDir, realRunDir)) {
       warnings.push('Run diagnostics directory was skipped because it is unsafe.');
-      return { runId, files: [], warnings };
+      return buildResult(runId, [], warnings, scheduleTrace);
     }
   } catch (error) {
     if (isMissingPathError(error)) {
       warnings.push('Run diagnostics directory is missing.');
-      return { runId, files: [], warnings };
+      return buildResult(runId, [], warnings, scheduleTrace);
     }
     throw error;
   }
@@ -120,7 +128,23 @@ export function collectRunDiagnostics(
   }
 
   appendLogWriterWarnings(files, warnings);
-  return { runId, files: redactDiagnosticFiles(files), warnings };
+  return buildResult(
+    runId,
+    redactDiagnosticFiles(files),
+    warnings,
+    scheduleTrace
+  );
+}
+
+function buildResult(
+  runId: string,
+  files: DiagnosticFileResponse[],
+  warnings: string[],
+  scheduleTrace: ScheduleRunTrace | undefined
+): CollectRunDiagnosticsResult {
+  return scheduleTrace === undefined
+    ? { runId, files, warnings }
+    : { runId, files, warnings, scheduleTrace };
 }
 
 function appendLogWriterWarnings(

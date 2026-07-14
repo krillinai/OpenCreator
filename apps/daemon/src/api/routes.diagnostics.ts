@@ -6,11 +6,13 @@ import {
   type CollectRunDiagnosticsResult as CollectedRunDiagnostics
 } from '../diagnostics/collector.js';
 import type { RunRepository } from '../storage/repositories.js';
+import type { ScheduleRepository } from '../scheduler/repository.js';
 import { apiError } from './errors.js';
 
 export type DiagnosticsRouteInput = {
   dataDir: string;
   runs: Pick<RunRepository, 'getRun'>;
+  schedules: Pick<ScheduleRepository, 'getRunTrace'>;
   getCodexStatusSnapshot: () => CodexStatusResponse;
 };
 
@@ -26,6 +28,7 @@ export async function registerDiagnosticsRoutes(
       const diagnostics: CollectedRunDiagnostics = collectRunDiagnostics({
         dataDir: input.dataDir,
         runs: input.runs,
+        schedules: input.schedules,
         runId: id,
         includeRawRedacted: includeRawRedacted === 'true'
       });

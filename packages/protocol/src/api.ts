@@ -140,6 +140,7 @@ export type RunDiagnosticsResponse = {
   files: DiagnosticFileResponse[];
   codexStatusSnapshot: CodexStatusResponse;
   warnings: string[];
+  scheduleTrace?: ScheduleRunTrace;
 };
 
 export type CleanupItemType = 'run_logs' | 'managed_thread_workspace';
@@ -770,6 +771,7 @@ export type CodexProfileDeleteResponse = {
 export type ScheduleConcurrencyPolicy = 'skip' | 'queue' | 'parallel';
 export type ScheduleMisfirePolicy = 'skip';
 export type ScheduleLastStatus = PublicRunStatus | 'skipped' | 'queued';
+export type ScheduleActorType = 'user' | 'agent' | 'timer' | 'migration';
 export type ScheduleOperationType =
   | 'create'
   | 'update'
@@ -782,7 +784,41 @@ export type ScheduleOperationType =
   | 'skip_concurrency'
   | 'queue_trigger'
   | 'run_queued';
+export type ScheduleTriggerType = Extract<
+  ScheduleOperationType,
+  'run_now' | 'timer_trigger' | 'run_queued'
+>;
 export type ScheduleOperationStatus = 'succeeded' | 'failed' | 'skipped' | 'queued';
+export type ScheduleDiagnosticEventType =
+  | 'SCHEDULE_TRIGGERED'
+  | 'SCHEDULE_TRIGGER_QUEUED'
+  | 'SCHEDULE_TRIGGER_SKIPPED'
+  | 'SCHEDULE_THREAD_REPAIRED'
+  | 'SCHEDULE_THREAD_REPAIR_FAILED'
+  | 'SCHEDULE_RUN_STARTED'
+  | 'SCHEDULE_RUN_COMPLETED'
+  | 'SCHEDULE_RUN_WAITING_APPROVAL';
+export type ScheduleDiagnosticEvent = {
+  type: ScheduleDiagnosticEventType;
+  occurredAt: string;
+  operationId?: string;
+  errorCode?: string;
+};
+export type ScheduleRunTrace = {
+  scheduleId: string;
+  threadId: string;
+  runId: string;
+  triggerType: ScheduleTriggerType;
+  actorType: ScheduleActorType | null;
+  actorRunId: string | null;
+  scheduledAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  status: PublicRunStatus;
+  queueReason: 'thread_active' | null;
+  errorCode: string | null;
+  events: ScheduleDiagnosticEvent[];
+};
 export type ScheduleRunSummary = Pick<RunResponse, 'id' | 'threadId' | 'status'>;
 
 export type CreateScheduleRequest = {
@@ -856,6 +892,9 @@ export type ScheduleOperationResponse = {
   scheduleId: string;
   status: ScheduleOperationStatus;
   runId?: string | null;
+  actorType?: ScheduleActorType | null;
+  actorRunId?: string | null;
+  diagnosticEvent?: ScheduleDiagnosticEventType;
   errorCode?: string | null;
   errorMessage?: string | null;
   createdAt: string;

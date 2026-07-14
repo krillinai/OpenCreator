@@ -76,7 +76,10 @@ describe('schedule binding repair', () => {
       });
       expect(repository.listOperations(schedule.id)[0]).toMatchObject({
         operation: 'binding_repair',
-        status: 'succeeded'
+        status: 'succeeded',
+        actorType: 'migration',
+        actorRunId: null,
+        diagnosticEvent: 'SCHEDULE_THREAD_REPAIRED'
       });
     }
     expect(repository.listOperations(valid.id)).toEqual([]);
@@ -111,13 +114,19 @@ describe('schedule binding repair', () => {
     expect(repository.listOperations(bad.id)[0]).toMatchObject({
       operation: 'binding_repair_failed',
       status: 'failed',
+      actorType: 'migration',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_THREAD_REPAIR_FAILED',
       errorCode: 'SQLITE_CONSTRAINT_TRIGGER',
       errorMessage: 'binding update failed'
     });
     expect(repository.getById(good.id)?.threadId).toMatch(/^thread_/);
     expect(repository.listOperations(good.id)[0]).toMatchObject({
       operation: 'binding_repair',
-      status: 'succeeded'
+      status: 'succeeded',
+      actorType: 'migration',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_THREAD_REPAIRED'
     });
     expect(threadManager.listThreads({ status: 'all' })).toHaveLength(1);
   });

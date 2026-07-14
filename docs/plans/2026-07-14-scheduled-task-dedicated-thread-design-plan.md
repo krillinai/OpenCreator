@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P2-B3`，已通过（2026-07-15 00:41 CST）；下一批 `P2-B4` |
+| 当前批次 | `P2-B4`，已通过（2026-07-15 01:10 CST）；下一批 `P2-B5` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -345,7 +345,7 @@ P2-B1 审批和连续失败体验
 | P2-B1 | 等待审批和连续失败体验 | `PASS` |
 | P2-B2 | Codex thread 轮换和摘要恢复 | `PASS` |
 | P2-B3 | 后台 Host 通知 | `PASS` |
-| P2-B4 | actor 审计和诊断事件 | `NOT_STARTED` |
+| P2-B4 | actor 审计和诊断事件 | `PASS` |
 | P2-B5 | Playwright 端到端测试 | `NOT_STARTED` |
 | P2-B6 | 100 个任务性能门禁 | `NOT_STARTED` |
 | P2-B7 | 发布、回滚和最终验收 | `NOT_STARTED` |
@@ -1857,7 +1857,7 @@ feat(notifications): 增加任务后台通知 outbox
 
 ### P2-B4：actor 审计和诊断事件
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`（2026-07-15 00:53 CST 开始，01:10 CST 完成）
 
 **依赖：** `P2-B3`
 
@@ -2494,6 +2494,27 @@ docs(release): 完成任务专属会话发布与回滚说明
   daemon 全量恢复稳定通过。Web build 继续只有两个既有主 chunk 超过 500 kB 的警告。
 - 下一步：执行 P2-B4，为 Schedule 操作增加 actor 审计字段和 Trigger 到
   Schedule/Thread/Run 的诊断链路。
+
+### 2026-07-15 01:10 CST - P2-B4
+
+- 状态：`PASS`
+- 提交：`feat(diagnostics): 增加任务操作 actor 和触发链路`
+  （SHA 以包含本日志的提交为准）
+- 已完成：为 `schedule_operations` 增加兼容旧库的 `actor_type`、
+  `actor_run_id` 和查询索引；统一 user、agent、timer、migration 四类写入上下文，
+  Agent 来源 Run 与新触发 Run 分栏保存；操作列表返回 Trigger、Queue、Skip 和
+  binding repair 诊断事件；Run 诊断新增 Schedule、Thread、Run、trigger、actor、
+  时间、状态、queue reason、错误码和审批等待事件链路；Web 诊断包保留安全 trace。
+- 验证：先运行 RED，daemon 专项 101 项中 22 项按预期失败，Web 导出测试 1 项按预期
+  失败；实现后 daemon P2-B4 专项 101/101、Web 导出 1/1 通过；daemon 全量 649 项
+  通过、14 项 gated real Codex smoke 按预期跳过；Web 全量 519 项通过；全仓
+  `pnpm typecheck`、`pnpm build` 和 `git diff --check` 通过。
+- 未完成：真实 Codex smoke 不属于本批自动化门禁，本次未重复运行；P2-B7 仍负责最终
+  统一真实环境验收。
+- 风险或偏差：诊断 trace 通过数据库安全字段投影生成，不读取 Schedule Prompt、
+  Run public prompt、审批正文、能力令牌、结果或原始错误正文；Web build 继续只有两个
+  既有主 chunk 超过 500 kB 的警告。
+- 下一步：执行 P2-B5，补齐连续运行、会话切换和刷新恢复的 Playwright 端到端测试。
 
 ### 日志模板
 

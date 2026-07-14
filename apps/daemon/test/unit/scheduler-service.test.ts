@@ -142,7 +142,10 @@ describe('scheduler service', () => {
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'run_now',
       status: 'succeeded',
-      runId: 'run_0'
+      runId: 'run_0',
+      actorType: 'user',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_TRIGGERED'
     });
     expect(service.getSchedule(schedule.id)).toMatchObject({
       lastRunId: 'run_0',
@@ -175,6 +178,30 @@ describe('scheduler service', () => {
       createdBy: 'schedule',
       sourceId: schedule.id,
       timeoutMs: undefined
+    });
+  });
+
+  it('records the calling agent separately from the scheduled run it starts', () => {
+    const { service } = createFixture();
+    const schedule = service.createSchedule({
+      name: 'agent requested run',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status'
+    });
+
+    const response = service.runNow(schedule.id, {
+      type: 'agent',
+      runId: 'run_agent_actor'
+    });
+
+    expect(response.run?.id).toBe('run_0');
+    expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
+      operation: 'run_now',
+      status: 'succeeded',
+      runId: 'run_0',
+      actorType: 'agent',
+      actorRunId: 'run_agent_actor',
+      diagnosticEvent: 'SCHEDULE_TRIGGERED'
     });
   });
 
@@ -223,7 +250,10 @@ describe('scheduler service', () => {
     expect(runManager.hasActiveRunForThread).toHaveBeenCalledWith(schedule.threadId);
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'skip_concurrency',
-      status: 'skipped'
+      status: 'skipped',
+      actorType: 'user',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_TRIGGER_SKIPPED'
     });
     expect(service.getSchedule(schedule.id)).toMatchObject({
       lastStatus: 'skipped'
@@ -254,6 +284,13 @@ describe('scheduler service', () => {
     expect(service.listOperations(schedule.id).operations.filter(operation => operation.operation === 'queue_trigger')).toHaveLength(
       2
     );
+    expect(service.listOperations(schedule.id).operations.find(
+      operation => operation.operation === 'queue_trigger'
+    )).toMatchObject({
+      actorType: 'user',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_TRIGGER_QUEUED'
+    });
 
     runManager.hasActiveRunForThread.mockReturnValue(false);
     service.processPendingTriggersForTest?.();
@@ -269,7 +306,10 @@ describe('scheduler service', () => {
     });
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'run_queued',
-      status: 'succeeded'
+      status: 'succeeded',
+      actorType: 'timer',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_TRIGGERED'
     });
   });
 
@@ -485,6 +525,9 @@ describe('scheduler service', () => {
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'run_now',
       status: 'failed',
+      actorType: 'user',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_TRIGGERED',
       errorCode: 'INTERNAL_ERROR',
       errorMessage: 'boom'
     });
@@ -525,7 +568,10 @@ describe('scheduler service', () => {
     });
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'timer_trigger',
-      status: 'succeeded'
+      status: 'succeeded',
+      actorType: 'timer',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_TRIGGERED'
     });
   });
 
@@ -552,7 +598,10 @@ describe('scheduler service', () => {
     });
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'skip_concurrency',
-      status: 'skipped'
+      status: 'skipped',
+      actorType: 'timer',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_TRIGGER_SKIPPED'
     });
   });
 
@@ -577,7 +626,10 @@ describe('scheduler service', () => {
     });
     expect(service.listOperations(schedule.id).operations[0]).toMatchObject({
       operation: 'skip_misfire',
-      status: 'skipped'
+      status: 'skipped',
+      actorType: 'timer',
+      actorRunId: null,
+      diagnosticEvent: 'SCHEDULE_TRIGGER_SKIPPED'
     });
   });
 

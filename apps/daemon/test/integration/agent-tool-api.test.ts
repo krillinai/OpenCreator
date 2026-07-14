@@ -15,9 +15,10 @@ import {
   createAgentCapabilityTokenStore,
   type AgentCapabilityTokenStore
 } from '../../src/agent-tools/capability-token.js';
-import type {
-  AgentScheduleActor,
-  AgentScheduleOperations
+import {
+  createDefaultAgentScheduleOperations,
+  type AgentScheduleActor,
+  type AgentScheduleOperations
 } from '../../src/agent-tools/internal-routes.js';
 import { buildServer } from '../../src/api/server.js';
 import { createRunManager } from '../../src/runs/manager.js';
@@ -97,7 +98,35 @@ describe('agent tool internal api', () => {
     });
     expect(readLatestScheduleOperation()).toMatchObject({
       operation: 'create',
-      run_id: 'run-draft-create'
+      run_id: null,
+      actor_type: 'agent',
+      actor_run_id: 'run-draft-create'
+    });
+  });
+
+  it('passes the capability actor into the default run-now operation', async () => {
+    const runNow = vi.fn(() => ({
+      run: null,
+      schedule: schedule({ id: 'schedule-1', threadId: 'thread-1' }),
+      skipped: false,
+      queued: false
+    }));
+    const operations = createDefaultAgentScheduleOperations({
+      coordinator: {} as never,
+      scheduler: { runNow } as never,
+      threadManager: { getThread: vi.fn() }
+    });
+    const actor: AgentScheduleActor = {
+      runId: 'run-editor',
+      threadId: 'thread-1',
+      createdBy: 'api'
+    };
+
+    await operations.runScheduleNow('schedule-1', actor);
+
+    expect(runNow).toHaveBeenCalledWith('schedule-1', {
+      type: 'agent',
+      runId: 'run-editor'
     });
   });
 
@@ -704,15 +733,19 @@ async function createPublicSchedule(name: string, cwd: string): Promise<Schedule
 function readLatestScheduleOperation(): {
   operation: string;
   run_id: string | null;
+  actor_type: string | null;
+  actor_run_id: string | null;
 } {
   return db!.prepare(`
-    SELECT operation, run_id
+    SELECT operation, run_id, actor_type, actor_run_id
     FROM schedule_operations
     ORDER BY created_at DESC, rowid DESC
     LIMIT 1
   `).get() as {
     operation: string;
     run_id: string | null;
+    actor_type: string | null;
+    actor_run_id: string | null;
   };
 }
 
