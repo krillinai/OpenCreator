@@ -4,9 +4,11 @@ import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RunManager } from '../../src/runs/manager.js';
+import { createScheduleCoordinator } from '../../src/scheduler/coordinator.js';
 import { ScheduleRepository } from '../../src/scheduler/repository.js';
 import { createSchedulerService, SchedulerError } from '../../src/scheduler/service.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
+import { createThreadManager } from '../../src/threads/manager.js';
 
 let tempDir = '';
 let db: Database.Database | undefined;
@@ -83,6 +85,29 @@ describe('scheduler service', () => {
       enabled: false,
       nextRunAt: null
     });
+  });
+
+  it('rejects exposing migration records without a dedicated thread binding', () => {
+    const { repository, service } = createFixture();
+    const created = service.createSchedule({
+      name: 'legacy status',
+      cron: '0 9 * * *',
+      prompt: 'Summarize project status'
+    });
+    repository.update(created.id, { threadId: null });
+
+    expect(() => service.getSchedule(created.id)).toThrow(
+      expect.objectContaining({
+        code: 'INTERNAL_ERROR',
+        message: `Schedule thread binding is missing: ${created.id}`
+      })
+    );
+    expect(() => service.listSchedules()).toThrow(
+      expect.objectContaining({
+        code: 'INTERNAL_ERROR',
+        message: `Schedule thread binding is missing: ${created.id}`
+      })
+    );
   });
 
   it('run-now creates a scheduled run with source metadata', () => {
@@ -638,7 +663,7 @@ function createFixture(options: { autostart?: boolean } = {}) {
     listEvents: vi.fn(),
     subscribe: vi.fn()
   };
-  const service = createSchedulerService({
+  const scheduler = createSchedulerService({
     repository,
     runManager: runManager as unknown as RunManager,
     defaultCwd: tempDir,
@@ -646,7 +671,20 @@ function createFixture(options: { autostart?: boolean } = {}) {
     clock: { now: () => new Date('2026-07-06T00:00:00.000Z') },
     autostart: options.autostart ?? false
   });
-  return { repository, runManager, service };
+  const threadManager = createThreadManager({ db, dataDir: tempDir });
+  const coordinator = createScheduleCoordinator({
+    db,
+    repository,
+    threadManager,
+    defaultCwd: tempDir,
+    profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
+    clock: { now: () => new Date('2026-07-06T00:00:00.000Z') },
+    onSchedulesChanged: () => scheduler.refreshTimer()
+  });
+  const service = Object.assign(scheduler, {
+    createSchedule: coordinator.createManual
+  });
+  return { repository, runManager, threadManager, coordinator, service };
 }
 
 function createFixtureWithTimers(now: string) {
@@ -654,7 +692,7 @@ function createFixtureWithTimers(now: string) {
   const cleared: unknown[] = [];
   const fixture = createFixture({ autostart: false });
   let currentNow = now;
-  const service = createSchedulerService({
+  const scheduler = createSchedulerService({
     repository: fixture.repository,
     runManager: fixture.runManager as unknown as RunManager,
     defaultCwd: tempDir,
@@ -672,8 +710,21 @@ function createFixtureWithTimers(now: string) {
     },
     autostart: false
   });
+  const coordinator = createScheduleCoordinator({
+    db: db!,
+    repository: fixture.repository,
+    threadManager: fixture.threadManager,
+    defaultCwd: tempDir,
+    profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
+    clock: { now: () => new Date(currentNow) },
+    onSchedulesChanged: () => scheduler.refreshTimer()
+  });
+  const service = Object.assign(scheduler, {
+    createSchedule: coordinator.createManual
+  });
   return {
     ...fixture,
+    coordinator,
     service,
     timers,
     cleared,

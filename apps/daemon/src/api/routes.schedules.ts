@@ -1,10 +1,12 @@
 import type { CreateScheduleRequest, UpdateScheduleRequest } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { ScheduleCoordinator } from '../scheduler/coordinator.js';
 import { SchedulerError, type SchedulerService } from '../scheduler/service.js';
 import { apiError } from './errors.js';
 
 export async function registerScheduleRoutes(
   server: FastifyInstance,
+  coordinator: ScheduleCoordinator,
   scheduler: SchedulerService
 ): Promise<void> {
   server.get('/schedules', async (_request, reply) => {
@@ -20,7 +22,7 @@ export async function registerScheduleRoutes(
     if (!body.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
 
     try {
-      const schedule = scheduler.createSchedule(body.value as CreateScheduleRequest);
+      const schedule = coordinator.createManual(body.value as CreateScheduleRequest);
       return reply.code(201).send(schedule);
     } catch (error) {
       return sendSchedulerError(error, reply);

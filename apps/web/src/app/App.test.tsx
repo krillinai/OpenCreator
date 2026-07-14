@@ -4644,6 +4644,7 @@ function createRunResponse(overrides: Partial<RunResponse> = {}): RunResponse {
 function createScheduleResponse(overrides: Partial<ScheduleResponse> = {}): ScheduleResponse {
   return {
     id: 'schedule-1',
+    threadId: 'thread-schedule-1',
     name: '每日总结',
     cron: '0 18 * * *',
     timezone: 'Asia/Shanghai',

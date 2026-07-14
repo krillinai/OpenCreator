@@ -762,7 +762,7 @@ export type UpdateScheduleRequest = Partial<
 
 export type ScheduleResponse = {
   id: string;
-  threadId?: string | null;
+  threadId: string;
   name: string;
   cron: string;
   timezone: string;

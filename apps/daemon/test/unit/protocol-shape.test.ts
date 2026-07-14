@@ -136,6 +136,7 @@ describe('protocol shape', () => {
     };
     const response: ScheduleResponse = {
       id: 'sch_123',
+      threadId: 'thread_123',
       name: request.name,
       cron: request.cron,
       timezone: 'Asia/Shanghai',
@@ -158,6 +159,7 @@ describe('protocol shape', () => {
       createdAt: '2026-07-06T00:00:00.000Z',
       updatedAt: '2026-07-06T00:00:00.000Z'
     };
+    const threadIdIsRequired: {} extends Pick<ScheduleResponse, 'threadId'> ? false : true = true;
     const detail: ScheduleDetailResponse = {
       ...response,
       prompt: request.prompt
@@ -184,6 +186,7 @@ describe('protocol shape', () => {
     };
 
     expect(detail.prompt).toBe('Summarize the project state');
+    expect(threadIdIsRequired).toBe(true);
     expect(runNow.run?.id).toBe('run_1');
     expect(operations.operations[0]?.operation).toBe('run_now');
   });

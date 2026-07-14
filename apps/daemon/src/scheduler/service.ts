@@ -1,5 +1,4 @@
 import type {
-  CreateScheduleRequest,
   RunScheduleNowResponse,
   ScheduleDetailResponse,
   ScheduleListResponse,
@@ -10,9 +9,14 @@ import type {
 import type { RunManager } from '../runs/manager.js';
 import { computeNextRunAt } from './cron.js';
 import type { ScheduleRepository } from './repository.js';
-import type { ProfileValidator, ScheduleOperationRecord, ScheduleRecord, SchedulerClock } from './types.js';
+import type {
+  BoundScheduleRecord,
+  ProfileValidator,
+  ScheduleOperationRecord,
+  ScheduleRecord,
+  SchedulerClock
+} from './types.js';
 import {
-  parseCreateScheduleRequest,
   parseUpdateScheduleRequest,
   type ScheduleValidationErrorCode
 } from './validator.js';
@@ -30,7 +34,6 @@ export class SchedulerError extends Error {
 }
 
 export type SchedulerService = {
-  createSchedule(input: CreateScheduleRequest): ScheduleResponse;
   listSchedules(): ScheduleListResponse;
   getSchedule(id: string): ScheduleDetailResponse | undefined;
   updateSchedule(id: string, input: UpdateScheduleRequest): ScheduleResponse;
@@ -97,7 +100,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         });
         return {
           run: null,
-          schedule: toScheduleResponse(skipped),
+          schedule: toScheduleResponse(requireBoundSchedule(skipped)),
           skipped: true,
           queued: false
         };
@@ -115,7 +118,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         refreshQueueTimerIfStarted();
         return {
           run: null,
-          schedule: toScheduleResponse(updated),
+          schedule: toScheduleResponse(requireBoundSchedule(updated)),
           skipped: false,
           queued: true
         };
@@ -170,7 +173,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     });
     return {
       run,
-      schedule: toScheduleResponse(updated),
+      schedule: toScheduleResponse(requireBoundSchedule(updated)),
       skipped: false,
       queued: false
     };
@@ -289,33 +292,21 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
   }
 
   const service: SchedulerService = {
-    createSchedule(input) {
-      const parsed = parseCreateScheduleRequest(input, {
-        now: clock.now().toISOString(),
-        defaultCwd: options.defaultCwd,
-        profileValidator: options.profileValidator
-      });
-      if (!parsed.ok) throw new SchedulerError(parsed.code, parsed.message);
-
-      const schedule = options.repository.create(parsed.value);
-      options.repository.insertOperation({
-        scheduleId: schedule.id,
-        operation: 'create',
-        status: 'succeeded'
-      });
-      refreshTimerIfStarted();
-      return toScheduleResponse(schedule);
-    },
-
     listSchedules() {
       options.repository.reconcileLastRunStatuses();
-      return { schedules: options.repository.list().map(toScheduleResponse) };
+      return {
+        schedules: options.repository
+          .list()
+          .map(schedule => toScheduleResponse(requireBoundSchedule(schedule)))
+      };
     },
 
     getSchedule(id) {
       options.repository.reconcileLastRunStatuses();
       const schedule = options.repository.getById(id);
-      return schedule === null ? undefined : toScheduleDetailResponse(schedule);
+      return schedule === null
+        ? undefined
+        : toScheduleDetailResponse(requireBoundSchedule(schedule));
     },
 
     updateSchedule(id, input) {
@@ -345,7 +336,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         status: 'succeeded'
       });
       refreshTimerIfStarted();
-      return toScheduleResponse(updated);
+      return toScheduleResponse(requireBoundSchedule(updated));
     },
 
     deleteSchedule(id) {
@@ -421,7 +412,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
   return service;
 }
 
-export function toScheduleResponse(schedule: ScheduleRecord): ScheduleResponse {
+export function toScheduleResponse(schedule: BoundScheduleRecord): ScheduleResponse {
   return {
     id: schedule.id,
     threadId: schedule.threadId,
@@ -449,7 +440,7 @@ export function toScheduleResponse(schedule: ScheduleRecord): ScheduleResponse {
   };
 }
 
-function toScheduleDetailResponse(schedule: ScheduleRecord): ScheduleDetailResponse {
+function toScheduleDetailResponse(schedule: BoundScheduleRecord): ScheduleDetailResponse {
   return {
     ...toScheduleResponse(schedule),
     prompt: schedule.prompt
@@ -464,6 +455,16 @@ function requireSchedule(repository: ScheduleRepository, id: string): ScheduleRe
   const schedule = repository.getById(id);
   if (schedule === null) throw notFound();
   return schedule;
+}
+
+function requireBoundSchedule(schedule: ScheduleRecord): BoundScheduleRecord {
+  if (schedule.threadId === null) {
+    throw new SchedulerError(
+      'INTERNAL_ERROR',
+      `Schedule thread binding is missing: ${schedule.id}`
+    );
+  }
+  return schedule as BoundScheduleRecord;
 }
 
 function notFound(): SchedulerError {

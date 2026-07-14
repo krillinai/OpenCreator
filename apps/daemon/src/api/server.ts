@@ -34,6 +34,7 @@ import { createSkillMarketRecordRepository } from '../codex/skills/market-record
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
+import { createScheduleCoordinator } from '../scheduler/coordinator.js';
 import { ScheduleRepository } from '../scheduler/repository.js';
 import { createSchedulerService, type SchedulerService } from '../scheduler/service.js';
 import { openRuntimeDatabase } from '../storage/database.js';
@@ -167,6 +168,14 @@ export async function buildServer(input: BuildServerInput) {
       profileValidator: profileManager,
       autostart: false
     });
+  const scheduleCoordinator = createScheduleCoordinator({
+    db,
+    repository: scheduleRepository,
+    threadManager,
+    defaultCwd: process.cwd(),
+    profileValidator: profileManager,
+    onSchedulesChanged: () => scheduler.refreshTimer()
+  });
   const cleanupService = createCleanupService({
     dataDir,
     runs: runRepository,
@@ -291,7 +300,7 @@ export async function buildServer(input: BuildServerInput) {
     capabilities,
     memoryService
   });
-  await registerScheduleRoutes(server, scheduler);
+  await registerScheduleRoutes(server, scheduleCoordinator, scheduler);
   await registerCleanupRoutes(server, cleanupService);
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes

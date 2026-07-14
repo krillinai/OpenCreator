@@ -559,6 +559,7 @@ describe('runtime api', () => {
 
     expect(created.statusCode).toBe(201);
     expect(created.json()).toMatchObject({
+      threadId: expect.stringMatching(/^thread_/),
       name: 'daily status',
       promptPreviewRedacted: 'Summarize status',
       timeoutMs: 5000,
@@ -567,6 +568,23 @@ describe('runtime api', () => {
     });
     expect(created.json()).not.toHaveProperty('prompt');
     const id = created.json().id;
+    const threadId = created.json().threadId;
+
+    const taskThread = await authGet(`/threads/${threadId}`);
+    expect(taskThread.statusCode).toBe(200);
+    expect(taskThread.json().thread).toMatchObject({
+      id: threadId,
+      scheduleId: id,
+      title: 'daily status',
+      cwd: tempDir,
+      canonicalCwd: realpathSync(tempDir),
+      workspaceMode: 'external',
+      profile: 'default',
+      model: null,
+      reasoning: null,
+      sandbox: 'workspace-write',
+      purpose: 'schedule_task'
+    });
 
     const listed = await authGet('/schedules');
     expect(listed.statusCode).toBe(200);
@@ -1247,12 +1265,16 @@ describe('runtime api', () => {
         code: 'CODEX_PROFILE_IN_USE',
         message: 'Profile is still referenced',
         details: {
-          threads: [
+          threads: expect.arrayContaining([
             {
               id: thread.json().thread.id,
               title: '审查会话'
+            },
+            {
+              id: schedule.json().threadId,
+              title: '每日审查'
             }
-          ],
+          ]),
           schedules: [
             {
               id: schedule.json().id,
@@ -1262,6 +1284,7 @@ describe('runtime api', () => {
         }
       }
     });
+    expect(deleted.json().error.details.threads).toHaveLength(2);
     expect((await authGet('/codex/profiles/review')).statusCode).toBe(200);
   });
 
@@ -3900,9 +3923,6 @@ function writeOldApiDir(dir: string, fileName: string, content: string): string 
 
 function createFakeScheduler(overrides: Partial<SchedulerService> = {}): SchedulerService {
   return {
-    createSchedule() {
-      throw new Error('unexpected createSchedule');
-    },
     listSchedules() {
       return { schedules: [] };
     },

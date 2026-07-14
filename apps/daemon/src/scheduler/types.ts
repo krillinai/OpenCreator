@@ -43,6 +43,10 @@ export type ScheduleRecord = {
   deletedAt?: string | null;
 };
 
+export type BoundScheduleRecord = Omit<ScheduleRecord, 'threadId'> & {
+  threadId: string;
+};
+
 export type InsertScheduleInput = Omit<
   ScheduleRecord,
   | 'id'

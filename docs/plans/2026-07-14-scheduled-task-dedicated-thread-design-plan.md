@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P0-B3`，等待开始 |
+| 当前批次 | `P0-B4`，等待开始 |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -326,7 +326,7 @@ P2-B1 审批和连续失败体验
 |---|---|---|
 | P0-B1 | 收敛 Schema、Protocol 和当前 WIP | `PASS` |
 | P0-B2 | Thread purpose、scheduleId 和配置保护 | `PASS` |
-| P0-B3 | ScheduleCoordinator 手动创建事务 | `NOT_STARTED` |
+| P0-B3 | ScheduleCoordinator 手动创建事务 | `PASS` |
 | P0-B4 | 原子更新、暂停恢复和删除 | `NOT_STARTED` |
 | P0-B5 | 固定 Thread 触发与 Thread 级并发 | `NOT_STARTED` |
 | P0-B6 | 旧绑定修复和启动顺序 | `NOT_STARTED` |
@@ -527,7 +527,7 @@ feat(threads): 支持任务会话类型和绑定保护
 
 ### P0-B3：ScheduleCoordinator 手动创建事务
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P0-B2`
 
@@ -586,6 +586,23 @@ pnpm --filter @clawee/daemon build
 - 创建 Schedule 后数据库不存在半成品。
 - 新 Schedule 的 Thread 配置完整且 purpose 正确。
 - API 返回 `threadId`，现有客户端字段保持兼容。
+
+**执行结果（2026-07-14）：**
+
+- 新增 `ScheduleCoordinator.createManual()`，在同一个 `better-sqlite3` transaction 中
+  创建 `schedule_task` Thread、绑定 Schedule 和 `create` 操作记录。
+- Schedule 写入失败会回滚已创建 Thread；Thread 创建失败不会留下 Schedule 或操作记录。
+- Scheduler 刷新回调只在事务提交后执行。
+- SchedulerService 已移除创建职责，公开 `POST /schedules` 改由 Coordinator 处理。
+- 新 Schedule 的 Thread 标题、cwd、canonical cwd、Profile、模型、推理强度和 Sandbox
+  与 Schedule 一致，且 `workspaceMode='external'`。
+- `ScheduleResponse.threadId` 已收敛为必填 `string`，新增 `BoundScheduleRecord`；
+  未绑定迁移记录对外转换时抛出明确 `INTERNAL_ERROR`，不使用非空断言伪造绑定。
+- P0-B3 专项测试：5 个文件、161 项通过。
+- daemon 全量测试：569 项通过，13 项真实 Codex smoke 按环境开关跳过。
+- Web 全量测试：479 项通过。
+- Protocol、daemon、Web typecheck 均通过。
+- `pnpm build` 和 `git diff --check` 均通过；Vite 仅保留既有大 chunk 警告。
 
 **回滚边界：** 回滚 Coordinator 和路由接线即可恢复旧创建路径；不删除已创建 Thread，
 不执行反向数据清理。
@@ -2008,6 +2025,20 @@ docs(release): 完成任务专属会话发布与回滚说明
   捕获 stderr；该用例隔离重跑通过，daemon 在无并行负载下全量重跑通过。
 - 下一步：执行 P0-B3，新增 ScheduleCoordinator 并在同一 SQLite transaction 中创建
   Schedule 与 `schedule_task` Thread。
+
+### 2026-07-14 13:52 CST - P0-B3
+
+- 状态：`PASS`
+- 提交：`feat(scheduler): 原子创建任务及专属会话`
+  （SHA 以包含本日志的提交为准）
+- 已完成：ScheduleCoordinator 手动创建事务、任务 Thread 配置继承、操作记录原子写入、
+  Scheduler 提交后刷新、公开创建路由接线，以及 `ScheduleResponse.threadId` 必填收敛。
+- 验证：Protocol/daemon/Web typecheck、P0-B3 专项测试、daemon/Web 全量测试、全仓 build
+  和 `git diff --check` 均通过。
+- 未完成：Schedule 更新、暂停恢复和删除时同步/归档任务 Thread 留到 P0-B4。
+- 风险或偏差：旧数据库中的未绑定 Schedule 目前会返回明确内部绑定错误，启动自动修复
+  在 P0-B6 完成前尚未上线。
+- 下一步：执行 P0-B4，把更新、暂停恢复和删除迁移到 Coordinator 的原子事务。
 
 ### 日志模板
 
