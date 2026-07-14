@@ -48,7 +48,7 @@ export async function registerScheduleRoutes(
       if (!body.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
 
       try {
-        return scheduler.updateSchedule(request.params.id, body.value as UpdateScheduleRequest);
+        return coordinator.update(request.params.id, body.value as UpdateScheduleRequest);
       } catch (error) {
         return sendSchedulerError(error, reply);
       }
@@ -57,7 +57,7 @@ export async function registerScheduleRoutes(
 
   server.delete<{ Params: { id: string } }>('/schedules/:id', async (request, reply) => {
     try {
-      scheduler.deleteSchedule(request.params.id);
+      coordinator.delete(request.params.id);
       return { deleted: true };
     } catch (error) {
       return sendSchedulerError(error, reply);
@@ -118,6 +118,13 @@ function sendSchedulerError(error: unknown, reply: FastifyReply) {
   }
   if (error.code === 'SCHEDULE_NOT_FOUND' || error.code === 'CODEX_PROFILE_NOT_FOUND') {
     return reply.code(404).send(apiError(error.code, error.message));
+  }
+  if (
+    error.code === 'SCHEDULE_HAS_ACTIVE_RUN'
+    || error.code === 'SCHEDULE_THREAD_MISSING'
+    || error.code === 'SCHEDULE_THREAD_ARCHIVED'
+  ) {
+    return reply.code(409).send(apiError(error.code, error.message));
   }
   if (error.code === 'CODEX_PROFILE_INVALID' || error.code === 'CODEX_CONFIG_INVALID') {
     return reply.code(422).send(apiError(error.code, error.message));

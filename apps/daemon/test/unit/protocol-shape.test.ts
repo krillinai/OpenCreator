@@ -196,6 +196,16 @@ describe('protocol shape', () => {
     expect(code).toBe('SCHEDULE_NOT_FOUND');
   });
 
+  it('includes schedule thread lifecycle conflicts as closed error codes', () => {
+    const codes: RuntimeErrorCode[] = [
+      'SCHEDULE_HAS_ACTIVE_RUN',
+      'SCHEDULE_THREAD_MISSING',
+      'SCHEDULE_THREAD_ARCHIVED'
+    ];
+
+    expect(codes).toHaveLength(3);
+  });
+
   it('includes schedule-managed thread conflicts as a closed error code', () => {
     const code: RuntimeErrorCode = 'THREAD_MANAGED_BY_SCHEDULE';
     expect(code).toBe('THREAD_MANAGED_BY_SCHEDULE');

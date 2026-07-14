@@ -610,6 +610,11 @@ describe('runtime api', () => {
       name: 'paused status',
       nextRunAt: null
     });
+    expect((await authGet(`/threads/${threadId}`)).json().thread).toMatchObject({
+      id: threadId,
+      title: 'paused status',
+      status: 'active'
+    });
 
     const runNow = await authPost(`/schedules/${id}/run-now`, {});
     expect(runNow.statusCode).toBe(202);
@@ -625,6 +630,101 @@ describe('runtime api', () => {
     const deleted = await authDelete(`/schedules/${id}`);
     expect(deleted.statusCode).toBe(200);
     expect(deleted.json()).toEqual({ deleted: true });
+    expect((await authGet(`/threads/${threadId}`)).json().thread).toMatchObject({
+      id: threadId,
+      status: 'archived'
+    });
+  });
+
+  it('allows metadata updates but blocks schedule task configuration and deletion during active runs', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const fake = createFakeCodex(tempDir, { stdoutLines: [{ type: 'turn.started' }], hang: true });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home')
+    });
+    const schedule = (await authPost('/schedules', {
+      name: 'daily status',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'Summarize status',
+      cwd: tempDir
+    })).json();
+    const run = (await authPost('/runs', {
+      threadId: schedule.threadId,
+      prompt: 'keep running'
+    })).json();
+
+    const metadata = await authPatch(`/schedules/${schedule.id}`, {
+      name: 'renamed status',
+      prompt: 'Use the new prompt',
+      enabled: false
+    });
+    const configuration = await authPatch(`/schedules/${schedule.id}`, {
+      sandbox: 'danger-full-access'
+    });
+    const deleted = await authDelete(`/schedules/${schedule.id}`);
+
+    expect(metadata.statusCode).toBe(200);
+    expect(metadata.json()).toMatchObject({
+      name: 'renamed status',
+      enabled: false
+    });
+    expect(configuration.statusCode).toBe(409);
+    expect(configuration.json().error.code).toBe('SCHEDULE_HAS_ACTIVE_RUN');
+    expect(deleted.statusCode).toBe(409);
+    expect(deleted.json().error.code).toBe('SCHEDULE_HAS_ACTIVE_RUN');
+
+    await authPost(`/runs/${run.id}/cancel`, {});
+    await waitForRunStatus(run.id, 'canceled');
+  });
+
+  it('returns stable conflicts for missing and unexpectedly archived schedule threads', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      db
+    });
+    const missing = (await authPost('/schedules', {
+      name: 'missing thread',
+      cron: '0 9 * * *',
+      timezone: 'UTC',
+      prompt: 'Summarize status',
+      cwd: tempDir
+    })).json();
+    db.prepare('DELETE FROM threads WHERE id = ?').run(missing.threadId);
+
+    const missingResponse = await authPatch(`/schedules/${missing.id}`, {
+      name: 'still missing'
+    });
+
+    const archived = (await authPost('/schedules', {
+      name: 'archived thread',
+      cron: '0 10 * * *',
+      timezone: 'UTC',
+      prompt: 'Summarize status',
+      cwd: tempDir
+    })).json();
+    db.prepare(`
+      UPDATE threads
+      SET status = 'archived',
+          archived_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(archived.threadId);
+
+    const archivedResponse = await authPatch(`/schedules/${archived.id}`, {
+      name: 'still archived'
+    });
+
+    expect(missingResponse.statusCode).toBe(409);
+    expect(missingResponse.json().error.code).toBe('SCHEDULE_THREAD_MISSING');
+    expect(archivedResponse.statusCode).toBe(409);
+    expect(archivedResponse.json().error.code).toBe('SCHEDULE_THREAD_ARCHIVED');
   });
 
   it('maps invalid and missing schedule requests', async () => {
@@ -3928,12 +4028,6 @@ function createFakeScheduler(overrides: Partial<SchedulerService> = {}): Schedul
     },
     getSchedule() {
       return undefined;
-    },
-    updateSchedule() {
-      throw new Error('unexpected updateSchedule');
-    },
-    deleteSchedule() {
-      throw new Error('unexpected deleteSchedule');
     },
     runNow() {
       throw new Error('unexpected runNow');

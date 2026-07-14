@@ -3,25 +3,26 @@ import type {
   ScheduleDetailResponse,
   ScheduleListResponse,
   ScheduleOperationListResponse,
-  ScheduleResponse,
-  UpdateScheduleRequest
+  ScheduleResponse
 } from '@clawee/protocol';
 import type { RunManager } from '../runs/manager.js';
 import { computeNextRunAt } from './cron.js';
 import type { ScheduleRepository } from './repository.js';
 import type {
   BoundScheduleRecord,
-  ProfileValidator,
   ScheduleOperationRecord,
   ScheduleRecord,
   SchedulerClock
 } from './types.js';
-import {
-  parseUpdateScheduleRequest,
-  type ScheduleValidationErrorCode
-} from './validator.js';
+import type { ScheduleValidationErrorCode } from './validator.js';
 
-export type SchedulerErrorCode = ScheduleValidationErrorCode | 'SCHEDULE_NOT_FOUND' | 'INTERNAL_ERROR';
+export type SchedulerErrorCode =
+  | ScheduleValidationErrorCode
+  | 'SCHEDULE_NOT_FOUND'
+  | 'SCHEDULE_HAS_ACTIVE_RUN'
+  | 'SCHEDULE_THREAD_MISSING'
+  | 'SCHEDULE_THREAD_ARCHIVED'
+  | 'INTERNAL_ERROR';
 
 export class SchedulerError extends Error {
   readonly code: SchedulerErrorCode;
@@ -36,8 +37,6 @@ export class SchedulerError extends Error {
 export type SchedulerService = {
   listSchedules(): ScheduleListResponse;
   getSchedule(id: string): ScheduleDetailResponse | undefined;
-  updateSchedule(id: string, input: UpdateScheduleRequest): ScheduleResponse;
-  deleteSchedule(id: string): void;
   runNow(id: string): RunScheduleNowResponse;
   listOperations(id: string, limit?: number): ScheduleOperationListResponse;
   start(): void;
@@ -56,8 +55,6 @@ type SchedulerTimers = {
 export type SchedulerServiceOptions = {
   repository: ScheduleRepository;
   runManager: RunManager;
-  defaultCwd: string;
-  profileValidator: ProfileValidator;
   clock?: SchedulerClock;
   timers?: SchedulerTimers;
   triggerGraceMs?: number;
@@ -309,48 +306,6 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
         : toScheduleDetailResponse(requireBoundSchedule(schedule));
     },
 
-    updateSchedule(id, input) {
-      const existing = requireSchedule(options.repository, id);
-      const parsed = parseUpdateScheduleRequest(input, {
-        now: clock.now().toISOString(),
-        defaultCwd: existing.cwd,
-        profileValidator: options.profileValidator
-      });
-      if (!parsed.ok) throw new SchedulerError(parsed.code, parsed.message);
-
-      const nextInput = { ...parsed.value };
-      if (requiresNextRunRecompute(parsed.value)) {
-        const mergedEnabled = parsed.value.enabled ?? existing.enabled;
-        const mergedCron = parsed.value.cron ?? existing.cron;
-        const mergedTimezone = parsed.value.timezone ?? existing.timezone;
-        nextInput.nextRunAt = mergedEnabled
-          ? computeNextRunAt({ cron: mergedCron, timezone: mergedTimezone, from: clock.now() })
-          : null;
-      }
-
-      const updated = options.repository.update(id, nextInput);
-      if (updated === null) throw notFound();
-      options.repository.insertOperation({
-        scheduleId: id,
-        operation: 'update',
-        status: 'succeeded'
-      });
-      refreshTimerIfStarted();
-      return toScheduleResponse(requireBoundSchedule(updated));
-    },
-
-    deleteSchedule(id) {
-      requireSchedule(options.repository, id);
-      const deleted = options.repository.softDelete(id);
-      if (!deleted) throw notFound();
-      options.repository.insertOperation({
-        scheduleId: id,
-        operation: 'delete',
-        status: 'succeeded'
-      });
-      refreshTimerIfStarted();
-    },
-
     runNow(id) {
       const schedule = requireSchedule(options.repository, id);
       const response = handleTrigger(schedule, 'run_now', clock.now().toISOString());
@@ -469,10 +424,6 @@ function requireBoundSchedule(schedule: ScheduleRecord): BoundScheduleRecord {
 
 function notFound(): SchedulerError {
   return new SchedulerError('SCHEDULE_NOT_FOUND', 'Schedule not found');
-}
-
-function requiresNextRunRecompute(input: UpdateScheduleRequest): boolean {
-  return input.cron !== undefined || input.timezone !== undefined || input.enabled !== undefined;
 }
 
 function formatError(error: unknown): string {

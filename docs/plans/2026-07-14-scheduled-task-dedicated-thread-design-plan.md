@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P0-B4`，等待开始 |
+| 当前批次 | `P0-B5`，等待开始 |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -327,7 +327,7 @@ P2-B1 审批和连续失败体验
 | P0-B1 | 收敛 Schema、Protocol 和当前 WIP | `PASS` |
 | P0-B2 | Thread purpose、scheduleId 和配置保护 | `PASS` |
 | P0-B3 | ScheduleCoordinator 手动创建事务 | `PASS` |
-| P0-B4 | 原子更新、暂停恢复和删除 | `NOT_STARTED` |
+| P0-B4 | 原子更新、暂停恢复和删除 | `PASS` |
 | P0-B5 | 固定 Thread 触发与 Thread 级并发 | `NOT_STARTED` |
 | P0-B6 | 旧绑定修复和启动顺序 | `NOT_STARTED` |
 | P0-B7 | legacy Schedule session 分类 | `NOT_STARTED` |
@@ -615,7 +615,7 @@ feat(scheduler): 原子创建任务及专属会话
 
 ### P0-B4：原子更新、暂停恢复和删除
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P0-B3`
 
@@ -670,6 +670,18 @@ pnpm --filter @clawee/daemon typecheck
 - 暂停不影响查看历史和继续进入会话。
 - 删除保留历史，不允许活动 Run 被静默遗弃。
 - 错误码与规格一致且有 API 测试。
+
+**执行结果：**
+
+- Schedule 更新、暂停恢复和删除已统一迁移到 Coordinator，并在同一 SQLite transaction
+  内同步任务 Thread 配置或归档任务 Thread。
+- 活动 Run 期间允许更新只影响后续执行的元数据；执行配置修改和删除稳定返回
+  `SCHEDULE_HAS_ACTIVE_RUN`。Thread 缺失和异常归档分别返回对应稳定冲突错误。
+- P0-B4 四文件专项测试：160 项通过。
+- daemon 全量测试：580 项通过，13 项真实 Codex smoke 按环境开关跳过。
+- Web 全量测试：479 项通过。
+- Protocol、daemon、Web typecheck、全仓 build 和 `git diff --check` 均通过；
+  Vite 仅保留既有大 chunk 警告。
 
 **回滚边界：** 回滚更新/删除协调逻辑，不反向恢复已经软删除的任务；如需恢复，使用显式
 数据修复脚本而不是自动回滚。
@@ -2039,6 +2051,21 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：旧数据库中的未绑定 Schedule 目前会返回明确内部绑定错误，启动自动修复
   在 P0-B6 完成前尚未上线。
 - 下一步：执行 P0-B4，把更新、暂停恢复和删除迁移到 Coordinator 的原子事务。
+
+### 2026-07-14 14:11 CST - P0-B4
+
+- 状态：`PASS`
+- 提交：`feat(scheduler): 原子同步任务配置和会话生命周期`
+  （SHA 以包含本日志的提交为准）
+- 已完成：Coordinator 原子更新/删除、Schedule 与 Thread 配置同步、暂停恢复、删除归档、
+  活动 Run 冲突保护、绑定异常错误码和公开 API 接线。
+- 验证：P0-B4 四文件专项测试 160 项、daemon 全量 580 项、Web 全量 479 项通过；
+  Protocol/daemon/Web typecheck、全仓 build 和 `git diff --check` 均通过。
+- 未完成：Scheduler 固定 Thread 触发、Thread 级 queue/skip 和 pending trigger 合并留到
+  P0-B5。
+- 风险或偏差：真实 Codex smoke 13 项按环境开关跳过，继续登记到最终统一验收；构建仅有
+  既有 Vite 大 chunk 警告。
+- 下一步：执行 P0-B5，使自动触发和立即执行复用固定任务 Thread，并按 Thread 串行。
 
 ### 日志模板
 

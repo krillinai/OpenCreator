@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -114,17 +114,185 @@ describe('schedule coordinator', () => {
     expect(schedule.threadId).toMatch(/^thread_/);
     expect(onSchedulesChanged).toHaveBeenCalledOnce();
   });
+
+  it('atomically updates schedule execution configuration and its task thread', () => {
+    const { coordinator, repository, threadManager } = createFixture();
+    const created = coordinator.createManual(scheduleRequest());
+    const nextCwd = join(tempDir, 'next-project');
+    mkdirSync(nextCwd);
+
+    const updated = coordinator.update(created.id, {
+      name: 'Weekly report',
+      cwd: nextCwd,
+      profile: 'review',
+      model: 'gpt-5',
+      reasoning: 'high',
+      sandbox: 'danger-full-access'
+    });
+
+    expect(updated).toMatchObject({
+      name: 'Weekly report',
+      cwd: nextCwd,
+      canonicalCwd: realpathSync(nextCwd),
+      profile: 'review',
+      model: 'gpt-5',
+      reasoning: 'high',
+      sandbox: 'danger-full-access'
+    });
+    expect(repository.getById(created.id)).toMatchObject(updated);
+    expect(threadManager.getThread(created.threadId)).toMatchObject({
+      title: 'Weekly report',
+      cwd: nextCwd,
+      canonicalCwd: realpathSync(nextCwd),
+      profile: 'review',
+      model: 'gpt-5',
+      reasoning: 'high',
+      sandbox: 'danger-full-access',
+      purpose: 'schedule_task'
+    });
+  });
+
+  it('pauses and resumes without archiving or replacing the task thread', () => {
+    const { coordinator, threadManager } = createFixture();
+    const created = coordinator.createManual(scheduleRequest());
+
+    const paused = coordinator.update(created.id, { enabled: false });
+    const resumed = coordinator.update(created.id, { enabled: true });
+
+    expect(paused).toMatchObject({
+      threadId: created.threadId,
+      enabled: false,
+      nextRunAt: null
+    });
+    expect(resumed.threadId).toBe(created.threadId);
+    expect(resumed.enabled).toBe(true);
+    expect(resumed.nextRunAt).not.toBeNull();
+    expect(threadManager.getThread(created.threadId)).toMatchObject({
+      id: created.threadId,
+      status: 'active',
+      purpose: 'schedule_task'
+    });
+  });
+
+  it('rolls back schedule changes when task thread synchronization fails', () => {
+    const { coordinator, repository, threadManager } = createFixture();
+    const created = coordinator.createManual(scheduleRequest());
+    vi.spyOn(threadManager, 'updateScheduleThread').mockImplementationOnce(() => {
+      throw new Error('thread update failed');
+    });
+
+    expect(() => coordinator.update(created.id, { name: 'Changed title' }))
+      .toThrow('thread update failed');
+    expect(repository.getById(created.id)?.name).toBe('Daily report');
+    expect(threadManager.getThread(created.threadId)?.title).toBe('Daily report');
+  });
+
+  it('leaves the task thread unchanged when schedule persistence fails', () => {
+    const { coordinator, repository, threadManager } = createFixture();
+    const created = coordinator.createManual(scheduleRequest());
+    db?.exec(`
+      CREATE TRIGGER fail_schedule_update
+      BEFORE UPDATE ON schedules
+      WHEN NEW.name = 'Changed title'
+      BEGIN
+        SELECT RAISE(ABORT, 'schedule update failed');
+      END;
+    `);
+
+    expect(() => coordinator.update(created.id, { name: 'Changed title' }))
+      .toThrow('schedule update failed');
+    expect(repository.getById(created.id)?.name).toBe('Daily report');
+    expect(threadManager.getThread(created.threadId)?.title).toBe('Daily report');
+  });
+
+  it('allows metadata changes but blocks execution configuration and deletion during active runs', () => {
+    const hasActiveRunForThread = vi.fn(() => true);
+    const { coordinator } = createFixture({ hasActiveRunForThread });
+    const created = coordinator.createManual(scheduleRequest());
+
+    expect(coordinator.update(created.id, {
+      name: 'Renamed report',
+      prompt: 'Use the new instructions',
+      enabled: false
+    })).toMatchObject({
+      name: 'Renamed report',
+      enabled: false
+    });
+    expect(() => coordinator.update(created.id, { sandbox: 'danger-full-access' })).toThrow(
+      expect.objectContaining({ code: 'SCHEDULE_HAS_ACTIVE_RUN' })
+    );
+    expect(() => coordinator.delete(created.id)).toThrow(
+      expect.objectContaining({ code: 'SCHEDULE_HAS_ACTIVE_RUN' })
+    );
+    expect(hasActiveRunForThread).toHaveBeenCalledWith(created.threadId);
+  });
+
+  it('soft deletes the schedule and archives its task thread while preserving the binding', () => {
+    const { coordinator, repository, threadManager } = createFixture();
+    const created = coordinator.createManual(scheduleRequest());
+
+    coordinator.delete(created.id);
+
+    const deleted = db?.prepare(`
+      SELECT thread_id, enabled, next_run_at, deleted_at
+      FROM schedules
+      WHERE id = ?
+    `).get(created.id) as {
+      thread_id: string;
+      enabled: number;
+      next_run_at: string | null;
+      deleted_at: string | null;
+    };
+    expect(repository.getById(created.id)).toBeNull();
+    expect(deleted).toMatchObject({
+      thread_id: created.threadId,
+      enabled: 0,
+      next_run_at: null,
+      deleted_at: expect.any(String)
+    });
+    expect(threadManager.getThread(created.threadId)).toMatchObject({
+      id: created.threadId,
+      status: 'archived',
+      purpose: 'schedule_task'
+    });
+    expect(repository.listOperations(created.id)[0]).toMatchObject({
+      operation: 'delete',
+      status: 'succeeded'
+    });
+  });
+
+  it('returns a stable error when the bound task thread is missing', () => {
+    const { coordinator } = createFixture();
+    const missing = coordinator.createManual(scheduleRequest());
+    db?.prepare('DELETE FROM threads WHERE id = ?').run(missing.threadId);
+
+    expect(() => coordinator.update(missing.id, { name: 'Missing thread' })).toThrow(
+      expect.objectContaining({ code: 'SCHEDULE_THREAD_MISSING' })
+    );
+  });
+
+  it('returns a stable error when the bound task thread is unexpectedly archived', () => {
+    const { coordinator, threadManager } = createFixture();
+    const archived = coordinator.createManual(scheduleRequest());
+    threadManager.archiveScheduleThread(archived.threadId);
+
+    expect(() => coordinator.update(archived.id, { name: 'Archived thread' })).toThrow(
+      expect.objectContaining({ code: 'SCHEDULE_THREAD_ARCHIVED' })
+    );
+  });
 });
 
 function createFixture(options: {
   threadManager?: ThreadManager;
+  hasActiveRunForThread?(threadId: string): boolean;
   onSchedulesChanged?(database: Database.Database): void;
 } = {}) {
   tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-coordinator-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+  let operationId = 0;
   const repository = new ScheduleRepository(db, {
     idFactory: () => 'sch_one',
-    operationIdFactory: () => 'schop_one',
+    operationIdFactory: () => `schop_${operationId++}`,
     now: () => '2026-07-14T00:00:00.000Z'
   });
   const threadManager = options.threadManager ?? createThreadManager({ db, dataDir: tempDir });
@@ -132,6 +300,9 @@ function createFixture(options: {
     db,
     repository,
     threadManager,
+    runManager: {
+      hasActiveRunForThread: options.hasActiveRunForThread ?? (() => false)
+    },
     defaultCwd: tempDir,
     profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
     clock: { now: () => new Date('2026-07-14T00:00:00.000Z') },

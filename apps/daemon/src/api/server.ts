@@ -164,14 +164,13 @@ export async function buildServer(input: BuildServerInput) {
     createSchedulerService({
       repository: scheduleRepository,
       runManager,
-      defaultCwd: process.cwd(),
-      profileValidator: profileManager,
       autostart: false
     });
   const scheduleCoordinator = createScheduleCoordinator({
     db,
     repository: scheduleRepository,
     threadManager,
+    runManager,
     defaultCwd: process.cwd(),
     profileValidator: profileManager,
     onSchedulesChanged: () => scheduler.refreshTimer()

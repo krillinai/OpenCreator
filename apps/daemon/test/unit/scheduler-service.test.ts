@@ -666,8 +666,6 @@ function createFixture(options: { autostart?: boolean } = {}) {
   const scheduler = createSchedulerService({
     repository,
     runManager: runManager as unknown as RunManager,
-    defaultCwd: tempDir,
-    profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
     clock: { now: () => new Date('2026-07-06T00:00:00.000Z') },
     autostart: options.autostart ?? false
   });
@@ -676,13 +674,16 @@ function createFixture(options: { autostart?: boolean } = {}) {
     db,
     repository,
     threadManager,
+    runManager: runManager as unknown as RunManager,
     defaultCwd: tempDir,
     profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
     clock: { now: () => new Date('2026-07-06T00:00:00.000Z') },
     onSchedulesChanged: () => scheduler.refreshTimer()
   });
   const service = Object.assign(scheduler, {
-    createSchedule: coordinator.createManual
+    createSchedule: coordinator.createManual,
+    updateSchedule: coordinator.update,
+    deleteSchedule: coordinator.delete
   });
   return { repository, runManager, threadManager, coordinator, service };
 }
@@ -695,8 +696,6 @@ function createFixtureWithTimers(now: string) {
   const scheduler = createSchedulerService({
     repository: fixture.repository,
     runManager: fixture.runManager as unknown as RunManager,
-    defaultCwd: tempDir,
-    profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
     clock: { now: () => new Date(currentNow) },
     timers: {
       setTimeout(callback, ms) {
@@ -714,13 +713,16 @@ function createFixtureWithTimers(now: string) {
     db: db!,
     repository: fixture.repository,
     threadManager: fixture.threadManager,
+    runManager: fixture.runManager as unknown as RunManager,
     defaultCwd: tempDir,
     profileValidator: { validateProfileForRun: () => ({ ok: true as const }) },
     clock: { now: () => new Date(currentNow) },
     onSchedulesChanged: () => scheduler.refreshTimer()
   });
   const service = Object.assign(scheduler, {
-    createSchedule: coordinator.createManual
+    createSchedule: coordinator.createManual,
+    updateSchedule: coordinator.update,
+    deleteSchedule: coordinator.delete
   });
   return {
     ...fixture,
