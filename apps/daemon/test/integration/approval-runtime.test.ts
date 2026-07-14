@@ -118,6 +118,21 @@ describe('approval runtime integration', () => {
       })
     ]);
   });
+
+  it('fails explicit app-server resume before spawn when the thread has no Codex session', () => {
+    const fixture = setup('accept');
+    const run = fixture.runManager.startRun({
+      prompt: 'resume without a target',
+      threadId: fixture.thread.id,
+      resumeMode: 'resume_thread'
+    });
+
+    expect(run.status).toBe('failed');
+    expect(fixture.runManager.getRun(run.id)).toMatchObject({
+      status: 'failed',
+      errorCode: 'CODEX_THREAD_ID_MISSING'
+    });
+  });
 });
 
 function setup(expectedDecision: 'accept' | 'decline' | 'close') {

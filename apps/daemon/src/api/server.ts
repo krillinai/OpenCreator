@@ -22,6 +22,10 @@ import {
   type AgentScheduleOperations
 } from '../agent-tools/internal-routes.js';
 import {
+  createAgentScheduleRunInjector,
+  resolveAgentScheduleStdioCommand
+} from '../agent-tools/run-injection.js';
+import {
   isResumeExecutionSupported,
   withRuntimeSkillCapabilities,
   type RuntimeCapabilityMatrix
@@ -97,6 +101,7 @@ export type BuildServerInput = {
   approvalManager?: ApprovalManager;
   agentCapabilityTokens?: AgentCapabilityTokenStore;
   agentScheduleOperations?: AgentScheduleOperations;
+  agentToolsEnabled?: boolean;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
 };
 
@@ -160,6 +165,9 @@ export async function buildServer(input: BuildServerInput) {
   const memoryService = createMemoryService({ db });
   const agentCapabilityTokens =
     input.agentCapabilityTokens ?? createAgentCapabilityTokenStore();
+  const agentToolCommand = input.agentToolsEnabled === true
+    ? resolveAgentScheduleStdioCommand()
+    : undefined;
   const runManager =
     input.runManager ??
     createRunManager({
@@ -172,6 +180,14 @@ export async function buildServer(input: BuildServerInput) {
       profileValidator: profileManager,
       runtimeTransport: capabilities.appServerApprovals === true ? 'app-server' : 'exec',
       approvalManager,
+      agentToolInjector: agentToolCommand === undefined
+        ? undefined
+        : createAgentScheduleRunInjector({
+            capabilities: agentCapabilityTokens,
+            getBaseUrl: () => resolveListeningOrigin(server.server.address()),
+            command: agentToolCommand.command,
+            args: agentToolCommand.args
+          }),
       recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items),
       onRunTerminal: runId => agentCapabilityTokens.revokeRun(runId)
     });
@@ -479,4 +495,16 @@ function isAllowedWebOrigin(origin: string): boolean {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function resolveListeningOrigin(
+  address: ReturnType<typeof import('node:net').Server.prototype.address>
+): string | undefined {
+  if (address === null || typeof address === 'string') return undefined;
+  const host = address.address === '::' || address.address === '0.0.0.0'
+    ? '127.0.0.1'
+    : address.address.includes(':')
+      ? `[${address.address}]`
+      : address.address;
+  return `http://${host}:${address.port}`;
 }

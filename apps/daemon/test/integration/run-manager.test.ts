@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeCodex } from '../helpers/fake-codex.js';
+import { createAgentCapabilityTokenStore } from '../../src/agent-tools/capability-token.js';
+import { createAgentScheduleRunInjector } from '../../src/agent-tools/run-injection.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunManager } from '../../src/runs/manager.js';
 import {
@@ -853,6 +855,77 @@ describe('run manager', () => {
     };
     expect(meta.args).toEqual(argv);
     expect(meta.args).toEqual(expect.arrayContaining(['-c', 'sandbox_mode="read-only"']));
+  });
+
+  it('injects per-run schedule tools without persisting the capability secret', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-agent-tools-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-agent-tools' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threadManager = createThreadManager({ db, dataDir: tempDir });
+    const thread = threadManager.createThread({
+      workspaceMode: 'external',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only'
+    });
+    const capabilities = createAgentCapabilityTokenStore();
+    const codexHome = join(tempDir, 'codex-home');
+    mkdirSync(codexHome, { recursive: true });
+    const configPath = join(codexHome, 'config.toml');
+    writeFileSync(configPath, 'model = "existing-model"\\n');
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome,
+      threadAccess: threadManager,
+      resumeCapabilityVerified: true,
+      agentToolInjector: createAgentScheduleRunInjector({
+        capabilities,
+        getBaseUrl: () => 'http://127.0.0.1:43123',
+        command: '/usr/bin/node',
+        args: ['/app/agent-tools/stdio-server.js']
+      }),
+      onRunTerminal: runId => capabilities.revokeRun(runId)
+    });
+
+    const run = await manager.createAndRun({
+      threadId: thread.id,
+      prompt: '创建一个每日总结任务'
+    });
+
+    expect(run.status).toBe('succeeded');
+    const argv = fake.readArgv();
+    const env = fake.readAgentToolEnv();
+    const token = env.CLAWEE_AGENT_CAPABILITY_TOKEN!;
+    expect(argv).toEqual(expect.arrayContaining([
+      '-c',
+      'mcp_servers.clawee_schedule.command="/usr/bin/node"',
+      '-c',
+      'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_create","clawee_schedule_update","clawee_schedule_pause","clawee_schedule_resume","clawee_schedule_run_now","clawee_schedule_get"]'
+    ]));
+    expect(env.CLAWEE_AGENT_TOOL_URL).toBe('http://127.0.0.1:43123');
+    expect(token).toMatch(/^clwcap_/);
+    expect(readFileSync(configPath, 'utf8')).toBe('model = "existing-model"\\n');
+
+    const persisted = [
+      fake.readPrompt(),
+      readFileSync(join(tempDir, 'runs', run.id, 'meta.json'), 'utf8'),
+      readFileSync(join(tempDir, 'runs', run.id, 'diagnostics.json'), 'utf8'),
+      JSON.stringify(manager.listEvents(run.id))
+    ].join('\n');
+    expect(persisted).not.toContain(token);
+    expect(JSON.stringify(argv)).not.toContain(token);
+    expect(() => capabilities.authorize(token, {
+      scope: 'schedule:get'
+    })).toThrow('revoked');
+    capabilities.close();
   });
 
   it('uses the thread sandbox override for workspace-write resumed runs', async () => {

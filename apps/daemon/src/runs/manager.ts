@@ -11,8 +11,17 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import type { ApprovalManager } from '../approvals/manager.js';
-import { buildCodexExecArgs, buildCodexResumeArgs } from '../codex/argv.js';
+import type {
+  AgentScheduleRunInjector,
+  AgentToolRunInjection
+} from '../agent-tools/run-injection.js';
 import {
+  buildCodexExecArgs,
+  buildCodexResumeArgs,
+  type CodexMcpServerConfig
+} from '../codex/argv.js';
+import {
+  buildCodexAppServerArgs,
   startCodexAppServer,
   type AppServerRequest
 } from '../codex/app-server-runner.js';
@@ -68,6 +77,7 @@ export type RunManagerOptions = {
   recordRunContext?(runId: string, items: NonNullable<CreateRunInput['contextItems']>): void;
   onRunTerminal?(runId: string): void;
   logWriterFactory?(runDir: string): OrderedLogWriter;
+  agentToolInjector?: AgentScheduleRunInjector;
 };
 
 export type RuntimeRun = {
@@ -493,7 +503,12 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     const resolvedResumeMode = resolveResumeMode(runInput, thread);
     const codexThreadId = thread?.codexThreadId ?? undefined;
     let resolvedCodexThreadId = resolvedResumeMode === 'resume_thread' ? codexThreadId : undefined;
-    const plannedArgv = buildRunArgv(runInput, resolvedResumeMode, resolvedCodexThreadId);
+    const plannedArgv = buildRuntimeArgv(
+      runInput,
+      resolvedResumeMode,
+      resolvedCodexThreadId,
+      options.runtimeTransport
+    );
 
     runs.setRunResumeMode(id, resolvedResumeMode);
     if (runInput.threadId !== undefined) runs.setRunQueueState(id, 'started');
@@ -535,7 +550,13 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       return run;
     };
 
-    if (plannedArgv === undefined) {
+    if (
+      plannedArgv === undefined
+      || (
+        resolvedResumeMode === 'resume_thread'
+        && resolvedCodexThreadId === undefined
+      )
+    ) {
       return failBeforeSpawnAndRelease({
         code: 'CODEX_THREAD_ID_MISSING',
         message: 'resume_thread requires a persisted codexThreadId',
@@ -560,12 +581,42 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       }
     }
 
+    let agentToolInjection: AgentToolRunInjection | undefined;
+    try {
+      agentToolInjection = thread === undefined
+        ? undefined
+        : options.agentToolInjector?.prepare({
+            runId: id,
+            thread,
+            createdBy: runInput.createdBy ?? 'api'
+          });
+    } catch (error) {
+      return failBeforeSpawnAndRelease({
+        code: 'AGENT_TOOL_INJECTION_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+        terminationReason: 'stream_error'
+      });
+    }
+
     const stdoutLines: string[] = [];
     let stderr = '';
     let seq = lastSeqForRun(id);
     let sawTurnCompleted = false;
     let sawCodexThreadId = resolvedResumeMode === 'resume_thread';
-    const codexArgs = plannedArgv;
+    const codexArgs = buildRuntimeArgv(
+      runInput,
+      resolvedResumeMode,
+      resolvedCodexThreadId,
+      options.runtimeTransport,
+      agentToolInjection?.mcpServers
+    );
+    if (codexArgs === undefined) {
+      return failBeforeSpawnAndRelease({
+        code: 'CODEX_THREAD_ID_MISSING',
+        message: 'resume_thread requires a persisted codexThreadId',
+        terminationReason: 'stream_error'
+      });
+    }
     const runTimeouts = resolveRunTimeouts(runInput, options);
     if (resolvedResumeMode === 'resume_thread') {
       runs.setRunCodexThreadId(id, resolvedCodexThreadId!);
@@ -604,6 +655,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         reasoning: runInput.reasoning,
         prompt: runInput.executionPrompt ?? runInput.prompt,
         imagePaths: runInput.imagePaths,
+        mcpServers: agentToolInjection?.mcpServers,
+        env: agentToolInjection?.env,
         codexThreadId: resolvedResumeMode === 'resume_thread' ? resolvedCodexThreadId : undefined,
         timeoutMs: runTimeouts.timeoutMs,
         spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
@@ -682,7 +735,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
               runInput,
               resumeMode: resolvedResumeMode,
               codexThreadId: resolvedCodexThreadId,
-              argv: ['app-server', '--stdio'],
+              argv: codexArgs,
               queueState: runs.getRun(id)?.queue_state,
               errorCode: publicStatus === 'failed' ? 'CODEX_STREAM_ERROR' : null,
               errorMessage: publicStatus === 'failed'
@@ -733,7 +786,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
                 runInput,
                 resumeMode: resolvedResumeMode,
                 codexThreadId: resolvedCodexThreadId,
-                argv: ['app-server', '--stdio'],
+                argv: codexArgs,
                 queueState: runs.getRun(id)?.queue_state,
                 errorCode,
                 errorMessage,
@@ -770,6 +823,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       cwd: runInput.cwd,
       args: codexArgs,
       prompt: runInput.executionPrompt ?? runInput.prompt,
+      env: agentToolInjection?.env,
       timeoutMs: runTimeouts.timeoutMs,
       spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
       inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
@@ -1068,22 +1122,12 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     const id = `run_${nanoid(10)}`;
     const runDir = join(options.dataDir, 'runs', id);
     const canonicalCwd = resolve(input.cwd);
-    const args = resolvedResumeMode === 'resume_thread' && codexThreadId !== undefined
-      ? buildCodexResumeArgs({
-          codexThreadId,
-          sandbox: input.sandbox,
-          model: input.model,
-          reasoning: input.reasoning,
-          imagePaths: input.imagePaths
-        })
-      : buildCodexExecArgs({
-          profile: input.profile,
-          cwd: input.cwd,
-          sandbox: input.sandbox,
-          model: input.model,
-          reasoning: input.reasoning,
-          imagePaths: input.imagePaths
-        });
+    const args = buildRuntimeArgv(
+      input,
+      resolvedResumeMode,
+      codexThreadId,
+      options.runtimeTransport
+    );
 
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, 'raw.redacted.ndjson'), '');
@@ -1205,7 +1249,12 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         runInput,
         resumeMode,
         codexThreadId,
-        argv: buildRunArgv(runInput, resumeMode, codexThreadId),
+        argv: buildRuntimeArgv(
+          runInput,
+          resumeMode,
+          codexThreadId,
+          options.runtimeTransport
+        ),
         queueState: row?.queue_state ?? 'queued',
         errorCode: null,
         errorMessage: null,
@@ -1446,7 +1495,8 @@ function writeJson(path: string, value: unknown): void {
 function buildRunArgv(
   input: ResolvedCreateRunInput,
   resumeMode: ResolvedResumeMode,
-  codexThreadId?: string
+  codexThreadId?: string,
+  mcpServers?: CodexMcpServerConfig[]
 ): string[] | undefined {
   if (resumeMode === 'resume_thread') {
     if (codexThreadId === undefined) return undefined;
@@ -1455,7 +1505,8 @@ function buildRunArgv(
       sandbox: input.sandbox,
       model: input.model,
       reasoning: input.reasoning,
-      imagePaths: input.imagePaths
+      imagePaths: input.imagePaths,
+      mcpServers
     });
   }
 
@@ -1465,8 +1516,25 @@ function buildRunArgv(
     sandbox: input.sandbox,
     model: input.model,
     reasoning: input.reasoning,
-    imagePaths: input.imagePaths
+    imagePaths: input.imagePaths,
+    mcpServers
   });
+}
+
+function buildRuntimeArgv(
+  input: ResolvedCreateRunInput,
+  resumeMode: ResolvedResumeMode,
+  codexThreadId: string | undefined,
+  runtimeTransport: RunManagerOptions['runtimeTransport'],
+  mcpServers?: CodexMcpServerConfig[]
+): string[] | undefined {
+  if (runtimeTransport === 'app-server') {
+    return buildCodexAppServerArgs({
+      profile: input.profile,
+      mcpServers
+    });
+  }
+  return buildRunArgv(input, resumeMode, codexThreadId, mcpServers);
 }
 
 function buildThreadRunDiagnosticsMetadata(input: {

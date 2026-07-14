@@ -5,6 +5,7 @@ import type {
 } from '@clawee/protocol';
 import type { FastifyInstance } from 'fastify';
 import { mkdtempSync, rmSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -294,6 +295,68 @@ describe('agent tool internal api', () => {
       () => fixture.tokens.authorize(token, { scope: 'schedule:get' }),
       'CAPABILITY_TOKEN_INVALID'
     );
+  });
+
+  it('injects the listening daemon origin into production Run child environments', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-agent-tool-listen-'));
+    const fakeCodex = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-agent-tools' },
+        { type: 'turn.completed' }
+      ]
+    });
+    server = await buildServer({
+      token: 'public-secret',
+      dataDir: tempDir,
+      codexBin: fakeCodex.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      resumeCapabilityVerified: true,
+      agentToolsEnabled: true
+    });
+    await server.listen({ host: '127.0.0.1', port: 0 });
+    const address = server.server.address() as AddressInfo;
+    const threadResponse = await server.inject({
+      method: 'POST',
+      url: '/threads',
+      headers: { authorization: 'Bearer public-secret' },
+      payload: {
+        workspaceMode: 'external',
+        cwd: tempDir,
+        profile: 'default',
+        sandbox: 'read-only'
+      }
+    });
+    const threadId = threadResponse.json().thread.id as string;
+    const runResponse = await server.inject({
+      method: 'POST',
+      url: '/runs',
+      headers: { authorization: 'Bearer public-secret' },
+      payload: {
+        threadId,
+        prompt: '创建每日总结任务'
+      }
+    });
+    const runId = runResponse.json().id as string;
+
+    await expect.poll(async () => {
+      const response = await server!.inject({
+        method: 'GET',
+        url: `/runs/${runId}`,
+        headers: { authorization: 'Bearer public-secret' }
+      });
+      return response.json().status as string;
+    }, { timeout: RUN_STATUS_TIMEOUT_MS }).toBe('succeeded');
+
+    expect(fakeCodex.readAgentToolEnv()).toMatchObject({
+      CLAWEE_AGENT_TOOL_URL: `http://127.0.0.1:${address.port}`,
+      CLAWEE_AGENT_CAPABILITY_TOKEN: expect.stringMatching(/^clwcap_/)
+    });
+    expect(fakeCodex.readArgv()).toEqual(expect.arrayContaining([
+      '-c',
+      expect.stringContaining('mcp_servers.clawee_schedule.command='),
+      '-c',
+      expect.stringContaining('mcp_servers.clawee_schedule.env_vars=')
+    ]));
   });
 });
 

@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B5`，已通过（2026-07-14 19:33 CST）；下一批 `P1-B6` |
+| 当前批次 | `P1-B6`，已通过（2026-07-14 20:38 CST）；下一批 `P1-B7` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -337,7 +337,7 @@ P2-B1 审批和连续失败体验
 | P1-B3 | “已安排”与任务会话互跳 | `PASS` |
 | P1-B4 | 任务会话头部 | `PASS` |
 | P1-B5 | 能力令牌和内部路由 | `PASS` |
-| P1-B6 | Schedule MCP 工具和逐 Run 注入 | `NOT_STARTED` |
+| P1-B6 | Schedule MCP 工具和逐 Run 注入 | `PASS` |
 | P1-B7 | Agent 创建和管理任务协调 | `NOT_STARTED` |
 | P1-B8 | 删除正则创建流程 | `NOT_STARTED` |
 | P1-B9 | 通知深链接和结果摘要 | `NOT_STARTED` |
@@ -1356,7 +1356,7 @@ feat(agent-tools): 增加按 Run 绑定的短期能力令牌
 
 ### P1-B6：Schedule MCP 工具和逐 Run 注入
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P1-B5`
 
@@ -2341,6 +2341,24 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：首次全量测试前，浏览器验收触发的 Vite daemon 残留占用默认 SQLite，
   清理该本次产生的进程并单独重跑后全量通过；没有修改数据库锁或测试并发策略。
 - 下一步：执行 P1-B6，使用官方 MCP SDK 实现 Schedule 工具并逐 Run 注入临时配置。
+
+### 2026-07-14 20:38 CST - P1-B6
+
+- 状态：`PASS`
+- 提交：`feat(agent-tools): 注入内置 Schedule MCP 工具`
+  （SHA 以包含本日志的提交为准）
+- 已完成：官方 MCP SDK stdio server、六个严格 Schedule 工具、结构化 timing 到 cron
+  转换、内部 HTTP 客户端、逐 Run 最小权限签发、exec/resume/app-server 统一 `-c` 注入、
+  监听地址动态传递、开发/构建产物启动路径和令牌非持久化保护。
+- 验证：P1-B6 专项 78 项、daemon 全量 620 项、daemon typecheck、生产 build、
+  `pnpm audit --prod` 和 `git diff --check` 通过；开发模式与编译产物均通过真实 stdio
+  子进程 MCP 调用 smoke。常规全量中的 13 项真实 Codex smoke 按既有开关跳过。
+- 未完成：create 内部路由仍按 P1-B5 设计返回 501；`current` 任务解析、draft 原子绑定和
+  普通会话新建任务留到 P1-B7。
+- 风险或偏差：windowed interval 为保证单个五段 cron 精确表达，要求 1-60 分钟、整点
+  起止且间隔整除 60；更复杂的自然语言间隔会返回明确校验错误，由 Agent 继续澄清。
+- 下一步：执行 P1-B7，把六个工具接到 ScheduleCoordinator，并实现 draft/普通/任务会话
+  的 actor 绑定语义。
 
 ### 日志模板
 

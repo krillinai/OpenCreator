@@ -1,5 +1,9 @@
 import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
 import { spawn } from 'node:child_process';
+import {
+  buildCodexMcpConfigArgs,
+  type CodexMcpServerConfig
+} from './argv.js';
 
 export type AppServerApprovalDecision =
   | 'approved'
@@ -31,6 +35,8 @@ export type StartCodexAppServerInput = {
   spawnTimeoutMs?: number;
   inactivityTimeoutMs?: number;
   forceKillGraceMs?: number;
+  mcpServers?: CodexMcpServerConfig[];
+  env?: Record<string, string>;
   onNotification?: (notification: Record<string, unknown>) => Promise<void> | void;
   onThreadStarted?: (threadId: string) => Promise<void> | void;
   onApprovalRequest?: (
@@ -60,14 +66,10 @@ type PendingRequest = {
 export function startCodexAppServer(
   input: StartCodexAppServerInput
 ): CodexAppServerProcess {
-  const args = [
-    ...(input.profile === 'default' ? [] : ['--profile', input.profile]),
-    'app-server',
-    '--stdio'
-  ];
+  const args = buildCodexAppServerArgs(input);
   const child = spawn(input.codexBin, args, {
     cwd: input.cwd,
-    env: { ...process.env, CODEX_HOME: input.codexHome },
+    env: { ...process.env, ...input.env, CODEX_HOME: input.codexHome },
     stdio: ['pipe', 'pipe', 'pipe']
   });
   const pending = new Map<string | number, PendingRequest>();
@@ -361,6 +363,18 @@ export function startCodexAppServer(
     },
     result
   };
+}
+
+export function buildCodexAppServerArgs(input: {
+  profile: string;
+  mcpServers?: CodexMcpServerConfig[];
+}): string[] {
+  return [
+    ...(input.profile === 'default' ? [] : ['--profile', input.profile]),
+    ...buildCodexMcpConfigArgs(input.mcpServers),
+    'app-server',
+    '--stdio'
+  ];
 }
 
 function approvalResponse(

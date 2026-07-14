@@ -5,14 +5,15 @@ import {
 } from '../../src/startup.js';
 
 describe('daemon production startup', () => {
-  it('enables scheduler autostart for the production server', () => {
+  it('enables scheduler autostart and built-in agent tools for the production server', () => {
     const input = createProductionServerInput({
       token: 'runtime-token'
     });
 
     expect(input).toMatchObject({
       token: 'runtime-token',
-      schedulerAutostart: true
+      schedulerAutostart: true,
+      agentToolsEnabled: true
     });
   });
 

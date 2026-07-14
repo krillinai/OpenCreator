@@ -18,6 +18,7 @@ export function createFakeCodex(dir: string, options: FakeCodexOptions) {
   const promptPath = join(dir, 'prompt.txt');
   const codexHomePath = join(dir, 'codex-home.txt');
   const argvPath = join(dir, 'argv.json');
+  const agentToolEnvPath = join(dir, 'agent-tool-env.json');
   mkdirSync(dir, { recursive: true });
 
   const script = `#!/usr/bin/env node
@@ -26,6 +27,10 @@ const prompt = fs.readFileSync(0, 'utf8');
 fs.writeFileSync(${JSON.stringify(promptPath)}, prompt);
 fs.writeFileSync(${JSON.stringify(codexHomePath)}, process.env.CODEX_HOME ?? '');
 fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2)));
+fs.writeFileSync(${JSON.stringify(agentToolEnvPath)}, JSON.stringify({
+  CLAWEE_AGENT_TOOL_URL: process.env.CLAWEE_AGENT_TOOL_URL,
+  CLAWEE_AGENT_CAPABILITY_TOKEN: process.env.CLAWEE_AGENT_CAPABILITY_TOKEN
+}));
 const delayMs = ${JSON.stringify(options.delayMs ?? 0)};
 const initialDelayMs = ${JSON.stringify(options.initialDelayMs ?? 0)};
 const lineDelayMs = ${JSON.stringify(options.lineDelayMs ?? 0)};
@@ -74,6 +79,15 @@ main().catch(error => {
     },
     readArgv(): string[] {
       return JSON.parse(readFileSync(argvPath, 'utf8')) as string[];
+    },
+    readAgentToolEnv(): {
+      CLAWEE_AGENT_TOOL_URL?: string;
+      CLAWEE_AGENT_CAPABILITY_TOKEN?: string;
+    } {
+      return JSON.parse(readFileSync(agentToolEnvPath, 'utf8')) as {
+        CLAWEE_AGENT_TOOL_URL?: string;
+        CLAWEE_AGENT_CAPABILITY_TOKEN?: string;
+      };
     }
   };
 }

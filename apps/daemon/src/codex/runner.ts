@@ -10,6 +10,7 @@ export type RunCodexExecInput = {
   spawnTimeoutMs?: number;
   inactivityTimeoutMs?: number;
   forceKillGraceMs?: number;
+  env?: Record<string, string>;
   onStdoutLine?: (line: string) => Promise<void> | void;
   onStderrChunk?: (chunk: string) => Promise<void> | void;
 };
@@ -68,7 +69,7 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
   const result = new Promise<RunCodexExecResult>((resolve, reject) => {
     const child = spawn(input.codexBin, input.args, {
       cwd: input.cwd,
-      env: { ...process.env, CODEX_HOME: input.codexHome },
+      env: { ...process.env, ...input.env, CODEX_HOME: input.codexHome },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 

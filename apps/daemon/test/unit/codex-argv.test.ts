@@ -97,4 +97,56 @@ describe('codex argv', () => {
       '019f-thread'
     ]);
   });
+
+  it('injects the same non-secret MCP config into exec and resume', () => {
+    const mcpServers = [{
+      name: 'clawee_schedule',
+      command: '/usr/bin/node',
+      args: ['/app/agent-tools/stdio-server.js'],
+      envVars: [
+        'CLAWEE_AGENT_TOOL_URL',
+        'CLAWEE_AGENT_CAPABILITY_TOKEN'
+      ],
+      enabledTools: [
+        'clawee_schedule_update',
+        'clawee_schedule_get'
+      ],
+      required: true,
+      startupTimeoutSec: 10,
+      toolTimeoutSec: 30
+    }];
+
+    const exec = buildCodexExecArgs({
+      cwd: '/repo',
+      sandbox: 'workspace-write',
+      mcpServers
+    });
+    const resume = buildCodexResumeArgs({
+      codexThreadId: '019f-thread',
+      sandbox: 'workspace-write',
+      mcpServers
+    });
+    const expected = [
+      '-c',
+      'mcp_servers.clawee_schedule.command="/usr/bin/node"',
+      '-c',
+      'mcp_servers.clawee_schedule.args=["/app/agent-tools/stdio-server.js"]',
+      '-c',
+      'mcp_servers.clawee_schedule.env_vars=["CLAWEE_AGENT_TOOL_URL","CLAWEE_AGENT_CAPABILITY_TOKEN"]',
+      '-c',
+      'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_update","clawee_schedule_get"]',
+      '-c',
+      'mcp_servers.clawee_schedule.required=true',
+      '-c',
+      'mcp_servers.clawee_schedule.startup_timeout_sec=10',
+      '-c',
+      'mcp_servers.clawee_schedule.tool_timeout_sec=30'
+    ];
+
+    expect(exec).toEqual(expect.arrayContaining(expected));
+    expect(resume).toEqual(expect.arrayContaining(expected));
+    expect(resume.at(-1)).toBe('019f-thread');
+    expect(JSON.stringify([exec, resume])).not.toContain('clwcap_');
+    expect(JSON.stringify([exec, resume])).not.toContain('127.0.0.1');
+  });
 });

@@ -7,6 +7,7 @@ export type BuildCodexExecArgsInput = {
   model?: string;
   reasoning?: ReasoningEffort;
   imagePaths?: string[];
+  mcpServers?: CodexMcpServerConfig[];
 };
 
 export type BuildCodexResumeArgsInput = {
@@ -17,6 +18,18 @@ export type BuildCodexResumeArgsInput = {
   model?: string;
   reasoning?: ReasoningEffort;
   imagePaths?: string[];
+  mcpServers?: CodexMcpServerConfig[];
+};
+
+export type CodexMcpServerConfig = {
+  name: string;
+  command: string;
+  args?: string[];
+  envVars?: string[];
+  enabledTools?: string[];
+  required?: boolean;
+  startupTimeoutSec?: number;
+  toolTimeoutSec?: number;
 };
 
 export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
@@ -29,6 +42,7 @@ export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
   if (input.reasoning && input.reasoning !== 'default') {
     args.push('-c', `model_reasoning_effort="${input.reasoning}"`);
   }
+  args.push(...buildCodexMcpConfigArgs(input.mcpServers));
   for (const imagePath of input.imagePaths ?? []) args.push('--image', imagePath);
 
   return args;
@@ -42,8 +56,53 @@ export function buildCodexResumeArgs(input: BuildCodexResumeArgsInput): string[]
   if (input.reasoning && input.reasoning !== 'default') {
     args.push('-c', `model_reasoning_effort="${input.reasoning}"`);
   }
+  args.push(...buildCodexMcpConfigArgs(input.mcpServers));
   for (const imagePath of input.imagePaths ?? []) args.push('--image', imagePath);
   args.push(input.codexThreadId);
 
   return args;
+}
+
+export function buildCodexMcpConfigArgs(
+  servers: CodexMcpServerConfig[] | undefined
+): string[] {
+  const args: string[] = [];
+  for (const server of servers ?? []) {
+    if (!/^[A-Za-z0-9_-]+$/.test(server.name)) {
+      throw new Error(`Invalid MCP server name: ${server.name}`);
+    }
+    const prefix = `mcp_servers.${server.name}`;
+    pushConfig(args, `${prefix}.command`, JSON.stringify(server.command));
+    if (server.args !== undefined) {
+      pushConfig(args, `${prefix}.args`, JSON.stringify(server.args));
+    }
+    if (server.envVars !== undefined) {
+      pushConfig(args, `${prefix}.env_vars`, JSON.stringify(server.envVars));
+    }
+    if (server.enabledTools !== undefined) {
+      pushConfig(args, `${prefix}.enabled_tools`, JSON.stringify(server.enabledTools));
+    }
+    if (server.required !== undefined) {
+      pushConfig(args, `${prefix}.required`, String(server.required));
+    }
+    if (server.startupTimeoutSec !== undefined) {
+      pushConfig(
+        args,
+        `${prefix}.startup_timeout_sec`,
+        String(server.startupTimeoutSec)
+      );
+    }
+    if (server.toolTimeoutSec !== undefined) {
+      pushConfig(args, `${prefix}.tool_timeout_sec`, String(server.toolTimeoutSec));
+    }
+  }
+  return args;
+}
+
+function pushConfig(
+  args: string[],
+  key: string,
+  value: string
+): void {
+  args.push('-c', `${key}=${value}`);
 }

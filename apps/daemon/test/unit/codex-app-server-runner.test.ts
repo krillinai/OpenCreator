@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -66,12 +66,73 @@ describe('codex app-server runner', () => {
       terminationReason: 'completed'
     });
   });
+
+  it('passes MCP config in argv and capability secrets only in the child environment', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeAppServer(tempDir, 'decline');
+    const token = 'clwcap_AppServerSecret';
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'read-only',
+      prompt: 'inspect environment',
+      mcpServers: [{
+        name: 'clawee_schedule',
+        command: '/usr/bin/node',
+        args: ['/app/agent-tools/stdio-server.js'],
+        envVars: [
+          'CLAWEE_AGENT_TOOL_URL',
+          'CLAWEE_AGENT_CAPABILITY_TOKEN'
+        ],
+        enabledTools: ['clawee_schedule_get'],
+        required: true
+      }],
+      env: {
+        CLAWEE_AGENT_TOOL_URL: 'http://127.0.0.1:43123',
+        CLAWEE_AGENT_CAPABILITY_TOKEN: token
+      },
+      async onApprovalRequest() {
+        return 'rejected';
+      }
+    });
+
+    await expect(process.result).resolves.toMatchObject({
+      turnStatus: 'completed'
+    });
+    const argv = JSON.parse(
+      readFileSync(join(tempDir, 'app-server-argv.json'), 'utf8')
+    ) as string[];
+    const env = JSON.parse(
+      readFileSync(join(tempDir, 'app-server-env.json'), 'utf8')
+    ) as Record<string, string>;
+
+    expect(argv).toEqual(expect.arrayContaining([
+      '-c',
+      'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_get"]',
+      'app-server',
+      '--stdio'
+    ]));
+    expect(JSON.stringify(argv)).not.toContain(token);
+    expect(JSON.stringify(argv)).not.toContain('127.0.0.1');
+    expect(env).toEqual({
+      CLAWEE_AGENT_TOOL_URL: 'http://127.0.0.1:43123',
+      CLAWEE_AGENT_CAPABILITY_TOKEN: token
+    });
+  });
 });
 
 function createFakeAppServer(dir: string, expectedDecision: 'accept' | 'decline'): string {
   const bin = join(dir, 'fake-codex.js');
   writeFileSync(bin, `#!/usr/bin/env node
 const readline = require('node:readline');
+const fs = require('node:fs');
+fs.writeFileSync(${JSON.stringify(join(dir, 'app-server-argv.json'))}, JSON.stringify(process.argv.slice(2)));
+fs.writeFileSync(${JSON.stringify(join(dir, 'app-server-env.json'))}, JSON.stringify({
+  CLAWEE_AGENT_TOOL_URL: process.env.CLAWEE_AGENT_TOOL_URL,
+  CLAWEE_AGENT_CAPABILITY_TOKEN: process.env.CLAWEE_AGENT_CAPABILITY_TOKEN
+}));
 const rl = readline.createInterface({ input: process.stdin });
 let approvalRequestId = 'approval-rpc-1';
 const send = value => process.stdout.write(JSON.stringify(value) + '\\n');

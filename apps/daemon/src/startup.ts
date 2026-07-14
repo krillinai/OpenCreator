@@ -9,7 +9,8 @@ export function createProductionServerInput(
 ): BuildServerInput {
   return {
     ...input,
-    schedulerAutostart: true
+    schedulerAutostart: true,
+    agentToolsEnabled: true
   };
 }
 
