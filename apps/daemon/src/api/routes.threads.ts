@@ -204,6 +204,7 @@ function toThreadResponse(thread: RuntimeThread): ThreadResponse {
     reasoning: thread.reasoning,
     sandbox: thread.sandbox,
     status: thread.status,
+    purpose: thread.purpose,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     archivedAt: thread.archivedAt

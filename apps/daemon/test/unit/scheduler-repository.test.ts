@@ -26,6 +26,7 @@ describe('schedule repository', () => {
 
     expect(inserted).toMatchObject({
       id: 'sch_one',
+      threadId: null,
       enabled: true,
       pendingTrigger: false,
       model: null,
@@ -40,6 +41,20 @@ describe('schedule repository', () => {
       updatedAt: '2026-07-06T00:00:00.000Z'
     });
     expect(loaded).toEqual(inserted);
+  });
+
+  it('persists and updates the dedicated thread binding', () => {
+    const repository = createRepository({
+      ids: ['sch_one'],
+      nowValues: ['2026-07-06T00:00:00.000Z', '2026-07-06T00:10:00.000Z']
+    });
+
+    const inserted = repository.create(scheduleInput({ threadId: 'thread_one' }));
+    const updated = repository.update(inserted.id, { threadId: 'thread_two' });
+
+    expect(inserted.threadId).toBe('thread_one');
+    expect(updated?.threadId).toBe('thread_two');
+    expect(repository.getById(inserted.id)?.threadId).toBe('thread_two');
   });
 
   it('lists non-deleted schedules newest first', () => {

@@ -384,6 +384,7 @@ function makeThreadRow(overrides: Partial<ThreadRow> & { id: string }): ThreadRo
     model: null,
     reasoning: null,
     status: 'archived',
+    purpose: 'conversation',
     created_at: '2026-05-01T00:00:00.000Z',
     updated_at: '2026-05-01T00:00:00.000Z',
     archived_at: '2026-05-01T00:00:00.000Z',

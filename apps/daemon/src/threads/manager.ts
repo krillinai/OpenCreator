@@ -42,7 +42,8 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
         model: request.model ?? null,
         reasoning: request.reasoning ?? null,
         sandbox,
-        status
+        status,
+        purpose: 'conversation'
       });
 
       return mapThreadRow(threads.getThread(id)!);
@@ -92,6 +93,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
         reasoning: request.reasoning ?? null,
         sandbox: request.sandbox ?? 'read-only',
         status: 'active',
+        purpose: 'conversation',
         createdAt: toSqliteTimestamp(request.createdAt),
         updatedAt
       });
@@ -156,6 +158,7 @@ function mapThreadRow(row: ThreadRow): RuntimeThread {
     reasoning: row.reasoning as RuntimeThread['reasoning'],
     sandbox: row.sandbox as RuntimeThread['sandbox'],
     status: row.status,
+    purpose: row.purpose,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     archivedAt: row.archived_at

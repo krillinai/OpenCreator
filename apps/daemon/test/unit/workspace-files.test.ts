@@ -650,6 +650,7 @@ function createThread(root: string, options: FixtureOptions): RuntimeThread {
     profile: 'default',
     sandbox: options.sandbox ?? 'read-only',
     status: options.status ?? 'active',
+    purpose: 'conversation',
     createdAt: now,
     updatedAt: now
   };

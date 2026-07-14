@@ -69,6 +69,7 @@ export function migrate(db: Database.Database): void {
       model TEXT,
       reasoning TEXT,
       status TEXT NOT NULL,
+      purpose TEXT NOT NULL DEFAULT 'conversation',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       archived_at TEXT,
@@ -138,6 +139,7 @@ export function migrate(db: Database.Database): void {
       last_run_id TEXT,
       last_status TEXT,
       pending_trigger INTEGER NOT NULL DEFAULT 0,
+      thread_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       deleted_at TEXT
@@ -338,6 +340,7 @@ export function migrate(db: Database.Database): void {
 
   ensureColumn(db, 'threads', 'title', 'title TEXT');
   ensureColumn(db, 'threads', 'archived_at', 'archived_at TEXT');
+  ensureColumn(db, 'threads', 'purpose', "purpose TEXT NOT NULL DEFAULT 'conversation'");
   ensureColumn(db, 'runs', 'resume_mode', 'resume_mode TEXT');
   ensureColumn(db, 'runs', 'queue_state', "queue_state TEXT NOT NULL DEFAULT 'none'");
   ensureColumn(db, 'runs', 'submission_mode', "submission_mode TEXT NOT NULL DEFAULT 'enqueue'");
@@ -345,9 +348,18 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'attachments', 'run_id', 'run_id TEXT');
   ensureColumn(db, 'codex_session_sources', 'head_size', 'head_size INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'codex_session_sources', 'head_hash', "head_hash TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'schedules', 'thread_id', 'thread_id TEXT');
+  db.prepare(`
+    UPDATE schedules
+    SET concurrency_policy = 'queue'
+    WHERE concurrency_policy = 'parallel'
+  `).run();
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_attachments_run_id
       ON attachments(run_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_thread_id
+      ON schedules(thread_id)
+      WHERE thread_id IS NOT NULL AND deleted_at IS NULL;
   `);
 }
 

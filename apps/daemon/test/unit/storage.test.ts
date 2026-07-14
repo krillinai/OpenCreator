@@ -282,6 +282,7 @@ describe('runtime storage', () => {
         'last_run_id',
         'last_status',
         'pending_trigger',
+        'thread_id',
         'created_at',
         'updated_at',
         'deleted_at'
@@ -308,6 +309,7 @@ describe('runtime storage', () => {
            AND name IN (
              'idx_schedules_enabled_next_run_at',
              'idx_schedules_deleted_at',
+             'idx_schedules_thread_id',
              'idx_schedule_operations_created_at',
              'idx_schedule_operations_schedule_id',
              'idx_runs_schedule_source'
@@ -319,8 +321,41 @@ describe('runtime storage', () => {
       'idx_schedule_operations_created_at',
       'idx_schedule_operations_schedule_id',
       'idx_schedules_deleted_at',
-      'idx_schedules_enabled_next_run_at'
+      'idx_schedules_enabled_next_run_at',
+      'idx_schedules_thread_id'
     ]);
+  });
+
+  it('enforces unique active schedule thread bindings while allowing deleted history', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const insertSchedule = db.prepare(`
+      INSERT INTO schedules (
+        id, thread_id, name, cron, timezone, prompt, prompt_hash, prompt_preview_redacted,
+        profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const values = [
+      'thread_one',
+      'daily status',
+      '0 9 * * *',
+      'Asia/Shanghai',
+      'Summarize project status',
+      'hash',
+      'Summarize project status',
+      'default',
+      tempDir,
+      tempDir,
+      'workspace-write',
+      'queue',
+      'skip'
+    ] as const;
+
+    insertSchedule.run('sch_one', ...values);
+    expect(() => insertSchedule.run('sch_conflict', ...values)).toThrow();
+
+    db.prepare('UPDATE schedules SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?').run('sch_one');
+    expect(() => insertSchedule.run('sch_replacement', ...values)).not.toThrow();
   });
 
   it('persists codex skill operations', () => {
@@ -394,7 +429,8 @@ it('persists threads and codex thread binding', () => {
     id: 'thread_1',
     title: 'R2 plan',
     codex_thread_id: null,
-    status: 'active'
+    status: 'active',
+    purpose: 'conversation'
   });
 
   threads.setCodexThreadId('thread_1', '019f-thread');
@@ -532,8 +568,10 @@ it('migrates legacy storage and preserves existing thread operations', () => {
   const threads = createThreadRepository(db);
 
   expect(columnNames(db, 'runs')).toEqual(expect.arrayContaining(['resume_mode', 'queue_state', 'timeout_ms']));
-  expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining(['title', 'archived_at']));
+  expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining(['title', 'archived_at', 'purpose']));
+  expect(columnNames(db, 'schedules')).toContain('thread_id');
   expect(runs.getRun('legacy_run_1')?.queue_state).toBe('none');
+  expect(threads.getThread('legacy_thread_1')?.purpose).toBe('conversation');
 
   threads.setCodexThreadId('legacy_thread_1', '019f-legacy-thread');
   expect(threads.getThread('legacy_thread_1')?.codex_thread_id).toBe('019f-legacy-thread');
@@ -545,6 +583,69 @@ it('migrates legacy storage and preserves existing thread operations', () => {
 
   threads.archiveThread('legacy_thread_1');
   expect(threads.getThread('legacy_thread_1')?.archived_at).toBe(fixedArchivedAt);
+});
+
+it('migrates legacy parallel schedules to queue before dedicated threads are attached', () => {
+  tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+  const dbPath = join(tempDir, 'app.sqlite');
+  const legacyDb = new Database(dbPath);
+  legacyDb.exec(`
+    CREATE TABLE schedules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      cron TEXT NOT NULL,
+      timezone TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      prompt TEXT NOT NULL,
+      prompt_hash TEXT NOT NULL,
+      prompt_preview_redacted TEXT NOT NULL,
+      profile TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      canonical_cwd TEXT NOT NULL,
+      model TEXT,
+      reasoning TEXT,
+      sandbox TEXT NOT NULL,
+      timeout_ms INTEGER,
+      concurrency_policy TEXT NOT NULL,
+      misfire_policy TEXT NOT NULL,
+      next_run_at TEXT,
+      last_run_at TEXT,
+      last_run_id TEXT,
+      last_status TEXT,
+      pending_trigger INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      deleted_at TEXT
+    );
+  `);
+  legacyDb.prepare(`
+    INSERT INTO schedules (
+      id, name, cron, timezone, prompt, prompt_hash, prompt_preview_redacted,
+      profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'sch_parallel',
+    'legacy parallel',
+    '0 9 * * *',
+    'Asia/Shanghai',
+    'Run task',
+    'hash',
+    'Run task',
+    'default',
+    tempDir,
+    tempDir,
+    'workspace-write',
+    'parallel',
+    'skip'
+  );
+  legacyDb.close();
+
+  db = openRuntimeDatabase(dbPath);
+
+  expect(columnNames(db, 'schedules')).toContain('thread_id');
+  expect(
+    db.prepare('SELECT concurrency_policy FROM schedules WHERE id = ?').get('sch_parallel')
+  ).toEqual({ concurrency_policy: 'queue' });
 });
 });
 

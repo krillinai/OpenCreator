@@ -10,6 +10,7 @@ import type {
 
 type ScheduleRow = {
   id: string;
+  thread_id: string | null;
   name: string;
   cron: string;
   timezone: string;
@@ -59,7 +60,7 @@ type UpdateBinding = {
 };
 
 const scheduleColumns = `
-  id, name, cron, timezone, enabled, prompt, prompt_hash, prompt_preview_redacted,
+  id, thread_id, name, cron, timezone, enabled, prompt, prompt_hash, prompt_preview_redacted,
   profile, cwd, canonical_cwd, model, reasoning, sandbox, timeout_ms, concurrency_policy,
   misfire_policy, next_run_at, last_run_at, last_run_id, last_status, pending_trigger,
   created_at, updated_at, deleted_at
@@ -83,11 +84,11 @@ export class ScheduleRepository {
       .prepare(
         `
         INSERT INTO schedules (
-          id, name, cron, timezone, enabled, prompt, prompt_hash, prompt_preview_redacted,
+          id, thread_id, name, cron, timezone, enabled, prompt, prompt_hash, prompt_preview_redacted,
           profile, cwd, canonical_cwd, model, reasoning, sandbox, timeout_ms, concurrency_policy,
           misfire_policy, next_run_at, pending_trigger, created_at, updated_at
         ) VALUES (
-          @id, @name, @cron, @timezone, @enabled, @prompt, @promptHash, @promptPreviewRedacted,
+          @id, @threadId, @name, @cron, @timezone, @enabled, @prompt, @promptHash, @promptPreviewRedacted,
           @profile, @cwd, @canonicalCwd, @model, @reasoning, @sandbox, @timeoutMs, @concurrencyPolicy,
           @misfirePolicy, @nextRunAt, 0, @createdAt, @updatedAt
         )
@@ -95,6 +96,7 @@ export class ScheduleRepository {
       )
       .run({
         id,
+        threadId: input.threadId ?? null,
         name: input.name,
         cron: input.cron,
         timezone: input.timezone,
@@ -373,6 +375,7 @@ export class ScheduleRepository {
 function mapSchedule(row: ScheduleRow): ScheduleRecord {
   return {
     id: row.id,
+    threadId: row.thread_id,
     name: row.name,
     cron: row.cron,
     timezone: row.timezone,
@@ -415,6 +418,7 @@ function mapOperation(row: ScheduleOperationRow): ScheduleOperationRecord {
 
 function updateEntries(input: UpdateScheduleInput): Array<[string, string | number | null]> {
   const entries: Array<[string, string | number | null]> = [];
+  addIfOwn(entries, input, 'threadId', 'thread_id');
   addIfOwn(entries, input, 'name', 'name');
   addIfOwn(entries, input, 'cron', 'cron');
   addIfOwn(entries, input, 'timezone', 'timezone');

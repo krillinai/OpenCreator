@@ -420,6 +420,8 @@ export type CreateThreadRequest = {
   sandbox?: SandboxMode;
 };
 
+export type ThreadPurpose = 'conversation' | 'schedule_draft' | 'schedule_task';
+
 export type UpdateThreadRequest = {
   sandbox?: SandboxMode;
 };
@@ -436,6 +438,8 @@ export type ThreadResponse = {
   reasoning?: ReasoningEffort | null;
   sandbox: SandboxMode;
   status: ThreadStatus;
+  purpose: ThreadPurpose;
+  scheduleId?: string;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;
@@ -757,6 +761,7 @@ export type UpdateScheduleRequest = Partial<
 
 export type ScheduleResponse = {
   id: string;
+  threadId?: string | null;
   name: string;
   cron: string;
   timezone: string;

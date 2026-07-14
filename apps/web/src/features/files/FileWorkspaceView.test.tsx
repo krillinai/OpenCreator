@@ -765,6 +765,7 @@ function createThread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
     reasoning: null,
     sandbox: 'danger-full-access',
     status: 'active',
+    purpose: 'conversation',
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
     ...overrides

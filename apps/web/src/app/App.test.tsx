@@ -4682,6 +4682,7 @@ function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadRe
     reasoning: null,
     sandbox: 'read-only',
     status: 'active',
+    purpose: 'conversation',
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
     archivedAt: null,

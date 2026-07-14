@@ -16,6 +16,7 @@ export type SchedulerClock = {
 
 export type ScheduleRecord = {
   id: string;
+  threadId: string | null;
   name: string;
   cron: string;
   timezone: string;
@@ -44,12 +45,23 @@ export type ScheduleRecord = {
 
 export type InsertScheduleInput = Omit<
   ScheduleRecord,
-  'id' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'lastRunAt' | 'lastRunId' | 'lastStatus' | 'pendingTrigger'
->;
+  | 'id'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'deletedAt'
+  | 'lastRunAt'
+  | 'lastRunId'
+  | 'lastStatus'
+  | 'pendingTrigger'
+  | 'threadId'
+> & {
+  threadId?: string | null;
+};
 
 export type UpdateScheduleInput = Partial<
   Pick<
     ScheduleRecord,
+    | 'threadId'
     | 'name'
     | 'cron'
     | 'timezone'

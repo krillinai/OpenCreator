@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope, RunSubmissionMode } from '@clawee/protocol';
+import type { AgentEventEnvelope, RunSubmissionMode, ThreadPurpose } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 
 export type ResolvedResumeMode = 'independent' | 'new_thread' | 'resume_thread';
@@ -99,6 +99,7 @@ export type InsertThreadInput = {
   model?: string | null;
   reasoning?: string | null;
   status: 'active' | 'archived';
+  purpose?: ThreadPurpose;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -115,6 +116,7 @@ export type ThreadRow = {
   model: string | null;
   reasoning: string | null;
   status: 'active' | 'archived';
+  purpose: ThreadPurpose;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -328,10 +330,10 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   const insert = db.prepare(`
     INSERT INTO threads (
       id, title, codex_thread_id, cwd, canonical_cwd, workspace_mode,
-      profile, sandbox, model, reasoning, status, created_at, updated_at
+      profile, sandbox, model, reasoning, status, purpose, created_at, updated_at
     ) VALUES (
       @id, @title, @codexThreadId, @cwd, @canonicalCwd, @workspaceMode,
-      @profile, @sandbox, @model, @reasoning, @status,
+      @profile, @sandbox, @model, @reasoning, @status, @purpose,
       COALESCE(@createdAt, CURRENT_TIMESTAMP), COALESCE(@updatedAt, CURRENT_TIMESTAMP)
     )
   `);
@@ -402,6 +404,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         codexThreadId: null,
         model: null,
         reasoning: null,
+        purpose: 'conversation',
         createdAt: null,
         updatedAt: null,
         ...input

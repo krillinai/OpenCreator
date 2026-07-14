@@ -2,6 +2,7 @@ import type {
   CreateThreadRequest,
   ReasoningEffort,
   SandboxMode,
+  ThreadPurpose,
   WorkspaceMode
 } from '@clawee/protocol';
 
@@ -17,6 +18,7 @@ export type RuntimeThread = {
   reasoning?: ReasoningEffort | null;
   sandbox: SandboxMode;
   status: 'active' | 'archived';
+  purpose: ThreadPurpose;
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;

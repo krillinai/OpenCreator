@@ -11,6 +11,8 @@ import type {
   RunRequest,
   RunScheduleNowResponse,
   RuntimeErrorCode,
+  ThreadPurpose,
+  ThreadResponse,
   ThreadHistoryQuery,
   ThreadHistoryResponse,
   WorkspaceDirectoryListRequest,
@@ -78,6 +80,28 @@ describe('protocol shape', () => {
 
     expect(query.limit).toBe(50);
     expect(response.nextCursor).toBe('next');
+  });
+
+  it('requires a closed purpose on thread responses', () => {
+    const purpose: ThreadPurpose = 'conversation';
+    const response: ThreadResponse = {
+      id: 'thread_1',
+      title: 'Daily status',
+      codexThreadId: null,
+      cwd: '/tmp/project',
+      canonicalCwd: '/tmp/project',
+      workspaceMode: 'external',
+      profile: 'default',
+      model: null,
+      reasoning: null,
+      sandbox: 'workspace-write',
+      status: 'active',
+      purpose,
+      createdAt: '2026-07-14T00:00:00.000Z',
+      updatedAt: '2026-07-14T00:00:00.000Z'
+    };
+
+    expect(response.purpose).toBe('conversation');
   });
 
   it('includes stable thread history cursor error codes', () => {

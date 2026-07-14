@@ -424,6 +424,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
 export function toScheduleResponse(schedule: ScheduleRecord): ScheduleResponse {
   return {
     id: schedule.id,
+    threadId: schedule.threadId,
     name: schedule.name,
     cron: schedule.cron,
     timezone: schedule.timezone,

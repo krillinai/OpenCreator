@@ -31,6 +31,7 @@ describe('thread manager', () => {
       sandbox: 'read-only'
     });
     expect(thread.workspaceMode).toBe('managed');
+    expect(thread.purpose).toBe('conversation');
     expect(thread.id).toMatch(/^thread_/);
     expect(thread.cwd).toContain(join('workspaces', thread.id));
   });

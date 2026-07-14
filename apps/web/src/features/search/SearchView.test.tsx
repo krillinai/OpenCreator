@@ -284,6 +284,7 @@ function thread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
     profile: 'default',
     sandbox: 'workspace-write',
     status: 'active',
+    purpose: 'conversation',
     createdAt: '2026-07-12T10:00:00.000Z',
     updatedAt: '2026-07-12T12:00:00.000Z',
     ...overrides,
