@@ -316,6 +316,7 @@ export type TaskItem = {
   terminationReason?: string;
   errorCode?: string;
   errorMessage?: string;
+  resultSummary?: string;
   pendingApproval?: RuntimeApproval;
 };
 

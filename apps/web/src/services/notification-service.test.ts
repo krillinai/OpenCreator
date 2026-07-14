@@ -68,14 +68,16 @@ describe('NotificationService', () => {
       permission: 'granted'
     });
     await expect(service.notify({
-      title: '已安排提醒',
-      body: '喝水提醒',
-      target: 'schedules'
+      title: '喝水提醒',
+      body: '该喝水了。',
+      threadId: 'thread_1',
+      runId: 'run_1'
     })).resolves.toBe(true);
     expect(notify).toHaveBeenCalledWith({
-      title: '已安排提醒',
-      body: '喝水提醒',
-      target: 'schedules'
+      title: '喝水提醒',
+      body: '该喝水了。',
+      threadId: 'thread_1',
+      runId: 'run_1'
     });
 
     expect(service.disable()).toEqual({

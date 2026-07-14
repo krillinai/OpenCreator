@@ -585,11 +585,7 @@ export function AppController(props: AppControllerProps) {
             selectedThreadIdRef.current
           )) continue;
           const message = createTaskNotification(task);
-          void notificationService.notify({
-            ...message,
-            threadId: task.threadId,
-            runId: task.runId
-          }).catch(() => undefined);
+          void notificationService.notify(message).catch(() => undefined);
         }
       } catch {
         return;

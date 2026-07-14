@@ -32,13 +32,26 @@ export function collectTaskTransitions(
 export function createTaskNotification(task: TaskItem): {
   title: HostNotification['title'];
   body: HostNotification['body'];
-  target?: HostNotification['target'];
+  threadId?: HostNotification['threadId'];
+  runId: HostNotification['runId'];
 } {
-  if (task.createdBy === 'schedule' && task.status === 'succeeded') {
+  const target = {
+    ...(task.threadId === undefined ? {} : { threadId: task.threadId }),
+    runId: task.runId
+  };
+  const detail = notificationDetail(task);
+
+  if (task.createdBy === 'schedule') {
     return {
-      title: '已安排提醒',
-      body: task.title,
-      target: 'schedules'
+      title: task.status === 'waiting_approval'
+        ? `${task.title}等待审批`
+        : task.status === 'failed'
+          ? `${task.title}失败`
+          : task.status === 'canceled'
+            ? `${task.title}已取消`
+            : task.title,
+      body: detail,
+      ...target
     };
   }
 
@@ -49,13 +62,28 @@ export function createTaskNotification(task: TaskItem): {
       : task.status === 'canceled'
         ? '任务已取消'
         : '任务失败';
-  const detail = task.errorMessage
-    ?? (task.status === 'waiting_approval' ? task.pendingApproval?.summary : undefined)
-    ?? task.cwd;
   return {
     title,
-    body: `${task.title}：${detail}`
+    body: `${task.title}：${detail}`,
+    ...target
   };
+}
+
+function notificationDetail(task: TaskItem): string {
+  switch (task.status) {
+    case 'waiting_approval':
+      return task.pendingApproval?.summary ?? '需要你的审批。';
+    case 'succeeded':
+      return task.resultSummary ?? '任务已完成。';
+    case 'failed':
+      return '本次任务未完成。';
+    case 'canceled':
+      return '本次任务已取消。';
+    case 'queued':
+      return '任务正在排队。';
+    case 'running':
+      return '任务正在运行。';
+  }
 }
 
 export function shouldSendSystemNotification(

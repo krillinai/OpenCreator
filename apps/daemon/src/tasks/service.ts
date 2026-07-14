@@ -8,11 +8,13 @@ import type {
 import type Database from 'better-sqlite3';
 import type { ApprovalManager } from '../approvals/manager.js';
 import type { RunManager } from '../runs/manager.js';
+import { redactText } from '../security/redaction.js';
 import type { RunRow } from '../storage/repositories.js';
 
 type TaskRow = RunRow & {
   thread_title: string | null;
   schedule_name: string | null;
+  result_event_payload_json: string | null;
 };
 
 type TaskCursor = {
@@ -32,6 +34,11 @@ const TASK_STATUSES: ReadonlySet<string> = new Set([
   'failed',
   'canceled'
 ]);
+const RESULT_SUMMARY_LIMIT = 120;
+const INTERNAL_SCHEDULE_PROMPT_MARKERS = [
+  '这是 Clawee 已经触发的一次计划任务执行。',
+  '执行规则：'
+] as const;
 
 export class TaskCursorError extends Error {
   constructor(message = 'Invalid task cursor') {
@@ -55,7 +62,18 @@ export function createTaskService(options: {
     cursorId: string | null;
     limit: number;
   }>(`
-    SELECT r.*, t.title AS thread_title, s.name AS schedule_name
+    SELECT
+      r.*,
+      t.title AS thread_title,
+      s.name AS schedule_name,
+      (
+        SELECT e.payload_json
+        FROM run_events e
+        WHERE e.run_id = r.id
+          AND e.type = 'assistant_message'
+        ORDER BY e.seq DESC
+        LIMIT 1
+      ) AS result_event_payload_json
     FROM runs r
     LEFT JOIN threads t ON t.id = r.thread_id
     LEFT JOIN schedules s
@@ -134,11 +152,13 @@ function mapTask(
   })[0];
   const runtimeRun = options.runs.getRun(row.id);
   const runStatus = row.public_status as PublicRunStatus;
+  const resultSummary = parseResultSummary(row.result_event_payload_json);
   return {
     id: row.id,
     runId: row.id,
     ...(row.thread_id === null ? {} : { threadId: row.thread_id }),
-    title: row.thread_title
+    title: (row.created_by === 'schedule' ? row.schedule_name : null)
+      ?? row.thread_title
       ?? row.schedule_name
       ?? row.prompt_preview_redacted
       ?? `Run ${row.id}`,
@@ -158,8 +178,40 @@ function mapTask(
     ...(row.termination_reason === null ? {} : { terminationReason: row.termination_reason }),
     ...(row.error_code === null ? {} : { errorCode: row.error_code }),
     ...(row.error_message === null ? {} : { errorMessage: row.error_message }),
+    ...(resultSummary === undefined ? {} : { resultSummary }),
     ...(pendingApproval === undefined ? {} : { pendingApproval })
   };
+}
+
+function parseResultSummary(payloadJson: string | null): string | undefined {
+  if (payloadJson === null) return undefined;
+  try {
+    const payload = JSON.parse(payloadJson) as unknown;
+    if (
+      typeof payload !== 'object'
+      || payload === null
+      || Array.isArray(payload)
+    ) {
+      return undefined;
+    }
+    const record = payload as Record<string, unknown>;
+    if (
+      record.type !== 'assistant_message'
+      || typeof record.text !== 'string'
+    ) {
+      return undefined;
+    }
+    const normalized = redactText(record.text).replace(/\s+/g, ' ').trim();
+    if (
+      normalized.length === 0
+      || INTERNAL_SCHEDULE_PROMPT_MARKERS.some(marker => normalized.includes(marker))
+    ) {
+      return undefined;
+    }
+    return Array.from(normalized).slice(0, RESULT_SUMMARY_LIMIT).join('');
+  } catch {
+    return undefined;
+  }
 }
 
 function encodeCursor(cursor: TaskCursor): string {

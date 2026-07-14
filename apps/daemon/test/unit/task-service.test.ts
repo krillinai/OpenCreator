@@ -93,20 +93,21 @@ describe('task service', () => {
     expect(fixture.service.list({ status: 'running' }).tasks).toEqual([]);
   });
 
-  it('uses the schedule name for scheduled runs without a conversation thread', () => {
+  it('uses the schedule name and persisted final assistant message for scheduled runs', () => {
     const fixture = setup();
     fixture.db.prepare(`
       INSERT INTO schedules (
-        id, name, cron, timezone, enabled, prompt, prompt_hash, prompt_preview_redacted,
+        id, thread_id, name, cron, timezone, enabled, prompt, prompt_hash, prompt_preview_redacted,
         profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
       ) VALUES (
-        'sch_reminder', '起来活动提醒', '*/5 8-17 * * *', 'Asia/Shanghai', 1,
+        'sch_reminder', 'thread_1', '起来活动提醒', '*/5 8-17 * * *', 'Asia/Shanghai', 1,
         '提醒我起来活动', 'hash', '提醒我起来活动',
         'default', @cwd, @cwd, 'read-only', 'skip', 'skip'
       )
     `).run({ cwd: tempDir });
     fixture.runs.insertRun({
       id: 'run_reminder',
+      threadId: 'thread_1',
       publicStatus: 'succeeded',
       internalStatus: 'succeeded',
       createdBy: 'schedule',
@@ -121,12 +122,54 @@ describe('task service', () => {
       codexHome: tempDir,
       normalizerVersion: 1
     });
+    insertAssistantMessage(
+      fixture.runs,
+      'run_reminder',
+      1,
+      '旧结果不应进入通知。'
+    );
+    insertAssistantMessage(
+      fixture.runs,
+      'run_reminder',
+      2,
+      `已完成今日活动提醒。 API_TOKEN=private clwcap_sensitive ${'后续内容'.repeat(40)}`
+    );
+    fixture.runs.insertRunEvent({
+      id: 'event_diagnostic',
+      runId: 'run_reminder',
+      seq: 3,
+      ts: '2026-07-14T10:00:03.000Z',
+      type: 'diagnostic',
+      payload: {
+        type: 'diagnostic',
+        code: 'INTERNAL_PROMPT',
+        severity: 'warning',
+        message: '这是 Clawee 已经触发的一次计划任务执行。',
+        details: { token: 'clwcap_diagnostic' }
+      },
+      normalizerVersion: 1
+    });
 
-    expect(fixture.service.list().tasks[0]).toMatchObject({
+    const task = fixture.service.list().tasks[0];
+    expect(task).toMatchObject({
       id: 'run_reminder',
       title: '起来活动提醒',
-      createdBy: 'schedule'
+      createdBy: 'schedule',
+      resultSummary: expect.stringContaining('已完成今日活动提醒。')
     });
+    expect(task?.resultSummary).toHaveLength(120);
+    expect(task?.resultSummary).toContain('API_TOKEN=[REDACTED]');
+    expect(task?.resultSummary).toContain('[REDACTED]');
+    expect(task?.resultSummary).not.toContain('private');
+    expect(task?.resultSummary).not.toContain('clwcap_sensitive');
+    expect(task?.resultSummary).not.toContain('Clawee 已经触发');
+  });
+
+  it('omits result summaries when no final assistant message was persisted', () => {
+    const fixture = setup();
+    insertRun(fixture.runs, 'run_failed', 'failed');
+
+    expect(fixture.service.list().tasks[0]).not.toHaveProperty('resultSummary');
   });
 
   it('rejects malformed cursors', () => {
@@ -200,6 +243,28 @@ function insertRun(
     codexVersion: 'test',
     codexBin: 'codex',
     codexHome: tempDir,
+    normalizerVersion: 1
+  });
+}
+
+function insertAssistantMessage(
+  runs: ReturnType<typeof createRunRepository>,
+  runId: string,
+  seq: number,
+  text: string
+) {
+  runs.insertRunEvent({
+    id: `event_assistant_${seq}`,
+    runId,
+    seq,
+    ts: `2026-07-14T10:00:0${seq}.000Z`,
+    type: 'assistant_message',
+    payload: {
+      type: 'assistant_message',
+      text,
+      format: 'plain_text',
+      delivery: 'message'
+    },
     normalizerVersion: 1
   });
 }

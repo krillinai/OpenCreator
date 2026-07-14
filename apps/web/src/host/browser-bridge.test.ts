@@ -63,7 +63,7 @@ describe('browserBridge', () => {
     await expect(browserBridge.readConnectionConfig()).resolves.toBeNull();
   });
 
-  it('opens schedules when a scheduled-task notification is clicked', async () => {
+  it('opens the targeted task run when a scheduled-task notification is clicked', async () => {
     const close = vi.fn();
     const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined);
     class NotificationMock {
@@ -83,14 +83,14 @@ describe('browserBridge', () => {
     window.location.hash = '#/thread/previous';
 
     await browserBridge.notify({
-      title: '已安排提醒',
-      body: '喝水提醒',
-      target: 'schedules',
-      threadId: 'thread_1'
+      title: '喝水提醒',
+      body: '该喝水了。',
+      threadId: 'thread/task',
+      runId: 'run 1'
     });
     NotificationMock.latest?.onclick?.();
 
-    expect(window.location.hash).toBe('#/schedules');
+    expect(window.location.hash).toBe('#/thread/thread%2Ftask?runId=run+1');
     expect(focus).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
   });

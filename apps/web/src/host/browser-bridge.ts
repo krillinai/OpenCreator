@@ -1,3 +1,4 @@
+import { formatRoute } from '../app/routes.js';
 import type { ConnectionConfig } from '../runtime/types.js';
 import { readJsonFromStorage } from '../storage/browser-storage.js';
 import type { HostBridge, HostBridgeResult, HostNotification } from './bridge.js';
@@ -27,10 +28,12 @@ export const browserBridge: HostBridge = {
     const notification = new Notification(message.title, { body: message.body });
     notification.onclick = () => {
       window.focus();
-      if (message.target === 'schedules') {
-        window.location.hash = '#/schedules';
-      } else if (message.threadId !== undefined) {
-        window.location.hash = `#/thread/${encodeURIComponent(message.threadId)}`;
+      if (message.threadId !== undefined) {
+        window.location.hash = formatRoute({
+          view: 'thread',
+          threadId: message.threadId,
+          ...(message.runId === undefined ? {} : { runId: message.runId })
+        });
       }
       notification.close();
     };

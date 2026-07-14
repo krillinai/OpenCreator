@@ -63,23 +63,77 @@ describe('task monitor', () => {
       createTask({ status: 'failed', runStatus: 'failed', errorMessage: '模型连接失败' })
     )).toEqual({
       title: '任务失败',
-      body: '整理发布说明：模型连接失败'
+      body: '整理发布说明：本次任务未完成。',
+      threadId: 'thread_1',
+      runId: 'run_1'
     });
   });
 
-  it('uses reminder copy for completed scheduled tasks', () => {
+  it('uses the schedule name and persisted result summary for completed scheduled tasks', () => {
     expect(createTaskNotification(
       createTask({
         createdBy: 'schedule',
         status: 'succeeded',
         runStatus: 'succeeded',
         title: '喝水提醒',
-        cwd: '/workspace'
+        cwd: '/workspace',
+        resultSummary: '该喝水了。'
       })
     )).toEqual({
-      title: '已安排提醒',
-      body: '喝水提醒',
-      target: 'schedules'
+      title: '喝水提醒',
+      body: '该喝水了。',
+      threadId: 'thread_1',
+      runId: 'run_1'
+    });
+  });
+
+  it('uses safe status summaries and stable routes for failed and approval notifications', () => {
+    expect(createTaskNotification(
+      createTask({
+        createdBy: 'schedule',
+        status: 'failed',
+        runStatus: 'failed',
+        title: '每日总结',
+        errorMessage: 'Authorization: Bearer private-token'
+      })
+    )).toEqual({
+      title: '每日总结失败',
+      body: '本次任务未完成。',
+      threadId: 'thread_1',
+      runId: 'run_1'
+    });
+
+    expect(createTaskNotification(
+      createTask({
+        createdBy: 'schedule',
+        status: 'waiting_approval',
+        runStatus: 'running',
+        title: '每日总结',
+        pendingApproval: {
+          id: 'approval_1',
+          runId: 'run_1',
+          threadId: 'thread_1',
+          codexThreadId: null,
+          turnId: 'turn_1',
+          itemId: 'item_1',
+          requestId: 'request_1',
+          kind: 'file_change',
+          status: 'pending',
+          risk: 'medium',
+          title: '允许修改文件',
+          summary: '需要允许写入 docs/daily',
+          details: {},
+          requestedAt: '2026-07-14T10:00:00.000Z',
+          expiresAt: '2026-07-14T10:10:00.000Z',
+          resolvedAt: null,
+          resolutionReason: null
+        }
+      })
+    )).toEqual({
+      title: '每日总结等待审批',
+      body: '需要允许写入 docs/daily',
+      threadId: 'thread_1',
+      runId: 'run_1'
     });
   });
 

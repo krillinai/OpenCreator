@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P1-B8`，已通过（2026-07-14 21:30 CST）；下一批 `P1-B9` |
+| 当前批次 | `P1-B9`，已通过（2026-07-14 21:48 CST）；下一批 `P1-B10` |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -340,7 +340,7 @@ P2-B1 审批和连续失败体验
 | P1-B6 | Schedule MCP 工具和逐 Run 注入 | `PASS` |
 | P1-B7 | Agent 创建和管理任务协调 | `PASS` |
 | P1-B8 | 删除正则创建流程 | `PASS` |
-| P1-B9 | 通知深链接和结果摘要 | `NOT_STARTED` |
+| P1-B9 | 通知深链接和结果摘要 | `PASS` |
 | P1-B10 | Schedule Run 公开时间线和 P1 门禁 | `NOT_STARTED` |
 | P2-B1 | 等待审批和连续失败体验 | `NOT_STARTED` |
 | P2-B2 | Codex thread 轮换和摘要恢复 | `NOT_STARTED` |
@@ -1537,7 +1537,7 @@ refactor(web): 使用 Agent Tool 替换任务创建正则
 
 ### P1-B9：通知深链接和结果摘要
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P1-B8`
 
@@ -2391,6 +2391,23 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：生产 build 继续报告两个既有主 chunk 超过 500 kB；草稿终态刷新是
   best-effort，失败时保留草稿可继续对话，下次页面加载会从 Runtime 重新同步。
 - 下一步：执行 P1-B9，补齐通知深链接和任务结果摘要。
+
+### 2026-07-14 21:48 CST - P1-B9
+
+- 状态：`PASS`
+- 提交：`feat(notifications): 深链接任务会话并展示结果摘要`
+  （SHA 以包含本日志的提交为准）
+- 已完成：TaskItem 增加持久化结果摘要；Schedule Run 使用 Schedule 名称作为通知标题；
+  成功摘要取最后一条持久化 `assistant_message` 的前 120 个字符并执行令牌脱敏；失败和
+  等待审批通知携带稳定 `threadId/runId`；Browser Host 点击通知进入带 Run 定位参数的
+  任务会话；代码中的旧 `target: 'schedules'` 路径已移除。
+- 验证：Daemon TaskService 专项 5 项、Web 通知/路由/App 专项 86 项、Protocol/Daemon/
+  Web typecheck、Daemon/Web 生产 build、`git diff --check` 通过。
+- 未完成：Schedule Run 时间线仍使用内部执行包装，公开输入和触发时间映射留到
+  P1-B10。
+- 风险或偏差：Web 生产 build 继续报告两个既有主 chunk 超过 500 kB；等待审批当前按
+  `runId` 定位，精确审批卡片定位按计划留到 P2-B1。
+- 下一步：执行 P1-B10，持久化并展示 Schedule Run 的公开输入，完成 P1 门禁。
 
 ### 日志模板
 
