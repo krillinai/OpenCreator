@@ -4,11 +4,13 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { buildServer } from '../../src/api/server.js';
+import { collectCodexCapabilityMatrix } from '../../src/codex/capabilities.js';
 import { runRealCodexResumeSmoke, runSmokeCommand } from '../../src/codex/smoke.js';
 
 const runRealCodex = process.env.CLAWEE_RUN_REAL_CODEX_SMOKE === '1';
 const fixtureDir = join(process.cwd(), 'test', 'fixtures', 'real-codex', 'generated');
-const SCHEDULER_SMOKE_MARKER = 'R6_SCHEDULER_SMOKE_MARKER';
+const SCHEDULER_FIRST_MARKER = 'P0_SCHEDULE_FIRST_MARKER';
+const SCHEDULER_SECOND_MARKER = 'P0_SCHEDULE_SECOND_MARKER';
 
 describe.runIf(runRealCodex)('real codex smoke', () => {
   it('captures codex version', () => {
@@ -303,7 +305,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     }
   });
 
-  it('creates a schedule run-now path through the daemon', async () => {
+  it('runs one schedule twice through the same Clawee and Codex threads', async () => {
     const dataDir = join(fixtureDir, `scheduler-data-${Date.now()}`);
     const workspace = join(fixtureDir, `scheduler-workspace-${Date.now()}`);
     mkdirSync(dataDir, { recursive: true });
@@ -313,8 +315,9 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
       token: 'secret',
       dataDir,
       codexBin: 'codex',
-      // R6 verifies the production pass-through path against the user's real Codex home.
+      // Mirror production startup against the user's real Codex home and capability probe.
       // The smoke only creates Runtime data/workspace and runs Codex in read-only sandbox.
+      capabilities: collectCodexCapabilityMatrix({ codexBin: 'codex' }),
       schedulerAutostart: false
     });
 
@@ -327,7 +330,12 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
           name: 'real codex scheduler smoke',
           cron: '0 9 * * *',
           timezone: 'UTC',
-          prompt: `Automated Runtime scheduler smoke. Do not run tools and do not modify files. Reply with ${SCHEDULER_SMOKE_MARKER} only.`,
+          prompt: [
+            'This scheduled task runs repeatedly in one conversation.',
+            'Do not run tools and do not modify files.',
+            `If no earlier assistant message contains ${SCHEDULER_FIRST_MARKER}, reply with ${SCHEDULER_FIRST_MARKER} only.`,
+            `If an earlier assistant message contains ${SCHEDULER_FIRST_MARKER}, reply with ${SCHEDULER_SECOND_MARKER} only.`
+          ].join(' '),
           cwd: workspace,
           sandbox: 'read-only',
           timeoutMs: 180_000
@@ -343,90 +351,85 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
       expect(created.statusCode).toBe(201);
 
       const scheduleId = created.json<{ id: string }>().id;
-      const runNow = await server.inject({
-        method: 'POST',
-        url: `/schedules/${scheduleId}/run-now`,
-        headers: { authorization: 'Bearer secret' }
-      });
-
-      if (runNow.statusCode !== 202) {
-        writeSchedulerFixture('scheduler-run-now', {
-          created: responseFixture(created),
-          runNow: responseFixture(runNow)
-        });
-        throwIfBlockedResponse(runNow, 'run schedule now');
-      }
-      expect(runNow.statusCode).toBe(202);
-
-      const runId = runNow.json<{ run: { id: string } | null }>().run?.id;
-      if (runId === undefined) throw new Error('scheduler smoke did not create a run');
-
-      await expect
-        .poll(async () => {
-          const response = await server.inject({
-            method: 'GET',
-            url: `/runs/${runId}`,
-            headers: { authorization: 'Bearer secret' }
-          });
-          return response.json<{ status?: string }>().status;
-        }, { timeout: 180_000, interval: 1_000 })
-        .toMatch(/^(succeeded|failed|canceled)$/);
-
-      const finished = await server.inject({
-        method: 'GET',
-        url: `/runs/${runId}`,
-        headers: { authorization: 'Bearer secret' }
-      });
+      const threadId = created.json<{ threadId: string }>().threadId;
+      const first = await runScheduleNow(server, scheduleId, dataDir);
+      const second = await runScheduleNow(server, scheduleId, dataDir);
       const operations = await server.inject({
         method: 'GET',
         url: `/schedules/${scheduleId}/operations`,
         headers: { authorization: 'Bearer secret' }
       });
-      const events = readRunEventsFixture(dataDir, runId);
 
       const fixture = {
         created: responseFixture(created),
-        runNow: responseFixture(runNow),
-        finished: responseFixture(finished),
-        operations: responseFixture(operations),
-        events
+        first: {
+          runNow: responseFixture(first.runNow),
+          finished: responseFixture(first.finished),
+          events: first.events
+        },
+        second: {
+          runNow: responseFixture(second.runNow),
+          finished: responseFixture(second.finished),
+          events: second.events
+        },
+        operations: responseFixture(operations)
       };
       writeSchedulerFixture('scheduler-run-now', fixture);
 
-      const run = finished.json<{
+      const firstRun = first.finished.json<{
         status: string;
+        threadId?: string | null;
+        codexThreadId?: string | null;
         createdBy?: string;
         sourceId?: string | null;
         errorCode?: string | null;
         errorMessage?: string | null;
       }>();
-      if (run.status !== 'succeeded') throwIfBlockedRun(run, fixture);
+      const secondRun = second.finished.json<typeof firstRun>();
+      if (firstRun.status !== 'succeeded') throwIfBlockedRun(firstRun, fixture);
+      if (secondRun.status !== 'succeeded') throwIfBlockedRun(secondRun, fixture);
 
-      expect(run).toMatchObject({
+      expect(firstRun).toMatchObject({
         status: 'succeeded',
+        threadId,
         createdBy: 'schedule',
         sourceId: scheduleId
       });
-      expect(runNow.json()).toMatchObject({
+      expect(secondRun).toMatchObject({
+        status: 'succeeded',
+        threadId,
+        codexThreadId: firstRun.codexThreadId,
+        createdBy: 'schedule',
+        sourceId: scheduleId
+      });
+      expect(firstRun.codexThreadId).toMatch(/[0-9a-f-]{10,}/);
+      expect(first.runNow.json()).toMatchObject({
         skipped: false,
         queued: false,
         schedule: {
           id: scheduleId,
-          lastRunId: runId
+          lastRunId: first.runId
         }
       });
-      expect(operations.json().operations).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            operation: 'run_now',
-            status: 'succeeded',
-            runId
-          })
-        ])
-      );
-      expect(events.body).toContain(SCHEDULER_SMOKE_MARKER);
-      expect(events.eventTypes).toContain('assistant_message');
-      expect(events.eventTypes).toContain('done');
+      expect(second.runNow.json()).toMatchObject({
+        skipped: false,
+        queued: false,
+        schedule: {
+          id: scheduleId,
+          lastRunId: second.runId
+        }
+      });
+      expect(
+        operations.json().operations.filter(
+          (operation: { operation: string }) => operation.operation === 'run_now'
+        )
+      ).toHaveLength(2);
+      expect(first.events.body).toContain(SCHEDULER_FIRST_MARKER);
+      expect(second.events.body).toContain(SCHEDULER_SECOND_MARKER);
+      expect(first.events.eventTypes).toContain('assistant_message');
+      expect(second.events.eventTypes).toContain('assistant_message');
+      expect(first.events.eventTypes).toContain('done');
+      expect(second.events.eventTypes).toContain('done');
     } finally {
       await server.close();
       rmSync(dataDir, { recursive: true, force: true });
@@ -474,6 +477,49 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     expect(result.second.stderr).toEqual(expect.any(String));
   }, 240_000);
 });
+
+async function runScheduleNow(
+  server: Awaited<ReturnType<typeof buildServer>>,
+  scheduleId: string,
+  dataDir: string
+) {
+  const runNow = await server.inject({
+    method: 'POST',
+    url: `/schedules/${scheduleId}/run-now`,
+    headers: { authorization: 'Bearer secret' }
+  });
+
+  if (runNow.statusCode !== 202) {
+    throwIfBlockedResponse(runNow, 'run schedule now');
+  }
+  expect(runNow.statusCode).toBe(202);
+
+  const runId = runNow.json<{ run: { id: string } | null }>().run?.id;
+  if (runId === undefined) throw new Error('scheduler smoke did not create a run');
+
+  await expect
+    .poll(async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/runs/${runId}`,
+        headers: { authorization: 'Bearer secret' }
+      });
+      return response.json<{ status?: string }>().status;
+    }, { timeout: 180_000, interval: 1_000 })
+    .toMatch(/^(succeeded|failed|canceled)$/);
+
+  const finished = await server.inject({
+    method: 'GET',
+    url: `/runs/${runId}`,
+    headers: { authorization: 'Bearer secret' }
+  });
+  return {
+    runId,
+    runNow,
+    finished,
+    events: readRunEventsFixture(dataDir, runId)
+  };
+}
 
 function writeFixture(name: string, result: SmokeCommandResult): void {
   mkdirSync(fixtureDir, { recursive: true });

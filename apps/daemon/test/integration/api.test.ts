@@ -135,6 +135,22 @@ describe('runtime api', () => {
       operation: 'binding_repair',
       status: 'succeeded'
     });
+    expect(
+      db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM schedules
+        WHERE deleted_at IS NULL AND thread_id IS NULL
+      `).get()
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare(`
+        SELECT thread_id, COUNT(*) AS count
+        FROM schedules
+        WHERE deleted_at IS NULL
+        GROUP BY thread_id
+        HAVING COUNT(*) > 1
+      `).all()
+    ).toEqual([]);
   });
 
   it('leaves an injected scheduler stopped when autostart is not enabled', async () => {
@@ -616,7 +632,9 @@ describe('runtime api', () => {
     server = await buildServer({
       token: 'secret',
       dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
       codexBin: fake.bin,
+      resumeCapabilityVerified: true,
       schedulerAutostart: false
     });
 
@@ -692,8 +710,10 @@ describe('runtime api', () => {
     expect(runNow.statusCode).toBe(202);
     expect(runNow.json().run).toMatchObject({ threadId, status: 'running' });
     await waitForRunStatus(runNow.json().run.id, 'succeeded');
-    expect((await authGet(`/runs/${runNow.json().run.id}`)).json()).toMatchObject({
+    const firstRun = (await authGet(`/runs/${runNow.json().run.id}`)).json();
+    expect(firstRun).toMatchObject({
       threadId,
+      codexThreadId: 'codex-thread-schedule',
       cwd: tempDir,
       profile: 'default',
       sandbox: 'workspace-write',
@@ -701,11 +721,39 @@ describe('runtime api', () => {
       sourceId: id
     });
 
+    const secondRunNow = await authPost(`/schedules/${id}/run-now`, {});
+    expect(secondRunNow.statusCode).toBe(202);
+    expect(secondRunNow.json().run).toMatchObject({ threadId, status: 'running' });
+    await waitForRunStatus(secondRunNow.json().run.id, 'succeeded');
+    const secondRun = (await authGet(`/runs/${secondRunNow.json().run.id}`)).json();
+    expect(secondRun).toMatchObject({
+      threadId,
+      codexThreadId: 'codex-thread-schedule',
+      createdBy: 'schedule',
+      sourceId: id
+    });
+    expect(secondRun.codexThreadId).toBe(firstRun.codexThreadId);
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(tempDir, 'runs', secondRunNow.json().run.id, 'meta.json'),
+          'utf8'
+        )
+      ).args
+    ).toEqual(expect.arrayContaining([
+      'exec',
+      'resume',
+      'codex-thread-schedule',
+      '--json'
+    ]));
+
     const operations = await authGet(`/schedules/${id}/operations`);
     expect(operations.statusCode).toBe(200);
-    expect(operations.json().operations).toEqual(
-      expect.arrayContaining([expect.objectContaining({ operation: 'run_now' })])
-    );
+    expect(
+      operations.json().operations.filter(
+        (operation: { operation: string }) => operation.operation === 'run_now'
+      )
+    ).toHaveLength(2);
 
     const deleted = await authDelete(`/schedules/${id}`);
     expect(deleted.statusCode).toBe(200);
@@ -713,6 +761,29 @@ describe('runtime api', () => {
     expect((await authGet(`/threads/${threadId}`)).json().thread).toMatchObject({
       id: threadId,
       status: 'archived'
+    });
+    const archivedRuns = await authGet(`/threads/${threadId}/runs`);
+    expect(archivedRuns.statusCode).toBe(200);
+    expect(archivedRuns.json().runs).toEqual([
+      expect.objectContaining({
+        id: secondRunNow.json().run.id,
+        threadId,
+        codexThreadId: 'codex-thread-schedule',
+        status: 'succeeded'
+      }),
+      expect.objectContaining({
+        id: runNow.json().run.id,
+        threadId,
+        codexThreadId: 'codex-thread-schedule',
+        status: 'succeeded'
+      })
+    ]);
+    const archivedHistory = await authGet(`/threads/${threadId}/history`);
+    expect(archivedHistory.statusCode).toBe(200);
+    expect(archivedHistory.json()).toMatchObject({
+      threadId,
+      codexThreadId: 'codex-thread-schedule',
+      items: []
     });
   });
 

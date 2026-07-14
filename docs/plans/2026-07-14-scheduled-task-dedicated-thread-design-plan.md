@@ -18,7 +18,7 @@
 | 当前 Codex CLI | `codex-cli 0.144.1` |
 | 实施顺序 | `P0 -> P1 -> P2 -> 最终统一验收` |
 | 计划规模 | 25 个独立批次 |
-| 当前批次 | `P0-B8`，等待开始 |
+| 当前批次 | `P1-B1`，等待开始 |
 
 基线提交只用于说明计划制定时的代码状态。执行者不得为了匹配该提交而回退、
 重置或覆盖当前工作区已有改动。
@@ -331,7 +331,7 @@ P2-B1 审批和连续失败体验
 | P0-B5 | 固定 Thread 触发与 Thread 级并发 | `PASS` |
 | P0-B6 | 旧绑定修复和启动顺序 | `PASS` |
 | P0-B7 | legacy Schedule session 分类 | `PASS` |
-| P0-B8 | P0 集成、重启和真实 smoke | `NOT_STARTED` |
+| P0-B8 | P0 集成、重启和真实 smoke | `PASS` |
 | P1-B1 | 前端模型、服务和任务摘要模型 | `NOT_STARTED` |
 | P1-B2 | 左侧“任务”区域 | `NOT_STARTED` |
 | P1-B3 | “已安排”与任务会话互跳 | `NOT_STARTED` |
@@ -930,7 +930,7 @@ fix(sessions): 仅隐藏旧版孤立 Schedule 会话
 
 ### P0-B8：P0 集成、重启和真实 smoke
 
-**状态：** `NOT_STARTED`
+**状态：** `PASS`
 
 **依赖：** `P0-B7`
 
@@ -975,6 +975,21 @@ git diff --check
 - SQL 不变量查询通过。
 - fake Codex 集成必须通过；真实 smoke 未执行时记录实际阻塞和 P2-B7 重跑命令，
   不得写成通过，但不阻塞 P1 代码实施。
+
+**执行结果：**
+
+- API 集成覆盖 Schedule 创建、更新、连续两次 `run-now`、固定 Clawee/Codex thread、
+  第二次 `codex exec resume`、删除后 Thread 归档，以及两个 Run 和历史路由继续可读。
+- Scheduler 重启测试覆盖两个并发触发合并为一个持久化 pending trigger；新实例保持原
+  Thread 绑定并只消费一次。
+- 旧数据库修复后执行 SQL 不变量断言：活动 Schedule 不存在空 `thread_id`，也不存在
+  重复 `thread_id`。
+- 真实 Codex smoke 按生产启动路径收集能力矩阵；同一 Schedule 连续两次执行进入同一
+  Clawee/Codex thread，第二次读取前次上下文并返回第二阶段 marker。
+- P0-B8 专项测试 184 项通过，13 项真实 smoke 在未启用开关时按预期跳过。
+- 真实 Codex smoke 13 项全部通过；daemon 全量测试 590 项通过，常规套件中的 13 项真实
+  smoke 按环境开关跳过。
+- Protocol/daemon typecheck、daemon build 和 `git diff --check` 均通过。
 
 **回滚边界：** 本批主要是测试和缺陷修复；任何修复按所属前序批次回滚，不删除测试覆盖。
 
@@ -2155,6 +2170,22 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：本批没有修改原始 JSONL scanner；索引不可用时仍由数据库中的 legacy Run
   判定过滤，真实 Codex smoke 继续登记到最终统一验收。
 - 下一步：执行 P0-B8，补齐后端闭环、重启和真实 Codex smoke 门禁。
+
+### 2026-07-14 16:50 CST - P0-B8
+
+- 状态：`PASS`
+- 提交：`test(scheduler): 覆盖任务专属会话后端闭环`
+  （SHA 以包含本日志的提交为准）
+- 已完成：Schedule 连续执行与删除后历史 API 闭环、Scheduler 重启后 pending trigger
+  单次消费、旧库 SQL 不变量，以及真实 Codex 同 Thread 上下文连续性 smoke。
+- 验证：P0-B8 专项测试 184 项通过；真实 Codex smoke 13 项全部通过；daemon 全量测试
+  590 项通过，常规套件中的 13 项真实 smoke 按开关跳过；Protocol/daemon typecheck、
+  daemon build 和 `git diff --check` 通过。
+- 未完成：P0 后端闭环已完成；前端任务摘要、任务分组和页面接入从 P1-B1 开始。
+- 风险或偏差：真实 smoke 首次运行因测试直接构造 Server、未传生产入口的 Codex 能力
+  矩阵而触发 `RESUME_CAPABILITY_UNVERIFIED`；改为按生产路径收集能力后，目标用例和
+  全部 13 项真实 smoke 均通过。
+- 下一步：执行 P1-B1，收敛前端 Schedule/Thread 模型并建立不加载历史的任务摘要模型。
 
 ### 日志模板
 

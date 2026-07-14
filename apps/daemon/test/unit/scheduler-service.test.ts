@@ -349,6 +349,75 @@ describe('scheduler service', () => {
     expect(timers.some(timer => timer.ms === 5_000)).toBe(true);
   });
 
+  it('preserves and consumes one coalesced pending trigger after scheduler restart', () => {
+    const first = createFixtureWithTimers('2026-07-06T00:00:00.000Z');
+    first.service.start();
+    const schedule = first.service.createSchedule({
+      name: 'queued across restart',
+      cron: '0 9 * * *',
+      prompt: 'Run after restart',
+      concurrencyPolicy: 'queue'
+    });
+    first.runManager.hasActiveRunForThread.mockReturnValue(true);
+
+    first.service.runNow(schedule.id);
+    first.service.runNow(schedule.id);
+    first.service.stop();
+
+    const restartedRepository = new ScheduleRepository(db!);
+    const restartedRunManager = {
+      ...first.runManager,
+      startRun: vi.fn((input: CreateRunInput) => ({
+        id: 'run_after_restart',
+        threadId: input.threadId,
+        status: 'running' as const,
+        submissionMode: input.submissionMode ?? 'enqueue'
+      })),
+      hasActiveRunForThread: vi.fn(() => false)
+    };
+    const restartedTimers: Array<{ callback: () => void; ms: number }> = [];
+    const restartedService = createSchedulerService({
+      repository: restartedRepository,
+      runManager: restartedRunManager as unknown as RunManager,
+      clock: { now: () => new Date('2026-07-06T00:05:00.000Z') },
+      timers: {
+        setTimeout(callback, ms) {
+          restartedTimers.push({ callback, ms });
+          return { index: restartedTimers.length - 1 };
+        },
+        clearTimeout() {}
+      },
+      autostart: false
+    });
+
+    expect(restartedRepository.getById(schedule.id)).toMatchObject({
+      threadId: schedule.threadId,
+      pendingTrigger: true,
+      lastStatus: 'queued'
+    });
+
+    restartedService.start();
+
+    expect(restartedTimers.some(timer => timer.ms === 5_000)).toBe(true);
+    restartedService.processPendingTriggersForTest?.();
+
+    expect(restartedRunManager.startRun).toHaveBeenCalledTimes(1);
+    expect(restartedRunManager.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId: schedule.threadId,
+        createdBy: 'schedule',
+        sourceId: schedule.id
+      })
+    );
+    expect(restartedRepository.getById(schedule.id)).toMatchObject({
+      threadId: schedule.threadId,
+      pendingTrigger: false,
+      lastStatus: 'running',
+      lastRunId: 'run_after_restart'
+    });
+    restartedService.stop();
+  });
+
   it('stop clears queue timer', () => {
     const { repository, service, timers, cleared } = createFixtureWithTimers('2026-07-06T00:00:00.000Z');
     const schedule = service.createSchedule({
