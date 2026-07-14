@@ -2874,6 +2874,103 @@ describe('App', () => {
     expect(requestedUrls.some(url => url.includes('/history'))).toBe(false);
   });
 
+  it('opens a sidebar task by clearing the previous timeline and showing task history loading', async () => {
+    const user = userEvent.setup();
+    const taskHistory = createDeferred<Response>();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread-conversation',
+              title: '普通会话',
+              purpose: 'conversation'
+            }),
+            createThreadResponse({
+              id: 'thread-task',
+              title: '任务线程',
+              purpose: 'schedule_task',
+              scheduleId: 'schedule-1'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/schedules')) {
+        return jsonResponse({
+          schedules: [
+            createScheduleResponse({
+              id: 'schedule-1',
+              threadId: 'thread-task',
+              name: '每日总结'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/tasks?status=all&limit=50')) {
+        return jsonResponse({ tasks: [], hasMore: false });
+      }
+      if (url.endsWith('/threads/thread-conversation/history?limit=50')) {
+        return jsonResponse({
+          threadId: 'thread-conversation',
+          codexThreadId: null,
+          items: [
+            {
+              id: 'history-conversation',
+              type: 'assistant_message',
+              text: '旧会话内容',
+              createdAt: '2026-07-14T00:00:00.000Z'
+            }
+          ]
+        });
+      }
+      if (url.endsWith('/threads/thread-conversation/runs?limit=50')) {
+        return jsonResponse({ runs: [] });
+      }
+      if (url.endsWith('/threads/thread-task/history?limit=50')) {
+        return taskHistory.promise;
+      }
+      if (url.endsWith('/threads/thread-task/runs?limit=50')) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: /普通会话/ }));
+    expect(await screen.findByText('旧会话内容')).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: /每日总结/ }));
+
+    expect(screen.queryByText('旧会话内容')).not.toBeInTheDocument();
+    expect(screen.getByRole('status', { name: '正在加载会话历史' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('#/thread/thread-task');
+
+    taskHistory.resolve(jsonResponse({
+      threadId: 'thread-task',
+      codexThreadId: null,
+      items: []
+    }));
+    await waitFor(() => {
+      expect(screen.queryByRole('status', { name: '正在加载会话历史' })).not.toBeInTheDocument();
+    });
+  });
+
   it('loads the selected Codex history transcript into the conversation surface', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();

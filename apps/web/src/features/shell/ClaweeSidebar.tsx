@@ -1,23 +1,32 @@
 import { useEffect, useState } from 'react';
 import {
+  CircleAlert,
   Clock3,
   Folder,
   FolderOpen,
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  PauseCircle,
   Plug,
   Search,
   Settings,
+  ShieldAlert,
   SquarePen,
+  TriangleAlert,
   type LucideIcon
 } from 'lucide-react';
 import type { ActiveView } from '../../app/app-state.js';
 import type { ClaweeConversation, ClaweeProject } from '../projects/project-model.js';
+import type {
+  SidebarTaskStatus,
+  SidebarTaskSummary
+} from './sidebar-task-model.js';
 
 export function ClaweeSidebar(props: {
   projects: ClaweeProject[];
   conversations: ClaweeConversation[];
+  tasks: SidebarTaskSummary[];
   runningConversationIds?: ReadonlySet<string>;
   currentProjectId: string;
   selectedConversationId?: string;
@@ -26,6 +35,7 @@ export function ClaweeSidebar(props: {
   onNewConversation(): void;
   onSelectProject(projectId: string): void;
   onSelectConversation(conversationId: string): void;
+  onSelectTask(threadId: string): void;
   onOpenView(view: ActiveView): void;
   onOpenSettings(): void;
   onToggleCollapsed(): void;
@@ -184,6 +194,56 @@ export function ClaweeSidebar(props: {
         </>
       )}
 
+      {collapsed ? null : (
+        <section
+          className="sidebar-section sidebar-task-section"
+          aria-labelledby="clawee-tasks-heading"
+        >
+          <h2 id="clawee-tasks-heading">任务</h2>
+          {props.tasks.length === 0 ? (
+            <p className="sidebar-empty">暂无任务</p>
+          ) : (
+            <div className="sidebar-task-list" aria-label="任务会话">
+              {props.tasks.map(task => {
+                const visual = taskStatusVisual(task.status);
+                const StatusIcon = visual.icon;
+                const disabled = task.status === 'repair_required' || task.threadId === undefined;
+                const detail = task.status === 'idle'
+                  ? task.nextRunLabel ?? visual.label
+                  : visual.label;
+                return (
+                  <button
+                    key={task.id}
+                    type="button"
+                    className="sidebar-task-row"
+                    data-status={task.status}
+                    aria-current={task.threadId === props.selectedConversationId ? 'page' : undefined}
+                    disabled={disabled}
+                    onClick={() => {
+                      if (task.threadId !== undefined) props.onSelectTask(task.threadId);
+                    }}
+                  >
+                    <StatusIcon
+                      className={task.status === 'running' ? 'sidebar-task-spinner' : 'sidebar-task-icon'}
+                      size={16}
+                      strokeWidth={2}
+                      aria-hidden="true"
+                    />
+                    <span className="sidebar-task-copy">
+                      <strong>{task.name}</strong>
+                      <span>{detail}</span>
+                    </span>
+                    {task.unread ? (
+                      <span className="sidebar-task-unread" aria-label="未读更新" />
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="sidebar-bottom">
         <button
           className="settings-button"
@@ -200,4 +260,26 @@ export function ClaweeSidebar(props: {
       </div>
     </nav>
   );
+}
+
+function taskStatusVisual(status: SidebarTaskStatus): {
+  icon: LucideIcon;
+  label: string;
+} {
+  switch (status) {
+    case 'running':
+      return { icon: LoaderCircle, label: '运行中' };
+    case 'queued':
+      return { icon: Clock3, label: '排队中' };
+    case 'waiting_approval':
+      return { icon: ShieldAlert, label: '待审批' };
+    case 'failed':
+      return { icon: CircleAlert, label: '失败' };
+    case 'paused':
+      return { icon: PauseCircle, label: '已暂停' };
+    case 'repair_required':
+      return { icon: TriangleAlert, label: '需修复' };
+    case 'idle':
+      return { icon: Clock3, label: '等待首次运行' };
+  }
 }

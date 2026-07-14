@@ -65,6 +65,24 @@ describe('app CSS visual contracts', () => {
     );
   });
 
+  it('keeps task rows stable, scrollable, and motion-aware', () => {
+    const taskSection = cssBlock('.sidebar-task-section');
+    const taskList = cssBlock('.sidebar-task-list');
+    const taskRow = cssBlock('.sidebar-task-row');
+    const taskSpinner = cssBlock('.sidebar-task-spinner');
+
+    expect(taskSection).toContain('min-height: 0;');
+    expect(taskSection).toContain('max-height: 220px;');
+    expect(taskList).toContain('overflow-y: auto;');
+    expect(taskList).toContain('grid-auto-rows: 44px;');
+    expect(taskRow).toContain('height: 44px;');
+    expect(taskRow).toContain('min-height: 44px;');
+    expect(taskSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
+    expect(appCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.sidebar-task-spinner\s*\{[^}]*animation:\s*none;/
+    );
+  });
+
   it('keeps global scrollbars darker and trackless', () => {
     const webkitScrollbar = cssBlock('*::-webkit-scrollbar');
     const webkitScrollbarTrack = cssBlock('*::-webkit-scrollbar-track,\n*::-webkit-scrollbar-track-piece,\n*::-webkit-scrollbar-corner');

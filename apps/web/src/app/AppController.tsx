@@ -82,6 +82,7 @@ import {
 import type { RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
+import { createSidebarTaskSummaries } from '../features/shell/sidebar-task-model.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
 import { ApiClientError, RuntimeClient } from '../runtime/client.js';
@@ -223,6 +224,7 @@ export function AppController(props: AppControllerProps) {
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig | null>(null);
   const [runtimeThreads, setRuntimeThreads] = useState<ThreadResponse[]>([]);
   const [runtimeSchedules, setRuntimeSchedules] = useState<ScheduleResponse[]>([]);
+  const [runtimeTasks, setRuntimeTasks] = useState<TaskItem[]>([]);
   const [threadLoadError, setThreadLoadError] = useState<string>();
   const [threadHistoryLoadError, setThreadHistoryLoadError] = useState<string>();
   const [historyLoadingThreadId, setHistoryLoadingThreadId] = useState<string>();
@@ -417,6 +419,14 @@ export function AppController(props: AppControllerProps) {
     () => createScheduleTaskSummaries(runtimeSchedules, runtimeThreads, runRegistry),
     [runRegistry, runtimeSchedules, runtimeThreads]
   );
+  const sidebarTasks = useMemo(
+    () => createSidebarTaskSummaries(
+      scheduleTaskSummaries,
+      runtimeTasks,
+      unreadTaskIds
+    ),
+    [runtimeTasks, scheduleTaskSummaries, unreadTaskIds]
+  );
   const runningConversationIds = useMemo(
     () => new Set(
       Object.entries(runRegistry.activeRunIdByThreadId)
@@ -530,6 +540,7 @@ export function AppController(props: AppControllerProps) {
     taskBaselineReadyRef.current = false;
 
     if (connectionState.status !== 'connected' || taskService === null) {
+      setRuntimeTasks([]);
       return () => {
         canceled = true;
       };
@@ -540,6 +551,7 @@ export function AppController(props: AppControllerProps) {
       try {
         const response = await activeTaskService.list({ status: 'all', limit: 50 });
         if (canceled) return;
+        setRuntimeTasks(response.tasks);
         const result = collectTaskTransitions(
           taskStatusesRef.current,
           response.tasks,
@@ -1492,6 +1504,17 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
+  function selectSidebarTask(threadId: string) {
+    const thread = runtimeThreads.find(item => item.id === threadId);
+    if (thread === undefined) return;
+    markThreadTasksRead(threadId);
+    const projectId = projectIdForThread(thread, projects);
+    if (projectId !== state.currentProjectId) {
+      dispatch({ type: 'select_project', projectId });
+    }
+    selectConversation(threadId);
+  }
+
   function navigateToRoute(route: AppRoute, options?: { replace?: boolean }) {
     const routeKey = formatRoute(route);
     if (routeKey === formatRoute(props.route)) return;
@@ -2363,6 +2386,25 @@ export function AppController(props: AppControllerProps) {
     });
   }
 
+  function markThreadTasksRead(threadId: string) {
+    const taskIds = new Set(
+      runtimeTasks
+        .filter(task => task.threadId === threadId)
+        .map(task => task.id)
+    );
+    if (taskIds.size === 0) return;
+    setUnreadTaskIds(current => {
+      const next = new Set(current);
+      let changed = false;
+      for (const taskId of taskIds) {
+        changed = next.delete(taskId) || changed;
+      }
+      if (!changed) return current;
+      notificationService.setUnreadIds(next);
+      return next;
+    });
+  }
+
   function clearUnreadTasks() {
     const next = new Set<string>();
     notificationService.setUnreadIds(next);
@@ -2772,6 +2814,7 @@ export function AppController(props: AppControllerProps) {
         <ClaweeSidebar
           projects={projects}
           conversations={conversations}
+          tasks={sidebarTasks}
           runningConversationIds={runningConversationIds}
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
@@ -2780,6 +2823,7 @@ export function AppController(props: AppControllerProps) {
           onNewConversation={startNewConversation}
           onSelectProject={selectProject}
           onSelectConversation={selectConversation}
+          onSelectTask={selectSidebarTask}
           onOpenView={openPrimaryView}
           onOpenSettings={() => {
             closeMobileSidebar();

@@ -45,11 +45,13 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ClaweeSidebar>> 
     <ClaweeSidebar
       projects={projects}
       conversations={conversations}
+      tasks={[]}
       currentProjectId="content-design"
       activeView="conversation"
       onNewConversation={vi.fn()}
       onSelectProject={vi.fn()}
       onSelectConversation={vi.fn()}
+      onSelectTask={vi.fn()}
       onOpenView={vi.fn()}
       onOpenSettings={vi.fn()}
       onToggleCollapsed={vi.fn()}
@@ -143,6 +145,49 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: /整理本周项目进展.*正在运行.*4天/ })).toBeInTheDocument();
   });
 
+  it('shows task rows with running, queued, approval, failed, paused, repair, and unread states', () => {
+    renderSidebar({
+      tasks: [
+        createTask({ id: 'running', name: '运行任务', status: 'running' }),
+        createTask({ id: 'queued', name: '排队任务', status: 'queued' }),
+        createTask({ id: 'approval', name: '审批任务', status: 'waiting_approval' }),
+        createTask({ id: 'failed', name: '失败任务', status: 'failed' }),
+        createTask({ id: 'paused', name: '暂停任务', status: 'paused' }),
+        createTask({
+          id: 'repair',
+          name: '异常任务',
+          threadId: undefined,
+          status: 'repair_required'
+        }),
+        createTask({ id: 'unread', name: '未读任务', unread: true })
+      ]
+    });
+
+    expect(screen.getByRole('heading', { name: '任务' })).toBeInTheDocument();
+    expect(screen.getByText('运行中')).toBeInTheDocument();
+    expect(screen.getByText('排队中')).toBeInTheDocument();
+    expect(screen.getByText('待审批')).toBeInTheDocument();
+    expect(screen.getByText('失败')).toBeInTheDocument();
+    expect(screen.getByText('已暂停')).toBeInTheDocument();
+    expect(screen.getByText('需修复')).toBeInTheDocument();
+    expect(screen.getByLabelText('未读更新')).toBeInTheDocument();
+    expect(document.querySelector('.sidebar-task-spinner')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /异常任务.*需修复/ })).toBeDisabled();
+  });
+
+  it('opens a paused task thread and keeps it selectable', async () => {
+    const user = userEvent.setup();
+    const onSelectTask = vi.fn();
+    renderSidebar({
+      tasks: [createTask({ id: 'paused', name: '暂停任务', status: 'paused' })],
+      onSelectTask
+    });
+
+    await user.click(screen.getByRole('button', { name: /暂停任务.*已暂停/ }));
+
+    expect(onSelectTask).toHaveBeenCalledWith('thread-paused');
+  });
+
   it('collapses the selected project when clicking it again', async () => {
     const user = userEvent.setup();
 
@@ -220,11 +265,16 @@ describe('ClaweeSidebar', () => {
     const user = userEvent.setup();
     const onToggleCollapsed = vi.fn();
 
-    renderSidebar({ collapsed: true, onToggleCollapsed });
+    renderSidebar({
+      collapsed: true,
+      onToggleCollapsed,
+      tasks: [createTask({ name: '折叠时隐藏的任务' })]
+    });
 
     expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '收起侧栏' })).not.toBeInTheDocument();
     expect(screen.queryByText('项目')).not.toBeInTheDocument();
+    expect(screen.queryByText('折叠时隐藏的任务')).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Clawee' })).toHaveAttribute('data-collapsed', 'true');
 
     await user.click(screen.getByRole('button', { name: '展开侧栏' }));
@@ -232,3 +282,24 @@ describe('ClaweeSidebar', () => {
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });
 });
+
+function createTask(overrides: {
+  id?: string;
+  threadId?: string;
+  name?: string;
+  status?: 'idle' | 'running' | 'queued' | 'waiting_approval' | 'failed' | 'paused' | 'repair_required';
+  nextRunLabel?: string;
+  unread?: boolean;
+} = {}) {
+  const id = overrides.id ?? 'task';
+  return {
+    id,
+    threadId: overrides.threadId === undefined && overrides.status !== 'repair_required'
+      ? `thread-${id}`
+      : overrides.threadId,
+    name: overrides.name ?? '每日总结',
+    status: overrides.status ?? 'idle',
+    nextRunLabel: overrides.nextRunLabel ?? '下次 18:00',
+    unread: overrides.unread ?? false
+  };
+}

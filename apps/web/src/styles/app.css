@@ -3186,7 +3186,7 @@ textarea:focus-visible {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   gap: 18px;
   padding: 24px 12px 12px;
   color: var(--text);
@@ -3301,6 +3301,113 @@ textarea:focus-visible {
   align-self: end;
   min-height: auto;
   padding-bottom: 4px;
+}
+
+.sidebar-task-section {
+  min-height: 0;
+  max-height: 220px;
+}
+
+.sidebar-task-list {
+  min-height: 0;
+  display: grid;
+  grid-auto-rows: 44px;
+  align-content: start;
+  gap: 3px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-right: -12px;
+  padding-right: 12px;
+}
+
+.sidebar-task-row {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 8px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+}
+
+.sidebar-task-row:hover {
+  background: rgba(252, 253, 255, 0.07);
+}
+
+.sidebar-task-row[aria-current="page"] {
+  border-color: rgba(216, 101, 50, 0.22);
+  background: rgba(173, 77, 31, 0.14);
+}
+
+.sidebar-task-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.sidebar-task-row:disabled:hover {
+  background: transparent;
+}
+
+.sidebar-task-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.sidebar-task-copy strong,
+.sidebar-task-copy span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-task-copy strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.sidebar-task-copy span {
+  color: var(--subtle);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.sidebar-task-icon {
+  color: rgba(252, 253, 255, 0.62);
+}
+
+.sidebar-task-row[data-status="waiting_approval"] .sidebar-task-icon {
+  color: #efb04c;
+}
+
+.sidebar-task-row[data-status="failed"] .sidebar-task-icon,
+.sidebar-task-row[data-status="repair_required"] .sidebar-task-icon {
+  color: var(--danger);
+}
+
+.sidebar-task-row[data-status="paused"] .sidebar-task-icon {
+  color: var(--subtle);
+}
+
+.sidebar-task-spinner {
+  color: var(--accent);
+  animation: conversation-run-spin 900ms linear infinite;
+}
+
+.sidebar-task-unread {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #efb04c;
+  box-shadow: 0 0 10px rgba(239, 176, 76, 0.48);
 }
 
 .sidebar-section h2 {
@@ -3428,6 +3535,12 @@ textarea:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .conversation-run-spinner {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-task-spinner {
     animation: none;
   }
 }
