@@ -76,6 +76,7 @@ export type RunRepository = {
   getRun(id: string): RunRow | undefined;
   listRuns(limit?: number): RunRow[];
   listRunsByThread(threadId: string, limit?: number): RunRow[];
+  isCodexThreadCreatedBy(codexThreadId: string, createdBy: 'schedule'): boolean;
   listNonTerminalRuns(): RunRow[];
   updateRunStatus(input: UpdateRunStatusInput): void;
   setRunCodexThreadId(runId: string, codexThreadId: string): void;
@@ -127,6 +128,7 @@ export type ThreadRepository = {
   getThreadByCodexThreadId(codexThreadId: string): ThreadRow | undefined;
   listThreads(input?: { status?: 'active' | 'archived' | 'all'; limit?: number }): ThreadRow[];
   listProfileReferences(profile: string): Array<{ id: string; title: string | null }>;
+  archiveThreadsCreatedBy(createdBy: 'schedule'): void;
   archiveThread(id: string): void;
   updateImportedThread(input: UpdateImportedThreadInput): void;
   updateThreadSandbox(input: UpdateThreadSandboxInput): void;
@@ -171,6 +173,16 @@ export function createRunRepository(db: Database.Database): RunRepository {
     WHERE thread_id = @threadId
     ORDER BY created_at DESC, id DESC
     LIMIT @limit
+  `);
+  const findCodexThreadByCreator = db.prepare<{
+    codexThreadId: string;
+    createdBy: 'schedule';
+  }>(`
+    SELECT 1
+    FROM runs
+    WHERE codex_thread_id = @codexThreadId
+      AND created_by = @createdBy
+    LIMIT 1
   `);
   const listNonTerminal = db.prepare(`
     SELECT *
@@ -255,6 +267,9 @@ export function createRunRepository(db: Database.Database): RunRepository {
     },
     listRunsByThread(threadId: string, limit = 50): RunRow[] {
       return listByThread.all({ threadId, limit }) as RunRow[];
+    },
+    isCodexThreadCreatedBy(codexThreadId: string, createdBy: 'schedule'): boolean {
+      return findCodexThreadByCreator.get({ codexThreadId, createdBy }) !== undefined;
     },
     listNonTerminalRuns(): RunRow[] {
       return listNonTerminal.all() as RunRow[];
@@ -341,6 +356,19 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `);
+  const archiveThreadsCreatedByStatement = db.prepare<{ createdBy: 'schedule' }>(`
+    UPDATE threads
+    SET status = 'archived',
+        archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE status <> 'archived'
+      AND codex_thread_id IN (
+        SELECT codex_thread_id
+        FROM runs
+        WHERE created_by = @createdBy
+          AND codex_thread_id IS NOT NULL
+      )
+  `);
   const updateImported = db.prepare(`
     UPDATE threads
     SET title = @title,
@@ -393,6 +421,9 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     },
     listProfileReferences(profile: string): Array<{ id: string; title: string | null }> {
       return listProfileReferences.all(profile) as Array<{ id: string; title: string | null }>;
+    },
+    archiveThreadsCreatedBy(createdBy: 'schedule'): void {
+      archiveThreadsCreatedByStatement.run({ createdBy });
     },
     archiveThread(id: string): void {
       archive.run(id);

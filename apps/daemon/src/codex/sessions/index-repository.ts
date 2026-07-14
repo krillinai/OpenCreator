@@ -94,6 +94,7 @@ export type CodexSessionIndexRepository = {
   applyFileIndex(input: ApplyCodexSessionFileIndexInput): void;
   ensureSearchIndex(): void;
   removeMissingSources(paths: string[]): void;
+  markScheduledSessions(): void;
   listSessions(limit?: number): CodexSessionSummary[];
   listExcludedSubagentThreadIds(): string[];
   listHistory(codexThreadId: string): ThreadHistoryItem[];
@@ -237,6 +238,17 @@ export function createCodexSessionIndexRepository(
     WHERE kind = 'user' AND cwd IS NOT NULL
     ORDER BY updated_at DESC, codex_thread_id DESC
     LIMIT @limit
+  `);
+  const markScheduledSessionsStatement = db.prepare(`
+    UPDATE codex_sessions
+    SET kind = 'schedule'
+    WHERE kind <> 'schedule'
+      AND codex_thread_id IN (
+        SELECT codex_thread_id
+        FROM runs
+        WHERE created_by = 'schedule'
+          AND codex_thread_id IS NOT NULL
+      )
   `);
   const listSubagentIds = db.prepare(`
     SELECT codex_thread_id
@@ -519,6 +531,9 @@ export function createCodexSessionIndexRepository(
     },
     removeMissingSources(paths: string[]): void {
       removeMissingSources(paths);
+    },
+    markScheduledSessions(): void {
+      markScheduledSessionsStatement.run();
     },
     listSessions(limit = 50): CodexSessionSummary[] {
       const rows = listSessions.all({ limit }) as Array<{

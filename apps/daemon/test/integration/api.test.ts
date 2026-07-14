@@ -2449,6 +2449,77 @@ describe('runtime api', () => {
     );
   });
 
+  it('hides scheduled Codex sessions and archives previously imported scheduled threads', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const cwd = join(tempDir, 'playground');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '14');
+    mkdirSync(sessionDir, { recursive: true });
+    writeCodexSession(sessionDir, 'scheduled-reminder-session', {
+      timestamp: '2026-07-14T01:00:00.000Z',
+      cwd,
+      userMessage: '提醒我起来活动'
+    });
+    writeCodexSession(sessionDir, 'normal-user-session', {
+      timestamp: '2026-07-14T00:55:00.000Z',
+      cwd,
+      userMessage: '整理今天的工作记录'
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    createRunRepository(db).insertRun({
+      id: 'run_scheduled_reminder',
+      codexThreadId: 'scheduled-reminder-session',
+      publicStatus: 'succeeded',
+      internalStatus: 'succeeded',
+      createdBy: 'schedule',
+      sourceId: 'sch_reminder',
+      profile: 'default',
+      cwd,
+      canonicalCwd: cwd,
+      workspaceMode: 'external',
+      sandbox: 'read-only',
+      codexVersion: 'test',
+      codexBin: 'codex',
+      codexHome,
+      normalizerVersion: 1
+    });
+    createThreadRepository(db).insertThread({
+      id: 'thread_codex_scheduledremindersession',
+      title: '提醒我起来活动',
+      codexThreadId: 'scheduled-reminder-session',
+      cwd,
+      canonicalCwd: cwd,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active'
+    });
+    server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome, db });
+
+    const listed = await authGet('/threads?status=active&limit=1');
+    const all = await authGet('/threads?status=all&limit=10');
+
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().threads).toEqual([
+      expect.objectContaining({
+        codexThreadId: 'normal-user-session',
+        title: '整理今天的工作记录'
+      })
+    ]);
+    expect(all.json().threads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          codexThreadId: 'scheduled-reminder-session',
+          status: 'archived'
+        })
+      ])
+    );
+    expect(
+      db.prepare('SELECT kind FROM codex_sessions WHERE codex_thread_id = ?')
+        .get('scheduled-reminder-session')
+    ).toEqual({ kind: 'schedule' });
+  });
+
   it('returns Codex session chat history for imported runtime threads', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     const codexHome = join(tempDir, 'codex-home');

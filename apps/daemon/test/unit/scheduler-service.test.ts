@@ -103,6 +103,9 @@ describe('scheduler service', () => {
     });
     expect(runManager.startRun).toHaveBeenCalledWith({
       prompt: 'Summarize project status',
+      executionPrompt: expect.stringMatching(
+        /已经到达执行时间[\s\S]*不要询问执行时间[\s\S]*Summarize project status/
+      ),
       cwd: tempDir,
       profile: 'default',
       sandbox: 'workspace-write',
@@ -141,6 +144,7 @@ describe('scheduler service', () => {
 
     expect(runManager.startRun).toHaveBeenCalledWith({
       prompt: 'Summarize project status',
+      executionPrompt: expect.stringContaining('Summarize project status'),
       cwd: tempDir,
       profile: 'default',
       sandbox: 'workspace-write',

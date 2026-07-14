@@ -12,6 +12,7 @@ import type { RunRow } from '../storage/repositories.js';
 
 type TaskRow = RunRow & {
   thread_title: string | null;
+  schedule_name: string | null;
 };
 
 type TaskCursor = {
@@ -54,9 +55,11 @@ export function createTaskService(options: {
     cursorId: string | null;
     limit: number;
   }>(`
-    SELECT r.*, t.title AS thread_title
+    SELECT r.*, t.title AS thread_title, s.name AS schedule_name
     FROM runs r
     LEFT JOIN threads t ON t.id = r.thread_id
+    LEFT JOIN schedules s
+      ON r.created_by = 'schedule' AND s.id = r.source_id
     WHERE (
       @cursorCreatedAt IS NULL
       OR r.created_at < @cursorCreatedAt
@@ -135,7 +138,10 @@ function mapTask(
     id: row.id,
     runId: row.id,
     ...(row.thread_id === null ? {} : { threadId: row.thread_id }),
-    title: row.thread_title ?? row.prompt_preview_redacted ?? `Run ${row.id}`,
+    title: row.thread_title
+      ?? row.schedule_name
+      ?? row.prompt_preview_redacted
+      ?? `Run ${row.id}`,
     status: pendingApproval === undefined ? runStatus : 'waiting_approval',
     runStatus,
     cwd: row.cwd,

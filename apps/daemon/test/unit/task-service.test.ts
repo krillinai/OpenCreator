@@ -93,6 +93,42 @@ describe('task service', () => {
     expect(fixture.service.list({ status: 'running' }).tasks).toEqual([]);
   });
 
+  it('uses the schedule name for scheduled runs without a conversation thread', () => {
+    const fixture = setup();
+    fixture.db.prepare(`
+      INSERT INTO schedules (
+        id, name, cron, timezone, enabled, prompt, prompt_hash, prompt_preview_redacted,
+        profile, cwd, canonical_cwd, sandbox, concurrency_policy, misfire_policy
+      ) VALUES (
+        'sch_reminder', '起来活动提醒', '*/5 8-17 * * *', 'Asia/Shanghai', 1,
+        '提醒我起来活动', 'hash', '提醒我起来活动',
+        'default', @cwd, @cwd, 'read-only', 'skip', 'skip'
+      )
+    `).run({ cwd: tempDir });
+    fixture.runs.insertRun({
+      id: 'run_reminder',
+      publicStatus: 'succeeded',
+      internalStatus: 'succeeded',
+      createdBy: 'schedule',
+      sourceId: 'sch_reminder',
+      profile: 'default',
+      cwd: tempDir,
+      canonicalCwd: tempDir,
+      workspaceMode: 'external',
+      sandbox: 'read-only',
+      codexVersion: 'test',
+      codexBin: 'codex',
+      codexHome: tempDir,
+      normalizerVersion: 1
+    });
+
+    expect(fixture.service.list().tasks[0]).toMatchObject({
+      id: 'run_reminder',
+      title: '起来活动提醒',
+      createdBy: 'schedule'
+    });
+  });
+
   it('rejects malformed cursors', () => {
     const fixture = setup();
     expect(() => fixture.service.list({ cursor: 'not-a-cursor' }))

@@ -134,6 +134,7 @@ export function createSchedulerService(options: SchedulerServiceOptions): Schedu
     try {
       run = options.runManager.startRun({
         prompt: schedule.prompt,
+        executionPrompt: createScheduleExecutionPrompt(schedule.prompt),
         cwd: schedule.cwd,
         profile: schedule.profile,
         sandbox: schedule.sandbox,
@@ -474,4 +475,15 @@ function requiresNextRunRecompute(input: UpdateScheduleRequest): boolean {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function createScheduleExecutionPrompt(prompt: string): string {
+  return [
+    '这是一个已经到达执行时间的计划任务。',
+    '请立即执行任务，不要重新创建、修改计划任务，也不要询问执行时间。',
+    '如果任务内容是提醒，请直接输出此刻应发给用户的简短提醒；如果是其他任务，请直接完成并返回结果。',
+    '',
+    '任务内容：',
+    prompt
+  ].join('\n');
 }

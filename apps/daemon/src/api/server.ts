@@ -197,16 +197,24 @@ export async function buildServer(input: BuildServerInput) {
     }
 
     let scan;
+    let usedSessionIndex = true;
     try {
       scan = codexSessionIndexer.sync({ limit });
     } catch (error) {
+      usedSessionIndex = false;
       console.warn(`Codex session index sync failed; using raw JSONL fallback: ${formatError(error)}`);
       scan = scanCodexSessionsWithMetadata({ codexHome, limit });
     }
+    codexSessionRepository.markScheduledSessions();
+    threadRepository.archiveThreadsCreatedBy('schedule');
     for (const codexThreadId of scan.excludedSubagentThreadIds) {
       threadManager.archiveCodexThread(codexThreadId);
     }
-    for (const session of scan.sessions) {
+    const sessions = usedSessionIndex
+      ? codexSessionRepository.listSessions(limit)
+      : scan.sessions;
+    for (const session of sessions) {
+      if (runRepository.isCodexThreadCreatedBy(session.codexThreadId, 'schedule')) continue;
       threadManager.importCodexThread({
         codexThreadId: session.codexThreadId,
         title: session.title,
