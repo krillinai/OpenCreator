@@ -83,6 +83,23 @@ describe('app CSS visual contracts', () => {
     );
   });
 
+  it('keeps the task thread toolbar compact and mobile-safe', () => {
+    const taskHeader = cssBlock('.conversation-header--task');
+    const taskStrip = cssBlock('.conversation-task-strip');
+    const taskToolbar = cssBlock('.schedule-thread-header');
+    const taskActions = cssBlock('.schedule-thread-actions');
+
+    expect(taskHeader).toContain('grid-template-columns: minmax(0, 1fr) auto;');
+    expect(taskStrip).toContain('grid-column: 1 / -1;');
+    expect(taskStrip).toContain('min-width: 0;');
+    expect(taskToolbar).toContain('min-height: 36px;');
+    expect(taskToolbar).toContain('flex-wrap: wrap;');
+    expect(taskActions).toContain('flex: 0 0 auto;');
+    expect(appCss).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.schedule-thread-header\s*\{[^}]*align-items:\s*flex-start;/
+    );
+  });
+
   it('keeps global scrollbars darker and trackless', () => {
     const webkitScrollbar = cssBlock('*::-webkit-scrollbar');
     const webkitScrollbarTrack = cssBlock('*::-webkit-scrollbar-track,\n*::-webkit-scrollbar-track-piece,\n*::-webkit-scrollbar-corner');

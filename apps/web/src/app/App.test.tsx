@@ -288,6 +288,72 @@ describe('App', () => {
     expect(screen.getByRole('textbox', { name: '输入任务' })).toBeInTheDocument();
   });
 
+  it('shows task management only inside a bound schedule thread', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread-normal',
+              title: '普通会话'
+            }),
+            createThreadResponse({
+              id: 'thread-schedule-1',
+              title: '每日总结',
+              purpose: 'schedule_task',
+              scheduleId: 'schedule-1'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/schedules')) {
+        return jsonResponse({ schedules: [createScheduleResponse()] });
+      }
+      if (url.endsWith('/tasks?status=all&limit=50')) {
+        return jsonResponse({ tasks: [], hasMore: false });
+      }
+      if (url.endsWith('/threads/thread-schedule-1/history?limit=50')) {
+        return jsonResponse({
+          threadId: 'thread-schedule-1',
+          codexThreadId: null,
+          items: []
+        });
+      }
+      if (url.endsWith('/threads/thread-schedule-1/runs?limit=50')) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: /每日总结/ }));
+
+    expect(await screen.findByLabelText('任务管理')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '立即运行任务' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '暂停任务' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑任务' })).toBeInTheDocument();
+  });
+
   it.each([
     {
       label: 'starts',

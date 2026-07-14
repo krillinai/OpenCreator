@@ -63,6 +63,7 @@ import {
 import { RunDetailPanel } from '../features/runs/RunDetailPanel.js';
 import { createNaturalLanguageScheduleRequest } from '../features/schedules/schedule-natural-language.js';
 import { createScheduleTaskSummaries } from '../features/schedules/schedule-task-model.js';
+import { ScheduleThreadHeader } from '../features/schedules/ScheduleThreadHeader.js';
 import {
   getRunCancelState,
   getThreadActiveRun,
@@ -1071,6 +1072,12 @@ export function AppController(props: AppControllerProps) {
   const selectedScheduleTask = scheduleTaskSummaries.find(
     task => task.threadId === state.selectedThreadId
   );
+  const selectedSchedule = selectedScheduleTask === undefined
+    ? undefined
+    : runtimeSchedules.find(schedule => schedule.id === selectedScheduleTask.scheduleId);
+  const selectedSidebarTask = selectedScheduleTask === undefined
+    ? undefined
+    : sidebarTasks.find(task => task.id === selectedScheduleTask.scheduleId);
   const selectedThread = runtimeThreads.find(thread => thread.id === state.selectedThreadId);
   const selectedSummaryOperation =
     summaryOperation?.threadId === state.selectedThreadId ? summaryOperation : undefined;
@@ -2357,8 +2364,15 @@ export function AppController(props: AppControllerProps) {
   }
 
   async function runScheduleNow(schedule: ScheduleResponse) {
-    const opened = await openScheduleTask(schedule.threadId);
+    const alreadyOpen =
+      state.activeView === 'conversation'
+      && state.selectedThreadId === schedule.threadId;
+    const opened = alreadyOpen || await openScheduleTask(schedule.threadId);
     if (!opened) throw new Error('无法打开任务对应的会话');
+    if (alreadyOpen) {
+      setTimelineRunTarget(undefined);
+      navigateToRoute({ view: 'thread', threadId: schedule.threadId });
+    }
 
     try {
       if (scheduleService === null) {
@@ -2701,6 +2715,23 @@ export function AppController(props: AppControllerProps) {
         }
         projectName={currentProjectName}
         statusLabel={getConnectionStatusLabel(connectionState)}
+        taskToolbar={
+          selectedScheduleTask?.bindingStatus === 'ready'
+          && selectedSchedule !== undefined
+          && selectedSidebarTask !== undefined
+          && scheduleService !== null ? (
+            <ScheduleThreadHeader
+              schedule={selectedSchedule}
+              status={selectedSidebarTask.status}
+              nextRunLabel={selectedSidebarTask.nextRunLabel}
+              service={scheduleService}
+              projects={projects}
+              profiles={codexProfiles?.profiles}
+              onRunNow={runScheduleNow}
+              onScheduleChanged={handleScheduleChanged}
+            />
+          ) : undefined
+        }
         summaryLoading={
           selectedSummaryOperation?.phase === 'loading'
         }

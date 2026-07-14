@@ -62,4 +62,29 @@ describe('ConversationHeader', () => {
     expect(onCreateSummary).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('status', { name: '摘要状态' })).toHaveTextContent('已生成摘要 v2');
   });
+
+  it('renders an optional task toolbar without changing ordinary conversations', () => {
+    const { rerender } = render(
+      <ConversationHeader
+        title="普通会话"
+        projectName="content-design"
+        onOpenLocation={vi.fn()}
+        onToggleDetail={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
+
+    rerender(
+      <ConversationHeader
+        title="每日总结"
+        projectName="content-design"
+        taskToolbar={<div aria-label="任务管理">任务工具栏</div>}
+        onOpenLocation={vi.fn()}
+        onToggleDetail={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText('任务管理')).toHaveTextContent('任务工具栏');
+  });
 });

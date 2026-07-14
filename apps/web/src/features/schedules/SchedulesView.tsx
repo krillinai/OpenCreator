@@ -37,11 +37,12 @@ import {
   createScheduleUpdate,
   ScheduleEditor,
   scheduleDetailToEditorValues,
+  scheduleResponseToEditorValues,
   type ScheduleEditorErrors,
   type ScheduleEditorValues,
+  validateScheduleEditorValues,
 } from './ScheduleEditor.js';
 import {
-  cronToScheduleFrequency,
   defaultScheduleFrequency,
   formatScheduleFrequency,
   formatScheduleNextRun,
@@ -227,7 +228,7 @@ export function SchedulesView(props: SchedulesViewProps) {
     setEditor({
       mode: 'edit',
       scheduleId: schedule.id,
-      values: scheduleToLoadingValues(schedule),
+      values: scheduleResponseToEditorValues(schedule),
       loading: true,
     });
     try {
@@ -254,7 +255,7 @@ export function SchedulesView(props: SchedulesViewProps) {
 
   async function saveEditor(values: ScheduleEditorValues) {
     if (props.service === null || editor === undefined) return;
-    const validationErrors = validateSchedule(values);
+    const validationErrors = validateScheduleEditorValues(values);
     if (Object.keys(validationErrors).length > 0) {
       setEditorErrors(validationErrors);
       return;
@@ -649,47 +650,6 @@ function createDefaultValues(
     concurrencyPolicy: 'skip',
     enabled: true,
   };
-}
-
-function scheduleToLoadingValues(schedule: ScheduleResponse): ScheduleEditorValues {
-  return {
-    name: schedule.name,
-    prompt: '',
-    frequency: cronToScheduleFrequency(schedule.cron),
-    timezone: schedule.timezone,
-    cwd: schedule.cwd,
-    profile: schedule.profile,
-    model: schedule.model ?? '',
-    reasoning: schedule.reasoning ?? '',
-    sandbox: schedule.sandbox,
-    timeoutMinutes: schedule.timeoutMs === null || schedule.timeoutMs === undefined
-      ? ''
-      : String(Math.max(1, Math.round(schedule.timeoutMs / 60_000))),
-    concurrencyPolicy: schedule.concurrencyPolicy,
-    enabled: schedule.enabled,
-  };
-}
-
-function validateSchedule(values: ScheduleEditorValues): ScheduleEditorErrors {
-  const errors: ScheduleEditorErrors = {};
-  if (values.name.trim().length === 0) errors.name = '请输入任务标题';
-  if (values.prompt.trim().length === 0) errors.prompt = '请描述 Clawee 应该做什么';
-  try {
-    scheduleFrequencyToCron(values.frequency);
-  } catch (error) {
-    errors.frequency = errorMessage(error, '请选择执行频率');
-  }
-  if (values.timezone.trim().length === 0) errors.timezone = '请输入时区';
-  if (values.cwd.trim().length === 0) errors.cwd = '请选择项目';
-  if (values.profile.trim().length === 0) errors.profile = '请选择运行配置';
-  if (
-    values.timeoutMinutes.trim().length > 0
-    && (!Number.isFinite(Number(values.timeoutMinutes))
-      || Number(values.timeoutMinutes) <= 0)
-  ) {
-    errors.timeoutMinutes = '最长运行时间必须大于 0 分钟';
-  }
-  return errors;
 }
 
 function mapScheduleError(error: unknown): ScheduleEditorErrors {

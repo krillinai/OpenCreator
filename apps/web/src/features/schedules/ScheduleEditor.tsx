@@ -5,6 +5,7 @@ import type {
   SandboxMode,
   ScheduleConcurrencyPolicy,
   ScheduleDetailResponse,
+  ScheduleResponse,
   UpdateScheduleRequest,
 } from '@clawee/protocol';
 import { ChevronDown, LoaderCircle, Save, X } from 'lucide-react';
@@ -492,12 +493,42 @@ export function createScheduleUpdate(values: ScheduleEditorValues): UpdateSchedu
   };
 }
 
+export function validateScheduleEditorValues(
+  values: ScheduleEditorValues
+): ScheduleEditorErrors {
+  const errors: ScheduleEditorErrors = {};
+  if (values.name.trim().length === 0) errors.name = '请输入任务标题';
+  if (values.prompt.trim().length === 0) errors.prompt = '请描述 Clawee 应该做什么';
+  try {
+    scheduleFrequencyToCron(values.frequency);
+  } catch {
+    errors.frequency = '请选择执行频率';
+  }
+  if (values.timezone.trim().length === 0) errors.timezone = '请输入时区';
+  if (values.cwd.trim().length === 0) errors.cwd = '请选择项目';
+  if (values.profile.trim().length === 0) errors.profile = '请选择运行配置';
+  if (
+    values.timeoutMinutes.trim().length > 0
+    && (!Number.isFinite(Number(values.timeoutMinutes))
+      || Number(values.timeoutMinutes) <= 0)
+  ) {
+    errors.timeoutMinutes = '最长运行时间必须大于 0 分钟';
+  }
+  return errors;
+}
+
 export function scheduleDetailToEditorValues(
   schedule: ScheduleDetailResponse
 ): ScheduleEditorValues {
+  return scheduleResponseToEditorValues(schedule);
+}
+
+export function scheduleResponseToEditorValues(
+  schedule: ScheduleResponse | ScheduleDetailResponse
+): ScheduleEditorValues {
   return {
     name: schedule.name,
-    prompt: schedule.prompt,
+    prompt: 'prompt' in schedule ? schedule.prompt : schedule.promptPreviewRedacted,
     frequency: cronToScheduleFrequency(schedule.cron),
     timezone: schedule.timezone,
     cwd: schedule.cwd,

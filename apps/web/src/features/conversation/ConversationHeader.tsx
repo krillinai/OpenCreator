@@ -1,4 +1,5 @@
 import { FileText, Info, MapPin } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 export function ConversationHeader(props: {
   title: string;
@@ -6,12 +7,13 @@ export function ConversationHeader(props: {
   statusLabel?: string;
   summaryStatus?: string;
   summaryLoading?: boolean;
+  taskToolbar?: ReactNode;
   onCreateSummary?(): void;
   onOpenLocation(): void;
   onToggleDetail(): void;
 }) {
   return (
-    <header className="conversation-header">
+    <header className={`conversation-header${props.taskToolbar ? ' conversation-header--task' : ''}`}>
       <div className="conversation-title">
         <div className="conversation-title-row">
           <h1>{props.title}</h1>
@@ -48,6 +50,9 @@ export function ConversationHeader(props: {
           <Info aria-hidden="true" size={16} />
         </button>
       </div>
+      {props.taskToolbar ? (
+        <div className="conversation-task-strip">{props.taskToolbar}</div>
+      ) : null}
     </header>
   );
 }

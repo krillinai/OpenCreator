@@ -2134,6 +2134,166 @@ textarea:focus-visible {
   backdrop-filter: blur(18px);
 }
 
+.conversation-header--task {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.conversation-task-strip {
+  min-width: 0;
+  grid-column: 1 / -1;
+}
+
+.schedule-thread-header {
+  min-width: 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(252, 253, 255, 0.06);
+}
+
+.schedule-thread-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+}
+
+.schedule-thread-status,
+.schedule-thread-operation {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.schedule-thread-status strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.schedule-thread-status[data-status="running"],
+.schedule-thread-status[data-status="queued"],
+.schedule-thread-status[data-status="waiting_approval"] {
+  color: var(--warning);
+}
+
+.schedule-thread-status[data-status="failed"],
+.schedule-thread-status[data-status="repair_required"] {
+  color: var(--danger);
+}
+
+.schedule-thread-status[data-status="paused"] {
+  color: var(--subtle);
+}
+
+.schedule-thread-next {
+  color: var(--subtle);
+  font-size: 11px;
+}
+
+.schedule-thread-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.schedule-thread-actions button,
+.schedule-thread-editor-loading header button {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(252, 253, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(22, 25, 30, 0.72);
+  color: var(--muted);
+}
+
+.schedule-thread-actions button:hover,
+.schedule-thread-editor-loading header button:hover {
+  border-color: color-mix(in srgb, var(--accent-strong) 44%, var(--border));
+  color: var(--text);
+}
+
+.schedule-thread-actions button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.schedule-thread-spinner {
+  animation: conversation-run-spin 900ms linear infinite;
+}
+
+.schedule-thread-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.schedule-thread-editor-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 5, 8, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.schedule-thread-editor-dialog {
+  width: min(720px, 100%);
+  height: min(760px, calc(100dvh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
+}
+
+.schedule-thread-editor-dialog .schedule-editor {
+  padding: 0 24px;
+}
+
+.schedule-thread-editor-loading {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 0 24px;
+}
+
+.schedule-thread-editor-loading header {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.schedule-thread-editor-loading > span,
+.schedule-thread-editor-loading > p {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.schedule-thread-editor-loading > p {
+  color: var(--danger);
+}
+
 .conversation-title {
   min-width: 0;
   display: grid;
@@ -4270,6 +4430,34 @@ textarea:focus-visible {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     padding: 10px 12px;
+  }
+
+  .schedule-thread-header {
+    align-items: flex-start;
+  }
+
+  .schedule-thread-main {
+    flex: 1 1 100%;
+  }
+
+  .schedule-thread-actions {
+    margin-left: auto;
+  }
+
+  .schedule-thread-editor-backdrop {
+    padding: 0;
+  }
+
+  .schedule-thread-editor-dialog {
+    width: 100%;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .schedule-thread-editor-dialog .schedule-editor,
+  .schedule-thread-editor-loading {
+    padding: 0 12px;
   }
 
   .connection-pill {
