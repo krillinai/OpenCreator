@@ -69,8 +69,14 @@ describe('NotificationService', () => {
     });
     await expect(service.notify({
       title: '已安排提醒',
-      body: '喝水提醒'
+      body: '喝水提醒',
+      target: 'schedules'
     })).resolves.toBe(true);
+    expect(notify).toHaveBeenCalledWith({
+      title: '已安排提醒',
+      body: '喝水提醒',
+      target: 'schedules'
+    });
 
     expect(service.disable()).toEqual({
       enabled: false,

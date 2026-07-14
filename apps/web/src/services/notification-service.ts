@@ -1,4 +1,4 @@
-import type { HostBridge } from '../host/bridge.js';
+import type { HostBridge, HostNotification } from '../host/bridge.js';
 import {
   readJsonFromStorage,
   writeJsonToStorage
@@ -68,12 +68,7 @@ export function createNotificationService(input: {
       return settings;
     },
 
-    async notify(message: {
-      title: string;
-      body: string;
-      threadId?: string;
-      runId?: string;
-    }): Promise<boolean> {
+    async notify(message: HostNotification): Promise<boolean> {
       const settings = readSettings();
       if (!settings.enabled) return false;
       await input.hostBridge.notify(message);

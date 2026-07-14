@@ -62,4 +62,36 @@ describe('browserBridge', () => {
 
     await expect(browserBridge.readConnectionConfig()).resolves.toBeNull();
   });
+
+  it('opens schedules when a scheduled-task notification is clicked', async () => {
+    const close = vi.fn();
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => undefined);
+    class NotificationMock {
+      static permission = 'granted';
+      static latest: NotificationMock | undefined;
+      onclick: (() => void) | null = null;
+
+      constructor() {
+        NotificationMock.latest = this;
+      }
+
+      close() {
+        close();
+      }
+    }
+    vi.stubGlobal('Notification', NotificationMock);
+    window.location.hash = '#/thread/previous';
+
+    await browserBridge.notify({
+      title: '已安排提醒',
+      body: '喝水提醒',
+      target: 'schedules',
+      threadId: 'thread_1'
+    });
+    NotificationMock.latest?.onclick?.();
+
+    expect(window.location.hash).toBe('#/schedules');
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
 });

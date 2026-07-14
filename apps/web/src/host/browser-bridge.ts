@@ -27,7 +27,9 @@ export const browserBridge: HostBridge = {
     const notification = new Notification(message.title, { body: message.body });
     notification.onclick = () => {
       window.focus();
-      if (message.threadId !== undefined) {
+      if (message.target === 'schedules') {
+        window.location.hash = '#/schedules';
+      } else if (message.threadId !== undefined) {
         window.location.hash = `#/thread/${encodeURIComponent(message.threadId)}`;
       }
       notification.close();

@@ -78,7 +78,8 @@ describe('task monitor', () => {
       })
     )).toEqual({
       title: '已安排提醒',
-      body: '喝水提醒'
+      body: '喝水提醒',
+      target: 'schedules'
     });
   });
 

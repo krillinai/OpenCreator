@@ -1,5 +1,6 @@
 import type { TaskItem } from '@clawee/protocol';
 import type { ActiveView } from '../../app/app-state.js';
+import type { HostNotification } from '../../host/bridge.js';
 
 const NOTIFIABLE_STATUSES: ReadonlySet<TaskItem['status']> = new Set([
   'waiting_approval',
@@ -29,13 +30,15 @@ export function collectTaskTransitions(
 }
 
 export function createTaskNotification(task: TaskItem): {
-  title: string;
-  body: string;
+  title: HostNotification['title'];
+  body: HostNotification['body'];
+  target?: HostNotification['target'];
 } {
   if (task.createdBy === 'schedule' && task.status === 'succeeded') {
     return {
       title: '已安排提醒',
-      body: task.title
+      body: task.title,
+      target: 'schedules'
     };
   }
 
