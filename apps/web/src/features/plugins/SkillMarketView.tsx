@@ -5,6 +5,7 @@ import type {
 import { skillMarketCatalog, type SkillMarketEntry } from '@clawee/skill-market';
 import {
   AlertCircle,
+  ArrowDownUp,
   Bookmark,
   CheckCircle2,
   Loader2,
@@ -19,15 +20,19 @@ import {
   skillMarketInitialVisibleCount,
   skillMarketLoadMoreCount,
   type SkillMarketFilterStatus,
+  type SkillMarketSort,
   type SkillMarketViewEntry,
 } from './skill-market-model.js';
 import { readSavedSkillIds, writeSavedSkillIds } from './skill-market-storage.js';
 import {
   getSkillMarketAction,
-  getSkillMarketUnavailableReason,
   SkillMarketCard,
 } from './SkillMarketCard.js';
 import { SkillDetailModal } from './SkillDetailModal.js';
+import {
+  SkillUseProjectDialog,
+  type SkillMarketProjectOption,
+} from './SkillUseProjectDialog.js';
 import './skill-market.css';
 
 export type SkillMarketOperation =
@@ -47,9 +52,11 @@ export type SkillMarketViewProps = {
   loadError?: string;
   operation?: SkillMarketOperation;
   useError?: SkillMarketUseError;
+  projects: readonly SkillMarketProjectOption[];
+  currentProjectId: string;
   onInstall(skillId: string): void;
   onUpdate(skillId: string): void;
-  onUse(skillId: string): void;
+  onUse(skillId: string, projectId: string): void;
 };
 
 type SkillMarketViewInternalProps = SkillMarketViewProps & {
@@ -64,6 +71,8 @@ export function SkillMarketView({
   loadError,
   operation,
   useError,
+  projects,
+  currentProjectId,
   onInstall,
   onUpdate,
   onUse,
@@ -74,11 +83,14 @@ export function SkillMarketView({
   const [status, setStatus] = useState<SkillMarketFilterStatus>('all');
   const [category, setCategory] = useState<string | null>(null);
   const [subcategory, setSubcategory] = useState<string | null>(null);
+  const [sort, setSort] = useState<SkillMarketSort>('recommended');
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [savedWriteError, setSavedWriteError] = useState<string | null>(null);
   const [activeEntry, setActiveEntry] = useState<SkillMarketViewEntry | null>(null);
+  const [pendingUseEntry, setPendingUseEntry] = useState<SkillMarketViewEntry | null>(null);
   const [visibleCount, setVisibleCount] = useState(skillMarketInitialVisibleCount);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setSavedIds(readSavedSkillIds());
@@ -107,9 +119,10 @@ export function SkillMarketView({
         status,
         category,
         subcategory,
+        sort,
         operation,
       }),
-    [catalog, skills, installRecords, savedIds, query, status, category, subcategory, operation]
+    [catalog, skills, installRecords, savedIds, query, status, category, subcategory, sort, operation]
   );
 
   const activeSyncedEntry =
@@ -120,24 +133,41 @@ export function SkillMarketView({
         activeEntry;
   const page = paginateSkillMarketEntries(filteredResult.entries, visibleCount);
 
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!page.hasMore || target === null || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setVisibleCount((current) =>
+          Math.min(current + skillMarketLoadMoreCount, filteredResult.entries.length)
+        );
+      },
+      { rootMargin: '0px 0px 320px 0px' }
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [filteredResult.entries.length, page.hasMore]);
+
   const savedCount = baseResult.entries.filter((entry) => entry.saved).length;
   const installedCount = baseResult.entries.filter((entry) => entry.installed).length;
   const currentSubcategories = filteredResult.subcategories;
   const mutationLocked = operation !== undefined && operation.error === undefined;
   const skillsKnown = skills !== undefined;
-  const showSavedFilter = savedCount > 0 || status === 'saved';
-  const showInstalledFilter = installedCount > 0 || status === 'installed';
   const hasActiveControls =
     query.trim().length > 0 ||
     status !== 'all' ||
     category !== null ||
-    subcategory !== null;
+    subcategory !== null ||
+    sort !== 'recommended';
 
   function resetFilters() {
     setQuery('');
     setStatus('all');
     setCategory(null);
     setSubcategory(null);
+    setSort('recommended');
     resetVisibleCount();
   }
 
@@ -165,6 +195,15 @@ export function SkillMarketView({
     window.setTimeout(() => restoreFocusRef.current?.focus(), 0);
   }
 
+  function requestUse(skillId: string) {
+    const entry =
+      filteredResult.entries.find((item) => item.id === skillId)
+      ?? baseResult.entries.find((item) => item.id === skillId);
+    if (entry === undefined) return;
+    setActiveEntry(null);
+    setPendingUseEntry(entry);
+  }
+
   function resetVisibleCount() {
     setVisibleCount(skillMarketInitialVisibleCount);
   }
@@ -172,127 +211,147 @@ export function SkillMarketView({
   return (
     <section className="skill-market" aria-label="Skill 功能目录">
       <header className="skill-market-heading">
-        <h1>
-          <Plug size={20} aria-hidden="true" />
-          <span>插件</span>
-        </h1>
+        <div className="skill-market-heading__title">
+          <h1>
+            <Plug size={20} aria-hidden="true" />
+            <span>插件</span>
+          </h1>
+          <span>{baseResult.entries.length} 个 Skill</span>
+        </div>
+
+        <div className="skill-market__toolbar">
+          <label className="skill-market-search">
+            <Search size={17} aria-hidden="true" />
+            <input
+              aria-label="搜索 Skill"
+              onChange={(event) => {
+                setQuery(event.target.value);
+                resetVisibleCount();
+              }}
+              placeholder="搜索：字幕、封面、SEO、B站发布..."
+              type="search"
+              value={query}
+            />
+          </label>
+
+          <label className="skill-market-sort">
+            <ArrowDownUp size={15} aria-hidden="true" />
+            <span>排序</span>
+            <select
+              aria-label="排序"
+              onChange={(event) => {
+                setSort(event.target.value as SkillMarketSort);
+                resetVisibleCount();
+              }}
+              value={sort}
+            >
+              <option value="recommended">推荐优先</option>
+              <option value="users">使用人数</option>
+              <option value="installed">已安装优先</option>
+              <option value="saved">已收藏优先</option>
+            </select>
+          </label>
+
+          {hasActiveControls ? (
+            <button
+              aria-label="重置筛选"
+              className="skill-market-reset-button"
+              onClick={resetFilters}
+              title="重置筛选"
+              type="button"
+            >
+              <RotateCcw size={16} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
       </header>
 
-      <div className="skill-market__toolbar">
-        <label className="skill-market-search">
-          <Search size={17} aria-hidden="true" />
-          <input
-            aria-label="搜索 Skill"
-            onChange={(event) => {
-              setQuery(event.target.value);
-              resetVisibleCount();
-            }}
-            placeholder="搜索：字幕、封面、SEO、B站发布..."
-            type="search"
-            value={query}
-          />
-        </label>
-
-        {showSavedFilter || showInstalledFilter ? (
-          <div className="skill-market-status-controls" aria-label="目录状态" role="group">
-            {showSavedFilter ? (
+      <div className="skill-market-navigation">
+        <div className="skill-market-category-line">
+          <div
+            className="skill-market-filter-row skill-market-filter-row--categories"
+            aria-label="分类"
+            role="group"
+          >
+            <button
+              aria-pressed={category === null}
+              className={category === null ? 'is-active' : ''}
+              onClick={() => {
+                setCategory(null);
+                setSubcategory(null);
+                resetVisibleCount();
+              }}
+              type="button"
+            >
+              <span>全部</span>
+              <b>{baseResult.entries.length}</b>
+            </button>
+            {baseResult.categories.map((item) => (
               <button
-                aria-pressed={status === 'saved'}
-                className={status === 'saved' ? 'is-active' : ''}
+                aria-pressed={category === item.id}
+                className={category === item.id ? 'is-active' : ''}
+                key={item.id}
                 onClick={() => {
-                  setStatus(status === 'saved' ? 'all' : 'saved');
+                  setCategory(item.id);
+                  setSubcategory(null);
                   resetVisibleCount();
                 }}
                 type="button"
               >
-                <Bookmark size={14} aria-hidden="true" />
-                <span>我的收藏</span>
-                <b>{savedCount}</b>
+                <span>{item.name}</span>
+                <b>{item.count}</b>
               </button>
-            ) : null}
-            {showInstalledFilter ? (
-              <button
-                aria-pressed={status === 'installed'}
-                className={status === 'installed' ? 'is-active' : ''}
-                onClick={() => {
-                  setStatus(status === 'installed' ? 'all' : 'installed');
-                  resetVisibleCount();
-                }}
-                type="button"
-              >
-                <CheckCircle2 size={14} aria-hidden="true" />
-                <span>已安装</span>
-                <b>{installedCount}</b>
-              </button>
-            ) : null}
+            ))}
           </div>
-        ) : null}
 
-        {hasActiveControls ? (
-          <button
-            aria-label="重置筛选"
-            className="skill-market-reset-button"
-            onClick={resetFilters}
-            title="重置筛选"
-            type="button"
+          <div className="skill-market-status-controls" aria-label="目录状态" role="group">
+            <button
+              aria-pressed={status === 'saved'}
+              className={status === 'saved' ? 'is-active' : ''}
+              onClick={() => {
+                setStatus(status === 'saved' ? 'all' : 'saved');
+                resetVisibleCount();
+              }}
+              type="button"
+            >
+              <Bookmark size={14} aria-hidden="true" />
+              <span>我的收藏</span>
+              <b>{savedCount}</b>
+            </button>
+            <button
+              aria-pressed={status === 'installed'}
+              className={status === 'installed' ? 'is-active' : ''}
+              onClick={() => {
+                setStatus(status === 'installed' ? 'all' : 'installed');
+                resetVisibleCount();
+              }}
+              type="button"
+            >
+              <CheckCircle2 size={14} aria-hidden="true" />
+              <span>已安装</span>
+              <b>{installedCount}</b>
+            </button>
+          </div>
+        </div>
+
+        {category !== null ? (
+          <div
+            className="skill-market-filter-row skill-market-filter-row--scenes"
+            aria-label="场景"
+            role="group"
           >
-            <RotateCcw size={16} aria-hidden="true" />
-          </button>
-        ) : null}
-      </div>
-
-      <div className="skill-market-filter-row" aria-label="分类" role="group">
-        <span className="skill-market-filter-row__label">分类</span>
-        <button
-          aria-pressed={category === null}
-          className={category === null ? 'is-active' : ''}
-          onClick={() => {
-            setCategory(null);
-            setSubcategory(null);
-            resetVisibleCount();
-          }}
-          type="button"
-        >
-          <span>全部分类</span>
-          <b>{baseResult.entries.length}</b>
-        </button>
-        {baseResult.categories.map((item) => (
-          <button
-            aria-pressed={category === item.id}
-            className={category === item.id ? 'is-active' : ''}
-            key={item.id}
-            onClick={() => {
-              setCategory(item.id);
-              setSubcategory(null);
-              resetVisibleCount();
-            }}
-            type="button"
-          >
-            <span>{item.name}</span>
-            <b>{item.count}</b>
-          </button>
-        ))}
-      </div>
-
-      <div
-        className="skill-market-filter-row skill-market-filter-row--scenes"
-        aria-label="场景"
-        role="group"
-      >
-        <span className="skill-market-filter-row__label">场景</span>
-        <button
-          aria-pressed={subcategory === null}
-          className={subcategory === null ? 'is-active' : ''}
-          onClick={() => {
-            setSubcategory(null);
-            resetVisibleCount();
-          }}
-          type="button"
-        >
-          <span>全部场景</span>
-        </button>
-        {category !== null
-          ? currentSubcategories.map((item) => (
+            <button
+              aria-pressed={subcategory === null}
+              className={subcategory === null ? 'is-active' : ''}
+              onClick={() => {
+                setSubcategory(null);
+                resetVisibleCount();
+              }}
+              type="button"
+            >
+              <span>全部场景</span>
+            </button>
+            {currentSubcategories.map((item) => (
               <button
                 aria-pressed={subcategory === item.id}
                 className={subcategory === item.id ? 'is-active' : ''}
@@ -306,8 +365,9 @@ export function SkillMarketView({
                 <span>{item.label}</span>
                 <b>{item.count}</b>
               </button>
-            ))
-          : null}
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {!connected ? (
@@ -360,7 +420,6 @@ export function SkillMarketView({
               action={getSkillMarketAction(item.status, connected, {
                 mutationLocked,
                 skillsKnown,
-                unavailableReason: getSkillMarketUnavailableReason(item.entry.install),
               })}
               item={item}
               key={item.id}
@@ -368,7 +427,7 @@ export function SkillMarketView({
               onOpen={(trigger) => openEntry(item, trigger)}
               onToggleSaved={toggleSaved}
               onUpdate={onUpdate}
-              onUse={onUse}
+              onUse={requestUse}
             />
           ))}
         </div>
@@ -378,13 +437,12 @@ export function SkillMarketView({
         <div className="skill-market-pagination" aria-live="polite">
           <span>已显示 {page.visibleCount} / {page.totalCount}</span>
           {page.hasMore ? (
-            <button
-              className="skill-market-load-more"
-              onClick={() => setVisibleCount(current => current + skillMarketLoadMoreCount)}
-              type="button"
-            >
-              加载更多 Skill
-            </button>
+            <div
+              aria-hidden="true"
+              className="skill-market-scroll-sentinel"
+              data-testid="skill-market-scroll-sentinel"
+              ref={loadMoreRef}
+            />
           ) : null}
         </div>
       ) : null}
@@ -398,12 +456,26 @@ export function SkillMarketView({
           onInstall={onInstall}
           onToggleSaved={toggleSaved}
           onUpdate={onUpdate}
-          onUse={onUse}
+          onUse={requestUse}
           saved={activeSyncedEntry.saved}
           skillsKnown={skillsKnown}
           useError={
             useError?.skillId === activeSyncedEntry.id ? useError.error : undefined
           }
+        />
+      ) : null}
+
+      {pendingUseEntry ? (
+        <SkillUseProjectDialog
+          currentProjectId={currentProjectId}
+          onClose={() => setPendingUseEntry(null)}
+          onConfirm={(projectId) => {
+            const skillId = pendingUseEntry.id;
+            setPendingUseEntry(null);
+            onUse(skillId, projectId);
+          }}
+          projects={projects}
+          skillTitle={pendingUseEntry.title}
         />
       ) : null}
     </section>

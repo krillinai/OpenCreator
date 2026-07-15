@@ -1,7 +1,6 @@
 import sourceSkills from './source-skills.json' with { type: 'json' };
 import sourceCategories from './source-categories.json' with { type: 'json' };
 import { customSkills } from './custom-skills.js';
-import { installSourceForSkill } from './install-sources.js';
 import type {
   CreatorSkillSource,
   SkillMarketCategory,
@@ -65,7 +64,12 @@ export const skillMarketCatalog: readonly SkillMarketEntry[] = deepFreeze(
           notes: [...skill.risks.notes],
         },
         listingStatus: skill.listingStatus,
-        install: installSourceForSkill(skill.id),
+        install: {
+          repository: skill.github.repo,
+          skillPath: skill.github.skillPath ?? '.',
+          ref: skill.github.defaultBranch,
+          marketRevision: 1,
+        },
       })
     )
 );

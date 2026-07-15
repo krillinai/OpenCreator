@@ -75,7 +75,7 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
     expect(screen.getByRole('button', { name: 'bili' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '对话' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '对话' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
     expect(screen.getByText('4天')).toBeInTheDocument();
@@ -118,6 +118,7 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: 'empty-project' }));
 
     expect(onSelectProject).toHaveBeenCalledWith('empty-project');
+    expect(screen.queryByText('暂无聊天')).not.toBeInTheDocument();
   });
 
   it('shows conversations under the selected project', () => {
@@ -148,6 +149,7 @@ describe('ClaweeSidebar', () => {
   it('shows task rows with running, queued, approval, failed, paused, repair, and unread states', () => {
     renderSidebar({
       tasks: [
+        createTask({ id: 'draft', name: '任务草稿', status: 'draft' }),
         createTask({ id: 'running', name: '运行任务', status: 'running' }),
         createTask({ id: 'queued', name: '排队任务', status: 'queued' }),
         createTask({ id: 'approval', name: '审批任务', status: 'waiting_approval' }),
@@ -164,6 +166,7 @@ describe('ClaweeSidebar', () => {
     });
 
     expect(screen.getByRole('heading', { name: '任务' })).toBeInTheDocument();
+    expect(screen.getByText('草稿')).toBeInTheDocument();
     expect(screen.getByText('运行中')).toBeInTheDocument();
     expect(screen.getByText('排队中')).toBeInTheDocument();
     expect(screen.getByText('待审批')).toBeInTheDocument();
@@ -173,6 +176,25 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByLabelText('未读更新')).toBeInTheDocument();
     expect(document.querySelector('.sidebar-task-spinner')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /异常任务.*需修复/ })).toBeDisabled();
+  });
+
+  it('highlights a selected draft task without marking its execution project as current', () => {
+    renderSidebar({
+      selectedConversationId: 'thread-draft',
+      tasks: [
+        createTask({
+          id: 'draft',
+          threadId: 'thread-draft',
+          name: '任务草稿',
+          status: 'draft'
+        })
+      ]
+    });
+
+    expect(screen.getByRole('button', { name: /任务草稿.*草稿/ }))
+      .toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'content-design' }))
+      .not.toHaveAttribute('data-current-project');
   });
 
   it('opens a paused task thread and keeps it selectable', async () => {
@@ -287,7 +309,7 @@ function createTask(overrides: {
   id?: string;
   threadId?: string;
   name?: string;
-  status?: 'idle' | 'running' | 'queued' | 'waiting_approval' | 'failed' | 'paused' | 'repair_required';
+  status?: 'draft' | 'idle' | 'running' | 'queued' | 'waiting_approval' | 'failed' | 'paused' | 'repair_required';
   nextRunLabel?: string;
   unread?: boolean;
 } = {}) {

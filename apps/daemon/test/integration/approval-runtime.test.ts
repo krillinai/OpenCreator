@@ -97,6 +97,85 @@ describe('approval runtime integration', () => {
     expect(fixture.approvalManager.get(approval.id)?.status).toBe('rejected');
   });
 
+  it('runs full-access commands without creating an approval record', async () => {
+    const fixture = setup('accept', 'danger-full-access');
+    const run = fixture.runManager.startRun({
+      prompt: 'execute without approval',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'danger-full-access',
+      threadId: fixture.thread.id,
+      resumeMode: 'new_thread'
+    });
+
+    await expect.poll(
+      () => fixture.runManager.getRun(run.id)?.status,
+      { timeout: 5_000, interval: 20 }
+    ).toBe('succeeded');
+    expect(fixture.approvalManager.list({ runId: run.id })).toEqual([]);
+    expect(fixture.runManager.listEvents(run.id).filter(event => event.type === 'approval'))
+      .toEqual([]);
+  });
+
+  it('surfaces an MCP schedule tool approval and continues after the user approves it', async () => {
+    const fixture = setupMcpElicitation();
+    const run = fixture.runManager.startRun({
+      prompt: 'create a protected schedule',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      threadId: fixture.thread.id,
+      resumeMode: 'new_thread'
+    });
+
+    await expect.poll(
+      () => fixture.approvalManager.list({ status: 'pending' })[0],
+      { timeout: 5_000, interval: 20 }
+    ).toMatchObject({
+      runId: run.id,
+      threadId: fixture.thread.id,
+      kind: 'permissions',
+      status: 'pending',
+      title: '允许创建定时任务',
+      summary: '武汉天气每5分钟简报',
+      details: {
+        serverName: 'clawee_schedule',
+        toolName: 'clawee_schedule_create',
+        toolDescription: '创建一个 Clawee 定时任务。',
+        toolParams: {
+          name: '武汉天气每5分钟简报'
+        }
+      }
+    });
+
+    const approval = fixture.approvalManager.list({ status: 'pending' })[0]!;
+    expect(fixture.approvalManager.approve(approval.id).changed).toBe(true);
+    await expect.poll(
+      () => fixture.runManager.getRun(run.id)?.status,
+      { timeout: 5_000, interval: 20 }
+    ).toBe('succeeded');
+  });
+
+  it('runs a full-access MCP schedule tool without creating an approval record', async () => {
+    const fixture = setupMcpElicitation('danger-full-access');
+    const run = fixture.runManager.startRun({
+      prompt: 'create a schedule without approval',
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'danger-full-access',
+      threadId: fixture.thread.id,
+      resumeMode: 'new_thread'
+    });
+
+    await expect.poll(
+      () => fixture.runManager.getRun(run.id)?.status,
+      { timeout: 5_000, interval: 20 }
+    ).toBe('succeeded');
+    expect(fixture.approvalManager.list({ runId: run.id })).toEqual([]);
+    expect(fixture.runManager.listEvents(run.id).filter(event => event.type === 'approval'))
+      .toEqual([]);
+  });
+
   it('cancels a pending approval when app-server exits unexpectedly', async () => {
     const fixture = setup('close');
     const run = fixture.runManager.startRun({
@@ -207,7 +286,10 @@ describe('approval runtime integration', () => {
   });
 });
 
-function setup(expectedDecision: 'accept' | 'decline' | 'close') {
+function setup(
+  expectedDecision: 'accept' | 'decline' | 'close',
+  sandbox: 'read-only' | 'danger-full-access' = 'read-only'
+) {
   tempDir = mkdtempSync(join(tmpdir(), 'clawee-approval-runtime-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const threadManager = createThreadManager({ db, dataDir: tempDir });
@@ -215,13 +297,41 @@ function setup(expectedDecision: 'accept' | 'decline' | 'close') {
     workspaceMode: 'external',
     cwd: tempDir,
     profile: 'default',
-    sandbox: 'read-only'
+    sandbox
   });
   const approvalManager = createApprovalManager({ db });
   const createdRunManager = createRunManager({
     db,
     dataDir: tempDir,
     codexBin: createFakeApprovalAppServer(tempDir, expectedDecision),
+    codexHome: join(tempDir, 'codex-home'),
+    threadAccess: threadManager,
+    resumeCapabilityVerified: true,
+    runtimeTransport: 'app-server',
+    approvalManager
+  });
+  runManager = createdRunManager;
+  return { approvalManager, runManager: createdRunManager, thread };
+}
+
+function setupMcpElicitation(
+  sandbox: 'workspace-write' | 'danger-full-access' = 'workspace-write'
+) {
+  tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-approval-runtime-'));
+  db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+  const threadManager = createThreadManager({ db, dataDir: tempDir });
+  const thread = threadManager.createThread({
+    purpose: 'schedule_draft',
+    workspaceMode: 'external',
+    cwd: tempDir,
+    profile: 'default',
+    sandbox
+  });
+  const approvalManager = createApprovalManager({ db });
+  const createdRunManager = createRunManager({
+    db,
+    dataDir: tempDir,
+    codexBin: createFakeMcpElicitationAppServer(tempDir),
     codexHome: join(tempDir, 'codex-home'),
     threadAccess: threadManager,
     resumeCapabilityVerified: true,
@@ -262,6 +372,62 @@ rl.on('line', line => {
     send({ method: 'serverRequest/resolved', params: { threadId: 'codex-thread-approval', requestId: 'approval-rpc' } });
     send({ method: 'item/completed', params: { threadId: 'codex-thread-approval', turnId: 'turn-approval', item: { type: 'commandExecution', id: 'item-approval', command: 'rm -rf build', cwd: process.cwd(), status: ${JSON.stringify(expectedDecision === 'accept' ? 'completed' : 'declined')}, commandActions: [], aggregatedOutput: ${JSON.stringify(expectedDecision === 'accept' ? 'done' : '')}, exitCode: ${expectedDecision === 'accept' ? 0 : 'null'} } } });
     send({ method: 'turn/completed', params: { threadId: 'codex-thread-approval', turn: { id: 'turn-approval', status: 'completed' } } });
+  }
+});
+`, 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function createFakeMcpElicitationAppServer(dir: string): string {
+  const bin = join(dir, 'fake-mcp-approval-codex.js');
+  writeFileSync(bin, `#!/usr/bin/env node
+const readline = require('node:readline');
+const rl = readline.createInterface({ input: process.stdin });
+const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
+rl.on('line', line => {
+  const message = JSON.parse(line);
+  if (message.method === 'initialize') {
+    send({ id: message.id, result: { userAgent: 'fake', codexHome: process.env.CODEX_HOME, platformFamily: 'unix', platformOs: 'test' } });
+  } else if (message.method === 'thread/start') {
+    send({ id: message.id, result: { thread: { id: 'codex-thread-mcp-approval' } } });
+  } else if (message.method === 'turn/start') {
+    send({ id: message.id, result: { turn: { id: 'turn-mcp-approval', status: 'inProgress' } } });
+    send({ method: 'turn/started', params: { threadId: 'codex-thread-mcp-approval', turn: { id: 'turn-mcp-approval', status: 'inProgress' } } });
+    send({
+      id: 'mcp-approval-rpc',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        threadId: 'codex-thread-mcp-approval',
+        turnId: 'turn-mcp-approval',
+        serverName: 'clawee_schedule',
+        mode: 'form',
+        _meta: {
+          codex_approval_kind: 'mcp_tool_call',
+          tool_description: '创建一个 Clawee 定时任务。',
+          tool_params: {
+            name: '武汉天气每5分钟简报'
+          }
+        },
+        requestedSchema: {
+          type: 'object',
+          properties: {}
+        }
+      }
+    });
+  } else if (message.id === 'mcp-approval-rpc') {
+    if (
+      !message.result
+      || message.result.action !== 'accept'
+      || JSON.stringify(message.result.content) !== '{}'
+      || message.result._meta !== null
+    ) {
+      process.stderr.write('unexpected MCP elicitation response\\n');
+      process.exit(2);
+      return;
+    }
+    send({ method: 'serverRequest/resolved', params: { threadId: 'codex-thread-mcp-approval', requestId: 'mcp-approval-rpc' } });
+    send({ method: 'turn/completed', params: { threadId: 'codex-thread-mcp-approval', turn: { id: 'turn-mcp-approval', status: 'completed' } } });
   }
 });
 `, 'utf8');

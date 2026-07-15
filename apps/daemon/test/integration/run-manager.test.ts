@@ -2,7 +2,7 @@ import type { SandboxMode } from '@clawee/protocol';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeCodex } from '../helpers/fake-codex.js';
@@ -1033,6 +1033,44 @@ describe('run manager', () => {
       }
     });
     expect(fake.readPrompt()).toBe('internal schedule prompt');
+  });
+
+  it('uses canonicalCwd when running a legacy managed thread with a relative cwd', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-managed-cwd-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-managed' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const created = threadManager.createThread({
+      purpose: 'schedule_draft',
+      workspaceMode: 'managed',
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+    const legacyRelativeCwd = relative(process.cwd(), created.cwd);
+    db!.prepare('UPDATE threads SET cwd = ? WHERE id = ?').run(legacyRelativeCwd, created.id);
+    const legacyThread = threadManager.getThread(created.id)!;
+
+    const run = await manager.createAndRun({
+      threadId: legacyThread.id,
+      prompt: 'create a schedule'
+    });
+
+    expect(run.status).toBe('succeeded');
+    expect(manager.getRun(run.id)?.cwd).toBe(legacyThread.canonicalCwd);
+    const meta = JSON.parse(
+      readFileSync(join(tempDir, 'runs', run.id, 'meta.json'), 'utf8')
+    ) as { cwd?: string; args?: string[] };
+    expect(meta.cwd).toBe(legacyThread.canonicalCwd);
+    expect(meta.args).toContain(legacyThread.canonicalCwd);
   });
 
   it('does not persist schedule-only public metadata for ordinary runs', async () => {

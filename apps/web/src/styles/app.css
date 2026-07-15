@@ -78,7 +78,8 @@ button:not(:disabled):active {
 
 button:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--accent-strong);
   outline-offset: 2px;
 }
@@ -3367,7 +3368,7 @@ textarea:focus-visible {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   gap: 18px;
   padding: 24px 12px 12px;
   color: var(--text);
@@ -3477,13 +3478,6 @@ textarea:focus-visible {
   gap: 8px;
 }
 
-.sidebar-conversations {
-  grid-template-rows: auto auto;
-  align-self: end;
-  min-height: auto;
-  padding-bottom: 4px;
-}
-
 .sidebar-task-section {
   min-height: 0;
   max-height: 220px;
@@ -3563,6 +3557,10 @@ textarea:focus-visible {
 
 .sidebar-task-icon {
   color: rgba(252, 253, 255, 0.62);
+}
+
+.sidebar-task-row[data-status="draft"] .sidebar-task-icon {
+  color: var(--accent);
 }
 
 .sidebar-task-row[data-status="waiting_approval"] .sidebar-task-icon {
@@ -4009,6 +4007,18 @@ textarea:focus-visible {
   grid-template-columns: minmax(160px, 1fr) auto;
 }
 
+.settings-select {
+  width: min(240px, 100%);
+  min-width: 180px;
+  height: 34px;
+  justify-self: end;
+  padding: 0 34px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
 .settings-switch {
   width: 42px;
   height: 24px;
@@ -4098,6 +4108,12 @@ textarea:focus-visible {
 
   .settings-row strong {
     text-align: left;
+  }
+
+  .settings-select {
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
   }
 
   .settings-action {
@@ -4297,10 +4313,6 @@ textarea:focus-visible {
     min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;
-  }
-
-  .sidebar-conversations {
-    display: none;
   }
 
   .sidebar-bottom {

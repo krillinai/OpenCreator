@@ -147,19 +147,22 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('uses a compact toolbar and two flat visible filter rows', () => {
+  it('uses a compact toolbar with sorting and workflow navigation', () => {
     const toolbar = skillMarketCssBlock('.skill-market__toolbar');
     const filterRow = skillMarketCssBlock('.skill-market-filter-row');
+    const categoryLine = skillMarketCssBlock('.skill-market-category-line');
     const statusControls = skillMarketCssBlock('.skill-market-status-controls');
     const searchFocus = skillMarketCssBlock('.skill-market-search input:focus-visible');
+    const sort = skillMarketCssBlock('.skill-market-sort');
 
     expect(toolbar).toContain('display: flex;');
-    expect(toolbar).toContain('flex-wrap: wrap;');
+    expect(toolbar).toContain('justify-content: flex-end;');
     expect(filterRow).toContain('display: flex;');
-    expect(filterRow).toContain('flex-wrap: wrap;');
-    expect(statusControls).toContain('padding: 3px;');
+    expect(filterRow).toContain('overflow-x: auto;');
+    expect(categoryLine).toContain('justify-content: space-between;');
+    expect(statusControls).toContain('flex: 0 0 auto;');
+    expect(sort).toContain('height: 40px;');
     expect(searchFocus).toContain('outline: none;');
-    expect(skillMarketCss).not.toContain('.skill-market-sort');
     expect(skillMarketCss).not.toContain('.skill-market-filter-selects');
     expect(skillMarketCss).not.toContain('.skill-market-filter-shell');
     expect(skillMarketCss).not.toContain('.skill-market-chip-row');
@@ -171,36 +174,32 @@ describe('app CSS visual contracts', () => {
     expect(brandButton).toContain('padding: 0;');
   });
 
-  it('uses a complete 2:1 cover and one compact metadata flow for skill cards', () => {
+  it('uses an avatar-first compact metadata flow without card covers', () => {
+    const card = skillMarketCssBlock('.skill-market-card');
     const cardOpen = skillMarketCssBlock('.skill-market-card__open');
-    const cover = skillMarketCssBlock('.skill-market-card__cover');
-    const image = skillMarketCssBlock('.skill-market-cover__image');
+    const identity = skillMarketCssBlock('.skill-market-card__identity');
     const body = skillMarketCssBlock('.skill-market-card__body');
     const tags = skillMarketCssBlock('.skill-market-card__tags');
     const tagline = skillMarketCssBlock('.skill-market-card__tagline');
+    const avatar = skillMarketCssBlock('.skill-market-avatar--small');
 
-    expect(cardOpen).toContain('grid-template-rows: auto minmax(0, 1fr);');
-    expect(cover).toContain('aspect-ratio: 2 / 1;');
-    expect(image).toContain('object-fit: contain;');
-    expect(body).toContain('gap: 9px;');
-    expect(tags).toContain('flex-wrap: wrap;');
+    expect(card).toContain('min-height: 176px;');
+    expect(cardOpen).toContain('flex-direction: column;');
+    expect(identity).toContain('align-items: center;');
+    expect(body).toContain('flex-direction: column;');
+    expect(tags).toContain('overflow: hidden;');
     expect(tagline).toContain('-webkit-line-clamp: 2;');
-    expect(skillMarketCss).not.toContain('.skill-market-card__cover-top');
+    expect(avatar).toContain('width: 40px;');
+    expect(skillMarketCss).not.toContain('.skill-market-card__cover');
     expect(skillMarketCss).not.toContain('.skill-market-task-row');
   });
 
-  it('scales the skill market grid from five columns down to one', () => {
+  it('scales the skill market grid from three columns down to one', () => {
     const grid = skillMarketCssBlock('.skill-market-grid');
 
-    expect(grid).toContain('grid-template-columns: repeat(5, minmax(0, 1fr));');
+    expect(grid).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(skillMarketCss).toMatch(
-      /@media \(max-width: 1920px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(4, minmax\(0, 1fr\)\)/
-    );
-    expect(skillMarketCss).toMatch(
-      /@media \(max-width: 1560px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/
-    );
-    expect(skillMarketCss).toMatch(
-      /@media \(max-width: 1220px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/
+      /@media \(max-width: 1280px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/
     );
     expect(skillMarketCss).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.skill-market-grid[^}]*grid-template-columns: minmax\(0, 1fr\)/
@@ -211,14 +210,17 @@ describe('app CSS visual contracts', () => {
     const modal = skillMarketCssBlock('.skill-market-modal');
     const body = skillMarketCssBlock('.skill-market-modal__body');
     const head = skillMarketCssBlock('.skill-market-detail-head');
+    const identity = skillMarketCssBlock('.skill-market-detail-head__identity');
     const layout = skillMarketCssBlock('.skill-market-detail-layout');
     const block = skillMarketCssBlock('.skill-market-detail-block');
 
-    expect(modal).toContain('width: min(1040px, 100%);');
-    expect(body).toContain('padding: 24px 28px 28px;');
-    expect(head).toContain('grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);');
-    expect(layout).toContain('grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.8fr);');
+    expect(modal).toContain('width: min(920px, 100%);');
+    expect(body).toContain('padding: 28px 30px 30px;');
+    expect(head).toContain('padding-right: 42px;');
+    expect(identity).toContain('display: flex;');
+    expect(layout).toContain('grid-template-columns: minmax(0, 1.65fr) minmax(240px, 0.75fr);');
     expect(block).toContain('border-top: 1px solid var(--border);');
+    expect(skillMarketCss).not.toContain('.skill-market-detail-head__cover');
     expect(skillMarketCss).not.toContain('.skill-market-detail-grid');
     expect(skillMarketCss).not.toContain('.skill-market-modal__bar');
   });

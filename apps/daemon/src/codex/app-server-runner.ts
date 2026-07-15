@@ -16,7 +16,8 @@ export type AppServerRequest = {
   method:
     | 'item/commandExecution/requestApproval'
     | 'item/fileChange/requestApproval'
-    | 'item/permissions/requestApproval';
+    | 'item/permissions/requestApproval'
+    | 'mcpServer/elicitation/request';
   params: Record<string, unknown>;
 };
 
@@ -67,6 +68,9 @@ export function startCodexAppServer(
   input: StartCodexAppServerInput
 ): CodexAppServerProcess {
   const args = buildCodexAppServerArgs(input);
+  const approvalPolicy = input.sandbox === 'danger-full-access'
+    ? 'never'
+    : 'on-request';
   const child = spawn(input.codexBin, args, {
     cwd: input.cwd,
     env: { ...process.env, ...input.env, CODEX_HOME: input.codexHome },
@@ -156,6 +160,13 @@ export function startCodexAppServer(
   }
 
   async function respondToServerRequest(message: AppServerRequest): Promise<void> {
+    if (approvalPolicy === 'never') {
+      send({
+        id: message.id,
+        result: approvalResponse(message.method, 'approved', message.params)
+      });
+      return;
+    }
     if (input.onApprovalRequest === undefined) {
       send({
         id: message.id,
@@ -198,11 +209,19 @@ export function startCodexAppServer(
     const method = stringField(message, 'method');
     if (
       (typeof id === 'string' || typeof id === 'number')
-      && isApprovalMethod(method)
       && isRecord(message.params)
     ) {
-      void respondToServerRequest({ id, method, params: message.params });
-      return;
+      if (isApprovalRequest(method, message.params)) {
+        void respondToServerRequest({ id, method, params: message.params });
+        return;
+      }
+      if (method === 'mcpServer/elicitation/request') {
+        send({
+          id,
+          result: approvalResponse(method, 'canceled', message.params)
+        });
+        return;
+      }
     }
 
     if (method === undefined) return;
@@ -312,7 +331,7 @@ export function startCodexAppServer(
             cwd: input.cwd,
             model: input.model ?? null,
             sandbox: input.sandbox,
-            approvalPolicy: 'on-request',
+            approvalPolicy,
             approvalsReviewer: 'user',
             serviceName: 'clawee-agent'
           }
@@ -321,7 +340,7 @@ export function startCodexAppServer(
             cwd: input.cwd,
             model: input.model ?? null,
             sandbox: input.sandbox,
-            approvalPolicy: 'on-request',
+            approvalPolicy,
             approvalsReviewer: 'user'
           }
     );
@@ -341,7 +360,7 @@ export function startCodexAppServer(
       cwd: input.cwd,
       model: input.model ?? null,
       effort: normalizeReasoning(input.reasoning),
-      approvalPolicy: 'on-request',
+      approvalPolicy,
       approvalsReviewer: 'user'
     });
     const turn = isRecord(turnResponse) && isRecord(turnResponse.turn)
@@ -383,6 +402,13 @@ function approvalResponse(
   params: Record<string, unknown>
 ): Record<string, unknown> {
   const accepted = decision === 'approved';
+  if (method === 'mcpServer/elicitation/request') {
+    return {
+      action: accepted ? 'accept' : decision === 'canceled' ? 'cancel' : 'decline',
+      content: accepted ? {} : null,
+      _meta: null
+    };
+  }
   if (method === 'item/permissions/requestApproval') {
     return accepted
       ? {
@@ -399,10 +425,20 @@ function approvalResponse(
   };
 }
 
-function isApprovalMethod(method: string | undefined): method is AppServerRequest['method'] {
-  return method === 'item/commandExecution/requestApproval'
+function isApprovalRequest(
+  method: string | undefined,
+  params: Record<string, unknown>
+): method is AppServerRequest['method'] {
+  if (
+    method === 'item/commandExecution/requestApproval'
     || method === 'item/fileChange/requestApproval'
-    || method === 'item/permissions/requestApproval';
+    || method === 'item/permissions/requestApproval'
+  ) {
+    return true;
+  }
+  if (method !== 'mcpServer/elicitation/request') return false;
+  const meta = isRecord(params._meta) ? params._meta : undefined;
+  return stringField(meta, 'codex_approval_kind') === 'mcp_tool_call';
 }
 
 function normalizeTurnStatus(

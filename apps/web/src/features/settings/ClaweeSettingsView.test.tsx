@@ -27,6 +27,7 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByRole('button', { name: '关于 Clawee' })).toBeInTheDocument();
 
     expect(screen.getByText('默认权限')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '默认权限' })).toHaveValue('follow-project');
     expect(screen.getByText('默认文件打开方式')).toBeInTheDocument();
     expect(screen.getByText('语言')).toBeInTheDocument();
     expect(screen.getByText('中文')).toBeInTheDocument();
@@ -34,6 +35,25 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByRole('switch', { name: '动态背景' })).toBeChecked();
     expect(screen.queryByText('工作模式')).not.toBeInTheDocument();
     expect(screen.queryByText('适用于编程')).not.toBeInTheDocument();
+  });
+
+  it('notifies when the global default permission changes', () => {
+    const onDefaultPermissionChange = vi.fn();
+    render(
+      <ClaweeSettingsView
+        runtimeStatus={runtimeStatus}
+        defaultPermission="workspace-write"
+        onDefaultPermissionChange={onDefaultPermissionChange}
+        onBack={vi.fn()}
+      />
+    );
+
+    const permission = screen.getByRole('combobox', { name: '默认权限' });
+    expect(permission).toHaveValue('workspace-write');
+
+    fireEvent.change(permission, { target: { value: 'danger-full-access' } });
+
+    expect(onDefaultPermissionChange).toHaveBeenCalledWith('danger-full-access');
   });
 
   it('notifies when the dynamic background setting changes', () => {

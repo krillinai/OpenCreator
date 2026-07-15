@@ -54,6 +54,9 @@ export function ClaweeSidebar(props: {
     { label: '插件', icon: Plug, view: 'plugins', onClick: () => props.onOpenView('plugins') }
   ];
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
+  const selectedTaskThread = props.tasks.some(
+    task => task.threadId === props.selectedConversationId
+  );
 
   for (const conversation of props.conversations) {
     const projectConversations = conversationsByProject.get(conversation.projectId) ?? [];
@@ -117,81 +120,71 @@ export function ClaweeSidebar(props: {
       </div>
 
       {collapsed ? null : (
-        <>
-          <section className="sidebar-section" aria-labelledby="clawee-projects-heading">
-            <h2 id="clawee-projects-heading">项目</h2>
-            <div className="sidebar-project-tree" aria-label="项目和对话">
-              {props.projects.map((project) => {
-                const isCurrentProject = project.id === props.currentProjectId;
-                const isExpanded = project.id === expandedProjectId;
-                const projectConversations = conversationsByProject.get(project.id) ?? [];
-                const ProjectIcon = isCurrentProject ? FolderOpen : Folder;
+        <section className="sidebar-section" aria-labelledby="clawee-projects-heading">
+          <h2 id="clawee-projects-heading">项目</h2>
+          <div className="sidebar-project-tree" aria-label="项目和对话">
+            {props.projects.map((project) => {
+              const isCurrentProject =
+                !selectedTaskThread && project.id === props.currentProjectId;
+              const isExpanded = project.id === expandedProjectId;
+              const projectConversations = conversationsByProject.get(project.id) ?? [];
+              const ProjectIcon = isCurrentProject ? FolderOpen : Folder;
 
-                return (
-                  <div className="sidebar-project-node" key={project.id}>
-                    <button
-                      type="button"
-                      className="sidebar-row project-row"
-                      data-current-project={isCurrentProject ? 'true' : undefined}
-                      aria-expanded={isExpanded}
-                      onClick={() => {
-                        if (isExpanded) {
-                          setExpandedProjectId(undefined);
-                          return;
-                        }
-                        setExpandedProjectId(project.id);
-                        if (projectConversations.length === 0) {
-                          props.onSelectProject(project.id);
-                        }
-                      }}
-                    >
-                      <ProjectIcon className="project-icon" size={18} strokeWidth={1.85} aria-hidden="true" />
-                      <span>{project.name}</span>
-                    </button>
-                    {isExpanded ? (
-                      <div className="sidebar-conversation-tree" aria-label={`${project.name} 对话`}>
-                        {projectConversations.length === 0 ? (
-                          <p className="sidebar-empty">暂无聊天</p>
-                        ) : (
-                          projectConversations.map((conversation) => {
-                            const isRunning = props.runningConversationIds?.has(conversation.id) === true;
-                            return (
-                              <button
-                                key={conversation.id}
-                                type="button"
-                                className="conversation-row nested-conversation-row"
-                                aria-current={conversation.id === props.selectedConversationId ? 'page' : undefined}
-                                onClick={() => props.onSelectConversation(conversation.id)}
-                              >
-                                <strong>{conversation.title}</strong>
-                                <span className="conversation-row-meta">
-                                  {isRunning ? (
-                                    <LoaderCircle
-                                      className="conversation-run-spinner"
-                                      size={13}
-                                      strokeWidth={2}
-                                      aria-label="正在运行"
-                                    />
-                                  ) : null}
-                                  <span className="conversation-updated-label">{conversation.updatedLabel}</span>
-                                </span>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="sidebar-section sidebar-conversations" aria-labelledby="clawee-conversations-heading">
-            <h2 id="clawee-conversations-heading">对话</h2>
-            <p className="sidebar-empty">暂无聊天</p>
-          </section>
-        </>
+              return (
+                <div className="sidebar-project-node" key={project.id}>
+                  <button
+                    type="button"
+                    className="sidebar-row project-row"
+                    data-current-project={isCurrentProject ? 'true' : undefined}
+                    aria-expanded={isExpanded}
+                    onClick={() => {
+                      if (isExpanded) {
+                        setExpandedProjectId(undefined);
+                        return;
+                      }
+                      setExpandedProjectId(project.id);
+                      if (projectConversations.length === 0) {
+                        props.onSelectProject(project.id);
+                      }
+                    }}
+                  >
+                    <ProjectIcon className="project-icon" size={18} strokeWidth={1.85} aria-hidden="true" />
+                    <span>{project.name}</span>
+                  </button>
+                  {isExpanded && projectConversations.length > 0 ? (
+                    <div className="sidebar-conversation-tree" aria-label={`${project.name} 对话`}>
+                      {projectConversations.map((conversation) => {
+                        const isRunning = props.runningConversationIds?.has(conversation.id) === true;
+                        return (
+                          <button
+                            key={conversation.id}
+                            type="button"
+                            className="conversation-row nested-conversation-row"
+                            aria-current={conversation.id === props.selectedConversationId ? 'page' : undefined}
+                            onClick={() => props.onSelectConversation(conversation.id)}
+                          >
+                            <strong>{conversation.title}</strong>
+                            <span className="conversation-row-meta">
+                              {isRunning ? (
+                                <LoaderCircle
+                                  className="conversation-run-spinner"
+                                  size={13}
+                                  strokeWidth={2}
+                                  aria-label="正在运行"
+                                />
+                              ) : null}
+                              <span className="conversation-updated-label">{conversation.updatedLabel}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {collapsed ? null : (
@@ -267,6 +260,8 @@ function taskStatusVisual(status: SidebarTaskStatus): {
   label: string;
 } {
   switch (status) {
+    case 'draft':
+      return { icon: SquarePen, label: '草稿' };
     case 'running':
       return { icon: LoaderCircle, label: '运行中' };
     case 'queued':

@@ -10,7 +10,6 @@ import {
 } from '@clawee/skill-market';
 
 export type SkillMarketStatus =
-  | 'unavailable'
   | 'not_installed'
   | 'invalid'
   | 'installed_unknown_version'
@@ -102,13 +101,12 @@ export function resolveSkillMarketStatus(
   if (skill?.status === 'valid') {
     const record = findRecordBySkillId(records, entry.id);
     if (record === undefined) return 'installed_unknown_version';
-    if (!entry.install.available) return 'installed_unknown_version';
     return record.marketRevision < entry.install.marketRevision
       ? 'update_available'
       : 'installed';
   }
 
-  return entry.install.available ? 'not_installed' : 'unavailable';
+  return 'not_installed';
 }
 
 export function filterAndSortSkillMarketEntries(
@@ -208,7 +206,7 @@ export function getSkillMarketStableUserCount(entry: SkillMarketEntry): number {
     Math.min(entry.tasks.length, 5) * 180 +
     Math.min(entry.platforms.length, 5) * 120 +
     Math.min(entry.examples.length, 3) * 250 +
-    (entry.install.available ? 160 : 0)
+    160
   );
 }
 
@@ -285,7 +283,6 @@ function compareEntries(
           listingStatusRank[left.entry.listingStatus],
           listingStatusRank[right.entry.listingStatus]
         ) ||
-        compareBoolean(right.entry.install.available, left.entry.install.available) ||
         compareNumber(right.users, left.users) ||
         compareInstalledPriority(left.status, right.status) ||
         compareText(left.title, right.title) ||
@@ -348,8 +345,6 @@ function statusSortRank(status: SkillMarketStatus): number {
       return 5;
     case 'not_installed':
       return 6;
-    case 'unavailable':
-      return 7;
   }
 }
 

@@ -14,8 +14,8 @@ import {
   type SkillWriteTransaction
 } from '../../src/codex/skills/manager.js';
 import { createSkillMarketManager } from '../../src/codex/skills/market-manager.js';
-import type { MarketArchiveDownloader } from '../../src/codex/skills/market-downloader.js';
 import type { SkillMarketRecordRepository } from '../../src/codex/skills/market-records.js';
+import type { CodexSkillSourceInstaller } from '../../src/codex/skills/source-installer.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 
 let tempDir = '';
@@ -37,40 +37,48 @@ describe('codex skill market manager', () => {
     );
   });
 
-  it('rejects market entries that are not installable', async () => {
-    const { manager } = createManagerFixture();
+  it('attempts installation for every catalog entry through the Codex Skill Installer', async () => {
+    const { manager, sourceInstaller } = createManagerFixture();
 
-    await expect(manager.installSkill('garrytan-gstack')).rejects.toThrow(
-      /CODEX_SKILL_MARKET_NOT_INSTALLABLE/
-    );
+    await manager.installSkill('garrytan-gstack');
+
+    expect(sourceInstaller.install).toHaveBeenCalledWith({
+      repository: 'garrytan/gstack',
+      skillPath: '.',
+      ref: 'main',
+      skillId: 'garrytan-gstack',
+      workDir: expect.stringContaining(join(tempDir, 'data', 'skill-market-installs'))
+    });
   });
 
-  it('installs market skills with the fixed catalog source and global write confirmation', async () => {
-    const { manager, skillManager, downloader, records } = createManagerFixture();
+  it('installs market skills with the catalog source and global write confirmation', async () => {
+    const { manager, skillManager, sourceInstaller, records } = createManagerFixture();
 
     const result = await manager.installSkill('frontend-slides');
 
-    expect(downloader.download).toHaveBeenCalledWith({
+    expect(sourceInstaller.install).toHaveBeenCalledWith({
       repository: 'zarazhangrui/frontend-slides',
-      commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
-      workDir: expect.stringContaining(join(tempDir, 'data', 'skill-market-downloads'))
+      skillPath: '.',
+      ref: 'main',
+      skillId: 'frontend-slides',
+      workDir: expect.stringContaining(join(tempDir, 'data', 'skill-market-installs'))
     });
     expect(skillManager.installSkill).toHaveBeenCalledWith({
       id: 'frontend-slides',
-      sourcePath: expect.stringContaining('market-archive-root'),
+      sourcePath: expect.stringContaining(join('market-source-root', 'frontend-slides')),
       confirmWriteToCodexHome: true
     });
     expect(records.upsertRecord).toHaveBeenCalledWith({
       skillId: 'frontend-slides',
       repository: 'zarazhangrui/frontend-slides',
       skillPath: '.',
-      commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
+      commit: 'main',
       marketRevision: 1
     });
     expect(result.record).toMatchObject({
       skillId: 'frontend-slides',
       repository: 'zarazhangrui/frontend-slides',
-      commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
+      commit: 'main',
       marketRevision: 1
     });
   });
@@ -85,17 +93,17 @@ describe('codex skill market manager', () => {
 
     expect(skillManager.installSkill).toHaveBeenCalledWith({
       id: 'frontend-slides',
-      sourcePath: expect.stringContaining('market-archive-root'),
+      sourcePath: expect.stringContaining(join('market-source-root', 'frontend-slides')),
       overwrite: true,
       confirmWriteToCodexHome: true
     });
   });
 
   it('rejects updates when the target skill is missing', async () => {
-    const { manager, downloader, skillManager } = createManagerFixture();
+    const { manager, sourceInstaller, skillManager } = createManagerFixture();
 
     await expect(manager.updateSkill('frontend-slides')).rejects.toThrow(/CODEX_SKILL_NOT_FOUND/);
-    expect(downloader.download).not.toHaveBeenCalled();
+    expect(sourceInstaller.install).not.toHaveBeenCalled();
     expect(skillManager.installSkill).not.toHaveBeenCalled();
   });
 
@@ -250,10 +258,10 @@ describe('codex skill market manager', () => {
     expect((error as Error).message).toContain('rollback denied');
   });
 
-  it('cleans up the outer download work directory after success, failure, and rollback failure', async () => {
+  it('cleans up the outer installer work directory after success, failure, and rollback failure', async () => {
     const success = createManagerFixture();
     await success.manager.installSkill('frontend-slides');
-    expect(readdirSync(join(tempDir, 'data', 'skill-market-downloads'))).toEqual([]);
+    expect(readdirSync(join(tempDir, 'data', 'skill-market-installs'))).toEqual([]);
 
     const failure = createManagerFixture({
       recordWriteError: new Error('market record write failed'),
@@ -262,7 +270,7 @@ describe('codex skill market manager', () => {
     await expect(failure.manager.installSkill('frontend-slides')).rejects.toThrow(
       /market record write failed/
     );
-    expect(readdirSync(join(tempDir, 'data', 'skill-market-downloads'))).toEqual([]);
+    expect(readdirSync(join(tempDir, 'data', 'skill-market-installs'))).toEqual([]);
 
     const rollbackFailure = createManagerFixture({
       recordWriteError: new Error('market record write failed'),
@@ -272,7 +280,7 @@ describe('codex skill market manager', () => {
     await expect(rollbackFailure.manager.installSkill('frontend-slides')).rejects.toThrow(
       /rollback denied/
     );
-    expect(readdirSync(join(tempDir, 'data', 'skill-market-downloads'))).toEqual([]);
+    expect(readdirSync(join(tempDir, 'data', 'skill-market-installs'))).toEqual([]);
   });
 
   it('lists install records from the repository', () => {
@@ -297,22 +305,22 @@ function createManagerFixture(options: {
   mkdirSync(dataDir, { recursive: true });
   const skillManager = makeFakeSkillManager(options);
   const records = makeFakeRecords(options);
-  const downloader = makeFakeDownloader(options.tempRootName ?? 'market-archive-root');
+  const sourceInstaller = makeFakeSourceInstaller(options.tempRootName ?? 'market-source-root');
   const manager = createSkillMarketManager({
     dataDir,
     skillManager,
     records,
-    downloader,
+    sourceInstaller,
     ...(options.cleanupError === undefined
       ? {}
       : {
           cleanupWorkDir() {
             throw options.cleanupError;
           }
-        })
+      })
   });
 
-  return { manager, skillManager, records, downloader };
+  return { manager, skillManager, records, sourceInstaller };
 }
 
 function createRealManagerFixture(options: { failRecordWrite: boolean }) {
@@ -329,8 +337,8 @@ function createRealManagerFixture(options: { failRecordWrite: boolean }) {
   const records = makeFakeRecords({
     recordWriteError: options.failRecordWrite ? new Error('market record write failed') : undefined
   });
-  const downloader = makeFakeDownloader('real-market-archive-root', 'new');
-  const manager = createSkillMarketManager({ dataDir, skillManager, records, downloader });
+  const sourceInstaller = makeFakeSourceInstaller('real-market-source-root', 'new');
+  const manager = createSkillMarketManager({ dataDir, skillManager, records, sourceInstaller });
 
   return { manager, skillManager, codexHome };
 }
@@ -355,7 +363,7 @@ function createConcurrentRealManagerFixture() {
     records: makeFakeRecords({
       recordWriteError: new Error('market record write failed')
     }),
-    downloader: makeFakeDownloader('first-update-root', 'first-update'),
+    sourceInstaller: makeFakeSourceInstaller('first-update-root', 'first-update'),
     cleanupWorkDir(workDir) {
       cleanupCalls += 1;
       if (cleanupCalls === 1) {
@@ -369,7 +377,7 @@ function createConcurrentRealManagerFixture() {
     dataDir,
     skillManager,
     records: makeFakeRecords({}),
-    downloader: makeFakeDownloader('second-update-root', 'second-update')
+    sourceInstaller: makeFakeSourceInstaller('second-update-root', 'second-update')
   });
 
   return {
@@ -439,12 +447,15 @@ function makeFakeRecords(options: {
   };
 }
 
-function makeFakeDownloader(rootName: string, marker = 'new'): MarketArchiveDownloader {
+function makeFakeSourceInstaller(
+  rootName: string,
+  marker = 'new'
+): CodexSkillSourceInstaller {
   return {
-    download: vi.fn(async ({ workDir }) => {
-      const root = join(workDir, rootName);
-      writeSkill(root, 'frontend-slides', marker);
-      return root;
+    install: vi.fn(async ({ workDir, skillId }) => {
+      const sourcePath = join(workDir, rootName, skillId);
+      writeSkill(sourcePath, skillId, marker);
+      return sourcePath;
     })
   };
 }
@@ -502,7 +513,7 @@ function makeRecord(
     skillId,
     repository: 'zarazhangrui/frontend-slides',
     skillPath: '.',
-    commit: '9906a34d640d2111f724544cbc50f7f130569ae1',
+    commit: 'main',
     marketRevision: 1,
     installedAt: '2026-07-11T00:00:00.000Z',
     updatedAt: '2026-07-11T00:00:00.000Z',

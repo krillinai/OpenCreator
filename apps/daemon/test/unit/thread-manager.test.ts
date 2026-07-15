@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createThreadManager } from '../../src/threads/manager.js';
@@ -34,6 +34,24 @@ describe('thread manager', () => {
     expect(thread.purpose).toBe('conversation');
     expect(thread.id).toMatch(/^thread_/);
     expect(thread.cwd).toContain(join('workspaces', thread.id));
+  });
+
+  it('stores an absolute managed workspace when dataDir is relative', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-relative-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({
+      db: database,
+      dataDir: relative(process.cwd(), tempDir)
+    });
+
+    const thread = manager.createThread({
+      workspaceMode: 'managed',
+      profile: 'default',
+      sandbox: 'workspace-write'
+    });
+
+    expect(isAbsolute(thread.cwd)).toBe(true);
+    expect(thread.canonicalCwd).toBe(realpathSync(thread.cwd));
   });
 
   it('persists managed and external threads', () => {

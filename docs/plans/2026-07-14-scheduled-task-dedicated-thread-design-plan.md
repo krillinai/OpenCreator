@@ -1051,7 +1051,7 @@ pnpm --filter @clawee/web typecheck
 **执行结果：**
 
 - 前端按 `ThreadResponse.purpose` 将 `conversation`、`schedule_draft` 与
-  `schedule_task` 稳定分组，任务 Thread 不再进入项目普通会话列表。
+  `schedule_task` 稳定分组；后续体验修订为草稿和正式任务都不进入项目普通会话列表。
 - 新增任务摘要模型，由 Schedule、绑定 Thread 和 RunRegistry 合并 name、threadId、
   enabled、nextRunAt、lastStatus、pendingTrigger 和当前 Run 状态，不读取会话历史。
 - 对旧 daemon 空 `threadId`、绑定 Thread 缺失、purpose 不匹配和 scheduleId 不匹配
@@ -1077,7 +1077,7 @@ feat(web): 接入任务会话绑定模型
 **依赖：** `P1-B1`
 
 **目标：** 在侧栏底部、设置上方增加面向用户的“任务”区域，并从项目普通会话中移除
-`schedule_task`。
+`schedule_draft` 和 `schedule_task`。
 
 **主要文件：**
 
@@ -1090,7 +1090,7 @@ feat(web): 接入任务会话绑定模型
 
 **测试先行：**
 
-1. `schedule_task` 不出现在项目普通会话树。
+1. `schedule_draft` 和 `schedule_task` 不出现在项目普通会话树。
 2. 任务区域显示运行、排队、等待审批、失败、暂停和未读状态。
 3. 正在运行使用旋转图标，状态变化不改变行高。
 4. 点击任务立即清空旧时间线并进入加载状态。
@@ -1119,8 +1119,9 @@ pnpm --filter @clawee/web build
 
 **执行结果：**
 
-- 新增独立 Sidebar task 展示模型，合并 Schedule 绑定摘要、全局 Task 轮询和未读集合，
-  按修复、审批、运行、排队、暂停、失败和空闲的优先级生成稳定状态。
+- 新增独立 Sidebar task 展示模型，合并 Schedule 绑定摘要、未完成草稿、全局 Task
+  轮询和未读集合；草稿显示草稿、运行、审批、排队或失败状态，正式任务按修复、审批、
+  运行、排队、暂停、失败和空闲的优先级生成稳定状态。
 - 侧栏设置上方新增任务区域，支持运行旋转图标、排队、待审批、失败、暂停、需修复、
   下次运行时间和未读标记；修复状态禁用，暂停任务保持可进入。
 - AppController 保留 Task 轮询快照；点击任务会清除该 Thread 未读、切换项目和 Thread、
@@ -2617,6 +2618,159 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 风险或偏差：Vite 仍提示主入口和 FilesPage 超过 500 kB，但两者均低于仓库硬预算；
   Host 验收完成前不得将 P2-B7 改为 `PASS`，总体状态不得改为 `COMPLETE`。
 - 下一步：在目标原生 Desktop Host 上按运行手册执行后台通知实机验收并补充证据。
+
+### 2026-07-15 10:08 CST - App-server 会话加载优化
+
+- 状态：`PASS`
+- 提交：未提交
+- 已完成：将最近会话列表、历史分页和会话搜索统一切换到 Codex app-server；
+  启动及在线请求不再扫描 `~/.codex/sessions`，Clawee 数据库只继续管理 Thread 业务映射、
+  Schedule、Run、审批、附件和 Memory；Schedule 专属 Thread 仍由 Clawee 本地数据管理。
+- 已完成：最近会话使用 `thread/list`、`useStateDbOnly=true`、`recency_at` 排序以及
+  `cli/vscode/exec/appServer` 来源；历史使用 `thread/turns/list` 和 `itemsView=summary`；
+  搜索使用 `thread/search`，结果不再暴露 `itemId`，打开搜索结果时加载会话最新历史。
+- 已完成：最新历史页不缓存，带 cursor 的旧页只缓存 5 秒；Memory 显式摘要操作会分页
+  读取完整 summary 历史；旧 JSONL 索引代码保留用于兼容和独立测试，但已退出启动、列表、
+  历史和搜索在线路径。
+- 已完成：app-server 任一请求超时后，客户端会使整个进程状态失效、拒绝所有待处理请求、
+  终止旧进程，并允许下一次请求重新初始化；搜索和历史的无效 app-server cursor 分别稳定
+  映射为 `SEARCH_CURSOR_INVALID` 和 `THREAD_HISTORY_CURSOR_INVALID` 400 响应。
+- 验证：daemon 全量 652 项通过、23 项按既有门禁跳过；Web 既有全量 521 项通过；
+  全仓 `pnpm typecheck`、`pnpm build` 和 `git diff --check` 通过。
+- 真实验证：使用 `/Users/wulien/.codex` 直接调用 app-server，最近会话返回 50 条并有
+  下一页，耗时 224ms；首条会话 summary 历史返回 22 项，耗时 8ms；搜索“启动服务”
+  返回 20 条并有下一页，耗时 1287ms，结果均无 `itemId`。
+- 运行验证：最新开发服务同源 API 返回 50 条会话，其中 49 条绑定 Codex Thread；
+  首条历史返回 22 项；搜索返回 20 条；真实无效 cursor 均返回预期 400 错误码。现有开发
+  数据库保留 2150 条旧 `codex_session_sources` 记录，列表、历史和搜索请求前后计数不变，
+  证明新在线路径未继续写入旧索引。
+- 未完成：不补齐 app-server 最近列表未返回的更早会话；全量历史只通过搜索访问。
+- 风险或偏差：现有旧索引表不主动清理，避免扩大迁移范围；app-server 不提供搜索结果的
+  精确消息 item id，因此本版本不支持从搜索结果直接定位到单条历史消息。
+- 下一步：在实际使用中观察 app-server 搜索与历史分页错误率；如需清理旧索引数据，
+  另行设计可回滚的数据迁移，不重新接回在线 JSONL 扫描。
+
+### 2026-07-15 10:35 CST - 定时任务草稿归属与 MCP 审批修复
+
+- 状态：`PASS`
+- 提交：未提交
+- 已完成：确认现场 Run 停在 `mcpServer/elicitation/request`，runner 原先没有识别
+  该 app-server 服务端请求，导致既不创建 Clawee 审批，也不向 Codex 回包。
+- 已完成：runner 支持 MCP elicitation，批准返回
+  `action=accept, content={}, _meta=null`，拒绝或过期返回 `decline`，取消返回 `cancel`；
+  Schedule create 请求生成“允许创建定时任务”审批，摘要使用任务名称，详情保留脱敏后的
+  server、tool、description 和参数；非工具审批的普通 MCP form elicitation 明确返回
+  `cancel`，不误当成空表单批准。
+- 已完成：未完成的 `schedule_draft` 从项目普通对话树移入左侧任务区域，支持草稿、
+  运行中、排队、待审批和失败状态；选中任务草稿时任务行高亮，执行项目不再显示为当前
+  侧栏归属。
+- 已完成（后续已调整）：本批次任务草稿继承创建时项目的 cwd、Profile、模型和
+  Sandbox；该行为已在 2026-07-15 11:14 CST 的后续修复中改为独立任务工作区。
+- 验证：daemon 全量 655 项通过、23 项按门禁跳过，Web 全量 524 项通过；全仓
+  `pnpm typecheck`、`pnpm build` 和 `git diff --check` 通过，build 仅有既有大 chunk
+  警告。最终 MCP runner 6 项和审批运行集成 6 项再次通过。
+- 真实验证：开发服务使用真实 Codex app-server 创建任务，页面显示“允许创建定时任务”
+  审批，批准后同一 Run 成功，草稿 Thread 原地转成 `schedule_task`，Sandbox 保持
+  `workspace-write`；浏览器确认任务行位于任务区且被选中、项目无当前高亮、权限显示
+  “工作区读写”、正式任务管理栏正常、控制台无错误。验证 Schedule 已删除，Thread 已归档。
+- 风险或偏差：现场旧 Run `run_jVTFC9i0gr` 已按 inactivity timeout 收敛为失败，需要
+  用户重新发起原武汉天气任务；修复不会静默自动批准 MCP mutation，仍要求用户明确批准。
+- 下一步：观察真实使用中的 MCP elicitation 错误率；如需支持非审批 form elicitation，
+  另行设计字段采集 UI，不复用批准/拒绝卡片。
+
+### 2026-07-15 11:14 CST - 任务草稿与当前项目彻底解耦
+
+- 状态：`PASS`
+- 提交：未提交
+- 已完成：定位到 `openScheduleCreationConversation()` 仍通过 `buildThreadRequest()`
+  注入 `currentProject.cwd`，且 Composer 无条件显示当前项目，导致任务虽已归入“任务”
+  区，创建界面仍显示并实际使用 `customer-agent`。
+- 已完成：任务草稿改为 `workspaceMode='managed'` 的 Clawee 独立工作区，不再发送当前
+  项目 `cwd`；默认 Profile 为 `default`、Sandbox 为 `workspace-write`。
+- 已完成：`schedule_draft` 和 `schedule_task` 的 Composer 隐藏普通项目选择器；独立
+  managed 草稿仍进入左侧任务区，但不会被派生为项目或高亮现有项目。
+- 验证：先新增失败回归测试确认旧请求为 `external + currentProject.cwd` 且项目按钮仍
+  存在；修复后 Composer/App 定向 106 项通过，Web 全量 525 项通过，
+  `pnpm --filter @clawee/web typecheck` 和 `pnpm --filter @clawee/web build` 通过。
+- 当时真实验证（后续证实范围不充分）：在 `http://127.0.0.1:9001/` 完成
+  “已安排 -> 创建 -> 使用 Clawee 创建”，但没有发送消息启动真实 Codex Run；
+  新 Thread 为 `workspaceMode='managed'`，cwd 位于独立 `.runtime/workspaces/<threadId>`，
+  Profile 为 `default`、Sandbox 为 `workspace-write`；页面项目选择器数量为 0，任务区
+  草稿正常出现，控制台无错误。该验证遗漏了 MCP 初始化链路，验证草稿已归档清理。
+- 风险或偏差：Agent 创建工具按安全边界继承发起 Thread 的执行目录，不接受任意 `cwd`；
+  因此任务页草稿适合通用任务，需要访问具体仓库时应从对应项目普通会话发起，或使用
+  “手动设置”。本次未新增独立的“执行目录”控件。
+- 下一步：观察需要访问代码仓库的真实任务；如果用户频繁需要从任务页显式选目录，再
+  设计独立的“执行目录”控件及受控 Thread 配置接口，不恢复普通项目归属选择器。
+
+### 2026-07-15 11:50 CST - Managed 任务草稿 MCP 启动路径修复
+
+- 状态：`PASS`
+- 提交：未提交
+- 现场问题：任务草稿发送消息后，Codex 报
+  `required MCP servers failed to initialize: clawee_schedule: No such file or directory`。
+  上一批只验证 Thread 创建和界面状态，没有真正启动 Run，属于验证遗漏。
+- 根因：开发环境 `dataDir='.runtime'`，managed Thread 将 cwd 持久化为
+  `.runtime/workspaces/<threadId>` 相对路径；Codex app-server 已以该目录作为进程 cwd，
+  `thread/start` 又收到同一个相对 cwd，二次解析到不存在的嵌套目录，导致 required MCP
+  `clawee_schedule` 无法初始化。
+- 已完成：ThreadManager 创建 managed Thread 时使用绝对工作区路径；RunManager 对历史
+  相对 managed Thread 使用绝对 `canonicalCwd` 执行，因此现有失败草稿可以直接重试，
+  不要求删除重建。
+- 测试先行：新增“相对 dataDir 创建 managed Thread 必须得到绝对 cwd”和“历史相对
+  managed Thread Run 必须使用 canonicalCwd”两个回归测试；修复前均失败，修复后定向
+  60 项通过。
+- 验证：daemon 全量 658 项通过、23 项按门禁跳过；
+  `pnpm --filter @clawee/daemon typecheck`、`pnpm --filter @clawee/daemon build` 和
+  `git diff --check` 通过。
+- 真实验证一：重启 `http://127.0.0.1:9001/` 后，从任务页创建新草稿并发送
+  “每隔5分钟提醒我喝水”；MCP 正常启动并出现审批，批准后创建“每5分钟喝水提醒”，
+  Run `run_-han1SvxVN` 为 `succeeded`，项目选择器为 0，任务管理栏正常，控制台无错误。
+- 真实验证二：创建测试草稿后将数据库 cwd 故意改回历史相对格式
+  `.runtime/workspaces/thread_g9OAPEoO-d`；实际 Run `run_Lb0Ep1MqIQ` 的 `meta.json`
+  使用绝对 canonical cwd，MCP 审批、Schedule 创建和 Run 完成全部成功，无 MCP 错误。
+- 清理：两个验证 Schedule 均已软删除，对应测试 Thread 均已归档；用户原失败草稿
+  `thread_FGHySVA4nY` 保持 active，可在页面直接重新发送。
+- 下一步：真实创建链路的验收标准必须至少覆盖“发送 -> MCP 初始化 -> 审批 -> Tool
+  执行 -> Run 终态”，不得再以 Thread 创建成功代替端到端验证。
+
+### 2026-07-15 12:46 CST - 任务默认完全访问与无审批执行
+
+- 状态：`PASS`
+- 提交：未提交
+- 现场问题：用户创建武汉天气定时任务后，任务执行停在
+  `item/commandExecution/requestApproval`，最终触发
+  `CODEX_EXEC_INACTIVITY_TIMEOUT`；任务页草稿仍显示“工作区读写”，不符合无人值守
+  任务的预期。
+- 根因：`openScheduleCreationConversation()` 仍写死
+  `sandbox='workspace-write'`；Codex app-server runner 在 `thread/start`、
+  `thread/resume` 和 `turn/start` 三处均写死 `approvalPolicy='on-request'`。
+- 已完成：任务页 Clawee 草稿默认改为 `danger-full-access`；runner 按 Sandbox 计算
+  approval policy，完全访问使用 `never`，其他模式保持 `on-request`。
+- 已完成：完全访问模式下，runner 对 app-server 残留的 command、file、permissions
+  和 MCP tool elicitation 请求直接返回批准，不调用 RunManager 审批回调，因此不会
+  创建 Approval 记录或审批事件；普通 MCP form elicitation 仍返回 `cancel`。
+- 测试先行：新增任务草稿默认完全访问、start/resume/turn 使用 `never`、完全访问
+  command 与 MCP 请求不产生审批记录等失败测试；修复后全部转绿。
+- 自动验证：daemon 全量 663 项通过、23 项按门禁跳过；Web 全量 525 项通过；
+  `pnpm typecheck`、`pnpm build` 和 `git diff --check` 通过。构建仅保留既有大 chunk
+  警告。
+- 真实验证：在 `http://127.0.0.1:9001/` 创建 managed 草稿
+  `thread_LSnGuGhF2G`，服务端确认 Sandbox 为 `danger-full-access`；真实
+  Codex app-server 通过 `clawee_schedule_create` 创建“武汉天气5分钟简报”，创建 Run
+  `run_Jj_SADRUDY` 成功且 Approval 为 0。
+- 真实验证：立即运行天气任务，Run `run_Vw8zeMIIAQ` 成功且 Approval 为 0；随后将
+  Schedule Prompt 改为必须通过 Shell 执行 Open-Meteo `curl`，Run
+  `run_OLU_lKJUIn` 原始事件确认 `commandExecution` 在 1264ms 内以 exit code 0 完成，
+  返回武汉 36.3℃、体感 42.2℃、无降水、南偏西风 11.7km/h；没有
+  `requestApproval`、inactivity timeout 或 Approval 记录。
+- 真实验证：验收期间 5 分钟定时器自动触发 Run `run_4JRaG3jfjT`，同样成功且
+  Approval 为 0。测试 Schedule 已删除，测试 Thread 已归档。
+- 环境偏差：本轮浏览器自动化连接没有可用实例；任务草稿界面“完全访问”由真实组件
+  测试覆盖，daemon API、Codex app-server 协议、MCP、定时器和 Shell 网络命令均使用
+  本地真实服务完成端到端验证。
+- 下一步：保留 `read-only`、`workspace-write` 的现有审批能力；后续若增加新的无人值守
+  入口，必须显式选择 `danger-full-access`，不能全局关闭普通会话审批。
 
 ### 日志模板
 

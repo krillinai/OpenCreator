@@ -1,7 +1,11 @@
 import type { TaskItem } from '@clawee/protocol';
+import type { ThreadResponse } from '@clawee/protocol';
 import { describe, expect, it } from 'vitest';
 import type { ScheduleTaskSummary } from '../schedules/schedule-task-model.js';
-import { createSidebarTaskSummaries } from './sidebar-task-model.js';
+import {
+  createScheduleDraftSidebarSummaries,
+  createSidebarTaskSummaries
+} from './sidebar-task-model.js';
 
 describe('sidebar task model', () => {
   it('uses actionable runtime state before schedule state and keeps repair highest priority', () => {
@@ -88,6 +92,51 @@ describe('sidebar task model', () => {
     });
     expect(task?.nextRunLabel).toMatch(/^下次 /);
   });
+
+  it('shows schedule drafts as task rows with approval and active-run priority', () => {
+    const drafts = [
+      createDraft({ id: 'draft-idle', title: '空闲草稿' }),
+      createDraft({ id: 'draft-running', title: '运行草稿' }),
+      createDraft({ id: 'draft-approval', title: '审批草稿' })
+    ];
+    const runtimeTasks = [
+      createTask({
+        id: 'task-approval',
+        threadId: 'draft-approval',
+        status: 'waiting_approval',
+        runStatus: 'running'
+      })
+    ];
+
+    expect(createScheduleDraftSidebarSummaries(
+      drafts,
+      runtimeTasks,
+      new Set(['task-approval']),
+      new Set(['draft-running', 'draft-approval'])
+    )).toEqual([
+      {
+        id: 'draft:draft-idle',
+        threadId: 'draft-idle',
+        name: '空闲草稿',
+        status: 'draft',
+        unread: false
+      },
+      {
+        id: 'draft:draft-running',
+        threadId: 'draft-running',
+        name: '运行草稿',
+        status: 'running',
+        unread: false
+      },
+      {
+        id: 'draft:draft-approval',
+        threadId: 'draft-approval',
+        name: '审批草稿',
+        status: 'waiting_approval',
+        unread: true
+      }
+    ]);
+  });
 });
 
 function createSummary(
@@ -119,6 +168,27 @@ function createTask(overrides: Partial<TaskItem> = {}): TaskItem {
     submissionMode: 'enqueue',
     createdAt: '2026-07-14T00:00:00.000Z',
     updatedAt: '2026-07-14T00:01:00.000Z',
+    ...overrides
+  };
+}
+
+function createDraft(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
+  return {
+    id: 'draft-1',
+    title: '任务草稿',
+    codexThreadId: null,
+    cwd: '/workspace',
+    canonicalCwd: '/workspace',
+    workspaceMode: 'external',
+    profile: 'default',
+    model: null,
+    reasoning: null,
+    sandbox: 'workspace-write',
+    status: 'active',
+    purpose: 'schedule_draft',
+    createdAt: '2026-07-14T00:00:00.000Z',
+    updatedAt: '2026-07-14T00:01:00.000Z',
+    archivedAt: null,
     ...overrides
   };
 }

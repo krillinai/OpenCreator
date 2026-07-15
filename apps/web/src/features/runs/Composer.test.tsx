@@ -66,6 +66,20 @@ describe('Composer', () => {
     expect(screen.getByPlaceholderText('随心输入')).toBeInTheDocument();
   });
 
+  it('hides the project selector for a project-independent task draft', () => {
+    render(
+      <Composer
+        {...defaultProps}
+        showProjectSelector={false}
+        permission="workspace-write"
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 工作区读写' })).toBeInTheDocument();
+  });
+
   it('searches projects and switches the conversation workspace', async () => {
     const user = userEvent.setup();
     const onSelectProject = vi.fn();

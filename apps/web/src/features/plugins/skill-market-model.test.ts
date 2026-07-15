@@ -43,20 +43,20 @@ describe('skill market model', () => {
     });
   });
 
-  it('resolves unavailable when the skill is absent and the catalog source is not installable', () => {
+  it('resolves every absent catalog skill as installable', () => {
     expect(
       resolveSkillMarketStatus(
-        createEntry({ install: { available: false, reason: 'missing_skill_manifest' } }),
+        createEntry(),
         createSkillsResponse([]),
         []
       )
-    ).toBe('unavailable');
+    ).toBe('not_installed');
   });
 
   it('treats a valid local skill as installed even without a market record', () => {
     expect(
       resolveSkillMarketStatus(
-        createEntry({ install: { available: false, reason: 'missing_skill_manifest' } }),
+        createEntry(),
         createSkillsResponse([createSkill({ id: 'frontend-slides', status: 'valid' })]),
         []
       )
@@ -164,10 +164,7 @@ describe('skill market model', () => {
   it('does not let another skill operation error contaminate external installed status', () => {
     const result = filterAndSortSkillMarketEntries({
       entries: [
-        createEntry({
-          id: 'frontend-slides',
-          install: { available: false, reason: 'missing_skill_manifest' },
-        }),
+        createEntry({ id: 'frontend-slides' }),
         createEntry({
           id: 'guizang-social-card-skill',
           name: 'guizang-social-card-skill',
@@ -233,9 +230,7 @@ describe('skill market model', () => {
   });
 
   it('includes externally installed skills in the installed filter', () => {
-    const entry = createEntry({
-      install: { available: false, reason: 'missing_skill_manifest' },
-    });
+    const entry = createEntry();
 
     const result = filterAndSortSkillMarketEntries({
       entries: [entry],
@@ -381,10 +376,9 @@ function createEntry(
 
 function createInstallSource(marketRevision: number): SkillMarketEntry['install'] {
   return {
-    available: true,
     repository: 'zarazhangrui/frontend-slides',
     skillPath: '.',
-    commit: 'commit',
+    ref: 'main',
     marketRevision,
   };
 }

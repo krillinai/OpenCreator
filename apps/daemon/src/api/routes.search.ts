@@ -1,11 +1,12 @@
 import type {
   ConversationSearchItemType,
-  ConversationSearchQuery
+  ConversationSearchQuery,
+  ConversationSearchResponse
 } from '@clawee/protocol';
 import type { FastifyInstance } from 'fastify';
+import { CodexAppServerResponseError } from '../codex/app-server-client.js';
 import {
-  SearchCursorError,
-  type ConversationSearchService
+  SearchCursorError
 } from '../search/service.js';
 import { apiError } from './errors.js';
 
@@ -23,11 +24,9 @@ const MAX_SEARCH_LIMIT = 50;
 
 export async function registerSearchRoutes(
   server: FastifyInstance,
-  service: ConversationSearchService,
-  options: {
-    syncCodexSessions?(): void;
-    ensureSearchIndex?(): void;
-  } = {}
+  service: {
+    search(query: ConversationSearchQuery): Promise<ConversationSearchResponse>;
+  }
 ): Promise<void> {
   server.get('/search/conversations', async (request, reply) => {
     const parsed = parseConversationSearchQuery(request.query);
@@ -35,15 +34,19 @@ export async function registerSearchRoutes(
       return reply.code(400).send(apiError('VALIDATION_FAILED', parsed.message));
     }
 
-    if (parsed.value.cursor === undefined) {
-      options.syncCodexSessions?.();
-    }
-    options.ensureSearchIndex?.();
     try {
-      return service.search(parsed.value);
+      return await service.search(parsed.value);
     } catch (error) {
       if (error instanceof SearchCursorError) {
         return reply.code(400).send(apiError('SEARCH_CURSOR_INVALID', error.message));
+      }
+      if (
+        parsed.value.cursor !== undefined
+        && error instanceof CodexAppServerResponseError
+      ) {
+        return reply
+          .code(400)
+          .send(apiError('SEARCH_CURSOR_INVALID', 'Search cursor is invalid'));
       }
       throw error;
     }

@@ -35,9 +35,6 @@ function sendSkillMarketError(error: unknown, reply: FastifyReply) {
   if (code === 'CODEX_SKILL_MARKET_ENTRY_NOT_FOUND') {
     return reply.code(404).send(apiError(code, 'Skill market entry not found'));
   }
-  if (code === 'CODEX_SKILL_MARKET_NOT_INSTALLABLE') {
-    return reply.code(422).send(apiError(code, 'Skill market entry is not installable'));
-  }
   if (code === 'CODEX_SKILL_NOT_FOUND') {
     return reply.code(404).send(apiError(code, 'Skill not found'));
   }
@@ -47,8 +44,10 @@ function sendSkillMarketError(error: unknown, reply: FastifyReply) {
   if (code === 'CODEX_SKILL_INVALID') {
     return reply.code(422).send(apiError(code, getErrorMessage(error, 'Skill is invalid')));
   }
-  if (code === 'CODEX_SKILL_MARKET_DOWNLOAD_FAILED') {
-    return reply.code(502).send(apiError(code, 'Failed to download market skill archive'));
+  if (code === 'CODEX_SKILL_MARKET_INSTALL_FAILED') {
+    return reply
+      .code(502)
+      .send(apiError(code, getErrorDetail(error, 'Failed to install market skill')));
   }
 
   return reply
@@ -63,6 +62,14 @@ function getCodexErrorCode(error: unknown): string | undefined {
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function getErrorDetail(error: unknown, fallback: string): string {
+  const message = getErrorMessage(error, fallback);
+  const separator = message.indexOf(':');
+  if (separator < 0) return message;
+  const detail = message.slice(separator + 1).trim();
+  return detail.length > 0 ? detail : fallback;
 }
 
 function toRuntimeErrorCode(code: string | undefined): RuntimeErrorCode | undefined {

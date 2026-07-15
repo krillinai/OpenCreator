@@ -30,22 +30,23 @@ import {
   withRuntimeSkillCapabilities,
   type RuntimeCapabilityMatrix
 } from '../codex/capabilities.js';
+import { createCodexAppServerClient } from '../codex/app-server-client.js';
 import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createMemoryService } from '../memory/service.js';
 import { createNotificationService } from '../notifications/service.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
-import { readCodexSessionHistory } from '../codex/sessions/history.js';
 import {
-  createCodexSessionIndexRepository,
-  ThreadHistoryCursorError
-} from '../codex/sessions/index-repository.js';
-import { createCodexSessionIndexer } from '../codex/sessions/indexer.js';
-import { scanCodexSessionsWithMetadata } from '../codex/sessions/scanner.js';
+  createCodexSessionProvider,
+  type CodexSessionProvider
+} from '../codex/sessions/app-server-provider.js';
 import { createSkillManager } from '../codex/skills/manager.js';
-import { MarketArchiveDownloader, type MarketArchiveDownloader as MarketArchiveDownloaderType } from '../codex/skills/market-downloader.js';
 import { createSkillMarketManager } from '../codex/skills/market-manager.js';
 import { createSkillMarketRecordRepository } from '../codex/skills/market-records.js';
+import {
+  createCodexSkillSourceInstaller,
+  type CodexSkillSourceInstaller
+} from '../codex/skills/source-installer.js';
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
@@ -57,7 +58,6 @@ import { ScheduleRepository } from '../scheduler/repository.js';
 import { createSchedulerService, type SchedulerService } from '../scheduler/service.js';
 import { openRuntimeDatabase } from '../storage/database.js';
 import { createRunRepository, createThreadRepository } from '../storage/repositories.js';
-import { createConversationSearchService } from '../search/service.js';
 import { createThreadManager } from '../threads/manager.js';
 import { createTaskService } from '../tasks/service.js';
 import { createDefaultRevealExecutor } from '../workspace-files/reveal.js';
@@ -97,7 +97,7 @@ export type BuildServerInput = {
   sseHeartbeatMs?: number;
   resumeCapabilityVerified?: boolean;
   capabilities?: RuntimeCapabilityMatrix;
-  marketArchiveDownloader?: MarketArchiveDownloaderType;
+  skillMarketSourceInstaller?: CodexSkillSourceInstaller;
   attachmentMaxSizeBytes?: number;
   attachmentDraftTtlMs?: number;
   approvalManager?: ApprovalManager;
@@ -105,10 +105,10 @@ export type BuildServerInput = {
   agentScheduleOperations?: AgentScheduleOperations;
   agentToolsEnabled?: boolean;
   codexThreadRotationRunThreshold?: number;
+  codexSessionProvider?: CodexSessionProvider;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
 };
 
-const SEARCH_SESSION_SYNC_INTERVAL_MS = 30_000;
 const ATTACHMENT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 export async function buildServer(input: BuildServerInput) {
@@ -144,12 +144,19 @@ export async function buildServer(input: BuildServerInput) {
   const runRepository = createRunRepository(db);
   const threadRepository = createThreadRepository(db);
   const scheduleRepository = new ScheduleRepository(db);
-  const codexSessionRepository = createCodexSessionIndexRepository(db);
-  const codexSessionIndexer = createCodexSessionIndexer({
-    codexHome,
-    repository: codexSessionRepository
-  });
   const threadManager = createThreadManager({ db, dataDir });
+  const codexSessionProvider = input.codexSessionProvider ?? createCodexSessionProvider({
+    client: createCodexAppServerClient({
+      codexBin,
+      codexHome
+    }),
+    importThread(session) {
+      const existing = threadManager.getThreadByCodexThreadId(session.codexThreadId);
+      if (existing?.purpose === 'schedule_task') return existing;
+      if (runRepository.isLegacyScheduleCodexThread(session.codexThreadId)) return undefined;
+      return threadManager.importCodexThread(session);
+    }
+  });
   const workspaceFileService = createWorkspaceFileService({
     getThread: (id) => threadManager.getThread(id),
     revealExecutor: createDefaultRevealExecutor()
@@ -161,7 +168,8 @@ export async function buildServer(input: BuildServerInput) {
     dataDir,
     skillManager,
     records: skillMarketRecords,
-    downloader: input.marketArchiveDownloader ?? MarketArchiveDownloader
+    sourceInstaller:
+      input.skillMarketSourceInstaller ?? createCodexSkillSourceInstaller({ codexHome })
   });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const notificationService = createNotificationService({ db });
@@ -208,54 +216,6 @@ export async function buildServer(input: BuildServerInput) {
         notificationService.enqueueRunTerminal(runId);
       }
     });
-  let lastCodexSessionSyncAt: number | undefined;
-  function syncCodexSessions(
-    limit?: number,
-    minimumIntervalMs = 0,
-    reconcileLegacyScheduleSessions = true
-  ) {
-    const now = Date.now();
-    if (
-      lastCodexSessionSyncAt !== undefined
-      && now - lastCodexSessionSyncAt < minimumIntervalMs
-    ) {
-      return;
-    }
-
-    let scan;
-    let usedSessionIndex = true;
-    try {
-      scan = codexSessionIndexer.sync({ limit });
-    } catch (error) {
-      usedSessionIndex = false;
-      console.warn(`Codex session index sync failed; using raw JSONL fallback: ${formatError(error)}`);
-      scan = scanCodexSessionsWithMetadata({ codexHome, limit });
-    }
-    if (reconcileLegacyScheduleSessions) {
-      codexSessionRepository.classifyScheduledSessions();
-      threadRepository.archiveLegacyScheduleThreads();
-    }
-    for (const codexThreadId of scan.excludedSubagentThreadIds) {
-      threadManager.archiveCodexThread(codexThreadId);
-    }
-    const sessions = usedSessionIndex
-      ? codexSessionRepository.listSessions(limit)
-      : scan.sessions;
-    for (const session of sessions) {
-      const existingThread = threadManager.getThreadByCodexThreadId(session.codexThreadId);
-      if (existingThread?.purpose === 'schedule_task') continue;
-      if (runRepository.isLegacyScheduleCodexThread(session.codexThreadId)) continue;
-      threadManager.importCodexThread({
-        codexThreadId: session.codexThreadId,
-        title: session.title,
-        cwd: session.cwd,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt
-      });
-    }
-    lastCodexSessionSyncAt = Date.now();
-  }
-
   let scheduler = input.scheduler;
   const scheduleCoordinator = input.scheduleCoordinator ?? createScheduleCoordinator({
     db,
@@ -269,7 +229,7 @@ export async function buildServer(input: BuildServerInput) {
   prepareSchedulerStartup({
     coordinator: scheduleCoordinator,
     classifySessions: input.schedulerAutostart === true
-      ? (input.startupSessionClassifier ?? (() => syncCodexSessions(undefined, 0, false)))
+      ? input.startupSessionClassifier
       : undefined
   });
   scheduler ??= createSchedulerService({
@@ -294,7 +254,6 @@ export async function buildServer(input: BuildServerInput) {
     runs: runRepository,
     threads: threadRepository
   });
-  const conversationSearchService = createConversationSearchService(db);
   const attachmentService = createAttachmentService({
     db,
     dataDir,
@@ -329,7 +288,10 @@ export async function buildServer(input: BuildServerInput) {
     scheduler.stop();
     agentCapabilityTokens.close();
     try {
-      await runManager.close({ timeoutMs: 5_000 });
+      await Promise.all([
+        codexSessionProvider.close(),
+        runManager.close({ timeoutMs: 5_000 })
+      ]);
       if (ownsDb) db.close();
     } catch (error) {
       if (ownsDb) {
@@ -390,7 +352,7 @@ export async function buildServer(input: BuildServerInput) {
   await registerNotificationRoutes(server, notificationService);
   await registerTaskRoutes(server, taskService);
   await registerMemoryRoutes(server, memoryService, {
-    readThreadHistory(threadId) {
+    async readThreadHistory(threadId) {
       if (input.memoryHistoryReader !== undefined) {
         return input.memoryHistoryReader(threadId);
       }
@@ -399,21 +361,9 @@ export async function buildServer(input: BuildServerInput) {
       if (thread.codexThreadId === undefined || thread.codexThreadId === null) {
         return { items: [] };
       }
-      try {
-        if (!codexSessionIndexer.isHistoryCurrent(thread.codexThreadId)) {
-          syncCodexSessions();
-        }
-        return {
-          items: codexSessionIndexer.readHistory(thread.codexThreadId)
-        };
-      } catch {
-        return {
-          items: readCodexSessionHistory({
-            codexHome,
-            codexThreadId: thread.codexThreadId
-          })
-        };
-      }
+      return {
+        items: await readAllCodexHistory(codexSessionProvider, thread.codexThreadId)
+      };
     }
   });
   await registerDiagnosticsRoutes(server, {
@@ -428,35 +378,47 @@ export async function buildServer(input: BuildServerInput) {
       })
   });
   await registerWorkspaceFileRoutes(server, workspaceFileService);
-  await registerSearchRoutes(server, conversationSearchService, {
-    syncCodexSessions() {
-      syncCodexSessions(undefined, SEARCH_SESSION_SYNC_INTERVAL_MS);
-    },
-    ensureSearchIndex: () => codexSessionRepository.ensureSearchIndex()
-  });
+  await registerSearchRoutes(server, codexSessionProvider);
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager,
     attachmentService,
-    syncCodexSessions,
+    async listRecentCodexThreads({ limit }) {
+      return (await codexSessionProvider.listRecent({ limit })).threads;
+    },
     readThreadHistory(codexThreadId, options) {
-      try {
-        if (!codexSessionIndexer.isHistoryCurrent(codexThreadId)) {
-          syncCodexSessions();
-        }
-        return options === undefined
-          ? { items: codexSessionIndexer.readHistory(codexThreadId) }
-          : codexSessionIndexer.readHistoryPage(codexThreadId, options);
-      } catch (error) {
-        if (error instanceof ThreadHistoryCursorError) throw error;
-        console.warn(`Codex session history index failed; using raw JSONL fallback: ${formatError(error)}`);
-        if (options !== undefined) throw error;
-        return { items: readCodexSessionHistory({ codexHome, codexThreadId }) };
-      }
+      return codexSessionProvider.listTurns({
+        codexThreadId,
+        limit: options.limit,
+        ...(options.cursor === undefined ? {} : { cursor: options.cursor })
+      });
     }
   });
 
   if (input.schedulerAutostart === true) scheduler.start();
   return server;
+}
+
+async function readAllCodexHistory(
+  provider: CodexSessionProvider,
+  codexThreadId: string
+): Promise<import('@clawee/protocol').ThreadHistoryItem[]> {
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  let items: import('@clawee/protocol').ThreadHistoryItem[] = [];
+  do {
+    const page = await provider.listTurns({
+      codexThreadId,
+      limit: 100,
+      ...(cursor === undefined ? {} : { cursor })
+    });
+    items = [...page.items, ...items];
+    cursor = page.nextCursor;
+    if (cursor !== undefined && seenCursors.has(cursor)) {
+      throw new Error('Codex app-server returned a repeated history cursor');
+    }
+    if (cursor !== undefined) seenCursors.add(cursor);
+  } while (cursor !== undefined);
+  return items;
 }
 
 function createUnknownCapabilityMatrix(): RuntimeCapabilityMatrix {

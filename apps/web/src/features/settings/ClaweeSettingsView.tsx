@@ -4,6 +4,7 @@ import type {
   CodexProfileListResponse,
   CodexStatusResponse
 } from '@clawee/protocol';
+import type { ProjectPermission } from '../projects/project-model.js';
 import { McpSettingsView, type McpCapabilities, type McpSettingsService } from './McpSettingsView.js';
 import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
 import { CleanupSettingsView, type CleanupSettingsService } from './CleanupSettingsView.js';
@@ -24,8 +25,13 @@ export type RuntimeStatus = {
   lastCheckedAt?: string;
 };
 
+export type DefaultPermissionPreference = 'follow-project' | ProjectPermission;
+
 export type ClaweeSettingsViewProps = {
   runtimeStatus: RuntimeStatus;
+  defaultPermission?: DefaultPermissionPreference;
+  defaultPermissionError?: string;
+  onDefaultPermissionChange?(permission: DefaultPermissionPreference): void;
   dynamicBackgroundEnabled?: boolean;
   onDynamicBackgroundChange?(enabled: boolean): void;
   mcpService?: McpSettingsService | null;
@@ -54,6 +60,16 @@ const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: 'cleanup', label: '清理' },
   { id: 'diagnostics', label: '诊断' },
   { id: 'about', label: '关于 Clawee' }
+];
+
+const defaultPermissionOptions: Array<{
+  value: DefaultPermissionPreference;
+  label: string;
+}> = [
+  { value: 'follow-project', label: '跟随项目设置' },
+  { value: 'follow-global', label: '只读访问' },
+  { value: 'workspace-write', label: '工作区读写' },
+  { value: 'danger-full-access', label: '完全访问' }
 ];
 
 export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
@@ -86,6 +102,9 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
       <main className="settings-content">
         {activeTab === 'general' ? (
           <GeneralSettings
+            defaultPermission={props.defaultPermission ?? 'follow-project'}
+            defaultPermissionError={props.defaultPermissionError}
+            onDefaultPermissionChange={props.onDefaultPermissionChange}
             dynamicBackgroundEnabled={props.dynamicBackgroundEnabled ?? true}
             onDynamicBackgroundChange={props.onDynamicBackgroundChange}
           />
@@ -136,6 +155,9 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
 }
 
 function GeneralSettings(props: {
+  defaultPermission: DefaultPermissionPreference;
+  defaultPermissionError?: string;
+  onDefaultPermissionChange?(permission: DefaultPermissionPreference): void;
   dynamicBackgroundEnabled: boolean;
   onDynamicBackgroundChange?(enabled: boolean): void;
 }) {
@@ -146,7 +168,12 @@ function GeneralSettings(props: {
         <p>调整 Clawee 的默认偏好和桌面显示方式。</p>
       </header>
       <div className="settings-card">
-        <SettingsRow label="默认权限" value="跟随项目设置" />
+        <SettingsSelectRow
+          label="默认权限"
+          value={props.defaultPermission}
+          options={defaultPermissionOptions}
+          onChange={(permission) => props.onDefaultPermissionChange?.(permission)}
+        />
         <SettingsRow label="默认文件打开方式" value="系统默认应用" />
         <SettingsRow label="语言" value="中文" />
         <SettingsRow label="菜单栏显示" value="开启" />
@@ -156,6 +183,9 @@ function GeneralSettings(props: {
           onChange={(checked) => props.onDynamicBackgroundChange?.(checked)}
         />
       </div>
+      {props.defaultPermissionError ? (
+        <p className="settings-error" role="alert">{props.defaultPermissionError}</p>
+      ) : null}
     </section>
   );
 }
@@ -212,6 +242,31 @@ function SettingsRow(props: { label: string; value: string }) {
       <span>{props.label}</span>
       <strong>{props.value}</strong>
     </div>
+  );
+}
+
+function SettingsSelectRow(props: {
+  label: string;
+  value: DefaultPermissionPreference;
+  options: Array<{ value: DefaultPermissionPreference; label: string }>;
+  onChange(value: DefaultPermissionPreference): void;
+}) {
+  const labelId = `settings-select-${props.label}`;
+
+  return (
+    <label className="settings-row settings-control-row" htmlFor={labelId}>
+      <span>{props.label}</span>
+      <select
+        id={labelId}
+        className="settings-select"
+        value={props.value}
+        onChange={event => props.onChange(event.target.value as DefaultPermissionPreference)}
+      >
+        {props.options.map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 

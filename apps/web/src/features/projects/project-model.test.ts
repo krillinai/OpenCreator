@@ -75,7 +75,8 @@ describe('project model', () => {
     });
 
     expect(groupThreadsByPurpose([conversation, draft, task])).toEqual({
-      conversationThreads: [conversation, draft],
+      conversationThreads: [conversation],
+      scheduleDraftThreads: [draft],
       scheduleTaskThreads: [task]
     });
   });

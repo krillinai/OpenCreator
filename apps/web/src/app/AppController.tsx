@@ -51,7 +51,8 @@ import {
   findProjectById,
   groupThreadsByPurpose,
   type ClaweeConversation,
-  type ClaweeProject
+  type ClaweeProject,
+  type ProjectPermission
 } from '../features/projects/project-model.js';
 import {
   Composer,
@@ -78,10 +79,16 @@ import {
   createRunReplayDeduper,
   timelineReplayMergeKey
 } from '../features/runs/run-event-replay.js';
-import type { RuntimeStatus } from '../features/settings/ClaweeSettingsView.js';
+import type {
+  DefaultPermissionPreference,
+  RuntimeStatus
+} from '../features/settings/ClaweeSettingsView.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
 import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
-import { createSidebarTaskSummaries } from '../features/shell/sidebar-task-model.js';
+import {
+  createScheduleDraftSidebarSummaries,
+  createSidebarTaskSummaries
+} from '../features/shell/sidebar-task-model.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
 import { ApiClientError, RuntimeClient } from '../runtime/client.js';
@@ -170,6 +177,7 @@ function canScrollVertically(
   return false;
 }
 const DYNAMIC_BACKGROUND_STORAGE_KEY = 'clawee.preferences.dynamicBackground';
+const DEFAULT_PERMISSION_STORAGE_KEY = 'clawee.preferences.defaultPermission';
 const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v2';
 const SCHEDULE_DRAFT_TITLE = '任务草稿';
 const SCHEDULE_CREATION_DRAFT =
@@ -273,6 +281,8 @@ export function AppController(props: AppControllerProps) {
   const [conversationPaneWidth, setConversationPaneWidth] = useState<number>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [defaultPermission, setDefaultPermission] = useState(readDefaultPermissionPreference);
+  const [defaultPermissionSyncError, setDefaultPermissionSyncError] = useState<string>();
   const [dynamicBackgroundEnabled, setDynamicBackgroundEnabled] = useState(readDynamicBackgroundPreference);
   const [threadHistoryReloadKey, setThreadHistoryReloadKey] = useState(0);
   const [searchHistoryTarget, setSearchHistoryTarget] = useState<
@@ -326,7 +336,12 @@ export function AppController(props: AppControllerProps) {
   const skillMarketMutationInFlightRef = useRef(false);
   const skillMarketUseInFlightRef = useRef(false);
   const skillMarketRuntimeGenerationRef = useRef(0);
+  const capabilityLoadGenerationRef = useRef<number>();
+  const profileLoadGenerationRef = useRef<number>();
+  const skillMarketLoadGenerationRef = useRef<number>();
   const mobileSidebarHistoryEntryRef = useRef(false);
+  const defaultPermissionAppliedByThreadRef = useRef(new Map<string, SandboxMode>());
+  const defaultPermissionSyncFailuresRef = useRef(new Set<string>());
   const capabilityServiceRef = useRef<CapabilityService | null>(null);
   const skillMarketServiceRef = useRef<SkillMarketService | null>(null);
   const threadServiceRef = useRef<ThreadService | null>(null);
@@ -429,7 +444,10 @@ export function AppController(props: AppControllerProps) {
     () => groupThreadsByPurpose(visibleRuntimeThreads),
     [visibleRuntimeThreads]
   );
-  const projects = useMemo(() => createProjectsForThreads(baseProjects, visibleRuntimeThreads), [baseProjects, visibleRuntimeThreads]);
+  const projects = useMemo(
+    () => createProjectsForThreads(baseProjects, visibleThreadGroups.conversationThreads),
+    [baseProjects, visibleThreadGroups.conversationThreads]
+  );
   const conversations = useMemo(
     () => visibleThreadGroups.conversationThreads.map(
       thread => mapThreadToConversation(thread, projects)
@@ -440,15 +458,7 @@ export function AppController(props: AppControllerProps) {
     () => createScheduleTaskSummaries(runtimeSchedules, runtimeThreads, runRegistry),
     [runRegistry, runtimeSchedules, runtimeThreads]
   );
-  const sidebarTasks = useMemo(
-    () => createSidebarTaskSummaries(
-      scheduleTaskSummaries,
-      runtimeTasks,
-      unreadTaskIds
-    ),
-    [runtimeTasks, scheduleTaskSummaries, unreadTaskIds]
-  );
-  const runningConversationIds = useMemo(
+  const runningThreadIds = useMemo(
     () => new Set(
       Object.entries(runRegistry.activeRunIdByThreadId)
         .filter(([, runId]) => runId !== undefined)
@@ -456,6 +466,33 @@ export function AppController(props: AppControllerProps) {
     ),
     [runRegistry.activeRunIdByThreadId]
   );
+  const scheduleDraftSidebarTasks = useMemo(
+    () => createScheduleDraftSidebarSummaries(
+      visibleThreadGroups.scheduleDraftThreads,
+      runtimeTasks,
+      unreadTaskIds,
+      runningThreadIds
+    ),
+    [
+      runningThreadIds,
+      runtimeTasks,
+      unreadTaskIds,
+      visibleThreadGroups.scheduleDraftThreads
+    ]
+  );
+  const scheduleSidebarTasks = useMemo(
+    () => createSidebarTaskSummaries(
+      scheduleTaskSummaries,
+      runtimeTasks,
+      unreadTaskIds
+    ),
+    [runtimeTasks, scheduleTaskSummaries, unreadTaskIds]
+  );
+  const sidebarTasks = useMemo(
+    () => [...scheduleDraftSidebarTasks, ...scheduleSidebarTasks],
+    [scheduleDraftSidebarTasks, scheduleSidebarTasks]
+  );
+  const runningConversationIds = runningThreadIds;
   const selectedThreadExists = state.selectedThreadId !== undefined
     && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
   activeViewRef.current = state.activeView;
@@ -829,11 +866,69 @@ export function AppController(props: AppControllerProps) {
   ]);
 
   useEffect(() => {
-    let canceled = false;
+    if (
+      defaultPermission === 'follow-project'
+      || connectionState.status !== 'connected'
+      || threadService === null
+    ) {
+      defaultPermissionAppliedByThreadRef.current.clear();
+      if (defaultPermission === 'follow-project') {
+        defaultPermissionSyncFailuresRef.current.clear();
+        setDefaultPermissionSyncError(undefined);
+      }
+      return;
+    }
 
+    const sandbox = toRuntimeSandbox(defaultPermission);
+    for (const thread of runtimeThreads) {
+      if (thread.purpose !== 'conversation') continue;
+      if (defaultPermissionAppliedByThreadRef.current.get(thread.id) === sandbox) continue;
+
+      defaultPermissionAppliedByThreadRef.current.set(thread.id, sandbox);
+      defaultPermissionSyncFailuresRef.current.delete(thread.id);
+      if (thread.sandbox === sandbox) continue;
+
+      void threadService
+        .updateThread(thread.id, { sandbox })
+        .then(response => {
+          if (
+            !mountedRef.current
+            || defaultPermissionAppliedByThreadRef.current.get(thread.id) !== sandbox
+          ) {
+            return;
+          }
+          defaultPermissionSyncFailuresRef.current.delete(thread.id);
+          setRuntimeThreads(previous => upsertThread(previous, response.thread));
+          setDefaultPermissionSyncError(
+            defaultPermissionSyncFailuresRef.current.size > 0
+              ? '部分普通会话的全局权限同步失败，重新打开会话后会重试'
+              : undefined
+          );
+        })
+        .catch(() => {
+          if (defaultPermissionAppliedByThreadRef.current.get(thread.id) === sandbox) {
+            defaultPermissionAppliedByThreadRef.current.delete(thread.id);
+          }
+          if (!mountedRef.current) return;
+          defaultPermissionSyncFailuresRef.current.add(thread.id);
+          setDefaultPermissionSyncError('部分普通会话的全局权限同步失败，重新打开会话后会重试');
+        });
+    }
+  }, [
+    connectionState.status,
+    defaultPermission,
+    runtimeThreads,
+    state.selectedThreadId,
+    threadService
+  ]);
+
+  useEffect(() => {
     if (connectionState.status !== 'connected' || capabilityService === null || skillMarketService === null) {
       skillMarketMutationInFlightRef.current = false;
       skillMarketUseInFlightRef.current = false;
+      capabilityLoadGenerationRef.current = undefined;
+      profileLoadGenerationRef.current = undefined;
+      skillMarketLoadGenerationRef.current = undefined;
       setCodexSkills(undefined);
       setCodexMcp(undefined);
       setCodexProfiles(undefined);
@@ -844,58 +939,143 @@ export function AppController(props: AppControllerProps) {
       setSkillMarketLoadError(undefined);
       setSkillMarketOperation(undefined);
       setSkillMarketUseError(undefined);
-      return () => {
-        canceled = true;
-      };
+    }
+  }, [capabilityService, connectionState.status, skillMarketService]);
+
+  useEffect(() => {
+    if (
+      connectionState.status !== 'connected'
+      || capabilityService === null
+      || state.activeView !== 'conversation'
+    ) {
+      return;
     }
 
-    setCapabilitiesLoading(true);
-    setSkillMarketLoading(true);
-    setCodexSkills(undefined);
-    setCodexProfiles(undefined);
-    setSkillMarketInstallRecords(undefined);
-    setCapabilitiesLoadError(undefined);
-    setSkillMarketLoadError(undefined);
     const generation = skillMarketRuntimeGenerationRef.current;
+    if (capabilityLoadGenerationRef.current === generation) {
+      if (codexSkills !== undefined && codexMcp !== undefined) {
+        setCapabilitiesLoadError(undefined);
+      }
+      return;
+    }
+
+    capabilityLoadGenerationRef.current = generation;
+    setCapabilitiesLoading(true);
+    setCapabilitiesLoadError(undefined);
     const activeCapabilityService = capabilityService;
-    const activeSkillMarketService = skillMarketService;
 
     Promise.allSettled([
-      Promise.resolve().then(() => activeCapabilityService.listSkills()),
-      Promise.resolve().then(() => activeCapabilityService.listMcp()),
-      Promise.resolve().then(() => activeCapabilityService.listProfiles()),
-      Promise.resolve().then(() => activeSkillMarketService.listInstallRecords())
+      codexSkills === undefined
+        ? Promise.resolve().then(() => activeCapabilityService.listSkills())
+        : Promise.resolve(codexSkills),
+      codexMcp === undefined
+        ? Promise.resolve().then(() => activeCapabilityService.listMcp())
+        : Promise.resolve(codexMcp)
     ])
       .then(results => {
-        if (canceled || !isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) return;
-        const [skillsResult, mcpResult, profilesResult, recordsResult] = results;
+        if (!isCurrentCapabilityRuntime(generation, activeCapabilityService)) return;
+        const [skillsResult, mcpResult] = results;
         if (skillsResult?.status === 'fulfilled') setCodexSkills(skillsResult.value);
         else setCodexSkills(undefined);
         if (mcpResult?.status === 'fulfilled') setCodexMcp(mcpResult.value);
         else setCodexMcp(undefined);
-        if (profilesResult?.status === 'fulfilled') setCodexProfiles(profilesResult.value);
-        else setCodexProfiles(undefined);
-        if (recordsResult?.status === 'fulfilled') setSkillMarketInstallRecords(recordsResult.value.records);
-        else setSkillMarketInstallRecords(undefined);
         if (skillsResult?.status === 'rejected' || mcpResult?.status === 'rejected') {
           setCapabilitiesLoadError('本机能力检测失败');
         }
+      })
+      .finally(() => {
+        if (isCurrentCapabilityRuntime(generation, activeCapabilityService)) {
+          setCapabilitiesLoading(false);
+        }
+      });
+  }, [capabilityService, codexMcp, codexSkills, connectionState.status, state.activeView]);
+
+  useEffect(() => {
+    if (
+      connectionState.status !== 'connected'
+      || capabilityService === null
+      || (state.activeView !== 'conversation' && state.activeView !== 'schedules')
+    ) {
+      return;
+    }
+
+    const generation = skillMarketRuntimeGenerationRef.current;
+    if (profileLoadGenerationRef.current === generation || codexProfiles !== undefined) {
+      profileLoadGenerationRef.current = generation;
+      return;
+    }
+
+    profileLoadGenerationRef.current = generation;
+    const activeCapabilityService = capabilityService;
+    Promise.resolve()
+      .then(() => activeCapabilityService.listProfiles())
+      .then(response => {
+        if (isCurrentCapabilityRuntime(generation, activeCapabilityService)) {
+          setCodexProfiles(response);
+        }
+      })
+      .catch(() => {
+        if (isCurrentCapabilityRuntime(generation, activeCapabilityService)) {
+          setCodexProfiles(undefined);
+        }
+      });
+  }, [capabilityService, codexProfiles, connectionState.status, state.activeView]);
+
+  useEffect(() => {
+    if (
+      connectionState.status !== 'connected'
+      || capabilityService === null
+      || skillMarketService === null
+      || state.activeView !== 'plugins'
+    ) {
+      return;
+    }
+
+    const generation = skillMarketRuntimeGenerationRef.current;
+    if (skillMarketLoadGenerationRef.current === generation) {
+      if (codexSkills !== undefined && skillMarketInstallRecords !== undefined) {
+        setSkillMarketLoadError(undefined);
+      }
+      return;
+    }
+
+    skillMarketLoadGenerationRef.current = generation;
+    setSkillMarketLoading(true);
+    setSkillMarketLoadError(undefined);
+    const activeCapabilityService = capabilityService;
+    const activeSkillMarketService = skillMarketService;
+
+    Promise.allSettled([
+      codexSkills === undefined
+        ? Promise.resolve().then(() => activeCapabilityService.listSkills())
+        : Promise.resolve(codexSkills),
+      Promise.resolve().then(() => activeSkillMarketService.listInstallRecords())
+    ])
+      .then(results => {
+        if (!isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) return;
+        const [skillsResult, recordsResult] = results;
+        if (skillsResult?.status === 'fulfilled') setCodexSkills(skillsResult.value);
+        else setCodexSkills(undefined);
+        if (recordsResult?.status === 'fulfilled') setSkillMarketInstallRecords(recordsResult.value.records);
+        else setSkillMarketInstallRecords(undefined);
         const marketErrors: string[] = [];
         if (skillsResult?.status === 'rejected') marketErrors.push('Skill 状态加载失败');
         if (recordsResult?.status === 'rejected') marketErrors.push('安装记录加载失败');
         setSkillMarketLoadError(marketErrors.length > 0 ? marketErrors.join('；') : undefined);
       })
       .finally(() => {
-        if (!canceled && isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
-          setCapabilitiesLoading(false);
+        if (isCurrentSkillMarketRuntime(generation, activeCapabilityService, activeSkillMarketService)) {
           setSkillMarketLoading(false);
         }
       });
-
-    return () => {
-      canceled = true;
-    };
-  }, [capabilityService, connectionState.status, skillMarketService]);
+  }, [
+    capabilityService,
+    codexSkills,
+    connectionState.status,
+    skillMarketInstallRecords,
+    skillMarketService,
+    state.activeView
+  ]);
 
   useEffect(() => {
     if (!allowInitialRuntimeProjectFocusRef.current) return;
@@ -1175,7 +1355,7 @@ export function AppController(props: AppControllerProps) {
     : runtimeSchedules.find(schedule => schedule.id === selectedScheduleTask.scheduleId);
   const selectedSidebarTask = selectedScheduleTask === undefined
     ? undefined
-    : sidebarTasks.find(task => task.id === selectedScheduleTask.scheduleId);
+    : scheduleSidebarTasks.find(task => task.id === selectedScheduleTask.scheduleId);
   const selectedThread = runtimeThreads.find(thread => thread.id === state.selectedThreadId);
   const selectedSummaryOperation =
     summaryOperation?.threadId === state.selectedThreadId ? summaryOperation : undefined;
@@ -1383,6 +1563,14 @@ export function AppController(props: AppControllerProps) {
   function handleDynamicBackgroundChange(enabled: boolean) {
     setDynamicBackgroundEnabled(enabled);
     writeDynamicBackgroundPreference(enabled);
+  }
+
+  function handleDefaultPermissionChange(permission: DefaultPermissionPreference) {
+    setDefaultPermission(permission);
+    setComposerRunConfig(null);
+    defaultPermissionSyncFailuresRef.current.clear();
+    setDefaultPermissionSyncError(undefined);
+    writeDefaultPermissionPreference(permission);
   }
 
   function openMobileSidebar() {
@@ -1645,11 +1833,7 @@ export function AppController(props: AppControllerProps) {
     setHistoryLoadingThreadId(thread.id);
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
-    setSearchHistoryTarget(
-      result.itemId === undefined
-        ? undefined
-        : { threadId: thread.id, itemId: result.itemId }
-    );
+    setSearchHistoryTarget(undefined);
     showTimelineForThread(thread.id, [], false);
 
     const projectId = projectIdForThread(thread, projects);
@@ -1662,7 +1846,8 @@ export function AppController(props: AppControllerProps) {
   }
 
   async function handleComposerPermissionChange(permission: ComposerRunConfig['permission']) {
-    const baseConfig = composerRunConfig ?? defaultComposerRunConfig(currentProject);
+    const baseConfig = composerRunConfig
+      ?? defaultComposerRunConfig(currentProject, defaultPermission);
     setComposerRunConfig({ ...baseConfig, permission });
 
     if (selectedThread === undefined) {
@@ -1702,6 +1887,16 @@ export function AppController(props: AppControllerProps) {
       && connectionStatusRef.current === 'connected'
       && capabilityServiceRef.current === activeCapabilityService
       && skillMarketServiceRef.current === activeSkillMarketService;
+  }
+
+  function isCurrentCapabilityRuntime(
+    generation: number,
+    activeCapabilityService: CapabilityService
+  ) {
+    return mountedRef.current
+      && skillMarketRuntimeGenerationRef.current === generation
+      && connectionStatusRef.current === 'connected'
+      && capabilityServiceRef.current === activeCapabilityService;
   }
 
   function isCurrentThreadRuntime(generation: number, activeThreadService: ThreadService) {
@@ -1795,7 +1990,7 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
-  async function useMarketSkill(skillId: string) {
+  async function useMarketSkill(skillId: string, projectId: string) {
     if (skillMarketUseInFlightRef.current) return;
     setSkillMarketUseError(undefined);
 
@@ -1814,8 +2009,12 @@ export function AppController(props: AppControllerProps) {
       return;
     }
 
-    const project = currentProject;
-    const config = effectiveComposerConfig;
+    const project = findProjectById(projects, projectId);
+    if (project === undefined) {
+      setSkillMarketUseError({ skillId, error: '未找到所选项目' });
+      return;
+    }
+    const config = defaultComposerRunConfig(project, defaultPermission);
     const title = getSkillMarketDisplayTitle(entry);
     const generation = skillMarketRuntimeGenerationRef.current;
     skillMarketUseInFlightRef.current = true;
@@ -1834,6 +2033,9 @@ export function AppController(props: AppControllerProps) {
       setThreadConfigUpdateError(undefined);
       skipNextHistoryLoadForThreadRef.current = created.thread.id;
       allowInitialRuntimeProjectFocusRef.current = false;
+      if (project.id !== state.currentProjectId) {
+        dispatch({ type: 'select_project', projectId: project.id });
+      }
       dispatch({ type: 'select_thread', threadId: created.thread.id });
       navigateToRoute({ view: 'thread', threadId: created.thread.id });
       nextComposerDraftIdRef.current += 1;
@@ -1878,7 +2080,9 @@ export function AppController(props: AppControllerProps) {
       )
     ) return false;
 
-    const effectiveConfig = config ?? composerRunConfig ?? defaultComposerRunConfig(currentProject);
+    const effectiveConfig = config
+      ?? composerRunConfig
+      ?? defaultComposerRunConfig(currentProject, defaultPermission);
     setComposerRunConfig(effectiveConfig);
     const pendingRunStartId = createTimelineId('pending_start');
     updatePendingRunStart({
@@ -2493,7 +2697,10 @@ export function AppController(props: AppControllerProps) {
     const generation = skillMarketRuntimeGenerationRef.current;
     const created = await activeThreadService.createThread(
       {
-        ...buildThreadRequest(SCHEDULE_DRAFT_TITLE, currentProject, effectiveComposerConfig),
+        title: SCHEDULE_DRAFT_TITLE,
+        workspaceMode: 'managed',
+        profile: 'default',
+        sandbox: 'danger-full-access',
         purpose: 'schedule_draft'
       }
     );
@@ -2729,7 +2936,7 @@ export function AppController(props: AppControllerProps) {
       : '正在连接本地运行内核';
   const fileWorkspaceOpen = state.activeView === 'conversation' && state.rightPanelMode === 'file';
   const effectiveComposerConfig = selectedThread === undefined
-    ? composerRunConfig ?? defaultComposerRunConfig(currentProject)
+    ? composerRunConfig ?? defaultComposerRunConfig(currentProject, defaultPermission)
     : {
         permission: fromRuntimeSandbox(selectedThread.sandbox),
         profile: selectedThread.profile,
@@ -2885,6 +3092,9 @@ export function AppController(props: AppControllerProps) {
           projectId={currentProject?.id ?? state.currentProjectId}
           projectName={currentProjectName}
           projects={projects}
+          showProjectSelector={
+            selectedThread === undefined || selectedThread.purpose === 'conversation'
+          }
           permission={effectiveComposerConfig.permission}
           profile={effectiveComposerConfig.profile}
           model={effectiveComposerConfig.model}
@@ -3009,6 +3219,9 @@ export function AppController(props: AppControllerProps) {
   ) : state.activeView === 'settings' ? (
     <SettingsPage
       runtimeStatus={runtimeStatus}
+      defaultPermission={defaultPermission}
+      defaultPermissionError={defaultPermissionSyncError}
+      onDefaultPermissionChange={handleDefaultPermissionChange}
       dynamicBackgroundEnabled={dynamicBackgroundEnabled}
       onDynamicBackgroundChange={handleDynamicBackgroundChange}
       mcpService={mcpService}
@@ -3037,9 +3250,11 @@ export function AppController(props: AppControllerProps) {
       loadError={skillMarketLoadError}
       operation={skillMarketOperation}
       useError={skillMarketUseError}
+      projects={projects}
+      currentProjectId={currentProject?.id ?? state.currentProjectId}
       onInstall={skillId => void installMarketSkill(skillId)}
       onUpdate={skillId => void updateMarketSkill(skillId)}
-      onUse={skillId => void useMarketSkill(skillId)}
+      onUse={(skillId, projectId) => void useMarketSkill(skillId, projectId)}
     />
   ) : state.activeView === 'conversation' ? (
     conversationWorkspace
@@ -3278,11 +3493,28 @@ function readDynamicBackgroundPreference(): boolean {
   }
 }
 
+function readDefaultPermissionPreference(): DefaultPermissionPreference {
+  try {
+    const value = window.localStorage.getItem(DEFAULT_PERMISSION_STORAGE_KEY);
+    return isDefaultPermissionPreference(value) ? value : 'follow-project';
+  } catch {
+    return 'follow-project';
+  }
+}
+
 function resolveDefaultTimezone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   } catch {
     return 'UTC';
+  }
+}
+
+function writeDefaultPermissionPreference(permission: DefaultPermissionPreference): void {
+  try {
+    window.localStorage.setItem(DEFAULT_PERMISSION_STORAGE_KEY, permission);
+  } catch {
+    return;
   }
 }
 
@@ -3346,6 +3578,7 @@ function createProjectsForThreads(baseProjects: ClaweeProject[], threads: Thread
 }
 
 function shouldShowThreadInSidebar(thread: ThreadResponse): boolean {
+  if (thread.purpose === 'schedule_draft') return true;
   if (thread.workspaceMode === 'managed') return false;
   if (isRuntimeWorkspacePath(thread.cwd)) return false;
   if (isRuntimeWorkspacePath(thread.canonicalCwd)) return false;
@@ -3474,13 +3707,32 @@ function buildThreadRequest(prompt: string, project: ClaweeProject | undefined, 
   return request;
 }
 
-function defaultComposerRunConfig(project?: ClaweeProject): ComposerRunConfig {
+function defaultComposerRunConfig(
+  project: ClaweeProject | undefined,
+  defaultPermission: DefaultPermissionPreference
+): ComposerRunConfig {
   return {
-    permission: project?.sandbox ?? 'follow-global',
+    permission: resolveDefaultPermission(project, defaultPermission),
     profile: project?.profile ?? 'default',
     model: project?.model ?? null,
     reasoning: (project?.reasoning ?? null) as ComposerRunConfig['reasoning']
   };
+}
+
+function resolveDefaultPermission(
+  project: ClaweeProject | undefined,
+  preference: DefaultPermissionPreference
+): ProjectPermission {
+  return preference === 'follow-project'
+    ? project?.sandbox ?? 'follow-global'
+    : preference;
+}
+
+function isDefaultPermissionPreference(value: string | null): value is DefaultPermissionPreference {
+  return value === 'follow-project'
+    || value === 'follow-global'
+    || value === 'workspace-write'
+    || value === 'danger-full-access';
 }
 
 function getOrCreateComposerAttachmentDraftId(

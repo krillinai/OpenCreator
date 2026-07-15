@@ -6,8 +6,8 @@ import { getSkillMarketEntry } from '@clawee/skill-market';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SkillManager, SkillWriteTransaction } from './manager.js';
-import { type MarketArchiveDownloader, resolveMarketSkillSource } from './market-downloader.js';
 import type { SkillMarketRecordRepository } from './market-records.js';
+import type { CodexSkillSourceInstaller } from './source-installer.js';
 
 export type SkillMarketManager = {
   listInstallRecords(): CodexSkillMarketInstallRecordResponse[];
@@ -19,7 +19,7 @@ export function createSkillMarketManager(input: {
   dataDir: string;
   skillManager: SkillManager;
   records: SkillMarketRecordRepository;
-  downloader: MarketArchiveDownloader;
+  sourceInstaller: CodexSkillSourceInstaller;
   cleanupWorkDir?: (workDir: string) => void | Promise<void>;
 }): SkillMarketManager {
   return {
@@ -40,7 +40,7 @@ async function mutateSkill(
     dataDir: string;
     skillManager: SkillManager;
     records: SkillMarketRecordRepository;
-    downloader: MarketArchiveDownloader;
+    sourceInstaller: CodexSkillSourceInstaller;
     cleanupWorkDir?: (workDir: string) => void | Promise<void>;
   },
   id: string,
@@ -50,26 +50,24 @@ async function mutateSkill(
   if (entry === undefined) {
     throw new Error(`CODEX_SKILL_MARKET_ENTRY_NOT_FOUND: ${id}`);
   }
-  if (!entry.install.available) {
-    throw new Error(`CODEX_SKILL_MARKET_NOT_INSTALLABLE: ${id}`);
-  }
   const installSource = entry.install;
   if (overwrite && input.skillManager.getSkill(id) === undefined) {
     throw new Error(`CODEX_SKILL_NOT_FOUND: ${id}`);
   }
 
-  const downloadParent = join(input.dataDir, 'skill-market-downloads');
-  mkdirSync(downloadParent, { recursive: true });
-  const workDir = mkdtempSync(join(downloadParent, 'mutation-'));
+  const installParent = join(input.dataDir, 'skill-market-installs');
+  mkdirSync(installParent, { recursive: true });
+  const workDir = mkdtempSync(join(installParent, 'mutation-'));
   let workDirCleaned = false;
 
   try {
-    const archiveRoot = await input.downloader.download({
+    const sourcePath = await input.sourceInstaller.install({
       repository: installSource.repository,
-      commit: installSource.commit,
+      skillPath: installSource.skillPath,
+      ref: installSource.ref,
+      skillId: id,
       workDir
     });
-    const sourcePath = resolveMarketSkillSource(archiveRoot, installSource.skillPath);
     return await input.skillManager.withWriteTransaction(async (transaction) => {
       if (overwrite && transaction.getSkill(id) === undefined) {
         throw new Error(`CODEX_SKILL_NOT_FOUND: ${id}`);
@@ -101,7 +99,7 @@ async function mutateSkill(
           result.operation.backupPath ?? null,
           wrapSkillWriteFailed(
             cleanupError,
-            `market download workDir cleanup failed after install: ${workDir}; ${getErrorMessage(cleanupError)}`
+            `market installer workDir cleanup failed after install: ${workDir}; ${getErrorMessage(cleanupError)}`
           )
         );
       }
@@ -111,7 +109,7 @@ async function mutateSkill(
           skillId: id,
           repository: installSource.repository,
           skillPath: installSource.skillPath,
-          commit: installSource.commit,
+          commit: installSource.ref,
           marketRevision: installSource.marketRevision
         });
         return { ...result, record };

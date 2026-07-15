@@ -20,7 +20,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ClaweeProject } from '../projects/project-model.js';
-import type { SidebarTaskStatus } from '../shell/sidebar-task-model.js';
+import type { ScheduleSidebarTaskStatus } from '../shell/sidebar-task-model.js';
 import {
   createScheduleUpdate,
   ScheduleEditor,
@@ -40,7 +40,7 @@ type Operation = 'run' | 'toggle' | 'load_editor' | 'save_editor';
 
 export function ScheduleThreadHeader(props: {
   schedule: ScheduleResponse;
-  status: SidebarTaskStatus;
+  status: ScheduleSidebarTaskStatus;
   nextRunLabel?: string;
   service: ScheduleThreadService;
   projects: ClaweeProject[];
@@ -290,7 +290,7 @@ export function ScheduleThreadHeader(props: {
   );
 }
 
-function statusVisual(status: SidebarTaskStatus) {
+function statusVisual(status: ScheduleSidebarTaskStatus) {
   switch (status) {
     case 'idle':
       return { label: '已启用', icon: CircleCheck };

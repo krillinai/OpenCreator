@@ -67,6 +67,174 @@ describe('codex app-server runner', () => {
     });
   });
 
+  it('uses never approval policy and auto-approves fallback requests for full access', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeAppServer(tempDir, 'accept');
+    let approvalRequested = false;
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'danger-full-access',
+      prompt: 'run command without approval',
+      async onApprovalRequest() {
+        approvalRequested = true;
+        return 'rejected';
+      }
+    });
+
+    await expect(process.result).resolves.toMatchObject({
+      turnStatus: 'completed',
+      terminationReason: 'completed'
+    });
+    expect(approvalRequested).toBe(false);
+    expect(readAppServerRequests(tempDir)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        method: 'thread/start',
+        params: expect.objectContaining({
+          sandbox: 'danger-full-access',
+          approvalPolicy: 'never'
+        })
+      }),
+      expect.objectContaining({
+        method: 'turn/start',
+        params: expect.objectContaining({
+          approvalPolicy: 'never'
+        })
+      })
+    ]));
+  });
+
+  it('uses never approval policy when resuming a full-access thread', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeAppServer(tempDir, 'accept');
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'danger-full-access',
+      prompt: 'resume without approval',
+      codexThreadId: 'codex-thread-existing'
+    });
+
+    await expect(process.result).resolves.toMatchObject({
+      turnStatus: 'completed'
+    });
+    expect(readAppServerRequests(tempDir)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        method: 'thread/resume',
+        params: expect.objectContaining({
+          threadId: 'codex-thread-existing',
+          sandbox: 'danger-full-access',
+          approvalPolicy: 'never'
+        })
+      })
+    ]));
+  });
+
+  it('responds to an MCP elicitation approval with the official accept payload', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeMcpElicitationAppServer(tempDir, 'accept');
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      prompt: 'create a schedule',
+      inactivityTimeoutMs: 5_000,
+      async onApprovalRequest(request) {
+        expect(request).toMatchObject({
+          method: 'mcpServer/elicitation/request',
+          params: {
+            serverName: 'clawee_schedule',
+            mode: 'form'
+          }
+        });
+        return 'approved';
+      }
+    });
+
+    await expect(process.result).resolves.toMatchObject({
+      turnStatus: 'completed',
+      terminationReason: 'completed'
+    });
+  });
+
+  it('auto-accepts MCP tool elicitation without creating an approval in full-access mode', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeMcpElicitationAppServer(tempDir, 'accept');
+    let approvalRequested = false;
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'danger-full-access',
+      prompt: 'create a schedule without approval',
+      inactivityTimeoutMs: 5_000,
+      async onApprovalRequest() {
+        approvalRequested = true;
+        return 'rejected';
+      }
+    });
+
+    await expect(process.result).resolves.toMatchObject({
+      turnStatus: 'completed',
+      terminationReason: 'completed'
+    });
+    expect(approvalRequested).toBe(false);
+  });
+
+  it('maps MCP elicitation rejection to the official decline payload', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeMcpElicitationAppServer(tempDir, 'decline');
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      prompt: 'create a schedule',
+      inactivityTimeoutMs: 5_000,
+      async onApprovalRequest() {
+        return 'rejected';
+      }
+    });
+
+    await expect(process.result).resolves.toMatchObject({
+      turnStatus: 'completed',
+      terminationReason: 'completed'
+    });
+  });
+
+  it('cancels unsupported MCP form elicitation without treating it as an approval', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeMcpElicitationAppServer(tempDir, 'cancel', false);
+    let approvalRequested = false;
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      prompt: 'request user input',
+      inactivityTimeoutMs: 5_000,
+      async onApprovalRequest() {
+        approvalRequested = true;
+        return 'approved';
+      }
+    });
+
+    await expect(process.result).resolves.toMatchObject({
+      turnStatus: 'completed',
+      terminationReason: 'completed'
+    });
+    expect(approvalRequested).toBe(false);
+  });
+
   it('passes MCP config in argv and capability secrets only in the child environment', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
     const fake = createFakeAppServer(tempDir, 'decline');
@@ -138,11 +306,12 @@ let approvalRequestId = 'approval-rpc-1';
 const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
 rl.on('line', line => {
   const message = JSON.parse(line);
+  fs.appendFileSync(${JSON.stringify(join(dir, 'app-server-messages.ndjson'))}, JSON.stringify(message) + '\\n');
   if (message.method === 'initialize') {
     send({ id: message.id, result: { userAgent: 'fake', codexHome: process.env.CODEX_HOME, platformFamily: 'unix', platformOs: 'test' } });
     return;
   }
-  if (message.method === 'thread/start') {
+  if (message.method === 'thread/start' || message.method === 'thread/resume') {
     send({ id: message.id, result: { thread: { id: 'codex-thread-1' } } });
     return;
   }
@@ -173,6 +342,83 @@ rl.on('line', line => {
     }
     send({ method: 'serverRequest/resolved', params: { threadId: 'codex-thread-1', requestId: approvalRequestId } });
     send({ method: 'turn/completed', params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', status: 'completed' } } });
+  }
+});
+`, 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function readAppServerRequests(dir: string): Array<Record<string, unknown>> {
+  return readFileSync(join(dir, 'app-server-messages.ndjson'), 'utf8')
+    .trim()
+    .split('\n')
+    .map(line => JSON.parse(line) as Record<string, unknown>);
+}
+
+function createFakeMcpElicitationAppServer(
+  dir: string,
+  expectedAction: 'accept' | 'decline' | 'cancel',
+  approvalRequest = true
+): string {
+  const bin = join(dir, 'fake-mcp-elicitation-codex.js');
+  writeFileSync(bin, `#!/usr/bin/env node
+const readline = require('node:readline');
+const rl = readline.createInterface({ input: process.stdin });
+const requestId = 'mcp-approval-rpc-1';
+const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
+rl.on('line', line => {
+  const message = JSON.parse(line);
+  if (message.method === 'initialize') {
+    send({ id: message.id, result: { userAgent: 'fake', codexHome: process.env.CODEX_HOME, platformFamily: 'unix', platformOs: 'test' } });
+    return;
+  }
+  if (message.method === 'thread/start') {
+    send({ id: message.id, result: { thread: { id: 'codex-thread-mcp' } } });
+    return;
+  }
+  if (message.method === 'turn/start') {
+    send({ id: message.id, result: { turn: { id: 'turn-mcp', status: 'inProgress' } } });
+    send({ method: 'turn/started', params: { threadId: 'codex-thread-mcp', turn: { id: 'turn-mcp', status: 'inProgress' } } });
+    send({
+      id: requestId,
+      method: 'mcpServer/elicitation/request',
+      params: {
+        threadId: 'codex-thread-mcp',
+        turnId: 'turn-mcp',
+        serverName: 'clawee_schedule',
+        mode: 'form',
+        _meta: {
+          ${approvalRequest ? "codex_approval_kind: 'mcp_tool_call'," : ''}
+          message: 'Allow the clawee_schedule MCP server to run tool "clawee_schedule_create"?',
+          tool_description: '创建一个 Clawee 定时任务。',
+          tool_params: {
+            name: '武汉天气每5分钟简报'
+          }
+        },
+        requestedSchema: {
+          type: 'object',
+          properties: {}
+        }
+      }
+    });
+    return;
+  }
+  if (message.id === requestId) {
+    const expectedAction = ${JSON.stringify(expectedAction)};
+    const expectedContent = expectedAction === 'accept' ? {} : null;
+    if (
+      !message.result
+      || message.result.action !== expectedAction
+      || JSON.stringify(message.result.content) !== JSON.stringify(expectedContent)
+      || message.result._meta !== null
+    ) {
+      process.stderr.write('unexpected MCP elicitation response: ' + JSON.stringify(message) + '\\n');
+      process.exit(2);
+      return;
+    }
+    send({ method: 'serverRequest/resolved', params: { threadId: 'codex-thread-mcp', requestId } });
+    send({ method: 'turn/completed', params: { threadId: 'codex-thread-mcp', turn: { id: 'turn-mcp', status: 'completed' } } });
   }
 });
 `, 'utf8');

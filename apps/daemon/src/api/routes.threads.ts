@@ -8,9 +8,9 @@ import type {
   UpdateThreadRequest
 } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { CodexAppServerResponseError } from '../codex/app-server-client.js';
 import {
-  ThreadHistoryCursorError,
-  type ThreadHistoryPageOptions
+  ThreadHistoryCursorError
 } from '../codex/sessions/index-repository.js';
 import type { AttachmentService } from '../attachments/service.js';
 import type { RunManager, RuntimeRun } from '../runs/manager.js';
@@ -24,7 +24,7 @@ export async function registerThreadRoutes(
   options: {
     profileValidator?: ProfileValidator;
     attachmentService?: AttachmentService;
-    syncCodexSessions?: SyncCodexSessions;
+    listRecentCodexThreads?(input: { limit: number }): Promise<RuntimeThread[]>;
     readThreadHistory?: ReadThreadHistory;
   } = {}
 ): Promise<void> {
@@ -47,15 +47,48 @@ export async function registerThreadRoutes(
     const query = parseThreadListQuery(request.query);
     if (!query.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', query.message));
 
-    const { status, purpose, excludePurpose, limit } = query.value;
-    if (purpose !== 'schedule_task') options.syncCodexSessions?.(limit);
-    const threads = manager.listThreads({
-      status,
+    const {
+      status = 'active',
       purpose,
       excludePurpose,
-      limit
-    }).map(toThreadResponse);
-    return { threads };
+      limit = 50
+    } = query.value;
+    let threads: RuntimeThread[];
+    if (
+      status === 'active'
+      && (purpose === undefined || purpose === 'conversation')
+      && options.listRecentCodexThreads !== undefined
+    ) {
+      try {
+        const recent = await options.listRecentCodexThreads({ limit });
+        threads = mergeRecentThreads(
+          recent,
+          manager.listThreads({
+            status,
+            purpose,
+            excludePurpose,
+            limit
+          }),
+          { purpose, excludePurpose, limit }
+        );
+      } catch (error) {
+        console.warn(`Codex app-server thread list failed: ${formatError(error)}`);
+        threads = manager.listThreads({
+          status,
+          purpose,
+          excludePurpose,
+          limit
+        });
+      }
+    } else {
+      threads = manager.listThreads({
+        status,
+        purpose,
+        excludePurpose,
+        limit
+      });
+    }
+    return { threads: threads.map(toThreadResponse) };
   });
 
   server.get('/threads/:id', async (request, reply) => {
@@ -102,10 +135,14 @@ export async function registerThreadRoutes(
     const query = parseThreadHistoryQuery(request.query);
     if (!query.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', query.message));
 
+    if (query.value.targetItemId !== undefined) {
+      return reply.code(400).send(apiError(
+        'VALIDATION_FAILED',
+        'Codex app-server search results do not expose message item ids'
+      ));
+    }
     const paginationRequested =
-      query.value.limit !== undefined
-      || query.value.before !== undefined
-      || query.value.targetItemId !== undefined;
+      query.value.limit !== undefined || query.value.before !== undefined;
     let history: ThreadHistoryReadResult;
     try {
       history = thread.codexThreadId === undefined || thread.codexThreadId === null
@@ -113,22 +150,26 @@ export async function registerThreadRoutes(
             items: [],
             ...(paginationRequested ? { hasMore: false } : {})
           }
-        : options.readThreadHistory?.(
+        : await options.readThreadHistory?.(
             thread.codexThreadId,
-            paginationRequested
-              ? {
-                  limit: query.value.limit ?? DEFAULT_HISTORY_LIMIT,
-                  ...(query.value.before === undefined ? {} : { before: query.value.before }),
-                  ...(query.value.targetItemId === undefined
-                    ? {}
-                    : { targetItemId: query.value.targetItemId })
-                }
-              : undefined
+            {
+              limit: query.value.limit ?? DEFAULT_HISTORY_LIMIT,
+              ...(query.value.before === undefined ? {} : { cursor: query.value.before })
+            }
           ) ?? {
             items: [],
             ...(paginationRequested ? { hasMore: false } : {})
           };
     } catch (error) {
+      if (
+        query.value.before !== undefined
+        && error instanceof CodexAppServerResponseError
+      ) {
+        return reply.code(400).send(apiError(
+          'THREAD_HISTORY_CURSOR_INVALID',
+          'Thread history cursor is invalid'
+        ));
+      }
       if (error instanceof ThreadHistoryCursorError) {
         const statusCode = error.code === 'THREAD_HISTORY_CURSOR_INVALID'
           ? 400
@@ -251,15 +292,62 @@ type ProfileValidationResult = { ok: true } | { ok: false; code: string; message
 type ProfileValidator = {
   validateProfileForRun(name: string): ProfileValidationResult;
 };
-type SyncCodexSessions = (limit?: number) => void;
 type ThreadHistoryReadResult = Pick<
   ThreadHistoryResponse,
   'items' | 'hasMore' | 'nextCursor' | 'oldestItemAt' | 'targetItemId'
 >;
+type ThreadHistoryPageOptions = {
+  limit: number;
+  cursor?: string;
+};
 type ReadThreadHistory = (
   codexThreadId: string,
-  options?: ThreadHistoryPageOptions
-) => ThreadHistoryReadResult;
+  options: ThreadHistoryPageOptions
+) => Promise<ThreadHistoryReadResult> | ThreadHistoryReadResult;
+
+function mergeRecentThreads(
+  recent: RuntimeThread[],
+  local: RuntimeThread[],
+  filter: {
+    purpose?: RuntimeThread['purpose'];
+    excludePurpose?: RuntimeThread['purpose'];
+    limit: number;
+  }
+): RuntimeThread[] {
+  const merged = new Map<string, RuntimeThread>();
+  for (const thread of recent) {
+    if (!matchesPurposeFilter(thread, filter)) continue;
+    merged.set(thread.id, thread);
+  }
+  for (const thread of local) {
+    if (thread.codexThreadId !== undefined && thread.codexThreadId !== null) {
+      if (thread.purpose === 'conversation') continue;
+    }
+    if (!matchesPurposeFilter(thread, filter)) continue;
+    merged.set(thread.id, thread);
+  }
+  return [...merged.values()]
+    .sort((left, right) => {
+      const timestampOrder = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+      return timestampOrder === 0 ? right.id.localeCompare(left.id) : timestampOrder;
+    })
+    .slice(0, filter.limit);
+}
+
+function matchesPurposeFilter(
+  thread: RuntimeThread,
+  filter: {
+    purpose?: RuntimeThread['purpose'];
+    excludePurpose?: RuntimeThread['purpose'];
+  }
+): boolean {
+  return (filter.purpose === undefined || thread.purpose === filter.purpose)
+    && (filter.excludePurpose === undefined || thread.purpose !== filter.excludePurpose);
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function attachScheduleRunMetadata(
   items: ThreadHistoryItem[],

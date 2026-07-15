@@ -264,12 +264,10 @@ describe('protocol shape', () => {
 
   it('includes skill market errors as closed error codes', () => {
     const notFound: RuntimeErrorCode = 'CODEX_SKILL_MARKET_ENTRY_NOT_FOUND';
-    const notInstallable: RuntimeErrorCode = 'CODEX_SKILL_MARKET_NOT_INSTALLABLE';
-    const downloadFailed: RuntimeErrorCode = 'CODEX_SKILL_MARKET_DOWNLOAD_FAILED';
+    const installFailed: RuntimeErrorCode = 'CODEX_SKILL_MARKET_INSTALL_FAILED';
 
     expect(notFound).toBe('CODEX_SKILL_MARKET_ENTRY_NOT_FOUND');
-    expect(notInstallable).toBe('CODEX_SKILL_MARKET_NOT_INSTALLABLE');
-    expect(downloadFailed).toBe('CODEX_SKILL_MARKET_DOWNLOAD_FAILED');
+    expect(installFailed).toBe('CODEX_SKILL_MARKET_INSTALL_FAILED');
   });
 
   it('allows run diagnostics response shape', () => {

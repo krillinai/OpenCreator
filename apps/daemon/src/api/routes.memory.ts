@@ -15,7 +15,11 @@ export async function registerMemoryRoutes(
   server: FastifyInstance,
   service: MemoryService,
   options: {
-    readThreadHistory(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
+    readThreadHistory(
+      threadId: string
+    ): Promise<{ items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined>
+      | { items: import('@clawee/protocol').ThreadHistoryItem[] }
+      | undefined;
   }
 ): Promise<void> {
   server.get('/memories', async (request, reply) => {
@@ -78,7 +82,7 @@ export async function registerMemoryRoutes(
 
   server.post('/threads/:id/summaries', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const history = options.readThreadHistory(id);
+    const history = await options.readThreadHistory(id);
     if (history === undefined) {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }

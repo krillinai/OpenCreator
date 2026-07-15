@@ -603,12 +603,20 @@ describe('App', () => {
       if (url.endsWith('/schedules')) return jsonResponse({ schedules: [] });
       if (url.endsWith('/threads') && init?.method === 'POST') {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const cwd = body.workspaceMode === 'managed'
+          ? '/runtime/workspaces/thread_schedule_builder'
+          : String(body.cwd);
         return jsonResponse({
           thread: createThreadResponse({
             id: 'thread_schedule_builder',
             title: String(body.title),
-            cwd: String(body.cwd),
-            canonicalCwd: String(body.cwd),
+            cwd,
+            canonicalCwd: cwd,
+            workspaceMode: body.workspaceMode === 'managed' ? 'managed' : 'external',
+            profile: String(body.profile),
+            sandbox: body.sandbox === 'danger-full-access'
+              ? 'danger-full-access'
+              : 'workspace-write',
             purpose: body.purpose === 'schedule_draft'
               ? 'schedule_draft'
               : 'conversation'
@@ -639,15 +647,18 @@ describe('App', () => {
       expect(call).toBeDefined();
       return call!;
     });
-    expect(JSON.parse(String(createThreadCall.init?.body))).toMatchObject({
+    const createThreadBody = JSON.parse(String(createThreadCall.init?.body)) as Record<string, unknown>;
+    expect(createThreadBody).toMatchObject({
       title: '任务草稿',
-      cwd: '~/develop/content-design',
+      workspaceMode: 'managed',
       profile: 'default',
       sandbox: 'danger-full-access',
       purpose: 'schedule_draft'
     });
+    expect(createThreadBody).not.toHaveProperty('cwd');
     expect(window.location.hash).toBe('#/thread/thread_schedule_builder');
     expect(await screen.findByRole('heading', { name: '任务草稿' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     await waitFor(() => {
       expect(textbox).toHaveValue(
@@ -680,12 +691,16 @@ describe('App', () => {
       }
       if (url.endsWith('/threads') && init?.method === 'POST') {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const cwd = body.workspaceMode === 'managed'
+          ? '/runtime/workspaces/thread_schedule_builder'
+          : String(body.cwd);
         return jsonResponse({
           thread: createThreadResponse({
             id: 'thread_schedule_builder',
             title: String(body.title),
-            cwd: String(body.cwd),
-            canonicalCwd: String(body.cwd),
+            cwd,
+            canonicalCwd: cwd,
+            workspaceMode: body.workspaceMode === 'managed' ? 'managed' : 'external',
             profile: String(body.profile),
             sandbox: body.sandbox === 'danger-full-access' ? 'danger-full-access' : 'workspace-write',
             purpose: 'schedule_draft'
@@ -777,6 +792,98 @@ describe('App', () => {
     await waitFor(() => expect(scheduleListCalls).toBeGreaterThanOrEqual(2));
     expect(await screen.findByRole('heading', { name: '任务草稿' })).toBeInTheDocument();
     expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
+  });
+
+  it('creates schedule drafts in the task area and shows the thread workspace permission', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread-customer',
+              title: '客户项目会话',
+              cwd: '/Users/test/project/customer-agent',
+              canonicalCwd: '/Users/test/project/customer-agent',
+              sandbox: 'workspace-write'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/schedules')) return jsonResponse({ schedules: [] });
+      if (url.endsWith('/threads') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const cwd = body.workspaceMode === 'managed'
+          ? '/runtime/workspaces/thread-schedule-draft'
+          : String(body.cwd);
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread-schedule-draft',
+            title: String(body.title),
+            cwd,
+            canonicalCwd: cwd,
+            workspaceMode: body.workspaceMode === 'managed' ? 'managed' : 'external',
+            profile: String(body.profile),
+            sandbox: body.sandbox === 'danger-full-access'
+              ? 'danger-full-access'
+              : 'workspace-write',
+            purpose: 'schedule_draft'
+          })
+        }, { status: 201 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'customer-agent' }))
+        .toHaveAttribute('data-current-project', 'true');
+    });
+    await user.click(screen.getByRole('button', { name: '已安排' }));
+    await user.click(await screen.findByRole('button', { name: /^创建$/ }));
+    await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
+
+    const createThreadCall = await waitFor(() => {
+      const call = findPostCall(fetchCalls, '/threads');
+      expect(call).toBeDefined();
+      return call!;
+    });
+    const createThreadBody = JSON.parse(String(createThreadCall.init?.body)) as Record<string, unknown>;
+    expect(createThreadBody).toMatchObject({
+      workspaceMode: 'managed',
+      sandbox: 'danger-full-access',
+      purpose: 'schedule_draft'
+    });
+    expect(createThreadBody).not.toHaveProperty('cwd');
+    expect(await screen.findByRole('button', { name: /任务草稿.*草稿/ }))
+      .toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'customer-agent' }))
+      .not.toHaveAttribute('data-current-project');
+    expect(screen.queryByRole('button', { name: /选择项目/ }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问' }))
+      .toBeInTheDocument();
+    expect(within(screen.getByLabelText('customer-agent 对话')).queryByText('任务草稿'))
+      .not.toBeInTheDocument();
   });
 
   it('refreshes a draft into its bound task thread after the Agent creates a schedule', async () => {
@@ -1544,8 +1651,70 @@ describe('App', () => {
     expect(screen.getByRole('option', { name: /设置 Goal/ })).toBeInTheDocument();
   });
 
+  it('loads plugin data without requesting MCP or Profiles on a direct plugin refresh', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/plugins';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchUrls: string[] = [];
+    const runtimeFetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      fetchUrls.push(url);
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/codex/skills')) return jsonResponse(createSkillListResponse());
+      if (url.endsWith('/codex/mcp')) return jsonResponse(createMcpListResponse());
+      if (url.endsWith('/codex/profiles')) {
+        return jsonResponse({
+          codexHome: '/Users/test/.codex',
+          codexHomeMode: 'global',
+          writable: true,
+          baseConfigValid: true,
+          profiles: [],
+          diagnostics: []
+        });
+      }
+      if (url.endsWith('/codex/skill-market/install-records')) {
+        return jsonResponse({ records: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('正在加载 Skills 目录')).not.toBeInTheDocument();
+    });
+    expect(fetchUrls.some(url => url.endsWith('/codex/skills'))).toBe(true);
+    expect(fetchUrls.some(url => url.endsWith('/codex/skill-market/install-records'))).toBe(true);
+    expect(fetchUrls.some(url => url.endsWith('/codex/mcp'))).toBe(false);
+    expect(fetchUrls.some(url => url.endsWith('/codex/profiles'))).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: '新对话' }));
+    await waitFor(() => {
+      expect(fetchUrls.some(url => url.endsWith('/codex/mcp'))).toBe(true);
+      expect(fetchUrls.some(url => url.endsWith('/codex/profiles'))).toBe(true);
+    });
+  });
+
   it('connects the plugin market to real install state and creates draft conversations', async () => {
     const user = userEvent.setup();
+    window.localStorage.setItem(
+      'clawee.preferences.defaultPermission',
+      'danger-full-access'
+    );
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
@@ -1610,12 +1779,13 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await waitFor(() => expect(skillRequests).toBe(1));
-    await waitFor(() => expect(recordRequests).toBe(1));
 
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await waitFor(() => expect(recordRequests).toBe(1));
     expect(screen.queryByRole('heading', { name: 'Clawee：插件' })).not.toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
+    await showSkillMarketCard(user, 'frontend-slides');
 
     const frontendCard = getSkillMarketCard('frontend-slides');
     expect(within(frontendCard).getByText('网页演示稿生成')).toBeInTheDocument();
@@ -1627,12 +1797,19 @@ describe('App', () => {
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
 
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
+    const projectDialog = screen.getByRole('dialog', { name: '选择使用项目' });
+    expect(within(projectDialog).getByRole('radio', { name: /content-design/ })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await user.click(within(projectDialog).getByRole('radio', { name: /bili/ }));
+    await user.click(within(projectDialog).getByRole('button', { name: '在 bili 中使用' }));
 
     await waitFor(() => expect(threadCreateCalls()).toHaveLength(1));
     const createThreadBody = JSON.parse(String(threadCreateCalls()[0]?.init?.body)) as Record<string, unknown>;
     expect(createThreadBody).toMatchObject({
       title: '网页演示稿生成',
-      cwd: '~/develop/content-design',
+      cwd: '~/develop/clawee/bili',
       workspaceMode: 'external',
       profile: 'default',
       sandbox: 'danger-full-access'
@@ -1648,8 +1825,10 @@ describe('App', () => {
     });
 
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(getSkillMarketCard('frontend-slides')).toBeInTheDocument());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
+    await user.click(screen.getByRole('button', { name: '在 bili 中使用' }));
 
     await waitFor(() => expect(threadCreateCalls()).toHaveLength(2));
     expect(JSON.parse(String(threadCreateCalls()[1]?.init?.body))).toMatchObject({
@@ -1716,6 +1895,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '插件' }));
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
+    await showSkillMarketCard(user, 'frontend-slides');
     expect(screen.getByRole('alert')).toHaveTextContent('安装记录加载失败');
     const card = getSkillMarketCard('frontend-slides');
     expect(within(card).getByText('版本未知')).toBeInTheDocument();
@@ -1756,6 +1936,7 @@ describe('App', () => {
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '插件' }));
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
+    await showSkillMarketCard(user, 'frontend-slides');
     expect(screen.getByRole('alert')).toHaveTextContent('Skill 状态加载失败');
     const action = within(getSkillMarketCard('frontend-slides')).getByRole('button', {
       name: '状态未知'
@@ -1802,6 +1983,7 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
 
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', {
@@ -1809,17 +1991,25 @@ describe('App', () => {
     }));
     const dialog = screen.getByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: '使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
 
-    expect(await screen.findAllByText('使用失败：创建对话失败')).toHaveLength(2);
-    expect(within(dialog).getByText('使用失败：创建对话失败')).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: '使用' }));
+    expect(await screen.findAllByText('使用失败：创建对话失败')).toHaveLength(1);
+    await user.click(
+      within(getSkillMarketCard('frontend-slides')).getByRole('button', {
+        name: /打开 .*详情/
+      })
+    );
+    const retryDialog = screen.getByRole('dialog');
+    expect(within(retryDialog).getByText('使用失败：创建对话失败')).toBeInTheDocument();
+    await user.click(within(retryDialog).getByRole('button', { name: '使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
     await waitFor(() => {
       expect(
         fetchCalls.filter(call => call.url.endsWith('/threads') && call.init?.method === 'POST')
       ).toHaveLength(2);
     });
     expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '网页演示稿生成' })).not.toBeInTheDocument();
     expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
   });
 
@@ -1863,11 +2053,14 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
 
     const firstUseButton = within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' });
     await user.click(firstUseButton);
+    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
     await user.click(firstUseButton);
+    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
 
     expect(threadCreateCalls()).toHaveLength(1);
 
@@ -1886,8 +2079,10 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
 
     expect(threadCreateCalls()).toHaveLength(2);
     await act(async () => {
@@ -1962,6 +2157,7 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '安装' })).toBeEnabled());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '安装' }));
     await waitFor(() => expect(staleRecords).toBeDefined());
@@ -2040,8 +2236,9 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await waitFor(() => expect(skillRequests).toBe(1));
-    await waitFor(() => expect(recordRequests).toBe(1));
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await showSkillMarketCard(user, 'frontend-slides');
+    await waitFor(() => expect(recordRequests).toBe(1));
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '更新' })).toBeEnabled());
 
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '更新' }));
@@ -2095,6 +2292,7 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await showSkillMarketCard(user, 'frontend-slides');
     await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '安装' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('安装记录刷新失败');
@@ -2156,6 +2354,7 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '插件' }));
+    await showSkillMarketCard(user, 'frontend-slides');
     await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '更新' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Skill 状态刷新失败');
@@ -2769,9 +2968,13 @@ describe('App', () => {
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
 
-  it('creates Playground threads with the Playground cwd so they survive refresh grouping', async () => {
+  it('creates Playground threads with the Playground cwd and global permission', async () => {
     const user = userEvent.setup();
     const prompt = 'hi';
+    window.localStorage.setItem(
+      'clawee.preferences.defaultPermission',
+      'danger-full-access'
+    );
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
@@ -2787,7 +2990,8 @@ describe('App', () => {
             id: 'thread_playground',
             title: prompt,
             cwd: '/Users/test/develop/clawee/playground',
-            canonicalCwd: '/Users/test/develop/clawee/playground'
+            canonicalCwd: '/Users/test/develop/clawee/playground',
+            sandbox: 'danger-full-access'
           })
         }, { status: 201 });
       }
@@ -2818,7 +3022,8 @@ describe('App', () => {
     expect(createThreadBody).toMatchObject({
       title: prompt,
       cwd: '~/develop/clawee/playground',
-      workspaceMode: 'external'
+      workspaceMode: 'external',
+      sandbox: 'danger-full-access'
     });
   });
 
@@ -3307,7 +3512,10 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('button', { name: /普通会话/ })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /任务草稿/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /任务草稿.*草稿/ }))
+      .toHaveClass('sidebar-task-row');
+    expect(within(screen.getByLabelText('content-design 对话')).queryByText('任务草稿'))
+      .not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /任务线程旧标题/ })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(requestedUrls.some(url => url.endsWith('/schedules'))).toBe(true);
@@ -3765,7 +3973,7 @@ describe('App', () => {
     expect(historyRequests).toBe(1);
   });
 
-  it('opens a search result outside the initial thread page with a target history window', async () => {
+  it('opens a search result outside the recent page and loads the latest history page', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
@@ -3789,8 +3997,7 @@ describe('App', () => {
               codexThreadId: 'codex-search-target',
               title: '搜索命中的会话',
               cwd: '/Users/test/develop/content-design',
-              itemId: 'search-target-item',
-              itemType: 'user_message',
+              itemType: 'title',
               createdAt: '2026-07-12T12:00:00.000Z',
               snippet: [
                 { text: '目标位于 ', highlighted: false },
@@ -3810,13 +4017,10 @@ describe('App', () => {
           })
         });
       }
-      if (url.endsWith(
-        '/threads/thread_search_target/history?limit=50&targetItemId=search-target-item'
-      )) {
+      if (url.endsWith('/threads/thread_search_target/history?limit=50')) {
         return jsonResponse({
           threadId: 'thread_search_target',
           codexThreadId: 'codex-search-target',
-          targetItemId: 'search-target-item',
           items: [
             {
               id: 'search-before-item',
@@ -3858,15 +4062,15 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '搜索' }));
-    await user.type(screen.getByRole('searchbox', { name: '搜索会话' }), 'App.tsx');
-    const result = await screen.findByTestId('search-result-search-target-item');
+    await user.type(await screen.findByRole('searchbox', { name: '搜索会话' }), 'App.tsx');
+    const result = await screen.findByTestId('search-result-title');
     await user.click(within(result).getByRole('button'));
 
     expect(await findTimelineUserMessage('目标位于 App.tsx')).toBeInTheDocument();
-    expect(document.querySelector('[data-search-target="true"]')).toHaveTextContent('目标位于 App.tsx');
+    expect(document.querySelector('[data-search-target="true"]')).toBeNull();
     expect(requestedUrls).toEqual(expect.arrayContaining([
       expect.stringContaining(
-        '/threads/thread_search_target/history?limit=50&targetItemId=search-target-item'
+        '/threads/thread_search_target/history?limit=50'
       )
     ]));
     expect(requestedUrls.some(url => (
@@ -4935,6 +5139,123 @@ describe('App', () => {
     expect(window.localStorage.getItem('clawee.preferences.dynamicBackground')).toBe('false');
   });
 
+  it('persists the global default permission across refreshes and projects', async () => {
+    const user = userEvent.setup();
+    const firstRender = render(<App fileService={createFileService()} />);
+
+    await user.click(await screen.findByRole('button', { name: '选择项目 content-design' }));
+    await user.click(screen.getByRole('option', { name: 'Playground' }));
+    expect(screen.getByRole('button', { name: '选择访问权限 只读访问' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '设置 账户' }));
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: '默认权限' }),
+      'danger-full-access'
+    );
+
+    expect(window.localStorage.getItem('clawee.preferences.defaultPermission'))
+      .toBe('danger-full-access');
+
+    await user.click(screen.getByRole('button', { name: '返回应用' }));
+    expect(await screen.findByRole('button', { name: '选择项目 Playground' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问' })).toBeInTheDocument();
+
+    firstRender.unmount();
+    render(<App fileService={createFileService()} />);
+
+    expect(await screen.findByRole('button', { name: '选择项目 Playground' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '设置 账户' }));
+    expect(await screen.findByRole('combobox', { name: '默认权限' }))
+      .toHaveValue('danger-full-access');
+  });
+
+  it('syncs a global permission to ordinary conversations without changing scheduled threads', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/settings';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const ordinaryThread = createThreadResponse({
+      id: 'thread-ordinary',
+      title: '普通只读会话',
+      sandbox: 'read-only'
+    });
+    const scheduleDraftThread = createThreadResponse({
+      id: 'thread-schedule-draft',
+      title: '任务草稿',
+      purpose: 'schedule_draft',
+      workspaceMode: 'managed',
+      sandbox: 'danger-full-access'
+    });
+    const scheduleTaskThread = createThreadResponse({
+      id: 'thread-schedule-task',
+      title: '已安排任务',
+      purpose: 'schedule_task',
+      scheduleId: 'schedule-1',
+      sandbox: 'workspace-write'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&excludePurpose=schedule_task&limit=50')) {
+        return jsonResponse({ threads: [ordinaryThread, scheduleDraftThread] });
+      }
+      if (url.endsWith('/threads?status=active&purpose=schedule_task&limit=100')) {
+        return jsonResponse({ threads: [scheduleTaskThread] });
+      }
+      if (url.endsWith('/schedules')) return jsonResponse({ schedules: [] });
+      if (url.endsWith('/tasks?status=all&limit=50')) {
+        return jsonResponse({ tasks: [], hasMore: false });
+      }
+      if (url.endsWith('/threads/thread-ordinary') && init?.method === 'PATCH') {
+        const body = JSON.parse(String(init.body)) as { sandbox: ThreadResponse['sandbox'] };
+        return jsonResponse({
+          thread: {
+            ...ordinaryThread,
+            sandbox: body.sandbox
+          }
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('heading', { name: '常规' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchCalls.some(call => call.url.includes('excludePurpose=schedule_task'))).toBe(true);
+    });
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: '默认权限' }),
+      'danger-full-access'
+    );
+
+    await waitFor(() => {
+      expect(findPatchCall(fetchCalls, '/threads/thread-ordinary')).toBeDefined();
+    });
+    expect(JSON.parse(String(findPatchCall(fetchCalls, '/threads/thread-ordinary')?.init?.body)))
+      .toEqual({ sandbox: 'danger-full-access' });
+    expect(findPatchCall(fetchCalls, '/threads/thread-schedule-draft')).toBeUndefined();
+    expect(findPatchCall(fetchCalls, '/threads/thread-schedule-task')).toBeUndefined();
+    expect(window.localStorage.getItem('clawee.preferences.defaultPermission'))
+      .toBe('danger-full-access');
+  });
+
   it('connects memory management, summary creation, suggestions, and run context end to end', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
@@ -5211,6 +5532,16 @@ function getSkillMarketCard(skillId: string): HTMLElement {
   const card = document.querySelector(`[data-testid="skill-market-card"][data-skill-id="${skillId}"]`);
   if (!(card instanceof HTMLElement)) throw new Error(`Expected skill market card: ${skillId}`);
   return card;
+}
+
+async function showSkillMarketCard(
+  user: ReturnType<typeof userEvent.setup>,
+  skillId: string
+): Promise<HTMLElement> {
+  const search = screen.getByRole('searchbox', { name: '搜索 Skill' });
+  await user.clear(search);
+  await user.type(search, skillId);
+  return waitFor(() => getSkillMarketCard(skillId));
 }
 
 function createCodexStatusResponse(overrides: Partial<CodexStatusResponse> = {}): CodexStatusResponse {

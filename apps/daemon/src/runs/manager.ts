@@ -1470,7 +1470,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       if (thread.status === 'archived') throw new Error(`Thread is archived: ${normalizedInput.threadId}`);
       return {
         ...normalizedInput,
-        cwd: expandHome(thread.cwd, options.homeDir ?? homedir()),
+        cwd: thread.workspaceMode === 'managed'
+          ? thread.canonicalCwd
+          : expandHome(thread.cwd, options.homeDir ?? homedir()),
         profile: thread.profile,
         sandbox: thread.sandbox,
         model: thread.model ?? undefined,
@@ -1671,19 +1673,39 @@ function buildApprovalRequest(input: {
   const host = optionalString(networkContext?.host);
   const protocol = optionalString(networkContext?.protocol);
   const port = typeof networkContext?.port === 'number' ? networkContext.port : undefined;
+  const mcpMeta = isRecord(params._meta) ? params._meta : undefined;
+  const serverName = optionalString(params.serverName);
+  const mcpMessage = optionalString(mcpMeta?.message);
+  const toolDescription = optionalString(mcpMeta?.tool_description);
+  const toolParams = isRecord(mcpMeta?.tool_params) ? mcpMeta.tool_params : undefined;
+  const toolParamsDisplay = Array.isArray(mcpMeta?.tool_params_display)
+    ? mcpMeta.tool_params_display
+    : undefined;
+  const toolName = optionalString(mcpMeta?.tool_name)
+    ?? parseMcpToolName(mcpMessage)
+    ?? inferBuiltInMcpToolName(serverName, toolDescription);
+  const scheduleName = optionalString(toolParams?.name);
+  const isMcpElicitation = input.request.method === 'mcpServer/elicitation/request';
+  const isScheduleCreate =
+    serverName === 'clawee_schedule'
+    && toolName === 'clawee_schedule_create';
   const kind = input.request.method === 'item/commandExecution/requestApproval'
     ? 'command_execution' as const
     : input.request.method === 'item/fileChange/requestApproval'
       ? 'file_change' as const
       : 'permissions' as const;
-  const title = kind === 'command_execution'
-    ? host === undefined ? '允许执行命令' : '允许网络访问'
-    : kind === 'file_change'
-      ? '允许修改文件'
-      : '允许扩大权限';
+  const title = isScheduleCreate
+    ? '允许创建定时任务'
+    : isMcpElicitation
+      ? '允许调用 MCP 工具'
+      : kind === 'command_execution'
+        ? host === undefined ? '允许执行命令' : '允许网络访问'
+        : kind === 'file_change'
+          ? '允许修改文件'
+          : '允许扩大权限';
   const summary = host !== undefined
     ? `${protocol ?? 'network'}://${host}${port === undefined ? '' : `:${port}`}`
-    : command ?? grantRoot ?? reason ?? title;
+    : scheduleName ?? toolName ?? serverName ?? command ?? grantRoot ?? reason ?? title;
   const details = redactApprovalDetails({
     ...(reason === undefined ? {} : { reason }),
     ...(command === undefined ? {} : { command }),
@@ -1696,6 +1718,11 @@ function buildApprovalRequest(input: {
         ...(port === undefined ? {} : { port })
       }
     }),
+    ...(serverName === undefined ? {} : { serverName }),
+    ...(toolName === undefined ? {} : { toolName }),
+    ...(toolDescription === undefined ? {} : { toolDescription }),
+    ...(toolParams === undefined ? {} : { toolParams }),
+    ...(toolParamsDisplay === undefined ? {} : { toolParamsDisplay }),
     ...(Array.isArray(params.commandActions) ? { commandActions: params.commandActions } : {}),
     ...(isRecord(params.permissions) ? { permissions: params.permissions } : {})
   });
@@ -1705,7 +1732,7 @@ function buildApprovalRequest(input: {
     threadId: input.threadId,
     codexThreadId: input.codexThreadId,
     turnId: optionalString(params.turnId) ?? 'unknown',
-    itemId: optionalString(params.itemId) ?? 'unknown',
+    itemId: optionalString(params.itemId) ?? toolName ?? serverName ?? 'unknown',
     requestId: String(input.request.id),
     kind,
     risk: kind === 'file_change' ? 'medium' as const : 'high' as const,
@@ -1713,6 +1740,29 @@ function buildApprovalRequest(input: {
     summary: redactText(summary),
     details
   };
+}
+
+function parseMcpToolName(message: string | undefined): string | undefined {
+  if (message === undefined) return undefined;
+  return message.match(/\btool\s+"([^"]+)"/i)?.[1];
+}
+
+function inferBuiltInMcpToolName(
+  serverName: string | undefined,
+  description: string | undefined
+): string | undefined {
+  if (serverName !== 'clawee_schedule' || description === undefined) {
+    return undefined;
+  }
+  const tools = [
+    ['创建一个 Clawee 定时任务', 'clawee_schedule_create'],
+    ['更新当前任务会话绑定的定时任务', 'clawee_schedule_update'],
+    ['暂停当前任务会话绑定的定时任务', 'clawee_schedule_pause'],
+    ['恢复当前任务会话绑定的定时任务', 'clawee_schedule_resume'],
+    ['立即触发当前任务会话绑定的定时任务', 'clawee_schedule_run_now'],
+    ['读取当前任务会话绑定的定时任务', 'clawee_schedule_get']
+  ] as const;
+  return tools.find(([prefix]) => description.startsWith(prefix))?.[1];
 }
 
 function redactApprovalDetails(

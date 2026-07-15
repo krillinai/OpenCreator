@@ -12,10 +12,9 @@ import type { SkillMarketViewEntry } from './skill-market-model.js';
 import {
   formatUsers,
   getSkillMarketAction,
-  getSkillMarketUnavailableReason,
   type SkillMarketAction,
 } from './SkillMarketCard.js';
-import { SkillAuthorAvatar, SkillMarketCover } from './SkillMarketCover.js';
+import { SkillAuthorAvatar } from './SkillMarketCover.js';
 
 export function SkillDetailModal({
   item,
@@ -48,7 +47,6 @@ export function SkillDetailModal({
   const action = getSkillMarketAction(item.status, connected, {
     mutationLocked,
     skillsKnown,
-    unavailableReason: getSkillMarketUnavailableReason(item.entry.install),
   });
   const actionReasonId = action.reason ? `skill-market-modal-action-reason-${sanitizeId(item.id)}` : undefined;
   const riskNotes = getRiskNotes(item);
@@ -117,30 +115,27 @@ export function SkillDetailModal({
 
         <div className="skill-market-modal__body">
           <header className="skill-market-detail-head">
-            <div className="skill-market-detail-head__cover">
-              <SkillMarketCover item={item} compact />
-            </div>
-            <div className="skill-market-detail-head__content">
-              <div className="skill-market-detail-meta">
-                <span>{item.category.name}</span>
-                <span>{item.subcategory}</span>
-                {item.status === 'installed_unknown_version' ? <span>版本未知</span> : null}
-              </div>
-              <h2 id="skill-market-detail-title">{item.title}</h2>
-              <p>{item.entry.summary || item.entry.tagline}</p>
-              <div className="skill-market-detail-byline">
-                <div className="skill-market-detail-author">
-                  <SkillAuthorAvatar
-                    name={item.entry.creator.name}
-                    size="large"
-                    src={item.entry.creator.avatarUrl}
-                  />
-                  <span>{item.entry.creator.name}</span>
+            <div className="skill-market-detail-head__identity">
+              <SkillAuthorAvatar
+                name={item.entry.creator.name}
+                size="large"
+                src={item.entry.creator.avatarUrl}
+              />
+              <div className="skill-market-detail-head__content">
+                <div className="skill-market-detail-meta">
+                  <span>{item.category.name}</span>
+                  <span>{item.subcategory}</span>
+                  {item.status === 'installed_unknown_version' ? <span>版本未知</span> : null}
                 </div>
-                <span className="skill-market-detail-users">
-                  <Users size={14} aria-hidden="true" />
-                  {formatUsers(item.users)} 位用户
-                </span>
+                <h2 id="skill-market-detail-title">{item.title}</h2>
+                <p>{item.entry.summary || item.entry.tagline}</p>
+                <div className="skill-market-detail-byline">
+                  <span className="skill-market-detail-author">{item.entry.creator.name}</span>
+                  <span className="skill-market-detail-users">
+                    <Users size={14} aria-hidden="true" />
+                    {formatUsers(item.users)} 位用户
+                  </span>
+                </div>
               </div>
             </div>
           </header>
@@ -224,7 +219,7 @@ export function SkillDetailModal({
             </button>
             <button
               aria-describedby={actionReasonId}
-              className="skill-market-action-button"
+              className={`skill-market-action-button skill-market-action-button--${action.kind}`}
               disabled={action.disabled}
               onClick={() => handleAction(action, item.id, onInstall, onUpdate, onUse)}
               title={action.reason}

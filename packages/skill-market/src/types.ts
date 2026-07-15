@@ -53,6 +53,7 @@ export type CreatorSkillSource = {
     license: string | null;
     lastPushedAt: string | null;
     defaultBranch: string;
+    skillPath?: string;
     readmeText?: string;
     readmeLanguage?: 'zh' | 'en' | 'unknown';
   };
@@ -78,15 +79,12 @@ export type CreatorSkillSource = {
   relatedSkillIds: string[];
 };
 
-export type SkillMarketInstallSource =
-  | { available: false; reason: 'missing_skill_manifest' | 'unsafe_archive' }
-  | {
-      available: true;
-      repository: string;
-      skillPath: string;
-      commit: string;
-      marketRevision: number;
-    };
+export type SkillMarketInstallSource = {
+  repository: string;
+  skillPath: string;
+  ref: string;
+  marketRevision: number;
+};
 
 export type SkillMarketEntry = {
   id: string;

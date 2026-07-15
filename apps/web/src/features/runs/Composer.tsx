@@ -122,6 +122,7 @@ export function Composer(props: {
   projectId: string;
   projectName: string;
   projects: ClaweeProject[];
+  showProjectSelector?: boolean;
   permission: ProjectPermission;
   profile: string;
   model: string | null;
@@ -497,67 +498,69 @@ export function Composer(props: {
       }}
       onDrop={handleDrop}
     >
-      <div className="composer-project-context">
-        <div
-          className="composer-control-wrap composer-project-control"
-          data-composer-menu-root="project"
-        >
-          <button
-            className="composer-project-button"
-            type="button"
-            aria-label={`选择项目 ${props.projectName}`}
-            aria-expanded={openMenu === 'project'}
-            onClick={toggleProjectMenu}
+      {props.showProjectSelector !== false ? (
+        <div className="composer-project-context">
+          <div
+            className="composer-control-wrap composer-project-control"
+            data-composer-menu-root="project"
           >
-            <Folder aria-hidden="true" size={15} />
-            <span>{props.projectName}</span>
-            <ChevronDown aria-hidden="true" size={14} />
-          </button>
-          {openMenu === 'project' ? (
-            <div
-              className="composer-popover composer-project-popover"
-              role="dialog"
-              aria-label="选择项目"
+            <button
+              className="composer-project-button"
+              type="button"
+              aria-label={`选择项目 ${props.projectName}`}
+              aria-expanded={openMenu === 'project'}
+              onClick={toggleProjectMenu}
             >
-              <label className="composer-project-search">
-                <Search aria-hidden="true" size={15} />
-                <input
-                  ref={projectSearchRef}
-                  type="search"
-                  aria-label="搜索项目"
-                  placeholder="搜索项目"
-                  value={projectQuery}
-                  onChange={event => setProjectQuery(event.currentTarget.value)}
-                />
-              </label>
-              <div className="composer-project-list" role="listbox" aria-label="项目列表">
-                {filteredProjects.length === 0 ? (
-                  <p className="composer-project-empty">没有匹配的项目</p>
-                ) : (
-                  filteredProjects.map(project => (
-                    <button
-                      key={project.id}
-                      className="composer-project-option"
-                      type="button"
-                      role="option"
-                      aria-label={project.name}
-                      aria-selected={project.id === props.projectId}
-                      title={project.cwd}
-                      onClick={() => selectProject(project.id)}
-                    >
-                      <Folder aria-hidden="true" size={16} />
-                      <span>{project.name}</span>
-                      {project.id === props.projectId ? (
-                        <Check className="composer-project-check" aria-hidden="true" size={15} />
-                      ) : null}
-                    </button>
-                  ))
-                )}
+              <Folder aria-hidden="true" size={15} />
+              <span>{props.projectName}</span>
+              <ChevronDown aria-hidden="true" size={14} />
+            </button>
+            {openMenu === 'project' ? (
+              <div
+                className="composer-popover composer-project-popover"
+                role="dialog"
+                aria-label="选择项目"
+              >
+                <label className="composer-project-search">
+                  <Search aria-hidden="true" size={15} />
+                  <input
+                    ref={projectSearchRef}
+                    type="search"
+                    aria-label="搜索项目"
+                    placeholder="搜索项目"
+                    value={projectQuery}
+                    onChange={event => setProjectQuery(event.currentTarget.value)}
+                  />
+                </label>
+                <div className="composer-project-list" role="listbox" aria-label="项目列表">
+                  {filteredProjects.length === 0 ? (
+                    <p className="composer-project-empty">没有匹配的项目</p>
+                  ) : (
+                    filteredProjects.map(project => (
+                      <button
+                        key={project.id}
+                        className="composer-project-option"
+                        type="button"
+                        role="option"
+                        aria-label={project.name}
+                        aria-selected={project.id === props.projectId}
+                        title={project.cwd}
+                        onClick={() => selectProject(project.id)}
+                      >
+                        <Folder aria-hidden="true" size={16} />
+                        <span>{project.name}</span>
+                        {project.id === props.projectId ? (
+                          <Check className="composer-project-check" aria-hidden="true" size={15} />
+                        ) : null}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
       <AttachmentTray
         items={attachmentDrafts}
         onRemove={(localId) => void removeAttachment(localId)}

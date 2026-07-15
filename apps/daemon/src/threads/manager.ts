@@ -2,7 +2,7 @@ import type { ThreadPurpose } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import { expandHome } from '../platform/paths.js';
 import { createThreadRepository, type ThreadRow } from '../storage/repositories.js';
@@ -31,7 +31,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       const workspaceMode = request.workspaceMode ?? 'managed';
       const cwd =
         workspaceMode === 'managed'
-          ? join(input.dataDir, 'workspaces', id)
+          ? resolve(input.dataDir, 'workspaces', id)
           : normalizeExternalCwd(request.cwd ?? process.cwd(), input.homeDir ?? homedir());
       mkdirSync(cwd, { recursive: true });
       const canonicalCwd = realpathSync(cwd);

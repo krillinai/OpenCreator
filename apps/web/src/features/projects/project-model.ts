@@ -42,17 +42,20 @@ export function findProjectById(projects: ClaweeProject[], projectId: string): C
 
 export function groupThreadsByPurpose(threads: ThreadResponse[]): {
   conversationThreads: ThreadResponse[];
+  scheduleDraftThreads: ThreadResponse[];
   scheduleTaskThreads: ThreadResponse[];
 } {
   const conversationThreads: ThreadResponse[] = [];
+  const scheduleDraftThreads: ThreadResponse[] = [];
   const scheduleTaskThreads: ThreadResponse[] = [];
 
   for (const thread of threads) {
     if (thread.purpose === 'schedule_task') scheduleTaskThreads.push(thread);
+    else if (thread.purpose === 'schedule_draft') scheduleDraftThreads.push(thread);
     else conversationThreads.push(thread);
   }
 
-  return { conversationThreads, scheduleTaskThreads };
+  return { conversationThreads, scheduleDraftThreads, scheduleTaskThreads };
 }
 
 export function listRecentConversations(): ClaweeConversation[] {

@@ -7,7 +7,7 @@ import { render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ClaweeProject } from '../projects/project-model.js';
-import type { SidebarTaskStatus } from '../shell/sidebar-task-model.js';
+import type { ScheduleSidebarTaskStatus } from '../shell/sidebar-task-model.js';
 import { ScheduleThreadHeader } from './ScheduleThreadHeader.js';
 
 describe('ScheduleThreadHeader', () => {
@@ -18,7 +18,7 @@ describe('ScheduleThreadHeader', () => {
     ['waiting_approval', '等待审批'],
     ['failed', '上次失败'],
     ['paused', '已暂停'],
-  ] satisfies Array<[SidebarTaskStatus, string]>)(
+  ] satisfies Array<[ScheduleSidebarTaskStatus, string]>)(
     'renders the %s task status',
     (status, label) => {
       renderHeader({ status });
@@ -115,7 +115,7 @@ describe('ScheduleThreadHeader', () => {
 
 function renderHeader(overrides: {
   schedule?: ScheduleResponse;
-  status?: SidebarTaskStatus;
+  status?: ScheduleSidebarTaskStatus;
   service?: ReturnType<typeof createService>;
   onRunNow?(schedule: ScheduleResponse): Promise<void> | void;
   onScheduleChanged?(schedule: ScheduleResponse): void;

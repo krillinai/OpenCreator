@@ -830,9 +830,13 @@ type AgentCreateScheduleInput = {
 1. Tool 不接受任意 `threadId`。
 2. 如果当前 Thread 是 `schedule_draft`，绑定当前 Thread。
 3. 如果当前 Thread 是普通会话，创建新的 `schedule_task` Thread。
-4. 项目、Profile、模型、权限默认继承当前 Thread。
-5. 服务端转换 timing 为 cron 并执行最终校验。
-6. Tool 返回 `scheduleId`、`threadId`、名称和下次执行时间。
+4. `schedule_draft` 使用 Clawee 管理的独立工作区，默认 Profile 为 `default`、
+   Sandbox 为 `danger-full-access`，不继承创建前选中的项目。
+5. Agent 创建工具不接受任意 `cwd`；需要绑定代码仓库或业务目录的任务，应从对应项目
+   的普通会话发起，或使用“手动设置”。普通会话发起时，项目、Profile、模型和权限继承
+   当前 Thread。
+6. 服务端转换 timing 为 cron 并执行最终校验。
+7. Tool 返回 `scheduleId`、`threadId`、名称和下次执行时间。
 
 ### 12.5 更新工具输入
 
@@ -939,18 +943,23 @@ runManager.hasActiveRunForThread(schedule.threadId)
 
 ## 15. 审批和无人值守边界
 
-定时任务使用普通 Clawee 权限和审批机制。
+任务页通过“使用 Clawee 创建”生成的任务以无人值守执行为默认目标，使用
+`danger-full-access`，不进入审批流程。其他入口创建的任务继续遵循其绑定 Thread 的
+Sandbox 和审批策略。
 
 规则：
 
-1. 定时任务不能自动批准高风险操作。
-2. Agent 发起审批后，Run 进入 `waiting_approval`。
-3. 任务在左侧显示“等待审批”。
-4. 发送系统通知。
-5. 点击通知进入任务会话并滚动到审批卡片。
-6. 用户批准后继续当前 Run。
-7. 等待审批期间，后续触发按 queue 或 skip 处理。
-8. 审批过期后本次 Run 失败，任务本身不自动暂停。
+1. `danger-full-access` 映射为 Codex app-server
+   `approvalPolicy='never'`，并在 `thread/start`、`thread/resume` 和 `turn/start`
+   三处保持一致。
+2. 完全访问模式不创建 Clawee Approval 记录、不展示审批卡，也不进入
+   `waiting_approval`。
+3. 如果 app-server 在 `never` 模式下仍发送 command、file、permissions 或
+   MCP tool elicitation 审批请求，runner 直接返回批准结果，避免无人值守 Run
+   因等待用户操作触发 inactivity timeout。
+4. `read-only` 和 `workspace-write` 继续使用 `approvalPolicy='on-request'`，保留
+   现有审批卡、通知、批准、拒绝、过期和 queue/skip 处理。
+5. 普通 MCP form elicitation 不属于工具审批；当前版本返回 `cancel`，不伪造表单输入。
 
 ## 16. 通知设计
 
@@ -1037,8 +1046,15 @@ P2 增加 Host 后台通知：
 
 前端按 `ThreadResponse.purpose` 分组：
 
-- `conversation` 和未完成的 `schedule_draft`：项目普通会话区域。
-- `schedule_task`：左侧“任务”区域。
+- `conversation`：项目普通会话区域。
+- 未完成的 `schedule_draft` 和正式 `schedule_task`：左侧“任务”区域。
+- “使用 Clawee 创建”生成的 `schedule_draft` 使用 `workspaceMode='managed'`，不携带
+  当前项目 `cwd`，默认 Profile 为 `default`、Sandbox 为 `danger-full-access`。
+- 新建 managed Thread 必须持久化绝对工作区路径；兼容历史相对 `cwd` 时，Run 执行必须
+  使用 Thread 的绝对 `canonicalCwd`，避免 Codex app-server 二次相对解析导致 MCP
+  启动目录不存在。
+- 任务草稿和正式任务的 Composer 不显示普通项目选择器；需要项目目录时，从对应项目
+  普通会话发起任务创建，或使用“手动设置”。项目只是任务执行配置，不是任务侧栏归属。
 
 ### 17.2 Codex session 索引
 
@@ -1846,7 +1862,7 @@ P2 目标：让任务适合长期运行、后台通知和故障恢复。
 | 场景 | 操作 | 预期 |
 |---|---|---|
 | AI 创建提醒 | “每 30 分钟提醒我喝水” | 创建任务会话，按时产生简短提醒 |
-| AI 创建内容任务 | “每天 9 点生成 100 字文稿” | 追问或使用当前项目，生成内容进入同一会话 |
+| AI 创建内容任务 | “每天 9 点生成 100 字文稿” | 无需项目时使用独立任务工作区；需要目录时从项目会话发起或手动设置，生成内容进入同一会话 |
 | 手动创建 | 表单提交 | 自动进入专属会话 |
 | 连续立即执行 | 连点两次 | 第二次排队或跳过，不并行 |
 | 自动执行两次 | 等待两个周期 | 两次结果在同一会话 |

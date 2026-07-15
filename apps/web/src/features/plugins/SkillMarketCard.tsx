@@ -1,4 +1,3 @@
-import type { SkillMarketEntry } from '@clawee/skill-market';
 import {
   Bookmark,
   CheckCircle2,
@@ -9,10 +8,16 @@ import {
 } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import type { SkillMarketStatus, SkillMarketViewEntry } from './skill-market-model.js';
-import { SkillAuthorAvatar, SkillMarketCover } from './SkillMarketCover.js';
+import { SkillAuthorAvatar } from './SkillMarketCover.js';
 
 export type SkillMarketAction =
-  | { label: string; kind: 'install' | 'update' | 'use' | 'disabled'; disabled: boolean; reason?: string };
+  | {
+      label: string;
+      kind: 'install' | 'update' | 'use' | 'disabled';
+      disabled: boolean;
+      reason?: string;
+      showReason?: boolean;
+    };
 
 export function SkillMarketCard({
   item,
@@ -32,7 +37,10 @@ export function SkillMarketCard({
   onUse(skillId: string): void;
 }) {
   const tags = getCardTags(item);
-  const actionReasonId = action.reason ? `skill-market-action-reason-${sanitizeId(item.id)}` : undefined;
+  const actionReasonId =
+    action.reason && action.showReason !== false
+      ? `skill-market-action-reason-${sanitizeId(item.id)}`
+      : undefined;
 
   function handleAction(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -56,12 +64,15 @@ export function SkillMarketCard({
         onClick={(event) => onOpen(event.currentTarget)}
         type="button"
       >
-        <span className="skill-market-card__cover">
-          <SkillMarketCover item={item} />
-        </span>
-
         <span className="skill-market-card__body">
-          <span className="skill-market-card__title">{item.title}</span>
+          <span className="skill-market-card__identity">
+            <SkillAuthorAvatar name={item.entry.creator.name} src={item.entry.creator.avatarUrl} />
+            <span className="skill-market-card__identity-copy">
+              <span className="skill-market-card__title">{item.title}</span>
+              <span className="skill-market-card__author">{item.entry.creator.name}</span>
+            </span>
+          </span>
+
           <span className="skill-market-card__tagline" title={item.entry.tagline}>
             {item.entry.tagline}
           </span>
@@ -71,44 +82,46 @@ export function SkillMarketCard({
               <span key={tag}>{tag}</span>
             ))}
           </span>
-
-          <span className="skill-market-card__footer">
-            <span className="skill-market-author">
-              <SkillAuthorAvatar name={item.entry.creator.name} src={item.entry.creator.avatarUrl} />
-              <span>{item.entry.creator.name}</span>
-            </span>
-            <span className="skill-market-card__metrics">
-              {item.status === 'installed_unknown_version' ? (
-                <span className="skill-market-version-note">版本未知</span>
-              ) : null}
-              <span className="skill-market-users" title="使用人数" aria-label="使用人数">
-                <Users size={14} aria-hidden="true" />
-                {formatUsers(item.users)}
-              </span>
-            </span>
-          </span>
         </span>
       </button>
 
+      <button
+        aria-label={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
+        className={`skill-market-icon-button skill-market-card__bookmark ${item.saved ? 'is-active' : ''}`}
+        onClick={() => onToggleSaved(item.id)}
+        title={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
+        type="button"
+      >
+        <Bookmark fill={item.saved ? 'currentColor' : 'none'} size={16} aria-hidden="true" />
+      </button>
+
       <div className="skill-market-card__action-row">
-        <button
-          aria-label={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
-          className={`skill-market-icon-button ${item.saved ? 'is-active' : ''}`}
-          onClick={() => onToggleSaved(item.id)}
-          title={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
-          type="button"
-        >
-          <Bookmark fill={item.saved ? 'currentColor' : 'none'} size={16} aria-hidden="true" />
-        </button>
-        {action.reason ? (
-          <span className="skill-market-action-hint" id={actionReasonId}>
+        <span className="skill-market-card__metrics">
+          {item.status === 'installed_unknown_version' ? (
+            <span className="skill-market-version-note">版本未知</span>
+          ) : null}
+          <span className="skill-market-users" title="使用人数" aria-label="使用人数">
+            <Users size={14} aria-hidden="true" />
+            {formatUsers(item.users)}
+          </span>
+        </span>
+        {actionReasonId ? (
+          <span
+            className="skill-market-action-reason"
+            id={actionReasonId}
+            title={action.reason}
+          >
             <Info size={14} aria-hidden="true" />
-            {action.reason}
+            <span className="skill-market-visually-hidden">{action.reason}</span>
           </span>
         ) : null}
         <button
           aria-describedby={actionReasonId}
-          className="skill-market-action-button"
+          className={[
+            'skill-market-action-button',
+            `skill-market-action-button--${action.kind}`,
+            action.showReason === false ? 'skill-market-action-button--quiet-disabled' : '',
+          ].filter(Boolean).join(' ')}
           disabled={action.disabled}
           onClick={handleAction}
           title={action.reason}
@@ -131,16 +144,8 @@ export function SkillMarketCard({
 export function getSkillMarketAction(
   status: SkillMarketStatus,
   connected: boolean,
-  options: { mutationLocked?: boolean; skillsKnown?: boolean; unavailableReason?: string } = {}
+  options: { mutationLocked?: boolean; skillsKnown?: boolean } = {}
 ): SkillMarketAction {
-  if (status === 'unavailable') {
-    return {
-      label: '暂不可安装',
-      kind: 'disabled',
-      disabled: true,
-      reason: options.unavailableReason ?? '当前目录条目没有可安装来源',
-    };
-  }
   if (!connected) {
     if (status === 'update_available') {
       return { label: '连接后更新', kind: 'update', disabled: true, reason: '需要连接 Runtime' };
@@ -169,7 +174,13 @@ export function getSkillMarketAction(
   }
   if (status === 'update_available') {
     if (options.mutationLocked) {
-      return { label: '更新', kind: 'update', disabled: true, reason: '请等待当前操作完成' };
+      return {
+        label: '更新',
+        kind: 'update',
+        disabled: true,
+        reason: '请等待当前操作完成',
+        showReason: false,
+      };
     }
     return { label: '更新', kind: 'update', disabled: false };
   }
@@ -177,7 +188,13 @@ export function getSkillMarketAction(
     return { label: '使用', kind: 'use', disabled: false };
   }
   if (options.mutationLocked) {
-    return { label: '安装', kind: 'install', disabled: true, reason: '请等待当前操作完成' };
+    return {
+      label: '安装',
+      kind: 'install',
+      disabled: true,
+      reason: '请等待当前操作完成',
+      showReason: false,
+    };
   }
   return { label: '安装', kind: 'install', disabled: false };
 }
@@ -194,22 +211,14 @@ function getActionIcon(kind: SkillMarketAction['kind']) {
   return <Download size={15} aria-hidden="true" />;
 }
 
-export function getSkillMarketUnavailableReason(
-  install: SkillMarketEntry['install']
-): string | undefined {
-  if (install.available) return undefined;
-  if (install.reason === 'unsafe_archive') return '仓库包结构未通过安全校验';
-  return '仓库未提供标准 SKILL.md';
-}
-
 function getCardTags(item: SkillMarketViewEntry): string[] {
   const tags: string[] = [];
   const seen = new Set<string>();
   const candidates = [
-    item.category.name,
     item.subcategory,
-    ...item.entry.platforms,
     ...item.entry.tasks,
+    ...item.entry.platforms,
+    item.category.name,
   ];
 
   for (const candidate of candidates) {
@@ -218,7 +227,7 @@ function getCardTags(item: SkillMarketViewEntry): string[] {
     if (tag.length === 0 || seen.has(key)) continue;
     seen.add(key);
     tags.push(tag);
-    if (tags.length === 6) break;
+    if (tags.length === 2) break;
   }
   return tags;
 }
