@@ -64,7 +64,7 @@ describe('ClaweeSidebar', () => {
   it('renders global actions, projects with nested conversations, and the settings footer action', () => {
     renderSidebar();
 
-    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-all.png');
+    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-white.png');
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
@@ -93,6 +93,12 @@ describe('ClaweeSidebar', () => {
 
     expect(onSelectProject).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
+  });
+
+  it('uses the black logo in light mode', () => {
+    renderSidebar({ colorMode: 'light' });
+
+    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-black.png');
   });
 
   it('selects projects without conversations', async () => {

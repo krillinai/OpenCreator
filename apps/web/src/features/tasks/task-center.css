@@ -144,7 +144,7 @@
 }
 
 .task-row__main:hover {
-  background: rgba(252, 253, 255, 0.04);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
 }
 
 .task-row__status {

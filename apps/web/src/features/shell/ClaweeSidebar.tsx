@@ -17,6 +17,7 @@ import {
   type LucideIcon
 } from 'lucide-react';
 import type { ActiveView } from '../../app/app-state.js';
+import type { ColorMode } from '../../styles/color-mode.js';
 import type { ClaweeConversation, ClaweeProject } from '../projects/project-model.js';
 import type {
   SidebarTaskStatus,
@@ -32,6 +33,7 @@ export function ClaweeSidebar(props: {
   selectedConversationId?: string;
   activeView: ActiveView;
   collapsed?: boolean;
+  colorMode?: ColorMode;
   onNewConversation(): void;
   onSelectProject(projectId: string): void;
   onSelectConversation(conversationId: string): void;
@@ -42,6 +44,7 @@ export function ClaweeSidebar(props: {
 }) {
   const [expandedProjectId, setExpandedProjectId] = useState<string | undefined>(props.currentProjectId);
   const collapsed = props.collapsed === true;
+  const logoSrc = props.colorMode === 'light' ? '/logo-black.png' : '/logo-white.png';
   const globalActions: Array<{
     label: string;
     icon: LucideIcon;
@@ -79,13 +82,15 @@ export function ClaweeSidebar(props: {
             title="展开侧栏"
             onClick={props.onToggleCollapsed}
           >
-            <img className="sidebar-logo-image sidebar-logo-mark" src="/logo-cor.png" alt="Clawee" />
+            <span className="sidebar-logo-mark-crop">
+              <img className="sidebar-logo-image sidebar-logo-mark" src={logoSrc} alt="Clawee" />
+            </span>
             <PanelLeftOpen className="sidebar-expand-icon" size={19} strokeWidth={1.85} aria-hidden="true" />
           </button>
         ) : (
           <>
             <div className="sidebar-logo-lockup">
-              <img className="sidebar-logo-image sidebar-logo-full" src="/logo-all.png" alt="Clawee" />
+              <img className="sidebar-logo-image sidebar-logo-full" src={logoSrc} alt="Clawee" />
             </div>
             <button
               className="sidebar-collapse-button"

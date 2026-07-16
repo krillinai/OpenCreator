@@ -37,8 +37,9 @@
 .settings-primary-button {
   flex: 0 0 auto;
   padding: 0 12px;
-  border-color: rgba(240, 168, 102, 0.45);
-  background: rgba(173, 77, 31, 0.88);
+  border-color: var(--border-strong);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .settings-secondary-button {
@@ -72,12 +73,12 @@
 }
 
 .settings-error {
-  border-color: rgba(239, 108, 108, 0.35);
-  color: #f0aaaa !important;
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  color: var(--danger) !important;
 }
 
 .settings-inline-warning {
-  color: #e1b98e !important;
+  color: var(--warning) !important;
 }
 
 .settings-state {
@@ -144,8 +145,8 @@
 
 .settings-item__title span[data-status="configured"],
 .settings-item__title span[data-status="valid"] {
-  border-color: rgba(93, 179, 125, 0.32);
-  color: #94d6aa;
+  border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+  color: var(--success);
 }
 
 .settings-item__main > p {
@@ -163,7 +164,7 @@
 .settings-env-editor > div > button {
   width: 32px;
   padding: 0;
-  background: rgba(252, 253, 255, 0.04);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
 }
 
 .settings-tags {
@@ -179,7 +180,7 @@
   max-width: 100%;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(252, 253, 255, 0.06);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
   color: var(--text);
   overflow-wrap: anywhere;
 }
@@ -387,7 +388,7 @@
 }
 
 .cleanup-delete-button {
-  color: #f0aaaa;
+  color: var(--danger);
 }
 
 .cleanup-item-list,
@@ -447,9 +448,9 @@
   align-items: center;
   gap: 12px;
   padding: 13px 14px;
-  border: 1px solid rgba(239, 108, 108, 0.34);
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
   border-radius: 8px;
-  background: rgba(239, 108, 108, 0.08);
+  background: var(--danger-soft);
 }
 
 .settings-confirmation > div:not(.settings-confirmation__actions) {
@@ -485,8 +486,8 @@
 }
 
 .cleanup-result__counts strong[data-status="failed"] {
-  border-color: rgba(239, 108, 108, 0.34);
-  color: #f0aaaa;
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
+  color: var(--danger);
 }
 
 .diagnostics-overview {
@@ -579,7 +580,7 @@
 .diagnostics-warning-list svg {
   flex: 0 0 auto;
   margin-top: 2px;
-  color: #e1b98e;
+  color: var(--warning);
 }
 
 .memory-toolbar {
@@ -722,13 +723,13 @@
 }
 
 .memory-item__meta span[data-status="enabled"] {
-  border-color: rgba(93, 179, 125, 0.32);
-  color: #94d6aa;
+  border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+  color: var(--success);
 }
 
 .memory-item__meta span[data-status="sensitive"] {
-  border-color: rgba(239, 108, 108, 0.34);
-  color: #f0aaaa;
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
+  color: var(--danger);
 }
 
 .memory-item__actions {
@@ -790,7 +791,7 @@
   flex: 0 0 auto;
   min-height: 30px;
   padding: 0 9px;
-  border: 1px solid rgba(225, 185, 142, 0.38);
+  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border));
   border-radius: 7px;
   background: transparent;
   color: inherit;

@@ -32,7 +32,7 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByText('语言')).toBeInTheDocument();
     expect(screen.getByText('中文')).toBeInTheDocument();
     expect(screen.getByText('菜单栏显示')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: '动态背景' })).toBeChecked();
+    expect(screen.queryByRole('switch', { name: '动态背景' })).not.toBeInTheDocument();
     expect(screen.queryByText('工作模式')).not.toBeInTheDocument();
     expect(screen.queryByText('适用于编程')).not.toBeInTheDocument();
   });
@@ -56,23 +56,29 @@ describe('ClaweeSettingsView', () => {
     expect(onDefaultPermissionChange).toHaveBeenCalledWith('danger-full-access');
   });
 
-  it('notifies when the dynamic background setting changes', () => {
-    const onDynamicBackgroundChange = vi.fn();
+  it('renders a two-option color mode control and notifies when it changes', () => {
+    const onColorModeChange = vi.fn();
     render(
       <ClaweeSettingsView
         runtimeStatus={runtimeStatus}
-        dynamicBackgroundEnabled={false}
-        onDynamicBackgroundChange={onDynamicBackgroundChange}
+        colorMode="dark"
+        onColorModeChange={onColorModeChange}
         onBack={vi.fn()}
       />
     );
 
-    const switchControl = screen.getByRole('switch', { name: '动态背景' });
-    expect(switchControl).not.toBeChecked();
+    const modeControl = screen.getByRole('group', { name: '颜色模式' });
+    expect(within(modeControl).getByRole('button', { name: '浅色' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    expect(within(modeControl).getByRole('button', { name: '深色' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
 
-    fireEvent.click(switchControl);
-
-    expect(onDynamicBackgroundChange).toHaveBeenCalledWith(true);
+    fireEvent.click(within(modeControl).getByRole('button', { name: '浅色' }));
+    expect(onColorModeChange).toHaveBeenCalledWith('light');
   });
 
   it('does not show Codex CLI version on the initial general tab', () => {

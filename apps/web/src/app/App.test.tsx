@@ -313,7 +313,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('button', { name: '新对话' })).toBeInTheDocument();
     expect(await screen.findByText('要在 content-design 中处理什么？')).toBeInTheDocument();
-    expect(screen.getByTestId('conversation-lightfall-background')).toBeInTheDocument();
+    expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 完全访问' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
@@ -5122,21 +5122,31 @@ describe('App', () => {
     expect(await screen.findByText('要在 content-design 中处理什么？')).toBeInTheDocument();
   });
 
-  it('can turn off the empty-state dynamic background from settings', async () => {
+  it('uses a solid conversation background without a dynamic background setting', async () => {
     const user = userEvent.setup();
 
     render(<App fileService={createFileService()} />);
 
-    expect(await screen.findByTestId('conversation-lightfall-background')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
+    expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
+    expect(document.querySelector('.conversation-page')).not.toHaveAttribute('data-background-mode');
+    expect(document.querySelector('.conversation-page')).not.toHaveAttribute('data-dynamic-background');
 
     await user.click(await screen.findByRole('button', { name: '设置 账户' }));
-    await user.click(screen.getByRole('switch', { name: '动态背景' }));
-    await user.click(screen.getByRole('button', { name: '返回应用' }));
+    expect(screen.queryByRole('switch', { name: '动态背景' })).not.toBeInTheDocument();
+  });
 
-    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
-    expect(document.querySelector('.conversation-page')).toHaveAttribute('data-dynamic-background', 'off');
-    expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
-    expect(window.localStorage.getItem('clawee.preferences.dynamicBackground')).toBe('false');
+  it('applies and persists the selected color mode', async () => {
+    const user = userEvent.setup();
+
+    render(<App fileService={createFileService()} />);
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark');
+
+    await user.click(await screen.findByRole('button', { name: '设置 账户' }));
+    await user.click(screen.getByRole('button', { name: '浅色' }));
+
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light');
+    expect(window.localStorage.getItem('clawee.preferences.colorMode')).toBe('light');
   });
 
   it('persists the global default permission across refreshes and projects', async () => {

@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { Moon, Sun } from 'lucide-react';
 import type {
   CodexMcpListResponse,
   CodexProfileListResponse,
   CodexStatusResponse
 } from '@clawee/protocol';
+import type { ColorMode } from '../../styles/color-mode.js';
 import type { ProjectPermission } from '../projects/project-model.js';
 import { McpSettingsView, type McpCapabilities, type McpSettingsService } from './McpSettingsView.js';
 import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
@@ -32,8 +34,8 @@ export type ClaweeSettingsViewProps = {
   defaultPermission?: DefaultPermissionPreference;
   defaultPermissionError?: string;
   onDefaultPermissionChange?(permission: DefaultPermissionPreference): void;
-  dynamicBackgroundEnabled?: boolean;
-  onDynamicBackgroundChange?(enabled: boolean): void;
+  colorMode?: ColorMode;
+  onColorModeChange?(mode: ColorMode): void;
   mcpService?: McpSettingsService | null;
   mcpData?: CodexMcpListResponse;
   mcpCapabilities?: McpCapabilities;
@@ -105,8 +107,8 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
             defaultPermission={props.defaultPermission ?? 'follow-project'}
             defaultPermissionError={props.defaultPermissionError}
             onDefaultPermissionChange={props.onDefaultPermissionChange}
-            dynamicBackgroundEnabled={props.dynamicBackgroundEnabled ?? true}
-            onDynamicBackgroundChange={props.onDynamicBackgroundChange}
+            colorMode={props.colorMode ?? 'dark'}
+            onColorModeChange={props.onColorModeChange}
           />
         ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}
@@ -158,8 +160,8 @@ function GeneralSettings(props: {
   defaultPermission: DefaultPermissionPreference;
   defaultPermissionError?: string;
   onDefaultPermissionChange?(permission: DefaultPermissionPreference): void;
-  dynamicBackgroundEnabled: boolean;
-  onDynamicBackgroundChange?(enabled: boolean): void;
+  colorMode: ColorMode;
+  onColorModeChange?(mode: ColorMode): void;
 }) {
   return (
     <section className="settings-section" aria-labelledby="settings-general-title">
@@ -168,6 +170,10 @@ function GeneralSettings(props: {
         <p>调整 Clawee 的默认偏好和桌面显示方式。</p>
       </header>
       <div className="settings-card">
+        <SettingsColorModeRow
+          value={props.colorMode}
+          onChange={(mode) => props.onColorModeChange?.(mode)}
+        />
         <SettingsSelectRow
           label="默认权限"
           value={props.defaultPermission}
@@ -177,16 +183,39 @@ function GeneralSettings(props: {
         <SettingsRow label="默认文件打开方式" value="系统默认应用" />
         <SettingsRow label="语言" value="中文" />
         <SettingsRow label="菜单栏显示" value="开启" />
-        <SettingsSwitchRow
-          label="动态背景"
-          checked={props.dynamicBackgroundEnabled}
-          onChange={(checked) => props.onDynamicBackgroundChange?.(checked)}
-        />
       </div>
       {props.defaultPermissionError ? (
         <p className="settings-error" role="alert">{props.defaultPermissionError}</p>
       ) : null}
     </section>
+  );
+}
+
+function SettingsColorModeRow(props: { value: ColorMode; onChange(mode: ColorMode): void }) {
+  const labelId = 'settings-color-mode-label';
+
+  return (
+    <div className="settings-row settings-control-row">
+      <span id={labelId}>颜色模式</span>
+      <div className="settings-color-mode" role="group" aria-labelledby={labelId}>
+        <button
+          type="button"
+          aria-pressed={props.value === 'light'}
+          onClick={() => props.onChange('light')}
+        >
+          <Sun size={14} aria-hidden="true" />
+          浅色
+        </button>
+        <button
+          type="button"
+          aria-pressed={props.value === 'dark'}
+          onClick={() => props.onChange('dark')}
+        >
+          <Moon size={14} aria-hidden="true" />
+          深色
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -267,25 +296,5 @@ function SettingsSelectRow(props: {
         ))}
       </select>
     </label>
-  );
-}
-
-function SettingsSwitchRow(props: { label: string; checked: boolean; onChange(checked: boolean): void }) {
-  const labelId = `settings-switch-${props.label}`;
-
-  return (
-    <div className="settings-row settings-control-row">
-      <span id={labelId}>{props.label}</span>
-      <button
-        className="settings-switch"
-        type="button"
-        role="switch"
-        aria-checked={props.checked}
-        aria-labelledby={labelId}
-        onClick={() => props.onChange(!props.checked)}
-      >
-        <span aria-hidden="true" />
-      </button>
-    </div>
   );
 }

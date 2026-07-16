@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 const appCss = readFileSync('src/styles/app.css', 'utf8');
 const appControllerTsx = readFileSync('src/app/AppController.tsx', 'utf8');
 const skillMarketCss = readFileSync('src/features/plugins/skill-market.css', 'utf8');
+const schedulesCss = readFileSync('src/features/schedules/schedules-view.css', 'utf8');
+const settingsCss = readFileSync('src/features/settings/settings-management.css', 'utf8');
+const taskCenterCss = readFileSync('src/features/tasks/task-center.css', 'utf8');
 const tokensCss = readFileSync('src/styles/tokens.css', 'utf8');
 
 function cssBlock(selector: string) {
@@ -18,12 +21,41 @@ function skillMarketCssBlock(selector: string) {
   return match?.groups?.body ?? '';
 }
 
+function hexChannels(value: string): number[] {
+  const normalized = value.length === 3
+    ? value.split('').map(channel => channel.repeat(2)).join('')
+    : value;
+  return [0, 2, 4].map(offset => Number.parseInt(normalized.slice(offset, offset + 2), 16));
+}
+
 describe('app CSS visual contracts', () => {
-  it('uses the warm brand color as the accent token', () => {
-    expect(tokensCss).toContain('--accent: #AD4D1F;');
-    expect(tokensCss).not.toMatch(/#7c47e8|#a47cff|124,\s*71,\s*232|164,\s*124,\s*255/i);
-    expect(appCss).not.toMatch(/#7c47e8|#a47cff|#b08cff|#8755ee|#a77dff|#7b43e6|#5d2bbf/i);
-    expect(appCss).not.toMatch(/124,\s*71,\s*232|164,\s*124,\s*255|167,\s*125,\s*255|123,\s*67,\s*230|93,\s*43,\s*191/i);
+  it('uses complete light and dark monochrome theme tokens', () => {
+    const themeSources = [
+      tokensCss,
+      appCss,
+      skillMarketCss,
+      schedulesCss,
+      settingsCss,
+      taskCenterCss,
+      appControllerTsx,
+    ].join('\n');
+    const colorChannels = [
+      ...Array.from(themeSources.matchAll(/#([\da-f]{3}|[\da-f]{6})(?![\da-f])/gi), match =>
+        hexChannels(match[1]!)
+      ),
+      ...Array.from(themeSources.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g), match =>
+        [Number(match[1]), Number(match[2]), Number(match[3])]
+      ),
+    ];
+
+    expect(tokensCss).toContain(':root[data-theme="dark"]');
+    expect(tokensCss).toContain(':root[data-theme="light"]');
+    expect(tokensCss).toContain('color-scheme: dark;');
+    expect(tokensCss).toContain('color-scheme: light;');
+    expect(tokensCss).toContain('--accent: #d7d7da;');
+    expect(tokensCss).toContain('--accent: #303035;');
+    expect(colorChannels.length).toBeGreaterThan(0);
+    expect(colorChannels.every(channels => Math.max(...channels) - Math.min(...channels) <= 8)).toBe(true);
   });
 
   it('keeps sidebar project rows fixed while loading and places the scrollbar at the edge', () => {
@@ -44,7 +76,7 @@ describe('app CSS visual contracts', () => {
     expect(projectRow).toContain('font-weight: 520;');
     expect(appCss).toMatch(/\.conversation-row\s*\{[^}]*padding:\s*0 10px 0 32px;/);
     expect(currentProjectIcon).toContain('color: var(--accent);');
-    expect(selectedConversationRow).toContain('background: rgba(173, 77, 31, 0.14);');
+    expect(selectedConversationRow).toContain('background: var(--accent-soft);');
     expect(selectedConversationRow).not.toContain('border-color');
     expect(settingsButton).toContain('gap: 4px;');
     expect(settingsButton).toContain('padding: 0 6px;');
@@ -106,12 +138,12 @@ describe('app CSS visual contracts', () => {
     const webkitScrollbarThumb = cssBlock('*::-webkit-scrollbar-thumb');
     const webkitScrollbarThumbHover = cssBlock('*::-webkit-scrollbar-thumb:hover');
 
-    expect(appCss).toContain('scrollbar-color: rgba(145, 153, 168, 0.3) transparent;');
+    expect(appCss).toContain('scrollbar-color: color-mix(in srgb, var(--text) 24%, transparent) transparent;');
     expect(webkitScrollbar).toContain('width: 6px;');
     expect(webkitScrollbar).toContain('background: transparent;');
     expect(webkitScrollbarTrack).toContain('background: transparent;');
-    expect(webkitScrollbarThumb).toContain('background-color: rgba(145, 153, 168, 0.28);');
-    expect(webkitScrollbarThumbHover).toContain('background-color: rgba(161, 170, 186, 0.38);');
+    expect(webkitScrollbarThumb).toContain('background-color: color-mix(in srgb, var(--text) 22%, transparent);');
+    expect(webkitScrollbarThumbHover).toContain('background-color: color-mix(in srgb, var(--text) 34%, transparent);');
   });
 
   it('keeps the app shell dark during layout changes', () => {
@@ -194,12 +226,18 @@ describe('app CSS visual contracts', () => {
     expect(skillMarketCss).not.toContain('.skill-market-task-row');
   });
 
-  it('scales the skill market grid from three columns down to one', () => {
+  it('scales the skill market grid from five columns down to one', () => {
     const grid = skillMarketCssBlock('.skill-market-grid');
 
-    expect(grid).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(grid).toContain('grid-template-columns: repeat(5, minmax(0, 1fr));');
     expect(skillMarketCss).toMatch(
-      /@media \(max-width: 1280px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/
+      /@media \(max-width: 1920px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(4, minmax\(0, 1fr\)\)/
+    );
+    expect(skillMarketCss).toMatch(
+      /@media \(max-width: 1560px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(3, minmax\(0, 1fr\)\)/
+    );
+    expect(skillMarketCss).toMatch(
+      /@media \(max-width: 1220px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(2, minmax\(0, 1fr\)\)/
     );
     expect(skillMarketCss).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.skill-market-grid[^}]*grid-template-columns: minmax\(0, 1fr\)/
@@ -254,22 +292,29 @@ describe('app CSS visual contracts', () => {
 
   it('keeps the empty-state title centered without the large decorative logo', () => {
     const title = cssBlock('.conversation-empty-state h2');
+    const lightTitle = cssBlock(':root[data-theme="light"] .conversation-empty-state h2');
+    const lightComposer = cssBlock(':root[data-theme="light"] .clawee-composer');
 
     expect(appCss).not.toContain('.conversation-empty-logo-bg');
     expect(title).toContain('font-size: 48px;');
+    expect(lightTitle).toContain('text-shadow: none;');
+    expect(lightComposer).toContain('border-color: color-mix(in srgb, var(--text) 16%, transparent);');
+    expect(lightComposer).toContain('background: var(--surface);');
+    expect(lightComposer).toContain('box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-base) 8%, transparent);');
+    expect(lightComposer).toContain('backdrop-filter: none;');
+    expect(lightComposer).not.toContain('linear-gradient');
+    expect(lightComposer).not.toContain('inset');
+    expect(appCss).toMatch(/:root\[data-theme="light"\] \.clawee-composer \.composer-icon-button,[\s\S]*?\.composer-submit-menu-button\s*\{[^}]*box-shadow:\s*none;/);
     expect(appCss).toMatch(/\.conversation-empty-state h2\s*\{[^}]*font-size:\s*38px;/);
     expect(appCss).toMatch(/\.conversation-empty-state h2\s*\{[^}]*font-size:\s*30px;/);
   });
 
-  it('styles the settings dynamic background switch as a compact product control', () => {
-    const toggle = cssBlock('.settings-switch');
-    const toggleChecked = cssBlock('.settings-switch[aria-checked="true"]');
-    const staticConversation = cssBlock('.conversation-page[data-dynamic-background="off"]');
+  it('styles the color mode selector as a compact product control', () => {
+    const colorMode = cssBlock('.settings-color-mode');
+    const selectedColorMode = cssBlock('.settings-color-mode button[aria-pressed="true"]');
 
-    expect(toggle).toContain('width: 42px;');
-    expect(toggle).toContain('border-radius: 999px;');
-    expect(toggleChecked).toContain('background: rgba(173, 77, 31, 0.86);');
-    expect(staticConversation).toContain('background: var(--conversation-bg);');
+    expect(colorMode).toContain('display: inline-flex;');
+    expect(selectedColorMode).toContain('color: var(--on-accent);');
   });
 
   it('keeps mobile settings navigation above content without pointer overlap', () => {
@@ -311,46 +356,30 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('keeps the empty-state dynamic background stable during resize', () => {
+  it('uses a solid conversation background without dynamic background assets', () => {
     const conversationPage = cssBlock('.conversation-page');
-    const lightfallBg = cssBlock('.conversation-lightfall-bg');
-    const lightfallOverlay = cssBlock('.conversation-lightfall-bg::after');
 
-    expect(tokensCss).toContain('--conversation-bg: #090d12;');
+    expect(tokensCss).toContain('--conversation-bg: #0c0d0f;');
+    expect(tokensCss).toContain('--conversation-bg: #fafafa;');
     expect(conversationPage).toContain('background: var(--conversation-bg);');
-    expect(lightfallBg).toContain('background:');
-    expect(lightfallBg).toContain('var(--conversation-bg)');
-    expect(lightfallBg).toContain('rgba(173, 77, 31, 0.16)');
-    expect(lightfallBg).toContain('opacity: 1;');
-    expect(lightfallOverlay).toContain('z-index: 0;');
-    expect(lightfallOverlay).toContain('rgba(173, 77, 31, 0.16)');
-    expect(lightfallOverlay).toContain('rgba(5, 8, 12, 0.52)');
-    expect(appCss).toMatch(/\.conversation-lightfall-bg \.lightfall-container\s*\{[^}]*z-index:\s*1;/);
-    expect(appControllerTsx).toContain('streakCount={3}');
-    expect(appControllerTsx).toContain('streakWidth={0.32}');
-    expect(appControllerTsx).toContain('glow={0.48}');
-    expect(appControllerTsx).toContain('density={0.12}');
-    expect(appControllerTsx).toContain('backgroundGlow={0.34}');
-    expect(appControllerTsx).toContain('opacity={0.72}');
+    expect(appCss).not.toContain('.conversation-lightfall-bg');
+    expect(appControllerTsx).not.toContain('Lightfall');
+    expect(appControllerTsx).not.toContain('data-background-mode');
+    expect(appControllerTsx).not.toContain('data-dynamic-background');
   });
 
   it('keeps the conversation history loading state on the dark surface', () => {
     const conversationBody = cssBlock('.conversation-body');
-    const dynamicConversationBody = cssBlock('.conversation-page[data-background-mode="dynamic"] .conversation-body');
-    const solidConversationBody = cssBlock('.conversation-page[data-background-mode="solid"] .conversation-body');
     const timelineList = cssBlock('.timeline-list');
     const historyLoading = cssBlock('.conversation-history-loading');
 
     expect(conversationBody).toContain('background: var(--conversation-bg);');
-    expect(dynamicConversationBody).toContain('background: transparent;');
-    expect(solidConversationBody).toContain('background: var(--conversation-bg);');
     expect(timelineList).toContain('background: var(--conversation-bg);');
     expect(historyLoading).toContain('position: absolute;');
     expect(historyLoading).toContain('inset: 0;');
-    expect(historyLoading).toContain('background: rgba(9, 13, 18, 0.72);');
+    expect(historyLoading).toContain('background: color-mix(in srgb, var(--conversation-bg) 72%, transparent);');
     expect(historyLoading).toContain('backdrop-filter: blur(10px);');
     expect(historyLoading).toContain('color: var(--muted);');
-    expect(appControllerTsx).toContain('data-background-mode={showConversationLightfall ? \'dynamic\' : \'solid\'}');
   });
 
   it('keeps the file workspace header compact and single-layered', () => {
@@ -372,10 +401,9 @@ describe('app CSS visual contracts', () => {
     const disabledSend = cssBlock('.composer-send:disabled');
     const disabledSendIcon = cssBlock('.composer-send:disabled svg');
 
-    expect(disabledSend).toContain('background: linear-gradient(180deg, rgba(64, 70, 80, 0.68), rgba(32, 36, 43, 0.72));');
-    expect(disabledSend).toContain('color: rgba(252, 253, 255, 0.48);');
-    expect(disabledSend).not.toMatch(/#AD4D1F|#DF7440|173,\s*77,\s*31|216,\s*101,\s*50/i);
-    expect(disabledSendIcon).toContain('color: rgba(252, 253, 255, 0.48);');
+    expect(disabledSend).toContain('background: var(--control-disabled);');
+    expect(disabledSend).toContain('color: var(--control-disabled-text);');
+    expect(disabledSendIcon).toContain('color: var(--control-disabled-text);');
   });
 
   it('uses chat bubble corners to identify speaker direction', () => {

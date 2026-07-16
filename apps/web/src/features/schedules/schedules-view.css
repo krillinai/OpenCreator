@@ -63,7 +63,7 @@
 .schedule-button--primary {
   border-color: var(--accent-strong);
   background: var(--accent-strong);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .schedule-button--secondary {
@@ -76,7 +76,7 @@
 }
 
 .schedule-button--primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent-strong) 86%, white);
+  background: color-mix(in srgb, var(--accent-strong) 86%, var(--surface));
 }
 
 .schedule-button:disabled,
@@ -457,15 +457,15 @@
 }
 
 .schedule-suggestion-icon--blue {
-  color: #3b82f6;
+  color: var(--muted);
 }
 
 .schedule-suggestion-icon--violet {
-  color: #8b5cf6;
+  color: var(--subtle);
 }
 
 .schedule-suggestion-icon--green {
-  color: #22c55e;
+  color: var(--text);
 }
 
 .schedule-editor {

@@ -27,7 +27,6 @@ import type {
 } from 'react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
-import Lightfall from '../components/effects/Lightfall.js';
 import { Timeline, type TimelineHandle } from '../components/timeline/Timeline.js';
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
@@ -116,6 +115,12 @@ import { createTaskService } from '../services/task-service.js';
 import { createThreadService } from '../services/thread-service.js';
 import { createWorkspaceFileService } from '../services/workspace-file-service.js';
 import { readJsonFromStorage, writeJsonToStorage } from '../storage/browser-storage.js';
+import {
+  applyColorMode,
+  readColorModePreference,
+  type ColorMode,
+  writeColorModePreference
+} from '../styles/color-mode.js';
 import { initialAppState, reduceAppState, type ActiveView, type AppState } from './app-state.js';
 import { formatRoute, type AppRoute } from './routes.js';
 
@@ -144,8 +149,6 @@ type ActiveRunEventController = {
 const CONVERSATION_PANE_MIN_WIDTH = 320;
 const FILE_WORKSPACE_MIN_WIDTH = 520;
 const RESIZE_KEY_STEP = 32;
-const CONVERSATION_LIGHTFALL_COLORS = ['#AD4D1F', '#D86532', '#F0A866'];
-
 function canScrollVertically(
   target: EventTarget | null,
   boundary: HTMLElement,
@@ -176,7 +179,6 @@ function canScrollVertically(
 
   return false;
 }
-const DYNAMIC_BACKGROUND_STORAGE_KEY = 'clawee.preferences.dynamicBackground';
 const DEFAULT_PERMISSION_STORAGE_KEY = 'clawee.preferences.defaultPermission';
 const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v2';
 const SCHEDULE_DRAFT_TITLE = '任务草稿';
@@ -283,7 +285,7 @@ export function AppController(props: AppControllerProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [defaultPermission, setDefaultPermission] = useState(readDefaultPermissionPreference);
   const [defaultPermissionSyncError, setDefaultPermissionSyncError] = useState<string>();
-  const [dynamicBackgroundEnabled, setDynamicBackgroundEnabled] = useState(readDynamicBackgroundPreference);
+  const [colorMode, setColorMode] = useState(readColorModePreference);
   const [threadHistoryReloadKey, setThreadHistoryReloadKey] = useState(0);
   const [searchHistoryTarget, setSearchHistoryTarget] = useState<
     { threadId: string; itemId: string } | undefined
@@ -326,6 +328,10 @@ export function AppController(props: AppControllerProps) {
   const allowInitialRuntimeProjectFocusRef = useRef(
     props.route.view === 'home' && persistedNavigation === null
   );
+
+  useEffect(() => {
+    applyColorMode(colorMode);
+  }, [colorMode]);
   const navigationPersistenceReadyRef = useRef(
     persistedNavigation !== null || props.route.view !== 'home'
   );
@@ -1560,9 +1566,10 @@ export function AppController(props: AppControllerProps) {
     readHostRuntimeConfig(loadVersion, () => false);
   }
 
-  function handleDynamicBackgroundChange(enabled: boolean) {
-    setDynamicBackgroundEnabled(enabled);
-    writeDynamicBackgroundPreference(enabled);
+  function handleColorModeChange(mode: ColorMode) {
+    setColorMode(mode);
+    applyColorMode(mode);
+    writeColorModePreference(mode);
   }
 
   function handleDefaultPermissionChange(permission: DefaultPermissionPreference) {
@@ -2946,8 +2953,6 @@ export function AppController(props: AppControllerProps) {
   const conversationFileLayoutStyle = conversationPaneWidth === undefined
     ? undefined
     : ({ '--conversation-pane-width': `${conversationPaneWidth}px` } as CSSProperties);
-  const showConversationLightfall =
-    dynamicBackgroundEnabled && state.selectedThreadId === undefined && timelineItems.length === 0;
   const showHistoryLoadingOverlay =
     historyLoadingThreadId !== undefined && historyLoadingThreadId === state.selectedThreadId;
   function handleComposerWheel(event: ReactWheelEvent<HTMLDivElement>) {
@@ -2956,33 +2961,7 @@ export function AppController(props: AppControllerProps) {
     event.preventDefault();
   }
   const conversationPage = (
-    <section
-      className="conversation-page"
-      data-background-mode={showConversationLightfall ? 'dynamic' : 'solid'}
-      data-dynamic-background={dynamicBackgroundEnabled ? 'on' : 'off'}
-    >
-      {showConversationLightfall ? (
-        <div className="conversation-lightfall-bg" data-testid="conversation-lightfall-background" aria-hidden="true">
-          <Lightfall
-            colors={CONVERSATION_LIGHTFALL_COLORS}
-            backgroundColor="#000000"
-            speed={0.28}
-            streakCount={3}
-            streakWidth={0.32}
-            streakLength={0.78}
-            glow={0.48}
-            density={0.12}
-            twinkle={0.62}
-            zoom={3.1}
-            backgroundGlow={0.34}
-            opacity={0.72}
-            mouseInteraction={false}
-            mouseStrength={0.3}
-            mouseRadius={1.05}
-            dpr={1.5}
-          />
-        </div>
-      ) : null}
+    <section className="conversation-page">
       <ConversationHeader
         title={
           selectedConversation?.title
@@ -3222,8 +3201,8 @@ export function AppController(props: AppControllerProps) {
       defaultPermission={defaultPermission}
       defaultPermissionError={defaultPermissionSyncError}
       onDefaultPermissionChange={handleDefaultPermissionChange}
-      dynamicBackgroundEnabled={dynamicBackgroundEnabled}
-      onDynamicBackgroundChange={handleDynamicBackgroundChange}
+      colorMode={colorMode}
+      onColorModeChange={handleColorModeChange}
       mcpService={mcpService}
       mcpData={codexMcp}
       mcpCapabilities={readMcpCapabilities(connectionState)}
@@ -3274,6 +3253,7 @@ export function AppController(props: AppControllerProps) {
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
           collapsed={sidebarCollapsed}
+          colorMode={colorMode}
           onNewConversation={startNewConversation}
           onSelectProject={selectProject}
           onSelectConversation={selectConversation}
@@ -3485,14 +3465,6 @@ function writePersistedNavigation(value: PersistedNavigation): void {
   }
 }
 
-function readDynamicBackgroundPreference(): boolean {
-  try {
-    return window.localStorage.getItem(DYNAMIC_BACKGROUND_STORAGE_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-}
-
 function readDefaultPermissionPreference(): DefaultPermissionPreference {
   try {
     const value = window.localStorage.getItem(DEFAULT_PERMISSION_STORAGE_KEY);
@@ -3513,14 +3485,6 @@ function resolveDefaultTimezone(): string {
 function writeDefaultPermissionPreference(permission: DefaultPermissionPreference): void {
   try {
     window.localStorage.setItem(DEFAULT_PERMISSION_STORAGE_KEY, permission);
-  } catch {
-    return;
-  }
-}
-
-function writeDynamicBackgroundPreference(enabled: boolean): void {
-  try {
-    window.localStorage.setItem(DYNAMIC_BACKGROUND_STORAGE_KEY, String(enabled));
   } catch {
     return;
   }
