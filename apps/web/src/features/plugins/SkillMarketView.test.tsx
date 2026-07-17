@@ -78,6 +78,51 @@ describe('SkillMarketView', () => {
     expect(screen.queryByRole('combobox', { name: '分类' })).not.toBeInTheDocument();
   });
 
+  it('超宽屏下哨兵持续可见时自动加载全部批次', async () => {
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        readonly root = null;
+        readonly rootMargin = '';
+        readonly thresholds = [0];
+
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+
+        observe(target: Element) {
+          const bounds = target.getBoundingClientRect();
+          queueMicrotask(() => {
+            this.callback(
+              [{
+                boundingClientRect: bounds,
+                intersectionRatio: 1,
+                intersectionRect: bounds,
+                isIntersecting: true,
+                rootBounds: null,
+                target,
+                time: 0,
+              }],
+              this as unknown as IntersectionObserver
+            );
+          });
+        }
+
+        unobserve() {}
+        disconnect() {}
+        takeRecords(): IntersectionObserverEntry[] {
+          return [];
+        }
+      }
+    );
+
+    renderSkillMarket();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('skill-market-card')).toHaveLength(55);
+    });
+    expect(screen.getByText('已显示 55 / 55')).toBeInTheDocument();
+    expect(screen.queryByTestId('skill-market-scroll-sentinel')).not.toBeInTheDocument();
+  });
+
   it('通过平铺的分类和场景联动筛选并可一次重置', async () => {
     const user = userEvent.setup();
     renderSkillMarket();
@@ -183,20 +228,99 @@ describe('SkillMarketView', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '适合场景' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '描述' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '输入与产出' })).toBeInTheDocument();
     expect(screen.getByText('需要输入')).toBeInTheDocument();
     expect(screen.getByText('会产出')).toBeInTheDocument();
     expect(screen.getByText('精选案例')).toBeInTheDocument();
     expect(screen.getByText('使用前注意')).toBeInTheDocument();
     expect(dialog.querySelector('.skill-market-detail-layout')).toBeInTheDocument();
+    expect(dialog.querySelectorAll('.skill-market-case')).toHaveLength(3);
+    expect(within(dialog).getByRole('img', { name: '编辑风格演示页' })).toHaveAttribute(
+      'src',
+      'https://raw.githubusercontent.com/zarazhangrui/beautiful-html-templates/main/screenshots/soft-editorial-4.png'
+    );
+    expect(within(dialog).getByRole('button', { name: '预览 编辑风格演示页' })).toBeInTheDocument();
     expect(dialog.querySelector('.skill-market-modal__bar')).not.toBeInTheDocument();
+    expect(dialog.querySelector('.skill-market-modal__toolbar')).not.toBeInTheDocument();
+    const title = within(dialog).getByRole('heading', { name: '网页演示稿生成' });
+    const meta = dialog.querySelector('.skill-market-detail-meta');
+    expect(meta).not.toBeNull();
+    expect(title.compareDocumentPosition(meta!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(dialog.firstElementChild).toHaveClass('skill-market-detail-head');
+    expect(dialog.querySelector('.skill-market-modal__body')).not.toContainElement(title);
+    expect(meta!.firstElementChild).toHaveClass('skill-market-detail-author');
+    expect(meta!.firstElementChild).toHaveTextContent('zarazhangrui');
     expect(
-      within(dialog).getByRole('button', { name: '收藏 网页演示稿生成' }).closest('footer')
+      within(dialog).getByRole('button', { name: '收藏 网页演示稿生成' }).closest('.skill-market-detail-title-row')
     ).toBeInTheDocument();
+    expect(dialog.querySelector('.skill-market-case__caption svg')).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: '关闭详情' })).not.toBeInTheDocument();
   });
 
-  it('Escape 和关闭按钮关闭弹窗', async () => {
+  it('案例超过三个时全部渲染在单行横滑轨道中', async () => {
+    const user = userEvent.setup();
+    const entry = createMarketEntry({
+      id: 'scrollable-examples',
+      title: '横滑案例',
+      examples: [
+        { type: 'image', title: '案例一', url: '/case-1.png', approved: true },
+        { type: 'image', title: '案例二', url: '/case-2.png', approved: true },
+        { type: 'image', title: '案例三', url: '/case-3.png', approved: true },
+        { type: 'image', title: '案例四', url: '/case-4.png', approved: true },
+      ],
+    });
+    renderSkillMarket({ catalogOverride: [entry] });
+
+    await user.click(screen.getByRole('button', { name: '打开 横滑案例 详情' }));
+
+    const dialog = screen.getByRole('dialog');
+    const caseList = dialog.querySelector('.skill-market-case-list');
+    expect(caseList).toHaveClass('skill-market-case-list--scrollable');
+    expect(dialog.querySelectorAll('.skill-market-case')).toHaveLength(4);
+    expect(within(dialog).getByRole('button', { name: '预览 案例四' })).toBeInTheDocument();
+  });
+
+  it('点击案例后预览大图，Escape 关闭并把焦点还给案例', async () => {
+    const user = userEvent.setup();
+    renderSkillMarket();
+
+    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.click(getSkillDetailButton('frontend-slides'));
+    const previewTrigger = screen.getByRole('button', { name: '预览 编辑风格演示页' });
+    await user.click(previewTrigger);
+
+    const preview = screen.getByRole('dialog', { name: '预览 编辑风格演示页' });
+    expect(within(preview).getByRole('img', { name: '编辑风格演示页' })).toBeInTheDocument();
+    expect(within(preview).getByRole('link', { name: '查看 GitHub 原图' })).toHaveAttribute(
+      'target',
+      '_blank'
+    );
+    expect(within(preview).getByRole('button', { name: '关闭图片预览' })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: '预览 编辑风格演示页' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await waitFor(() => expect(previewTrigger).toHaveFocus());
+  });
+
+  it('GitHub 案例图加载失败时使用本地素材兜底', async () => {
+    const user = userEvent.setup();
+    renderSkillMarket();
+
+    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.click(getSkillDetailButton('frontend-slides'));
+
+    const image = screen.getByRole('img', { name: '编辑风格演示页' });
+    fireEvent.error(image);
+
+    expect(screen.getByRole('img', { name: '编辑风格演示页案例图暂不可用' })).toHaveAttribute(
+      'src',
+      '/skill-market/skills-empty.png'
+    );
+  });
+
+  it('Escape 关闭弹窗，且仅在键盘打开时恢复卡片焦点', async () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
@@ -211,8 +335,10 @@ describe('SkillMarketView', () => {
     await waitFor(() => expect(trigger).toHaveFocus());
 
     await user.click(trigger);
-    await user.click(screen.getByRole('button', { name: '关闭详情' }));
+    expect(screen.getByRole('dialog')).toHaveFocus();
+    await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).not.toHaveFocus();
   });
 
   it('点击详情遮罩关闭弹窗', async () => {
@@ -235,8 +361,8 @@ describe('SkillMarketView', () => {
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = screen.getByRole('dialog');
-    const closeButton = within(dialog).getByRole('button', { name: '关闭详情' });
-    closeButton.focus();
+    const firstButton = within(dialog).getByRole('button', { name: '收藏 网页演示稿生成' });
+    firstButton.focus();
 
     await user.tab({ shift: true });
 
@@ -634,7 +760,7 @@ describe('SkillMarketView', () => {
     expect(modalUpdateButton).toBeDisabled();
     expect(modalUpdateButton).toHaveAttribute('title', '请等待当前操作完成');
     expect(modalUpdateButton).toHaveAccessibleDescription('请等待当前操作完成');
-    await user.click(screen.getByRole('button', { name: '关闭详情' }));
+    await user.keyboard('{Escape}');
 
     await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'humanizer-zh');

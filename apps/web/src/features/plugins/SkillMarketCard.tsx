@@ -30,7 +30,7 @@ export function SkillMarketCard({
 }: {
   item: SkillMarketViewEntry;
   action: SkillMarketAction;
-  onOpen(trigger: HTMLElement): void;
+  onOpen(trigger: HTMLElement, restoreFocus: boolean): void;
   onToggleSaved(skillId: string): void;
   onInstall(skillId: string): void;
   onUpdate(skillId: string): void;
@@ -61,7 +61,7 @@ export function SkillMarketCard({
       <button
         aria-label={`打开 ${item.title} 详情`}
         className="skill-market-card__open"
-        onClick={(event) => onOpen(event.currentTarget)}
+        onClick={(event) => onOpen(event.currentTarget, event.detail === 0)}
         type="button"
       >
         <span className="skill-market-card__body">

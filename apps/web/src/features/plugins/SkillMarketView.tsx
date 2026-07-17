@@ -148,7 +148,7 @@ export function SkillMarketView({
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [filteredResult.entries.length, page.hasMore]);
+  }, [filteredResult.entries.length, page.hasMore, page.visibleCount]);
 
   const savedCount = baseResult.entries.filter((entry) => entry.saved).length;
   const installedCount = baseResult.entries.filter((entry) => entry.installed).length;
@@ -185,14 +185,21 @@ export function SkillMarketView({
     }
   }
 
-  function openEntry(entry: SkillMarketViewEntry, trigger: HTMLElement) {
-    restoreFocusRef.current = trigger;
+  function openEntry(
+    entry: SkillMarketViewEntry,
+    trigger: HTMLElement,
+    restoreFocus: boolean
+  ) {
+    restoreFocusRef.current = restoreFocus ? trigger : null;
     setActiveEntry(entry);
   }
 
   function closeEntry() {
     setActiveEntry(null);
-    window.setTimeout(() => restoreFocusRef.current?.focus(), 0);
+    window.setTimeout(() => {
+      restoreFocusRef.current?.focus({ preventScroll: true });
+      restoreFocusRef.current = null;
+    }, 0);
   }
 
   function requestUse(skillId: string) {
@@ -424,7 +431,7 @@ export function SkillMarketView({
               item={item}
               key={item.id}
               onInstall={onInstall}
-              onOpen={(trigger) => openEntry(item, trigger)}
+              onOpen={(trigger, restoreFocus) => openEntry(item, trigger, restoreFocus)}
               onToggleSaved={toggleSaved}
               onUpdate={onUpdate}
               onUse={requestUse}

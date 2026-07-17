@@ -136,28 +136,51 @@ describe('app CSS visual contracts', () => {
     const webkitScrollbar = cssBlock('*::-webkit-scrollbar');
     const webkitScrollbarTrack = cssBlock('*::-webkit-scrollbar-track,\n*::-webkit-scrollbar-track-piece,\n*::-webkit-scrollbar-corner');
     const webkitScrollbarThumb = cssBlock('*::-webkit-scrollbar-thumb');
-    const webkitScrollbarThumbHover = cssBlock('*::-webkit-scrollbar-thumb:hover');
+    const activeScrollbar = cssBlock('.is-scrollbar-active');
+    const activeScrollbarThumb = cssBlock('.is-scrollbar-active::-webkit-scrollbar-thumb');
+    const activeScrollbarThumbHover = cssBlock('.is-scrollbar-active::-webkit-scrollbar-thumb:hover');
 
-    expect(appCss).toContain('scrollbar-color: color-mix(in srgb, var(--text) 24%, transparent) transparent;');
-    expect(webkitScrollbar).toContain('width: 6px;');
+    expect(appCss).toContain('scrollbar-color: transparent transparent;');
+    expect(activeScrollbar).toContain('scrollbar-color: color-mix(in srgb, var(--text) 24%, transparent) transparent;');
+    expect(webkitScrollbar).toContain('width: 4px;');
+    expect(webkitScrollbar).toContain('height: 6px;');
     expect(webkitScrollbar).toContain('background: transparent;');
     expect(webkitScrollbarTrack).toContain('background: transparent;');
-    expect(webkitScrollbarThumb).toContain('background-color: color-mix(in srgb, var(--text) 22%, transparent);');
-    expect(webkitScrollbarThumbHover).toContain('background-color: color-mix(in srgb, var(--text) 34%, transparent);');
+    expect(webkitScrollbarThumb).toContain('background-color: transparent;');
+    expect(activeScrollbarThumb).toContain('background-color: color-mix(in srgb, var(--text) 22%, transparent);');
+    expect(activeScrollbarThumbHover).toContain('background-color: color-mix(in srgb, var(--text) 34%, transparent);');
   });
 
   it('keeps the app shell dark during layout changes', () => {
     const mainPane = cssBlock('.clawee-main-pane');
 
-    expect(appCss).toMatch(/html,\nbody,\n#root\s*\{[^}]*background:\s*var\(--bg\);/);
+    expect(appCss).toMatch(/html,\nbody,\n#root\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;[^}]*background:\s*var\(--bg\);/);
+    expect(tokensCss).toContain('--bg: #0c0d0f;\n  --conversation-bg: #0c0d0f;');
+    expect(tokensCss).toContain('--bg: #fafafa;\n  --conversation-bg: #fafafa;');
     expect(mainPane).toContain('background: var(--conversation-bg);');
     expect(mainPane).toContain('overflow: hidden;');
+  });
+
+  it('uses local fonts and opaque primary surfaces during viewport changes', () => {
+    const body = cssBlock('body');
+    const conversationHeader = cssBlock('.conversation-header');
+    const composer = cssBlock('.clawee-composer');
+
+    expect(appCss).not.toContain('@import url(');
+    expect(tokensCss).toContain('--font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;');
+    expect(body).toContain('text-rendering: auto;');
+    expect(conversationHeader).toContain('background: var(--conversation-bg);');
+    expect(conversationHeader).not.toMatch(/background:\s*(?:linear-gradient|color-mix)/);
+    expect(composer).toContain('background: var(--surface);');
+    expect(composer).not.toMatch(/background:\s*(?:linear-gradient|color-mix)/);
+    expect(appCss).toMatch(/\.clawee-sidebar-pane\s*\{[^}]*background:\s*var\(--sidebar\);/);
   });
 
   it('keeps the desktop shell inside short viewports', () => {
     const shell = cssBlock('.clawee-shell');
 
-    expect(shell).toContain('height: 100vh;');
+    expect(shell).toContain('width: 100%;');
+    expect(shell).toContain('height: 100%;');
     expect(shell).toContain('min-height: 0;');
     expect(shell).not.toContain('min-height: 640px;');
   });
@@ -244,23 +267,79 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('uses a hierarchy-led skill detail layout without equal nested panels', () => {
+  it('uses a single-column skill detail with real media cases and a fixed primary action', () => {
     const modal = skillMarketCssBlock('.skill-market-modal');
     const body = skillMarketCssBlock('.skill-market-modal__body');
     const head = skillMarketCssBlock('.skill-market-detail-head');
     const identity = skillMarketCssBlock('.skill-market-detail-head__identity');
+    const author = skillMarketCssBlock('.skill-market-detail-meta .skill-market-detail-author');
     const layout = skillMarketCssBlock('.skill-market-detail-layout');
-    const block = skillMarketCssBlock('.skill-market-detail-block');
+    const workflow = skillMarketCssBlock('.skill-market-detail-workflow');
+    const workflowList = skillMarketCssBlock('.skill-market-detail-list');
+    const workflowTitle = skillMarketCssBlock('.skill-market-detail-list h4');
+    const workflowItems = skillMarketCssBlock('.skill-market-detail-list__items');
+    const workflowItem = skillMarketCssBlock('.skill-market-detail-list__items span');
+    const caseList = skillMarketCssBlock('.skill-market-case-list');
+    const scrollableCaseList = skillMarketCssBlock('.skill-market-case-list--scrollable');
+    const caseMedia = skillMarketCssBlock('.skill-market-case__media');
+    const caseCaption = skillMarketCssBlock('.skill-market-case__caption');
+    const titleRow = skillMarketCssBlock('.skill-market-detail-title-row');
+    const bookmark = skillMarketCssBlock('.skill-market-detail-bookmark');
+    const description = skillMarketCssBlock('.skill-market-detail-description');
+    const risk = skillMarketCssBlock('.skill-market-detail-risk');
+    const riskList = skillMarketCssBlock('.skill-market-detail-risk ul');
+    const riskItem = skillMarketCssBlock('.skill-market-detail-risk li');
+    const preview = skillMarketCssBlock('.skill-market-example-preview');
+    const previewMedia = skillMarketCssBlock('.skill-market-case__media--preview');
+    const primary = skillMarketCssBlock('.skill-market-modal__primary');
 
-    expect(modal).toContain('width: min(920px, 100%);');
-    expect(body).toContain('padding: 28px 30px 30px;');
-    expect(head).toContain('padding-right: 42px;');
+    expect(modal).toContain('width: min(600px, 100%);');
+    expect(modal).toContain('max-height: min(800px, calc(100dvh - 64px));');
+    expect(modal).toContain('outline: none;');
+    expect(modal).toContain('grid-template-rows: auto minmax(0, 1fr) auto;');
+    expect(body).toContain('padding: 4px 24px 26px;');
+    expect(head).toContain('padding: 24px 24px 16px;');
+    expect(head).toContain('background: var(--surface);');
     expect(identity).toContain('display: flex;');
-    expect(layout).toContain('grid-template-columns: minmax(0, 1.65fr) minmax(240px, 0.75fr);');
-    expect(block).toContain('border-top: 1px solid var(--border);');
+    expect(author).toContain('border: 0;');
+    expect(author).toContain('background: transparent;');
+    expect(author).toContain('font-size: 12px;');
+    expect(skillMarketCss).not.toContain('.skill-market-modal__close');
+    expect(titleRow).toContain('display: flex;');
+    expect(bookmark).toContain('margin-left: auto;');
+    expect(description).not.toContain('border-top');
+    expect(risk).toContain('padding: 12px 14px;');
+    expect(riskList).toContain('gap: 4px;');
+    expect(riskItem).toContain('font-size: 12px;');
+    expect(riskItem).toContain('line-height: 1.35;');
+    expect(layout).toContain('gap: 22px;');
+    expect(layout).toContain('margin-top: 0;');
+    expect(layout).not.toContain('grid-template-columns');
+    expect(workflow).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(workflow).toContain('gap: 10px;');
+    expect(workflowList).toContain('min-height: 78px;');
+    expect(workflowList).toContain('padding: 10px 12px;');
+    expect(workflowTitle).toContain('margin: 0 0 8px;');
+    expect(workflowItems).toContain('gap: 5px;');
+    expect(workflowItem).toContain('padding: 4px 7px;');
+    expect(workflowItem).toContain('font-size: 10px;');
+    expect(caseList).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(scrollableCaseList).toContain('grid-auto-flow: column;');
+    expect(scrollableCaseList).toContain('grid-auto-columns: calc((100% - 24px) / 3.2);');
+    expect(scrollableCaseList).toContain('overflow-x: auto;');
+    expect(caseMedia).toContain('aspect-ratio: 16 / 9;');
+    expect(caseMedia).toContain('object-fit: contain;');
+    expect(caseCaption).toContain('min-height: 32px;');
+    expect(caseCaption).toContain('justify-content: center;');
+    expect(caseCaption).toContain('text-align: center;');
+    expect(skillMarketCss).not.toContain('.skill-market-case__caption svg');
+    expect(preview).toContain('width: min(1180px, 100%);');
+    expect(previewMedia).toContain('max-height: calc(100dvh - 140px);');
+    expect(primary).toContain('width: 100%;');
+    expect(skillMarketCss).not.toContain('.skill-market-modal__toolbar');
     expect(skillMarketCss).not.toContain('.skill-market-detail-head__cover');
     expect(skillMarketCss).not.toContain('.skill-market-detail-grid');
-    expect(skillMarketCss).not.toContain('.skill-market-modal__bar');
+    expect(skillMarketCss).not.toContain('.skill-market-detail-aside');
   });
 
   it('keeps the composer compact over one continuous conversation background', () => {
@@ -300,7 +379,6 @@ describe('app CSS visual contracts', () => {
     expect(lightTitle).toContain('text-shadow: none;');
     expect(lightComposer).toContain('border-color: color-mix(in srgb, var(--text) 16%, transparent);');
     expect(lightComposer).toContain('background: var(--surface);');
-    expect(lightComposer).toContain('box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow-base) 8%, transparent);');
     expect(lightComposer).toContain('backdrop-filter: none;');
     expect(lightComposer).not.toContain('linear-gradient');
     expect(lightComposer).not.toContain('inset');
@@ -377,8 +455,7 @@ describe('app CSS visual contracts', () => {
     expect(timelineList).toContain('background: var(--conversation-bg);');
     expect(historyLoading).toContain('position: absolute;');
     expect(historyLoading).toContain('inset: 0;');
-    expect(historyLoading).toContain('background: color-mix(in srgb, var(--conversation-bg) 72%, transparent);');
-    expect(historyLoading).toContain('backdrop-filter: blur(10px);');
+    expect(historyLoading).toContain('background: var(--conversation-bg);');
     expect(historyLoading).toContain('color: var(--muted);');
   });
 
@@ -422,5 +499,14 @@ describe('app CSS visual contracts', () => {
     expect(assistantAvatar).toContain('background: transparent;');
     expect(assistantAvatar).toContain('box-shadow: none;');
     expect(assistantAvatar).not.toMatch(/linear-gradient|var\(--accent/i);
+  });
+
+  it('globally disables blur and shadow effects', () => {
+    expect(appCss).toMatch(
+      /\*,\s*\*::before,\s*\*::after\s*\{[^}]*box-shadow:\s*none !important;[^}]*text-shadow:\s*none !important;[^}]*backdrop-filter:\s*none !important;[^}]*-webkit-backdrop-filter:\s*none !important;[^}]*filter:\s*none !important;/
+    );
+    expect(appCss).toMatch(
+      /html\.is-window-resizing \*,\s*html\.is-window-resizing \*::before,\s*html\.is-window-resizing \*::after\s*\{[^}]*transition:\s*none !important;[^}]*animation-play-state:\s*paused !important;/
+    );
   });
 });

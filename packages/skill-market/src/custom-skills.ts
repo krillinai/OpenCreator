@@ -28,16 +28,7 @@ export const customSkills: CreatorSkillSource[] = [
         "北立传感小课堂可以把一段文案、Word 或网页资料转成火柴人风格的传感器科普视频。\n\n适合场景：\n\n- 传感器概念科普。\n- 产品知识讲解。\n- 销售培训素材。\n- 企业公众号和短视频科普。",
       readmeLanguage: "zh",
     },
-    examples: [
-      {
-        type: "image",
-        url: "/skill-market/skills-empty.png",
-        title: "Skill 默认封面",
-        source: "manual",
-        relevance: "workflow-preview",
-        approved: true,
-      },
-    ],
+    examples: [],
     inputs: ["文案", "Word", "网页链接", "产品资料"],
     outputs: ["火柴人科普视频", "短视频脚本", "字幕", "配音"],
     install: {
@@ -85,16 +76,7 @@ export const customSkills: CreatorSkillSource[] = [
         "产品宣传片可以把北立传感器产品资料转成一条产品宣传介绍视频。\n\n适合场景：\n\n- 官网产品介绍。\n- 展会循环播放素材。\n- 销售跟进视频。\n- 客户方案展示。",
       readmeLanguage: "zh",
     },
-    examples: [
-      {
-        type: "image",
-        url: "/skill-market/skills-empty.png",
-        title: "Skill 默认封面",
-        source: "manual",
-        relevance: "workflow-preview",
-        approved: true,
-      },
-    ],
+    examples: [],
     inputs: ["产品资料", "产品图片", "参数说明", "应用场景"],
     outputs: ["产品宣传视频", "产品介绍脚本", "字幕", "配音"],
     install: {

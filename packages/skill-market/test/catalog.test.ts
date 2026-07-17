@@ -30,6 +30,21 @@ describe('skill market catalog', () => {
     ).toEqual([]);
   });
 
+  it('provides current GitHub-hosted examples for the detail gallery', () => {
+    const examples = skillMarketCatalog.flatMap((entry) => entry.examples);
+    const frontendSlides = getSkillMarketEntry('frontend-slides');
+
+    expect(examples.length).toBeGreaterThan(6);
+    expect(examples.every((example) => (
+      example.url.startsWith('https://raw.githubusercontent.com/')
+      || example.url.startsWith('https://github.com/user-attachments/')
+    ))).toBe(true);
+    expect(frontendSlides?.examples).toHaveLength(3);
+    expect(frontendSlides?.examples[0]?.url).toContain(
+      'zarazhangrui/beautiful-html-templates/main/screenshots/'
+    );
+  });
+
   it('uses the catalog repository and default branch as the install source', () => {
     expect(skillMarketSourceCommit).toBe(
       '91302f79937b8f4e194e56554afdbb2ca939a1d5'

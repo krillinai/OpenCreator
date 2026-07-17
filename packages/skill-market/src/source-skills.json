@@ -42,10 +42,26 @@
     "examples": [
       {
         "type": "image",
-        "url": "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/docs/assets/invoke-web-server-1.png",
+        "url": "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/docs/src/content/docs/assets/invoke-web-server-1.png",
         "title": "视觉生成工作台",
         "source": "docs",
         "relevance": "interface-preview",
+        "approved": true
+      },
+      {
+        "type": "image",
+        "url": "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/docs/src/content/docs/assets/invoke-webui-canvas.png",
+        "title": "画布编辑界面",
+        "source": "docs",
+        "relevance": "interface-preview",
+        "approved": true
+      },
+      {
+        "type": "image",
+        "url": "https://raw.githubusercontent.com/invoke-ai/InvokeAI/main/docs/src/content/docs/features/Workflows/assets/workflow_library.png",
+        "title": "工作流资源库",
+        "source": "docs",
+        "relevance": "workflow-preview",
         "approved": true
       }
     ],
@@ -210,10 +226,26 @@
     "examples": [
       {
         "type": "image",
-        "url": "https://raw.githubusercontent.com/WEIFENG2333/VideoCaptioner/master/docs/images/main.png",
+        "url": "https://raw.githubusercontent.com/WEIFENG2333/VideoCaptioner/master/docs/public/main.png",
         "title": "字幕处理工作台",
         "source": "readme",
         "relevance": "interface-preview",
+        "approved": true
+      },
+      {
+        "type": "image",
+        "url": "https://raw.githubusercontent.com/WEIFENG2333/VideoCaptioner/master/docs/public/preview1.png",
+        "title": "字幕编辑预览",
+        "source": "docs",
+        "relevance": "interface-preview",
+        "approved": true
+      },
+      {
+        "type": "image",
+        "url": "https://raw.githubusercontent.com/WEIFENG2333/VideoCaptioner/master/docs/public/preview2.png",
+        "title": "字幕生成结果",
+        "source": "docs",
+        "relevance": "direct-output",
         "approved": true
       }
     ],
@@ -302,7 +334,7 @@
     "examples": [
       {
         "type": "image",
-        "url": "https://raw.githubusercontent.com/linyqh/NarratoAI/main/resource/screenshot/home.png",
+        "url": "https://raw.githubusercontent.com/linyqh/NarratoAI/main/docs/index-zh.png",
         "title": "视频解说生成界面",
         "source": "readme",
         "relevance": "interface-preview",
@@ -2779,8 +2811,24 @@
     "examples": [
       {
         "type": "image",
-        "url": "https://raw.githubusercontent.com/zarazhangrui/frontend-slides/main/examples/preview.png",
-        "title": "网页幻灯片预览",
+        "url": "https://raw.githubusercontent.com/zarazhangrui/beautiful-html-templates/main/screenshots/soft-editorial-4.png",
+        "title": "编辑风格演示页",
+        "source": "readme",
+        "relevance": "direct-output",
+        "approved": true
+      },
+      {
+        "type": "image",
+        "url": "https://raw.githubusercontent.com/zarazhangrui/beautiful-html-templates/main/screenshots/editorial-forest-2.png",
+        "title": "深色演示模板",
+        "source": "readme",
+        "relevance": "direct-output",
+        "approved": true
+      },
+      {
+        "type": "image",
+        "url": "https://raw.githubusercontent.com/zarazhangrui/beautiful-html-templates/main/screenshots/neo-grid-bold-1.png",
+        "title": "网格演示模板",
         "source": "readme",
         "relevance": "direct-output",
         "approved": true
@@ -3408,10 +3456,18 @@
     "examples": [
       {
         "type": "image",
-        "url": "https://raw.githubusercontent.com/OpenTalker/SadTalker/main/docs/chinese/figs/pipeline.png",
-        "title": "照片到口播视频流程",
+        "url": "https://raw.githubusercontent.com/OpenTalker/SadTalker/main/docs/example_full.gif",
+        "title": "全身口播生成效果",
         "source": "docs",
-        "relevance": "workflow-preview",
+        "relevance": "direct-output",
+        "approved": true
+      },
+      {
+        "type": "image",
+        "url": "https://raw.githubusercontent.com/OpenTalker/SadTalker/main/docs/example_crop.gif",
+        "title": "头像口播生成效果",
+        "source": "docs",
+        "relevance": "direct-output",
         "approved": true
       }
     ],
@@ -4128,7 +4184,7 @@
     "examples": [
       {
         "type": "image",
-        "url": "https://raw.githubusercontent.com/op7418/guizang-social-card-skill/main/examples/social-card.png",
+        "url": "https://github.com/user-attachments/assets/d370abcc-1fc4-4de1-903a-09020a6556ce",
         "title": "社媒图文卡片效果",
         "source": "readme",
         "relevance": "direct-output",
