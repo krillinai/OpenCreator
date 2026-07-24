@@ -1,13 +1,19 @@
 import type {
   ConversationSearchItemType,
   ConversationSearchQuery,
-  ConversationSearchResponse
+  ConversationSearchResponse,
+  ConversationSearchResult
 } from '@clawee/protocol';
 import type { FastifyInstance } from 'fastify';
 import { CodexAppServerResponseError } from '../codex/app-server-client.js';
+import type {
+  CodexConversationSearchPage,
+  CodexSessionProvider
+} from '../codex/sessions/app-server-provider.js';
 import {
   SearchCursorError
 } from '../search/service.js';
+import type { ThreadManager } from '../threads/types.js';
 import { apiError } from './errors.js';
 
 const SEARCH_ITEM_TYPES = [
@@ -24,8 +30,9 @@ const MAX_SEARCH_LIMIT = 50;
 
 export async function registerSearchRoutes(
   server: FastifyInstance,
-  service: {
-    search(query: ConversationSearchQuery): Promise<ConversationSearchResponse>;
+  options: {
+    provider: Pick<CodexSessionProvider, 'search'>;
+    threadManager: Pick<ThreadManager, 'getThreadByCodexThreadId'>;
   }
 ): Promise<void> {
   server.get('/search/conversations', async (request, reply) => {
@@ -35,7 +42,7 @@ export async function registerSearchRoutes(
     }
 
     try {
-      return await service.search(parsed.value);
+      return await searchOwnedConversations(parsed.value, options);
     } catch (error) {
       if (error instanceof SearchCursorError) {
         return reply.code(400).send(apiError('SEARCH_CURSOR_INVALID', error.message));
@@ -51,6 +58,69 @@ export async function registerSearchRoutes(
       throw error;
     }
   });
+}
+
+async function searchOwnedConversations(
+  query: ConversationSearchQuery,
+  options: {
+    provider: Pick<CodexSessionProvider, 'search'>;
+    threadManager: Pick<ThreadManager, 'getThreadByCodexThreadId'>;
+  }
+): Promise<ConversationSearchResponse> {
+  const limit = query.limit ?? 20;
+  const results: ConversationSearchResult[] = [];
+  const seenCursors = new Set<string>();
+  let cursor = query.cursor;
+  let lastPage: CodexConversationSearchPage | undefined;
+
+  while (results.length < limit) {
+    const remaining = limit - results.length;
+    const page = await options.provider.search({
+      ...query,
+      limit: remaining,
+      ...(cursor === undefined ? {} : { cursor })
+    });
+    lastPage = page;
+
+    for (const result of page.results) {
+      const thread = options.threadManager.getThreadByCodexThreadId(result.codexThreadId);
+      if (
+        thread === undefined
+        || thread.status !== 'active'
+        || thread.origin !== 'clawee_created'
+        || thread.purpose !== 'conversation'
+        || thread.projectId === null
+      ) {
+        continue;
+      }
+      results.push({
+        ...result,
+        threadId: thread.id,
+        projectId: thread.projectId,
+        title: thread.title?.trim() || result.title,
+        cwd: thread.cwd
+      });
+    }
+
+    if (
+      results.length >= limit
+      || !page.hasMore
+      || page.nextCursor === undefined
+      || seenCursors.has(page.nextCursor)
+    ) {
+      break;
+    }
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
+
+  const nextCursor = lastPage?.nextCursor;
+  const hasMore = lastPage?.hasMore === true && nextCursor !== undefined;
+  return {
+    results,
+    hasMore,
+    ...(hasMore ? { nextCursor } : {})
+  };
 }
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };

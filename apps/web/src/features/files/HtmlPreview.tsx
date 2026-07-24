@@ -19,7 +19,7 @@ type SafePreviewDocument = {
 
 const PREVIEW_CSP = [
   "default-src 'none'",
-  "script-src 'none'",
+  "script-src 'unsafe-inline'",
   "style-src 'unsafe-inline'",
   'img-src data:',
   'font-src data:',
@@ -69,7 +69,7 @@ export function HtmlPreview(props: {
       <iframe
         title={`${props.name} HTML 预览`}
         srcDoc={document.html}
-        sandbox=""
+        sandbox="allow-scripts"
         referrerPolicy="no-referrer"
       />
       {document.externalLinks.length > 0 && props.onOpenExternal !== undefined ? (
@@ -119,7 +119,7 @@ async function buildSafePreviewDocument(
 
 function removeDangerousContent(document: Document): void {
   document.querySelectorAll(
-    'script, iframe, frame, frameset, object, embed, portal, base, meta[http-equiv], link[rel~="import"]'
+    'script[src], iframe, frame, frameset, object, embed, portal, base, meta[http-equiv], link[rel~="import"]'
   ).forEach(node => node.remove());
 
   document.querySelectorAll('form').forEach(form => {
@@ -149,6 +149,13 @@ function removeDangerousContent(document: Document): void {
         element.removeAttribute(attribute.name);
       }
     }
+  });
+
+  document.querySelectorAll<HTMLElement>('[hidden]').forEach(element => {
+    element.removeAttribute('hidden');
+  });
+  document.querySelectorAll<HTMLElement>('img[loading], iframe[loading]').forEach(element => {
+    element.setAttribute('loading', 'eager');
   });
 }
 
@@ -340,6 +347,19 @@ function installContentSecurityPolicy(document: Document): void {
   meta.setAttribute('http-equiv', 'Content-Security-Policy');
   meta.setAttribute('content', PREVIEW_CSP);
   document.head.prepend(meta);
+  const previewOverrides = document.createElement('style');
+  previewOverrides.setAttribute('data-clawee-preview', 'true');
+  previewOverrides.textContent = `
+    html, body { min-height: 100%; }
+    body { overflow: auto !important; }
+    [data-reveal], .reveal, .fade-in, .animate-in {
+      opacity: 1 !important;
+      visibility: visible !important;
+      transform: none !important;
+      animation: none !important;
+    }
+  `;
+  document.head.append(previewOverrides);
 }
 
 function parseExternalUrl(value: string): string | undefined {

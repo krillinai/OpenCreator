@@ -1,0 +1,81 @@
+import type { ConnectionConfig } from '../runtime/types.js';
+import type {
+  HostBridge,
+  HostBridgeResult,
+  HostNotification
+} from './bridge.js';
+
+type DesktopApi = {
+  kind: 'desktop';
+  readConnectionConfig(): Promise<ConnectionConfig | null>;
+  subscribeConnectionConfig(
+    listener: (connection: ConnectionConfig | null) => void
+  ): () => void;
+  restartRuntime(): Promise<HostBridgeResult>;
+  reloadWorkspace(): Promise<HostBridgeResult>;
+  workspaceReady(): void;
+  readDesktopPreferences(): Promise<{
+    closeBehavior: 'hide' | 'quit';
+  }>;
+  updateDesktopPreferences(preferences: {
+    closeBehavior?: 'hide' | 'quit';
+  }): Promise<{
+    closeBehavior: 'hide' | 'quit';
+  }>;
+  ensureDefaultProjectDirectory(): Promise<string>;
+  createProjectDirectory(name: string): Promise<string>;
+  selectProjectDirectory(): Promise<string | null>;
+  resolveDroppedFilePath(file: File): string | null;
+  openExternal(url: string): Promise<void>;
+  revealPath(path: string): Promise<HostBridgeResult>;
+  notify(message: HostNotification): Promise<void>;
+  configureBackgroundNotifications(
+    configuration: { enabled: boolean }
+  ): Promise<HostBridgeResult>;
+  subscribeNavigation(listener: (route: string) => void): () => void;
+};
+
+declare global {
+  interface Window {
+    claweeDesktop?: DesktopApi;
+  }
+}
+
+export type DesktopHostBridge = HostBridge & {
+  kind: 'desktop';
+  subscribeConnectionConfig(
+    listener: (connection: ConnectionConfig | null) => void
+  ): () => void;
+  restartRuntime(): Promise<HostBridgeResult>;
+};
+
+export function readDesktopHostBridge(): DesktopHostBridge | undefined {
+  const api = window.claweeDesktop;
+  if (api?.kind !== 'desktop') return undefined;
+  return {
+    kind: 'desktop',
+    readConnectionConfig: () => api.readConnectionConfig(),
+    subscribeConnectionConfig: listener => api.subscribeConnectionConfig(listener),
+    restartRuntime: () => api.restartRuntime(),
+    readDesktopPreferences: () => api.readDesktopPreferences(),
+    updateDesktopPreferences: preferences =>
+      api.updateDesktopPreferences(preferences),
+    ensureDefaultProjectDirectory: () => api.ensureDefaultProjectDirectory(),
+    createProjectDirectory: name => api.createProjectDirectory(name),
+    selectProjectDirectory: () => api.selectProjectDirectory(),
+    resolveDroppedFilePath: file => api.resolveDroppedFilePath(file),
+    openExternal: url => api.openExternal(url),
+    revealPath: path => api.revealPath(path),
+    notify: message => api.notify(message),
+    configureBackgroundNotifications: configuration =>
+      api.configureBackgroundNotifications(configuration)
+  };
+}
+
+export function subscribeDesktopNavigation(listener: (route: string) => void): () => void {
+  return window.claweeDesktop?.subscribeNavigation(listener) ?? (() => undefined);
+}
+
+export function signalDesktopWorkspaceReady(): void {
+  window.claweeDesktop?.workspaceReady();
+}

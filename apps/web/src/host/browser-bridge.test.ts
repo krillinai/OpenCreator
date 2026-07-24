@@ -13,7 +13,7 @@ describe('browserBridge', () => {
       JSON.stringify({ baseUrl: 'http://127.0.0.1:1', token: 'storage-token' })
     );
     const fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' }), {
+      new Response(JSON.stringify({ baseUrl: '/.clawee/runtime' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       })
@@ -21,8 +21,7 @@ describe('browserBridge', () => {
     vi.stubGlobal('fetch', fetch);
 
     await expect(browserBridge.readConnectionConfig()).resolves.toEqual({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
+      baseUrl: '/.clawee/runtime'
     });
     expect(fetch).toHaveBeenCalledWith('/.clawee/runtime-config', expect.objectContaining({ method: 'GET' }));
   });
@@ -44,7 +43,7 @@ describe('browserBridge', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        new Response(JSON.stringify({ baseUrl: '/.clawee/runtime', token: 'runtime-token' }), {
+        new Response(JSON.stringify({ baseUrl: '/.clawee/runtime' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -52,13 +51,22 @@ describe('browserBridge', () => {
     );
 
     await expect(browserBridge.readConnectionConfig()).resolves.toEqual({
-      baseUrl: '/.clawee/runtime',
-      token: 'runtime-token'
+      baseUrl: '/.clawee/runtime'
     });
   });
 
   it('ignores malformed same-origin runtime configs', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ baseUrl: 123, token: null }), { status: 200 })));
+
+    await expect(browserBridge.readConnectionConfig()).resolves.toBeNull();
+  });
+
+  it('requires a token for direct daemon configs stored locally', async () => {
+    window.localStorage.setItem(
+      'clawee.web.connection.v1',
+      JSON.stringify({ baseUrl: 'http://127.0.0.1:60765' })
+    );
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
 
     await expect(browserBridge.readConnectionConfig()).resolves.toBeNull();
   });

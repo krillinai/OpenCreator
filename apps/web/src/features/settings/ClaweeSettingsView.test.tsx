@@ -56,6 +56,28 @@ describe('ClaweeSettingsView', () => {
     expect(onDefaultPermissionChange).toHaveBeenCalledWith('danger-full-access');
   });
 
+  it('keeps the existing permission when full access confirmation is canceled', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const onDefaultPermissionChange = vi.fn();
+    render(
+      <ClaweeSettingsView
+        runtimeStatus={runtimeStatus}
+        defaultPermission="workspace-write"
+        onDefaultPermissionChange={onDefaultPermissionChange}
+        onBack={vi.fn()}
+      />
+    );
+
+    const permission = screen.getByRole('combobox', { name: '默认权限' });
+    expect(within(permission).getAllByRole('option').map(option => option.textContent))
+      .toEqual(['跟随项目设置', '请求批准', '完全访问权限']);
+
+    fireEvent.change(permission, { target: { value: 'danger-full-access' } });
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(onDefaultPermissionChange).not.toHaveBeenCalled();
+  });
+
   it('renders a two-option color mode control and notifies when it changes', () => {
     const onColorModeChange = vi.fn();
     render(
@@ -79,6 +101,23 @@ describe('ClaweeSettingsView', () => {
 
     fireEvent.click(within(modeControl).getByRole('button', { name: '浅色' }));
     expect(onColorModeChange).toHaveBeenCalledWith('light');
+  });
+
+  it('updates the desktop close behavior when Desktop preferences are available', () => {
+    const onDesktopCloseBehaviorChange = vi.fn();
+    render(
+      <ClaweeSettingsView
+        runtimeStatus={runtimeStatus}
+        desktopCloseBehavior="hide"
+        onDesktopCloseBehaviorChange={onDesktopCloseBehaviorChange}
+        onBack={vi.fn()}
+      />
+    );
+
+    const behavior = screen.getByRole('combobox', { name: '关闭窗口时' });
+    expect(behavior).toHaveValue('hide');
+    fireEvent.change(behavior, { target: { value: 'quit' } });
+    expect(onDesktopCloseBehaviorChange).toHaveBeenCalledWith('quit');
   });
 
   it('does not show Codex CLI version on the initial general tab', () => {

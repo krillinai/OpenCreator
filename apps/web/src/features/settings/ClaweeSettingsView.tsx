@@ -36,6 +36,8 @@ export type ClaweeSettingsViewProps = {
   onDefaultPermissionChange?(permission: DefaultPermissionPreference): void;
   colorMode?: ColorMode;
   onColorModeChange?(mode: ColorMode): void;
+  desktopCloseBehavior?: 'hide' | 'quit';
+  onDesktopCloseBehaviorChange?(behavior: 'hide' | 'quit'): void;
   mcpService?: McpSettingsService | null;
   mcpData?: CodexMcpListResponse;
   mcpCapabilities?: McpCapabilities;
@@ -69,9 +71,8 @@ const defaultPermissionOptions: Array<{
   label: string;
 }> = [
   { value: 'follow-project', label: '跟随项目设置' },
-  { value: 'follow-global', label: '只读访问' },
-  { value: 'workspace-write', label: '工作区读写' },
-  { value: 'danger-full-access', label: '完全访问' }
+  { value: 'workspace-write', label: '请求批准' },
+  { value: 'danger-full-access', label: '完全访问权限' }
 ];
 
 export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
@@ -109,6 +110,8 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
             onDefaultPermissionChange={props.onDefaultPermissionChange}
             colorMode={props.colorMode ?? 'dark'}
             onColorModeChange={props.onColorModeChange}
+            desktopCloseBehavior={props.desktopCloseBehavior}
+            onDesktopCloseBehaviorChange={props.onDesktopCloseBehaviorChange}
           />
         ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}
@@ -162,6 +165,8 @@ function GeneralSettings(props: {
   onDefaultPermissionChange?(permission: DefaultPermissionPreference): void;
   colorMode: ColorMode;
   onColorModeChange?(mode: ColorMode): void;
+  desktopCloseBehavior?: 'hide' | 'quit';
+  onDesktopCloseBehaviorChange?(behavior: 'hide' | 'quit'): void;
 }) {
   return (
     <section className="settings-section" aria-labelledby="settings-general-title">
@@ -178,11 +183,39 @@ function GeneralSettings(props: {
           label="默认权限"
           value={props.defaultPermission}
           options={defaultPermissionOptions}
-          onChange={(permission) => props.onDefaultPermissionChange?.(permission)}
+          onChange={(permission) => {
+            if (
+              permission === 'danger-full-access'
+              && props.defaultPermission !== 'danger-full-access'
+              && !window.confirm(
+                '完全访问权限允许 Clawee 访问本机文件并执行本地操作。确定要设为默认权限吗？'
+              )
+            ) {
+              return;
+            }
+            props.onDefaultPermissionChange?.(permission);
+          }}
         />
         <SettingsRow label="默认文件打开方式" value="系统默认应用" />
         <SettingsRow label="语言" value="中文" />
-        <SettingsRow label="菜单栏显示" value="开启" />
+        {props.desktopCloseBehavior === undefined ? (
+          <SettingsRow label="菜单栏显示" value="浏览器模式" />
+        ) : (
+          <label className="settings-row settings-control-row" htmlFor="settings-desktop-close-behavior">
+            <span>关闭窗口时</span>
+            <select
+              id="settings-desktop-close-behavior"
+              className="settings-select"
+              value={props.desktopCloseBehavior}
+              onChange={event => props.onDesktopCloseBehaviorChange?.(
+                event.target.value as 'hide' | 'quit'
+              )}
+            >
+              <option value="hide">隐藏到菜单栏</option>
+              <option value="quit">退出 Clawee</option>
+            </select>
+          </label>
+        )}
       </div>
       {props.defaultPermissionError ? (
         <p className="settings-error" role="alert">{props.defaultPermissionError}</p>

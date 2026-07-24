@@ -29,6 +29,7 @@ type SearchCursor = {
 type SearchRow = {
   row_id: number;
   thread_id: string;
+  project_id: string;
   codex_thread_id: string;
   session_title: string;
   session_cwd: string;
@@ -109,6 +110,7 @@ export function createConversationSearchService(
         SELECT
           codex_session_search.rowid AS row_id,
           thread.id AS thread_id,
+          COALESCE(thread.project_id, '') AS project_id,
           codex_session_search.codex_thread_id,
           session.title AS session_title,
           session.cwd AS session_cwd,
@@ -190,6 +192,7 @@ function mapSearchRow(row: SearchRow, query: string): ConversationSearchResult {
     : row.indexed_content || row.indexed_cwd || row.indexed_title;
   return {
     threadId: row.thread_id,
+    projectId: row.project_id,
     codexThreadId: row.codex_thread_id,
     title: createConversationTitle(row.session_title, '未命名对话'),
     cwd: row.session_cwd,

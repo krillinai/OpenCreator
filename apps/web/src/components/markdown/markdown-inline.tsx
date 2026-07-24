@@ -91,6 +91,7 @@ function pushTextWithLinks(
     allowRelative: boolean;
     onLinkClick?: MarkdownLinkClickHandler;
     linkifyWorkspaceFiles?: boolean;
+    linkifySkills?: boolean;
   }
 ) {
   if (!text) return;
@@ -109,6 +110,34 @@ function pushTextWithLinks(
   }
 
   function pushPlain(value: string) {
+    if (!value) return;
+    if (options.linkifySkills) {
+      const skillRe = /\$[A-Za-z0-9][A-Za-z0-9._:-]*/g;
+      let skillLastIndex = 0;
+      let skillMatch: RegExpExecArray | null;
+      while ((skillMatch = skillRe.exec(value))) {
+        if (skillMatch.index > skillLastIndex) {
+          pushPlainWithoutSkills(value.slice(skillLastIndex, skillMatch.index));
+        }
+        const reference = skillMatch[0];
+        output.push(
+          <span
+            key={`${baseKey}-${key++}`}
+            className="md-skill-reference"
+            title={`Skill：${reference.slice(1)}`}
+          >
+            {reference}
+          </span>
+        );
+        skillLastIndex = skillRe.lastIndex;
+      }
+      if (skillLastIndex < value.length) pushPlainWithoutSkills(value.slice(skillLastIndex));
+      return;
+    }
+    pushPlainWithoutSkills(value);
+  }
+
+  function pushPlainWithoutSkills(value: string) {
     if (!value) return;
     if (!options.linkifyWorkspaceFiles || options.onLinkClick === undefined) {
       pushLiteral(value);
@@ -164,7 +193,8 @@ export function renderInlineMarkdown(
       pushTextWithLinks(output, text.slice(lastIndex, match.index), key++, {
         allowRelative,
         onLinkClick: options.onLinkClick,
-        linkifyWorkspaceFiles: options.linkifyWorkspaceFiles
+        linkifyWorkspaceFiles: options.linkifyWorkspaceFiles,
+        linkifySkills: userVariant
       });
     }
 
@@ -211,7 +241,8 @@ export function renderInlineMarkdown(
     pushTextWithLinks(output, text.slice(lastIndex), key++, {
       allowRelative,
       onLinkClick: options.onLinkClick,
-      linkifyWorkspaceFiles: options.linkifyWorkspaceFiles
+      linkifyWorkspaceFiles: options.linkifyWorkspaceFiles,
+      linkifySkills: userVariant
     });
   }
 

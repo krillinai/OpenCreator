@@ -189,7 +189,7 @@ describe('schedule coordinator', () => {
 
   it('does not leave a schedule when task thread creation fails', () => {
     const threadManager = {
-      createThread: vi.fn(() => {
+      createScheduleThread: vi.fn(() => {
         throw new Error('thread write failed');
       })
     } as unknown as ThreadManager;

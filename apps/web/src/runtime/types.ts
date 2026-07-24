@@ -1,6 +1,6 @@
 export type ConnectionConfig = {
   baseUrl: string;
-  token: string;
+  token?: string;
 };
 
 export type ApiErrorPayload = {

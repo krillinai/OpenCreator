@@ -14,7 +14,13 @@
     "release:verify-scheduled-task-upgrade": "pnpm --filter @clawee/daemon verify:schedule-upgrade",
     "daemon:dev": "pnpm --filter @clawee/daemon dev",
     "web:dev": "pnpm --filter @clawee/web dev",
-    "harness": "pnpm --filter @clawee/harness start"
+    "harness": "pnpm --filter @clawee/harness start",
+    "desktop:dev": "pnpm --filter @clawee/desktop dev",
+    "desktop:build": "pnpm --filter @clawee/desktop build",
+    "desktop:package": "pnpm --filter @clawee/desktop package",
+    "desktop:dist": "pnpm --filter @clawee/desktop dist",
+    "desktop:release": "pnpm --filter @clawee/desktop release",
+    "desktop:test": "pnpm --filter @clawee/desktop test"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

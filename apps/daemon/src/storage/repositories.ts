@@ -1,4 +1,11 @@
-import type { AgentEventEnvelope, RunSubmissionMode, ThreadPurpose } from '@clawee/protocol';
+import type {
+  AgentEventEnvelope,
+  ProjectSandbox,
+  ProjectStatus,
+  RunSubmissionMode,
+  ThreadOrigin,
+  ThreadPurpose
+} from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 
 export type ResolvedResumeMode = 'independent' | 'new_thread' | 'resume_thread';
@@ -91,10 +98,79 @@ export type RunRepository = {
   listRunEvents(runId: string, afterSeq?: number): AgentEventEnvelope[];
 };
 
+export type ProjectRow = {
+  id: string;
+  name: string;
+  cwd: string;
+  canonical_cwd: string | null;
+  profile: string;
+  model: string | null;
+  reasoning: string | null;
+  sandbox: ProjectSandbox;
+  status: ProjectStatus;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+export type InsertProjectInput = {
+  id: string;
+  name: string;
+  cwd: string;
+  canonicalCwd: string | null;
+  profile: string;
+  model?: string | null;
+  reasoning?: string | null;
+  sandbox: ProjectSandbox;
+  status?: ProjectStatus;
+  createdAt?: string;
+  updatedAt?: string;
+  archivedAt?: string | null;
+};
+
+export type UpdateProjectConfigInput = {
+  id: string;
+  name: string;
+  profile: string;
+  model: string | null;
+  reasoning: string | null;
+  sandbox: ProjectSandbox;
+};
+
+export type ProjectMigrationRow = {
+  migration_key: string;
+  request_hash: string;
+  result_json: string;
+  applied_at: string;
+};
+
+export type ProjectRepository = {
+  insertProject(input: InsertProjectInput): void;
+  getProject(id: string): ProjectRow | undefined;
+  getProjectByActiveCanonicalCwd(canonicalCwd: string): ProjectRow | undefined;
+  listProjects(status?: ProjectStatus | 'all'): ProjectRow[];
+  updateProjectConfig(input: UpdateProjectConfigInput): void;
+  archiveProject(id: string): void;
+  restoreProject(id: string): void;
+  replaceProjectDirectory(input: {
+    id: string;
+    cwd: string;
+    canonicalCwd: string;
+  }): void;
+  getMigration(key: string): ProjectMigrationRow | undefined;
+  saveMigration(input: {
+    key: string;
+    requestHash: string;
+    resultJson: string;
+  }): void;
+};
+
 export type InsertThreadInput = {
   id: string;
   title?: string | null;
   codexThreadId?: string | null;
+  projectId?: string | null;
+  origin?: ThreadOrigin;
   cwd: string;
   canonicalCwd: string;
   workspaceMode: string;
@@ -113,6 +189,8 @@ export type ThreadRow = {
   schedule_id: string | null;
   title: string | null;
   codex_thread_id: string | null;
+  project_id: string | null;
+  origin: ThreadOrigin;
   cwd: string;
   canonical_cwd: string;
   workspace_mode: string;
@@ -139,23 +217,33 @@ export type ThreadRepository = {
     excludePurpose?: ThreadPurpose;
     limit?: number;
   }): ThreadRow[];
+  listPublicThreads(input?: {
+    status?: 'active' | 'archived' | 'all';
+    purpose?: ThreadPurpose;
+    excludePurpose?: ThreadPurpose;
+    assignment?: 'assigned' | 'unassigned';
+    limit?: number;
+  }): ThreadRow[];
+  listUnassignedClaweeConversationThreads(): ThreadRow[];
   listProfileReferences(profile: string): Array<{ id: string; title: string | null }>;
   archiveLegacyScheduleThreads(): void;
   archiveThread(id: string): void;
-  updateImportedThread(input: UpdateImportedThreadInput): void;
+  assignProject(input: { id: string; projectId: string }): boolean;
   updateThreadSandbox(input: UpdateThreadSandboxInput): void;
   updateScheduleThread(input: UpdateScheduleThreadRowInput): void;
   setThreadPurpose(input: { id: string; purpose: ThreadPurpose }): void;
   setCodexThreadId(threadId: string, codexThreadId: string): void;
+  listCodexBindingRepairCandidates(): Array<{
+    threadId: string;
+    codexThreadId: string;
+  }>;
+  listUnresolvedCodexBindingThreadIds(): string[];
+  updateProjectThreadsDirectory(input: {
+    projectId: string;
+    cwd: string;
+    canonicalCwd: string;
+  }): void;
   touchThread(threadId: string): void;
-};
-
-export type UpdateImportedThreadInput = {
-  id: string;
-  title: string;
-  cwd: string;
-  canonicalCwd: string;
-  updatedAt: string;
 };
 
 export type UpdateThreadSandboxInput = {
@@ -173,6 +261,116 @@ export type UpdateScheduleThreadRowInput = {
   reasoning: string | null;
   sandbox: string;
 };
+
+export function createProjectRepository(db: Database.Database): ProjectRepository {
+  const insert = db.prepare(`
+    INSERT INTO projects (
+      id, name, cwd, canonical_cwd, profile, model, reasoning, sandbox,
+      status, created_at, updated_at, archived_at
+    ) VALUES (
+      @id, @name, @cwd, @canonicalCwd, @profile, @model, @reasoning, @sandbox,
+      @status, COALESCE(@createdAt, CURRENT_TIMESTAMP),
+      COALESCE(@updatedAt, CURRENT_TIMESTAMP), @archivedAt
+    )
+  `);
+  const get = db.prepare<string>('SELECT * FROM projects WHERE id = ?');
+  const getByActiveCanonicalCwd = db.prepare<string>(`
+    SELECT *
+    FROM projects
+    WHERE status = 'active' AND canonical_cwd = ?
+    LIMIT 1
+  `);
+  const list = db.prepare<{ status: ProjectStatus | 'all' }>(`
+    SELECT *
+    FROM projects
+    WHERE @status = 'all' OR status = @status
+    ORDER BY updated_at DESC, id DESC
+  `);
+  const updateConfig = db.prepare(`
+    UPDATE projects
+    SET name = @name,
+        profile = @profile,
+        model = @model,
+        reasoning = @reasoning,
+        sandbox = @sandbox,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @id
+  `);
+  const archive = db.prepare(`
+    UPDATE projects
+    SET status = 'archived',
+        archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  const restore = db.prepare(`
+    UPDATE projects
+    SET status = 'active',
+        archived_at = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `);
+  const replaceDirectory = db.prepare(`
+    UPDATE projects
+    SET cwd = @cwd,
+        canonical_cwd = @canonicalCwd,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @id
+  `);
+  const getMigration = db.prepare<string>(`
+    SELECT *
+    FROM project_migrations
+    WHERE migration_key = ?
+  `);
+  const saveMigration = db.prepare(`
+    INSERT INTO project_migrations (
+      migration_key, request_hash, result_json
+    ) VALUES (
+      @key, @requestHash, @resultJson
+    )
+  `);
+
+  return {
+    insertProject(input): void {
+      insert.run({
+        model: null,
+        reasoning: null,
+        status: 'active',
+        createdAt: null,
+        updatedAt: null,
+        archivedAt: null,
+        ...input
+      });
+    },
+    getProject(id): ProjectRow | undefined {
+      return get.get(id) as ProjectRow | undefined;
+    },
+    getProjectByActiveCanonicalCwd(canonicalCwd): ProjectRow | undefined {
+      return getByActiveCanonicalCwd.get(canonicalCwd) as ProjectRow | undefined;
+    },
+    listProjects(status = 'active'): ProjectRow[] {
+      return list.all({ status }) as ProjectRow[];
+    },
+    updateProjectConfig(input): void {
+      updateConfig.run(input);
+    },
+    archiveProject(id): void {
+      archive.run(id);
+    },
+    restoreProject(id): void {
+      restore.run(id);
+    },
+    replaceProjectDirectory(input): void {
+      replaceDirectory.run(input);
+    },
+    getMigration(key): ProjectMigrationRow | undefined {
+      return getMigration.get(key) as ProjectMigrationRow | undefined;
+    },
+    saveMigration(input): void {
+      saveMigration.run(input);
+    }
+  };
+}
 
 export function createRunRepository(db: Database.Database): RunRepository {
   const insert = db.prepare(`
@@ -361,10 +559,10 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   `;
   const insert = db.prepare(`
     INSERT INTO threads (
-      id, title, codex_thread_id, cwd, canonical_cwd, workspace_mode,
+      id, title, codex_thread_id, project_id, origin, cwd, canonical_cwd, workspace_mode,
       profile, sandbox, model, reasoning, status, purpose, created_at, updated_at
     ) VALUES (
-      @id, @title, @codexThreadId, @cwd, @canonicalCwd, @workspaceMode,
+      @id, @title, @codexThreadId, @projectId, @origin, @cwd, @canonicalCwd, @workspaceMode,
       @profile, @sandbox, @model, @reasoning, @status, @purpose,
       COALESCE(@createdAt, CURRENT_TIMESTAMP), COALESCE(@updatedAt, CURRENT_TIMESTAMP)
     )
@@ -392,6 +590,45 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     ORDER BY threads.updated_at DESC, threads.id DESC
     LIMIT @limit
   `);
+  const listPublic = db.prepare<{
+    status: 'active' | 'archived' | 'all';
+    purpose: ThreadPurpose | null;
+    excludePurpose: ThreadPurpose | null;
+    assignment: 'assigned' | 'unassigned';
+    limit: number;
+  }>(`
+    ${threadSelect}
+    WHERE (@status = 'all' OR threads.status = @status)
+      AND (@purpose IS NULL OR threads.purpose = @purpose)
+      AND (@excludePurpose IS NULL OR threads.purpose <> @excludePurpose)
+      AND (
+        (
+          @assignment = 'assigned'
+          AND (
+            threads.purpose <> 'conversation'
+            OR (
+              threads.origin = 'clawee_created'
+              AND threads.project_id IS NOT NULL
+            )
+          )
+        )
+        OR (
+          @assignment = 'unassigned'
+          AND threads.purpose = 'conversation'
+          AND threads.origin = 'clawee_created'
+          AND threads.project_id IS NULL
+        )
+      )
+    ORDER BY threads.updated_at DESC, threads.id DESC
+    LIMIT @limit
+  `);
+  const listUnassignedClaweeConversationThreads = db.prepare(`
+    ${threadSelect}
+    WHERE threads.purpose = 'conversation'
+      AND threads.origin = 'clawee_created'
+      AND threads.project_id IS NULL
+    ORDER BY threads.id ASC
+  `);
   const listProfileReferences = db.prepare<string>(`
     SELECT id, title
     FROM threads
@@ -404,6 +641,15 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP),
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
+  `);
+  const assignProject = db.prepare(`
+    UPDATE threads
+    SET project_id = @projectId,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @id
+      AND purpose = 'conversation'
+      AND origin = 'clawee_created'
+      AND project_id IS NULL
   `);
   const archiveLegacyScheduleThreadsStatement = db.prepare(`
     UPDATE threads
@@ -419,14 +665,6 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
           AND thread_id IS NULL
           AND codex_thread_id IS NOT NULL
       )
-  `);
-  const updateImported = db.prepare(`
-    UPDATE threads
-    SET title = @title,
-        cwd = @cwd,
-        canonical_cwd = @canonicalCwd,
-        updated_at = @updatedAt
-    WHERE id = @id
   `);
   const updateSandbox = db.prepare(`
     UPDATE threads
@@ -459,6 +697,49 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         updated_at = CURRENT_TIMESTAMP
     WHERE id = @threadId
   `);
+  const listCodexBindingRepairCandidates = db.prepare(`
+    SELECT
+      threads.id AS threadId,
+      MIN(runs.codex_thread_id) AS codexThreadId
+    FROM threads
+    INNER JOIN runs ON runs.thread_id = threads.id
+    WHERE threads.codex_thread_id IS NULL
+      AND runs.codex_thread_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM threads AS mapped_threads
+        WHERE mapped_threads.codex_thread_id = runs.codex_thread_id
+          AND mapped_threads.id <> threads.id
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM runs AS conflicting_runs
+        WHERE conflicting_runs.codex_thread_id = runs.codex_thread_id
+          AND (
+            conflicting_runs.thread_id IS NULL
+            OR conflicting_runs.thread_id <> threads.id
+          )
+      )
+    GROUP BY threads.id
+    HAVING COUNT(DISTINCT runs.codex_thread_id) = 1
+  `);
+  const listUnresolvedCodexBindingThreadIds = db.prepare(`
+    SELECT DISTINCT threads.id
+    FROM threads
+    INNER JOIN runs ON runs.thread_id = threads.id
+    WHERE threads.codex_thread_id IS NULL
+      AND runs.codex_thread_id IS NOT NULL
+    ORDER BY threads.id ASC
+  `);
+  const updateProjectThreadsDirectory = db.prepare(`
+    UPDATE threads
+    SET cwd = @cwd,
+        canonical_cwd = @canonicalCwd,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE project_id = @projectId
+      AND purpose = 'conversation'
+      AND origin = 'clawee_created'
+  `);
   const touch = db.prepare(`
     UPDATE threads
     SET updated_at = CURRENT_TIMESTAMP
@@ -470,6 +751,8 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
       insert.run({
         title: null,
         codexThreadId: null,
+        projectId: null,
+        origin: 'clawee_created',
         model: null,
         reasoning: null,
         purpose: 'conversation',
@@ -492,6 +775,18 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         limit: input.limit ?? 50
       }) as ThreadRow[];
     },
+    listPublicThreads(input = {}): ThreadRow[] {
+      return listPublic.all({
+        status: input.status ?? 'active',
+        purpose: input.purpose ?? null,
+        excludePurpose: input.excludePurpose ?? null,
+        assignment: input.assignment ?? 'assigned',
+        limit: input.limit ?? 50
+      }) as ThreadRow[];
+    },
+    listUnassignedClaweeConversationThreads(): ThreadRow[] {
+      return listUnassignedClaweeConversationThreads.all() as ThreadRow[];
+    },
     listProfileReferences(profile: string): Array<{ id: string; title: string | null }> {
       return listProfileReferences.all(profile) as Array<{ id: string; title: string | null }>;
     },
@@ -501,8 +796,8 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     archiveThread(id: string): void {
       archive.run(id);
     },
-    updateImportedThread(input: UpdateImportedThreadInput): void {
-      updateImported.run(input);
+    assignProject(input): boolean {
+      return assignProject.run(input).changes === 1;
     },
     updateThreadSandbox(input: UpdateThreadSandboxInput): void {
       updateSandbox.run(input);
@@ -515,6 +810,22 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     },
     setCodexThreadId(threadId: string, codexThreadId: string): void {
       setCodexThreadId.run({ threadId, codexThreadId });
+    },
+    listCodexBindingRepairCandidates(): Array<{
+      threadId: string;
+      codexThreadId: string;
+    }> {
+      return listCodexBindingRepairCandidates.all() as Array<{
+        threadId: string;
+        codexThreadId: string;
+      }>;
+    },
+    listUnresolvedCodexBindingThreadIds(): string[] {
+      return (listUnresolvedCodexBindingThreadIds.all() as Array<{ id: string }>)
+        .map(row => row.id);
+    },
+    updateProjectThreadsDirectory(input): void {
+      updateProjectThreadsDirectory.run(input);
     },
     touchThread(threadId: string): void {
       touch.run(threadId);

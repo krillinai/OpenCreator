@@ -89,6 +89,8 @@ describe('protocol shape', () => {
     const response: ThreadResponse = {
       id: 'thread_1',
       title: 'Daily status',
+      projectId: 'project_1',
+      origin: 'clawee_created',
       codexThreadId: null,
       cwd: '/tmp/project',
       canonicalCwd: '/tmp/project',

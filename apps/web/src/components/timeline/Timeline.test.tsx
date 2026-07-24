@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Timeline } from './Timeline.js';
@@ -77,6 +77,76 @@ describe('Timeline', () => {
     );
   });
 
+  it('keeps a pending approval fully above the composer safety area', async () => {
+    render(
+      <Timeline
+        items={[{
+          kind: 'approval',
+          id: 'event_approval_visible',
+          runId: 'run_visible',
+          approval: {
+            id: 'approval_visible',
+            runId: 'run_visible',
+            threadId: 'thread_visible',
+            turnId: 'turn_visible',
+            itemId: 'item_visible',
+            requestId: 'rpc_visible',
+            kind: 'command_execution',
+            status: 'pending',
+            risk: 'high',
+            title: '允许执行命令',
+            summary: '运行较长命令',
+            details: {
+              command: 'pnpm test --filter web && pnpm build --filter desktop',
+              cwd: '/workspace'
+            },
+            requestedAt: '2026-07-24T10:00:00.000Z',
+            expiresAt: '2026-07-24T10:10:00.000Z'
+          },
+          source: 'runtime'
+        }]}
+      />
+    );
+
+    const scroller = screen.getByTestId('virtuoso-scroller');
+    await waitFor(() => expect(scroller.scrollTop).toBeGreaterThanOrEqual(96));
+  });
+
+  it.each(['approved', 'rejected', 'expired', 'canceled'] as const)(
+    'hides %s approval cards after they are resolved',
+    (status) => {
+      render(
+        <Timeline
+          items={[{
+            kind: 'approval',
+            id: `event_approval_${status}`,
+            runId: 'run_resolved',
+            approval: {
+              id: `approval_${status}`,
+              runId: 'run_resolved',
+              threadId: 'thread_resolved',
+              turnId: 'turn_resolved',
+              itemId: 'item_resolved',
+              requestId: 'rpc_resolved',
+              kind: 'command_execution',
+              status,
+              risk: 'high',
+              title: '已处理的审批',
+              summary: '不应继续显示',
+              details: { command: 'pnpm test', cwd: '/workspace' },
+              requestedAt: '2026-07-24T10:00:00.000Z',
+              expiresAt: '2026-07-24T10:10:00.000Z'
+            },
+            source: 'runtime'
+          }]}
+        />
+      );
+
+      expect(screen.queryByText('已处理的审批')).not.toBeInTheDocument();
+      expect(screen.queryByText('不应继续显示')).not.toBeInTheDocument();
+    }
+  );
+
   it('renders image metadata and a local preview with the user message', () => {
     render(
       <Timeline
@@ -113,6 +183,36 @@ describe('Timeline', () => {
     );
     expect(screen.getByText('2 KB')).toBeInTheDocument();
     expect(screen.getByText('描述图片')).toBeInTheDocument();
+  });
+
+  it('copies and edits a user message from its action row', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    });
+    const onEditUserMessage = vi.fn();
+    const item: Extract<TimelineItem, { kind: 'user_message' }> = {
+      kind: 'user_message',
+      id: 'user_actions',
+      text: '重新整理这段需求',
+      source: 'runtime'
+    };
+
+    render(
+      <Timeline
+        items={[item]}
+        onEditUserMessage={onEditUserMessage}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '复制消息' }));
+    expect(writeText).toHaveBeenCalledWith('重新整理这段需求');
+    expect(await screen.findByRole('button', { name: '已复制消息' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '编辑消息' }));
+    expect(onEditUserMessage).toHaveBeenCalledWith(item);
   });
 
   it('marks the virtual item that contains a search target', () => {
@@ -197,13 +297,14 @@ describe('Timeline', () => {
 
     const { container } = render(<Timeline items={items} />);
 
-    expect(screen.getByText('50 条记录')).toBeInTheDocument();
+    expect(screen.getByText('已完成')).toBeInTheDocument();
     expect(container.querySelectorAll('.process-step')).toHaveLength(0);
 
-    await user.click(screen.getByText('思考过程'));
+    await user.click(screen.getByText('已完成'));
 
     expect(container.querySelectorAll('.process-step')).toHaveLength(50);
-    expect(screen.getByText('echo 49')).toBeInTheDocument();
+    expect(screen.getAllByText('正在执行本地命令')).toHaveLength(50);
+    expect(screen.queryByText('echo 49')).not.toBeInTheDocument();
   });
 
   it('renders user and final assistant messages while folding completed run process', async () => {
@@ -313,8 +414,10 @@ describe('Timeline', () => {
     expect(screen.queryByText('Mock Agent')).not.toBeInTheDocument();
     expect(screen.queryByText('{"type":"user_message","text":"please inspect the run"}')).not.toBeInTheDocument();
     expect(screen.queryByText('{"type":"assistant_message","text":"I am checking the logs"}')).not.toBeInTheDocument();
-    expect(screen.getByText('思考过程')).toBeInTheDocument();
-    expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
+    const processDetails = container.querySelector('.timeline-process details');
+    const processSummary = processDetails?.querySelector('summary');
+    expect(processSummary).toHaveTextContent('已完成');
+    expect(processDetails).not.toHaveAttribute('open');
     expect(screen.queryByText('运行 running')).not.toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
@@ -322,16 +425,16 @@ describe('Timeline', () => {
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
     expect(screen.queryByText('我会先确认日志里有没有失败信息。')).not.toBeInTheDocument();
 
-    await user.click(screen.getByText('思考过程'));
+    await user.click(processSummary!);
 
     expect(screen.getByText('我会先确认日志里有没有失败信息。')).toBeInTheDocument();
     expect(screen.getByText('然后根据结果给出结论。')).toBeInTheDocument();
-    expect(screen.getByText('使用工具 exec_command')).toBeInTheDocument();
-    expect(screen.getByText('pnpm test')).toBeInTheDocument();
+    expect(screen.getByText('正在运行测试')).toBeInTheDocument();
+    expect(screen.queryByText('pnpm test')).not.toBeInTheDocument();
     expect(
       screen.queryByText('{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"command":"pnpm test"}}')
     ).not.toBeInTheDocument();
-    expect(screen.getByText('工具完成 exec_command')).toBeInTheDocument();
+    expect(screen.getByText('已完成：运行测试')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(
       screen.queryByText('{"type":"tool_result","toolCallId":"call_1","output":"test output","exitCode":0,"isError":false}')
@@ -378,7 +481,8 @@ describe('Timeline', () => {
     );
 
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
-    expect(screen.getByText('正在思考')).toBeInTheDocument();
+    expect(screen.getByText('思考中')).toBeInTheDocument();
+    expect(screen.getByTitle('等待 Clawee 返回过程')).toBeInTheDocument();
     expect(screen.getByText('等待 Clawee 返回过程...')).toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
   });
@@ -404,10 +508,8 @@ describe('Timeline', () => {
     const { container } = render(<Timeline items={items} />);
 
     expect(screen.getByText('hello')).toBeInTheDocument();
-    expect(screen.getByText('处理过程')).toBeInTheDocument();
     expect(screen.getByText('Failed to fetch')).toBeInTheDocument();
     expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
-    expect(screen.queryByText('思考过程')).not.toBeInTheDocument();
     expect(container.querySelector('.timeline-process')).not.toBeInTheDocument();
     expect(container.querySelector('.timeline-diagnostic')).toBeInTheDocument();
   });
@@ -507,10 +609,47 @@ describe('Timeline', () => {
       />
     );
 
-    expect(screen.getByText('正在思考')).toBeInTheDocument();
+    expect(screen.getByText('思考中')).toBeInTheDocument();
+    expect(screen.getByTitle('我会读取上下文再执行任务。')).toBeInTheDocument();
     expect(screen.getByText('我会读取上下文再执行任务。')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
+  });
+
+  it('keeps a user-collapsed active process closed after virtual remounts', async () => {
+    const user = userEvent.setup();
+    const activeItems: TimelineItem[] = [
+      {
+        kind: 'run_status',
+        id: 'status_running',
+        runId: 'run_persistent',
+        label: 'running',
+        source: 'runtime'
+      },
+      {
+        kind: 'reasoning_summary',
+        id: 'reasoning_persistent',
+        runId: 'run_persistent',
+        text: '正在检查项目文件。',
+        source: 'runtime'
+      }
+    ];
+    const fillerItems: TimelineItem[] = Array.from({ length: 31 }, (_, index) => ({
+      kind: 'user_message',
+      id: `filler_${index}`,
+      text: `占位消息 ${index}`,
+      source: 'runtime'
+    }));
+    const { container, rerender } = render(<Timeline items={activeItems} />);
+
+    await user.click(screen.getByText('思考中'));
+    expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
+
+    rerender(<Timeline items={[...activeItems, ...fillerItems]} />);
+    expect(container.querySelector('.timeline-process')).not.toBeInTheDocument();
+
+    rerender(<Timeline items={activeItems} />);
+    expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
   });
 
   it('keeps a completed status-only run process available for inspection', async () => {
@@ -569,11 +708,11 @@ describe('Timeline', () => {
     expect(screen.getByText('OK')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
-    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    expect(screen.getByText('已完成')).toBeInTheDocument();
     expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
     expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
 
-    await user.click(screen.getByText('思考过程'));
+    await user.click(screen.getByText('已完成'));
 
     expect(screen.getByText('运行详情')).toBeInTheDocument();
     expect(screen.getByText('本次没有可展示的中间过程。')).toBeInTheDocument();
@@ -606,7 +745,7 @@ describe('Timeline', () => {
 
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
-    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    expect(screen.getByText('已完成')).toBeInTheDocument();
     expect(screen.getByText('任务运行时间过长，已自动停止')).toBeInTheDocument();
     expect(screen.getByText('运行详情')).toBeInTheDocument();
   });
@@ -657,11 +796,11 @@ describe('Timeline', () => {
       />
     );
 
-    expect(screen.getByText('工具完成')).toBeInTheDocument();
+    expect(screen.getByText('操作已完成')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_missing')).not.toBeInTheDocument();
   });
 
-  it('renders concrete exec command details without exposing raw tool JSON', () => {
+  it('renders a plain Chinese activity without exposing raw commands or tool JSON', () => {
     const content =
       '{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"cmd":"pnpm --filter @clawee/web test -- src/app/App.test.tsx"}}';
 
@@ -680,8 +819,8 @@ describe('Timeline', () => {
       />
     );
 
-    expect(screen.getByText('使用工具 exec_command')).toBeInTheDocument();
-    expect(screen.getByText('pnpm --filter @clawee/web test -- src/app/App.test.tsx')).toBeInTheDocument();
+    expect(screen.getByText('正在运行测试')).toBeInTheDocument();
+    expect(screen.queryByText('pnpm --filter @clawee/web test -- src/app/App.test.tsx')).not.toBeInTheDocument();
     expect(screen.queryByText(content)).not.toBeInTheDocument();
   });
 
@@ -745,19 +884,47 @@ describe('Timeline', () => {
     const { container } = render(<Timeline items={items} />);
 
     expect(screen.getByText('检查当前目录并总结结果')).toBeInTheDocument();
-    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    expect(screen.getByText('已完成')).toBeInTheDocument();
     expect(screen.queryByText('我会先确认当前目录，再读取相关文件做判断。')).not.toBeInTheDocument();
 
-    await user.click(screen.getByText('思考过程'));
+    await user.click(screen.getByText('已完成'));
 
     expect(screen.getByText('我会先确认当前目录，再读取相关文件做判断。')).toBeInTheDocument();
-    expect(screen.getByText('使用工具 command_execution')).toBeInTheDocument();
-    expect(screen.getByText('pwd')).toBeInTheDocument();
-    expect(screen.getByText('工具完成 command_execution')).toBeInTheDocument();
+    expect(screen.getByText('正在查看项目内容')).toBeInTheDocument();
+    expect(screen.queryByText('pwd')).not.toBeInTheDocument();
+    expect(screen.getByText('已完成：查看项目内容')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
     expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
     expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
+  });
+
+  it('shows elapsed time for completed runs with timestamped events', () => {
+    render(
+      <Timeline
+        items={[
+          {
+            kind: 'run_status',
+            id: 'status_timed',
+            runId: 'run_timed',
+            timestamp: '2026-07-24T10:00:00.000Z',
+            label: 'running',
+            source: 'runtime'
+          },
+          {
+            kind: 'done',
+            id: 'done_timed',
+            runId: 'run_timed',
+            timestamp: '2026-07-24T10:01:05.000Z',
+            status: 'succeeded',
+            content: '{"type":"done","status":"succeeded"}',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('耗时 1分5秒')).toBeInTheDocument();
   });
 
   it('renders reasoning summaries as the main process content', () => {
@@ -850,9 +1017,7 @@ describe('Timeline', () => {
     expect(onOpenRunDetail).toHaveBeenCalledWith('run_1');
   });
 
-  it('shows queued follow-up position and cancels it', async () => {
-    const user = userEvent.setup();
-    const onCancelQueuedRun = vi.fn();
+  it('keeps queued follow-ups out of the conversation timeline', () => {
     render(
       <Timeline
         items={[{
@@ -865,13 +1030,10 @@ describe('Timeline', () => {
           queuePosition: 2,
           source: 'runtime'
         }]}
-        onCancelQueuedRun={onCancelQueuedRun}
       />
     );
 
-    expect(screen.getByText('等待打断后执行 · 第 2 位')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '取消排队' }));
-    expect(onCancelQueuedRun).toHaveBeenCalledWith('run_queued');
+    expect(screen.queryByText('排队任务')).not.toBeInTheDocument();
   });
 
   it('groups consecutive file changes from the same run', async () => {

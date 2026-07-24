@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createConversationTitle } from '../../src/threads/conversation-title.js';
+import {
+  createConversationTitle,
+  extractPublicConversationInput
+} from '../../src/threads/conversation-title.js';
 
 describe('createConversationTitle', () => {
   it('keeps an already concise title unchanged', () => {
@@ -52,5 +55,35 @@ describe('createConversationTitle', () => {
     expect(createConversationTitle(
       'Use the r4_smoke_skill_1783880138172 skill and reply with the marker'
     )).toBe('Use the r4_smoke_skill_17838…');
+  });
+
+  it('extracts only the public request from Clawee-managed context wrappers', () => {
+    expect(extractPublicConversationInput([
+      '[Clawee 用户显式管理的上下文]',
+      '- 会话摘要：内部摘要',
+      '[上下文结束]',
+      '',
+      '用户当前请求：',
+      '修复重复请求'
+    ].join('\n'))).toBe('修复重复请求');
+
+    expect(extractPublicConversationInput([
+      '[Clawee 执行上下文恢复摘要]',
+      '- 已完成：内部恢复信息',
+      '',
+      '本次公开任务输入：',
+      '继续运行测试'
+    ].join('\n'))).toBe('继续运行测试');
+  });
+
+  it('hides malformed or empty Clawee context wrappers instead of exposing internal text', () => {
+    expect(extractPublicConversationInput(
+      '[Clawee 用户显式管理的上下文]\n- 会话摘要：内部摘要'
+    )).toBeUndefined();
+    expect(extractPublicConversationInput([
+      '[Clawee 执行上下文恢复摘要]',
+      '本次公开任务输入：',
+      '   '
+    ].join('\n'))).toBeUndefined();
   });
 });

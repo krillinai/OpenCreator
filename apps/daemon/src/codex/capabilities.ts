@@ -1,4 +1,8 @@
-import { spawnSync } from 'node:child_process';
+import {
+  spawnCodexProcess,
+  spawnCodexProcessSync,
+  terminateCodexProcess
+} from './process.js';
 
 export type ExecHelpCapabilities = {
   supportsJson: boolean;
@@ -57,7 +61,36 @@ export type CollectCodexCapabilityMatrixInput = {
   checkedAt?: string;
   resumeContextContinuityVerified?: boolean;
   timeoutMs?: number;
+  signal?: AbortSignal;
 };
+
+export const STARTUP_CAPABILITY_TIMEOUT_MS = 500;
+
+export type CodexVersionProbeResult = {
+  ready: boolean;
+  version: string;
+  warning?: string;
+};
+
+export async function probeCodexVersionAsync(input: {
+  codexBin: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}): Promise<CodexVersionProbeResult> {
+  const result = await runCodexInfoAsync(
+    input.codexBin,
+    ['--version'],
+    input.timeoutMs ?? 3_000,
+    input.signal
+  );
+  const version = result.output.trim().split(/\r?\n/)[0] ?? '';
+  const warning = result.warnings[0];
+  return {
+    ready: warning === undefined && version.length > 0,
+    version,
+    ...(warning === undefined ? {} : { warning })
+  };
+}
 
 export function parseCodexExecHelp(help: string): ExecHelpCapabilities {
   return {
@@ -187,6 +220,79 @@ export function collectCodexCapabilityMatrix(
   return matrix;
 }
 
+export async function collectCodexCapabilityMatrixAsync(
+  input: CollectCodexCapabilityMatrixInput = {}
+): Promise<RuntimeCapabilityMatrix> {
+  const codexBin = input.codexBin ?? 'codex';
+  const [
+    version,
+    execHelp,
+    resumeHelp,
+    mcpHelp,
+    mcpAddHelp,
+    appServerHelp
+  ] = await Promise.all([
+    runCodexInfoAsync(codexBin, ['--version'], input.timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['exec', '--help'], input.timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['exec', 'resume', '--help'], input.timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['mcp', '--help'], input.timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['mcp', 'add', '--help'], input.timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['app-server', '--help'], input.timeoutMs, input.signal)
+  ]);
+
+  const matrix = parseCodexCapabilityMatrix({
+    versionOutput: version.output.trim() || 'unknown',
+    execHelp: execHelp.output,
+    resumeHelp: resumeHelp.output,
+    mcpHelp: mcpHelp.output,
+    mcpAddHelp: mcpAddHelp.output,
+    appServerHelp: appServerHelp.output,
+    resumeContextContinuityVerified: input.resumeContextContinuityVerified,
+    checkedAt: input.checkedAt
+  });
+  matrix.warnings.push(
+    ...version.warnings,
+    ...execHelp.warnings,
+    ...resumeHelp.warnings,
+    ...mcpHelp.warnings,
+    ...mcpAddHelp.warnings,
+    ...appServerHelp.warnings
+  );
+  if (!isResumeExecutionSupported(matrix)) {
+    matrix.warnings.push('Codex resume execution support was not verified from help output.');
+  }
+  return matrix;
+}
+
+export async function collectStartupCapabilityMatrixAsync(
+  input: CollectCodexCapabilityMatrixInput = {}
+): Promise<RuntimeCapabilityMatrix> {
+  const codexBin = input.codexBin ?? 'codex';
+  const timeoutMs = input.timeoutMs ?? STARTUP_CAPABILITY_TIMEOUT_MS;
+  const [version, execHelp, resumeHelp, appServerHelp] = await Promise.all([
+    runCodexInfoAsync(codexBin, ['--version'], timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['exec', '--help'], timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['exec', 'resume', '--help'], timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['app-server', '--help'], timeoutMs, input.signal)
+  ]);
+  const matrix = parseCodexCapabilityMatrix({
+    versionOutput: version.output.trim() || 'unknown',
+    execHelp: execHelp.output,
+    resumeHelp: resumeHelp.output,
+    mcpHelp: '',
+    mcpAddHelp: '',
+    appServerHelp: appServerHelp.output,
+    checkedAt: input.checkedAt
+  });
+  matrix.warnings.push(
+    ...version.warnings,
+    ...execHelp.warnings,
+    ...resumeHelp.warnings,
+    ...appServerHelp.warnings
+  );
+  return matrix;
+}
+
 export function isResumeExecutionSupported(matrix: RuntimeCapabilityMatrix): boolean {
   return matrix.resumeJson && matrix.resumeByThreadId;
 }
@@ -194,12 +300,65 @@ export function isResumeExecutionSupported(matrix: RuntimeCapabilityMatrix): boo
 export function withRuntimeSkillCapabilities(
   matrix: RuntimeCapabilityMatrix
 ): RuntimeCapabilityMatrix {
-  return {
-    ...matrix,
+  Object.assign(matrix, {
     skillsScan: true,
     skillsInstall: true,
     skillsDelete: true,
     skillsGlobalWrite: true
+  });
+  return matrix;
+}
+
+export function applyCapabilityMatrix(
+  target: RuntimeCapabilityMatrix,
+  source: RuntimeCapabilityMatrix
+): RuntimeCapabilityMatrix {
+  Object.assign(target, source);
+  return target;
+}
+
+export function createUnknownCapabilityMatrix(
+  checkedAt = new Date().toISOString()
+): RuntimeCapabilityMatrix {
+  return {
+    codexVersion: 'unknown',
+    checkedAt,
+    execJson: false,
+    execStdinPrompt: false,
+    execProfile: false,
+    execCwd: false,
+    execSandbox: false,
+    execSkipGitRepoCheck: false,
+    resumeJson: false,
+    resumeByThreadId: false,
+    resumeLast: false,
+    resumeModelOverride: false,
+    resumeConfigOverride: false,
+    resumeCwdOverride: false,
+    resumeProfileOverride: false,
+    resumeSandboxOverride: false,
+    execImages: false,
+    resumeImages: false,
+    resumeContextContinuityVerified: false,
+    mcpList: false,
+    mcpGet: false,
+    mcpAdd: false,
+    mcpRemove: false,
+    mcpLogin: false,
+    mcpLogout: false,
+    mcpAddEnv: false,
+    mcpAddUrl: false,
+    mcpAddBearerTokenEnvVar: false,
+    mcpAddOAuth: false,
+    mcpRuntimeDiscoveryVerified: false,
+    mcpRuntimeBehaviorVerified: false,
+    skillsScan: false,
+    skillsInstall: false,
+    skillsDelete: false,
+    skillsGlobalWrite: false,
+    skillsRuntimeDiscoveryVerified: false,
+    skillsRuntimeBehaviorVerified: false,
+    warnings: ['Codex runtime help has not been collected yet.']
   };
 }
 
@@ -208,7 +367,7 @@ function runCodexInfo(
   args: string[],
   timeoutMs = 5_000
 ): { output: string; warnings: string[] } {
-  const result = spawnSync(codexBin, args, {
+  const result = spawnCodexProcessSync(codexBin, args, {
     encoding: 'utf8',
     timeout: timeoutMs
   });
@@ -223,4 +382,64 @@ function runCodexInfo(
   }
 
   return { output, warnings };
+}
+
+function runCodexInfoAsync(
+  codexBin: string,
+  args: string[],
+  timeoutMs = 5_000,
+  signal?: AbortSignal
+): Promise<{ output: string; warnings: string[] }> {
+  return new Promise(resolve => {
+    const command = [codexBin, ...args].join(' ');
+    let output = '';
+    let settled = false;
+    let timedOut = false;
+    let aborted = false;
+    const child = spawnCodexProcess(codexBin, args, {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    const finish = (warnings: string[]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      resolve({ output, warnings });
+    };
+    const append = (chunk: Buffer | string) => {
+      if (output.length >= 512 * 1024) return;
+      output += chunk.toString().slice(0, 512 * 1024 - output.length);
+    };
+    child.stdout.on('data', append);
+    child.stderr.on('data', append);
+    child.once('error', error => {
+      finish([`${command} failed: ${error.message}`]);
+    });
+    child.once('exit', code => {
+      if (aborted) {
+        finish([`${command} canceled`]);
+        return;
+      }
+      if (timedOut) {
+        finish([`${command} timed out after ${timeoutMs}ms`]);
+        return;
+      }
+      finish(code === 0 ? [] : [`${command} exited with code ${String(code)}`]);
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      terminateCodexProcess(child, 'SIGTERM');
+      const forceKill = setTimeout(() => {
+        if (!settled) terminateCodexProcess(child, 'SIGKILL');
+      }, 500);
+      forceKill.unref();
+    }, timeoutMs);
+    timer.unref();
+    const abort = () => {
+      aborted = true;
+      void terminateCodexProcess(child, 'SIGTERM');
+    };
+    if (signal?.aborted === true) abort();
+    else signal?.addEventListener('abort', abort, { once: true });
+  });
 }

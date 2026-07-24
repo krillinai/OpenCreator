@@ -41,17 +41,34 @@ describe('daemon production startup', () => {
     expect(resolveProductionServerEnvironment({
       CLAWEE_DATA_DIR: ' /tmp/clawee-data ',
       CLAWEE_CODEX_BIN: ' /tmp/fake-codex ',
-      CLAWEE_CODEX_HOME: ' /tmp/clawee-codex-home '
+      CODEX_HOME: ' /tmp/clawee-codex-home ',
+      CLAWEE_DEFAULT_CWD: ' /tmp/default-workspace '
     })).toEqual({
       dataDir: '/tmp/clawee-data',
       codexBin: '/tmp/fake-codex',
-      codexHome: '/tmp/clawee-codex-home'
+      codexHome: '/tmp/clawee-codex-home',
+      defaultCwd: '/tmp/default-workspace'
     });
 
     expect(resolveProductionServerEnvironment({
       CLAWEE_DATA_DIR: ' ',
       CLAWEE_CODEX_BIN: '',
-      CLAWEE_CODEX_HOME: '\t'
+      CODEX_HOME: '\t',
+      CLAWEE_DEFAULT_CWD: '\n'
     })).toEqual({});
+  });
+
+  it('prefers standard CODEX_HOME and keeps the legacy variable as a fallback', () => {
+    expect(resolveProductionServerEnvironment({
+      CODEX_HOME: '/tmp/standard-codex-home',
+      CLAWEE_CODEX_HOME: '/tmp/legacy-codex-home'
+    })).toMatchObject({
+      codexHome: '/tmp/standard-codex-home'
+    });
+    expect(resolveProductionServerEnvironment({
+      CLAWEE_CODEX_HOME: '/tmp/legacy-codex-home'
+    })).toMatchObject({
+      codexHome: '/tmp/legacy-codex-home'
+    });
   });
 });

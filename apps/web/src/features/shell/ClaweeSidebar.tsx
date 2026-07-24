@@ -1,24 +1,33 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CircleAlert,
   Clock3,
   Folder,
+  FolderCog,
+  FolderMinus,
+  FolderPlus,
   FolderOpen,
   LoaderCircle,
+  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   PauseCircle,
   Plug,
   Search,
   Settings,
+  Settings2,
   ShieldAlert,
   SquarePen,
+  Trash2,
   TriangleAlert,
   type LucideIcon
 } from 'lucide-react';
 import type { ActiveView } from '../../app/app-state.js';
 import type { ColorMode } from '../../styles/color-mode.js';
-import type { ClaweeConversation, ClaweeProject } from '../projects/project-model.js';
+import type {
+  ClaweeConversation,
+  ClaweeProject
+} from '../projects/project-model.js';
 import type {
   SidebarTaskStatus,
   SidebarTaskSummary
@@ -29,20 +38,29 @@ export function ClaweeSidebar(props: {
   conversations: ClaweeConversation[];
   tasks: SidebarTaskSummary[];
   runningConversationIds?: ReadonlySet<string>;
-  currentProjectId: string;
+  currentProjectId?: string;
   selectedConversationId?: string;
   activeView: ActiveView;
   collapsed?: boolean;
   colorMode?: ColorMode;
-  onNewConversation(): void;
+  onNewConversation(projectId?: string): void;
   onSelectProject(projectId: string): void;
   onSelectConversation(conversationId: string): void;
   onSelectTask(threadId: string): void;
   onOpenView(view: ActiveView): void;
   onOpenSettings(): void;
   onToggleCollapsed(): void;
+  onAddProject?(): void;
+  onManageProjects?(): void;
+  onEditProject?(projectId: string): void;
+  onReplaceProjectDirectory?(projectId: string): void;
+  onArchiveProject?(projectId: string): void;
+  onDeleteTaskDraft?(threadId: string): void | Promise<void>;
 }) {
   const [expandedProjectId, setExpandedProjectId] = useState<string | undefined>(props.currentProjectId);
+  const [projectMenuId, setProjectMenuId] = useState<string>();
+  const [deletingDraftThreadId, setDeletingDraftThreadId] = useState<string>();
+  const projectMenuRef = useRef<HTMLDivElement>(null);
   const collapsed = props.collapsed === true;
   const logoSrc = props.colorMode === 'light' ? '/logo-black.png' : '/logo-white.png';
   const globalActions: Array<{
@@ -51,7 +69,7 @@ export function ClaweeSidebar(props: {
     view?: ActiveView;
     onClick(): void;
   }> = [
-    { label: '新对话', icon: SquarePen, onClick: props.onNewConversation },
+    { label: '新对话', icon: SquarePen, onClick: () => props.onNewConversation() },
     { label: '搜索', icon: Search, view: 'search', onClick: () => props.onOpenView('search') },
     { label: '已安排', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') },
     { label: '插件', icon: Plug, view: 'plugins', onClick: () => props.onOpenView('plugins') }
@@ -70,6 +88,24 @@ export function ClaweeSidebar(props: {
   useEffect(() => {
     setExpandedProjectId(props.currentProjectId);
   }, [props.currentProjectId]);
+
+  useEffect(() => {
+    if (projectMenuId === undefined) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!projectMenuRef.current?.contains(event.target as Node)) {
+        setProjectMenuId(undefined);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setProjectMenuId(undefined);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [projectMenuId]);
 
   return (
     <nav className="clawee-sidebar" aria-label="Clawee" data-collapsed={collapsed ? 'true' : 'false'}>
@@ -126,7 +162,31 @@ export function ClaweeSidebar(props: {
 
       {collapsed ? null : (
         <section className="sidebar-section" aria-labelledby="clawee-projects-heading">
-          <h2 id="clawee-projects-heading">项目</h2>
+          <div className="sidebar-section-heading">
+            <h2 id="clawee-projects-heading">项目</h2>
+            {props.onAddProject ? (
+              <button
+                type="button"
+                className="sidebar-section-action"
+                aria-label="添加项目文件夹"
+                title="添加项目文件夹"
+                onClick={props.onAddProject}
+              >
+                <FolderPlus size={16} strokeWidth={1.9} aria-hidden="true" />
+              </button>
+            ) : null}
+            {props.onManageProjects ? (
+              <button
+                type="button"
+                className="sidebar-section-action"
+                aria-label="管理项目"
+                title="管理项目"
+                onClick={props.onManageProjects}
+              >
+                <Settings2 size={16} strokeWidth={1.9} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
           <div className="sidebar-project-tree" aria-label="项目和对话">
             {props.projects.map((project) => {
               const isCurrentProject =
@@ -137,25 +197,101 @@ export function ClaweeSidebar(props: {
 
               return (
                 <div className="sidebar-project-node" key={project.id}>
-                  <button
-                    type="button"
-                    className="sidebar-row project-row"
-                    data-current-project={isCurrentProject ? 'true' : undefined}
-                    aria-expanded={isExpanded}
-                    onClick={() => {
-                      if (isExpanded) {
-                        setExpandedProjectId(undefined);
-                        return;
-                      }
-                      setExpandedProjectId(project.id);
-                      if (projectConversations.length === 0) {
-                        props.onSelectProject(project.id);
-                      }
-                    }}
-                  >
-                    <ProjectIcon className="project-icon" size={18} strokeWidth={1.85} aria-hidden="true" />
-                    <span>{project.name}</span>
-                  </button>
+                  <div className="sidebar-project-row-shell">
+                    <button
+                      type="button"
+                      className="sidebar-row project-row"
+                      data-current-project={isCurrentProject ? 'true' : undefined}
+                      aria-expanded={isExpanded}
+                      onClick={() => {
+                        if (isExpanded) {
+                          setExpandedProjectId(undefined);
+                          return;
+                        }
+                        setExpandedProjectId(project.id);
+                        if (projectConversations.length === 0) {
+                          props.onSelectProject(project.id);
+                        }
+                      }}
+                    >
+                      <ProjectIcon className="project-icon" size={18} strokeWidth={1.85} aria-hidden="true" />
+                      <span>{project.name}</span>
+                    </button>
+                    <div
+                      className="sidebar-project-actions"
+                      ref={projectMenuId === project.id ? projectMenuRef : undefined}
+                    >
+                      <button
+                        type="button"
+                        className="sidebar-project-new-conversation"
+                        aria-label={`在 ${project.name} 中新建会话`}
+                        title="新建会话"
+                        onClick={() => props.onNewConversation(project.id)}
+                      >
+                        <SquarePen size={16} strokeWidth={1.9} aria-hidden="true" />
+                      </button>
+                      {props.onArchiveProject ? (
+                        <div className="sidebar-project-menu-shell">
+                          <button
+                            type="button"
+                            className="sidebar-project-menu-trigger"
+                            aria-label={`项目操作 ${project.name}`}
+                            title="项目操作"
+                            aria-haspopup="menu"
+                            aria-expanded={projectMenuId === project.id}
+                            onClick={() => setProjectMenuId(
+                              current => current === project.id ? undefined : project.id
+                            )}
+                          >
+                            <MoreHorizontal size={16} strokeWidth={2} aria-hidden="true" />
+                          </button>
+                          {projectMenuId === project.id ? (
+                            <div
+                              className="sidebar-project-menu"
+                              role="menu"
+                              aria-label={`${project.name} 项目操作`}
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setProjectMenuId(undefined);
+                                  props.onEditProject?.(project.id);
+                                }}
+                              >
+                                <Settings2 size={15} strokeWidth={1.9} aria-hidden="true" />
+                                <span>编辑项目</span>
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setProjectMenuId(undefined);
+                                  props.onReplaceProjectDirectory?.(project.id);
+                                }}
+                              >
+                                <FolderCog size={15} strokeWidth={1.9} aria-hidden="true" />
+                                <span>更换目录</span>
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                aria-label={`移除项目 ${project.name}`}
+                                title="仅从项目列表移除，不会删除本机文件"
+                                onClick={() => {
+                                  setProjectMenuId(undefined);
+                                  props.onArchiveProject?.(project.id);
+                                }}
+                              >
+                                <FolderMinus size={15} strokeWidth={1.9} aria-hidden="true" />
+                                <span>移除项目</span>
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
                   {isExpanded && projectConversations.length > 0 ? (
                     <div className="sidebar-conversation-tree" aria-label={`${project.name} 对话`}>
                       {projectConversations.map((conversation) => {
@@ -209,32 +345,70 @@ export function ClaweeSidebar(props: {
                 const detail = task.status === 'idle'
                   ? task.nextRunLabel ?? visual.label
                   : visual.label;
+                const canDeleteDraft =
+                  task.status === 'draft'
+                  && task.threadId !== undefined
+                  && props.onDeleteTaskDraft !== undefined;
                 return (
-                  <button
-                    key={task.id}
-                    type="button"
-                    className="sidebar-task-row"
+                  <div
+                    className="sidebar-task-row-shell"
                     data-status={task.status}
-                    aria-current={task.threadId === props.selectedConversationId ? 'page' : undefined}
-                    disabled={disabled}
-                    onClick={() => {
-                      if (task.threadId !== undefined) props.onSelectTask(task.threadId);
-                    }}
+                    key={task.id}
                   >
-                    <StatusIcon
-                      className={task.status === 'running' ? 'sidebar-task-spinner' : 'sidebar-task-icon'}
-                      size={16}
-                      strokeWidth={2}
-                      aria-hidden="true"
-                    />
-                    <span className="sidebar-task-copy">
-                      <strong>{task.name}</strong>
-                      <span>{detail}</span>
-                    </span>
-                    {task.unread ? (
-                      <span className="sidebar-task-unread" aria-label="未读更新" />
+                    <button
+                      type="button"
+                      className="sidebar-task-row"
+                      data-status={task.status}
+                      aria-current={task.threadId === props.selectedConversationId ? 'page' : undefined}
+                      disabled={disabled}
+                      onClick={() => {
+                        if (task.threadId !== undefined) props.onSelectTask(task.threadId);
+                      }}
+                    >
+                      <StatusIcon
+                        className={task.status === 'running' ? 'sidebar-task-spinner' : 'sidebar-task-icon'}
+                        size={16}
+                        strokeWidth={2}
+                        aria-hidden="true"
+                      />
+                      <span className="sidebar-task-copy">
+                        <strong>{task.name}</strong>
+                        <span>{detail}</span>
+                      </span>
+                      {task.unread ? (
+                        <span className="sidebar-task-unread" aria-label="未读更新" />
+                      ) : null}
+                    </button>
+                    {canDeleteDraft ? (
+                      <button
+                        type="button"
+                        className="sidebar-task-delete"
+                        aria-label={`删除草稿 ${task.name}`}
+                        title="删除草稿"
+                        disabled={deletingDraftThreadId === task.threadId}
+                        onClick={async () => {
+                          if (
+                            task.threadId === undefined
+                            || !window.confirm(`删除“${task.name}”？此操作不会删除项目文件。`)
+                          ) {
+                            return;
+                          }
+                          setDeletingDraftThreadId(task.threadId);
+                          try {
+                            await props.onDeleteTaskDraft?.(task.threadId);
+                          } finally {
+                            setDeletingDraftThreadId(undefined);
+                          }
+                        }}
+                      >
+                        {deletingDraftThreadId === task.threadId ? (
+                          <LoaderCircle className="sidebar-task-spinner" size={15} aria-hidden="true" />
+                        ) : (
+                          <Trash2 size={15} aria-hidden="true" />
+                        )}
+                      </button>
                     ) : null}
-                  </button>
+                  </div>
                 );
               })}
             </div>

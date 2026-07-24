@@ -1,0 +1,40 @@
+{
+  "name": "@clawee/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Clawee 本地 Codex 桌面工作台",
+  "author": "Clawee",
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --target=node22 --external:electron --outfile=dist/preload/index.cjs",
+    "build:bootstrap": "vite build --config vite.bootstrap.config.ts",
+    "build": "pnpm build:main && pnpm build:preload && pnpm build:bootstrap",
+    "prepare:daemon": "node scripts/prepare-daemon.mjs",
+    "package": "node scripts/package-release.mjs --dir",
+    "dist": "node scripts/package-release.mjs --dist",
+    "release": "node scripts/package-release.mjs --release",
+    "verify:package": "node scripts/verify-package.mjs",
+    "e2e": "playwright test --config playwright.config.ts",
+    "e2e:package": "playwright test --config playwright.config.ts",
+    "e2e:real-codex": "playwright test --config playwright.real.config.ts",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "@electron/asar": "^3.4.1",
+    "@electron/fuses": "1.8.0",
+    "@types/node": "^22.10.7",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vitest": "^3.2.7"
+  }
+}

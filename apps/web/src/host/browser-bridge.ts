@@ -10,7 +10,9 @@ export const browserBridge: HostBridge = {
   kind: 'browser',
   async readConnectionConfig(): Promise<ConnectionConfig | null> {
     const sameOriginConfig = await readSameOriginRuntimeConfig();
-    return sameOriginConfig ?? readJsonFromStorage<ConnectionConfig>(CONNECTION_KEY);
+    return sameOriginConfig ?? parseStoredConnectionConfig(
+      readJsonFromStorage<unknown>(CONNECTION_KEY)
+    );
   },
   async openExternal(url: string): Promise<void> {
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -49,13 +51,20 @@ async function readSameOriginRuntimeConfig(): Promise<ConnectionConfig | null> {
       cache: 'no-store'
     });
     if (!response.ok) return null;
-    return parseConnectionConfig(await response.json());
+    return parseSameOriginConnectionConfig(await response.json());
   } catch {
     return null;
   }
 }
 
-function parseConnectionConfig(value: unknown): ConnectionConfig | null {
+function parseSameOriginConnectionConfig(value: unknown): ConnectionConfig | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.baseUrl !== '/.clawee/runtime') return null;
+  return { baseUrl: record.baseUrl };
+}
+
+function parseStoredConnectionConfig(value: unknown): ConnectionConfig | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (typeof record.baseUrl !== 'string' || record.baseUrl.length === 0) return null;

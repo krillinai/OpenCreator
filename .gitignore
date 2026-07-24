@@ -1,5 +1,8 @@
 node_modules/
 dist/
+apps/desktop/.pack/
+apps/desktop/.cache/
+apps/desktop/release/
 .runtime/
 .codegraph/
 coverage/

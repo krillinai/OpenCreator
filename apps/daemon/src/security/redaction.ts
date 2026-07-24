@@ -12,3 +12,12 @@ export function redactText(input: string): string {
     .replace(agentCapabilityPattern, '[REDACTED]')
     .replace(standaloneOpenAiKeyPattern, '[REDACTED]');
 }
+
+export function redactValue(input: unknown): unknown {
+  if (typeof input === 'string') return redactText(input);
+  if (Array.isArray(input)) return input.map(redactValue);
+  if (typeof input !== 'object' || input === null) return input;
+  return Object.fromEntries(
+    Object.entries(input).map(([key, value]) => [key, redactValue(value)])
+  );
+}

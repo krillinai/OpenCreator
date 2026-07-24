@@ -1,69 +1,11 @@
-import type { ConversationSearchResponse } from '@clawee/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createCodexSessionProvider,
+  type CodexConversationSearchPage,
   type CodexAppServerRequestClient
 } from '../../src/codex/sessions/app-server-provider.js';
-import type { RuntimeThread } from '../../src/threads/types.js';
 
 describe('Codex app-server session provider', () => {
-  it('lists recent interactive threads and maps Unix timestamps through the Clawee importer', async () => {
-    const request = vi.fn(async () => ({
-      data: [
-        codexThread({
-          id: 'codex-thread-1',
-          name: '命名会话',
-          preview: '预览标题',
-          createdAt: 1_784_073_600,
-          updatedAt: 1_784_077_200,
-          recencyAt: 1_784_080_800
-        })
-      ],
-      nextCursor: 'next-thread-page',
-      backwardsCursor: null
-    }));
-    const importThread = vi.fn(input => runtimeThread({
-      id: 'thread-1',
-      title: input.title,
-      codexThreadId: input.codexThreadId,
-      cwd: input.cwd,
-      canonicalCwd: input.cwd,
-      createdAt: input.createdAt,
-      updatedAt: input.updatedAt
-    }));
-    const provider = createCodexSessionProvider({
-      client: fakeClient(request),
-      importThread
-    });
-
-    const page = await provider.listRecent({ limit: 50 });
-
-    expect(request).toHaveBeenCalledWith('thread/list', {
-      limit: 50,
-      cursor: null,
-      archived: false,
-      sourceKinds: ['cli', 'vscode', 'exec', 'appServer'],
-      useStateDbOnly: true,
-      sortKey: 'recency_at',
-      sortDirection: 'desc'
-    });
-    expect(importThread).toHaveBeenCalledWith({
-      codexThreadId: 'codex-thread-1',
-      title: '命名会话',
-      cwd: '/workspace/project',
-      createdAt: '2026-07-15T00:00:00.000Z',
-      updatedAt: '2026-07-15T02:00:00.000Z'
-    });
-    expect(page).toEqual({
-      threads: [expect.objectContaining({
-        id: 'thread-1',
-        codexThreadId: 'codex-thread-1',
-        title: '命名会话'
-      })],
-      nextCursor: 'next-thread-page'
-    });
-  });
-
   it('maps summary turns in chronological order and reuses a short-lived page cache', async () => {
     const request = vi.fn(async () => ({
       data: [
@@ -120,15 +62,7 @@ describe('Codex app-server session provider', () => {
       backwardsCursor: null
     }));
     const provider = createCodexSessionProvider({
-      client: fakeClient(request),
-      importThread: input => runtimeThread({
-        codexThreadId: input.codexThreadId,
-        title: input.title,
-        cwd: input.cwd,
-        canonicalCwd: input.cwd,
-        createdAt: input.createdAt,
-        updatedAt: input.updatedAt
-      })
+      client: fakeClient(request)
     });
 
     const first = await provider.listTurns({
@@ -250,15 +184,7 @@ describe('Codex app-server session provider', () => {
       backwardsCursor: null
     }));
     const provider = createCodexSessionProvider({
-      client: fakeClient(request),
-      importThread: input => runtimeThread({
-        codexThreadId: input.codexThreadId,
-        title: input.title,
-        cwd: input.cwd,
-        canonicalCwd: input.cwd,
-        createdAt: input.createdAt,
-        updatedAt: input.updatedAt
-      })
+      client: fakeClient(request)
     });
 
     const page = await provider.listTurns({
@@ -285,6 +211,67 @@ describe('Codex app-server session provider', () => {
     ]);
   });
 
+  it('maps a Clawee-managed request wrapper to one public user message', async () => {
+    const request = vi.fn(async () => ({
+      data: [{
+        id: 'turn-managed-context',
+        status: 'completed',
+        startedAt: 1_784_073_600,
+        completedAt: 1_784_073_660,
+        itemsView: 'summary',
+        items: [
+          {
+            type: 'userMessage',
+            id: 'user-managed-context',
+            clientId: null,
+            content: [{
+              type: 'text',
+              text: [
+                '[Clawee 用户显式管理的上下文]',
+                '- 会话摘要：不应显示在用户消息中',
+                '[上下文结束]',
+                '',
+                '用户当前请求：',
+                '修复重复请求'
+              ].join('\n'),
+              text_elements: []
+            }]
+          }
+        ],
+        error: null,
+        durationMs: 60_000
+      }],
+      nextCursor: null,
+      backwardsCursor: null
+    }));
+    const provider = createCodexSessionProvider({
+      client: fakeClient(request)
+    });
+
+    const page = await provider.listTurns({
+      codexThreadId: 'codex-thread-managed-context',
+      limit: 20
+    });
+
+    expect(page.items).toEqual([
+      {
+        id: 'user-managed-context',
+        type: 'user_message',
+        text: '修复重复请求',
+        createdAt: '2026-07-15T00:00:00.000Z',
+        turnId: 'turn-managed-context'
+      },
+      {
+        id: 'history_done_turn-managed-context',
+        type: 'done',
+        status: 'succeeded',
+        createdAt: '2026-07-15T00:01:00.000Z',
+        turnId: 'turn-managed-context'
+      }
+    ]);
+    expect(JSON.stringify(page.items)).not.toContain('会话摘要');
+  });
+
   it('searches through app-server and returns conversation-level results without item ids', async () => {
     const request = vi.fn(async () => ({
       data: [{
@@ -302,19 +289,10 @@ describe('Codex app-server session provider', () => {
       backwardsCursor: null
     }));
     const provider = createCodexSessionProvider({
-      client: fakeClient(request),
-      importThread: input => runtimeThread({
-        id: 'thread-search',
-        codexThreadId: input.codexThreadId,
-        title: input.title,
-        cwd: input.cwd,
-        canonicalCwd: input.cwd,
-        createdAt: input.createdAt,
-        updatedAt: input.updatedAt
-      })
+      client: fakeClient(request)
     });
 
-    const response: ConversationSearchResponse = await provider.search({
+    const response: CodexConversationSearchPage = await provider.search({
       query: '页面卡住',
       limit: 20
     });
@@ -330,7 +308,6 @@ describe('Codex app-server session provider', () => {
     });
     expect(response).toEqual({
       results: [{
-        threadId: 'thread-search',
         codexThreadId: 'codex-thread-search',
         title: '页面卡住问题',
         cwd: '/workspace/project',
@@ -368,27 +345,6 @@ function codexThread(overrides: Record<string, unknown>) {
     updatedAt: 1_783_990_800,
     recencyAt: null,
     cwd: '/workspace/project',
-    ...overrides
-  };
-}
-
-function runtimeThread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
-  return {
-    id: 'thread-runtime',
-    title: '会话',
-    codexThreadId: 'codex-thread',
-    cwd: '/workspace/project',
-    canonicalCwd: '/workspace/project',
-    workspaceMode: 'external',
-    profile: 'default',
-    model: null,
-    reasoning: null,
-    sandbox: 'read-only',
-    status: 'active',
-    purpose: 'conversation',
-    createdAt: '2026-07-15T00:00:00.000Z',
-    updatedAt: '2026-07-15T01:00:00.000Z',
-    archivedAt: null,
     ...overrides
   };
 }

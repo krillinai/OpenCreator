@@ -9,7 +9,7 @@ export type SseFrame = {
 
 export type SubscribeRunEventsInput = {
   baseUrl: string;
-  token: string;
+  token?: string;
   runId: string;
   fromSeq?: number;
   fetchImpl?: typeof fetch;
@@ -33,9 +33,13 @@ export function sseEventsToFrames(lines: string[]): SseFrame[] {
 export async function subscribeRunEvents(input: SubscribeRunEventsInput): Promise<void> {
   const fetchImpl = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const url = `${input.baseUrl.replace(/\/+$/, '')}/runs/${encodeURIComponent(input.runId)}/events?fromSeq=${input.fromSeq ?? 0}`;
+  const headers: Record<string, string> = {};
+  if (input.token !== undefined && input.token.length > 0) {
+    headers.Authorization = `Bearer ${input.token}`;
+  }
   const response = await fetchImpl(url, {
     method: 'GET',
-    headers: { Authorization: `Bearer ${input.token}` },
+    headers,
     signal: input.signal
   });
 

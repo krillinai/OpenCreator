@@ -94,6 +94,142 @@ describe('runtime storage', () => {
     expect(runs.getLastRunEventSeq('run_1')).toBe(3);
   });
 
+  it('creates project ownership schema and enforces active directory and Codex mapping uniqueness', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-projects-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+
+    expect(
+      db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('projects', 'project_migrations')"
+      ).all()
+    ).toEqual(expect.arrayContaining([
+      { name: 'projects' },
+      { name: 'project_migrations' }
+    ]));
+    expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining([
+      'project_id',
+      'origin'
+    ]));
+
+    const projectIndexes = db.prepare(`
+      SELECT name, sql
+      FROM sqlite_master
+      WHERE type = 'index'
+        AND name IN (
+          'idx_projects_active_canonical_cwd',
+          'idx_threads_unique_codex_thread_id'
+        )
+    `).all() as Array<{ name: string; sql: string }>;
+    expect(projectIndexes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'idx_projects_active_canonical_cwd',
+        sql: expect.stringContaining("WHERE status = 'active'")
+      }),
+      expect.objectContaining({
+        name: 'idx_threads_unique_codex_thread_id',
+        sql: expect.stringContaining('WHERE codex_thread_id IS NOT NULL')
+      })
+    ]));
+
+    const insertProject = db.prepare(`
+      INSERT INTO projects (
+        id, name, cwd, canonical_cwd, profile, sandbox, status
+      ) VALUES (?, ?, ?, ?, 'default', 'follow-global', 'active')
+    `);
+    insertProject.run('project_one', 'One', tempDir, tempDir);
+    expect(() => {
+      insertProject.run('project_two', 'Two', tempDir, tempDir);
+    }).toThrow();
+
+    const threads = createThreadRepository(db);
+    threads.insertThread({
+      id: 'thread_one',
+      title: 'One',
+      codexThreadId: 'codex_shared',
+      cwd: tempDir,
+      canonicalCwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active',
+      purpose: 'conversation'
+    });
+    expect(() => {
+      threads.insertThread({
+        id: 'thread_two',
+        title: 'Two',
+        codexThreadId: 'codex_shared',
+        cwd: tempDir,
+        canonicalCwd: tempDir,
+        workspaceMode: 'external',
+        profile: 'default',
+        sandbox: 'read-only',
+        status: 'active',
+        purpose: 'conversation'
+      });
+    }).toThrow();
+  });
+
+  it('assigns only unowned Clawee conversation threads to projects', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-project-assignment-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    db.prepare(`
+      INSERT INTO projects (
+        id, name, cwd, canonical_cwd, profile, sandbox, status
+      ) VALUES (
+        'project_one', 'One', ?, ?, 'default', 'follow-global', 'active'
+      )
+    `).run(tempDir, tempDir);
+    const threads = createThreadRepository(db);
+    for (const input of [
+      {
+        id: 'thread_unowned',
+        origin: 'clawee_created' as const,
+        purpose: 'conversation' as const
+      },
+      {
+        id: 'thread_discovered',
+        origin: 'codex_discovered' as const,
+        purpose: 'conversation' as const
+      },
+      {
+        id: 'thread_schedule',
+        origin: 'clawee_created' as const,
+        purpose: 'schedule_task' as const
+      }
+    ]) {
+      threads.insertThread({
+        ...input,
+        cwd: tempDir,
+        canonicalCwd: tempDir,
+        workspaceMode: 'external',
+        profile: 'default',
+        sandbox: 'read-only',
+        status: 'active'
+      });
+    }
+
+    expect(
+      threads.listUnassignedClaweeConversationThreads().map(thread => thread.id)
+    ).toEqual(['thread_unowned']);
+    expect(threads.assignProject({
+      id: 'thread_unowned',
+      projectId: 'project_one'
+    })).toBe(true);
+    expect(threads.assignProject({
+      id: 'thread_unowned',
+      projectId: 'project_one'
+    })).toBe(false);
+    expect(threads.assignProject({
+      id: 'thread_discovered',
+      projectId: 'project_one'
+    })).toBe(false);
+    expect(threads.assignProject({
+      id: 'thread_schedule',
+      projectId: 'project_one'
+    })).toBe(false);
+  });
+
   it('creates the persistent notification outbox and pending cursor index', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

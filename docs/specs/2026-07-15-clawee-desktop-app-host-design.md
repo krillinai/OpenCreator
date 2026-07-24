@@ -4,15 +4,16 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档状态 | 待实施 |
-| 版本 | 1.0 |
+| 文档状态 | 整改后实施完成，本机发布候选通过，外部环境验收部分阻塞 |
+| 版本 | 1.4 |
 | 创建日期 | 2026-07-15 |
+| 最近整改验收 | 2026-07-16 |
 | 适用范围 | Clawee Desktop Host、Local Runtime Daemon、Web UI、Protocol、通知、打包与发布 |
 | 技术路线 | Electron 薄宿主 + 现有 React Web UI + 独立 Clawee Daemon |
 | 首要平台 | macOS；架构保持 Windows 可移植 |
 | 规格优先级 | 本文档覆盖现有文档中尚未实现的原生 Desktop Host 部分 |
 
-本文是 Clawee 桌面版第一阶段的产品、架构和实施规格。开发必须按照本文定义的进程边界、启动门禁和验收标准执行。
+本文是 Clawee 桌面版第一阶段的产品、架构和实施规格。P0、P1 和 P2 的仓库内实现已经完成；macOS arm64 离线 fresh package、Fuses、ASAR、packaged E2E、真实 Codex hello 和本地 OSV 验收已通过。签名、公证、真实版本升级、GitHub Actions 发布矩阵和 Windows 实机项目因当前环境缺失保留为 `BLOCKED_ENV` 或 `NOT_RUN`。
 
 如实现过程中需要改变以下原则，必须先更新本文档：
 
@@ -25,7 +26,7 @@
 
 ## 1. 一句话定义
 
-**Clawee Desktop 是本机 Codex CLI 的桌面 Agent 工作台，由 Electron 托管现有 Web UI 和 Clawee Daemon，并在冷启动时通过一次真实 Codex `hello` 调用确认完整运行链可用。**
+**Clawee Desktop 是本机 Codex CLI 的桌面 Agent 工作台，由 Electron 托管现有 Web UI 和 Clawee Daemon，并在冷启动时通过一次真实 Codex `hello` 调用确认 Codex CLI 基础模型调用可用。**
 
 ## 2. 已确认决策
 
@@ -51,6 +52,10 @@
 7. Desktop Host 通过现有 `HostBridge` 方向向 Web UI 暴露有限原生能力。
 8. Daemon 继续只监听 `127.0.0.1` 的随机端口，并使用每次启动生成的临时 token。
 9. Web 开发服务器继续固定使用 `127.0.0.1:9000`；该端口只用于开发环境，不用于生产 Daemon。
+10. 生产 Renderer 不直接获得 Daemon token；`clawee-app://app/.clawee/runtime/*` 由 Electron Main 代理并注入鉴权。
+11. Desktop 使用标准 `CODEX_HOME` 向 Daemon 传递用户 Codex Home；Probe 运行时由 Daemon 创建一次性净化 `CODEX_HOME`，普通任务仍使用用户真实 Codex Home。
+12. Daemon 异常重启且 Codex 环境未变化时复用本次 Desktop 生命周期内的 Probe 成功结果，不重复产生模型调用。
+13. Probe 的临时 `CODEX_HOME` 解析用户基础 `config.toml` 后只写入 model、选中 provider、认证路由和模型目录等调用必需配置，并复制 `auth.json` 与模型目录文件；Skills、Plugins、MCP、Hooks、项目授权、通知及其他扩展状态不进入 Probe Home。启动 Probe 没有显式 Profile，因此不推断或加载 `<name>.config.toml`。
 
 ### 2.3 Codex 可用性决策
 
@@ -75,55 +80,57 @@ Clawee Daemon
 
 ## 3. 当前实现基线
 
-### 3.1 已有模块
+### 3.1 已完成模块
 
 当前仓库已经具备：
 
-1. `apps/web`
-   - React 18、TypeScript、Vite。
-   - 已按桌面工作台形态实现主界面。
-   - 已有项目、会话、任务、插件、文件、设置和审批交互。
+1. `apps/desktop`
+   - Electron Main、sandboxed Preload、Bootstrap 页面和共享 IPC 类型。
+   - 单实例、窗口、托盘、通知、深链接、诊断导出、数据迁移和更新框架。
+   - Codex 路径解析、登录 Shell 环境恢复、Windows `where.exe` 与 `.cmd/.bat/.exe` 支持。
+   - Daemon Utility Process 托管、一次自动恢复、二次崩溃熔断和进程树回收。
+   - `clawee-app://` 本地资源协议以及 JSON、二进制和 SSE Runtime 代理。
 2. `apps/daemon`
-   - Node.js、Fastify、`better-sqlite3`。
-   - 已有 Thread、Run、Scheduler、Skills、MCP、附件、搜索、记忆、通知和诊断。
-   - 已支持 `codex exec` 和 Codex `app-server` 两种执行链。
-3. `packages/protocol`
-   - 已定义前后端共享协议。
-4. `apps/harness`
-   - 已有通知 outbox 消费和深链接参考实现。
-5. `apps/web/src/host/bridge.ts`
-   - 已定义 `browser | desktop` Host 类型。
-   - 已定义连接配置、外部链接、文件定位、通知和后台通知配置。
-6. Daemon 启动协议
-   - Daemon 监听随机本地端口。
-   - 启动成功后 stdout 输出 `address` 和 `token`。
+   - 冷启动真实 Codex Probe、结构化 Bootstrap 协议和 Runtime 互斥锁。
+   - 临时净化 Probe Home、低推理等级、无工具、只读和扩展能力禁用。
+   - 现有 Thread、Run、Scheduler、Skills、MCP、附件、搜索、记忆、通知和诊断能力保持复用。
+3. `apps/web`
+   - Desktop HostBridge、连接更新、同源 Runtime 代理和桌面设置入口。
+   - Browser 模式继续固定使用 `127.0.0.1:9000`，页面刷新不触发 Probe。
+4. 打包与发布
+   - Electron Builder、独立 Daemon 生产部署、Electron ABI 原生模块重建、阶段超时和包内容校验。
+   - Electron Fuses 关闭 RunAsNode、NODE_OPTIONS 和 Node CLI Inspector，启用 Cookie 加密、ASAR 完整性和 OnlyLoadAppFromAsar。
+   - macOS arm64 unsigned/ad-hoc `.app` 已通过全离线 fresh package、构建清单、正式包校验和 6 项 packaged E2E。
+   - 自动更新源固定为 GitHub Releases `wulien/clawee-agent`，生产运行时不依赖环境变量。
+   - macOS x64、arm64 和 Windows x64 CI 发布矩阵、OSV、签名参数和更新元数据流程已配置。
+5. 自动化
+   - Desktop 48 项单元测试和 6 项 packaged E2E。
+   - Web 532 项单元/组件测试。
+   - Daemon 663 项通过，23 项条件型用例显式跳过并单独记录。
+   - 本机 Codex CLI 0.144.4 真实冷启动 hello Smoke。
+   - OSV Scanner 2.3.8 发布源码扫描和 actionlint 1.7.7 工作流静态检查。
 
-### 3.2 当前缺口
+### 3.2 剩余环境验收
 
-当前仓库没有真实原生 Desktop Host，因此缺少：
+以下项目不是代码缺口，当前因外部发布环境不足标记为 `BLOCKED_ENV`：
 
-1. Electron 应用入口。
-2. Codex 路径解析和 GUI Shell 环境恢复。
-3. 冷启动真实 Codex 探测。
-4. Daemon Utility Process 托管。
-5. 启动检查界面。
-6. 主窗口生命周期管理。
-7. 系统托盘和后台驻留。
-8. 原生通知和通知点击跳转。
-9. 外部深链接和单实例。
-10. macOS 应用打包、签名、公证和自动更新。
-11. 原生 Desktop Host 实机验收。
+1. macOS Developer ID 正式签名。
+2. Apple 公证、stapling 和 Gatekeeper 正式包验证。
+3. 从上一正式版本通过真实更新服务升级。
+4. macOS 通知中心点击的发布包人工验收。
+5. Windows x64 构建机上的安装、托盘、通知、协议和进程树实机验收。
+6. Windows Authenticode 正式签名。
 
-### 3.3 必须复用的现有能力
+### 3.3 复用边界
 
-桌面版不能重写以下能力：
+桌面版继续复用且不重写：
 
 1. Web 主工作台和现有业务页面。
 2. Daemon 的 Thread、Run、Scheduler、Skills 和 MCP 服务。
-3. Daemon 的 bearer token 鉴权。
+3. Daemon 的 bearer token 鉴权；生产 Renderer 只能通过 Main 同源代理访问。
 4. 通知 outbox 数据模型和确认语义。
 5. 现有 Thread、Run、Approval 深链接格式。
-6. `CLAWEE_CODEX_BIN`、`CLAWEE_CODEX_HOME` 和 `CLAWEE_DATA_DIR` 环境入口。
+6. `CLAWEE_CODEX_BIN`、`CODEX_HOME`、`CLAWEE_DATA_DIR` 和 `CLAWEE_DEFAULT_CWD` 环境入口。
 
 ## 4. 目标与成功标准
 
@@ -157,13 +164,15 @@ Clawee Daemon
 13. 页面刷新不会重启 Daemon，也不会再次调用 Codex。
 14. Daemon 崩溃后 Host 能展示故障状态并执行受控重启。
 15. `better-sqlite3` 能在打包后的 Utility Process 中正常加载。
+16. 生产 Renderer 无法读取或持久化 Daemon token。
+17. Desktop 首次启动可以安全导入现有 `.runtime` 数据，失败时不破坏源数据。
 
 ### 4.3 性能目标
 
 1. 点击应用后 500ms 内显示启动检查窗口。
 2. 本机 Codex 路径解析目标耗时不超过 2 秒，硬超时 5 秒。
-3. Codex 真实探测硬超时 30 秒。
-4. 探测成功后 1.5 秒内开始显示 Clawee 主工作台。
+3. Codex 真实探测硬超时 45 秒。
+4. 探测成功后 1.5 秒内开始显示 Clawee 主工作台；Capability 完整扫描不能阻塞该目标。
 5. 主工作台刷新不执行 Codex 探测，目标恢复时间不超过 2 秒。
 6. 从托盘重新打开窗口不执行 Codex 探测，目标显示时间不超过 500ms。
 
@@ -255,7 +264,7 @@ Electron Main 不负责：
 
 ### 6.4 Daemon 职责
 
-1. 使用 Host 指定的 `CLAWEE_CODEX_BIN` 和 `CLAWEE_CODEX_HOME`。
+1. 使用 Host 指定的 `CLAWEE_CODEX_BIN` 和标准 `CODEX_HOME`。
 2. 在 Desktop 模式下先完成真实 Codex 探测。
 3. 探测成功后再启动完整 Runtime 和 Scheduler。
 4. 继续承载所有现有业务能力。
@@ -378,7 +387,6 @@ Desktop 设置只保存：
 type DesktopRuntimeSettings = {
   codexBin?: string;
   closeBehavior: 'hide' | 'quit';
-  launchAtLogin: boolean;
 };
 ```
 
@@ -396,9 +404,11 @@ Desktop Host 至少传递：
 
 ```text
 CLAWEE_CODEX_BIN=<absolute path>
-CLAWEE_CODEX_HOME=<resolved CODEX_HOME>
+CODEX_HOME=<resolved CODEX_HOME>
 CLAWEE_DATA_DIR=<app userData>/daemon
+CLAWEE_DEFAULT_CWD=<user home or configured workspace>
 CLAWEE_REQUIRE_CODEX_PROBE=1
+CLAWEE_CODEX_PROBE_VERIFIED=0
 HOME=<user home>
 PATH=<resolved shell path>
 SHELL=<user shell>
@@ -413,8 +423,8 @@ Daemon 及其 Codex 子进程必须使用同一组环境，避免探测和真实
 自动探测只在以下情况触发：
 
 1. Desktop Host 冷启动并创建新的 Daemon。
-2. Daemon 异常退出后执行受控重启。
-3. 用户选择新的 Codex 路径。
+2. 用户选择新的 Codex 路径。
+3. 用户改变 `CODEX_HOME`。
 4. 用户在失败页面点击 `重新检测`。
 
 以下操作不能触发：
@@ -426,6 +436,7 @@ Daemon 及其 Codex 子进程必须使用同一组环境，避免探测和真实
 5. 切换项目或会话。
 6. 隐藏窗口后从托盘重新打开。
 7. 系统通知点击。
+8. Daemon 在同一 Desktop 生命周期中异常退出，且 Codex 路径、`CODEX_HOME` 和关键环境指纹未变化。
 
 ### 9.2 启动状态机
 
@@ -478,7 +489,7 @@ type DesktopBootstrapState = {
   -> 输出 probing_codex 状态
   -> 执行真实 Codex Probe
   -> Probe 成功
-  -> 收集非阻断 capability 信息
+  -> 读取缓存或收集启动必需的 capability 信息
   -> buildServer()
   -> 启动 Scheduler
   -> listen(127.0.0.1, 0)
@@ -527,7 +538,7 @@ Bootstrap 进度行：
   "type": "clawee_daemon_bootstrap_error",
   "code": "CODEX_PROBE_TIMEOUT",
   "message": "Codex CLI did not return an assistant message before timeout",
-  "durationMs": 30000,
+  "durationMs": 45000,
   "details": {
     "exitCode": null,
     "signal": "SIGTERM"
@@ -612,56 +623,96 @@ If possible, include this marker: CLAWEE_READY_<nonce>
 1. Codex 进程正常完成。
 2. JSONL 中至少出现一条非空 `agent_message`。
 
-`markerMatched` 只作为诊断字段，不作为硬门禁。只要收到真实 assistant 消息，就证明 Codex CLI 能够完成调用。
+`markerMatched` 只作为诊断字段，不作为硬门禁。只要收到真实 assistant 消息，就证明 Codex CLI 基础模型调用能够完成；它不证明后续 `app-server` transport、MCP 或 Skills 一定可用。
 
 ### 10.3 Probe argv
 
 目标命令语义：
 
 ```text
+CODEX_HOME=<temporary sanitized probe home>
 codex exec
   --json
   --ephemeral
   --skip-git-repo-check
   --ignore-rules
   --sandbox read-only
-  -C <empty probe directory>
+  -c approval_policy="never"
+  -c model_reasoning_effort="low"
+  -c model_verbosity="low"
   -c mcp_servers={}
+  -c plugins={}
+  -c web_search="disabled"
+  -c notify=[]
+  -c check_for_update_on_startup=false
+  --disable hooks
+  --disable plugins
+  --disable apps
+  --disable multi_agent
+  --disable browser_use
+  --disable computer_use
+  --disable in_app_browser
+  --disable image_generation
+  --disable tool_suggest
+  --disable shell_tool
+  --disable unified_exec
+  --disable shell_snapshot
+  -C <empty probe directory>
+  --output-last-message <temporary result file>
 ```
 
 要求：
 
 1. Prompt 通过 stdin 传入，不拼入 Shell 命令。
-2. 使用用户真实 `CODEX_HOME`。
-3. 使用用户真实 provider、model 和认证配置。
+2. 输入源是用户真实 `CODEX_HOME`，但 Codex Probe 子进程只使用一次性临时 Home。
+3. 临时 Home 不复制整份 `config.toml`；Daemon 使用 TOML 解析器读取基础配置，只写入 model、选中 provider、认证路由、模型目录和请求兼容字段，并复制 `auth.json` 与模型目录文件，因此保留真实调用链但不继承无关启动行为。Codex `0.134.0+` 的 Profile 只能由 `--profile <name>` 显式选择，启动 Probe 不带该参数，所以不得读取旧式顶层 `profile`、内联 `[profiles.*]` 或任意 `<name>.config.toml`。
 4. 使用空 Probe 工作目录，避免加载项目 `AGENTS.md`。
 5. 使用 `--ephemeral`，避免持久化 Codex session。
 6. 使用 `read-only`，禁止文件修改。
-7. 使用 `mcp_servers={}` 覆盖关闭 MCP server。
-8. 不传图片、Skills、附件或项目目录。
-9. 不调用 `codex login status`。
-10. 不调用 `codex doctor`。
+7. 不复制 Skills、Plugins、MCP OAuth 凭据、Rules、Hooks 和项目状态。
+8. 通过配置覆盖清空 MCP、Plugins 和通知，关闭启动更新检查，并显式禁用 Hooks、Apps、浏览器、Computer Use、图片生成、工具建议、Shell 和 Exec 等扩展能力。
+9. 推理等级和输出详细度固定为 `low`，减少启动门禁的耗时与成本。
+10. 不传图片、Skills、附件或项目目录。
+11. 不调用 `codex login status`。
+12. 不调用 `codex doctor`。
+13. Probe 结果记录 `homePreparationMs`、`firstEventMs`、`responseReceivedMs` 和 `processExitMs`，避免把配置准备、CLI 初始化、模型响应和进程退出笼统归为“hello 耗时”。
 
-如果目标 Codex CLI 不接受 Probe 必需参数，则 Probe 失败并展示真实错误；不根据版本号提前推断。
+如果目标 Codex CLI 不接受 Probe 必需参数，则 Probe 失败并展示真实错误；不根据版本号提前推断。临时 Home 的设计保证自定义 provider 和 model 与真实运行环境一致，同时不让用户 Skills、Plugins 或 MCP 参与启动门禁。
 
-### 10.4 Probe 工作目录
+Probe 成功信号优先级：
 
-目录位于：
+1. `--output-last-message` 文件存在且包含非空 assistant 文本。
+2. JSONL `agent_message` 作为兼容成功信号。
+3. JSONL 事件只用于诊断，不把具体事件 schema 当作长期稳定协议。
+
+### 10.4 Probe 工作目录和临时 Home
+
+工作目录位于：
 
 ```text
 <app userData>/probe
 ```
 
+临时 Home 位于操作系统临时目录：
+
+```text
+<os temp>/clawee-codex-probe-<random>/
+```
+
 规则：
 
-1. 目录由 Desktop Host 或 Daemon 创建。
-2. 目录中不能包含项目文件、`AGENTS.md` 或用户内容。
+1. 工作目录由 Daemon 创建。
+2. 工作目录中不能包含项目文件、`AGENTS.md` 或用户内容。
 3. 每次启动前清理 Clawee 自己生成的临时 Probe 文件。
 4. Probe 不允许访问用户项目 cwd。
+5. 临时 Home 权限为 `0700`，复制的文件权限为 `0600`。
+6. Probe 完成、失败或超时后都必须删除临时 Home 和输出文件。
+7. 不把临时 Home 用于正常 Thread、Run、Scheduler、Skills 或 MCP。
+8. `model_catalog_json` 指向的文件必须复制到临时 Home 并重写路径，不能借最小配置重新访问用户原始目录。
 
 ### 10.5 超时和重试
 
-1. 总超时：30 秒。
+1. 总超时：45 秒。
 2. Spawn 首次活动超时：5 秒。
 3. 进程终止宽限：2 秒。
 4. 自动探测只执行一次。
@@ -716,12 +767,13 @@ Desktop Host：
 
 1. 停止通知 outbox 消费。
 2. 停止接受新的深链接导航。
-3. 请求 Daemon 优雅关闭。
+3. 通过 Utility Process `postMessage({ type: 'shutdown' })` 请求 Daemon 优雅关闭。
 4. 最多等待 5 秒。
-5. 超时后发送 `SIGTERM`。
-6. 再等待 2 秒后强制终止。
-7. 清理内存 token。
-8. 退出 Electron。
+5. Daemon 收到消息后调用 `server.close()`，停止 Scheduler 并回收 Codex 子进程。
+6. 超时后调用 `UtilityProcess.kill()`。
+7. 再等待 2 秒后使用平台级进程终止兜底，并清理已知 Codex 子进程。
+8. 清理内存 token。
+9. 退出 Electron。
 
 ### 11.3 窗口关闭
 
@@ -745,7 +797,7 @@ Desktop Host：
 1. Host 记录退出码和信号。
 2. 主窗口仍存在时显示运行服务中断状态。
 3. 第一次异常退出允许自动重启一次。
-4. 自动重启必须重新执行 Codex Probe。
+4. Codex 环境指纹未变化且本次 Desktop 生命周期已有成功 Probe 时，自动重启不重复 Probe。
 5. 第二次连续失败停止自动重启，进入诊断状态。
 6. 不允许无限重启循环。
 7. 恢复成功后通过 Host 事件更新 Web UI 连接配置。
@@ -773,7 +825,7 @@ type DesktopHostBridge = HostBridge & {
 
 现有方法继续支持：
 
-1. `readConnectionConfig()`
+1. `readConnectionConfig()`；Desktop 只返回同源 Runtime 代理地址，不返回真实 token。
 2. `openExternal()`
 3. `revealPath()`
 4. `notify()`
@@ -787,7 +839,7 @@ type DesktopHostBridge = HostBridge & {
 2. Renderer 刷新只重新读取内存配置。
 3. Renderer 不负责启动 Daemon。
 4. Renderer 不负责执行 Codex Probe。
-5. Daemon 重启后通过订阅事件下发新 `address + token`。
+5. Daemon 重启后由 Main 更新代理目标，并通过订阅事件下发新的代理连接状态。
 6. Browser Bridge 行为保持不变。
 
 ### 12.3 内部页面协议
@@ -810,6 +862,9 @@ clawee://
 2. `clawee://` 只接收系统外部唤起。
 3. Daemon CORS 只增加对精确内部 origin 的允许。
 4. 不允许任意自定义 scheme origin 访问 Daemon。
+5. `clawee-app://app/.clawee/runtime/*` 由 Main 使用 Node 24 标准 `fetch` 转发到 Daemon，并在最终同源断言后注入 Authorization。请求使用 `redirect: 'manual'`；Electron `net.fetch` 因在 `protocol.handle` 内出现过无法稳定收敛的挂起，不再用于该链路。
+6. Runtime 代理必须支持 JSON、二进制上传下载和流式 SSE。
+7. 内部 scheme 必须在 `app.ready` 前通过 `registerSchemesAsPrivileged` 注册为 `standard`、`secure` 且支持 Fetch API。
 
 ### 12.4 IPC 安全
 
@@ -837,6 +892,9 @@ BrowserWindow 固定配置：
 7. 所有 IPC channel 在共享类型文件中静态定义。
 8. 所有监听函数返回取消订阅方法。
 9. 窗口销毁时释放全部 listener。
+10. IPC handler 必须校验 sender frame URL 属于 `clawee-app://app` 或受控开发 origin。
+11. 禁止未受控导航，并通过 `setWindowOpenHandler` 拒绝 Renderer 创建窗口。
+12. Preload 构建为单文件 CommonJS，兼容 sandboxed preload 环境。
 
 ## 13. 主窗口、托盘和系统集成
 
@@ -856,9 +914,7 @@ BrowserWindow 固定配置：
 1. 打开 Clawee。
 2. 新建任务。
 3. 查看运行中任务。
-4. 暂停全部计划任务。
-5. 恢复计划任务。
-6. 退出 Clawee。
+4. 退出 Clawee。
 
 托盘本身不能直接读取 SQLite，所有状态通过 Daemon API 获取。
 
@@ -914,9 +970,21 @@ clawee://tasks
     └── attachments/
 ```
 
-Codex 数据继续位于用户真实 `$CODEX_HOME`，不复制到 Clawee `userData`。
+Codex 数据继续位于用户真实 `$CODEX_HOME`，不复制到 Clawee `userData`。只有启动 Probe 会在操作系统临时目录复制最小配置子集，并在 Probe 结束后删除。
 
-### 14.2 日志规则
+### 14.2 首次数据导入
+
+当 Desktop 数据目录为空时允许导入现有 Clawee `.runtime`：
+
+1. 导入必须由明确的源目录触发，不能遍历磁盘猜测多个候选。
+2. 导入前创建目标目录备份点并校验源 `app.sqlite`。
+3. 不能复制正在被其他 Clawee Daemon 使用的 SQLite。
+4. 使用临时目录完成复制和校验后再原子切换。
+5. 失败时删除未完成目标，源数据保持不变。
+6. Desktop 和 Web 开发 Daemon 不能长期共享同一数据目录，避免重复 Scheduler。
+7. 迁移 Web origin 下的 localStorage 不作为自动能力；需要将长期偏好迁移到 Desktop 设置或由用户重新配置。
+
+### 14.3 日志规则
 
 1. token 永不落盘。
 2. Authorization header 永不落盘。
@@ -974,6 +1042,7 @@ apps/desktop
 5. `.node` 原生文件放入 `asarUnpack`。
 6. 打包后不依赖用户安装 Node.js。
 7. 打包后仍依赖用户安装 Codex CLI。
+8. Bootstrap Probe 成功前不静态加载 `better-sqlite3` 所在的完整 Server 模块图。
 
 ### 15.3 平台顺序
 
@@ -984,18 +1053,75 @@ P0：
 
 P1：
 
-1. macOS 签名和公证。
-2. macOS 自动更新。
+1. macOS 托盘、通知和深链接。
+2. 故障恢复和诊断。
 
 P2：
 
-1. Windows x64 安装包。
-2. Windows Codex 路径解析。
-3. Windows 深链接和托盘实机验收。
+1. macOS 签名、公证和自动更新。
+2. Windows x64 安装包。
+3. Windows Codex 路径解析。
+4. Windows 深链接和托盘实机验收。
 
 ## 16. 实施任务
 
 以下任务按依赖顺序执行。每个批次完成后必须保持全仓可构建、可测试。
+
+### 16.1 实施与验收状态回填
+
+状态说明：
+
+- `DONE`：代码与仓库内自动化已完成。
+- `PASS`：当前环境已执行并通过。
+- `BLOCKED_ENV`：实现已完成，但需要当前环境没有的证书、发布服务或目标平台实机。
+
+| 任务 | 实施状态 | 自动化/实机状态 | 说明 |
+|---|---|---|---|
+| P0-A0 Desktop 打包技术尖峰 | DONE | PASS | unsigned macOS arm64 `.app` 已生成；Utility Process、Runtime 代理、原生 SQLite 和进程回收已通过 |
+| P0-B1 Electron 工程骨架 | DONE | PASS | 单实例、安全 BrowserWindow、固定 `9000` 开发端口和构建脚本已完成 |
+| P0-B2 Codex 路径解析 | DONE | PASS | 登录 Shell、保存路径、手动路径和 Windows `where.exe`/常见目录已覆盖 |
+| P0-B3 Daemon Codex Probe | DONE | PASS | 临时净化 Home、真实 assistant 响应判定、45 秒超时和进程回收已覆盖 |
+| P0-B4 Daemon Bootstrap | DONE | PASS | Probe 在 Runtime/SQLite/Scheduler 前执行，最终连接协议保持兼容 |
+| P0-B5 Desktop DaemonManager | DONE | PASS | Utility Process、内存 token、优雅退出、强制回收和单次恢复已覆盖 |
+| P0-B6 Bootstrap 页面 | DONE | PASS | 成功进入工作台，失败停留诊断页，不提供登录或跳过入口 |
+| P0-B7 内部协议与 Bridge | DONE | PASS | `clawee-app://`、固定 IPC 白名单、严格 loopback 同源、10 MiB 上限和 JSON/二进制/SSE 代理已通过 |
+| P0-B8 工作台刷新与恢复 | DONE | PASS | 刷新五次 Probe 计数保持 1，Daemon 恢复后连接可更新 |
+| P1-B1 窗口与托盘 | DONE | PASS | 默认隐藏、全局关闭行为设置、托盘恢复和有序退出已实现 |
+| P1-B2 原生通知 | DONE | PASS（自动化） | outbox、确认语义、去重和点击路由已覆盖；发布包通知中心人工点击为 `BLOCKED_ENV` |
+| P1-B3 单实例与深链接 | DONE | PASS | 第二实例、启动前缓存和 `clawee://` 路由已覆盖 |
+| P1-B4 文件与外部应用 | DONE | PASS | 路径定位、外部协议白名单和错误映射已实现 |
+| P1-B5 故障恢复与诊断 | DONE | PASS | 首次崩溃恢复、二次熔断、手动重试和脱敏诊断已覆盖 |
+| P2-B1 生产打包加固 | DONE | PASS / BLOCKED_ENV | 离线部署、Electron ABI 重建、构建清单、Fuses、ASAR、包内容检查和 6 项 packaged E2E 已通过；无 Node.js 独立干净机验收待外部环境 |
+| P2-B2 macOS 发布 | DONE | PASS / BLOCKED_ENV | GitHub Releases 更新状态机、macOS arm64 ad-hoc 包和恢复测试已通过；Developer ID、公证、上一正式版本真实升级仍阻塞 |
+| P2-B3 Windows 适配 | DONE | BLOCKED_ENV | 路径、脚本入口、进程树、NSIS 和 CI 已实现；缺少 Windows x64 构建机与实机验收 |
+| P2-B4 最终验收 | DONE | PASS / BLOCKED_ENV | 全仓自动化、离线 fresh package、OSV、actionlint 与本机真实 Codex 已通过；外部环境项逐项保留为 `BLOCKED_ENV` 或 `NOT_RUN` |
+
+原任务清单保留作为实现范围和验收定义；最终状态以本节和 `docs/test-reports/clawee-desktop-final-acceptance.md` 为准。
+
+### P0-A0：完成 Desktop 打包技术尖峰
+
+**目标：** 在业务功能展开前验证 Electron、Utility Process、原生模块和外部 Codex 的打包链。
+
+**实现内容：**
+
+1. 生成 unsigned macOS `.app`。
+2. 从 Utility Process 启动编译后的 Daemon。
+3. 验证 `better-sqlite3` 打开数据库。
+4. 验证外部 Codex CLI 路径和环境传递。
+5. 验证内部 scheme、Runtime 代理、SSE 和二进制请求。
+6. 验证打包环境默认 cwd 和 macOS TCC 目录行为。
+
+**验收标准：**
+
+- [x] `.app` 不依赖用户 Node.js。
+- [x] Utility Process 可以启动和关闭 Daemon。
+- [x] 原生模块不存在 ABI 加载错误。
+- [x] 强制关闭后没有残留 Codex 子进程。
+- [x] 打包问题在后续 P0 功能实现前暴露。
+
+**依赖：** 无。
+
+**规模：** M。
 
 ### P0-B1：建立 Electron Desktop 工程骨架
 
@@ -1023,12 +1149,12 @@ P2：
 
 **验收标准：**
 
-- [ ] `pnpm --filter @clawee/desktop typecheck` 通过。
-- [ ] Electron 启动后只有一个主窗口。
-- [ ] 第二次启动不会创建第二个主实例。
-- [ ] Renderer 中不存在 `window.require`。
-- [ ] `nodeIntegration=false`、`contextIsolation=true`、`sandbox=true` 有自动化断言。
-- [ ] 开发模式始终连接 `127.0.0.1:9000`。
+- [x] `pnpm --filter @clawee/desktop typecheck` 通过。
+- [x] Electron 启动后只有一个主窗口。
+- [x] 第二次启动不会创建第二个主实例。
+- [x] Renderer 中不存在 `window.require`。
+- [x] `nodeIntegration=false`、`contextIsolation=true`、`sandbox=true` 有自动化断言。
+- [x] 开发模式始终连接 `127.0.0.1:9000`。
 
 **验证：**
 
@@ -1064,12 +1190,12 @@ pnpm desktop:dev
 
 **验收标准：**
 
-- [ ] 能解析当前机器上的 `~/.local/node-current/bin/codex` 类路径。
-- [ ] Electron 原始 `PATH` 不含 Codex 时，仍能从登录 Shell 找到。
-- [ ] Shell 环境读取超过 5 秒会终止。
-- [ ] 无效保存路径不会阻断后续候选搜索。
-- [ ] 未经真实 Probe 成功的路径不会覆盖成功路径。
-- [ ] 测试不调用真实模型。
+- [x] 能解析当前机器上的 `~/.local/node-current/bin/codex` 类路径。
+- [x] Electron 原始 `PATH` 不含 Codex 时，仍能从登录 Shell 找到。
+- [x] Shell 环境读取超过 5 秒会终止。
+- [x] 无效保存路径不会阻断后续候选搜索。
+- [x] 未经真实 Probe 成功的路径不会覆盖成功路径。
+- [x] 测试不调用真实模型。
 
 **验证：**
 
@@ -1098,23 +1224,23 @@ pnpm --filter @clawee/desktop typecheck
 
 1. 新增 `CodexProbeService`。
 2. 生成固定模板和随机 marker。
-3. 构建临时、只读、禁用 MCP 的 Probe argv。
+3. 构建临时、只读的 Probe argv，并使用净化临时 `CODEX_HOME` 隔离 Skills、Plugins 和 MCP 状态。
 4. 复用 `startCodexExec()`。
-5. 解析 JSONL `agent_message`。
+5. 优先读取 `--output-last-message`，并兼容解析 JSONL `agent_message`。
 6. 按成功、超时、退出非零、无响应和非法输出映射结果。
 7. 对 stderr 脱敏并截断。
 8. 使用 fake Codex executable 完成单元测试。
 
 **验收标准：**
 
-- [ ] 收到任意非空 assistant 消息即成功。
-- [ ] marker 未匹配但有 assistant 消息仍成功。
-- [ ] `--ephemeral`、`read-only` 和空 cwd 被传入。
-- [ ] argv 中明确禁用 MCP。
-- [ ] 不调用 `login status`。
-- [ ] 不调用 `doctor`。
-- [ ] 不创建 Clawee Thread、Run、通知或 SQLite 文件。
-- [ ] 超时后进程被完整回收。
+- [x] 收到任意非空 assistant 消息即成功。
+- [x] marker 未匹配但有 assistant 消息仍成功。
+- [x] `--ephemeral`、`read-only` 和空 cwd 被传入。
+- [x] 临时 Home 不复制 Skills、Plugins 和 MCP OAuth 凭据，argv 同时明确清空 MCP 与 Plugins。
+- [x] 不调用 `login status`。
+- [x] 不调用 `doctor`。
+- [x] 不创建 Clawee Thread、Run、通知或 SQLite 文件。
+- [x] 超时后进程被完整回收。
 
 **验证：**
 
@@ -1145,18 +1271,18 @@ pnpm --filter @clawee/daemon typecheck
 2. 在 `buildServer()` 前执行 Probe。
 3. 输出结构化 Bootstrap 事件。
 4. Probe 失败时输出结构化错误并退出。
-5. Probe 成功后再收集 capabilities、打开数据库和启动 Scheduler。
+5. Probe 成功后读取 capability 缓存；缓存缺失时只同步检测启动必需项，完整检测异步执行。
 6. 保持最终 `{ address, token }` 协议兼容。
 7. 普通 Web 开发模式保持原启动行为。
 
 **验收标准：**
 
-- [ ] Probe 失败时不会调用 `buildServer()`。
-- [ ] Probe 失败时不会创建 `app.sqlite`。
-- [ ] Probe 失败时 Scheduler 不启动。
-- [ ] Probe 成功时最终输出连接配置。
-- [ ] 最终连接行 token 不进入日志快照。
-- [ ] 未设置 Desktop Probe 环境变量时不产生真实模型调用。
+- [x] Probe 失败时不会调用 `buildServer()`。
+- [x] Probe 失败时不会创建 `app.sqlite`。
+- [x] Probe 失败时 Scheduler 不启动。
+- [x] Probe 成功时最终输出连接配置。
+- [x] 最终连接行 token 不进入日志快照。
+- [x] 未设置 Desktop Probe 环境变量时不产生真实模型调用。
 
 **验证：**
 
@@ -1194,12 +1320,14 @@ pnpm --filter @clawee/daemon typecheck
 
 **验收标准：**
 
-- [ ] 同一 attempt 只启动一个 Daemon。
-- [ ] 未收到最终连接行前不产生可用连接配置。
-- [ ] stdout 非 JSON 噪声不会导致 Main 崩溃。
-- [ ] token 不进入 Desktop 日志。
-- [ ] Daemon 超时和提前退出能映射到稳定错误码。
-- [ ] 退出 Clawee 后没有残留 Daemon 进程。
+- [x] 同一 attempt 只启动一个 Daemon。
+- [x] 未收到最终连接行前不产生可用连接配置。
+- [x] stdout 非 JSON 噪声不会导致 Main 崩溃。
+- [x] token 不进入 Desktop 日志。
+- [x] Daemon 超时和提前退出能映射到稳定错误码。
+- [x] 退出 Clawee 后没有残留 Daemon 进程。
+- [x] 正常退出通过 `postMessage` 触发 `server.close()`。
+- [x] 同一环境下异常重启不会重复 Probe。
 
 **验证：**
 
@@ -1236,12 +1364,12 @@ pnpm --filter @clawee/desktop typecheck
 
 **验收标准：**
 
-- [ ] 主工作台不会在 Probe 成功前挂载。
-- [ ] 页面不出现登录、API Key 或账号输入。
-- [ ] 页面不出现 Skills 或 MCP 加载状态。
-- [ ] 失败页面没有跳过按钮。
-- [ ] 重新检测不会并发启动多个 Daemon。
-- [ ] 成功后窗口只切换内容，不创建第二个窗口。
+- [x] 主工作台不会在 Probe 成功前挂载。
+- [x] 页面不出现登录、API Key 或账号输入。
+- [x] 页面不出现 Skills 或 MCP 加载状态。
+- [x] 失败页面没有跳过按钮。
+- [x] 重新检测不会并发启动多个 Daemon。
+- [x] 成功后窗口只切换内容，不创建第二个窗口。
 
 **验证：**
 
@@ -1270,22 +1398,24 @@ pnpm --filter @clawee/desktop typecheck
 
 **实现内容：**
 
-1. 注册 `clawee-app://app` 内部协议。
+1. 在 `app.ready` 前注册 `clawee-app` privileged scheme。
 2. 安全映射 `apps/web/dist` 静态资源。
 3. Daemon CORS 允许精确内部 origin。
 4. Preload 暴露固定 Desktop API。
 5. Web 启动时根据 Preload 能力选择 Desktop Bridge。
-6. 实现连接配置读取和连接更新订阅。
+6. 实现同源 Runtime 代理、连接状态读取和连接更新订阅，真实 token 不进入 Renderer。
 7. 保持 Browser Bridge 和 `9000` 开发模式不变。
 
 **验收标准：**
 
-- [ ] 生产包不使用远程 URL 加载 UI。
-- [ ] 内部协议不能读取 `apps/web/dist` 外的文件。
-- [ ] Renderer 无法访问任意 IPC channel。
-- [ ] Desktop Bridge 能立即读到连接配置。
-- [ ] Browser Bridge 全部测试继续通过。
-- [ ] Daemon 只允许精确 Desktop origin 和既有本地 Web origin。
+- [x] 生产包不使用远程 URL 加载 UI。
+- [x] 内部协议不能读取 `apps/web/dist` 外的文件。
+- [x] Renderer 无法访问任意 IPC channel。
+- [x] Desktop Bridge 能立即读到连接配置。
+- [x] Renderer 无法读取真实 Daemon token。
+- [x] Runtime 代理支持 SSE、JSON 和二进制请求。
+- [x] Browser Bridge 全部测试继续通过。
+- [x] Daemon 只允许精确 Desktop origin 和既有本地 Web origin。
 
 **验证：**
 
@@ -1324,12 +1454,12 @@ pnpm --filter @clawee/desktop typecheck
 
 **验收标准：**
 
-- [ ] 冷启动成功后主工作台正常加载。
-- [ ] 连续刷新 5 次只发生一次 Codex Probe。
-- [ ] 刷新不重启 Daemon PID。
-- [ ] 刷新后当前 Thread 路由保持。
-- [ ] Daemon 连接更新后 Web 能恢复 API 调用。
-- [ ] 插件页面加载失败不影响主工作台启动。
+- [x] 冷启动成功后主工作台正常加载。
+- [x] 连续刷新 5 次只发生一次 Codex Probe。
+- [x] 刷新不重启 Daemon PID。
+- [x] 刷新后当前 Thread 路由保持。
+- [x] Daemon 连接更新后 Web 能恢复 API 调用。
+- [x] 插件页面加载失败不影响主工作台启动。
 
 **验证：**
 
@@ -1345,14 +1475,14 @@ pnpm --filter @clawee/web typecheck
 
 ### P0 检查点：桌面版最小可运行闭环
 
-- [ ] macOS 上可以启动 Electron。
-- [ ] 能找到本机 Codex。
-- [ ] 能通过真实 hello Probe。
-- [ ] Probe 成功后进入现有 Clawee 主工作台。
-- [ ] Probe 失败时停留在诊断页面。
-- [ ] 刷新不重复 Probe。
-- [ ] Daemon token 不落盘。
-- [ ] 全仓测试、类型检查和构建通过。
+- [x] macOS 上可以启动 Electron。
+- [x] 能找到本机 Codex。
+- [x] 能通过真实 hello Probe。
+- [x] Probe 成功后进入现有 Clawee 主工作台。
+- [x] Probe 失败时停留在诊断页面。
+- [x] 刷新不重复 Probe。
+- [x] Daemon token 不落盘。
+- [x] 全仓测试、类型检查和构建通过。
 
 ### P1-B1：实现窗口生命周期和系统托盘
 
@@ -1370,16 +1500,16 @@ pnpm --filter @clawee/web typecheck
 1. 默认关闭窗口时隐藏。
 2. 保存和恢复窗口状态。
 3. 创建托盘菜单。
-4. 实现打开、新建任务、任务页、暂停/恢复计划任务和退出。
+4. 实现打开、新建任务、任务页和退出。
 5. 支持设置切换为关闭即退出。
 
 **验收标准：**
 
-- [ ] 关闭窗口后 Daemon PID 不变。
-- [ ] 关闭窗口后正在运行的 Run 不被取消。
-- [ ] 托盘点击可以恢复同一窗口。
-- [ ] 托盘退出可以有序关闭 Daemon。
-- [ ] 窗口位置在显示器变化后仍可见。
+- [x] 关闭窗口后 Daemon PID 不变。
+- [x] 关闭窗口后正在运行的 Run 不被取消。
+- [x] 托盘点击可以恢复同一窗口。
+- [x] 托盘退出可以有序关闭 Daemon。
+- [x] 窗口位置在显示器变化后仍可见。
 
 **依赖：** P0 检查点。
 
@@ -1407,11 +1537,11 @@ pnpm --filter @clawee/web typecheck
 
 **验收标准：**
 
-- [ ] 窗口隐藏时通知仍能展示。
-- [ ] 同一通知只展示一次。
-- [ ] 未成功展示的通知不会被确认。
-- [ ] 通知点击打开正确 Thread、Run 和 Approval。
-- [ ] Renderer 刷新不会造成重复通知。
+- [x] 窗口隐藏时通知仍能展示。
+- [x] 同一通知只展示一次。
+- [x] 未成功展示的通知不会被确认。
+- [x] 通知点击打开正确 Thread、Run 和 Approval。
+- [x] Renderer 刷新不会造成重复通知。
 
 **依赖：** P1-B1。
 
@@ -1440,11 +1570,11 @@ pnpm --filter @clawee/web typecheck
 
 **验收标准：**
 
-- [ ] 深链接不会创建第二个主窗口。
-- [ ] 未完成 Probe 时点击通知不会绕过门禁。
-- [ ] Probe 成功后自动处理缓存导航。
-- [ ] 非法 scheme 和 route 被拒绝。
-- [ ] Thread、Run、Approval 特殊字符能正确编码和解码。
+- [x] 深链接不会创建第二个主窗口。
+- [x] 未完成 Probe 时点击通知不会绕过门禁。
+- [x] Probe 成功后自动处理缓存导航。
+- [x] 非法 scheme 和 route 被拒绝。
+- [x] Thread、Run、Approval 特殊字符能正确编码和解码。
 
 **依赖：** P0-B7、P1-B2。
 
@@ -1470,10 +1600,10 @@ pnpm --filter @clawee/web typecheck
 
 **验收标准：**
 
-- [ ] 文件和目录能在 Finder 中正确定位。
-- [ ] 不存在路径返回 `FAILED`，不导致 Main 崩溃。
-- [ ] `javascript:`、`file:` 和未知协议被拒绝。
-- [ ] `https:` 链接交给默认浏览器。
+- [x] 文件和目录能在 Finder 中正确定位。
+- [x] 不存在路径返回 `FAILED`，不导致 Main 崩溃。
+- [x] `javascript:`、`file:` 和未知协议被拒绝。
+- [x] `https:` 链接交给默认浏览器。
 
 **依赖：** P0-B7。
 
@@ -1501,11 +1631,11 @@ pnpm --filter @clawee/web typecheck
 
 **验收标准：**
 
-- [ ] Daemon 首次崩溃后自动恢复。
-- [ ] 连续失败后停止重启循环。
-- [ ] 手动重新检测可以恢复。
-- [ ] 诊断文件不包含 daemon token。
-- [ ] 诊断文案不推断登录状态。
+- [x] Daemon 首次崩溃后自动恢复。
+- [x] 连续失败后停止重启循环。
+- [x] 手动重新检测可以恢复。
+- [x] 诊断文件不包含 daemon token。
+- [x] 诊断文案不推断登录状态。
 
 **依赖：** P0-B5、P0-B6、P0-B8。
 
@@ -1513,14 +1643,14 @@ pnpm --filter @clawee/web typecheck
 
 ### P1 检查点：完整原生桌面体验
 
-- [ ] 关闭窗口后后台任务继续。
-- [ ] 系统通知在页面隐藏时可用。
-- [ ] 通知点击进入正确页面。
-- [ ] 单实例和深链接可用。
-- [ ] 文件定位和外部链接可用。
-- [ ] Daemon 崩溃恢复和诊断可用。
+- [x] 关闭窗口后后台任务继续。
+- [x] 系统通知在页面隐藏时可用。
+- [x] 通知点击进入正确页面。
+- [x] 单实例和深链接可用。
+- [x] 文件定位和外部链接可用。
+- [x] Daemon 崩溃恢复和诊断可用。
 
-### P2-B1：完成生产打包和原生依赖验证
+### P2-B1：完成生产打包加固和原生依赖复验
 
 **目标：** 生成不依赖用户 Node.js 的 macOS 安装包。
 
@@ -1543,13 +1673,13 @@ pnpm --filter @clawee/web typecheck
 
 **验收标准：**
 
-- [ ] 未安装 Node.js 的干净用户环境可以启动 Clawee。
-- [ ] 已安装 Codex CLI 时 Probe 可以成功。
-- [ ] `better-sqlite3` 正常打开数据库。
-- [ ] 打包后 Web 静态资源完整。
-- [ ] Daemon 和 Renderer 不从开发目录读取文件。
+- [ ] `BLOCKED_ENV`：未安装 Node.js 的独立干净用户环境启动验收；包内运行时和原生模块自动化已通过。
+- [x] 已安装 Codex CLI 时 Probe 可以成功。
+- [x] `better-sqlite3` 正常打开数据库。
+- [x] 打包后 Web 静态资源完整。
+- [x] Daemon 和 Renderer 不从开发目录读取文件。
 
-**依赖：** P1 检查点。
+**依赖：** P0-A0、P1 检查点。
 
 **规模：** L，实施时拆成打包和原生模块两个提交。
 
@@ -1576,11 +1706,11 @@ pnpm --filter @clawee/web typecheck
 
 **验收标准：**
 
-- [ ] Gatekeeper 不提示应用已损坏。
-- [ ] 公证验证通过。
-- [ ] 从上一版本升级后数据库和设置保留。
-- [ ] 有运行中任务时不会静默强制重启。
-- [ ] 更新失败不影响当前版本继续使用。
+- [ ] `BLOCKED_ENV`：Gatekeeper 正式包验证，需要 Developer ID 签名和公证产物。
+- [ ] `BLOCKED_ENV`：公证与 stapling 验证，需要 Apple 公证凭据。
+- [ ] `BLOCKED_ENV`：从上一正式版本真实升级并验证数据库和设置保留，需要上一版本和更新服务。
+- [x] 有运行中任务时不会静默强制重启。
+- [x] 更新失败不影响当前版本继续使用。
 
 **依赖：** P2-B1。
 
@@ -1608,11 +1738,11 @@ pnpm --filter @clawee/web typecheck
 
 **验收标准：**
 
-- [ ] Windows 终端可运行 Codex 时 Desktop 能找到同一 Codex。
-- [ ] Probe 成功后进入主工作台。
-- [ ] 关闭窗口后后台任务继续。
-- [ ] 深链接和通知点击可用。
-- [ ] 安装、升级和卸载不删除用户 Clawee 数据。
+- [ ] `BLOCKED_ENV`：Windows 终端与 Desktop Codex 路径一致性实机验证。
+- [ ] `BLOCKED_ENV`：Windows 真实 Probe 与工作台启动实机验证。
+- [ ] `BLOCKED_ENV`：Windows 关闭窗口后后台任务实机验证。
+- [ ] `BLOCKED_ENV`：Windows 深链接、托盘和通知点击实机验证。
+- [ ] `BLOCKED_ENV`：Windows 安装、覆盖升级和卸载数据保留验证。
 
 **依赖：** P2-B1。
 
@@ -1647,11 +1777,11 @@ pnpm --filter @clawee/web typecheck
 
 **验收标准：**
 
-- [ ] 自动化测试全部通过。
-- [ ] 真实 Codex 冷启动通过。
-- [ ] macOS 安装包实机通过。
-- [ ] 后台通知和深链接实机通过。
-- [ ] 所有失败项有明确状态：`PASS`、`FAIL` 或 `BLOCKED_ENV`。
+- [x] 自动化测试全部通过。
+- [x] 真实 Codex 冷启动通过。
+- [x] macOS 安装包实机通过。
+- [ ] `BLOCKED_ENV`：发布包后台通知中心点击实机通过；深链接自动化已通过。
+- [x] 所有失败项有明确状态：`PASS`、`FAIL` 或 `BLOCKED_ENV`。
 
 **依赖：** P2-B2；Windows 验收依赖 P2-B3。
 
@@ -1660,6 +1790,9 @@ pnpm --filter @clawee/web typecheck
 ## 17. 依赖关系
 
 ```text
+P0-A0 打包技术尖峰
+  -> P0-B1 Desktop 骨架
+
 P0-B1 Desktop 骨架
   ├── P0-B2 Codex 解析
   └── P0-B7 内部协议与 Bridge
@@ -1785,14 +1918,17 @@ P2-B2
 | 风险 | 影响 | 缓解 |
 |---|---|---|
 | GUI 环境找不到终端中的 Codex | 无法启动 | 恢复登录 Shell PATH、保存成功绝对路径、支持手动选择 |
-| Codex Probe 产生启动延迟 | 用户等待 | 立即显示 Bootstrap、30 秒硬超时、不自动重复调用 |
-| Probe 每次产生真实模型调用 | 有少量调用成本 | 只在冷启动或 Daemon 重启执行，刷新和托盘恢复不执行 |
-| 全局 MCP 配置拖慢 Probe | 启动长时间卡住 | Probe argv 明确覆盖 `mcp_servers={}` |
+| Codex Probe 产生启动延迟 | 用户等待 | 立即显示 Bootstrap、45 秒硬超时、不自动重复调用，固定低推理等级，并用最小配置隔离项目授权、市场、Hooks、通知和更新检查等无关初始化 |
+| Probe 每次产生真实模型调用 | 有少量调用成本 | 只在冷启动、环境变化或用户手动重试时执行；刷新、托盘恢复和同环境 Daemon 自动恢复不执行 |
+| 全局 MCP、Skills 或 Plugins 拖慢 Probe | 启动长时间卡住 | 使用临时净化 Home，只生成 provider/model/auth 必需配置并复制实际引用文件，在 argv 中清空和禁用扩展能力 |
+| 忽略用户配置导致自定义 provider 失效 | Probe 误报 401 或不可用 | 结构化提取 model、选中 provider、认证路由和模型目录，复制 `auth.json`，不使用 `--ignore-user-config` |
 | Probe 污染 Codex 历史 | 产生无意义会话 | 使用 `--ephemeral`，发布验收检查 session 目录 |
-| Electron Main 泄漏 Daemon token | 本地 API 风险 | token 仅内存保存，日志层结构化删除 |
+| Electron Main 泄漏 Daemon token | 本地 API 风险 | token 只保留在 Main，Renderer 通过同源 Runtime 代理访问 |
 | `better-sqlite3` ABI 不匹配 | 打包后 Daemon 无法启动 | Electron ABI 重建、`asarUnpack`、安装包 smoke |
 | Daemon 无限崩溃重启 | 资源消耗和糟糕体验 | 最多自动重启一次，连续失败熔断 |
 | Renderer XSS 获取本地 token | 本地数据风险 | 只加载本地资源、CSP、sandbox、严格 IPC、禁止远程导航 |
+| Desktop 首次启动看不到 Web 数据 | 用户数据割裂 | 首次导入、SQLite 校验、临时目录复制和原子切换 |
+| 打包 cwd 指向应用资源目录 | 任务目录错误或不可写 | 显式传递 `CLAWEE_DEFAULT_CWD` |
 | 自动更新中断任务 | 用户任务丢失 | 只提示安装，用户确认退出后更新 |
 
 ## 21. 明确禁止的实现
@@ -1812,6 +1948,9 @@ P2-B2
 13. 向 Renderer 暴露完整 `ipcRenderer`。
 14. 使用用户系统 Node.js 运行打包后的 Daemon。
 15. Daemon Probe 失败后仍启动 Scheduler。
+16. 仅通过 `mcp_servers={}` 假定已经隔离用户 MCP，而不同时使用净化临时 Home 和扩展禁用参数。
+17. 将用户全局 Codex Home 通过 `CLAWEE_CODEX_HOME` 伪装成隔离可写目录。
+18. 把真实 Daemon token 暴露给生产 Renderer。
 
 ## 22. 最终验收定义
 

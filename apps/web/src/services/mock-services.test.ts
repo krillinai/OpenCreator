@@ -1,20 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createMockApprovalService } from './approval-service.js';
 import { createMockFileService } from './file-service.js';
-import { createMockProjectService } from './project-service.js';
 
 function testDatabaseName(name: string) {
   return `clawee.web.test.mock-services.${name}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
 }
 
 describe('mock services', () => {
-  it('loads default project and file tree', async () => {
-    const service = createMockProjectService();
-    await expect(service.listProjects()).resolves.toEqual([
-      expect.objectContaining({ id: 'default-project', source: 'mock' })
-    ]);
-  });
-
   it('opens edits and saves a mock file', async () => {
     const service = createMockFileService({ databaseName: testDatabaseName('seed-save') });
     const file = await service.openFile('docs/design/enterprise-agent-workbench.md');

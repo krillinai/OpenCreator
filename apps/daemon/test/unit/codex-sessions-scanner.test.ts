@@ -95,6 +95,41 @@ describe('codex sessions scanner', () => {
     ]);
   });
 
+  it('keeps Clawee recovery context out of scanned titles and public history', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+    const codexHome = join(tempDir, 'codex-home');
+    const sessionDir = join(codexHome, 'sessions', '2026', '07', '13');
+    mkdirSync(sessionDir, { recursive: true });
+    writeSession(sessionDir, 'managed-context', {
+      id: 'managed-context',
+      cwd: tempDir,
+      timestamp: '2026-07-13T02:00:00.000Z',
+      userMessage: [
+        '[Clawee 执行上下文恢复摘要]',
+        '- 已完成：内部恢复信息',
+        '',
+        '本次公开任务输入：',
+        '继续运行测试'
+      ].join('\n')
+    });
+
+    expect(scanCodexSessions({ codexHome, limit: 20 })).toEqual([
+      expect.objectContaining({
+        codexThreadId: 'managed-context',
+        title: '继续运行测试'
+      })
+    ]);
+    expect(readCodexSessionHistory({
+      codexHome,
+      codexThreadId: 'managed-context'
+    })).toEqual([
+      expect.objectContaining({
+        type: 'user_message',
+        text: '继续运行测试'
+      })
+    ]);
+  });
+
   it('filters subagent Codex sessions before applying the list limit', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
     const codexHome = join(tempDir, 'codex-home');

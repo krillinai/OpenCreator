@@ -1,6 +1,3 @@
-import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import type { CodexMcpServerConfig } from '../codex/argv.js';
 import type { RuntimeThread } from '../threads/types.js';
 import {
@@ -11,6 +8,7 @@ import {
   AGENT_SCHEDULE_TOOL_NAMES,
   type AgentScheduleToolName
 } from './schedule-tools.js';
+import { AGENT_SCHEDULE_MCP_ROUTE } from './internal-routes.js';
 
 export const AGENT_SCHEDULE_MCP_SERVER_NAME = 'clawee_schedule';
 export const AGENT_TOOL_BASE_URL_ENV = 'CLAWEE_AGENT_TOOL_URL';
@@ -44,8 +42,7 @@ const TOOL_SCOPES: Array<{
 export function createAgentScheduleRunInjector(input: {
   capabilities: AgentCapabilityTokenStore;
   getBaseUrl(): string | undefined;
-  command: string;
-  args: string[];
+  env?: NodeJS.ProcessEnv;
 }): AgentScheduleRunInjector {
   return {
     prepare(run) {
@@ -60,48 +57,37 @@ export function createAgentScheduleRunInjector(input: {
         createdBy: run.createdBy,
         scopes
       });
+      const noProxy = loopbackNoProxy(input.env ?? process.env);
       return {
         mcpServers: [{
           name: AGENT_SCHEDULE_MCP_SERVER_NAME,
-          command: input.command,
-          args: input.args,
-          envVars: [
-            AGENT_TOOL_BASE_URL_ENV,
-            AGENT_TOOL_CAPABILITY_TOKEN_ENV
-          ],
+          url: `${baseUrl}${AGENT_SCHEDULE_MCP_ROUTE}`,
+          bearerTokenEnvVar: AGENT_TOOL_CAPABILITY_TOKEN_ENV,
           enabledTools: allowed.map(tool => tool.name),
           required: true,
           startupTimeoutSec: 10,
           toolTimeoutSec: 30
         }],
         env: {
-          [AGENT_TOOL_BASE_URL_ENV]: baseUrl,
-          [AGENT_TOOL_CAPABILITY_TOKEN_ENV]: issued.token
+          [AGENT_TOOL_CAPABILITY_TOKEN_ENV]: issued.token,
+          NO_PROXY: noProxy,
+          no_proxy: noProxy
         }
       };
     }
   };
 }
 
-export function resolveAgentScheduleStdioCommand(): {
-  command: string;
-  args: string[];
-} {
-  const sourcePath = fileURLToPath(new URL('./stdio-server.ts', import.meta.url));
-  if (existsSync(sourcePath)) {
-    return {
-      command: process.execPath,
-      args: [
-        '--import',
-        createRequire(import.meta.url).resolve('tsx'),
-        sourcePath
-      ]
-    };
-  }
-  return {
-    command: process.execPath,
-    args: [fileURLToPath(new URL('./stdio-server.js', import.meta.url))]
-  };
+function loopbackNoProxy(env: NodeJS.ProcessEnv): string {
+  const entries = [
+    ...(env.NO_PROXY ?? '').split(','),
+    ...(env.no_proxy ?? '').split(','),
+    '127.0.0.1',
+    'localhost'
+  ]
+    .map(entry => entry.trim())
+    .filter(entry => entry.length > 0);
+  return [...new Set(entries)].join(',');
 }
 
 function allowedTools(

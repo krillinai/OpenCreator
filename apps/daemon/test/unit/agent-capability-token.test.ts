@@ -15,6 +15,12 @@ describe('agent capability token store', () => {
     });
 
     expect(issued.token).toMatch(/^clwcap_[A-Za-z0-9_-]+$/);
+    expect(store.inspect(issued.token)).toMatchObject({
+      runId: 'run-1',
+      threadId: 'thread-1',
+      createdBy: 'api',
+      scopes: ['schedule:get', 'schedule:update']
+    });
     expect(store.authorize(issued.token, {
       scope: 'schedule:get',
       runId: 'run-1',
@@ -66,6 +72,11 @@ describe('agent capability token store', () => {
 
     expectCapabilityError(
       () => store.authorize(undefined, { scope: 'schedule:get' }),
+      'CAPABILITY_TOKEN_MISSING',
+      401
+    );
+    expectCapabilityError(
+      () => store.inspect(undefined),
       'CAPABILITY_TOKEN_MISSING',
       401
     );

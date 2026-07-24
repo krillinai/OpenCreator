@@ -1,5 +1,6 @@
 import { createIndexedDbStore } from '../storage/indexed-db.js';
-import type { DataSource } from './project-service.js';
+
+export type DataSource = 'runtime' | 'mock';
 
 export type WorkspaceFile = {
   path: string;

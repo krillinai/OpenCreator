@@ -21,6 +21,12 @@ function skillMarketCssBlock(selector: string) {
   return match?.groups?.body ?? '';
 }
 
+function schedulesCssBlock(selector: string) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = schedulesCss.match(new RegExp(`${escapedSelector}\\s*\\{(?<body>[^}]*)\\}`));
+  return match?.groups?.body ?? '';
+}
+
 function hexChannels(value: string): number[] {
   const normalized = value.length === 3
     ? value.split('').map(channel => channel.repeat(2)).join('')
@@ -130,6 +136,20 @@ describe('app CSS visual contracts', () => {
     expect(appCss).toMatch(
       /@media \(max-width: 720px\)\s*\{[\s\S]*?\.schedule-thread-header\s*\{[^}]*align-items:\s*flex-start;/
     );
+  });
+
+  it('keeps the schedule select chevron inside the native select click target', () => {
+    const control = schedulesCssBlock('.schedule-select-control');
+    const select = schedulesCssBlock('.schedule-select-control select');
+    const chevron = schedulesCssBlock('.schedule-select-control svg');
+
+    expect(control).toContain('position: relative;');
+    expect(schedulesCss).toMatch(
+      /\.schedule-select-control select,\s*\.schedule-setting-input,\s*\.schedule-time-input\s*\{[^}]*width:\s*100%;/
+    );
+    expect(select).toContain('padding-right: 24px;');
+    expect(chevron).toContain('position: absolute;');
+    expect(chevron).toContain('pointer-events: none;');
   });
 
   it('keeps global scrollbars darker and trackless', () => {
@@ -356,9 +376,10 @@ describe('app CSS visual contracts', () => {
     expect(composer).toContain('gap: 8px;');
     expect(composer).toContain('padding: 10px 18px;');
     expect(appCss).toMatch(/\.composer-wrap\s*\{\s*padding:\s*0 12px 6px;/);
-    expect(composerTextarea).toContain('min-height: 28px;');
-    expect(composerTextarea).toContain('max-height: 76px;');
-    expect(composerTextarea).toContain('font-size: 16px;');
+    expect(composerTextarea).toContain('min-height: 48px;');
+    expect(composerTextarea).toContain('max-height: 268px;');
+    expect(composerTextarea).toContain('font-size: 14px;');
+    expect(composerTextarea).toContain('line-height: 22px;');
     expect(composerTextarea).toContain('resize: none;');
     expect(composerTextarea).not.toContain('resize: vertical;');
     expect(appCss).toMatch(/\.composer-select,\n\.composer-model-button\s*\{[^}]*padding:\s*0 2px;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/);
@@ -366,7 +387,9 @@ describe('app CSS visual contracts', () => {
     expect(appCss).toMatch(
       /@media \(max-height: 560px\) and \(min-width: 921px\)\s*\{[\s\S]*?\.composer-wrap\s*\{[^}]*padding:\s*0 clamp\(18px, 4vw, 52px\) 10px;/
     );
-    expect(cssBlock('.timeline-end-spacer')).toContain('min-height: 32px;');
+    expect(cssBlock('.timeline-end-spacer')).toContain('min-height: clamp(72px, 10vh, 112px);');
+    expect(cssBlock('.app-drop-shell')).toContain('height: 100%;');
+    expect(cssBlock('.project-drop-overlay')).toContain('pointer-events: none;');
   });
 
   it('keeps the empty-state title centered without the large decorative logo', () => {
@@ -483,13 +506,15 @@ describe('app CSS visual contracts', () => {
     expect(disabledSendIcon).toContain('color: var(--control-disabled-text);');
   });
 
-  it('uses chat bubble corners to identify speaker direction', () => {
+  it('keeps user messages as bubbles and assistant replies as unframed prose', () => {
     const userBubble = cssBlock('.timeline-user_message .timeline-bubble');
     const assistantBubble = cssBlock('.timeline-assistant_message .timeline-bubble');
 
     expect(userBubble).toContain('border-top-right-radius: 0;');
     expect(userBubble).not.toContain('border-bottom-right-radius: 6px;');
-    expect(assistantBubble).toContain('border-top-left-radius: 0;');
+    expect(assistantBubble).toContain('border: 0;');
+    expect(assistantBubble).toContain('border-radius: 0;');
+    expect(assistantBubble).toContain('background: transparent;');
   });
 
   it('shows the assistant avatar as the logo without a container background', () => {

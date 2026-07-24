@@ -644,6 +644,8 @@ function createThread(root: string, options: FixtureOptions): RuntimeThread {
   return {
     id: 'thread_1',
     title: 'Workspace',
+    projectId: 'project_1',
+    origin: 'clawee_created',
     cwd: root,
     canonicalCwd: realpathSync(root),
     workspaceMode: 'external',

@@ -21,16 +21,30 @@ export type BuildCodexResumeArgsInput = {
   mcpServers?: CodexMcpServerConfig[];
 };
 
-export type CodexMcpServerConfig = {
+type CodexMcpServerCommonConfig = {
   name: string;
-  command: string;
-  args?: string[];
-  envVars?: string[];
   enabledTools?: string[];
   required?: boolean;
   startupTimeoutSec?: number;
   toolTimeoutSec?: number;
 };
+
+export type CodexMcpServerConfig = CodexMcpServerCommonConfig & (
+  | {
+      command: string;
+      args?: string[];
+      envVars?: string[];
+      url?: never;
+      bearerTokenEnvVar?: never;
+    }
+  | {
+      url: string;
+      bearerTokenEnvVar?: string;
+      command?: never;
+      args?: never;
+      envVars?: never;
+    }
+);
 
 export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
   const args = ['exec', '--json', '--skip-git-repo-check'];
@@ -72,12 +86,23 @@ export function buildCodexMcpConfigArgs(
       throw new Error(`Invalid MCP server name: ${server.name}`);
     }
     const prefix = `mcp_servers.${server.name}`;
-    pushConfig(args, `${prefix}.command`, JSON.stringify(server.command));
-    if (server.args !== undefined) {
-      pushConfig(args, `${prefix}.args`, JSON.stringify(server.args));
-    }
-    if (server.envVars !== undefined) {
-      pushConfig(args, `${prefix}.env_vars`, JSON.stringify(server.envVars));
+    if (server.url !== undefined) {
+      pushConfig(args, `${prefix}.url`, JSON.stringify(server.url));
+      if (server.bearerTokenEnvVar !== undefined) {
+        pushConfig(
+          args,
+          `${prefix}.bearer_token_env_var`,
+          JSON.stringify(server.bearerTokenEnvVar)
+        );
+      }
+    } else {
+      pushConfig(args, `${prefix}.command`, JSON.stringify(server.command));
+      if (server.args !== undefined) {
+        pushConfig(args, `${prefix}.args`, JSON.stringify(server.args));
+      }
+      if (server.envVars !== undefined) {
+        pushConfig(args, `${prefix}.env_vars`, JSON.stringify(server.envVars));
+      }
     }
     if (server.enabledTools !== undefined) {
       pushConfig(args, `${prefix}.enabled_tools`, JSON.stringify(server.enabledTools));

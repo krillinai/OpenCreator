@@ -180,7 +180,7 @@ export function SearchView(props: {
                   return (
                     <ConversationRow
                       key={thread.id}
-                      projectName={projectNameForCwd(thread.cwd, props.projects)}
+                      projectName={projectNameForId(thread.projectId, props.projects)}
                       result={result}
                       onOpen={props.onOpenResult}
                     />
@@ -200,7 +200,7 @@ export function SearchView(props: {
                 <ConversationRow
                   active={index === activeResultIndex}
                   key={result.threadId}
-                  projectName={projectNameForCwd(result.cwd, props.projects)}
+                  projectName={projectNameForId(result.projectId, props.projects)}
                   result={result}
                   testId={`search-result-${result.itemId ?? 'title'}`}
                   onOpen={props.onOpenResult}
@@ -314,8 +314,12 @@ function appendUniqueConversations(
 }
 
 function threadToSearchResult(thread: ThreadResponse): ConversationSearchResult {
+  if (thread.projectId === null) {
+    throw new Error('Conversation threads must have a projectId');
+  }
   return {
     threadId: thread.id,
+    projectId: thread.projectId,
     codexThreadId: thread.codexThreadId ?? '',
     title: thread.title?.trim() || thread.codexThreadId || thread.id,
     cwd: thread.cwd,
@@ -325,23 +329,12 @@ function threadToSearchResult(thread: ThreadResponse): ConversationSearchResult 
   };
 }
 
-function projectNameForCwd(cwd: string, projects: ClaweeProject[]): string {
-  const normalizedCwd = normalizePath(cwd);
-  const matched = projects.find(project => {
-    const normalizedProject = normalizePath(project.cwd);
-    return normalizedProject === normalizedCwd
-      || normalizedCwd.endsWith(`/${lastPathSegment(normalizedProject)}`)
-      || normalizedProject.endsWith(`/${lastPathSegment(normalizedCwd)}`);
-  });
-  return matched?.name ?? lastPathSegment(normalizedCwd) ?? '未知项目';
-}
-
-function normalizePath(value: string): string {
-  return value.replace(/\\/g, '/').replace(/\/+$/, '');
-}
-
-function lastPathSegment(value: string): string {
-  return value.split('/').filter(Boolean).at(-1) ?? value;
+function projectNameForId(
+  projectId: string | null,
+  projects: ClaweeProject[]
+): string {
+  if (projectId === null) return '未知项目';
+  return projects.find(project => project.id === projectId)?.name ?? '未知项目';
 }
 
 function searchResultDomId(result: ConversationSearchResult): string {

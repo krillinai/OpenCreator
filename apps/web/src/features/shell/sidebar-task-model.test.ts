@@ -176,6 +176,8 @@ function createDraft(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
   return {
     id: 'draft-1',
     title: '任务草稿',
+    projectId: null,
+    origin: 'clawee_created',
     codexThreadId: null,
     cwd: '/workspace',
     canonicalCwd: '/workspace',

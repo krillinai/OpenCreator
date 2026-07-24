@@ -1,31 +1,35 @@
 import type {
   ConversationSearchQuery,
-  ConversationSearchResponse,
   ConversationSearchSnippetSegment,
   ThreadHistoryItem
 } from '@clawee/protocol';
 import type { CodexAppServerRequestClient } from '../app-server-client.js';
-import type {
-  ImportCodexThreadInput,
-  RuntimeThread
-} from '../../threads/types.js';
+import { extractPublicConversationInput } from '../../threads/conversation-title.js';
 
 export type { CodexAppServerRequestClient } from '../app-server-client.js';
 
+export type CodexConversationSearchResult = {
+  codexThreadId: string;
+  title: string;
+  cwd: string;
+  itemType: 'title';
+  createdAt: string;
+  snippet: ConversationSearchSnippetSegment[];
+};
+
+export type CodexConversationSearchPage = {
+  results: CodexConversationSearchResult[];
+  hasMore: boolean;
+  nextCursor?: string;
+};
+
 export type CodexSessionProvider = {
-  listRecent(input: {
-    limit: number;
-    cursor?: string;
-  }): Promise<{
-    threads: RuntimeThread[];
-    nextCursor?: string;
-  }>;
   listTurns(input: {
     codexThreadId: string;
     limit: number;
     cursor?: string;
   }): Promise<CodexThreadHistoryPage>;
-  search(query: ConversationSearchQuery): Promise<ConversationSearchResponse>;
+  search(query: ConversationSearchQuery): Promise<CodexConversationSearchPage>;
   close(): Promise<void>;
 };
 
@@ -38,7 +42,6 @@ export type CodexThreadHistoryPage = {
 
 export type CreateCodexSessionProviderInput = {
   client: CodexAppServerRequestClient;
-  importThread(input: ImportCodexThreadInput): RuntimeThread | undefined;
   historyCacheTtlMs?: number;
   now?: () => number;
 };
@@ -101,25 +104,6 @@ export function createCodexSessionProvider(
   const historyCache = new Map<string, CachedHistoryPage>();
 
   return {
-    async listRecent(options) {
-      const response = await input.client.request<CodexThreadListResponse>('thread/list', {
-        limit: options.limit,
-        cursor: options.cursor ?? null,
-        archived: false,
-        sourceKinds: [...INTERACTIVE_SOURCE_KINDS],
-        useStateDbOnly: true,
-        sortKey: 'recency_at',
-        sortDirection: 'desc'
-      });
-      const threads = response.data
-        .map(thread => importCodexThread(thread))
-        .filter((thread): thread is RuntimeThread => thread !== undefined);
-      return {
-        threads,
-        ...(response.nextCursor === null ? {} : { nextCursor: response.nextCursor })
-      };
-    },
-
     listTurns(options) {
       const key = JSON.stringify([
         options.codexThreadId,
@@ -167,30 +151,37 @@ export function createCodexSessionProvider(
         sortDirection: 'desc'
       });
       const results = response.data.flatMap(result => {
-        const thread = importCodexThread(result.thread);
-        if (thread === undefined) return [];
-        if (query.cwd !== undefined && thread.cwd !== query.cwd) return [];
+        if (
+          query.itemTypes !== undefined
+          && query.itemTypes.length > 0
+          && !query.itemTypes.includes('title')
+        ) {
+          return [];
+        }
+        if (query.cwd !== undefined && result.thread.cwd !== query.cwd) return [];
+        const createdAt = unixSecondsToIso(
+          result.thread.recencyAt ?? result.thread.updatedAt
+        );
         if (
           query.createdAfter !== undefined
-          && Date.parse(thread.createdAt) < Date.parse(query.createdAfter)
+          && Date.parse(createdAt) < Date.parse(query.createdAfter)
         ) {
           return [];
         }
         if (
           query.createdBefore !== undefined
-          && Date.parse(thread.createdAt) > Date.parse(query.createdBefore)
+          && Date.parse(createdAt) > Date.parse(query.createdBefore)
         ) {
           return [];
         }
         return [{
-          threadId: thread.id,
           codexThreadId: result.thread.id,
-          title: thread.title?.trim() || '未命名对话',
-          cwd: thread.cwd,
+          title: result.thread.name?.trim()
+            || result.thread.preview?.trim()
+            || '未命名对话',
+          cwd: result.thread.cwd,
           itemType: 'title' as const,
-          createdAt: unixSecondsToIso(
-            result.thread.recencyAt ?? result.thread.updatedAt
-          ),
+          createdAt,
           snippet: buildSnippet(result.snippet, query.query)
         }];
       });
@@ -206,16 +197,6 @@ export function createCodexSessionProvider(
       await input.client.close();
     }
   };
-
-  function importCodexThread(thread: CodexThread): RuntimeThread | undefined {
-    return input.importThread({
-      codexThreadId: thread.id,
-      title: thread.name?.trim() || thread.preview?.trim() || '未命名对话',
-      cwd: thread.cwd,
-      createdAt: unixSecondsToIso(thread.createdAt),
-      updatedAt: unixSecondsToIso(thread.recencyAt ?? thread.updatedAt)
-    });
-  }
 }
 
 function mapTurnsPage(response: CodexTurnsListResponse): CodexThreadHistoryPage {
@@ -237,7 +218,7 @@ function mapTurn(turn: CodexTurn): ThreadHistoryItem[] {
 
   for (const item of turn.items) {
     if (isUserMessageItem(item)) {
-      const text = item.content
+      const rawText = item.content
         .flatMap(content => (
           isRecord(content)
           && content.type === 'text'
@@ -247,7 +228,8 @@ function mapTurn(turn: CodexTurn): ThreadHistoryItem[] {
         ))
         .join('\n')
         .trim();
-      if (text.length === 0 || isInjectedUserMessage(text)) continue;
+      const text = extractPublicConversationInput(rawText);
+      if (text === undefined) continue;
       const scheduleTrigger = parseScheduleExecutionPrompt(text);
       items.push(scheduleTrigger === undefined
         ? {
@@ -364,13 +346,6 @@ function isAgentMessageItem(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isInjectedUserMessage(text: string): boolean {
-  const trimmed = text.trimStart();
-  return trimmed.startsWith('# AGENTS.md instructions')
-    || trimmed.startsWith('<environment_context>')
-    || trimmed.startsWith('Another language model started to solve this problem');
 }
 
 const SCHEDULE_EXECUTION_PREFIX = '这是 Clawee 已经触发的一次计划任务执行。';

@@ -130,6 +130,8 @@ function createThread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
   return {
     id: 'thread-task',
     title: '每日总结',
+    projectId: null,
+    origin: 'clawee_created',
     codexThreadId: 'codex-thread-task',
     cwd: '/workspace/project',
     canonicalCwd: '/workspace/project',

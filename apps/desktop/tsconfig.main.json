@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "electron"]
+  },
+  "include": ["src/main/**/*.ts", "src/shared/**/*.ts"]
+}

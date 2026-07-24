@@ -99,12 +99,30 @@ describe('ThreadService', () => {
       '/threads/thread_1/history?limit=50&targetItemId=item%2F%E4%B8%AD%E6%96%87'
     );
   });
+
+  it('archives a task draft through the thread archive endpoint', async () => {
+    const post = vi.fn(async () => ({
+      thread: createThreadResponse({
+        id: 'thread-draft',
+        purpose: 'schedule_draft',
+        scheduleId: undefined,
+        status: 'archived'
+      })
+    }));
+    const service = createThreadService(createClient(vi.fn(), post));
+
+    await service.archiveThread('thread/draft');
+
+    expect(post).toHaveBeenCalledWith('/threads/thread%2Fdraft/archive', {});
+  });
 });
 
 function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
   return {
     id: 'thread-task',
     title: '每日总结',
+    projectId: null,
+    origin: 'clawee_created',
     codexThreadId: 'codex-thread-task',
     cwd: '/workspace/project',
     canonicalCwd: '/workspace/project',
@@ -123,10 +141,16 @@ function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadRe
   };
 }
 
-function createClient(get: (path: string) => Promise<unknown>): RuntimeClient {
+function createClient(
+  get: (path: string) => Promise<unknown>,
+  post: (path: string, body?: unknown) => Promise<unknown> = async () => ({})
+): RuntimeClient {
   return {
     get<T>(path: string): Promise<T> {
       return get(path) as Promise<T>;
+    },
+    post<T>(path: string, body?: unknown): Promise<T> {
+      return post(path, body) as Promise<T>;
     }
   } as RuntimeClient;
 }

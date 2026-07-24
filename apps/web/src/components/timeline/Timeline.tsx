@@ -1,4 +1,12 @@
-import { ArrowDown, ArrowUp, Clock3, LoaderCircle, X } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Clock3,
+  Copy,
+  LoaderCircle,
+  Pencil
+} from 'lucide-react';
 import {
   forwardRef,
   useEffect,
@@ -9,6 +17,7 @@ import {
 } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer.js';
+import { copyToClipboard } from '../markdown/clipboard.js';
 import { isWorkspaceFilePath } from '../markdown/markdown-inline.js';
 import { ApprovalPanel } from '../../features/approvals/ApprovalPanel.js';
 import type { TimelineItem } from './timeline-model.js';
@@ -37,6 +46,7 @@ type ChangeBlock = {
 };
 
 type TimelineRenderItem = { type: 'item'; item: TimelineItem } | ProcessBlock | ChangeBlock;
+const APPROVAL_BOTTOM_VISIBILITY_GAP = 96;
 
 function isProcessTimelineItem(item: TimelineItem, finalAssistantMessageIds: ReadonlySet<string>): item is ProcessTimelineItem {
   if (item.kind === 'assistant_message') {
@@ -143,13 +153,69 @@ function hasVisibleProcessContent(process: ProcessBlock): boolean {
   return countVisibleProcessItems(process) > 0;
 }
 
+function compactProcessActivity(value: string): string {
+  const compacted = value.replace(/\s+/g, ' ').trim();
+  if (compacted.length <= 72) return compacted;
+  return `${compacted.slice(0, 71)}...`;
+}
+
+function getActiveProcessActivity(process: ProcessBlock): string {
+  const toolActivityByCallId = buildToolActivityByCallId(process.items);
+
+  for (let index = process.items.length - 1; index >= 0; index -= 1) {
+    const item = process.items[index]!;
+    if (item.kind === 'reasoning_summary' || item.kind === 'assistant_message') {
+      const activity = compactProcessActivity(item.text);
+      if (activity.length > 0) return activity;
+      continue;
+    }
+    if (item.kind === 'tool_step') {
+      const title = getProcessStepTitle(item, toolActivityByCallId);
+      if (title.length === 0) continue;
+      return getPayloadType(item) === 'tool_result'
+        ? `${title}，正在继续处理`
+        : title;
+    }
+    if (item.kind === 'diagnostic') {
+      const activity = compactProcessActivity(item.message);
+      if (activity.length > 0) return activity;
+    }
+  }
+
+  return '等待 Clawee 返回过程';
+}
+
 function hasStartedRun(process: ProcessBlock): boolean {
   return process.runId !== undefined
     && process.items.some(item => item.kind === 'run_status' && item.label !== 'queued');
 }
 
 function shouldRenderProcess(process: ProcessBlock): boolean {
+  if (process.items.every(item => item.kind === 'run_status' && item.label === 'queued')) {
+    return false;
+  }
   return hasVisibleProcessContent(process) || !isProcessComplete(process) || hasStartedRun(process);
+}
+
+function getProcessDuration(process: ProcessBlock): string | undefined {
+  const timestamps = process.items.flatMap(item => {
+    if (item.timestamp === undefined) return [];
+    const value = Date.parse(item.timestamp);
+    return Number.isFinite(value) ? [value] : [];
+  });
+  if (timestamps.length < 2 || !isProcessComplete(process)) return undefined;
+  return formatDuration(Math.max(...timestamps) - Math.min(...timestamps));
+}
+
+function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}秒`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds === 0 ? `${minutes}分钟` : `${minutes}分${seconds}秒`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0 ? `${hours}小时` : `${hours}小时${remainingMinutes}分钟`;
 }
 
 function safeParseJson(content: string): unknown {
@@ -240,15 +306,84 @@ function getToolCommand(item: Extract<ProcessTimelineItem, { kind: 'tool_step' }
   return formatCommandFromInput(payload.input);
 }
 
-function buildToolNameByCallId(items: ProcessTimelineItem[]): Map<string, string> {
-  const names = new Map<string, string>();
+function getToolActivity(
+  toolName: string,
+  command?: string
+): string {
+  const normalizedName = toolName.toLocaleLowerCase().split(/[.:/]/u).at(-1) ?? toolName;
+  if (
+    normalizedName === 'exec_command'
+    || normalizedName === 'command_execution'
+    || normalizedName === 'shell'
+    || normalizedName === 'bash'
+  ) {
+    return getCommandActivity(command);
+  }
+  if (
+    normalizedName.includes('apply_patch')
+    || normalizedName.includes('edit')
+    || normalizedName.includes('write')
+  ) return '修改项目文件';
+  if (
+    normalizedName.includes('read')
+    || normalizedName.includes('open')
+    || normalizedName.includes('find')
+    || normalizedName.includes('search')
+  ) return '查看项目内容';
+  if (
+    normalizedName.includes('image')
+    || normalizedName.includes('screenshot')
+  ) return '查看图片';
+  if (
+    normalizedName.includes('browser')
+    || normalizedName.includes('chrome')
+    || normalizedName.includes('playwright')
+  ) return '操作浏览器';
+  if (
+    normalizedName.includes('web')
+    || normalizedName.includes('query')
+  ) return '查询资料';
+  if (
+    normalizedName.includes('lark')
+    || normalizedName.includes('docs')
+  ) return '处理飞书文档';
+  return '执行开发操作';
+}
+
+function getCommandActivity(command: string | undefined): string {
+  if (command === undefined) return '执行本地命令';
+  const normalized = command.trim().toLocaleLowerCase();
+  if (
+    /\b(?:vitest|jest|pytest|go test|cargo test)\b/u.test(normalized)
+    || /\b(?:pnpm|npm|yarn)\b[^\n]*\btest\b/u.test(normalized)
+  ) return '运行测试';
+  if (
+    /\b(?:electron-builder|package-release)\b/u.test(normalized)
+    || /\b(?:pnpm|npm|yarn)\b[^\n]*\bpackage\b/u.test(normalized)
+  ) return '打包应用';
+  if (
+    /\b(?:vite build|tsc|electron-builder)\b/u.test(normalized)
+    || /\b(?:pnpm|npm|yarn)\b[^\n]*\bbuild\b/u.test(normalized)
+  ) return '构建应用';
+  if (/^git\s+(?:status|diff|log|show)\b/u.test(normalized)) return '检查代码变更';
+  if (/^git\s+/u.test(normalized)) return '更新代码';
+  if (/^(?:rg|grep|sed|cat|ls|find|head|tail|wc|pwd)\b/u.test(normalized)) {
+    return '查看项目内容';
+  }
+  return '执行本地命令';
+}
+
+function buildToolActivityByCallId(items: ProcessTimelineItem[]): Map<string, string> {
+  const activities = new Map<string, string>();
   for (const item of items) {
     if (item.kind !== 'tool_step') continue;
     if (getPayloadType(item) !== 'tool_use') continue;
     const toolCallId = getToolCallId(item);
-    if (toolCallId !== undefined) names.set(toolCallId, item.name);
+    if (toolCallId !== undefined) {
+      activities.set(toolCallId, getToolActivity(item.name, getToolCommand(item)));
+    }
   }
-  return names;
+  return activities;
 }
 
 function formatTerminationReason(reason: string | undefined): string {
@@ -276,16 +411,23 @@ function formatTerminationReason(reason: string | undefined): string {
   }
 }
 
-function getProcessStepTitle(item: ProcessTimelineItem, toolNameByCallId = new Map<string, string>()): string {
+function getProcessStepTitle(
+  item: ProcessTimelineItem,
+  toolActivityByCallId = new Map<string, string>()
+): string {
   switch (item.kind) {
     case 'reasoning_summary':
     case 'assistant_message':
       return item.text;
     case 'tool_step': {
-      if (getPayloadType(item) !== 'tool_result') return `使用工具 ${item.name}`;
+      if (getPayloadType(item) !== 'tool_result') {
+        return `正在${getToolActivity(item.name, getToolCommand(item))}`;
+      }
       const toolCallId = getToolCallId(item);
-      const readableName = toolCallId !== undefined ? toolNameByCallId.get(toolCallId) : undefined;
-      return readableName !== undefined ? `工具完成 ${readableName}` : '工具完成';
+      const activity = toolCallId !== undefined
+        ? toolActivityByCallId.get(toolCallId)
+        : undefined;
+      return activity !== undefined ? `已完成：${activity}` : '操作已完成';
     }
     case 'diagnostic':
       return item.message;
@@ -301,12 +443,6 @@ function getProcessStepTitle(item: ProcessTimelineItem, toolNameByCallId = new M
       const _exhaustive: never = item;
       return _exhaustive;
   }
-}
-
-function getProcessStepCommand(item: ProcessTimelineItem): string | undefined {
-  if (item.kind !== 'tool_step') return undefined;
-  if (getPayloadType(item) !== 'tool_use') return undefined;
-  return getToolCommand(item);
 }
 
 function hasRunId(item: ProcessTimelineItem): item is ProcessTimelineItem & { runId: string } {
@@ -418,7 +554,7 @@ function buildTimelineRenderItems(items: TimelineItem[]): TimelineRenderItem[] {
 function renderMessageContent(
   item: Extract<TimelineItem, { kind: 'user_message' | 'assistant_message' }>,
   onOpenFile?: (path: string) => void,
-  onCancelQueuedRun?: (runId: string) => void
+  onEditUserMessage?: (item: Extract<TimelineItem, { kind: 'user_message' }>) => void
 ) {
   const canOpenWorkspaceFiles = item.kind === 'assistant_message' && onOpenFile !== undefined;
   return (
@@ -451,24 +587,52 @@ function renderMessageContent(
             }
           : undefined}
       />
-      {item.kind === 'user_message' && item.runStatus === 'queued' ? (
-        <div className="timeline-queue-state">
-          <span>
-            {item.submissionMode === 'interrupt_and_enqueue' ? '等待打断后执行' : '排队中'}
-            {item.queuePosition === undefined ? '' : ` · 第 ${item.queuePosition} 位`}
-          </span>
-          {item.runId !== undefined && onCancelQueuedRun !== undefined ? (
-            <button
-              type="button"
-              onClick={() => onCancelQueuedRun(item.runId!)}
-            >
-              <X aria-hidden="true" size={13} />
-              取消排队
-            </button>
-          ) : null}
-        </div>
+      {item.kind === 'user_message' ? (
+        <MessageActions item={item} onEdit={onEditUserMessage} />
       ) : null}
     </>
+  );
+}
+
+function MessageActions(props: {
+  item: Extract<TimelineItem, { kind: 'user_message' }>;
+  onEdit?: (item: Extract<TimelineItem, { kind: 'user_message' }>) => void;
+}) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  return (
+    <div className="timeline-message-actions">
+      <button
+        type="button"
+        aria-label={
+          copyState === 'copied'
+            ? '已复制消息'
+            : copyState === 'failed'
+              ? '复制消息失败'
+              : '复制消息'
+        }
+        title={copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}
+        onClick={async () => {
+          setCopyState(await copyToClipboard(props.item.text) ? 'copied' : 'failed');
+        }}
+      >
+        {copyState === 'copied' ? (
+          <Check size={14} aria-hidden="true" />
+        ) : (
+          <Copy size={14} aria-hidden="true" />
+        )}
+      </button>
+      {props.onEdit ? (
+        <button
+          type="button"
+          aria-label="编辑消息"
+          title="编辑"
+          onClick={() => props.onEdit?.(props.item)}
+        >
+          <Pencil size={14} aria-hidden="true" />
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -573,7 +737,7 @@ function renderChangeBlock(
 function renderTimelineItemContent(
   item: TimelineItem,
   onOpenFile?: (path: string) => void,
-  onCancelQueuedRun?: (runId: string) => void,
+  onEditUserMessage?: (item: Extract<TimelineItem, { kind: 'user_message' }>) => void,
   approvalState?: {
     resolving?: boolean;
     error?: string;
@@ -584,7 +748,7 @@ function renderTimelineItemContent(
   switch (item.kind) {
     case 'user_message':
     case 'assistant_message':
-      return renderMessageContent(item, onOpenFile, onCancelQueuedRun);
+      return renderMessageContent(item, onOpenFile, onEditUserMessage);
     case 'schedule_trigger':
       return renderScheduleTrigger(item);
     case 'change_card':
@@ -620,7 +784,7 @@ function renderTimelineItemContent(
   }
 }
 
-function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<string, string>) {
+function renderProcessStep(item: VisibleProcessItem, toolActivityByCallId: Map<string, string>) {
   if (item.kind === 'reasoning_summary' || item.kind === 'assistant_message') {
     return (
       <li key={item.id} className={`process-step process-step-${item.kind}`}>
@@ -631,16 +795,13 @@ function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<strin
     );
   }
 
-  const command = getProcessStepCommand(item);
-
   return (
     <li key={item.id} className={`process-step process-step-${item.kind}`}>
       <div className="process-step-row">
         {item.kind === 'diagnostic' ? <span className={`process-step-severity ${item.severity}`}>{item.severity}</span> : null}
         {item.kind === 'done' ? <span className="process-step-severity error">{item.status}</span> : null}
-        <span className="process-step-title">{getProcessStepTitle(item, toolNameByCallId)}</span>
+        <span className="process-step-title">{getProcessStepTitle(item, toolActivityByCallId)}</span>
       </div>
-      {command !== undefined ? <code className="process-step-command">{command}</code> : null}
       {item.kind === 'diagnostic' && shouldRenderDiagnosticPayload(item) ? <CodePayloadBlock content={item.content} /> : null}
       {item.kind === 'done' ? <CodePayloadBlock content={item.content} /> : null}
     </li>
@@ -649,22 +810,21 @@ function renderProcessStep(item: VisibleProcessItem, toolNameByCallId: Map<strin
 
 function ProcessBlockView(props: {
   process: ProcessBlock;
+  expanded: boolean;
   targeted?: boolean;
+  onExpandedChange(expanded: boolean): void;
   onOpenRunDetail?: (runId: string) => void;
 }) {
-  const { process, onOpenRunDetail } = props;
+  const { process, expanded, onExpandedChange, onOpenRunDetail } = props;
   const complete = isProcessComplete(process);
-  const shouldOpen = !complete || hasFailedOrCanceledDone(process);
-  const [expanded, setExpanded] = useState(shouldOpen);
-  const visibleItemCount = countVisibleProcessItems(process);
   const emptyCopy = complete ? '本次没有可展示的中间过程。' : '等待 Clawee 返回过程...';
-
-  useEffect(() => {
-    setExpanded(shouldOpen);
-  }, [shouldOpen]);
+  const activeActivity = complete ? undefined : getActiveProcessActivity(process);
+  const duration = getProcessDuration(process);
 
   const steps = expanded ? visibleProcessItems(process) : [];
-  const toolNameByCallId = expanded ? buildToolNameByCallId(process.items) : new Map<string, string>();
+  const toolActivityByCallId = expanded
+    ? buildToolActivityByCallId(process.items)
+    : new Map<string, string>();
 
   return (
     <article
@@ -677,22 +837,32 @@ function ProcessBlockView(props: {
         <summary
           onClick={event => {
             event.preventDefault();
-            setExpanded(current => !current);
+            onExpandedChange(!expanded);
           }}
         >
           <span className="process-caret" aria-hidden="true">
             &gt;
           </span>
-          <span className="process-summary-label">{complete ? '思考过程' : '正在思考'}</span>
-          {visibleItemCount > 0 ? <span className="process-summary-count">{visibleItemCount} 条记录</span> : null}
+          {!complete ? (
+            <LoaderCircle className="process-summary-spinner" aria-hidden="true" size={14} />
+          ) : null}
+          <span className="process-summary-label">
+            {complete ? duration === undefined ? '已完成' : `耗时 ${duration}` : '思考中'}
+          </span>
         </summary>
         {expanded ? (
           <div className="process-detail">
             {steps.length > 0 ? (
-              <ol className="process-steps">{steps.map(item => renderProcessStep(item, toolNameByCallId))}</ol>
+              <ol className="process-steps">{steps.map(item => renderProcessStep(item, toolActivityByCallId))}</ol>
             ) : (
               <div className="process-waiting" role="status">{emptyCopy}</div>
             )}
+            {activeActivity ? (
+              <div className="process-active-state" role="status" title={activeActivity}>
+                <LoaderCircle className="process-summary-spinner" aria-hidden="true" size={14} />
+                <span>当前动态：{activeActivity}</span>
+              </div>
+            ) : null}
             {onOpenRunDetail && canOpenRunDetail(process) ? (
               <button
                 type="button"
@@ -724,7 +894,7 @@ type TimelineProps = {
   onLoadOlder?(): Promise<void> | void;
   onOpenRunDetail?(runId: string): void;
   onOpenFile?(path: string): void;
-  onCancelQueuedRun?(runId: string): void;
+  onEditUserMessage?(item: Extract<TimelineItem, { kind: 'user_message' }>): void;
   resolvingApprovalIds?: ReadonlySet<string>;
   approvalErrors?: Readonly<Record<string, string | undefined>>;
   onApproveApproval?(id: string): void;
@@ -740,6 +910,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
   const firstItemIndexRef = useRef(100_000);
   const [atBottom, setAtBottom] = useState(true);
   const [hasNewContent, setHasNewContent] = useState(false);
+  const [processExpansionOverrides, setProcessExpansionOverrides] = useState<Record<string, boolean>>({});
 
   useImperativeHandle(ref, () => ({
     scrollBy(deltaY) {
@@ -752,9 +923,19 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
   }), []);
 
   const renderItems = useMemo(
-    () => buildTimelineRenderItems(props.items).filter(item => (
-      item.type !== 'process' || shouldRenderProcess(item)
-    )),
+    () => buildTimelineRenderItems(props.items).filter(item => {
+      if (item.type === 'process') return shouldRenderProcess(item);
+      if (
+        item.type === 'item'
+        && item.item.kind === 'approval'
+        && item.item.approval.status !== 'pending'
+      ) return false;
+      return !(
+        item.type === 'item'
+        && item.item.kind === 'user_message'
+        && item.item.runStatus === 'queued'
+      );
+    }),
     [props.items]
   );
   const targetRenderItemIndex = useMemo(
@@ -766,6 +947,22 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     )),
     [props.targetApprovalId, props.targetItemId, props.targetRunId, renderItems]
   );
+  const pendingApprovalTarget = useMemo(() => {
+    for (let index = renderItems.length - 1; index >= 0; index -= 1) {
+      const renderItem = renderItems[index];
+      if (
+        renderItem?.type === 'item'
+        && renderItem.item.kind === 'approval'
+        && renderItem.item.approval.status === 'pending'
+      ) {
+        return {
+          id: renderItem.item.approval.id,
+          index
+        };
+      }
+    }
+    return undefined;
+  }, [renderItems]);
   const itemIds = props.items.map(item => item.id);
   const previousItemIds = previousItemIdsRef.current;
   const previousRenderItemCount = previousRenderItemCountRef.current;
@@ -809,6 +1006,28 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     props.targetRunId,
     targetRenderItemIndex
   ]);
+
+  useEffect(() => {
+    if (pendingApprovalTarget === undefined) return;
+    let secondFrameId: number | undefined;
+    const firstFrameId = window.requestAnimationFrame(() => {
+      virtuosoRef.current?.scrollToIndex({
+        index: pendingApprovalTarget.index,
+        align: 'end',
+        behavior: 'auto'
+      });
+      secondFrameId = window.requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollBy({
+          top: APPROVAL_BOTTOM_VISIBILITY_GAP,
+          behavior: 'auto'
+        });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrameId);
+      if (secondFrameId !== undefined) window.cancelAnimationFrame(secondFrameId);
+    };
+  }, [pendingApprovalTarget?.id, pendingApprovalTarget?.index]);
 
   function loadOlder() {
     if (!props.hasMore || props.loadingOlder || props.onLoadOlder === undefined) return;
@@ -896,11 +1115,20 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                   props.targetApprovalId,
                   props.onOpenRunDetail,
                   props.onOpenFile,
-                  props.onCancelQueuedRun,
+                  props.onEditUserMessage,
                   props.resolvingApprovalIds,
                   props.approvalErrors,
                   props.onApproveApproval,
-                  props.onRejectApproval
+                  props.onRejectApproval,
+                  renderItem.type === 'process'
+                    ? processExpansionOverrides[renderItem.key]
+                    : undefined,
+                  (processKey, expanded) => {
+                    setProcessExpansionOverrides(current => ({
+                      ...current,
+                      [processKey]: expanded
+                    }));
+                  }
                 )}
               </div>
             )}
@@ -928,22 +1156,27 @@ function renderTimelineRenderItem(
   targetApprovalId?: string,
   onOpenRunDetail?: (runId: string) => void,
   onOpenFile?: (path: string) => void,
-  onCancelQueuedRun?: (runId: string) => void,
+  onEditUserMessage?: (item: Extract<TimelineItem, { kind: 'user_message' }>) => void,
   resolvingApprovalIds?: ReadonlySet<string>,
   approvalErrors?: Readonly<Record<string, string | undefined>>,
   onApproveApproval?: (id: string) => void,
-  onRejectApproval?: (id: string) => void
+  onRejectApproval?: (id: string) => void,
+  processExpansionOverride?: boolean,
+  onProcessExpandedChange?: (processKey: string, expanded: boolean) => void
 ) {
   if (renderItem.type === 'process') {
+    const defaultExpanded = !isProcessComplete(renderItem) || hasFailedOrCanceledDone(renderItem);
     return (
       <ProcessBlockView
         process={renderItem}
+        expanded={processExpansionOverride ?? defaultExpanded}
         targeted={renderItemMatchesTarget(
           renderItem,
           targetItemId,
           targetRunId,
           targetApprovalId
         )}
+        onExpandedChange={expanded => onProcessExpandedChange?.(renderItem.key, expanded)}
         onOpenRunDetail={onOpenRunDetail}
       />
     );
@@ -986,7 +1219,7 @@ function renderTimelineRenderItem(
         {renderTimelineItemContent(
           item,
           onOpenFile,
-          onCancelQueuedRun,
+          onEditUserMessage,
           item.kind === 'approval'
             && onApproveApproval !== undefined
             && onRejectApproval !== undefined

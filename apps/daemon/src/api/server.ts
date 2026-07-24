@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import type { CodexAvailabilityProbe } from '@clawee/protocol';
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { join } from 'node:path';
@@ -21,11 +22,10 @@ import {
   registerAgentToolRoutes,
   type AgentScheduleOperations
 } from '../agent-tools/internal-routes.js';
+import { registerAgentScheduleMcpRoute } from '../agent-tools/mcp-routes.js';
+import { createAgentScheduleRunInjector } from '../agent-tools/run-injection.js';
 import {
-  createAgentScheduleRunInjector,
-  resolveAgentScheduleStdioCommand
-} from '../agent-tools/run-injection.js';
-import {
+  createUnknownCapabilityMatrix,
   isResumeExecutionSupported,
   withRuntimeSkillCapabilities,
   type RuntimeCapabilityMatrix
@@ -35,6 +35,7 @@ import { resolveCodexHome } from '../codex/home.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createMemoryService } from '../memory/service.js';
 import { createNotificationService } from '../notifications/service.js';
+import { createProjectManager } from '../projects/manager.js';
 import { createProfileManager } from '../codex/profiles/manager.js';
 import {
   createCodexSessionProvider,
@@ -74,6 +75,7 @@ import { registerMcpRoutes } from './routes.mcp.js';
 import { registerMemoryRoutes } from './routes.memory.js';
 import { registerNotificationRoutes } from './routes.notifications.js';
 import { registerProfileRoutes } from './routes.profiles.js';
+import { registerProjectRoutes } from './routes.projects.js';
 import { registerRunRoutes } from './routes.runs.js';
 import { registerSearchRoutes } from './routes.search.js';
 import { registerScheduleRoutes } from './routes.schedules.js';
@@ -89,6 +91,7 @@ export type BuildServerInput = {
   db?: Database.Database;
   codexBin?: string;
   codexHome?: string;
+  defaultCwd?: string;
   runManager?: RunManager;
   scheduler?: SchedulerService;
   scheduleCoordinator?: ScheduleCoordinator;
@@ -106,17 +109,22 @@ export type BuildServerInput = {
   agentToolsEnabled?: boolean;
   codexThreadRotationRunThreshold?: number;
   codexSessionProvider?: CodexSessionProvider;
+  getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
+  allowedWebOrigins?: string[];
 };
 
 const ATTACHMENT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 export async function buildServer(input: BuildServerInput) {
   const server = Fastify({ logger: false });
+  const allowedWebOrigins = new Set(
+    input.allowedWebOrigins ?? ['http://127.0.0.1:9000']
+  );
   await server.register(cors, {
     origin(origin, callback) {
       if (origin === undefined) return callback(null, false);
-      if (isAllowedWebOrigin(origin)) return callback(null, true);
+      if (allowedWebOrigins.has(origin)) return callback(null, true);
       return callback(null, false);
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -127,6 +135,7 @@ export async function buildServer(input: BuildServerInput) {
   const auth = requireAuth(input.token);
   const dataDir = input.dataDir ?? '.runtime';
   const codexBin = input.codexBin ?? 'codex';
+  const defaultCwd = input.defaultCwd ?? process.cwd();
   const resolvedCodexHome =
     input.codexHome === undefined
       ? resolveCodexHome()
@@ -144,21 +153,16 @@ export async function buildServer(input: BuildServerInput) {
   const runRepository = createRunRepository(db);
   const threadRepository = createThreadRepository(db);
   const scheduleRepository = new ScheduleRepository(db);
-  const threadManager = createThreadManager({ db, dataDir });
+  const projectManager = createProjectManager({ db });
+  const threadManager = createThreadManager({ db, dataDir, projectManager });
   const codexSessionProvider = input.codexSessionProvider ?? createCodexSessionProvider({
     client: createCodexAppServerClient({
       codexBin,
       codexHome
-    }),
-    importThread(session) {
-      const existing = threadManager.getThreadByCodexThreadId(session.codexThreadId);
-      if (existing?.purpose === 'schedule_task') return existing;
-      if (runRepository.isLegacyScheduleCodexThread(session.codexThreadId)) return undefined;
-      return threadManager.importCodexThread(session);
-    }
+    })
   });
   const workspaceFileService = createWorkspaceFileService({
-    getThread: (id) => threadManager.getThread(id),
+    getThread: (id) => threadManager.getPublicThread(id),
     revealExecutor: createDefaultRevealExecutor()
   });
   const profileManager = createProfileManager({ codexHome: resolvedCodexHome });
@@ -182,9 +186,6 @@ export async function buildServer(input: BuildServerInput) {
   const memoryService = createMemoryService({ db });
   const agentCapabilityTokens =
     input.agentCapabilityTokens ?? createAgentCapabilityTokenStore();
-  const agentToolCommand = input.agentToolsEnabled === true
-    ? resolveAgentScheduleStdioCommand()
-    : undefined;
   const runManager =
     input.runManager ??
     createRunManager({
@@ -202,13 +203,11 @@ export async function buildServer(input: BuildServerInput) {
         ?? parseNonNegativeInteger(process.env.CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD),
       prepareThreadRotationContext: context =>
         memoryService.prepareThreadRotationContext(context),
-      agentToolInjector: agentToolCommand === undefined
+      agentToolInjector: input.agentToolsEnabled !== true
         ? undefined
         : createAgentScheduleRunInjector({
             capabilities: agentCapabilityTokens,
-            getBaseUrl: () => resolveListeningOrigin(server.server.address()),
-            command: agentToolCommand.command,
-            args: agentToolCommand.args
+            getBaseUrl: () => resolveListeningOrigin(server.server.address())
           }),
       recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items),
       onRunTerminal(runId) {
@@ -222,7 +221,7 @@ export async function buildServer(input: BuildServerInput) {
     repository: scheduleRepository,
     threadManager,
     runManager,
-    defaultCwd: process.cwd(),
+    defaultCwd,
     profileValidator: profileManager,
     onSchedulesChanged: () => scheduler?.refreshTimer()
   });
@@ -316,7 +315,8 @@ export async function buildServer(input: BuildServerInput) {
   await registerCodexRoutes(server, {
     codexBin,
     codexHome: resolvedCodexHome,
-    capabilities
+    capabilities,
+    getAvailabilityProbe: input.getCodexAvailabilityProbe
   });
   await registerProfileRoutes(server, {
     codexHome: resolvedCodexHome,
@@ -328,6 +328,7 @@ export async function buildServer(input: BuildServerInput) {
       };
     }
   });
+  await registerProjectRoutes(server, projectManager, runManager);
   await registerSkillRoutes(server, { skillManager });
   await registerSkillMarketRoutes(server, { skillMarketManager });
   await registerMcpRoutes(server, { mcpManager });
@@ -344,6 +345,12 @@ export async function buildServer(input: BuildServerInput) {
     capabilities: agentCapabilityTokens,
     schedules: agentScheduleOperations
   });
+  if (input.agentToolsEnabled === true) {
+    await registerAgentScheduleMcpRoute(server, {
+      capabilities: agentCapabilityTokens,
+      getBaseUrl: () => resolveListeningOrigin(server.server.address())
+    });
+  }
   await registerCleanupRoutes(server, cleanupService);
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes
@@ -374,17 +381,18 @@ export async function buildServer(input: BuildServerInput) {
       buildCodexStatusResponse({
         codexBin,
         codexHome: resolvedCodexHome,
-        capabilities
+        capabilities,
+        availabilityProbe: input.getCodexAvailabilityProbe?.()
       })
   });
   await registerWorkspaceFileRoutes(server, workspaceFileService);
-  await registerSearchRoutes(server, codexSessionProvider);
+  await registerSearchRoutes(server, {
+    provider: codexSessionProvider,
+    threadManager
+  });
   await registerThreadRoutes(server, threadManager, runManager, {
     profileValidator: profileManager,
     attachmentService,
-    async listRecentCodexThreads({ limit }) {
-      return (await codexSessionProvider.listRecent({ limit })).threads;
-    },
     readThreadHistory(codexThreadId, options) {
       return codexSessionProvider.listTurns({
         codexThreadId,
@@ -419,61 +427,6 @@ async function readAllCodexHistory(
     if (cursor !== undefined) seenCursors.add(cursor);
   } while (cursor !== undefined);
   return items;
-}
-
-function createUnknownCapabilityMatrix(): RuntimeCapabilityMatrix {
-  return {
-    codexVersion: 'unknown',
-    checkedAt: new Date().toISOString(),
-    execJson: false,
-    execStdinPrompt: false,
-    execProfile: false,
-    execCwd: false,
-    execSandbox: false,
-    execSkipGitRepoCheck: false,
-    resumeJson: false,
-    resumeByThreadId: false,
-    resumeLast: false,
-    resumeModelOverride: false,
-    resumeConfigOverride: false,
-    resumeCwdOverride: false,
-    resumeProfileOverride: false,
-    resumeSandboxOverride: false,
-    execImages: false,
-    resumeImages: false,
-    resumeContextContinuityVerified: false,
-    mcpList: false,
-    mcpGet: false,
-    mcpAdd: false,
-    mcpRemove: false,
-    mcpLogin: false,
-    mcpLogout: false,
-    mcpAddEnv: false,
-    mcpAddUrl: false,
-    mcpAddBearerTokenEnvVar: false,
-    mcpAddOAuth: false,
-    mcpRuntimeDiscoveryVerified: false,
-    mcpRuntimeBehaviorVerified: false,
-    skillsScan: false,
-    skillsInstall: false,
-    skillsDelete: false,
-    skillsGlobalWrite: false,
-    skillsRuntimeDiscoveryVerified: false,
-    skillsRuntimeBehaviorVerified: false,
-    warnings: ['Codex runtime help has not been collected yet.']
-  };
-}
-
-function isAllowedWebOrigin(origin: string): boolean {
-  try {
-    const url = new URL(origin);
-    if (url.protocol !== 'http:') return false;
-    if (url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') return false;
-    const port = Number(url.port);
-    return Number.isInteger(port) && port >= 1024 && port <= 65535;
-  } catch {
-    return false;
-  }
 }
 
 function formatError(error: unknown): string {

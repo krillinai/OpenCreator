@@ -33,7 +33,7 @@ import {
   normalizeCodexEvent
 } from '../events/normalizer.js';
 import { parseJsonLine } from '../events/parser.js';
-import { redactText } from '../security/redaction.js';
+import { redactText, redactValue } from '../security/redaction.js';
 import {
   createRunRepository,
   type ResolvedResumeMode,
@@ -55,6 +55,11 @@ import type {
 
 export type ThreadAccess = {
   getThread(id: string): RuntimeThread | undefined;
+  assertRunnableThread?(id: string): RuntimeThread;
+  repairCodexThreadBindings?(): {
+    repairedThreadIds: string[];
+    unresolvedThreadIds: string[];
+  };
   setCodexThreadId(threadId: string, codexThreadId: string): void;
   touchThread(threadId: string): void;
 };
@@ -121,6 +126,7 @@ export type RunManager = {
   cancelRun(id: string): boolean;
   getRun(id: string): RuntimeRun | undefined;
   hasActiveRunForThread(threadId: string): boolean;
+  hasActiveRunForProject(projectId: string): boolean;
   listRuns(limit?: number): RuntimeRun[];
   listRunsByThread(threadId: string, limit?: number): RuntimeRun[];
   getLastEventSeq(runId: string): number;
@@ -175,6 +181,17 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       AND codex_thread_id = @codexThreadId
       AND public_status IN ('succeeded', 'failed', 'canceled')
   `);
+  const findActiveRunByProject = options.db.prepare<{ projectId: string }>(`
+    SELECT 1
+    FROM runs
+    INNER JOIN threads ON threads.id = runs.thread_id
+    WHERE threads.project_id = @projectId
+      AND (
+        runs.public_status IN ('queued', 'running')
+        OR runs.internal_status IN ('queued', 'running', 'canceling')
+      )
+    LIMIT 1
+  `);
   const activeRuns = new Map<string, ActiveRun>();
   const runCompletions = new Map<string, Promise<CreatedRun>>();
   const queuedCompletionResolvers = new Map<string, (run: CreatedRun) => void>();
@@ -224,6 +241,14 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     });
   };
 
+  const bindingRepair = options.threadAccess?.repairCodexThreadBindings?.();
+  if ((bindingRepair?.unresolvedThreadIds.length ?? 0) > 0) {
+    console.warn(
+      `Codex thread binding repair skipped ambiguous threads: ${
+        bindingRepair!.unresolvedThreadIds.join(', ')
+      }`
+    );
+  }
   recoverOrphanedRuns();
 
   const manager: RunManager = {
@@ -372,6 +397,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           || run.internal_status === 'running'
           || run.internal_status === 'canceling'
         );
+    },
+
+    hasActiveRunForProject(projectId: string): boolean {
+      return findActiveRunByProject.get({ projectId }) !== undefined;
     },
 
     listRuns(limit?: number): RuntimeRun[] {
@@ -803,6 +832,28 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           };
     }
 
+    async function bindStartedCodexThread(parsedCodexThreadId: string): Promise<void> {
+      runs.setRunCodexThreadId(id, parsedCodexThreadId);
+      if (runInput.threadId === undefined) return;
+      try {
+        options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
+      } catch (error) {
+        if (!isThreadCodexIdConflict(error)) throw error;
+        await safePublish(publishDiagnostic(
+          id,
+          ++seq,
+          'THREAD_CODEX_ID_CONFLICT',
+          'Codex thread id is already bound to another thread',
+          publish,
+          {
+            threadId: runInput.threadId,
+            codexThreadId: parsedCodexThreadId
+          }
+        ));
+        throw error;
+      }
+    }
+
     if (options.runtimeTransport === 'app-server') {
       let appServerThreadEstablished = false;
       let appServerTurnStarted = false;
@@ -828,10 +879,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             appServerThreadEstablished = true;
             sawCodexThreadId = true;
             resolvedCodexThreadId = parsedCodexThreadId;
-            runs.setRunCodexThreadId(id, parsedCodexThreadId);
-            if (runInput.threadId) {
-              options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
-            }
+            await bindStartedCodexThread(parsedCodexThreadId);
             await publishStatus(id, ++seq, 'initializing', publish, {
               threadId: runInput.threadId,
               codexThreadId: parsedCodexThreadId
@@ -839,7 +887,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             await announceRotation(parsedCodexThreadId);
           },
           async onNotification(notification) {
-            const redactedLine = redactText(JSON.stringify(notification));
+            const redactedNotification = redactValue(notification);
+            const redactedLine = JSON.stringify(redactedNotification);
             stdoutLines.push(redactedLine);
             await appendRunLog(id, 'raw.redacted.ndjson', `${redactedLine}\n`);
             if (notification.method === 'turn/started') appServerTurnStarted = true;
@@ -852,7 +901,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             await publish(normalizeAppServerEvent({
               runId: id,
               seq: ++seq,
-              raw: JSON.parse(redactedLine)
+              raw: redactedNotification
             }));
           },
           async onApprovalRequest(request) {
@@ -965,6 +1014,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
       async function handleAppServerError(error: unknown): Promise<CreatedRun> {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        const bindingConflict = isThreadCodexIdConflict(error);
         if (
           resolvedResumeMode === 'resume_thread'
           && rotation === undefined
@@ -979,9 +1029,11 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         const terminationReason = appServerErrorToTerminationReason(errorMessage);
         const publicStatus: 'failed' | 'canceled' =
           terminationReason === 'user_canceled' ? 'canceled' : 'failed';
-        const errorCode = rotation === undefined
-          ? errorCodeForTermination(terminationReason)
-          : 'THREAD_CODEX_ROTATION_FAILED';
+        const errorCode = bindingConflict
+          ? 'THREAD_CODEX_ID_CONFLICT'
+          : rotation === undefined
+            ? errorCodeForTermination(terminationReason)
+            : 'THREAD_CODEX_ROTATION_FAILED';
         options.approvalManager?.cancelRun(id, 'run_failed');
         await safePublish(publishError(id, ++seq, errorCode, errorMessage, publish));
         await finalizeRun({
@@ -1048,10 +1100,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         const parsedCodexThreadId = parsed.value.thread_id;
         sawCodexThreadId = true;
         resolvedCodexThreadId = parsedCodexThreadId;
-        runs.setRunCodexThreadId(id, parsedCodexThreadId);
-        if (runInput.threadId) {
-          options.threadAccess?.setCodexThreadId(runInput.threadId, parsedCodexThreadId);
-        }
+        await bindStartedCodexThread(parsedCodexThreadId);
         await publishStatus(id, seq, 'initializing', publish, {
           threadId: runInput.threadId,
           codexThreadId: parsedCodexThreadId
@@ -1217,6 +1266,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
     async function handleExecError(error: unknown): Promise<CreatedRun> {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      const bindingConflict = isThreadCodexIdConflict(error);
       const shutdownTimeoutAfterCompletedTurn = isShutdownTimeoutAfterCompletedTurn({
         error,
         sawTurnCompleted,
@@ -1274,12 +1324,16 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         terminationReason === 'user_canceled' ? 'canceled' : 'failed';
       const errorCode = missingCodexThreadId
         ? 'CODEX_THREAD_ID_MISSING'
-        : rotation === undefined
-          ? errorCodeForTermination(terminationReason)
-          : 'THREAD_CODEX_ROTATION_FAILED';
+        : bindingConflict
+          ? 'THREAD_CODEX_ID_CONFLICT'
+          : rotation === undefined
+            ? errorCodeForTermination(terminationReason)
+            : 'THREAD_CODEX_ROTATION_FAILED';
       const finalErrorMessage = missingCodexThreadId
         ? CODEX_THREAD_ID_MISSING_MESSAGE
-        : errorMessage;
+        : bindingConflict
+          ? 'Codex thread id is already bound to another thread'
+          : errorMessage;
       const diagnostics = {
         ...buildThreadRunDiagnosticsMetadata({
           runInput,
@@ -1465,7 +1519,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         };
 
     if (normalizedInput.threadId !== undefined && options.threadAccess !== undefined) {
-      const thread = options.threadAccess.getThread(normalizedInput.threadId);
+      const thread = options.threadAccess.assertRunnableThread?.(normalizedInput.threadId)
+        ?? options.threadAccess.getThread(normalizedInput.threadId);
       if (thread === undefined) throw new Error(`Thread not found: ${normalizedInput.threadId}`);
       if (thread.status === 'archived') throw new Error(`Thread is archived: ${normalizedInput.threadId}`);
       return {
@@ -1768,12 +1823,8 @@ function inferBuiltInMcpToolName(
 function redactApprovalDetails(
   details: Record<string, unknown>
 ): Record<string, unknown> {
-  try {
-    const redacted = JSON.parse(redactText(JSON.stringify(details)));
-    return isRecord(redacted) ? redacted : {};
-  } catch {
-    return {};
-  }
+  const redacted = redactValue(details);
+  return isRecord(redacted) ? redacted : {};
 }
 
 function publishApproval(
@@ -2066,6 +2117,22 @@ function isThreadStarted(value: unknown): value is { type: 'thread.started'; thr
     && (value as { type?: unknown }).type === 'thread.started'
     && typeof (value as { thread_id?: unknown }).thread_id === 'string'
     && (value as { thread_id: string }).thread_id.trim().length > 0;
+}
+
+function isThreadCodexIdConflict(error: unknown): boolean {
+  let current = error;
+  const seen = new Set<unknown>();
+  while (typeof current === 'object' && current !== null && !seen.has(current)) {
+    seen.add(current);
+    if (
+      'code' in current
+      && current.code === 'THREAD_CODEX_ID_CONFLICT'
+    ) {
+      return true;
+    }
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return false;
 }
 
 function resolveResumeMode(

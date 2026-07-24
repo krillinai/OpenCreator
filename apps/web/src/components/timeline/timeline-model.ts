@@ -29,21 +29,22 @@ export type TimelineItem =
       source: 'runtime';
     }
   | { kind: 'approval'; id: string; runId: string; approval: RuntimeApproval; source: 'runtime' }
-  | { kind: 'reasoning_summary'; id: string; runId?: string; text: string; content?: string; source: 'runtime' }
-  | { kind: 'assistant_message'; id: string; runId?: string; text: string; content?: string; source: 'runtime' | 'mock' }
-  | { kind: 'tool_step'; id: string; runId?: string; name: string; content: string; source: 'runtime' }
+  | { kind: 'reasoning_summary'; id: string; runId?: string; timestamp?: string; text: string; content?: string; source: 'runtime' }
+  | { kind: 'assistant_message'; id: string; runId?: string; timestamp?: string; text: string; content?: string; source: 'runtime' | 'mock' }
+  | { kind: 'tool_step'; id: string; runId?: string; timestamp?: string; name: string; content: string; source: 'runtime' }
   | { kind: 'change_card'; id: string; runId?: string; title: string; path: string; delta: string; source: 'runtime' | 'mock' }
   | {
       kind: 'diagnostic';
       id: string;
       runId?: string;
+      timestamp?: string;
       severity: 'info' | 'warning' | 'error';
       message: string;
       content: string;
       source: 'runtime';
     }
-  | { kind: 'run_status'; id: string; runId?: string; label: string; content?: string; source: 'runtime' }
-  | { kind: 'done'; id: string; runId?: string; status: string; terminationReason?: string; content: string; source: 'runtime' };
+  | { kind: 'run_status'; id: string; runId?: string; timestamp?: string; label: string; content?: string; source: 'runtime' }
+  | { kind: 'done'; id: string; runId?: string; timestamp?: string; status: string; terminationReason?: string; content: string; source: 'runtime' };
 
 function safeStringify(value: unknown): string {
   const seen = new WeakSet<object>();
@@ -116,6 +117,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'assistant_message',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         text: event.payload.text,
         content: safeStringify(event.payload),
         source: 'runtime'
@@ -125,6 +127,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'reasoning_summary',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         text: event.payload.text,
         content: safeStringify(event.payload),
         source: 'runtime'
@@ -134,6 +137,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'tool_step',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         name: event.payload.name,
         content: safeStringify(event.payload),
         source: 'runtime'
@@ -143,6 +147,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'tool_step',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         name: event.payload.toolCallId,
         content: safeStringify(event.payload),
         source: 'runtime'
@@ -164,6 +169,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'diagnostic',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         severity: event.payload.severity,
         message: event.payload.message,
         content: safeStringify(event.payload),
@@ -182,6 +188,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'diagnostic',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         severity: 'error',
         message: event.payload.message,
         content: safeStringify(event.payload),
@@ -192,6 +199,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'done',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         status: event.payload.status,
         terminationReason: event.payload.terminationReason,
         content: safeStringify(event.payload),
@@ -202,6 +210,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'run_status',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         label: event.payload.label,
         content: safeStringify(event.payload),
         source: 'runtime'
@@ -211,6 +220,7 @@ export function eventToTimelineItem(event: AgentEventEnvelope): TimelineItem | n
         kind: 'run_status',
         id: event.id,
         runId: event.runId,
+        timestamp: event.ts,
         label: event.type,
         content: safeStringify(event.payload),
         source: 'runtime'

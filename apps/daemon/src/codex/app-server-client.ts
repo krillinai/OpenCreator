@@ -1,7 +1,11 @@
 import {
-  spawn,
   type ChildProcessWithoutNullStreams
 } from 'node:child_process';
+import {
+  spawnCodexProcess,
+  terminateCodexProcess
+} from './process.js';
+import { BoundedFrameBuffer } from './bounded-buffer.js';
 
 export type CodexAppServerRequestClient = {
   request<Result>(method: string, params: unknown): Promise<Result>;
@@ -27,7 +31,7 @@ type AppServerProcessState = {
   pending: Map<string, PendingRequest>;
   initialize: Promise<void>;
   nextRequestId: number;
-  stdoutBuffer: string;
+  stdoutFrames: BoundedFrameBuffer;
   settled: boolean;
 };
 
@@ -58,9 +62,9 @@ export function createCodexAppServerClient(
       const closed = new Promise<void>(resolve => {
         state.child.once('close', () => resolve());
       });
-      state.child.kill('SIGTERM');
+      terminateCodexProcess(state.child, 'SIGTERM');
       const forceKill = setTimeout(() => {
-        if (!state.settled) state.child.kill('SIGKILL');
+        if (!state.settled) terminateCodexProcess(state.child, 'SIGKILL');
       }, CLOSE_GRACE_MS);
       forceKill.unref();
       await closed;
@@ -71,7 +75,7 @@ export function createCodexAppServerClient(
   function ensureProcess(): AppServerProcessState {
     if (processState !== undefined && !processState.settled) return processState;
 
-    const child = spawn(input.codexBin, ['app-server', '--stdio'], {
+    const child = spawnCodexProcess(input.codexBin, ['app-server', '--stdio'], {
       cwd: input.cwd ?? process.cwd(),
       env: {
         ...process.env,
@@ -85,17 +89,14 @@ export function createCodexAppServerClient(
       pending: new Map<string, PendingRequest>(),
       initialize: Promise.resolve(),
       nextRequestId: 0,
-      stdoutBuffer: '',
+      stdoutFrames: new BoundedFrameBuffer(1024 * 1024),
       settled: false
     } satisfies AppServerProcessState;
     processState = state;
 
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
-      state.stdoutBuffer += chunk;
-      const lines = state.stdoutBuffer.split(/\r?\n/);
-      state.stdoutBuffer = lines.pop() ?? '';
-      for (const line of lines) {
+      for (const line of state.stdoutFrames.push(chunk)) {
         if (line.trim().length === 0) continue;
         let message: unknown;
         try {
@@ -216,10 +217,10 @@ export function createCodexAppServerClient(
     }
     state.pending.clear();
     if (kill && !state.child.killed) {
-      state.child.kill('SIGTERM');
+      terminateCodexProcess(state.child, 'SIGTERM');
       const forceKill = setTimeout(() => {
         if (state.child.exitCode === null && state.child.signalCode === null) {
-          state.child.kill('SIGKILL');
+          terminateCodexProcess(state.child, 'SIGKILL');
         }
       }, CLOSE_GRACE_MS);
       forceKill.unref();

@@ -3,6 +3,8 @@ import type {
   ScheduleDetailResponse,
   ScheduleResponse
 } from '@clawee/protocol';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { FastifyInstance } from 'fastify';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
@@ -21,6 +23,7 @@ import {
   type AgentScheduleOperations
 } from '../../src/agent-tools/internal-routes.js';
 import { buildServer } from '../../src/api/server.js';
+import { createProjectManager } from '../../src/projects/manager.js';
 import { createRunManager } from '../../src/runs/manager.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createThreadManager } from '../../src/threads/manager.js';
@@ -132,11 +135,9 @@ describe('agent tool internal api', () => {
 
   it('creates a dedicated inherited task thread from a conversation', async () => {
     const fixture = await createRealServerFixture();
-    const conversation = fixture.threadManager.createThread({
-      purpose: 'conversation',
+    const conversation = fixture.threadManager.createConversationThread({
+      projectId: fixture.projectId,
       title: '普通会话',
-      cwd: tempDir,
-      workspaceMode: 'external',
       profile: 'default',
       model: 'gpt-5',
       reasoning: 'medium',
@@ -177,10 +178,8 @@ describe('agent tool internal api', () => {
 
   it('resolves current task bindings and returns same-project candidates without guessing', async () => {
     const fixture = await createRealServerFixture();
-    const conversation = fixture.threadManager.createThread({
-      purpose: 'conversation',
-      cwd: tempDir,
-      workspaceMode: 'external',
+    const conversation = fixture.threadManager.createConversationThread({
+      projectId: fixture.projectId,
       profile: 'default',
       sandbox: 'workspace-write'
     });
@@ -233,12 +232,13 @@ describe('agent tool internal api', () => {
     );
     expect(crossProject.statusCode).toBe(403);
 
-    const otherConversation = fixture.threadManager.createThread({
-      purpose: 'conversation',
+    const otherProjectRecord = fixture.projectManager.createProject({
       cwd: otherProject,
-      workspaceMode: 'external',
       profile: 'default',
       sandbox: 'workspace-write'
+    });
+    const otherConversation = fixture.threadManager.createConversationThread({
+      projectId: otherProjectRecord.id
     });
     const singleCandidateToken = fixture.tokens.issue({
       runId: 'run-single-candidate',
@@ -341,6 +341,14 @@ describe('agent tool internal api', () => {
         expiresAt: '2026-07-14T00:05:00.000Z'
       })),
       authorize: vi.fn(() => ({
+        runId: 'run-automatic',
+        threadId: 'thread-1',
+        createdBy: 'schedule' as const,
+        scopes: ['schedule:update' as const],
+        issuedAt: '2026-07-14T00:00:00.000Z',
+        expiresAt: '2026-07-14T00:05:00.000Z'
+      })),
+      inspect: vi.fn(() => ({
         runId: 'run-automatic',
         threadId: 'thread-1',
         createdBy: 'schedule' as const,
@@ -452,12 +460,19 @@ describe('agent tool internal api', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-agent-capability-run-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const tokens = createAgentCapabilityTokenStore();
-    const threadManager = createThreadManager({ db, dataDir: tempDir });
-    const thread = threadManager.createThread({
+    const projectManager = createProjectManager({ db, homeDir: tempDir });
+    const project = projectManager.createProject({
       cwd: tempDir,
-      workspaceMode: 'external',
       profile: 'default',
       sandbox: 'read-only'
+    });
+    const threadManager = createThreadManager({
+      db,
+      dataDir: tempDir,
+      projectManager
+    });
+    const thread = threadManager.createConversationThread({
+      projectId: project.id
     });
     const fakeCodex = createFakeCodex(tempDir, {
       stdoutLines: [
@@ -506,12 +521,19 @@ describe('agent tool internal api', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-agent-capability-cancel-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const tokens = createAgentCapabilityTokenStore();
-    const threadManager = createThreadManager({ db, dataDir: tempDir });
-    const thread = threadManager.createThread({
+    const projectManager = createProjectManager({ db, homeDir: tempDir });
+    const project = projectManager.createProject({
       cwd: tempDir,
-      workspaceMode: 'external',
       profile: 'default',
       sandbox: 'read-only'
+    });
+    const threadManager = createThreadManager({
+      db,
+      dataDir: tempDir,
+      projectManager
+    });
+    const thread = threadManager.createConversationThread({
+      projectId: project.id
     });
     const fakeCodex = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'thread.started', thread_id: 'codex-thread-cancel' }],
@@ -595,17 +617,26 @@ describe('agent tool internal api', () => {
     });
     await server.listen({ host: '127.0.0.1', port: 0 });
     const address = server.server.address() as AddressInfo;
-    const threadResponse = await server.inject({
+    const projectResponse = await server.inject({
       method: 'POST',
-      url: '/threads',
+      url: '/projects',
       headers: { authorization: 'Bearer public-secret' },
       payload: {
-        workspaceMode: 'external',
         cwd: tempDir,
         profile: 'default',
         sandbox: 'read-only'
       }
     });
+    expect(projectResponse.statusCode).toBe(201);
+    const threadResponse = await server.inject({
+      method: 'POST',
+      url: '/threads',
+      headers: { authorization: 'Bearer public-secret' },
+      payload: {
+        projectId: projectResponse.json().project.id
+      }
+    });
+    expect(threadResponse.statusCode).toBe(201);
     const threadId = threadResponse.json().thread.id as string;
     const runResponse = await server.inject({
       method: 'POST',
@@ -628,15 +659,82 @@ describe('agent tool internal api', () => {
     }, { timeout: RUN_STATUS_TIMEOUT_MS }).toBe('succeeded');
 
     expect(fakeCodex.readAgentToolEnv()).toMatchObject({
-      CLAWEE_AGENT_TOOL_URL: `http://127.0.0.1:${address.port}`,
-      CLAWEE_AGENT_CAPABILITY_TOKEN: expect.stringMatching(/^clwcap_/)
+      CLAWEE_AGENT_CAPABILITY_TOKEN: expect.stringMatching(/^clwcap_/),
+      NO_PROXY: expect.stringContaining('127.0.0.1'),
+      no_proxy: expect.stringContaining('127.0.0.1')
     });
     expect(fakeCodex.readArgv()).toEqual(expect.arrayContaining([
       '-c',
-      expect.stringContaining('mcp_servers.clawee_schedule.command='),
+      `mcp_servers.clawee_schedule.url="http://127.0.0.1:${address.port}/internal/agent-tools/mcp"`,
       '-c',
-      expect.stringContaining('mcp_servers.clawee_schedule.env_vars=')
+      'mcp_servers.clawee_schedule.bearer_token_env_var="CLAWEE_AGENT_CAPABILITY_TOKEN"'
     ]));
+  });
+
+  it('serves authenticated schedule tools over streamable HTTP', async () => {
+    const fixture = await createServerFixture();
+    const address = await server!.listen({ host: '127.0.0.1', port: 0 });
+    const token = fixture.tokens.issue({
+      runId: 'run-mcp-http',
+      threadId: 'thread-1',
+      createdBy: 'api',
+      scopes: ['schedule:get']
+    }).token;
+    const endpoint = new URL('/internal/agent-tools/mcp', address);
+
+    const unauthorized = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'unauthorized-test', version: '1.0.0' }
+        }
+      })
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const client = new Client({
+      name: 'clawee-http-test',
+      version: '1.0.0'
+    });
+    const transport = new StreamableHTTPClientTransport(endpoint, {
+      requestInit: {
+        headers: { authorization: `Bearer ${token}` }
+      }
+    });
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      expect(listed.tools.map(tool => tool.name)).toContain('clawee_schedule_get');
+
+      const result = await client.callTool({
+        name: 'clawee_schedule_get',
+        arguments: { scheduleId: 'schedule-1' }
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        scheduleId: 'schedule-1',
+        threadId: 'thread-1',
+        name: '每日总结'
+      });
+      expect(fixture.operations.getSchedule).toHaveBeenCalledWith(
+        'schedule-1',
+        expect.objectContaining({
+          runId: 'run-mcp-http',
+          threadId: 'thread-1'
+        })
+      );
+    } finally {
+      await client.close();
+    }
   });
 });
 
@@ -652,7 +750,8 @@ async function createServerFixture(): Promise<{
     dataDir: tempDir,
     codexHome: join(tempDir, 'codex-home'),
     agentCapabilityTokens: tokens,
-    agentScheduleOperations: operations
+    agentScheduleOperations: operations,
+    agentToolsEnabled: true
   });
   return { tokens, operations };
 }
@@ -694,11 +793,23 @@ function createOperations() {
 async function createRealServerFixture(): Promise<{
   tokens: AgentCapabilityTokenStore;
   threadManager: ReturnType<typeof createThreadManager>;
+  projectManager: ReturnType<typeof createProjectManager>;
+  projectId: string;
 }> {
   tempDir = mkdtempSync(join(tmpdir(), 'clawee-agent-tool-real-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const tokens = createAgentCapabilityTokenStore();
-  const threadManager = createThreadManager({ db, dataDir: tempDir });
+  const projectManager = createProjectManager({ db, homeDir: tempDir });
+  const project = projectManager.createProject({
+    cwd: tempDir,
+    profile: 'default',
+    sandbox: 'workspace-write'
+  });
+  const threadManager = createThreadManager({
+    db,
+    dataDir: tempDir,
+    projectManager
+  });
   server = await buildServer({
     token: 'public-secret',
     dataDir: tempDir,
@@ -707,7 +818,12 @@ async function createRealServerFixture(): Promise<{
     agentCapabilityTokens: tokens,
     schedulerAutostart: false
   });
-  return { tokens, threadManager };
+  return {
+    tokens,
+    threadManager,
+    projectManager,
+    projectId: project.id
+  };
 }
 
 async function createPublicSchedule(name: string, cwd: string): Promise<ScheduleResponse> {
@@ -793,6 +909,8 @@ function runtimeThread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
     id: 'thread-1',
     scheduleId: 'schedule-1',
     title: '每日总结',
+    projectId: null,
+    origin: 'clawee_created',
     codexThreadId: null,
     cwd: '/workspace/current',
     canonicalCwd: '/workspace/current',

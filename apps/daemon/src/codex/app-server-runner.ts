@@ -1,9 +1,20 @@
 import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
-import { spawn } from 'node:child_process';
 import {
   buildCodexMcpConfigArgs,
   type CodexMcpServerConfig
 } from './argv.js';
+import {
+  spawnCodexProcess,
+  terminateCodexProcess
+} from './process.js';
+import {
+  BoundedFrameBuffer,
+  BoundedTextBuffer,
+  type BufferTruncation
+} from './bounded-buffer.js';
+
+const MAX_APP_SERVER_FRAME_BYTES = 1024 * 1024;
+const MAX_APP_SERVER_STDERR_BYTES = 1024 * 1024;
 
 export type AppServerApprovalDecision =
   | 'approved'
@@ -52,6 +63,10 @@ export type CodexAppServerResult = {
   turnStatus: 'completed' | 'interrupted' | 'failed';
   stderr: string;
   terminationReason: 'completed' | 'canceled';
+  outputTruncation: {
+    stderr: BufferTruncation;
+    frames: BufferTruncation;
+  };
 };
 
 export type CodexAppServerProcess = {
@@ -71,15 +86,15 @@ export function startCodexAppServer(
   const approvalPolicy = input.sandbox === 'danger-full-access'
     ? 'never'
     : 'on-request';
-  const child = spawn(input.codexBin, args, {
+  const child = spawnCodexProcess(input.codexBin, args, {
     cwd: input.cwd,
     env: { ...process.env, ...input.env, CODEX_HOME: input.codexHome },
     stdio: ['pipe', 'pipe', 'pipe']
   });
   const pending = new Map<string | number, PendingRequest>();
   let requestSequence = 0;
-  let stdoutBuffer = '';
-  let stderr = '';
+  const stdoutFrames = new BoundedFrameBuffer(MAX_APP_SERVER_FRAME_BYTES);
+  const stderr = new BoundedTextBuffer(MAX_APP_SERVER_STDERR_BYTES);
   let threadId: string | undefined;
   let turnId: string | undefined;
   let cancelRequested = false;
@@ -111,11 +126,11 @@ export function startCodexAppServer(
   }
 
   function kill(signal: NodeJS.Signals = 'SIGTERM'): void {
-    if (child.killed) return;
-    child.kill(signal);
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    terminateCodexProcess(child, signal);
     if (forceKillTimeout === undefined) {
       forceKillTimeout = setTimeout(() => {
-        if (!settled) child.kill('SIGKILL');
+        if (!settled) terminateCodexProcess(child, 'SIGKILL');
       }, input.forceKillGraceMs ?? 2_000);
     }
   }
@@ -234,8 +249,12 @@ export function startCodexAppServer(
       threadId,
       turnId,
       turnStatus: status,
-      stderr,
-      terminationReason: cancelRequested || status === 'interrupted' ? 'canceled' : 'completed'
+      stderr: stderr.text(),
+      terminationReason: cancelRequested || status === 'interrupted' ? 'canceled' : 'completed',
+      outputTruncation: {
+        stderr: stderr.truncation(),
+        frames: stdoutFrames.truncation()
+      }
     };
     kill();
   }
@@ -246,10 +265,7 @@ export function startCodexAppServer(
     child.stdout.pause();
     stdoutWork = stdoutWork
       .then(async () => {
-        stdoutBuffer += chunk;
-        const lines = stdoutBuffer.split(/\r?\n/);
-        stdoutBuffer = lines.pop() ?? '';
-        for (const line of lines) {
+        for (const line of stdoutFrames.push(chunk)) {
           if (line.trim().length === 0) continue;
           let message: unknown;
           try {
@@ -272,7 +288,7 @@ export function startCodexAppServer(
     child.stderr.pause();
     stderrWork = stderrWork
       .then(async () => {
-        stderr += chunk;
+        stderr.append(chunk);
         await input.onStderrChunk?.(chunk);
       })
       .catch(error => fail(error instanceof Error ? error : new Error(String(error))))
@@ -283,6 +299,18 @@ export function startCodexAppServer(
 
   child.on('error', error => fail(error));
   child.on('close', () => {
+    const finalFrame = stdoutFrames.flush();
+    if (finalFrame !== undefined) {
+      stdoutWork = stdoutWork.then(async () => {
+        let message: unknown;
+        try {
+          message = JSON.parse(finalFrame);
+        } catch {
+          throw new Error('Codex app-server emitted invalid JSON');
+        }
+        await handleMessage(message);
+      });
+    }
     void Promise.allSettled([stdoutWork, stderrWork]).then(() => {
       if (settled) return;
       settled = true;

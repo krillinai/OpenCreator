@@ -608,12 +608,10 @@
 }
 
 .schedule-select-control {
+  position: relative;
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  display: block;
   justify-self: stretch;
-  gap: 6px;
   color: var(--muted);
 }
 
@@ -633,6 +631,16 @@
 
 .schedule-select-control select {
   appearance: none;
+  padding-right: 24px;
+  cursor: pointer;
+}
+
+.schedule-select-control svg {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .schedule-setting-input::placeholder {

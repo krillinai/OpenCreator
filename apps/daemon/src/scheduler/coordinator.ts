@@ -57,7 +57,7 @@ export type ScheduleCoordinatorOptions = {
   repository: ScheduleRepository;
   threadManager: Pick<
     ThreadManager,
-    | 'createThread'
+    | 'createScheduleThread'
     | 'getThread'
     | 'updateScheduleThread'
     | 'setPurpose'
@@ -87,7 +87,7 @@ export function createScheduleCoordinator(
       });
       if (!parsed.ok) throw new SchedulerError(parsed.code, parsed.message);
 
-      const thread = options.threadManager.createThread({
+      const thread = options.threadManager.createScheduleThread({
         purpose: 'schedule_task',
         title: parsed.value.name,
         cwd: parsed.value.cwd,
@@ -147,7 +147,7 @@ export function createScheduleCoordinator(
         return toScheduleResponse(created);
       }
 
-      const thread = options.threadManager.createThread({
+      const thread = options.threadManager.createScheduleThread({
         purpose: 'schedule_task',
         title: parsed.value.name,
         cwd: parsed.value.cwd,
@@ -252,7 +252,7 @@ export function createScheduleCoordinator(
     }, scheduleOperationActors.user);
   });
   const repairBindingTransaction = options.db.transaction((schedule: ScheduleRecord): void => {
-    const thread = options.threadManager.createThread({
+    const thread = options.threadManager.createScheduleThread({
       purpose: 'schedule_task',
       title: schedule.name,
       cwd: schedule.cwd,

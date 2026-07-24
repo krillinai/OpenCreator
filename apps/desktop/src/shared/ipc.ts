@@ -1,0 +1,23 @@
+export const desktopIpc = {
+  readConnection: 'clawee:connection:read',
+  connectionChanged: 'clawee:connection:changed',
+  readBootstrap: 'clawee:bootstrap:read',
+  bootstrapChanged: 'clawee:bootstrap:changed',
+  bootstrapRetry: 'clawee:bootstrap:retry',
+  selectCodex: 'clawee:codex:select',
+  ensureDefaultProjectDirectory: 'clawee:project:ensure-default-directory',
+  createProjectDirectory: 'clawee:project:create-directory',
+  selectProjectDirectory: 'clawee:project:select-directory',
+  restartRuntime: 'clawee:runtime:restart',
+  reloadWorkspace: 'clawee:workspace:reload',
+  workspaceReady: 'clawee:workspace:ready',
+  readPreferences: 'clawee:preferences:read',
+  updatePreferences: 'clawee:preferences:update',
+  openExternal: 'clawee:native:open-external',
+  revealPath: 'clawee:native:reveal-path',
+  notify: 'clawee:notification:show',
+  configureNotifications: 'clawee:notification:configure',
+  navigate: 'clawee:navigation',
+  exportDiagnostics: 'clawee:diagnostics:export',
+  quit: 'clawee:app:quit'
+} as const;

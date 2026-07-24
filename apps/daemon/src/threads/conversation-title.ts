@@ -13,7 +13,8 @@ const REQUEST_MARKERS = [
 ];
 
 export function createConversationTitle(input: string, fallback = DEFAULT_TITLE): string {
-  const extracted = extractRequest(input);
+  const publicInput = extractPublicConversationInput(input);
+  const extracted = publicInput === undefined ? undefined : extractRequest(publicInput);
   if (extracted === undefined) {
     return input.includes('# Files mentioned by the user:') ? ATTACHMENT_TITLE : fallback;
   }
@@ -33,6 +34,50 @@ export function createConversationTitle(input: string, fallback = DEFAULT_TITLE)
   const candidate = candidates[0] ?? cleanCandidate(withoutSkill);
 
   return limitTitle(shortenCandidate(candidate), fallback);
+}
+
+export function extractPublicConversationInput(input: string): string | undefined {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return undefined;
+
+  const managedContextPrefix = '[Clawee 用户显式管理的上下文]';
+  if (trimmed.startsWith(managedContextPrefix)) {
+    return extractAfterMarker(
+      trimmed,
+      managedContextPrefix,
+      '\n用户当前请求：\n'
+    );
+  }
+
+  const rotationContextPrefix = '[Clawee 执行上下文恢复摘要]';
+  if (trimmed.startsWith(rotationContextPrefix)) {
+    return extractAfterMarker(
+      trimmed,
+      rotationContextPrefix,
+      '\n本次公开任务输入：\n'
+    );
+  }
+
+  if (
+    trimmed.startsWith('# AGENTS.md instructions')
+    || trimmed.startsWith('<environment_context>')
+    || trimmed.startsWith('Another language model started to solve this problem')
+  ) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function extractAfterMarker(
+  input: string,
+  prefix: string,
+  marker: string
+): string | undefined {
+  if (!input.startsWith(prefix)) return undefined;
+  const markerIndex = input.lastIndexOf(marker);
+  if (markerIndex < 0) return undefined;
+  const publicInput = input.slice(markerIndex + marker.length).trim();
+  return publicInput.length === 0 ? undefined : publicInput;
 }
 
 function extractRequest(input: string): string | undefined {

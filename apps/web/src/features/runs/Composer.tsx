@@ -10,11 +10,12 @@ import {
 } from 'react';
 import {
   ArrowUp,
-  Cable,
   Check,
   ChevronDown,
+  ChevronRight,
   Circle,
   Folder,
+  FolderPlus,
   ListPlus,
   Paperclip,
   Plus,
@@ -22,7 +23,7 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
-  Target,
+  X,
   Zap
 } from 'lucide-react';
 import type {
@@ -61,6 +62,12 @@ export type ComposerAttachment = {
   previewUrl: string;
 };
 
+export type ComposerQueuedItem = {
+  runId: string;
+  text: string;
+  queuePosition?: number;
+};
+
 type ComposerAttachmentDraft = AttachmentTrayItem & {
   file: File;
   attachment?: AttachmentResponse;
@@ -86,19 +93,14 @@ const permissionOptions: Array<{
   description: string;
 }> = [
   {
-    value: 'follow-global',
-    label: '只读访问',
-    description: '只能读取上下文，不写入本机文件'
-  },
-  {
     value: 'workspace-write',
-    label: '工作区读写',
-    description: '可修改当前工作区文件'
+    label: '请求批准',
+    description: '需要操作文件或执行高风险命令时询问你'
   },
   {
     value: 'danger-full-access',
-    label: '完全访问',
-    description: '可访问本机文件并执行本地操作'
+    label: '完全访问权限',
+    description: '允许访问本机文件并执行本地操作'
   }
 ];
 
@@ -108,10 +110,13 @@ const modelOptions: ComposerModelOption[] = [
   { id: 'xhigh', label: '默认模型 超高', model: null, reasoning: 'xhigh' }
 ];
 
-const TEXTAREA_MIN_HEIGHT = 28;
-const TEXTAREA_MAX_VISIBLE_LINES = 3;
-const TEXTAREA_LINE_HEIGHT = 24;
+const TEXTAREA_MIN_VISIBLE_LINES = 2;
+const TEXTAREA_MAX_VISIBLE_LINES = 12;
+const TEXTAREA_LINE_HEIGHT = 22;
 const TEXTAREA_VERTICAL_PADDING = 4;
+const TEXTAREA_MIN_HEIGHT = Math.ceil(
+  TEXTAREA_LINE_HEIGHT * TEXTAREA_MIN_VISIBLE_LINES + TEXTAREA_VERTICAL_PADDING
+);
 const TEXTAREA_MAX_HEIGHT = Math.ceil(TEXTAREA_LINE_HEIGHT * TEXTAREA_MAX_VISIBLE_LINES + TEXTAREA_VERTICAL_PADDING);
 
 export function Composer(props: {
@@ -119,6 +124,7 @@ export function Composer(props: {
   disabledReason?: string;
   running?: boolean;
   canceling?: boolean;
+  permissionChangeDisabled?: boolean;
   projectId: string;
   projectName: string;
   projects: ClaweeProject[];
@@ -130,13 +136,20 @@ export function Composer(props: {
   slashCommands?: ComposerSlashCommand[];
   slashCommandsLoading?: boolean;
   slashCommandsError?: string;
+  queuedItems?: ComposerQueuedItem[];
   draftRequest?: ComposerDraftRequest;
   imageInputSupported?: boolean;
   imageInputUnsupportedReason?: string;
   onSelectProject(projectId: string): void;
-  onPermissionChange?(permission: ProjectPermission): void;
+  onCreateBlankProject?(name: string): boolean | void | Promise<boolean | void>;
+  onAddProjectDirectory?(): void | Promise<void>;
+  onPermissionChange?(
+    permission: ProjectPermission
+  ): boolean | void | Promise<boolean | void>;
   onDraftApplied?(id: number): void;
   onCancel?(): void;
+  onCancelQueuedRun?(runId: string): void;
+  onSteerQueuedRun?(runId: string): void;
   onUploadAttachment?(file: File): Promise<AttachmentResponse>;
   onDeleteAttachment?(attachment: AttachmentResponse): Promise<void>;
   onSubmit(
@@ -148,18 +161,25 @@ export function Composer(props: {
 }) {
   const [prompt, setPrompt] = useState('');
   const [projectQuery, setProjectQuery] = useState('');
-  const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(props.permission);
+  const [projectCreateMenuOpen, setProjectCreateMenuOpen] = useState(false);
+  const [projectNameDialogOpen, setProjectNameDialogOpen] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState('');
+  const [projectNameSubmitting, setProjectNameSubmitting] = useState(false);
+  const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(
+    normalizePermission(props.permission)
+  );
   const [selectedModel, setSelectedModel] = useState(() => modelOptionForConfig(props.model, props.reasoning));
   const [openMenu, setOpenMenu] = useState<
-    'project' | 'add' | 'permission' | 'model' | 'submit' | null
+    'project' | 'add' | 'permission' | 'model' | null
   >(null);
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
-  const [submissionMode, setSubmissionMode] = useState<RunSubmissionMode>('enqueue');
   const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [permissionUpdating, setPermissionUpdating] = useState(false);
   const composerRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const projectSearchRef = useRef<HTMLInputElement | null>(null);
+  const projectNameInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentDraftsRef = useRef<ComposerAttachmentDraft[]>([]);
   const transferredPreviewUrlsRef = useRef(new Set<string>());
@@ -180,7 +200,7 @@ export function Composer(props: {
   }, []);
 
   useEffect(() => {
-    setSelectedPermission(props.permission);
+    setSelectedPermission(normalizePermission(props.permission));
   }, [props.permission, props.projectName]);
 
   useEffect(() => {
@@ -194,6 +214,7 @@ export function Composer(props: {
       setOpenMenu(null);
       setSlashTrigger(null);
       setProjectQuery('');
+      setProjectCreateMenuOpen(false);
     };
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
@@ -227,7 +248,6 @@ export function Composer(props: {
     const isOverflowing = contentHeight > TEXTAREA_MAX_HEIGHT;
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = isOverflowing ? 'auto' : 'hidden';
-    textarea.scrollTop = isOverflowing ? textarea.scrollHeight : 0;
   }, [prompt]);
 
   useEffect(() => {
@@ -303,7 +323,7 @@ export function Composer(props: {
         reasoning: selectedModel.reasoning
       };
       accepted = props.running
-        ? await props.onSubmit(trimmedPrompt, config, attachments, submissionMode)
+        ? await props.onSubmit(trimmedPrompt, config, attachments, 'enqueue')
         : await props.onSubmit(trimmedPrompt, config, attachments);
       if (accepted === false) {
         for (const item of attachments) transferredPreviewUrlsRef.current.delete(item.previewUrl);
@@ -338,6 +358,7 @@ export function Composer(props: {
   const closeProjectMenu = () => {
     setOpenMenu(null);
     setProjectQuery('');
+    setProjectCreateMenuOpen(false);
   };
 
   const selectProject = (projectId: string) => {
@@ -352,8 +373,41 @@ export function Composer(props: {
       return;
     }
     setProjectQuery('');
+    setProjectCreateMenuOpen(false);
     setOpenMenu('project');
     window.requestAnimationFrame(() => projectSearchRef.current?.focus());
+  };
+
+  const runProjectAction = (
+    action: (() => void | Promise<void>) | undefined
+  ) => {
+    if (action === undefined) return;
+    closeProjectMenu();
+    void action();
+  };
+
+  const openProjectNameDialog = () => {
+    closeProjectMenu();
+    setProjectNameDraft('');
+    setProjectNameDialogOpen(true);
+    window.requestAnimationFrame(() => projectNameInputRef.current?.focus());
+  };
+
+  const createNamedProject = async () => {
+    const name = projectNameDraft.trim();
+    if (name.length === 0 || props.onCreateBlankProject === undefined || projectNameSubmitting) {
+      return;
+    }
+    setProjectNameSubmitting(true);
+    try {
+      const created = await props.onCreateBlankProject(name);
+      if (created !== false) {
+        setProjectNameDialogOpen(false);
+        setProjectNameDraft('');
+      }
+    } finally {
+      setProjectNameSubmitting(false);
+    }
   };
 
   const applySlashCommand = (command: ComposerSlashCommand) => {
@@ -556,9 +610,115 @@ export function Composer(props: {
                     ))
                   )}
                 </div>
+                {props.onCreateBlankProject !== undefined
+                || props.onAddProjectDirectory !== undefined ? (
+                  <div className="composer-project-create">
+                    <button
+                      className="composer-project-create-trigger"
+                      type="button"
+                      aria-haspopup="menu"
+                      aria-expanded={projectCreateMenuOpen}
+                      onClick={() => setProjectCreateMenuOpen(open => !open)}
+                    >
+                      <Plus aria-hidden="true" size={17} />
+                      <span>新建项目</span>
+                      <ChevronRight aria-hidden="true" size={15} />
+                    </button>
+                    {projectCreateMenuOpen ? (
+                      <div
+                        className="composer-project-create-menu"
+                        role="menu"
+                        aria-label="新建项目"
+                      >
+                        {props.onCreateBlankProject !== undefined ? (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={openProjectNameDialog}
+                          >
+                            <Plus aria-hidden="true" size={17} />
+                            <span>新建空白项目</span>
+                          </button>
+                        ) : null}
+                        {props.onAddProjectDirectory !== undefined ? (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => runProjectAction(props.onAddProjectDirectory)}
+                          >
+                            <FolderPlus aria-hidden="true" size={17} />
+                            <span>使用现有文件夹</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
+        </div>
+      ) : null}
+      {projectNameDialogOpen ? (
+        <div
+          className="composer-project-name-backdrop"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget && !projectNameSubmitting) {
+              setProjectNameDialogOpen(false);
+            }
+          }}
+        >
+          <section
+            className="composer-project-name-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="新建空白项目"
+          >
+            <header>
+              <strong>新建空白项目</strong>
+              <span>项目会创建在 Clawee 默认项目目录中</span>
+            </header>
+            <label>
+              <span>项目名称</span>
+              <input
+                ref={projectNameInputRef}
+                type="text"
+                aria-label="项目名称"
+                maxLength={80}
+                value={projectNameDraft}
+                disabled={projectNameSubmitting}
+                onChange={event => setProjectNameDraft(event.currentTarget.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Escape' && !projectNameSubmitting) {
+                    event.preventDefault();
+                    setProjectNameDialogOpen(false);
+                  }
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void createNamedProject();
+                  }
+                }}
+              />
+            </label>
+            <footer>
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={projectNameSubmitting}
+                onClick={() => setProjectNameDialogOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="button-primary"
+                disabled={projectNameSubmitting || projectNameDraft.trim().length === 0}
+                onClick={() => void createNamedProject()}
+              >
+                {projectNameSubmitting ? '正在创建' : '创建'}
+              </button>
+            </footer>
+          </section>
         </div>
       ) : null}
       <AttachmentTray
@@ -566,6 +726,41 @@ export function Composer(props: {
         onRemove={(localId) => void removeAttachment(localId)}
         onRetry={(localId) => void uploadAttachment(localId)}
       />
+      {(props.queuedItems?.length ?? 0) > 0 ? (
+        <div className="composer-queue" aria-label="排队消息">
+          {props.queuedItems?.map(item => (
+            <div className="composer-queue-item" key={item.runId}>
+              <span className="composer-queue-copy" title={item.text}>
+                {item.text}
+              </span>
+              {item.queuePosition === undefined ? null : (
+                <span className="composer-queue-position">第 {item.queuePosition} 位</span>
+              )}
+              {props.onSteerQueuedRun ? (
+                <button
+                  type="button"
+                  className="composer-queue-steer"
+                  onClick={() => props.onSteerQueuedRun?.(item.runId)}
+                >
+                  <Zap aria-hidden="true" size={13} />
+                  Steer
+                </button>
+              ) : null}
+              {props.onCancelQueuedRun ? (
+                <button
+                  type="button"
+                  className="composer-queue-remove"
+                  aria-label={`删除排队消息 ${item.text}`}
+                  title="删除排队消息"
+                  onClick={() => props.onCancelQueuedRun?.(item.runId)}
+                >
+                  <X aria-hidden="true" size={14} />
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="composer-input-wrap" data-composer-menu-root="slash">
         <textarea
           ref={textareaRef}
@@ -573,7 +768,7 @@ export function Composer(props: {
           aria-autocomplete="list"
           aria-controls={slashMenuOpen ? 'composer-slash-menu' : undefined}
           aria-expanded={slashMenuOpen}
-          rows={1}
+          rows={2}
           value={prompt}
           disabled={props.disabled}
           onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
@@ -678,6 +873,12 @@ export function Composer(props: {
               type="button"
               aria-label={`选择访问权限 ${selectedPermissionOption.label}`}
               aria-expanded={openMenu === 'permission'}
+              disabled={props.permissionChangeDisabled === true || permissionUpdating}
+              title={
+                props.permissionChangeDisabled === true
+                  ? '当前任务结束后可修改访问权限'
+                  : undefined
+              }
               onClick={() => {
                 setSlashTrigger(null);
                 setOpenMenu(openMenu === 'permission' ? null : 'permission');
@@ -695,10 +896,31 @@ export function Composer(props: {
                     type="button"
                     role="menuitemradio"
                     aria-checked={selectedPermission === option.value}
-                    onClick={() => {
-                      setSelectedPermission(option.value);
-                      props.onPermissionChange?.(option.value);
-                      setOpenMenu(null);
+                    disabled={permissionUpdating}
+                    onClick={async () => {
+                      if (
+                        option.value === 'danger-full-access'
+                        && selectedPermission !== 'danger-full-access'
+                        && !window.confirm(
+                          '完全访问权限允许 Clawee 访问本机文件并执行本地操作。确定要开启吗？'
+                        )
+                      ) {
+                        return;
+                      }
+                      if (option.value === selectedPermission) {
+                        setOpenMenu(null);
+                        return;
+                      }
+                      setPermissionUpdating(true);
+                      try {
+                        const accepted = await props.onPermissionChange?.(option.value);
+                        if (accepted !== false) {
+                          setSelectedPermission(option.value);
+                          setOpenMenu(null);
+                        }
+                      } finally {
+                        setPermissionUpdating(false);
+                      }
                     }}
                   >
                     <span className="composer-menu-icon" aria-hidden="true">
@@ -769,85 +991,32 @@ export function Composer(props: {
               <Square aria-hidden="true" size={13} fill="currentColor" />
             </button>
           ) : null}
-          <div className="composer-submit-wrap" data-composer-menu-root="submit">
+          <div className="composer-submit-wrap">
             <button
               className="composer-send"
               type="submit"
               aria-label={
                 props.running
-                  ? submissionMode === 'interrupt_and_enqueue'
-                    ? '立即打断并继续'
-                    : '排队发送'
+                  ? '排队发送'
                   : '发送'
               }
               disabled={!canSubmit}
             >
-              {props.running && submissionMode === 'enqueue' ? (
+              {props.running ? (
                 <ListPlus aria-hidden="true" size={16} />
-              ) : props.running ? (
-                <Zap aria-hidden="true" size={16} />
               ) : (
                 <ArrowUp aria-hidden="true" size={17} />
               )}
             </button>
-            {props.running ? (
-              <>
-                <button
-                  className="composer-submit-menu-button"
-                  type="button"
-                  aria-label="选择发送方式"
-                  aria-expanded={openMenu === 'submit'}
-                  onClick={() => setOpenMenu(openMenu === 'submit' ? null : 'submit')}
-                >
-                  <ChevronDown aria-hidden="true" size={14} />
-                </button>
-                {openMenu === 'submit' ? (
-                  <div className="composer-popover composer-submit-menu" role="menu" aria-label="发送方式">
-                    <button
-                      className="composer-menu-item"
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={submissionMode === 'enqueue'}
-                      onClick={() => {
-                        setSubmissionMode('enqueue');
-                        setOpenMenu(null);
-                      }}
-                    >
-                      <span className="composer-menu-icon" aria-hidden="true">
-                        <ListPlus size={15} />
-                      </span>
-                      <span>
-                        <strong>排队发送</strong>
-                        <small>当前任务继续，新任务按顺序等待</small>
-                      </span>
-                    </button>
-                    <button
-                      className="composer-menu-item"
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={submissionMode === 'interrupt_and_enqueue'}
-                      onClick={() => {
-                        setSubmissionMode('interrupt_and_enqueue');
-                        setOpenMenu(null);
-                      }}
-                    >
-                      <span className="composer-menu-icon" aria-hidden="true">
-                        <Zap size={15} />
-                      </span>
-                      <span>
-                        <strong>立即打断并继续</strong>
-                        <small>停止当前任务，优先执行这条消息</small>
-                      </span>
-                    </button>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
           </div>
         </div>
       </div>
     </form>
   );
+}
+
+function normalizePermission(permission: ProjectPermission): ProjectPermission {
+  return permission === 'danger-full-access' ? permission : 'workspace-write';
 }
 
 function modelOptionForConfig(model: string | null, reasoning: ReasoningEffort | null): ComposerModelOption {
@@ -879,11 +1048,16 @@ function findSlashTrigger(value: string, caret: number): SlashTrigger | null {
 
 function filterSlashCommands(commands: ComposerSlashCommand[], query: string): ComposerSlashCommand[] {
   const normalizedQuery = query.trim().toLowerCase();
-  if (normalizedQuery.length === 0) return commands;
+  const skills = commands.filter(command => command.category === 'skill');
+  if (normalizedQuery.length === 0) return skills;
 
-  return commands.filter(command => {
-    const haystack = `${command.label} ${command.description} ${command.category}`.toLowerCase();
-    return haystack.includes(normalizedQuery);
+  return skills.filter(command => {
+    const id = command.id.replace(/^skill:/, '').toLowerCase();
+    const label = command.label.toLowerCase();
+    return id.startsWith(normalizedQuery)
+      || label.startsWith(normalizedQuery)
+      || id.includes(normalizedQuery)
+      || label.includes(normalizedQuery);
   });
 }
 
@@ -891,7 +1065,7 @@ function groupSlashCommands(commands: ComposerSlashCommand[]): Array<{
   category: ComposerSlashCommand['category'];
   commands: ComposerSlashCommand[];
 }> {
-  return (['skill', 'mcp', 'goal'] as const)
+  return (['skill'] as const)
     .map(category => ({ category, commands: commands.filter(command => command.category === category) }))
     .filter(group => group.commands.length > 0);
 }
@@ -903,12 +1077,10 @@ function nextSlashCommandIndex(current: number, length: number, delta: 1 | -1): 
 
 function slashCategoryLabel(category: ComposerSlashCommand['category']): string {
   if (category === 'skill') return 'Skills';
-  if (category === 'mcp') return 'MCP';
-  return 'Goal';
+  return category;
 }
 
 function slashCategoryIcon(category: ComposerSlashCommand['category']) {
   if (category === 'skill') return <Sparkles size={15} />;
-  if (category === 'mcp') return <Cable size={15} />;
-  return <Target size={15} />;
+  return null;
 }

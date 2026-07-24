@@ -76,17 +76,31 @@ describe('memory API', () => {
       dataDir: '.runtime-test-memory-run',
       runManager: createRunManager(runInputs)
     });
+    const projectResponse = await server.inject({
+      method: 'POST',
+      url: '/projects',
+      headers: authHeaders(),
+      payload: {
+        cwd: process.cwd(),
+        name: 'Memory project'
+      }
+    });
+    expect(projectResponse.statusCode).toBe(201);
+    const projectId = projectResponse.json().project.id as string;
     const threadResponse = await server.inject({
       method: 'POST',
       url: '/threads',
       headers: authHeaders(),
       payload: {
-        cwd: process.cwd(),
-        workspaceMode: 'external',
+        projectId,
         sandbox: 'read-only'
       }
     });
-    const thread = threadResponse.json().thread as { id: string; canonicalCwd: string };
+    expect(threadResponse.statusCode).toBe(201);
+    const thread = threadResponse.json().thread as {
+      id: string;
+      projectId: string;
+    };
     await server.inject({
       method: 'POST',
       url: '/memories',
@@ -94,7 +108,7 @@ describe('memory API', () => {
       payload: {
         content: '提交前运行全部测试',
         scope: 'project',
-        scopeKey: thread.canonicalCwd,
+        scopeKey: thread.projectId,
         source: 'user'
       }
     });
@@ -206,6 +220,9 @@ function createRunManager(inputs: Array<Record<string, unknown>>): RunManager {
       return undefined;
     },
     hasActiveRunForThread() {
+      return false;
+    },
+    hasActiveRunForProject() {
       return false;
     },
     listRuns() {

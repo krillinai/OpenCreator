@@ -11,7 +11,6 @@ describe('ConversationHeader', () => {
         projectName="content-design"
         statusLabel="正在等待本地服务"
         onOpenLocation={vi.fn()}
-        onToggleDetail={vi.fn()}
       />
     );
 
@@ -19,48 +18,38 @@ describe('ConversationHeader', () => {
     expect(screen.getByText('content-design')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('正在等待本地服务');
     expect(screen.getByRole('button', { name: '文件' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '详情' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '详情' })).not.toBeInTheDocument();
   });
 
-  it('calls the action handlers', async () => {
+  it('opens the file workspace without opening the summary dialog', async () => {
     const user = userEvent.setup();
     const onOpenLocation = vi.fn();
-    const onToggleDetail = vi.fn();
 
     render(
       <ConversationHeader
         title="整理本周项目进展"
         projectName="content-design"
         onOpenLocation={onOpenLocation}
-        onToggleDetail={onToggleDetail}
       />
     );
 
     await user.click(screen.getByRole('button', { name: '文件' }));
-    await user.click(screen.getByRole('button', { name: '详情' }));
 
     expect(onOpenLocation).toHaveBeenCalledTimes(1);
-    expect(onToggleDetail).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('creates a visible conversation summary when a thread is selected', async () => {
-    const user = userEvent.setup();
-    const onCreateSummary = vi.fn();
-
+  it('does not expose conversation summary actions', () => {
     render(
       <ConversationHeader
         title="整理本周项目进展"
         projectName="content-design"
-        summaryStatus="已生成摘要 v2"
-        onCreateSummary={onCreateSummary}
         onOpenLocation={vi.fn()}
-        onToggleDetail={vi.fn()}
       />
     );
 
-    await user.click(screen.getByRole('button', { name: '生成摘要' }));
-    expect(onCreateSummary).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('status', { name: '摘要状态' })).toHaveTextContent('已生成摘要 v2');
+    expect(screen.queryByRole('button', { name: /生成摘要|查看摘要/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /会话摘要/ })).not.toBeInTheDocument();
   });
 
   it('renders an optional task toolbar without changing ordinary conversations', () => {
@@ -69,7 +58,6 @@ describe('ConversationHeader', () => {
         title="普通会话"
         projectName="content-design"
         onOpenLocation={vi.fn()}
-        onToggleDetail={vi.fn()}
       />
     );
 
@@ -81,7 +69,6 @@ describe('ConversationHeader', () => {
         projectName="content-design"
         taskToolbar={<div aria-label="任务管理">任务工具栏</div>}
         onOpenLocation={vi.fn()}
-        onToggleDetail={vi.fn()}
       />
     );
 

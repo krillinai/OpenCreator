@@ -1,6 +1,12 @@
 import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
 
+Object.defineProperty(window, 'confirm', {
+  configurable: true,
+  writable: true,
+  value: () => true
+});
+
 type RectLike = {
   x: number;
   y: number;

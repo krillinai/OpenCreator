@@ -232,4 +232,42 @@ describe('codex runner', () => {
       })
     ).rejects.toBeInstanceOf(CodexExecError);
   });
+
+  it('bounds diagnostic output while preserving final assistant and terminal events', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    const fake = createFakeCodex(tempDir, {
+      rawStdoutLines: [
+        'x'.repeat(1024 * 1024 + 64),
+        ...Array.from({ length: 10_050 }, (_, index) =>
+          JSON.stringify({ type: 'diagnostic', index }))
+      ],
+      stdoutLines: [
+        {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'final answer' }
+        },
+        { type: 'turn.completed' }
+      ],
+      stderrLines: ['e'.repeat(1024 * 1024 + 64)],
+      delayMs: 100
+    });
+
+    const result = await runCodexExec({
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      args: ['exec', '--json'],
+      prompt: 'hello',
+      timeoutMs: 10_000,
+      inactivityTimeoutMs: 10_000
+    });
+
+    expect(result.stdoutLines.length).toBeLessThanOrEqual(10_000);
+    expect(result.stdoutLines.at(-2)).toContain('final answer');
+    expect(result.stdoutLines.at(-1)).toContain('turn.completed');
+    expect(Buffer.byteLength(result.stderr)).toBeLessThanOrEqual(1024 * 1024 + 3);
+    expect(result.outputTruncation.stdout.truncated).toBe(true);
+    expect(result.outputTruncation.stderr.truncated).toBe(true);
+    expect(result.outputTruncation.frames.truncated).toBe(true);
+  }, 20_000);
 });

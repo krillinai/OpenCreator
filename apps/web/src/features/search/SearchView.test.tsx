@@ -23,11 +23,13 @@ describe('SearchView', () => {
         thread({
           id: 'thread-recent-1',
           title: '梳理 AI 任务创建逻辑',
+          projectId: 'customer-agent',
           cwd: '/workspace/customer-agent',
         }),
         thread({
           id: 'thread-recent-2',
           title: '启动服务',
+          projectId: 'clawee-agent',
           cwd: '/workspace/clawee-agent',
         }),
       ],
@@ -277,6 +279,8 @@ function thread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
   return {
     id: 'thread-recent',
     title: '最近会话',
+    projectId: 'current',
+    origin: 'clawee_created',
     codexThreadId: 'codex-recent',
     cwd: '/workspace/current',
     canonicalCwd: '/workspace/current',
@@ -296,6 +300,7 @@ function result(
 ): ConversationSearchResult {
   return {
     threadId: 'thread-1',
+    projectId: 'current',
     codexThreadId: 'codex-thread-1',
     title: '搜索结果',
     cwd: '/workspace/current',

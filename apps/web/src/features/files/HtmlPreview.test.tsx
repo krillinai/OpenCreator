@@ -8,7 +8,7 @@ describe('HtmlPreview', () => {
     vi.unstubAllGlobals();
   });
 
-  it('removes executable and navigational content and uses a permissionless sandbox', async () => {
+  it('keeps inline scripts in an isolated sandbox while removing navigational content', async () => {
     render(
       <HtmlPreview
         name="unsafe.html"
@@ -29,10 +29,11 @@ describe('HtmlPreview', () => {
 
     const frame = await screen.findByTitle('unsafe.html HTML 预览');
     const srcDoc = frame.getAttribute('srcdoc') ?? '';
-    expect(frame).toHaveAttribute('sandbox', '');
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(srcDoc).toContain("default-src 'none'");
-    expect(srcDoc).not.toContain('<script');
+    expect(srcDoc).toContain('<script>');
+    expect(srcDoc).not.toContain('<script src=');
     expect(srcDoc).not.toContain('<iframe');
     expect(srcDoc).not.toContain('<form');
     expect(srcDoc).not.toContain('http-equiv="refresh"');

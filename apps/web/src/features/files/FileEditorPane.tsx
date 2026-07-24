@@ -82,17 +82,17 @@ export function FileEditorPane(props: FileEditorPaneProps) {
               <div className="file-editor-mode-toggle" aria-label="文件视图模式">
                 <button
                   type="button"
-                  aria-pressed={currentMode === 'edit'}
-                  onClick={() => setMode('edit')}
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
                   aria-pressed={currentMode === 'preview'}
                   onClick={() => setMode('preview')}
                 >
                   预览
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={currentMode === 'edit'}
+                  onClick={() => setMode('edit')}
+                >
+                  编辑
                 </button>
               </div>
             ) : null}

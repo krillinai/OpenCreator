@@ -1,10 +1,12 @@
 import type Database from 'better-sqlite3';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createProjectManager } from '../../src/projects/manager.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createThreadManager } from '../../src/threads/manager.js';
+import { ThreadManagerError } from '../../src/threads/types.js';
 
 let tempDir = '';
 let db: Database.Database | undefined;
@@ -21,6 +23,82 @@ afterEach(() => {
 });
 
 describe('thread manager', () => {
+  it('creates conversations from projects and preserves schedule thread creation', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-project-'));
+    const database = openTestDatabase(tempDir);
+    const projectDir = join(tempDir, 'project');
+    const missingDir = join(tempDir, 'missing-project');
+    const projects = createProjectManager({
+      db: database,
+      homeDir: tempDir,
+      idFactory: () => 'project_primary'
+    });
+    mkdirSync(projectDir, { recursive: true });
+    const project = projects.createProject({
+      cwd: projectDir,
+      profile: 'project-profile',
+      model: 'project-model',
+      reasoning: 'high',
+      sandbox: 'workspace-write'
+    });
+    const manager = createThreadManager({
+      db: database,
+      dataDir: tempDir,
+      projectManager: projects
+    });
+
+    const conversation = manager.createConversationThread({
+      projectId: project.id,
+      title: 'Project conversation',
+      model: 'request-model'
+    });
+
+    expect(conversation).toMatchObject({
+      projectId: project.id,
+      origin: 'clawee_created',
+      cwd: projectDir,
+      canonicalCwd: realpathSync(projectDir),
+      workspaceMode: 'external',
+      profile: 'project-profile',
+      model: 'request-model',
+      reasoning: 'high',
+      sandbox: 'workspace-write',
+      purpose: 'conversation'
+    });
+
+    projects.archiveProject(project.id);
+    expectThreadError(
+      () => manager.createConversationThread({ projectId: project.id }),
+      'PROJECT_ARCHIVED'
+    );
+    expectThreadError(
+      () => manager.createConversationThread({ projectId: 'project_missing' }),
+      'PROJECT_NOT_FOUND'
+    );
+
+    projects.createMigratedProject({
+      preferredId: 'project_missing_directory',
+      cwd: missingDir,
+      name: 'Missing project'
+    });
+    expectThreadError(
+      () => manager.createConversationThread({ projectId: 'project_missing_directory' }),
+      'PROJECT_DIRECTORY_UNAVAILABLE'
+    );
+
+    const draft = manager.createScheduleThread({
+      title: 'Draft',
+      purpose: 'schedule_draft',
+      workspaceMode: 'managed'
+    });
+    expect(draft).toMatchObject({
+      projectId: null,
+      origin: 'clawee_created',
+      purpose: 'schedule_draft',
+      workspaceMode: 'managed'
+    });
+  });
+
   it('creates a managed thread with fixed workspace', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
     const database = openTestDatabase(tempDir);
@@ -90,6 +168,34 @@ describe('thread manager', () => {
       id: external.id,
       title: 'External',
       cwd: tempDir
+    });
+  });
+
+  it('returns SQLite UTC timestamps as timezone-qualified ISO values', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-timestamp-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({ db: database, dataDir: tempDir });
+    const thread = manager.createThread({
+      title: 'Timestamp',
+      workspaceMode: 'external',
+      cwd: tempDir
+    });
+
+    database.prepare(`
+      UPDATE threads
+      SET created_at = ?, updated_at = ?, archived_at = ?
+      WHERE id = ?
+    `).run(
+      '2026-07-21 07:00:00',
+      '2026-07-21 07:00:30',
+      '2026-07-21 07:01:00',
+      thread.id
+    );
+
+    expect(manager.getThread(thread.id)).toMatchObject({
+      createdAt: '2026-07-21T07:00:00.000Z',
+      updatedAt: '2026-07-21T07:00:30.000Z',
+      archivedAt: '2026-07-21T07:01:00.000Z'
     });
   });
 
@@ -240,48 +346,21 @@ describe('thread manager', () => {
     expect(() => manager.archiveThread('thread_missing')).toThrow(/THREAD_NOT_FOUND/);
   });
 
-  it('imports Codex sessions with timestamps that sort correctly with runtime threads', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
-    const database = openTestDatabase(tempDir);
-    const manager = createThreadManager({ db: database, dataDir: tempDir });
-    manager.importCodexThread({
-      codexThreadId: 'codex-old',
-      title: 'Old Codex',
-      cwd: tempDir,
-      createdAt: '2026-07-07T00:00:00.000Z',
-      updatedAt: '2026-07-07T00:00:00.000Z'
-    });
-
-    const runtime = manager.createThread({ title: 'Runtime', workspaceMode: 'external', cwd: tempDir });
-
-    expect(manager.listThreads({ limit: 1 })[0]?.id).toBe(runtime.id);
-  });
-
-  it('refreshes imported Codex sessions when the source JSONL changes', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
-    const database = openTestDatabase(tempDir);
-    const manager = createThreadManager({ db: database, dataDir: tempDir });
-    const imported = manager.importCodexThread({
-      codexThreadId: 'codex-existing',
-      title: '旧标题',
-      cwd: tempDir,
-      createdAt: '2026-07-07T00:00:00.000Z',
-      updatedAt: '2026-07-07T00:00:00.000Z'
-    });
-
-    const refreshed = manager.importCodexThread({
-      codexThreadId: 'codex-existing',
-      title: '新标题',
-      cwd: tempDir,
-      createdAt: '2026-07-07T00:00:00.000Z',
-      updatedAt: '2026-07-07T01:00:00.000Z'
-    });
-
-    expect(refreshed.id).toBe(imported.id);
-    expect(refreshed.title).toBe('新标题');
-    expect(refreshed.updatedAt).toBe('2026-07-07 01:00:00');
-  });
 });
+
+function expectThreadError(
+  action: () => unknown,
+  code: ThreadManagerError['code']
+): void {
+  let error: unknown;
+  try {
+    action();
+  } catch (caught) {
+    error = caught;
+  }
+  expect(error).toBeInstanceOf(ThreadManagerError);
+  expect((error as ThreadManagerError).code).toBe(code);
+}
 
 function insertScheduleBinding(
   database: Database.Database,

@@ -367,12 +367,24 @@ export function ScheduleEditor(props: {
                 <SettingRow label="权限">
                   <SelectControl
                     ariaLabel="权限"
-                    value={values.sandbox}
-                    onChange={value => update('sandbox', value as SandboxMode)}
+                    value={values.sandbox === 'danger-full-access'
+                      ? 'danger-full-access'
+                      : 'workspace-write'}
+                    onChange={value => {
+                      if (
+                        value === 'danger-full-access'
+                        && values.sandbox !== 'danger-full-access'
+                        && !window.confirm(
+                          '完全访问权限允许计划任务访问本机文件并执行本地操作。确定要开启吗？'
+                        )
+                      ) {
+                        return;
+                      }
+                      update('sandbox', value as SandboxMode);
+                    }}
                   >
-                    <option value="read-only">只读</option>
-                    <option value="workspace-write">工作区可写</option>
-                    <option value="danger-full-access">完全访问</option>
+                    <option value="workspace-write">请求批准</option>
+                    <option value="danger-full-access">完全访问权限</option>
                   </SelectControl>
                 </SettingRow>
                 <SettingRow label="时区">

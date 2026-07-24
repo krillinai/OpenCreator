@@ -21,10 +21,12 @@ import type {
 import { skillMarketCatalog } from '@clawee/skill-market';
 import type {
   CSSProperties,
+  DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   WheelEvent as ReactWheelEvent
 } from 'react';
+import { FolderInput } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
 import { Timeline, type TimelineHandle } from '../components/timeline/Timeline.js';
@@ -39,6 +41,7 @@ import { getSkillMarketDisplayTitle } from '../features/plugins/skill-market-mod
 import {
   collectTaskTransitions,
   createTaskNotification,
+  shouldAutoSubscribeTask,
   shouldSendSystemNotification
 } from '../features/tasks/task-monitor.js';
 import type {
@@ -46,17 +49,20 @@ import type {
   SkillMarketUseError
 } from '../features/plugins/SkillMarketView.js';
 import {
-  createDefaultProjects,
   findProjectById,
   groupThreadsByPurpose,
+  parseLegacyLocalStorageProjects,
+  PROJECTS_STORAGE_KEY,
   type ClaweeConversation,
   type ClaweeProject,
   type ProjectPermission
 } from '../features/projects/project-model.js';
+import { ProjectManagementDialog } from '../features/projects/ProjectManagementDialog.js';
 import {
   Composer,
   type ComposerAttachment,
   type ComposerDraftRequest,
+  type ComposerQueuedItem,
   type ComposerRunConfig,
   type ComposerSlashCommand
 } from '../features/runs/Composer.js';
@@ -76,7 +82,7 @@ import {
 } from '../features/runs/run-event-controller.js';
 import {
   createRunReplayDeduper,
-  timelineReplayMergeKey
+  mergeTimelineHistoryWithCache
 } from '../features/runs/run-event-replay.js';
 import type {
   DefaultPermissionPreference,
@@ -102,7 +108,7 @@ import { createCleanupService } from '../services/cleanup-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
 import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
-import { createMockProjectService } from '../services/project-service.js';
+import { createProjectService } from '../services/project-service.js';
 import { createMcpService } from '../services/mcp-service.js';
 import { createMemoryService } from '../services/memory-service.js';
 import { createNotificationService } from '../services/notification-service.js';
@@ -135,6 +141,7 @@ type SkillMarketService = ReturnType<typeof createSkillMarketService>;
 type ThreadService = ReturnType<typeof createThreadService>;
 type ScheduleService = ReturnType<typeof createScheduleService>;
 type SearchService = ReturnType<typeof createSearchService>;
+type ProjectService = ReturnType<typeof createProjectService>;
 type PendingRunStart = {
   id: string;
   threadId?: string;
@@ -180,7 +187,7 @@ function canScrollVertically(
   return false;
 }
 const DEFAULT_PERMISSION_STORAGE_KEY = 'clawee.preferences.defaultPermission';
-const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v2';
+const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v3';
 const SCHEDULE_DRAFT_TITLE = '任务草稿';
 const SCHEDULE_CREATION_DRAFT =
   '我们一起来设置一个已安排任务吧。首先，说明已安排任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。';
@@ -197,7 +204,7 @@ const SettingsPage = lazy(() => import('../features/settings/SettingsPage.js'));
 const TaskCenterPage = lazy(() => import('../features/tasks/TaskCenterPage.js'));
 
 type PersistedNavigation = {
-  currentProjectId: string;
+  currentProjectId?: string;
   selectedThreadId?: string;
 };
 
@@ -222,7 +229,8 @@ export function AppController(props: AppControllerProps) {
     runRegistryReducer,
     initialRunRegistryState
   );
-  const baseProjects = useMemo(() => createDefaultProjects(), []);
+  const [projects, setProjects] = useState<ClaweeProject[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<ClaweeProject[]>([]);
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
@@ -240,6 +248,12 @@ export function AppController(props: AppControllerProps) {
   const [runtimeSchedules, setRuntimeSchedules] = useState<ScheduleResponse[]>([]);
   const [runtimeTasks, setRuntimeTasks] = useState<TaskItem[]>([]);
   const [threadLoadError, setThreadLoadError] = useState<string>();
+  const [projectLoadError, setProjectLoadError] = useState<string>();
+  const [projectManagementOpen, setProjectManagementOpen] = useState(false);
+  const [projectManagementProjectId, setProjectManagementProjectId] = useState<string>();
+  const [projectMutationBusy, setProjectMutationBusy] = useState(false);
+  const [projectDropActive, setProjectDropActive] = useState(false);
+  const [unassignedThreads, setUnassignedThreads] = useState<ThreadResponse[]>([]);
   const [threadHistoryLoadError, setThreadHistoryLoadError] = useState<string>();
   const [historyLoadingThreadId, setHistoryLoadingThreadId] = useState<string>();
   const [historyLoadedThreadId, setHistoryLoadedThreadId] = useState<string>();
@@ -252,11 +266,6 @@ export function AppController(props: AppControllerProps) {
   const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
   const [pendingMemorySuggestion, setPendingMemorySuggestion] = useState<{ id: number; content: string }>();
-  const [summaryOperation, setSummaryOperation] = useState<{
-    threadId: string;
-    phase: 'loading' | 'success' | 'error';
-    message?: string;
-  }>();
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
@@ -269,6 +278,14 @@ export function AppController(props: AppControllerProps) {
   const [pendingComposerDraft, setPendingComposerDraft] = useState<
     { threadId: string; request: ComposerDraftRequest } | undefined
   >();
+
+  useEffect(() => {
+    if (threadConfigUpdateError === undefined) return;
+    const timeoutId = window.setTimeout(() => {
+      setThreadConfigUpdateError(undefined);
+    }, 4200);
+    return () => window.clearTimeout(timeoutId);
+  }, [threadConfigUpdateError]);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilitiesLoadError, setCapabilitiesLoadError] = useState<string>();
   const [pendingRunStartsById, setPendingRunStartsById] = useState<PendingRunStartsById>({});
@@ -304,7 +321,6 @@ export function AppController(props: AppControllerProps) {
       ? { threadId: props.route.threadId, approvalId: props.route.approvalId }
       : undefined
   ));
-  const projectService = useMemo(() => createMockProjectService(), []);
   const timelineIdSequenceRef = useRef(0);
   const timelineItemsRef = useRef<TimelineItem[]>([]);
   const timelineRef = useRef<TimelineHandle>(null);
@@ -348,11 +364,13 @@ export function AppController(props: AppControllerProps) {
   const mobileSidebarHistoryEntryRef = useRef(false);
   const defaultPermissionAppliedByThreadRef = useRef(new Map<string, SandboxMode>());
   const defaultPermissionSyncFailuresRef = useRef(new Set<string>());
+  const projectDirectoryDialogInFlightRef = useRef(false);
   const capabilityServiceRef = useRef<CapabilityService | null>(null);
   const skillMarketServiceRef = useRef<SkillMarketService | null>(null);
   const threadServiceRef = useRef<ThreadService | null>(null);
   const scheduleServiceRef = useRef<ScheduleService | null>(null);
   const runtimeThreadsRef = useRef(runtimeThreads);
+  const currentProjectIdRef = useRef(state.currentProjectId);
   const connectionStatusRef = useRef<ConnectionState['status']>(connectionState.status);
   const activeViewRef = useRef(state.activeView);
   const selectedThreadIdRef = useRef(state.selectedThreadId);
@@ -363,6 +381,7 @@ export function AppController(props: AppControllerProps) {
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
   runRegistryRef.current = runRegistry;
   runtimeThreadsRef.current = runtimeThreads;
+  currentProjectIdRef.current = state.currentProjectId;
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -383,6 +402,10 @@ export function AppController(props: AppControllerProps) {
   );
   const threadService = useMemo(
     () => runtimeClient === null ? null : createThreadService(runtimeClient),
+    [runtimeClient]
+  );
+  const projectService: ProjectService | null = useMemo(
+    () => runtimeClient === null ? null : createProjectService(runtimeClient),
     [runtimeClient]
   );
   const searchService: SearchService | null = useMemo(
@@ -439,6 +462,9 @@ export function AppController(props: AppControllerProps) {
   const [notificationSettings, setNotificationSettings] = useState(
     () => notificationService.getSettings()
   );
+  const [desktopCloseBehavior, setDesktopCloseBehavior] = useState<
+    'hide' | 'quit' | undefined
+  >(undefined);
   const [unreadTaskIds, setUnreadTaskIds] = useState<Set<string>>(
     () => notificationService.getUnreadIds()
   );
@@ -450,14 +476,10 @@ export function AppController(props: AppControllerProps) {
     () => groupThreadsByPurpose(visibleRuntimeThreads),
     [visibleRuntimeThreads]
   );
-  const projects = useMemo(
-    () => createProjectsForThreads(baseProjects, visibleThreadGroups.conversationThreads),
-    [baseProjects, visibleThreadGroups.conversationThreads]
-  );
   const conversations = useMemo(
     () => visibleThreadGroups.conversationThreads.map(
-      thread => mapThreadToConversation(thread, projects)
-    ),
+      thread => mapThreadToConversation(thread)
+    ).filter((conversation): conversation is ClaweeConversation => conversation !== undefined),
     [projects, visibleThreadGroups.conversationThreads]
   );
   const scheduleTaskSummaries = useMemo(
@@ -516,6 +538,20 @@ export function AppController(props: AppControllerProps) {
         ? undefined
         : currentDraft
     );
+  }, []);
+  const editUserMessage = useCallback((
+    item: Extract<TimelineItem, { kind: 'user_message' }>
+  ) => {
+    const threadId = selectedThreadIdRef.current;
+    if (threadId === undefined) return;
+    nextComposerDraftIdRef.current += 1;
+    setPendingComposerDraft({
+      threadId,
+      request: {
+        id: nextComposerDraftIdRef.current,
+        text: item.text
+      }
+    });
   }, []);
   const threadHistory = useThreadHistory({
     threadId: state.selectedThreadId,
@@ -599,6 +635,27 @@ export function AppController(props: AppControllerProps) {
   }, [notificationService]);
 
   useEffect(() => {
+    let active = true;
+    if (
+      hostBridge.kind !== 'desktop'
+      || hostBridge.readDesktopPreferences === undefined
+    ) {
+      setDesktopCloseBehavior(undefined);
+      return () => {
+        active = false;
+      };
+    }
+    void hostBridge.readDesktopPreferences()
+      .then(preferences => {
+        if (active) setDesktopCloseBehavior(preferences.closeBehavior);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [hostBridge]);
+
+  useEffect(() => {
     const connection = connectionState.status === 'connected'
       ? connectionConfig
       : null;
@@ -645,11 +702,18 @@ export function AppController(props: AppControllerProps) {
         const response = await activeTaskService.list({ status: 'all', limit: 50 });
         if (canceled) return;
         setRuntimeTasks(response.tasks);
+        const result = collectTaskTransitions(
+          taskStatusesRef.current,
+          response.tasks,
+          taskBaselineReadyRef.current
+        );
+        const transitionedTaskIds = new Set(result.transitions.map(task => task.id));
         const selectedThreadId = selectedThreadIdRef.current;
         const unseenSelectedTask = selectedThreadId === undefined
           ? undefined
-          : response.tasks.find(task => (
+            : response.tasks.find(task => (
               task.threadId === selectedThreadId
+              && shouldAutoSubscribeTask(task, transitionedTaskIds.has(task.id))
               && runRegistryRef.current.runsById[task.runId] === undefined
             ));
         if (
@@ -666,11 +730,6 @@ export function AppController(props: AppControllerProps) {
             );
           }
         }
-        const result = collectTaskTransitions(
-          taskStatusesRef.current,
-          response.tasks,
-          taskBaselineReadyRef.current
-        );
         taskStatusesRef.current = result.statuses;
         taskBaselineReadyRef.current = true;
         if (result.transitions.length === 0) return;
@@ -718,9 +777,18 @@ export function AppController(props: AppControllerProps) {
     const loadVersion = connectionConfigVersionRef.current;
 
     readHostRuntimeConfig(loadVersion, () => canceled);
+    const unsubscribe = hostBridge.subscribeConnectionConfig?.(config => {
+      if (canceled) return;
+      connectionConfigVersionRef.current += 1;
+      setConnectionConfig(config);
+      if (config === null) {
+        setConnectionState({ status: 'disconnected', message: '正在恢复本地服务连接' });
+      }
+    });
 
     return () => {
       canceled = true;
+      unsubscribe?.();
     };
   }, [hostBridge]);
 
@@ -743,10 +811,6 @@ export function AppController(props: AppControllerProps) {
       canceled = true;
     };
   }, [fileService]);
-
-  useEffect(() => {
-    void projectService.getDefaultProject().catch(() => undefined);
-  }, [projectService]);
 
   useEffect(() => {
     let canceled = false;
@@ -774,19 +838,122 @@ export function AppController(props: AppControllerProps) {
     };
   }, [connectionService]);
 
+  const availabilityProbeStatus = connectionState.status === 'connected'
+    ? connectionState.codexStatus.availabilityProbe?.status
+    : undefined;
+
+  useEffect(() => {
+    if (
+      connectionService === null
+      || connectionState.status !== 'connected'
+      || availabilityProbeStatus !== 'pending'
+    ) {
+      return;
+    }
+    let canceled = false;
+    const refresh = () => {
+      void connectionService.check()
+        .then(nextState => {
+          if (!canceled) setConnectionState(nextState);
+        })
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, 1_500);
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    availabilityProbeStatus,
+    connectionService,
+    connectionState.status
+  ]);
+
   useEffect(() => {
     let canceled = false;
 
-    if (connectionState.status !== 'connected' || threadService === null) {
-      if (connectionState.status !== 'connected') setRuntimeThreads([]);
+    if (
+      connectionState.status !== 'connected'
+      || projectService === null
+      || threadService === null
+    ) {
+      if (connectionState.status !== 'connected') {
+        setProjects([]);
+        setArchivedProjects([]);
+        setRuntimeThreads([]);
+      }
       return () => {
         canceled = true;
       };
     }
 
+    const activeProjectService = projectService;
     const activeThreadService = threadService;
-    async function loadThreads() {
+    async function loadRuntimeWorkspace() {
       try {
+        const legacyProjects = parseLegacyLocalStorageProjects(
+          readJsonFromStorage<unknown>(PROJECTS_STORAGE_KEY)
+        );
+        const migration = await activeProjectService.migrateLocalStorageV1({
+          projects: legacyProjects
+        });
+        let [activeResponse, allResponse] = await Promise.all([
+          activeProjectService.listProjects('active'),
+          activeProjectService.listProjects('all')
+        ]);
+        if (canceled) return;
+
+        let initialProjectError: string | undefined;
+        if (
+          allResponse.projects.length === 0
+          && hostBridge.ensureDefaultProjectDirectory !== undefined
+        ) {
+          try {
+            const cwd = await hostBridge.ensureDefaultProjectDirectory();
+            try {
+              await activeProjectService.createProject({
+                cwd,
+                name: '默认项目'
+              });
+            } catch (error) {
+              if (
+                !(error instanceof ApiClientError)
+                || error.code !== 'PROJECT_DIRECTORY_CONFLICT'
+              ) {
+                throw error;
+              }
+            }
+            [activeResponse, allResponse] = await Promise.all([
+              activeProjectService.listProjects('active'),
+              activeProjectService.listProjects('all')
+            ]);
+            if (canceled) return;
+          } catch (error) {
+            initialProjectError = getRuntimeErrorMessage(
+              error,
+              '无法自动创建默认项目，请手动添加项目'
+            );
+          }
+        }
+
+        const activeProjects = activeResponse.projects;
+        setProjects(activeProjects);
+        setArchivedProjects(
+          allResponse.projects.filter(project => project.status === 'archived')
+        );
+        setProjectLoadError(initialProjectError);
+
+        const previousProjectId =
+          persistedNavigation?.currentProjectId ?? currentProjectIdRef.current;
+        const migratedProjectId = previousProjectId === undefined
+          ? undefined
+          : migration.projectIdMap[previousProjectId] ?? previousProjectId;
+        const nextProjectId = activeProjects.some(project => project.id === migratedProjectId)
+          ? migratedProjectId
+          : activeProjects[0]?.id;
+        dispatch({ type: 'set_current_project', projectId: nextProjectId });
+        navigationPersistenceReadyRef.current = true;
+
         const response = await activeThreadService.listActiveThreads();
         if (canceled) return;
         setRuntimeThreads(response.threads);
@@ -817,16 +984,21 @@ export function AppController(props: AppControllerProps) {
         }
       } catch {
         if (canceled) return;
-        setThreadLoadError('无法加载历史会话');
+        setProjects([]);
+        setArchivedProjects([]);
+        setRuntimeThreads([]);
+        dispatch({ type: 'set_current_project', projectId: undefined });
+        setProjectLoadError('无法迁移或加载项目，请稍后重试');
+        setThreadLoadError(undefined);
       }
     }
 
-    void loadThreads();
+    void loadRuntimeWorkspace();
 
     return () => {
       canceled = true;
     };
-  }, [connectionState.status, threadService]);
+  }, [connectionState.status, hostBridge, projectService, threadService]);
 
   useEffect(() => {
     let canceled = false;
@@ -995,6 +1167,45 @@ export function AppController(props: AppControllerProps) {
         }
       });
   }, [capabilityService, codexMcp, codexSkills, connectionState.status, state.activeView]);
+
+  useEffect(() => {
+    if (
+      connectionState.status !== 'connected'
+      || capabilityService === null
+      || state.activeView !== 'conversation'
+    ) {
+      return;
+    }
+
+    let refreshing = false;
+    const generation = skillMarketRuntimeGenerationRef.current;
+    const activeCapabilityService = capabilityService;
+    const refreshSkills = () => {
+      if (refreshing || !isCurrentCapabilityRuntime(generation, activeCapabilityService)) return;
+      refreshing = true;
+      void activeCapabilityService.listSkills()
+        .then(response => {
+          if (isCurrentCapabilityRuntime(generation, activeCapabilityService)) {
+            setCodexSkills(response);
+            setCapabilitiesLoadError(undefined);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          refreshing = false;
+        });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshSkills();
+    };
+
+    window.addEventListener('focus', refreshSkills);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', refreshSkills);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [capabilityService, connectionState.status, state.activeView]);
 
   useEffect(() => {
     if (
@@ -1350,8 +1561,8 @@ export function AppController(props: AppControllerProps) {
     state.selectedRunId === undefined ? undefined : runAttachmentsById[state.selectedRunId];
   const selectedRunContext =
     state.selectedRunId === undefined ? undefined : runContextById[state.selectedRunId];
-  const currentProject = findProjectById(projects, state.currentProjectId) ?? projects[0];
-  const currentProjectName = currentProject?.name ?? 'content-design';
+  const currentProject = findProjectById(projects, state.currentProjectId);
+  const currentProjectName = currentProject?.name ?? '未选择项目';
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
   const selectedScheduleTask = scheduleTaskSummaries.find(
     task => task.threadId === state.selectedThreadId
@@ -1363,8 +1574,6 @@ export function AppController(props: AppControllerProps) {
     ? undefined
     : scheduleSidebarTasks.find(task => task.id === selectedScheduleTask.scheduleId);
   const selectedThread = runtimeThreads.find(thread => thread.id === state.selectedThreadId);
-  const selectedSummaryOperation =
-    summaryOperation?.threadId === state.selectedThreadId ? summaryOperation : undefined;
   const selectedActiveRun = getThreadActiveRun(runRegistry, state.selectedThreadId);
   const selectedPendingRunStart = findPendingRunStart(
     pendingRunStartsById,
@@ -1376,8 +1585,22 @@ export function AppController(props: AppControllerProps) {
     : getRunCancelState(runRegistry, selectedActiveRun.id) === 'requested';
   const runtimeStatus = mapRuntimeStatus(connectionState);
   const slashCommands = useMemo(
-    () => buildComposerSlashCommands(codexSkills, codexMcp),
-    [codexSkills, codexMcp]
+    () => buildComposerSlashCommands(codexSkills),
+    [codexSkills]
+  );
+  const composerQueuedItems = useMemo<ComposerQueuedItem[]>(
+    () => timelineItems.flatMap(item => (
+      item.kind === 'user_message'
+      && item.runStatus === 'queued'
+      && item.runId !== undefined
+        ? [{
+            runId: item.runId,
+            text: item.text,
+            queuePosition: item.queuePosition
+          }]
+        : []
+    )),
+    [timelineItems]
   );
   const composerAttachmentScope = `${state.currentProjectId}:${state.selectedThreadId ?? 'new'}`;
   const composerAttachmentDraftId = getOrCreateComposerAttachmentDraftId(
@@ -1396,8 +1619,11 @@ export function AppController(props: AppControllerProps) {
     })),
     [visibleRuntimeThreads]
   );
-  const currentMemoryProjectKey = selectedThread?.canonicalCwd
-    ?? visibleRuntimeThreads.find(thread => projectIdForThread(thread, projects) === state.currentProjectId)?.canonicalCwd;
+  const currentMemoryProjectKey = selectedThread === undefined
+    ? state.currentProjectId
+    : selectedThread.purpose === 'conversation'
+      ? selectedThread.projectId ?? undefined
+      : undefined;
 
   function handleEditorContentChange(content: string) {
     const path = selectedFilePathRef.current;
@@ -1649,7 +1875,10 @@ export function AppController(props: AppControllerProps) {
     return false;
   }
 
-  function startNewConversation(options: { updateRoute?: boolean } = {}) {
+  function startNewConversation(options: {
+    updateRoute?: boolean;
+    projectId?: string;
+  } = {}) {
     closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
@@ -1661,6 +1890,12 @@ export function AppController(props: AppControllerProps) {
     setSearchHistoryTarget(undefined);
     setTimelineRunTarget(undefined);
     setTimelineApprovalTarget(undefined);
+    if (
+      options.projectId !== undefined
+      && options.projectId !== state.currentProjectId
+    ) {
+      dispatch({ type: 'select_project', projectId: options.projectId });
+    }
     dispatch({ type: 'new_conversation' });
     if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
   }
@@ -1680,6 +1915,245 @@ export function AppController(props: AppControllerProps) {
     setTimelineApprovalTarget(undefined);
     dispatch({ type: 'select_project', projectId });
     if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
+  }
+
+  async function addProjectDirectory() {
+    const selectDirectory = hostBridge.selectProjectDirectory;
+    if (
+      selectDirectory === undefined
+      || projectService === null
+      || projectDirectoryDialogInFlightRef.current
+    ) return;
+    projectDirectoryDialogInFlightRef.current = true;
+    try {
+      const path = await selectDirectory();
+      if (path === null) return;
+      await registerProjectDirectory(path);
+    } catch (error) {
+      setProjectLoadError(getRuntimeErrorMessage(error, '添加项目失败，请重试'));
+    } finally {
+      projectDirectoryDialogInFlightRef.current = false;
+    }
+  }
+
+  async function createBlankProject(name: string): Promise<boolean> {
+    const createDirectory = hostBridge.createProjectDirectory;
+    if (
+      createDirectory === undefined
+      || projectService === null
+      || projectDirectoryDialogInFlightRef.current
+    ) return false;
+    projectDirectoryDialogInFlightRef.current = true;
+    try {
+      const path = await createDirectory(name);
+      await registerProjectDirectory(path);
+      return true;
+    } catch (error) {
+      setProjectLoadError(getRuntimeErrorMessage(error, '新建项目失败，请重试'));
+      return false;
+    } finally {
+      projectDirectoryDialogInFlightRef.current = false;
+    }
+  }
+
+  async function registerProjectDirectory(path: string) {
+    if (projectService === null) return;
+    try {
+      const response = await projectService.createProject({ cwd: path });
+      setProjects(current => upsertProject(current, response.project));
+      selectProject(response.project.id);
+      setProjectLoadError(undefined);
+    } catch (error) {
+      if (!(error instanceof ApiClientError) || error.code !== 'PROJECT_DIRECTORY_CONFLICT') {
+        throw error;
+      }
+      const refreshed = await projectService.listProjects('active');
+      setProjects(refreshed.projects);
+      const existing = refreshed.projects.find(project => (
+        normalizeWorkspacePath(project.cwd) === normalizeWorkspacePath(path)
+        || (
+          project.canonicalCwd !== null
+          && normalizeWorkspacePath(project.canonicalCwd) === normalizeWorkspacePath(path)
+        )
+      ));
+      if (existing !== undefined) {
+        selectProject(existing.id);
+        setProjectLoadError(undefined);
+        return;
+      }
+      throw new Error('项目已存在，但无法在项目列表中找到');
+    }
+  }
+
+  function handleProjectDragEnter(event: ReactDragEvent<HTMLDivElement>) {
+    if (!canImportDroppedProject(event.dataTransfer, hostBridge, projectService)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setProjectDropActive(true);
+  }
+
+  function handleProjectDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    if (!canImportDroppedProject(event.dataTransfer, hostBridge, projectService)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    if (!projectDropActive) setProjectDropActive(true);
+  }
+
+  function handleProjectDragLeave(event: ReactDragEvent<HTMLDivElement>) {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setProjectDropActive(false);
+  }
+
+  async function handleProjectDrop(event: ReactDragEvent<HTMLDivElement>) {
+    const file = readDroppedDirectory(event.dataTransfer);
+    if (
+      file === undefined
+      || hostBridge.resolveDroppedFilePath === undefined
+      || projectService === null
+    ) {
+      setProjectDropActive(false);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setProjectDropActive(false);
+
+    const path = hostBridge.resolveDroppedFilePath(file);
+    if (path === null) {
+      setProjectLoadError('无法读取拖入的项目文件夹路径');
+      return;
+    }
+    try {
+      await registerProjectDirectory(path);
+    } catch (error) {
+      setProjectLoadError(getRuntimeErrorMessage(error, '拖入项目失败，请确认选择的是文件夹'));
+    }
+  }
+
+  async function archiveProject(projectId: string) {
+    if (projectService === null) return;
+    try {
+      const response = await projectService.archiveProject(projectId);
+      const remaining = projects.filter(project => project.id !== projectId);
+      setProjects(remaining);
+      setArchivedProjects(current => upsertProject(current, response.project));
+      if (state.currentProjectId === projectId) {
+        const nextProjectId = remaining[0]?.id;
+        if (nextProjectId === undefined) {
+          dispatch({ type: 'set_current_project', projectId: undefined });
+          startNewConversation();
+        } else {
+          selectProject(nextProjectId);
+        }
+      }
+      setProjectLoadError(undefined);
+    } catch (error) {
+      setProjectLoadError(getRuntimeErrorMessage(error, '移除项目失败，请重试'));
+    }
+  }
+
+  async function openProjectManagement(projectId?: string) {
+    setProjectManagementProjectId(projectId);
+    setProjectManagementOpen(true);
+    if (projectService === null) return;
+    try {
+      const response = await projectService.listUnassignedThreads();
+      if (mountedRef.current) setUnassignedThreads(response.threads);
+    } catch (error) {
+      if (mountedRef.current) {
+        setProjectLoadError(getRuntimeErrorMessage(error, '无法加载待归属会话'));
+      }
+    }
+  }
+
+  async function refreshProjectsFromRuntime() {
+    if (projectService === null) return;
+    const [activeResponse, allResponse] = await Promise.all([
+      projectService.listProjects('active'),
+      projectService.listProjects('all')
+    ]);
+    setProjects(activeResponse.projects);
+    setArchivedProjects(
+      allResponse.projects.filter(project => project.status === 'archived')
+    );
+  }
+
+  async function updateManagedProject(
+    projectId: string,
+    input: Parameters<ProjectService['updateProject']>[1]
+  ) {
+    if (projectService === null) return;
+    setProjectMutationBusy(true);
+    try {
+      const response = await projectService.updateProject(projectId, input);
+      setProjects(current => upsertProject(current, response.project));
+      setProjectLoadError(undefined);
+    } catch (error) {
+      setProjectLoadError(getRuntimeErrorMessage(error, '更新项目失败，请重试'));
+    } finally {
+      setProjectMutationBusy(false);
+    }
+  }
+
+  async function restoreManagedProject(projectId: string) {
+    if (projectService === null) return;
+    setProjectMutationBusy(true);
+    try {
+      await projectService.restoreProject(projectId);
+      await refreshProjectsFromRuntime();
+      setProjectLoadError(undefined);
+    } catch (error) {
+      setProjectLoadError(getRuntimeErrorMessage(error, '恢复项目失败，请重试'));
+    } finally {
+      setProjectMutationBusy(false);
+    }
+  }
+
+  async function replaceManagedProjectDirectory(projectId: string) {
+    if (projectService === null || hostBridge.selectProjectDirectory === undefined) return;
+    const cwd = await hostBridge.selectProjectDirectory();
+    if (cwd === null) return;
+    setProjectMutationBusy(true);
+    try {
+      const response = await projectService.replaceProjectDirectory(projectId, { cwd });
+      setProjects(current => upsertProject(current, response.project));
+      setProjectLoadError(undefined);
+    } catch (error) {
+      setProjectLoadError(getRuntimeErrorMessage(error, '更换项目目录失败，请重试'));
+    } finally {
+      setProjectMutationBusy(false);
+    }
+  }
+
+  async function assignManagedThread(threadId: string, projectId: string) {
+    if (projectService === null) return;
+    setProjectMutationBusy(true);
+    try {
+      const response = await projectService.assignThreadProject(threadId, { projectId });
+      setRuntimeThreads(current => upsertThread(current, response.thread));
+      setUnassignedThreads(current => current.filter(thread => thread.id !== threadId));
+      setProjectLoadError(undefined);
+    } catch (error) {
+      setProjectLoadError(getRuntimeErrorMessage(error, '认领会话失败，请重试'));
+    } finally {
+      setProjectMutationBusy(false);
+    }
+  }
+
+  async function deleteScheduleDraft(threadId: string) {
+    if (threadService === null) return;
+    try {
+      await threadService.archiveThread(threadId);
+      setRuntimeThreads(current => current.filter(thread => thread.id !== threadId));
+      delete timelineItemsByThreadIdRef.current[threadId];
+      if (state.selectedThreadId === threadId) {
+        startNewConversation();
+      }
+      setThreadLoadError(undefined);
+    } catch (error) {
+      setThreadLoadError(getRuntimeErrorMessage(error, '删除任务草稿失败，请重试'));
+    }
   }
 
   function selectConversation(conversationId: string, options: { updateRoute?: boolean } = {}) {
@@ -1724,10 +2198,6 @@ export function AppController(props: AppControllerProps) {
     const thread = runtimeThreads.find(item => item.id === threadId);
     if (thread === undefined) return;
     markThreadTasksRead(threadId);
-    const projectId = projectIdForThread(thread, projects);
-    if (projectId !== state.currentProjectId) {
-      dispatch({ type: 'select_project', projectId });
-    }
     selectConversation(threadId);
   }
 
@@ -1843,44 +2313,55 @@ export function AppController(props: AppControllerProps) {
     setSearchHistoryTarget(undefined);
     showTimelineForThread(thread.id, [], false);
 
-    const projectId = projectIdForThread(thread, projects);
-    if (projectId !== state.currentProjectId) {
-      dispatch({ type: 'select_project', projectId });
+    if (result.projectId !== state.currentProjectId) {
+      dispatch({ type: 'set_current_project', projectId: result.projectId });
     }
     dispatch({ type: 'select_thread', threadId: thread.id });
     navigateToRoute({ view: 'thread', threadId: thread.id });
     setThreadHistoryReloadKey(previous => previous + 1);
   }
 
-  async function handleComposerPermissionChange(permission: ComposerRunConfig['permission']) {
+  async function handleComposerPermissionChange(
+    permission: ComposerRunConfig['permission']
+  ): Promise<boolean> {
     const baseConfig = composerRunConfig
       ?? defaultComposerRunConfig(currentProject, defaultPermission);
-    setComposerRunConfig({ ...baseConfig, permission });
 
     if (selectedThread === undefined) {
+      setComposerRunConfig({ ...baseConfig, permission });
       setThreadConfigUpdateError(undefined);
-      return;
+      return true;
+    }
+    if (currentRunBusy) {
+      setThreadConfigUpdateError('任务运行期间不能修改访问权限，请等待当前任务结束');
+      return false;
     }
 
     const sandbox = toRuntimeSandbox(permission);
     if (sandbox === selectedThread.sandbox) {
       setThreadConfigUpdateError(undefined);
-      return;
+      return true;
     }
     if (threadService === null) {
       setThreadConfigUpdateError('本地服务暂不可用，无法更新会话访问权限');
-      return;
+      return false;
     }
 
     try {
       const response = await threadService.updateThread(selectedThread.id, { sandbox });
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) return false;
       setRuntimeThreads(previous => upsertThread(previous, response.thread));
       setThreadConfigUpdateError(undefined);
-    } catch {
+      return true;
+    } catch (error) {
       if (mountedRef.current) {
-        setThreadConfigUpdateError('无法更新会话访问权限');
+        setThreadConfigUpdateError(
+          error instanceof ApiClientError && error.code === 'THREAD_HAS_ACTIVE_RUN'
+            ? '任务运行期间不能修改访问权限，请等待当前任务结束'
+            : '无法更新会话访问权限'
+        );
       }
+      return false;
     }
   }
 
@@ -2293,7 +2774,12 @@ export function AppController(props: AppControllerProps) {
     if (state.selectedThreadId !== undefined) return { threadId: state.selectedThreadId, created: false };
     if (threadService === null) throw new Error('Thread service is not available');
 
-    const created = await threadService.createThread(buildThreadRequest(prompt, currentProject, config));
+    if (currentProject === undefined) {
+      throw new Error('请先添加项目');
+    }
+    const created = await threadService.createThread(
+      buildThreadRequest(prompt, currentProject, config)
+    );
     setRuntimeThreads(previous => upsertThread(previous, created.thread));
     skipNextHistoryLoadForThreadRef.current = created.thread.id;
     navigationPersistenceReadyRef.current = true;
@@ -2546,28 +3032,6 @@ export function AppController(props: AppControllerProps) {
     await memoryService.createMemory(input);
   }
 
-  async function createConversationSummary() {
-    const threadId = state.selectedThreadId;
-    if (threadId === undefined || memoryService === null) return;
-    setSummaryOperation({ threadId, phase: 'loading' });
-    try {
-      const response = await memoryService.createSummary(threadId);
-      if (!mountedRef.current) return;
-      setSummaryOperation({
-        threadId,
-        phase: 'success',
-        message: `已生成摘要 v${response.summary.version}`
-      });
-    } catch (reason) {
-      if (!mountedRef.current) return;
-      setSummaryOperation({
-        threadId,
-        phase: 'error',
-        message: getRuntimeErrorMessage(reason, '生成摘要失败')
-      });
-    }
-  }
-
   async function openScheduleTask(
     threadId: string,
     runId?: string,
@@ -2605,9 +3069,12 @@ export function AppController(props: AppControllerProps) {
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
     showTimelineForThread(thread.id, [], false);
-    const projectId = projectIdForThread(thread, projects);
-    if (projectId !== state.currentProjectId) {
-      dispatch({ type: 'select_project', projectId });
+    if (
+      thread.purpose === 'conversation'
+      && thread.projectId !== null
+      && thread.projectId !== state.currentProjectId
+    ) {
+      dispatch({ type: 'set_current_project', projectId: thread.projectId });
     }
     dispatch({ type: 'select_thread', threadId: thread.id });
     if (options.updateRoute !== false) {
@@ -2702,12 +3169,12 @@ export function AppController(props: AppControllerProps) {
     }
 
     const generation = skillMarketRuntimeGenerationRef.current;
-    const created = await activeThreadService.createThread(
+      const created = await activeThreadService.createThread(
       {
         title: SCHEDULE_DRAFT_TITLE,
         workspaceMode: 'managed',
         profile: 'default',
-        sandbox: 'danger-full-access',
+        sandbox: 'workspace-write',
         purpose: 'schedule_draft'
       }
     );
@@ -2774,9 +3241,12 @@ export function AppController(props: AppControllerProps) {
     setHistoryLoadedThreadId(undefined);
     setRunsLoadedThreadId(undefined);
     showTimelineForThread(thread.id, [], false);
-    const projectId = projectIdForThread(thread, projects);
-    if (projectId !== state.currentProjectId) {
-      dispatch({ type: 'select_project', projectId });
+    if (
+      thread.purpose === 'conversation'
+      && thread.projectId !== null
+      && thread.projectId !== state.currentProjectId
+    ) {
+      dispatch({ type: 'set_current_project', projectId: thread.projectId });
     }
     dispatch({ type: 'select_thread', threadId: thread.id });
     navigateToRoute({ view: 'thread', threadId: thread.id });
@@ -2931,16 +3401,25 @@ export function AppController(props: AppControllerProps) {
   const detailPanel = createDetailPanel();
   const selectedRunsLoading = runsLoadingThreadId !== undefined
     && runsLoadingThreadId === state.selectedThreadId;
-  const composerDisabled = selectedPendingRunStart !== undefined
+  const conversationNeedsProject =
+    selectedThread === undefined || selectedThread.purpose === 'conversation';
+  const composerDisabled = (
+    conversationNeedsProject && currentProject === undefined
+  )
+    || selectedPendingRunStart !== undefined
     || selectedRunsLoading
     || connectionState.status !== 'connected';
-  const composerDisabledReason = currentRunCanceling
-    ? '正在停止任务'
-    : selectedPendingRunStart !== undefined
-      ? '正在提交任务'
-      : selectedRunsLoading
-        ? '正在检查会话任务'
-      : '正在连接本地运行内核';
+  const composerDisabledReason = connectionState.status !== 'connected'
+    ? '正在连接本地运行内核'
+    : projectLoadError !== undefined
+      ? projectLoadError
+      : conversationNeedsProject && currentProject === undefined
+        ? '请先添加项目'
+        : currentRunCanceling
+          ? '正在停止任务'
+          : selectedPendingRunStart !== undefined
+            ? '正在提交任务'
+            : '正在检查会话任务';
   const fileWorkspaceOpen = state.activeView === 'conversation' && state.rightPanelMode === 'file';
   const effectiveComposerConfig = selectedThread === undefined
     ? composerRunConfig ?? defaultComposerRunConfig(currentProject, defaultPermission)
@@ -2990,30 +3469,20 @@ export function AppController(props: AppControllerProps) {
             </Suspense>
           ) : undefined
         }
-        summaryLoading={
-          selectedSummaryOperation?.phase === 'loading'
-        }
-        summaryStatus={selectedSummaryOperation?.message}
-        onCreateSummary={
-          connectionState.status === 'connected'
-          && state.selectedThreadId !== undefined
-          && memoryService !== null
-            ? () => void createConversationSummary()
-            : undefined
-        }
         onOpenLocation={() => openPrimaryView('files')}
-        onToggleDetail={() => {
-          if (state.rightPanelMode === 'closed') return;
-          dispatch({ type: 'close_detail' });
-        }}
       />
       <div className="conversation-body">
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
+        {projectLoadError ? <p className="inline-error">{projectLoadError}</p> : null}
         {threadLoadError ? <p className="inline-error">{threadLoadError}</p> : null}
         {threadHistoryLoadError ? <p className="inline-error">{threadHistoryLoadError}</p> : null}
-        {threadConfigUpdateError ? <p className="inline-error">{threadConfigUpdateError}</p> : null}
+        {threadConfigUpdateError ? (
+          <div className="conversation-toast" role="alert">
+            {threadConfigUpdateError}
+          </div>
+        ) : null}
         {timelineItems.length === 0 ? (
-          <ConversationEmptyState projectName={currentProjectName} />
+          <ConversationEmptyState projectName={currentProject?.name} />
         ) : (
           <Timeline
             ref={timelineRef}
@@ -3042,7 +3511,7 @@ export function AppController(props: AppControllerProps) {
             onLoadOlder={threadHistory.loadOlder}
             onOpenRunDetail={openRunDetail}
             onOpenFile={openTimelineFile}
-            onCancelQueuedRun={(runId) => void requestRunCancellation(runId)}
+            onEditUserMessage={editUserMessage}
             resolvingApprovalIds={resolvingApprovalIds}
             approvalErrors={approvalErrors}
             onApproveApproval={(id) => void resolveApproval(id, 'approve')}
@@ -3068,7 +3537,7 @@ export function AppController(props: AppControllerProps) {
         ) : null}
         <Composer
           key={composerAttachmentScope}
-          projectId={currentProject?.id ?? state.currentProjectId}
+          projectId={currentProject?.id ?? ''}
           projectName={currentProjectName}
           projects={projects}
           showProjectSelector={
@@ -3082,9 +3551,11 @@ export function AppController(props: AppControllerProps) {
           disabledReason={composerDisabledReason}
           running={currentRunBusy}
           canceling={currentRunCanceling}
+          permissionChangeDisabled={selectedThread !== undefined && currentRunBusy}
           slashCommands={slashCommands}
           slashCommandsLoading={capabilitiesLoading}
           slashCommandsError={capabilitiesLoadError}
+          queuedItems={composerQueuedItems}
           imageInputSupported={imageInputSupported}
           imageInputUnsupportedReason={
             imageInputSupported
@@ -3097,9 +3568,21 @@ export function AppController(props: AppControllerProps) {
               : undefined
           }
           onSelectProject={selectProject}
-          onPermissionChange={(permission) => void handleComposerPermissionChange(permission)}
+          onCreateBlankProject={
+            projectService === null || hostBridge.createProjectDirectory === undefined
+              ? undefined
+              : createBlankProject
+          }
+          onAddProjectDirectory={
+            projectService === null || hostBridge.selectProjectDirectory === undefined
+              ? undefined
+              : addProjectDirectory
+          }
+          onPermissionChange={handleComposerPermissionChange}
           onDraftApplied={handleComposerDraftApplied}
           onCancel={() => void cancelActiveRun()}
+          onCancelQueuedRun={(runId) => void requestRunCancellation(runId)}
+          onSteerQueuedRun={() => void cancelActiveRun()}
           onUploadAttachment={async file => {
             if (attachmentService === null) throw new Error('附件服务暂不可用');
             const response = await attachmentService.upload({
@@ -3155,7 +3638,9 @@ export function AppController(props: AppControllerProps) {
       connected={connectionState.status === 'connected'}
       service={searchService}
       projects={projects}
-      recentThreads={visibleRuntimeThreads}
+      recentThreads={visibleRuntimeThreads.filter(thread => (
+        thread.purpose === 'conversation' && thread.projectId !== null
+      ))}
       onOpenResult={result => void openSearchResult(result)}
     />
   ) : state.activeView === 'schedules' ? (
@@ -3163,7 +3648,7 @@ export function AppController(props: AppControllerProps) {
       connected={connectionState.status === 'connected'}
       service={scheduleService}
       projects={projects}
-      currentProjectId={state.currentProjectId}
+      currentProjectId={state.currentProjectId ?? ''}
       editScheduleId={
         props.route.view === 'schedules' ? props.route.scheduleId : undefined
       }
@@ -3203,6 +3688,16 @@ export function AppController(props: AppControllerProps) {
       onDefaultPermissionChange={handleDefaultPermissionChange}
       colorMode={colorMode}
       onColorModeChange={handleColorModeChange}
+      desktopCloseBehavior={desktopCloseBehavior}
+      onDesktopCloseBehaviorChange={behavior => {
+        const update = hostBridge.updateDesktopPreferences;
+        if (update === undefined) return;
+        const previous = desktopCloseBehavior;
+        setDesktopCloseBehavior(behavior);
+        void update({ closeBehavior: behavior })
+          .then(preferences => setDesktopCloseBehavior(preferences.closeBehavior))
+          .catch(() => setDesktopCloseBehavior(previous));
+      }}
       mcpService={mcpService}
       mcpData={codexMcp}
       mcpCapabilities={readMcpCapabilities(connectionState)}
@@ -3230,7 +3725,7 @@ export function AppController(props: AppControllerProps) {
       operation={skillMarketOperation}
       useError={skillMarketUseError}
       projects={projects}
-      currentProjectId={currentProject?.id ?? state.currentProjectId}
+      currentProjectId={currentProject?.id ?? ''}
       onInstall={skillId => void installMarketSkill(skillId)}
       onUpdate={skillId => void updateMarketSkill(skillId)}
       onUse={(skillId, projectId) => void useMarketSkill(skillId, projectId)}
@@ -3242,7 +3737,15 @@ export function AppController(props: AppControllerProps) {
   );
 
   return (
-    <WorkbenchLayout
+    <div
+      className="app-drop-shell"
+      data-project-drop-root="true"
+      onDragEnter={handleProjectDragEnter}
+      onDragOver={handleProjectDragOver}
+      onDragLeave={handleProjectDragLeave}
+      onDrop={(event) => void handleProjectDrop(event)}
+    >
+      <WorkbenchLayout
       sidebar={
         <ClaweeSidebar
           projects={projects}
@@ -3254,11 +3757,21 @@ export function AppController(props: AppControllerProps) {
           activeView={state.activeView}
           collapsed={sidebarCollapsed}
           colorMode={colorMode}
-          onNewConversation={startNewConversation}
+          onNewConversation={projectId => startNewConversation({ projectId })}
           onSelectProject={selectProject}
           onSelectConversation={selectConversation}
           onSelectTask={selectSidebarTask}
           onOpenView={openPrimaryView}
+          onAddProject={
+            hostBridge.selectProjectDirectory === undefined
+              ? undefined
+              : () => void addProjectDirectory()
+          }
+          onManageProjects={() => void openProjectManagement()}
+          onEditProject={projectId => void openProjectManagement(projectId)}
+          onReplaceProjectDirectory={projectId => void replaceManagedProjectDirectory(projectId)}
+          onArchiveProject={projectId => void archiveProject(projectId)}
+          onDeleteTaskDraft={threadId => deleteScheduleDraft(threadId)}
           onOpenSettings={() => {
             closeMobileSidebar();
             dispatch({ type: 'open_settings' });
@@ -3278,7 +3791,40 @@ export function AppController(props: AppControllerProps) {
       mobileSidebarOpen={mobileSidebarOpen}
       onOpenMobileSidebar={openMobileSidebar}
       onCloseMobileSidebar={dismissMobileSidebar}
-    />
+      />
+      {projectDropActive ? (
+        <div className="project-drop-overlay" role="status" aria-live="polite">
+          <FolderInput aria-hidden="true" size={30} />
+          <strong>松开以添加项目文件夹</strong>
+        </div>
+      ) : null}
+      <ProjectManagementDialog
+        open={projectManagementOpen}
+        projects={projects}
+        archivedProjects={archivedProjects}
+        unassignedThreads={unassignedThreads}
+        initialProjectId={projectManagementProjectId}
+        busy={projectMutationBusy}
+        error={projectManagementOpen ? projectLoadError : undefined}
+        onClose={() => {
+          setProjectManagementOpen(false);
+          setProjectManagementProjectId(undefined);
+        }}
+        onUpdate={updateManagedProject}
+        onArchive={archiveProject}
+        onRestore={restoreManagedProject}
+        onReplaceDirectory={replaceManagedProjectDirectory}
+        onAssignThread={assignManagedThread}
+        onAddProject={
+          hostBridge.selectProjectDirectory === undefined
+            ? undefined
+            : async () => {
+                await addProjectDirectory();
+                setProjectManagementOpen(true);
+              }
+        }
+      />
+    </div>
   );
 
   function createDetailPanel() {
@@ -3448,11 +3994,19 @@ function readPersistedNavigation(): PersistedNavigation | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
 
   const record = value as Record<string, unknown>;
-  if (typeof record.currentProjectId !== 'string' || record.currentProjectId.length === 0) return null;
+  if (
+    record.currentProjectId !== undefined
+    && (
+      typeof record.currentProjectId !== 'string'
+      || record.currentProjectId.length === 0
+    )
+  ) {
+    return null;
+  }
   if (record.selectedThreadId !== undefined && typeof record.selectedThreadId !== 'string') return null;
 
   return {
-    currentProjectId: record.currentProjectId,
+    currentProjectId: record.currentProjectId as string | undefined,
     selectedThreadId: record.selectedThreadId
   };
 }
@@ -3468,6 +4022,7 @@ function writePersistedNavigation(value: PersistedNavigation): void {
 function readDefaultPermissionPreference(): DefaultPermissionPreference {
   try {
     const value = window.localStorage.getItem(DEFAULT_PERMISSION_STORAGE_KEY);
+    if (value === 'follow-global') return 'workspace-write';
     return isDefaultPermissionPreference(value) ? value : 'follow-project';
   } catch {
     return 'follow-project';
@@ -3488,6 +4043,27 @@ function writeDefaultPermissionPreference(permission: DefaultPermissionPreferenc
   } catch {
     return;
   }
+}
+
+function canImportDroppedProject(
+  dataTransfer: DataTransfer,
+  hostBridge: HostBridge,
+  projectService: ProjectService | null
+): boolean {
+  return projectService !== null
+    && hostBridge.resolveDroppedFilePath !== undefined
+    && readDroppedDirectory(dataTransfer) !== undefined;
+}
+
+function readDroppedDirectory(dataTransfer: DataTransfer): File | undefined {
+  for (const item of Array.from(dataTransfer.items)) {
+    if (item.kind !== 'file') continue;
+    const entry = item.webkitGetAsEntry();
+    if (entry?.isDirectory !== true) continue;
+    const file = item.getAsFile();
+    if (file !== null) return file;
+  }
+  return undefined;
 }
 
 function PlaceholderView(props: { label: string }) {
@@ -3518,29 +4094,6 @@ function getSkillMarketEntry(skillId: string): (typeof skillMarketCatalog)[numbe
   return skillMarketCatalog.find(entry => entry.id === skillId);
 }
 
-function createProjectsForThreads(baseProjects: ClaweeProject[], threads: ThreadResponse[]): ClaweeProject[] {
-  const projectById = new Map(baseProjects.map(project => [project.id, project]));
-
-  for (const thread of threads) {
-    const projectId = projectIdForThread(thread, baseProjects);
-    if (projectById.has(projectId)) continue;
-
-    projectById.set(projectId, {
-      id: projectId,
-      name: formatProjectName(thread.cwd),
-      cwd: thread.cwd,
-      sandbox: thread.sandbox === 'danger-full-access' || thread.sandbox === 'workspace-write'
-        ? thread.sandbox
-        : 'follow-global',
-      profile: thread.profile,
-      model: thread.model ?? null,
-      reasoning: thread.reasoning ?? null
-    });
-  }
-
-  return Array.from(projectById.values());
-}
-
 function shouldShowThreadInSidebar(thread: ThreadResponse): boolean {
   if (thread.purpose === 'schedule_draft') return true;
   if (thread.workspaceMode === 'managed') return false;
@@ -3556,18 +4109,16 @@ function isRuntimeWorkspacePath(path: string): boolean {
     || normalized.includes('/.runtime/workspaces/');
 }
 
-function mapThreadToConversation(thread: ThreadResponse, projects: ClaweeProject[]): ClaweeConversation {
+function mapThreadToConversation(
+  thread: ThreadResponse
+): ClaweeConversation | undefined {
+  if (thread.projectId === null) return undefined;
   return {
     id: thread.id,
-    projectId: projectIdForThread(thread, projects),
+    projectId: thread.projectId,
     title: thread.title ?? thread.codexThreadId ?? thread.id,
     updatedLabel: formatRelativeTime(thread.updatedAt)
   };
-}
-
-function projectIdForThread(thread: ThreadResponse, projects: ClaweeProject[]): string {
-  const matched = projects.find(project => pathsLookRelated(project.cwd, thread.cwd));
-  return matched?.id ?? projectIdFromCwd(thread.cwd);
 }
 
 function buildMemoryProjectOptions(
@@ -3576,23 +4127,15 @@ function buildMemoryProjectOptions(
 ): Array<{ key: string; label: string }> {
   const options = new Map<string, string>();
   for (const thread of threads) {
-    const projectId = projectIdForThread(thread, projects);
-    const label = findProjectById(projects, projectId)?.name ?? formatProjectName(thread.cwd);
-    options.set(thread.canonicalCwd, label);
+    if (thread.purpose !== 'conversation' || thread.projectId === null) continue;
+    const label = findProjectById(projects, thread.projectId)?.name ?? '未知项目';
+    options.set(thread.projectId, label);
   }
   return Array.from(options, ([key, label]) => ({ key, label }));
 }
 
 function shouldSuggestMemory(prompt: string): boolean {
   return /(记住|以后|偏好|始终|每次|默认)/.test(prompt);
-}
-
-function pathsLookRelated(left: string, right: string): boolean {
-  const normalizedLeft = normalizePathForCompare(left);
-  const normalizedRight = normalizePathForCompare(right);
-  return normalizedLeft === normalizedRight
-    || normalizedLeft.endsWith(`/${lastPathSegment(normalizedRight)}`)
-    || normalizedRight.endsWith(`/${lastPathSegment(normalizedLeft)}`);
 }
 
 function toWorkspaceRelativePath(path: string, thread: ThreadResponse | undefined): string {
@@ -3622,21 +4165,15 @@ function normalizePathForCompare(path: string): string {
   return path.replace(/^~(?=\/)/, '').replace(/\/+$/, '');
 }
 
-function projectIdFromCwd(cwd: string): string {
-  const name = formatProjectName(cwd);
-  return `cwd-${name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'project'}`;
-}
-
-function formatProjectName(cwd: string): string {
-  return cwd.split('/').filter(Boolean).at(-1) ?? '项目';
-}
-
-function lastPathSegment(path: string): string {
-  return path.split('/').filter(Boolean).at(-1) ?? path;
-}
-
-function formatRelativeTime(iso: string): string {
-  const timestamp = Date.parse(iso);
+export function formatRelativeTime(iso: string): string {
+  const sqliteUtc = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d{1,3})?$/.exec(
+    iso
+  );
+  const timestamp = Date.parse(
+    sqliteUtc === null
+      ? iso
+      : `${sqliteUtc[1]}T${sqliteUtc[2]}${sqliteUtc[3] ?? ''}Z`
+  );
   if (!Number.isFinite(timestamp)) return '';
 
   const diffMs = Math.max(0, Date.now() - timestamp);
@@ -3656,11 +4193,14 @@ function getRuntimeErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function buildThreadRequest(prompt: string, project: ClaweeProject | undefined, config: ComposerRunConfig): CreateThreadRequest {
+function buildThreadRequest(
+  prompt: string,
+  project: ClaweeProject,
+  config: ComposerRunConfig
+): CreateThreadRequest {
   const request: CreateThreadRequest = {
+    projectId: project.id,
     title: prompt.trim() || '新对话',
-    cwd: project?.cwd,
-    workspaceMode: 'external',
     profile: config.profile,
     sandbox: toRuntimeSandbox(config.permission)
   };
@@ -3687,9 +4227,14 @@ function resolveDefaultPermission(
   project: ClaweeProject | undefined,
   preference: DefaultPermissionPreference
 ): ProjectPermission {
-  return preference === 'follow-project'
-    ? project?.sandbox ?? 'follow-global'
-    : preference;
+  if (preference !== 'follow-project') return preference;
+  if (
+    project?.sandbox === 'workspace-write'
+    || project?.sandbox === 'danger-full-access'
+  ) {
+    return project.sandbox;
+  }
+  return 'workspace-write';
 }
 
 function isDefaultPermissionPreference(value: string | null): value is DefaultPermissionPreference {
@@ -3747,75 +4292,25 @@ function readMcpCapabilities(connectionState: ConnectionState): McpCapabilities 
 }
 
 function buildComposerSlashCommands(
-  skills: CodexSkillListResponse | undefined,
-  mcp: CodexMcpListResponse | undefined
+  skills: CodexSkillListResponse | undefined
 ): ComposerSlashCommand[] {
-  return [
-    ...(skills?.skills ?? [])
-      .filter(skill => skill.status === 'valid')
-      .map(skill => ({
-        id: `skill:${skill.id}`,
-        category: 'skill' as const,
-        label: skill.name ?? skill.id,
-        description: skill.description ?? skill.id,
-        insertText: `$${skill.id} `
-      })),
-    ...(mcp?.servers ?? [])
-      .filter(server => server.status === 'configured')
-      .map(server => ({
-        id: `mcp:${server.name}`,
-        category: 'mcp' as const,
-        label: server.name,
-        description: formatMcpSlashDescription(server),
-        insertText: `使用 MCP：${server.name} `
-      })),
-    ...goalSlashCommands()
-  ];
-}
-
-function goalSlashCommands(): ComposerSlashCommand[] {
-  return [
-    {
-      id: 'goal:create',
-      category: 'goal',
-      label: '设置 Goal',
-      description: '为这次任务声明明确目标',
-      insertText: '目标：'
-    },
-    {
-      id: 'goal:review',
-      category: 'goal',
-      label: '检查 Goal',
-      description: '让 Agent 对齐当前目标和剩余工作',
-      insertText: '请先检查当前目标和剩余工作，再继续。'
-    },
-    {
-      id: 'goal:complete',
-      category: 'goal',
-      label: '完成 Goal',
-      description: '让 Agent 在完成后总结目标达成情况',
-      insertText: '完成后请总结目标达成情况。'
-    }
-  ];
-}
-
-function formatMcpSlashDescription(server: CodexMcpListResponse['servers'][number]): string {
-  const status = server.status === 'configured' ? '已配置' : server.status;
-  if (server.command !== undefined && server.command.length > 0) {
-    return `${server.transport} · ${status} · ${server.command}`;
-  }
-  if (server.url !== undefined && server.url.length > 0) {
-    return `${server.transport} · ${status} · ${server.url}`;
-  }
-  return `${server.transport} · ${status}`;
+  return (skills?.skills ?? [])
+    .filter(skill => skill.status === 'valid')
+    .map(skill => ({
+      id: `skill:${skill.id}`,
+      category: 'skill' as const,
+      label: skill.name ?? skill.id,
+      description: skill.description ?? skill.id,
+      insertText: `$${skill.id} `
+    }));
 }
 
 function toRuntimeSandbox(permission: ClaweeProject['sandbox'] | undefined): SandboxMode {
   if (permission === 'danger-full-access' || permission === 'workspace-write') return permission;
-  return 'read-only';
+  return 'workspace-write';
 }
 
-function fromRuntimeSandbox(sandbox: SandboxMode): ClaweeProject['sandbox'] {
+function fromRuntimeSandbox(sandbox: SandboxMode): ProjectPermission {
   if (sandbox === 'danger-full-access' || sandbox === 'workspace-write') return sandbox;
   return 'follow-global';
 }
@@ -3823,6 +4318,13 @@ function fromRuntimeSandbox(sandbox: SandboxMode): ClaweeProject['sandbox'] {
 function upsertThread(threads: ThreadResponse[], thread: ThreadResponse): ThreadResponse[] {
   const withoutThread = threads.filter(item => item.id !== thread.id);
   return [thread, ...withoutThread];
+}
+
+function upsertProject(
+  projects: ClaweeProject[],
+  project: ClaweeProject
+): ClaweeProject[] {
+  return [project, ...projects.filter(item => item.id !== project.id)];
 }
 
 function upsertSchedule(
@@ -3838,44 +4340,6 @@ function findPendingRunStart(
   threadId: string | undefined
 ): PendingRunStart | undefined {
   return Object.values(pendingRunStartsById).find(pending => pending?.threadId === threadId);
-}
-
-function mergeTimelineHistoryWithCache(
-  historyItems: TimelineItem[],
-  cachedItems: TimelineItem[]
-): TimelineItem[] {
-  const merged = [...historyItems];
-  const historyIds = new Set(historyItems.map(item => item.id));
-  const remainingHistoryKeys = new Map<string, number>();
-
-  for (const item of historyItems) {
-    const key = timelineReplayMergeKey(item);
-    if (key !== undefined) {
-      remainingHistoryKeys.set(key, (remainingHistoryKeys.get(key) ?? 0) + 1);
-    }
-  }
-
-  function consumeHistoryKey(item: TimelineItem): boolean {
-    const key = timelineReplayMergeKey(item);
-    if (key === undefined) return false;
-    const count = remainingHistoryKeys.get(key) ?? 0;
-    if (count === 0) return false;
-    if (count === 1) remainingHistoryKeys.delete(key);
-    else remainingHistoryKeys.set(key, count - 1);
-    return true;
-  }
-
-  for (const item of cachedItems) {
-    if (historyIds.has(item.id)) {
-      consumeHistoryKey(item);
-      continue;
-    }
-    if (consumeHistoryKey(item)) continue;
-    merged.push(item);
-    historyIds.add(item.id);
-  }
-
-  return merged;
 }
 
 function mapRunEventControllerState(
@@ -3956,6 +4420,7 @@ function mapHistoryItemToTimelineItem(item: ThreadHistoryItem, fallbackRunId?: s
       ?? (item.turnId === undefined ? undefined : `history_${item.turnId}`);
   const base = {
     id: item.id,
+    timestamp: item.createdAt,
     ...(runId === undefined ? {} : { runId })
   };
 

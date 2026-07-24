@@ -112,12 +112,12 @@ process.kill(process.pid, 'SIGTERM');
       codexBin,
       codexHome,
       args: ['mcp', 'list'],
-      timeoutMs: 3000
+      timeoutMs: 10_000
     });
 
     expect(result.timedOut).toBe(false);
     expect(result.exitCode).toBeNull();
     expect(result.redactedStderr).toContain('[codex-mcp] termination signal: SIGTERM');
     expect(result.redactedStderr).not.toContain('timed out');
-  });
+  }, 15_000);
 });

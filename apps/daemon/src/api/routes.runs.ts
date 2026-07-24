@@ -11,6 +11,7 @@ import {
 } from '../codex/capabilities.js';
 import type { RunManager } from '../runs/manager.js';
 import type { RuntimeThread, ThreadManager } from '../threads/types.js';
+import { ThreadManagerError } from '../threads/types.js';
 import type { MemoryService } from '../memory/service.js';
 import { apiError } from './errors.js';
 import { formatSseEvent } from './sse.js';
@@ -38,9 +39,14 @@ export async function registerRunRoutes(
     let thread: RuntimeThread | undefined;
     if (body.threadId !== undefined) {
       const threadManager = options.threadManager;
-      thread = threadManager?.getThread(body.threadId);
+      thread = threadManager?.getPublicThread(body.threadId);
       if (thread === undefined) {
         return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+      }
+      try {
+        thread = threadManager?.assertRunnableThread(body.threadId) ?? thread;
+      } catch (error) {
+        return sendThreadManagerError(reply, error);
       }
       if (thread.status === 'archived') {
         return reply.code(409).send(apiError('THREAD_ARCHIVED', 'Thread is archived'));
@@ -65,7 +71,9 @@ export async function registerRunRoutes(
       const context = options.memoryService?.prepareRunContext({
         prompt: body.prompt,
         threadId: thread.id,
-        projectKey: thread.canonicalCwd
+        projectKey: thread.purpose === 'conversation'
+          ? thread.projectId ?? ''
+          : ''
       });
 
       const run = manager.startRun({
@@ -115,7 +123,7 @@ export async function registerRunRoutes(
       prompt: body.prompt,
       cwd: body.cwd ?? process.cwd(),
       profile: body.profile ?? 'default',
-      sandbox: body.sandbox ?? 'read-only',
+      sandbox: body.sandbox ?? 'workspace-write',
       threadId: body.threadId,
       resumeMode: body.resumeMode,
       model: body.model,
@@ -439,6 +447,17 @@ function sendProfileValidationError(
     return reply.code(422).send(apiError('CODEX_CONFIG_INVALID', validation.message));
   }
   return reply.code(422).send(apiError('CODEX_PROFILE_INVALID', validation.message));
+}
+
+function sendThreadManagerError(reply: FastifyReply, error: unknown) {
+  if (!(error instanceof ThreadManagerError)) throw error;
+  if (error.code === 'THREAD_NOT_FOUND' || error.code === 'PROJECT_NOT_FOUND') {
+    return reply.code(404).send(apiError(error.code, error.message));
+  }
+  if (error.code === 'PROJECT_DIRECTORY_UNAVAILABLE') {
+    return reply.code(422).send(apiError(error.code, error.message));
+  }
+  return reply.code(409).send(apiError(error.code, error.message));
 }
 
 function getReplayAfterSeq(

@@ -59,10 +59,34 @@ export function migrate(db: Database.Database): void {
       UNIQUE(run_id, seq)
     );
 
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      canonical_cwd TEXT,
+      profile TEXT NOT NULL,
+      model TEXT,
+      reasoning TEXT,
+      sandbox TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      archived_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS project_migrations (
+      migration_key TEXT PRIMARY KEY,
+      request_hash TEXT NOT NULL,
+      result_json TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS threads (
       id TEXT PRIMARY KEY,
       title TEXT,
       codex_thread_id TEXT,
+      project_id TEXT,
+      origin TEXT NOT NULL DEFAULT 'clawee_created',
       cwd TEXT NOT NULL,
       canonical_cwd TEXT NOT NULL,
       workspace_mode TEXT NOT NULL,
@@ -76,7 +100,8 @@ export function migrate(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       archived_at TEXT,
       last_error_code TEXT,
-      last_error_message TEXT
+      last_error_message TEXT,
+      FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE RESTRICT
     );
 
     CREATE TABLE IF NOT EXISTS codex_skill_operations (
@@ -313,6 +338,9 @@ export function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_threads_status ON threads(status);
     CREATE INDEX IF NOT EXISTS idx_threads_codex_thread_id ON threads(codex_thread_id);
     CREATE INDEX IF NOT EXISTS idx_threads_updated_at ON threads(updated_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_active_canonical_cwd
+      ON projects(canonical_cwd)
+      WHERE status = 'active' AND canonical_cwd IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_runs_thread_id ON runs(thread_id);
     CREATE INDEX IF NOT EXISTS idx_runs_codex_thread_id ON runs(codex_thread_id);
     CREATE INDEX IF NOT EXISTS idx_runs_thread_created_at ON runs(thread_id, created_at);
@@ -361,6 +389,18 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'threads', 'title', 'title TEXT');
   ensureColumn(db, 'threads', 'archived_at', 'archived_at TEXT');
   ensureColumn(db, 'threads', 'purpose', "purpose TEXT NOT NULL DEFAULT 'conversation'");
+  ensureColumn(
+    db,
+    'threads',
+    'project_id',
+    'project_id TEXT REFERENCES projects(id) ON DELETE RESTRICT'
+  );
+  ensureColumn(
+    db,
+    'threads',
+    'origin',
+    "origin TEXT NOT NULL DEFAULT 'clawee_created'"
+  );
   ensureColumn(db, 'runs', 'resume_mode', 'resume_mode TEXT');
   ensureColumn(db, 'runs', 'queue_state', "queue_state TEXT NOT NULL DEFAULT 'none'");
   ensureColumn(db, 'runs', 'submission_mode', "submission_mode TEXT NOT NULL DEFAULT 'enqueue'");
@@ -378,7 +418,23 @@ export function migrate(db: Database.Database): void {
     SET concurrency_policy = 'queue'
     WHERE concurrency_policy = 'parallel'
   `).run();
+  db.prepare(`
+    UPDATE threads
+    SET origin = CASE
+      WHEN purpose = 'conversation' AND id LIKE 'thread_codex_%'
+        THEN 'codex_discovered'
+      ELSE 'clawee_created'
+    END
+  `).run();
+  assertUniqueCodexThreadIds(db);
   db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_threads_project_id
+      ON threads(project_id);
+    CREATE INDEX IF NOT EXISTS idx_threads_origin
+      ON threads(origin);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_unique_codex_thread_id
+      ON threads(codex_thread_id)
+      WHERE codex_thread_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_attachments_run_id
       ON attachments(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_thread_id
@@ -389,6 +445,21 @@ export function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_schedule_operations_actor_run_id
       ON schedule_operations(actor_run_id);
   `);
+}
+
+function assertUniqueCodexThreadIds(db: Database.Database): void {
+  const duplicates = db.prepare(`
+    SELECT codex_thread_id AS codexThreadId
+    FROM threads
+    WHERE codex_thread_id IS NOT NULL
+    GROUP BY codex_thread_id
+    HAVING COUNT(*) > 1
+    ORDER BY codex_thread_id ASC
+  `).all() as Array<{ codexThreadId: string }>;
+  if (duplicates.length === 0) return;
+  throw new Error(
+    `THREAD_CODEX_ID_CONFLICT: ${duplicates.map(row => row.codexThreadId).join(', ')}`
+  );
 }
 
 function ensureColumn(db: Database.Database, table: string, column: string, ddl: string): void {

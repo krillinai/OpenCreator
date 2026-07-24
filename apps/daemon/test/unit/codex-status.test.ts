@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildCodexStatusResponse } from '../../src/codex/status.js';
-import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
+import {
+  createUnknownCapabilityMatrix,
+  type RuntimeCapabilityMatrix
+} from '../../src/codex/capabilities.js';
 
 describe('codex status response builder', () => {
   it('builds the stable codex status response shape', () => {
@@ -53,7 +56,14 @@ describe('codex status response builder', () => {
         source: 'isolated',
         writable: true
       },
-      capabilities
+      capabilities,
+      availabilityProbe: {
+        status: 'succeeded',
+        checkedAt: '2026-07-17T00:00:00.000Z',
+        durationMs: 850,
+        responseReceived: true,
+        markerMatched: true
+      }
     });
 
     expect(response).toEqual({
@@ -64,7 +74,42 @@ describe('codex status response builder', () => {
       codexHomeSource: 'isolated',
       codexHomeWritable: true,
       capabilities,
-      diagnostics: []
+      diagnostics: [],
+      availabilityProbe: {
+        status: 'succeeded',
+        checkedAt: '2026-07-17T00:00:00.000Z',
+        durationMs: 850,
+        responseReceived: true,
+        markerMatched: true
+      }
     });
+  });
+
+  it('surfaces a failed background availability probe as a diagnostic', () => {
+    const response = buildCodexStatusResponse({
+      codexBin: 'codex',
+      codexHome: {
+        path: '/tmp/codex-home',
+        mode: 'isolated',
+        source: 'isolated',
+        writable: true
+      },
+      capabilities: createUnknownCapabilityMatrix(
+        '2026-07-17T00:00:00.000Z'
+      ),
+      availabilityProbe: {
+        status: 'failed',
+        errorCode: 'CODEX_PROBE_EXIT_NON_ZERO',
+        message: '尚未登录'
+      }
+    });
+
+    expect(response.availabilityProbe).toMatchObject({
+      status: 'failed',
+      errorCode: 'CODEX_PROBE_EXIT_NON_ZERO'
+    });
+    expect(response.diagnostics).toEqual([
+      'Codex 后台可用性验证失败：尚未登录'
+    ]);
   });
 });

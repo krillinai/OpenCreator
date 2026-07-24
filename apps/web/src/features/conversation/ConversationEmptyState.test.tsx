@@ -13,9 +13,9 @@ describe('ConversationEmptyState', () => {
     expect(brandMark).toBeNull();
   });
 
-  it('uses the default Clawee prompt when no project is selected', () => {
+  it('asks the user to add a project when none is selected', () => {
     render(<ConversationEmptyState />);
 
-    expect(screen.getByRole('heading', { name: '今天要让 Clawee 处理什么？' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '先添加项目后开始对话' })).toBeInTheDocument();
   });
 });

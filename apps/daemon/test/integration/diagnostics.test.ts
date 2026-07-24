@@ -247,12 +247,7 @@ describe('diagnostics', () => {
       codexHome: join(tempDir, 'codex-home'),
       resumeCapabilityVerified: true
     });
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
-      profile: 'default',
-      sandbox: 'read-only'
-    })).json().thread;
+    const thread = await createApiConversation();
     createThreadRepository(database).setCodexThreadId(thread.id, 'missing-session');
 
     const created = await authPost('/runs', {
@@ -282,12 +277,7 @@ describe('diagnostics', () => {
       codexBin: fake.bin,
       codexHome: join(tempDir, 'codex-home')
     });
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
-      profile: 'default',
-      sandbox: 'read-only'
-    })).json().thread;
+    const thread = await createApiConversation();
 
     const first = await authPost('/runs', { threadId: thread.id, prompt: 'hang' });
     const second = await authPost('/runs', { threadId: thread.id, prompt: 'queued' });
@@ -302,7 +292,7 @@ describe('diagnostics', () => {
       resumeMode: 'new_thread',
       cwd: tempDir,
       profile: 'default',
-      sandbox: 'read-only',
+      sandbox: 'workspace-write',
       queueState: 'queued',
       terminationReason: 'user_canceled'
     });
@@ -402,6 +392,25 @@ function authPost(url: string, payload: unknown) {
     headers: { authorization: 'Bearer secret' },
     payload: payload as TestInjectPayload
   });
+}
+
+async function createApiConversation(): Promise<{
+  id: string;
+  projectId: string;
+}> {
+  const project = await authPost('/projects', {
+    cwd: tempDir,
+    profile: 'default',
+    sandbox: 'read-only'
+  });
+  expect(project.statusCode).toBe(201);
+  const projectId = project.json().project.id as string;
+  const thread = await authPost('/threads', { projectId });
+  expect(thread.statusCode).toBe(201);
+  return thread.json().thread as {
+    id: string;
+    projectId: string;
+  };
 }
 
 async function waitForRunStatus(runId: string, status: string): Promise<void> {

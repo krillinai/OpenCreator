@@ -39,6 +39,7 @@ const FILE_TREE_MAX_WIDTH = 420;
 const FILE_EDITOR_MIN_WIDTH = 360;
 const RESIZE_KEY_STEP = 32;
 const FILE_TOAST_DURATION_MS = 2200;
+const FILE_REFRESH_INTERVAL_MS = 2000;
 
 export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const [nodes, setNodes] = useState<WorkspaceDirectoryResponse['nodes']>([]);
@@ -58,9 +59,9 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const [loadError, setLoadError] = useState<string>();
   const [saveError, setSaveError] = useState<string>();
   const [conflictOpen, setConflictOpen] = useState(false);
-  const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const [treeCollapsed, setTreeCollapsed] = useState(true);
   const [treeWidth, setTreeWidth] = useState(280);
-  const [fileMode, setFileMode] = useState<FileEditorMode>('edit');
+  const [fileMode, setFileMode] = useState<FileEditorMode>('preview');
   const [toastMessage, setToastMessage] = useState<string>();
   const objectUrlRef = useRef<string>();
   const toastTimeoutRef = useRef<number>();
@@ -106,7 +107,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   ), [service, thread]);
 
   useEffect(() => {
-    setFileMode(defaultModeForMeta(effectiveMeta));
+    setFileMode(workspaceModeForMeta(effectiveMeta));
   }, [effectiveMeta?.path, effectiveMeta?.kind, effectiveMeta?.editable]);
 
   useEffect(() => {
@@ -184,7 +185,74 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
       canceled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread?.id, thread?.sandbox, thread?.status, service, recentPathStorageKey, props.selectedPath]);
+  }, [thread?.id, thread?.sandbox, thread?.status, service, recentPathStorageKey]);
+
+  useEffect(() => {
+    const requestedPath = props.selectedPath?.trim();
+    if (
+      requestedPath === undefined
+      || requestedPath.length === 0
+      || requestedPath === activePath
+      || !loadedPathsRef.current.has('')
+    ) {
+      return;
+    }
+    void openFilePath(requestedPath, { skipDirtyConfirm: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.selectedPath]);
+
+  useEffect(() => {
+    if (!thread || !service || !activePath || !meta) return;
+
+    let canceled = false;
+    let checking = false;
+
+    const refreshIfChanged = async () => {
+      if (
+        canceled
+        || checking
+        || !mountedRef.current
+        || dirty
+        || document.visibilityState === 'hidden'
+      ) {
+        return;
+      }
+
+      checking = true;
+      try {
+        const latestMeta = await service.getMeta(thread.id, activePath);
+        if (
+          canceled
+          || !mountedRef.current
+          || latestMeta.versionToken === meta.versionToken
+        ) {
+          return;
+        }
+        await openFilePath(activePath, { skipDirtyConfirm: true });
+      } catch {
+        // 后台刷新失败不覆盖当前可用预览，用户主动打开时仍会看到明确错误。
+      } finally {
+        checking = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshIfChanged();
+    };
+    const intervalId = window.setInterval(() => {
+      void refreshIfChanged();
+    }, FILE_REFRESH_INTERVAL_MS);
+
+    window.addEventListener('focus', refreshIfChanged);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      canceled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshIfChanged);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePath, dirty, meta?.versionToken, service, thread?.id]);
 
   async function openFilePath(path: string, options?: { skipDirtyConfirm?: boolean }) {
     if (!thread || !service) {
@@ -228,7 +296,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
 
       replaceObjectUrl(nextObjectUrl);
       setActivePath(path);
-      setFileMode(defaultModeForMeta(nextMeta));
+      setFileMode(workspaceModeForMeta(nextMeta));
       setMeta(nextMeta);
       setSavedContent(nextContent);
       setDraftContent(nextContent);
@@ -587,6 +655,10 @@ function isTextMeta(meta: WorkspaceFileMeta): boolean {
 
 function isBlobMeta(meta: WorkspaceFileMeta): boolean {
   return meta.kind === 'image' || meta.kind === 'pdf';
+}
+
+function workspaceModeForMeta(meta?: WorkspaceFileMeta): FileEditorMode {
+  return meta !== undefined && isPreviewable(meta) ? 'preview' : defaultModeForMeta(meta);
 }
 
 function humanizeError(error: unknown, fallback: string): string {

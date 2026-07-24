@@ -1,0 +1,219 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f3f4f6;
+  color: #1f2933;
+  letter-spacing: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+}
+
+.bootstrap-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+  background:
+    linear-gradient(180deg, #f8fafb 0%, #eef1f3 100%);
+}
+
+.bootstrap-panel {
+  display: flex;
+  width: min(520px, 100%);
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.brand-mark {
+  width: 84px;
+  height: auto;
+  margin-bottom: 42px;
+}
+
+.status-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 22px;
+  place-items: center;
+}
+
+.status-mark span {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #d4d9dd;
+  border-top-color: #b64b1e;
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+.status-mark[data-failed="true"] span {
+  position: relative;
+  border: 0;
+  border-radius: 50%;
+  background: #a7342b;
+  animation: none;
+}
+
+.status-mark[data-failed="true"] span::before,
+.status-mark[data-failed="true"] span::after {
+  position: absolute;
+  top: 13px;
+  left: 6px;
+  width: 16px;
+  height: 2px;
+  content: "";
+  background: white;
+}
+
+.status-mark[data-failed="true"] span::before {
+  transform: rotate(45deg);
+}
+
+.status-mark[data-failed="true"] span::after {
+  transform: rotate(-45deg);
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+#status-detail {
+  min-height: 24px;
+  margin: 10px 0 0;
+  color: #65717b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.elapsed {
+  margin: 14px 0 0;
+  color: #8b949c;
+  font-size: 12px;
+}
+
+.failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 28px;
+}
+
+.failure-actions button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #cbd1d5;
+  border-radius: 6px;
+  background: #fff;
+  color: #2d3740;
+  cursor: pointer;
+}
+
+.failure-actions button:hover {
+  background: #f8f9fa;
+}
+
+.failure-actions .primary {
+  border-color: #9d401a;
+  background: #b64b1e;
+  color: white;
+}
+
+.failure-actions .primary:hover {
+  background: #9d401a;
+}
+
+.failure-actions .quiet {
+  border-color: transparent;
+  background: transparent;
+  color: #65717b;
+}
+
+details {
+  width: min(520px, 100%);
+  margin-top: 22px;
+  border-top: 1px solid #d9dde0;
+  padding-top: 16px;
+  text-align: left;
+}
+
+summary {
+  cursor: pointer;
+  color: #56616a;
+  font-size: 13px;
+}
+
+dl {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+dl div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  font-size: 12px;
+}
+
+dt {
+  color: #7b858d;
+}
+
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #39434b;
+}
+
+pre {
+  max-height: 160px;
+  overflow: auto;
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px solid #d9dde0;
+  border-radius: 6px;
+  background: #fff;
+  color: #4a535a;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 520px) {
+  .bootstrap-shell {
+    align-items: start;
+    padding: 72px 22px 24px;
+  }
+
+  .brand-mark {
+    margin-bottom: 34px;
+  }
+}

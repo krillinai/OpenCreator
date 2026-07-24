@@ -101,12 +101,8 @@ describe('codex argv', () => {
   it('injects the same non-secret MCP config into exec and resume', () => {
     const mcpServers = [{
       name: 'clawee_schedule',
-      command: '/usr/bin/node',
-      args: ['/app/agent-tools/stdio-server.js'],
-      envVars: [
-        'CLAWEE_AGENT_TOOL_URL',
-        'CLAWEE_AGENT_CAPABILITY_TOKEN'
-      ],
+      url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
+      bearerTokenEnvVar: 'CLAWEE_AGENT_CAPABILITY_TOKEN',
       enabledTools: [
         'clawee_schedule_update',
         'clawee_schedule_get'
@@ -128,11 +124,9 @@ describe('codex argv', () => {
     });
     const expected = [
       '-c',
-      'mcp_servers.clawee_schedule.command="/usr/bin/node"',
+      'mcp_servers.clawee_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
       '-c',
-      'mcp_servers.clawee_schedule.args=["/app/agent-tools/stdio-server.js"]',
-      '-c',
-      'mcp_servers.clawee_schedule.env_vars=["CLAWEE_AGENT_TOOL_URL","CLAWEE_AGENT_CAPABILITY_TOKEN"]',
+      'mcp_servers.clawee_schedule.bearer_token_env_var="CLAWEE_AGENT_CAPABILITY_TOKEN"',
       '-c',
       'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_update","clawee_schedule_get"]',
       '-c',
@@ -147,6 +141,6 @@ describe('codex argv', () => {
     expect(resume).toEqual(expect.arrayContaining(expected));
     expect(resume.at(-1)).toBe('019f-thread');
     expect(JSON.stringify([exec, resume])).not.toContain('clwcap_');
-    expect(JSON.stringify([exec, resume])).not.toContain('127.0.0.1');
+    expect(JSON.stringify([exec, resume])).not.toContain('/usr/bin/node');
   });
 });

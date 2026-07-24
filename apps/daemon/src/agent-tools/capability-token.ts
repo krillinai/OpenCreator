@@ -57,6 +57,7 @@ export type AgentCapabilityTokenStore = {
       threadId?: string;
     }
   ): AgentCapabilityGrant;
+  inspect(token: string | undefined): AgentCapabilityGrant;
   revokeRun(runId: string): number;
   cleanupExpired(): number;
   close(): void;
@@ -178,14 +179,7 @@ export function createAgentCapabilityTokenStore(
     return { token, expiresAt: record.expiresAt };
   }
 
-  function authorize(
-    token: string | undefined,
-    requirement: {
-      scope: AgentCapabilityScope;
-      runId?: string;
-      threadId?: string;
-    }
-  ): AgentCapabilityGrant {
+  function inspect(token: string | undefined): AgentCapabilityGrant {
     if (token === undefined || token.length === 0) {
       throw new AgentCapabilityTokenError(
         'CAPABILITY_TOKEN_MISSING',
@@ -228,30 +222,6 @@ export function createAgentCapabilityTokenStore(
         'Capability token has been revoked'
       );
     }
-    if (!record.scopes.includes(requirement.scope)) {
-      throw new AgentCapabilityTokenError(
-        'CAPABILITY_SCOPE_FORBIDDEN',
-        403,
-        'Capability scope is not allowed'
-      );
-    }
-    if (requirement.runId !== undefined && requirement.runId !== record.runId) {
-      throw new AgentCapabilityTokenError(
-        'CAPABILITY_RUN_FORBIDDEN',
-        403,
-        'Capability run binding does not match'
-      );
-    }
-    if (
-      requirement.threadId !== undefined
-      && requirement.threadId !== record.threadId
-    ) {
-      throw new AgentCapabilityTokenError(
-        'CAPABILITY_THREAD_FORBIDDEN',
-        403,
-        'Capability thread binding does not match'
-      );
-    }
     return {
       runId: record.runId,
       threadId: record.threadId,
@@ -260,6 +230,42 @@ export function createAgentCapabilityTokenStore(
       issuedAt: record.issuedAt,
       expiresAt: record.expiresAt
     };
+  }
+
+  function authorize(
+    token: string | undefined,
+    requirement: {
+      scope: AgentCapabilityScope;
+      runId?: string;
+      threadId?: string;
+    }
+  ): AgentCapabilityGrant {
+    const grant = inspect(token);
+    if (!grant.scopes.includes(requirement.scope)) {
+      throw new AgentCapabilityTokenError(
+        'CAPABILITY_SCOPE_FORBIDDEN',
+        403,
+        'Capability scope is not allowed'
+      );
+    }
+    if (requirement.runId !== undefined && requirement.runId !== grant.runId) {
+      throw new AgentCapabilityTokenError(
+        'CAPABILITY_RUN_FORBIDDEN',
+        403,
+        'Capability run binding does not match'
+      );
+    }
+    if (
+      requirement.threadId !== undefined
+      && requirement.threadId !== grant.threadId
+    ) {
+      throw new AgentCapabilityTokenError(
+        'CAPABILITY_THREAD_FORBIDDEN',
+        403,
+        'Capability thread binding does not match'
+      );
+    }
+    return grant;
   }
 
   function revokeRun(runId: string): number {
@@ -304,6 +310,7 @@ export function createAgentCapabilityTokenStore(
   return {
     issue,
     authorize,
+    inspect,
     revokeRun,
     cleanupExpired,
     close

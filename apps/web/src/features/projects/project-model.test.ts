@@ -1,68 +1,37 @@
-import { describe, expect, it } from 'vitest';
 import type { ThreadResponse } from '@clawee/protocol';
+import { describe, expect, it } from 'vitest';
 import {
-  createDefaultProjects,
   findProjectById,
   groupThreadsByPurpose,
-  listRecentConversations
+  parseLegacyLocalStorageProjects
 } from './project-model.js';
 
 describe('project model', () => {
-  it('creates default projects in the expected order with default runtime settings', () => {
-    const projects = createDefaultProjects();
+  it('finds Runtime projects by stable id', () => {
+    const projects = [{
+      id: 'project-one',
+      name: 'One',
+      cwd: '/workspace/one',
+      sandbox: 'follow-global' as const,
+      profile: 'default',
+      model: null,
+      reasoning: null
+    }];
 
-    expect(projects.map((project) => project.name)).toEqual([
-      'Playground',
-      'content-design',
-      'bili',
-      'default',
-      'feigua',
-      'cover'
-    ]);
-
-    for (const project of projects) {
-      expect(project.profile).toBe('default');
-      expect(project.model).toBeNull();
-      expect(project.reasoning).toBeNull();
-    }
-
-    const contentDesign = projects[1];
-    expect(contentDesign).toBeDefined();
-    if (contentDesign === undefined) {
-      throw new Error('content-design project should exist');
-    }
-
-    expect(contentDesign.cwd).toContain('content-design');
-    expect(contentDesign.sandbox).toBe('danger-full-access');
-
-    expect(projects.filter((project) => project.id !== contentDesign.id).map((project) => project.sandbox)).toEqual([
-      'follow-global',
-      'follow-global',
-      'follow-global',
-      'follow-global',
-      'follow-global'
-    ]);
-  });
-
-  it('finds a project by id', () => {
-    const projects = createDefaultProjects();
-
-    expect(findProjectById(projects, 'content-design')?.name).toBe('content-design');
+    expect(findProjectById(projects, 'project-one')?.name).toBe('One');
+    expect(findProjectById(projects, undefined)).toBeUndefined();
     expect(findProjectById(projects, 'missing')).toBeUndefined();
   });
 
-  it('lists recent conversations in recency order for content-design', () => {
-    const conversations = listRecentConversations();
-
-    expect(conversations.map((conversation) => conversation.title)).toEqual([
-      '整理本周项目进展',
-      '提炼会议待办事项',
-      '评审项目设计',
-      '检查内容产线进度',
-      '汇总团队最新更新'
+  it('parses legacy localStorage only as migration input', () => {
+    expect(parseLegacyLocalStorageProjects([
+      legacyProject('legacy-one', '/workspace/one'),
+      legacyProject('local-home', '~'),
+      { id: 'broken' }
+    ])).toEqual([
+      legacyProject('legacy-one', '/workspace/one'),
+      legacyProject('local-home', '~')
     ]);
-    expect(conversations.map((conversation) => conversation.updatedLabel)).toEqual(['4天', '5天', '1周', '1周', '3周']);
-    expect(conversations.every((conversation) => conversation.projectId === 'content-design')).toBe(true);
   });
 
   it('groups conversations, schedule drafts, and schedule tasks by thread purpose', () => {
@@ -82,10 +51,24 @@ describe('project model', () => {
   });
 });
 
+function legacyProject(id: string, cwd: string) {
+  return {
+    id,
+    name: id,
+    cwd,
+    sandbox: 'follow-global' as const,
+    profile: 'default',
+    model: null,
+    reasoning: null
+  };
+}
+
 function createThread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
   return {
     id: 'thread-1',
     title: '会话',
+    projectId: 'project-one',
+    origin: 'clawee_created',
     codexThreadId: null,
     cwd: '/workspace/project',
     canonicalCwd: '/workspace/project',

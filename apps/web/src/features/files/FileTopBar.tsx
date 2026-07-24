@@ -61,17 +61,17 @@ export function FileTopBar(props: FileTopBarProps) {
           <div className="file-editor-mode-toggle" aria-label="文件视图模式">
             <button
               type="button"
-              aria-pressed={props.mode === 'edit'}
-              onClick={() => props.onModeChange?.('edit')}
-            >
-              编辑
-            </button>
-            <button
-              type="button"
               aria-pressed={props.mode === 'preview'}
               onClick={() => props.onModeChange?.('preview')}
             >
               预览
+            </button>
+            <button
+              type="button"
+              aria-pressed={props.mode === 'edit'}
+              onClick={() => props.onModeChange?.('edit')}
+            >
+              编辑
             </button>
           </div>
         ) : null}

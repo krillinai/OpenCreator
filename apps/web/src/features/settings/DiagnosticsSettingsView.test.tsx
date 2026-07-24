@@ -14,6 +14,11 @@ const codexStatus: CodexStatusResponse = {
     mcpAdd: true,
     profiles: true
   },
+  availabilityProbe: {
+    status: 'succeeded',
+    checkedAt: '2026-07-17T00:00:00.000Z',
+    durationMs: 900
+  },
   diagnostics: ['MCP github 登录已过期']
 };
 
@@ -34,6 +39,7 @@ describe('DiagnosticsSettingsView', () => {
     expect(screen.getByText('MCP github 登录已过期')).toBeInTheDocument();
     expect(screen.getByText(/"mcpAdd": true/)).toBeInTheDocument();
     expect(screen.getByText('可写')).toBeInTheDocument();
+    expect(screen.getByText('可正常调用')).toBeInTheDocument();
   });
 
   it('shows explicit empty and disconnected states', () => {

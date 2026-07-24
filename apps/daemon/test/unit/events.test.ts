@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseJsonLine } from '../../src/events/parser.js';
-import { normalizeCodexEvent } from '../../src/events/normalizer.js';
+import {
+  normalizeAppServerEvent,
+  normalizeCodexEvent
+} from '../../src/events/normalizer.js';
 
 describe('event parser and normalizer', () => {
   it('parses valid json lines', () => {
@@ -163,6 +166,35 @@ describe('event parser and normalizer', () => {
       code: 'CODEX_ITEM_ERROR',
       severity: 'warning',
       message: 'Skill descriptions were shortened to fit the skills context budget.'
+    });
+  });
+
+  it('shows app-server reconnect attempts as warnings instead of terminal errors', () => {
+    const event = normalizeAppServerEvent({
+      runId: 'run_1',
+      seq: 7,
+      raw: {
+        method: 'error',
+        params: {
+          error: {
+            message: 'Reconnecting... 1/5',
+            codexErrorInfo: {
+              responseStreamDisconnected: {
+                httpStatusCode: null
+              }
+            }
+          },
+          additionalDetails: 'stream disconnected before completion'
+        }
+      }
+    });
+
+    expect(event.type).toBe('diagnostic');
+    expect(event.payload).toMatchObject({
+      type: 'diagnostic',
+      code: 'CODEX_STREAM_RETRYING',
+      severity: 'warning',
+      message: 'Codex 响应连接中断，正在自动重连（1/5）'
     });
   });
 

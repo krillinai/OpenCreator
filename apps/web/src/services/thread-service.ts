@@ -31,7 +31,7 @@ export function createThreadService(client: RuntimeClient) {
         return client.get('/threads?status=active&limit=50');
       }
     },
-    createThread(input: CreateThreadRequest = {}): Promise<{ thread: ThreadResponse }> {
+    createThread(input: CreateThreadRequest): Promise<{ thread: ThreadResponse }> {
       return client.post('/threads', input);
     },
     getThread(threadId: string): Promise<{ thread: ThreadResponse }> {
@@ -39,6 +39,9 @@ export function createThreadService(client: RuntimeClient) {
     },
     updateThread(threadId: string, input: UpdateThreadRequest): Promise<{ thread: ThreadResponse }> {
       return client.patch(`/threads/${encodeURIComponent(threadId)}`, input);
+    },
+    archiveThread(threadId: string): Promise<{ thread: ThreadResponse }> {
+      return client.post(`/threads/${encodeURIComponent(threadId)}/archive`, {});
     },
     listThreadRuns(threadId: string): Promise<ThreadRunsResponse> {
       return client.get(`/threads/${encodeURIComponent(threadId)}/runs?limit=50`);

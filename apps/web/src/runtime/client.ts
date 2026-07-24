@@ -10,7 +10,7 @@ export type RuntimeClientInput = ConnectionConfig & {
 
 export class RuntimeClient {
   private readonly baseUrl: string;
-  private readonly token: string;
+  private readonly token: string | undefined;
   private readonly fetchImpl: typeof fetch;
 
   constructor(input: RuntimeClientInput) {
@@ -55,7 +55,9 @@ export class RuntimeClient {
     input: { method: string; body?: unknown; binaryBody?: BodyInit }
   ): Promise<Response> {
     const headers: Record<string, string> = {};
-    if (path !== '/healthz') headers.Authorization = `Bearer ${this.token}`;
+    if (path !== '/healthz' && this.token !== undefined && this.token.length > 0) {
+      headers.Authorization = `Bearer ${this.token}`;
+    }
     if (input.body !== undefined) headers['Content-Type'] = 'application/json';
     if (input.binaryBody !== undefined) headers['Content-Type'] = 'application/octet-stream';
 

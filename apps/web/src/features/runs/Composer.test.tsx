@@ -56,7 +56,7 @@ describe('Composer', () => {
 
     expect(screen.getByRole('button', { name: '选择项目 content-design' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 工作区读写' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
@@ -77,7 +77,7 @@ describe('Composer', () => {
 
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 工作区读写' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
   });
 
   it('searches projects and switches the conversation workspace', async () => {
@@ -102,6 +102,40 @@ describe('Composer', () => {
 
     expect(onSelectProject).toHaveBeenCalledWith('playground');
     expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
+  });
+
+  it('offers blank and existing-folder project creation from the project selector', async () => {
+    const user = userEvent.setup();
+    const onCreateBlankProject = vi.fn();
+    const onAddProjectDirectory = vi.fn();
+    render(
+      <Composer
+        {...defaultProps}
+        projects={[]}
+        projectId=""
+        projectName="未选择项目"
+        onCreateBlankProject={onCreateBlankProject}
+        onAddProjectDirectory={onAddProjectDirectory}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '选择项目 未选择项目' }));
+
+    expect(screen.getByText('没有匹配的项目')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '新建项目' }));
+    expect(screen.getByRole('menu', { name: '新建项目' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: '新建空白项目' }));
+    expect(screen.getByRole('dialog', { name: '新建空白项目' })).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '项目名称' }), '我的项目');
+    await user.click(screen.getByRole('button', { name: '创建' }));
+    expect(onCreateBlankProject).toHaveBeenCalledWith('我的项目');
+    expect(screen.queryByRole('dialog', { name: '新建空白项目' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '选择项目 未选择项目' }));
+    await user.click(screen.getByRole('button', { name: '新建项目' }));
+    await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+    expect(onAddProjectDirectory).toHaveBeenCalledTimes(1);
   });
 
   it('closes the project menu without resetting the current project', async () => {
@@ -132,7 +166,7 @@ describe('Composer', () => {
 
   it.each([
     ['添加上下文', '添加上下文'],
-    ['选择访问权限 完全访问', '访问权限'],
+    ['选择访问权限 完全访问权限', '访问权限'],
     ['选择模型 默认模型', '模型']
   ])('closes the %s menu on outside pointer presses', async (triggerName, menuName) => {
     const user = userEvent.setup();
@@ -146,16 +180,12 @@ describe('Composer', () => {
     expect(screen.queryByRole('menu', { name: menuName })).not.toBeInTheDocument();
   });
 
-  it('closes the running submission menu on outside pointer presses', async () => {
-    const user = userEvent.setup();
+  it('does not expose a running submission mode menu', () => {
     render(<Composer {...defaultProps} running />);
 
-    await user.click(screen.getByRole('button', { name: '选择发送方式' }));
-    expect(screen.getByRole('menu', { name: '发送方式' })).toBeInTheDocument();
-
-    fireEvent.pointerDown(screen.getByRole('textbox', { name: '输入任务' }));
-
+    expect(screen.queryByRole('button', { name: '选择发送方式' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menu', { name: '发送方式' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '排队发送' })).toBeDisabled();
   });
 
   it('closes the active composer menu with Escape', async () => {
@@ -173,7 +203,7 @@ describe('Composer', () => {
     const onSubmit = vi.fn();
     render(<Composer {...defaultProps} permission="workspace-write" onSubmit={onSubmit} />);
 
-    await user.click(screen.getByRole('button', { name: '选择访问权限 工作区读写' }));
+    await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
 
     await user.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
@@ -190,6 +220,61 @@ describe('Composer', () => {
       reasoning: 'xhigh'
     }, []);
     expect(textbox).toHaveValue('');
+  });
+
+  it('shows only two permission levels and keeps request approval when full access is canceled', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const onPermissionChange = vi.fn();
+    render(
+      <Composer
+        {...defaultProps}
+        permission="workspace-write"
+        onPermissionChange={onPermissionChange}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
+
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2);
+    expect(screen.queryByText('只读访问')).not.toBeInTheDocument();
+    expect(screen.queryByText('工作区读写')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(onPermissionChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
+  });
+
+  it('keeps the current permission when the parent rejects the change', async () => {
+    const user = userEvent.setup();
+    const onPermissionChange = vi.fn(async () => false);
+    render(
+      <Composer
+        {...defaultProps}
+        permission="workspace-write"
+        onPermissionChange={onPermissionChange}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
+    await user.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
+
+    expect(onPermissionChange).toHaveBeenCalledWith('danger-full-access');
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
+  });
+
+  it('disables permission changes while the current task is running', () => {
+    render(
+      <Composer
+        {...defaultProps}
+        permission="workspace-write"
+        permissionChangeDisabled
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' }))
+      .toBeDisabled();
   });
 
   it('hides Profile controls while preserving the configured Profile', async () => {
@@ -245,7 +330,7 @@ describe('Composer', () => {
     expect(screen.getByPlaceholderText('当前对话有任务运行中')).toBeInTheDocument();
   });
 
-  it('keeps input available while running and submits queued or interrupting follow-ups', async () => {
+  it('keeps input available while running and submits queued follow-ups', async () => {
     const user = userEvent.setup();
     const onCancel = vi.fn();
     const onSubmit = vi.fn();
@@ -269,17 +354,6 @@ describe('Composer', () => {
       'enqueue'
     );
 
-    await user.type(textbox, '打断任务');
-    await user.click(screen.getByRole('button', { name: '选择发送方式' }));
-    await user.click(screen.getByRole('menuitemradio', { name: /立即打断并继续/ }));
-    await user.click(screen.getByRole('button', { name: '立即打断并继续' }));
-    expect(onSubmit).toHaveBeenLastCalledWith(
-      '打断任务',
-      expect.any(Object),
-      [],
-      'interrupt_and_enqueue'
-    );
-
     await user.click(screen.getByRole('button', { name: '停止任务' }));
     expect(onCancel).toHaveBeenCalledTimes(1);
 
@@ -298,7 +372,7 @@ describe('Composer', () => {
   it('keeps permission and model controls visible when disabled', () => {
     render(<Composer {...defaultProps} disabled />);
 
-    expect(screen.getByRole('button', { name: '选择访问权限 完全访问' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
   });
 
@@ -334,7 +408,7 @@ describe('Composer', () => {
     });
 
     await user.type(textbox, 'first line');
-    await waitFor(() => expect(textbox.style.height).toBe('28px'));
+    await waitFor(() => expect(textbox.style.height).toBe('48px'));
 
     await user.keyboard('{Shift>}{Enter}{/Shift}');
     await user.type(textbox, 'second line');
@@ -348,40 +422,40 @@ describe('Composer', () => {
       model: null,
       reasoning: null
     }, []);
-    await waitFor(() => expect(textbox.style.height).toBe('28px'));
+    await waitFor(() => expect(textbox.style.height).toBe('48px'));
   });
 
-  it('caps the textbox at three lines and scrolls to keep the latest input visible', async () => {
+  it('caps the textbox at twelve lines without forcing the current scroll position', async () => {
     render(<Composer {...defaultProps} />);
 
     const textbox = screen.getByRole('textbox', { name: '输入任务' }) as HTMLTextAreaElement;
-    let assignedScrollTop = 0;
+    let assignedScrollTop = 40;
+    const setScrollTop = vi.fn((value: number) => {
+      assignedScrollTop = value;
+    });
     Object.defineProperty(textbox, 'scrollHeight', {
       configurable: true,
-      get() {
-        const lineCount = textbox.value.split('\n').length;
-        if (lineCount >= 4) return 100;
-        if (lineCount === 3) return 76;
-        if (lineCount === 2) return 52;
-        return 28;
-      }
+      get: () => textbox.value.split('\n').length > 12 ? 300 : 48
     });
     Object.defineProperty(textbox, 'scrollTop', {
       configurable: true,
       get() {
         return assignedScrollTop;
       },
-      set(value: number) {
-        assignedScrollTop = value;
+      set: setScrollTop
+    });
+
+    fireEvent.change(textbox, {
+      target: {
+        value: Array.from({ length: 13 }, (_, index) => `line ${index + 1}`).join('\n')
       }
     });
 
-    fireEvent.change(textbox, { target: { value: 'first\nsecond\nthird\nfourth' } });
-
     await waitFor(() => {
-      expect(textbox.style.height).toBe('76px');
+      expect(textbox.style.height).toBe('268px');
       expect(textbox.style.overflowY).toBe('auto');
-      expect(textbox.scrollTop).toBe(100);
+      expect(textbox.scrollTop).toBe(40);
+      expect(setScrollTop).not.toHaveBeenCalled();
     });
   });
 
@@ -611,6 +685,34 @@ describe('Composer', () => {
     expect(textbox).toHaveValue('$frontend-slides 生成季度汇报');
   });
 
+  it('uses a two-line input and does not force the scroll position while editing', () => {
+    render(<Composer {...defaultProps} />);
+    const textbox = screen.getByRole('textbox', { name: '输入任务' }) as HTMLTextAreaElement;
+    let scrollTopWrites = 0;
+    Object.defineProperty(textbox, 'scrollHeight', {
+      configurable: true,
+      value: 1_000
+    });
+    Object.defineProperty(textbox, 'scrollTop', {
+      configurable: true,
+      get: () => 12,
+      set: () => {
+        scrollTopWrites += 1;
+      }
+    });
+
+    expect(textbox).toHaveAttribute('rows', '2');
+    fireEvent.change(textbox, {
+      target: {
+        value: '第一行\n第二行\n第三行',
+        selectionStart: 4
+      }
+    });
+
+    expect(scrollTopWrites).toBe(0);
+    expect(textbox.style.overflowY).toBe('auto');
+  });
+
   it('applies an external draft after RAF focus and caret placement in StrictMode', () => {
     const callbacks = new Map<number, FrameRequestCallback>();
     let nextRafId = 0;
@@ -691,7 +793,7 @@ describe('Composer', () => {
     expect(onDraftApplied).not.toHaveBeenCalled();
   });
 
-  it('typing slash opens skills, MCP, and goal commands and inserts the selected command', async () => {
+  it('typing slash shows only skills and inserts the selected command', async () => {
     const user = userEvent.setup();
     render(
       <Composer
@@ -727,11 +829,11 @@ describe('Composer', () => {
 
     expect(screen.getByRole('listbox', { name: '能力菜单' })).toBeInTheDocument();
     expect(screen.getByText('Skills')).toBeInTheDocument();
-    expect(screen.getByText('MCP')).toBeInTheDocument();
-    expect(screen.getByText('Goal')).toBeInTheDocument();
+    expect(screen.queryByText('MCP')).not.toBeInTheDocument();
+    expect(screen.queryByText('Goal')).not.toBeInTheDocument();
     expect(screen.getByRole('option', { name: /brainstorming/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /github/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /设置 Goal/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /github/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /设置 Goal/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('option', { name: /brainstorming/ }));
 
@@ -739,7 +841,7 @@ describe('Composer', () => {
     expect(screen.queryByRole('listbox', { name: '能力菜单' })).not.toBeInTheDocument();
   });
 
-  it('filters slash commands and selects the active command with Enter', async () => {
+  it('filters skills from the first typed character and selects the active command with Enter', async () => {
     const user = userEvent.setup();
     render(
       <Composer
@@ -753,25 +855,53 @@ describe('Composer', () => {
             insertText: '$brainstorming '
           },
           {
-            id: 'mcp:github',
-            category: 'mcp',
-            label: 'github',
-            description: 'stdio · configured',
-            insertText: '使用 MCP：github '
+            id: 'skill:zhiyu-helper',
+            category: 'skill',
+            label: 'zhiyu-helper',
+            description: '辅助完成开发操作',
+            insertText: '$zhiyu-helper '
           }
         ]}
       />
     );
 
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
-    await user.type(textbox, '/git');
+    await user.type(textbox, '/z');
 
     expect(screen.queryByRole('option', { name: /brainstorming/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /github/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('option', { name: /zhiyu-helper/ })).toHaveAttribute('aria-selected', 'true');
 
     await user.keyboard('{Enter}');
 
-    expect(textbox).toHaveValue('使用 MCP：github ');
+    expect(textbox).toHaveValue('$zhiyu-helper ');
+  });
+
+  it('renders queued messages above the input and forwards Steer and delete actions', async () => {
+    const user = userEvent.setup();
+    const onSteerQueuedRun = vi.fn();
+    const onCancelQueuedRun = vi.fn();
+    render(
+      <Composer
+        {...defaultProps}
+        queuedItems={[{
+          runId: 'run-queued',
+          text: '继续修复剩余问题',
+          queuePosition: 2
+        }]}
+        onSteerQueuedRun={onSteerQueuedRun}
+        onCancelQueuedRun={onCancelQueuedRun}
+      />
+    );
+
+    const queue = screen.getByLabelText('排队消息');
+    expect(queue).toHaveTextContent('继续修复剩余问题');
+    expect(queue).toHaveTextContent('第 2 位');
+
+    await user.click(screen.getByRole('button', { name: 'Steer' }));
+    await user.click(screen.getByRole('button', { name: '删除排队消息 继续修复剩余问题' }));
+
+    expect(onSteerQueuedRun).toHaveBeenCalledWith('run-queued');
+    expect(onCancelQueuedRun).toHaveBeenCalledWith('run-queued');
   });
 
   it('closes the slash command list on outside pointer presses', async () => {

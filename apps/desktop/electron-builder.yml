@@ -1,0 +1,78 @@
+appId: com.clawee.desktop
+productName: Clawee
+asar: true
+npmRebuild: false
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  resetAdHocDarwinSignature: true
+asarUnpack:
+  - "**/*.node"
+directories:
+  output: release
+files:
+  - dist/main/**/*
+  - dist/preload/**/*
+  - dist/bootstrap/**/*
+  - dist/shared/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.d.ts"
+  - "!**/{test,tests,__tests__,example,examples}/**/*"
+extraResources:
+  - from: .pack/daemon/dist
+    to: daemon/dist
+    filter:
+      - "**/*"
+      - "!**/*.map"
+      - "!**/*.d.ts"
+      - "!**/{test,tests,__tests__,example,examples}/**/*"
+  - from: .pack/daemon/node_modules
+    to: daemon/node_modules
+    filter:
+      - "**/*"
+      - "!**/*.map"
+      - "!**/*.d.ts"
+      - "!**/{test,tests,__tests__,example,examples}/**/*"
+  - from: .pack/daemon/package.json
+    to: daemon/package.json
+  - from: ../web/dist
+    to: web
+  - from: resources
+    to: desktop-resources
+protocols:
+  - name: Clawee
+    schemes:
+      - clawee
+publish:
+  provider: github
+  owner: wulien
+  repo: clawee-agent
+mac:
+  category: public.app-category.developer-tools
+  extendInfo:
+    CFBundleDevelopmentRegion: zh_CN
+    CFBundleLocalizations:
+      - zh_CN
+      - zh-Hans
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  icon: resources/icon.png
+  notarize: true
+win:
+  target:
+    - nsis
+  icon: resources/icon.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false

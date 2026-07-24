@@ -4,6 +4,7 @@ import {
   redactDiagnosticContent,
   redactDiagnosticFiles
 } from '../../src/diagnostics/redactor.js';
+import { redactValue } from '../../src/security/redaction.js';
 
 describe('diagnostics redactor', () => {
   it('redacts common secret assignments and authorization headers', () => {
@@ -63,5 +64,27 @@ describe('diagnostics redactor', () => {
     expect(redacted).toContain('"prompt":"[REDACTED]"');
     expect(redacted).toContain('"userPrompt":"[REDACTED]"');
     expect(redacted).toContain('"message":"running"');
+  });
+
+  it('redacts parsed values without corrupting escaped quotes in tool output', () => {
+    const redacted = redactValue({
+      method: 'item/completed',
+      params: {
+        item: {
+          aggregatedOutput: 'TOKEN=abc\\"def next'
+        }
+      }
+    });
+    const serialized = JSON.stringify(redacted);
+
+    expect(() => JSON.parse(serialized)).not.toThrow();
+    expect(serialized).not.toContain('abc');
+    expect(JSON.parse(serialized)).toMatchObject({
+      params: {
+        item: {
+          aggregatedOutput: 'TOKEN=[REDACTED]"def next'
+        }
+      }
+    });
   });
 });

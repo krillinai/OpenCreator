@@ -9,6 +9,7 @@ import {
   type RunManager
 } from '../../src/runs/manager.js';
 import { createMemoryService } from '../../src/memory/service.js';
+import { createProjectManager } from '../../src/projects/manager.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createThreadManager } from '../../src/threads/manager.js';
 
@@ -218,7 +219,8 @@ describe('approval runtime integration', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-rotation-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const threadManager = createThreadManager({ db, dataDir: tempDir });
-    const thread = threadManager.createThread({
+    const thread = threadManager.createScheduleThread({
+      purpose: 'schedule_task',
       workspaceMode: 'external',
       cwd: tempDir,
       profile: 'default',
@@ -292,12 +294,19 @@ function setup(
 ) {
   tempDir = mkdtempSync(join(tmpdir(), 'clawee-approval-runtime-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
-  const threadManager = createThreadManager({ db, dataDir: tempDir });
-  const thread = threadManager.createThread({
-    workspaceMode: 'external',
+  const projectManager = createProjectManager({ db, homeDir: tempDir });
+  const project = projectManager.createProject({
     cwd: tempDir,
     profile: 'default',
     sandbox
+  });
+  const threadManager = createThreadManager({
+    db,
+    dataDir: tempDir,
+    projectManager
+  });
+  const thread = threadManager.createConversationThread({
+    projectId: project.id
   });
   const approvalManager = createApprovalManager({ db });
   const createdRunManager = createRunManager({

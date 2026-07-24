@@ -5,7 +5,7 @@ export type ActiveView = 'conversation' | 'search' | 'schedules' | 'tasks' | 'pl
 
 export type AppState = {
   activeView: ActiveView;
-  currentProjectId: string;
+  currentProjectId?: string;
   selectedThreadId?: string;
   selectedRunId?: string;
   selectedChangeId?: string;
@@ -19,6 +19,7 @@ export type AppState = {
 export type AppAction =
   | { type: 'new_conversation' }
   | { type: 'select_project'; projectId: string }
+  | { type: 'set_current_project'; projectId?: string }
   | { type: 'set_active_view'; activeView: ActiveView }
   | { type: 'open_settings' }
   | { type: 'open_files' }
@@ -35,7 +36,6 @@ export type AppAction =
 
 export const initialAppState: AppState = {
   activeView: 'conversation',
-  currentProjectId: 'content-design',
   selectedFilePath: 'docs/atoms.md',
   rightPanelMode: 'closed',
   activeRunByThreadId: {}
@@ -43,6 +43,11 @@ export const initialAppState: AppState = {
 
 export function reduceAppState(state: AppState, action: AppAction): AppState {
   switch (action.type) {
+    case 'set_current_project':
+      return {
+        ...state,
+        currentProjectId: action.projectId
+      };
     case 'select_project':
       return {
         ...state,

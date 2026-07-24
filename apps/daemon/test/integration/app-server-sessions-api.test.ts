@@ -1,7 +1,4 @@
-import type {
-  ConversationSearchQuery,
-  ConversationSearchResponse
-} from '@clawee/protocol';
+import type { ConversationSearchQuery } from '@clawee/protocol';
 import type { FastifyInstance } from 'fastify';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,18 +7,22 @@ import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import type {
+  CodexConversationSearchPage,
   CodexSessionProvider,
   CodexThreadHistoryPage
 } from '../../src/codex/sessions/app-server-provider.js';
 import { CodexAppServerResponseError } from '../../src/codex/app-server-client.js';
 import { SearchCursorError } from '../../src/search/service.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
-import { createThreadRepository } from '../../src/storage/repositories.js';
-import type { RuntimeThread } from '../../src/threads/types.js';
+import {
+  createProjectRepository,
+  createThreadRepository
+} from '../../src/storage/repositories.js';
 
 let server: FastifyInstance | undefined;
 let db: Database.Database | undefined;
 let tempDir = '';
+type TestInjectPayload = string | object;
 
 afterEach(async () => {
   await server?.close();
@@ -33,21 +34,19 @@ afterEach(async () => {
 });
 
 describe('app-server session API', () => {
-  it('uses the provider for recent threads and excludes stale Codex mappings outside its page', async () => {
+  it('lists only local owned threads without calling Codex thread list', async () => {
     const setup = createSetup();
-    const recent = runtimeThread({
-      id: 'thread-recent',
-      codexThreadId: 'codex-recent',
-      title: '最近会话',
-      updatedAt: '2026-07-15T03:00:00.000Z'
+    insertProject(setup.db, 'project-owned');
+    const listRecent = vi.fn(async () => {
+      throw new Error('thread/list must not be called');
     });
-    const provider = fakeProvider({
-      listRecent: vi.fn(async () => ({ threads: [recent] }))
-    });
+    const provider = Object.assign(fakeProvider(), { listRecent });
     createThreadRepository(setup.db).insertThread({
-      id: 'thread-stale',
-      title: '旧映射不应出现',
-      codexThreadId: 'codex-stale',
+      id: 'thread-owned',
+      title: '已归属会话',
+      codexThreadId: 'codex-owned',
+      projectId: 'project-owned',
+      origin: 'clawee_created',
       cwd: tempDir,
       canonicalCwd: tempDir,
       workspaceMode: 'external',
@@ -57,6 +56,38 @@ describe('app-server session API', () => {
       purpose: 'conversation',
       createdAt: '2026-07-14T00:00:00.000Z',
       updatedAt: '2026-07-14T00:00:00.000Z'
+    });
+    createThreadRepository(setup.db).insertThread({
+      id: 'thread-unassigned',
+      title: '待归属会话',
+      codexThreadId: 'codex-unassigned',
+      projectId: null,
+      origin: 'clawee_created',
+      cwd: tempDir,
+      canonicalCwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active',
+      purpose: 'conversation',
+      createdAt: '2026-07-15T01:00:00.000Z',
+      updatedAt: '2026-07-15T01:00:00.000Z'
+    });
+    createThreadRepository(setup.db).insertThread({
+      id: 'thread-discovered',
+      title: '外部会话',
+      codexThreadId: 'codex-discovered',
+      projectId: null,
+      origin: 'codex_discovered',
+      cwd: tempDir,
+      canonicalCwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active',
+      purpose: 'conversation',
+      createdAt: '2026-07-15T02:00:00.000Z',
+      updatedAt: '2026-07-15T02:00:00.000Z'
     });
     createThreadRepository(setup.db).insertThread({
       id: 'thread-local-draft',
@@ -79,14 +110,46 @@ describe('app-server session API', () => {
     });
 
     const response = await authGet('/threads?status=active&excludePurpose=schedule_task&limit=50');
+    const unassigned = await authGet(
+      '/threads?status=active&purpose=conversation&assignment=unassigned&limit=50'
+    );
 
     expect(response.statusCode).toBe(200);
-    expect(provider.listRecent).toHaveBeenCalledWith({ limit: 50 });
+    expect(listRecent).not.toHaveBeenCalled();
     expect(response.json().threads.map((thread: { id: string }) => thread.id)).toEqual([
-      'thread-recent',
-      'thread-local-draft'
+      'thread-local-draft',
+      'thread-owned'
     ]);
-    expect(response.body).not.toContain('thread-stale');
+    expect(response.body).not.toContain('thread-unassigned');
+    expect(response.body).not.toContain('thread-discovered');
+    expect(unassigned.statusCode).toBe(200);
+    expect(unassigned.json().threads.map((thread: { id: string }) => thread.id)).toEqual([
+      'thread-unassigned'
+    ]);
+    for (const url of [
+      '/threads/thread-discovered',
+      '/threads/thread-discovered/runs',
+      '/threads/thread-discovered/history',
+      '/workspace/files/directory?threadId=thread-discovered&path='
+    ]) {
+      const hidden = await authGet(url);
+      expect(hidden.statusCode, url).toBe(404);
+      expect(hidden.json().error.code, url).toBe('THREAD_NOT_FOUND');
+    }
+    const hiddenRun = await authPost('/runs', {
+      threadId: 'thread-discovered',
+      prompt: 'hidden'
+    });
+    expect(hiddenRun.statusCode).toBe(404);
+    expect(hiddenRun.json().error.code).toBe('THREAD_NOT_FOUND');
+    const hiddenUpdate = await authPatch('/threads/thread-discovered', {
+      sandbox: 'workspace-write'
+    });
+    expect(hiddenUpdate.statusCode).toBe(404);
+    expect(hiddenUpdate.json().error.code).toBe('THREAD_NOT_FOUND');
+    const hiddenArchive = await authPost('/threads/thread-discovered/archive', {});
+    expect(hiddenArchive.statusCode).toBe(404);
+    expect(hiddenArchive.json().error.code).toBe('THREAD_NOT_FOUND');
     expect(
       setup.db.prepare('SELECT COUNT(*) AS count FROM codex_session_sources').get()
     ).toEqual({ count: 0 });
@@ -94,10 +157,13 @@ describe('app-server session API', () => {
 
   it('uses provider cursors for history and provider search results without item targets', async () => {
     const setup = createSetup();
+    insertProject(setup.db, 'project-recent');
     createThreadRepository(setup.db).insertThread({
       id: 'thread-recent',
       title: '最近会话',
       codexThreadId: 'codex-recent',
+      projectId: 'project-recent',
+      origin: 'clawee_created',
       cwd: tempDir,
       canonicalCwd: tempDir,
       workspaceMode: 'external',
@@ -120,9 +186,20 @@ describe('app-server session API', () => {
       nextCursor: 'older-cursor',
       oldestItemAt: '2026-07-15T00:00:00.000Z'
     };
-    const search: ConversationSearchResponse = {
+    const search: CodexConversationSearchPage = {
       results: [{
-        threadId: 'thread-recent',
+        codexThreadId: 'codex-unknown',
+        title: '未知会话',
+        cwd: tempDir,
+        itemType: 'title',
+        createdAt: '2026-07-15T03:00:00.000Z',
+        snippet: [{ text: '历史消息', highlighted: true }]
+      }],
+      hasMore: true,
+      nextCursor: 'second-page'
+    };
+    const secondSearch: CodexConversationSearchPage = {
+      results: [{
         codexThreadId: 'codex-recent',
         title: '最近会话',
         cwd: tempDir,
@@ -134,7 +211,7 @@ describe('app-server session API', () => {
     };
     const provider = fakeProvider({
       listTurns: vi.fn(async () => history),
-      search: vi.fn(async () => search)
+      search: vi.fn(async query => query.cursor === 'second-page' ? secondSearch : search)
     });
     server = await buildServer({
       token: 'secret',
@@ -166,7 +243,19 @@ describe('app-server session API', () => {
       query: '历史消息',
       limit: 20
     });
-    expect(searchResponse.json()).toEqual(search);
+    expect(provider.search).toHaveBeenCalledWith({
+      query: '历史消息',
+      limit: 20,
+      cursor: 'second-page'
+    });
+    expect(searchResponse.json()).toEqual({
+      ...secondSearch,
+      results: [{
+        ...secondSearch.results[0],
+        threadId: 'thread-recent',
+        projectId: 'project-recent'
+      }]
+    });
     expect(searchResponse.json().results[0]).not.toHaveProperty('itemId');
   });
 
@@ -274,11 +363,21 @@ function createSetup() {
   return { db };
 }
 
+function insertProject(database: Database.Database, id: string): void {
+  createProjectRepository(database).insertProject({
+    id,
+    name: id,
+    cwd: tempDir,
+    canonicalCwd: tempDir,
+    profile: 'default',
+    sandbox: 'follow-global'
+  });
+}
+
 function fakeProvider(
   overrides: Partial<CodexSessionProvider> = {}
 ): CodexSessionProvider {
   return {
-    listRecent: vi.fn(async () => ({ threads: [] })),
     listTurns: vi.fn(async () => ({ items: [], hasMore: false })),
     search: vi.fn(async (_query: ConversationSearchQuery) => ({
       results: [],
@@ -289,31 +388,28 @@ function fakeProvider(
   };
 }
 
-function runtimeThread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
-  return {
-    id: 'thread-runtime',
-    title: '会话',
-    codexThreadId: 'codex-thread',
-    cwd: tempDir,
-    canonicalCwd: tempDir,
-    workspaceMode: 'external',
-    profile: 'default',
-    model: null,
-    reasoning: null,
-    sandbox: 'read-only',
-    status: 'active',
-    purpose: 'conversation',
-    createdAt: '2026-07-15T00:00:00.000Z',
-    updatedAt: '2026-07-15T01:00:00.000Z',
-    archivedAt: null,
-    ...overrides
-  };
-}
-
 async function authGet(url: string) {
   return server!.inject({
     method: 'GET',
     url,
     headers: { authorization: 'Bearer secret' }
+  });
+}
+
+async function authPost(url: string, payload: unknown) {
+  return server!.inject({
+    method: 'POST',
+    url,
+    headers: { authorization: 'Bearer secret' },
+    payload: payload as TestInjectPayload
+  });
+}
+
+async function authPatch(url: string, payload: unknown) {
+  return server!.inject({
+    method: 'PATCH',
+    url,
+    headers: { authorization: 'Bearer secret' },
+    payload: payload as TestInjectPayload
   });
 }

@@ -11,6 +11,7 @@ import type {
   CodexSkillResponse,
   CodexStatusResponse,
   CreateScheduleRequest,
+  ProjectResponse,
   RunDiagnosticsResponse,
   RunResponse,
   ScheduleResponse,
@@ -18,13 +19,28 @@ import type {
   ThreadResponse
 } from '@clawee/protocol';
 import { App } from './App.js';
+import { formatRelativeTime } from './AppController.js';
+import { PROJECTS_STORAGE_KEY } from '../features/projects/project-model.js';
+import type { ClaweeProject } from '../features/projects/project-model.js';
 import type { HostBridge } from '../host/bridge.js';
 import type { SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 
 vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
 
+let testRuntimeProjects: ProjectResponse[] | undefined;
+
 describe('App', () => {
+  it('treats timezone-less Runtime timestamps as UTC before formatting relative time', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(
+      Date.parse('2026-07-21T07:00:30.000Z')
+    );
+
+    expect(formatRelativeTime('2026-07-21 07:00:00')).toBe('刚刚');
+
+    now.mockRestore();
+  });
+
   it('restores a primary page directly from its URL', async () => {
     window.location.hash = '#/search';
 
@@ -71,8 +87,10 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -105,7 +123,7 @@ describe('App', () => {
       throw new Error(`Unexpected request ${url}`);
     };
 
-    render(
+    const firstRender = render(
       <App
         fileService={createFileService()}
         hostBridge={hostBridge}
@@ -163,8 +181,10 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -197,7 +217,7 @@ describe('App', () => {
       throw new Error(`Unexpected request ${url}`);
     };
 
-    render(
+    const firstRender = render(
       <App
         fileService={createFileService()}
         hostBridge={hostBridge}
@@ -304,6 +324,7 @@ describe('App', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    testRuntimeProjects = undefined;
     window.localStorage.clear();
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   });
@@ -312,10 +333,10 @@ describe('App', () => {
     render(<App fileService={createFileService()} />);
 
     expect(await screen.findByRole('button', { name: '新对话' })).toBeInTheDocument();
-    expect(await screen.findByText('要在 content-design 中处理什么？')).toBeInTheDocument();
+    expect(await screen.findByText('先添加项目后开始对话')).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 完全访问' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
     expect(screen.queryByText('跟随全局模型')).not.toBeInTheDocument();
     expect(screen.queryByText('跟随全局配置')).not.toBeInTheDocument();
@@ -352,8 +373,10 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -394,7 +417,7 @@ describe('App', () => {
       throw new Error(`Unexpected request ${url}`);
     };
 
-    render(
+    const firstRender = render(
       <App
         fileService={createFileService()}
         hostBridge={hostBridge}
@@ -426,8 +449,10 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -529,6 +554,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -596,6 +623,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -622,6 +651,23 @@ describe('App', () => {
               : 'conversation'
           })
         }, { status: 201 });
+      }
+      if (
+        url.endsWith('/threads/thread_schedule_builder/archive')
+        && init?.method === 'POST'
+      ) {
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_schedule_builder',
+            title: '任务草稿',
+            cwd: '/runtime/workspaces/thread_schedule_builder',
+            canonicalCwd: '/runtime/workspaces/thread_schedule_builder',
+            workspaceMode: 'managed',
+            sandbox: 'workspace-write',
+            purpose: 'schedule_draft',
+            status: 'archived'
+          })
+        });
       }
       throw new Error(`Unexpected request ${url}`);
     };
@@ -652,7 +698,7 @@ describe('App', () => {
       title: '任务草稿',
       workspaceMode: 'managed',
       profile: 'default',
-      sandbox: 'danger-full-access',
+      sandbox: 'workspace-write',
       purpose: 'schedule_draft'
     });
     expect(createThreadBody).not.toHaveProperty('cwd');
@@ -668,6 +714,17 @@ describe('App', () => {
     });
     expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
     expect(fetchCalls.some(call => call.url.endsWith('/runs'))).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: '删除草稿 任务草稿' }));
+
+    await waitFor(() => {
+      expect(fetchCalls.some(call => (
+        call.url.endsWith('/threads/thread_schedule_builder/archive')
+        && call.init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /任务草稿.*草稿/ })).not.toBeInTheDocument();
   });
 
   it('runs schedule draft prompts through the normal Agent flow and keeps incomplete drafts', async () => {
@@ -681,6 +738,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -796,6 +855,10 @@ describe('App', () => {
 
   it('creates schedule drafts in the task area and shows the thread workspace permission', async () => {
     const user = userEvent.setup();
+    const [customerProject] = persistProjects('/Users/test/project/customer-agent');
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: customerProject.id
+    }));
     const hostBridge = createHostBridge();
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     hostBridge.readConnectionConfig = async () => ({
@@ -804,6 +867,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -870,7 +935,7 @@ describe('App', () => {
     const createThreadBody = JSON.parse(String(createThreadCall.init?.body)) as Record<string, unknown>;
     expect(createThreadBody).toMatchObject({
       workspaceMode: 'managed',
-      sandbox: 'danger-full-access',
+      sandbox: 'workspace-write',
       purpose: 'schedule_draft'
     });
     expect(createThreadBody).not.toHaveProperty('cwd');
@@ -880,7 +945,7 @@ describe('App', () => {
       .not.toHaveAttribute('data-current-project');
     expect(screen.queryByRole('button', { name: /选择项目/ }))
       .not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 完全访问' }))
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' }))
       .toBeInTheDocument();
     expect(within(screen.getByLabelText('customer-agent 对话')).queryByText('任务草稿'))
       .not.toBeInTheDocument();
@@ -901,6 +966,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -990,8 +1057,10 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -1065,6 +1134,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -1186,7 +1257,7 @@ describe('App', () => {
     expect(await findTimelineUserMessage('执行长任务')).toBeInTheDocument();
     expect(document.querySelectorAll('.timeline-user_message')).toHaveLength(1);
     expect(await screen.findByText('后台完成后的内容')).toBeInTheDocument();
-    await user.click(screen.getByText('思考过程'));
+    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
     expect(screen.getAllByText('切换前的实时进度')).toHaveLength(1);
     expect(subscriptions).toHaveLength(1);
   });
@@ -1201,6 +1272,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -1274,6 +1347,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -1359,8 +1434,10 @@ describe('App', () => {
       token: 'runtime-token'
     });
     let runCompleted = false;
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -1481,7 +1558,7 @@ describe('App', () => {
     expect(subscriptions[0]?.fromSeq).toBe(0);
     expect(subscriptions[1]?.fromSeq).toBe(1);
     expect(await screen.findByText('第二段内容')).toBeInTheDocument();
-    await user.click(await screen.findByText('思考过程'));
+    await user.click(await screen.findByText(/^(?:已完成|耗时 .+)$/));
     expect(await screen.findAllByText('第一段内容')).toHaveLength(1);
     expect(screen.queryByText('SSE connection closed unexpectedly')).not.toBeInTheDocument();
     await waitFor(() => {
@@ -1499,6 +1576,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -1574,12 +1653,14 @@ describe('App', () => {
     });
   });
 
-  it('loads runtime skills and MCP servers into the composer slash menu', async () => {
+  it('loads runtime skills into the composer slash menu', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -1647,8 +1728,8 @@ describe('App', () => {
 
     expect(await screen.findByRole('listbox', { name: '能力菜单' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /brainstorming/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /github/ })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /设置 Goal/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /github/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /设置 Goal/ })).not.toBeInTheDocument();
   });
 
   it('loads plugin data without requesting MCP or Profiles on a direct plugin refresh', async () => {
@@ -1660,8 +1741,10 @@ describe('App', () => {
       token: 'runtime-token'
     });
     const fetchUrls: string[] = [];
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchUrls.push(url);
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -1724,6 +1807,8 @@ describe('App', () => {
     let createdThreadCount = 0;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -1748,14 +1833,17 @@ describe('App', () => {
       if (url.endsWith('/threads') && init?.method === 'POST') {
         createdThreadCount += 1;
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const project = readTestRuntimeProjects().find(item => item.id === body.projectId);
+        if (project === undefined) throw new Error(`Unknown test project ${String(body.projectId)}`);
         return jsonResponse(
           {
             thread: createThreadResponse({
               id: `thread_skill_${createdThreadCount}`,
               title: String(body.title),
-              cwd: String(body.cwd),
-              canonicalCwd: String(body.cwd),
-              workspaceMode: body.workspaceMode === 'external' ? 'external' : 'managed',
+              projectId: project.id,
+              cwd: project.cwd,
+              canonicalCwd: project.canonicalCwd ?? project.cwd,
+              workspaceMode: 'external',
               profile: String(body.profile),
               sandbox: body.sandbox === 'danger-full-access' ? 'danger-full-access' : 'read-only'
             })
@@ -1802,18 +1890,18 @@ describe('App', () => {
       'aria-checked',
       'true'
     );
-    await user.click(within(projectDialog).getByRole('radio', { name: /bili/ }));
-    await user.click(within(projectDialog).getByRole('button', { name: '在 bili 中使用' }));
+    await user.click(within(projectDialog).getByRole('button', { name: '在 content-design 中使用' }));
 
     await waitFor(() => expect(threadCreateCalls()).toHaveLength(1));
     const createThreadBody = JSON.parse(String(threadCreateCalls()[0]?.init?.body)) as Record<string, unknown>;
     expect(createThreadBody).toMatchObject({
       title: '网页演示稿生成',
-      cwd: '~/develop/clawee/bili',
-      workspaceMode: 'external',
+      projectId: readTestRuntimeProjects()[0]!.id,
       profile: 'default',
       sandbox: 'danger-full-access'
     });
+    expect(createThreadBody).not.toHaveProperty('cwd');
+    expect(createThreadBody).not.toHaveProperty('workspaceMode');
     expect(createThreadBody).not.toHaveProperty('model');
     expect(createThreadBody).not.toHaveProperty('reasoning');
     expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
@@ -1828,7 +1916,7 @@ describe('App', () => {
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(getSkillMarketCard('frontend-slides')).toBeInTheDocument());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
-    await user.click(screen.getByRole('button', { name: '在 bili 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
 
     await waitFor(() => expect(threadCreateCalls()).toHaveLength(2));
     expect(JSON.parse(String(threadCreateCalls()[1]?.init?.body))).toMatchObject({
@@ -1841,8 +1929,10 @@ describe('App', () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -1890,7 +1980,8 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), '/');
-    expect(await screen.findByRole('option', { name: /github/ })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /frontend-slides/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /github/ })).not.toBeInTheDocument();
     await user.keyboard('{Escape}');
 
     await user.click(screen.getByRole('button', { name: '插件' }));
@@ -1907,8 +1998,10 @@ describe('App', () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -1952,6 +2045,8 @@ describe('App', () => {
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -2021,6 +2116,8 @@ describe('App', () => {
     const threadCreates: Array<Deferred<Response>> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -2069,8 +2166,8 @@ describe('App', () => {
         thread: createThreadResponse({
           id: 'thread_skill_1',
           title: '网页演示稿生成',
-          cwd: '~/develop/content-design',
-          canonicalCwd: '~/develop/content-design',
+          cwd: '~',
+          canonicalCwd: '~',
           sandbox: 'danger-full-access'
         })
       }, { status: 201 }));
@@ -2090,8 +2187,8 @@ describe('App', () => {
         thread: createThreadResponse({
           id: 'thread_skill_2',
           title: '网页演示稿生成',
-          cwd: '~/develop/content-design',
-          canonicalCwd: '~/develop/content-design',
+          cwd: '~',
+          canonicalCwd: '~',
           sandbox: 'danger-full-access'
         })
       }, { status: 201 }));
@@ -2111,6 +2208,8 @@ describe('App', () => {
     let staleRecords: Deferred<Response> | undefined;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.startsWith('http://127.0.0.1:60765')) {
         if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
         if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse({ codexVersion: 'codex-cli next' }));
@@ -2195,6 +2294,8 @@ describe('App', () => {
     let recordRequests = 0;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -2256,6 +2357,8 @@ describe('App', () => {
     let recordRequests = 0;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -2309,6 +2412,8 @@ describe('App', () => {
     let skillRequests = 0;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -2374,6 +2479,8 @@ describe('App', () => {
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(codexStatus);
@@ -2444,13 +2551,13 @@ describe('App', () => {
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
-    expect(await screen.findByText('思考过程')).toBeInTheDocument();
+    expect(await screen.findByText(/^(?:已完成|耗时 .+)$/)).toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
     expect(screen.queryByText('排队中')).not.toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
 
-    await user.click(screen.getByText('思考过程'));
+    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
 
     expect(await screen.findByText('我会先确认输入要求。')).toBeInTheDocument();
     expect(await screen.findByText('然后返回指定文本。')).toBeInTheDocument();
@@ -2512,6 +2619,8 @@ describe('App', () => {
     };
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -2588,8 +2697,10 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '批准' }));
 
-    expect(await screen.findByText('已批准')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('rm -rf build')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument();
+    });
     expect(fetchCalls.some(call => (
       call.url.endsWith('/approvals/approval_1/approve')
       && call.init?.method === 'POST'
@@ -2605,8 +2716,10 @@ describe('App', () => {
     const prompt = '只回复 OK';
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -2651,10 +2764,10 @@ describe('App', () => {
     expect(await screen.findByText('OK')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
-    expect(screen.getByText('思考过程')).toBeInTheDocument();
+    expect(screen.getByText(/^(?:已完成|耗时 .+)$/)).toBeInTheDocument();
     expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
 
-    await user.click(screen.getByText('思考过程'));
+    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
 
     expect(screen.getByText('运行详情')).toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
@@ -2667,8 +2780,10 @@ describe('App', () => {
     const prompt = '你都会做什么';
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -2699,7 +2814,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
-    expect(await screen.findByText('正在思考')).toBeInTheDocument();
+    expect(await screen.findByText('思考中')).toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
 
     await act(async () => {
@@ -2719,6 +2834,8 @@ describe('App', () => {
     let subscriptionInput: SubscribeRunEventsInput | undefined;
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -2808,8 +2925,10 @@ describe('App', () => {
     const prompt = '检查当前目录并总结';
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
@@ -2887,14 +3006,14 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
-    expect(await screen.findByText('思考过程')).toBeInTheDocument();
+    expect(await screen.findByText(/^(?:已完成|耗时 .+)$/)).toBeInTheDocument();
 
-    await user.click(screen.getByText('思考过程'));
+    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
 
     expect(screen.getByText('我会先确认当前目录，再读取必要文件。')).toBeInTheDocument();
-    expect(screen.getByText('使用工具 command_execution')).toBeInTheDocument();
-    expect(screen.getByText('pwd')).toBeInTheDocument();
-    expect(screen.getByText('工具完成 command_execution')).toBeInTheDocument();
+    expect(screen.getByText('正在查看项目内容')).toBeInTheDocument();
+    expect(screen.queryByText('pwd')).not.toBeInTheDocument();
+    expect(screen.getByText('已完成：查看项目内容')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
     expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
@@ -2906,8 +3025,10 @@ describe('App', () => {
     const prompt = '生成一份项目周报';
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -2968,41 +3089,104 @@ describe('App', () => {
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
 
-  it('creates Playground threads with the Playground cwd and global permission', async () => {
+  it('creates and selects a default project on the first Desktop launch', async () => {
+    testRuntimeProjects = [];
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.ensureDefaultProjectDirectory = vi.fn(
+      async () => '/Users/test/Documents/Clawee/Default Project'
+    );
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const appProps = {
+      fileService: createFileService(),
+      hostBridge,
+      runtimeFetch,
+      subscribeRunEvents: async () => undefined
+    };
+
+    const firstRender = render(<App {...appProps} />);
+
+    expect(await screen.findByRole('button', {
+      name: '选择项目 默认项目'
+    })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    expect(screen.getByText('要在 默认项目 中处理什么？')).toBeInTheDocument();
+    expect(hostBridge.ensureDefaultProjectDirectory).toHaveBeenCalledTimes(1);
+    const createProjectCall = findPostCall(fetchCalls, '/projects');
+    expect(readRequestBody(createProjectCall!.init!)).toEqual({
+      cwd: '/Users/test/Documents/Clawee/Default Project',
+      name: '默认项目'
+    });
+
+    firstRender.unmount();
+    render(<App {...appProps} />);
+
+    expect(await screen.findByRole('button', {
+      name: '选择项目 默认项目'
+    })).toBeInTheDocument();
+    expect(hostBridge.ensureDefaultProjectDirectory).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks conversation creation when the host cannot create a default project and sends projectId without cwd', async () => {
     const user = userEvent.setup();
     const prompt = 'hi';
+    testRuntimeProjects = [];
     window.localStorage.setItem(
       'clawee.preferences.defaultPermission',
       'danger-full-access'
     );
     const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.selectProjectDirectory = vi.fn(async () => '/Users/test/develop/content-design');
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
       if (url.endsWith('/threads')) {
+        const body = readRequestBody(init!);
+        const project = readTestRuntimeProjects().find(item => item.id === body.projectId);
+        if (project === undefined) throw new Error(`Unknown test project ${String(body.projectId)}`);
         return jsonResponse({
           thread: createThreadResponse({
-            id: 'thread_playground',
+            id: 'thread_project_bound',
             title: prompt,
-            cwd: '/Users/test/develop/clawee/playground',
-            canonicalCwd: '/Users/test/develop/clawee/playground',
+            projectId: project.id,
+            cwd: project.cwd,
+            canonicalCwd: project.canonicalCwd ?? project.cwd,
             sandbox: 'danger-full-access'
           })
         }, { status: 201 });
       }
-      if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', threadId: 'thread_playground', status: 'running' }, { status: 202 });
+      if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', threadId: 'thread_project_bound', status: 'running' }, { status: 202 });
       throw new Error(`Unexpected request ${url}`);
     };
     const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
       input.onEvent(createRuntimeEvent('done', { type: 'done', status: 'succeeded', terminationReason: 'completed' }, 1));
     };
 
-    render(
+    const firstRender = render(
       <App
         fileService={createFileService()}
         hostBridge={hostBridge}
@@ -3012,26 +3196,46 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '选择项目 content-design' }));
-    await user.click(screen.getByRole('option', { name: 'Playground' }));
-    expect(screen.getByRole('button', { name: '选择项目 Playground' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请先添加项目')).toBeDisabled();
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
+    expect(findPostCall(fetchCalls, '/threads')).toBeUndefined();
+
+    firstRender.unmount();
+    testRuntimeProjects = [
+      createTestProject('/Users/test/develop/content-design', {
+        name: 'content-design'
+      })
+    ];
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={subscribeRunEvents}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: '选择项目 content-design' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     const createThreadBody = JSON.parse(String(findPostCall(fetchCalls, '/threads')?.init?.body)) as Record<string, unknown>;
     expect(createThreadBody).toMatchObject({
       title: prompt,
-      cwd: '~/develop/clawee/playground',
-      workspaceMode: 'external',
+      projectId: readTestRuntimeProjects()[0]!.id,
       sandbox: 'danger-full-access'
     });
+    expect(createThreadBody).not.toHaveProperty('cwd');
+    expect(createThreadBody).not.toHaveProperty('workspaceMode');
   });
 
-  it('shows refreshed Playground conversations under Playground', async () => {
+  it('does not infer projects from historical conversation directories', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -3064,14 +3268,250 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
 
-    expect(await screen.findByRole('button', { name: /Playground 历史会话/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Playground 历史会话/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'playground' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'content-design' })).toBeInTheDocument();
+  });
+
+  it('adds and archives a local project directory through the desktop host', async () => {
+    const user = userEvent.setup();
+    const legacyProjects = JSON.stringify([
+      createLegacyPersistedProject('/Users/test/Documents/legacy-project')
+    ]);
+    window.localStorage.setItem(PROJECTS_STORAGE_KEY, legacyProjects);
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.selectProjectDirectory = vi.fn(async () => '/Users/test/Documents/官网资料');
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'legacy-project' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: '添加项目文件夹' }));
+    expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(fetchCalls.map(call => [call.url, call.init?.method])).toContainEqual([
+        'http://127.0.0.1:60764/projects',
+        'POST'
+      ]);
+    });
+    expect(readTestRuntimeProjects().some(project => project.name === '官网资料')).toBe(true);
+    expect(await screen.findByRole('button', { name: '官网资料' })).toBeInTheDocument();
+    expect(findPostCall(fetchCalls, '/projects')).toBeDefined();
+    expect(window.localStorage.getItem(PROJECTS_STORAGE_KEY)).toBe(legacyProjects);
+
+    await user.click(screen.getByRole('button', { name: '项目操作 官网资料' }));
+    await user.click(screen.getByRole('menuitem', { name: '移除项目 官网资料' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '官网资料' })).not.toBeInTheDocument();
+    });
+    expect(fetchCalls.some(call => (
+      call.url.includes('/projects/')
+      && call.url.endsWith('/archive')
+      && call.init?.method === 'POST'
+    ))).toBe(true);
+    expect(window.localStorage.getItem(PROJECTS_STORAGE_KEY)).toBe(legacyProjects);
+  });
+
+  it('adds a project by dropping a folder into the desktop workspace', async () => {
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.resolveDroppedFilePath = vi.fn(
+      () => '/Users/test/Documents/dropped-project'
+    );
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    const dropRoot = document.querySelector<HTMLElement>('[data-project-drop-root="true"]');
+    if (dropRoot === null) throw new Error('Expected project drop root');
+    const folder = new File([], 'dropped-project');
+    const dataTransfer = createDirectoryDataTransfer(folder);
+
+    fireEvent.dragEnter(dropRoot, { dataTransfer });
+    expect(screen.getByText('松开以添加项目文件夹')).toBeInTheDocument();
+
+    fireEvent.drop(dropRoot, { dataTransfer });
+
+    expect(hostBridge.resolveDroppedFilePath).toHaveBeenCalledWith(folder);
+    expect(await screen.findByRole('button', { name: 'dropped-project' })).toBeInTheDocument();
+    expect(findPostCall(fetchCalls, '/projects')).toBeDefined();
+    expect(screen.queryByText('松开以添加项目文件夹')).not.toBeInTheDocument();
+  });
+
+  it('opens only one project directory picker while the previous request is pending', async () => {
+    const user = userEvent.setup();
+    let resolveDirectory: ((path: string | null) => void) | undefined;
+    const directorySelection = new Promise<string | null>((resolve) => {
+      resolveDirectory = resolve;
+    });
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.selectProjectDirectory = vi.fn(() => directorySelection);
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    const addProjectButton = await screen.findByRole('button', {
+      name: '添加项目文件夹'
+    });
+    await user.click(addProjectButton);
+    await user.click(addProjectButton);
+
+    expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveDirectory?.(null);
+      await directorySelection;
+    });
+  });
+
+  it('creates a blank project from the composer project selector', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.createProjectDirectory = vi.fn(
+      async () => '/Users/test/Documents/blank-project'
+    );
+    hostBridge.selectProjectDirectory = vi.fn(
+      async () => '/Users/test/Documents/existing-project'
+    );
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', {
+      name: '选择项目 content-design'
+    }));
+    await user.click(screen.getByRole('button', { name: '新建项目' }));
+    await user.click(screen.getByRole('menuitem', { name: '新建空白项目' }));
+    await user.type(screen.getByRole('textbox', { name: '项目名称' }), 'blank-project');
+    await user.click(screen.getByRole('button', { name: '创建' }));
+
+    expect(hostBridge.createProjectDirectory).toHaveBeenCalledWith('blank-project');
+    await waitFor(() => {
+      expect(fetchCalls.map(call => [call.url, call.init?.method])).toContainEqual([
+        'http://127.0.0.1:60764/projects',
+        'POST'
+      ]);
+    });
+    expect(await screen.findByRole('button', {
+      name: '选择项目 blank-project'
+    })).toBeInTheDocument();
+    expect(screen.getByRole('button', {
+      name: 'blank-project'
+    })).toHaveAttribute('data-current-project', 'true');
+
+    await user.click(screen.getByRole('button', {
+      name: '选择项目 blank-project'
+    }));
+    await user.click(screen.getByRole('button', { name: '新建项目' }));
+    await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+
+    expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole('button', {
+      name: '选择项目 existing-project'
+    })).toBeInTheDocument();
   });
 
   it('does not show managed runtime workspaces as projects', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -3127,14 +3567,49 @@ describe('App', () => {
   it('clears the current conversation surface when switching projects', async () => {
     const user = userEvent.setup();
     const prompt = '生成一份项目周报';
+    const projects = persistProjects(
+      '/workspace/primary',
+      '/workspace/secondary'
+    );
+    const primaryProject = projects[0];
+    const secondaryProject = projects[1]!;
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: primaryProject.id
+    }));
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
-      if (url.endsWith('/threads')) return jsonResponse({ thread: createThreadResponse({ title: prompt }) }, { status: 201 });
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_secondary_history',
+              title: 'secondary 历史',
+              projectId: secondaryProject.id,
+              cwd: '/workspace/secondary',
+              canonicalCwd: '/workspace/secondary'
+            })
+          ]
+        });
+      }
+      if (url.endsWith('/threads')) {
+        const body = readRequestBody(init!);
+        const project = readTestRuntimeProjects().find(item => item.id === body.projectId);
+        if (project === undefined) throw new Error(`Unknown test project ${String(body.projectId)}`);
+        return jsonResponse({
+          thread: createThreadResponse({
+            title: prompt,
+            projectId: project.id,
+            cwd: project.cwd,
+            canonicalCwd: project.canonicalCwd ?? project.cwd
+          })
+        }, { status: 201 });
+      }
       if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', threadId: 'thread_from_api', status: 'running' }, { status: 202 });
       throw new Error(`Unexpected request ${url}`);
     };
@@ -3171,16 +3646,26 @@ describe('App', () => {
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
     expect(await screen.findByText('周报已整理。')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'bili' }));
+    await user.click(screen.getByRole('button', { name: '选择项目 primary' }));
+    await user.click(screen.getByRole('option', { name: 'secondary' }));
 
     expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
-    expect(screen.getByText('要在 bili 中处理什么？')).toBeInTheDocument();
+    expect(screen.getByText('要在 secondary 中处理什么？')).toBeInTheDocument();
     expect(screen.queryByText(prompt)).not.toBeInTheDocument();
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
 
   it('does not let an aborted subscription clear events queued by its replacement', async () => {
     const user = userEvent.setup();
+    const projects = persistProjects(
+      '/workspace/primary',
+      '/workspace/secondary'
+    );
+    const primaryProject = projects[0];
+    const secondaryProject = projects[1]!;
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: primaryProject.id
+    }));
     const animationFrames: FrameRequestCallback[] = [];
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       animationFrames.push(callback);
@@ -3192,15 +3677,38 @@ describe('App', () => {
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     let threadSequence = 0;
     let runSequence = 0;
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_secondary_history',
+              title: 'secondary 历史',
+              projectId: secondaryProject.id,
+              cwd: '/workspace/secondary',
+              canonicalCwd: '/workspace/secondary'
+            })
+          ]
+        });
+      }
       if (url.endsWith('/threads')) {
         threadSequence += 1;
+        const body = readRequestBody(init!);
+        const project = readTestRuntimeProjects().find(item => item.id === body.projectId);
+        if (project === undefined) throw new Error(`Unknown test project ${String(body.projectId)}`);
         return jsonResponse({
-          thread: createThreadResponse({ id: `thread_${threadSequence}`, title: `任务 ${threadSequence}` })
+          thread: createThreadResponse({
+            id: `thread_${threadSequence}`,
+            title: `任务 ${threadSequence}`,
+            projectId: project.id,
+            cwd: project.cwd,
+            canonicalCwd: project.canonicalCwd ?? project.cwd
+          })
         }, { status: 201 });
       }
       if (url.endsWith('/runs')) {
@@ -3259,7 +3767,8 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(subscriptionSequence).toBe(1));
 
-    await user.click(screen.getByRole('button', { name: 'bili' }));
+    await user.click(screen.getByRole('button', { name: '选择项目 primary' }));
+    await user.click(screen.getByRole('option', { name: 'secondary' }));
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), '新任务');
     await user.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(subscriptionSequence).toBe(2));
@@ -3281,10 +3790,18 @@ describe('App', () => {
 
   it('restores the last selected project and conversation after remount', async () => {
     const user = userEvent.setup();
+    const projects = persistProjects(
+      '/Users/test/develop/content-design',
+      '/Users/test/develop/clawee/bili'
+    );
+    const contentProject = projects[0];
+    const biliProject = projects[1]!;
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -3293,6 +3810,7 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_content_history',
               title: 'content-design 历史',
+              projectId: contentProject.id,
               codexThreadId: 'codex-content-history',
               cwd: '/Users/test/develop/content-design',
               canonicalCwd: '/Users/test/develop/content-design'
@@ -3300,6 +3818,7 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_bili_history',
               title: 'bili 历史',
+              projectId: biliProject.id,
               codexThreadId: 'codex-bili-history',
               cwd: '/Users/test/develop/clawee/bili',
               canonicalCwd: '/Users/test/develop/clawee/bili'
@@ -3345,8 +3864,9 @@ describe('App', () => {
   });
 
   it('restores a selected historical conversation that is outside the initial thread page', async () => {
-    window.localStorage.setItem('clawee.navigation.v2', JSON.stringify({
-      currentProjectId: 'bili',
+    const [biliProject] = persistProjects('/Users/test/develop/clawee/bili');
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: biliProject.id,
       selectedThreadId: 'thread_older_history'
     }));
     const hostBridge = createHostBridge();
@@ -3355,8 +3875,10 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       requestedUrls.push(url);
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -3413,15 +3935,17 @@ describe('App', () => {
     );
 
     expect(await findTimelineUserMessage('这条历史会话不在首批 50 条中')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /分页外的历史会话/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '分页外的历史会话' })).toBeInTheDocument();
     expect(requestedUrls.some(url => url.endsWith('/threads/thread_older_history'))).toBe(true);
   });
 
   it('loads conversation history from runtime threads instead of mock conversations', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -3455,14 +3979,20 @@ describe('App', () => {
   });
 
   it('loads task summaries without preloading task history or listing task threads as conversations', async () => {
+    const [contentProject] = persistProjects('/Users/test/develop/content-design');
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: contentProject.id
+    }));
     const requestedUrls: string[] = [];
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       requestedUrls.push(url);
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -3531,8 +4061,10 @@ describe('App', () => {
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -3624,8 +4156,10 @@ describe('App', () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -3683,12 +4217,20 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /真实 Codex 历史会话/ }));
 
     expect(await findTimelineUserMessage('分析这个 skill 是干什么的')).toBeInTheDocument();
-    expect(await screen.findByText('思考过程')).toBeInTheDocument();
+    expect(await screen.findByText(/^(?:已完成|耗时 .+)$/)).toBeInTheDocument();
 
-    await user.click(screen.getByText('思考过程'));
+    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
 
     expect(screen.getByText('先读取 skill 说明。')).toBeInTheDocument();
     expect(screen.getByText('这个 skill 用于分析选品资料。')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '编辑消息' }));
+
+    expect(screen.getByRole('textbox', { name: '输入任务' }))
+      .toHaveValue('分析这个 skill 是干什么的');
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveFocus();
+    });
   });
 
   it('loads the latest history page first and prepends an older cursor page without duplicates', async () => {
@@ -3696,8 +4238,10 @@ describe('App', () => {
     const requestedUrls: string[] = [];
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       requestedUrls.push(url);
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -3796,8 +4340,10 @@ describe('App', () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -3900,7 +4446,7 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /无 Turn ID 的分页会话/ }));
-    await user.click(await screen.findByText('思考过程'));
+    await user.click(await screen.findByText(/^(?:已完成|耗时 .+)$/));
 
     expect(screen.getByText('当前任务的处理过程')).toBeInTheDocument();
 
@@ -3915,8 +4461,10 @@ describe('App', () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     let historyRequests = 0;
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -3981,8 +4529,10 @@ describe('App', () => {
       token: 'runtime-token'
     });
     const requestedUrls: string[] = [];
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       requestedUrls.push(url);
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -4082,8 +4632,10 @@ describe('App', () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -4147,11 +4699,22 @@ describe('App', () => {
 
   it('replaces the previous transcript with a loading state while switching conversations', async () => {
     const user = userEvent.setup();
+    const projects = persistProjects(
+      '/Users/test/develop/content-design',
+      '/Users/test/develop/clawee/bili'
+    );
+    const contentProject = projects[0];
+    const biliProject = projects[1]!;
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: contentProject.id
+    }));
     const hostBridge = createHostBridge();
     let resolveNextHistory: ((response: Response) => void) | undefined;
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -4160,6 +4723,7 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_content_history',
               title: 'content-design 历史',
+              projectId: contentProject.id,
               codexThreadId: 'codex-content-history',
               cwd: '/Users/test/develop/content-design',
               canonicalCwd: '/Users/test/develop/content-design'
@@ -4167,6 +4731,7 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_bili_history',
               title: 'bili 历史',
+              projectId: biliProject.id,
               codexThreadId: 'codex-bili-history',
               cwd: '/Users/test/develop/clawee/bili',
               canonicalCwd: '/Users/test/develop/clawee/bili'
@@ -4237,8 +4802,10 @@ describe('App', () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -4336,7 +4903,7 @@ describe('App', () => {
 
     expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '真实文件会话' })).toBeInTheDocument();
-    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Workspace' })).toBeInTheDocument();
     expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '返回对话' })).not.toBeInTheDocument();
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
@@ -4350,6 +4917,8 @@ describe('App', () => {
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -4480,7 +5049,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('link', { name: absoluteChangedPath }));
 
     expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
-    expect(await screen.findByRole('textbox', { name: 'docs/generated.md 编辑器' })).toHaveTextContent('# Generated');
+    expect(await screen.findByRole('heading', { name: 'Generated' })).toBeInTheDocument();
     expect(screen.queryByText('已编辑 docs/atoms.md')).not.toBeInTheDocument();
     expect(
       fetchCalls.some(call => call.url.includes('/workspace/files/meta?') && call.url.includes('path=docs%2Fgenerated.md'))
@@ -4491,8 +5060,10 @@ describe('App', () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -4587,7 +5158,7 @@ describe('App', () => {
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
     await user.click(screen.getByRole('button', { name: '文件' }));
-    await screen.findByRole('textbox', { name: 'README.md 编辑器' });
+    await screen.findByRole('heading', { name: 'Workspace' });
 
     const layout = screen.getByLabelText('会话和文件工作区');
     vi.spyOn(layout, 'getBoundingClientRect').mockReturnValue({
@@ -4618,6 +5189,8 @@ describe('App', () => {
     let threadSandbox: ThreadResponse['sandbox'] = 'read-only';
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -4729,24 +5302,30 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '文件' }));
 
     expect(await screen.findByText('当前会话为只读模式，不能保存文件')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Workspace' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '编辑' }));
     expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toHaveAttribute('aria-readonly', 'true');
 
-    await user.click(screen.getByRole('button', { name: '选择访问权限 只读访问' }));
+    await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
 
     await waitFor(() => {
       expect(findPatchCall(fetchCalls, '/threads/thread_files')).toBeDefined();
     });
-    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toHaveAttribute('aria-readonly', 'false');
     expect(screen.queryByText('当前会话为只读模式，不能保存文件')).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Workspace' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '编辑' }));
+    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toHaveAttribute('aria-readonly', 'false');
   });
 
-  it('点击详情不会打开旧 mock 详情，点击文件才进入真实文件工作区', async () => {
+  it('不显示无用途的详情按钮，点击文件进入真实文件工作区', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -4841,7 +5420,7 @@ describe('App', () => {
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
 
-    await user.click(screen.getByRole('button', { name: '详情' }));
+    expect(screen.queryByRole('button', { name: '详情' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'README.md' })).not.toBeInTheDocument();
     expect(screen.queryByText('已编辑 docs/atoms.md')).not.toBeInTheDocument();
     expect(screen.queryByText('+903 -0')).not.toBeInTheDocument();
@@ -4851,15 +5430,27 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '文件' }));
     expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '真实文件会话' })).toBeInTheDocument();
-    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Workspace' })).toBeInTheDocument();
     expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
   });
 
-  it('focuses the most recent runtime project when there is no saved navigation', async () => {
+  it('loads migrated projects from Runtime and never renders local home', async () => {
+    const contentProject = createLegacyPersistedProject('/Users/test/develop/content-design');
+    const legacyProjects = JSON.stringify([
+      {
+        ...createLegacyPersistedProject('~'),
+        id: 'local-home',
+        name: '本机目录'
+      },
+      contentProject
+    ]);
+    window.localStorage.setItem(PROJECTS_STORAGE_KEY, legacyProjects);
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
-    const runtimeFetch = async (input: RequestInfo | URL) => {
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
@@ -4868,6 +5459,7 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_codex_clawee_agent',
               title: '真实 Codex 当前项目历史',
+              projectId: contentProject.id,
               codexThreadId: 'codex-history-clawee-agent',
               cwd: '/Users/test/develop/clawee/clawee-agent',
               canonicalCwd: '/Users/test/develop/clawee/clawee-agent',
@@ -4876,6 +5468,7 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_codex_content_design',
               title: 'content-design 旧历史',
+              projectId: contentProject.id,
               codexThreadId: 'codex-history-content-design',
               cwd: '/Users/test/develop/content-design',
               canonicalCwd: '/Users/test/develop/content-design',
@@ -4897,8 +5490,12 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'clawee-agent' })).toHaveAttribute('data-current-project', 'true');
+    expect(await screen.findByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
+    expect(screen.queryByRole('button', { name: '本机目录' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'clawee-agent' })).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /真实 Codex 当前项目历史/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /content-design 旧历史/ })).toBeInTheDocument();
+    expect(window.localStorage.getItem(PROJECTS_STORAGE_KEY)).toBe(legacyProjects);
   });
 
   it('creates a runtime thread before starting the first run in a new conversation', async () => {
@@ -4909,12 +5506,21 @@ describe('App', () => {
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
       if (url.endsWith('/threads')) {
-        return jsonResponse({ thread: createThreadResponse({ id: 'thread_created_from_chat', title: prompt }) }, { status: 201 });
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_created_from_chat',
+            title: prompt,
+            cwd: '~',
+            canonicalCwd: '~'
+          })
+        }, { status: 201 });
       }
       if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', threadId: 'thread_created_from_chat', status: 'running' }, { status: 202 });
       throw new Error(`Unexpected request ${url}`);
@@ -4953,8 +5559,10 @@ describe('App', () => {
     const createThreadBody = JSON.parse(String(findPostCall(fetchCalls, '/threads')?.init?.body)) as Record<string, unknown>;
     expect(createThreadBody).toMatchObject({
       title: prompt,
-      workspaceMode: 'external'
+      projectId: readTestRuntimeProjects()[0]!.id
     });
+    expect(createThreadBody).not.toHaveProperty('cwd');
+    expect(createThreadBody).not.toHaveProperty('workspaceMode');
     expect(createThreadBody).not.toHaveProperty('model');
     expect(createThreadBody).not.toHaveProperty('reasoning');
     expect(JSON.parse(String(findPostCall(fetchCalls, '/runs')?.init?.body))).toEqual({
@@ -4973,6 +5581,8 @@ describe('App', () => {
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -5002,6 +5612,8 @@ describe('App', () => {
             thread: createThreadResponse({
               id: 'thread_configured_from_chat',
               title: prompt,
+              cwd: '~',
+              canonicalCwd: '~',
               profile: 'default',
               sandbox: 'danger-full-access',
               reasoning: 'xhigh'
@@ -5026,9 +5638,7 @@ describe('App', () => {
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '选择访问权限 完全访问' }));
-    await user.click(screen.getByRole('menuitemradio', { name: /工作区读写/ }));
-    await user.click(screen.getByRole('button', { name: '选择访问权限 工作区读写' }));
+    await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
     await user.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
     await user.click(screen.getByRole('menuitemradio', { name: /默认模型 超高/ }));
@@ -5060,6 +5670,8 @@ describe('App', () => {
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -5119,7 +5731,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '返回应用' }));
 
     expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
-    expect(await screen.findByText('要在 content-design 中处理什么？')).toBeInTheDocument();
+    expect(await screen.findByText('先添加项目后开始对话')).toBeInTheDocument();
   });
 
   it('uses a solid conversation background without a dynamic background setting', async () => {
@@ -5151,11 +5763,53 @@ describe('App', () => {
 
   it('persists the global default permission across refreshes and projects', async () => {
     const user = userEvent.setup();
-    const firstRender = render(<App fileService={createFileService()} />);
+    const projects = persistProjects(
+      '/workspace/primary',
+      '/workspace/secondary'
+    );
+    const primaryProject = projects[0];
+    const secondaryProject = projects[1]!;
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: primaryProject.id
+    }));
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [
+            createThreadResponse({
+              id: 'thread_secondary_history',
+              title: 'secondary 历史',
+              projectId: secondaryProject.id,
+              cwd: '/workspace/secondary',
+              canonicalCwd: '/workspace/secondary'
+            })
+          ]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+    const appProps = {
+      fileService: createFileService(),
+      hostBridge,
+      runtimeFetch,
+      subscribeRunEvents: async () => undefined
+    };
+    const firstRender = render(<App {...appProps} />);
 
-    await user.click(await screen.findByRole('button', { name: '选择项目 content-design' }));
-    await user.click(screen.getByRole('option', { name: 'Playground' }));
-    expect(screen.getByRole('button', { name: '选择访问权限 只读访问' })).toBeInTheDocument();
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: '选择项目 primary' }));
+    await user.click(screen.getByRole('option', { name: 'secondary' }));
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置 账户' }));
     await user.selectOptions(
@@ -5167,14 +5821,14 @@ describe('App', () => {
       .toBe('danger-full-access');
 
     await user.click(screen.getByRole('button', { name: '返回应用' }));
-    expect(await screen.findByRole('button', { name: '选择项目 Playground' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 完全访问' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '选择项目 secondary' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
 
     firstRender.unmount();
-    render(<App fileService={createFileService()} />);
+    render(<App {...appProps} />);
 
-    expect(await screen.findByRole('button', { name: '选择项目 Playground' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 完全访问' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '选择项目 secondary' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置 账户' }));
     expect(await screen.findByRole('combobox', { name: '默认权限' }))
@@ -5211,6 +5865,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -5266,6 +5922,135 @@ describe('App', () => {
       .toBe('danger-full-access');
   });
 
+  it('disables permission changes while the selected thread has an active run', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const thread = createThreadResponse({
+      id: 'thread_running_permission',
+      title: '运行中的权限会话',
+      sandbox: 'workspace-write'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [thread] });
+      }
+      if (url.endsWith('/threads/thread_running_permission/history?limit=50')) {
+        return jsonResponse({
+          threadId: thread.id,
+          codexThreadId: null,
+          items: []
+        });
+      }
+      if (url.endsWith('/threads/thread_running_permission/runs?limit=50')) {
+        return jsonResponse({
+          runs: [createRunResponse({
+            id: 'run_running_permission',
+            threadId: thread.id,
+            status: 'running'
+          })]
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /运行中的权限会话/ }));
+
+    const permissionButton = await screen.findByRole('button', {
+      name: '选择访问权限 请求批准'
+    });
+    await waitFor(() => expect(permissionButton).toBeDisabled());
+    expect(permissionButton).toHaveAttribute('title', '当前任务结束后可修改访问权限');
+    expect(findPatchCall(fetchCalls, '/threads/thread_running_permission')).toBeUndefined();
+  });
+
+  it('keeps request approval selected when the runtime rejects a permission update', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const thread = createThreadResponse({
+      id: 'thread_permission_race',
+      title: '权限切换竞争',
+      sandbox: 'workspace-write'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [thread] });
+      }
+      if (url.endsWith('/threads/thread_permission_race/history?limit=50')) {
+        return jsonResponse({
+          threadId: thread.id,
+          codexThreadId: null,
+          items: []
+        });
+      }
+      if (url.endsWith('/threads/thread_permission_race/runs?limit=50')) {
+        return jsonResponse({ runs: [] });
+      }
+      if (url.endsWith('/threads/thread_permission_race') && init?.method === 'PATCH') {
+        return jsonResponse({
+          error: {
+            code: 'THREAD_HAS_ACTIVE_RUN',
+            message: 'Thread has active run'
+          }
+        }, { status: 409 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /权限切换竞争/ }));
+    await user.click(await screen.findByRole('button', {
+      name: '选择访问权限 请求批准'
+    }));
+    await user.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
+
+    expect(await screen.findByText('任务运行期间不能修改访问权限，请等待当前任务结束'))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' }))
+      .toBeInTheDocument();
+    expect(findPatchCall(fetchCalls, '/threads/thread_permission_race')).toBeDefined();
+  });
+
   it('connects memory management, summary creation, suggestions, and run context end to end', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
@@ -5277,6 +6062,8 @@ describe('App', () => {
     });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
@@ -5399,8 +6186,7 @@ describe('App', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: /记忆功能会话/ }));
-    await user.click(await screen.findByRole('button', { name: '生成摘要' }));
-    expect(await screen.findByRole('status', { name: '摘要状态' })).toHaveTextContent('已生成摘要 v2');
+    expect(screen.queryByRole('button', { name: /生成摘要|查看摘要/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置 账户' }));
     await user.click(await screen.findByRole('button', { name: '记忆' }));
@@ -5477,11 +6263,188 @@ function createHostBridge(): HostBridge {
   };
 }
 
+function createDirectoryDataTransfer(folder: File): DataTransfer {
+  return {
+    dropEffect: 'none',
+    effectAllowed: 'all',
+    files: [folder],
+    items: [{
+      kind: 'file',
+      type: '',
+      getAsFile: () => folder,
+      getAsString: () => undefined,
+      webkitGetAsEntry: () => ({
+        filesystem: {},
+        fullPath: `/${folder.name}`,
+        isDirectory: true,
+        isFile: false,
+        name: folder.name,
+        getParent: () => undefined
+      })
+    }],
+    types: ['Files'],
+    clearData: () => undefined,
+    getData: () => '',
+    setData: () => undefined,
+    setDragImage: () => undefined
+  } as unknown as DataTransfer;
+}
+
 function jsonResponse(value: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(value), {
     status: init.status ?? 200,
     headers: { 'Content-Type': 'application/json', ...init.headers }
   });
+}
+
+function handleDefaultProjectApiRequest(
+  url: string,
+  init?: RequestInit
+): Response | undefined {
+  if (url.endsWith('/projects/migrations/local-storage-v1')) {
+    const projects = readTestRuntimeProjects();
+    return jsonResponse({
+      status: 'applied',
+      projectIdMap: Object.fromEntries(projects.map(project => [project.id, project.id])),
+      assignedThreadIds: [],
+      unassignedThreadIds: []
+    });
+  }
+  if (url.includes('/threads?') && url.includes('assignment=unassigned')) {
+    return jsonResponse({ threads: [] });
+  }
+  if (url.endsWith('/projects?status=active')) {
+    return jsonResponse({
+      projects: readTestRuntimeProjects().filter(project => project.status === 'active')
+    });
+  }
+  if (url.endsWith('/projects?status=all')) {
+    return jsonResponse({ projects: readTestRuntimeProjects() });
+  }
+  if (url.endsWith('/projects') && init?.method === 'POST') {
+    const body = readRequestBody(init);
+    const cwd = typeof body.cwd === 'string' ? body.cwd : '/workspace/project';
+    const project = createTestProject(
+      cwd,
+      typeof body.name === 'string' ? { name: body.name } : {}
+    );
+    testRuntimeProjects = [
+      project,
+      ...readTestRuntimeProjects().filter(item => item.id !== project.id)
+    ];
+    return jsonResponse({ project }, { status: 201 });
+  }
+
+  const projectMutation = url.match(/\/projects\/([^/]+)\/(archive|restore|replace-directory)$/);
+  if (projectMutation !== null && init?.method === 'POST') {
+    const projectId = decodeURIComponent(projectMutation[1]!);
+    const existing = readTestRuntimeProjects().find(project => project.id === projectId);
+    if (existing === undefined) return jsonResponse({}, { status: 404 });
+    const body = readRequestBody(init);
+    const project = projectMutation[2] === 'archive'
+      ? {
+          ...existing,
+          status: 'archived' as const,
+          archivedAt: new Date(0).toISOString()
+        }
+      : projectMutation[2] === 'restore'
+        ? {
+            ...existing,
+            status: 'active' as const,
+            archivedAt: null
+          }
+        : {
+            ...existing,
+            cwd: typeof body.cwd === 'string' ? body.cwd : existing.cwd,
+            canonicalCwd: typeof body.cwd === 'string' ? body.cwd : existing.canonicalCwd,
+            directoryState: 'available' as const
+          };
+    testRuntimeProjects = readTestRuntimeProjects().map(item => (
+      item.id === projectId ? project : item
+    ));
+    return jsonResponse({ project });
+  }
+
+  const projectUpdate = url.match(/\/projects\/([^/]+)$/);
+  if (projectUpdate !== null && init?.method === 'PATCH') {
+    const projectId = decodeURIComponent(projectUpdate[1]!);
+    const body = readRequestBody(init);
+    const existing = readTestRuntimeProjects().find(project => project.id === projectId);
+    if (existing === undefined) return jsonResponse({}, { status: 404 });
+    const project = { ...existing, ...body } as ProjectResponse;
+    testRuntimeProjects = readTestRuntimeProjects().map(item => (
+      item.id === projectId ? project : item
+    ));
+    return jsonResponse({ project });
+  }
+  return undefined;
+}
+
+function readTestRuntimeProjects(): ProjectResponse[] {
+  if (testRuntimeProjects !== undefined) return testRuntimeProjects;
+  const raw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
+  if (raw !== null) {
+    try {
+      const value = JSON.parse(raw) as unknown;
+      if (Array.isArray(value)) {
+        testRuntimeProjects = value
+          .filter((item): item is ClaweeProject => (
+            typeof item === 'object'
+            && item !== null
+            && !Array.isArray(item)
+            && typeof (item as { id?: unknown }).id === 'string'
+            && (item as { id: string }).id !== 'local-home'
+            && typeof (item as { cwd?: unknown }).cwd === 'string'
+          ))
+          .map(project => createTestProject(project.cwd, {
+            id: project.id,
+            name: project.name,
+            sandbox: project.sandbox,
+            profile: project.profile,
+            model: project.model,
+            reasoning: project.reasoning
+          }));
+        return testRuntimeProjects;
+      }
+    } catch {
+      testRuntimeProjects = [];
+      return testRuntimeProjects;
+    }
+  }
+  testRuntimeProjects = [
+    createTestProject('/Users/test/develop/content-design', {
+      name: 'content-design'
+    })
+  ];
+  return testRuntimeProjects;
+}
+
+function createTestProject(
+  cwd: string,
+  overrides: Partial<ProjectResponse> = {}
+): ProjectResponse {
+  const legacy = createLegacyPersistedProject(cwd);
+  return {
+    id: legacy.id,
+    name: legacy.name,
+    cwd: legacy.cwd,
+    canonicalCwd: legacy.cwd,
+    directoryState: 'available',
+    profile: legacy.profile,
+    model: legacy.model,
+    reasoning: legacy.reasoning,
+    sandbox: legacy.sandbox,
+    status: 'active',
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    archivedAt: null,
+    ...overrides
+  };
+}
+
+function readRequestBody(init: RequestInit): Record<string, unknown> {
+  if (typeof init.body !== 'string') return {};
+  return JSON.parse(init.body) as Record<string, unknown>;
 }
 
 function createSkillListResponse(skills: CodexSkillResponse[] = []): CodexSkillListResponse {
@@ -5616,9 +6579,12 @@ function createScheduleResponse(overrides: Partial<ScheduleResponse> = {}): Sche
 }
 
 function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
-  return {
+  const defaultProjectId = readTestRuntimeProjects().find(project => project.status === 'active')?.id ?? null;
+  const thread: ThreadResponse = {
     id: 'thread_from_api',
     title: 'Thread from API',
+    projectId: defaultProjectId,
+    origin: 'clawee_created',
     codexThreadId: null,
     cwd: '/Users/test/develop/content-design',
     canonicalCwd: '/Users/test/develop/content-design',
@@ -5633,6 +6599,40 @@ function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadRe
     updatedAt: new Date(0).toISOString(),
     archivedAt: null,
     ...overrides
+  };
+  if (overrides.projectId === undefined) {
+    thread.projectId = thread.purpose === 'conversation'
+      ? defaultProjectId
+      : null;
+  }
+  return thread;
+}
+
+function persistProjects(cwd: string, ...additionalCwds: string[]): [ClaweeProject, ...ClaweeProject[]] {
+  const projects: [ClaweeProject, ...ClaweeProject[]] = [
+    createLegacyPersistedProject(cwd),
+    ...additionalCwds.map(createLegacyPersistedProject)
+  ];
+  window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+  return projects;
+}
+
+function createLegacyPersistedProject(cwd: string): ClaweeProject {
+  const normalizedCwd = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
+  const name = normalizedCwd.split('/').filter(Boolean).at(-1) ?? 'project';
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < normalizedCwd.length; index += 1) {
+    hash ^= normalizedCwd.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return {
+    id: `project-${name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')}-${(hash >>> 0).toString(36)}`,
+    name,
+    cwd: normalizedCwd,
+    sandbox: 'follow-global',
+    profile: 'default',
+    model: null,
+    reasoning: null
   };
 }
 

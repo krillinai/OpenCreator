@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -26,13 +26,44 @@ export type FakeCodexInvocation = {
   files?: Record<string, string>;
 };
 
+export type FakeCodexThread = {
+  id: string;
+  preview: string;
+  name: string | null;
+  createdAt: number;
+  updatedAt: number;
+  recencyAt: number | null;
+  cwd: string;
+};
+
+export type FakeCodexConfig = {
+  invocations?: FakeCodexInvocation[];
+  threads?: FakeCodexThread[];
+  searchResults?: Array<{
+    thread: FakeCodexThread;
+    snippet: string;
+  }>;
+};
+
+export type OpenAppOptions = {
+  legacyProjects?: unknown[];
+  currentProjectId?: string;
+  selectedThreadId?: string;
+};
+
 export type RuntimeFixture = {
   origin: string;
   projectDir: string;
+  projectId: string;
   ordinaryThreadId: string;
   configureInvocations(invocations: FakeCodexInvocation[]): void;
-  openApp(page: Page): Promise<void>;
+  configureCodex(config: FakeCodexConfig): void;
+  openApp(page: Page, options?: OpenAppOptions): Promise<void>;
   api<T>(method: string, path: string, body?: unknown): Promise<T>;
+  apiResult(method: string, path: string, body?: unknown): Promise<{
+    status: number;
+    body: unknown;
+  }>;
   createSchedule(overrides?: Record<string, unknown>): Promise<ScheduleFixture>;
   runScheduleNow(scheduleId: string): Promise<RunNowFixture>;
   waitForRunStatus(
@@ -41,6 +72,7 @@ export type RuntimeFixture = {
     timeoutMs?: number
   ): Promise<Record<string, unknown>>;
   readInvocationCount(): number;
+  readCodexMethods(): string[];
 };
 
 type ScheduleFixture = {
@@ -82,7 +114,11 @@ export const test = base.extend<TestFixtures>({
     mkdirSync(codexHome, { recursive: true });
     mkdirSync(stateDir, { recursive: true });
     mkdirSync(projectDir, { recursive: true });
-    writeFileSync(configPath, JSON.stringify({ invocations: [{ message: 'E2E 默认结果' }] }));
+    writeFileSync(configPath, JSON.stringify({
+      invocations: [{ message: 'E2E 默认结果' }],
+      threads: [],
+      searchResults: []
+    }));
     writeFileSync(
       wrapperPath,
       `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`,
@@ -144,37 +180,75 @@ export const test = base.extend<TestFixtures>({
         }
         return await response.json() as T;
       };
+      const apiResult = async (
+        method: string,
+        path: string,
+        body?: unknown
+      ): Promise<{ status: number; body: unknown }> => {
+        const response = await fetch(`${runtimeBaseUrl}${path}`, {
+          method,
+          headers: {
+            authorization: `Bearer ${runtimeConfig.token}`,
+            ...(body === undefined ? {} : { 'content-type': 'application/json' })
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) })
+        });
+        const text = await response.text();
+        return {
+          status: response.status,
+          body: text.length === 0 ? {} : JSON.parse(text) as unknown
+        };
+      };
+      const project = await api<{ project: { id: string } }>('POST', '/projects', {
+        cwd: projectDir,
+        name: 'workspace'
+      });
       const ordinary = await api<{ thread: { id: string } }>('POST', '/threads', {
         title: '普通会话',
-        cwd: projectDir,
-        workspaceMode: 'external',
+        projectId: project.project.id,
         profile: 'default',
         sandbox: 'workspace-write'
       });
+      const writeCodexConfig = (update: FakeCodexConfig) => {
+        const current = JSON.parse(readFileSync(configPath, 'utf8')) as FakeCodexConfig;
+        const temporaryPath = `${configPath}.tmp`;
+        writeFileSync(temporaryPath, JSON.stringify({ ...current, ...update }));
+        renameSync(temporaryPath, configPath);
+      };
 
       const fixture: RuntimeFixture = {
         origin,
         projectDir,
+        projectId: project.project.id,
         ordinaryThreadId: ordinary.thread.id,
         configureInvocations(invocations) {
-          const temporaryPath = `${configPath}.tmp`;
-          writeFileSync(temporaryPath, JSON.stringify({ invocations }));
-          renameSync(temporaryPath, configPath);
+          writeCodexConfig({ invocations });
         },
-        async openApp(page) {
-          const projectId = projectIdForCwd(projectDir);
+        configureCodex(config) {
+          writeCodexConfig(config);
+        },
+        async openApp(page, options = {}) {
+          const projectId = options.currentProjectId ?? project.project.id;
           const ordinaryThreadId = ordinary.thread.id;
-          await page.addInitScript(({ projectId: storedProjectId, ordinaryThreadId: storedThreadId }) => {
+          const selectedThreadId = options.selectedThreadId ?? ordinaryThreadId;
+          await page.addInitScript(({
+            projectId: storedProjectId,
+            selectedThreadId: storedThreadId,
+            legacyProjects
+          }) => {
             if (window.top !== window) return;
             localStorage.setItem('clawee.preferences.dynamicBackground', 'false');
             localStorage.setItem('clawee.tasks.notifications.v1', JSON.stringify({
               enabled: true,
               permission: 'granted'
             }));
-            localStorage.setItem('clawee.navigation.v2', JSON.stringify({
+            localStorage.setItem('clawee.navigation.v3', JSON.stringify({
               currentProjectId: storedProjectId,
               selectedThreadId: storedThreadId
             }));
+            if (legacyProjects !== undefined) {
+              localStorage.setItem('clawee.projects.v1', JSON.stringify(legacyProjects));
+            }
             const notifications: Array<{
               title: string;
               body?: string;
@@ -201,11 +275,16 @@ export const test = base.extend<TestFixtures>({
               configurable: true,
               value: E2ENotification
             });
-          }, { projectId, ordinaryThreadId });
+          }, {
+            projectId,
+            selectedThreadId,
+            legacyProjects: options.legacyProjects
+          });
           await page.goto(origin);
           await expect(page.getByText('本地运行内核正常')).toBeVisible();
         },
         api,
+        apiResult,
         createSchedule(overrides = {}) {
           return api<ScheduleFixture>('POST', '/schedules', {
             name: 'E2E 计划任务',
@@ -244,6 +323,24 @@ export const test = base.extend<TestFixtures>({
           } catch {
             return 0;
           }
+        },
+        readCodexMethods() {
+          try {
+            return readFileSync(join(stateDir, 'messages.ndjson'), 'utf8')
+              .trim()
+              .split('\n')
+              .filter(Boolean)
+              .flatMap(line => {
+                const parsed = JSON.parse(line) as {
+                  message?: { method?: unknown };
+                };
+                return typeof parsed.message?.method === 'string'
+                  ? [parsed.message.method]
+                  : [];
+              });
+          } catch {
+            return [];
+          }
         }
       };
 
@@ -257,7 +354,9 @@ export const test = base.extend<TestFixtures>({
         });
       }
       await stopProcessTree(child);
-      rmSync(rootDir, { recursive: true, force: true });
+      if (process.env.CLAWEE_E2E_KEEP_TEMP !== '1') {
+        rmSync(rootDir, { recursive: true, force: true });
+      }
     }
   },
 
@@ -362,9 +461,4 @@ async function stopProcessTree(child: ChildProcess): Promise<void> {
     child.kill('SIGKILL');
   }
   await Promise.race([exited, delay(3_000)]);
-}
-
-function projectIdForCwd(cwd: string): string {
-  const name = basename(cwd);
-  return `cwd-${name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'project'}`;
 }

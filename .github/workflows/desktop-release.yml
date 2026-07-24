@@ -1,0 +1,128 @@
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  osv:
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
+    with:
+      scan-args: |-
+        -r
+        ./
+
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm build
+
+  package:
+    needs:
+      - osv
+      - verify
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-x64
+            os: macos-14
+            platform: mac
+            arch: x64
+            native: true
+          - name: macos-arm64
+            os: macos-14
+            platform: mac
+            arch: arm64
+            native: false
+          - name: windows-x64
+            os: windows-latest
+            platform: win
+            arch: x64
+            native: true
+    runs-on: ${{ matrix.os }}
+    env:
+      CLAWEE_DESKTOP_CACHE_DIR: ${{ github.workspace }}/apps/desktop/.cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: |
+            apps/desktop/.cache/electron
+            apps/desktop/.cache/electron-builder
+            apps/desktop/.cache/node-gyp
+            apps/desktop/.cache/npm
+          key: desktop-build-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/desktop/package.json') }}
+      - name: Windows 全量测试
+        if: matrix.platform == 'win'
+        run: pnpm test
+      - name: Windows 类型检查
+        if: matrix.platform == 'win'
+        run: pnpm typecheck
+      - run: pnpm desktop:release
+        env:
+          CLAWEE_DESKTOP_TARGET_PLATFORM: ${{ matrix.platform }}
+          CLAWEE_DESKTOP_TARGET_ARCH: ${{ matrix.arch }}
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      - run: pnpm --filter @clawee/desktop e2e:package
+        if: matrix.native
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clawee-desktop-${{ matrix.name }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
+            apps/desktop/release/clawee-desktop-build-manifest.json
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: 发布 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes
+          find artifacts -type f -print0 | xargs -0 gh release upload "$TAG" --clobber

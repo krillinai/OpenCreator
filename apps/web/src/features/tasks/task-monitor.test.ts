@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   collectTaskTransitions,
   createTaskNotification,
+  shouldAutoSubscribeTask,
   shouldSendSystemNotification
 } from './task-monitor.js';
 
@@ -56,6 +57,26 @@ describe('task monitor', () => {
     ], true);
 
     expect(result.transitions.map(task => task.id)).toEqual(['run_1', 'run_3']);
+  });
+
+  it('auto-subscribes live tasks and newly transitioned terminal tasks', () => {
+    for (const status of ['queued', 'running', 'waiting_approval'] as const) {
+      expect(shouldAutoSubscribeTask(createTask({
+        status,
+        runStatus: status === 'waiting_approval' ? 'running' : status
+      }))).toBe(true);
+    }
+
+    for (const status of ['succeeded', 'failed', 'canceled'] as const) {
+      expect(shouldAutoSubscribeTask(createTask({
+        status,
+        runStatus: status
+      }))).toBe(false);
+      expect(shouldAutoSubscribeTask(createTask({
+        status,
+        runStatus: status
+      }), true)).toBe(true);
+    }
   });
 
   it('creates concise Chinese notification copy for each transition', () => {

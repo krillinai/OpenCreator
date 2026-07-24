@@ -1,4 +1,5 @@
 import type {
+  AssignThreadProjectRequest,
   RunResponse,
   ThreadHistoryItem,
   ThreadHistoryQuery,
@@ -14,7 +15,13 @@ import {
 } from '../codex/sessions/index-repository.js';
 import type { AttachmentService } from '../attachments/service.js';
 import type { RunManager, RuntimeRun } from '../runs/manager.js';
-import type { CreateRuntimeThreadInput, RuntimeThread, ThreadManager } from '../threads/types.js';
+import type {
+  CreateConversationThreadInput,
+  CreateScheduleThreadInput,
+  RuntimeThread,
+  ThreadManager
+} from '../threads/types.js';
+import { ThreadManagerError } from '../threads/types.js';
 import { apiError } from './errors.js';
 
 export async function registerThreadRoutes(
@@ -24,7 +31,6 @@ export async function registerThreadRoutes(
   options: {
     profileValidator?: ProfileValidator;
     attachmentService?: AttachmentService;
-    listRecentCodexThreads?(input: { limit: number }): Promise<RuntimeThread[]>;
     readThreadHistory?: ReadThreadHistory;
   } = {}
 ): Promise<void> {
@@ -39,8 +45,14 @@ export async function registerThreadRoutes(
       }
     }
 
-    const thread = manager.createThread(body.value);
-    return reply.code(201).send({ thread: toThreadResponse(thread) });
+    try {
+      const thread = 'projectId' in body.value
+        ? manager.createConversationThread(body.value)
+        : manager.createScheduleThread(body.value);
+      return reply.code(201).send({ thread: toThreadResponse(thread) });
+    } catch (error) {
+      return sendThreadManagerError(reply, error);
+    }
   });
 
   server.get('/threads', async (request, reply) => {
@@ -51,49 +63,22 @@ export async function registerThreadRoutes(
       status = 'active',
       purpose,
       excludePurpose,
+      assignment = 'assigned',
       limit = 50
     } = query.value;
-    let threads: RuntimeThread[];
-    if (
-      status === 'active'
-      && (purpose === undefined || purpose === 'conversation')
-      && options.listRecentCodexThreads !== undefined
-    ) {
-      try {
-        const recent = await options.listRecentCodexThreads({ limit });
-        threads = mergeRecentThreads(
-          recent,
-          manager.listThreads({
-            status,
-            purpose,
-            excludePurpose,
-            limit
-          }),
-          { purpose, excludePurpose, limit }
-        );
-      } catch (error) {
-        console.warn(`Codex app-server thread list failed: ${formatError(error)}`);
-        threads = manager.listThreads({
-          status,
-          purpose,
-          excludePurpose,
-          limit
-        });
-      }
-    } else {
-      threads = manager.listThreads({
-        status,
-        purpose,
-        excludePurpose,
-        limit
-      });
-    }
+    const threads = manager.listPublicThreads({
+      status,
+      purpose,
+      excludePurpose,
+      assignment,
+      limit
+    });
     return { threads: threads.map(toThreadResponse) };
   });
 
   server.get('/threads/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const thread = manager.getThread(id);
+    const thread = manager.getPublicThread(id);
     if (thread === undefined) {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
@@ -102,7 +87,7 @@ export async function registerThreadRoutes(
 
   server.get('/threads/:id/runs', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const thread = manager.getThread(id);
+    const thread = manager.getPublicThread(id);
     if (thread === undefined) {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
@@ -127,7 +112,7 @@ export async function registerThreadRoutes(
 
   server.get('/threads/:id/history', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const thread = manager.getThread(id);
+    const thread = manager.getPublicThread(id);
     if (thread === undefined) {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
@@ -198,12 +183,31 @@ export async function registerThreadRoutes(
     return response;
   });
 
+  server.post<{ Params: { id: string }; Body: unknown }>(
+    '/threads/:id/assign-project',
+    async (request, reply) => {
+      const body = parseAssignThreadProjectRequest(request.body);
+      if (!body.ok) {
+        return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
+      }
+      try {
+        return {
+          thread: toThreadResponse(
+            manager.assignProject(request.params.id, body.value.projectId)
+          )
+        };
+      } catch (error) {
+        return sendThreadManagerError(reply, error);
+      }
+    }
+  );
+
   server.patch<{ Body: unknown }>('/threads/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = parseUpdateThreadRequest(request.body);
     if (!body.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
 
-    const existing = manager.getThread(id);
+    const existing = manager.getPublicThread(id);
     if (existing === undefined) {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
@@ -237,7 +241,7 @@ export async function registerThreadRoutes(
 
   server.post('/threads/:id/archive', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const existing = manager.getThread(id);
+    const existing = manager.getPublicThread(id);
     if (existing === undefined) {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
@@ -270,6 +274,8 @@ function toThreadResponse(thread: RuntimeThread): ThreadResponse {
   return {
     id: thread.id,
     title: thread.title,
+    projectId: thread.projectId,
+    origin: thread.origin,
     codexThreadId: thread.codexThreadId,
     cwd: thread.cwd,
     canonicalCwd: thread.canonicalCwd,
@@ -304,50 +310,6 @@ type ReadThreadHistory = (
   codexThreadId: string,
   options: ThreadHistoryPageOptions
 ) => Promise<ThreadHistoryReadResult> | ThreadHistoryReadResult;
-
-function mergeRecentThreads(
-  recent: RuntimeThread[],
-  local: RuntimeThread[],
-  filter: {
-    purpose?: RuntimeThread['purpose'];
-    excludePurpose?: RuntimeThread['purpose'];
-    limit: number;
-  }
-): RuntimeThread[] {
-  const merged = new Map<string, RuntimeThread>();
-  for (const thread of recent) {
-    if (!matchesPurposeFilter(thread, filter)) continue;
-    merged.set(thread.id, thread);
-  }
-  for (const thread of local) {
-    if (thread.codexThreadId !== undefined && thread.codexThreadId !== null) {
-      if (thread.purpose === 'conversation') continue;
-    }
-    if (!matchesPurposeFilter(thread, filter)) continue;
-    merged.set(thread.id, thread);
-  }
-  return [...merged.values()]
-    .sort((left, right) => {
-      const timestampOrder = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
-      return timestampOrder === 0 ? right.id.localeCompare(left.id) : timestampOrder;
-    })
-    .slice(0, filter.limit);
-}
-
-function matchesPurposeFilter(
-  thread: RuntimeThread,
-  filter: {
-    purpose?: RuntimeThread['purpose'];
-    excludePurpose?: RuntimeThread['purpose'];
-  }
-): boolean {
-  return (filter.purpose === undefined || thread.purpose === filter.purpose)
-    && (filter.excludePurpose === undefined || thread.purpose !== filter.excludePurpose);
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function attachScheduleRunMetadata(
   items: ThreadHistoryItem[],
@@ -385,32 +347,71 @@ function attachScheduleRunMetadata(
 const WORKSPACE_MODES = ['managed', 'external'] as const;
 const SANDBOX_MODES = ['read-only', 'workspace-write', 'danger-full-access'] as const;
 const REASONING_EFFORTS = ['default', 'low', 'medium', 'high', 'xhigh'] as const;
-const PUBLIC_THREAD_PURPOSES = ['conversation', 'schedule_draft'] as const;
 const THREAD_PURPOSES = ['conversation', 'schedule_draft', 'schedule_task'] as const;
 const THREAD_STATUSES = ['active', 'archived', 'all'] as const;
 const LIMIT_PATTERN = /^[1-9]\d*$/;
 const MAX_LIMIT = 100;
 const DEFAULT_HISTORY_LIMIT = 50;
 
-function parseCreateThreadRequest(body: unknown): ParseResult<CreateRuntimeThreadInput> {
-  if (body === undefined) return { ok: true, value: {} };
+function parseCreateThreadRequest(
+  body: unknown
+): ParseResult<CreateConversationThreadInput | CreateScheduleThreadInput> {
+  if (body === undefined) return { ok: false, message: 'body must be an object' };
   if (!isPlainObject(body)) return { ok: false, message: 'body must be an object' };
 
   const input = body as Record<string, unknown>;
-  const value: CreateRuntimeThreadInput = {};
+  if (input.purpose === 'schedule_draft') {
+    if (input.projectId !== undefined) {
+      return { ok: false, message: 'schedule drafts must not specify projectId' };
+    }
+    const value: CreateScheduleThreadInput = { purpose: 'schedule_draft' };
+    for (const key of ['title', 'cwd', 'profile', 'model'] as const) {
+      const field = input[key];
+      if (field === undefined) continue;
+      if (typeof field !== 'string') return { ok: false, message: `${key} must be a string` };
+      value[key] = field;
+    }
+    const shared = parseThreadCreateOptions(input, value, true);
+    return shared.ok ? { ok: true, value } : shared;
+  }
 
-  for (const key of ['title', 'cwd', 'profile', 'model'] as const) {
+  if (input.purpose !== undefined && input.purpose !== 'conversation') {
+    return { ok: false, message: 'purpose must be conversation or schedule_draft' };
+  }
+  if (typeof input.projectId !== 'string' || input.projectId.trim().length === 0) {
+    return { ok: false, message: 'projectId is required for conversation threads' };
+  }
+  if (input.cwd !== undefined || input.workspaceMode !== undefined) {
+    return {
+      ok: false,
+      message: 'conversation cwd and workspaceMode are controlled by the project'
+    };
+  }
+
+  const value: CreateConversationThreadInput = { projectId: input.projectId };
+  for (const key of ['title', 'profile', 'model'] as const) {
     const field = input[key];
     if (field === undefined) continue;
     if (typeof field !== 'string') return { ok: false, message: `${key} must be a string` };
     value[key] = field;
   }
+  const shared = parseThreadCreateOptions(input, value, false);
+  return shared.ok ? { ok: true, value } : shared;
+}
 
+function parseThreadCreateOptions(
+  input: Record<string, unknown>,
+  value: CreateConversationThreadInput | CreateScheduleThreadInput,
+  allowWorkspaceMode: boolean
+): ParseResult<undefined> {
   if (input.workspaceMode !== undefined) {
+    if (!allowWorkspaceMode) {
+      return { ok: false, message: 'workspaceMode is controlled by the project' };
+    }
     if (!isOneOf(input.workspaceMode, WORKSPACE_MODES)) {
       return { ok: false, message: 'workspaceMode must be managed or external' };
     }
-    value.workspaceMode = input.workspaceMode;
+    (value as CreateScheduleThreadInput).workspaceMode = input.workspaceMode;
   }
 
   if (input.sandbox !== undefined) {
@@ -427,14 +428,7 @@ function parseCreateThreadRequest(body: unknown): ParseResult<CreateRuntimeThrea
     value.reasoning = input.reasoning;
   }
 
-  if (input.purpose !== undefined) {
-    if (!isOneOf(input.purpose, PUBLIC_THREAD_PURPOSES)) {
-      return { ok: false, message: 'purpose must be conversation or schedule_draft' };
-    }
-    value.purpose = input.purpose;
-  }
-
-  return { ok: true, value };
+  return { ok: true, value: undefined };
 }
 
 function parseUpdateThreadRequest(body: unknown): ParseResult<Required<UpdateThreadRequest>> {
@@ -450,12 +444,27 @@ function parseUpdateThreadRequest(body: unknown): ParseResult<Required<UpdateThr
   return { ok: true, value: { sandbox } };
 }
 
+function parseAssignThreadProjectRequest(
+  body: unknown
+): ParseResult<AssignThreadProjectRequest> {
+  if (!isPlainObject(body)) return { ok: false, message: 'body must be an object' };
+  if (
+    Object.keys(body).some(key => key !== 'projectId')
+    || typeof body.projectId !== 'string'
+    || body.projectId.trim().length === 0
+  ) {
+    return { ok: false, message: 'projectId is required' };
+  }
+  return { ok: true, value: { projectId: body.projectId } };
+}
+
 function parseThreadListQuery(
   query: unknown
 ): ParseResult<{
   status?: 'active' | 'archived' | 'all';
   purpose?: RuntimeThread['purpose'];
   excludePurpose?: RuntimeThread['purpose'];
+  assignment?: 'assigned' | 'unassigned';
   limit?: number;
 }> {
   const status = getQueryString(query, 'status');
@@ -485,6 +494,22 @@ function parseThreadListQuery(
     };
   }
 
+  const assignment = getQueryString(query, 'assignment');
+  if (!assignment.ok) return assignment;
+  if (
+    assignment.value !== undefined
+    && assignment.value !== 'assigned'
+    && assignment.value !== 'unassigned'
+  ) {
+    return { ok: false, message: 'assignment must be assigned or unassigned' };
+  }
+  if (assignment.value === 'unassigned' && purpose.value !== 'conversation') {
+    return {
+      ok: false,
+      message: 'assignment=unassigned requires purpose=conversation'
+    };
+  }
+
   const limit = parseLimitQuery(query);
   if (!limit.ok) return limit;
 
@@ -496,6 +521,9 @@ function parseThreadListQuery(
       ...(excludePurpose.value === undefined
         ? {}
         : { excludePurpose: excludePurpose.value }),
+      ...(assignment.value === undefined
+        ? {}
+        : { assignment: assignment.value }),
       ...(limit.value === undefined ? {} : { limit: limit.value })
     }
   };
@@ -568,4 +596,15 @@ function sendProfileValidationError(
     return reply.code(422).send(apiError('CODEX_CONFIG_INVALID', validation.message));
   }
   return reply.code(422).send(apiError('CODEX_PROFILE_INVALID', validation.message));
+}
+
+function sendThreadManagerError(reply: FastifyReply, error: unknown) {
+  if (!(error instanceof ThreadManagerError)) throw error;
+  if (error.code === 'THREAD_NOT_FOUND' || error.code === 'PROJECT_NOT_FOUND') {
+    return reply.code(404).send(apiError(error.code, error.message));
+  }
+  if (error.code === 'PROJECT_DIRECTORY_UNAVAILABLE') {
+    return reply.code(422).send(apiError(error.code, error.message));
+  }
+  return reply.code(409).send(apiError(error.code, error.message));
 }

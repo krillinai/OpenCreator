@@ -248,17 +248,12 @@ describe('codex app-server runner', () => {
       prompt: 'inspect environment',
       mcpServers: [{
         name: 'clawee_schedule',
-        command: '/usr/bin/node',
-        args: ['/app/agent-tools/stdio-server.js'],
-        envVars: [
-          'CLAWEE_AGENT_TOOL_URL',
-          'CLAWEE_AGENT_CAPABILITY_TOKEN'
-        ],
+        url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
+        bearerTokenEnvVar: 'CLAWEE_AGENT_CAPABILITY_TOKEN',
         enabledTools: ['clawee_schedule_get'],
         required: true
       }],
       env: {
-        CLAWEE_AGENT_TOOL_URL: 'http://127.0.0.1:43123',
         CLAWEE_AGENT_CAPABILITY_TOKEN: token
       },
       async onApprovalRequest() {
@@ -278,14 +273,16 @@ describe('codex app-server runner', () => {
 
     expect(argv).toEqual(expect.arrayContaining([
       '-c',
+      'mcp_servers.clawee_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
+      '-c',
+      'mcp_servers.clawee_schedule.bearer_token_env_var="CLAWEE_AGENT_CAPABILITY_TOKEN"',
+      '-c',
       'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_get"]',
       'app-server',
       '--stdio'
     ]));
     expect(JSON.stringify(argv)).not.toContain(token);
-    expect(JSON.stringify(argv)).not.toContain('127.0.0.1');
     expect(env).toEqual({
-      CLAWEE_AGENT_TOOL_URL: 'http://127.0.0.1:43123',
       CLAWEE_AGENT_CAPABILITY_TOKEN: token
     });
   });
@@ -298,7 +295,6 @@ const readline = require('node:readline');
 const fs = require('node:fs');
 fs.writeFileSync(${JSON.stringify(join(dir, 'app-server-argv.json'))}, JSON.stringify(process.argv.slice(2)));
 fs.writeFileSync(${JSON.stringify(join(dir, 'app-server-env.json'))}, JSON.stringify({
-  CLAWEE_AGENT_TOOL_URL: process.env.CLAWEE_AGENT_TOOL_URL,
   CLAWEE_AGENT_CAPABILITY_TOKEN: process.env.CLAWEE_AGENT_CAPABILITY_TOKEN
 }));
 const rl = readline.createInterface({ input: process.stdin });

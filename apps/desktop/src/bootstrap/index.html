@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clawee</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="bootstrap-shell">
+      <section class="bootstrap-panel" aria-live="polite">
+        <img class="brand-mark" src="./logo.png" alt="Clawee" />
+        <div class="status-mark" id="status-mark" aria-hidden="true">
+          <span></span>
+        </div>
+        <h1 id="status-title">正在准备 Clawee</h1>
+        <p id="status-detail">正在检查本机运行环境</p>
+        <p class="elapsed" id="elapsed" hidden></p>
+
+        <div class="failure-actions" id="failure-actions" hidden>
+          <button class="primary" id="retry" type="button">重新检测</button>
+          <button id="select-codex" type="button">选择 Codex 或 ChatGPT</button>
+          <button id="diagnostics" type="button">导出诊断</button>
+          <button class="quiet" id="quit" type="button">退出</button>
+        </div>
+
+        <div class="failure-actions" id="workspace-actions" hidden>
+          <button class="primary" id="reload-workspace" type="button">重新加载工作台</button>
+          <button id="restart-runtime" type="button">重启 Runtime</button>
+          <button id="workspace-diagnostics" type="button">导出诊断</button>
+          <button class="quiet" id="workspace-quit" type="button">退出</button>
+        </div>
+
+        <details id="technical-details" hidden>
+          <summary>技术信息</summary>
+          <dl>
+            <div><dt>Codex</dt><dd id="codex-path">-</dd></div>
+            <div><dt>CODEX_HOME</dt><dd id="codex-home">-</dd></div>
+            <div><dt>错误代码</dt><dd id="error-code">-</dd></div>
+          </dl>
+          <pre id="error-message"></pre>
+        </details>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

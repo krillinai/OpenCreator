@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { execPath } from 'node:process';
 import {
+  applyCapabilityMatrix,
+  createUnknownCapabilityMatrix,
   isResumeExecutionSupported,
   parseCodexCapabilityMatrix,
-  parseCodexExecHelp
+  parseCodexExecHelp,
+  probeCodexVersionAsync
 } from '../../src/codex/capabilities.js';
 
 const EXEC_HELP_01425 = `
@@ -58,6 +62,24 @@ Commands:
 `;
 
 describe('codex capability parsing', () => {
+  it('uses a fast local version probe as the executable startup gate', async () => {
+    await expect(probeCodexVersionAsync({
+      codexBin: execPath,
+      timeoutMs: 1_000
+    })).resolves.toMatchObject({
+      ready: true,
+      version: expect.stringContaining('v')
+    });
+
+    await expect(probeCodexVersionAsync({
+      codexBin: '/path/that/does/not/exist/codex',
+      timeoutMs: 100
+    })).resolves.toMatchObject({
+      ready: false,
+      warning: expect.stringContaining('failed')
+    });
+  });
+
   it('detects supported exec flags', () => {
     const parsed = parseCodexExecHelp(EXEC_HELP_01425);
     expect(parsed.supportsJson).toBe(true);
@@ -197,6 +219,25 @@ Commands:
       skillsGlobalWrite: false,
       skillsRuntimeDiscoveryVerified: false,
       skillsRuntimeBehaviorVerified: false
+    });
+  });
+
+  it('updates one shared capability object in place', () => {
+    const shared = createUnknownCapabilityMatrix('2026-07-01T00:00:00.000Z');
+    const updated = parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.144.1',
+      execHelp: EXEC_HELP_01425,
+      resumeHelp: RESUME_HELP_01425,
+      mcpHelp: MCP_HELP_01425,
+      mcpAddHelp: MCP_ADD_HELP_01425,
+      appServerHelp: APP_SERVER_HELP_0144
+    });
+
+    expect(applyCapabilityMatrix(shared, updated)).toBe(shared);
+    expect(shared).toMatchObject({
+      codexVersion: 'codex-cli 0.144.1',
+      appServerApprovals: true,
+      mcpAdd: true
     });
   });
 });

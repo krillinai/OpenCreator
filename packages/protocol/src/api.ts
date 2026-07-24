@@ -9,6 +9,10 @@ export type ApprovalKind = 'command_execution' | 'file_change' | 'permissions';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'canceled';
 export type ApprovalRisk = 'medium' | 'high';
 export type ThreadStatus = 'active' | 'archived';
+export type ProjectStatus = 'active' | 'archived';
+export type ProjectDirectoryState = 'available' | 'missing';
+export type ProjectSandbox = 'follow-global' | SandboxMode;
+export type ThreadOrigin = 'clawee_created' | 'codex_discovered';
 export type CodexHomeMode = 'global' | 'isolated';
 export type CodexHomeSource = 'env' | 'default' | 'isolated';
 export type CodexSkillStatus = 'valid' | 'invalid';
@@ -19,6 +23,16 @@ export type CodexMcpStatus = 'configured' | 'missing' | 'invalid' | 'unknown';
 export type CodexMcpOperationType = 'add' | 'remove' | 'login' | 'logout' | 'get' | 'list';
 export type CodexMcpOperationStatus = 'succeeded' | 'failed';
 
+export type CodexAvailabilityProbe = {
+  status: 'pending' | 'succeeded' | 'failed' | 'skipped';
+  checkedAt?: string;
+  durationMs?: number;
+  responseReceived?: boolean;
+  markerMatched?: boolean;
+  errorCode?: string;
+  message?: string;
+};
+
 export type CodexStatusResponse = {
   codexBin: string;
   codexVersion: string;
@@ -28,6 +42,7 @@ export type CodexStatusResponse = {
   codexHomeWritable: boolean;
   capabilities: unknown;
   diagnostics: string[];
+  availabilityProbe?: CodexAvailabilityProbe;
 };
 
 export type WorkspaceFileKind =
@@ -451,16 +466,92 @@ export type RunContextResponse = {
 
 export type ThreadPurpose = 'conversation' | 'schedule_draft' | 'schedule_task';
 
-export type CreateThreadRequest = {
-  title?: string;
-  cwd?: string;
-  workspaceMode?: WorkspaceMode;
-  profile?: string;
-  model?: string;
-  reasoning?: ReasoningEffort;
-  sandbox?: SandboxMode;
-  purpose?: Extract<ThreadPurpose, 'conversation' | 'schedule_draft'>;
+export type ProjectResponse = {
+  id: string;
+  name: string;
+  cwd: string;
+  canonicalCwd: string | null;
+  directoryState: ProjectDirectoryState;
+  profile: string;
+  model: string | null;
+  reasoning: ReasoningEffort | null;
+  sandbox: ProjectSandbox;
+  status: ProjectStatus;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
 };
+
+export type ProjectListResponse = {
+  projects: ProjectResponse[];
+};
+
+export type CreateProjectRequest = {
+  cwd: string;
+  name?: string;
+  profile?: string;
+  model?: string | null;
+  reasoning?: ReasoningEffort | null;
+  sandbox?: ProjectSandbox;
+};
+
+export type UpdateProjectRequest = {
+  name?: string;
+  profile?: string;
+  model?: string | null;
+  reasoning?: ReasoningEffort | null;
+  sandbox?: ProjectSandbox;
+};
+
+export type ReplaceProjectDirectoryRequest = {
+  cwd: string;
+};
+
+export type LegacyLocalStorageProjectV1 = {
+  id: string;
+  name: string;
+  cwd: string;
+  sandbox: ProjectSandbox;
+  profile: string;
+  model: string | null;
+  reasoning: ReasoningEffort | null;
+};
+
+export type MigrateLocalStorageProjectsV1Request = {
+  projects: LegacyLocalStorageProjectV1[];
+};
+
+export type MigrateLocalStorageProjectsV1Response = {
+  status: 'applied' | 'already_applied';
+  projectIdMap: Record<string, string>;
+  assignedThreadIds: string[];
+  unassignedThreadIds: string[];
+};
+
+export type AssignThreadProjectRequest = {
+  projectId: string;
+};
+
+export type CreateThreadRequest =
+  | {
+      projectId: string;
+      purpose?: 'conversation';
+      title?: string;
+      profile?: string;
+      model?: string;
+      reasoning?: ReasoningEffort;
+      sandbox?: SandboxMode;
+    }
+  | {
+      purpose: 'schedule_draft';
+      title?: string;
+      cwd?: string;
+      workspaceMode?: WorkspaceMode;
+      profile?: string;
+      model?: string;
+      reasoning?: ReasoningEffort;
+      sandbox?: SandboxMode;
+    };
 
 export type UpdateThreadRequest = {
   sandbox?: SandboxMode;
@@ -469,6 +560,8 @@ export type UpdateThreadRequest = {
 export type ThreadResponse = {
   id: string;
   title?: string | null;
+  projectId: string | null;
+  origin: ThreadOrigin;
   codexThreadId?: string | null;
   cwd: string;
   canonicalCwd: string;
@@ -560,6 +653,7 @@ export type ConversationSearchSnippetSegment = {
 
 export type ConversationSearchResult = {
   threadId: string;
+  projectId: string;
   codexThreadId: string;
   title: string;
   cwd: string;

@@ -1,11 +1,8 @@
-import { existsSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createAgentCapabilityTokenStore } from '../../src/agent-tools/capability-token.js';
 import {
   AGENT_SCHEDULE_MCP_SERVER_NAME,
-  createAgentScheduleRunInjector,
-  resolveAgentScheduleStdioCommand
+  createAgentScheduleRunInjector
 } from '../../src/agent-tools/run-injection.js';
 import type { RuntimeThread } from '../../src/threads/types.js';
 
@@ -15,8 +12,10 @@ describe('agent tool run injection', () => {
     const injector = createAgentScheduleRunInjector({
       capabilities: tokens,
       getBaseUrl: () => 'http://127.0.0.1:43123',
-      command: '/usr/bin/node',
-      args: ['/app/agent-tools/stdio-server.js']
+      env: {
+        NO_PROXY: 'existing.example',
+        no_proxy: 'internal.example,127.0.0.1'
+      }
     });
 
     const injection = injector.prepare({
@@ -28,6 +27,8 @@ describe('agent tool run injection', () => {
     expect(injection?.mcpServers).toEqual([
       expect.objectContaining({
         name: AGENT_SCHEDULE_MCP_SERVER_NAME,
+        url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
+        bearerTokenEnvVar: 'CLAWEE_AGENT_CAPABILITY_TOKEN',
         enabledTools: [
           'clawee_schedule_create',
           'clawee_schedule_update',
@@ -40,6 +41,10 @@ describe('agent tool run injection', () => {
     ]);
     const token = injection?.env.CLAWEE_AGENT_CAPABILITY_TOKEN;
     expect(token).toMatch(/^clwcap_/);
+    expect(injection?.env).toMatchObject({
+      NO_PROXY: 'existing.example,internal.example,127.0.0.1,localhost',
+      no_proxy: 'existing.example,internal.example,127.0.0.1,localhost'
+    });
     expect(tokens.authorize(token, { scope: 'schedule:create' })).toMatchObject({
       runId: 'run-user',
       threadId: 'thread-1'
@@ -51,9 +56,7 @@ describe('agent tool run injection', () => {
     const tokens = createAgentCapabilityTokenStore();
     const injector = createAgentScheduleRunInjector({
       capabilities: tokens,
-      getBaseUrl: () => 'http://127.0.0.1:43123',
-      command: '/usr/bin/node',
-      args: ['/app/agent-tools/stdio-server.js']
+      getBaseUrl: () => 'http://127.0.0.1:43123'
     });
 
     const taskRun = injector.prepare({
@@ -88,9 +91,7 @@ describe('agent tool run injection', () => {
     const tokens = createAgentCapabilityTokenStore();
     const injector = createAgentScheduleRunInjector({
       capabilities: tokens,
-      getBaseUrl: () => undefined,
-      command: '/usr/bin/node',
-      args: ['/app/agent-tools/stdio-server.js']
+      getBaseUrl: () => undefined
     });
 
     expect(injector.prepare({
@@ -100,24 +101,14 @@ describe('agent tool run injection', () => {
     })).toBeUndefined();
     tokens.close();
   });
-
-  it('uses absolute source and loader paths in daemon development mode', () => {
-    const command = resolveAgentScheduleStdioCommand();
-
-    expect(command.args[0]).toBe('--import');
-    expect(command.args[1]).toBeDefined();
-    expect(isAbsolute(command.args[1]!)).toBe(true);
-    expect(existsSync(command.args[1]!)).toBe(true);
-    expect(command.args[2]).toBeDefined();
-    expect(isAbsolute(command.args[2]!)).toBe(true);
-    expect(existsSync(command.args[2]!)).toBe(true);
-  });
 });
 
 function thread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
   return {
     id: 'thread-1',
     title: '测试会话',
+    projectId: 'project-1',
+    origin: 'clawee_created',
     cwd: '/workspace/current',
     canonicalCwd: '/workspace/current',
     workspaceMode: 'external',

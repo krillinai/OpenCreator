@@ -1,16 +1,17 @@
 import react from '@vitejs/plugin-react';
 import { request as httpRequest } from 'node:http';
-import { request as httpsRequest } from 'node:https';
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { URL } from 'node:url';
 import type { Readable } from 'node:stream';
 import { defineConfig } from 'vite';
 import type { Plugin } from 'vite';
+import {
+  DEV_RUNTIME_PROXY_BASE,
+  buildDevProxyTarget,
+  parseDevDaemonConfig,
+  type DevDaemonConfig
+} from './src/runtime/dev-proxy-target.js';
 
-type RuntimeConfig = {
-  baseUrl: string;
-  token: string;
-};
+type RuntimeConfig = DevDaemonConfig;
 
 type RuntimeProcess = {
   child: ChildProcessByStdio<null, Readable, Readable>;
@@ -18,7 +19,7 @@ type RuntimeProcess = {
 };
 
 let runtimeProcess: RuntimeProcess | undefined;
-const DEV_RUNTIME_PROXY_BASE = '/.clawee/runtime';
+const MAX_RUNTIME_OUTPUT_BUFFER = 1024 * 1024;
 
 export default defineConfig({
   plugins: [react(), claweeRuntimeDevPlugin()],
@@ -43,7 +44,7 @@ function claweeRuntimeDevPlugin(): Plugin {
           response.statusCode = 200;
           response.setHeader('Content-Type', 'application/json');
           response.setHeader('Cache-Control', 'no-store');
-          response.end(JSON.stringify({ baseUrl: DEV_RUNTIME_PROXY_BASE, token: config.token }));
+          response.end(JSON.stringify({ baseUrl: DEV_RUNTIME_PROXY_BASE }));
         } catch (error) {
           response.statusCode = 503;
           response.setHeader('Content-Type', 'application/json');
@@ -109,17 +110,19 @@ function startRuntimeProcess(): RuntimeProcess {
 
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
-      stdout += chunk;
+      stdout = boundedAppend(stdout, chunk);
       const parsed = parseRuntimeConfigFromOutput(stdout);
       if (parsed !== null) {
         clearTimeout(timeout);
+        stdout = '';
+        stderr = '';
         resolve(parsed);
       }
     });
 
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
+      stderr = boundedAppend(stderr, chunk);
     });
 
     child.on('error', error => {
@@ -145,7 +148,10 @@ function parseRuntimeConfigFromOutput(output: string): RuntimeConfig | null {
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
       const record = parsed as Record<string, unknown>;
       if (typeof record.address !== 'string' || typeof record.token !== 'string') continue;
-      return { baseUrl: normalizeRuntimeAddress(record.address), token: record.token };
+      return parseDevDaemonConfig({
+        address: record.address,
+        token: record.token
+      });
     } catch {
       continue;
     }
@@ -154,27 +160,23 @@ function parseRuntimeConfigFromOutput(output: string): RuntimeConfig | null {
   return null;
 }
 
-function normalizeRuntimeAddress(address: string): string {
-  if (/^https?:\/\//.test(address)) return address;
-  return `http://${address}`;
-}
-
 function proxyRuntimeRequest(
   config: RuntimeConfig,
   incoming: import('node:http').IncomingMessage,
   outgoing: import('node:http').ServerResponse
 ) {
   const incomingUrl = incoming.url ?? '/';
-  const runtimePath = incomingUrl.startsWith(DEV_RUNTIME_PROXY_BASE)
-    ? incomingUrl.slice(DEV_RUNTIME_PROXY_BASE.length) || '/'
-    : incomingUrl || '/';
-  const target = new URL(runtimePath, config.baseUrl.replace(/\/+$/, '') + '/');
-  const requestImpl = target.protocol === 'https:' ? httpsRequest : httpRequest;
+  const fullRuntimeUrl = incomingUrl.startsWith(DEV_RUNTIME_PROXY_BASE)
+    ? incomingUrl
+    : `${DEV_RUNTIME_PROXY_BASE}${incomingUrl.startsWith('/') ? '' : '/'}${incomingUrl}`;
+  const target = buildDevProxyTarget(config.baseUrl, fullRuntimeUrl);
   const headers = { ...incoming.headers };
-  delete headers.host;
-  delete headers.connection;
+  for (const name of ['authorization', 'host', 'origin', 'referer', 'connection']) {
+    delete headers[name];
+  }
+  headers.authorization = `Bearer ${config.token}`;
 
-  const proxyRequest = requestImpl(
+  const proxyRequest = httpRequest(
     target,
     {
       method: incoming.method,
@@ -206,4 +208,11 @@ function proxyRuntimeRequest(
   });
 
   incoming.pipe(proxyRequest);
+}
+
+function boundedAppend(current: string, chunk: string): string {
+  const next = current + chunk;
+  return next.length <= MAX_RUNTIME_OUTPUT_BUFFER
+    ? next
+    : next.slice(-MAX_RUNTIME_OUTPUT_BUFFER);
 }

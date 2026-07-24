@@ -86,9 +86,7 @@ export function createNotificationService(input: {
       }
       const enabled = readSettings().enabled && connection !== null;
       try {
-        const result = await configure(enabled
-          ? { enabled: true, connection }
-          : { enabled: false });
+        const result = await configure({ enabled });
         backgroundActive = enabled && result.ok;
       } catch {
         backgroundActive = false;

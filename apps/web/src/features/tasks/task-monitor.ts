@@ -29,6 +29,16 @@ export function collectTaskTransitions(
   };
 }
 
+export function shouldAutoSubscribeTask(
+  task: TaskItem,
+  transitioned = false
+): boolean {
+  return task.status === 'queued'
+    || task.status === 'running'
+    || task.status === 'waiting_approval'
+    || (transitioned && NOTIFIABLE_STATUSES.has(task.status));
+}
+
 export function createTaskNotification(task: TaskItem): {
   title: HostNotification['title'];
   body: HostNotification['body'];

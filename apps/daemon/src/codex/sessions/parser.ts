@@ -1,5 +1,8 @@
 import type { ThreadHistoryItem } from '@clawee/protocol';
-import { createConversationTitle } from '../../threads/conversation-title.js';
+import {
+  createConversationTitle,
+  extractPublicConversationInput
+} from '../../threads/conversation-title.js';
 
 export type CodexSessionKind = 'user' | 'subagent';
 
@@ -53,21 +56,23 @@ export function parseCodexSessionLine(input: {
   const turnId = getTurnId(payload) ?? state.currentTurnId;
   if (turnId !== undefined) state.currentTurnId = turnId;
 
-  const userMessage = extractUserMessage(entry, payload);
+  const rawUserMessage = extractUserMessage(entry, payload);
+  const userMessage = rawUserMessage === undefined
+    ? undefined
+    : extractPublicConversationInput(rawUserMessage);
   const scheduleTrigger = userMessage === undefined
     ? undefined
     : parseScheduleExecutionPrompt(userMessage);
   if (
     state.title === undefined
     && userMessage !== undefined
-    && !isInjectedUserMessage(userMessage)
   ) {
     state.title = createConversationTitle(scheduleTrigger?.prompt ?? userMessage, '未命名对话');
   }
 
   if (entry.type === 'event_msg' && payload?.type === 'user_message') {
-    const text = getString(payload, 'message');
-    if (text !== undefined && !isInjectedUserMessage(text)) {
+    const text = userMessage;
+    if (text !== undefined) {
       if (scheduleTrigger !== undefined) {
         return {
           state,
@@ -270,13 +275,6 @@ function extractUserMessage(
   }
 
   return undefined;
-}
-
-function isInjectedUserMessage(text: string): boolean {
-  const trimmed = text.trimStart();
-  return trimmed.startsWith('# AGENTS.md instructions')
-    || trimmed.startsWith('<environment_context>')
-    || trimmed.startsWith('Another language model started to solve this problem');
 }
 
 const SCHEDULE_EXECUTION_PREFIX = '这是 Clawee 已经触发的一次计划任务执行。';

@@ -12,7 +12,11 @@ export type HostNotification = {
 
 export type BackgroundNotificationConfiguration =
   | { enabled: false }
-  | { enabled: true; connection: ConnectionConfig };
+  | { enabled: true };
+
+export type DesktopPreferences = {
+  closeBehavior: 'hide' | 'quit';
+};
 
 export type HostBridge = {
   kind: 'browser' | 'desktop';
@@ -23,4 +27,16 @@ export type HostBridge = {
   configureBackgroundNotifications?(
     configuration: BackgroundNotificationConfiguration
   ): Promise<HostBridgeResult>;
+  subscribeConnectionConfig?(
+    listener: (connection: ConnectionConfig | null) => void
+  ): () => void;
+  restartRuntime?(): Promise<HostBridgeResult>;
+  readDesktopPreferences?(): Promise<DesktopPreferences>;
+  updateDesktopPreferences?(
+    preferences: Partial<DesktopPreferences>
+  ): Promise<DesktopPreferences>;
+  ensureDefaultProjectDirectory?(): Promise<string>;
+  createProjectDirectory?(name: string): Promise<string>;
+  selectProjectDirectory?(): Promise<string | null>;
+  resolveDroppedFilePath?(file: File): string | null;
 };

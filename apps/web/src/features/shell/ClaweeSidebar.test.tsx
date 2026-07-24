@@ -216,6 +216,26 @@ describe('ClaweeSidebar', () => {
     expect(onSelectTask).toHaveBeenCalledWith('thread-paused');
   });
 
+  it('deletes only task drafts after confirmation', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onDeleteTaskDraft = vi.fn(async () => undefined);
+
+    renderSidebar({
+      tasks: [
+        createTask({ id: 'draft', name: '任务草稿', status: 'draft' }),
+        createTask({ id: 'scheduled', name: '正式任务', status: 'idle' })
+      ],
+      onDeleteTaskDraft
+    });
+
+    await user.click(screen.getByRole('button', { name: '删除草稿 任务草稿' }));
+
+    expect(confirm).toHaveBeenCalledWith('删除“任务草稿”？此操作不会删除项目文件。');
+    expect(onDeleteTaskDraft).toHaveBeenCalledWith('thread-draft');
+    expect(screen.queryByRole('button', { name: '删除草稿 正式任务' })).not.toBeInTheDocument();
+  });
+
   it('collapses the selected project when clicking it again', async () => {
     const user = userEvent.setup();
 
@@ -248,6 +268,47 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: '设置 账户' }));
 
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds an existing project from the projects heading', async () => {
+    const user = userEvent.setup();
+    const onAddProject = vi.fn();
+
+    renderSidebar({ onAddProject });
+
+    await user.click(screen.getByRole('button', { name: '添加项目文件夹' }));
+
+    expect(onAddProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes a Runtime project from its action menu without implying file deletion', async () => {
+    const user = userEvent.setup();
+    const onArchiveProject = vi.fn();
+
+    renderSidebar({
+      projects,
+      onArchiveProject
+    });
+
+    await user.click(screen.getByRole('button', { name: '项目操作 content-design' }));
+    const remove = screen.getByRole('menuitem', { name: '移除项目 content-design' });
+    expect(remove).toHaveAttribute('title', '仅从项目列表移除，不会删除本机文件');
+    await user.click(remove);
+
+    expect(onArchiveProject).toHaveBeenCalledWith('content-design');
+  });
+
+  it('starts a new conversation directly inside a project', async () => {
+    const user = userEvent.setup();
+    const onNewConversation = vi.fn();
+
+    renderSidebar({ onNewConversation });
+
+    await user.click(screen.getByRole('button', {
+      name: '在 content-design 中新建会话'
+    }));
+
+    expect(onNewConversation).toHaveBeenCalledWith('content-design');
   });
 
   it('starts a new conversation from the primary action', async () => {

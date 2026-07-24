@@ -22,6 +22,7 @@ import {
 } from './capability-token.js';
 
 export const AGENT_TOOL_ROUTE_PREFIX = '/internal/agent-tools';
+export const AGENT_SCHEDULE_MCP_ROUTE = `${AGENT_TOOL_ROUTE_PREFIX}/mcp`;
 
 export type AgentScheduleActor = ScheduleAgentActor;
 
@@ -366,7 +367,7 @@ function hasActorOverride(value: unknown): boolean {
   });
 }
 
-function readBearerToken(value: string | undefined): string | undefined {
+export function readBearerToken(value: string | undefined): string | undefined {
   if (value === undefined || !value.startsWith('Bearer ')) return undefined;
   const token = value.slice('Bearer '.length);
   return token.length === 0 || /\s/.test(token) ? undefined : token;

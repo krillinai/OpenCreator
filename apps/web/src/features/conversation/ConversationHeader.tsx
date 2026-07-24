@@ -1,16 +1,12 @@
-import { FileText, Info, MapPin } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export function ConversationHeader(props: {
   title: string;
   projectName: string;
   statusLabel?: string;
-  summaryStatus?: string;
-  summaryLoading?: boolean;
   taskToolbar?: ReactNode;
-  onCreateSummary?(): void;
   onOpenLocation(): void;
-  onToggleDetail(): void;
 }) {
   return (
     <header className={`conversation-header${props.taskToolbar ? ' conversation-header--task' : ''}`}>
@@ -26,28 +22,9 @@ export function ConversationHeader(props: {
         <span className="conversation-project">{props.projectName}</span>
       </div>
       <div className="conversation-actions">
-        {props.onCreateSummary ? (
-          <button
-            className="toolbar-button"
-            type="button"
-            disabled={props.summaryLoading}
-            onClick={props.onCreateSummary}
-          >
-            <FileText aria-hidden="true" size={16} />
-            <span>{props.summaryLoading ? '生成中' : '生成摘要'}</span>
-          </button>
-        ) : null}
-        {props.summaryStatus ? (
-          <span className="conversation-summary-status" role="status" aria-label="摘要状态">
-            {props.summaryStatus}
-          </span>
-        ) : null}
         <button className="toolbar-button" type="button" onClick={props.onOpenLocation}>
           <MapPin aria-hidden="true" size={16} />
           <span>文件</span>
-        </button>
-        <button className="icon-button" type="button" aria-label="详情" onClick={props.onToggleDetail}>
-          <Info aria-hidden="true" size={16} />
         </button>
       </div>
       {props.taskToolbar ? (

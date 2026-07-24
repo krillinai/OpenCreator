@@ -407,6 +407,24 @@ export function normalizeAppServerEvent(input: NormalizeInput): AgentEventEnvelo
   }
 
   if (method === 'error') {
+    const message = appServerErrorMessage(params);
+    const reconnectProgress = message.match(/Reconnecting\.\.\.\s*(\d+\/\d+)/i)?.[1];
+    if (reconnectProgress !== undefined || params?.willRetry === true) {
+      return {
+        ...base,
+        type: 'diagnostic',
+        rawEventId,
+        payload: {
+          type: 'diagnostic',
+          code: 'CODEX_STREAM_RETRYING',
+          severity: 'warning',
+          message: reconnectProgress === undefined
+            ? 'Codex 响应连接中断，正在自动重连'
+            : `Codex 响应连接中断，正在自动重连（${reconnectProgress}）`,
+          details: { raw: params }
+        }
+      };
+    }
     return {
       ...base,
       type: 'error',
@@ -414,7 +432,7 @@ export function normalizeAppServerEvent(input: NormalizeInput): AgentEventEnvelo
       payload: {
         type: 'error',
         code: 'CODEX_STREAM_ERROR',
-        message: firstStringValue(params ?? {}, ['message']) ?? 'Codex app-server error',
+        message,
         details: { raw: params }
       }
     };
@@ -430,6 +448,17 @@ export function normalizeAppServerEvent(input: NormalizeInput): AgentEventEnvelo
       ...(method === undefined ? {} : { codexType: method })
     }
   };
+}
+
+function appServerErrorMessage(
+  params: JsonRecord | undefined
+): string {
+  const direct = firstStringValue(params ?? {}, ['message']);
+  if (direct !== undefined) return direct;
+  const error = isRecord(params?.error) ? params.error : undefined;
+  return firstStringValue(error ?? {}, ['message', 'additionalDetails'])
+    ?? firstStringValue(params ?? {}, ['additionalDetails'])
+    ?? 'Codex app-server error';
 }
 
 function extractAppServerFileChanges(

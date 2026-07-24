@@ -9,6 +9,7 @@ import { createFakeCodex } from '../helpers/fake-codex.js';
 import { createAgentCapabilityTokenStore } from '../../src/agent-tools/capability-token.js';
 import { createAgentScheduleRunInjector } from '../../src/agent-tools/run-injection.js';
 import { createMemoryService } from '../../src/memory/service.js';
+import { createProjectManager } from '../../src/projects/manager.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunManager } from '../../src/runs/manager.js';
 import {
@@ -59,13 +60,17 @@ function createTestRunManager(input: {
 
 function createPersistedThread(
   threadManager: ReturnType<typeof createThreadManager>,
-  overrides: { codexThreadId?: string } = {}
+  overrides: { codexThreadId?: string; sandbox?: SandboxMode } = {}
 ) {
-  const thread = threadManager.createThread({
-    workspaceMode: 'external',
+  const projects = createProjectManager({ db: db!, homeDir: tempDir });
+  const project = projects.listProjects()[0] ?? projects.createProject({
     cwd: tempDir,
     profile: 'default',
     sandbox: 'read-only'
+  });
+  const thread = threadManager.createConversationThread({
+    projectId: project.id,
+    sandbox: overrides.sandbox
   });
   if (overrides.codexThreadId) threadManager.setCodexThreadId(thread.id, overrides.codexThreadId);
   return threadManager.getThread(thread.id)!;
@@ -83,6 +88,31 @@ function threadRun(
     sandbox: thread.sandbox,
     resumeMode: 'auto' as const
   };
+}
+
+function insertHistoricalRun(
+  database: Database.Database,
+  id: string,
+  threadId: string,
+  codexThreadId: string
+): void {
+  database.prepare(`
+    INSERT INTO runs (
+      id, thread_id, codex_thread_id, public_status, internal_status, created_by,
+      profile, cwd, canonical_cwd, workspace_mode, sandbox, codex_version,
+      codex_bin, codex_home, normalizer_version
+    ) VALUES (
+      @id, @threadId, @codexThreadId, 'succeeded', 'succeeded', 'api',
+      'default', @cwd, @cwd, 'external', 'read-only', 'unknown',
+      'codex', @codexHome, 1
+    )
+  `).run({
+    id,
+    threadId,
+    codexThreadId,
+    cwd: tempDir,
+    codexHome: join(tempDir, 'codex-home')
+  });
 }
 
 async function waitForRunStatus(
@@ -827,6 +857,78 @@ describe('run manager', () => {
     );
   });
 
+  it('keeps the run Codex id when thread binding conflicts', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-binding-conflict-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-shared' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ]
+    });
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threadManager = createThreadManager({ db, dataDir: tempDir });
+    const owner = createPersistedThread(threadManager, {
+      codexThreadId: 'codex-thread-shared'
+    });
+    const candidate = createPersistedThread(threadManager);
+    const manager = createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: fake.bin,
+      codexHome: join(tempDir, 'codex-home'),
+      threadAccess: threadManager,
+      resumeCapabilityVerified: true
+    });
+
+    const run = await manager.createAndRun(threadRun(candidate, 'hello'));
+
+    expect(run.status).toBe('failed');
+    expect(manager.getRun(run.id)).toMatchObject({
+      threadId: candidate.id,
+      codexThreadId: 'codex-thread-shared',
+      errorCode: 'THREAD_CODEX_ID_CONFLICT'
+    });
+    expect(threadManager.getThread(owner.id)?.codexThreadId).toBe('codex-thread-shared');
+    expect(threadManager.getThread(candidate.id)?.codexThreadId).toBeNull();
+    expect(manager.listEvents(run.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'diagnostic',
+        payload: expect.objectContaining({ code: 'THREAD_CODEX_ID_CONFLICT' })
+      })
+    ]));
+  });
+
+  it('repairs only an unambiguous missing Codex thread binding on startup', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-binding-repair-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threadManager = createThreadManager({ db, dataDir: tempDir });
+    const unique = createPersistedThread(threadManager);
+    const ambiguous = createPersistedThread(threadManager);
+    const shared = createPersistedThread(threadManager);
+    const sharedOwner = createPersistedThread(threadManager, {
+      codexThreadId: 'codex-thread-owned'
+    });
+
+    insertHistoricalRun(db, 'run_unique', unique.id, 'codex-thread-unique');
+    insertHistoricalRun(db, 'run_ambiguous_a', ambiguous.id, 'codex-thread-a');
+    insertHistoricalRun(db, 'run_ambiguous_b', ambiguous.id, 'codex-thread-b');
+    insertHistoricalRun(db, 'run_shared', shared.id, 'codex-thread-owned');
+
+    createRunManager({
+      db,
+      dataDir: tempDir,
+      codexBin: join(tempDir, 'codex'),
+      codexHome: join(tempDir, 'codex-home'),
+      threadAccess: threadManager
+    });
+
+    expect(threadManager.getThread(unique.id)?.codexThreadId).toBe('codex-thread-unique');
+    expect(threadManager.getThread(ambiguous.id)?.codexThreadId).toBeNull();
+    expect(threadManager.getThread(shared.id)?.codexThreadId).toBeNull();
+    expect(threadManager.getThread(sharedOwner.id)?.codexThreadId).toBe('codex-thread-owned');
+  });
+
   it('uses codex exec resume for a thread with codexThreadId', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
     const fake = createFakeCodex(tempDir, {
@@ -849,13 +951,13 @@ describe('run manager', () => {
     expect(run.status).toBe('succeeded');
     const argv = fake.readArgv();
     expect(argv.slice(0, 4)).toEqual(['exec', 'resume', '--json', '--skip-git-repo-check']);
-    expect(argv).toEqual(expect.arrayContaining(['-c', 'sandbox_mode="read-only"']));
+    expect(argv).toEqual(expect.arrayContaining(['-c', 'sandbox_mode="workspace-write"']));
     expect(argv.at(-1)).toBe('codex-thread-1');
     const meta = JSON.parse(readFileSync(join(tempDir, 'runs', run.id, 'meta.json'), 'utf8')) as {
       args: string[];
     };
     expect(meta.args).toEqual(argv);
-    expect(meta.args).toEqual(expect.arrayContaining(['-c', 'sandbox_mode="read-only"']));
+    expect(meta.args).toEqual(expect.arrayContaining(['-c', 'sandbox_mode="workspace-write"']));
   });
 
   it('injects per-run schedule tools without persisting the capability secret', async () => {
@@ -869,12 +971,7 @@ describe('run manager', () => {
     });
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const threadManager = createThreadManager({ db, dataDir: tempDir });
-    const thread = threadManager.createThread({
-      workspaceMode: 'external',
-      cwd: tempDir,
-      profile: 'default',
-      sandbox: 'read-only'
-    });
+    const thread = createPersistedThread(threadManager);
     const capabilities = createAgentCapabilityTokenStore();
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
@@ -889,9 +986,7 @@ describe('run manager', () => {
       resumeCapabilityVerified: true,
       agentToolInjector: createAgentScheduleRunInjector({
         capabilities,
-        getBaseUrl: () => 'http://127.0.0.1:43123',
-        command: '/usr/bin/node',
-        args: ['/app/agent-tools/stdio-server.js']
+        getBaseUrl: () => 'http://127.0.0.1:43123'
       }),
       onRunTerminal: runId => capabilities.revokeRun(runId)
     });
@@ -907,11 +1002,13 @@ describe('run manager', () => {
     const token = env.CLAWEE_AGENT_CAPABILITY_TOKEN!;
     expect(argv).toEqual(expect.arrayContaining([
       '-c',
-      'mcp_servers.clawee_schedule.command="/usr/bin/node"',
+      'mcp_servers.clawee_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
       '-c',
       'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_create","clawee_schedule_update","clawee_schedule_pause","clawee_schedule_resume","clawee_schedule_run_now","clawee_schedule_get"]'
     ]));
-    expect(env.CLAWEE_AGENT_TOOL_URL).toBe('http://127.0.0.1:43123');
+    expect(env.CLAWEE_AGENT_TOOL_URL).toBeUndefined();
+    expect(env.NO_PROXY).toContain('127.0.0.1');
+    expect(env.no_proxy).toContain('127.0.0.1');
     expect(token).toMatch(/^clwcap_/);
     expect(readFileSync(configPath, 'utf8')).toBe('model = "existing-model"\\n');
 
@@ -943,10 +1040,7 @@ describe('run manager', () => {
       codexBin: fake.bin,
       resumeCapabilityVerified: true
     });
-    const thread = threadManager.createThread({
-      workspaceMode: 'external',
-      cwd: tempDir,
-      profile: 'default',
+    const thread = createPersistedThread(threadManager, {
       sandbox: 'workspace-write'
     });
     threadManager.setCodexThreadId(thread.id, 'codex-thread-1');

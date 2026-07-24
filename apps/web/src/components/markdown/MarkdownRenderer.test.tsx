@@ -130,6 +130,22 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByText('是代码')).toHaveProperty('tagName', 'CODE');
   });
 
+  it('marks skill references in user messages without changing surrounding text', () => {
+    render(
+      <MarkdownRenderer
+        variant="user"
+        text="使用 $zhiyu-brainstorm 分析需求，再继续执行。"
+      />
+    );
+
+    expect(screen.getByText('$zhiyu-brainstorm')).toHaveClass('md-skill-reference');
+    expect(screen.getByText('$zhiyu-brainstorm')).toHaveAttribute(
+      'title',
+      'Skill：zhiyu-brainstorm'
+    );
+    expect(screen.getByText(/分析需求，再继续执行/)).toBeInTheDocument();
+  });
+
   it('does not throw on nested or multiline emphasis', () => {
     render(<MarkdownRenderer variant="assistant" text={'**a *b* c**\n\n**第一行\n第二行**'} />);
 

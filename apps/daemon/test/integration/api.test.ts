@@ -23,6 +23,7 @@ import { buildServer } from '../../src/api/server.js';
 import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
 import type { CodexSessionProvider } from '../../src/codex/sessions/app-server-provider.js';
 import type { CodexSkillSourceInstaller } from '../../src/codex/skills/source-installer.js';
+import { createProjectManager } from '../../src/projects/manager.js';
 import { SchedulerError, type SchedulerService } from '../../src/scheduler/service.js';
 import type { ScheduleCoordinator } from '../../src/scheduler/coordinator.js';
 import { ScheduleRepository } from '../../src/scheduler/repository.js';
@@ -203,20 +204,20 @@ describe('runtime api', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('allows web app CORS preflight from localhost origins', async () => {
+  it('allows web app CORS preflight only from the fixed Vite origin', async () => {
     server = await buildServer({ token: 'secret' });
     const response = await server.inject({
       method: 'OPTIONS',
       url: '/runs',
       headers: {
-        origin: 'http://localhost:5173',
+        origin: 'http://127.0.0.1:9000',
         'access-control-request-method': 'POST',
         'access-control-request-headers': 'authorization,content-type,last-event-id'
       }
     });
 
     expect(response.statusCode).toBe(204);
-    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:9000');
     expect(String(response.headers['access-control-allow-headers']).toLowerCase()).toContain(
       'authorization'
     );
@@ -228,7 +229,7 @@ describe('runtime api', () => {
     );
   });
 
-  it('allows web app CORS preflight from Vite fallback ports', async () => {
+  it('rejects localhost aliases and arbitrary fallback ports by default', async () => {
     server = await buildServer({ token: 'secret' });
     const response = await server.inject({
       method: 'OPTIONS',
@@ -240,8 +241,16 @@ describe('runtime api', () => {
       }
     });
 
-    expect(response.statusCode).toBe(204);
-    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5174');
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+    const localhost = await server.inject({
+      method: 'OPTIONS',
+      url: '/runs',
+      headers: {
+        origin: 'http://localhost:9000',
+        'access-control-request-method': 'POST'
+      }
+    });
+    expect(localhost.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it('does not allow arbitrary web origins', async () => {
@@ -271,9 +280,7 @@ describe('runtime api', () => {
     );
     server = await buildServer({ token: 'secret', dataDir: tempDir });
 
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'workspace-write'
     })).json().thread as { id: string };
@@ -322,13 +329,13 @@ describe('runtime api', () => {
       method: 'OPTIONS',
       url: '/workspace/files/content',
       headers: {
-        origin: 'http://localhost:5173',
+        origin: 'http://127.0.0.1:9000',
         'access-control-request-method': 'POST',
         'access-control-request-headers': 'authorization,content-type'
       }
     });
     expect(preflight.statusCode).toBe(204);
-    expect(preflight.headers['access-control-allow-origin']).toBe('http://localhost:5173');
+    expect(preflight.headers['access-control-allow-origin']).toBe('http://127.0.0.1:9000');
     expect(String(preflight.headers['access-control-allow-methods'])).toContain('POST');
 
     const traversal = await authGet(
@@ -349,9 +356,7 @@ describe('runtime api', () => {
     writeFileSync(join(tempDir, 'note.txt'), 'before');
     server = await buildServer({ token: 'secret', dataDir: tempDir });
 
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'workspace-write'
     })).json().thread as { id: string };
@@ -513,9 +518,7 @@ describe('runtime api', () => {
         resumeImages: true
       })
     });
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'read-only'
     })).json().thread as { id: string };
@@ -583,9 +586,7 @@ describe('runtime api', () => {
         resumeImages: false
       })
     });
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'read-only'
     })).json().thread as { id: string };
@@ -1502,10 +1503,8 @@ describe('runtime api', () => {
       name: 'review',
       config: { model: 'gpt-5.3-codex' }
     })).statusCode).toBe(201);
-    const thread = await authPost('/threads', {
+    const thread = await createConversationResponseViaApi({
       title: '审查会话',
-      cwd: tempDir,
-      workspaceMode: 'external',
       profile: 'review',
       sandbox: 'workspace-write'
     });
@@ -2246,9 +2245,7 @@ describe('runtime api', () => {
     expect(run.statusCode).toBe(404);
     expect(run.json().error.code).toBe('CODEX_PROFILE_NOT_FOUND');
 
-    const thread = await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = await createConversationResponseViaApi({
       profile: 'missing-profile',
       sandbox: 'read-only'
     });
@@ -2277,9 +2274,7 @@ describe('runtime api', () => {
     });
     expect(createdProfile.statusCode).toBe(201);
 
-    const thread = await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = await createConversationResponseViaApi({
       profile: 'review',
       sandbox: 'read-only'
     });
@@ -2389,9 +2384,7 @@ describe('runtime api', () => {
     });
     expect(createdProfile.statusCode).toBe(201);
 
-    const thread = await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = await createConversationResponseViaApi({
       profile: 'review',
       sandbox: 'read-only'
     });
@@ -2435,9 +2428,7 @@ describe('runtime api', () => {
     });
     expect(createdProfile.statusCode).toBe(201);
 
-    const thread = await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = await createConversationResponseViaApi({
       profile: 'review',
       sandbox: 'read-only'
     });
@@ -2495,9 +2486,7 @@ describe('runtime api', () => {
     });
     expect(createdProfile.statusCode).toBe(201);
 
-    const thread = await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = await createConversationResponseViaApi({
       profile: 'review',
       sandbox: 'read-only'
     });
@@ -2538,9 +2527,7 @@ describe('runtime api', () => {
     });
     expect(createdProfile.statusCode).toBe(201);
 
-    const thread = await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = await createConversationResponseViaApi({
       profile: 'review',
       sandbox: 'read-only'
     });
@@ -2567,11 +2554,9 @@ describe('runtime api', () => {
       codexHome: join(tempDir, 'codex-home')
     });
 
-    const created = await server.inject({
-      method: 'POST',
-      url: '/threads?limit=100',
-      headers: { authorization: 'Bearer secret' },
-      payload: { title: 'R2', workspaceMode: 'managed', sandbox: 'read-only' }
+    const created = await createConversationResponseViaApi({
+      title: 'R2',
+      sandbox: 'read-only'
     });
     expect(created.statusCode).toBe(201);
     const thread = created.json().thread;
@@ -2602,9 +2587,7 @@ describe('runtime api', () => {
   it('updates an active thread sandbox explicitly', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'read-only'
     })).json().thread;
@@ -2646,6 +2629,11 @@ describe('runtime api', () => {
   it('returns schedule bindings and blocks public mutation of schedule task threads', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const projectManager = createProjectManager({ db, homeDir: tempDir });
+    const project = projectManager.createProject({
+      cwd: tempDir,
+      name: 'Conversation project'
+    });
     const manager = createThreadManager({ db, dataDir: tempDir });
     const task = manager.createThread({
       title: 'Daily report',
@@ -2653,11 +2641,9 @@ describe('runtime api', () => {
       cwd: tempDir,
       purpose: 'schedule_task'
     });
-    const conversation = manager.createThread({
+    const conversation = manager.createConversationThread({
+      projectId: project.id,
       title: 'Conversation',
-      workspaceMode: 'external',
-      cwd: tempDir,
-      purpose: 'conversation'
     });
     db.prepare(`
       INSERT INTO schedules (
@@ -3208,13 +3194,7 @@ describe('runtime api', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
 
-    const created = await server.inject({
-      method: 'POST',
-      url: '/threads',
-      headers: { authorization: 'Bearer secret' },
-      payload: { workspaceMode: 'managed' }
-    });
-    const thread = created.json().thread;
+    const thread = await createThreadViaApi();
 
     const response = await server.inject({
       method: 'GET',
@@ -3223,6 +3203,75 @@ describe('runtime api', () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('requires a project for conversation creation and rejects cwd overrides', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-project-thread-'));
+    const projectDir = join(tempDir, 'project');
+    mkdirSync(projectDir, { recursive: true });
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+
+    const projectResponse = await authPost('/projects', {
+      cwd: projectDir,
+      profile: 'project-profile',
+      sandbox: 'workspace-write'
+    });
+    const project = projectResponse.json().project;
+
+    const created = await authPost('/threads', {
+      projectId: project.id,
+      title: 'Project thread'
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().thread).toMatchObject({
+      projectId: project.id,
+      origin: 'clawee_created',
+      cwd: projectDir,
+      canonicalCwd: realpathSync(projectDir),
+      workspaceMode: 'external',
+      profile: 'project-profile',
+      sandbox: 'workspace-write',
+      purpose: 'conversation'
+    });
+
+    for (const payload of [
+      {},
+      { title: 'Missing project' },
+      { projectId: project.id, cwd: tempDir },
+      { projectId: project.id, workspaceMode: 'managed' },
+      { projectId: project.id, purpose: 'schedule_draft' }
+    ]) {
+      const response = await authPost('/threads', payload);
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe('VALIDATION_FAILED');
+    }
+
+    await authPost(`/projects/${project.id}/archive`, {});
+    const archived = await authPost('/threads', { projectId: project.id });
+    expect(archived.statusCode).toBe(409);
+    expect(archived.json().error.code).toBe('PROJECT_ARCHIVED');
+
+    const archivedRun = await authPost('/runs', {
+      threadId: created.json().thread.id,
+      prompt: 'Should not run'
+    });
+    expect(archivedRun.statusCode).toBe(409);
+    expect(archivedRun.json().error.code).toBe('PROJECT_ARCHIVED');
+
+    const secondDir = join(tempDir, 'second-project');
+    mkdirSync(secondDir, { recursive: true });
+    const secondProject = (await authPost('/projects', { cwd: secondDir })).json().project;
+    const secondThread = (await authPost('/threads', {
+      projectId: secondProject.id
+    })).json().thread;
+    rmSync(secondDir, { recursive: true, force: true });
+
+    const missingDirectoryRun = await authPost('/runs', {
+      threadId: secondThread.id,
+      prompt: 'Should not run'
+    });
+    expect(missingDirectoryRun.statusCode).toBe(422);
+    expect(missingDirectoryRun.json().error.code).toBe('PROJECT_DIRECTORY_UNAVAILABLE');
   });
 
   it('rejects invalid thread creation bodies', async () => {
@@ -3430,14 +3479,14 @@ describe('runtime api', () => {
       url: `/runs/${run.id}/events`,
       headers: {
         authorization: 'Bearer secret',
-        origin: 'http://127.0.0.1:5173'
+        origin: 'http://127.0.0.1:9000'
       }
     });
 
     expect(events.statusCode).toBe(200);
     expect(events.headers['content-type']).toContain('text/event-stream');
     expect(events.headers.vary).toBe('Origin');
-    expect(events.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5173');
+    expect(events.headers['access-control-allow-origin']).toBe('http://127.0.0.1:9000');
     expect(events.body).toContain('event: done');
   });
 
@@ -3511,9 +3560,7 @@ describe('runtime api', () => {
       capabilities: makeResumeCapableMatrix()
     });
 
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'read-only'
     })).json().thread;
@@ -3595,9 +3642,7 @@ describe('runtime api', () => {
       codexHome: join(tempDir, 'codex-home')
     });
 
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'read-only'
     })).json().thread;
@@ -3618,9 +3663,7 @@ describe('runtime api', () => {
   it('rejects run requests that override thread config', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'read-only'
     })).json().thread;
@@ -3638,9 +3681,7 @@ describe('runtime api', () => {
   it('rejects run requests that override non-sandbox thread config', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'read-only'
     })).json().thread;
@@ -3666,9 +3707,7 @@ describe('runtime api', () => {
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error.code).toBe('THREAD_NOT_FOUND');
 
-    const thread = (await authPost('/threads', {
-      workspaceMode: 'external',
-      cwd: tempDir,
+    const thread = (await createConversationResponseViaApi({
       profile: 'default',
       sandbox: 'read-only'
     })).json().thread;
@@ -4435,9 +4474,6 @@ function createFakeSkillSourceInstaller(): CodexSkillSourceInstaller {
 
 function createNoopCodexSessionProvider(): CodexSessionProvider {
   return {
-    async listRecent() {
-      return { threads: [] };
-    },
     async listTurns() {
       return { items: [], hasMore: false };
     },
@@ -4449,12 +4485,32 @@ function createNoopCodexSessionProvider(): CodexSessionProvider {
 }
 
 async function createThreadViaApi() {
-  return (await authPost('/threads', {
-    workspaceMode: 'external',
+  return (await createConversationResponseViaApi()).json().thread;
+}
+
+async function createConversationResponseViaApi(input: {
+  title?: string;
+  profile?: string;
+  model?: string;
+  reasoning?: 'default' | 'low' | 'medium' | 'high' | 'xhigh';
+  sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+} = {}) {
+  const project = await ensureProjectViaApi();
+  return authPost('/threads', {
+    projectId: project.id,
+    ...input
+  });
+}
+
+async function ensureProjectViaApi(): Promise<{ id: string }> {
+  const listed = await authGet('/projects');
+  const existing = listed.json().projects?.[0] as { id: string } | undefined;
+  if (existing !== undefined) return existing;
+  const created = await authPost('/projects', {
     cwd: tempDir,
-    profile: 'default',
-    sandbox: 'read-only'
-  })).json().thread;
+    name: 'Test project'
+  });
+  return created.json().project as { id: string };
 }
 
 async function waitForRunStatus(runId: string, status: string): Promise<void> {

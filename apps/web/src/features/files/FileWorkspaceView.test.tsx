@@ -1,6 +1,7 @@
 import type { ThreadResponse, WorkspaceDirectoryResponse, WorkspaceFileMeta, WorkspaceFileNode } from '@clawee/protocol';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '../../runtime/errors.js';
 import { workspaceKey } from './file-view-state.js';
@@ -40,7 +41,9 @@ describe('FileWorkspaceView', () => {
     expect(service.listDirectory).toHaveBeenCalledWith(thread.id, '');
     await waitFor(() => expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'README.md'));
     await waitFor(() => expect(service.openText).toHaveBeenCalledWith(thread.id, 'README.md'));
-    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(await screen.findAllByText('README.md')).not.toHaveLength(0);
+    expect(screen.getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('textbox', { name: 'README.md 编辑器' })).not.toBeInTheDocument();
     expect(window.localStorage.getItem(`clawee.file-workspace.recent.${workspaceKey(thread.canonicalCwd)}`)).toBe('README.md');
   });
 
@@ -77,7 +80,7 @@ describe('FileWorkspaceView', () => {
 
     await waitFor(() => expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'docs/generated.md'));
     expect(service.getMeta).not.toHaveBeenCalledWith(thread.id, 'README.md');
-    expect(await screen.findByRole('textbox', { name: 'docs/generated.md 编辑器' })).toHaveTextContent('# Generated');
+    expect(await screen.findByRole('heading', { name: 'Generated' })).toBeInTheDocument();
   });
 
   it('点击目录时调用 listDirectory 并合并节点', async () => {
@@ -97,10 +100,61 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
+    await expandFileTree(user);
     await user.click(await screen.findByRole('treeitem', { name: 'docs' }));
 
     expect(service.listDirectory).toHaveBeenCalledWith(thread.id, 'docs');
     expect(await screen.findByRole('treeitem', { name: 'guide.md' })).toBeInTheDocument();
+  });
+
+  it('选择文件更新 selectedPath 时保留已经展开的目录', async () => {
+    const user = userEvent.setup();
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          nodes: [directoryNode('docs', 0)]
+        }),
+        docs: createDirectory({
+          path: 'docs',
+          nodes: [fileNode('docs/guide.md', 'markdown', 1)]
+        })
+      },
+      metas: {
+        'docs/guide.md': createMeta({
+          path: 'docs/guide.md',
+          name: 'guide.md',
+          kind: 'markdown',
+          mime: 'text/markdown'
+        })
+      },
+      contents: {
+        'docs/guide.md': '# Guide'
+      }
+    });
+
+    function ControlledWorkspace() {
+      const [selectedPath, setSelectedPath] = useState<string>();
+      return (
+        <FileWorkspaceView
+          selectedThread={thread}
+          selectedPath={selectedPath}
+          workspaceFileService={service}
+          onSelectPath={setSelectedPath}
+          onClose={vi.fn()}
+        />
+      );
+    }
+
+    render(<ControlledWorkspace />);
+    await expandFileTree(user);
+    const docs = await screen.findByRole('treeitem', { name: 'docs' });
+    await user.click(docs);
+    await user.click(await screen.findByRole('treeitem', { name: 'guide.md' }));
+
+    expect(await screen.findByRole('heading', { name: 'Guide' })).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: 'docs' })).toHaveAttribute('aria-expanded', 'true');
+    expect(service.listDirectory).toHaveBeenCalledTimes(2);
   });
 
   it('点击文本文件时调用 getMeta 和 openText', async () => {
@@ -122,11 +176,60 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
+    await expandFileTree(user);
     await user.click(await screen.findByRole('treeitem', { name: 'notes.txt' }));
 
     expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'notes.txt');
     expect(service.openText).toHaveBeenCalledWith(thread.id, 'notes.txt');
-    expect(await screen.findByRole('textbox', { name: 'notes.txt 编辑器' })).toHaveTextContent('hello notes');
+    expect(await screen.findByText('hello notes')).toBeInTheDocument();
+  });
+
+  it('回到窗口时检测版本并自动刷新未修改的当前文件', async () => {
+    const thread = createThread();
+    const metas = {
+      'notes.txt': createMeta({
+        path: 'notes.txt',
+        name: 'notes.txt',
+        kind: 'text',
+        mime: 'text/plain',
+        versionToken: 'v1'
+      })
+    };
+    const contents = { 'notes.txt': '旧内容' };
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          suggestedOpenPath: 'notes.txt',
+          nodes: [fileNode('notes.txt', 'text')]
+        })
+      },
+      metas,
+      contents
+    });
+
+    render(
+      <FileWorkspaceView
+        selectedThread={thread}
+        workspaceFileService={service}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByText('旧内容')).toBeInTheDocument();
+    const textCallsBeforeRefresh = service.openText.mock.calls.length;
+    metas['notes.txt'] = createMeta({
+      path: 'notes.txt',
+      name: 'notes.txt',
+      kind: 'text',
+      mime: 'text/plain',
+      versionToken: 'v2'
+    });
+    contents['notes.txt'] = '新内容';
+
+    fireEvent.focus(window);
+
+    await waitFor(() => expect(service.openText.mock.calls.length).toBe(textCallsBeforeRefresh + 1));
+    expect(await screen.findByText('新内容')).toBeInTheDocument();
   });
 
   it('点击图片和 PDF 时调用 getMeta 和 openBlob', async () => {
@@ -162,6 +265,7 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
+    await expandFileTree(user);
     await user.click(await screen.findByRole('treeitem', { name: 'preview.png' }));
     await waitFor(() => expect(service.openBlob).toHaveBeenCalledWith(thread.id, 'preview.png'));
     await user.click(screen.getByRole('treeitem', { name: 'spec.pdf' }));
@@ -183,7 +287,8 @@ describe('FileWorkspaceView', () => {
       <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
     );
 
-    await screen.findByRole('textbox', { name: 'README.md 编辑器' });
+    await screen.findAllByText('README.md');
+    await userEvent.setup().click(screen.getByRole('button', { name: '展开目录树' }));
 
     const body = container.querySelector('.file-workspace-body');
     if (!(body instanceof HTMLElement)) throw new Error('Expected file workspace body');
@@ -221,7 +326,7 @@ describe('FileWorkspaceView', () => {
       <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
     );
 
-    expect(await screen.findByRole('textbox', { name: 'scripts/notes.md 编辑器' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'notes' })).toBeInTheDocument();
 
     const toolbar = container.querySelector('.file-top-bar');
     if (!(toolbar instanceof HTMLElement)) throw new Error('Expected compact file toolbar');
@@ -232,8 +337,8 @@ describe('FileWorkspaceView', () => {
     const pathNav = within(toolbar).getByLabelText('文件路径');
     expect(pathNav).toHaveTextContent('repo/scripts/notes.md');
     expect(within(pathNav).getByRole('button', { name: '复制路径' })).toBeEnabled();
-    expect(within(toolbar).getByRole('button', { name: '编辑' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(toolbar).getByRole('button', { name: '预览' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(toolbar).getByRole('button', { name: '编辑' })).toHaveAttribute('aria-pressed', 'false');
     expect(within(toolbar).getByRole('button', { name: '保存' })).toBeDisabled();
     expect(within(toolbar).getByRole('button', { name: '打开所在目录' })).toBeEnabled();
 
@@ -241,12 +346,15 @@ describe('FileWorkspaceView', () => {
     if (!(actions instanceof HTMLElement)) throw new Error('Expected file toolbar actions');
     expect(within(actions).queryByRole('button', { name: '复制路径' })).not.toBeInTheDocument();
 
-    await user.click(within(toolbar).getByRole('button', { name: '预览' }));
+    const modeButtons = within(toolbar).getAllByRole('button')
+      .filter(button => button.textContent === '预览' || button.textContent === '编辑');
+    expect(modeButtons.map(button => button.textContent)).toEqual(['预览', '编辑']);
 
-    expect(within(toolbar).getByRole('button', { name: '编辑' })).toHaveAttribute('aria-pressed', 'false');
-    expect(within(toolbar).getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByRole('textbox', { name: 'scripts/notes.md 编辑器' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'notes' })).toBeInTheDocument();
+    await user.click(within(toolbar).getByRole('button', { name: '编辑' }));
+
+    expect(within(toolbar).getByRole('button', { name: '编辑' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(toolbar).getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('textbox', { name: 'scripts/notes.md 编辑器' })).toBeInTheDocument();
 
     expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
     expect(container.querySelector('.file-path-bar')).not.toBeInTheDocument();
@@ -281,7 +389,7 @@ describe('FileWorkspaceView', () => {
 
     const preview = await screen.findByTitle('business-cover.html HTML 预览');
     expect(screen.getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
-    expect(preview).toHaveAttribute('sandbox', '');
+    expect(preview).toHaveAttribute('sandbox', 'allow-scripts');
     expect(screen.queryByRole('textbox', { name: 'business-cover.html 编辑器' })).not.toBeInTheDocument();
   });
 
@@ -317,7 +425,7 @@ describe('FileWorkspaceView', () => {
         <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
       );
 
-      expect(await screen.findByRole('textbox', { name: 'scripts/notes.md 编辑器' })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'notes' })).toBeInTheDocument();
       vi.useFakeTimers();
 
       await act(async () => {
@@ -361,13 +469,7 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
-    expect(await screen.findByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
-    expect(screen.getByLabelText('项目文件树')).toBeInTheDocument();
-    expect(screen.getByRole('separator', { name: '调整编辑区和目录树宽度' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '收起目录树' }));
-
-    expect(screen.getByRole('textbox', { name: 'README.md 编辑器' })).toBeInTheDocument();
+    expect(await screen.findAllByText('README.md')).not.toHaveLength(0);
     expect(screen.queryByLabelText('项目文件树')).not.toBeInTheDocument();
     expect(screen.queryByRole('separator', { name: '调整编辑区和目录树宽度' })).not.toBeInTheDocument();
 
@@ -375,6 +477,9 @@ describe('FileWorkspaceView', () => {
 
     expect(screen.getByLabelText('项目文件树')).toBeInTheDocument();
     expect(screen.getByRole('separator', { name: '调整编辑区和目录树宽度' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '收起目录树' }));
+    expect(screen.queryByLabelText('项目文件树')).not.toBeInTheDocument();
   });
 
   it('编辑区和目录树之间的分隔条可以拖动调整目录树宽度', async () => {
@@ -392,7 +497,8 @@ describe('FileWorkspaceView', () => {
       <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
     );
 
-    await screen.findByRole('textbox', { name: 'README.md 编辑器' });
+    await screen.findAllByText('README.md');
+    await userEvent.setup().click(screen.getByRole('button', { name: '展开目录树' }));
 
     const body = container.querySelector('.file-workspace-body');
     if (!(body instanceof HTMLElement)) throw new Error('Expected file workspace body');
@@ -447,6 +553,7 @@ describe('FileWorkspaceView', () => {
       <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
     );
 
+    await expandFileTree(user);
     await user.click(await screen.findByRole('treeitem', { name: 'preview.png' }));
     await waitFor(() => expect(screen.getByRole('img', { name: 'preview.png' })).toBeInTheDocument());
     await user.click(screen.getByRole('treeitem', { name: 'notes.txt' }));
@@ -486,7 +593,7 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
-    const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
+    const editor = await openFileEditor(user, 'notes.txt');
     await user.click(editor);
     await user.keyboard('A');
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -528,7 +635,7 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
-    const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
+    const editor = await openFileEditor(user, 'notes.txt');
     await user.click(editor);
     await user.keyboard('A');
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -561,9 +668,10 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
-    const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
+    const editor = await openFileEditor(user, 'notes.txt');
     await user.click(editor);
     await user.keyboard('A');
+    await expandFileTree(user);
 
     confirmMock.mockReturnValueOnce(false);
     await user.click(screen.getByRole('treeitem', { name: 'guide.md' }));
@@ -576,7 +684,7 @@ describe('FileWorkspaceView', () => {
     await user.click(screen.getByRole('treeitem', { name: 'guide.md' }));
 
     await waitFor(() => expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'guide.md'));
-    expect(await screen.findByRole('textbox', { name: 'guide.md 编辑器' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'guide' })).toBeInTheDocument();
   });
 
   it('409 冲突时重新加载会重新打开当前文件，覆盖保存会带 overwriteConflict，取消会关闭提示', async () => {
@@ -604,7 +712,7 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
-    const editor = await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
+    const editor = await openFileEditor(user, 'notes.txt');
     await user.click(editor);
     await user.keyboard('A');
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -618,7 +726,7 @@ describe('FileWorkspaceView', () => {
     await waitFor(() => expect(service.getMeta.mock.calls.length).toBe(metaCallsBeforeReload + 1));
     await waitFor(() => expect(service.openText.mock.calls.length).toBe(textCallsBeforeReload + 1));
 
-    await user.click(screen.getByRole('textbox', { name: 'notes.txt 编辑器' }));
+    await user.click(await openFileEditor(user, 'notes.txt'));
     await user.keyboard('B');
     await user.click(screen.getByRole('button', { name: '保存' }));
     const conflictAlert = await screen.findByRole('alert');
@@ -634,7 +742,7 @@ describe('FileWorkspaceView', () => {
       });
     });
 
-    await user.click(screen.getByRole('textbox', { name: 'notes.txt 编辑器' }));
+    await user.click(await openFileEditor(user, 'notes.txt'));
     await user.keyboard('C');
     await user.click(screen.getByRole('button', { name: '保存' }));
     const closeAlert = await screen.findByRole('alert');
@@ -663,6 +771,7 @@ describe('FileWorkspaceView', () => {
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     expect(await screen.findByText('当前会话为只读模式，不能保存文件')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: '编辑' }));
     expect(await screen.findByRole('textbox', { name: 'notes.txt 编辑器' })).toHaveAttribute('aria-readonly', 'true');
     expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
   });
@@ -687,7 +796,7 @@ describe('FileWorkspaceView', () => {
 
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
-    await screen.findByRole('textbox', { name: 'notes.txt 编辑器' });
+    await screen.findByText('draft');
     await user.click(screen.getByRole('button', { name: '打开所在目录' }));
 
     await waitFor(() => {
@@ -699,6 +808,21 @@ describe('FileWorkspaceView', () => {
     });
   });
 });
+
+async function expandFileTree(user: ReturnType<typeof userEvent.setup>) {
+  const button = screen.queryByRole('button', { name: '展开目录树' });
+  if (button !== null) await user.click(button);
+}
+
+async function openFileEditor(
+  user: ReturnType<typeof userEvent.setup>,
+  fileName: string
+): Promise<HTMLElement> {
+  const existing = screen.queryByRole('textbox', { name: `${fileName} 编辑器` });
+  if (existing !== null) return existing;
+  await user.click(await screen.findByRole('button', { name: '编辑' }));
+  return await screen.findByRole('textbox', { name: `${fileName} 编辑器` });
+}
 
 type ServiceOptions = {
   directories?: Record<string, WorkspaceDirectoryResponse>;
@@ -756,6 +880,8 @@ function createThread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
   return {
     id: 'thread-1',
     title: '会话',
+    projectId: 'project-one',
+    origin: 'clawee_created',
     codexThreadId: null,
     cwd: '/Users/test/repo',
     canonicalCwd: '/Users/test/repo',

@@ -105,11 +105,7 @@ describe('NotificationService', () => {
       token: 'runtime-token'
     })).resolves.toBe(true);
     expect(configureBackgroundNotifications).toHaveBeenCalledWith({
-      enabled: true,
-      connection: {
-        baseUrl: 'http://127.0.0.1:60764',
-        token: 'runtime-token'
-      }
+      enabled: true
     });
     expect(service.shouldNotifyInForeground('schedule')).toBe(false);
     expect(service.shouldNotifyInForeground('api')).toBe(true);

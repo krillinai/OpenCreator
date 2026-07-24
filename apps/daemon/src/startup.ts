@@ -6,11 +6,15 @@ import type {
 
 export function resolveProductionServerEnvironment(
   env: NodeJS.ProcessEnv = process.env
-): Pick<BuildServerInput, 'dataDir' | 'codexBin' | 'codexHome'> {
+): Pick<BuildServerInput, 'dataDir' | 'codexBin' | 'codexHome' | 'defaultCwd'> {
   return {
     ...optionalEnvironmentValue('dataDir', env.CLAWEE_DATA_DIR),
     ...optionalEnvironmentValue('codexBin', env.CLAWEE_CODEX_BIN),
-    ...optionalEnvironmentValue('codexHome', env.CLAWEE_CODEX_HOME)
+    ...optionalEnvironmentValue(
+      'codexHome',
+      env.CODEX_HOME ?? env.CLAWEE_CODEX_HOME
+    ),
+    ...optionalEnvironmentValue('defaultCwd', env.CLAWEE_DEFAULT_CWD)
   };
 }
 
@@ -33,7 +37,9 @@ export function prepareSchedulerStartup(input: {
   return result;
 }
 
-function optionalEnvironmentValue<Key extends 'dataDir' | 'codexBin' | 'codexHome'>(
+function optionalEnvironmentValue<
+  Key extends 'dataDir' | 'codexBin' | 'codexHome' | 'defaultCwd'
+>(
   key: Key,
   value: string | undefined
 ): Partial<Record<Key, string>> {
