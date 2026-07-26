@@ -1,11 +1,16 @@
-import { useState } from 'react';
-import { Moon, Sun } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Check, Moon, Sun } from 'lucide-react';
 import type {
   CodexMcpListResponse,
   CodexProfileListResponse,
   CodexStatusResponse
 } from '@clawee/protocol';
 import type { ColorMode } from '../../styles/color-mode.js';
+import {
+  defaultCustomAccentColor,
+  normalizeHexColor,
+  type AccentColor
+} from '../../styles/accent-color.js';
 import type { ProjectPermission } from '../projects/project-model.js';
 import { McpSettingsView, type McpCapabilities, type McpSettingsService } from './McpSettingsView.js';
 import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
@@ -36,6 +41,10 @@ export type ClaweeSettingsViewProps = {
   onDefaultPermissionChange?(permission: DefaultPermissionPreference): void;
   colorMode?: ColorMode;
   onColorModeChange?(mode: ColorMode): void;
+  accentColor?: AccentColor;
+  onAccentColorChange?(color: AccentColor): void;
+  customAccentColor?: string;
+  onCustomAccentColorChange?(color: string): void;
   desktopCloseBehavior?: 'hide' | 'quit';
   onDesktopCloseBehaviorChange?(behavior: 'hide' | 'quit'): void;
   mcpService?: McpSettingsService | null;
@@ -110,6 +119,10 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
             onDefaultPermissionChange={props.onDefaultPermissionChange}
             colorMode={props.colorMode ?? 'dark'}
             onColorModeChange={props.onColorModeChange}
+            accentColor={props.accentColor ?? 'neutral'}
+            onAccentColorChange={props.onAccentColorChange}
+            customAccentColor={props.customAccentColor ?? defaultCustomAccentColor}
+            onCustomAccentColorChange={props.onCustomAccentColorChange}
             desktopCloseBehavior={props.desktopCloseBehavior}
             onDesktopCloseBehaviorChange={props.onDesktopCloseBehaviorChange}
           />
@@ -165,6 +178,10 @@ function GeneralSettings(props: {
   onDefaultPermissionChange?(permission: DefaultPermissionPreference): void;
   colorMode: ColorMode;
   onColorModeChange?(mode: ColorMode): void;
+  accentColor: AccentColor;
+  onAccentColorChange?(color: AccentColor): void;
+  customAccentColor: string;
+  onCustomAccentColorChange?(color: string): void;
   desktopCloseBehavior?: 'hide' | 'quit';
   onDesktopCloseBehaviorChange?(behavior: 'hide' | 'quit'): void;
 }) {
@@ -178,6 +195,12 @@ function GeneralSettings(props: {
         <SettingsColorModeRow
           value={props.colorMode}
           onChange={(mode) => props.onColorModeChange?.(mode)}
+        />
+        <SettingsAccentColorRow
+          value={props.accentColor}
+          customColor={props.customAccentColor}
+          onChange={(color) => props.onAccentColorChange?.(color)}
+          onCustomColorChange={(color) => props.onCustomAccentColorChange?.(color)}
         />
         <SettingsSelectRow
           label="默认权限"
@@ -247,6 +270,143 @@ function SettingsColorModeRow(props: { value: ColorMode; onChange(mode: ColorMod
           <Moon size={14} aria-hidden="true" />
           深色
         </button>
+      </div>
+    </div>
+  );
+}
+
+const accentColorOptions: Array<{
+  value: AccentColor;
+  label: string;
+  swatch: string;
+}> = [
+  { value: 'neutral', label: '默认灰', swatch: '#85858b' },
+  { value: 'blue', label: '蓝色', swatch: '#3b82f6' },
+  { value: 'cyan', label: '青色', swatch: '#06b6d4' },
+  { value: 'purple', label: '紫色', swatch: '#8b5cf6' },
+  { value: 'orange', label: '橙色', swatch: '#f97316' },
+  { value: 'red', label: '红色', swatch: '#ef4444' }
+];
+
+function SettingsAccentColorRow(props: {
+  value: AccentColor;
+  customColor: string;
+  onChange(color: AccentColor): void;
+  onCustomColorChange(color: string): void;
+}) {
+  const labelId = 'settings-accent-color-label';
+  const inputId = 'settings-custom-accent-color';
+  const normalizedCustomColor = normalizeHexColor(props.customColor) ?? defaultCustomAccentColor;
+  const [draft, setDraft] = useState(normalizedCustomColor);
+  const [error, setError] = useState<string>();
+  const inputFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!inputFocusedRef.current) setDraft(normalizedCustomColor);
+  }, [normalizedCustomColor]);
+
+  function commitDraft() {
+    const normalized = normalizeHexColor(draft);
+    if (normalized === undefined) {
+      setError('请输入 3 位或 6 位十六进制色值');
+      return;
+    }
+    setDraft(normalized);
+    setError(undefined);
+    props.onCustomColorChange(normalized);
+  }
+
+  return (
+    <div className="settings-row settings-control-row settings-accent-row">
+      <span id={labelId}>重点色</span>
+      <div className="settings-accent-controls">
+        <div className="settings-accent-color">
+          <div className="settings-accent-options" role="radiogroup" aria-labelledby={labelId}>
+            {accentColorOptions.map(option => {
+              const selected = props.value === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={option.label}
+                  title={option.label}
+                  style={{ '--settings-accent-swatch': option.swatch } as CSSProperties}
+                  onClick={() => props.onChange(option.value)}
+                >
+                  <span className="settings-accent-swatch" aria-hidden="true">
+                    {selected ? <Check size={11} strokeWidth={2.5} /> : null}
+                  </span>
+                </button>
+              );
+            })}
+            <div className="settings-custom-accent-option">
+              <span className="settings-accent-separator" aria-hidden="true">｜</span>
+              <button
+                className="settings-custom-accent-choice"
+                type="button"
+                role="radio"
+                aria-checked={props.value === 'custom'}
+                aria-label="自定义"
+                title="自定义"
+                style={{ '--settings-accent-swatch': normalizedCustomColor } as CSSProperties}
+                onClick={() => props.onChange('custom')}
+              >
+                <span className="settings-accent-swatch" aria-hidden="true">
+                  {props.value === 'custom' ? <Check size={11} strokeWidth={2.5} /> : null}
+                </span>
+                <span className="settings-custom-accent-text">自定义</span>
+              </button>
+            </div>
+          </div>
+          <div className="settings-custom-accent">
+            <label className="settings-custom-accent-input-label" htmlFor={inputId}>
+              自定义重点色色值
+            </label>
+            <input
+              id={inputId}
+              type="text"
+              inputMode="text"
+              autoComplete="off"
+              spellCheck={false}
+              value={draft}
+              aria-invalid={error === undefined ? undefined : 'true'}
+              aria-describedby={error === undefined ? undefined : `${inputId}-error`}
+              onFocus={() => {
+                inputFocusedRef.current = true;
+              }}
+              onChange={event => {
+                const nextDraft = event.target.value;
+                setDraft(nextDraft);
+                const normalized = normalizeHexColor(nextDraft);
+                if (normalized === undefined) return;
+                setError(undefined);
+                props.onCustomColorChange(normalized);
+              }}
+              onBlur={() => {
+                inputFocusedRef.current = false;
+                commitDraft();
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  commitDraft();
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setDraft(normalizedCustomColor);
+                  setError(undefined);
+                }
+              }}
+            />
+            {error === undefined ? null : (
+              <p id={`${inputId}-error`} className="settings-custom-accent-error" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

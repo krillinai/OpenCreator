@@ -30,6 +30,7 @@ export function ProjectManagementDialog(props: {
   onReplaceDirectory(projectId: string): Promise<void>;
   onAssignThread(threadId: string, projectId: string): Promise<void>;
   onAddProject?(): void | Promise<void>;
+  onAddProjectDirectory?(): void | Promise<void>;
 }) {
   const [editingProjectId, setEditingProjectId] = useState<string>();
   const [assignmentByThreadId, setAssignmentByThreadId] = useState<Record<string, string>>({});
@@ -85,13 +86,21 @@ export function ProjectManagementDialog(props: {
             <h3 id="active-projects-title">活跃项目</h3>
             {props.projects.length === 0 ? (
               <div className="project-management-empty project-management-empty-action">
-                <p>还没有项目。先添加一个项目文件夹，再开始对话或认领已有会话。</p>
-                {props.onAddProject ? (
-                  <button type="button" onClick={() => void props.onAddProject?.()}>
-                    <FolderPlus size={15} aria-hidden="true" />
-                    <span>添加项目文件夹</span>
-                  </button>
-                ) : null}
+                <p>还没有项目。创建项目后即可开始对话或认领已有会话。</p>
+                <div className="project-management-actions">
+                  {props.onAddProject ? (
+                    <button type="button" onClick={() => void props.onAddProject?.()}>
+                      <FolderPlus size={15} aria-hidden="true" />
+                      <span>创建项目</span>
+                    </button>
+                  ) : null}
+                  {props.onAddProjectDirectory ? (
+                    <button type="button" onClick={() => void props.onAddProjectDirectory?.()}>
+                      <FolderPlus size={15} aria-hidden="true" />
+                      <span>使用现有文件夹</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <div className="project-management-list">
@@ -146,7 +155,7 @@ export function ProjectManagementDialog(props: {
                 {props.onAddProject ? (
                   <button type="button" onClick={() => void props.onAddProject?.()}>
                     <FolderPlus size={15} aria-hidden="true" />
-                    <span>添加项目文件夹</span>
+                    <span>创建项目</span>
                   </button>
                 ) : null}
               </div>

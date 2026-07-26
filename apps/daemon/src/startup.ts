@@ -6,7 +6,10 @@ import type {
 
 export function resolveProductionServerEnvironment(
   env: NodeJS.ProcessEnv = process.env
-): Pick<BuildServerInput, 'dataDir' | 'codexBin' | 'codexHome' | 'defaultCwd'> {
+): Pick<
+  BuildServerInput,
+  'dataDir' | 'codexBin' | 'codexHome' | 'defaultCwd' | 'defaultProjectRoot'
+> {
   return {
     ...optionalEnvironmentValue('dataDir', env.CLAWEE_DATA_DIR),
     ...optionalEnvironmentValue('codexBin', env.CLAWEE_CODEX_BIN),
@@ -14,7 +17,11 @@ export function resolveProductionServerEnvironment(
       'codexHome',
       env.CODEX_HOME ?? env.CLAWEE_CODEX_HOME
     ),
-    ...optionalEnvironmentValue('defaultCwd', env.CLAWEE_DEFAULT_CWD)
+    ...optionalEnvironmentValue('defaultCwd', env.CLAWEE_DEFAULT_CWD),
+    ...optionalEnvironmentValue(
+      'defaultProjectRoot',
+      env.CLAWEE_DEFAULT_PROJECT_ROOT
+    )
   };
 }
 
@@ -37,9 +44,7 @@ export function prepareSchedulerStartup(input: {
   return result;
 }
 
-function optionalEnvironmentValue<
-  Key extends 'dataDir' | 'codexBin' | 'codexHome' | 'defaultCwd'
->(
+function optionalEnvironmentValue<Key extends keyof BuildServerInput>(
   key: Key,
   value: string | undefined
 ): Partial<Record<Key, string>> {

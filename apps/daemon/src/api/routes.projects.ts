@@ -1,4 +1,5 @@
 import type {
+  CreateManagedProjectRequest,
   CreateProjectRequest,
   LegacyLocalStorageProjectV1,
   MigrateLocalStorageProjectsV1Request,
@@ -50,6 +51,18 @@ export async function registerProjectRoutes(
     }
     try {
       return reply.code(201).send({ project: manager.createProject(body.value) });
+    } catch (error) {
+      return sendProjectError(reply, error);
+    }
+  });
+
+  server.post<{ Body: unknown }>('/projects/managed', async (request, reply) => {
+    const body = parseCreateManagedProjectRequest(request.body);
+    if (!body.ok) {
+      return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
+    }
+    try {
+      return reply.code(201).send({ project: manager.createManagedProject(body.value) });
     } catch (error) {
       return sendProjectError(reply, error);
     }
@@ -172,6 +185,19 @@ function parseCreateProjectRequest(body: unknown): ParseResult<CreateProjectRequ
       ...shared.value
     }
   };
+}
+
+function parseCreateManagedProjectRequest(
+  body: unknown
+): ParseResult<CreateManagedProjectRequest> {
+  if (!isPlainObject(body)) return { ok: false, message: 'body must be an object' };
+  if (typeof body.name !== 'string') {
+    return { ok: false, message: 'name must be a string' };
+  }
+  if (Object.keys(body).some(key => key !== 'name')) {
+    return { ok: false, message: 'body contains unsupported fields' };
+  }
+  return { ok: true, value: { name: body.name } };
 }
 
 function parseUpdateProjectRequest(body: unknown): ParseResult<UpdateProjectRequest> {
@@ -306,6 +332,9 @@ function parseProjectConfig(
 
 function sendProjectError(reply: FastifyReply, error: unknown) {
   if (!(error instanceof ProjectManagerError)) throw error;
+  if (error.code === 'PROJECT_NAME_INVALID') {
+    return reply.code(400).send(apiError(error.code, error.message));
+  }
   if (error.code === 'PROJECT_NOT_FOUND') {
     return reply.code(404).send(apiError(error.code, error.message));
   }

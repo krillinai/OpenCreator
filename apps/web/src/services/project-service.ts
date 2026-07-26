@@ -1,5 +1,6 @@
 import type {
   AssignThreadProjectRequest,
+  CreateManagedProjectRequest,
   CreateProjectRequest,
   MigrateLocalStorageProjectsV1Request,
   MigrateLocalStorageProjectsV1Response,
@@ -20,6 +21,11 @@ export function createProjectService(client: RuntimeClient) {
     },
     createProject(input: CreateProjectRequest): Promise<{ project: ProjectResponse }> {
       return client.post('/projects', input);
+    },
+    createManagedProject(
+      input: CreateManagedProjectRequest
+    ): Promise<{ project: ProjectResponse }> {
+      return client.post('/projects/managed', input);
     },
     updateProject(
       projectId: string,

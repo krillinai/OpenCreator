@@ -1,4 +1,5 @@
 import type {
+  CreateManagedProjectRequest,
   CreateProjectRequest,
   MigrateLocalStorageProjectsV1Request,
   MigrateLocalStorageProjectsV1Response,
@@ -10,6 +11,7 @@ import type {
 
 export type ProjectManagerErrorCode =
   | 'PROJECT_NOT_FOUND'
+  | 'PROJECT_NAME_INVALID'
   | 'PROJECT_DIRECTORY_CONFLICT'
   | 'PROJECT_DIRECTORY_UNAVAILABLE';
 
@@ -28,6 +30,7 @@ export type CreateMigratedProjectInput = CreateProjectRequest & {
 
 export type ProjectManager = {
   createProject(input: CreateProjectRequest): ProjectResponse;
+  createManagedProject(input: CreateManagedProjectRequest): ProjectResponse;
   createMigratedProject(input: CreateMigratedProjectInput): ProjectResponse;
   migrateLocalStorageV1(
     input: MigrateLocalStorageProjectsV1Request

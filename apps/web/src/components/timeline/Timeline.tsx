@@ -99,7 +99,7 @@ function getTimelineAvatar(item: TimelineItem): string {
 
 function renderTimelineAvatar(item: TimelineItem) {
   if (item.kind === 'assistant_message') {
-    return <img className="timeline-avatar-logo" src="/logo-cor.png" alt="" />;
+    return <span className="timeline-avatar-logo" aria-hidden="true" />;
   }
   if (item.kind === 'schedule_trigger') {
     return <Clock3 aria-hidden="true" size={14} />;
@@ -933,7 +933,10 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       return !(
         item.type === 'item'
         && item.item.kind === 'user_message'
-        && item.item.runStatus === 'queued'
+        && (
+          item.item.runStatus === 'queued'
+          || (item.item.runStatus === 'canceled' && item.item.wasQueued === true)
+        )
       );
     }),
     [props.items]

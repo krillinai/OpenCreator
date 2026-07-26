@@ -26,6 +26,29 @@ afterEach(async () => {
 });
 
 describe('project API', () => {
+  it('creates managed projects under the configured Clawee directory', async () => {
+    await createSetup();
+
+    const created = await request('POST', '/projects/managed', { name: ' 浏览器项目 ' });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json().project).toMatchObject({
+      name: '浏览器项目',
+      cwd: join(tempDir, 'Clawee', '浏览器项目'),
+      directoryState: 'available'
+    });
+    expect(realpathSync(join(tempDir, 'Clawee', '浏览器项目')))
+      .toBe(created.json().project.canonicalCwd);
+
+    const invalid = await request('POST', '/projects/managed', { name: '../escape' });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.code).toBe('PROJECT_NAME_INVALID');
+
+    const duplicate = await request('POST', '/projects/managed', { name: '浏览器项目' });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().error.code).toBe('PROJECT_DIRECTORY_CONFLICT');
+  });
+
   it('manages projects without deleting threads and replaces execution directories atomically', async () => {
     const setup = await createSetup();
     const firstDir = join(tempDir, 'first');
@@ -378,6 +401,7 @@ async function createSetup(): Promise<{ db: Database.Database }> {
   server = await buildServer({
     token: 'secret',
     dataDir: tempDir,
+    defaultProjectRoot: tempDir,
     db,
     codexSessionProvider: fakeProvider()
   });

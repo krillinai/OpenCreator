@@ -1286,6 +1286,42 @@ describe('run manager', () => {
     expect(fake.readPrompt()).toBe('first');
   });
 
+  it('steers a selected queued run to the front and interrupts the active run', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-steer-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [],
+      hang: true
+    });
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      resumeCapabilityVerified: true
+    });
+    const thread = createPersistedThread(threadManager);
+
+    const active = manager.startRun(threadRun(thread, 'active'));
+    const firstQueued = manager.startRun(threadRun(thread, 'first queued'));
+    const selectedQueued = manager.startRun(threadRun(thread, 'selected queued'));
+
+    expect(manager.getRun(firstQueued.id)).toMatchObject({ queuePosition: 1 });
+    expect(manager.getRun(selectedQueued.id)).toMatchObject({ queuePosition: 2 });
+    expect(manager.steerRun?.(selectedQueued.id)).toBe(true);
+    expect(manager.getRun(selectedQueued.id)).toMatchObject({ queuePosition: 1 });
+    expect(manager.getRun(firstQueued.id)).toMatchObject({ queuePosition: 2 });
+
+    await waitForRunStatus(manager, active.id, 'canceled');
+    await waitForRunStatus(manager, selectedQueued.id, 'running');
+    await expect.poll(
+      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : ''
+    ).toBe('selected queued');
+
+    expect(manager.cancelRun(selectedQueued.id)).toBe(true);
+    await waitForRunStatus(manager, selectedQueued.id, 'canceled');
+    await waitForRunStatus(manager, firstQueued.id, 'running');
+    expect(manager.cancelRun(firstQueued.id)).toBe(true);
+    await waitForRunStatus(manager, firstQueued.id, 'canceled');
+  });
+
   it('interrupts the active run and prioritizes the follow-up ahead of regular queued runs', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-interrupt-'));
     const fake = createFakeCodex(tempDir, {

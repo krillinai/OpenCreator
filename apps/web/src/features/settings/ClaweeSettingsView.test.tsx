@@ -103,6 +103,65 @@ describe('ClaweeSettingsView', () => {
     expect(onColorModeChange).toHaveBeenCalledWith('light');
   });
 
+  it('renders seven accent color swatches and notifies when the selection changes', () => {
+    const onAccentColorChange = vi.fn();
+    render(
+      <ClaweeSettingsView
+        runtimeStatus={runtimeStatus}
+        accentColor="neutral"
+        onAccentColorChange={onAccentColorChange}
+        onBack={vi.fn()}
+      />
+    );
+
+    const accentControl = screen.getByRole('radiogroup', { name: '重点色' });
+    expect(within(accentControl).getAllByRole('radio')).toHaveLength(7);
+    expect(within(accentControl).getByRole('radio', { name: '默认灰' }))
+      .toHaveAttribute('aria-checked', 'true');
+    const customAccent = within(accentControl).getByRole('radio', { name: '自定义' });
+    expect(customAccent).toHaveTextContent('自定义');
+    expect(customAccent.querySelector('.settings-accent-swatch')).toBeInTheDocument();
+    expect(customAccent.firstElementChild).toHaveClass('settings-accent-swatch');
+    expect(customAccent.lastElementChild).toHaveClass('settings-custom-accent-text');
+    expect(customAccent.querySelector('svg')).not.toBeInTheDocument();
+    expect(customAccent).toHaveStyle({ '--settings-accent-swatch': '#3b82f6' });
+    expect(screen.getByText('｜')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '自定义重点色色值' })).toHaveValue('#3b82f6');
+
+    fireEvent.click(within(accentControl).getByRole('radio', { name: '橙色' }));
+    expect(onAccentColorChange).toHaveBeenCalledWith('orange');
+  });
+
+  it('validates and applies a custom accent color without blocking draft input', () => {
+    const onCustomAccentColorChange = vi.fn();
+    render(
+      <ClaweeSettingsView
+        runtimeStatus={runtimeStatus}
+        accentColor="custom"
+        customAccentColor="#3b82f6"
+        onCustomAccentColorChange={onCustomAccentColorChange}
+        onBack={vi.fn()}
+      />
+    );
+
+    const input = screen.getByRole('textbox', { name: '自定义重点色色值' });
+    expect(input).toHaveValue('#3b82f6');
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '#0af' } });
+    expect(onCustomAccentColorChange).toHaveBeenLastCalledWith('#00aaff');
+    expect(input).toHaveValue('#0af');
+
+    fireEvent.change(input, { target: { value: '#12' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByRole('alert')).toHaveTextContent('请输入 3 位或 6 位十六进制色值');
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(input).toHaveValue('#3b82f6');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('updates the desktop close behavior when Desktop preferences are available', () => {
     const onDesktopCloseBehaviorChange = vi.fn();
     render(

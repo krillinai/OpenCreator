@@ -35,9 +35,10 @@ function hexChannels(value: string): number[] {
 }
 
 describe('app CSS visual contracts', () => {
-  it('uses complete light and dark monochrome theme tokens', () => {
+  it('uses complete light and dark neutral theme tokens outside approvals', () => {
+    const neutralTokensCss = tokensCss.split(':root[data-accent="blue"]')[0]!;
     const themeSources = [
-      tokensCss,
+      neutralTokensCss,
       appCss,
       skillMarketCss,
       schedulesCss,
@@ -45,11 +46,12 @@ describe('app CSS visual contracts', () => {
       taskCenterCss,
       appControllerTsx,
     ].join('\n');
+    const neutralThemeSources = themeSources.replaceAll('#f59e0b', '');
     const colorChannels = [
-      ...Array.from(themeSources.matchAll(/#([\da-f]{3}|[\da-f]{6})(?![\da-f])/gi), match =>
+      ...Array.from(neutralThemeSources.matchAll(/#([\da-f]{3}|[\da-f]{6})(?![\da-f])/gi), match =>
         hexChannels(match[1]!)
       ),
-      ...Array.from(themeSources.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g), match =>
+      ...Array.from(neutralThemeSources.matchAll(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g), match =>
         [Number(match[1]), Number(match[2]), Number(match[3])]
       ),
     ];
@@ -62,6 +64,16 @@ describe('app CSS visual contracts', () => {
     expect(tokensCss).toContain('--accent: #303035;');
     expect(colorChannels.length).toBeGreaterThan(0);
     expect(colorChannels.every(channels => Math.max(...channels) - Math.min(...channels) <= 8)).toBe(true);
+  });
+
+  it('defines selectable accent tokens for both light and dark modes', () => {
+    for (const color of ['blue', 'cyan', 'purple', 'orange', 'red']) {
+      expect(tokensCss).toContain(`:root[data-accent="${color}"]`);
+      expect(tokensCss).toContain(`:root[data-theme="light"][data-accent="${color}"]`);
+    }
+    expect(tokensCss).toContain(':root[data-accent="custom"]');
+    expect(tokensCss).toContain('--accent: var(--custom-accent-value);');
+    expect(tokensCss).toContain('--on-accent: var(--custom-on-accent);');
   });
 
   it('keeps sidebar project rows fixed while loading and places the scrollbar at the edge', () => {
@@ -245,8 +257,29 @@ describe('app CSS visual contracts', () => {
 
   it('centers the collapsed sidebar logo inside its square button', () => {
     const brandButton = cssBlock('.sidebar-brand-button');
+    const fullLogo = cssBlock('.sidebar-logo-full');
+    const logoMark = cssBlock('.sidebar-logo-mark');
 
     expect(brandButton).toContain('padding: 0;');
+    expect(fullLogo).toContain('transform: translateX(-11px);');
+    expect(logoMark).toContain('width: 38px;');
+    expect(logoMark).toContain('height: 38px;');
+    expect(appCss).not.toContain('.sidebar-logo-mark-crop');
+  });
+
+  it('aligns sidebar project actions to shared hierarchy columns', () => {
+    const sectionHeading = cssBlock('.sidebar-section-heading');
+    const sectionActions = cssBlock('.sidebar-section-actions');
+    const projectRowShell = cssBlock('.sidebar-project-row-shell');
+    const projectActions = cssBlock('.sidebar-project-actions');
+
+    expect(sectionHeading).toContain('grid-template-columns: minmax(0, 1fr) 58px;');
+    expect(sectionHeading).toContain('padding-right: 0;');
+    expect(sectionActions).toContain('width: 58px;');
+    expect(sectionActions).toContain('grid-template-columns: repeat(2, 28px);');
+    expect(projectRowShell).toContain('grid-template-columns: minmax(0, 1fr) 58px;');
+    expect(projectActions).toContain('width: 58px;');
+    expect(projectActions).toContain('grid-template-columns: repeat(2, 28px);');
   });
 
   it('uses an avatar-first compact metadata flow without card covers', () => {
@@ -364,17 +397,28 @@ describe('app CSS visual contracts', () => {
 
   it('keeps the composer compact over one continuous conversation background', () => {
     const composerWrap = cssBlock('.composer-wrap');
+    const composerStack = cssBlock('.composer-stack');
     const composer = cssBlock('.clawee-composer');
     const composerTextarea = cssBlock('.clawee-composer textarea');
+    const composerQueue = cssBlock('.composer-queue');
+    const composerQueueItem = cssBlock('.composer-queue-item');
 
     expect(composerWrap).toContain('position: relative;');
     expect(composerWrap).toContain('padding: 0 clamp(18px, 4vw, 52px) 37px;');
     expect(composerWrap).toContain('background: transparent;');
     expect(appCss).not.toContain('.composer-wrap::before');
+    expect(composerStack).toContain('width: min(980px, 100%);');
+    expect(composerStack).toContain('display: grid;');
     expect(composer).toContain('position: relative;');
     expect(composer).toContain('z-index: 1;');
     expect(composer).toContain('gap: 8px;');
     expect(composer).toContain('padding: 10px 18px;');
+    expect(composer).toContain('width: 100%;');
+    expect(composerQueue).toContain('margin: 0 14px -1px;');
+    expect(composerQueue).toContain('border-bottom: 0;');
+    expect(composerQueue).toContain('max-height: 148px;');
+    expect(composerQueueItem).toContain('grid-template-columns: 18px minmax(0, 1fr) auto auto auto;');
+    expect(composerQueueItem).not.toContain('background:');
     expect(appCss).toMatch(/\.composer-wrap\s*\{\s*padding:\s*0 12px 6px;/);
     expect(composerTextarea).toContain('min-height: 48px;');
     expect(composerTextarea).toContain('max-height: 268px;');
@@ -415,7 +459,49 @@ describe('app CSS visual contracts', () => {
     const selectedColorMode = cssBlock('.settings-color-mode button[aria-pressed="true"]');
 
     expect(colorMode).toContain('display: inline-flex;');
-    expect(selectedColorMode).toContain('color: var(--on-accent);');
+    expect(selectedColorMode).toContain('background: var(--text);');
+    expect(selectedColorMode).toContain('color: var(--bg);');
+    expect(selectedColorMode).toContain('box-shadow: none;');
+    expect(selectedColorMode).not.toContain('var(--accent)');
+  });
+
+  it('renders accent choices as compact color swatches', () => {
+    const accentColor = cssBlock('.settings-accent-color');
+    const accentButton = cssBlock('.settings-accent-options > button');
+    const selectedAccent = cssBlock('.settings-accent-options > button[aria-checked="true"]');
+    const swatch = cssBlock('.settings-accent-swatch');
+
+    expect(accentColor).toContain('display: flex;');
+    expect(accentColor).toContain('flex-wrap: wrap;');
+    expect(accentButton).toContain('width: 30px;');
+    expect(selectedAccent).toContain('var(--settings-accent-swatch)');
+    expect(swatch).toContain('background: var(--settings-accent-swatch);');
+  });
+
+  it('separates the custom accent label, preview swatch, and value input', () => {
+    const customAccentOption = cssBlock('.settings-custom-accent-option');
+    const customAccentChoice = cssBlock(
+      '.settings-custom-accent-option > .settings-custom-accent-choice'
+    );
+    const separator = cssBlock('.settings-row .settings-accent-separator');
+
+    expect(customAccentOption).toContain('display: inline-flex;');
+    expect(customAccentChoice).toContain('width: auto;');
+    expect(customAccentChoice).toContain('display: inline-flex;');
+    expect(customAccentChoice).toContain('flex-direction: row;');
+    expect(customAccentChoice).toContain('align-items: center;');
+    expect(customAccentChoice).toContain('background: transparent;');
+    expect(separator).toContain('color: var(--subtle);');
+  });
+
+  it('keeps the custom accent input compact and free of visual effects', () => {
+    const customAccent = cssBlock('.settings-custom-accent');
+    const customAccentInput = cssBlock('.settings-custom-accent input');
+
+    expect(customAccent).toContain('width: 128px;');
+    expect(customAccentInput).toContain('height: 30px;');
+    expect(customAccentInput).toContain('background: var(--surface-2);');
+    expect(customAccentInput).toContain('box-shadow: none;');
   });
 
   it('keeps mobile settings navigation above content without pointer overlap', () => {
@@ -484,12 +570,16 @@ describe('app CSS visual contracts', () => {
 
   it('keeps the file workspace header compact and single-layered', () => {
     const workspace = cssBlock('.file-workspace-view');
+    const conversationFileLayout = cssBlock('.conversation-file-layout');
     const topBar = cssBlock('.file-top-bar');
     const topBarMain = cssBlock('.file-top-bar-main');
     const topBarPath = cssBlock('.file-top-bar-path');
     const hiddenEditorToolbar = cssBlock('.file-editor-pane[data-toolbar="hidden"]');
 
     expect(workspace).toContain('grid-template-rows: auto minmax(0, 1fr);');
+    expect(conversationFileLayout).toContain('420px');
+    expect(conversationFileLayout).toContain('calc(100% - 426px)');
+    expect(conversationFileLayout).toContain('minmax(420px, 1fr)');
     expect(topBar).toContain('min-height: 72px;');
     expect(topBar).toContain('padding: 12px 16px 12px 18px;');
     expect(topBarMain).toContain('flex-direction: column;');
@@ -497,33 +587,110 @@ describe('app CSS visual contracts', () => {
     expect(hiddenEditorToolbar).toContain('grid-template-rows: auto minmax(0, 1fr);');
   });
 
-  it('uses a neutral disabled state for the empty composer send button', () => {
+  it('uses solid fills for active and disabled composer send buttons', () => {
+    const composerControlBlocks = Array.from(
+      appCss.matchAll(/\.composer-send,\s*\.composer-stop\s*\{(?<body>[^}]*)\}/g),
+      match => match.groups?.body ?? ''
+    );
+    const activeComposerControls = composerControlBlocks.find(block =>
+      block.includes('background: var(--accent);')
+    ) ?? '';
+    const sendHover = cssBlock('.composer-send:not(:disabled):hover');
+    const submitMenuButton = Array.from(
+      appCss.matchAll(/\.composer-submit-menu-button\s*\{(?<body>[^}]*)\}/g),
+      match => match.groups?.body ?? ''
+    ).find(block => block.includes('background: var(--accent);')) ?? '';
     const disabledSend = cssBlock('.composer-send:disabled');
     const disabledSendIcon = cssBlock('.composer-send:disabled svg');
 
-    expect(disabledSend).toContain('background: var(--control-disabled);');
+    expect(activeComposerControls).toContain('background: var(--accent);');
+    expect(activeComposerControls).not.toContain('linear-gradient');
+    expect(sendHover).toContain('color-mix(in srgb, var(--accent) 90%, var(--text))');
+    expect(submitMenuButton).toContain('background: var(--accent);');
+    expect(submitMenuButton).not.toContain('linear-gradient');
+    expect(disabledSend).toContain('background: var(--surface-3);');
     expect(disabledSend).toContain('color: var(--control-disabled-text);');
     expect(disabledSendIcon).toContain('color: var(--control-disabled-text);');
   });
 
+  it('keeps composer image attachments as compact square previews', () => {
+    const tray = cssBlock('.composer-attachment-tray');
+    const attachment = cssBlock('.composer-attachment');
+    const trigger = cssBlock(
+      '.clawee-composer button.composer-attachment-preview-trigger:not(:disabled)'
+    );
+    const thumbnail = cssBlock('.composer-attachment-preview-trigger img');
+    const preview = cssBlock('.attachment-image-preview');
+    const previewImage = cssBlock('.attachment-image-preview > img');
+
+    expect(tray).toContain('display: flex;');
+    expect(tray).toContain('flex-wrap: wrap;');
+    expect(attachment).toContain('width: 72px;');
+    expect(attachment).toContain('flex: 0 0 72px;');
+    expect(attachment).toContain('aspect-ratio: 1;');
+    expect(trigger).toContain('position: absolute;');
+    expect(trigger).toContain('inset: 0;');
+    expect(thumbnail).toContain('object-fit: cover;');
+    expect(preview).toContain('width: min(960px, 80vw);');
+    expect(preview).toContain('height: min(720px, 80dvh);');
+    expect(preview).toContain('overflow: hidden;');
+    expect(previewImage).toContain('position: absolute;');
+    expect(previewImage).toContain('inset: 0;');
+    expect(previewImage).toContain('width: 100%;');
+    expect(previewImage).toContain('height: 100%;');
+    expect(previewImage).toContain('min-height: 0;');
+    expect(previewImage).toContain('max-height: 100%;');
+    expect(previewImage).toContain('object-fit: contain;');
+    expect(previewImage).toContain('background: transparent;');
+  });
+
   it('keeps user messages as bubbles and assistant replies as unframed prose', () => {
     const userBubble = cssBlock('.timeline-user_message .timeline-bubble');
+    const lightUserBubble = cssBlock(':root[data-theme="light"] .timeline-user_message .timeline-bubble');
     const assistantBubble = cssBlock('.timeline-assistant_message .timeline-bubble');
 
+    expect(userBubble).toContain('border: 0;');
     expect(userBubble).toContain('border-top-right-radius: 0;');
     expect(userBubble).not.toContain('border-bottom-right-radius: 6px;');
+    expect(lightUserBubble).toContain('background: #f2f2f2;');
     expect(assistantBubble).toContain('border: 0;');
     expect(assistantBubble).toContain('border-radius: 0;');
     expect(assistantBubble).toContain('background: transparent;');
   });
 
+  it('uses a very subtle divider between process groups', () => {
+    const processDetails = cssBlock('.timeline-process details');
+
+    expect(processDetails).toContain(
+      'border-bottom: 1px solid color-mix(in srgb, var(--text) 5%, transparent);'
+    );
+    expect(processDetails).not.toContain('border-bottom: 1px solid var(--border);');
+  });
+
+  it('gives approval cards a restrained orange-tinted background', () => {
+    const approvalBubble = cssBlock('.timeline-approval .timeline-bubble');
+
+    expect(approvalBubble).toContain(
+      'background: color-mix(in srgb, #f59e0b 8%, var(--surface-2));'
+    );
+  });
+
   it('shows the assistant avatar as the logo without a container background', () => {
     const assistantAvatar = cssBlock('.timeline-assistant_message .timeline-avatar');
+    const assistantHeader = cssBlock('.timeline-assistant_message .timeline-item-header');
+    const assistantLogo = cssBlock('.timeline-avatar-logo');
+    const lightAssistantLogo = cssBlock(':root[data-theme="light"] .timeline-avatar-logo');
 
     expect(assistantAvatar).toContain('border-color: transparent;');
     expect(assistantAvatar).toContain('background: transparent;');
     expect(assistantAvatar).toContain('box-shadow: none;');
     expect(assistantAvatar).not.toMatch(/linear-gradient|var\(--accent/i);
+    expect(assistantHeader).toContain('gap: 4px;');
+    expect(assistantLogo).toContain("url('/logo-v2-white-logo.svg')");
+    expect(assistantLogo).toContain('background-position: calc(50% - 1px) center;');
+    expect(assistantLogo).toContain('background-size: 50px 50px;');
+    expect(lightAssistantLogo).toContain("url('/logo-v2-black-logo.svg')");
+    expect(appCss).not.toContain('/logo-cor.png');
   });
 
   it('globally disables blur and shadow effects', () => {

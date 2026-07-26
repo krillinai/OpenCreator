@@ -1125,6 +1125,106 @@ describe('App', () => {
     expect(runRequests).toEqual(['thread_a', 'thread_b']);
   });
 
+  it('steers a selected queued task and removes another without waiting for SSE', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    const queuedRuns = new Map<string, ReturnType<typeof createRunResponse>>();
+    const steeredRunIds: string[] = [];
+    const canceledRunIds: string[] = [];
+    let nextQueuedRun = 1;
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({
+          threads: [createThreadResponse({ id: 'thread_queue', title: '队列会话' })]
+        });
+      }
+      if (url.endsWith('/threads/thread_queue/history?limit=50')) {
+        return jsonResponse({ threadId: 'thread_queue', codexThreadId: null, items: [] });
+      }
+      if (url.endsWith('/threads/thread_queue/runs?limit=50')) {
+        return jsonResponse({
+          runs: [
+            createRunResponse({ id: 'run_active', threadId: 'thread_queue', status: 'running' }),
+            ...queuedRuns.values()
+          ]
+        });
+      }
+      if (url.endsWith('/runs') && init?.method === 'POST') {
+        const id = `run_queued_${nextQueuedRun++}`;
+        const run = createRunResponse({
+          id,
+          threadId: 'thread_queue',
+          status: 'queued',
+          submissionMode: 'enqueue',
+          queuePosition: queuedRuns.size + 1
+        });
+        queuedRuns.set(id, run);
+        return jsonResponse(run, { status: 202 });
+      }
+      const steerMatch = url.match(/\/runs\/(run_queued_\d+)\/steer$/);
+      if (steerMatch !== null && init?.method === 'POST') {
+        steeredRunIds.push(steerMatch[1]!);
+        return jsonResponse({ id: steerMatch[1], steered: true }, { status: 202 });
+      }
+      const cancelMatch = url.match(/\/runs\/(run_queued_\d+)\/cancel$/);
+      if (cancelMatch !== null && init?.method === 'POST') {
+        const id = cancelMatch[1]!;
+        canceledRunIds.push(id);
+        queuedRuns.set(id, createRunResponse({
+          id,
+          threadId: 'thread_queue',
+          status: 'canceled'
+        }));
+        return jsonResponse({ id, canceled: true }, { status: 202 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async input => {
+          await new Promise<void>(resolve => {
+            input.signal?.addEventListener('abort', () => resolve(), { once: true });
+          });
+        }}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /队列会话/ }));
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await user.type(textbox, '优先处理这一条');
+    await user.click(screen.getByRole('button', { name: '排队发送' }));
+    await user.click(await screen.findByRole('button', {
+      name: '优先执行等待任务 优先处理这一条'
+    }));
+    await waitFor(() => expect(steeredRunIds).toEqual(['run_queued_1']));
+
+    await user.type(textbox, '移除这一条');
+    await user.click(screen.getByRole('button', { name: '排队发送' }));
+    await user.click(await screen.findByRole('button', {
+      name: '移除等待任务 移除这一条'
+    }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('移除这一条')).not.toBeInTheDocument();
+    });
+    expect(canceledRunIds).toEqual(['run_queued_2']);
+  });
+
   it('keeps a run subscribed in the background without leaking events into another conversation', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
@@ -3309,7 +3409,9 @@ describe('App', () => {
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'legacy-project' })).toBeInTheDocument();
-    await user.click(await screen.findByRole('button', { name: '添加项目文件夹' }));
+    await user.click(screen.getByRole('button', { name: /选择项目 / }));
+    await user.click(screen.getByRole('button', { name: '新建项目' }));
+    await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(fetchCalls.map(call => [call.url, call.init?.method])).toContainEqual([
@@ -3334,6 +3436,47 @@ describe('App', () => {
       && call.init?.method === 'POST'
     ))).toBe(true);
     expect(window.localStorage.getItem(PROJECTS_STORAGE_KEY)).toBe(legacyProjects);
+  });
+
+  it('creates a managed project by name through the browser host', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      fetchCalls.push({ url, init });
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: '创建项目' }));
+
+    expect(await screen.findByRole('dialog', { name: '创建项目' })).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'browser-project');
+    await user.click(screen.getByRole('button', { name: '创建' }));
+
+    expect(await screen.findByRole('button', { name: 'browser-project' })).toBeInTheDocument();
+    const createCall = findPostCall(fetchCalls, '/projects/managed');
+    expect(createCall).toBeDefined();
+    expect(readRequestBody(createCall!.init!)).toEqual({ name: 'browser-project' });
   });
 
   it('adds a project by dropping a folder into the desktop workspace', async () => {
@@ -3419,11 +3562,13 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
-    const addProjectButton = await screen.findByRole('button', {
-      name: '添加项目文件夹'
-    });
-    await user.click(addProjectButton);
-    await user.click(addProjectButton);
+    const openExistingFolderPicker = async () => {
+      await user.click(screen.getByRole('button', { name: /选择项目 / }));
+      await user.click(screen.getByRole('button', { name: '新建项目' }));
+      await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+    };
+    await openExistingFolderPicker();
+    await openExistingFolderPicker();
 
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
 
@@ -3476,7 +3621,7 @@ describe('App', () => {
     }));
     await user.click(screen.getByRole('button', { name: '新建项目' }));
     await user.click(screen.getByRole('menuitem', { name: '新建空白项目' }));
-    await user.type(screen.getByRole('textbox', { name: '项目名称' }), 'blank-project');
+    await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'blank-project');
     await user.click(screen.getByRole('button', { name: '创建' }));
 
     expect(hostBridge.createProjectDirectory).toHaveBeenCalledWith('blank-project');
@@ -4902,11 +5047,17 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '文件' }));
 
     expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '文件' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('heading', { name: '真实文件会话' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Workspace' })).toBeInTheDocument();
     expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '返回对话' })).not.toBeInTheDocument();
     expect(screen.queryByText('暂无预览内容')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '文件' }));
+
+    expect(screen.queryByLabelText('会话和文件工作区')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '文件' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('点击聊天回复中的生成文件链接会直接打开对应文件', async () => {
@@ -5058,6 +5209,16 @@ describe('App', () => {
 
   it('会话和文件工作区之间的分隔条可以拖动调整宽度', async () => {
     const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query.includes('max-width: 1094px'),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -5156,9 +5317,13 @@ describe('App', () => {
     );
 
     expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    const navigation = screen.getByLabelText('Clawee 导航');
+    expect(navigation).toHaveAttribute('data-collapsed', 'false');
     await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
     await user.click(screen.getByRole('button', { name: '文件' }));
     await screen.findByRole('heading', { name: 'Workspace' });
+    expect(navigation).toHaveAttribute('data-collapsed', 'true');
+    expect(screen.getByRole('button', { name: '侧栏已自动收起' })).toBeInTheDocument();
 
     const layout = screen.getByLabelText('会话和文件工作区');
     vi.spyOn(layout, 'getBoundingClientRect').mockReturnValue({
@@ -5179,6 +5344,15 @@ describe('App', () => {
     fireEvent.mouseUp(window);
 
     expect(layout).toHaveStyle({ '--conversation-pane-width': '520px' });
+
+    fireEvent.mouseDown(separator, { clientX: 520 });
+    fireEvent.mouseMove(window, { clientX: 1190 });
+    fireEvent.mouseUp(window);
+
+    expect(layout).toHaveStyle({ '--conversation-pane-width': '774px' });
+
+    await user.click(screen.getByRole('button', { name: '关闭文件工作区' }));
+    expect(navigation).toHaveAttribute('data-collapsed', 'false');
   });
 
   it('已有只读会话切换为完全访问后会更新 thread 并允许编辑文件', async () => {
@@ -5761,6 +5935,42 @@ describe('App', () => {
     expect(window.localStorage.getItem('clawee.preferences.colorMode')).toBe('light');
   });
 
+  it('applies and persists the selected accent color', async () => {
+    const user = userEvent.setup();
+
+    render(<App fileService={createFileService()} />);
+    expect(document.documentElement).toHaveAttribute('data-accent', 'neutral');
+
+    await user.click(await screen.findByRole('button', { name: '设置 账户' }));
+    await user.click(screen.getByRole('radio', { name: '紫色' }));
+
+    expect(document.documentElement).toHaveAttribute('data-accent', 'purple');
+    expect(window.localStorage.getItem('clawee.preferences.accentColor')).toBe('purple');
+  });
+
+  it('applies and persists a custom accent color', async () => {
+    const user = userEvent.setup();
+
+    render(<App fileService={createFileService()} />);
+    await user.click(await screen.findByRole('button', { name: '设置 账户' }));
+    await user.click(screen.getByRole('radio', { name: '自定义' }));
+
+    const input = screen.getByRole('textbox', { name: '自定义重点色色值' });
+    await user.clear(input);
+    await user.type(input, '#12abef');
+
+    expect(document.documentElement).toHaveAttribute('data-accent', 'custom');
+    expect(document.documentElement).toHaveStyle({
+      '--custom-accent-value': '#12abef'
+    });
+    expect(document.documentElement.style.getPropertyValue('--custom-on-accent')).not.toBe('');
+    expect(screen.getByRole('radio', { name: '自定义' })).toHaveStyle({
+      '--settings-accent-swatch': '#12abef'
+    });
+    expect(window.localStorage.getItem('clawee.preferences.accentColor')).toBe('custom');
+    expect(window.localStorage.getItem('clawee.preferences.customAccentColor')).toBe('#12abef');
+  });
+
   it('persists the global default permission across refreshes and projects', async () => {
     const user = userEvent.setup();
     const projects = persistProjects(
@@ -6320,6 +6530,16 @@ function handleDefaultProjectApiRequest(
   }
   if (url.endsWith('/projects?status=all')) {
     return jsonResponse({ projects: readTestRuntimeProjects() });
+  }
+  if (url.endsWith('/projects/managed') && init?.method === 'POST') {
+    const body = readRequestBody(init);
+    const name = typeof body.name === 'string' ? body.name.trim() : 'project';
+    const project = createTestProject(`/Users/test/Documents/Clawee/${name}`, { name });
+    testRuntimeProjects = [
+      project,
+      ...readTestRuntimeProjects().filter(item => item.id !== project.id)
+    ];
+    return jsonResponse({ project }, { status: 201 });
   }
   if (url.endsWith('/projects') && init?.method === 'POST') {
     const body = readRequestBody(init);

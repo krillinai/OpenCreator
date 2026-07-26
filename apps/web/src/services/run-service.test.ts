@@ -56,4 +56,23 @@ describe('RunService', () => {
       submissionMode: 'interrupt_and_enqueue'
     });
   });
+
+  it('steers a selected queued run through its dedicated endpoint', async () => {
+    const post = vi.fn(async (_path: string, _body?: unknown) => ({
+      id: 'run_queued',
+      steered: true
+    }));
+    const client = {
+      post<T>(path: string, body?: unknown): Promise<T> {
+        return post(path, body) as Promise<T>;
+      },
+      get<T>(): Promise<T> {
+        throw new Error('Unexpected get');
+      }
+    } satisfies Pick<RuntimeClient, 'post' | 'get'>;
+
+    await createRunService(client).steerRun('run/queued');
+
+    expect(post).toHaveBeenCalledWith('/runs/run%2Fqueued/steer', undefined);
+  });
 });

@@ -39,6 +39,26 @@ describe('ConversationHeader', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('exposes whether the file workspace is currently open', () => {
+    render(
+      <ConversationHeader
+        title="整理本周项目进展"
+        projectName="content-design"
+        fileWorkspaceOpen
+        onOpenLocation={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '文件' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: '文件' })).toHaveAttribute(
+      'title',
+      '收起文件工作区'
+    );
+  });
+
   it('does not expose conversation summary actions', () => {
     render(
       <ConversationHeader

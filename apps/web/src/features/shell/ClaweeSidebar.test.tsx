@@ -64,7 +64,7 @@ describe('ClaweeSidebar', () => {
   it('renders global actions, projects with nested conversations, and the settings footer action', () => {
     renderSidebar();
 
-    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-white.png');
+    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-v2-white.svg');
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
@@ -98,7 +98,7 @@ describe('ClaweeSidebar', () => {
   it('uses the black logo in light mode', () => {
     renderSidebar({ colorMode: 'light' });
 
-    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-black.png');
+    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-v2-black.svg');
   });
 
   it('selects projects without conversations', async () => {
@@ -270,13 +270,13 @@ describe('ClaweeSidebar', () => {
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 
-  it('adds an existing project from the projects heading', async () => {
+  it('creates a project from the projects heading', async () => {
     const user = userEvent.setup();
     const onAddProject = vi.fn();
 
     renderSidebar({ onAddProject });
 
-    await user.click(screen.getByRole('button', { name: '添加项目文件夹' }));
+    await user.click(screen.getByRole('button', { name: '创建项目' }));
 
     expect(onAddProject).toHaveBeenCalledTimes(1);
   });
@@ -361,6 +361,7 @@ describe('ClaweeSidebar', () => {
     });
 
     expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-v2-white-logo.svg');
     expect(screen.queryByRole('button', { name: '收起侧栏' })).not.toBeInTheDocument();
     expect(screen.queryByText('项目')).not.toBeInTheDocument();
     expect(screen.queryByText('折叠时隐藏的任务')).not.toBeInTheDocument();
@@ -369,6 +370,27 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: '展开侧栏' }));
 
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains when the sidebar is temporarily collapsed to protect workspace width', async () => {
+    const user = userEvent.setup();
+    const onToggleCollapsed = vi.fn();
+
+    renderSidebar({
+      collapsed: true,
+      autoCollapsed: true,
+      onToggleCollapsed
+    });
+
+    const autoCollapseButton = screen.getByRole('button', { name: '侧栏已自动收起' });
+    expect(autoCollapseButton).toHaveAttribute('aria-disabled', 'true');
+    expect(autoCollapseButton).toHaveAttribute(
+      'title',
+      '窗口较窄，关闭文件工作区后可展开侧栏'
+    );
+
+    await user.click(autoCollapseButton);
+    expect(onToggleCollapsed).not.toHaveBeenCalled();
   });
 });
 

@@ -42,19 +42,22 @@ describe('daemon production startup', () => {
       CLAWEE_DATA_DIR: ' /tmp/clawee-data ',
       CLAWEE_CODEX_BIN: ' /tmp/fake-codex ',
       CODEX_HOME: ' /tmp/clawee-codex-home ',
-      CLAWEE_DEFAULT_CWD: ' /tmp/default-workspace '
+      CLAWEE_DEFAULT_CWD: ' /tmp/default-workspace ',
+      CLAWEE_DEFAULT_PROJECT_ROOT: ' /tmp/Documents '
     })).toEqual({
       dataDir: '/tmp/clawee-data',
       codexBin: '/tmp/fake-codex',
       codexHome: '/tmp/clawee-codex-home',
-      defaultCwd: '/tmp/default-workspace'
+      defaultCwd: '/tmp/default-workspace',
+      defaultProjectRoot: '/tmp/Documents'
     });
 
     expect(resolveProductionServerEnvironment({
       CLAWEE_DATA_DIR: ' ',
       CLAWEE_CODEX_BIN: '',
       CODEX_HOME: '\t',
-      CLAWEE_DEFAULT_CWD: '\n'
+      CLAWEE_DEFAULT_CWD: '\n',
+      CLAWEE_DEFAULT_PROJECT_ROOT: ' '
     })).toEqual({});
   });
 

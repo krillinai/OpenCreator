@@ -72,3 +72,91 @@
   --scrim: rgba(24, 24, 27, 0.56);
   --logo-filter: grayscale(1) contrast(1.12) brightness(0.78);
 }
+
+:root[data-accent="blue"] {
+  --accent: #60a5fa;
+  --accent-strong: #93c5fd;
+  --accent-soft: rgba(59, 130, 246, 0.15);
+  --accent-glow: rgba(96, 165, 250, 0.2);
+  --on-accent: #0b1628;
+}
+
+:root[data-theme="light"][data-accent="blue"] {
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --accent-glow: rgba(37, 99, 235, 0.16);
+  --on-accent: #f8fafc;
+}
+
+:root[data-accent="cyan"] {
+  --accent: #22d3ee;
+  --accent-strong: #67e8f9;
+  --accent-soft: rgba(6, 182, 212, 0.15);
+  --accent-glow: rgba(34, 211, 238, 0.2);
+  --on-accent: #08212a;
+}
+
+:root[data-theme="light"][data-accent="cyan"] {
+  --accent: #0e7490;
+  --accent-strong: #155e75;
+  --accent-soft: rgba(8, 145, 178, 0.1);
+  --accent-glow: rgba(8, 145, 178, 0.15);
+  --on-accent: #f7feff;
+}
+
+:root[data-accent="purple"] {
+  --accent: #a78bfa;
+  --accent-strong: #c4b5fd;
+  --accent-soft: rgba(139, 92, 246, 0.15);
+  --accent-glow: rgba(167, 139, 250, 0.2);
+  --on-accent: #1b1133;
+}
+
+:root[data-theme="light"][data-accent="purple"] {
+  --accent: #7c3aed;
+  --accent-strong: #6d28d9;
+  --accent-soft: rgba(124, 58, 237, 0.1);
+  --accent-glow: rgba(124, 58, 237, 0.15);
+  --on-accent: #faf8ff;
+}
+
+:root[data-accent="orange"] {
+  --accent: #fb923c;
+  --accent-strong: #fdba74;
+  --accent-soft: rgba(249, 115, 22, 0.15);
+  --accent-glow: rgba(251, 146, 60, 0.2);
+  --on-accent: #2b1405;
+}
+
+:root[data-theme="light"][data-accent="orange"] {
+  --accent: #c2410c;
+  --accent-strong: #9a3412;
+  --accent-soft: rgba(234, 88, 12, 0.1);
+  --accent-glow: rgba(234, 88, 12, 0.15);
+  --on-accent: #fffaf5;
+}
+
+:root[data-accent="red"] {
+  --accent: #f87171;
+  --accent-strong: #fca5a5;
+  --accent-soft: rgba(239, 68, 68, 0.15);
+  --accent-glow: rgba(248, 113, 113, 0.2);
+  --on-accent: #2b0a0a;
+}
+
+:root[data-theme="light"][data-accent="red"] {
+  --accent: #dc2626;
+  --accent-strong: #b91c1c;
+  --accent-soft: rgba(220, 38, 38, 0.1);
+  --accent-glow: rgba(220, 38, 38, 0.15);
+  --on-accent: #fffafa;
+}
+
+:root[data-accent="custom"] {
+  --accent: var(--custom-accent-value);
+  --accent-strong: color-mix(in srgb, var(--custom-accent-value) 88%, var(--text));
+  --accent-soft: color-mix(in srgb, var(--custom-accent-value) 14%, transparent);
+  --accent-glow: color-mix(in srgb, var(--custom-accent-value) 20%, transparent);
+  --on-accent: var(--custom-on-accent);
+}

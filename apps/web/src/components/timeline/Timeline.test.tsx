@@ -409,7 +409,8 @@ describe('Timeline', () => {
     expect(screen.getByText('I am checking the logs')).toBeInTheDocument();
     expect(screen.getByText('Clawee')).toBeInTheDocument();
     expect(container.querySelector('.timeline-user_message .timeline-item-header')).not.toBeInTheDocument();
-    expect(container.querySelector('.timeline-assistant_message .timeline-avatar img')).toHaveAttribute('src', '/logo-cor.png');
+    expect(container.querySelector('.timeline-assistant_message .timeline-avatar-logo')).toBeInTheDocument();
+    expect(container.querySelector('.timeline-assistant_message .timeline-avatar img')).not.toBeInTheDocument();
     expect(screen.queryByText('Codex')).not.toBeInTheDocument();
     expect(screen.queryByText('Mock Agent')).not.toBeInTheDocument();
     expect(screen.queryByText('{"type":"user_message","text":"please inspect the run"}')).not.toBeInTheDocument();
@@ -1034,6 +1035,25 @@ describe('Timeline', () => {
     );
 
     expect(screen.queryByText('排队任务')).not.toBeInTheDocument();
+  });
+
+  it('keeps canceled follow-ups that never ran out of the conversation timeline', () => {
+    render(
+      <Timeline
+        items={[{
+          kind: 'user_message',
+          id: 'canceled_queued_message',
+          text: '已移除的等待任务',
+          runId: 'run_canceled_queued',
+          runStatus: 'canceled',
+          submissionMode: 'enqueue',
+          wasQueued: true,
+          source: 'runtime'
+        }]}
+      />
+    );
+
+    expect(screen.queryByText('已移除的等待任务')).not.toBeInTheDocument();
   });
 
   it('groups consecutive file changes from the same run', async () => {

@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
+  Trash2,
   X,
   Zap
 } from 'lucide-react';
@@ -32,6 +33,7 @@ import type {
   RunSubmissionMode
 } from '@clawee/protocol';
 import type { ClaweeProject, ProjectPermission } from '../projects/project-model.js';
+import { CreateProjectDialog } from '../projects/CreateProjectDialog.js';
 import {
   AttachmentTray,
   type AttachmentTrayItem
@@ -138,6 +140,7 @@ export function Composer(props: {
   slashCommandsError?: string;
   queuedItems?: ComposerQueuedItem[];
   draftRequest?: ComposerDraftRequest;
+  focusRequestId?: number;
   imageInputSupported?: boolean;
   imageInputUnsupportedReason?: string;
   onSelectProject(projectId: string): void;
@@ -147,6 +150,7 @@ export function Composer(props: {
     permission: ProjectPermission
   ): boolean | void | Promise<boolean | void>;
   onDraftApplied?(id: number): void;
+  onFocusRequestApplied?(id: number): void;
   onCancel?(): void;
   onCancelQueuedRun?(runId: string): void;
   onSteerQueuedRun?(runId: string): void;
@@ -163,8 +167,6 @@ export function Composer(props: {
   const [projectQuery, setProjectQuery] = useState('');
   const [projectCreateMenuOpen, setProjectCreateMenuOpen] = useState(false);
   const [projectNameDialogOpen, setProjectNameDialogOpen] = useState(false);
-  const [projectNameDraft, setProjectNameDraft] = useState('');
-  const [projectNameSubmitting, setProjectNameSubmitting] = useState(false);
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(
     normalizePermission(props.permission)
   );
@@ -179,7 +181,6 @@ export function Composer(props: {
   const composerRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const projectSearchRef = useRef<HTMLInputElement | null>(null);
-  const projectNameInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentDraftsRef = useRef<ComposerAttachmentDraft[]>([]);
   const transferredPreviewUrlsRef = useRef(new Set<string>());
@@ -280,6 +281,20 @@ export function Composer(props: {
     };
   }, [props.draftRequest, props.onDraftApplied]);
 
+  useEffect(() => {
+    const focusRequestId = props.focusRequestId;
+    if (focusRequestId === undefined) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (textarea === null || textarea.disabled) return;
+      textarea.focus({ preventScroll: true });
+      props.onFocusRequestApplied?.(focusRequestId);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [props.focusRequestId, props.onFocusRequestApplied]);
+
   const selectedPermissionOption = permissionOptions.find(option => option.value === selectedPermission) ?? permissionOptions[0]!;
   const normalizedProjectQuery = projectQuery.trim().toLocaleLowerCase();
   const filteredProjects = props.projects.filter(project =>
@@ -307,6 +322,7 @@ export function Composer(props: {
     && attachmentsSettled;
   const submitPrompt = async () => {
     if (!canSubmit) return;
+    textareaRef.current?.focus({ preventScroll: true });
     setSubmitting(true);
     const attachments = attachmentDrafts.flatMap(item =>
       item.status === 'ready' && item.attachment !== undefined
@@ -339,6 +355,12 @@ export function Composer(props: {
     setSlashTrigger(null);
     attachmentDraftsRef.current = [];
     setAttachmentDrafts([]);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (textarea !== null && !textarea.disabled) {
+        textarea.focus({ preventScroll: true });
+      }
+    });
   };
 
   useEffect(() => {
@@ -388,26 +410,7 @@ export function Composer(props: {
 
   const openProjectNameDialog = () => {
     closeProjectMenu();
-    setProjectNameDraft('');
     setProjectNameDialogOpen(true);
-    window.requestAnimationFrame(() => projectNameInputRef.current?.focus());
-  };
-
-  const createNamedProject = async () => {
-    const name = projectNameDraft.trim();
-    if (name.length === 0 || props.onCreateBlankProject === undefined || projectNameSubmitting) {
-      return;
-    }
-    setProjectNameSubmitting(true);
-    try {
-      const created = await props.onCreateBlankProject(name);
-      if (created !== false) {
-        setProjectNameDialogOpen(false);
-        setProjectNameDraft('');
-      }
-    } finally {
-      setProjectNameSubmitting(false);
-    }
   };
 
   const applySlashCommand = (command: ComposerSlashCommand) => {
@@ -540,18 +543,59 @@ export function Composer(props: {
   }
 
   return (
-    <form
-      ref={composerRef}
-      className="clawee-composer"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submitPrompt();
-      }}
-      onDragOver={(event) => {
-        if (props.imageInputSupported === true) event.preventDefault();
-      }}
-      onDrop={handleDrop}
-    >
+    <div className="composer-stack">
+      {(props.queuedItems?.length ?? 0) > 0 ? (
+        <div className="composer-queue" aria-label="排队消息">
+          {props.queuedItems?.map(item => (
+            <div className="composer-queue-item" key={item.runId}>
+              <span className="composer-queue-leading" aria-hidden="true">
+                <ListPlus size={13} />
+              </span>
+              <span className="composer-queue-copy" title={item.text}>
+                {item.text}
+              </span>
+              {item.queuePosition === undefined ? null : (
+                <span className="composer-queue-position">第 {item.queuePosition} 位</span>
+              )}
+              {props.onSteerQueuedRun ? (
+                <button
+                  type="button"
+                  className="composer-queue-steer"
+                  aria-label={`优先执行等待任务 ${item.text}`}
+                  title="停止当前任务并优先执行这条等待任务"
+                  onClick={() => props.onSteerQueuedRun?.(item.runId)}
+                >
+                  <Zap aria-hidden="true" size={13} />
+                  优先执行
+                </button>
+              ) : null}
+              {props.onCancelQueuedRun ? (
+                <button
+                  type="button"
+                  className="composer-queue-remove"
+                  aria-label={`移除等待任务 ${item.text}`}
+                  title="移除等待任务"
+                  onClick={() => props.onCancelQueuedRun?.(item.runId)}
+                >
+                  <Trash2 aria-hidden="true" size={13} />
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <form
+        ref={composerRef}
+        className="clawee-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submitPrompt();
+        }}
+        onDragOver={(event) => {
+          if (props.imageInputSupported === true) event.preventDefault();
+        }}
+        onDrop={handleDrop}
+      >
       {props.showProjectSelector !== false ? (
         <div className="composer-project-context">
           <div
@@ -659,108 +703,16 @@ export function Composer(props: {
           </div>
         </div>
       ) : null}
-      {projectNameDialogOpen ? (
-        <div
-          className="composer-project-name-backdrop"
-          onMouseDown={event => {
-            if (event.target === event.currentTarget && !projectNameSubmitting) {
-              setProjectNameDialogOpen(false);
-            }
-          }}
-        >
-          <section
-            className="composer-project-name-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="新建空白项目"
-          >
-            <header>
-              <strong>新建空白项目</strong>
-              <span>项目会创建在 Clawee 默认项目目录中</span>
-            </header>
-            <label>
-              <span>项目名称</span>
-              <input
-                ref={projectNameInputRef}
-                type="text"
-                aria-label="项目名称"
-                maxLength={80}
-                value={projectNameDraft}
-                disabled={projectNameSubmitting}
-                onChange={event => setProjectNameDraft(event.currentTarget.value)}
-                onKeyDown={event => {
-                  if (event.key === 'Escape' && !projectNameSubmitting) {
-                    event.preventDefault();
-                    setProjectNameDialogOpen(false);
-                  }
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    void createNamedProject();
-                  }
-                }}
-              />
-            </label>
-            <footer>
-              <button
-                type="button"
-                className="button-secondary"
-                disabled={projectNameSubmitting}
-                onClick={() => setProjectNameDialogOpen(false)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="button-primary"
-                disabled={projectNameSubmitting || projectNameDraft.trim().length === 0}
-                onClick={() => void createNamedProject()}
-              >
-                {projectNameSubmitting ? '正在创建' : '创建'}
-              </button>
-            </footer>
-          </section>
-        </div>
-      ) : null}
+      <CreateProjectDialog
+        open={projectNameDialogOpen}
+        onClose={() => setProjectNameDialogOpen(false)}
+        onCreate={name => props.onCreateBlankProject?.(name)}
+      />
       <AttachmentTray
         items={attachmentDrafts}
         onRemove={(localId) => void removeAttachment(localId)}
         onRetry={(localId) => void uploadAttachment(localId)}
       />
-      {(props.queuedItems?.length ?? 0) > 0 ? (
-        <div className="composer-queue" aria-label="排队消息">
-          {props.queuedItems?.map(item => (
-            <div className="composer-queue-item" key={item.runId}>
-              <span className="composer-queue-copy" title={item.text}>
-                {item.text}
-              </span>
-              {item.queuePosition === undefined ? null : (
-                <span className="composer-queue-position">第 {item.queuePosition} 位</span>
-              )}
-              {props.onSteerQueuedRun ? (
-                <button
-                  type="button"
-                  className="composer-queue-steer"
-                  onClick={() => props.onSteerQueuedRun?.(item.runId)}
-                >
-                  <Zap aria-hidden="true" size={13} />
-                  Steer
-                </button>
-              ) : null}
-              {props.onCancelQueuedRun ? (
-                <button
-                  type="button"
-                  className="composer-queue-remove"
-                  aria-label={`删除排队消息 ${item.text}`}
-                  title="删除排队消息"
-                  onClick={() => props.onCancelQueuedRun?.(item.runId)}
-                >
-                  <X aria-hidden="true" size={14} />
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
       <div className="composer-input-wrap" data-composer-menu-root="slash">
         <textarea
           ref={textareaRef}
@@ -1000,18 +952,16 @@ export function Composer(props: {
                   ? '排队发送'
                   : '发送'
               }
+              title={props.running ? '加入等待队列' : '发送'}
               disabled={!canSubmit}
             >
-              {props.running ? (
-                <ListPlus aria-hidden="true" size={16} />
-              ) : (
-                <ArrowUp aria-hidden="true" size={17} />
-              )}
+              <ArrowUp aria-hidden="true" size={17} />
             </button>
           </div>
         </div>
       </div>
-    </form>
+      </form>
+    </div>
   );
 }
 

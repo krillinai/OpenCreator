@@ -47,6 +47,9 @@ export function createRunService(client: ClientLike) {
     cancelRun(id: string): Promise<{ id: string; canceled: boolean }> {
       return client.post(`/runs/${encodeURIComponent(id)}/cancel`);
     },
+    steerRun(id: string): Promise<{ id: string; steered: boolean }> {
+      return client.post(`/runs/${encodeURIComponent(id)}/steer`);
+    },
     getRun(id: string): Promise<RunResponse> {
       return client.get(`/runs/${encodeURIComponent(id)}`);
     }

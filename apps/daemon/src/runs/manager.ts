@@ -124,6 +124,7 @@ export type RunManager = {
   startRun(input: CreateRunInput): CreatedRun;
   createAndRun(input: CreateRunInput): Promise<CreatedRun>;
   cancelRun(id: string): boolean;
+  steerRun?(id: string): boolean;
   getRun(id: string): RuntimeRun | undefined;
   hasActiveRunForThread(threadId: string): boolean;
   hasActiveRunForProject(projectId: string): boolean;
@@ -378,6 +379,25 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         console.warn(`Failed to finalize queued run ${id}: ${message}`);
       });
       return true;
+    },
+
+    steerRun(id: string): boolean {
+      for (const [threadId, queue] of threadQueues) {
+        const index = queue.findIndex(run => run.id === id);
+        if (index === -1) continue;
+
+        const [queued] = queue.splice(index, 1);
+        if (queued === undefined) return false;
+        queue.unshift(queued);
+
+        const activeRunId = runningThreadRun.get(threadId);
+        const activeRow = activeRunId === undefined ? undefined : runs.getRun(activeRunId);
+        if (activeRunId !== undefined && activeRow?.internal_status !== 'canceling') {
+          manager.cancelRun(activeRunId);
+        }
+        return true;
+      }
+      return false;
     },
 
     getRun(id: string): RuntimeRun | undefined {

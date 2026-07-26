@@ -92,6 +92,7 @@ export type BuildServerInput = {
   codexBin?: string;
   codexHome?: string;
   defaultCwd?: string;
+  defaultProjectRoot?: string;
   runManager?: RunManager;
   scheduler?: SchedulerService;
   scheduleCoordinator?: ScheduleCoordinator;
@@ -153,7 +154,12 @@ export async function buildServer(input: BuildServerInput) {
   const runRepository = createRunRepository(db);
   const threadRepository = createThreadRepository(db);
   const scheduleRepository = new ScheduleRepository(db);
-  const projectManager = createProjectManager({ db });
+  const projectManager = createProjectManager({
+    db,
+    managedProjectRoot: input.defaultProjectRoot === undefined
+      ? undefined
+      : join(input.defaultProjectRoot, 'Clawee')
+  });
   const threadManager = createThreadManager({ db, dataDir, projectManager });
   const codexSessionProvider = input.codexSessionProvider ?? createCodexSessionProvider({
     client: createCodexAppServerClient({

@@ -3425,6 +3425,13 @@ describe('runtime api', () => {
       })
     ]));
 
+    const steeredResponse = await authPost(`/runs/${regularResponse.json().id}/steer`, {});
+    expect(steeredResponse.statusCode).toBe(202);
+    expect(steeredResponse.json()).toEqual({
+      id: regularResponse.json().id,
+      steered: true
+    });
+
     await authPost(`/runs/${regularResponse.json().id}/cancel`, {});
     await authPost(`/runs/${interruptingResponse.json().id}/cancel`, {});
     await waitForRunStatus(active.id, 'canceled');

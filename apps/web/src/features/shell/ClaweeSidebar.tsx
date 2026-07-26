@@ -42,6 +42,7 @@ export function ClaweeSidebar(props: {
   selectedConversationId?: string;
   activeView: ActiveView;
   collapsed?: boolean;
+  autoCollapsed?: boolean;
   colorMode?: ColorMode;
   onNewConversation(projectId?: string): void;
   onSelectProject(projectId: string): void;
@@ -62,7 +63,8 @@ export function ClaweeSidebar(props: {
   const [deletingDraftThreadId, setDeletingDraftThreadId] = useState<string>();
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const collapsed = props.collapsed === true;
-  const logoSrc = props.colorMode === 'light' ? '/logo-black.png' : '/logo-white.png';
+  const autoCollapsed = props.autoCollapsed === true;
+  const fullLogoSrc = props.colorMode === 'light' ? '/logo-v2-black.svg' : '/logo-v2-white.svg';
   const globalActions: Array<{
     label: string;
     icon: LucideIcon;
@@ -114,19 +116,22 @@ export function ClaweeSidebar(props: {
           <button
             className="sidebar-brand-button sidebar-expand-button"
             type="button"
-            aria-label="展开侧栏"
-            title="展开侧栏"
-            onClick={props.onToggleCollapsed}
+            aria-disabled={autoCollapsed || undefined}
+            aria-label={autoCollapsed ? '侧栏已自动收起' : '展开侧栏'}
+            title={autoCollapsed ? '窗口较窄，关闭文件工作区后可展开侧栏' : '展开侧栏'}
+            onClick={autoCollapsed ? undefined : props.onToggleCollapsed}
           >
-            <span className="sidebar-logo-mark-crop">
-              <img className="sidebar-logo-image sidebar-logo-mark" src={logoSrc} alt="Clawee" />
-            </span>
+            <img
+              className="sidebar-logo-image sidebar-logo-mark"
+              src="/logo-v2-white-logo.svg"
+              alt="Clawee"
+            />
             <PanelLeftOpen className="sidebar-expand-icon" size={19} strokeWidth={1.85} aria-hidden="true" />
           </button>
         ) : (
           <>
             <div className="sidebar-logo-lockup">
-              <img className="sidebar-logo-image sidebar-logo-full" src={logoSrc} alt="Clawee" />
+              <img className="sidebar-logo-image sidebar-logo-full" src={fullLogoSrc} alt="Clawee" />
             </div>
             <button
               className="sidebar-collapse-button"
@@ -164,27 +169,31 @@ export function ClaweeSidebar(props: {
         <section className="sidebar-section" aria-labelledby="clawee-projects-heading">
           <div className="sidebar-section-heading">
             <h2 id="clawee-projects-heading">项目</h2>
-            {props.onAddProject ? (
-              <button
-                type="button"
-                className="sidebar-section-action"
-                aria-label="添加项目文件夹"
-                title="添加项目文件夹"
-                onClick={props.onAddProject}
-              >
-                <FolderPlus size={16} strokeWidth={1.9} aria-hidden="true" />
-              </button>
-            ) : null}
-            {props.onManageProjects ? (
-              <button
-                type="button"
-                className="sidebar-section-action"
-                aria-label="管理项目"
-                title="管理项目"
-                onClick={props.onManageProjects}
-              >
-                <Settings2 size={16} strokeWidth={1.9} aria-hidden="true" />
-              </button>
+            {props.onAddProject || props.onManageProjects ? (
+              <div className="sidebar-section-actions">
+                {props.onAddProject ? (
+                  <button
+                    type="button"
+                    className="sidebar-section-action"
+                    aria-label="创建项目"
+                    title="创建项目"
+                    onClick={props.onAddProject}
+                  >
+                    <FolderPlus size={16} strokeWidth={1.9} aria-hidden="true" />
+                  </button>
+                ) : null}
+                {props.onManageProjects ? (
+                  <button
+                    type="button"
+                    className="sidebar-section-action"
+                    aria-label="管理项目"
+                    title="管理项目"
+                    onClick={props.onManageProjects}
+                  >
+                    <Settings2 size={16} strokeWidth={1.9} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
           <div className="sidebar-project-tree" aria-label="项目和对话">

@@ -96,15 +96,39 @@ describe('ProjectManagementDialog', () => {
       />
     );
 
-    expect(screen.getByText('还没有项目。先添加一个项目文件夹，再开始对话或认领已有会话。'))
+    expect(screen.getByText('还没有项目。创建项目后即可开始对话或认领已有会话。'))
       .toBeInTheDocument();
     expect(screen.getByText('有 1 个待归属会话。添加项目后即可认领。'))
       .toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '认领' })).not.toBeInTheDocument();
 
-    await user.click(screen.getAllByRole('button', { name: '添加项目文件夹' })[0]!);
+    await user.click(screen.getAllByRole('button', { name: '创建项目' })[0]!);
     expect(onAddProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps using an existing folder as a separate desktop action', async () => {
+    const user = userEvent.setup();
+    const onAddProjectDirectory = vi.fn(async () => undefined);
+
+    render(
+      <ProjectManagementDialog
+        open
+        projects={[]}
+        archivedProjects={[]}
+        unassignedThreads={[]}
+        onClose={vi.fn()}
+        onUpdate={vi.fn(async () => undefined)}
+        onArchive={vi.fn(async () => undefined)}
+        onRestore={vi.fn(async () => undefined)}
+        onReplaceDirectory={vi.fn(async () => undefined)}
+        onAssignThread={vi.fn(async () => undefined)}
+        onAddProjectDirectory={onAddProjectDirectory}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
+    expect(onAddProjectDirectory).toHaveBeenCalledTimes(1);
   });
 });
 

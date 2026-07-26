@@ -1,4 +1,5 @@
 import type {
+  CreateManagedProjectRequest,
   CreateProjectRequest,
   MigrateLocalStorageProjectsV1Request,
   MigrateLocalStorageProjectsV1Response,
@@ -10,9 +11,9 @@ import type {
 } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
-import { realpathSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import { expandHome } from '../platform/paths.js';
 import {
@@ -33,6 +34,7 @@ import {
 export type CreateProjectManagerInput = {
   db: Database.Database;
   homeDir?: string;
+  managedProjectRoot?: string;
   idFactory?: () => string;
 };
 
@@ -40,30 +42,51 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
   const projects = createProjectRepository(input.db);
   const threads = createThreadRepository(input.db);
   const homeDir = input.homeDir ?? homedir();
+  const managedProjectRoot = input.managedProjectRoot === undefined
+    ? join(homeDir, 'Documents', 'Clawee')
+    : resolve(expandHome(input.managedProjectRoot, homeDir));
   const createId = input.idFactory ?? (() => `project_${nanoid(10)}`);
 
   return {
-    createProject(request): ProjectResponse {
-      const directory = requireAvailableDirectory(request.cwd, homeDir);
-      const duplicate = projects.getProjectByActiveCanonicalCwd(directory.canonicalCwd);
-      if (duplicate !== undefined) {
+    createProject: createProjectRecord,
+
+    createManagedProject(request: CreateManagedProjectRequest): ProjectResponse {
+      const name = normalizeManagedProjectName(request.name);
+      try {
+        mkdirSync(managedProjectRoot, { recursive: true });
+      } catch {
         throw new ProjectManagerError(
-          'PROJECT_DIRECTORY_CONFLICT',
-          'Project directory is already active'
+          'PROJECT_DIRECTORY_UNAVAILABLE',
+          'Clawee 默认项目目录不可用'
         );
       }
-      const id = nextAvailableId();
-      projects.insertProject({
-        id,
-        name: normalizeProjectName(request.name, directory.cwd),
-        cwd: directory.cwd,
-        canonicalCwd: directory.canonicalCwd,
-        profile: normalizeProfile(request.profile),
-        model: request.model ?? null,
-        reasoning: request.reasoning ?? null,
-        sandbox: request.sandbox ?? 'follow-global'
-      });
-      return mapProjectRow(projects.getProject(id)!);
+
+      const cwd = join(managedProjectRoot, name);
+      if (existsSync(cwd)) {
+        throw new ProjectManagerError('PROJECT_DIRECTORY_CONFLICT', '同名项目已存在');
+      }
+      try {
+        mkdirSync(cwd);
+      } catch {
+        if (existsSync(cwd)) {
+          throw new ProjectManagerError('PROJECT_DIRECTORY_CONFLICT', '同名项目已存在');
+        }
+        throw new ProjectManagerError(
+          'PROJECT_DIRECTORY_UNAVAILABLE',
+          '无法创建项目目录'
+        );
+      }
+
+      try {
+        return createProjectRecord({ cwd, name });
+      } catch (error) {
+        try {
+          rmdirSync(cwd);
+        } catch {
+          // Only remove the directory when it is still empty.
+        }
+        throw error;
+      }
     },
 
     createMigratedProject(request: CreateMigratedProjectInput): ProjectResponse {
@@ -209,6 +232,29 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
     }
   };
 
+  function createProjectRecord(request: CreateProjectRequest): ProjectResponse {
+    const directory = requireAvailableDirectory(request.cwd, homeDir);
+    const duplicate = projects.getProjectByActiveCanonicalCwd(directory.canonicalCwd);
+    if (duplicate !== undefined) {
+      throw new ProjectManagerError(
+        'PROJECT_DIRECTORY_CONFLICT',
+        'Project directory is already active'
+      );
+    }
+    const id = nextAvailableId();
+    projects.insertProject({
+      id,
+      name: normalizeProjectName(request.name, directory.cwd),
+      cwd: directory.cwd,
+      canonicalCwd: directory.canonicalCwd,
+      profile: normalizeProfile(request.profile),
+      model: request.model ?? null,
+      reasoning: request.reasoning ?? null,
+      sandbox: request.sandbox ?? 'follow-global'
+    });
+    return mapProjectRow(projects.getProject(id)!);
+  }
+
   function nextAvailableId(): string {
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const id = createId();
@@ -315,6 +361,29 @@ function normalizeProjectPath(value: string, homeDir: string): string {
 function normalizeProjectName(value: string | undefined, cwd: string): string {
   const name = value?.trim() || basename(cwd) || '项目';
   if (name.length === 0) throw new Error('Project name is required');
+  return name;
+}
+
+function normalizeManagedProjectName(value: string): string {
+  const name = value.trim();
+  if (name.length === 0) {
+    throw new ProjectManagerError('PROJECT_NAME_INVALID', '项目名称不能为空');
+  }
+  if (name.length > 80) {
+    throw new ProjectManagerError('PROJECT_NAME_INVALID', '项目名称不能超过 80 个字符');
+  }
+  if (
+    name === '.'
+    || name === '..'
+    || name.includes('/')
+    || name.includes('\\')
+    || name.includes('\0')
+  ) {
+    throw new ProjectManagerError(
+      'PROJECT_NAME_INVALID',
+      '项目名称不能包含路径分隔符'
+    );
+  }
   return name;
 }
 

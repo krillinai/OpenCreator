@@ -11,6 +11,7 @@ describe('ProjectService', () => {
 
     await service.listProjects('all');
     await service.createProject({ cwd: '/workspace/one' });
+    await service.createManagedProject({ name: 'New project' });
     await service.updateProject('project/one', { name: 'One' });
     await service.archiveProject('project/one');
     await service.restoreProject('project/one');
@@ -24,6 +25,7 @@ describe('ProjectService', () => {
       '/threads?status=all&purpose=conversation&assignment=unassigned&limit=100'
     );
     expect(post).toHaveBeenCalledWith('/projects', { cwd: '/workspace/one' });
+    expect(post).toHaveBeenCalledWith('/projects/managed', { name: 'New project' });
     expect(patch).toHaveBeenCalledWith('/projects/project%2Fone', { name: 'One' });
     expect(post).toHaveBeenCalledWith('/projects/project%2Fone/archive');
     expect(post).toHaveBeenCalledWith('/projects/project%2Fone/restore');

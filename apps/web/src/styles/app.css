@@ -674,8 +674,14 @@ select:focus-visible {
   width: 26px;
   height: 26px;
   display: block;
-  object-fit: contain;
-  filter: var(--logo-filter);
+  background-image: url('/logo-v2-white-logo.svg');
+  background-position: calc(50% - 1px) center;
+  background-size: 50px 50px;
+  background-repeat: no-repeat;
+}
+
+:root[data-theme="light"] .timeline-avatar-logo {
+  background-image: url('/logo-v2-black-logo.svg');
 }
 
 .timeline-kind {
@@ -706,6 +712,10 @@ select:focus-visible {
   box-shadow: none;
 }
 
+.timeline-assistant_message .timeline-item-header {
+  gap: 4px;
+}
+
 .timeline-user_message {
   justify-items: end;
 }
@@ -715,8 +725,13 @@ select:focus-visible {
 }
 
 .timeline-user_message .timeline-bubble {
+  border: 0;
   border-top-right-radius: 0;
   background: color-mix(in srgb, var(--surface-3) 86%, var(--accent) 14%);
+}
+
+:root[data-theme="light"] .timeline-user_message .timeline-bubble {
+  background: #f2f2f2;
 }
 
 .timeline-message-actions {
@@ -865,7 +880,7 @@ select:focus-visible {
 
 .timeline-approval .timeline-bubble {
   border-color: color-mix(in srgb, var(--warning) 34%, var(--border));
-  background: color-mix(in srgb, var(--surface-2) 90%, var(--warning) 10%);
+  background: color-mix(in srgb, #f59e0b 8%, var(--surface-2));
 }
 
 .approval-panel {
@@ -985,7 +1000,7 @@ select:focus-visible {
 }
 
 .timeline-process details {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 5%, transparent);
   border-radius: 0;
 }
 
@@ -2188,7 +2203,13 @@ select:focus-visible {
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-columns: var(--conversation-pane-width, minmax(360px, 0.48fr)) 6px minmax(560px, 1fr);
+  grid-template-columns:
+    minmax(
+      420px,
+      min(var(--conversation-pane-width, 34%), calc(100% - 426px))
+    )
+    6px
+    minmax(420px, 1fr);
   background: var(--bg);
 }
 
@@ -2789,13 +2810,19 @@ select:focus-visible {
   background: transparent;
 }
 
+.composer-stack {
+  width: min(980px, 100%);
+  display: grid;
+  margin: 0 auto;
+}
+
 .clawee-composer {
   position: relative;
   z-index: 1;
   display: grid;
   gap: 8px;
-  width: min(980px, 100%);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   padding: 10px 18px;
   border: 1px solid var(--border);
   border-radius: 22px;
@@ -3058,76 +3085,173 @@ select:focus-visible {
 
 .composer-attachment-tray {
   min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 8px;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .composer-attachment {
+  position: relative;
+  width: 72px;
+  flex: 0 0 72px;
+  aspect-ratio: 1;
   min-width: 0;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 6px;
+  overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--conversation-bg) 56%, transparent);
+  background: var(--surface-2);
 }
 
-.composer-attachment > img {
-  width: 44px;
-  height: 44px;
+.clawee-composer button.composer-attachment-preview-trigger:not(:disabled) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  cursor: zoom-in;
+}
+
+.clawee-composer button.composer-attachment-preview-trigger:not(:disabled):hover {
+  background: transparent;
+}
+
+.composer-attachment-preview-trigger img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: block;
   object-fit: cover;
-  border-radius: 6px;
+  object-position: center;
+  transition: opacity 140ms ease;
 }
 
-.composer-attachment-meta {
+.composer-attachment-preview-trigger:hover img {
+  opacity: 0.88;
+}
+
+.composer-attachment-status {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
   min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.composer-attachment-meta strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-}
-
-.composer-attachment-meta span {
-  min-width: 0;
+  min-height: 20px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  color: var(--muted);
-  font-size: 11px;
+  overflow: hidden;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--popover) 90%, transparent);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
-.composer-attachment-meta .composer-attachment-error {
+.composer-attachment-error .composer-attachment-preview-trigger img {
+  opacity: 0.56;
+}
+
+.composer-attachment-status.composer-attachment-error {
   color: var(--danger);
 }
 
 .composer-attachment-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
   display: inline-flex;
-  gap: 3px;
+  gap: 4px;
 }
 
-.composer-attachment-actions button {
-  width: 28px;
-  height: 28px;
+.clawee-composer .composer-attachment-actions button:not(:disabled) {
+  width: 20px;
+  height: 20px;
   display: inline-grid;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--popover) 92%, transparent);
   color: var(--muted);
+  box-shadow: none;
 }
 
-.composer-attachment-actions button:hover {
+.clawee-composer .composer-attachment-actions button:not(:disabled):hover {
+  background: var(--popover);
   color: var(--text);
+}
+
+.attachment-image-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 72%);
+}
+
+.attachment-image-preview {
+  position: relative;
+  width: min(960px, 80vw);
+  height: min(720px, 80dvh);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  outline: none;
+  pointer-events: none;
+}
+
+.attachment-image-preview > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  border-radius: 8px;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.attachment-image-preview > button {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 999px;
+  background: rgb(24 24 27 / 88%);
+  color: #f4f4f5;
+  box-shadow: none;
+  pointer-events: auto;
+}
+
+.attachment-image-preview > button:hover {
+  background: rgb(39 39 42 / 96%);
 }
 
 .composer-menu-notice {
@@ -3282,12 +3406,12 @@ select:focus-visible {
   border: 1px solid var(--border-strong);
   border-left: 1px solid color-mix(in srgb, var(--on-accent) 18%, transparent);
   border-radius: 0 12px 12px 0;
-  background: linear-gradient(180deg, var(--accent-strong), var(--accent));
+  background: var(--accent);
   color: var(--on-accent);
 }
 
 .composer-submit-menu-button:hover {
-  background: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 90%, var(--text));
 }
 
 .composer-submit-menu {
@@ -3303,11 +3427,15 @@ select:focus-visible {
 .composer-stop {
   border: 1px solid var(--border-strong);
   border-radius: 12px;
-  background: linear-gradient(180deg, var(--accent-strong), var(--accent));
+  background: var(--accent);
   color: var(--on-accent);
   box-shadow:
     0 10px 22px var(--accent-glow),
     0 0 0 1px color-mix(in srgb, var(--on-accent) 10%, transparent) inset;
+}
+
+.composer-send:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 90%, var(--text));
 }
 
 .composer-stop {
@@ -3326,7 +3454,7 @@ select:focus-visible {
 
 .composer-send:disabled {
   border-color: color-mix(in srgb, var(--text) 10%, transparent);
-  background: var(--control-disabled);
+  background: var(--surface-3);
   color: var(--control-disabled-text);
   box-shadow:
     0 8px 18px color-mix(in srgb, var(--shadow-base) 18%, transparent),
@@ -3475,29 +3603,46 @@ select:focus-visible {
 }
 
 .composer-queue {
+  position: relative;
+  z-index: 0;
+  max-height: 148px;
   display: grid;
-  gap: 5px;
-  margin: 0 4px 6px;
+  overflow-y: auto;
+  margin: 0 14px -1px;
+  padding: 7px 10px 9px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  background: var(--surface);
 }
 
 .composer-queue-item {
   min-width: 0;
-  min-height: 34px;
+  min-height: 30px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 8px;
-  padding: 5px 6px 5px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface-2);
+  gap: 6px;
+  padding: 2px 2px;
+}
+
+.composer-queue-item + .composer-queue-item {
+  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.composer-queue-leading {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--subtle);
 }
 
 .composer-queue-copy {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3510,7 +3655,7 @@ select:focus-visible {
 
 .composer-queue-steer,
 .composer-queue-remove {
-  min-height: 26px;
+  min-height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3522,14 +3667,13 @@ select:focus-visible {
 }
 
 .composer-queue-steer {
-  padding: 0 7px;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 650;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .composer-queue-remove {
-  width: 26px;
+  width: 24px;
   padding: 0;
 }
 
@@ -3644,7 +3788,7 @@ select:focus-visible {
 
 .sidebar-brand {
   min-width: 0;
-  min-height: 38px;
+  min-height: 50px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3654,7 +3798,7 @@ select:focus-visible {
 
 .sidebar-logo-lockup {
   min-width: 0;
-  height: 38px;
+  height: 50px;
   display: flex;
   align-items: center;
 }
@@ -3666,21 +3810,14 @@ select:focus-visible {
 
 .sidebar-logo-full {
   width: 124px;
-  height: 24px;
+  height: 50px;
   object-position: left center;
-}
-
-.sidebar-logo-mark-crop {
-  width: 34px;
-  height: 24px;
-  display: block;
-  overflow: hidden;
+  transform: translateX(-11px);
 }
 
 .sidebar-logo-mark {
-  width: auto;
-  max-width: none;
-  height: 24px;
+  width: 38px;
+  height: 38px;
 }
 
 .sidebar-collapse-button,
@@ -3707,6 +3844,16 @@ select:focus-visible {
 .sidebar-brand-button {
   position: relative;
   overflow: hidden;
+  border-color: #1f1f1f;
+  color: #fff;
+  background: #1f1f1f;
+}
+
+.sidebar-brand-button:hover,
+.sidebar-brand-button:focus-visible {
+  border-color: #2c2c2c;
+  color: #fff;
+  background: #2c2c2c;
 }
 
 .sidebar-brand-button .sidebar-logo-image,
@@ -3903,10 +4050,19 @@ select:focus-visible {
 
 .sidebar-section-heading {
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px;
   align-items: center;
-  justify-content: space-between;
-  padding-right: 8px;
+  gap: 2px;
+  padding-right: 0;
+}
+
+.sidebar-section-actions {
+  width: 58px;
+  display: grid;
+  grid-template-columns: repeat(2, 28px);
+  align-items: center;
+  gap: 2px;
 }
 
 .sidebar-section-action,
@@ -3948,14 +4104,16 @@ select:focus-visible {
   position: relative;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 58px;
   align-items: center;
   gap: 2px;
 }
 
 .sidebar-project-actions {
   position: relative;
-  display: flex;
+  width: 58px;
+  display: grid;
+  grid-template-columns: repeat(2, 28px);
   align-items: center;
   gap: 2px;
   opacity: 0;
@@ -4459,9 +4617,147 @@ select:focus-visible {
 }
 
 .settings-color-mode button[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--shadow-base) 20%, transparent);
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: none;
+}
+
+.settings-accent-color {
+  display: flex;
+  align-items: start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-accent-controls {
+  justify-self: end;
+  min-width: 0;
+}
+
+.settings-accent-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.settings-accent-options > button {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.settings-accent-options > button:hover {
+  background: color-mix(in srgb, var(--settings-accent-swatch) 9%, transparent);
+}
+
+.settings-accent-options > button[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--settings-accent-swatch) 62%, var(--border));
+  background: color-mix(in srgb, var(--settings-accent-swatch) 13%, transparent);
+}
+
+.settings-custom-accent-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.settings-row .settings-accent-separator {
+  color: var(--subtle);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 30px;
+}
+
+.settings-custom-accent-option > .settings-custom-accent-choice {
+  width: auto;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 2px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.settings-custom-accent-option > .settings-custom-accent-choice:hover,
+.settings-custom-accent-option > .settings-custom-accent-choice[aria-checked="true"] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+
+.settings-accent-swatch {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--settings-accent-swatch);
+  color: inherit !important;
+}
+
+.settings-custom-accent-choice .settings-accent-swatch {
+  color: var(--custom-on-accent) !important;
+}
+
+.settings-custom-accent {
+  position: relative;
+  width: 128px;
+  display: grid;
+  gap: 3px;
+}
+
+.settings-custom-accent-input-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.settings-custom-accent input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: none;
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.settings-custom-accent input:focus-visible {
+  border-color: var(--border-strong);
+  outline: none;
+  box-shadow: none;
+}
+
+.settings-custom-accent input[aria-invalid="true"] {
+  border-color: color-mix(in srgb, var(--danger) 58%, var(--border));
+}
+
+.settings-custom-accent .settings-custom-accent-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .settings-action {
@@ -4526,6 +4822,18 @@ select:focus-visible {
     width: 100%;
     min-width: 0;
     justify-self: stretch;
+  }
+
+  .settings-accent-controls {
+    justify-self: stretch;
+  }
+
+  .settings-accent-color {
+    justify-content: flex-start;
+  }
+
+  .settings-custom-accent {
+    width: min(196px, 100%);
   }
 
   .settings-action {
@@ -4796,6 +5104,15 @@ select:focus-visible {
     border-radius: 10px;
   }
 
+  .composer-queue {
+    max-height: 116px;
+    margin-right: 6px;
+    margin-left: 6px;
+    padding-right: 7px;
+    padding-left: 7px;
+    border-radius: 9px 9px 0 0;
+  }
+
   .composer-toolbar,
   .composer-left-actions,
   .composer-right-actions {
@@ -4934,6 +5251,20 @@ select:focus-visible {
 
   .conversation-empty-state h2 {
     font-size: 30px;
+  }
+
+  .attachment-image-preview-backdrop {
+    padding: 12px;
+  }
+
+  .attachment-image-preview {
+    width: calc(100vw - 32px);
+    height: calc(100dvh - 96px);
+  }
+
+  .attachment-image-preview > button {
+    top: 10px;
+    right: 10px;
   }
 }
 

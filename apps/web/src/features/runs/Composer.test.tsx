@@ -126,11 +126,11 @@ describe('Composer', () => {
     expect(screen.getByRole('menu', { name: '新建项目' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('menuitem', { name: '新建空白项目' }));
-    expect(screen.getByRole('dialog', { name: '新建空白项目' })).toBeInTheDocument();
-    await user.type(screen.getByRole('textbox', { name: '项目名称' }), '我的项目');
+    expect(screen.getByRole('dialog', { name: '创建项目' })).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), '我的项目');
     await user.click(screen.getByRole('button', { name: '创建' }));
     expect(onCreateBlankProject).toHaveBeenCalledWith('我的项目');
-    expect(screen.queryByRole('dialog', { name: '新建空白项目' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '创建项目' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '选择项目 未选择项目' }));
     await user.click(screen.getByRole('button', { name: '新建项目' }));
@@ -185,7 +185,10 @@ describe('Composer', () => {
 
     expect(screen.queryByRole('button', { name: '选择发送方式' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menu', { name: '发送方式' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '排队发送' })).toBeDisabled();
+    const submitButton = screen.getByRole('button', { name: '排队发送' });
+    expect(submitButton).toBeDisabled();
+    expect(submitButton).toHaveAttribute('title', '加入等待队列');
+    expect(submitButton.querySelector('.lucide-arrow-up')).toBeInTheDocument();
   });
 
   it('closes the active composer menu with Escape', async () => {
@@ -220,6 +223,7 @@ describe('Composer', () => {
       reasoning: 'xhigh'
     }, []);
     expect(textbox).toHaveValue('');
+    await waitFor(() => expect(textbox).toHaveFocus());
   });
 
   it('shows only two permission levels and keeps request approval when full access is canceled', async () => {
@@ -353,6 +357,7 @@ describe('Composer', () => {
       [],
       'enqueue'
     );
+    expect(textbox).toHaveFocus();
 
     await user.click(screen.getByRole('button', { name: '停止任务' }));
     expect(onCancel).toHaveBeenCalledTimes(1);
@@ -544,7 +549,7 @@ describe('Composer', () => {
     await user.upload(screen.getByLabelText('选择图片'), file);
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), '描述图片');
 
-    expect(screen.getByText('正在上传 screen.png')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: '正在上传 screen.png' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
 
     resolveUpload(attachment());
@@ -559,7 +564,9 @@ describe('Composer', () => {
         previewUrl: 'blob:screen.png'
       }]
     ));
-    await waitFor(() => expect(screen.queryByText('screen.png')).not.toBeInTheDocument());
+    await waitFor(() => expect(
+      screen.queryByRole('img', { name: 'screen.png' })
+    ).not.toBeInTheDocument());
   });
 
   it('keeps an accepted attachment preview alive when submission changes the composer key', async () => {
@@ -568,14 +575,17 @@ describe('Composer', () => {
 
     function Harness() {
       const [composerKey, setComposerKey] = useState('draft');
+      const [focusRequestId, setFocusRequestId] = useState<number>();
       return (
         <Composer
           key={composerKey}
           {...defaultProps}
+          focusRequestId={focusRequestId}
           imageInputSupported
           onUploadAttachment={async () => attachment()}
           onSubmit={() => {
             setComposerKey('thread');
+            setFocusRequestId(1);
             return true;
           }}
         />
@@ -590,6 +600,9 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:screen.png');
+    await waitFor(() => expect(
+      screen.getByRole('textbox', { name: '输入任务' })
+    ).toHaveFocus());
   });
 
   it('supports pasted and dropped images through the same upload path', async () => {
@@ -614,8 +627,8 @@ describe('Composer', () => {
     });
 
     await waitFor(() => expect(onUploadAttachment).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText('pasted.png')).toBeInTheDocument();
-    expect(await screen.findByText('dropped.webp')).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'pasted.png' })).toBeInTheDocument();
+    expect(await screen.findByRole('img', { name: 'dropped.webp' })).toBeInTheDocument();
   });
 
   it('removes uploaded attachments and retries failed uploads', async () => {
@@ -642,7 +655,7 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: '移除附件 screen.png' }));
 
     await waitFor(() => expect(onDeleteAttachment).toHaveBeenCalledWith(attachment()));
-    expect(screen.queryByText('screen.png')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'screen.png' })).not.toBeInTheDocument();
   });
 
   it('disables image input and prompts for a Codex update when unsupported', async () => {
@@ -894,11 +907,14 @@ describe('Composer', () => {
     );
 
     const queue = screen.getByLabelText('排队消息');
+    const composer = screen.getByRole('textbox', { name: '输入任务' }).closest('form');
     expect(queue).toHaveTextContent('继续修复剩余问题');
     expect(queue).toHaveTextContent('第 2 位');
+    expect(composer).not.toContainElement(queue);
+    expect(queue.nextElementSibling).toBe(composer);
 
-    await user.click(screen.getByRole('button', { name: 'Steer' }));
-    await user.click(screen.getByRole('button', { name: '删除排队消息 继续修复剩余问题' }));
+    await user.click(screen.getByRole('button', { name: '优先执行等待任务 继续修复剩余问题' }));
+    await user.click(screen.getByRole('button', { name: '移除等待任务 继续修复剩余问题' }));
 
     expect(onSteerQueuedRun).toHaveBeenCalledWith('run-queued');
     expect(onCancelQueuedRun).toHaveBeenCalledWith('run-queued');

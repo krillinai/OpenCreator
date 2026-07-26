@@ -18,6 +18,7 @@ export type TimelineItem =
       runStatus?: PublicRunStatus;
       submissionMode?: RunSubmissionMode;
       queuePosition?: number;
+      wasQueued?: boolean;
       source: 'runtime' | 'mock';
     }
   | {

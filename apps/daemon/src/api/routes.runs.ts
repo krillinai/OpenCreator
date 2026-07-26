@@ -166,6 +166,21 @@ export async function registerRunRoutes(
     return reply.code(canceled ? 202 : 409).send({ id, canceled });
   });
 
+  server.post('/runs/:id/steer', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const run = manager.getRun(id);
+    if (run === undefined) {
+      return reply.code(404).send(apiError('RUN_NOT_FOUND', 'Run not found'));
+    }
+    if (run.status !== 'queued') {
+      return reply
+        .code(409)
+        .send(apiError('VALIDATION_FAILED', 'Only queued runs can be steered'));
+    }
+    const steered = manager.steerRun?.(id) ?? false;
+    return reply.code(steered ? 202 : 409).send({ id, steered });
+  });
+
   server.get('/runs/:id/events', async (request, reply) => {
     const { id } = request.params as { id: string };
     const run = manager.getRun(id);

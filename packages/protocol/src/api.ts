@@ -495,6 +495,10 @@ export type CreateProjectRequest = {
   sandbox?: ProjectSandbox;
 };
 
+export type CreateManagedProjectRequest = {
+  name: string;
+};
+
 export type UpdateProjectRequest = {
   name?: string;
   profile?: string;

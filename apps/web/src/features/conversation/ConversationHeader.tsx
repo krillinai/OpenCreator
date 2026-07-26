@@ -6,6 +6,7 @@ export function ConversationHeader(props: {
   projectName: string;
   statusLabel?: string;
   taskToolbar?: ReactNode;
+  fileWorkspaceOpen?: boolean;
   onOpenLocation(): void;
 }) {
   return (
@@ -22,7 +23,13 @@ export function ConversationHeader(props: {
         <span className="conversation-project">{props.projectName}</span>
       </div>
       <div className="conversation-actions">
-        <button className="toolbar-button" type="button" onClick={props.onOpenLocation}>
+        <button
+          className="toolbar-button"
+          type="button"
+          aria-pressed={props.fileWorkspaceOpen === true}
+          title={props.fileWorkspaceOpen ? '收起文件工作区' : '打开文件工作区'}
+          onClick={props.onOpenLocation}
+        >
           <MapPin aria-hidden="true" size={16} />
           <span>文件</span>
         </button>

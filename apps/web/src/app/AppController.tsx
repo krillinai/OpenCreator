@@ -57,6 +57,7 @@ import {
   type ClaweeProject,
   type ProjectPermission
 } from '../features/projects/project-model.js';
+import { CreateProjectDialog } from '../features/projects/CreateProjectDialog.js';
 import { ProjectManagementDialog } from '../features/projects/ProjectManagementDialog.js';
 import {
   Composer,
@@ -122,6 +123,15 @@ import { createThreadService } from '../services/thread-service.js';
 import { createWorkspaceFileService } from '../services/workspace-file-service.js';
 import { readJsonFromStorage, writeJsonToStorage } from '../storage/browser-storage.js';
 import {
+  applyAccentColor,
+  normalizeHexColor,
+  readAccentColorPreference,
+  readCustomAccentColorPreference,
+  type AccentColor,
+  writeAccentColorPreference,
+  writeCustomAccentColorPreference
+} from '../styles/accent-color.js';
+import {
   applyColorMode,
   readColorModePreference,
   type ColorMode,
@@ -153,8 +163,18 @@ type ActiveRunEventController = {
   controller: RunEventController;
 };
 
-const CONVERSATION_PANE_MIN_WIDTH = 320;
-const FILE_WORKSPACE_MIN_WIDTH = 520;
+const CONVERSATION_PANE_MIN_WIDTH = 420;
+const FILE_WORKSPACE_MIN_WIDTH = 420;
+const CONVERSATION_FILE_RESIZE_HANDLE_WIDTH = 6;
+const DESKTOP_SIDEBAR_EXPANDED_WIDTH = 248;
+const MOBILE_NAVIGATION_MAX_WIDTH = 920;
+const WORKSPACE_AUTO_COLLAPSE_MAX_WIDTH =
+  DESKTOP_SIDEBAR_EXPANDED_WIDTH
+  + CONVERSATION_PANE_MIN_WIDTH
+  + CONVERSATION_FILE_RESIZE_HANDLE_WIDTH
+  + FILE_WORKSPACE_MIN_WIDTH;
+const WORKSPACE_AUTO_COLLAPSE_MEDIA_QUERY =
+  `(min-width: ${MOBILE_NAVIGATION_MAX_WIDTH + 1}px) and (max-width: ${WORKSPACE_AUTO_COLLAPSE_MAX_WIDTH}px)`;
 const RESIZE_KEY_STEP = 32;
 function canScrollVertically(
   target: EventTarget | null,
@@ -249,6 +269,7 @@ export function AppController(props: AppControllerProps) {
   const [runtimeTasks, setRuntimeTasks] = useState<TaskItem[]>([]);
   const [threadLoadError, setThreadLoadError] = useState<string>();
   const [projectLoadError, setProjectLoadError] = useState<string>();
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectManagementOpen, setProjectManagementOpen] = useState(false);
   const [projectManagementProjectId, setProjectManagementProjectId] = useState<string>();
   const [projectMutationBusy, setProjectMutationBusy] = useState(false);
@@ -278,6 +299,7 @@ export function AppController(props: AppControllerProps) {
   const [pendingComposerDraft, setPendingComposerDraft] = useState<
     { threadId: string; request: ComposerDraftRequest } | undefined
   >();
+  const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
 
   useEffect(() => {
     if (threadConfigUpdateError === undefined) return;
@@ -303,6 +325,10 @@ export function AppController(props: AppControllerProps) {
   const [defaultPermission, setDefaultPermission] = useState(readDefaultPermissionPreference);
   const [defaultPermissionSyncError, setDefaultPermissionSyncError] = useState<string>();
   const [colorMode, setColorMode] = useState(readColorModePreference);
+  const [accentColor, setAccentColor] = useState(readAccentColorPreference);
+  const [customAccentColor, setCustomAccentColor] = useState(
+    readCustomAccentColorPreference
+  );
   const [threadHistoryReloadKey, setThreadHistoryReloadKey] = useState(0);
   const [searchHistoryTarget, setSearchHistoryTarget] = useState<
     { threadId: string; itemId: string } | undefined
@@ -348,6 +374,9 @@ export function AppController(props: AppControllerProps) {
   useEffect(() => {
     applyColorMode(colorMode);
   }, [colorMode]);
+  useEffect(() => {
+    applyAccentColor(accentColor, customAccentColor);
+  }, [accentColor, customAccentColor]);
   const navigationPersistenceReadyRef = useRef(
     persistedNavigation !== null || props.route.view !== 'home'
   );
@@ -377,6 +406,7 @@ export function AppController(props: AppControllerProps) {
   const taskStatusesRef = useRef(new Map<string, TaskItem['status']>());
   const taskBaselineReadyRef = useRef(false);
   const nextComposerDraftIdRef = useRef(0);
+  const nextComposerFocusRequestIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
   runRegistryRef.current = runRegistry;
@@ -537,6 +567,11 @@ export function AppController(props: AppControllerProps) {
         && currentDraft.request.id === draftId
         ? undefined
         : currentDraft
+    );
+  }, []);
+  const handleComposerFocusRequestApplied = useCallback((requestId: number) => {
+    setPendingComposerFocusRequestId(currentRequestId =>
+      currentRequestId === requestId ? undefined : currentRequestId
     );
   }, []);
   const editUserMessage = useCallback((
@@ -1593,6 +1628,7 @@ export function AppController(props: AppControllerProps) {
       item.kind === 'user_message'
       && item.runStatus === 'queued'
       && item.runId !== undefined
+      && getRunCancelState(runRegistry, item.runId) !== 'requested'
         ? [{
             runId: item.runId,
             text: item.text,
@@ -1600,7 +1636,7 @@ export function AppController(props: AppControllerProps) {
           }]
         : []
     )),
-    [timelineItems]
+    [runRegistry, timelineItems]
   );
   const composerAttachmentScope = `${state.currentProjectId}:${state.selectedThreadId ?? 'new'}`;
   const composerAttachmentDraftId = getOrCreateComposerAttachmentDraftId(
@@ -1798,6 +1834,22 @@ export function AppController(props: AppControllerProps) {
     writeColorModePreference(mode);
   }
 
+  function handleAccentColorChange(color: AccentColor) {
+    setAccentColor(color);
+    applyAccentColor(color, customAccentColor);
+    writeAccentColorPreference(color);
+  }
+
+  function handleCustomAccentColorChange(color: string) {
+    const normalized = normalizeHexColor(color);
+    if (normalized === undefined) return;
+    setCustomAccentColor(normalized);
+    setAccentColor('custom');
+    applyAccentColor('custom', normalized);
+    writeCustomAccentColorPreference(normalized);
+    writeAccentColorPreference('custom');
+  }
+
   function handleDefaultPermissionChange(permission: DefaultPermissionPreference) {
     setDefaultPermission(permission);
     setComposerRunConfig(null);
@@ -1852,6 +1904,10 @@ export function AppController(props: AppControllerProps) {
       && connectionConfigRef.current !== null
     ) {
       const submitted = await submitRuntimePrompt(prompt, config, attachments, submissionMode);
+      if (submitted) {
+        nextComposerFocusRequestIdRef.current += 1;
+        setPendingComposerFocusRequestId(nextComposerFocusRequestIdRef.current);
+      }
       if (submitted && shouldSuggestMemory(prompt)) {
         setPendingMemorySuggestion({
           id: Date.now(),
@@ -1939,14 +1995,20 @@ export function AppController(props: AppControllerProps) {
   async function createBlankProject(name: string): Promise<boolean> {
     const createDirectory = hostBridge.createProjectDirectory;
     if (
-      createDirectory === undefined
-      || projectService === null
+      projectService === null
       || projectDirectoryDialogInFlightRef.current
     ) return false;
     projectDirectoryDialogInFlightRef.current = true;
     try {
-      const path = await createDirectory(name);
-      await registerProjectDirectory(path);
+      if (createDirectory !== undefined) {
+        const path = await createDirectory(name);
+        await registerProjectDirectory(path);
+      } else {
+        const response = await projectService.createManagedProject({ name });
+        setProjects(current => upsertProject(current, response.project));
+        selectProject(response.project.id);
+        setProjectLoadError(undefined);
+      }
       return true;
     } catch (error) {
       setProjectLoadError(getRuntimeErrorMessage(error, '新建项目失败，请重试'));
@@ -2661,7 +2723,8 @@ export function AppController(props: AppControllerProps) {
               runId: run.id,
               runStatus: run.status,
               submissionMode: run.submissionMode ?? submissionMode ?? 'enqueue',
-              queuePosition: run.queuePosition
+              queuePosition: run.queuePosition,
+              wasQueued: run.status === 'queued' || item.wasQueued === true
             }
           : item
       ));
@@ -2765,6 +2828,40 @@ export function AppController(props: AppControllerProps) {
     const threadId = runRegistryRef.current.runsById[runId]?.threadId;
     if (threadId === undefined) setTimelineItems(previous => [...previous, item]);
     else appendTimelineItemsForThread(threadId, [item]);
+  }
+
+  async function cancelQueuedRun(runId: string) {
+    if (getRunCancelState(runRegistryRef.current, runId) === 'requested') return;
+    dispatchRunRegistry({
+      type: 'set_cancel_state',
+      runId,
+      state: 'requested'
+    });
+    const threadId = runRegistryRef.current.runsById[runId]?.threadId;
+    await requestRunCancellation(runId);
+    if (threadId !== undefined) await refreshThreadRunState(threadId);
+  }
+
+  async function steerQueuedRun(runId: string) {
+    const threadId = runRegistryRef.current.runsById[runId]?.threadId;
+    try {
+      if (runService === null) throw new Error('本地运行内核已断开，无法调整等待任务');
+      await runService.steerRun(runId);
+      if (threadId !== undefined) await refreshThreadRunState(threadId);
+    } catch (error) {
+      const message = getRuntimeErrorMessage(error, '调整等待任务失败，请重试');
+      const item: TimelineItem = {
+        kind: 'diagnostic',
+        id: createTimelineId('steer_error'),
+        runId,
+        severity: 'error',
+        message,
+        content: message,
+        source: 'runtime'
+      };
+      if (threadId === undefined) setTimelineItems(previous => [...previous, item]);
+      else appendTimelineItemsForThread(threadId, [item]);
+    }
   }
 
   async function resolveThreadIdForPrompt(
@@ -2932,6 +3029,7 @@ export function AppController(props: AppControllerProps) {
               ? {
                   ...item,
                   runStatus: event.payload.label === 'queued' ? 'queued' : 'running',
+                  wasQueued: event.payload.label === 'queued' || item.wasQueued === true,
                   ...(event.payload.label === 'queued' ? {} : { queuePosition: undefined })
                 }
               : item
@@ -3351,7 +3449,10 @@ export function AppController(props: AppControllerProps) {
     setConversationPaneWidth(clampPaneWidth(
       clientX - rect.left,
       CONVERSATION_PANE_MIN_WIDTH,
-      Math.max(CONVERSATION_PANE_MIN_WIDTH, rect.width - FILE_WORKSPACE_MIN_WIDTH)
+      Math.max(
+        CONVERSATION_PANE_MIN_WIDTH,
+        rect.width - FILE_WORKSPACE_MIN_WIDTH - CONVERSATION_FILE_RESIZE_HANDLE_WIDTH
+      )
     ));
   }
 
@@ -3360,7 +3461,10 @@ export function AppController(props: AppControllerProps) {
     const rect = layout?.getBoundingClientRect();
     const fallbackWidth = rect ? Math.round(rect.width * 0.42) : 420;
     const maxWidth = rect
-      ? Math.max(CONVERSATION_PANE_MIN_WIDTH, rect.width - FILE_WORKSPACE_MIN_WIDTH)
+      ? Math.max(
+          CONVERSATION_PANE_MIN_WIDTH,
+          rect.width - FILE_WORKSPACE_MIN_WIDTH - CONVERSATION_FILE_RESIZE_HANDLE_WIDTH
+        )
       : 760;
 
     setConversationPaneWidth((previous) => clampPaneWidth(
@@ -3421,6 +3525,11 @@ export function AppController(props: AppControllerProps) {
             ? '正在提交任务'
             : '正在检查会话任务';
   const fileWorkspaceOpen = state.activeView === 'conversation' && state.rightPanelMode === 'file';
+  const workspaceNeedsCompactSidebar = useMediaQuery(WORKSPACE_AUTO_COLLAPSE_MEDIA_QUERY);
+  const sidebarAutoCollapsed = fileWorkspaceOpen
+    && !sidebarCollapsed
+    && workspaceNeedsCompactSidebar;
+  const effectiveSidebarCollapsed = sidebarCollapsed || sidebarAutoCollapsed;
   const effectiveComposerConfig = selectedThread === undefined
     ? composerRunConfig ?? defaultComposerRunConfig(currentProject, defaultPermission)
     : {
@@ -3469,7 +3578,14 @@ export function AppController(props: AppControllerProps) {
             </Suspense>
           ) : undefined
         }
-        onOpenLocation={() => openPrimaryView('files')}
+        fileWorkspaceOpen={fileWorkspaceOpen}
+        onOpenLocation={() => {
+          if (fileWorkspaceOpen) {
+            closeFileWorkspace();
+            return;
+          }
+          openPrimaryView('files');
+        }}
       />
       <div className="conversation-body">
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
@@ -3567,9 +3683,10 @@ export function AppController(props: AppControllerProps) {
               ? pendingComposerDraft.request
               : undefined
           }
+          focusRequestId={pendingComposerFocusRequestId}
           onSelectProject={selectProject}
           onCreateBlankProject={
-            projectService === null || hostBridge.createProjectDirectory === undefined
+            projectService === null
               ? undefined
               : createBlankProject
           }
@@ -3580,9 +3697,10 @@ export function AppController(props: AppControllerProps) {
           }
           onPermissionChange={handleComposerPermissionChange}
           onDraftApplied={handleComposerDraftApplied}
+          onFocusRequestApplied={handleComposerFocusRequestApplied}
           onCancel={() => void cancelActiveRun()}
-          onCancelQueuedRun={(runId) => void requestRunCancellation(runId)}
-          onSteerQueuedRun={() => void cancelActiveRun()}
+          onCancelQueuedRun={(runId) => void cancelQueuedRun(runId)}
+          onSteerQueuedRun={(runId) => void steerQueuedRun(runId)}
           onUploadAttachment={async file => {
             if (attachmentService === null) throw new Error('附件服务暂不可用');
             const response = await attachmentService.upload({
@@ -3688,6 +3806,10 @@ export function AppController(props: AppControllerProps) {
       onDefaultPermissionChange={handleDefaultPermissionChange}
       colorMode={colorMode}
       onColorModeChange={handleColorModeChange}
+      accentColor={accentColor}
+      onAccentColorChange={handleAccentColorChange}
+      customAccentColor={customAccentColor}
+      onCustomAccentColorChange={handleCustomAccentColorChange}
       desktopCloseBehavior={desktopCloseBehavior}
       onDesktopCloseBehaviorChange={behavior => {
         const update = hostBridge.updateDesktopPreferences;
@@ -3755,7 +3877,8 @@ export function AppController(props: AppControllerProps) {
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
-          collapsed={sidebarCollapsed}
+          collapsed={effectiveSidebarCollapsed}
+          autoCollapsed={sidebarAutoCollapsed}
           colorMode={colorMode}
           onNewConversation={projectId => startNewConversation({ projectId })}
           onSelectProject={selectProject}
@@ -3763,9 +3886,12 @@ export function AppController(props: AppControllerProps) {
           onSelectTask={selectSidebarTask}
           onOpenView={openPrimaryView}
           onAddProject={
-            hostBridge.selectProjectDirectory === undefined
+            projectService === null
               ? undefined
-              : () => void addProjectDirectory()
+              : () => {
+                  setProjectLoadError(undefined);
+                  setCreateProjectOpen(true);
+                }
           }
           onManageProjects={() => void openProjectManagement()}
           onEditProject={projectId => void openProjectManagement(projectId)}
@@ -3787,7 +3913,7 @@ export function AppController(props: AppControllerProps) {
       )}
       detail={detailPanel}
       detailOpen={detailPanel !== null && state.activeView === 'conversation'}
-      sidebarCollapsed={sidebarCollapsed}
+      sidebarCollapsed={effectiveSidebarCollapsed}
       mobileSidebarOpen={mobileSidebarOpen}
       onOpenMobileSidebar={openMobileSidebar}
       onCloseMobileSidebar={dismissMobileSidebar}
@@ -3798,6 +3924,12 @@ export function AppController(props: AppControllerProps) {
           <strong>松开以添加项目文件夹</strong>
         </div>
       ) : null}
+      <CreateProjectDialog
+        open={createProjectOpen}
+        error={createProjectOpen ? projectLoadError : undefined}
+        onClose={() => setCreateProjectOpen(false)}
+        onCreate={createBlankProject}
+      />
       <ProjectManagementDialog
         open={projectManagementOpen}
         projects={projects}
@@ -3816,6 +3948,15 @@ export function AppController(props: AppControllerProps) {
         onReplaceDirectory={replaceManagedProjectDirectory}
         onAssignThread={assignManagedThread}
         onAddProject={
+          projectService === null
+            ? undefined
+            : () => {
+                setProjectManagementOpen(false);
+                setProjectLoadError(undefined);
+                setCreateProjectOpen(true);
+              }
+        }
+        onAddProjectDirectory={
           hostBridge.selectProjectDirectory === undefined
             ? undefined
             : async () => {
@@ -4087,7 +4228,25 @@ function getPlaceholderLabel(activeView: 'schedules' | 'plugins' | 'files') {
 
 function isMobileNavigationViewport(): boolean {
   return typeof window.matchMedia === 'function'
-    && window.matchMedia('(max-width: 920px)').matches;
+    && window.matchMedia(`(max-width: ${MOBILE_NAVIGATION_MAX_WIDTH}px)`).matches;
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => (
+    typeof window.matchMedia === 'function' && window.matchMedia(query).matches
+  ));
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mediaQuery = window.matchMedia(query);
+    const updateMatches = () => setMatches(mediaQuery.matches);
+
+    updateMatches();
+    mediaQuery.addEventListener('change', updateMatches);
+    return () => mediaQuery.removeEventListener('change', updateMatches);
+  }, [query]);
+
+  return matches;
 }
 
 function getSkillMarketEntry(skillId: string): (typeof skillMarketCatalog)[number] | undefined {
