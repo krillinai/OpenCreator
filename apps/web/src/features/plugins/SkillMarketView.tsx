@@ -432,7 +432,6 @@ export function SkillMarketView({
               key={item.id}
               onInstall={onInstall}
               onOpen={(trigger, restoreFocus) => openEntry(item, trigger, restoreFocus)}
-              onToggleSaved={toggleSaved}
               onUpdate={onUpdate}
               onUse={requestUse}
             />

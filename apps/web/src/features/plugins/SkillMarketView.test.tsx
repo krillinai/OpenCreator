@@ -199,7 +199,7 @@ describe('SkillMarketView', () => {
     expect(screen.getByRole('combobox', { name: '排序' })).toHaveValue('recommended');
   });
 
-  it('筛选变化后重置首屏批次，加载更多后收藏和安装状态仍保持正确', async () => {
+  it('筛选变化后重置首屏批次，加载更多后安装状态仍保持正确', async () => {
     const user = userEvent.setup();
     const onInstall = vi.fn();
     renderSkillMarket({ onInstall });
@@ -211,9 +211,6 @@ describe('SkillMarketView', () => {
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(1);
 
     const card = getSkillCard('frontend-slides');
-    await user.click(within(card).getByRole('button', { name: '收藏 网页演示稿生成' }));
-    expect(screen.getByRole('button', { name: /我的收藏\s+1/ })).toBeInTheDocument();
-
     await user.click(within(card).getByRole('button', { name: '安装' }));
     expect(onInstall).toHaveBeenCalledWith('frontend-slides');
   });
@@ -384,7 +381,7 @@ describe('SkillMarketView', () => {
     expect(actionButton).toHaveFocus();
   });
 
-  it('收藏、安装、使用按钮的 Enter/Space 不会打开详情，详情按钮可键盘打开', async () => {
+  it('安装、使用按钮的 Enter/Space 不会打开详情，详情按钮可键盘打开', async () => {
     const user = userEvent.setup();
     const onInstall = vi.fn();
     const onUse = vi.fn();
@@ -400,11 +397,6 @@ describe('SkillMarketView', () => {
 
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     const card = getSkillCard('frontend-slides');
-
-    within(card).getByRole('button', { name: '收藏 网页演示稿生成' }).focus();
-    await user.keyboard('{Enter}');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /我的收藏\s+1/ })).toBeInTheDocument();
 
     within(card).getByRole('button', { name: '使用' }).focus();
     await user.keyboard('{Enter}');
@@ -433,17 +425,17 @@ describe('SkillMarketView', () => {
 
     expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
-    await user.click(
-      within(getSkillCard('frontend-slides')).getByRole('button', {
-        name: '收藏 网页演示稿生成',
-      })
-    );
+    await user.click(getSkillDetailButton('frontend-slides'));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.click(dialog.getByRole('button', { name: '收藏 网页演示稿生成' }));
 
     expect(screen.getByRole('button', { name: /我的收藏\s+1/ })).toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem(savedSkillIdsStorageKey) ?? 'null')).toEqual([
       'frontend-slides',
     ]);
 
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
     await user.click(screen.getByRole('button', { name: /我的收藏\s+1/ }));
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(1);
@@ -462,34 +454,21 @@ describe('SkillMarketView', () => {
 
     expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
-    await user.click(
-      within(getSkillCard('frontend-slides')).getByRole('button', {
-        name: '收藏 网页演示稿生成',
-      })
-    );
+    await user.click(getSkillDetailButton('frontend-slides'));
+    const dialog = within(screen.getByRole('dialog'));
+    const favoriteButton = dialog.getByRole('button', { name: '收藏 网页演示稿生成' });
+    await user.click(favoriteButton);
 
     expect(setItemSpy).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
-    expect(
-      within(getSkillCard('frontend-slides')).getByRole('button', {
-        name: '收藏 网页演示稿生成',
-      })
-    ).toBeInTheDocument();
+    expect(favoriteButton).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('收藏保存失败，请检查浏览器存储权限');
 
-    await user.click(
-      within(getSkillCard('frontend-slides')).getByRole('button', {
-        name: '收藏 网页演示稿生成',
-      })
-    );
+    await user.click(favoriteButton);
 
     expect(setItemSpy).toHaveBeenCalledTimes(2);
     expect(screen.getByRole('button', { name: /我的收藏\s+1/ })).toBeInTheDocument();
-    expect(
-      within(getSkillCard('frontend-slides')).getByRole('button', {
-        name: '取消收藏 网页演示稿生成',
-      })
-    ).toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: '取消收藏 网页演示稿生成' })).toBeInTheDocument();
     expect(screen.queryByText('收藏保存失败，请检查浏览器存储权限')).not.toBeInTheDocument();
   });
 
@@ -516,7 +495,7 @@ describe('SkillMarketView', () => {
     expect(onInstall).toHaveBeenCalledWith('videocaptioner');
   });
 
-  it('卡片不展示封面，并只保留两个高信号标签', () => {
+  it('卡片精简低优先级信息，并让高信号标签与安装按钮位于同一操作行', () => {
     const entry = createMarketEntry({
       category: 'video-subtitle',
       subcategory: '字幕生成',
@@ -534,6 +513,12 @@ describe('SkillMarketView', () => {
     ]);
     expect(card.querySelector('.skill-market-card__cover')).not.toBeInTheDocument();
     expect(within(card).getByAltText('Clawee')).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: /收藏/ })).not.toBeInTheDocument();
+    expect(within(card).queryByLabelText('使用人数')).not.toBeInTheDocument();
+
+    const actionRow = card.querySelector('.skill-market-card__action-row');
+    expect(actionRow).toContainElement(tags);
+    expect(actionRow).toContainElement(within(card).getByRole('button', { name: '安装' }));
   });
 
   it('外部安装同名有效 Skill 显示“使用”和“版本未知”', async () => {

@@ -1,10 +1,8 @@
 import {
-  Bookmark,
   CheckCircle2,
   Download,
   Info,
   RefreshCw,
-  Users,
 } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import type { SkillMarketStatus, SkillMarketViewEntry } from './skill-market-model.js';
@@ -23,7 +21,6 @@ export function SkillMarketCard({
   item,
   action,
   onOpen,
-  onToggleSaved,
   onInstall,
   onUpdate,
   onUse,
@@ -31,7 +28,6 @@ export function SkillMarketCard({
   item: SkillMarketViewEntry;
   action: SkillMarketAction;
   onOpen(trigger: HTMLElement, restoreFocus: boolean): void;
-  onToggleSaved(skillId: string): void;
   onInstall(skillId: string): void;
   onUpdate(skillId: string): void;
   onUse(skillId: string): void;
@@ -76,35 +72,18 @@ export function SkillMarketCard({
           <span className="skill-market-card__tagline" title={item.entry.tagline}>
             {item.entry.tagline}
           </span>
-
-          <span className="skill-market-card__tags" aria-label="标签">
-            {tags.map((tag) => (
-              <span key={tag}>{tag}</span>
-            ))}
-          </span>
         </span>
-      </button>
-
-      <button
-        aria-label={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
-        className={`skill-market-icon-button skill-market-card__bookmark ${item.saved ? 'is-active' : ''}`}
-        onClick={() => onToggleSaved(item.id)}
-        title={`${item.saved ? '取消收藏' : '收藏'} ${item.title}`}
-        type="button"
-      >
-        <Bookmark fill={item.saved ? 'currentColor' : 'none'} size={16} aria-hidden="true" />
       </button>
 
       <div className="skill-market-card__action-row">
-        <span className="skill-market-card__metrics">
-          {item.status === 'installed_unknown_version' ? (
-            <span className="skill-market-version-note">版本未知</span>
-          ) : null}
-          <span className="skill-market-users" title="使用人数" aria-label="使用人数">
-            <Users size={14} aria-hidden="true" />
-            {formatUsers(item.users)}
-          </span>
+        <span className="skill-market-card__tags" aria-label="标签">
+          {tags.map((tag) => (
+            <span key={tag}>{tag}</span>
+          ))}
         </span>
+        {item.status === 'installed_unknown_version' ? (
+          <span className="skill-market-version-note">版本未知</span>
+        ) : null}
         {actionReasonId ? (
           <span
             className="skill-market-action-reason"

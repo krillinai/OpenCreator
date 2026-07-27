@@ -308,7 +308,7 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  padding: 16px 52px 10px 16px;
+  padding: 16px 16px 10px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -378,9 +378,9 @@
 .skill-market-card__tags {
   min-width: 0;
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
   overflow: hidden;
 }
 
@@ -402,15 +402,7 @@
   font-size: 10px;
 }
 
-.skill-market-card__bookmark {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-}
-
 .skill-market-card__action-row,
-.skill-market-card__metrics,
-.skill-market-users,
 .skill-market-action-reason,
 .skill-market-action-hint {
   min-width: 0;
@@ -419,28 +411,16 @@
 }
 
 .skill-market-card__action-row {
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
   min-height: 46px;
   padding: 0 14px 14px 16px;
 }
 
-.skill-market-card__metrics {
-  flex: 1 1 auto;
-  gap: 8px;
-}
-
 .skill-market-version-note {
+  flex: 0 0 auto;
   color: var(--warning);
   font-size: 10px;
-  white-space: nowrap;
-}
-
-.skill-market-users {
-  flex: 0 0 auto;
-  gap: 5px;
-  color: var(--subtle);
-  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -1392,7 +1372,7 @@
   }
 
   .skill-market-card__open {
-    padding-inline: 14px 50px;
+    padding-inline: 14px;
   }
 
   .skill-market-card__action-row {
