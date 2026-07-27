@@ -174,25 +174,34 @@ describe('SkillMarketView', () => {
     expect(visibleIds.length).toBeGreaterThan(0);
   });
 
-  it('通过排序菜单切换目录顺序并可重置', async () => {
+  it('排序菜单只保留推荐与已安装优先，并可切换后重置', async () => {
     const user = userEvent.setup();
-    renderSkillMarket();
+    const skills = createSkillsResponse([
+      createSkill({ id: 'frontend-slides', status: 'valid' }),
+    ]);
+    const records = [createRecord({ skillId: 'frontend-slides', marketRevision: 1 })];
+    renderSkillMarket({ skills, installRecords: records });
 
-    const usersSortedIds = filterAndSortSkillMarketEntries({
+    const installedSortedIds = filterAndSortSkillMarketEntries({
       entries: skillMarketCatalog,
-      skills: createSkillsResponse([]),
-      records: [],
-      sort: 'users',
+      skills,
+      records,
+      sort: 'installed',
     }).entries.map((entry) => entry.id);
+    const sort = screen.getByRole('combobox', { name: '排序' });
 
-    await user.selectOptions(screen.getByRole('combobox', { name: '排序' }), 'users');
+    expect(within(sort).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      '推荐优先',
+      '已安装优先',
+    ]);
+    await user.selectOptions(sort, 'installed');
 
     expect(
       screen.getAllByTestId('skill-market-card').map((card) => card.getAttribute('data-skill-id'))
-    ).toEqual(usersSortedIds.slice(0, 12));
+    ).toEqual(installedSortedIds.slice(0, 12));
 
     await user.click(screen.getByRole('button', { name: '重置筛选' }));
-    expect(screen.getByRole('combobox', { name: '排序' })).toHaveValue('recommended');
+    expect(sort).toHaveValue('recommended');
   });
 
   it('筛选变化后重置首屏批次，加载更多后安装状态仍保持正确', async () => {

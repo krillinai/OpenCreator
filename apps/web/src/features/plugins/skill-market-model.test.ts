@@ -292,7 +292,7 @@ describe('skill market model', () => {
     expect(updatingResult.entries[0]?.installed).toBe(true);
   });
 
-  it('keeps recommended, users, installed, and saved sorts stable with explicit tie breakers', () => {
+  it('keeps recommended and installed sorts stable with explicit tie breakers', () => {
     const entries = [
       createEntry({
         id: 'b-entry',
@@ -324,17 +324,7 @@ describe('skill market model', () => {
       filterAndSortSkillMarketEntries({ ...baseInput, sort: 'recommended' }).entries.map((item) => item.id)
     ).toEqual(['a-entry', 'b-entry']);
     expect(
-      filterAndSortSkillMarketEntries({ ...baseInput, sort: 'users' }).entries.map((item) => item.id)
-    ).toEqual(['a-entry', 'b-entry']);
-    expect(
       filterAndSortSkillMarketEntries({ ...baseInput, sort: 'installed' }).entries.map((item) => item.id)
-    ).toEqual(['a-entry', 'b-entry']);
-    expect(
-      filterAndSortSkillMarketEntries({
-        ...baseInput,
-        sort: 'saved',
-        savedSkillIds: ['a-entry', 'b-entry'],
-      }).entries.map((item) => item.id)
     ).toEqual(['a-entry', 'b-entry']);
   });
 });

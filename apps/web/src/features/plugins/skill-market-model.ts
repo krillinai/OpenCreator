@@ -23,7 +23,7 @@ export type SkillMarketOperation =
   | null
   | undefined;
 
-export type SkillMarketSort = 'recommended' | 'users' | 'installed' | 'saved';
+export type SkillMarketSort = 'recommended' | 'installed';
 
 export type SkillMarketFilterStatus = 'all' | 'installed' | 'saved';
 
@@ -134,9 +134,7 @@ export function filterAndSortSkillMarketEntries(
   });
 
   const sort = input.sort ?? 'recommended';
-  filtered.sort((left, right) =>
-    compareEntries(left, right, sort, savedOrder)
-  );
+  filtered.sort((left, right) => compareEntries(left, right, sort));
 
   return {
     entries: filtered,
@@ -273,8 +271,7 @@ function summarizeSubcategories(
 function compareEntries(
   left: SkillMarketViewEntry & { originalIndex: number },
   right: SkillMarketViewEntry & { originalIndex: number },
-  sort: SkillMarketSort,
-  savedOrder: Map<string, number>
+  sort: SkillMarketSort
 ): number {
   switch (sort) {
     case 'recommended':
@@ -289,30 +286,9 @@ function compareEntries(
         compareText(left.id, right.id) ||
         compareNumber(left.originalIndex, right.originalIndex)
       );
-    case 'users':
-      return (
-        compareNumber(right.users, left.users) ||
-        compareNumber(
-          listingStatusRank[left.entry.listingStatus],
-          listingStatusRank[right.entry.listingStatus]
-        ) ||
-        compareText(left.title, right.title) ||
-        compareText(left.id, right.id) ||
-        compareNumber(left.originalIndex, right.originalIndex)
-      );
     case 'installed':
       return (
         compareBoolean(right.installed, left.installed) ||
-        compareInstalledPriority(left.status, right.status) ||
-        compareNumber(right.users, left.users) ||
-        compareText(left.title, right.title) ||
-        compareText(left.id, right.id) ||
-        compareNumber(left.originalIndex, right.originalIndex)
-      );
-    case 'saved':
-      return (
-        compareSavedOrder(left.id, right.id, savedOrder) ||
-        compareBoolean(right.saved, left.saved) ||
         compareInstalledPriority(left.status, right.status) ||
         compareNumber(right.users, left.users) ||
         compareText(left.title, right.title) ||
@@ -346,19 +322,6 @@ function statusSortRank(status: SkillMarketStatus): number {
     case 'not_installed':
       return 6;
   }
-}
-
-function compareSavedOrder(
-  leftId: string,
-  rightId: string,
-  savedOrder: Map<string, number>
-): number {
-  const left = savedOrder.get(leftId);
-  const right = savedOrder.get(rightId);
-  if (left === undefined && right === undefined) return 0;
-  if (left === undefined) return 1;
-  if (right === undefined) return -1;
-  return compareNumber(left, right);
 }
 
 function createSavedOrderMap(

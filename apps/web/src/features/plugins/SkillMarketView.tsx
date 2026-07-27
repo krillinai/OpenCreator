@@ -251,9 +251,7 @@ export function SkillMarketView({
               value={sort}
             >
               <option value="recommended">推荐优先</option>
-              <option value="users">使用人数</option>
               <option value="installed">已安装优先</option>
-              <option value="saved">已收藏优先</option>
             </select>
           </label>
 
