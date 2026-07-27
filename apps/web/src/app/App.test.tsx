@@ -3349,6 +3349,80 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'content-design' })).toBeInTheDocument();
   });
 
+  it.each(['browser', 'desktop'] as const)(
+    'archives the selected conversation consistently in the %s host',
+    async (hostKind) => {
+      const user = userEvent.setup();
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const hostBridge = createHostBridge();
+      hostBridge.kind = hostKind;
+      hostBridge.readConnectionConfig = async () => ({
+        baseUrl: 'http://127.0.0.1:60764',
+        token: 'runtime-token'
+      });
+      const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+      const thread = createThreadResponse({
+        id: `thread_archive_${hostKind}`,
+        title: `${hostKind} 归档会话`
+      });
+      const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+        if (projectApiResponse !== undefined) return projectApiResponse;
+        fetchCalls.push({ url, init });
+        if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+        if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+        if (url.endsWith('/threads?status=active&limit=50')) {
+          return jsonResponse({ threads: [thread] });
+        }
+        if (url.endsWith(`/threads/${thread.id}/history?limit=50`)) {
+          return jsonResponse({ threadId: thread.id, codexThreadId: null, items: [] });
+        }
+        if (url.endsWith(`/threads/${thread.id}/runs?limit=50`)) {
+          return jsonResponse({ runs: [] });
+        }
+        if (url.endsWith(`/threads/${thread.id}/archive`) && init?.method === 'POST') {
+          return jsonResponse({
+            thread: {
+              ...thread,
+              status: 'archived',
+              archivedAt: new Date(0).toISOString()
+            }
+          });
+        }
+        throw new Error(`Unexpected request ${url}`);
+      };
+
+      render(
+        <App
+          fileService={createFileService()}
+          hostBridge={hostBridge}
+          runtimeFetch={runtimeFetch}
+          subscribeRunEvents={async () => undefined}
+        />
+      );
+
+      expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+      await user.click(await screen.findByRole('button', {
+        name: new RegExp(`^${hostKind} 归档会话 `)
+      }));
+      await waitFor(() => expect(window.location.hash).toBe(`#/thread/${thread.id}`));
+      const conversation = screen.getByRole('group', {
+        name: `${hostKind} 归档会话`
+      });
+      await user.click(within(conversation).getByRole('button', { name: '归档' }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', {
+          name: new RegExp(`^${hostKind} 归档会话 `)
+        })).not.toBeInTheDocument();
+      });
+      expect(window.location.hash).toBe('#/');
+      expect(findPostCall(fetchCalls, `/threads/${thread.id}/archive`)).toBeDefined();
+      expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    }
+  );
+
   it('adds and archives a local project directory through the desktop host', async () => {
     const user = userEvent.setup();
     const legacyProjects = JSON.stringify([

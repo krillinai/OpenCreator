@@ -2196,6 +2196,25 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
+  async function archiveConversation(threadId: string) {
+    if (threadService === null) return;
+    try {
+      await threadService.archiveThread(threadId);
+      setRuntimeThreads(current => current.filter(thread => thread.id !== threadId));
+      delete timelineItemsByThreadIdRef.current[threadId];
+      if (state.selectedThreadId === threadId) {
+        startNewConversation();
+      }
+      setThreadLoadError(undefined);
+    } catch (error) {
+      setThreadLoadError(
+        error instanceof ApiClientError && error.code === 'THREAD_HAS_ACTIVE_RUN'
+          ? '任务运行期间不能归档会话，请等待当前任务结束'
+          : getRuntimeErrorMessage(error, '归档会话失败，请重试')
+      );
+    }
+  }
+
   function selectConversation(conversationId: string, options: { updateRoute?: boolean } = {}) {
     closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
@@ -3879,6 +3898,7 @@ export function AppController(props: AppControllerProps) {
               : projectId => void replaceManagedProjectDirectory(projectId)
           }
           onArchiveProject={projectId => void archiveProject(projectId)}
+          onArchiveConversation={threadId => archiveConversation(threadId)}
           onDeleteTaskDraft={threadId => deleteScheduleDraft(threadId)}
           onOpenSettings={() => {
             closeMobileSidebar();

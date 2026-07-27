@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ClaweeSidebar } from './ClaweeSidebar.js';
@@ -257,6 +257,32 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: '整理本周项目进展 4天' }));
 
     expect(onSelectConversation).toHaveBeenCalledWith('weekly-progress-brief');
+  });
+
+  it('archives a conversation after confirming that history and project files are preserved', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onArchiveConversation = vi.fn(async () => undefined);
+
+    renderSidebar({ onArchiveConversation });
+
+    const conversation = screen.getByRole('group', { name: '整理本周项目进展' });
+    await user.click(within(conversation).getByRole('button', { name: '归档' }));
+
+    expect(confirm).toHaveBeenCalledWith(
+      '归档“整理本周项目进展”？归档后会从项目列表隐藏，但不会删除项目文件或 Codex 历史。'
+    );
+    expect(onArchiveConversation).toHaveBeenCalledWith('weekly-progress-brief');
+  });
+
+  it('does not allow archiving a conversation while it is running', () => {
+    renderSidebar({
+      runningConversationIds: new Set(['weekly-progress-brief']),
+      onArchiveConversation: vi.fn()
+    });
+
+    const conversation = screen.getByRole('group', { name: '整理本周项目进展' });
+    expect(within(conversation).getByRole('button', { name: '归档' })).toBeDisabled();
   });
 
   it('opens settings from the footer button', async () => {

@@ -4100,6 +4100,53 @@ select:focus-visible {
   padding: 2px 0 7px;
 }
 
+.sidebar-conversation-row-shell {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+}
+
+.sidebar-conversation-row-shell[data-has-action="true"] {
+  grid-template-columns: minmax(0, 1fr) 28px;
+}
+
+.sidebar-conversation-archive {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--subtle);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.sidebar-conversation-row-shell:hover .sidebar-conversation-archive,
+.sidebar-conversation-row-shell:focus-within .sidebar-conversation-archive,
+.nested-conversation-row[aria-current="page"] + .sidebar-conversation-archive {
+  opacity: 1;
+}
+
+.sidebar-conversation-archive:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--text) 10%, transparent);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+}
+
+.sidebar-conversation-archive:disabled {
+  cursor: not-allowed;
+  color: color-mix(in srgb, var(--subtle) 58%, transparent);
+}
+
+@media (hover: none) {
+  .sidebar-conversation-archive {
+    opacity: 1;
+  }
+}
+
 .sidebar-project-row-shell {
   position: relative;
   min-width: 0;

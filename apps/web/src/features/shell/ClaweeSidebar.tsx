@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Archive,
   CircleAlert,
   Clock3,
   Folder,
@@ -56,10 +57,12 @@ export function ClaweeSidebar(props: {
   onEditProject?(projectId: string): void;
   onReplaceProjectDirectory?(projectId: string): void;
   onArchiveProject?(projectId: string): void;
+  onArchiveConversation?(conversationId: string): void | Promise<void>;
   onDeleteTaskDraft?(threadId: string): void | Promise<void>;
 }) {
   const [expandedProjectId, setExpandedProjectId] = useState<string | undefined>(props.currentProjectId);
   const [projectMenuId, setProjectMenuId] = useState<string>();
+  const [archivingConversationId, setArchivingConversationId] = useState<string>();
   const [deletingDraftThreadId, setDeletingDraftThreadId] = useState<string>();
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const collapsed = props.collapsed === true;
@@ -308,26 +311,68 @@ export function ClaweeSidebar(props: {
                       {projectConversations.map((conversation) => {
                         const isRunning = props.runningConversationIds?.has(conversation.id) === true;
                         return (
-                          <button
+                          <div
                             key={conversation.id}
-                            type="button"
-                            className="conversation-row nested-conversation-row"
-                            aria-current={conversation.id === props.selectedConversationId ? 'page' : undefined}
-                            onClick={() => props.onSelectConversation(conversation.id)}
+                            className="sidebar-conversation-row-shell"
+                            data-has-action={props.onArchiveConversation === undefined ? 'false' : 'true'}
+                            role="group"
+                            aria-label={conversation.title}
                           >
-                            <strong>{conversation.title}</strong>
-                            <span className="conversation-row-meta">
-                              {isRunning ? (
-                                <LoaderCircle
-                                  className="conversation-run-spinner"
-                                  size={13}
-                                  strokeWidth={2}
-                                  aria-label="正在运行"
-                                />
-                              ) : null}
-                              <span className="conversation-updated-label">{conversation.updatedLabel}</span>
-                            </span>
-                          </button>
+                            <button
+                              type="button"
+                              className="conversation-row nested-conversation-row"
+                              aria-current={conversation.id === props.selectedConversationId ? 'page' : undefined}
+                              onClick={() => props.onSelectConversation(conversation.id)}
+                            >
+                              <strong>{conversation.title}</strong>
+                              <span className="conversation-row-meta">
+                                {isRunning ? (
+                                  <LoaderCircle
+                                    className="conversation-run-spinner"
+                                    size={13}
+                                    strokeWidth={2}
+                                    aria-label="正在运行"
+                                  />
+                                ) : null}
+                                <span className="conversation-updated-label">{conversation.updatedLabel}</span>
+                              </span>
+                            </button>
+                            {props.onArchiveConversation ? (
+                              <button
+                                type="button"
+                                className="sidebar-conversation-archive"
+                                aria-label="归档"
+                                title={isRunning ? '任务运行结束后可归档' : '归档会话'}
+                                disabled={
+                                  isRunning
+                                  || archivingConversationId === conversation.id
+                                }
+                                onClick={async () => {
+                                  if (!window.confirm(
+                                    `归档“${conversation.title}”？归档后会从项目列表隐藏，但不会删除项目文件或 Codex 历史。`
+                                  )) {
+                                    return;
+                                  }
+                                  setArchivingConversationId(conversation.id);
+                                  try {
+                                    await props.onArchiveConversation?.(conversation.id);
+                                  } finally {
+                                    setArchivingConversationId(undefined);
+                                  }
+                                }}
+                              >
+                                {archivingConversationId === conversation.id ? (
+                                  <LoaderCircle
+                                    className="conversation-run-spinner"
+                                    size={14}
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <Archive size={14} strokeWidth={1.9} aria-hidden="true" />
+                                )}
+                              </button>
+                            ) : null}
+                          </div>
                         );
                       })}
                     </div>
