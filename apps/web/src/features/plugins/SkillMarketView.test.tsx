@@ -8,7 +8,6 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { filterAndSortSkillMarketEntries } from './skill-market-model.js';
-import { savedSkillIdsStorageKey } from './skill-market-storage.js';
 import { normalizeSkillMarketAssetUrl } from './SkillMarketCover.js';
 import { SkillMarketView } from './SkillMarketView.js';
 
@@ -253,9 +252,8 @@ describe('SkillMarketView', () => {
     expect(dialog.querySelector('.skill-market-modal__body')).not.toContainElement(title);
     expect(meta!.firstElementChild).toHaveClass('skill-market-detail-author');
     expect(meta!.firstElementChild).toHaveTextContent('zarazhangrui');
-    expect(
-      within(dialog).getByRole('button', { name: '收藏 网页演示稿生成' }).closest('.skill-market-detail-title-row')
-    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: /收藏/ })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/位用户/)).not.toBeInTheDocument();
     expect(dialog.querySelector('.skill-market-case__caption svg')).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: '关闭详情' })).not.toBeInTheDocument();
   });
@@ -363,7 +361,7 @@ describe('SkillMarketView', () => {
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = screen.getByRole('dialog');
-    const firstButton = within(dialog).getByRole('button', { name: '收藏 网页演示稿生成' });
+    const firstButton = within(dialog).getByRole('button', { name: '预览 编辑风格演示页' });
     firstButton.focus();
 
     await user.tab({ shift: true });
@@ -422,48 +420,6 @@ describe('SkillMarketView', () => {
     getSkillDetailButton('guizang-social-card-skill').focus();
     await user.keyboard('{Enter}');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-  });
-
-  it('详情收藏仍可持久化，但列表不再展示“我的收藏”入口', async () => {
-    const user = userEvent.setup();
-    renderSkillMarket();
-
-    expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
-    await user.click(getSkillDetailButton('frontend-slides'));
-    const dialog = within(screen.getByRole('dialog'));
-    await user.click(dialog.getByRole('button', { name: '收藏 网页演示稿生成' }));
-
-    expect(JSON.parse(window.localStorage.getItem(savedSkillIdsStorageKey) ?? 'null')).toEqual([
-      'frontend-slides',
-    ]);
-    expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
-  });
-
-  it('收藏写入失败时保持原状态，恢复后可重试成功并清除错误', async () => {
-    const user = userEvent.setup();
-    renderSkillMarket();
-    const setItemSpy = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementationOnce(() => {
-        throw new Error('blocked storage');
-      });
-
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
-    await user.click(getSkillDetailButton('frontend-slides'));
-    const dialog = within(screen.getByRole('dialog'));
-    const favoriteButton = dialog.getByRole('button', { name: '收藏 网页演示稿生成' });
-    await user.click(favoriteButton);
-
-    expect(setItemSpy).toHaveBeenCalled();
-    expect(dialog.getByRole('button', { name: '收藏 网页演示稿生成' })).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('收藏保存失败，请检查浏览器存储权限');
-
-    await user.click(favoriteButton);
-
-    expect(setItemSpy).toHaveBeenCalledTimes(2);
-    expect(dialog.getByRole('button', { name: '取消收藏 网页演示稿生成' })).toBeInTheDocument();
-    expect(screen.queryByText('收藏保存失败，请检查浏览器存储权限')).not.toBeInTheDocument();
   });
 
   it('所有未安装目录条目都可直接发起安装', async () => {

@@ -815,24 +815,7 @@
   gap: 8px;
 }
 
-.skill-market-detail-title-row {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.skill-market-detail-title-row h2 {
-  flex: 1 1 auto;
-}
-
-.skill-market-detail-bookmark {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
-.skill-market-detail-meta,
-.skill-market-detail-users {
+.skill-market-detail-meta {
   min-width: 0;
   display: flex;
   align-items: center;
@@ -869,10 +852,6 @@
   font-size: 26px;
   line-height: 1.2;
   overflow-wrap: anywhere;
-}
-
-.skill-market-detail-users {
-  color: var(--muted);
 }
 
 .skill-market-detail-layout {

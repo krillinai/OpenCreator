@@ -336,8 +336,6 @@ describe('app CSS visual contracts', () => {
     const scrollableCaseList = skillMarketCssBlock('.skill-market-case-list--scrollable');
     const caseMedia = skillMarketCssBlock('.skill-market-case__media');
     const caseCaption = skillMarketCssBlock('.skill-market-case__caption');
-    const titleRow = skillMarketCssBlock('.skill-market-detail-title-row');
-    const bookmark = skillMarketCssBlock('.skill-market-detail-bookmark');
     const description = skillMarketCssBlock('.skill-market-detail-description');
     const risk = skillMarketCssBlock('.skill-market-detail-risk');
     const riskList = skillMarketCssBlock('.skill-market-detail-risk ul');
@@ -358,8 +356,8 @@ describe('app CSS visual contracts', () => {
     expect(author).toContain('background: transparent;');
     expect(author).toContain('font-size: 12px;');
     expect(skillMarketCss).not.toContain('.skill-market-modal__close');
-    expect(titleRow).toContain('display: flex;');
-    expect(bookmark).toContain('margin-left: auto;');
+    expect(skillMarketCss).not.toContain('.skill-market-detail-bookmark');
+    expect(skillMarketCss).not.toContain('.skill-market-detail-users');
     expect(description).not.toContain('border-top');
     expect(risk).toContain('padding: 12px 14px;');
     expect(riskList).toContain('gap: 4px;');

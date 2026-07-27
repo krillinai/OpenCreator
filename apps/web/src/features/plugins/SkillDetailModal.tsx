@@ -1,17 +1,14 @@
 import {
-  Bookmark,
   CheckCircle2,
   Download,
   ExternalLink,
   RefreshCw,
   ShieldAlert,
-  Users,
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { SkillMarketViewEntry } from './skill-market-model.js';
 import {
-  formatUsers,
   getSkillMarketAction,
   type SkillMarketAction,
 } from './SkillMarketCard.js';
@@ -27,10 +24,8 @@ export function SkillDetailModal({
   connected,
   mutationLocked,
   skillsKnown,
-  saved,
   useError,
   onClose,
-  onToggleSaved,
   onInstall,
   onUpdate,
   onUse,
@@ -39,10 +34,8 @@ export function SkillDetailModal({
   connected: boolean;
   mutationLocked?: boolean;
   skillsKnown: boolean;
-  saved: boolean;
   useError?: string;
   onClose(): void;
-  onToggleSaved(skillId: string): void;
   onInstall(skillId: string): void;
   onUpdate(skillId: string): void;
   onUse(skillId: string): void;
@@ -138,25 +131,10 @@ export function SkillDetailModal({
               src={item.entry.creator.avatarUrl}
             />
             <div className="skill-market-detail-head__content">
-              <div className="skill-market-detail-title-row">
-                <h2 id="skill-market-detail-title">{item.title}</h2>
-                <button
-                  aria-label={`${saved ? '取消收藏' : '收藏'} ${item.title}`}
-                  className={`skill-market-icon-button skill-market-detail-bookmark ${saved ? 'is-active' : ''}`}
-                  onClick={() => onToggleSaved(item.id)}
-                  title={`${saved ? '取消收藏' : '收藏'} ${item.title}`}
-                  type="button"
-                >
-                  <Bookmark fill={saved ? 'currentColor' : 'none'} size={16} aria-hidden="true" />
-                </button>
-              </div>
+              <h2 id="skill-market-detail-title">{item.title}</h2>
               <div className="skill-market-detail-meta">
                 <span className="skill-market-detail-author">{item.entry.creator.name}</span>
                 <span>{item.category.name}</span>
-                <span className="skill-market-detail-users">
-                  <Users size={13} aria-hidden="true" />
-                  {formatUsers(item.users)} 位用户
-                </span>
                 {item.status === 'installed_unknown_version' ? <span>版本未知</span> : null}
               </div>
             </div>

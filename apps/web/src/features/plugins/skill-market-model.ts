@@ -25,7 +25,7 @@ export type SkillMarketOperation =
 
 export type SkillMarketSort = 'recommended' | 'installed';
 
-export type SkillMarketFilterStatus = 'all' | 'installed' | 'saved';
+export type SkillMarketFilterStatus = 'all' | 'installed';
 
 export type SkillMarketCategorySummary = SkillMarketCategory & {
   count: number;
@@ -44,8 +44,6 @@ export type SkillMarketViewEntry = {
   category: SkillMarketCategory;
   subcategory: string;
   status: SkillMarketStatus;
-  users: number;
-  saved: boolean;
   installed: boolean;
   operationError?: string;
   operationKind?: 'install' | 'update';
@@ -55,7 +53,6 @@ export type FilterAndSortSkillMarketEntriesInput = {
   entries: readonly SkillMarketEntry[];
   skills?: CodexSkillListResponse | readonly CodexSkillResponse[] | null;
   records?: readonly CodexSkillMarketInstallRecordResponse[] | null;
-  savedSkillIds?: readonly string[] | null;
   search?: string | null;
   category?: string | null;
   subcategory?: string | null;
@@ -112,9 +109,8 @@ export function resolveSkillMarketStatus(
 export function filterAndSortSkillMarketEntries(
   input: FilterAndSortSkillMarketEntriesInput
 ): SkillMarketFilterResult {
-  const savedOrder = createSavedOrderMap(input.savedSkillIds);
   const models = input.entries.map((entry, index) =>
-    createViewEntry(entry, index, input.skills, input.records, savedOrder, input.operation)
+    createViewEntry(entry, index, input.skills, input.records, input.operation)
   );
 
   const categories = summarizeCategories(models);
@@ -129,7 +125,6 @@ export function filterAndSortSkillMarketEntries(
   const filtered = categoryFiltered.filter((item) => {
     if (input.subcategory && item.subcategory !== input.subcategory) return false;
     if (status === 'installed' && !isInstalledStatus(item.status)) return false;
-    if (status === 'saved' && !item.saved) return false;
     return matchesSearch(item.entry, item.title, search);
   });
 
@@ -186,34 +181,11 @@ export function getSkillMarketSubcategory(entry: SkillMarketEntry): string {
   return subcategory.length > 0 ? subcategory : getSkillMarketCategory(entry).name;
 }
 
-export function getSkillMarketStableUserCount(entry: SkillMarketEntry): number {
-  const categoryIndex = skillMarketCategories.findIndex(
-    (category) => category.id === entry.category
-  );
-  const normalizedCategoryIndex = categoryIndex >= 0 ? categoryIndex : skillMarketCategories.length;
-  const listingBase =
-    entry.listingStatus === 'featured'
-      ? 24000
-      : entry.listingStatus === 'verified'
-        ? 14000
-        : 9000;
-
-  return (
-    listingBase +
-    normalizedCategoryIndex * 700 +
-    Math.min(entry.tasks.length, 5) * 180 +
-    Math.min(entry.platforms.length, 5) * 120 +
-    Math.min(entry.examples.length, 3) * 250 +
-    160
-  );
-}
-
 function createViewEntry(
   entry: SkillMarketEntry,
   index: number,
   skills: CodexSkillListResponse | readonly CodexSkillResponse[] | null | undefined,
   records: readonly CodexSkillMarketInstallRecordResponse[] | null | undefined,
-  savedOrder: Map<string, number>,
   operation?: SkillMarketOperation
 ): SkillMarketViewEntry & { originalIndex: number } {
   const status = resolveSkillMarketStatus(entry, skills, records, operation);
@@ -225,8 +197,6 @@ function createViewEntry(
     category: getSkillMarketCategory(entry),
     subcategory: getSkillMarketSubcategory(entry),
     status,
-    users: getSkillMarketStableUserCount(entry),
-    saved: savedOrder.has(entry.id),
     installed: isInstalledStatus(status),
     operationError:
       matchesOperation && operation?.error !== undefined ? operation.error : undefined,
@@ -280,7 +250,6 @@ function compareEntries(
           listingStatusRank[left.entry.listingStatus],
           listingStatusRank[right.entry.listingStatus]
         ) ||
-        compareNumber(right.users, left.users) ||
         compareInstalledPriority(left.status, right.status) ||
         compareText(left.title, right.title) ||
         compareText(left.id, right.id) ||
@@ -290,7 +259,6 @@ function compareEntries(
       return (
         compareBoolean(right.installed, left.installed) ||
         compareInstalledPriority(left.status, right.status) ||
-        compareNumber(right.users, left.users) ||
         compareText(left.title, right.title) ||
         compareText(left.id, right.id) ||
         compareNumber(left.originalIndex, right.originalIndex)
@@ -322,16 +290,6 @@ function statusSortRank(status: SkillMarketStatus): number {
     case 'not_installed':
       return 6;
   }
-}
-
-function createSavedOrderMap(
-  savedSkillIds: readonly string[] | null | undefined
-): Map<string, number> {
-  const order = new Map<string, number>();
-  for (const id of savedSkillIds ?? []) {
-    if (!order.has(id)) order.set(id, order.size);
-  }
-  return order;
 }
 
 function matchesSearch(

@@ -178,12 +178,6 @@ export function getSkillMarketAction(
   return { label: '安装', kind: 'install', disabled: false };
 }
 
-export function formatUsers(value: number): string {
-  if (value >= 10000) return `${(value / 10000).toFixed(value >= 100000 ? 0 : 1)}万`;
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return String(value);
-}
-
 function getActionIcon(kind: SkillMarketAction['kind']) {
   if (kind === 'update') return <RefreshCw size={15} aria-hidden="true" />;
   if (kind === 'use') return <CheckCircle2 size={15} aria-hidden="true" />;

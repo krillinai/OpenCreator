@@ -22,7 +22,6 @@ import {
   type SkillMarketSort,
   type SkillMarketViewEntry,
 } from './skill-market-model.js';
-import { readSavedSkillIds, writeSavedSkillIds } from './skill-market-storage.js';
 import {
   getSkillMarketAction,
   SkillMarketCard,
@@ -83,17 +82,11 @@ export function SkillMarketView({
   const [category, setCategory] = useState<string | null>(null);
   const [subcategory, setSubcategory] = useState<string | null>(null);
   const [sort, setSort] = useState<SkillMarketSort>('recommended');
-  const [savedIds, setSavedIds] = useState<string[]>([]);
-  const [savedWriteError, setSavedWriteError] = useState<string | null>(null);
   const [activeEntry, setActiveEntry] = useState<SkillMarketViewEntry | null>(null);
   const [pendingUseEntry, setPendingUseEntry] = useState<SkillMarketViewEntry | null>(null);
   const [visibleCount, setVisibleCount] = useState(skillMarketInitialVisibleCount);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setSavedIds(readSavedSkillIds());
-  }, []);
 
   const baseResult = useMemo(
     () =>
@@ -101,10 +94,9 @@ export function SkillMarketView({
         entries: catalog,
         skills,
         records: installRecords,
-        savedSkillIds: savedIds,
         operation,
       }),
-    [catalog, skills, installRecords, savedIds, operation]
+    [catalog, skills, installRecords, operation]
   );
 
   const filteredResult = useMemo(
@@ -113,7 +105,6 @@ export function SkillMarketView({
         entries: catalog,
         skills,
         records: installRecords,
-        savedSkillIds: savedIds,
         search: query,
         status,
         category,
@@ -121,7 +112,7 @@ export function SkillMarketView({
         sort,
         operation,
       }),
-    [catalog, skills, installRecords, savedIds, query, status, category, subcategory, sort, operation]
+    [catalog, skills, installRecords, query, status, category, subcategory, sort, operation]
   );
 
   const activeSyncedEntry =
@@ -167,20 +158,6 @@ export function SkillMarketView({
     setSubcategory(null);
     setSort('recommended');
     resetVisibleCount();
-  }
-
-  function toggleSaved(skillId: string) {
-    const next = savedIds.includes(skillId)
-      ? savedIds.filter((id) => id !== skillId)
-      : [...savedIds, skillId];
-
-    try {
-      writeSavedSkillIds(next);
-      setSavedIds(next);
-      setSavedWriteError(null);
-    } catch {
-      setSavedWriteError('收藏保存失败，请检查浏览器存储权限');
-    }
   }
 
   function openEntry(
@@ -382,12 +359,6 @@ export function SkillMarketView({
           使用失败：{useError.error}
         </p>
       ) : null}
-      {savedWriteError ? (
-        <p className="skill-market-inline-error skill-market-page-error" role="alert">
-          {savedWriteError}
-        </p>
-      ) : null}
-
       <div className="skill-market-summary">
         <strong>{filteredResult.entries.length} 个 Skill</strong>
         <span>
@@ -443,10 +414,8 @@ export function SkillMarketView({
           mutationLocked={mutationLocked}
           onClose={closeEntry}
           onInstall={onInstall}
-          onToggleSaved={toggleSaved}
           onUpdate={onUpdate}
           onUse={requestUse}
-          saved={activeSyncedEntry.saved}
           skillsKnown={skillsKnown}
           useError={
             useError?.skillId === activeSyncedEntry.id ? useError.error : undefined
