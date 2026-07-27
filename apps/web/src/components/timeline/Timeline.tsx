@@ -61,10 +61,6 @@ function isProcessTimelineItem(item: TimelineItem, finalAssistantMessageIds: Rea
     || item.kind === 'done';
 }
 
-function canOpenRunDetail(process: ProcessBlock): process is ProcessBlock & { runId: string } {
-  return typeof process.runId === 'string' && process.runId.length > 0;
-}
-
 function getTimelineTitle(item: TimelineItem): string {
   switch (item.kind) {
     case 'user_message':
@@ -151,38 +147,6 @@ function countVisibleProcessItems(process: ProcessBlock): number {
 
 function hasVisibleProcessContent(process: ProcessBlock): boolean {
   return countVisibleProcessItems(process) > 0;
-}
-
-function compactProcessActivity(value: string): string {
-  const compacted = value.replace(/\s+/g, ' ').trim();
-  if (compacted.length <= 72) return compacted;
-  return `${compacted.slice(0, 71)}...`;
-}
-
-function getActiveProcessActivity(process: ProcessBlock): string {
-  const toolActivityByCallId = buildToolActivityByCallId(process.items);
-
-  for (let index = process.items.length - 1; index >= 0; index -= 1) {
-    const item = process.items[index]!;
-    if (item.kind === 'reasoning_summary' || item.kind === 'assistant_message') {
-      const activity = compactProcessActivity(item.text);
-      if (activity.length > 0) return activity;
-      continue;
-    }
-    if (item.kind === 'tool_step') {
-      const title = getProcessStepTitle(item, toolActivityByCallId);
-      if (title.length === 0) continue;
-      return getPayloadType(item) === 'tool_result'
-        ? `${title}，正在继续处理`
-        : title;
-    }
-    if (item.kind === 'diagnostic') {
-      const activity = compactProcessActivity(item.message);
-      if (activity.length > 0) return activity;
-    }
-  }
-
-  return '等待 Clawee 返回过程';
 }
 
 function hasStartedRun(process: ProcessBlock): boolean {
@@ -813,12 +777,9 @@ function ProcessBlockView(props: {
   expanded: boolean;
   targeted?: boolean;
   onExpandedChange(expanded: boolean): void;
-  onOpenRunDetail?: (runId: string) => void;
 }) {
-  const { process, expanded, onExpandedChange, onOpenRunDetail } = props;
+  const { process, expanded, onExpandedChange } = props;
   const complete = isProcessComplete(process);
-  const emptyCopy = complete ? '本次没有可展示的中间过程。' : '等待 Clawee 返回过程...';
-  const activeActivity = complete ? undefined : getActiveProcessActivity(process);
   const duration = getProcessDuration(process);
 
   const steps = expanded ? visibleProcessItems(process) : [];
@@ -850,29 +811,9 @@ function ProcessBlockView(props: {
             {complete ? duration === undefined ? '已完成' : `耗时 ${duration}` : '思考中'}
           </span>
         </summary>
-        {expanded ? (
+        {expanded && steps.length > 0 ? (
           <div className="process-detail">
-            {steps.length > 0 ? (
-              <ol className="process-steps">{steps.map(item => renderProcessStep(item, toolActivityByCallId))}</ol>
-            ) : (
-              <div className="process-waiting" role="status">{emptyCopy}</div>
-            )}
-            {activeActivity ? (
-              <div className="process-active-state" role="status" title={activeActivity}>
-                <LoaderCircle className="process-summary-spinner" aria-hidden="true" size={14} />
-                <span>当前动态：{activeActivity}</span>
-              </div>
-            ) : null}
-            {onOpenRunDetail && canOpenRunDetail(process) ? (
-              <button
-                type="button"
-                className="inline-action"
-                aria-label={`查看运行详情 ${process.runId}`}
-                onClick={() => onOpenRunDetail(process.runId)}
-              >
-                运行详情
-              </button>
-            ) : null}
+            <ol className="process-steps">{steps.map(item => renderProcessStep(item, toolActivityByCallId))}</ol>
           </div>
         ) : null}
       </details>
@@ -892,7 +833,6 @@ type TimelineProps = {
   hasMore?: boolean;
   loadingOlder?: boolean;
   onLoadOlder?(): Promise<void> | void;
-  onOpenRunDetail?(runId: string): void;
   onOpenFile?(path: string): void;
   onEditUserMessage?(item: Extract<TimelineItem, { kind: 'user_message' }>): void;
   resolvingApprovalIds?: ReadonlySet<string>;
@@ -1116,7 +1056,6 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                   props.targetItemId,
                   props.targetRunId,
                   props.targetApprovalId,
-                  props.onOpenRunDetail,
                   props.onOpenFile,
                   props.onEditUserMessage,
                   props.resolvingApprovalIds,
@@ -1157,7 +1096,6 @@ function renderTimelineRenderItem(
   targetItemId?: string,
   targetRunId?: string,
   targetApprovalId?: string,
-  onOpenRunDetail?: (runId: string) => void,
   onOpenFile?: (path: string) => void,
   onEditUserMessage?: (item: Extract<TimelineItem, { kind: 'user_message' }>) => void,
   resolvingApprovalIds?: ReadonlySet<string>,
@@ -1180,7 +1118,6 @@ function renderTimelineRenderItem(
           targetApprovalId
         )}
         onExpandedChange={expanded => onProcessExpandedChange?.(renderItem.key, expanded)}
-        onOpenRunDetail={onOpenRunDetail}
       />
     );
   }

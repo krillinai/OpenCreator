@@ -1085,30 +1085,6 @@ select:focus-visible {
   padding: 12px 8px 18px;
 }
 
-.process-waiting {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.process-active-state {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.process-active-state span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .process-steps {
   display: grid;
   gap: 16px;

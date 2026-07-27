@@ -3622,7 +3622,6 @@ export function AppController(props: AppControllerProps) {
                 : undefined
             }
             onLoadOlder={threadHistory.loadOlder}
-            onOpenRunDetail={openRunDetail}
             onOpenFile={openTimelineFile}
             onEditUserMessage={editUserMessage}
             resolvingApprovalIds={resolvingApprovalIds}

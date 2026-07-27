@@ -2570,7 +2570,7 @@ describe('App', () => {
     expect(screen.queryByText('更新失败，请重试')).not.toBeInTheDocument();
   });
 
-  it('starts a real runtime run, records SSE events, opens run detail, and shows Codex info in settings', async () => {
+  it('starts a real runtime run, records SSE events without redundant process detail, and shows Codex info in settings', async () => {
     const user = userEvent.setup();
     const prompt = 'Reply with OK only.';
     const codexStatus = createCodexStatusResponse();
@@ -2675,14 +2675,8 @@ describe('App', () => {
     });
     expect(sseFetchImpl).toBe(runtimeFetch);
 
-    const runDetailButton = screen.getAllByRole('button', { name: '查看运行详情 run_1' })[0];
-    if (runDetailButton === undefined) throw new Error('Expected a run detail button');
-    await user.click(runDetailButton);
-
-    expect(await screen.findByRole('heading', { name: '运行详情' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Run run_1' })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: '导出脱敏诊断包' })).toBeInTheDocument();
-    expect(screen.getByText('codex-cli test')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /查看运行详情/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/当前动态/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置 账户' }));
     await user.click(await screen.findByRole('button', { name: '关于 Clawee' }));
@@ -2869,7 +2863,7 @@ describe('App', () => {
 
     await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
 
-    expect(screen.getByText('运行详情')).toBeInTheDocument();
+    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
     expect(screen.queryByText('finalizing')).not.toBeInTheDocument();
@@ -6461,11 +6455,7 @@ describe('App', () => {
       call.url.endsWith('/memories') && call.init?.method === 'POST'
     ))).toBe(false);
 
-    const runDetailButton = await screen.findByRole('button', { name: '查看运行详情 run_memory' });
-    await user.click(runDetailButton);
-    expect(await screen.findByText('本次使用的上下文')).toBeInTheDocument();
-    expect(screen.getByText('会话摘要 v1')).toBeInTheDocument();
-    expect(screen.getAllByText('提交前运行全部测试').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /查看运行详情/ })).not.toBeInTheDocument();
     expect(JSON.parse(String(findPostCall(fetchCalls, '/runs')?.init?.body))).toEqual({
       threadId: thread.id,
       prompt,

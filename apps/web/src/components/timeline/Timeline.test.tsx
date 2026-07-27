@@ -483,8 +483,10 @@ describe('Timeline', () => {
 
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(screen.getByText('思考中')).toBeInTheDocument();
-    expect(screen.getByTitle('等待 Clawee 返回过程')).toBeInTheDocument();
-    expect(screen.getByText('等待 Clawee 返回过程...')).toBeInTheDocument();
+    expect(screen.queryByText(/等待 Clawee 返回过程/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/当前动态/)).not.toBeInTheDocument();
+    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
+    expect(container.querySelector('.process-detail')).not.toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
   });
 
@@ -611,7 +613,6 @@ describe('Timeline', () => {
     );
 
     expect(screen.getByText('思考中')).toBeInTheDocument();
-    expect(screen.getByTitle('我会读取上下文再执行任务。')).toBeInTheDocument();
     expect(screen.getByText('我会读取上下文再执行任务。')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
@@ -703,7 +704,7 @@ describe('Timeline', () => {
       }
     ];
 
-    const { container } = render(<Timeline items={items} onOpenRunDetail={vi.fn()} />);
+    const { container } = render(<Timeline items={items} />);
 
     expect(screen.getByText('只回复 OK')).toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
@@ -711,12 +712,11 @@ describe('Timeline', () => {
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
     expect(screen.getByText('已完成')).toBeInTheDocument();
     expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
-    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
-
     await user.click(screen.getByText('已完成'));
 
-    expect(screen.getByText('运行详情')).toBeInTheDocument();
-    expect(screen.getByText('本次没有可展示的中间过程。')).toBeInTheDocument();
+    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
+    expect(screen.queryByText('本次没有可展示的中间过程。')).not.toBeInTheDocument();
+    expect(container.querySelector('.process-detail')).not.toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
     expect(screen.queryByText('finalizing')).not.toBeInTheDocument();
@@ -742,13 +742,13 @@ describe('Timeline', () => {
       }
     ];
 
-    const { container } = render(<Timeline items={items} onOpenRunDetail={vi.fn()} />);
+    const { container } = render(<Timeline items={items} />);
 
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
     expect(screen.getByText('已完成')).toBeInTheDocument();
     expect(screen.getByText('任务运行时间过长，已自动停止')).toBeInTheDocument();
-    expect(screen.getByText('运行详情')).toBeInTheDocument();
+    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
   });
 
   it('renders readable timeout failure labels', () => {
@@ -772,7 +772,6 @@ describe('Timeline', () => {
               source: 'runtime'
             }
           ]}
-          onOpenRunDetail={vi.fn()}
         />
       );
 
@@ -986,9 +985,7 @@ describe('Timeline', () => {
     expect(onOpenFile).toHaveBeenCalledWith('apps/web/src/components/timeline/timeline-model.ts');
   });
 
-  it('opens run detail from the process block with a labeled target', async () => {
-    const user = userEvent.setup();
-    const onOpenRunDetail = vi.fn();
+  it('does not expose run detail from the process block', () => {
     const items: TimelineItem[] = [
       {
         kind: 'run_status',
@@ -1006,16 +1003,10 @@ describe('Timeline', () => {
       }
     ];
 
-    render(<Timeline items={items} onOpenRunDetail={onOpenRunDetail} />);
+    render(<Timeline items={items} />);
 
-    const runDetailButton = screen.getByRole('button', { name: '查看运行详情 run_1' });
-
-    expect(runDetailButton).toHaveAttribute('aria-label', '查看运行详情 run_1');
-    expect(screen.queryByText('查看 Run 详情')).not.toBeInTheDocument();
-
-    await user.click(runDetailButton);
-
-    expect(onOpenRunDetail).toHaveBeenCalledWith('run_1');
+    expect(screen.queryByRole('button', { name: /查看运行详情/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
   });
 
   it('keeps queued follow-ups out of the conversation timeline', () => {
