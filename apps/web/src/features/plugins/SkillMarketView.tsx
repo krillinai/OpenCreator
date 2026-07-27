@@ -6,7 +6,6 @@ import { skillMarketCatalog, type SkillMarketEntry } from '@clawee/skill-market'
 import {
   AlertCircle,
   ArrowDownUp,
-  Bookmark,
   CheckCircle2,
   Loader2,
   Plug,
@@ -150,7 +149,6 @@ export function SkillMarketView({
     return () => observer.disconnect();
   }, [filteredResult.entries.length, page.hasMore, page.visibleCount]);
 
-  const savedCount = baseResult.entries.filter((entry) => entry.saved).length;
   const installedCount = baseResult.entries.filter((entry) => entry.installed).length;
   const currentSubcategories = filteredResult.subcategories;
   const mutationLocked = operation !== undefined && operation.error === undefined;
@@ -312,19 +310,6 @@ export function SkillMarketView({
           </div>
 
           <div className="skill-market-status-controls" aria-label="目录状态" role="group">
-            <button
-              aria-pressed={status === 'saved'}
-              className={status === 'saved' ? 'is-active' : ''}
-              onClick={() => {
-                setStatus(status === 'saved' ? 'all' : 'saved');
-                resetVisibleCount();
-              }}
-              type="button"
-            >
-              <Bookmark size={14} aria-hidden="true" />
-              <span>我的收藏</span>
-              <b>{savedCount}</b>
-            </button>
             <button
               aria-pressed={status === 'installed'}
               className={status === 'installed' ? 'is-active' : ''}

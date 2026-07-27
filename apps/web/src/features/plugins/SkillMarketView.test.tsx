@@ -69,11 +69,7 @@ describe('SkillMarketView', () => {
       })
     ).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: '场景' })).not.toBeInTheDocument();
-    expect(
-      within(screen.getByRole('group', { name: '目录状态' })).getByRole('button', {
-        name: /我的收藏\s+0/,
-      })
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: '排序' })).toHaveValue('recommended');
     expect(screen.queryByRole('combobox', { name: '分类' })).not.toBeInTheDocument();
   });
@@ -419,28 +415,20 @@ describe('SkillMarketView', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
-  it('收藏后“我的收藏”计数更新并持久化', async () => {
+  it('详情收藏仍可持久化，但列表不再展示“我的收藏”入口', async () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = within(screen.getByRole('dialog'));
     await user.click(dialog.getByRole('button', { name: '收藏 网页演示稿生成' }));
 
-    expect(screen.getByRole('button', { name: /我的收藏\s+1/ })).toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem(savedSkillIdsStorageKey) ?? 'null')).toEqual([
       'frontend-slides',
     ]);
-
-    await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
-    await user.click(screen.getByRole('button', { name: /我的收藏\s+1/ }));
-    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(1);
-    await user.click(screen.getByRole('button', { name: /我的收藏\s+1/ }));
-    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
+    expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
   });
 
   it('收藏写入失败时保持原状态，恢复后可重试成功并清除错误', async () => {
@@ -452,7 +440,6 @@ describe('SkillMarketView', () => {
         throw new Error('blocked storage');
       });
 
-    expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = within(screen.getByRole('dialog'));
@@ -460,14 +447,12 @@ describe('SkillMarketView', () => {
     await user.click(favoriteButton);
 
     expect(setItemSpy).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /我的收藏\s+0/ })).toBeInTheDocument();
-    expect(favoriteButton).toBeInTheDocument();
+    expect(dialog.getByRole('button', { name: '收藏 网页演示稿生成' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('收藏保存失败，请检查浏览器存储权限');
 
     await user.click(favoriteButton);
 
     expect(setItemSpy).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole('button', { name: /我的收藏\s+1/ })).toBeInTheDocument();
     expect(dialog.getByRole('button', { name: '取消收藏 网页演示稿生成' })).toBeInTheDocument();
     expect(screen.queryByText('收藏保存失败，请检查浏览器存储权限')).not.toBeInTheDocument();
   });
