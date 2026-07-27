@@ -4,6 +4,7 @@ import { copyToClipboard } from './clipboard.js';
 import { renderTextWithWorkspaceFileLinks, type MarkdownLinkClickHandler } from './markdown-inline.js';
 
 const CODE_COLLAPSE_LINE_THRESHOLD = 16;
+const CODE_COLLAPSE_VISIBLE_LINES = 8;
 
 export function MarkdownCodeBlock(props: {
   body: string;
@@ -11,7 +12,8 @@ export function MarkdownCodeBlock(props: {
   onLinkClick?: MarkdownLinkClickHandler;
   linkifyWorkspaceFiles?: boolean;
 }) {
-  const lineCount = useMemo(() => props.body.split('\n').length, [props.body]);
+  const lines = useMemo(() => props.body.split('\n'), [props.body]);
+  const lineCount = lines.length;
   const collapsible = lineCount > CODE_COLLAPSE_LINE_THRESHOLD;
   const [collapsed, setCollapsed] = useState(collapsible);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -42,6 +44,9 @@ export function MarkdownCodeBlock(props: {
   const linkifyTextFiles = props.linkifyWorkspaceFiles === true
     && props.onLinkClick !== undefined
     && isPlainTextLanguage(props.lang);
+  const visibleBody = collapsed
+    ? `${lines.slice(0, CODE_COLLAPSE_VISIBLE_LINES).join('\n')}\n…`
+    : props.body;
 
   return (
     <div className="md-code-block" data-collapsed={collapsed ? 'true' : undefined}>
@@ -75,7 +80,9 @@ export function MarkdownCodeBlock(props: {
       <div className="md-code-body">
         <pre className="md-code">
           <code data-lang={props.lang ?? undefined}>
-            {linkifyTextFiles ? renderTextWithWorkspaceFileLinks(props.body, props.onLinkClick!) : props.body}
+            {linkifyTextFiles
+              ? renderTextWithWorkspaceFileLinks(visibleBody, props.onLinkClick!)
+              : visibleBody}
           </code>
         </pre>
       </div>

@@ -5502,11 +5502,6 @@ select:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.markdown-prose .md-code-block[data-collapsed="true"] .md-code-body {
-  max-height: 168px;
-  overflow: hidden;
-}
-
 .markdown-prose .md-link {
   color: var(--accent);
   text-decoration: none;

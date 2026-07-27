@@ -58,6 +58,35 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByRole('button', { name: '已复制' })).toBeInTheDocument();
   });
 
+  it('collapses long code at a complete line boundary and expands all content', async () => {
+    const user = userEvent.setup();
+    const body = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join('\n');
+    const { container } = render(
+      <MarkdownRenderer variant="assistant" text={`\`\`\`text\n${body}\n\`\`\``} />
+    );
+    const code = container.querySelector('.md-code code');
+
+    expect(code?.textContent).toBe([
+      'line 1',
+      'line 2',
+      'line 3',
+      'line 4',
+      'line 5',
+      'line 6',
+      'line 7',
+      'line 8',
+      '…',
+    ].join('\n'));
+
+    await user.click(screen.getByRole('button', { name: '展开代码' }));
+
+    expect(code?.textContent).toBe(body);
+    expect(screen.getByRole('button', { name: '收起代码' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+  });
+
   it('falls back when clipboard copy fails', async () => {
     const user = userEvent.setup();
     Object.defineProperty(globalThis.navigator, 'clipboard', {
