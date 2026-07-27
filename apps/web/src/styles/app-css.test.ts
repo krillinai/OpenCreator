@@ -652,6 +652,7 @@ describe('app CSS visual contracts', () => {
     const userBubble = cssBlock('.timeline-user_message .timeline-bubble');
     const lightUserBubble = cssBlock(':root[data-theme="light"] .timeline-user_message .timeline-bubble');
     const assistantBubble = cssBlock('.timeline-assistant_message .timeline-bubble');
+    const messageMeta = cssBlock('.timeline-message-meta');
 
     expect(userBubble).toContain('border: 0;');
     expect(userBubble).toContain('border-top-right-radius: 0;');
@@ -660,6 +661,10 @@ describe('app CSS visual contracts', () => {
     expect(assistantBubble).toContain('border: 0;');
     expect(assistantBubble).toContain('border-radius: 0;');
     expect(assistantBubble).toContain('background: transparent;');
+    expect(messageMeta).toContain('opacity: 0;');
+    expect(messageMeta).toContain('pointer-events: none;');
+    expect(appCss).toContain('.timeline-user_message:hover .timeline-message-meta');
+    expect(appCss).toContain('@media (hover: none)');
   });
 
   it('uses a very subtle divider between process groups', () => {

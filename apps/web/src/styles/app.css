@@ -734,16 +734,32 @@ select:focus-visible {
   background: #f2f2f2;
 }
 
-.timeline-message-actions {
-  min-height: 24px;
+.timeline-message-meta {
+  min-height: 28px;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 2px;
-  padding-top: 2px;
-  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  gap: 4px;
+  padding: 2px 4px 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
 }
 
-.timeline-message-actions button {
+.timeline-user_message:hover .timeline-message-meta,
+.timeline-user_message:focus-within .timeline-message-meta {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.timeline-message-meta time {
+  margin-right: 4px;
+  color: var(--subtle);
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.timeline-message-meta button {
   width: 26px;
   height: 24px;
   display: inline-grid;
@@ -752,9 +768,16 @@ select:focus-visible {
   color: var(--muted);
 }
 
-.timeline-message-actions button:hover {
+.timeline-message-meta button:hover {
   background: color-mix(in srgb, var(--text) 7%, transparent);
   color: var(--text);
+}
+
+@media (hover: none) {
+  .timeline-message-meta {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .timeline-schedule_trigger .timeline-avatar {

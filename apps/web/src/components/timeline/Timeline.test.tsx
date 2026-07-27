@@ -196,6 +196,7 @@ describe('Timeline', () => {
     const item: Extract<TimelineItem, { kind: 'user_message' }> = {
       kind: 'user_message',
       id: 'user_actions',
+      timestamp: '2026-07-25T12:09:00.000Z',
       text: '重新整理这段需求',
       source: 'runtime'
     };
@@ -206,6 +207,13 @@ describe('Timeline', () => {
         onEditUserMessage={onEditUserMessage}
       />
     );
+
+    const message = screen.getByText('重新整理这段需求').closest('.timeline-user_message');
+    const bubble = message?.querySelector<HTMLElement>('.timeline-bubble') ?? null;
+    const meta = message?.querySelector<HTMLElement>('.timeline-message-meta') ?? null;
+    expect(meta).toBeInTheDocument();
+    expect(bubble).not.toContainElement(meta);
+    expect(meta?.querySelector('time')).toHaveAttribute('datetime', item.timestamp);
 
     await user.click(screen.getByRole('button', { name: '复制消息' }));
     expect(writeText).toHaveBeenCalledWith('重新整理这段需求');

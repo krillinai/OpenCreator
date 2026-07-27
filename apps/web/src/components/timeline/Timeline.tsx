@@ -551,21 +551,21 @@ function renderMessageContent(
             }
           : undefined}
       />
-      {item.kind === 'user_message' ? (
-        <MessageActions item={item} onEdit={onEditUserMessage} />
-      ) : null}
     </>
   );
 }
 
-function MessageActions(props: {
+function MessageMeta(props: {
   item: Extract<TimelineItem, { kind: 'user_message' }>;
   onEdit?: (item: Extract<TimelineItem, { kind: 'user_message' }>) => void;
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   return (
-    <div className="timeline-message-actions">
+    <div className="timeline-message-meta">
+      {props.item.timestamp ? (
+        <time dateTime={props.item.timestamp}>{formatMessageTime(props.item.timestamp)}</time>
+      ) : null}
       <button
         type="button"
         aria-label={
@@ -598,6 +598,17 @@ function MessageActions(props: {
       ) : null}
     </div>
   );
+}
+
+function formatMessageTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(date);
 }
 
 function renderScheduleTrigger(
@@ -1172,6 +1183,9 @@ function renderTimelineRenderItem(
             : undefined
         )}
       </div>
+      {item.kind === 'user_message' ? (
+        <MessageMeta item={item} onEdit={onEditUserMessage} />
+      ) : null}
     </article>
   );
 }

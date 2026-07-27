@@ -10,6 +10,7 @@ export type TimelineItem =
   | {
       kind: 'user_message';
       id: string;
+      timestamp?: string;
       text: string;
       content?: string;
       attachments?: AttachmentResponse[];

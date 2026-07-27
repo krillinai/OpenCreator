@@ -2655,6 +2655,7 @@ export function AppController(props: AppControllerProps) {
       {
         kind: 'user_message',
         id: userMessageId,
+        timestamp: new Date().toISOString(),
         text: prompt,
         attachments: attachmentMetadata,
         attachmentPreviewUrls,
