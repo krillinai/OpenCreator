@@ -208,12 +208,6 @@ function CodePayloadBlock(props: { content: string }) {
   );
 }
 
-function shouldRenderDiagnosticPayload(item: Extract<TimelineItem, { kind: 'diagnostic' }>): boolean {
-  const content = item.content.trim();
-  if (content.length === 0) return false;
-  return content !== item.message.trim();
-}
-
 function getPayloadType(item: ProcessTimelineItem): string | undefined {
   if (!('content' in item) || typeof item.content !== 'string') return undefined;
   const payload = safeParseJson(item.content);
@@ -745,7 +739,6 @@ function renderTimelineItemContent(
             <span className={`process-step-severity ${item.severity}`}>{item.severity}</span>
             <span className="process-step-title">{item.message}</span>
           </div>
-          {shouldRenderDiagnosticPayload(item) ? <CodePayloadBlock content={item.content} /> : null}
         </div>
       );
     case 'reasoning_summary':
@@ -777,7 +770,6 @@ function renderProcessStep(item: VisibleProcessItem, toolActivityByCallId: Map<s
         {item.kind === 'done' ? <span className="process-step-severity error">{item.status}</span> : null}
         <span className="process-step-title">{getProcessStepTitle(item, toolActivityByCallId)}</span>
       </div>
-      {item.kind === 'diagnostic' && shouldRenderDiagnosticPayload(item) ? <CodePayloadBlock content={item.content} /> : null}
       {item.kind === 'done' ? <CodePayloadBlock content={item.content} /> : null}
     </li>
   );

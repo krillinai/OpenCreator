@@ -453,8 +453,8 @@ describe('Timeline', () => {
     expect(screen.getByText('+12 -3')).toBeInTheDocument();
     expect(screen.getByText('warning')).toBeInTheDocument();
     expect(screen.getByText('stream resumed')).toBeInTheDocument();
-    expect(screen.getByText(/"code": "warn_1"/)).toBeInTheDocument();
-    expect(screen.getByText(/"source": "sse"/)).toBeInTheDocument();
+    expect(screen.queryByText(/"code": "warn_1"/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"source": "sse"/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(
         '{"type":"diagnostic","code":"warn_1","severity":"warning","message":"stream resumed","details":{"source":"sse"}}'
@@ -462,8 +462,8 @@ describe('Timeline', () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText('error')).toBeInTheDocument();
     expect(screen.getByText('runtime failed')).toBeInTheDocument();
-    expect(screen.getByText(/"code": "runtime_error"/)).toBeInTheDocument();
-    expect(screen.getByText(/"exitCode": 1/)).toBeInTheDocument();
+    expect(screen.queryByText(/"code": "runtime_error"/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"exitCode": 1/)).not.toBeInTheDocument();
     expect(
       screen.queryByText('{"type":"error","code":"runtime_error","message":"runtime failed","details":{"exitCode":1}}')
     ).not.toBeInTheDocument();
