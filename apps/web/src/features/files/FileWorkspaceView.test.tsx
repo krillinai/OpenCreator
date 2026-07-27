@@ -1,5 +1,5 @@
 import type { ThreadResponse, WorkspaceDirectoryResponse, WorkspaceFileMeta, WorkspaceFileNode } from '@clawee/protocol';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -331,20 +331,28 @@ describe('FileWorkspaceView', () => {
     const toolbar = container.querySelector('.file-top-bar');
     if (!(toolbar instanceof HTMLElement)) throw new Error('Expected compact file toolbar');
 
+    const titleRow = toolbar.querySelector('.file-top-bar-title-row');
+    if (!(titleRow instanceof HTMLElement)) throw new Error('Expected file toolbar title row');
     const title = toolbar.querySelector('.file-top-bar-title');
     if (!(title instanceof HTMLElement)) throw new Error('Expected file toolbar title');
     expect(within(title).getByText('notes.md')).toBeInTheDocument();
+    expect(within(titleRow).getByRole('button', { name: '关闭文件工作区' })).toBeEnabled();
+
+    const controlRow = toolbar.querySelector('.file-top-bar-control-row');
+    if (!(controlRow instanceof HTMLElement)) throw new Error('Expected file toolbar control row');
     const pathNav = within(toolbar).getByLabelText('文件路径');
     expect(pathNav).toHaveTextContent('repo/scripts/notes.md');
-    expect(within(pathNav).getByRole('button', { name: '复制路径' })).toBeEnabled();
-    expect(within(toolbar).getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(toolbar).getByRole('button', { name: '编辑' })).toHaveAttribute('aria-pressed', 'false');
-    expect(within(toolbar).getByRole('button', { name: '保存' })).toBeDisabled();
-    expect(within(toolbar).getByRole('button', { name: '打开所在目录' })).toBeEnabled();
+    expect(within(pathNav).queryByRole('button', { name: '复制路径' })).not.toBeInTheDocument();
+    expect(within(controlRow).getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(controlRow).getByRole('button', { name: '编辑' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(controlRow).getByRole('button', { name: '保存' })).toBeDisabled();
+    expect(within(controlRow).getByRole('button', { name: '打开文件' })).toBeEnabled();
+    expect(within(controlRow).getByRole('button', { name: '展开目录树' })).toBeEnabled();
 
     const actions = toolbar.querySelector('.file-top-bar-actions');
     if (!(actions instanceof HTMLElement)) throw new Error('Expected file toolbar actions');
     expect(within(actions).queryByRole('button', { name: '复制路径' })).not.toBeInTheDocument();
+    expect(within(actions).queryByRole('button', { name: '关闭文件工作区' })).not.toBeInTheDocument();
 
     const modeButtons = within(toolbar).getAllByRole('button')
       .filter(button => button.textContent === '预览' || button.textContent === '编辑');
@@ -356,7 +364,6 @@ describe('FileWorkspaceView', () => {
     expect(within(toolbar).getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('textbox', { name: 'scripts/notes.md 编辑器' })).toBeInTheDocument();
 
-    expect(screen.queryByText('打开文件')).not.toBeInTheDocument();
     expect(container.querySelector('.file-path-bar')).not.toBeInTheDocument();
     expect(container.querySelector('.file-editor-toolbar')).not.toBeInTheDocument();
   });
@@ -391,68 +398,6 @@ describe('FileWorkspaceView', () => {
     expect(screen.getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
     expect(preview).toHaveAttribute('sandbox', 'allow-scripts');
     expect(screen.queryByRole('textbox', { name: 'business-cover.html 编辑器' })).not.toBeInTheDocument();
-  });
-
-  it('复制路径时使用自动隐藏的 toast，不占用编辑区顶部空间', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(globalThis.navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText }
-    });
-    const thread = createThread();
-    const service = createService({
-      directories: {
-        '': createDirectory({
-          suggestedOpenPath: 'scripts/notes.md',
-          nodes: [directoryNode('scripts', 0), fileNode('scripts/notes.md', 'markdown', 1)]
-        })
-      },
-      metas: {
-        'scripts/notes.md': createMeta({
-          path: 'scripts/notes.md',
-          name: 'notes.md',
-          kind: 'markdown',
-          mime: 'text/markdown'
-        })
-      },
-      contents: {
-        'scripts/notes.md': '# notes'
-      }
-    });
-
-    try {
-      const { container } = render(
-        <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
-      );
-
-      expect(await screen.findByRole('heading', { name: 'notes' })).toBeInTheDocument();
-      vi.useFakeTimers();
-
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: '复制路径' }));
-        await Promise.resolve();
-      });
-
-      expect(writeText).toHaveBeenCalledWith('/Users/test/repo/scripts/notes.md');
-      expect(screen.getByRole('status')).toHaveTextContent('已复制文件路径');
-      expect(within(screen.getByLabelText('文件路径')).getByRole('status')).toHaveTextContent('已复制文件路径');
-      expect(container.querySelector('.file-workspace-toast')).toHaveTextContent('已复制文件路径');
-      expect(Array.from(container.querySelectorAll('.file-workspace-notice')).some((notice) => (
-        notice.textContent?.includes('已复制文件路径')
-      ))).toBe(false);
-
-      act(() => {
-        vi.advanceTimersByTime(2400);
-      });
-
-      expect(screen.queryByText('已复制文件路径')).not.toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-      Object.defineProperty(globalThis.navigator, 'clipboard', {
-        configurable: true,
-        value: undefined
-      });
-    }
   });
 
   it('可以收起和展开右侧目录树，编辑区保持可用', async () => {
@@ -776,7 +721,7 @@ describe('FileWorkspaceView', () => {
     expect(screen.getByRole('button', { name: '保存' })).toBeDisabled();
   });
 
-  it('点击打开所在目录时以 file 模式 reveal 当前文件', async () => {
+  it('点击打开文件时以 file 模式在系统文件管理器中定位当前文件', async () => {
     const user = userEvent.setup();
     const thread = createThread();
     const service = createService({
@@ -797,7 +742,7 @@ describe('FileWorkspaceView', () => {
     render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
 
     await screen.findByText('draft');
-    await user.click(screen.getByRole('button', { name: '打开所在目录' }));
+    await user.click(screen.getByRole('button', { name: '打开文件' }));
 
     await waitFor(() => {
       expect(service.reveal).toHaveBeenCalledWith({

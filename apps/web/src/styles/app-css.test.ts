@@ -568,12 +568,14 @@ describe('app CSS visual contracts', () => {
     expect(historyLoading).toContain('color: var(--muted);');
   });
 
-  it('keeps the file workspace header compact and single-layered', () => {
+  it('keeps the file workspace header compact with aligned title and control rows', () => {
     const workspace = cssBlock('.file-workspace-view');
     const conversationFileLayout = cssBlock('.conversation-file-layout');
     const topBar = cssBlock('.file-top-bar');
-    const topBarMain = cssBlock('.file-top-bar-main');
+    const titleRow = cssBlock('.file-top-bar-title-row');
+    const controlRow = cssBlock('.file-top-bar-control-row');
     const topBarPath = cssBlock('.file-top-bar-path');
+    const topBarActions = cssBlock('.file-top-bar-actions');
     const hiddenEditorToolbar = cssBlock('.file-editor-pane[data-toolbar="hidden"]');
 
     expect(workspace).toContain('grid-template-rows: auto minmax(0, 1fr);');
@@ -582,8 +584,12 @@ describe('app CSS visual contracts', () => {
     expect(conversationFileLayout).toContain('minmax(420px, 1fr)');
     expect(topBar).toContain('min-height: 72px;');
     expect(topBar).toContain('padding: 12px 16px 12px 18px;');
-    expect(topBarMain).toContain('flex-direction: column;');
+    expect(topBar).toContain('grid-template-rows: auto auto;');
+    expect(titleRow).toContain('justify-content: space-between;');
+    expect(controlRow).toContain('justify-content: space-between;');
     expect(topBarPath).toContain('font-size: 12px;');
+    expect(topBarPath).toContain('flex: 1 1 auto;');
+    expect(topBarActions).toContain('flex: 0 0 auto;');
     expect(hiddenEditorToolbar).toContain('grid-template-rows: auto minmax(0, 1fr);');
   });
 

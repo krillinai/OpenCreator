@@ -2532,10 +2532,9 @@ select:focus-visible {
 
 .file-top-bar {
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 8px;
   min-height: 72px;
   padding: 12px 16px 12px 18px;
   border-bottom: 1px solid var(--border);
@@ -2553,7 +2552,8 @@ select:focus-visible {
   background: var(--surface);
 }
 
-.file-top-bar-main,
+.file-top-bar-title-row,
+.file-top-bar-control-row,
 .file-top-bar-actions,
 .file-top-bar-title,
 .file-top-bar-path,
@@ -2565,11 +2565,13 @@ select:focus-visible {
   gap: 10px;
 }
 
-.file-top-bar-main {
-  flex: 1 1 auto;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+.file-top-bar-title-row {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.file-top-bar-control-row {
+  justify-content: space-between;
 }
 
 .file-top-bar-actions {
@@ -2592,6 +2594,7 @@ select:focus-visible {
 }
 
 .file-top-bar-path {
+  flex: 1 1 auto;
   max-width: min(680px, 54vw);
   color: var(--muted);
   font-size: 12px;
@@ -2607,28 +2610,6 @@ select:focus-visible {
 
 .file-top-bar-path-separator {
   color: var(--subtle);
-}
-
-.file-path-copy-button {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 2px;
-  border: 0;
-  border-radius: 4px;
-  padding: 0;
-  color: var(--subtle);
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-.file-path-copy-button:hover {
-  background: transparent;
-  color: var(--text);
 }
 
 .file-toolbar-icon-button {
@@ -5118,7 +5099,7 @@ select:focus-visible {
     justify-content: flex-end;
   }
 
-  .file-top-bar,
+  .file-top-bar-control-row,
   .file-path-bar {
     align-items: flex-start;
     flex-wrap: wrap;

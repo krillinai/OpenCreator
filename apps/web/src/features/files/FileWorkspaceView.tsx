@@ -38,7 +38,6 @@ const FILE_TREE_MIN_WIDTH = 220;
 const FILE_TREE_MAX_WIDTH = 420;
 const FILE_EDITOR_MIN_WIDTH = 360;
 const RESIZE_KEY_STEP = 32;
-const FILE_TOAST_DURATION_MS = 2200;
 const FILE_REFRESH_INTERVAL_MS = 2000;
 
 export function FileWorkspaceView(props: FileWorkspaceViewProps) {
@@ -62,9 +61,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const [treeCollapsed, setTreeCollapsed] = useState(true);
   const [treeWidth, setTreeWidth] = useState(280);
   const [fileMode, setFileMode] = useState<FileEditorMode>('preview');
-  const [toastMessage, setToastMessage] = useState<string>();
   const objectUrlRef = useRef<string>();
-  const toastTimeoutRef = useRef<number>();
   const workspaceBodyRef = useRef<HTMLDivElement | null>(null);
   const loadedPathsRef = useRef(new Set<string>());
   const openRequestIdRef = useRef(0);
@@ -115,7 +112,6 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
 
     return () => {
       mountedRef.current = false;
-      clearToastTimer();
       if (objectUrlRef.current && service) {
         service.revokeBlob(objectUrlRef.current);
       }
@@ -133,8 +129,6 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     setRootName('工作区');
     setRootPathLabel('');
     setWorkspaceMessage(undefined);
-    setToastMessage(undefined);
-    clearToastTimer();
     setActivePath(undefined);
     setMeta(undefined);
     setSavedContent('');
@@ -402,7 +396,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     }
   }
 
-  async function handleRevealDirectory() {
+  async function handleOpenFile() {
     if (!thread || !service || !activePath) {
       return;
     }
@@ -411,47 +405,8 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     try {
       await service.reveal({ threadId: thread.id, path: activePath, mode: 'file' });
     } catch (error) {
-      setWorkspaceMessage(humanizeError(error, '无法打开所在目录'));
+      setWorkspaceMessage(humanizeError(error, '无法打开文件'));
     }
-  }
-
-  async function handleCopyPath() {
-    if (!activePath) {
-      return;
-    }
-
-    const absolutePath = joinPath(rootPathLabel, activePath);
-    if (!navigator.clipboard?.writeText) {
-      showToast('当前环境不支持复制路径');
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(absolutePath);
-      showToast('已复制文件路径');
-    } catch (error) {
-      showToast(humanizeError(error, '复制路径失败'));
-    }
-  }
-
-  function showToast(message: string) {
-    clearToastTimer();
-    setToastMessage(message);
-    toastTimeoutRef.current = window.setTimeout(() => {
-      if (mountedRef.current) {
-        setToastMessage(undefined);
-      }
-      toastTimeoutRef.current = undefined;
-    }, FILE_TOAST_DURATION_MS);
-  }
-
-  function clearToastTimer() {
-    if (toastTimeoutRef.current === undefined) {
-      return;
-    }
-
-    window.clearTimeout(toastTimeoutRef.current);
-    toastTimeoutRef.current = undefined;
   }
 
   function handleBack() {
@@ -540,11 +495,9 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
         canToggleMode={effectiveMeta !== undefined && effectiveMeta.editable && isPreviewable(effectiveMeta)}
         canSave={effectiveMeta !== undefined && effectiveMeta.editable}
         saveDisabled={saving || !dirty || effectiveMeta?.readonly}
-        copyToastMessage={toastMessage}
         onModeChange={setFileMode}
         onSave={() => void handleSave(false)}
-        onRevealDirectory={() => void handleRevealDirectory()}
-        onCopyPath={() => void handleCopyPath()}
+        onOpenFile={() => void handleOpenFile()}
         onToggleTree={() => setTreeCollapsed(previous => !previous)}
         onClose={handleBack}
       />
@@ -688,12 +641,4 @@ function readRecentPath(storageKey: string): string | undefined {
 
 function writeRecentPath(storageKey: string, path: string) {
   window.localStorage.setItem(storageKey, path);
-}
-
-function joinPath(rootPathLabel: string, path: string): string {
-  if (rootPathLabel.length === 0) {
-    return path;
-  }
-
-  return `${rootPathLabel.replace(/\/+$/, '')}/${path}`;
 }
