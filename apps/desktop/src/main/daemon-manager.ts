@@ -29,6 +29,7 @@ export type DaemonStartInput = {
   codexHome: string;
   dataDir: string;
   defaultCwd: string;
+  defaultProjectRoot: string;
   requireProbe: boolean;
   probeVerified: boolean;
   startupTimeoutMs?: number;
@@ -98,6 +99,7 @@ export class DaemonManager extends EventEmitter<DaemonManagerEvents> {
           CODEX_HOME: input.codexHome,
           CLAWEE_DATA_DIR: input.dataDir,
           CLAWEE_DEFAULT_CWD: input.defaultCwd,
+          CLAWEE_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot,
           CLAWEE_REQUIRE_CODEX_PROBE: input.requireProbe ? '1' : '0',
           CLAWEE_CODEX_PROBE_VERIFIED: input.probeVerified ? '1' : '0'
         },

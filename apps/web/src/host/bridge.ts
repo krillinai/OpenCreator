@@ -35,8 +35,6 @@ export type HostBridge = {
   updateDesktopPreferences?(
     preferences: Partial<DesktopPreferences>
   ): Promise<DesktopPreferences>;
-  ensureDefaultProjectDirectory?(): Promise<string>;
-  createProjectDirectory?(name: string): Promise<string>;
   selectProjectDirectory?(): Promise<string | null>;
   resolveDroppedFilePath?(file: File): string | null;
 };

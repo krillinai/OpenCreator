@@ -22,8 +22,6 @@ type DesktopApi = {
   }): Promise<{
     closeBehavior: 'hide' | 'quit';
   }>;
-  ensureDefaultProjectDirectory(): Promise<string>;
-  createProjectDirectory(name: string): Promise<string>;
   selectProjectDirectory(): Promise<string | null>;
   resolveDroppedFilePath(file: File): string | null;
   openExternal(url: string): Promise<void>;
@@ -60,8 +58,6 @@ export function readDesktopHostBridge(): DesktopHostBridge | undefined {
     readDesktopPreferences: () => api.readDesktopPreferences(),
     updateDesktopPreferences: preferences =>
       api.updateDesktopPreferences(preferences),
-    ensureDefaultProjectDirectory: () => api.ensureDefaultProjectDirectory(),
-    createProjectDirectory: name => api.createProjectDirectory(name),
     selectProjectDirectory: () => api.selectProjectDirectory(),
     resolveDroppedFilePath: file => api.resolveDroppedFilePath(file),
     openExternal: url => api.openExternal(url),

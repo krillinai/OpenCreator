@@ -26,6 +26,25 @@ afterEach(async () => {
 });
 
 describe('project API', () => {
+  it('ensures the same default project across repeated requests', async () => {
+    const setup = await createSetup();
+
+    const first = await request('POST', '/projects/default');
+    const repeated = await request('POST', '/projects/default');
+
+    expect(first.statusCode).toBe(200);
+    expect(first.json().project).toMatchObject({
+      name: '默认项目',
+      cwd: join(tempDir, 'Clawee', 'Default Project'),
+      directoryState: 'available'
+    });
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json().project).toEqual(first.json().project);
+    expect(
+      setup.db.prepare('SELECT COUNT(*) AS count FROM projects').get()
+    ).toEqual({ count: 1 });
+  });
+
   it('creates managed projects under the configured Clawee directory', async () => {
     await createSetup();
 

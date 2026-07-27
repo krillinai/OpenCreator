@@ -19,6 +19,9 @@ export function createProjectService(client: RuntimeClient) {
     listProjects(status: ProjectStatus | 'all' = 'active'): Promise<ProjectListResponse> {
       return client.get(`/projects?status=${status}`);
     },
+    ensureDefaultProject(): Promise<{ project: ProjectResponse }> {
+      return client.post('/projects/default');
+    },
     createProject(input: CreateProjectRequest): Promise<{ project: ProjectResponse }> {
       return client.post('/projects', input);
     },

@@ -5,6 +5,92 @@ import {
   type FakeCodexThread
 } from './fixtures/runtime.js';
 
+test('browser first launch uses the Runtime default project without desktop-only actions', async ({
+  page,
+  runtime
+}) => {
+  const projects: Array<Record<string, unknown>> = [];
+  const projectApiCalls: Array<{ method: string; path: string }> = [];
+
+  await page.route('**/.clawee/runtime/projects**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    projectApiCalls.push({ method: request.method(), path: url.pathname });
+
+    if (url.pathname.endsWith('/projects/migrations/local-storage-v1')) {
+      await route.fulfill({
+        json: {
+          status: 'applied',
+          projectIdMap: {},
+          assignedThreadIds: [],
+          unassignedThreadIds: []
+        }
+      });
+      return;
+    }
+    if (url.pathname.endsWith('/projects/default') && request.method() === 'POST') {
+      if (projects.length === 0) {
+        projects.push(e2eProject('project-default', '默认项目', '/tmp/Clawee/Default Project'));
+      }
+      await route.fulfill({ json: { project: projects[0] } });
+      return;
+    }
+    if (url.pathname.endsWith('/projects/managed') && request.method() === 'POST') {
+      const body = request.postDataJSON() as { name: string };
+      const project = e2eProject(
+        `project-${body.name}`,
+        body.name,
+        `/tmp/Clawee/${body.name}`
+      );
+      projects.unshift(project);
+      await route.fulfill({ status: 201, json: { project } });
+      return;
+    }
+    if (url.pathname.endsWith('/projects') && request.method() === 'GET') {
+      await route.fulfill({ json: { projects } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route('**/.clawee/runtime/threads**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === 'GET' && url.pathname.endsWith('/threads')) {
+      await route.fulfill({ json: { threads: [] } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.addInitScript(() => {
+    localStorage.clear();
+    localStorage.setItem('clawee.preferences.dynamicBackground', 'false');
+  });
+
+  await page.goto(runtime.origin);
+
+  await expect(page.getByRole('button', {
+    name: '选择项目 默认项目'
+  })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+  expect(projectApiCalls.filter(call => (
+    call.method === 'POST' && call.path.endsWith('/projects/default')
+  ))).toHaveLength(1);
+
+  await page.getByRole('button', { name: '选择项目 默认项目' }).click();
+  await page.getByRole('button', { name: '新建项目' }).click();
+  await expect(page.getByRole('menuitem', { name: '使用现有文件夹' })).toHaveCount(0);
+  await page.getByRole('menuitem', { name: '新建空白项目' }).click();
+  await page.getByRole('textbox', { name: '文件夹名称' }).fill('browser-project');
+  await page.getByRole('button', { name: '创建', exact: true }).click();
+
+  await expect(page.getByRole('button', {
+    name: '选择项目 browser-project'
+  })).toBeVisible();
+  expect(projectApiCalls.filter(call => (
+    call.method === 'POST' && call.path.endsWith('/projects/managed')
+  ))).toHaveLength(1);
+});
+
 test('Clawee owns projects and mapped sessions across reloads', async ({ page, runtime }) => {
   runtime.configureInvocations([{
     threadId: 'codex-owned-e2e',
@@ -177,6 +263,24 @@ function codexThread(id: string, name: string, cwd: string): FakeCodexThread {
     updatedAt: now,
     recencyAt: now,
     cwd
+  };
+}
+
+function e2eProject(id: string, name: string, cwd: string): Record<string, unknown> {
+  return {
+    id,
+    name,
+    cwd,
+    canonicalCwd: cwd,
+    directoryState: 'available',
+    profile: 'default',
+    model: null,
+    reasoning: null,
+    sandbox: 'follow-global',
+    status: 'active',
+    createdAt: '2026-07-27T00:00:00.000Z',
+    updatedAt: '2026-07-27T00:00:00.000Z',
+    archivedAt: null
   };
 }
 

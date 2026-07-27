@@ -298,6 +298,25 @@ describe('ClaweeSidebar', () => {
     expect(onArchiveProject).toHaveBeenCalledWith('content-design');
   });
 
+  it('shows directory replacement only when the host provides that capability', async () => {
+    const user = userEvent.setup();
+    const onReplaceProjectDirectory = vi.fn();
+    const view = renderSidebar({ onArchiveProject: vi.fn() });
+
+    await user.click(screen.getByRole('button', { name: '项目操作 content-design' }));
+    expect(screen.queryByRole('menuitem', { name: '更换目录' })).not.toBeInTheDocument();
+
+    view.unmount();
+    renderSidebar({
+      onArchiveProject: vi.fn(),
+      onReplaceProjectDirectory
+    });
+    await user.click(screen.getByRole('button', { name: '项目操作 content-design' }));
+    await user.click(screen.getByRole('menuitem', { name: '更换目录' }));
+
+    expect(onReplaceProjectDirectory).toHaveBeenCalledWith('content-design');
+  });
+
   it('starts a new conversation directly inside a project', async () => {
     const user = userEvent.setup();
     const onNewConversation = vi.fn();

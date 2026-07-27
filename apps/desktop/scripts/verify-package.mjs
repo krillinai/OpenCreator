@@ -14,8 +14,9 @@ import {
   readdirSync,
   statSync
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -36,6 +37,7 @@ const resourcesDir = platformResourcesDir(packageRoot);
 const appAsar = join(resourcesDir, 'app.asar');
 const daemonDir = join(resourcesDir, 'daemon');
 const webDir = join(resourcesDir, 'web');
+const sourceWebDir = resolve(desktopDir, '../web/dist');
 const executable = packagedExecutable(packageRoot);
 
 assertExists(packageRoot);
@@ -54,6 +56,7 @@ assertExists(join(webDir, 'index.html'));
 
 assertAsarContents();
 assertDaemonContents();
+assertWebContents();
 assertNoLocalData();
 assertSize('app.asar', appAsar, 80 * 1024 * 1024);
 assertSize('Daemon resources', daemonDir, 250 * 1024 * 1024);
@@ -151,6 +154,66 @@ function assertDaemonContents() {
       throw new Error(`Daemon resources contain a development artifact: ${path}`);
     }
   });
+}
+
+function assertWebContents() {
+  assertExists(sourceWebDir);
+  const source = hashDirectory(sourceWebDir);
+  const packaged = hashDirectory(webDir);
+  const firstDifferentPath = findFirstDifferentPath(source.files, packaged.files);
+
+  if (firstDifferentPath !== undefined) {
+    throw new Error(
+      `Packaged Web file list differs from apps/web/dist at: ${firstDifferentPath}`
+    );
+  }
+  if (source.hash !== packaged.hash) {
+    throw new Error(
+      `Packaged Web contents differ from apps/web/dist: `
+      + `${packaged.hash} !== ${source.hash}`
+    );
+  }
+  if (typeof manifest.packageRoot === 'string') {
+    if (
+      manifest.webBuildHash !== source.hash
+      || manifest.webFileCount !== source.fileCount
+    ) {
+      throw new Error(
+        'Desktop build manifest Web hash does not match apps/web/dist'
+      );
+    }
+  }
+}
+
+function hashDirectory(root) {
+  const files = [];
+  walk(root, path => {
+    if (!statSync(path).isFile()) return;
+    files.push(relative(root, path).replaceAll('\\', '/'));
+  });
+  files.sort();
+
+  const aggregate = createHash('sha256');
+  for (const relativePath of files) {
+    const contents = readFileSync(join(root, relativePath));
+    const contentHash = createHash('sha256').update(contents).digest('hex');
+    aggregate.update(relativePath).update('\0').update(contentHash).update('\0');
+  }
+  return {
+    files,
+    fileCount: files.length,
+    hash: aggregate.digest('hex')
+  };
+}
+
+function findFirstDifferentPath(left, right) {
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    if (left[index] !== right[index]) {
+      return `${left[index] ?? '<missing>'} / ${right[index] ?? '<missing>'}`;
+    }
+  }
+  return undefined;
 }
 
 function assertNoLocalData() {

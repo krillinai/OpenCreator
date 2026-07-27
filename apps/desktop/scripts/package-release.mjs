@@ -2,9 +2,12 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -77,6 +80,7 @@ await runStage(
 );
 
 const packageRoot = findFreshPackageRoot(candidates);
+const webBuild = hashDirectory(resolve(rootDir, 'apps/web/dist'));
 const manifest = {
   version: 1,
   commit: gitOutput(['rev-parse', 'HEAD']) || 'unknown',
@@ -86,7 +90,9 @@ const manifest = {
   arch,
   mode,
   packageRoot,
-  packageRootRelative: relative(rootDir, packageRoot)
+  packageRootRelative: relative(rootDir, packageRoot),
+  webBuildHash: webBuild.hash,
+  webFileCount: webBuild.fileCount
 };
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`[desktop-package] 构建清单：${manifestPath}`);
@@ -198,6 +204,36 @@ function findFreshPackageRoot(candidates) {
     );
   }
   return resolve(matches[0]);
+}
+
+function hashDirectory(root) {
+  const files = listRelativeFiles(root).sort();
+  const aggregate = createHash('sha256');
+  for (const relativePath of files) {
+    const contents = readFileSync(join(root, relativePath));
+    const contentHash = createHash('sha256').update(contents).digest('hex');
+    aggregate.update(relativePath).update('\0').update(contentHash).update('\0');
+  }
+  return {
+    hash: aggregate.digest('hex'),
+    fileCount: files.length
+  };
+}
+
+function listRelativeFiles(root, current = root) {
+  const files = [];
+  for (const entry of readdirSync(current, { withFileTypes: true })) {
+    const path = join(current, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listRelativeFiles(root, path));
+      continue;
+    }
+    if (!entry.isFile()) {
+      throw new Error(`Web build contains unsupported entry: ${path}`);
+    }
+    files.push(relative(root, path).replaceAll('\\', '/'));
+  }
+  return files;
 }
 
 function gitOutput(args) {

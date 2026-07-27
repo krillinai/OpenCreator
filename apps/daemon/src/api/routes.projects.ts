@@ -56,6 +56,14 @@ export async function registerProjectRoutes(
     }
   });
 
+  server.post('/projects/default', async (_request, reply) => {
+    try {
+      return { project: manager.ensureDefaultProject() };
+    } catch (error) {
+      return sendProjectError(reply, error);
+    }
+  });
+
   server.post<{ Body: unknown }>('/projects/managed', async (request, reply) => {
     const body = parseCreateManagedProjectRequest(request.body);
     if (!body.ok) {

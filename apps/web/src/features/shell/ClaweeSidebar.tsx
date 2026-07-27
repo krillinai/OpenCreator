@@ -271,17 +271,19 @@ export function ClaweeSidebar(props: {
                                 <Settings2 size={15} strokeWidth={1.9} aria-hidden="true" />
                                 <span>编辑项目</span>
                               </button>
-                              <button
-                                type="button"
-                                role="menuitem"
-                                onClick={() => {
-                                  setProjectMenuId(undefined);
-                                  props.onReplaceProjectDirectory?.(project.id);
-                                }}
-                              >
-                                <FolderCog size={15} strokeWidth={1.9} aria-hidden="true" />
-                                <span>更换目录</span>
-                              </button>
+                              {props.onReplaceProjectDirectory ? (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setProjectMenuId(undefined);
+                                    props.onReplaceProjectDirectory?.(project.id);
+                                  }}
+                                >
+                                  <FolderCog size={15} strokeWidth={1.9} aria-hidden="true" />
+                                  <span>更换目录</span>
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 role="menuitem"

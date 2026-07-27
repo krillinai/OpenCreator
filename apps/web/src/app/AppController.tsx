@@ -939,25 +939,9 @@ export function AppController(props: AppControllerProps) {
         if (canceled) return;
 
         let initialProjectError: string | undefined;
-        if (
-          allResponse.projects.length === 0
-          && hostBridge.ensureDefaultProjectDirectory !== undefined
-        ) {
+        if (allResponse.projects.length === 0) {
           try {
-            const cwd = await hostBridge.ensureDefaultProjectDirectory();
-            try {
-              await activeProjectService.createProject({
-                cwd,
-                name: '默认项目'
-              });
-            } catch (error) {
-              if (
-                !(error instanceof ApiClientError)
-                || error.code !== 'PROJECT_DIRECTORY_CONFLICT'
-              ) {
-                throw error;
-              }
-            }
+            await activeProjectService.ensureDefaultProject();
             [activeResponse, allResponse] = await Promise.all([
               activeProjectService.listProjects('active'),
               activeProjectService.listProjects('all')
@@ -1993,22 +1977,16 @@ export function AppController(props: AppControllerProps) {
   }
 
   async function createBlankProject(name: string): Promise<boolean> {
-    const createDirectory = hostBridge.createProjectDirectory;
     if (
       projectService === null
       || projectDirectoryDialogInFlightRef.current
     ) return false;
     projectDirectoryDialogInFlightRef.current = true;
     try {
-      if (createDirectory !== undefined) {
-        const path = await createDirectory(name);
-        await registerProjectDirectory(path);
-      } else {
-        const response = await projectService.createManagedProject({ name });
-        setProjects(current => upsertProject(current, response.project));
-        selectProject(response.project.id);
-        setProjectLoadError(undefined);
-      }
+      const response = await projectService.createManagedProject({ name });
+      setProjects(current => upsertProject(current, response.project));
+      selectProject(response.project.id);
+      setProjectLoadError(undefined);
       return true;
     } catch (error) {
       setProjectLoadError(getRuntimeErrorMessage(error, '新建项目失败，请重试'));
@@ -3895,7 +3873,11 @@ export function AppController(props: AppControllerProps) {
           }
           onManageProjects={() => void openProjectManagement()}
           onEditProject={projectId => void openProjectManagement(projectId)}
-          onReplaceProjectDirectory={projectId => void replaceManagedProjectDirectory(projectId)}
+          onReplaceProjectDirectory={
+            hostBridge.selectProjectDirectory === undefined
+              ? undefined
+              : projectId => void replaceManagedProjectDirectory(projectId)
+          }
           onArchiveProject={projectId => void archiveProject(projectId)}
           onDeleteTaskDraft={threadId => deleteScheduleDraft(threadId)}
           onOpenSettings={() => {
@@ -3945,7 +3927,11 @@ export function AppController(props: AppControllerProps) {
         onUpdate={updateManagedProject}
         onArchive={archiveProject}
         onRestore={restoreManagedProject}
-        onReplaceDirectory={replaceManagedProjectDirectory}
+        onReplaceDirectory={
+          hostBridge.selectProjectDirectory === undefined
+            ? undefined
+            : replaceManagedProjectDirectory
+        }
         onAssignThread={assignManagedThread}
         onAddProject={
           projectService === null

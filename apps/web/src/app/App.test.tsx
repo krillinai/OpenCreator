@@ -3189,61 +3189,56 @@ describe('App', () => {
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
 
-  it('creates and selects a default project on the first Desktop launch', async () => {
-    testRuntimeProjects = [];
-    const hostBridge = createHostBridge();
-    hostBridge.kind = 'desktop';
-    hostBridge.ensureDefaultProjectDirectory = vi.fn(
-      async () => '/Users/test/Documents/Clawee/Default Project'
-    );
-    hostBridge.readConnectionConfig = async () => ({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
-    });
-    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
-    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      fetchCalls.push({ url, init });
-      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-      if (projectApiResponse !== undefined) return projectApiResponse;
-      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&limit=50')) {
-        return jsonResponse({ threads: [] });
-      }
-      throw new Error(`Unexpected request ${url}`);
-    };
-    const appProps = {
-      fileService: createFileService(),
-      hostBridge,
-      runtimeFetch,
-      subscribeRunEvents: async () => undefined
-    };
+  it.each(['browser', 'desktop'] as const)(
+    'creates and selects the Runtime default project on the first %s launch',
+    async kind => {
+      testRuntimeProjects = [];
+      const hostBridge = createHostBridge();
+      hostBridge.kind = kind;
+      hostBridge.readConnectionConfig = async () => ({
+        baseUrl: 'http://127.0.0.1:60764',
+        token: 'runtime-token'
+      });
+      const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+      const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        fetchCalls.push({ url, init });
+        const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+        if (projectApiResponse !== undefined) return projectApiResponse;
+        if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+        if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+        if (url.endsWith('/threads?status=active&limit=50')) {
+          return jsonResponse({ threads: [] });
+        }
+        throw new Error(`Unexpected request ${url}`);
+      };
+      const appProps = {
+        fileService: createFileService(),
+        hostBridge,
+        runtimeFetch,
+        subscribeRunEvents: async () => undefined
+      };
 
-    const firstRender = render(<App {...appProps} />);
+      const firstRender = render(<App {...appProps} />);
 
-    expect(await screen.findByRole('button', {
-      name: '选择项目 默认项目'
-    })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
-    expect(screen.getByText('要在 默认项目 中处理什么？')).toBeInTheDocument();
-    expect(hostBridge.ensureDefaultProjectDirectory).toHaveBeenCalledTimes(1);
-    const createProjectCall = findPostCall(fetchCalls, '/projects');
-    expect(readRequestBody(createProjectCall!.init!)).toEqual({
-      cwd: '/Users/test/Documents/Clawee/Default Project',
-      name: '默认项目'
-    });
+      expect(await screen.findByRole('button', {
+        name: '选择项目 默认项目'
+      })).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+      expect(screen.getByText('要在 默认项目 中处理什么？')).toBeInTheDocument();
+      expect(findPostCalls(fetchCalls, '/projects/default')).toHaveLength(1);
 
-    firstRender.unmount();
-    render(<App {...appProps} />);
+      firstRender.unmount();
+      render(<App {...appProps} />);
 
-    expect(await screen.findByRole('button', {
-      name: '选择项目 默认项目'
-    })).toBeInTheDocument();
-    expect(hostBridge.ensureDefaultProjectDirectory).toHaveBeenCalledTimes(1);
-  });
+      expect(await screen.findByRole('button', {
+        name: '选择项目 默认项目'
+      })).toBeInTheDocument();
+      expect(findPostCalls(fetchCalls, '/projects/default')).toHaveLength(1);
+    }
+  );
 
-  it('blocks conversation creation when the host cannot create a default project and sends projectId without cwd', async () => {
+  it('creates a conversation in the Runtime default project without sending cwd', async () => {
     const user = userEvent.setup();
     const prompt = 'hi';
     testRuntimeProjects = [];
@@ -3286,26 +3281,6 @@ describe('App', () => {
       input.onEvent(createRuntimeEvent('done', { type: 'done', status: 'succeeded', terminationReason: 'completed' }, 1));
     };
 
-    const firstRender = render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={subscribeRunEvents}
-      />
-    );
-
-    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('请先添加项目')).toBeDisabled();
-    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
-    expect(findPostCall(fetchCalls, '/threads')).toBeUndefined();
-
-    firstRender.unmount();
-    testRuntimeProjects = [
-      createTestProject('/Users/test/develop/content-design', {
-        name: 'content-design'
-      })
-    ];
     render(
       <App
         fileService={createFileService()}
@@ -3315,7 +3290,8 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('button', { name: '选择项目 content-design' })).toBeInTheDocument();
+    expect(await screen.findByText('本地运行内核正常')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '选择项目 默认项目' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));
 
@@ -3582,9 +3558,6 @@ describe('App', () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.kind = 'desktop';
-    hostBridge.createProjectDirectory = vi.fn(
-      async () => '/Users/test/Documents/blank-project'
-    );
     hostBridge.selectProjectDirectory = vi.fn(
       async () => '/Users/test/Documents/existing-project'
     );
@@ -3624,13 +3597,14 @@ describe('App', () => {
     await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'blank-project');
     await user.click(screen.getByRole('button', { name: '创建' }));
 
-    expect(hostBridge.createProjectDirectory).toHaveBeenCalledWith('blank-project');
     await waitFor(() => {
       expect(fetchCalls.map(call => [call.url, call.init?.method])).toContainEqual([
-        'http://127.0.0.1:60764/projects',
+        'http://127.0.0.1:60764/projects/managed',
         'POST'
       ]);
     });
+    expect(readRequestBody(findPostCall(fetchCalls, '/projects/managed')!.init!))
+      .toEqual({ name: 'blank-project' });
     expect(await screen.findByRole('button', {
       name: '选择项目 blank-project'
     })).toBeInTheDocument();
@@ -6531,6 +6505,18 @@ function handleDefaultProjectApiRequest(
   if (url.endsWith('/projects?status=all')) {
     return jsonResponse({ projects: readTestRuntimeProjects() });
   }
+  if (url.endsWith('/projects/default') && init?.method === 'POST') {
+    const existing = readTestRuntimeProjects().find(
+      project => project.cwd === '/Users/test/Documents/Clawee/Default Project'
+    );
+    if (existing !== undefined) return jsonResponse({ project: existing });
+    const project = createTestProject(
+      '/Users/test/Documents/Clawee/Default Project',
+      { name: '默认项目' }
+    );
+    testRuntimeProjects = [project, ...readTestRuntimeProjects()];
+    return jsonResponse({ project });
+  }
   if (url.endsWith('/projects/managed') && init?.method === 'POST') {
     const body = readRequestBody(init);
     const name = typeof body.name === 'string' ? body.name.trim() : 'project';
@@ -6858,6 +6844,10 @@ function createLegacyPersistedProject(cwd: string): ClaweeProject {
 
 function findPostCall(calls: Array<{ url: string; init?: RequestInit }>, path: string) {
   return calls.find(call => call.url.endsWith(path) && call.init?.method === 'POST');
+}
+
+function findPostCalls(calls: Array<{ url: string; init?: RequestInit }>, path: string) {
+  return calls.filter(call => call.url.endsWith(path) && call.init?.method === 'POST');
 }
 
 function findPatchCall(calls: Array<{ url: string; init?: RequestInit }>, path: string) {

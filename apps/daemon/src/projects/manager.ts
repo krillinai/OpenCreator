@@ -48,6 +48,50 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
   const createId = input.idFactory ?? (() => `project_${nanoid(10)}`);
 
   return {
+    ensureDefaultProject(): ProjectResponse {
+      try {
+        mkdirSync(managedProjectRoot, { recursive: true });
+      } catch {
+        throw new ProjectManagerError(
+          'PROJECT_DIRECTORY_UNAVAILABLE',
+          'Clawee 默认项目目录不可用'
+        );
+      }
+
+      const cwd = join(managedProjectRoot, 'Default Project');
+      let createdDirectory = false;
+      if (!existsSync(cwd)) {
+        try {
+          mkdirSync(cwd);
+          createdDirectory = true;
+        } catch {
+          if (!existsSync(cwd)) {
+            throw new ProjectManagerError(
+              'PROJECT_DIRECTORY_UNAVAILABLE',
+              '无法创建默认项目目录'
+            );
+          }
+        }
+      }
+
+      const directory = requireAvailableDirectory(cwd, homeDir);
+      const existing = projects.getProjectByActiveCanonicalCwd(directory.canonicalCwd);
+      if (existing !== undefined) return mapProjectRow(existing);
+
+      try {
+        return createProjectRecord({ cwd: directory.cwd, name: '默认项目' });
+      } catch (error) {
+        if (createdDirectory) {
+          try {
+            rmdirSync(cwd);
+          } catch {
+            // Only remove the directory when it is still empty.
+          }
+        }
+        throw error;
+      }
+    },
+
     createProject: createProjectRecord,
 
     createManagedProject(request: CreateManagedProjectRequest): ProjectResponse {

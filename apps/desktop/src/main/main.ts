@@ -24,8 +24,6 @@ import {
 import { exportDesktopDiagnostics } from './diagnostics.js';
 import { createDesktopLogger } from './logger.js';
 import {
-  createNamedProjectDirectory,
-  ensureDefaultProjectDirectory,
   openExternal,
   revealPath
 } from './native-actions.js';
@@ -99,6 +97,8 @@ async function launchDesktop(): Promise<void> {
   const appRoot = app.getAppPath();
   const userData = app.getPath('userData');
   const dataDir = join(userData, 'daemon');
+  const defaultProjectRoot = process.env.CLAWEE_DEFAULT_PROJECT_ROOT
+    ?? app.getPath('documents');
   const logDir = join(userData, 'logs');
   const logger = createDesktopLogger(join(logDir, 'desktop-main.log'));
   const settings = createSettingsStore(join(userData, 'desktop-settings.json'));
@@ -129,6 +129,7 @@ async function launchDesktop(): Promise<void> {
     logger,
     daemonEntryPath,
     dataDir,
+    defaultProjectRoot,
     development
   });
   windowManager = new WindowManager({
@@ -346,18 +347,6 @@ function registerIpcHandlers(input: {
     return input.bootstrap.currentState.phase === 'ready'
       ? ok()
       : failed(input.bootstrap.currentState.error?.message ?? 'Codex 检测失败');
-  });
-  handle(desktopIpc.ensureDefaultProjectDirectory, input.development, () => (
-    ensureDefaultProjectDirectory(
-      process.env.CLAWEE_DEFAULT_PROJECT_ROOT ?? app.getPath('documents')
-    )
-  ));
-  handle(desktopIpc.createProjectDirectory, input.development, (_event, name: unknown) => {
-    if (typeof name !== 'string') throw new Error('项目名称必须是字符串');
-    return createNamedProjectDirectory(
-      process.env.CLAWEE_DEFAULT_PROJECT_ROOT ?? app.getPath('documents'),
-      name
-    );
   });
   handle(desktopIpc.selectProjectDirectory, input.development, async () => {
     const result = await dialog.showOpenDialog({

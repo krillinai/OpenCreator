@@ -1,60 +1,32 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import {
-  createNamedProjectDirectory,
-  ensureDefaultProjectDirectory
-} from '../src/main/native-actions.js';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 
-const temporaryRoots: string[] = [];
+describe('desktop project boundary', () => {
+  it('keeps project creation in the Runtime instead of the native bridge', () => {
+    const nativeActions = readFileSync('src/main/native-actions.ts', 'utf8');
+    const main = readFileSync('src/main/main.ts', 'utf8');
+    const ipc = readFileSync('src/shared/ipc.ts', 'utf8');
+    const preload = readFileSync('src/preload/index.ts', 'utf8');
 
-afterEach(() => {
-  for (const root of temporaryRoots.splice(0)) {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-describe('desktop project directories', () => {
-  it('creates default and named projects under the Clawee directory', () => {
-    const root = createTemporaryRoot();
-
-    expect(ensureDefaultProjectDirectory(root)).toBe(join(root, 'Clawee', 'Default Project'));
-    expect(createNamedProjectDirectory(root, '产品官网')).toBe(join(root, 'Clawee', '产品官网'));
+    expect(nativeActions).not.toContain('ensureDefaultProjectDirectory');
+    expect(nativeActions).not.toContain('createNamedProjectDirectory');
+    expect(main).not.toContain('desktopIpc.ensureDefaultProjectDirectory');
+    expect(main).not.toContain('desktopIpc.createProjectDirectory');
+    expect(ipc).not.toContain('ensureDefaultProjectDirectory');
+    expect(ipc).not.toContain('createProjectDirectory');
+    expect(preload).not.toContain('ensureDefaultProjectDirectory');
+    expect(preload).not.toContain('createProjectDirectory');
   });
 
-  it.each(['', '   ', '.', '..', '../outside', 'nested/project', 'nested\\project'])(
-    'rejects invalid project name %j',
-    name => {
-      expect(() => createNamedProjectDirectory(createTemporaryRoot(), name)).toThrow();
-    }
-  );
+  it('passes the system documents directory to the Runtime managed project root', () => {
+    const main = readFileSync('src/main/main.ts', 'utf8');
+    const bootstrap = readFileSync('src/main/bootstrap-controller.ts', 'utf8');
+    const daemonManager = readFileSync('src/main/daemon-manager.ts', 'utf8');
 
-  it('rejects an existing project directory', () => {
-    const root = createTemporaryRoot();
-    createNamedProjectDirectory(root, '重复项目');
-
-    expect(() => createNamedProjectDirectory(root, '重复项目')).toThrow('同名项目已存在');
-  });
-
-  it('keeps project creation out of the native folder picker path', () => {
-    const source = readFileSync('src/main/main.ts', 'utf8');
-    const handlerStart = source.indexOf('handle(desktopIpc.createProjectDirectory');
-    const nextHandlerStart = source.indexOf(
-      'handle(desktopIpc.selectProjectDirectory',
-      handlerStart
+    expect(main).toContain("app.getPath('documents')");
+    expect(bootstrap).toContain('defaultProjectRoot: this.input.defaultProjectRoot');
+    expect(daemonManager).toContain(
+      'CLAWEE_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot'
     );
-    const handlerSource = source.slice(handlerStart, nextHandlerStart);
-
-    expect(handlerStart).toBeGreaterThanOrEqual(0);
-    expect(nextHandlerStart).toBeGreaterThan(handlerStart);
-    expect(handlerSource).toContain('createNamedProjectDirectory(');
-    expect(handlerSource).not.toContain('dialog.showOpenDialog');
   });
 });
-
-function createTemporaryRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'clawee-projects-'));
-  temporaryRoots.push(root);
-  return root;
-}

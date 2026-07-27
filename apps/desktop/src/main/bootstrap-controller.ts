@@ -39,6 +39,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
     logger: DesktopLogger;
     daemonEntryPath: string;
     dataDir: string;
+    defaultProjectRoot: string;
     development: boolean;
   }) {
     super();
@@ -286,6 +287,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       codexHome: environment.codexHome,
       dataDir: this.input.dataDir,
       defaultCwd: environment.defaultCwd,
+      defaultProjectRoot: this.input.defaultProjectRoot,
       requireProbe,
       probeVerified
     };

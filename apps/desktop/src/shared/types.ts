@@ -89,8 +89,6 @@ export type DesktopApi = {
   subscribeBootstrapState(listener: (state: DesktopBootstrapState) => void): () => void;
   retryBootstrap(): Promise<DesktopHostResult>;
   selectCodexPath(): Promise<DesktopHostResult>;
-  ensureDefaultProjectDirectory(): Promise<string>;
-  createProjectDirectory(name: string): Promise<string>;
   selectProjectDirectory(): Promise<string | null>;
   resolveDroppedFilePath(file: File): string | null;
   restartRuntime(): Promise<DesktopHostResult>;

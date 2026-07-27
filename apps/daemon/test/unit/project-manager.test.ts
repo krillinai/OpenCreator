@@ -18,6 +18,34 @@ afterEach(() => {
 });
 
 describe('project manager', () => {
+  it('ensures one default project inside the managed Clawee directory', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-default-project-'));
+    const managedProjectRoot = join(tempDir, 'Documents', 'Clawee');
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    let nextId = 0;
+    const manager = createProjectManager({
+      db,
+      homeDir: tempDir,
+      idFactory: () => `project_default_${++nextId}`
+    });
+
+    const first = manager.ensureDefaultProject();
+    const repeated = manager.ensureDefaultProject();
+
+    expect(first).toMatchObject({
+      id: 'project_default_1',
+      name: '默认项目',
+      cwd: join(managedProjectRoot, 'Default Project'),
+      directoryState: 'available'
+    });
+    expect(repeated).toEqual(first);
+    expect(existsSync(join(managedProjectRoot, 'Default Project'))).toBe(true);
+    expect(manager.listProjects('all')).toEqual([first]);
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM projects').get()
+    ).toEqual({ count: 1 });
+  });
+
   it('creates named projects inside the managed Clawee directory', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-managed-project-'));
     const managedProjectRoot = join(tempDir, 'Documents', 'Clawee');

@@ -130,6 +130,32 @@ describe('ProjectManagementDialog', () => {
     await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
     expect(onAddProjectDirectory).toHaveBeenCalledTimes(1);
   });
+
+  it('hides directory replacement when the host does not provide that capability', () => {
+    render(
+      <ProjectManagementDialog
+        open
+        projects={[
+          project(),
+          project({
+            id: 'project-missing',
+            name: 'Missing',
+            directoryState: 'missing'
+          })
+        ]}
+        archivedProjects={[]}
+        unassignedThreads={[]}
+        onClose={vi.fn()}
+        onUpdate={vi.fn(async () => undefined)}
+        onArchive={vi.fn(async () => undefined)}
+        onRestore={vi.fn(async () => undefined)}
+        onAssignThread={vi.fn(async () => undefined)}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: '更换目录' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '修复目录' })).not.toBeInTheDocument();
+  });
 });
 
 function project(overrides: Partial<ProjectResponse> = {}): ProjectResponse {

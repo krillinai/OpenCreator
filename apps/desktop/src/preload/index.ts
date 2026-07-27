@@ -18,9 +18,6 @@ const api: DesktopApi = {
   },
   retryBootstrap: () => ipcRenderer.invoke(desktopIpc.bootstrapRetry),
   selectCodexPath: () => ipcRenderer.invoke(desktopIpc.selectCodex),
-  ensureDefaultProjectDirectory: () =>
-    ipcRenderer.invoke(desktopIpc.ensureDefaultProjectDirectory),
-  createProjectDirectory: name => ipcRenderer.invoke(desktopIpc.createProjectDirectory, name),
   selectProjectDirectory: () => ipcRenderer.invoke(desktopIpc.selectProjectDirectory),
   resolveDroppedFilePath: file => {
     const path = webUtils.getPathForFile(file);

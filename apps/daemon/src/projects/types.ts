@@ -29,6 +29,7 @@ export type CreateMigratedProjectInput = CreateProjectRequest & {
 };
 
 export type ProjectManager = {
+  ensureDefaultProject(): ProjectResponse;
   createProject(input: CreateProjectRequest): ProjectResponse;
   createManagedProject(input: CreateManagedProjectRequest): ProjectResponse;
   createMigratedProject(input: CreateMigratedProjectInput): ProjectResponse;

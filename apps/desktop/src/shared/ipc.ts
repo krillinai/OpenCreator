@@ -5,8 +5,6 @@ export const desktopIpc = {
   bootstrapChanged: 'clawee:bootstrap:changed',
   bootstrapRetry: 'clawee:bootstrap:retry',
   selectCodex: 'clawee:codex:select',
-  ensureDefaultProjectDirectory: 'clawee:project:ensure-default-directory',
-  createProjectDirectory: 'clawee:project:create-directory',
   selectProjectDirectory: 'clawee:project:select-directory',
   restartRuntime: 'clawee:runtime:restart',
   reloadWorkspace: 'clawee:workspace:reload',

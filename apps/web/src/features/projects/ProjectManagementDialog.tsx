@@ -27,7 +27,7 @@ export function ProjectManagementDialog(props: {
   onUpdate(projectId: string, input: UpdateProjectRequest): Promise<void>;
   onArchive(projectId: string): Promise<void>;
   onRestore(projectId: string): Promise<void>;
-  onReplaceDirectory(projectId: string): Promise<void>;
+  onReplaceDirectory?(projectId: string): Promise<void>;
   onAssignThread(threadId: string, projectId: string): Promise<void>;
   onAddProject?(): void | Promise<void>;
   onAddProjectDirectory?(): void | Promise<void>;
@@ -117,10 +117,15 @@ export function ProjectManagementDialog(props: {
                       <button type="button" onClick={() => setEditingProjectId(project.id)}>
                         编辑
                       </button>
-                      <button type="button" onClick={() => void props.onReplaceDirectory(project.id)}>
-                        <FolderCog size={15} aria-hidden="true" />
-                        <span>{project.directoryState === 'missing' ? '修复目录' : '更换目录'}</span>
-                      </button>
+                      {props.onReplaceDirectory ? (
+                        <button
+                          type="button"
+                          onClick={() => void props.onReplaceDirectory?.(project.id)}
+                        >
+                          <FolderCog size={15} aria-hidden="true" />
+                          <span>{project.directoryState === 'missing' ? '修复目录' : '更换目录'}</span>
+                        </button>
+                      ) : null}
                       <button type="button" onClick={() => void props.onArchive(project.id)}>
                         <FolderMinus size={15} aria-hidden="true" />
                         <span>移除</span>
