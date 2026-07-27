@@ -3557,6 +3557,7 @@ export function AppController(props: AppControllerProps) {
         }
         projectName={currentProjectName}
         statusLabel={getConnectionStatusLabel(connectionState)}
+        statusHealthy={connectionState.status === 'connected'}
         taskToolbar={
           selectedScheduleTask?.bindingStatus === 'ready'
           && selectedSchedule !== undefined

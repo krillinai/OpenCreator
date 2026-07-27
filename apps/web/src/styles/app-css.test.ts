@@ -667,6 +667,18 @@ describe('app CSS visual contracts', () => {
     expect(appCss).toContain('@media (hover: none)');
   });
 
+  it('uses a compact red or green connection status dot without visible text', () => {
+    const indicator = cssBlock('.connection-indicator');
+    const healthy = cssBlock('.connection-indicator.is-healthy');
+    const unhealthy = cssBlock('.connection-indicator.is-unhealthy');
+
+    expect(indicator).toContain('width: 8px;');
+    expect(indicator).toContain('height: 8px;');
+    expect(healthy).toContain('background: var(--success);');
+    expect(unhealthy).toContain('background: var(--danger);');
+    expect(appCss).not.toContain('.connection-pill');
+  });
+
   it('uses a very subtle divider between process groups', () => {
     const processDetails = cssBlock('.timeline-process details');
 

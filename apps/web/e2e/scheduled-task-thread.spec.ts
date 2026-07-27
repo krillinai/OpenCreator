@@ -84,7 +84,7 @@ test('运行中刷新后恢复活动 Run 和 SSE', async ({ page, runtime }) => 
   await page.getByRole('button', { name: '立即运行任务' }).click();
   await expect(page.getByRole('status', { name: '任务状态' })).toContainText('运行中');
   await page.reload();
-  await expect(page.getByText('本地运行内核正常')).toBeVisible();
+  await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
   await expect(page.getByRole('heading', { name: schedule.name })).toBeVisible();
   await expect(page.getByText('刷新后恢复的任务结果')).toBeVisible();
   await expectNoHorizontalOverflow(page);

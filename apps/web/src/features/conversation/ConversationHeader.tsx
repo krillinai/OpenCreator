@@ -5,6 +5,7 @@ export function ConversationHeader(props: {
   title: string;
   projectName: string;
   statusLabel?: string;
+  statusHealthy?: boolean;
   taskToolbar?: ReactNode;
   fileWorkspaceOpen?: boolean;
   onOpenLocation(): void;
@@ -15,9 +16,12 @@ export function ConversationHeader(props: {
         <div className="conversation-title-row">
           <h1>{props.title}</h1>
           {props.statusLabel ? (
-            <span className="connection-pill" role="status">
-              {props.statusLabel}
-            </span>
+            <span
+              aria-label={props.statusLabel}
+              className={`connection-indicator ${props.statusHealthy ? 'is-healthy' : 'is-unhealthy'}`}
+              role="status"
+              title={props.statusLabel}
+            />
           ) : null}
         </div>
         <span className="conversation-project">{props.projectName}</span>

@@ -78,7 +78,7 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
 
   await closeMobileSidebar(page);
   await page.reload();
-  await expect(page.getByText('本地运行内核正常')).toBeVisible();
+  await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
   await openSidebar(page);
   await expect(taskButtons).toHaveCount(SCHEDULE_COUNT);
   await expect(taskList.locator('button:disabled')).toHaveCount(0);

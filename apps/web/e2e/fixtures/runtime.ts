@@ -281,7 +281,7 @@ export const test = base.extend<TestFixtures>({
             legacyProjects: options.legacyProjects
           });
           await page.goto(origin);
-          await expect(page.getByText('本地运行内核正常')).toBeVisible();
+          await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
         },
         api,
         apiResult,

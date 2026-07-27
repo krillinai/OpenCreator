@@ -2439,33 +2439,19 @@ select:focus-visible {
   white-space: nowrap;
 }
 
-.connection-pill {
-  min-width: 0;
-  max-width: 220px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 9px;
-  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 620;
-  line-height: 1.45;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.connection-pill::before {
-  content: "";
-  width: 6px;
-  height: 6px;
+.connection-indicator {
+  width: 8px;
+  height: 8px;
   flex: 0 0 auto;
   border-radius: 999px;
+}
+
+.connection-indicator.is-healthy {
   background: var(--success);
-  box-shadow: 0 0 12px var(--success-soft);
+}
+
+.connection-indicator.is-unhealthy {
+  background: var(--danger);
 }
 
 .conversation-actions {
@@ -5247,10 +5233,6 @@ select:focus-visible {
   .schedule-thread-editor-dialog .schedule-editor,
   .schedule-thread-editor-loading {
     padding: 0 12px;
-  }
-
-  .connection-pill {
-    max-width: 100%;
   }
 
   .conversation-actions .toolbar-button span {
