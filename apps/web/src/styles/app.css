@@ -2373,8 +2373,8 @@ select:focus-visible {
 }
 
 .schedule-thread-editor-dialog {
-  width: min(720px, 100%);
-  height: min(760px, calc(100dvh - 48px));
+  width: min(760px, 100%);
+  height: min(720px, calc(100dvh - 48px));
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;

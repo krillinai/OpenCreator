@@ -491,7 +491,8 @@
 .schedule-editor__scroll {
   min-height: 0;
   overflow: auto;
-  padding: 28px 0 36px;
+  padding: 28px 10px 36px 0;
+  scrollbar-gutter: stable;
 }
 
 .schedule-form-error {

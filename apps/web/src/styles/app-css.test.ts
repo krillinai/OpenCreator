@@ -164,6 +164,16 @@ describe('app CSS visual contracts', () => {
     expect(chevron).toContain('pointer-events: none;');
   });
 
+  it('keeps the schedule editor scrollbar clear of form controls', () => {
+    const dialog = cssBlock('.schedule-thread-editor-dialog');
+    const scroll = schedulesCssBlock('.schedule-editor__scroll');
+
+    expect(dialog).toContain('width: min(760px, 100%);');
+    expect(dialog).toContain('height: min(720px, calc(100dvh - 48px));');
+    expect(scroll).toContain('padding: 28px 10px 36px 0;');
+    expect(scroll).toContain('scrollbar-gutter: stable;');
+  });
+
   it('keeps global scrollbars darker and trackless', () => {
     const webkitScrollbar = cssBlock('*::-webkit-scrollbar');
     const webkitScrollbarTrack = cssBlock('*::-webkit-scrollbar-track,\n*::-webkit-scrollbar-track-piece,\n*::-webkit-scrollbar-corner');
