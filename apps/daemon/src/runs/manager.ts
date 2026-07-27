@@ -40,6 +40,7 @@ import {
   type RunQueueState,
   type RunRow
 } from '../storage/repositories.js';
+import { normalizeDatabaseTimestamp } from '../storage/database.js';
 import type { RuntimeThread } from '../threads/types.js';
 import { expandHome } from '../platform/paths.js';
 import {
@@ -2250,10 +2251,12 @@ function mapRunRow(row: RunRow): RuntimeRun {
     createdBy: row.created_by,
     sourceId: row.source_id,
     ...(row.public_prompt === null ? {} : { publicPrompt: row.public_prompt }),
-    ...(row.triggered_at === null ? {} : { triggeredAt: row.triggered_at }),
+    ...(row.triggered_at === null
+      ? {}
+      : { triggeredAt: normalizeDatabaseTimestamp(row.triggered_at) }),
     timeoutMs: row.timeout_ms,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: normalizeDatabaseTimestamp(row.created_at),
+    updatedAt: normalizeDatabaseTimestamp(row.updated_at),
     ...(row.termination_reason === null ? {} : { terminationReason: row.termination_reason }),
     exitCode: row.exit_code,
     signal: row.signal,

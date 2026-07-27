@@ -94,6 +94,46 @@ describe('runtime storage', () => {
     expect(runs.getLastRunEventSeq('run_1')).toBe(3);
   });
 
+  it('normalizes persisted run event timestamps to UTC ISO strings', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-event-time-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const runs = createRunRepository(db);
+
+    runs.insertRun({
+      id: 'run_1',
+      publicStatus: 'succeeded',
+      internalStatus: 'succeeded',
+      createdBy: 'schedule',
+      profile: 'default',
+      cwd: tempDir,
+      canonicalCwd: tempDir,
+      workspaceMode: 'managed',
+      sandbox: 'read-only',
+      codexVersion: 'codex-cli 0.139.0',
+      codexBin: 'codex',
+      codexHome: join(tempDir, 'codex-home'),
+      normalizerVersion: 1
+    });
+    db.prepare(`
+      INSERT INTO run_events (id, run_id, seq, type, payload_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      'event_1',
+      'run_1',
+      1,
+      'done',
+      '{"type":"done","status":"succeeded"}',
+      '2026-07-25 02:01:05'
+    );
+
+    expect(runs.listRunEvents('run_1')).toEqual([
+      expect.objectContaining({
+        id: 'event_1',
+        ts: '2026-07-25T02:01:05.000Z'
+      })
+    ]);
+  });
+
   it('creates project ownership schema and enforces active directory and Codex mapping uniqueness', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-projects-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

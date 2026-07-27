@@ -7,6 +7,7 @@ import type {
   ThreadPurpose
 } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
+import { normalizeDatabaseTimestamp } from './database.js';
 
 export type ResolvedResumeMode = 'independent' | 'new_thread' | 'resume_thread';
 export type RunQueueState = 'none' | 'queued' | 'started';
@@ -539,7 +540,7 @@ export function createRunRepository(db: Database.Database): RunRepository {
         id: row.id,
         runId: row.run_id,
         seq: row.seq,
-        ts: row.created_at,
+        ts: normalizeDatabaseTimestamp(row.created_at),
         type: row.type,
         payload: JSON.parse(row.payload_json),
         normalizerVersion: 1,
