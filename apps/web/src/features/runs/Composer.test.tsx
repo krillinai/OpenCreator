@@ -850,7 +850,10 @@ describe('Composer', () => {
 
     await user.click(screen.getByRole('option', { name: /brainstorming/ }));
 
-    expect(textbox).toHaveValue('$brainstorming ');
+    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+    expect(textbox).toHaveValue('');
+    await user.type(textbox, '整理需求');
+    expect(textbox).toHaveValue('整理需求');
     expect(screen.queryByRole('listbox', { name: '能力菜单' })).not.toBeInTheDocument();
   });
 
@@ -886,7 +889,34 @@ describe('Composer', () => {
 
     await user.keyboard('{Enter}');
 
-    expect(textbox).toHaveValue('$zhiyu-helper ');
+    expect(screen.getByLabelText('已选择 Skill zhiyu-helper')).toBeInTheDocument();
+    expect(textbox).toHaveValue('');
+  });
+
+  it('removes the selected skill chip when Backspace is pressed at the start', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[{
+          id: 'skill:brainstorming',
+          category: 'skill',
+          label: 'brainstorming',
+          description: '需求梳理和方案发散',
+          insertText: '$brainstorming '
+        }]}
+      />
+    );
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await user.type(textbox, '/');
+    await user.keyboard('{Enter}');
+    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+
+    await user.keyboard('{Backspace}');
+
+    expect(screen.queryByLabelText('已选择 Skill brainstorming')).not.toBeInTheDocument();
+    expect(textbox).toHaveValue('');
   });
 
   it('keeps the keyboard-selected skill visible while moving through a long slash menu', async () => {

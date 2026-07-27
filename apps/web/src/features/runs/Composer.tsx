@@ -304,6 +304,11 @@ export function Composer(props: {
     || project.cwd.toLocaleLowerCase().includes(normalizedProjectQuery)
   );
   const slashCommands = props.slashCommands ?? [];
+  const selectedSkillCommand = findLeadingSkillCommand(prompt, slashCommands);
+  const selectedSkillPrefix = selectedSkillCommand?.insertText ?? '';
+  const visiblePrompt = selectedSkillCommand === undefined
+    ? prompt
+    : prompt.slice(selectedSkillPrefix.length);
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, slashTrigger?.query ?? ''),
     [slashCommands, slashTrigger?.query]
@@ -389,6 +394,13 @@ export function Composer(props: {
     if (nextTrigger !== null) setOpenMenu(null);
   };
 
+  const updateVisiblePrompt = (value: string, caret: number) => {
+    updatePrompt(
+      `${selectedSkillPrefix}${value}`,
+      selectedSkillPrefix.length + caret
+    );
+  };
+
   const closeProjectMenu = () => {
     setOpenMenu(null);
     setProjectQuery('');
@@ -435,8 +447,13 @@ export function Composer(props: {
     setOpenMenu(null);
 
     window.requestAnimationFrame(() => {
+      const leadingCommand = findLeadingSkillCommand(nextPrompt, slashCommands);
+      const visibleCaret = Math.max(
+        0,
+        nextCaret - (leadingCommand?.insertText.length ?? 0)
+      );
       textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+      textareaRef.current?.setSelectionRange(visibleCaret, visibleCaret);
     });
   };
 
@@ -471,6 +488,17 @@ export function Composer(props: {
           return;
         }
       }
+    }
+
+    if (
+      selectedSkillCommand !== undefined
+      && event.key === 'Backspace'
+      && event.currentTarget.selectionStart === 0
+      && event.currentTarget.selectionEnd === 0
+    ) {
+      event.preventDefault();
+      setPrompt(visiblePrompt);
+      return;
     }
 
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
@@ -725,7 +753,16 @@ export function Composer(props: {
         onRemove={(localId) => void removeAttachment(localId)}
         onRetry={(localId) => void uploadAttachment(localId)}
       />
-      <div className="composer-input-wrap" data-composer-menu-root="slash">
+      <div
+        className={`composer-input-wrap${selectedSkillCommand === undefined ? '' : ' has-skill-chip'}`}
+        data-composer-menu-root="slash"
+      >
+        {selectedSkillCommand ? (
+          <span className="composer-skill-chip" aria-label={`已选择 Skill ${selectedSkillCommand.label}`}>
+            <Sparkles aria-hidden="true" size={15} />
+            <strong>{selectedSkillCommand.label}</strong>
+          </span>
+        ) : null}
         <textarea
           ref={textareaRef}
           aria-label="输入任务"
@@ -736,10 +773,13 @@ export function Composer(props: {
             : undefined}
           aria-expanded={slashMenuOpen}
           rows={2}
-          value={prompt}
+          value={visiblePrompt}
           disabled={props.disabled}
-          onChange={(event) => updatePrompt(event.target.value, event.target.selectionStart)}
-          onClick={(event) => updatePrompt(prompt, event.currentTarget.selectionStart)}
+          onChange={(event) => updateVisiblePrompt(event.target.value, event.target.selectionStart)}
+          onClick={(event) => updatePrompt(
+            prompt,
+            selectedSkillPrefix.length + event.currentTarget.selectionStart
+          )}
           onKeyDown={handlePromptKeyDown}
           onPaste={handlePaste}
           placeholder={props.disabled ? props.disabledReason ?? '当前对话不可用' : '随心输入'}
@@ -1041,6 +1081,17 @@ function groupSlashCommands(commands: ComposerSlashCommand[]): Array<{
 function nextSlashCommandIndex(current: number, length: number, delta: 1 | -1): number {
   if (length <= 0) return 0;
   return (current + delta + length) % length;
+}
+
+function findLeadingSkillCommand(
+  prompt: string,
+  commands: readonly ComposerSlashCommand[]
+): ComposerSlashCommand | undefined {
+  return commands.find(command => (
+    command.category === 'skill'
+    && command.insertText.length > 0
+    && prompt.startsWith(command.insertText)
+  ));
 }
 
 function slashCategoryLabel(category: ComposerSlashCommand['category']): string {

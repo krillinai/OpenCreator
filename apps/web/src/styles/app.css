@@ -3039,6 +3039,37 @@ select:focus-visible {
   display: grid;
 }
 
+.composer-input-wrap.has-skill-chip textarea {
+  min-height: 76px;
+  padding-top: 38px;
+}
+
+.composer-skill-chip {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 1;
+  max-width: calc(100% - 4px);
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text);
+  pointer-events: none;
+}
+
+.composer-skill-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composer-file-input {
   position: absolute;
   width: 1px;
