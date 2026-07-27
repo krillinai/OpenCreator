@@ -1,6 +1,5 @@
 import type {
   CreateScheduleRequest,
-  CodexProfileResponse,
   ReasoningEffort,
   SandboxMode,
   ScheduleConcurrencyPolicy,
@@ -48,7 +47,6 @@ export function ScheduleEditor(props: {
   mode: 'create' | 'edit';
   initialValues: ScheduleEditorValues;
   projects: ClaweeProject[];
-  profiles?: CodexProfileResponse[];
   loading?: boolean;
   saving?: boolean;
   errors?: ScheduleEditorErrors;
@@ -62,13 +60,6 @@ export function ScheduleEditor(props: {
   }, [props.initialValues]);
 
   const formLabel = props.mode === 'create' ? '创建计划任务' : `编辑${values.name || '计划任务'}`;
-  const profileOptions = Array.from(new Set([
-    'default',
-    values.profile,
-    ...(props.profiles ?? [])
-      .filter(profile => profile.status === 'valid')
-      .map(profile => profile.name),
-  ])).filter(Boolean);
   const projectOptions = props.projects.some(project => project.cwd === values.cwd)
     ? props.projects
     : [
@@ -211,49 +202,9 @@ export function ScheduleEditor(props: {
                     ))}
                   </SelectControl>
                 </SettingRow>
-                <SettingRow label="运行配置">
-                  <SelectControl
-                    ariaLabel="运行配置"
-                    value={values.profile}
-                    onChange={value => update('profile', value)}
-                  >
-                    {profileOptions.map(profile => (
-                      <option key={profile} value={profile}>{profile}</option>
-                    ))}
-                  </SelectControl>
-                </SettingRow>
-                <SettingRow label="模型">
-                  <input
-                    className="schedule-setting-input"
-                    aria-label="模型"
-                    value={values.model}
-                    placeholder="使用运行配置默认值"
-                    onChange={event => update('model', event.target.value)}
-                  />
-                </SettingRow>
-                <SettingRow label="推理">
-                  <SelectControl
-                    ariaLabel="推理"
-                    value={values.reasoning}
-                    onChange={value => update(
-                      'reasoning',
-                      value as ScheduleEditorValues['reasoning']
-                    )}
-                  >
-                    <option value="">使用运行配置默认值</option>
-                    <option value="default">默认</option>
-                    <option value="low">低</option>
-                    <option value="medium">中</option>
-                    <option value="high">高</option>
-                    <option value="xhigh">极高</option>
-                  </SelectControl>
-                </SettingRow>
               </div>
               {props.errors?.cwd ? (
                 <small className="schedule-field__error">{props.errors.cwd}</small>
-              ) : null}
-              {props.errors?.profile ? (
-                <small className="schedule-field__error">{props.errors.profile}</small>
               ) : null}
             </section>
 
@@ -518,7 +469,9 @@ export function validateScheduleEditorValues(
   }
   if (values.timezone.trim().length === 0) errors.timezone = '请输入时区';
   if (values.cwd.trim().length === 0) errors.cwd = '请选择项目';
-  if (values.profile.trim().length === 0) errors.profile = '请选择运行配置';
+  if (values.profile.trim().length === 0) {
+    errors.form = '当前项目的运行配置不可用，请先在项目设置中修复';
+  }
   if (
     values.timeoutMinutes.trim().length > 0
     && (!Number.isFinite(Number(values.timeoutMinutes))

@@ -380,7 +380,6 @@ export function SchedulesView(props: SchedulesViewProps) {
             mode={editor.mode}
             initialValues={editor.values}
             projects={props.projects}
-            profiles={props.profiles}
             loading={editor.mode === 'edit' && editor.loading}
             saving={saving}
             errors={editorErrors}
@@ -677,7 +676,9 @@ function mapScheduleError(error: unknown): ScheduleEditorErrors {
   }
   if (normalized.includes('cron')) return { frequency: '执行频率无效' };
   if (normalized.includes('timezone')) return { timezone: '时区无效' };
-  if (normalized.includes('profile')) return { profile: '运行配置不存在或无效' };
+  if (normalized.includes('profile')) {
+    return { form: '当前项目的运行配置不可用，请先在项目设置中修复' };
+  }
   if (normalized.includes('timeout')) return { timeoutMinutes: '最长运行时间无效' };
   if (error instanceof ApiClientError) return { form: error.message };
   return { form: '无法保存计划任务' };

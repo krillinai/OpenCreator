@@ -276,7 +276,6 @@ export function ScheduleThreadHeader(props: {
                 mode="edit"
                 initialValues={editorValues}
                 projects={props.projects}
-                profiles={props.profiles}
                 saving={operation === 'save_editor'}
                 errors={editorErrors}
                 onCancel={closeEditor}

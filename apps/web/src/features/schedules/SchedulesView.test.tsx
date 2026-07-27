@@ -97,7 +97,9 @@ describe('SchedulesView', () => {
 
     await openCreateMenu(user, '手动设置');
     expect(screen.queryByLabelText('Cron 表达式')).not.toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'review' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('运行配置')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('模型')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('推理')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('已安排任务标题'), '每日简报');
     await user.type(screen.getByLabelText('任务内容'), '总结今天的项目进展');
     await user.selectOptions(screen.getByLabelText('重复'), 'weekdays');
@@ -193,7 +195,12 @@ describe('SchedulesView', () => {
         listSchedules: vi.fn(async () => ({
           schedules: [schedule({ cron: '0 9 1 * *' })],
         })),
-        getSchedule: vi.fn(async () => scheduleDetail({ cron: '0 9 1 * *' })),
+        getSchedule: vi.fn(async () => scheduleDetail({
+          cron: '0 9 1 * *',
+          profile: 'review',
+          model: 'gpt-5.6',
+          reasoning: 'high',
+        })),
         updateSchedule,
       }),
     });
@@ -213,8 +220,9 @@ describe('SchedulesView', () => {
       prompt: '完整的每日总结执行指令',
       cron: '0 9 1 * *',
       concurrencyPolicy: 'queue',
-      model: null,
-      reasoning: null,
+      profile: 'review',
+      model: 'gpt-5.6',
+      reasoning: 'high',
       timeoutMs: null,
     }));
     expect(onScheduleChanged).toHaveBeenCalledWith(expect.objectContaining({
