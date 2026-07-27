@@ -180,6 +180,7 @@ export function Composer(props: {
   const [permissionUpdating, setPermissionUpdating] = useState(false);
   const composerRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const slashMenuRef = useRef<HTMLDivElement | null>(null);
   const projectSearchRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentDraftsRef = useRef<ComposerAttachmentDraft[]>([]);
@@ -369,6 +370,17 @@ export function Composer(props: {
     if (slashTrigger.activeIndex < filteredSlashCommands.length) return;
     setSlashTrigger({ ...slashTrigger, activeIndex: 0 });
   }, [filteredSlashCommands.length, slashTrigger]);
+
+  useLayoutEffect(() => {
+    if (slashTrigger === null || filteredSlashCommands.length === 0) return;
+
+    const activeOption = slashMenuRef.current?.querySelector<HTMLElement>(
+      `[data-slash-command-index="${slashTrigger.activeIndex}"]`
+    );
+    if (typeof activeOption?.scrollIntoView === 'function') {
+      activeOption.scrollIntoView({ block: 'nearest' });
+    }
+  }, [filteredSlashCommands.length, slashTrigger?.activeIndex]);
 
   const updatePrompt = (value: string, caret: number) => {
     setPrompt(value);
@@ -719,6 +731,9 @@ export function Composer(props: {
           aria-label="输入任务"
           aria-autocomplete="list"
           aria-controls={slashMenuOpen ? 'composer-slash-menu' : undefined}
+          aria-activedescendant={slashMenuOpen && filteredSlashCommands.length > 0
+            ? `composer-slash-option-${slashTrigger.activeIndex}`
+            : undefined}
           aria-expanded={slashMenuOpen}
           rows={2}
           value={prompt}
@@ -731,6 +746,7 @@ export function Composer(props: {
         />
         {slashMenuOpen ? (
           <div
+            ref={slashMenuRef}
             id="composer-slash-menu"
             className="composer-popover composer-slash-menu"
             role="listbox"
@@ -749,10 +765,12 @@ export function Composer(props: {
                   return (
                     <button
                       key={command.id}
+                      id={`composer-slash-option-${commandIndex}`}
                       className={`composer-menu-item composer-slash-item${slashTrigger.activeIndex === commandIndex ? ' is-active' : ''}`}
                       type="button"
                       role="option"
                       aria-selected={slashTrigger.activeIndex === commandIndex}
+                      data-slash-command-index={commandIndex}
                       onMouseEnter={() => setSlashTrigger({ ...slashTrigger, activeIndex: commandIndex })}
                       onClick={() => applySlashCommand(command)}
                     >

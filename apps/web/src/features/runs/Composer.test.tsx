@@ -889,6 +889,50 @@ describe('Composer', () => {
     expect(textbox).toHaveValue('$zhiyu-helper ');
   });
 
+  it('keeps the keyboard-selected skill visible while moving through a long slash menu', async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView
+    });
+
+    try {
+      render(
+        <Composer
+          {...defaultProps}
+          slashCommands={Array.from({ length: 12 }, (_, index) => ({
+            id: `skill:skill-${index + 1}`,
+            category: 'skill' as const,
+            label: `skill-${index + 1}`,
+            description: `第 ${index + 1} 个 Skill`,
+            insertText: `$skill-${index + 1} `
+          }))}
+        />
+      );
+
+      const textbox = screen.getByRole('textbox', { name: '输入任务' });
+      await user.type(textbox, '/');
+      scrollIntoView.mockClear();
+
+      for (let index = 0; index < 9; index += 1) {
+        await user.keyboard('{ArrowDown}');
+      }
+
+      const activeOption = screen.getByRole('option', { name: /skill-10/ });
+      expect(activeOption).toHaveAttribute('aria-selected', 'true');
+      expect(textbox).toHaveAttribute('aria-activedescendant', activeOption.id);
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' });
+      expect(scrollIntoView.mock.instances.at(-1)).toBe(activeOption);
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: originalScrollIntoView
+      });
+    }
+  });
+
   it('renders queued messages above the input and forwards Steer and delete actions', async () => {
     const user = userEvent.setup();
     const onSteerQueuedRun = vi.fn();
