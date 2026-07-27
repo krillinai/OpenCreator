@@ -30,6 +30,13 @@ type VisibleProcessItem = Extract<
   ProcessTimelineItem,
   { kind: 'reasoning_summary' | 'assistant_message' | 'tool_step' | 'diagnostic' | 'done' }
 >;
+type ProcessDisplayStep = {
+  key: string;
+  item: VisibleProcessItem;
+  title?: string;
+  repeatCount: number;
+  mergeKey?: string;
+};
 
 type ProcessBlock = {
   type: 'process';
@@ -331,19 +338,6 @@ function getCommandActivity(command: string | undefined): string {
   return '执行本地命令';
 }
 
-function buildToolActivityByCallId(items: ProcessTimelineItem[]): Map<string, string> {
-  const activities = new Map<string, string>();
-  for (const item of items) {
-    if (item.kind !== 'tool_step') continue;
-    if (getPayloadType(item) !== 'tool_use') continue;
-    const toolCallId = getToolCallId(item);
-    if (toolCallId !== undefined) {
-      activities.set(toolCallId, getToolActivity(item.name, getToolCommand(item)));
-    }
-  }
-  return activities;
-}
-
 function formatTerminationReason(reason: string | undefined): string {
   switch (reason) {
     case 'timeout':
@@ -369,23 +363,15 @@ function formatTerminationReason(reason: string | undefined): string {
   }
 }
 
-function getProcessStepTitle(
-  item: ProcessTimelineItem,
-  toolActivityByCallId = new Map<string, string>()
-): string {
+function getProcessStepTitle(item: ProcessTimelineItem): string {
   switch (item.kind) {
     case 'reasoning_summary':
     case 'assistant_message':
       return item.text;
     case 'tool_step': {
-      if (getPayloadType(item) !== 'tool_result') {
-        return `正在${getToolActivity(item.name, getToolCommand(item))}`;
-      }
-      const toolCallId = getToolCallId(item);
-      const activity = toolCallId !== undefined
-        ? toolActivityByCallId.get(toolCallId)
-        : undefined;
-      return activity !== undefined ? `已完成：${activity}` : '操作已完成';
+      return getPayloadType(item) === 'tool_result'
+        ? '操作已完成'
+        : `正在${getToolActivity(item.name, getToolCommand(item))}`;
     }
     case 'diagnostic':
       return item.message;
@@ -401,6 +387,61 @@ function getProcessStepTitle(
       const _exhaustive: never = item;
       return _exhaustive;
   }
+}
+
+function buildVisibleProcessSteps(process: ProcessBlock): ProcessDisplayStep[] {
+  const toolUseCallIds = new Set<string>();
+  const completedToolCallIds = new Set<string>();
+
+  for (const item of process.items) {
+    if (item.kind !== 'tool_step') continue;
+    const toolCallId = getToolCallId(item);
+    if (toolCallId === undefined) continue;
+    const payloadType = getPayloadType(item);
+    if (payloadType === 'tool_use') toolUseCallIds.add(toolCallId);
+    if (payloadType === 'tool_result') completedToolCallIds.add(toolCallId);
+  }
+
+  const steps: ProcessDisplayStep[] = [];
+  for (const item of visibleProcessItems(process)) {
+    if (item.kind !== 'tool_step') {
+      steps.push({ key: item.id, item, repeatCount: 1 });
+      continue;
+    }
+
+    const payloadType = getPayloadType(item);
+    const toolCallId = getToolCallId(item);
+    if (
+      payloadType === 'tool_result'
+      && toolCallId !== undefined
+      && toolUseCallIds.has(toolCallId)
+    ) {
+      continue;
+    }
+
+    const title = payloadType === 'tool_result'
+      ? '操作已完成'
+      : `${toolCallId !== undefined && completedToolCallIds.has(toolCallId) ? '已完成：' : '正在'}${getToolActivity(
+        item.name,
+        getToolCommand(item)
+      )}`;
+    const mergeKey = `tool:${title}`;
+    const previous = steps.at(-1);
+    if (previous?.mergeKey === mergeKey) {
+      previous.repeatCount += 1;
+      continue;
+    }
+
+    steps.push({
+      key: item.id,
+      item,
+      title,
+      repeatCount: 1,
+      mergeKey
+    });
+  }
+
+  return steps;
 }
 
 function hasRunId(item: ProcessTimelineItem): item is ProcessTimelineItem & { runId: string } {
@@ -752,10 +793,11 @@ function renderTimelineItemContent(
   }
 }
 
-function renderProcessStep(item: VisibleProcessItem, toolActivityByCallId: Map<string, string>) {
+function renderProcessStep(step: ProcessDisplayStep) {
+  const { item } = step;
   if (item.kind === 'reasoning_summary' || item.kind === 'assistant_message') {
     return (
-      <li key={item.id} className={`process-step process-step-${item.kind}`}>
+      <li key={step.key} className={`process-step process-step-${item.kind}`}>
         <div className="process-reasoning-text">
           <MarkdownRenderer text={item.text} variant="process" />
         </div>
@@ -764,11 +806,14 @@ function renderProcessStep(item: VisibleProcessItem, toolActivityByCallId: Map<s
   }
 
   return (
-    <li key={item.id} className={`process-step process-step-${item.kind}`}>
+    <li key={step.key} className={`process-step process-step-${item.kind}`}>
       <div className="process-step-row">
         {item.kind === 'diagnostic' ? <span className={`process-step-severity ${item.severity}`}>{item.severity}</span> : null}
         {item.kind === 'done' ? <span className="process-step-severity error">{item.status}</span> : null}
-        <span className="process-step-title">{getProcessStepTitle(item, toolActivityByCallId)}</span>
+        <span className="process-step-title">
+          {step.title ?? getProcessStepTitle(item)}
+          {step.repeatCount > 1 ? `（${step.repeatCount} 次）` : null}
+        </span>
       </div>
       {item.kind === 'done' ? <CodePayloadBlock content={item.content} /> : null}
     </li>
@@ -785,10 +830,7 @@ function ProcessBlockView(props: {
   const complete = isProcessComplete(process);
   const duration = getProcessDuration(process);
 
-  const steps = expanded ? visibleProcessItems(process) : [];
-  const toolActivityByCallId = expanded
-    ? buildToolActivityByCallId(process.items)
-    : new Map<string, string>();
+  const steps = expanded ? buildVisibleProcessSteps(process) : [];
 
   return (
     <article
@@ -816,7 +858,7 @@ function ProcessBlockView(props: {
         </summary>
         {expanded && steps.length > 0 ? (
           <div className="process-detail">
-            <ol className="process-steps">{steps.map(item => renderProcessStep(item, toolActivityByCallId))}</ol>
+            <ol className="process-steps">{steps.map(renderProcessStep)}</ol>
           </div>
         ) : null}
       </details>

@@ -310,8 +310,8 @@ describe('Timeline', () => {
 
     await user.click(screen.getByText('已完成'));
 
-    expect(container.querySelectorAll('.process-step')).toHaveLength(50);
-    expect(screen.getAllByText('正在执行本地命令')).toHaveLength(50);
+    expect(container.querySelectorAll('.process-step')).toHaveLength(1);
+    expect(screen.getByText('正在执行本地命令（50 次）')).toBeInTheDocument();
     expect(screen.queryByText('echo 49')).not.toBeInTheDocument();
   });
 
@@ -438,7 +438,7 @@ describe('Timeline', () => {
 
     expect(screen.getByText('我会先确认日志里有没有失败信息。')).toBeInTheDocument();
     expect(screen.getByText('然后根据结果给出结论。')).toBeInTheDocument();
-    expect(screen.getByText('正在运行测试')).toBeInTheDocument();
+    expect(screen.queryByText('正在运行测试')).not.toBeInTheDocument();
     expect(screen.queryByText('pnpm test')).not.toBeInTheDocument();
     expect(
       screen.queryByText('{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"command":"pnpm test"}}')
@@ -832,6 +832,44 @@ describe('Timeline', () => {
     expect(screen.queryByText(content)).not.toBeInTheDocument();
   });
 
+  it('replaces matched tool uses with completed state and groups consecutive equal activities', () => {
+    const items: TimelineItem[] = Array.from({ length: 3 }, (_, index) => [
+      {
+        kind: 'tool_step' as const,
+        id: `tool_use_${index}`,
+        runId: 'run_1',
+        name: 'exec_command',
+        content: JSON.stringify({
+          type: 'tool_use',
+          toolCallId: `call_${index}`,
+          name: 'exec_command',
+          input: { command: `echo ${index}` }
+        }),
+        source: 'runtime' as const
+      },
+      {
+        kind: 'tool_step' as const,
+        id: `tool_result_${index}`,
+        runId: 'run_1',
+        name: `call_${index}`,
+        content: JSON.stringify({
+          type: 'tool_result',
+          toolCallId: `call_${index}`,
+          output: String(index),
+          exitCode: 0,
+          isError: false
+        }),
+        source: 'runtime' as const
+      }
+    ]).flat();
+
+    const { container } = render(<Timeline items={items} />);
+
+    expect(screen.getByText('已完成：执行本地命令（3 次）')).toBeInTheDocument();
+    expect(screen.queryByText('正在执行本地命令')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.process-step-tool_step')).toHaveLength(1);
+  });
+
   it('folds intermediate Codex agent messages into the run process and leaves only the final answer as Clawee reply', async () => {
     const user = userEvent.setup();
     const items: TimelineItem[] = [
@@ -898,7 +936,7 @@ describe('Timeline', () => {
     await user.click(screen.getByText('已完成'));
 
     expect(screen.getByText('我会先确认当前目录，再读取相关文件做判断。')).toBeInTheDocument();
-    expect(screen.getByText('正在查看项目内容')).toBeInTheDocument();
+    expect(screen.queryByText('正在查看项目内容')).not.toBeInTheDocument();
     expect(screen.queryByText('pwd')).not.toBeInTheDocument();
     expect(screen.getByText('已完成：查看项目内容')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();

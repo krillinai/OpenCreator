@@ -3105,7 +3105,7 @@ describe('App', () => {
     await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
 
     expect(screen.getByText('我会先确认当前目录，再读取必要文件。')).toBeInTheDocument();
-    expect(screen.getByText('正在查看项目内容')).toBeInTheDocument();
+    expect(screen.queryByText('正在查看项目内容')).not.toBeInTheDocument();
     expect(screen.queryByText('pwd')).not.toBeInTheDocument();
     expect(screen.getByText('已完成：查看项目内容')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
