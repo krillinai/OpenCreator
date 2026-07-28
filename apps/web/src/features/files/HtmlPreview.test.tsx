@@ -41,6 +41,35 @@ describe('HtmlPreview', () => {
     expect(srcDoc).not.toContain('javascript:');
   });
 
+  it('restores static report content left hidden by script-driven reveal styles', async () => {
+    render(
+      <HtmlPreview
+        name="report.html"
+        path="report.html"
+        content={`
+          <style>
+            body { opacity: 0; }
+            .report { visibility: hidden; transform: translateY(16px); }
+          </style>
+          <main class="report opacity-0" style="opacity: 0">审计报告正文</main>
+        `}
+      />
+    );
+
+    const frame = await screen.findByTitle('report.html HTML 预览');
+    const srcDoc = frame.getAttribute('srcdoc') ?? '';
+    const sourceStyleIndex = srcDoc.indexOf('body { opacity: 0; }');
+    const previewStyleIndex = srcDoc.indexOf('data-clawee-preview="true"');
+
+    expect(sourceStyleIndex).toBeGreaterThanOrEqual(0);
+    expect(previewStyleIndex).toBeGreaterThan(sourceStyleIndex);
+    expect(srcDoc).toContain('body > :not(script):not(style):not(link)');
+    expect(srcDoc).toContain('.opacity-0');
+    expect(srcDoc).toContain('[style*="visibility: hidden"]');
+    expect(srcDoc).toContain('opacity: 1 !important;');
+    expect(srcDoc).toContain('visibility: visible !important;');
+  });
+
   it('loads relative images and stylesheets through controlled workspace resources', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const bytes = url.includes('cover.png')

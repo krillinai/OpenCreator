@@ -350,9 +350,23 @@ function installContentSecurityPolicy(document: Document): void {
   const previewOverrides = document.createElement('style');
   previewOverrides.setAttribute('data-clawee-preview', 'true');
   previewOverrides.textContent = `
-    html, body { min-height: 100%; }
+    html, body {
+      min-height: 100%;
+      opacity: 1 !important;
+      visibility: visible !important;
+    }
     body { overflow: auto !important; }
-    [data-reveal], .reveal, .fade-in, .animate-in {
+    body > :not(script):not(style):not(link),
+    [data-reveal],
+    .reveal,
+    .fade-in,
+    .animate-in,
+    .opacity-0,
+    .invisible,
+    [style*="opacity: 0"],
+    [style*="opacity:0"],
+    [style*="visibility: hidden"],
+    [style*="visibility:hidden"] {
       opacity: 1 !important;
       visibility: visible !important;
       transform: none !important;
