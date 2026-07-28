@@ -3555,7 +3555,6 @@ export function AppController(props: AppControllerProps) {
           ?? selectedThread?.title
           ?? '新对话'
         }
-        projectName={currentProjectName}
         statusLabel={getConnectionStatusLabel(connectionState)}
         statusHealthy={connectionState.status === 'connected'}
         taskToolbar={

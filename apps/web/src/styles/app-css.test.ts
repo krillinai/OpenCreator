@@ -213,8 +213,11 @@ describe('app CSS visual contracts', () => {
     expect(appCss).not.toContain('@import url(');
     expect(tokensCss).toContain('--font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;');
     expect(body).toContain('text-rendering: auto;');
+    expect(conversationHeader).toContain('min-height: 56px;');
+    expect(conversationHeader).toContain('padding: 10px 22px;');
     expect(conversationHeader).toContain('background: var(--conversation-bg);');
     expect(conversationHeader).not.toMatch(/background:\s*(?:linear-gradient|color-mix)/);
+    expect(appCss).not.toContain('.conversation-project');
     expect(composer).toContain('background: var(--surface);');
     expect(composer).not.toMatch(/background:\s*(?:linear-gradient|color-mix)/);
     expect(appCss).toMatch(/\.clawee-sidebar-pane\s*\{[^}]*background:\s*var\(--sidebar\);/);

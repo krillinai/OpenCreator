@@ -4,11 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { ConversationHeader } from './ConversationHeader.js';
 
 describe('ConversationHeader', () => {
-  it('renders the title, project name, and actions', () => {
+  it('renders the title and actions without repeating the project name', () => {
     render(
       <ConversationHeader
         title="整理本周项目进展"
-        projectName="content-design"
         statusLabel="正在等待本地服务"
         statusHealthy={false}
         onOpenLocation={vi.fn()}
@@ -16,7 +15,7 @@ describe('ConversationHeader', () => {
     );
 
     expect(screen.getByRole('heading', { name: '整理本周项目进展' })).toBeInTheDocument();
-    expect(screen.getByText('content-design')).toBeInTheDocument();
+    expect(screen.queryByText('content-design')).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: '正在等待本地服务' })).toHaveClass(
       'connection-indicator',
       'is-unhealthy'
@@ -33,7 +32,6 @@ describe('ConversationHeader', () => {
     render(
       <ConversationHeader
         title="整理本周项目进展"
-        projectName="content-design"
         onOpenLocation={onOpenLocation}
       />
     );
@@ -48,7 +46,6 @@ describe('ConversationHeader', () => {
     render(
       <ConversationHeader
         title="整理本周项目进展"
-        projectName="content-design"
         fileWorkspaceOpen
         onOpenLocation={vi.fn()}
       />
@@ -68,7 +65,6 @@ describe('ConversationHeader', () => {
     render(
       <ConversationHeader
         title="整理本周项目进展"
-        projectName="content-design"
         onOpenLocation={vi.fn()}
       />
     );
@@ -81,7 +77,6 @@ describe('ConversationHeader', () => {
     const { rerender } = render(
       <ConversationHeader
         title="普通会话"
-        projectName="content-design"
         onOpenLocation={vi.fn()}
       />
     );
@@ -91,7 +86,6 @@ describe('ConversationHeader', () => {
     rerender(
       <ConversationHeader
         title="每日总结"
-        projectName="content-design"
         taskToolbar={<div aria-label="任务管理">任务工具栏</div>}
         onOpenLocation={vi.fn()}
       />

@@ -2253,12 +2253,12 @@ select:focus-visible {
 }
 
 .conversation-header {
-  min-height: 64px;
+  min-height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 22px 10px;
+  padding: 10px 22px;
   border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent);
   background: var(--conversation-bg);
 }
@@ -2498,15 +2498,6 @@ select:focus-visible {
   border-color: color-mix(in srgb, var(--accent-strong) 44%, var(--border));
   background: var(--surface-3);
   box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.conversation-project {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .file-workspace-view {

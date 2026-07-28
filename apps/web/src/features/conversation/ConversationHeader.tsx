@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 
 export function ConversationHeader(props: {
   title: string;
-  projectName: string;
   statusLabel?: string;
   statusHealthy?: boolean;
   taskToolbar?: ReactNode;
@@ -24,7 +23,6 @@ export function ConversationHeader(props: {
             />
           ) : null}
         </div>
-        <span className="conversation-project">{props.projectName}</span>
       </div>
       <div className="conversation-actions">
         <button
