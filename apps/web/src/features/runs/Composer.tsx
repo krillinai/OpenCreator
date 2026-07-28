@@ -783,7 +783,11 @@ export function Composer(props: {
           )}
           onKeyDown={handlePromptKeyDown}
           onPaste={handlePaste}
-          placeholder={props.disabled ? props.disabledReason ?? '当前对话不可用' : '随心输入'}
+          placeholder={
+            props.disabled
+              ? props.disabledReason ?? '当前对话不可用'
+              : '需要帮你做点什么？输入 / 调用插件'
+          }
         />
         {slashMenuOpen ? (
           <div

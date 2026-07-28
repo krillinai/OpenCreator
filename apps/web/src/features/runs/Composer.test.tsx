@@ -63,7 +63,7 @@ describe('Composer', () => {
     expect(screen.queryByText('跟随全局配置')).not.toBeInTheDocument();
     expect(screen.queryByText('本地模式')).not.toBeInTheDocument();
     expect(screen.queryByText('open-clawee')).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText('随心输入')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('需要帮你做点什么？输入 / 调用插件')).toBeInTheDocument();
   });
 
   it('hides the project selector for a project-independent task draft', () => {
