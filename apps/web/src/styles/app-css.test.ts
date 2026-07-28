@@ -727,6 +727,7 @@ describe('app CSS visual contracts', () => {
   it('shows the assistant avatar as the logo without a container background', () => {
     const assistantAvatar = cssBlock('.timeline-assistant_message .timeline-avatar');
     const assistantHeader = cssBlock('.timeline-assistant_message .timeline-item-header');
+    const assistantKind = cssBlock('.timeline-assistant_message .timeline-kind');
     const assistantLogo = cssBlock('.timeline-avatar-logo');
     const lightAssistantLogo = cssBlock(':root[data-theme="light"] .timeline-avatar-logo');
 
@@ -735,9 +736,13 @@ describe('app CSS visual contracts', () => {
     expect(assistantAvatar).toContain('box-shadow: none;');
     expect(assistantAvatar).not.toMatch(/linear-gradient|var\(--accent/i);
     expect(assistantHeader).toContain('gap: 4px;');
+    expect(assistantKind).toContain('font-size: 13px;');
+    expect(assistantKind).toContain('font-weight: 680;');
     expect(assistantLogo).toContain("url('/logo-v2-white-logo.svg')");
+    expect(assistantLogo).toContain('width: 24px;');
+    expect(assistantLogo).toContain('height: 24px;');
     expect(assistantLogo).toContain('background-position: calc(50% - 1px) center;');
-    expect(assistantLogo).toContain('background-size: 50px 50px;');
+    expect(assistantLogo).toContain('background-size: 46px 46px;');
     expect(lightAssistantLogo).toContain("url('/logo-v2-black-logo.svg')");
     expect(appCss).not.toContain('/logo-cor.png');
   });

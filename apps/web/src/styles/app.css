@@ -671,12 +671,12 @@ select:focus-visible {
 }
 
 .timeline-avatar-logo {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   display: block;
   background-image: url('/logo-v2-white-logo.svg');
   background-position: calc(50% - 1px) center;
-  background-size: 50px 50px;
+  background-size: 46px 46px;
   background-repeat: no-repeat;
 }
 
@@ -714,6 +714,11 @@ select:focus-visible {
 
 .timeline-assistant_message .timeline-item-header {
   gap: 4px;
+}
+
+.timeline-assistant_message .timeline-kind {
+  font-size: 13px;
+  font-weight: 680;
 }
 
 .timeline-user_message {
