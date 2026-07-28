@@ -52,7 +52,7 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByText('const value = 1;')).toBeInTheDocument();
     expect(document.querySelector('.md-code-highlighted')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '复制代码' }));
+    await user.click(screen.getByRole('button', { name: '复制' }));
 
     expect(writeText).toHaveBeenCalledWith('const value = 1;');
     expect(screen.getByRole('button', { name: '已复制' })).toBeInTheDocument();
@@ -96,7 +96,7 @@ describe('MarkdownRenderer', () => {
 
     render(<MarkdownRenderer variant="assistant" text={'```txt\nhello\n```'} />);
 
-    await user.click(screen.getByRole('button', { name: '复制代码' }));
+    await user.click(screen.getByRole('button', { name: '复制' }));
 
     expect(screen.getByRole('button', { name: '复制失败' })).toBeInTheDocument();
   });

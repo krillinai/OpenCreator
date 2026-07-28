@@ -5470,6 +5470,7 @@ select:focus-visible {
   padding: 0 7px;
   border-radius: 6px;
   color: var(--muted);
+  font-size: 11px;
 }
 
 .markdown-prose .md-code-action:hover {

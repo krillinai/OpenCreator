@@ -238,6 +238,13 @@ describe('app CSS visual contracts', () => {
     expect(frame).toContain('min-height: 0;');
   });
 
+  it('keeps code block actions compact', () => {
+    const action = cssBlock('.markdown-prose .md-code-action');
+
+    expect(action).toContain('min-height: 26px;');
+    expect(action).toContain('font-size: 11px;');
+  });
+
   it('keeps the desktop skill market scrollable inside the fixed app shell', () => {
     expect(skillMarketCss).toMatch(
       /@media \(min-width: 921px\)\s*\{\s*\.skill-market\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/

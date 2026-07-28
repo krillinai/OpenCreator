@@ -39,7 +39,7 @@ export function MarkdownCodeBlock(props: {
     }, 1600);
   }
 
-  const copyLabel = copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制代码';
+  const copyLabel = copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制';
   const CopyIcon = copyState === 'copied' ? Check : copyState === 'failed' ? AlertCircle : Copy;
   const linkifyTextFiles = props.linkifyWorkspaceFiles === true
     && props.onLinkClick !== undefined
