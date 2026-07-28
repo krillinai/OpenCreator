@@ -326,6 +326,7 @@ export function Composer(props: {
     && !submitting
     && trimmedPrompt.length > 0
     && attachmentsSettled;
+  const showStopAction = props.running === true && !canSubmit;
   const submitPrompt = async () => {
     if (!canSubmit) return;
     textareaRef.current?.focus({ preventScroll: true });
@@ -990,30 +991,32 @@ export function Composer(props: {
             ) : null}
           </div>
 
-          {props.running ? (
-            <button
-              className="composer-stop"
-              type="button"
-              aria-label={props.canceling ? '正在停止任务' : '停止任务'}
-              disabled={props.canceling || props.onCancel === undefined}
-              onClick={props.onCancel}
-            >
-              <Square aria-hidden="true" size={13} fill="currentColor" />
-            </button>
-          ) : null}
           <div className="composer-submit-wrap">
             <button
-              className="composer-send"
-              type="submit"
+              className={showStopAction ? 'composer-stop' : 'composer-send'}
+              type={showStopAction ? 'button' : 'submit'}
               aria-label={
-                props.running
-                  ? '排队发送'
-                  : '发送'
+                showStopAction
+                  ? props.canceling ? '正在停止任务' : '停止任务'
+                  : props.running ? '排队发送' : '发送'
               }
-              title={props.running ? '加入等待队列' : '发送'}
-              disabled={!canSubmit}
+              title={
+                showStopAction
+                  ? props.canceling ? '正在停止任务' : '停止任务'
+                  : props.running ? '加入等待队列' : '发送'
+              }
+              disabled={
+                showStopAction
+                  ? props.canceling || props.onCancel === undefined
+                  : !canSubmit
+              }
+              onClick={showStopAction ? props.onCancel : undefined}
             >
-              <ArrowUp aria-hidden="true" size={17} />
+              {showStopAction ? (
+                <Square aria-hidden="true" size={13} fill="currentColor" />
+              ) : (
+                <ArrowUp aria-hidden="true" size={17} />
+              )}
             </button>
           </div>
         </div>

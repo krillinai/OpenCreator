@@ -185,10 +185,11 @@ describe('Composer', () => {
 
     expect(screen.queryByRole('button', { name: '选择发送方式' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menu', { name: '发送方式' })).not.toBeInTheDocument();
-    const submitButton = screen.getByRole('button', { name: '排队发送' });
-    expect(submitButton).toBeDisabled();
-    expect(submitButton).toHaveAttribute('title', '加入等待队列');
-    expect(submitButton.querySelector('.lucide-arrow-up')).toBeInTheDocument();
+    const stopButton = screen.getByRole('button', { name: '停止任务' });
+    expect(stopButton).toBeDisabled();
+    expect(stopButton).toHaveAttribute('title', '停止任务');
+    expect(stopButton.querySelector('.lucide-square')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '排队发送' })).not.toBeInTheDocument();
   });
 
   it('closes the active composer menu with Escape', async () => {
@@ -349,7 +350,9 @@ describe('Composer', () => {
 
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     expect(textbox).toBeEnabled();
+    expect(screen.getByRole('button', { name: '停止任务' })).toBeInTheDocument();
     await user.type(textbox, '排队任务');
+    expect(screen.queryByRole('button', { name: '停止任务' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '排队发送' }));
     expect(onSubmit).toHaveBeenLastCalledWith(
       '排队任务',
@@ -358,6 +361,7 @@ describe('Composer', () => {
       'enqueue'
     );
     expect(textbox).toHaveFocus();
+    expect(screen.queryByRole('button', { name: '排队发送' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '停止任务' }));
     expect(onCancel).toHaveBeenCalledTimes(1);
