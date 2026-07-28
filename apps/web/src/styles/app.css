@@ -413,13 +413,14 @@ select:focus-visible {
 }
 
 .connection-status-dot.connected {
-  background: var(--success);
-  box-shadow: 0 0 0 3px var(--success-soft);
+  background: var(--status-connected);
+  box-shadow: 0 0 0 3px var(--status-connected-soft);
 }
 
+.connection-status-dot.disconnected,
 .connection-status-dot.invalid_token {
-  background: var(--danger);
-  box-shadow: 0 0 0 3px var(--danger-soft);
+  background: var(--status-disconnected);
+  box-shadow: 0 0 0 3px var(--status-disconnected-soft);
 }
 
 .connection-summary {
@@ -2454,11 +2455,11 @@ select:focus-visible {
 }
 
 .connection-indicator.is-healthy {
-  background: var(--success);
+  background: var(--status-connected);
 }
 
 .connection-indicator.is-unhealthy {
-  background: var(--danger);
+  background: var(--status-disconnected);
 }
 
 .conversation-actions {

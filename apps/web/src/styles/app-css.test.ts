@@ -46,7 +46,9 @@ describe('app CSS visual contracts', () => {
       taskCenterCss,
       appControllerTsx,
     ].join('\n');
-    const neutralThemeSources = themeSources.replaceAll('#f59e0b', '');
+    const neutralThemeSources = themeSources
+      .replaceAll('#f59e0b', '')
+      .replace(/--status-(?:connected|disconnected)(?:-soft)?:\s*[^;]+;/g, '');
     const colorChannels = [
       ...Array.from(neutralThemeSources.matchAll(/#([\da-f]{3}|[\da-f]{6})(?![\da-f])/gi), match =>
         hexChannels(match[1]!)
@@ -699,11 +701,21 @@ describe('app CSS visual contracts', () => {
     const indicator = cssBlock('.connection-indicator');
     const healthy = cssBlock('.connection-indicator.is-healthy');
     const unhealthy = cssBlock('.connection-indicator.is-unhealthy');
+    const connected = cssBlock('.connection-status-dot.connected');
+    const disconnected = cssBlock(
+      '.connection-status-dot.disconnected,\n.connection-status-dot.invalid_token'
+    );
 
     expect(indicator).toContain('width: 8px;');
     expect(indicator).toContain('height: 8px;');
-    expect(healthy).toContain('background: var(--success);');
-    expect(unhealthy).toContain('background: var(--danger);');
+    expect(tokensCss).toContain('--status-connected: #34d399;');
+    expect(tokensCss).toContain('--status-connected: #16a34a;');
+    expect(tokensCss).toContain('--status-disconnected: #f87171;');
+    expect(tokensCss).toContain('--status-disconnected: #dc2626;');
+    expect(healthy).toContain('background: var(--status-connected);');
+    expect(unhealthy).toContain('background: var(--status-disconnected);');
+    expect(connected).toContain('background: var(--status-connected);');
+    expect(disconnected).toContain('background: var(--status-disconnected);');
     expect(appCss).not.toContain('.connection-pill');
   });
 
