@@ -840,6 +840,7 @@ export function Composer(props: {
               type="button"
               aria-label="添加上下文"
               aria-expanded={openMenu === 'add'}
+              title="添加文件等"
               onClick={() => {
                 setSlashTrigger(null);
                 setOpenMenu(openMenu === 'add' ? null : 'add');
@@ -892,7 +893,7 @@ export function Composer(props: {
               title={
                 props.permissionChangeDisabled === true
                   ? '当前任务结束后可修改访问权限'
-                  : undefined
+                  : '更改项目权限'
               }
               onClick={() => {
                 setSlashTrigger(null);
@@ -901,6 +902,7 @@ export function Composer(props: {
             >
               <ShieldCheck aria-hidden="true" size={15} />
               <span>{selectedPermissionOption.label}</span>
+              <ChevronDown aria-hidden="true" size={13} />
             </button>
             {openMenu === 'permission' ? (
               <div className="composer-popover composer-permission-menu" role="menu" aria-label="访问权限">

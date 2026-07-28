@@ -55,8 +55,13 @@ describe('Composer', () => {
     render(<Composer {...defaultProps} permission="workspace-write" />);
 
     expect(screen.getByRole('button', { name: '选择项目 content-design' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '添加上下文' }))
+      .toHaveAttribute('title', '添加文件等');
+    const permissionButton = screen.getByRole('button', {
+      name: '选择访问权限 请求批准'
+    });
+    expect(permissionButton).toHaveAttribute('title', '更改项目权限');
+    expect(permissionButton.querySelectorAll('svg')).toHaveLength(2);
     expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
@@ -280,6 +285,8 @@ describe('Composer', () => {
 
     expect(screen.getByRole('button', { name: '选择访问权限 请求批准' }))
       .toBeDisabled();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' }))
+      .toHaveAttribute('title', '当前任务结束后可修改访问权限');
   });
 
   it('hides Profile controls while preserving the configured Profile', async () => {
