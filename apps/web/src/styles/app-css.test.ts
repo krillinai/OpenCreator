@@ -680,6 +680,11 @@ describe('app CSS visual contracts', () => {
     expect(messageMeta).toContain('opacity: 0;');
     expect(messageMeta).toContain('pointer-events: none;');
     expect(appCss).toContain('.timeline-user_message:hover .timeline-message-meta');
+    expect(appCss).toContain('.timeline-assistant_message:hover .timeline-message-meta');
+    expect(appCss).toContain('.timeline-message-meta.is-latest-assistant');
+    expect(appCss).toMatch(
+      /\.timeline-message-meta\.is-latest-assistant time\s*\{[^}]*opacity:\s*0;/
+    );
     expect(appCss).toContain('@media (hover: none)');
   });
 

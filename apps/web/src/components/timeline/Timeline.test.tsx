@@ -223,6 +223,53 @@ describe('Timeline', () => {
     expect(onEditUserMessage).toHaveBeenCalledWith(item);
   });
 
+  it('shows reply actions for assistant messages and marks only the latest reply for default copy access', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    });
+    const { container } = render(
+      <Timeline
+        items={[
+          {
+            kind: 'assistant_message',
+            id: 'assistant_old',
+            timestamp: '2026-07-25T12:00:00.000Z',
+            text: '较早回复',
+            source: 'runtime'
+          },
+          {
+            kind: 'assistant_message',
+            id: 'assistant_latest',
+            timestamp: '2026-07-25T12:09:00.000Z',
+            text: '最新回复',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    const replies = container.querySelectorAll('.timeline-assistant_message');
+    expect(replies).toHaveLength(2);
+    expect(replies[0]?.querySelector('.timeline-message-meta')).not.toHaveClass(
+      'is-latest-assistant'
+    );
+    expect(replies[1]?.querySelector('.timeline-message-meta')).toHaveClass(
+      'is-latest-assistant'
+    );
+    expect(replies[1]?.querySelector('time')).toHaveAttribute(
+      'datetime',
+      '2026-07-25T12:09:00.000Z'
+    );
+    expect(screen.queryByRole('button', { name: '编辑消息' })).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole('button', { name: '复制回复' })[1]!);
+    expect(writeText).toHaveBeenCalledWith('最新回复');
+    expect(await screen.findByRole('button', { name: '已复制回复' })).toBeInTheDocument();
+  });
+
   it('marks the virtual item that contains a search target', () => {
     const items: TimelineItem[] = [
       {

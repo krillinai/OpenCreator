@@ -591,13 +591,15 @@ function renderMessageContent(
 }
 
 function MessageMeta(props: {
-  item: Extract<TimelineItem, { kind: 'user_message' }>;
+  item: Extract<TimelineItem, { kind: 'user_message' | 'assistant_message' }>;
+  latestAssistant?: boolean;
   onEdit?: (item: Extract<TimelineItem, { kind: 'user_message' }>) => void;
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const itemLabel = props.item.kind === 'assistant_message' ? '回复' : '消息';
 
   return (
-    <div className="timeline-message-meta">
+    <div className={`timeline-message-meta${props.latestAssistant ? ' is-latest-assistant' : ''}`}>
       {props.item.timestamp ? (
         <time dateTime={props.item.timestamp}>{formatMessageTime(props.item.timestamp)}</time>
       ) : null}
@@ -605,10 +607,10 @@ function MessageMeta(props: {
         type="button"
         aria-label={
           copyState === 'copied'
-            ? '已复制消息'
+            ? `已复制${itemLabel}`
             : copyState === 'failed'
-              ? '复制消息失败'
-              : '复制消息'
+              ? `复制${itemLabel}失败`
+              : `复制${itemLabel}`
         }
         title={copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}
         onClick={async () => {
@@ -621,12 +623,14 @@ function MessageMeta(props: {
           <Copy size={14} aria-hidden="true" />
         )}
       </button>
-      {props.onEdit ? (
+      {props.item.kind === 'user_message' && props.onEdit ? (
         <button
           type="button"
           aria-label="编辑消息"
           title="编辑"
-          onClick={() => props.onEdit?.(props.item)}
+          onClick={() => {
+            if (props.item.kind === 'user_message') props.onEdit?.(props.item);
+          }}
         >
           <Pencil size={14} aria-hidden="true" />
         </button>
@@ -923,6 +927,18 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     }),
     [props.items]
   );
+  const latestAssistantMessageId = useMemo(() => {
+    for (let index = renderItems.length - 1; index >= 0; index -= 1) {
+      const renderItem = renderItems[index];
+      if (
+        renderItem?.type === 'item'
+        && renderItem.item.kind === 'assistant_message'
+      ) {
+        return renderItem.item.id;
+      }
+    }
+    return undefined;
+  }, [renderItems]);
   const targetRenderItemIndex = useMemo(
     () => renderItems.findIndex(item => renderItemMatchesTarget(
       item,
@@ -1104,6 +1120,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                   props.approvalErrors,
                   props.onApproveApproval,
                   props.onRejectApproval,
+                  latestAssistantMessageId,
                   renderItem.type === 'process'
                     ? processExpansionOverrides[renderItem.key]
                     : undefined,
@@ -1144,6 +1161,7 @@ function renderTimelineRenderItem(
   approvalErrors?: Readonly<Record<string, string | undefined>>,
   onApproveApproval?: (id: string) => void,
   onRejectApproval?: (id: string) => void,
+  latestAssistantMessageId?: string,
   processExpansionOverride?: boolean,
   onProcessExpandedChange?: (processKey: string, expanded: boolean) => void
 ) {
@@ -1214,8 +1232,15 @@ function renderTimelineRenderItem(
             : undefined
         )}
       </div>
-      {item.kind === 'user_message' ? (
-        <MessageMeta item={item} onEdit={onEditUserMessage} />
+      {item.kind === 'user_message' || item.kind === 'assistant_message' ? (
+        <MessageMeta
+          item={item}
+          latestAssistant={
+            item.kind === 'assistant_message'
+            && item.id === latestAssistantMessageId
+          }
+          onEdit={item.kind === 'user_message' ? onEditUserMessage : undefined}
+        />
       ) : null}
     </article>
   );

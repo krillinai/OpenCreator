@@ -747,9 +747,22 @@ select:focus-visible {
 }
 
 .timeline-user_message:hover .timeline-message-meta,
-.timeline-user_message:focus-within .timeline-message-meta {
+.timeline-user_message:focus-within .timeline-message-meta,
+.timeline-assistant_message:hover .timeline-message-meta,
+.timeline-assistant_message:focus-within .timeline-message-meta,
+.timeline-message-meta.is-latest-assistant {
   opacity: 1;
   pointer-events: auto;
+}
+
+.timeline-message-meta.is-latest-assistant time {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.timeline-assistant_message:hover .timeline-message-meta.is-latest-assistant time,
+.timeline-assistant_message:focus-within .timeline-message-meta.is-latest-assistant time {
+  opacity: 1;
 }
 
 .timeline-message-meta time {
