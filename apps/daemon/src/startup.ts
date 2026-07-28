@@ -31,7 +31,8 @@ export function createProductionServerInput(
   return {
     ...input,
     schedulerAutostart: true,
-    agentToolsEnabled: true
+    agentToolsEnabled: true,
+    persistentAppServerEnabled: input.persistentAppServerEnabled ?? true
   };
 }
 

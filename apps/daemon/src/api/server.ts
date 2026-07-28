@@ -23,7 +23,10 @@ import {
   type AgentScheduleOperations
 } from '../agent-tools/internal-routes.js';
 import { registerAgentScheduleMcpRoute } from '../agent-tools/mcp-routes.js';
-import { createAgentScheduleRunInjector } from '../agent-tools/run-injection.js';
+import {
+  createAgentScheduleProcessInjector,
+  createAgentScheduleRunInjector
+} from '../agent-tools/run-injection.js';
 import {
   createUnknownCapabilityMatrix,
   isResumeExecutionSupported,
@@ -51,6 +54,7 @@ import {
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
+import { createPersistentAppServerExecutor } from '../runs/persistent-app-server-executor-2026-07-28.js';
 import {
   createScheduleCoordinator,
   type ScheduleCoordinator
@@ -108,6 +112,7 @@ export type BuildServerInput = {
   agentCapabilityTokens?: AgentCapabilityTokenStore;
   agentScheduleOperations?: AgentScheduleOperations;
   agentToolsEnabled?: boolean;
+  persistentAppServerEnabled?: boolean;
   codexThreadRotationRunThreshold?: number;
   codexSessionProvider?: CodexSessionProvider;
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
@@ -192,6 +197,32 @@ export async function buildServer(input: BuildServerInput) {
   const memoryService = createMemoryService({ db });
   const agentCapabilityTokens =
     input.agentCapabilityTokens ?? createAgentCapabilityTokenStore();
+  const runtimeTransport =
+    capabilities.appServerApprovals === true ? 'app-server' : 'exec';
+  const getAgentToolBaseUrl = () =>
+    resolveListeningOrigin(server.server.address());
+  const agentToolInjector = input.agentToolsEnabled !== true
+    ? undefined
+    : createAgentScheduleRunInjector({
+        capabilities: agentCapabilityTokens,
+        getBaseUrl: getAgentToolBaseUrl
+      });
+  const agentToolProcessInjector = input.agentToolsEnabled !== true
+    ? undefined
+    : createAgentScheduleProcessInjector({
+        capabilities: agentCapabilityTokens,
+        getBaseUrl: getAgentToolBaseUrl
+      });
+  const persistentAppServerExecutor =
+    input.runManager === undefined
+    && input.persistentAppServerEnabled !== false
+    && runtimeTransport === 'app-server'
+      ? createPersistentAppServerExecutor({
+          codexBin,
+          codexHome,
+          processInjector: agentToolProcessInjector
+        })
+      : undefined;
   const runManager =
     input.runManager ??
     createRunManager({
@@ -202,19 +233,15 @@ export async function buildServer(input: BuildServerInput) {
       threadAccess: threadManager,
       resumeCapabilityVerified,
       profileValidator: profileManager,
-      runtimeTransport: capabilities.appServerApprovals === true ? 'app-server' : 'exec',
+      runtimeTransport,
       approvalManager,
+      persistentAppServerExecutor,
       codexThreadRotationRunThreshold:
         input.codexThreadRotationRunThreshold
         ?? parseNonNegativeInteger(process.env.CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD),
       prepareThreadRotationContext: context =>
         memoryService.prepareThreadRotationContext(context),
-      agentToolInjector: input.agentToolsEnabled !== true
-        ? undefined
-        : createAgentScheduleRunInjector({
-            capabilities: agentCapabilityTokens,
-            getBaseUrl: () => resolveListeningOrigin(server.server.address())
-          }),
+      agentToolInjector,
       recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items),
       onRunTerminal(runId) {
         agentCapabilityTokens.revokeRun(runId);
@@ -288,26 +315,27 @@ export async function buildServer(input: BuildServerInput) {
   });
 
   server.addHook('onClose', async () => {
-    clearInterval(attachmentCleanupTimer);
-    unsubscribeApprovalNotifications();
-    scheduler.stop();
-    agentCapabilityTokens.close();
-    try {
-      await Promise.all([
-        codexSessionProvider.close(),
-        runManager.close({ timeoutMs: 5_000 })
-      ]);
-      if (ownsDb) db.close();
-    } catch (error) {
-      if (ownsDb) {
-        void runManager.close()
-          .finally(() => {
-            if (db.open) db.close();
-          })
-          .catch(() => undefined);
+    let firstError: unknown;
+    const capture = async (operation: () => void | Promise<void>) => {
+      try {
+        await operation();
+      } catch (error) {
+        firstError ??= error;
       }
-      throw error;
+    };
+
+    await capture(() => clearInterval(attachmentCleanupTimer));
+    await capture(() => unsubscribeApprovalNotifications());
+    await capture(() => scheduler.stop());
+    await capture(() => runManager.close());
+    await capture(() => codexSessionProvider.close());
+    await capture(() => agentCapabilityTokens.close());
+    if (ownsDb) {
+      await capture(() => {
+        if (db.open) db.close();
+      });
     }
+    if (firstError !== undefined) throw firstError;
   });
 
   server.get('/healthz', async () => ({ ok: true }));

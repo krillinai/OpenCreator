@@ -7,7 +7,8 @@ import {
 } from './run-injection.js';
 import {
   createAgentScheduleHttpClient,
-  createAgentScheduleToolDefinitions
+  createAgentScheduleToolDefinitions,
+  type AgentScheduleToolName
 } from './schedule-tools.js';
 
 export async function startAgentScheduleStdioServer(
@@ -26,6 +27,7 @@ export async function startAgentScheduleStdioServer(
 export function createAgentScheduleMcpServer(input: {
   request: ReturnType<typeof createAgentScheduleHttpClient>['request'];
   defaultTimezone?: string;
+  enabledTools?: AgentScheduleToolName[];
 }): McpServer {
   const tools = createAgentScheduleToolDefinitions({
     request: input.request,
@@ -36,7 +38,16 @@ export function createAgentScheduleMcpServer(input: {
     version: '0.1.0'
   });
 
+  const enabledTools = input.enabledTools === undefined
+    ? undefined
+    : new Set(input.enabledTools);
   for (const [name, tool] of Object.entries(tools)) {
+    if (
+      enabledTools !== undefined
+      && !enabledTools.has(name as AgentScheduleToolName)
+    ) {
+      continue;
+    }
     server.registerTool(name, {
       description: tool.description,
       inputSchema: tool.inputSchema

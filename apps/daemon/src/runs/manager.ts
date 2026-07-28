@@ -24,7 +24,8 @@ import {
   buildCodexAppServerArgs,
   startCodexAppServer,
   type CodexAppServerResult,
-  type AppServerRequest
+  type AppServerRequest,
+  type StartCodexAppServerInput
 } from '../codex/app-server-runner.js';
 import { CodexExecError, startCodexExec } from '../codex/runner.js';
 import {
@@ -53,6 +54,10 @@ import type {
   CreateRunInput,
   ResolvedCreateRunInput
 } from './types.js';
+import type {
+  PersistentAppServerExecution,
+  PersistentAppServerExecutor
+} from './persistent-app-server-executor-2026-07-28.js';
 
 export type ThreadAccess = {
   getThread(id: string): RuntimeThread | undefined;
@@ -93,6 +98,7 @@ export type RunManagerOptions = {
   onRunTerminal?(runId: string): void;
   logWriterFactory?(runDir: string): OrderedLogWriter;
   agentToolInjector?: AgentScheduleRunInjector;
+  persistentAppServerExecutor?: PersistentAppServerExecutor;
 };
 
 export type RuntimeRun = {
@@ -153,6 +159,8 @@ type QueuedRun = {
   id: string;
   input: ResolvedCreateRunInput;
   runDir: string;
+  usePersistentAppServer?: boolean;
+  submissionSequence?: number;
 };
 
 type CodexThreadRotation = {
@@ -198,11 +206,14 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   const runCompletions = new Map<string, Promise<CreatedRun>>();
   const queuedCompletionResolvers = new Map<string, (run: CreatedRun) => void>();
   const threadQueues = new Map<string, QueuedRun[]>();
+  const persistentRunQueue: QueuedRun[] = [];
   const runningThreadRun = new Map<string, string>();
   const subscribers = new Map<string, Set<RunEventSubscriber>>();
   const logWriters = new Map<string, OrderedLogWriter>();
   let closing = false;
   let closeWork: Promise<void> | undefined;
+  let runningPersistentRunId: string | undefined;
+  let persistentSubmissionSequence = 0;
 
   const publish = (event: AgentEventEnvelope): Promise<void> => {
     runs.insertRunEvent(event);
@@ -278,6 +289,72 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         ).catch(() => undefined);
       }
 
+      const usePersistentAppServer =
+        options.runtimeTransport === 'app-server'
+        && options.persistentAppServerExecutor !== undefined
+        && (runInput.createdBy ?? 'api') === 'api'
+        && thread !== undefined;
+      if (usePersistentAppServer) {
+        const queuedRun: QueuedRun = {
+          id,
+          input: runInput,
+          runDir,
+          usePersistentAppServer: true,
+          submissionSequence: ++persistentSubmissionSequence
+        };
+        const blocked =
+          runningPersistentRunId !== undefined
+          || persistentRunQueue.length > 0
+          || options.persistentAppServerExecutor!.isBusy()
+          || runningThreadRun.has(thread.id);
+        if (!blocked) return startExistingRun(queuedRun);
+
+        updateStatus(id, 'queued', 'queued');
+        runs.setRunQueueState(id, 'queued');
+        void publishStatus(id, nextSeqForRun(id), 'queued', publish, {
+          threadId: runInput.threadId,
+          codexThreadId
+        }).catch(() => undefined);
+        let resolveCompletion!: (run: CreatedRun) => void;
+        const completion = new Promise<CreatedRun>(resolve => {
+          resolveCompletion = resolve;
+        });
+        runCompletions.set(id, completion);
+        queuedCompletionResolvers.set(id, resolveCompletion);
+        const submissionMode = runInput.submissionMode ?? 'enqueue';
+        let queuePosition: number;
+        if (submissionMode === 'interrupt_and_enqueue') {
+          const firstRegularIndex = persistentRunQueue.findIndex(
+            item => (item.input.submissionMode ?? 'enqueue') === 'enqueue'
+          );
+          const insertIndex = firstRegularIndex === -1
+            ? persistentRunQueue.length
+            : firstRegularIndex;
+          persistentRunQueue.splice(insertIndex, 0, queuedRun);
+          queuePosition = insertIndex + 1;
+          const activeRunId = runningPersistentRunId;
+          const activeRow = activeRunId === undefined
+            ? undefined
+            : runs.getRun(activeRunId);
+          if (
+            activeRunId !== undefined
+            && activeRow?.internal_status !== 'canceling'
+          ) {
+            manager.cancelRun(activeRunId);
+          }
+        } else {
+          persistentRunQueue.push(queuedRun);
+          queuePosition = persistentRunQueue.length;
+        }
+        return {
+          id,
+          threadId: runInput.threadId,
+          status: 'queued',
+          submissionMode,
+          queuePosition
+        };
+      }
+
       if (runInput.threadId !== undefined && runningThreadRun.has(runInput.threadId)) {
         updateStatus(id, 'queued', 'queued');
         runs.setRunQueueState(id, 'queued');
@@ -350,6 +427,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       });
       notifyRunTerminal(id);
       runs.setRunQueueState(id, 'none');
+      startNextPersistentRun();
       void (async () => {
         const statusWrite = publishStatus(
           id,
@@ -383,6 +461,23 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     },
 
     steerRun(id: string): boolean {
+      const persistentIndex = persistentRunQueue.findIndex(run => run.id === id);
+      if (persistentIndex !== -1) {
+        const [queued] = persistentRunQueue.splice(persistentIndex, 1);
+        if (queued === undefined) return false;
+        persistentRunQueue.unshift(queued);
+        const activeRunId = runningPersistentRunId;
+        const activeRow = activeRunId === undefined
+          ? undefined
+          : runs.getRun(activeRunId);
+        if (
+          activeRunId !== undefined
+          && activeRow?.internal_status !== 'canceling'
+        ) {
+          manager.cancelRun(activeRunId);
+        }
+        return true;
+      }
       for (const [threadId, queue] of threadQueues) {
         const index = queue.findIndex(run => run.id === id);
         if (index === -1) continue;
@@ -454,19 +549,38 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     async close(closeOptions = {}) {
       if (closeWork === undefined) {
         closing = true;
-        for (const active of activeRuns.values()) active.cancel();
         for (const queue of threadQueues.values()) {
           for (const queued of [...queue]) manager.cancelRun(queued.id);
         }
+        for (const queued of [...persistentRunQueue]) {
+          manager.cancelRun(queued.id);
+        }
+        for (const active of activeRuns.values()) active.cancel();
 
         closeWork = (async () => {
+          let firstError: unknown;
           const completions = [
             ...[...activeRuns.values()].map(active => active.done),
             ...runCompletions.values()
           ];
+          try {
+            await options.persistentAppServerExecutor?.close({
+              interruptGraceMs: 1_000,
+              terminateGraceMs: 2_000
+            });
+          } catch (error) {
+            firstError = error;
+          }
           await Promise.allSettled(completions);
-          await Promise.all([...logWriters.values()].map(writer => writer.close()));
+          const writerResults = await Promise.allSettled(
+            [...logWriters.values()].map(writer => writer.close())
+          );
+          firstError ??= writerResults.find(
+            (result): result is PromiseRejectedResult =>
+              result.status === 'rejected'
+          )?.reason;
           logWriters.clear();
+          if (firstError !== undefined) throw firstError;
         })();
       }
       if (closeOptions.timeoutMs === undefined) {
@@ -590,6 +704,12 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   function startExistingRun(input: QueuedRun): CreatedRun {
     const { id, runDir } = input;
     const runInput = input.input;
+    const usePersistentAppServer = input.usePersistentAppServer === true;
+    const executionStartedAt = new Date().toISOString();
+    const submittedAt = normalizeDatabaseTimestamp(
+      runs.getRun(id)?.created_at ?? executionStartedAt
+    );
+    if (usePersistentAppServer) runningPersistentRunId = id;
     if (runInput.threadId !== undefined) runningThreadRun.set(runInput.threadId, id);
 
     const thread = runInput.threadId === undefined
@@ -701,7 +821,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
     let agentToolInjection: AgentToolRunInjection | undefined;
     try {
-      agentToolInjection = thread === undefined
+      agentToolInjection = usePersistentAppServer || thread === undefined
         ? undefined
         : options.agentToolInjector?.prepare({
             runId: id,
@@ -878,20 +998,27 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     if (options.runtimeTransport === 'app-server') {
       let appServerThreadEstablished = false;
       let appServerTurnStarted = false;
+      let appServerProcessInfo: {
+        pid: number;
+        reused: boolean;
+      } | undefined;
+      let appServerStarted: PersistentAppServerExecution['started'] | undefined;
+      const appServerLifecycle: Array<Record<string, unknown>> = [];
+      let turnStartSentAt: string | undefined;
+      let turnStartedAt: string | undefined;
+      let firstModelEventAt: string | undefined;
 
       function startAppServerAttempt() {
-        return startCodexAppServer({
-          codexBin: options.codexBin,
-          codexHome: options.codexHome,
+        const commonInput: Omit<
+          StartCodexAppServerInput,
+          'codexBin' | 'codexHome' | 'profile' | 'mcpServers' | 'env'
+        > = {
           cwd: executionRunInput.cwd,
-          profile: executionRunInput.profile,
           sandbox: executionRunInput.sandbox,
           model: executionRunInput.model,
           reasoning: executionRunInput.reasoning,
           prompt: executionRunInput.executionPrompt ?? executionRunInput.prompt,
           imagePaths: executionRunInput.imagePaths,
-          mcpServers: agentToolInjection?.mcpServers,
-          env: agentToolInjection?.env,
           codexThreadId: resolvedResumeMode === 'resume_thread' ? resolvedCodexThreadId : undefined,
           timeoutMs: runTimeouts.timeoutMs,
           spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
@@ -908,6 +1035,19 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             await announceRotation(parsedCodexThreadId);
           },
           async onNotification(notification) {
+            const method = typeof notification.method === 'string'
+              ? notification.method
+              : undefined;
+            if (method === 'turn/started' && turnStartedAt === undefined) {
+              turnStartedAt = new Date().toISOString();
+            }
+            if (
+              firstModelEventAt === undefined
+              && method !== undefined
+              && method.startsWith('item/')
+            ) {
+              firstModelEventAt = new Date().toISOString();
+            }
             const redactedNotification = redactValue(notification);
             const redactedLine = JSON.stringify(redactedNotification);
             stdoutLines.push(redactedLine);
@@ -947,7 +1087,36 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             const redactedChunk = redactText(chunk);
             stderr += redactedChunk;
             await appendRunLog(id, 'stderr.redacted.log', redactedChunk);
+          },
+          onTurnStartWritten() {
+            turnStartSentAt ??= new Date().toISOString();
           }
+        };
+        if (usePersistentAppServer) {
+          const execution = options.persistentAppServerExecutor!.start({
+            ...commonInput,
+            runId: id,
+            thread: thread!,
+            profile: executionRunInput.profile,
+            onLifecycle(event) {
+              appServerLifecycle.push(redactValue(event) as Record<string, unknown>);
+            }
+          });
+          appServerStarted = execution.started;
+          void execution.started.then(info => {
+            appServerProcessInfo = info;
+          }).catch(() => undefined);
+          return execution;
+        }
+        appServerStarted = undefined;
+        appServerProcessInfo = undefined;
+        return startCodexAppServer({
+          ...commonInput,
+          codexBin: options.codexBin,
+          codexHome: options.codexHome,
+          profile: executionRunInput.profile,
+          mcpServers: agentToolInjection?.mcpServers,
+          env: agentToolInjection?.env
         });
       }
 
@@ -982,6 +1151,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       async function handleAppServerResult(
         result: CodexAppServerResult
       ): Promise<CreatedRun> {
+        if (appServerStarted !== undefined) {
+          appServerProcessInfo = await appServerStarted.catch(() => undefined);
+        }
         const publicStatus: 'succeeded' | 'failed' | 'canceled' =
           result.terminationReason === 'canceled'
             ? 'canceled'
@@ -1009,6 +1181,21 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           }),
           ...rotationDiagnostics(),
           runtimeTransport: 'app-server',
+          submittedAt,
+          executionStartedAt,
+          turnStartSentAt: turnStartSentAt ?? null,
+          turnStartedAt: turnStartedAt ?? null,
+          firstModelEventAt: firstModelEventAt ?? null,
+          turnStartWritten: turnStartSentAt !== undefined,
+          appServer: {
+            lifecycle: appServerLifecycle
+          },
+          ...(appServerProcessInfo === undefined
+            ? {}
+            : {
+                appServerPid: appServerProcessInfo.pid,
+                appServerReused: appServerProcessInfo.reused
+              }),
           turnId: result.turnId,
           turnStatus: result.turnStatus,
           terminationReason,
@@ -1034,6 +1221,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       }
 
       async function handleAppServerError(error: unknown): Promise<CreatedRun> {
+        if (appServerStarted !== undefined) {
+          appServerProcessInfo = await appServerStarted.catch(() => undefined);
+        }
         const errorMessage = error instanceof Error ? error.message : String(error);
         const bindingConflict = isThreadCodexIdConflict(error);
         if (
@@ -1076,6 +1266,21 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             }),
             ...rotationDiagnostics(),
             runtimeTransport: 'app-server',
+            submittedAt,
+            executionStartedAt,
+            turnStartSentAt: turnStartSentAt ?? null,
+            turnStartedAt: turnStartedAt ?? null,
+            firstModelEventAt: firstModelEventAt ?? null,
+            turnStartWritten: turnStartSentAt !== undefined,
+            appServer: {
+              lifecycle: appServerLifecycle
+            },
+            ...(appServerProcessInfo === undefined
+              ? {}
+              : {
+                  appServerPid: appServerProcessInfo.pid,
+                  appServerReused: appServerProcessInfo.reused
+                }),
             error: errorMessage,
             ...runTimeouts
           },
@@ -1584,6 +1789,12 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   }
 
   function removeQueuedRun(runId: string): (QueuedRun & { threadId: string }) | undefined {
+    const persistentIndex = persistentRunQueue.findIndex(run => run.id === runId);
+    if (persistentIndex !== -1) {
+      const [queued] = persistentRunQueue.splice(persistentIndex, 1);
+      if (queued?.input.threadId === undefined) return undefined;
+      return { ...queued, threadId: queued.input.threadId };
+    }
     for (const [threadId, queue] of threadQueues) {
       const index = queue.findIndex(run => run.id === runId);
       if (index === -1) continue;
@@ -1597,6 +1808,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
 
   function decorateQueuePosition(run: RuntimeRun): RuntimeRun {
     if (run.status !== 'queued' || run.threadId === undefined) return run;
+    const persistentIndex = persistentRunQueue.findIndex(item => item.id === run.id);
+    if (persistentIndex !== -1) {
+      return { ...run, queuePosition: persistentIndex + 1 };
+    }
     const queue = threadQueues.get(run.threadId) ?? [];
     const index = queue.findIndex(item => item.id === run.id);
     return index === -1 ? run : { ...run, queuePosition: index + 1 };
@@ -1659,9 +1874,29 @@ export function createRunManager(options: RunManagerOptions): RunManager {
   }
 
   function completeThreadRun(threadId: string | undefined, runId: string): void {
-    if (threadId === undefined) return;
-    if (runningThreadRun.get(threadId) === runId) runningThreadRun.delete(threadId);
-    startNextQueuedThreadRun(threadId);
+    const wasPersistent = runningPersistentRunId === runId;
+    if (wasPersistent) runningPersistentRunId = undefined;
+    if (threadId !== undefined && runningThreadRun.get(threadId) === runId) {
+      runningThreadRun.delete(threadId);
+    }
+    startNextPersistentRun();
+    if (threadId !== undefined) startNextQueuedThreadRun(threadId);
+  }
+
+  function startNextPersistentRun(): void {
+    if (closing || runningPersistentRunId !== undefined) return;
+    const next = persistentRunQueue[0];
+    const threadId = next?.input.threadId;
+    if (
+      next === undefined
+      || threadId === undefined
+      || runningThreadRun.has(threadId)
+      || options.persistentAppServerExecutor?.isBusy() === true
+    ) {
+      return;
+    }
+    persistentRunQueue.shift();
+    startExistingRun(next);
   }
 
   function startNextQueuedThreadRun(threadId: string): void {
@@ -1870,6 +2105,7 @@ function publishApproval(
 
 function appServerErrorToTerminationReason(message: string): TerminationReason {
   const normalized = message.toLowerCase();
+  if (normalized.includes('canceled')) return 'user_canceled';
   if (normalized.includes('spawn timeout')) return 'spawn_timeout';
   if (normalized.includes('inactivity timeout')) return 'inactivity_timeout';
   if (normalized.includes(' timeout after')) return 'timeout';

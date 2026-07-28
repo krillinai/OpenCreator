@@ -14,6 +14,7 @@ import {
   createAgentScheduleHttpClient
 } from './schedule-tools.js';
 import { createAgentScheduleMcpServer } from './stdio-server.js';
+import { toolNamesForScopes } from './run-injection.js';
 
 export async function registerAgentScheduleMcpRoute(
   fastify: FastifyInstance,
@@ -25,16 +26,20 @@ export async function registerAgentScheduleMcpRoute(
   fastify.post<{ Body: unknown }>(
     AGENT_SCHEDULE_MCP_ROUTE,
     async (request, reply) => {
-      const token = authorizeMcpRequest(request, reply, input.capabilities);
-      if (token === undefined) return;
+      const authorization = authorizeMcpRequest(request, reply, input.capabilities);
+      if (authorization === undefined) return;
       const baseUrl = input.getBaseUrl();
       if (baseUrl === undefined) {
         return reply.code(503).send(jsonRpcError('Clawee runtime is not listening'));
       }
 
-      const scheduleClient = createAgentScheduleHttpClient({ baseUrl, token });
+      const scheduleClient = createAgentScheduleHttpClient({
+        baseUrl,
+        token: authorization.token
+      });
       const mcpServer = createAgentScheduleMcpServer({
-        request: scheduleClient.request
+        request: scheduleClient.request,
+        enabledTools: toolNamesForScopes(authorization.grant.scopes)
       });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined
@@ -76,11 +81,14 @@ function authorizeMcpRequest(
   request: FastifyRequest,
   reply: FastifyReply,
   capabilities: AgentCapabilityTokenStore
-): string | undefined {
+): {
+  token: string;
+  grant: ReturnType<AgentCapabilityTokenStore['inspect']>;
+} | undefined {
   const token = readBearerToken(request.headers.authorization);
   try {
-    capabilities.inspect(token);
-    return token;
+    const grant = capabilities.inspect(token);
+    return { token: token!, grant };
   } catch (error) {
     if (!(error instanceof AgentCapabilityTokenError)) throw error;
     reply.code(error.statusCode).send({

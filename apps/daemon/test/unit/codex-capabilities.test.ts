@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { execPath } from 'node:process';
 import {
   applyCapabilityMatrix,
+  collectCodexCapabilityMatrix,
   createUnknownCapabilityMatrix,
   isResumeExecutionSupported,
   parseCodexCapabilityMatrix,
@@ -62,6 +63,13 @@ Commands:
 `;
 
 describe('codex capability parsing', () => {
+  it('accepts a null sync spawn error from successful process creation', () => {
+    expect(() => collectCodexCapabilityMatrix({
+      codexBin: execPath,
+      timeoutMs: 1_000
+    })).not.toThrow();
+  });
+
   it('uses a fast local version probe as the executable startup gate', async () => {
     await expect(probeCodexVersionAsync({
       codexBin: execPath,

@@ -340,6 +340,9 @@ describe('agent tool internal api', () => {
         token: 'clwcap_automatic',
         expiresAt: '2026-07-14T00:05:00.000Z'
       })),
+      issueProcess: vi.fn(() => {
+        throw new Error('not used by this test');
+      }),
       authorize: vi.fn(() => ({
         runId: 'run-automatic',
         threadId: 'thread-1',
@@ -713,7 +716,9 @@ describe('agent tool internal api', () => {
     try {
       await client.connect(transport);
       const listed = await client.listTools();
-      expect(listed.tools.map(tool => tool.name)).toContain('clawee_schedule_get');
+      expect(listed.tools.map(tool => tool.name)).toEqual([
+        'clawee_schedule_get'
+      ]);
 
       const result = await client.callTool({
         name: 'clawee_schedule_get',
@@ -735,6 +740,77 @@ describe('agent tool internal api', () => {
     } finally {
       await client.close();
     }
+  });
+
+  it('rejects an inactive process token and exposes only its active grant tools', async () => {
+    const fixture = await createServerFixture();
+    const address = await server!.listen({ host: '127.0.0.1', port: 0 });
+    const lease = fixture.tokens.issueProcess({
+      createdBy: 'api',
+      maxScopes: ['schedule:get', 'schedule:update']
+    });
+    const endpoint = new URL('/internal/agent-tools/mcp', address);
+    const initializeBody = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'process-token-test', version: '1.0.0' }
+      }
+    });
+
+    const inactive = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${lease.token}`,
+        'content-type': 'application/json'
+      },
+      body: initializeBody
+    });
+    expect(inactive.status).toBe(403);
+    expect(await inactive.json()).toMatchObject({
+      error: { code: 'CAPABILITY_CONTEXT_INACTIVE' }
+    });
+
+    lease.activate({
+      runId: 'run-process',
+      threadId: 'thread-1',
+      createdBy: 'api',
+      scopes: ['schedule:update']
+    });
+    const client = new Client({
+      name: 'clawee-process-http-test',
+      version: '1.0.0'
+    });
+    const transport = new StreamableHTTPClientTransport(endpoint, {
+      requestInit: {
+        headers: { authorization: `Bearer ${lease.token}` }
+      }
+    });
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      expect(listed.tools.map(tool => tool.name)).toEqual([
+        'clawee_schedule_update'
+      ]);
+    } finally {
+      await client.close();
+    }
+
+    expect(lease.deactivate('run-process')).toBe(true);
+    const inactiveAgain = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${lease.token}`,
+        'content-type': 'application/json'
+      },
+      body: initializeBody
+    });
+    expect(inactiveAgain.status).toBe(403);
   });
 });
 

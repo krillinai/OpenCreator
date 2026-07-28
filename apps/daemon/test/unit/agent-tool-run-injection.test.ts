@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createAgentCapabilityTokenStore } from '../../src/agent-tools/capability-token.js';
 import {
   AGENT_SCHEDULE_MCP_SERVER_NAME,
+  createAgentScheduleProcessInjector,
   createAgentScheduleRunInjector
 } from '../../src/agent-tools/run-injection.js';
 import type { RuntimeThread } from '../../src/threads/types.js';
@@ -101,7 +102,77 @@ describe('agent tool run injection', () => {
     })).toBeUndefined();
     tokens.close();
   });
+
+  it('uses one inactive process token and switches the active manifest per run', () => {
+    const tokens = createAgentCapabilityTokenStore();
+    const injector = createAgentScheduleProcessInjector({
+      capabilities: tokens,
+      getBaseUrl: () => 'http://127.0.0.1:43123'
+    });
+    const injection = injector.create();
+
+    expect(injection?.mcpServers).toEqual([
+      expect.objectContaining({
+        name: AGENT_SCHEDULE_MCP_SERVER_NAME,
+        url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
+        bearerTokenEnvVar: 'CLAWEE_AGENT_CAPABILITY_TOKEN'
+      })
+    ]);
+    expect(injection?.mcpServers[0]).not.toHaveProperty('enabledTools');
+    const token = injection?.env.CLAWEE_AGENT_CAPABILITY_TOKEN;
+    expectCapabilityCode(
+      () => tokens.inspect(token),
+      'CAPABILITY_CONTEXT_INACTIVE'
+    );
+
+    const conversation = injection?.activate({
+      runId: 'run-conversation',
+      thread: thread({ purpose: 'conversation' }),
+      createdBy: 'api'
+    });
+    expect(conversation?.manifestKey).toContain('clawee_schedule_create');
+    expect(tokens.authorize(token, { scope: 'schedule:create' })).toMatchObject({
+      runId: 'run-conversation',
+      threadId: 'thread-1'
+    });
+    injection?.deactivate('run-conversation');
+
+    const task = injection?.activate({
+      runId: 'run-task',
+      thread: thread({ id: 'thread-2', purpose: 'schedule_task' }),
+      createdBy: 'api'
+    });
+    expect(task?.manifestKey).not.toBe(conversation?.manifestKey);
+    expect(task?.manifestKey).not.toContain('clawee_schedule_create');
+    expect(tokens.authorize(token, { scope: 'schedule:update' })).toMatchObject({
+      runId: 'run-task',
+      threadId: 'thread-2'
+    });
+    expectCapabilityCode(
+      () => tokens.authorize(token, { scope: 'schedule:create' }),
+      'CAPABILITY_SCOPE_FORBIDDEN'
+    );
+
+    injection?.close();
+    expectCapabilityCode(
+      () => tokens.inspect(token),
+      'CAPABILITY_TOKEN_INVALID'
+    );
+    tokens.close();
+  });
 });
+
+function expectCapabilityCode(
+  operation: () => unknown,
+  code: string
+): void {
+  try {
+    operation();
+    throw new Error(`Expected ${code}`);
+  } catch (error) {
+    expect(error).toMatchObject({ code });
+  }
+}
 
 function thread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
   return {

@@ -117,8 +117,13 @@ test('使用本机真实 Codex 完成冷启动 Probe 和真实会话', async () 
       healthStatus: 200,
       healthBody: { ok: true }
     });
-    expect(initial.state?.probeTimings?.homePreparationMs).toBeLessThan(250);
-    expect(initial.state?.probeTimings?.firstEventMs).toBeLessThan(1_000);
+    const availabilityProbe = await waitForAvailabilityProbe(page, 60_000);
+    expect(availabilityProbe).toMatchObject({
+      status: 'succeeded',
+      responseReceived: true,
+      markerMatched: true
+    });
+    expect(availabilityProbe.durationMs).toEqual(expect.any(Number));
 
     const conversation = await runRealHello(page, root);
     if (conversation.status !== 'succeeded') {
@@ -149,8 +154,8 @@ test('使用本机真实 Codex 完成冷启动 Probe 和真实会话', async () 
         arch: process.arch,
         codexBin: initial.state?.codexBin,
         codexHome: initial.state?.codexHome,
-        probeDurationMs: initial.state?.durationMs,
-        probeTimings: initial.state?.probeTimings,
+        probeDurationMs: availabilityProbe.durationMs,
+        availabilityProbe,
         threadId: conversation.threadId,
         runId: conversation.runId,
         runStatus: conversation.status,
@@ -198,11 +203,15 @@ async function runRealHello(
       return payload as Record<string, any>;
     };
 
-    const createdThread = await runtimeRequest('POST', '/threads', {
-      workspaceMode: 'external',
+    const createdProject = await runtimeRequest('POST', '/projects', {
       cwd,
+      name: '真实 Codex 验收项目',
       profile: 'default',
       sandbox: 'read-only'
+    });
+    const createdThread = await runtimeRequest('POST', '/threads', {
+      projectId: createdProject.project.id,
+      title: '真实 Codex 验收会话'
     });
     const threadId = createdThread.thread.id as string;
     const createdRun = await runtimeRequest('POST', '/runs', {
@@ -249,6 +258,42 @@ async function waitForBootstrapOutcome(
     await page.waitForTimeout(250);
   }
   throw new Error(`等待 Desktop 启动状态超时（${timeoutMs}ms）`);
+}
+
+async function waitForAvailabilityProbe(
+  page: Page,
+  timeoutMs: number
+): Promise<{
+  status: string;
+  durationMs?: number;
+  responseReceived?: boolean;
+  markerMatched?: boolean;
+  errorCode?: string;
+  message?: string;
+}> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const probe = await page.evaluate(async () => {
+      const response = await fetch('/.clawee/runtime/codex/status');
+      if (!response.ok) {
+        throw new Error(`Codex status failed with ${response.status}`);
+      }
+      const status = await response.json() as {
+        availabilityProbe?: {
+          status: string;
+          durationMs?: number;
+          responseReceived?: boolean;
+          markerMatched?: boolean;
+          errorCode?: string;
+          message?: string;
+        };
+      };
+      return status.availabilityProbe;
+    });
+    if (probe !== undefined && probe.status !== 'pending') return probe;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`等待 Codex 后台可用性验证超时（${timeoutMs}ms）`);
 }
 
 function finderLikeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

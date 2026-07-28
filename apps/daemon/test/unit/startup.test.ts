@@ -14,7 +14,8 @@ describe('daemon production startup', () => {
     expect(input).toMatchObject({
       token: 'runtime-token',
       schedulerAutostart: true,
-      agentToolsEnabled: true
+      agentToolsEnabled: true,
+      persistentAppServerEnabled: true
     });
   });
 

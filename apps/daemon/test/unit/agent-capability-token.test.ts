@@ -137,6 +137,157 @@ describe('agent capability token store', () => {
     store.close();
   });
 
+  it('keeps a process lease inactive until one user run is activated', () => {
+    const store = createAgentCapabilityTokenStore();
+    const lease = store.issueProcess({
+      createdBy: 'api',
+      maxScopes: ['schedule:get', 'schedule:update']
+    });
+
+    expect(lease.token).toMatch(/^clwcap_[A-Za-z0-9_-]+$/);
+    expectCapabilityError(
+      () => store.inspect(lease.token),
+      'CAPABILITY_CONTEXT_INACTIVE',
+      403
+    );
+
+    const grant = lease.activate({
+      runId: 'run-1',
+      threadId: 'thread-1',
+      createdBy: 'api',
+      scopes: ['schedule:get']
+    });
+    expect(grant).toMatchObject({
+      runId: 'run-1',
+      threadId: 'thread-1',
+      createdBy: 'api',
+      scopes: ['schedule:get']
+    });
+    expect(store.authorize(lease.token, {
+      scope: 'schedule:get',
+      runId: 'run-1',
+      threadId: 'thread-1'
+    })).toMatchObject({
+      runId: 'run-1',
+      threadId: 'thread-1'
+    });
+    expectCapabilityError(
+      () => lease.activate({
+        runId: 'run-2',
+        threadId: 'thread-2',
+        createdBy: 'api',
+        scopes: ['schedule:get']
+      }),
+      'CAPABILITY_CONTEXT_ACTIVE',
+      409
+    );
+    expectCapabilityError(
+      () => store.authorize(lease.token, { scope: 'schedule:update' }),
+      'CAPABILITY_SCOPE_FORBIDDEN',
+      403
+    );
+    expectCapabilityError(
+      () => lease.activate({
+        runId: 'run-2',
+        threadId: 'thread-2',
+        createdBy: 'api',
+        scopes: ['schedule:create']
+      }),
+      'CAPABILITY_CONTEXT_ACTIVE',
+      409
+    );
+
+    expect(lease.deactivate('run-other')).toBe(false);
+    expect(lease.deactivate('run-1')).toBe(true);
+    expectCapabilityError(
+      () => store.inspect(lease.token),
+      'CAPABILITY_CONTEXT_INACTIVE',
+      403
+    );
+    store.close();
+  });
+
+  it('reuses one process token without leaking a previous run binding', () => {
+    const store = createAgentCapabilityTokenStore();
+    const lease = store.issueProcess({
+      createdBy: 'api',
+      maxScopes: ['schedule:get', 'schedule:update']
+    });
+
+    lease.activate({
+      runId: 'run-1',
+      threadId: 'thread-1',
+      createdBy: 'api',
+      scopes: ['schedule:get']
+    });
+    expect(lease.deactivate('run-1')).toBe(true);
+    lease.activate({
+      runId: 'run-2',
+      threadId: 'thread-2',
+      createdBy: 'api',
+      scopes: ['schedule:update']
+    });
+
+    expect(lease.deactivate('run-1')).toBe(false);
+    expect(store.inspect(lease.token)).toMatchObject({
+      runId: 'run-2',
+      threadId: 'thread-2',
+      scopes: ['schedule:update']
+    });
+    expect(store.revokeRun('run-1')).toBe(0);
+    expect(store.revokeRun('run-2')).toBe(1);
+    expectCapabilityError(
+      () => store.inspect(lease.token),
+      'CAPABILITY_CONTEXT_INACTIVE',
+      403
+    );
+    store.close();
+  });
+
+  it('keeps the process token after an active grant expires', () => {
+    let now = 1_000;
+    const store = createAgentCapabilityTokenStore({
+      clock: { now: () => now },
+      ttlMs: 500
+    });
+    const lease = store.issueProcess({
+      createdBy: 'api',
+      maxScopes: ['schedule:get']
+    });
+
+    lease.activate({
+      runId: 'run-1',
+      threadId: 'thread-1',
+      createdBy: 'api',
+      scopes: ['schedule:get']
+    });
+    now = 1_501;
+    expectCapabilityError(
+      () => store.inspect(lease.token),
+      'CAPABILITY_CONTEXT_INACTIVE',
+      403
+    );
+
+    lease.activate({
+      runId: 'run-2',
+      threadId: 'thread-2',
+      createdBy: 'api',
+      scopes: ['schedule:get']
+    });
+    expect(store.inspect(lease.token)).toMatchObject({
+      runId: 'run-2',
+      threadId: 'thread-2'
+    });
+    expect(lease.revoke()).toBe(true);
+    expect(lease.revoke()).toBe(false);
+    expectCapabilityError(
+      () => store.inspect(lease.token),
+      'CAPABILITY_TOKEN_INVALID',
+      401
+    );
+    store.close();
+  });
+
   it('uses an unref cleanup timer and clears it on close', () => {
     const unref = vi.fn();
     const clearInterval = vi.fn();

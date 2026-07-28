@@ -383,6 +383,12 @@ function toActor(grant: AgentCapabilityGrant): AgentScheduleActor {
 
 function capabilityErrorMessage(code: AgentCapabilityTokenError['code']): string {
   if (code === 'CAPABILITY_TOKEN_MISSING') return 'Capability token required';
+  if (code === 'CAPABILITY_CONTEXT_INACTIVE') {
+    return 'Capability context is inactive';
+  }
+  if (code === 'CAPABILITY_CONTEXT_ACTIVE') {
+    return 'Capability context is already active';
+  }
   if (
     code === 'CAPABILITY_TOKEN_INVALID'
     || code === 'CAPABILITY_TOKEN_EXPIRED'

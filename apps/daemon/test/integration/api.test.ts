@@ -195,7 +195,7 @@ describe('runtime api', () => {
     await server.close();
     server = undefined;
 
-    expect(close).toHaveBeenCalledWith({ timeoutMs: 5_000 });
+    expect(close).toHaveBeenCalledWith();
   });
 
   it('rejects unauthorized requests', async () => {

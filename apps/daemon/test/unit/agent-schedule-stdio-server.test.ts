@@ -94,4 +94,28 @@ describe('agent schedule MCP server', () => {
     expect(result.isError).toBe(true);
     expect(request).not.toHaveBeenCalled();
   });
+
+  it('registers only tools enabled for the active process grant', async () => {
+    const server = createAgentScheduleMcpServer({
+      request: vi.fn(),
+      enabledTools: [
+        'clawee_schedule_update',
+        'clawee_schedule_get'
+      ]
+    });
+    const client = new Client({
+      name: 'clawee-agent-test',
+      version: '0.1.0'
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    closeWork.push(() => client.close(), () => server.close());
+
+    const listed = await client.listTools();
+    expect(listed.tools.map(tool => tool.name)).toEqual([
+      'clawee_schedule_update',
+      'clawee_schedule_get'
+    ]);
+  });
 });

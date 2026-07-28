@@ -375,7 +375,7 @@ function runCodexInfo(
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
   const warnings: string[] = [];
 
-  if (result.error !== undefined) {
+  if (result.error != null) {
     warnings.push(`${command} failed: ${result.error.message}`);
   } else if (result.status !== 0) {
     warnings.push(`${command} exited with code ${result.status}`);

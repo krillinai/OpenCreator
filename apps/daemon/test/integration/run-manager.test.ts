@@ -12,6 +12,10 @@ import { createMemoryService } from '../../src/memory/service.js';
 import { createProjectManager } from '../../src/projects/manager.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunManager } from '../../src/runs/manager.js';
+import type {
+  PersistentAppServerExecutionInput,
+  PersistentAppServerExecutor
+} from '../../src/runs/persistent-app-server-executor-2026-07-28.js';
 import {
   createOrderedLogWriter,
   type OrderedLogWriter
@@ -35,6 +39,8 @@ function createTestRunManager(input: {
   homeDir?: string;
   resumeCapabilityVerified?: boolean;
   logWriterFactory?(runDir: string): OrderedLogWriter;
+  runtimeTransport?: 'exec' | 'app-server';
+  persistentAppServerExecutor?: PersistentAppServerExecutor;
 } = {}) {
   tempDir = input.tempDir ?? mkdtempSync(join(tmpdir(), 'clawee-manager-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -53,7 +59,9 @@ function createTestRunManager(input: {
     homeDir: input.homeDir,
     threadAccess: threadManager,
     resumeCapabilityVerified: input.resumeCapabilityVerified ?? true,
-    logWriterFactory: input.logWriterFactory
+    logWriterFactory: input.logWriterFactory,
+    runtimeTransport: input.runtimeTransport,
+    persistentAppServerExecutor: input.persistentAppServerExecutor
   });
   return { manager, threadManager };
 }
@@ -126,6 +134,76 @@ async function waitForRunStatus(
 }
 
 describe('run manager', () => {
+  it('preserves one global FIFO for persistent app-server runs across threads', async () => {
+    const persistent = createControllablePersistentExecutor();
+    const { manager, threadManager } = createTestRunManager({
+      runtimeTransport: 'app-server',
+      persistentAppServerExecutor: persistent.executor
+    });
+    const threadA = createPersistedThread(threadManager);
+    const threadB = createPersistedThread(threadManager);
+
+    const runA1 = manager.startRun(threadRun(threadA, 'A1'));
+    await expect.poll(() => persistent.starts.length).toBe(1);
+    const runA2 = manager.startRun(threadRun(threadA, 'A2'));
+    const runB1 = manager.startRun(threadRun(threadB, 'B1'));
+
+    expect(runA1.status).toBe('running');
+    expect(runA2).toMatchObject({ status: 'queued', queuePosition: 1 });
+    expect(runB1).toMatchObject({ status: 'queued', queuePosition: 2 });
+    expect(manager.getRun(runA2.id)?.queuePosition).toBe(1);
+    expect(manager.getRun(runB1.id)?.queuePosition).toBe(2);
+
+    persistent.complete(runA1.id);
+    await expect.poll(() => persistent.starts.length).toBe(2);
+    expect(persistent.starts.map(item => item.runId)).toEqual([
+      runA1.id,
+      runA2.id
+    ]);
+    expect(persistent.starts[1]?.codexThreadId).toBe(`codex-${runA1.id}`);
+
+    persistent.complete(runA2.id);
+    await expect.poll(() => persistent.starts.length).toBe(3);
+    expect(persistent.starts.map(item => item.runId)).toEqual([
+      runA1.id,
+      runA2.id,
+      runB1.id
+    ]);
+    persistent.complete(runB1.id);
+
+    await waitForRunStatus(manager, runA1.id, 'succeeded');
+    await waitForRunStatus(manager, runA2.id, 'succeeded');
+    await waitForRunStatus(manager, runB1.id, 'succeeded');
+  });
+
+  it('cancels a queued persistent run without sending it to Codex', async () => {
+    const persistent = createControllablePersistentExecutor();
+    const { manager, threadManager } = createTestRunManager({
+      runtimeTransport: 'app-server',
+      persistentAppServerExecutor: persistent.executor
+    });
+    const threadA = createPersistedThread(threadManager);
+    const threadB = createPersistedThread(threadManager);
+
+    const runA1 = manager.startRun(threadRun(threadA, 'A1'));
+    await expect.poll(() => persistent.starts.length).toBe(1);
+    const runA2 = manager.startRun(threadRun(threadA, 'A2'));
+    const runB1 = manager.startRun(threadRun(threadB, 'B1'));
+
+    expect(manager.cancelRun(runA2.id)).toBe(true);
+    await waitForRunStatus(manager, runA2.id, 'canceled');
+    expect(manager.getRun(runB1.id)?.queuePosition).toBe(1);
+
+    persistent.complete(runA1.id);
+    await expect.poll(() => persistent.starts.length).toBe(2);
+    expect(persistent.starts.map(item => item.runId)).toEqual([
+      runA1.id,
+      runB1.id
+    ]);
+    persistent.complete(runB1.id);
+    await waitForRunStatus(manager, runB1.id, 'succeeded');
+  });
+
   it('expands a home-relative cwd before starting a standalone run', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-home-cwd-'));
     const workspace = join(tempDir, 'workspace');
@@ -1312,7 +1390,8 @@ describe('run manager', () => {
     await waitForRunStatus(manager, active.id, 'canceled');
     await waitForRunStatus(manager, selectedQueued.id, 'running');
     await expect.poll(
-      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : ''
+      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : '',
+      { timeout: RUN_STATUS_TIMEOUT_MS }
     ).toBe('selected queued');
 
     expect(manager.cancelRun(selectedQueued.id)).toBe(true);
@@ -1360,14 +1439,16 @@ describe('run manager', () => {
     await waitForRunStatus(manager, active.id, 'canceled');
     await waitForRunStatus(manager, interrupting.id, 'running');
     await expect.poll(
-      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : ''
+      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : '',
+      { timeout: RUN_STATUS_TIMEOUT_MS }
     ).toBe('interrupting');
 
     expect(manager.cancelRun(interrupting.id)).toBe(true);
     await waitForRunStatus(manager, interrupting.id, 'canceled');
     await waitForRunStatus(manager, regular.id, 'running');
     await expect.poll(
-      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : ''
+      () => existsSync(join(tempDir, 'prompt.txt')) ? fake.readPrompt() : '',
+      { timeout: RUN_STATUS_TIMEOUT_MS }
     ).toBe('regular');
     expect(manager.listRunsByThread(thread.id).filter(run => run.status === 'running')).toHaveLength(1);
     expect(manager.cancelRun(regular.id)).toBe(true);
@@ -2113,3 +2194,109 @@ describe('run manager', () => {
     expect(manager.listEvents(run.id).some(event => event.type === 'done')).toBe(true);
   });
 });
+
+function createControllablePersistentExecutor(): {
+  executor: PersistentAppServerExecutor;
+  starts: PersistentAppServerExecutionInput[];
+  complete(runId: string): void;
+} {
+  type Completion = {
+    input: PersistentAppServerExecutionInput;
+    resolve(status: 'completed' | 'interrupted'): void;
+  };
+  const starts: PersistentAppServerExecutionInput[] = [];
+  const completions = new Map<string, Completion>();
+  let activeRunId: string | undefined;
+
+  const executor: PersistentAppServerExecutor = {
+    start(input) {
+      if (activeRunId !== undefined) {
+        throw new Error('Persistent app-server executor is busy');
+      }
+      activeRunId = input.runId;
+      starts.push(input);
+      const codexThreadId = input.codexThreadId ?? `codex-${input.runId}`;
+      const turnId = `turn-${input.runId}`;
+      let resolveCompletion!: (status: 'completed' | 'interrupted') => void;
+      const completion = new Promise<'completed' | 'interrupted'>(resolve => {
+        resolveCompletion = resolve;
+      });
+      completions.set(input.runId, {
+        input,
+        resolve: resolveCompletion
+      });
+      const result = Promise.resolve()
+        .then(() => input.onThreadStarted?.(codexThreadId))
+        .then(() => completion)
+        .then(async status => {
+          await input.onNotification?.({
+            method: 'turn/started',
+            params: {
+              threadId: codexThreadId,
+              turn: { id: turnId, status: 'inProgress' }
+            }
+          });
+          await input.onNotification?.({
+            method: 'turn/completed',
+            params: {
+              threadId: codexThreadId,
+              turn: { id: turnId, status }
+            }
+          });
+          return {
+            threadId: codexThreadId,
+            turnId,
+            turnStatus: status,
+            stderr: '',
+            terminationReason: status === 'interrupted' ? 'canceled' : 'completed',
+            outputTruncation: {
+              stderr: {
+                truncated: false,
+                droppedItems: 0,
+                droppedBytes: 0
+              },
+              frames: {
+                truncated: false,
+                droppedItems: 0,
+                droppedBytes: 0
+              }
+            }
+          } as const;
+        })
+        .finally(() => {
+          completions.delete(input.runId);
+          if (activeRunId === input.runId) activeRunId = undefined;
+        });
+      return {
+        cancel() {
+          resolveCompletion('interrupted');
+        },
+        result,
+        started: Promise.resolve({
+          pid: 42_424,
+          reused: starts.length > 1
+        })
+      };
+    },
+    isBusy() {
+      return activeRunId !== undefined;
+    },
+    async close() {
+      if (activeRunId !== undefined) {
+        completions.get(activeRunId)?.resolve('interrupted');
+      }
+    }
+  };
+
+  return {
+    executor,
+    starts,
+    complete(runId) {
+      const completion = completions.get(runId);
+      if (completion === undefined) {
+        throw new Error(`Run ${runId} is not active`);
+      }
+      completion.resolve('completed');
+    }
+  };
+}

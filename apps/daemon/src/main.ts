@@ -91,6 +91,8 @@ async function main(): Promise<void> {
     token,
     capabilities,
     getCodexAvailabilityProbe: () => availabilityProbe,
+    persistentAppServerEnabled:
+      process.env.CLAWEE_PERSISTENT_APP_SERVER !== '0',
     ...environment
   }));
   const address = await server.listen({ host: '127.0.0.1', port: 0 });

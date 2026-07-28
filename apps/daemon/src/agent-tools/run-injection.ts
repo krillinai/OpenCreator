@@ -27,6 +27,24 @@ export type AgentScheduleRunInjector = {
   }): AgentToolRunInjection | undefined;
 };
 
+export type AgentToolProcessInjection = {
+  mcpServers: CodexMcpServerConfig[];
+  env: Record<string, string>;
+  activate(input: {
+    runId: string;
+    thread: RuntimeThread;
+    createdBy: 'api';
+  }): {
+    manifestKey: string;
+  };
+  deactivate(runId: string): void;
+  close(): void;
+};
+
+export type AgentScheduleProcessInjector = {
+  create(): AgentToolProcessInjection | undefined;
+};
+
 const TOOL_SCOPES: Array<{
   name: AgentScheduleToolName;
   scope: AgentCapabilityScope;
@@ -78,6 +96,68 @@ export function createAgentScheduleRunInjector(input: {
   };
 }
 
+export function createAgentScheduleProcessInjector(input: {
+  capabilities: AgentCapabilityTokenStore;
+  getBaseUrl(): string | undefined;
+  env?: NodeJS.ProcessEnv;
+}): AgentScheduleProcessInjector {
+  return {
+    create() {
+      const baseUrl = input.getBaseUrl();
+      if (baseUrl === undefined) return undefined;
+      const lease = input.capabilities.issueProcess({
+        createdBy: 'api',
+        maxScopes: TOOL_SCOPES.map(tool => tool.scope)
+      });
+      const noProxy = loopbackNoProxy(input.env ?? process.env);
+      return {
+        mcpServers: [{
+          name: AGENT_SCHEDULE_MCP_SERVER_NAME,
+          url: `${baseUrl}${AGENT_SCHEDULE_MCP_ROUTE}`,
+          bearerTokenEnvVar: AGENT_TOOL_CAPABILITY_TOKEN_ENV,
+          required: true,
+          startupTimeoutSec: 10,
+          toolTimeoutSec: 30
+        }],
+        env: {
+          [AGENT_TOOL_CAPABILITY_TOKEN_ENV]: lease.token,
+          NO_PROXY: noProxy,
+          no_proxy: noProxy
+        },
+        activate(run) {
+          const allowed = allowedTools(run.createdBy, run.thread);
+          lease.activate({
+            runId: run.runId,
+            threadId: run.thread.id,
+            createdBy: run.createdBy,
+            scopes: allowed.map(tool => tool.scope)
+          });
+          return {
+            manifestKey: JSON.stringify(
+              allowed.map(tool => tool.name).sort()
+            )
+          };
+        },
+        deactivate(runId) {
+          lease.deactivate(runId);
+        },
+        close() {
+          lease.revoke();
+        }
+      };
+    }
+  };
+}
+
+export function toolNamesForScopes(
+  scopes: AgentCapabilityScope[]
+): AgentScheduleToolName[] {
+  const allowed = new Set(scopes);
+  return TOOL_SCOPES
+    .filter(tool => allowed.has(tool.scope))
+    .map(tool => tool.name);
+}
+
 function loopbackNoProxy(env: NodeJS.ProcessEnv): string {
   const entries = [
     ...(env.NO_PROXY ?? '').split(','),
@@ -90,10 +170,10 @@ function loopbackNoProxy(env: NodeJS.ProcessEnv): string {
   return [...new Set(entries)].join(',');
 }
 
-function allowedTools(
+export function allowedTools(
   createdBy: 'api' | 'schedule',
   thread: RuntimeThread
-): typeof TOOL_SCOPES {
+): Array<(typeof TOOL_SCOPES)[number]> {
   if (createdBy === 'schedule') {
     return TOOL_SCOPES.filter(tool => tool.scope === 'schedule:get');
   }
