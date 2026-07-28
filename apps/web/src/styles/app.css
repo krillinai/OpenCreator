@@ -2779,12 +2779,12 @@ select:focus-visible {
 
 .composer-wrap {
   position: relative;
-  padding: 0 clamp(18px, 4vw, 52px) 37px;
+  padding: 0 clamp(18px, 4vw, 52px) 24px;
   background: transparent;
 }
 
 .composer-stack {
-  width: min(980px, 100%);
+  width: min(940px, 100%);
   display: grid;
   margin: 0 auto;
 }

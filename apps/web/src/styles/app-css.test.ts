@@ -419,10 +419,10 @@ describe('app CSS visual contracts', () => {
     const composerQueueItem = cssBlock('.composer-queue-item');
 
     expect(composerWrap).toContain('position: relative;');
-    expect(composerWrap).toContain('padding: 0 clamp(18px, 4vw, 52px) 37px;');
+    expect(composerWrap).toContain('padding: 0 clamp(18px, 4vw, 52px) 24px;');
     expect(composerWrap).toContain('background: transparent;');
     expect(appCss).not.toContain('.composer-wrap::before');
-    expect(composerStack).toContain('width: min(980px, 100%);');
+    expect(composerStack).toContain('width: min(940px, 100%);');
     expect(composerStack).toContain('display: grid;');
     expect(composer).toContain('position: relative;');
     expect(composer).toContain('z-index: 1;');
