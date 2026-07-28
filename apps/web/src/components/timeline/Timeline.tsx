@@ -846,9 +846,6 @@ function ProcessBlockView(props: {
             onExpandedChange(!expanded);
           }}
         >
-          <span className="process-caret" aria-hidden="true">
-            &gt;
-          </span>
           {!complete ? (
             <LoaderCircle className="process-summary-spinner" aria-hidden="true" size={14} />
           ) : null}

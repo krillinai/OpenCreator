@@ -1060,17 +1060,6 @@ select:focus-visible {
   color: var(--text);
 }
 
-.process-caret {
-  display: inline-block;
-  color: var(--subtle);
-  font: 700 12px/1 var(--font-mono);
-  transition: transform 120ms ease;
-}
-
-.timeline-process details[open] .process-caret {
-  transform: rotate(90deg);
-}
-
 .process-summary-label {
   flex: 0 0 auto;
   color: var(--text);

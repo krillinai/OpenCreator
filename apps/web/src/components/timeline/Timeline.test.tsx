@@ -623,6 +623,7 @@ describe('Timeline', () => {
     expect(screen.getByText('思考中')).toBeInTheDocument();
     expect(screen.getByText('我会读取上下文再执行任务。')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
+    expect(container.querySelector('.process-caret')).not.toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
   });
 
