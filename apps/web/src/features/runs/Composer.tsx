@@ -1070,9 +1070,7 @@ function filterSlashCommands(commands: ComposerSlashCommand[], query: string): C
     const id = command.id.replace(/^skill:/, '').toLowerCase();
     const label = command.label.toLowerCase();
     return id.startsWith(normalizedQuery)
-      || label.startsWith(normalizedQuery)
-      || id.includes(normalizedQuery)
-      || label.includes(normalizedQuery);
+      || label.startsWith(normalizedQuery);
   });
 }
 

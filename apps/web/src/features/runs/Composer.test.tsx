@@ -897,6 +897,44 @@ describe('Composer', () => {
     expect(textbox).toHaveValue('');
   });
 
+  it('filters slash skills by prefix instead of matching a single letter anywhere in the name', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[
+          {
+            id: 'skill:acquisition-strategy',
+            category: 'skill',
+            label: 'acquisition-strategy',
+            description: '获客策略',
+            insertText: '$acquisition-strategy '
+          },
+          {
+            id: 'skill:community-growth-strategy',
+            category: 'skill',
+            label: 'community-growth-strategy',
+            description: '社区增长策略',
+            insertText: '$community-growth-strategy '
+          },
+          {
+            id: 'skill:growth-audit',
+            category: 'skill',
+            label: 'growth-audit',
+            description: '增长审计',
+            insertText: '$growth-audit '
+          }
+        ]}
+      />
+    );
+
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '/g');
+
+    expect(screen.getByRole('option', { name: /growth-audit/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /acquisition-strategy/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /community-growth-strategy/ })).not.toBeInTheDocument();
+  });
+
   it('removes the selected skill chip when Backspace is pressed at the start', async () => {
     const user = userEvent.setup();
     render(
