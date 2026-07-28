@@ -662,8 +662,12 @@ describe('app CSS visual contracts', () => {
     const userBubble = cssBlock('.timeline-user_message .timeline-bubble');
     const lightUserBubble = cssBlock(':root[data-theme="light"] .timeline-user_message .timeline-bubble');
     const assistantBubble = cssBlock('.timeline-assistant_message .timeline-bubble');
+    const virtualItem = cssBlock('.timeline-virtual-item');
+    const timelineItem = cssBlock('.timeline-item');
     const messageMeta = cssBlock('.timeline-message-meta');
 
+    expect(virtualItem).toContain('padding: 8px clamp(18px, 5vw, 72px);');
+    expect(timelineItem).toContain('gap: 6px;');
     expect(userBubble).toContain('border: 0;');
     expect(userBubble).toContain('border-top-right-radius: 0;');
     expect(userBubble).not.toContain('border-bottom-right-radius: 6px;');
@@ -671,6 +675,8 @@ describe('app CSS visual contracts', () => {
     expect(assistantBubble).toContain('border: 0;');
     expect(assistantBubble).toContain('border-radius: 0;');
     expect(assistantBubble).toContain('background: transparent;');
+    expect(messageMeta).toContain('min-height: 24px;');
+    expect(messageMeta).toContain('padding: 0 4px;');
     expect(messageMeta).toContain('opacity: 0;');
     expect(messageMeta).toContain('pointer-events: none;');
     expect(appCss).toContain('.timeline-user_message:hover .timeline-message-meta');

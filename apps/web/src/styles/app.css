@@ -587,7 +587,7 @@ select:focus-visible {
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
-  padding: 14px clamp(18px, 5vw, 72px);
+  padding: 8px clamp(18px, 5vw, 72px);
 }
 
 .timeline-end-spacer {
@@ -639,7 +639,7 @@ select:focus-visible {
 .timeline-item {
   min-width: 0;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .timeline-item[data-search-target="true"] {
@@ -735,12 +735,12 @@ select:focus-visible {
 }
 
 .timeline-message-meta {
-  min-height: 28px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  padding: 2px 4px 0;
+  padding: 0 4px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
