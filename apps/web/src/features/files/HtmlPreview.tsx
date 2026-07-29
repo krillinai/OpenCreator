@@ -17,9 +17,13 @@ type SafePreviewDocument = {
   externalLinks: ExternalPreviewLink[];
 };
 
-const PREVIEW_CSP = [
+type PreviewState =
+  | { status: 'loading' }
+  | { status: 'ready'; document: SafePreviewDocument }
+  | { status: 'error' };
+
+const PREVIEW_CSP_BASE = [
   "default-src 'none'",
-  "script-src 'unsafe-inline'",
   "style-src 'unsafe-inline'",
   'img-src data:',
   'font-src data:',
@@ -29,10 +33,12 @@ const PREVIEW_CSP = [
   "object-src 'none'",
   "form-action 'none'",
   "base-uri 'none'"
-].join('; ');
+];
 const MAX_PREVIEW_RESOURCES = 128;
 const MAX_PREVIEW_RESOURCE_BYTES = 10 * 1024 * 1024;
 const MAX_EXTERNAL_LINKS = 20;
+const PREVIEW_RUNTIME_ATTRIBUTE = 'data-clawee-preview-runtime';
+const PREVIEW_RUNTIME_FILE = 'html-preview-runtime-2026-07-28.js';
 
 type ResourceBudget = {
   remaining: number;
@@ -46,17 +52,18 @@ export function HtmlPreview(props: {
   resources?: HtmlPreviewResources;
   onOpenExternal?(url: string): void;
 }) {
-  const [document, setDocument] = useState<SafePreviewDocument>(() => ({
-    html: loadingDocument(),
-    externalLinks: []
-  }));
+  const [preview, setPreview] = useState<PreviewState>({ status: 'loading' });
 
   useEffect(() => {
     let canceled = false;
+    setPreview({ status: 'loading' });
 
     void buildSafePreviewDocument(props.content, props.path, props.resources)
       .then(nextDocument => {
-        if (!canceled) setDocument(nextDocument);
+        if (!canceled) setPreview({ status: 'ready', document: nextDocument });
+      })
+      .catch(() => {
+        if (!canceled) setPreview({ status: 'error' });
       });
 
     return () => {
@@ -64,17 +71,33 @@ export function HtmlPreview(props: {
     };
   }, [props.content, props.path, props.resources]);
 
+  if (preview.status === 'loading') {
+    return (
+      <div className="file-preview file-preview-html file-preview-html-status" role="status">
+        正在准备 HTML 预览...
+      </div>
+    );
+  }
+
+  if (preview.status === 'error') {
+    return (
+      <div className="file-preview file-preview-html file-preview-html-status" role="alert">
+        HTML 预览加载失败，请切换到编辑模式查看源码。
+      </div>
+    );
+  }
+
   return (
     <div className="file-preview file-preview-html">
       <iframe
         title={`${props.name} HTML 预览`}
-        srcDoc={document.html}
+        srcDoc={preview.document.html}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
       />
-      {document.externalLinks.length > 0 && props.onOpenExternal !== undefined ? (
+      {preview.document.externalLinks.length > 0 && props.onOpenExternal !== undefined ? (
         <div className="html-preview-external-links" aria-label="预览外链">
-          {document.externalLinks.map(link => (
+          {preview.document.externalLinks.map(link => (
             <button
               key={link.url}
               type="button"
@@ -119,7 +142,7 @@ async function buildSafePreviewDocument(
 
 function removeDangerousContent(document: Document): void {
   document.querySelectorAll(
-    'script[src], iframe, frame, frameset, object, embed, portal, base, meta[http-equiv], link[rel~="import"]'
+    'script, iframe, frame, frameset, object, embed, portal, base, meta[http-equiv], link[rel~="import"]'
   ).forEach(node => node.remove());
 
   document.querySelectorAll('form').forEach(form => {
@@ -342,10 +365,15 @@ async function loadBlobUrl(
 }
 
 function installContentSecurityPolicy(document: Document): void {
+  const runtimeUrl = new URL(`/${PREVIEW_RUNTIME_FILE}`, window.location.href);
+  const runtimeSource = `${runtimeUrl.protocol}//${runtimeUrl.host}`;
   document.querySelectorAll('meta[http-equiv]').forEach(meta => meta.remove());
   const meta = document.createElement('meta');
   meta.setAttribute('http-equiv', 'Content-Security-Policy');
-  meta.setAttribute('content', PREVIEW_CSP);
+  meta.setAttribute('content', [
+    ...PREVIEW_CSP_BASE,
+    `script-src ${runtimeSource}`
+  ].join('; '));
   document.head.prepend(meta);
   const previewOverrides = document.createElement('style');
   previewOverrides.setAttribute('data-clawee-preview', 'true');
@@ -356,24 +384,24 @@ function installContentSecurityPolicy(document: Document): void {
       visibility: visible !important;
     }
     body { overflow: auto !important; }
-    body > :not(script):not(style):not(link),
-    [data-reveal],
-    .reveal,
-    .fade-in,
-    .animate-in,
-    .opacity-0,
-    .invisible,
-    [style*="opacity: 0"],
-    [style*="opacity:0"],
-    [style*="visibility: hidden"],
-    [style*="visibility:hidden"] {
+    html[data-clawee-preview-state="recovering"] *,
+    html[data-clawee-preview-state="recovered"] * {
+      animation: none !important;
+      transition: none !important;
+    }
+    html[data-clawee-preview-state="recovering"] [data-clawee-preview-force-visible],
+    html[data-clawee-preview-state="recovered"] [data-clawee-preview-force-visible] {
       opacity: 1 !important;
       visibility: visible !important;
-      transform: none !important;
-      animation: none !important;
+      content-visibility: visible !important;
     }
   `;
   document.head.append(previewOverrides);
+
+  const runtime = document.createElement('script');
+  runtime.setAttribute(PREVIEW_RUNTIME_ATTRIBUTE, 'true');
+  runtime.setAttribute('src', runtimeUrl.href);
+  document.body.append(runtime);
 }
 
 function parseExternalUrl(value: string): string | undefined {
@@ -453,8 +481,4 @@ export function resolveWorkspacePreviewPath(
     baseSegments.push(segment);
   }
   return baseSegments.length === 0 ? undefined : baseSegments.join('/');
-}
-
-function loadingDocument(): string {
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}"></head><body></body></html>`;
 }

@@ -41,7 +41,7 @@ describe('FileEditorPane', () => {
     expect(screen.getByText('正文')).toBeInTheDocument();
   });
 
-  it('HTML 默认在隔离 iframe 中运行内联脚本并渲染页面', async () => {
+  it('HTML 默认在隔离 iframe 中渲染页面并移除用户脚本', async () => {
     const html = '<!doctype html><html><body><main>商务封面</main><script>document.body.dataset.ready = "true"</script></body></html>';
 
     const { container } = render(
@@ -61,7 +61,8 @@ describe('FileEditorPane', () => {
     expect(screen.queryByRole('textbox', { name: 'business-cover.html 编辑器' })).not.toBeInTheDocument();
     expect(preview).toHaveAttribute('sandbox', 'allow-scripts');
     expect(preview).toHaveAttribute('referrerpolicy', 'no-referrer');
-    expect(preview.getAttribute('srcdoc')).toContain('<script>');
+    expect(preview.getAttribute('srcdoc')).not.toContain('document.body.dataset.ready');
+    expect(preview.getAttribute('srcdoc')).toContain('html-preview-runtime-2026-07-28.js');
     expect(container.querySelector('.file-preview-html pre')).not.toBeInTheDocument();
   });
 

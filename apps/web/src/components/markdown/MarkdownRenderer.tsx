@@ -13,6 +13,14 @@ export type MarkdownRendererProps = {
   linkifyWorkspaceFiles?: boolean;
 };
 
+const PRIVATE_CITATION_MARKER = /[ \t]*\uE200(?:cite|filecite|navlist)\uE202[^\uE201]*\uE201/gu;
+
+export function normalizeMarkdownDisplayText(text: string): string {
+  return text
+    .replace(PRIVATE_CITATION_MARKER, '')
+    .replace(/[ \t]+\n/g, '\n');
+}
+
 function alignStyle(align: TableAlign): React.CSSProperties | undefined {
   if (align === null) return undefined;
   return { textAlign: align };
@@ -155,7 +163,8 @@ function renderBlock(block: MarkdownBlock, key: number, options: MarkdownRendere
 
 export function MarkdownRenderer(props: MarkdownRendererProps) {
   const variant = props.variant ?? 'assistant';
-  const blocks = useMemo(() => parseMarkdownBlocks(props.text), [props.text]);
+  const displayText = useMemo(() => normalizeMarkdownDisplayText(props.text), [props.text]);
+  const blocks = useMemo(() => parseMarkdownBlocks(displayText), [displayText]);
   const className = props.className ? `markdown-prose ${props.className}` : 'markdown-prose';
 
   return (

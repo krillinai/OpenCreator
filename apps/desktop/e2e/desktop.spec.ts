@@ -242,6 +242,139 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
   }
 });
 
+test('打包 App 可稳定预览隐藏正文和本地图片，并阻止用户脚本', async () => {
+  const fixture = await launchPackagedDesktop('success');
+  const projectDir = join(fixture.root, 'html-preview-project');
+  const fileName = '隐藏天气页回归-2026-07-28.html';
+  const backgroundName = '天气背景回归-2026-07-28.png';
+  const consoleErrors: string[] = [];
+  fixture.page.on('console', message => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  mkdirSync(projectDir);
+  writeFileSync(
+    join(projectDir, backgroundName),
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64'
+    )
+  );
+  writeFileSync(
+    join(projectDir, fileName),
+    `<!doctype html>
+      <html lang="zh-CN">
+        <head>
+          <meta charset="utf-8">
+          <style>
+            html, body { min-height: 100%; margin: 0; }
+            body { background: #f4f7f8; }
+            .weather-report {
+              display: none;
+              visibility: hidden;
+              opacity: 0;
+              max-height: 0;
+              overflow: hidden;
+              color: transparent;
+              transform: translateX(-200vw) scale(0);
+              min-height: 420px;
+              padding: 32px;
+              background-image: url("./${backgroundName}");
+            }
+          </style>
+        </head>
+        <body>
+          <main class="weather-report">
+            <h1>武汉天气预览回归</h1>
+            <p>隐藏正文已经恢复，本地背景图已经内联。</p>
+          </main>
+          <script>document.documentElement.dataset.userScriptExecuted = "true"</script>
+        </body>
+      </html>`
+  );
+
+  try {
+    await waitForWorkspace(fixture.page);
+    const createdProject = await runtimeRequest<{
+      project: { id: string };
+    }>(fixture.page, 'POST', '/projects', {
+      cwd: projectDir,
+      name: 'HTML 预览回归项目',
+      sandbox: 'workspace-write'
+    });
+    const createdThread = await runtimeRequest<{
+      thread: { id: string };
+    }>(fixture.page, 'POST', '/threads', {
+      projectId: createdProject.body.project.id,
+      title: 'HTML 预览回归会话',
+      sandbox: 'workspace-write'
+    });
+
+    await fixture.page.evaluate(({ threadId, path }) => {
+      const query = new URLSearchParams({ threadId, path });
+      window.location.hash = `#/files?${query.toString()}`;
+    }, {
+      threadId: createdThread.body.thread.id,
+      path: fileName
+    });
+    await fixture.page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForWorkspace(fixture.page);
+
+    const preview = fixture.page.getByTitle(`${fileName} HTML 预览`);
+    await expect(preview).toBeVisible();
+    const frame = preview.contentFrame();
+    const heading = frame.getByRole('heading', { name: '武汉天气预览回归' });
+    await expect(heading).toBeVisible({ timeout: 8_000 });
+    await expect(frame.getByText('隐藏正文已经恢复，本地背景图已经内联。')).toBeVisible();
+    await expect.poll(
+      () => frame.locator('html').getAttribute('data-clawee-preview-state')
+    ).toBe('recovered');
+
+    const frameRect = await preview.boundingBox();
+    expect(frameRect?.height ?? 0).toBeGreaterThan(400);
+    expect(await frame.locator('html').getAttribute('data-user-script-executed')).toBeNull();
+    expect(await frame.locator('script').count()).toBe(1);
+    await expect(frame.locator('script')).toHaveAttribute(
+      'src',
+      /html-preview-runtime-2026-07-28\.js$/
+    );
+
+    const source = await preview.getAttribute('srcdoc') ?? '';
+    expect(source).toContain('data:image/png;base64,');
+    expect(source).not.toContain('document.documentElement.dataset.userScriptExecuted');
+    expect(consoleErrors.filter(message => (
+      message.includes('Content Security Policy')
+      || message.includes('Refused to')
+    ))).toEqual([]);
+
+    const separator = fixture.page.getByRole('separator', {
+      name: '调整会话和文件区域宽度'
+    });
+    const separatorBox = await separator.boundingBox();
+    const previewBox = await preview.boundingBox();
+    if (separatorBox === null || previewBox === null) {
+      throw new Error('无法读取打包 App 的 HTML 拖拽区域尺寸');
+    }
+
+    const dragY = separatorBox.y + Math.min(separatorBox.height / 2, 120);
+    const targetX = Math.min(previewBox.x + 160, previewBox.x + previewBox.width / 2);
+    await fixture.page.mouse.move(separatorBox.x + separatorBox.width / 2, dragY);
+    await fixture.page.mouse.down();
+    await expect(fixture.page.locator('.pane-resize-shield')).toBeVisible();
+    await fixture.page.mouse.move(targetX, dragY, { steps: 8 });
+    await fixture.page.mouse.up();
+
+    await expect(fixture.page.locator('.pane-resize-shield')).toHaveCount(0);
+    await expect(fixture.page.locator('html')).not.toHaveClass(/is-pane-resizing/);
+    const releasedBox = await separator.boundingBox();
+    if (releasedBox === null) throw new Error('无法读取打包 App 松开后的分隔条尺寸');
+    await fixture.page.mouse.move(Math.max(20, releasedBox.x - 180), dragY, { steps: 5 });
+    const afterFreeMoveBox = await separator.boundingBox();
+    expect(Math.abs((afterFreeMoveBox?.x ?? 0) - releasedBox.x)).toBeLessThan(2);
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
 test('packaged app persists Clawee projects when Codex app-server is unavailable', async ({
 }, testInfo) => {
   let fixture = await launchPackagedDesktop('success');
@@ -469,6 +602,38 @@ test('IPC 拒绝非 Clawee 页面来源', async () => {
       }
     });
     expect(result).toContain('IPC sender is not trusted');
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
+test('启动页使用新版品牌图标', async ({}, testInfo) => {
+  const fixture = await launchPackagedDesktop('probe-hang');
+  try {
+    await fixture.page.waitForURL(url => (
+      url.protocol === 'clawee-app:'
+      && url.hostname === 'bootstrap'
+    ));
+    const brandMark = fixture.page.locator('.brand-mark');
+    await expect(brandMark).toBeVisible();
+    await expect(brandMark).toHaveCSS('width', '72px');
+    await expect(brandMark).toHaveCSS('height', '72px');
+
+    const renderedAssetHash = await brandMark.evaluate(async image => {
+      const response = await fetch((image as HTMLImageElement).currentSrc);
+      const contents = await response.arrayBuffer();
+      const digest = await crypto.subtle.digest('SHA-256', contents);
+      return Array.from(new Uint8Array(digest))
+        .map(value => value.toString(16).padStart(2, '0'))
+        .join('');
+    });
+    expect(renderedAssetHash).toBe(
+      '5025bac0dc2456a3da5b8850562446fed513ee7b0f71dec119efc33161574e8e'
+    );
+
+    await fixture.page.screenshot({
+      path: testInfo.outputPath('clawee-startup-2026-07-27.png')
+    });
   } finally {
     await closeFixture(fixture);
   }

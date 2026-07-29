@@ -5381,13 +5381,15 @@ describe('App', () => {
     });
 
     const separator = screen.getByRole('separator', { name: '调整会话和文件区域宽度' });
-    fireEvent.mouseDown(separator, { clientX: 420 });
+    fireEvent.mouseDown(separator, { button: 0, clientX: 420 });
+    expect(document.querySelector('.pane-resize-shield')).not.toBeNull();
     fireEvent.mouseMove(window, { clientX: 520 });
     fireEvent.mouseUp(window);
+    expect(document.querySelector('.pane-resize-shield')).toBeNull();
 
     expect(layout).toHaveStyle({ '--conversation-pane-width': '520px' });
 
-    fireEvent.mouseDown(separator, { clientX: 520 });
+    fireEvent.mouseDown(separator, { button: 0, clientX: 520 });
     fireEvent.mouseMove(window, { clientX: 1190 });
     fireEvent.mouseUp(window);
 

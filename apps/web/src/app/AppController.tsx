@@ -29,6 +29,7 @@ import type {
 import { FolderInput } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
+import { beginPaneResize } from '../components/layout/pane-resize-2026-07-29.js';
 import { Timeline, type TimelineHandle } from '../components/timeline/Timeline.js';
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
@@ -3473,21 +3474,7 @@ export function AppController(props: AppControllerProps) {
   }
 
   function handleConversationResizeMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
-    if (event.button !== 0) return;
-
-    event.preventDefault();
-    updateConversationPaneWidth(event.clientX);
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      updateConversationPaneWidth(moveEvent.clientX);
-    };
-    const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    beginPaneResize(event, updateConversationPaneWidth);
   }
 
   function handleConversationResizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {

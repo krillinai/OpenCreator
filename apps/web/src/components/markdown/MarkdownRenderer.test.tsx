@@ -41,6 +41,27 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByRole('table')).toBeInTheDocument();
   });
 
+  it('removes private citation markers without exposing internal source ids', () => {
+    render(
+      <MarkdownRenderer
+        variant="assistant"
+        text={[
+          '天气数据已确认。 \uE200cite\uE202turn0forecast0\uE201',
+          '',
+          '页面已经完成。\uE200cite\uE202turn3search0\uE202turn3search1\uE201'
+        ].join('\n')}
+      />
+    );
+
+    expect(screen.getByText('天气数据已确认。')).toBeInTheDocument();
+    expect(screen.getByText('页面已经完成。')).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('turn0forecast0');
+    expect(document.body).not.toHaveTextContent('turn3search0');
+    expect(document.body).not.toHaveTextContent('\uE200');
+    expect(document.body).not.toHaveTextContent('\uE201');
+    expect(document.body).not.toHaveTextContent('\uE202');
+  });
+
   it('renders fenced code without syntax highlighting or innerHTML', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();

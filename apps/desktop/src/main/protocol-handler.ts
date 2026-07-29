@@ -178,7 +178,7 @@ export async function staticResponse(
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob:",
         "font-src 'self' data:",
-        "connect-src 'self'",
+        "connect-src 'self' blob:",
         "worker-src 'self' blob:",
         "media-src 'self' blob:",
         "object-src 'none'",

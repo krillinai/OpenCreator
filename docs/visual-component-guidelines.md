@@ -155,14 +155,14 @@ Clawee 当前是深色、低噪声、偏工具型的桌面应用界面。整体�
 
 展开态：
 
-- 使用 `/logo-all.png`。
+- 深色主题使用 `/logo-v2-white.svg`，浅色主题使用 `/logo-v2-black.svg`。
 - logo 宽度约 `124px`，高度约 `24px`。
 - 右侧展示收起按钮。
 
 收起态：
 
 - 宽度 `72px`。
-- 展示 `/logo-cor.png`。
+- 展示 `/logo-v2-white-logo.svg`。
 - hover 或 focus 时 logo 隐去，切换为展开 icon。
 
 ### 顶部主导航
@@ -248,7 +248,7 @@ Clawee 当前是深色、低噪声、偏工具型的桌面应用界面。整体�
 
 Agent 消息：
 
-- 展示 `/logo-cor.png` 作为头像。
+- 深色主题展示 `/logo-v2-white-logo.svg`，浅色主题展示 `/logo-v2-black-logo.svg`。
 - 头像不需要容器背景，直接展示 logo。
 - 气泡左上角保持直角：`border-top-left-radius: 0`。
 - 默认背景：`rgba(36, 40, 46, 0.88)`。
@@ -487,16 +487,19 @@ Loading：
 
 当前品牌资产：
 
-- `/logo-cor.png`：图标版，用于浏览器 favicon、收起侧栏、Agent 头像。
-- `/logo-all.png`：logo + 字母，用于展开侧栏品牌区。
-- `/logo-bg.png`：此前用于默认背景上方装饰，当前默认态已移除，不作为常规组件使用。
-- `/logo-white.png`：备用白色 logo。
+- `/logo-v2-white-logo.svg`：白色图标版，用于深色背景、收起侧栏和深色主题 Agent 头像。
+- `/logo-v2-black-logo.svg`：黑色图标版，用于浅色背景和浅色主题 Agent 头像。
+- `/logo-v2-white.svg`：白色完整品牌标识，用于深色主题展开侧栏。
+- `/logo-v2-black.svg`：黑色完整品牌标识，用于浅色主题展开侧栏。
+- `apps/desktop/resources/icon.png`：桌面应用图标，使用深色圆角底板和白色 v2 图标。
+- `apps/desktop/resources/tray.png`：macOS 菜单栏模板图，只保留透明背景的 v2 图标。
 
 使用规则：
 
-- favicon 使用 `/logo-cor.png`。
-- Agent 头像直接展示 `/logo-cor.png`，不要加背景容器。
+- favicon 使用 `/logo-v2-white-logo.svg`。
+- Agent 头像直接展示与主题匹配的 v2 图标，不要加背景容器。
 - 品牌图不要拉伸，保持 `object-fit: contain`。
+- 不再引用 `logo.png`、`logo-cor.png`、`logo-all.png` 等旧命名资源；这些文件仅作为历史路径兼容层。
 - 新增 icon 优先从 `lucide-react` 选取。
 
 ## 17. 新增页面检查清单

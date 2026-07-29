@@ -43,9 +43,11 @@ button {
 }
 
 .brand-mark {
-  width: 84px;
-  height: auto;
+  width: 72px;
+  height: 72px;
   margin-bottom: 42px;
+  filter: brightness(0) saturate(100%);
+  object-fit: contain;
 }
 
 .status-mark {

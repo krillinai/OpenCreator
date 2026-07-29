@@ -8,6 +8,7 @@ import type {
 } from '@clawee/protocol';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { beginPaneResize } from '../../components/layout/pane-resize-2026-07-29.js';
 import { ApiClientError } from '../../runtime/errors.js';
 import { defaultModeForMeta, FileEditorPane, isPreviewable, type FileEditorMode } from './FileEditorPane.js';
 import { FileTopBar } from './FileTopBar.js';
@@ -444,21 +445,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   }
 
   function handleTreeResizeMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
-    if (event.button !== 0) return;
-
-    event.preventDefault();
-    updateTreeWidth(event.clientX);
-
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      updateTreeWidth(moveEvent.clientX);
-    };
-    const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    beginPaneResize(event, updateTreeWidth);
   }
 
   function handleTreeResizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {

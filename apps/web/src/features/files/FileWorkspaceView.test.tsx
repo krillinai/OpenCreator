@@ -460,9 +460,11 @@ describe('FileWorkspaceView', () => {
     });
 
     const separator = screen.getByRole('separator', { name: '调整编辑区和目录树宽度' });
-    fireEvent.mouseDown(separator, { clientX: 620 });
+    fireEvent.mouseDown(separator, { button: 0, clientX: 620 });
+    expect(document.querySelector('.pane-resize-shield')).not.toBeNull();
     fireEvent.mouseMove(window, { clientX: 560 });
     fireEvent.mouseUp(window);
+    expect(document.querySelector('.pane-resize-shield')).toBeNull();
 
     expect(body).toHaveStyle({ '--file-tree-width': '340px' });
   });

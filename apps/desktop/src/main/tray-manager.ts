@@ -14,10 +14,12 @@ export class TrayManager {
     quit(): void;
   }): void {
     if (this.tray !== undefined) return;
+    const size = process.platform === 'darwin' ? 18 : 20;
     const icon = nativeImage.createFromPath(input.iconPath).resize({
-      width: process.platform === 'darwin' ? 18 : 20,
-      height: process.platform === 'darwin' ? 12 : 20
+      width: size,
+      height: size
     });
+    if (process.platform === 'darwin') icon.setTemplateImage(true);
     const tray = new Tray(icon);
     tray.setToolTip('Clawee');
     tray.setContextMenu(Menu.buildFromTemplate([

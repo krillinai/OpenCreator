@@ -8,7 +8,7 @@ describe('HtmlPreview', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps inline scripts in an isolated sandbox while removing navigational content', async () => {
+  it('removes user scripts and navigational content while allowing only the preview runtime', async () => {
     render(
       <HtmlPreview
         name="unsafe.html"
@@ -32,8 +32,10 @@ describe('HtmlPreview', () => {
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(srcDoc).toContain("default-src 'none'");
-    expect(srcDoc).toContain('<script>');
-    expect(srcDoc).not.toContain('<script src=');
+    expect(srcDoc).toContain('script-src http://localhost:3000');
+    expect(srcDoc).toContain('data-clawee-preview-runtime="true"');
+    expect(srcDoc).toContain('html-preview-runtime-2026-07-28.js');
+    expect(srcDoc).not.toContain('window.top.location');
     expect(srcDoc).not.toContain('<iframe');
     expect(srcDoc).not.toContain('<form');
     expect(srcDoc).not.toContain('http-equiv="refresh"');
@@ -41,7 +43,7 @@ describe('HtmlPreview', () => {
     expect(srcDoc).not.toContain('javascript:');
   });
 
-  it('restores static report content left hidden by script-driven reveal styles', async () => {
+  it('installs a rendered-content health check instead of enumerating hidden class names', async () => {
     render(
       <HtmlPreview
         name="report.html"
@@ -49,7 +51,7 @@ describe('HtmlPreview', () => {
         content={`
           <style>
             body { opacity: 0; }
-            .report { visibility: hidden; transform: translateY(16px); }
+            .report { display: none; scale: 0; translate: -200vw 0; }
           </style>
           <main class="report opacity-0" style="opacity: 0">审计报告正文</main>
         `}
@@ -60,14 +62,15 @@ describe('HtmlPreview', () => {
     const srcDoc = frame.getAttribute('srcdoc') ?? '';
     const sourceStyleIndex = srcDoc.indexOf('body { opacity: 0; }');
     const previewStyleIndex = srcDoc.indexOf('data-clawee-preview="true"');
+    const runtimeIndex = srcDoc.indexOf('data-clawee-preview-runtime="true"');
 
     expect(sourceStyleIndex).toBeGreaterThanOrEqual(0);
     expect(previewStyleIndex).toBeGreaterThan(sourceStyleIndex);
-    expect(srcDoc).toContain('body > :not(script):not(style):not(link)');
-    expect(srcDoc).toContain('.opacity-0');
-    expect(srcDoc).toContain('[style*="visibility: hidden"]');
-    expect(srcDoc).toContain('opacity: 1 !important;');
-    expect(srcDoc).toContain('visibility: visible !important;');
+    expect(runtimeIndex).toBeGreaterThan(previewStyleIndex);
+    expect(srcDoc).toContain('html-preview-runtime-2026-07-28.js');
+    expect(srcDoc).toContain('script-src http://localhost:3000');
+    expect(srcDoc).not.toContain('.opacity-0,');
+    expect(srcDoc).not.toContain('[style*="visibility: hidden"]');
   });
 
   it('loads relative images and stylesheets through controlled workspace resources', async () => {

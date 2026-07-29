@@ -1800,6 +1800,15 @@ select:focus-visible {
   background: #fff;
 }
 
+.file-preview-html-status {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 .html-preview-external-links {
   min-width: 0;
   display: flex;
@@ -2252,6 +2261,21 @@ select:focus-visible {
   box-shadow: 0 0 18px var(--accent-glow);
 }
 
+.pane-resize-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+
+html.is-pane-resizing,
+html.is-pane-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
 .conversation-header {
   min-height: 56px;
   display: flex;
@@ -2658,10 +2682,15 @@ select:focus-visible {
 .file-workspace-editor {
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   border-right: 0;
   background: var(--surface);
+}
+
+.file-workspace-editor > .file-editor-pane {
+  flex: 1 1 auto;
+  height: auto;
 }
 
 .file-workspace-notice,

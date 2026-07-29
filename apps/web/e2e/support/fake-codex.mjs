@@ -112,6 +112,11 @@ readline.on('line', line => {
     return;
   }
 
+  if (message.method === 'config/mcpServer/reload') {
+    send({ id: message.id, result: {} });
+    return;
+  }
+
   if (message.method === 'thread/resume') {
     ensureInvocation();
     threadId = message.params?.threadId ?? threadId;

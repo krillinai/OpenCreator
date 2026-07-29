@@ -49,4 +49,14 @@ describe('Desktop static response', () => {
     expect(response.headers.get('content-type')).toBe('text/javascript; charset=utf-8');
     expect(await response.text()).toBe('export {}');
   });
+
+  it('allows blob reads needed to inline local preview resources', async () => {
+    root = mkdtempSync(join(tmpdir(), 'clawee-static-'));
+    writeFileSync(join(root, 'index.html'), '<main>workspace</main>');
+
+    const response = await staticResponse(root, '/', true);
+
+    expect(response.headers.get('content-security-policy'))
+      .toContain("connect-src 'self' blob:");
+  });
 });

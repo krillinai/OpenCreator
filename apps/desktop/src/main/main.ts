@@ -224,7 +224,7 @@ async function launchDesktop(): Promise<void> {
     appReadyAt
   });
   tray.create({
-    iconPath: join(resourceRoot, 'tray.png'),
+    iconPath: join(resourceRoot, process.platform === 'darwin' ? 'tray.png' : 'icon.png'),
     open: () => windowManager?.show(),
     navigate,
     quit: () => app.quit()

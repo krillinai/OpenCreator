@@ -1,4 +1,7 @@
-import { listPackage } from '@electron/asar';
+import {
+  extractFile,
+  listPackage
+} from '@electron/asar';
 import electronFuses from '@electron/fuses';
 
 const {
@@ -55,6 +58,7 @@ assertExists(join(
 assertExists(join(webDir, 'index.html'));
 
 assertAsarContents();
+assertBrandingContents();
 assertDaemonContents();
 assertWebContents();
 assertNoLocalData();
@@ -132,6 +136,35 @@ function assertAsarContents() {
   }
 }
 
+function assertBrandingContents() {
+  const desktopResourcesDir = join(resourcesDir, 'desktop-resources');
+  const sourceResourcesDir = resolve(desktopDir, 'resources');
+  const packagedIcon = join(desktopResourcesDir, 'icon.png');
+  const packagedTray = join(desktopResourcesDir, 'tray.png');
+  const sourceIcon = join(sourceResourcesDir, 'icon.png');
+  const sourceTray = join(sourceResourcesDir, 'tray.png');
+  const sourceBootstrapLogo = resolve(desktopDir, 'src', 'bootstrap', 'logo.png');
+
+  assertSameFile('Desktop icon', packagedIcon, sourceIcon);
+  assertSameFile('Desktop tray icon', packagedTray, sourceTray);
+
+  const bootstrapLogoEntry = listPackage(appAsar).find(entry =>
+    /^\/dist\/bootstrap\/assets\/logo-[^/]+\.png$/.test(entry)
+  );
+  if (bootstrapLogoEntry === undefined) {
+    throw new Error('app.asar is missing the Desktop bootstrap logo');
+  }
+  const packagedBootstrapLogo = extractFile(appAsar, bootstrapLogoEntry.slice(1));
+  const sourceBootstrapLogoHash = hashBuffer(readFileSync(sourceBootstrapLogo));
+  if (hashBuffer(packagedBootstrapLogo) !== sourceBootstrapLogoHash) {
+    throw new Error('Packaged Desktop bootstrap logo differs from its source asset');
+  }
+
+  if (process.platform === 'darwin') {
+    assertExists(join(resourcesDir, 'icon.icns'));
+  }
+}
+
 function assertDaemonContents() {
   const forbiddenTopLevelNames = new Set([
     '.runtime',
@@ -154,6 +187,18 @@ function assertDaemonContents() {
       throw new Error(`Daemon resources contain a development artifact: ${path}`);
     }
   });
+}
+
+function assertSameFile(label, left, right) {
+  assertExists(left);
+  assertExists(right);
+  if (hashBuffer(readFileSync(left)) !== hashBuffer(readFileSync(right))) {
+    throw new Error(`${label} differs between the package and source resources`);
+  }
+}
+
+function hashBuffer(contents) {
+  return createHash('sha256').update(contents).digest('hex');
 }
 
 function assertWebContents() {
