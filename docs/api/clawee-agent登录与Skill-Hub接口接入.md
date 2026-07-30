@@ -1,8 +1,8 @@
-# Clawee Agent 登录与 Skill Hub 接口接入文档
+# Clawee Agent 登录、MCP 能力目录与 Skill Hub 接口接入文档
 
 ## 1. 文档目的
 
-本文定义 Clawee Agent 接入企业 MCP Gateway 登录和 Skill Hub 所需的 HTTP API、调用流程、错误处理和 Clawee 侧实现约束。
+本文定义 Clawee Agent 接入企业 MCP Gateway 登录、MCP 能力目录和 Skill Hub 所需的 HTTP API、调用流程、错误处理和 Clawee 侧实现约束。
 
 本文面向 Clawee Web、Desktop 和 Daemon 的开发与测试人员。接口提供方为 `claw-mcp`，下文统一称为“企业服务”。
 
@@ -14,11 +14,12 @@
 2. 使用已注册账号登录 Clawee。
 3. 查询当前登录账号和会话状态。
 4. 注销并撤销当前服务会话。
-5. 获取企业 Skill Hub 中已发布的 Skill。
-6. 获取 Skill 当前发布版本详情。
-7. 下载指定发布版本的 Skill ZIP 包。
-8. 校验并安装 Skill 到本机 Codex Skills 目录。
-9. 根据远端版本信息识别可安装、已安装和可更新状态。
+5. 查询服务侧启用的 MCP 连接器、Tool 和当前 Agent 的有效授权状态。
+6. 获取企业 Skill Hub 中已发布的 Skill。
+7. 获取 Skill 当前发布版本详情。
+8. 下载指定发布版本的 Skill ZIP 包。
+9. 校验并安装 Skill 到本机 Codex Skills 目录。
+10. 根据远端版本信息识别可安装、已安装和可更新状态。
 
 本次接入不包括：
 
@@ -39,9 +40,10 @@
 2. 校验账号和密码。
 3. 为 `clawee-agent` 签发应用端 Bearer JWT。
 4. 校验会话、账号状态和 Token 有效性。
-5. 返回已发布 Skill 的元数据和版本信息。
-6. 分发经过服务端校验的 Skill ZIP 包。
-7. 返回稳定的 HTTP 状态码和业务错误码。
+5. 返回服务侧启用的 MCP 连接器、Tool 和当前 Agent 的授权状态。
+6. 返回已发布 Skill 的元数据和版本信息。
+7. 分发经过服务端校验的 Skill ZIP 包。
+8. 返回稳定的 HTTP 状态码和业务错误码。
 
 ### 3.2 Clawee Daemon
 
@@ -159,6 +161,7 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 | 账号登录 | `POST` | `/api/v1/auth/login` | 无 |
 | 查询当前账号 | `GET` | `/api/v1/auth/me` | Bearer JWT |
 | 注销当前会话 | `POST` | `/api/v1/auth/logout` | Bearer JWT |
+| 获取 MCP 能力目录 | `GET` | `/api/v1/app/agents/mcp-catalog` | Bearer JWT |
 | 获取已发布 Skill 列表 | `GET` | `/api/v1/app/skills` | Bearer JWT |
 | 获取已发布 Skill 详情 | `GET` | `/api/v1/app/skills/detail?skill_id=...` | Bearer JWT |
 | 下载指定 Skill 版本 | `GET` | `/api/v1/app/skills/package?skill_id=...&version_id=...` | Bearer JWT |
@@ -795,9 +798,100 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/me
 POST /api/v1/auth/logout
 
+GET  /api/v1/app/agents/mcp-catalog
+
 GET  /api/v1/app/skills
 GET  /api/v1/app/skills/detail?skill_id=<skill_id>
 GET  /api/v1/app/skills/package?skill_id=<skill_id>&version_id=<version_id>
 ```
 
-Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份和 Skill 分发，Clawee 负责本地安装及其完整性和回滚。
+Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。后续 MCP 能力目录请求优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份、MCP 能力目录和 Skill 分发，Clawee 负责本地安装及其完整性和回滚。
+
+## 23. MCP 能力目录接口
+
+### 23.1 `GET /api/v1/app/agents/mcp-catalog`
+
+返回企业服务当前启用的 MCP 上游连接器、启用的 Tool，以及 Clawee 当前登录会话所绑定 Agent 的有效授权状态。该接口为只读目录，不提供授权申请或修改能力。
+
+请求：
+
+```http
+GET /api/v1/app/agents/mcp-catalog HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+Clawee 请求不需要传递 `agent_id`。服务端优先从已认证的 `clawee-agent` Principal 和 Session 中读取绑定的 Agent ID：
+
+1. 未传 `agent_id` 时，查询当前会话绑定 Agent 的授权状态，不回退到账号主 Agent。
+2. 显式传入 `agent_id` 时，只用于一致性校验；值必须与会话绑定 Agent 完全一致。
+3. 显式值与会话不一致时返回 `403 agent_context_mismatch`，不得切换到其他 Agent。
+
+成功响应：
+
+```json
+{
+  "data": {
+    "agent_id": "clawee_550e8400-e29b-41d4-a716-446655440000",
+    "connectors": [
+      {
+        "id": "crm-main",
+        "name": "CRM",
+        "domain": "sales",
+        "tools": [
+          {
+            "id": "cap_customer_search",
+            "name": "crm.customer.search",
+            "title": "查询客户",
+            "description": "按条件查询客户资料",
+            "risk_level": "low",
+            "confirm_required": false,
+            "authorized": true,
+            "authorization_expires_at": "2026-08-31T16:00:00Z"
+          },
+          {
+            "id": "cap_customer_delete",
+            "name": "crm.customer.delete",
+            "title": "删除客户",
+            "description": "删除指定客户记录",
+            "risk_level": "high",
+            "confirm_required": true,
+            "authorized": false,
+            "authorization_expires_at": null
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `agent_id` | string | 本次授权判断实际使用的会话 Agent ID；Clawee 必须校验其与本地 `agent_id` 一致 |
+| `connectors` | array | 当前所有启用的 MCP 上游连接器；没有可用连接器时为空数组 |
+| `connectors[].id` | string | 连接器的不透明标识 |
+| `connectors[].name` | string | 连接器展示名称 |
+| `connectors[].domain` | string | 连接器所属业务域 |
+| `connectors[].tools` | array | 该连接器下所有启用的 Tool；无启用 Tool 时为空数组 |
+| `tools[].id` | string | Tool 能力的不透明标识 |
+| `tools[].name` | string | Agent 调用时使用的 Tool 名称 |
+| `tools[].title` | string | Tool 展示名称 |
+| `tools[].description` | string | Tool 功能说明 |
+| `tools[].risk_level` | string | 风险等级 |
+| `tools[].confirm_required` | boolean | 调用时是否需要用户确认 |
+| `tools[].authorized` | boolean | 当前会话 Agent 是否拥有有效授权；客户端必须以此字段为准 |
+| `tools[].authorization_expires_at` | string \| null | 当前有效授权的到期时间；永久授权、无授权或授权已失效时为 `null` |
+
+接口会返回已授权和未授权的启用 Tool。禁用连接器和禁用 Tool 不返回；响应不包含上游地址、连接凭证、授权数据范围等敏感信息。当前目录不分页，客户端必须忽略未来新增字段。
+
+错误处理：
+
+| HTTP 状态 | `error.code` | Clawee 处理 |
+| --- | --- | --- |
+| `401` | `unauthorized` | Token 缺失、过期或会话失效；清除本地 Token 并进入未登录状态 |
+| `403` | `agent_context_mismatch` | 请求中的 `agent_id` 与会话不一致；按客户端状态错误处理，不得尝试切换 Agent |
+| `403` | `agent_forbidden` | 会话绑定 Agent 已停用或不可用；保留本地 `agent_id`，提示重新登录或联系管理员 |
+| `500` | `internal_error` | 保留登录状态，允许用户手动重试 |
