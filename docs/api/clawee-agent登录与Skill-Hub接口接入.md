@@ -298,7 +298,7 @@ Content-Type: application/json
 3. `agent_id` 已存在但属于其他账号：返回 `409 agent_id_conflict`，不得创建替代 Agent。
 4. `agent_id` 已存在但状态不可用：返回 `403 agent_forbidden`。
 
-Agent 创建、账号绑定和 Session 签发必须作为一个原子操作完成；任一步失败时不得留下部分 Agent、绑定或 Session。
+Agent、账号绑定和初始 Agent Token 必须原子创建，成功后再签发 Session。Session 签发失败时本次登录仍然失败，但可以保留已经完整创建并归属于当前账号的 Agent；Clawee 使用同一个本地 `agent_id` 重试登录时必须复用该 Agent，不得重复创建或生成替代 ID。
 
 成功响应：`200 OK`
 
