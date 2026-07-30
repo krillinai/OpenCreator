@@ -10,18 +10,19 @@
 
 本次接入包括：
 
-1. 使用企业账号登录 Clawee。
-2. 查询当前登录账号和会话状态。
-3. 注销并撤销当前企业会话。
-4. 获取企业 Skill Hub 中已发布的 Skill。
-5. 获取 Skill 当前发布版本详情。
-6. 下载指定发布版本的 Skill ZIP 包。
-7. 校验并安装 Skill 到本机 Codex Skills 目录。
-8. 根据远端版本信息识别可安装、已安装和可更新状态。
+1. 注册普通服务账号。
+2. 使用已注册账号登录 Clawee。
+3. 查询当前登录账号和会话状态。
+4. 注销并撤销当前服务会话。
+5. 获取企业 Skill Hub 中已发布的 Skill。
+6. 获取 Skill 当前发布版本详情。
+7. 下载指定发布版本的 Skill ZIP 包。
+8. 校验并安装 Skill 到本机 Codex Skills 目录。
+9. 根据远端版本信息识别可安装、已安装和可更新状态。
 
 本次接入不包括：
 
-1. 在 Clawee 内注册企业账号。
+1. 特殊企业账户、企业身份源或管理员预分配账号。
 2. 调用企业后台 `/api/v1/admin/*` 接口。
 3. 在 Clawee 内上传、发布或下架 Skill。
 4. 由企业服务操作用户本地文件或 Codex Skills 目录。
@@ -34,18 +35,19 @@
 
 企业服务负责：
 
-1. 校验企业账号和密码。
-2. 为 `clawee-agent` 签发应用端 Bearer JWT。
-3. 校验会话、账号状态和 Token 有效性。
-4. 返回已发布 Skill 的元数据和版本信息。
-5. 分发经过服务端校验的 Skill ZIP 包。
-6. 返回稳定的 HTTP 状态码和业务错误码。
+1. 注册普通账号，并为账号初始化默认 Agent 绑定。
+2. 校验账号和密码。
+3. 为 `clawee-agent` 签发应用端 Bearer JWT。
+4. 校验会话、账号状态和 Token 有效性。
+5. 返回已发布 Skill 的元数据和版本信息。
+6. 分发经过服务端校验的 Skill ZIP 包。
+7. 返回稳定的 HTTP 状态码和业务错误码。
 
 ### 3.2 Clawee Daemon
 
 Clawee Daemon 是企业服务的唯一调用方，负责：
 
-1. 代理登录、当前账号查询和注销请求。
+1. 代理注册、登录、当前账号查询和注销请求。
 2. 保存企业服务地址和企业会话 Token。
 3. 为 Clawee Web 与 Desktop 提供统一的本地登录状态。
 4. 获取 Skill 列表、详情和 ZIP 包。
@@ -68,7 +70,7 @@ Clawee Web / Desktop
         v
 Clawee Daemon
         |
-        | HTTPS + Authorization: Bearer <enterprise_access_token>
+        | HTTP；注册/登录无认证，后续请求使用 Bearer Token
         v
 企业服务 /api/v1/auth/* 与 /api/v1/app/*
 ```
@@ -79,13 +81,13 @@ Clawee Daemon
 
 ### 5.1 服务地址
 
-本文使用以下占位地址：
+当前接入使用以下固定服务 Origin：
 
 ```text
-https://gateway.example.com
+http://1.13.175.31:1904
 ```
 
-Clawee 配置中保存企业服务 Origin，不保存带业务路径的完整 URL。Origin 必须使用 HTTPS，开发环境显式配置的本机地址除外。
+Clawee 配置中保存企业服务 Origin，不保存带业务路径的完整 URL。当前地址使用 HTTP，账号密码和 Bearer Token 会以未加密的 HTTP 流量传输；切换到生产域名时应启用 HTTPS，但在服务端地址正式变更前，客户端不得自行改写协议、主机或端口。
 
 ### 5.2 请求头
 
@@ -96,7 +98,7 @@ Accept: application/json
 Content-Type: application/json
 ```
 
-除登录和健康检查外，所有接口都必须携带：
+除注册、登录和健康检查外，所有接口都必须携带：
 
 ```http
 Authorization: Bearer <enterprise_access_token>
@@ -153,7 +155,8 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 
 | 用途 | 方法 | 路径 | 认证 |
 | --- | --- | --- | --- |
-| 企业账号登录 | `POST` | `/api/v1/auth/login` | 无 |
+| 注册账号 | `POST` | `/api/v1/auth/register` | 无 |
+| 账号登录 | `POST` | `/api/v1/auth/login` | 无 |
 | 查询当前账号 | `GET` | `/api/v1/auth/me` | Bearer JWT |
 | 注销当前会话 | `POST` | `/api/v1/auth/logout` | Bearer JWT |
 | 获取已发布 Skill 列表 | `GET` | `/api/v1/app/skills` | Bearer JWT |
@@ -163,17 +166,89 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 
 Clawee 不得调用历史兼容路径 `/auth/*`、`/api/v1/skills/*` 或任何 `/api/v1/admin/*` 接口。
 
-## 7. 登录接口
+## 7. 账号注册与登录接口
 
-### 7.1 `POST /api/v1/auth/login`
+当前不引入特殊企业账户。首次使用必须先注册普通账号，再使用同一邮箱和密码登录并获取 `clawee-agent` Bearer JWT。
 
-使用企业账号和密码创建 Clawee 应用会话。
+### 7.1 `POST /api/v1/auth/register`
+
+创建普通服务账号。第一个注册成功的账号会成为 `admin`，后续自助注册账号为普通 `user`。无论账号角色如何，注册成功后服务端都会为该账号创建并绑定默认 Agent；默认 Agent 初始化失败时，整个注册操作回滚。
+
+请求：
+
+```http
+POST /api/v1/auth/register HTTP/1.1
+Host: 1.13.175.31:1904
+Accept: application/json
+Content-Type: application/json
+```
+
+```json
+{
+  "email": "user@example.com",
+  "name": "张三",
+  "password": "user-password"
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `email` | string | 是 | 登录邮箱；服务端会去除首尾空白并转换为小写 |
+| `name` | string | 否 | 用户显示名称；服务端会去除首尾空白 |
+| `password` | string | 是 | 密码，当前要求至少 8 个字符 |
+
+注册请求不得传递 `client_id=clawee-agent`。当前服务端注册接口只接受 Web 注册语义，省略 `client_id` 时默认按 `web` 处理；传递 `electron`、`clawee-agent` 或其他值会返回 `400 invalid_request`。
+
+成功响应：`200 OK`
+
+```json
+{
+  "data": {
+    "account": {
+      "user_id": "usr_123",
+      "email": "user@example.com",
+      "name": "张三",
+      "status": "active"
+    },
+    "applications": {
+      "frontend": true,
+      "admin": false
+    },
+    "redirect_to": "/app"
+  }
+}
+```
+
+注册响应不包含 Bearer Token。服务端可能同时返回 Web 登录 Cookie，但 Clawee Daemon 不使用、不保存该 Cookie；注册成功后必须继续调用 `/api/v1/auth/login`，并固定传递 `client_id=clawee-agent` 获取 Bearer JWT。
+
+Clawee 注册流程：
+
+1. 用户提交邮箱、可选名称和密码。
+2. Daemon 调用 `/api/v1/auth/register`，且不传 `client_id`。
+3. 注册成功后丢弃响应中的 `Set-Cookie`，不把 Web Cookie 暴露给 Web/Desktop 渲染进程。
+4. Daemon 使用同一邮箱和密码立即调用 `/api/v1/auth/login`，并传递 `client_id=clawee-agent`。
+5. 登录成功后只保存登录响应中的 `access_token` 和 `expires_at`。
+6. 注册或后续登录任一步失败时，不进入已登录状态；密码不得持久化或写入日志。
+
+常见失败：
+
+| HTTP | `error.code` | 场景 | Clawee 行为 |
+| --- | --- | --- | --- |
+| `400` | `invalid_request` | JSON 无效、邮箱为空、密码少于 8 个字符或传入不支持的 `client_id` | 提示注册参数无效，不自动重试 |
+| `500` | `internal_error` | 账号创建、权限初始化或默认 Agent 初始化失败 | 保留注册页，允许用户核对账号状态后手动重试或登录 |
+| `502/503` | 网关或服务不可用 | 企业服务暂不可用 | 保留注册页，允许用户手动重试 |
+
+### 7.2 `POST /api/v1/auth/login`
+
+使用已注册账号和密码创建 Clawee 应用会话。
 
 请求：
 
 ```http
 POST /api/v1/auth/login HTTP/1.1
-Host: gateway.example.com
+Host: 1.13.175.31:1904
 Accept: application/json
 Content-Type: application/json
 ```
@@ -190,8 +265,8 @@ Content-Type: application/json
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `email` | string | 是 | 企业账号邮箱 |
-| `password` | string | 是 | 企业账号密码 |
+| `email` | string | 是 | 已注册账号邮箱 |
+| `password` | string | 是 | 已注册账号密码 |
 | `client_id` | string | 是 | 固定为 `clawee-agent` |
 
 成功响应：`200 OK`
@@ -240,7 +315,7 @@ Clawee 处理要求：
 
 ```http
 GET /api/v1/auth/me HTTP/1.1
-Host: gateway.example.com
+Host: 1.13.175.31:1904
 Accept: application/json
 Authorization: Bearer <enterprise_access_token>
 ```
@@ -287,7 +362,7 @@ Clawee 只依赖 `account` 和 `applications.frontend`。后台角色和权限�
 
 ```http
 POST /api/v1/auth/logout HTTP/1.1
-Host: gateway.example.com
+Host: 1.13.175.31:1904
 Accept: application/json
 Authorization: Bearer <enterprise_access_token>
 ```
@@ -312,7 +387,7 @@ Clawee 注销顺序：
 
 ```http
 GET /api/v1/app/skills HTTP/1.1
-Host: gateway.example.com
+Host: 1.13.175.31:1904
 Accept: application/json
 Authorization: Bearer <enterprise_access_token>
 ```
@@ -367,7 +442,7 @@ Clawee 不得对 `version` 做大小比较。是否存在更新以 `version_id` 
 
 ```http
 GET /api/v1/app/skills/detail?skill_id=skill_123 HTTP/1.1
-Host: gateway.example.com
+Host: 1.13.175.31:1904
 Accept: application/json
 Authorization: Bearer <enterprise_access_token>
 ```
@@ -408,7 +483,7 @@ Skill 不存在、未发布或已下架时返回 `404 not_found`。Clawee 收到
 
 ```http
 GET /api/v1/app/skills/package?skill_id=skill_123&version_id=skillver_456 HTTP/1.1
-Host: gateway.example.com
+Host: 1.13.175.31:1904
 Accept: application/zip
 Authorization: Bearer <enterprise_access_token>
 ```
@@ -593,7 +668,7 @@ Clawee 应同时读取：
 | 操作 | 超时 |
 | --- | --- |
 | 健康检查 | 5 秒 |
-| 登录、当前账号、注销 | 15 秒 |
+| 注册、登录、当前账号、注销 | 15 秒 |
 | Skill 列表和详情 | 15 秒 |
 | Skill ZIP 下载 | 120 秒 |
 
@@ -621,14 +696,16 @@ Clawee 应同时读取：
 
 ## 21. 验收清单
 
-### 21.1 登录
+### 21.1 注册与登录
 
-1. Web 与 Desktop 使用同一 Daemon 登录接口和状态模型。
-2. 登录请求固定提交 `client_id=clawee-agent`。
-3. 企业 JWT 不出现在渲染进程、浏览器存储和日志中。
-4. 应用重启后可以通过 `/api/v1/auth/me` 恢复或拒绝会话。
-5. `401` 会清除本地 Token，网络错误不会误清除 Token。
-6. 注销成功后原 Token 无法继续访问 Skill 接口。
+1. Web 与 Desktop 使用同一 Daemon 注册、登录接口和状态模型。
+2. 首次使用可以通过 `/api/v1/auth/register` 注册普通账号。
+3. 注册请求不传 `client_id=clawee-agent`，注册成功后不保存 Web Cookie。
+4. 注册成功后自动调用登录接口，登录请求固定提交 `client_id=clawee-agent`。
+5. 企业 JWT 不出现在渲染进程、浏览器存储和日志中。
+6. 应用重启后可以通过 `/api/v1/auth/me` 恢复或拒绝会话。
+7. `401` 会清除本地 Token，网络错误不会误清除 Token。
+8. 注销成功后原 Token 无法继续访问 Skill 接口。
 
 ### 21.2 Skill Hub
 
@@ -647,6 +724,7 @@ Clawee 应同时读取：
 Clawee 正式依赖以下稳定契约：
 
 ```text
+POST /api/v1/auth/register
 POST /api/v1/auth/login
 GET  /api/v1/auth/me
 POST /api/v1/auth/logout
@@ -656,4 +734,4 @@ GET  /api/v1/app/skills/detail?skill_id=<skill_id>
 GET  /api/v1/app/skills/package?skill_id=<skill_id>&version_id=<version_id>
 ```
 
-认证使用 `client_id=clawee-agent` 签发的 `claw-frontend` Bearer JWT。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份和 Skill 分发，Clawee 负责本地安装及其完整性和回滚。
+账号通过 `/api/v1/auth/register` 自助注册，注册请求不传 `client_id=clawee-agent`；注册成功后再通过登录接口使用 `client_id=clawee-agent` 签发 `claw-frontend` Bearer JWT。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份和 Skill 分发，Clawee 负责本地安装及其完整性和回滚。
