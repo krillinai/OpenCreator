@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 const packageDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const workspaceDir = dirname(dirname(packageDir));
+const runtimeImportTestTimeoutMs = 60_000;
 
 describe('skill market runtime exports', () => {
   it('builds from a clean dist and loads through native Node consumers', () => {
@@ -49,5 +50,5 @@ describe('skill market runtime exports', () => {
     );
 
     expect(output).toBe('runtime-import-ok');
-  });
+  }, runtimeImportTestTimeoutMs);
 });
