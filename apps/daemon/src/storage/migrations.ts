@@ -129,6 +129,17 @@ export function migrate(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS enterprise_skill_installs (
+      skill_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      version_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      package_sha256 TEXT NOT NULL,
+      installed_content_sha256 TEXT NOT NULL,
+      installed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS codex_mcp_operations (
       id TEXT PRIMARY KEY,
       operation TEXT NOT NULL,
@@ -350,6 +361,8 @@ export function migrate(db: Database.Database): void {
       ON codex_skill_operations(created_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_codex_skill_market_installs_updated_at
       ON codex_skill_market_installs(updated_at DESC, skill_id ASC);
+    CREATE INDEX IF NOT EXISTS idx_enterprise_skill_installs_updated_at
+      ON enterprise_skill_installs(updated_at DESC, skill_id ASC);
     CREATE INDEX IF NOT EXISTS idx_codex_mcp_operations_created_at
       ON codex_mcp_operations(created_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next_run_at

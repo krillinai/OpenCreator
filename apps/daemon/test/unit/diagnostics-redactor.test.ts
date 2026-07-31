@@ -87,4 +87,30 @@ describe('diagnostics redactor', () => {
       }
     });
   });
+
+  it('redacts enterprise bearer cookie and token fields from diagnostics', () => {
+    const secrets = [
+      'enterprise-access-token',
+      'enterprise-cookie',
+      'enterprise-password',
+      '2026-07-31T10:00:00Z'
+    ];
+    const content = JSON.stringify({
+      enterprise: {
+        access_token: secrets[0],
+        expires_at: secrets[3],
+        password: secrets[2]
+      },
+      headers: {
+        Authorization: `Token ${secrets[0]}`,
+        Cookie: `enterprise_session=${secrets[1]}`,
+        'Set-Cookie': `enterprise_session=${secrets[1]}`
+      }
+    });
+
+    const redacted = redactDiagnosticContent(content);
+
+    for (const secret of secrets) expect(redacted).not.toContain(secret);
+    expect(redacted).toContain('[REDACTED]');
+  });
 });

@@ -53,6 +53,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ClaweeSidebar>> 
       onSelectConversation={vi.fn()}
       onSelectTask={vi.fn()}
       onOpenView={vi.fn()}
+      onOpenAccount={vi.fn()}
       onOpenSettings={vi.fn()}
       onToggleCollapsed={vi.fn()}
       {...overrides}
@@ -79,7 +80,8 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
     expect(screen.getByText('4天')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '设置 账户' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '企业账户' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
   });
 
@@ -291,9 +293,60 @@ describe('ClaweeSidebar', () => {
 
     renderSidebar({ onOpenSettings });
 
-    await user.click(screen.getByRole('button', { name: '设置 账户' }));
+    await user.click(screen.getByRole('button', { name: '设置' }));
 
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps account and settings separately accessible when expanded or collapsed', async () => {
+    const user = userEvent.setup();
+    const onOpenAccount = vi.fn();
+    const onOpenSettings = vi.fn();
+    const view = renderSidebar({
+      onOpenAccount,
+      onOpenSettings,
+      enterpriseSession: {
+        status: 'signed_in',
+        account: { email: 'member@example.com', name: 'Member' },
+        transportSecurity: 'secure_https'
+      },
+      activeView: 'account'
+    });
+
+    expect(screen.getByRole('button', { name: 'Member member@example.com' }))
+      .toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '设置' })).not.toHaveAttribute('aria-current');
+    await user.click(screen.getByRole('button', { name: 'Member member@example.com' }));
+    await user.click(screen.getByRole('button', { name: '设置' }));
+    expect(onOpenAccount).toHaveBeenCalledTimes(1);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+
+    view.rerender(
+      <ClaweeSidebar
+        projects={projects}
+        conversations={conversations}
+        tasks={[]}
+        activeView="account"
+        collapsed
+        enterpriseSession={{
+          status: 'signed_in',
+          account: { email: 'member@example.com', name: 'Member' },
+          transportSecurity: 'secure_https'
+        }}
+        onNewConversation={vi.fn()}
+        onSelectProject={vi.fn()}
+        onSelectConversation={vi.fn()}
+        onSelectTask={vi.fn()}
+        onOpenView={vi.fn()}
+        onOpenAccount={onOpenAccount}
+        onOpenSettings={onOpenSettings}
+        onToggleCollapsed={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Member member@example.com' }))
+      .toHaveAttribute('title', 'Member');
+    expect(screen.getByRole('button', { name: '设置' })).toHaveAttribute('title', '设置');
   });
 
   it('creates a project from the projects heading', async () => {

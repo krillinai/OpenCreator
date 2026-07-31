@@ -8,6 +8,11 @@ import type {
   ConversationSearchResult,
   CreateMemoryRequest,
   CreateThreadRequest,
+  EnterpriseLoginRequest,
+  EnterpriseRegisterRequest,
+  EnterpriseSessionResponse,
+  EnterpriseSkillDetailResponse,
+  EnterpriseSkillResponse,
   RunDiagnosticsResponse,
   RunContextResponse,
   RunResponse,
@@ -49,6 +54,10 @@ import type {
   SkillMarketOperation,
   SkillMarketUseError
 } from '../features/plugins/SkillMarketView.js';
+import type {
+  EnterpriseSkillOperation,
+  EnterpriseSkillUseError
+} from '../features/plugins/EnterpriseSkillHubView-2026-07-30.js';
 import {
   findProjectById,
   groupThreadsByPurpose,
@@ -108,6 +117,7 @@ import { createApprovalService } from '../services/approval-service.js';
 import { createConnectionService, type ConnectionState } from '../services/connection-service.js';
 import { createCleanupService } from '../services/cleanup-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
+import { createEnterpriseService } from '../services/enterprise-service-2026-07-30.js';
 import { createMockFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createProjectService } from '../services/project-service.js';
@@ -149,6 +159,7 @@ type AppFileService = {
 
 type CapabilityService = ReturnType<typeof createCapabilityService>;
 type SkillMarketService = ReturnType<typeof createSkillMarketService>;
+type EnterpriseService = ReturnType<typeof createEnterpriseService>;
 type ThreadService = ReturnType<typeof createThreadService>;
 type ScheduleService = ReturnType<typeof createScheduleService>;
 type SearchService = ReturnType<typeof createSearchService>;
@@ -213,6 +224,9 @@ const SCHEDULE_DRAFT_TITLE = '任务草稿';
 const SCHEDULE_CREATION_DRAFT =
   '我们一起来设置一个已安排任务吧。首先，说明已安排任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。';
 const CapabilitiesPage = lazy(() => import('../features/capabilities/CapabilitiesPage.js'));
+const EnterpriseAccountPage = lazy(
+  () => import('../features/account/EnterpriseAccountPage-2026-07-30.js')
+);
 const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
 const ScheduleThreadHeader = lazy(async () => {
@@ -284,6 +298,20 @@ export function AppController(props: AppControllerProps) {
     status: 'disconnected',
     message: '正在等待本地服务'
   });
+  const [enterpriseSession, setEnterpriseSession] = useState<EnterpriseSessionResponse>({
+    status: 'signed_out',
+    transportSecurity: 'secure_https'
+  });
+  const [enterpriseCheckingTimedOut, setEnterpriseCheckingTimedOut] = useState(false);
+  const [enterpriseSessionProbeKey, setEnterpriseSessionProbeKey] = useState(0);
+  const [enterpriseSkills, setEnterpriseSkills] = useState<EnterpriseSkillResponse[]>();
+  const [enterpriseSkillsLoading, setEnterpriseSkillsLoading] = useState(false);
+  const [enterpriseSkillsLoadError, setEnterpriseSkillsLoadError] = useState<string>();
+  const [enterpriseSkillOperation, setEnterpriseSkillOperation] =
+    useState<EnterpriseSkillOperation>();
+  const [enterpriseSkillUseError, setEnterpriseSkillUseError] =
+    useState<EnterpriseSkillUseError>();
+  const [enterpriseSkillsReloadKey, setEnterpriseSkillsReloadKey] = useState(0);
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
@@ -301,6 +329,10 @@ export function AppController(props: AppControllerProps) {
     { threadId: string; request: ComposerDraftRequest } | undefined
   >();
   const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
+  const activePluginSource =
+    props.route.view === 'plugins' && props.route.source === 'enterprise'
+      ? 'enterprise'
+      : 'public';
 
   useEffect(() => {
     if (threadConfigUpdateError === undefined) return;
@@ -388,15 +420,21 @@ export function AppController(props: AppControllerProps) {
   const skillMarketMutationInFlightRef = useRef(false);
   const skillMarketUseInFlightRef = useRef(false);
   const skillMarketRuntimeGenerationRef = useRef(0);
+  const enterpriseRuntimeGenerationRef = useRef(0);
+  const enterpriseHubGenerationRef = useRef(0);
   const capabilityLoadGenerationRef = useRef<number>();
   const profileLoadGenerationRef = useRef<number>();
   const skillMarketLoadGenerationRef = useRef<number>();
+  const enterpriseSkillMutationInFlightRef = useRef(false);
   const mobileSidebarHistoryEntryRef = useRef(false);
   const defaultPermissionAppliedByThreadRef = useRef(new Map<string, SandboxMode>());
   const defaultPermissionSyncFailuresRef = useRef(new Set<string>());
   const projectDirectoryDialogInFlightRef = useRef(false);
   const capabilityServiceRef = useRef<CapabilityService | null>(null);
   const skillMarketServiceRef = useRef<SkillMarketService | null>(null);
+  const enterpriseServiceRef = useRef<EnterpriseService | null>(null);
+  const enterpriseSessionRef = useRef(enterpriseSession);
+  const enterpriseReturnRouteRef = useRef<AppRoute>();
   const threadServiceRef = useRef<ThreadService | null>(null);
   const scheduleServiceRef = useRef<ScheduleService | null>(null);
   const runtimeThreadsRef = useRef(runtimeThreads);
@@ -413,6 +451,7 @@ export function AppController(props: AppControllerProps) {
   runRegistryRef.current = runRegistry;
   runtimeThreadsRef.current = runtimeThreads;
   currentProjectIdRef.current = state.currentProjectId;
+  enterpriseSessionRef.current = enterpriseSession;
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -473,6 +512,10 @@ export function AppController(props: AppControllerProps) {
   );
   const skillMarketService = useMemo(
     () => runtimeClient === null ? null : createSkillMarketService(runtimeClient),
+    [runtimeClient]
+  );
+  const enterpriseService = useMemo(
+    () => runtimeClient === null ? null : createEnterpriseService(runtimeClient),
     [runtimeClient]
   );
   const workspaceFileService = useMemo(
@@ -1048,9 +1091,11 @@ export function AppController(props: AppControllerProps) {
     connectionStatusRef.current = connectionState.status;
     capabilityServiceRef.current = capabilityService;
     skillMarketServiceRef.current = skillMarketService;
+    enterpriseServiceRef.current = enterpriseService;
     threadServiceRef.current = threadService;
     scheduleServiceRef.current = scheduleService;
     skillMarketRuntimeGenerationRef.current += 1;
+    enterpriseRuntimeGenerationRef.current += 1;
     skillMarketMutationInFlightRef.current = false;
     skillMarketUseInFlightRef.current = false;
     setSkillMarketOperation(undefined);
@@ -1058,9 +1103,143 @@ export function AppController(props: AppControllerProps) {
   }, [
     capabilityService,
     connectionState.status,
+    enterpriseService,
     scheduleService,
     skillMarketService,
     threadService
+  ]);
+
+  useEffect(() => {
+    const generation = enterpriseRuntimeGenerationRef.current;
+    setEnterpriseCheckingTimedOut(false);
+
+    if (
+      connectionState.status !== 'connected'
+      || enterpriseService === null
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const activeEnterpriseService = enterpriseService;
+
+    void pollEnterpriseSessionUntilSettled({
+      signal: controller.signal,
+      readSession: () => activeEnterpriseService.getSession(),
+      onSession(response) {
+        if (
+          enterpriseRuntimeGenerationRef.current !== generation
+          || enterpriseServiceRef.current !== activeEnterpriseService
+        ) {
+          return;
+        }
+        setEnterpriseSession(response);
+        setEnterpriseCheckingTimedOut(false);
+      },
+      onTimeout() {
+        if (
+          enterpriseRuntimeGenerationRef.current !== generation
+          || enterpriseServiceRef.current !== activeEnterpriseService
+        ) {
+          return;
+        }
+        setEnterpriseCheckingTimedOut(true);
+      },
+      onError() {
+        if (
+          enterpriseRuntimeGenerationRef.current !== generation
+          || enterpriseServiceRef.current !== activeEnterpriseService
+        ) {
+          return;
+        }
+        setEnterpriseCheckingTimedOut(false);
+        setEnterpriseSession(previous => ({
+          status: 'service_unavailable',
+          ...(previous.account === undefined ? {} : { account: previous.account }),
+          reason: 'service_unavailable',
+          transportSecurity: previous.transportSecurity
+        }));
+      }
+    });
+    return () => {
+      controller.abort();
+    };
+  }, [
+    connectionState.status,
+    enterpriseService,
+    enterpriseSessionProbeKey
+  ]);
+
+  useEffect(() => {
+    enterpriseHubGenerationRef.current += 1;
+    enterpriseSkillMutationInFlightRef.current = false;
+    setEnterpriseSkillOperation(undefined);
+    setEnterpriseSkillUseError(undefined);
+
+    if (
+      connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      setEnterpriseSkills(undefined);
+      setEnterpriseSkillsLoading(false);
+      setEnterpriseSkillsLoadError(undefined);
+    }
+  }, [
+    connectionState.status,
+    enterpriseService,
+    enterpriseSession.status
+  ]);
+
+  useEffect(() => {
+    if (
+      state.activeView !== 'plugins'
+      || activePluginSource !== 'enterprise'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      return;
+    }
+
+    const generation = enterpriseHubGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    setEnterpriseSkillsLoading(true);
+    setEnterpriseSkillsLoadError(undefined);
+
+    void activeEnterpriseService.listSkills()
+      .then(response => {
+        if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) return;
+        setEnterpriseSkills(response.skills);
+      })
+      .catch(error => {
+        if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) return;
+        if (isEnterpriseUnauthorized(error)) {
+          setEnterpriseSession({
+            status: 'signed_out',
+            reason: 'session_expired',
+            transportSecurity: enterpriseSessionRef.current.transportSecurity
+          });
+          setEnterpriseSkills(undefined);
+        } else {
+          setEnterpriseSkillsLoadError(formatEnterpriseSkillError(
+            error,
+            '企业 Skill 目录加载失败'
+          ));
+        }
+      })
+      .finally(() => {
+        if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
+          setEnterpriseSkillsLoading(false);
+        }
+      });
+  }, [
+    activePluginSource,
+    connectionState.status,
+    enterpriseService,
+    enterpriseSession.status,
+    enterpriseSkillsReloadKey,
+    state.activeView
   ]);
 
   useEffect(() => {
@@ -1264,6 +1443,7 @@ export function AppController(props: AppControllerProps) {
       || capabilityService === null
       || skillMarketService === null
       || state.activeView !== 'plugins'
+      || activePluginSource !== 'public'
     ) {
       return;
     }
@@ -1307,6 +1487,7 @@ export function AppController(props: AppControllerProps) {
       });
   }, [
     capabilityService,
+    activePluginSource,
     codexSkills,
     connectionState.status,
     skillMarketInstallRecords,
@@ -1813,6 +1994,86 @@ export function AppController(props: AppControllerProps) {
     readHostRuntimeConfig(loadVersion, () => false);
   }
 
+  async function runEnterpriseSessionMutation(
+    action: (service: EnterpriseService) => Promise<EnterpriseSessionResponse>
+  ): Promise<EnterpriseSessionResponse> {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || connectionStatusRef.current !== 'connected'
+    ) {
+      throw new Error('本地 Runtime 未连接');
+    }
+    const generation = enterpriseRuntimeGenerationRef.current;
+
+    try {
+      const response = await action(activeEnterpriseService);
+      if (
+        enterpriseRuntimeGenerationRef.current === generation
+        && enterpriseServiceRef.current === activeEnterpriseService
+      ) {
+        setEnterpriseSession(response);
+        setEnterpriseCheckingTimedOut(false);
+        if (response.status === 'checking') {
+          setEnterpriseSessionProbeKey(current => current + 1);
+        }
+      }
+      return response;
+    } catch (error) {
+      try {
+        const snapshot = await activeEnterpriseService.getSession();
+        if (
+          enterpriseRuntimeGenerationRef.current === generation
+          && enterpriseServiceRef.current === activeEnterpriseService
+        ) {
+          setEnterpriseSession(snapshot);
+          setEnterpriseCheckingTimedOut(false);
+        }
+      } catch {
+        // The original operation error remains the user-facing failure.
+      }
+      throw error;
+    }
+  }
+
+  async function loginEnterprise(
+    input: EnterpriseLoginRequest
+  ): Promise<EnterpriseSessionResponse> {
+    const response = await runEnterpriseSessionMutation(service => service.login(input));
+    returnToEnterpriseHubAfterSignIn(response);
+    return response;
+  }
+
+  async function registerEnterprise(
+    input: EnterpriseRegisterRequest
+  ): Promise<EnterpriseSessionResponse> {
+    const response = await runEnterpriseSessionMutation(service => service.register(input));
+    returnToEnterpriseHubAfterSignIn(response);
+    return response;
+  }
+
+  function logoutEnterprise(): Promise<EnterpriseSessionResponse> {
+    return runEnterpriseSessionMutation(service => service.logout());
+  }
+
+  function refreshEnterpriseSession(): Promise<EnterpriseSessionResponse> {
+    return runEnterpriseSessionMutation(service => service.refreshSession());
+  }
+
+  function returnToEnterpriseHubAfterSignIn(response: EnterpriseSessionResponse) {
+    if (response.status !== 'signed_in') return;
+    const returnRoute = enterpriseReturnRouteRef.current;
+    if (
+      returnRoute?.view !== 'plugins'
+      || returnRoute.source !== 'enterprise'
+    ) {
+      return;
+    }
+    enterpriseReturnRouteRef.current = undefined;
+    dispatch({ type: 'set_active_view', activeView: 'plugins' });
+    navigateToRoute(returnRoute);
+  }
+
   function handleColorModeChange(mode: ColorMode) {
     setColorMode(mode);
     applyColorMode(mode);
@@ -2293,6 +2554,7 @@ export function AppController(props: AppControllerProps) {
       case 'schedules':
       case 'tasks':
       case 'plugins':
+      case 'account':
       case 'settings':
         closeMobileSidebar();
         dispatch({
@@ -2454,6 +2716,145 @@ export function AppController(props: AppControllerProps) {
       && threadServiceRef.current === activeThreadService;
   }
 
+  function isCurrentEnterpriseHubRuntime(
+    generation: number,
+    activeEnterpriseService: EnterpriseService
+  ) {
+    return mountedRef.current
+      && enterpriseHubGenerationRef.current === generation
+      && connectionStatusRef.current === 'connected'
+      && enterpriseSessionRef.current.status === 'signed_in'
+      && enterpriseServiceRef.current === activeEnterpriseService;
+  }
+
+  async function refreshEnterpriseSkillListOnce(
+    generation: number,
+    activeEnterpriseService: EnterpriseService
+  ): Promise<void> {
+    const response = await activeEnterpriseService.listSkills();
+    if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) return;
+    setEnterpriseSkills(response.skills);
+    setEnterpriseSkillsLoadError(undefined);
+  }
+
+  function refreshEnterpriseHub() {
+    if (enterpriseSessionRef.current.status === 'signed_in') {
+      setEnterpriseSkillsReloadKey(current => current + 1);
+      return;
+    }
+    void refreshEnterpriseSession();
+  }
+
+  async function loadEnterpriseSkillDetail(
+    skillId: string
+  ): Promise<EnterpriseSkillDetailResponse> {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || connectionStatusRef.current !== 'connected'
+      || enterpriseSessionRef.current.status !== 'signed_in'
+    ) {
+      throw new Error('企业 Skill Hub 暂不可用');
+    }
+    const generation = enterpriseHubGenerationRef.current;
+    try {
+      const detail = await activeEnterpriseService.getSkillDetail(skillId);
+      if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
+        throw new Error('企业 Skill 详情请求已过期');
+      }
+      return detail;
+    } catch (error) {
+      if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
+        if (isEnterpriseUnauthorized(error)) {
+          setEnterpriseSession({
+            status: 'signed_out',
+            reason: 'session_expired',
+            transportSecurity: enterpriseSessionRef.current.transportSecurity
+          });
+        } else if (
+          error instanceof ApiClientError
+          && error.status === 404
+        ) {
+          setEnterpriseSkillsReloadKey(current => current + 1);
+        }
+      }
+      throw new Error(formatEnterpriseSkillError(error, '企业 Skill 详情加载失败'));
+    }
+  }
+
+  async function mutateEnterpriseSkill(
+    skillId: string,
+    kind: 'install' | 'update'
+  ) {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || connectionStatusRef.current !== 'connected'
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSkillMutationInFlightRef.current
+    ) {
+      return;
+    }
+
+    const generation = enterpriseHubGenerationRef.current;
+    enterpriseSkillMutationInFlightRef.current = true;
+    setEnterpriseSkillOperation({ skillId, kind });
+    try {
+      if (kind === 'install') {
+        await activeEnterpriseService.installSkill(skillId);
+      } else {
+        await activeEnterpriseService.updateSkill(skillId);
+      }
+      await refreshEnterpriseSkillListOnce(generation, activeEnterpriseService);
+      if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
+        setEnterpriseSkillOperation(undefined);
+      }
+    } catch (error) {
+      if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        setEnterpriseSession({
+          status: 'signed_out',
+          reason: 'session_expired',
+          transportSecurity: enterpriseSessionRef.current.transportSecurity
+        });
+        setEnterpriseSkillOperation(undefined);
+        return;
+      }
+      if (
+        error instanceof ApiClientError
+        && (error.status === 404 || error.status === 409)
+      ) {
+        try {
+          await refreshEnterpriseSkillListOnce(generation, activeEnterpriseService);
+        } catch {
+          // Preserve the mutation error; the user can refresh the directory manually.
+        }
+      }
+      if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
+        setEnterpriseSkillOperation({
+          skillId,
+          kind,
+          error: formatEnterpriseSkillError(
+            error,
+            kind === 'install' ? '企业 Skill 安装失败' : '企业 Skill 更新失败'
+          )
+        });
+      }
+    } finally {
+      if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
+        enterpriseSkillMutationInFlightRef.current = false;
+      }
+    }
+  }
+
+  function installEnterpriseSkill(skillId: string) {
+    return mutateEnterpriseSkill(skillId, 'install');
+  }
+
+  function updateEnterpriseSkill(skillId: string) {
+    return mutateEnterpriseSkill(skillId, 'update');
+  }
+
   async function refreshSkillMarketState(
     generation: number,
     activeCapabilityService: CapabilityService,
@@ -2539,36 +2940,63 @@ export function AppController(props: AppControllerProps) {
   }
 
   async function useMarketSkill(skillId: string, projectId: string) {
-    if (skillMarketUseInFlightRef.current) return;
     setSkillMarketUseError(undefined);
-
-    const activeThreadService = threadService;
-    if (activeThreadService === null) {
-      setSkillMarketUseError({
-        skillId,
-        error: '本地服务暂不可用，无法创建对话'
-      });
-      return;
-    }
-
     const entry = getSkillMarketEntry(skillId);
     if (entry === undefined) {
       setSkillMarketUseError({ skillId, error: '未找到这个 Skill' });
       return;
     }
+    await useSkillByName({
+      skillName: skillId,
+      title: getSkillMarketDisplayTitle(entry),
+      projectId,
+      onError: error => setSkillMarketUseError(
+        error === undefined ? undefined : { skillId, error }
+      )
+    });
+  }
 
-    const project = findProjectById(projects, projectId);
+  async function useEnterpriseSkill(
+    skill: EnterpriseSkillResponse,
+    projectId: string
+  ) {
+    setEnterpriseSkillUseError(undefined);
+    await useSkillByName({
+      skillName: skill.name,
+      title: skill.name,
+      projectId,
+      onError: error => setEnterpriseSkillUseError(
+        error === undefined
+          ? undefined
+          : { skillId: skill.skillId, error }
+      )
+    });
+  }
+
+  async function useSkillByName(input: {
+    skillName: string;
+    title: string;
+    projectId: string;
+    onError(error?: string): void;
+  }) {
+    if (skillMarketUseInFlightRef.current) return;
+    input.onError(undefined);
+    const activeThreadService = threadService;
+    if (activeThreadService === null) {
+      input.onError('本地服务暂不可用，无法创建对话');
+      return;
+    }
+    const project = findProjectById(projects, input.projectId);
     if (project === undefined) {
-      setSkillMarketUseError({ skillId, error: '未找到所选项目' });
+      input.onError('未找到所选项目');
       return;
     }
     const config = defaultComposerRunConfig(project, defaultPermission);
-    const title = getSkillMarketDisplayTitle(entry);
     const generation = skillMarketRuntimeGenerationRef.current;
     skillMarketUseInFlightRef.current = true;
 
     try {
-      const request = buildThreadRequest(title, project, config);
+      const request = buildThreadRequest(input.title, project, config);
       const created = await activeThreadService.createThread(request);
       if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
 
@@ -2591,15 +3019,12 @@ export function AppController(props: AppControllerProps) {
         threadId: created.thread.id,
         request: {
           id: nextComposerDraftIdRef.current,
-          text: `$${skillId} `
+          text: `$${input.skillName} `
         }
       });
     } catch (error) {
       if (isCurrentThreadRuntime(generation, activeThreadService)) {
-        setSkillMarketUseError({
-          skillId,
-          error: getRuntimeErrorMessage(error, '创建对话失败，请重试')
-        });
+        input.onError(getRuntimeErrorMessage(error, '创建对话失败，请重试'));
       }
     } finally {
       if (isCurrentThreadRuntime(generation, activeThreadService)) {
@@ -3821,9 +4246,20 @@ export function AppController(props: AppControllerProps) {
         navigateToRoute(routeForConversation(state.selectedThreadId));
       }}
     />
+  ) : state.activeView === 'account' ? (
+    <EnterpriseAccountPage
+      connected={connectionState.status === 'connected'}
+      session={enterpriseSession}
+      checkingTimedOut={enterpriseCheckingTimedOut}
+      onLogin={loginEnterprise}
+      onRegister={registerEnterprise}
+      onLogout={logoutEnterprise}
+      onRefresh={refreshEnterpriseSession}
+    />
   ) : state.activeView === 'plugins' ? (
     <PluginsPage
       connected={connectionState.status === 'connected'}
+      source={activePluginSource}
       skills={codexSkills}
       installRecords={skillMarketInstallRecords}
       loading={skillMarketLoading}
@@ -3835,6 +4271,37 @@ export function AppController(props: AppControllerProps) {
       onInstall={skillId => void installMarketSkill(skillId)}
       onUpdate={skillId => void updateMarketSkill(skillId)}
       onUse={(skillId, projectId) => void useMarketSkill(skillId, projectId)}
+      onSourceChange={source => {
+        navigateToRoute(
+          source === 'enterprise'
+            ? { view: 'plugins', source: 'enterprise' }
+            : { view: 'plugins' }
+        );
+      }}
+      enterprise={{
+        connected: connectionState.status === 'connected',
+        session: enterpriseSession,
+        skills: enterpriseSkills,
+        loading: enterpriseSkillsLoading,
+        loadError: enterpriseSkillsLoadError,
+        operation: enterpriseSkillOperation,
+        useError: enterpriseSkillUseError,
+        projects,
+        currentProjectId: currentProject?.id ?? '',
+        onOpenAccount: () => {
+          enterpriseReturnRouteRef.current = {
+            view: 'plugins',
+            source: 'enterprise'
+          };
+          dispatch({ type: 'set_active_view', activeView: 'account' });
+          navigateToRoute({ view: 'account' });
+        },
+        onRefresh: refreshEnterpriseHub,
+        onLoadDetail: loadEnterpriseSkillDetail,
+        onInstall: skillId => void installEnterpriseSkill(skillId),
+        onUpdate: skillId => void updateEnterpriseSkill(skillId),
+        onUse: (skill, projectId) => void useEnterpriseSkill(skill, projectId)
+      }}
     />
   ) : state.activeView === 'conversation' ? (
     conversationWorkspace
@@ -3864,11 +4331,18 @@ export function AppController(props: AppControllerProps) {
           collapsed={effectiveSidebarCollapsed}
           autoCollapsed={sidebarAutoCollapsed}
           colorMode={colorMode}
+          enterpriseSession={enterpriseSession}
           onNewConversation={projectId => startNewConversation({ projectId })}
           onSelectProject={selectProject}
           onSelectConversation={selectConversation}
           onSelectTask={selectSidebarTask}
           onOpenView={openPrimaryView}
+          onOpenAccount={() => {
+            enterpriseReturnRouteRef.current = undefined;
+            closeMobileSidebar();
+            dispatch({ type: 'set_active_view', activeView: 'account' });
+            navigateToRoute({ view: 'account' });
+          }}
           onAddProject={
             projectService === null
               ? undefined
@@ -4062,6 +4536,7 @@ function createInitialState(
     case 'schedules':
     case 'tasks':
     case 'plugins':
+    case 'account':
     case 'settings':
       return {
         ...persistedState,
@@ -4094,6 +4569,8 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
       return { view: 'tasks' };
     case 'plugins':
       return { view: 'plugins' };
+    case 'account':
+      return { view: 'account' };
     case 'settings':
       return { view: 'settings' };
     case 'files':
@@ -4116,6 +4593,65 @@ function PageLoading() {
       <span>正在加载页面...</span>
     </section>
   );
+}
+
+export async function pollEnterpriseSessionUntilSettled(input: {
+  readSession(): Promise<EnterpriseSessionResponse>;
+  onSession(response: EnterpriseSessionResponse): void;
+  onTimeout(): void;
+  onError(error: unknown): void;
+  signal?: AbortSignal;
+  now?: () => number;
+  wait?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
+  timeoutMs?: number;
+  intervalMs?: number;
+}): Promise<void> {
+  const now = input.now ?? Date.now;
+  const wait = input.wait ?? waitForEnterprisePoll;
+  const timeoutMs = input.timeoutMs ?? 15_000;
+  const intervalMs = input.intervalMs ?? 250;
+  const startedAt = now();
+  const isAborted = () => input.signal?.aborted === true;
+
+  while (!isAborted()) {
+    let response: EnterpriseSessionResponse;
+    try {
+      response = await input.readSession();
+    } catch (error) {
+      if (!isAborted()) input.onError(error);
+      return;
+    }
+    if (isAborted()) return;
+
+    input.onSession(response);
+    if (response.status !== 'checking') return;
+
+    const elapsed = now() - startedAt;
+    if (elapsed >= timeoutMs) {
+      input.onTimeout();
+      return;
+    }
+    await wait(Math.min(intervalMs, timeoutMs - elapsed), input.signal);
+  }
+}
+
+function waitForEnterprisePoll(
+  delayMs: number,
+  signal?: AbortSignal
+): Promise<void> {
+  return new Promise(resolve => {
+    if (signal?.aborted === true) {
+      resolve();
+      return;
+    }
+    const finish = () => {
+      window.clearTimeout(timerId);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timerId = window.setTimeout(finish, delayMs);
+    signal?.addEventListener('abort', finish, { once: true });
+  });
 }
 
 function getConnectionStatusLabel(connectionState: ConnectionState) {
@@ -4343,6 +4879,42 @@ export function formatRelativeTime(iso: string): string {
 function getRuntimeErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim().length > 0) return error.message;
   return fallback;
+}
+
+function isEnterpriseUnauthorized(error: unknown): boolean {
+  return error instanceof ApiClientError
+    && (
+      error.status === 401
+      || error.code === 'ENTERPRISE_UNAUTHORIZED'
+      || error.code === 'ENTERPRISE_SESSION_EXPIRED'
+    );
+}
+
+function formatEnterpriseSkillError(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
+  switch (error.code) {
+    case 'ENTERPRISE_FORBIDDEN':
+      return '当前账户没有企业 Skill Hub 访问权限';
+    case 'ENTERPRISE_SKILL_NOT_FOUND':
+      return '该企业 Skill 已下架或不存在';
+    case 'ENTERPRISE_SKILL_VERSION_CHANGED':
+      return '企业 Skill 版本已变化，请刷新后重试';
+    case 'ENTERPRISE_SKILL_SOURCE_CONFLICT':
+      return '本地同名 Skill 已由其他来源占用';
+    case 'ENTERPRISE_SKILL_LOCAL_CHANGED':
+      return '本地 Skill 已被修改，无法自动覆盖';
+    case 'ENTERPRISE_SKILL_PACKAGE_INVALID':
+    case 'ENTERPRISE_SKILL_PACKAGE_HASH_MISMATCH':
+      return '企业 Skill 包校验失败';
+    case 'ENTERPRISE_SKILL_PACKAGE_TOO_LARGE':
+      return '企业 Skill 包超过允许大小';
+    case 'ENTERPRISE_RATE_LIMITED':
+      return '企业服务请求过于频繁，请稍后重试';
+    case 'ENTERPRISE_SERVICE_UNAVAILABLE':
+      return '企业 Skill Hub 暂时不可用';
+    default:
+      return error.message.trim().length > 0 ? error.message : fallback;
+  }
 }
 
 function buildThreadRequest(

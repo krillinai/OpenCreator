@@ -22,6 +22,9 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import {
+  assertKeyringArtifacts
+} from './enterprise-package-contract-2026-07-30.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
@@ -33,6 +36,10 @@ const manifest = readBuildManifest(manifestPath);
 const targetArch = process.env.CLAWEE_DESKTOP_TARGET_ARCH
   ?? manifest.arch
   ?? process.arch;
+const targetPlatform = process.env.CLAWEE_DESKTOP_TARGET_PLATFORM
+  ?? manifest.platform
+  ?? process.platform;
+const targetLibc = process.env.CLAWEE_DESKTOP_TARGET_LIBC;
 const packageRoot = process.env.CLAWEE_DESKTOP_PACKAGE_ROOT
   ? resolve(process.env.CLAWEE_DESKTOP_PACKAGE_ROOT)
   : resolve(manifest.packageRoot);
@@ -56,6 +63,11 @@ assertExists(join(
   'better_sqlite3.node'
 ));
 assertExists(join(webDir, 'index.html'));
+const keyring = assertKeyringArtifacts(daemonDir, {
+  platform: targetPlatform,
+  arch: targetArch,
+  ...(targetLibc === undefined ? {} : { linuxLibc: targetLibc })
+});
 
 assertAsarContents();
 assertBrandingContents();
@@ -73,6 +85,8 @@ console.log(JSON.stringify({
   packageRoot,
   packageBytes: treeSize(packageRoot),
   daemonBytes: treeSize(daemonDir),
+  keyringPackage: keyring.packageName,
+  keyringNativeFile: keyring.nativeFile,
   fuses: 'verified',
   privacy: 'verified'
 }));

@@ -1,5 +1,5 @@
 import type { DiagnosticFileResponse } from '@clawee/protocol';
-import { redactText } from '../security/redaction.js';
+import { redactText, redactValue } from '../security/redaction.js';
 
 export const DIAGNOSTICS_REDACTION_WARNING =
   'Diagnostics are redacted on a best-effort basis.';
@@ -8,8 +8,12 @@ export function redactDiagnosticContent(content: string): string {
   const secretRedacted = redactText(content);
   const parsedDocument = parseJson(secretRedacted);
   if (parsedDocument.ok) {
-    const redactedDocument = redactPromptFields(parsedDocument.value);
-    return redactedDocument.changed
+    const secretFieldsRedacted = redactValue(parsedDocument.value);
+    const redactedDocument = redactPromptFields(secretFieldsRedacted);
+    const changed =
+      redactedDocument.changed ||
+      JSON.stringify(secretFieldsRedacted) !== JSON.stringify(parsedDocument.value);
+    return changed
       ? JSON.stringify(redactedDocument.value, null, 2)
       : secretRedacted;
   }
@@ -19,8 +23,12 @@ export function redactDiagnosticContent(content: string): string {
     .map(line => {
       const parsedLine = parseJson(line);
       if (!parsedLine.ok) return line;
-      const redactedLine = redactPromptFields(parsedLine.value);
-      return redactedLine.changed ? JSON.stringify(redactedLine.value) : line;
+      const secretFieldsRedacted = redactValue(parsedLine.value);
+      const redactedLine = redactPromptFields(secretFieldsRedacted);
+      const changed =
+        redactedLine.changed ||
+        JSON.stringify(secretFieldsRedacted) !== JSON.stringify(parsedLine.value);
+      return changed ? JSON.stringify(redactedLine.value) : line;
     })
     .join('\n');
 }

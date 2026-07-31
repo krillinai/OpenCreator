@@ -719,6 +719,91 @@ export type CodexSkillOperationResponse = {
   createdAt: string;
 };
 
+export type EnterpriseSessionStatus =
+  | 'signed_out'
+  | 'checking'
+  | 'signed_in'
+  | 'service_unavailable';
+
+export type EnterpriseSessionReason =
+  | 'session_expired'
+  | 'account_inactive'
+  | 'frontend_forbidden'
+  | 'secure_storage_unavailable'
+  | 'service_unavailable';
+
+export type EnterpriseTransportSecurity =
+  | 'insecure_http'
+  | 'secure_https';
+
+export type EnterpriseAccountSummary = {
+  email: string;
+  name: string;
+};
+
+export type EnterpriseSessionResponse = {
+  status: EnterpriseSessionStatus;
+  account?: EnterpriseAccountSummary;
+  expiresAt?: string;
+  reason?: EnterpriseSessionReason;
+  transportSecurity: EnterpriseTransportSecurity;
+};
+
+export type EnterpriseLoginRequest = {
+  email: string;
+  password: string;
+};
+
+export type EnterpriseRegisterRequest = {
+  email: string;
+  name?: string;
+  password: string;
+};
+
+export type EnterpriseSkillStatus =
+  | 'not_installed'
+  | 'invalid'
+  | 'installed_unknown_source'
+  | 'name_conflict'
+  | 'installed'
+  | 'update_available'
+  | 'unpublished';
+
+export type EnterpriseSkillIntegrity =
+  | 'not_applicable'
+  | 'verified'
+  | 'local_changed'
+  | 'unknown';
+
+export type EnterpriseSkillAction = 'install' | 'update' | 'use';
+
+export type EnterpriseSkillResponse = {
+  skillId: string;
+  name: string;
+  description?: string;
+  version?: string;
+  installedVersion?: string;
+  updatedAt?: string;
+  status: EnterpriseSkillStatus;
+  integrity: EnterpriseSkillIntegrity;
+  actions: EnterpriseSkillAction[];
+};
+
+export type EnterpriseSkillListResponse = {
+  skills: EnterpriseSkillResponse[];
+  refreshedAt: string;
+};
+
+export type EnterpriseSkillDetailResponse = EnterpriseSkillResponse & {
+  changelog?: string;
+};
+
+export type EnterpriseSkillMutationResponse = {
+  skill: EnterpriseSkillResponse;
+  localSkill: CodexSkillResponse;
+  operation: CodexSkillOperationResponse;
+};
+
 export type CodexSkillOperationListResponse = {
   operations: CodexSkillOperationResponse[];
 };

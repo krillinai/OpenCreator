@@ -818,6 +818,16 @@ describe('Composer', () => {
   });
 
   it('typing slash shows only skills and inserts the selected command', async () => {
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let nextRafId = 0;
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      nextRafId += 1;
+      callbacks.set(nextRafId, callback);
+      return nextRafId;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      callbacks.delete(id);
+    });
     const user = userEvent.setup();
     render(
       <Composer
@@ -863,7 +873,12 @@ describe('Composer', () => {
 
     expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
     expect(textbox).toHaveValue('');
-    await user.type(textbox, '整理需求');
+    expect(callbacks.size).toBe(1);
+    await user.type(textbox, '整');
+    act(() => {
+      Array.from(callbacks.values())[0]!(16);
+    });
+    await user.type(textbox, '理需求');
     expect(textbox).toHaveValue('整理需求');
     expect(screen.queryByRole('listbox', { name: '能力菜单' })).not.toBeInTheDocument();
   });

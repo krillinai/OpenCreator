@@ -84,7 +84,8 @@ describe('app CSS visual contracts', () => {
     const projectRow = cssBlock('.project-row');
     const currentProjectIcon = cssBlock('.project-row[data-current-project="true"] .project-icon');
     const selectedConversationRow = cssBlock('.nested-conversation-row[aria-current="page"]');
-    const settingsButton = cssBlock('.settings-button');
+    const accountButton = cssBlock('.sidebar-account-button');
+    const settingsButton = cssBlock('.sidebar-settings-button');
 
     expect(projectTree).toContain('align-content: start;');
     expect(projectTree).toContain('grid-auto-rows: max-content;');
@@ -98,8 +99,12 @@ describe('app CSS visual contracts', () => {
     expect(currentProjectIcon).toContain('color: var(--accent);');
     expect(selectedConversationRow).toContain('background: var(--accent-soft);');
     expect(selectedConversationRow).not.toContain('border-color');
-    expect(settingsButton).toContain('gap: 4px;');
-    expect(settingsButton).toContain('padding: 0 6px;');
+    expect(accountButton).toContain('height: 42px;');
+    expect(accountButton).toContain('gap: 7px;');
+    expect(accountButton).toContain('padding: 0 6px;');
+    expect(settingsButton).toContain('width: 36px;');
+    expect(settingsButton).toContain('height: 36px;');
+    expect(settingsButton).toContain('padding: 0;');
   });
 
   it('keeps the conversation run indicator compact and motion-aware', () => {

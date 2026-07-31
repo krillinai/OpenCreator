@@ -41,6 +41,8 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
     dataDir: string;
     defaultProjectRoot: string;
     development: boolean;
+    enterpriseOrigin?: string;
+    enterpriseE2ERunId?: string;
   }) {
     super();
     input.daemon.on('bootstrap', event => {
@@ -289,7 +291,13 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       defaultCwd: environment.defaultCwd,
       defaultProjectRoot: this.input.defaultProjectRoot,
       requireProbe,
-      probeVerified
+      probeVerified,
+      ...(this.input.enterpriseOrigin === undefined
+        ? {}
+        : { enterpriseOrigin: this.input.enterpriseOrigin }),
+      ...(this.input.enterpriseE2ERunId === undefined
+        ? {}
+        : { enterpriseE2ERunId: this.input.enterpriseE2ERunId })
     };
   }
 

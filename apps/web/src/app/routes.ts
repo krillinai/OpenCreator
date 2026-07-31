@@ -4,7 +4,8 @@ export type AppRoute =
   | { view: 'search' }
   | { view: 'schedules'; scheduleId?: string }
   | { view: 'tasks' }
-  | { view: 'plugins' }
+  | { view: 'plugins'; source?: 'enterprise' }
+  | { view: 'account' }
   | { view: 'capabilities' }
   | { view: 'settings' }
   | { view: 'files'; threadId?: string; path?: string };
@@ -32,7 +33,13 @@ export function parseRoute(hash: string): AppRoute {
     };
   }
   if (path === '#/tasks') return { view: 'tasks' };
-  if (path === '#/plugins') return { view: 'plugins' };
+  if (path === '#/plugins') {
+    const fields = parseQuery(query);
+    return fields.source === 'enterprise'
+      ? { view: 'plugins', source: 'enterprise' }
+      : { view: 'plugins' };
+  }
+  if (path === '#/account') return { view: 'account' };
   if (path === '#/capabilities') return { view: 'capabilities' };
   if (path === '#/settings') return { view: 'settings' };
   if (path === '#/files') {
@@ -69,7 +76,11 @@ export function formatRoute(route: AppRoute): string {
     case 'tasks':
       return '#/tasks';
     case 'plugins':
-      return '#/plugins';
+      return route.source === 'enterprise'
+        ? '#/plugins?source=enterprise'
+        : '#/plugins';
+    case 'account':
+      return '#/account';
     case 'capabilities':
       return '#/capabilities';
     case 'settings':
@@ -90,6 +101,7 @@ function parseQuery(query: string): {
   runId?: string;
   approvalId?: string;
   scheduleId?: string;
+  source?: 'enterprise';
 } {
   const fields: {
     threadId?: string;
@@ -97,6 +109,7 @@ function parseQuery(query: string): {
     runId?: string;
     approvalId?: string;
     scheduleId?: string;
+    source?: 'enterprise';
   } = {};
   for (const pair of query.split('&')) {
     if (pair.length === 0) continue;
@@ -109,6 +122,7 @@ function parseQuery(query: string): {
     if (key === 'runId') fields.runId = value;
     if (key === 'approvalId') fields.approvalId = value;
     if (key === 'scheduleId') fields.scheduleId = value;
+    if (key === 'source' && value === 'enterprise') fields.source = value;
   }
   return fields;
 }

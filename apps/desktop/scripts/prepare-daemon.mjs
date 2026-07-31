@@ -8,13 +8,19 @@ import {
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  assertKeyringArtifacts
+} from './enterprise-package-contract-2026-07-30.mjs';
 import { runStage } from './script-utils.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
 const rootDir = resolve(desktopDir, '../..');
 const targetDir = resolve(desktopDir, '.pack/daemon');
+const targetPlatform =
+  process.env.CLAWEE_DESKTOP_TARGET_PLATFORM ?? process.platform;
 const targetArch = process.env.CLAWEE_DESKTOP_TARGET_ARCH ?? process.arch;
+const targetLibc = process.env.CLAWEE_DESKTOP_TARGET_LIBC;
 const cacheDir = resolve(
   process.env.CLAWEE_DESKTOP_CACHE_DIR
     ?? resolve(desktopDir, '.cache')
@@ -85,6 +91,15 @@ pruneDevelopmentArtifacts(targetDir);
 
 assertExists(resolve(targetDir, 'dist/main.js'));
 assertExists(resolve(targetDir, 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'));
+const keyring = assertKeyringArtifacts(targetDir, {
+  platform: targetPlatform,
+  arch: targetArch,
+  ...(targetLibc === undefined ? {} : { linuxLibc: targetLibc })
+});
+console.log(
+  `[desktop-package] Keyring 原生模块：`
+  + `${keyring.packageName}/${keyring.nativeFile}`
+);
 assertCleanDeployment();
 
 function assertExists(path) {

@@ -27,6 +27,7 @@ import {
   resolveProductionServerEnvironment
 } from './startup.js';
 import { acquireRuntimeLock } from './runtime-lock.js';
+import { createSystemEnterpriseCredentialStore } from './enterprise/credential-store-2026-07-30.js';
 
 type BootstrapPhase = 'starting_runtime';
 
@@ -90,6 +91,9 @@ async function main(): Promise<void> {
   server = await buildServer(createProductionServerInput({
     token,
     capabilities,
+    enterpriseCredentialStore: createSystemEnterpriseCredentialStore({
+      e2eRunId: environment.enterpriseE2ERunId
+    }),
     getCodexAvailabilityProbe: () => availabilityProbe,
     persistentAppServerEnabled:
       process.env.CLAWEE_PERSISTENT_APP_SERVER !== '0',

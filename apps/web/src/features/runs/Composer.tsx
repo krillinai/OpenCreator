@@ -188,6 +188,7 @@ export function Composer(props: {
   const nextAttachmentIdRef = useRef(0);
   const scheduledDraftIdRef = useRef<number>();
   const appliedDraftIdRef = useRef<number>();
+  const promptRevisionRef = useRef(0);
   const trimmedPrompt = prompt.trim();
   const activeFloatingMenu = openMenu ?? (slashTrigger === null ? null : 'slash');
 
@@ -259,6 +260,7 @@ export function Composer(props: {
     if (scheduledDraftIdRef.current === draftRequest.id) return;
 
     scheduledDraftIdRef.current = draftRequest.id;
+    promptRevisionRef.current += 1;
     setPrompt(draftRequest.text);
     setSlashTrigger(null);
     setOpenMenu(null);
@@ -358,6 +360,7 @@ export function Composer(props: {
       setSubmitting(false);
     }
     if (accepted === false) return;
+    promptRevisionRef.current += 1;
     setPrompt('');
     setSlashTrigger(null);
     attachmentDraftsRef.current = [];
@@ -389,6 +392,7 @@ export function Composer(props: {
   }, [filteredSlashCommands.length, slashTrigger?.activeIndex]);
 
   const updatePrompt = (value: string, caret: number) => {
+    promptRevisionRef.current += 1;
     setPrompt(value);
     const nextTrigger = props.disabled ? null : findSlashTrigger(value, caret);
     setSlashTrigger(nextTrigger);
@@ -443,11 +447,14 @@ export function Composer(props: {
 
     const nextPrompt = `${prompt.slice(0, slashTrigger.start)}${command.insertText}${prompt.slice(slashTrigger.end)}`;
     const nextCaret = slashTrigger.start + command.insertText.length;
+    promptRevisionRef.current += 1;
+    const caretRevision = promptRevisionRef.current;
     setPrompt(nextPrompt);
     setSlashTrigger(null);
     setOpenMenu(null);
 
     window.requestAnimationFrame(() => {
+      if (promptRevisionRef.current !== caretRevision) return;
       const leadingCommand = findLeadingSkillCommand(nextPrompt, slashCommands);
       const visibleCaret = Math.max(
         0,
@@ -498,6 +505,7 @@ export function Composer(props: {
       && event.currentTarget.selectionEnd === 0
     ) {
       event.preventDefault();
+      promptRevisionRef.current += 1;
       setPrompt(visiblePrompt);
       return;
     }

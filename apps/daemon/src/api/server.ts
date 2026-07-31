@@ -68,6 +68,21 @@ import { createTaskService } from '../tasks/service.js';
 import { createDefaultRevealExecutor } from '../workspace-files/reveal.js';
 import { createWorkspaceFileService } from '../workspace-files/service.js';
 import { prepareSchedulerStartup } from '../startup.js';
+import type { EnterpriseCredentialStore } from '../enterprise/credential-store-2026-07-30.js';
+import {
+  EnterpriseCredentialStoreError
+} from '../enterprise/credential-store-2026-07-30.js';
+import {
+  createEnterpriseHttpClient,
+  type EnterpriseHttpClient
+} from '../enterprise/http-client-2026-07-30.js';
+import { resolveEnterpriseOrigin } from '../enterprise/config-2026-07-30.js';
+import { createEnterpriseSessionManager } from '../enterprise/session-manager-2026-07-30.js';
+import { createEnterpriseInstallRecordRepository } from '../enterprise/install-records-2026-07-30.js';
+import {
+  createEnterpriseSkillManager,
+  type EnterpriseSkillManager
+} from '../enterprise/skill-manager-2026-07-30.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerAttachmentRoutes } from './routes.attachments.js';
@@ -88,6 +103,7 @@ import { registerSkillRoutes } from './routes.skills.js';
 import { registerTaskRoutes } from './routes.tasks.js';
 import { registerThreadRoutes } from './routes.threads.js';
 import { registerWorkspaceFileRoutes } from './routes.workspace-files.js';
+import { registerEnterpriseRoutes } from './routes.enterprise-2026-07-30.js';
 
 export type BuildServerInput = {
   token: string;
@@ -118,6 +134,11 @@ export type BuildServerInput = {
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
   allowedWebOrigins?: string[];
+  enterpriseCredentialStore?: EnterpriseCredentialStore;
+  enterpriseHttpClient?: EnterpriseHttpClient;
+  enterpriseOrigin?: string;
+  enterpriseE2ERunId?: string;
+  enterpriseSkillManager?: EnterpriseSkillManager;
 };
 
 const ATTACHMENT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
@@ -140,6 +161,17 @@ export async function buildServer(input: BuildServerInput) {
   });
   const auth = requireAuth(input.token);
   const dataDir = input.dataDir ?? '.runtime';
+  const enterpriseOrigin = resolveEnterpriseOrigin(input.enterpriseOrigin);
+  const enterpriseHttpClient =
+    input.enterpriseHttpClient ??
+    createEnterpriseHttpClient({ origin: enterpriseOrigin.origin });
+  const enterpriseSessionManager = createEnterpriseSessionManager({
+    credentialStore:
+      input.enterpriseCredentialStore ?? createUnavailableCredentialStore(),
+    httpClient: enterpriseHttpClient,
+    transportSecurity: enterpriseOrigin.transportSecurity
+  });
+  enterpriseSessionManager.startRestore();
   const codexBin = input.codexBin ?? 'codex';
   const defaultCwd = input.defaultCwd ?? process.cwd();
   const resolvedCodexHome =
@@ -186,6 +218,18 @@ export async function buildServer(input: BuildServerInput) {
     sourceInstaller:
       input.skillMarketSourceInstaller ?? createCodexSkillSourceInstaller({ codexHome })
   });
+  const enterpriseInstallRecords =
+    createEnterpriseInstallRecordRepository(db);
+  const enterpriseSkillManager =
+    input.enterpriseSkillManager ??
+    createEnterpriseSkillManager({
+      dataDir,
+      sessionManager: enterpriseSessionManager,
+      httpClient: enterpriseHttpClient,
+      skillManager,
+      publicRecords: skillMarketRecords,
+      records: enterpriseInstallRecords
+    });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const notificationService = createNotificationService({ db });
   const approvalManager = input.approvalManager ?? createApprovalManager({ db });
@@ -325,6 +369,7 @@ export async function buildServer(input: BuildServerInput) {
     };
 
     await capture(() => clearInterval(attachmentCleanupTimer));
+    await capture(() => enterpriseSessionManager.close());
     await capture(() => unsubscribeApprovalNotifications());
     await capture(() => scheduler.stop());
     await capture(() => runManager.close());
@@ -351,6 +396,10 @@ export async function buildServer(input: BuildServerInput) {
     codexHome: resolvedCodexHome,
     capabilities,
     getAvailabilityProbe: input.getCodexAvailabilityProbe
+  });
+  await registerEnterpriseRoutes(server, {
+    sessionManager: enterpriseSessionManager,
+    skillManager: enterpriseSkillManager
   });
   await registerProfileRoutes(server, {
     codexHome: resolvedCodexHome,
@@ -438,6 +487,20 @@ export async function buildServer(input: BuildServerInput) {
 
   if (input.schedulerAutostart === true) scheduler.start();
   return server;
+}
+
+function createUnavailableCredentialStore(): EnterpriseCredentialStore {
+  return {
+    async read() {
+      return undefined;
+    },
+    async write() {
+      throw new EnterpriseCredentialStoreError('write');
+    },
+    async delete() {
+      throw new EnterpriseCredentialStoreError('delete');
+    }
+  };
 }
 
 async function readAllCodexHistory(

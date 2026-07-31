@@ -11,7 +11,10 @@ import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  assertEnterpriseReleaseTransport
+} from './enterprise-package-contract-2026-07-30.mjs';
 import { runStage } from './script-utils.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -63,6 +66,11 @@ await runStage('准备打包 Daemon 与 Web', process.execPath, [
   env,
   timeoutMs: 25 * 60_000
 });
+const enterpriseRelease = await readEnterpriseReleaseConfiguration(mode);
+console.log(
+  `[desktop-package] 企业服务传输：`
+  + `${enterpriseRelease.transportSecurity} ${enterpriseRelease.origin}`
+);
 
 const candidates = packageRootCandidates(platform, arch);
 for (const path of candidates) rmSync(path, { recursive: true, force: true });
@@ -89,6 +97,8 @@ const manifest = {
   platform,
   arch,
   mode,
+  enterpriseOrigin: enterpriseRelease.origin,
+  enterpriseTransportSecurity: enterpriseRelease.transportSecurity,
   packageRoot,
   packageRootRelative: relative(rootDir, packageRoot),
   webBuildHash: webBuild.hash,
@@ -247,6 +257,34 @@ function gitOutput(args) {
 
 function hasValue(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+async function readEnterpriseReleaseConfiguration(packageMode) {
+  const configPath = resolve(
+    desktopDir,
+    '.pack',
+    'daemon',
+    'dist',
+    'enterprise',
+    'config-2026-07-30.js'
+  );
+  if (!existsSync(configPath)) {
+    throw new Error(
+      `Packaged Daemon enterprise configuration is missing: ${configPath}`
+    );
+  }
+  const module = await import(
+    `${pathToFileURL(configPath).href}?build=${Date.now()}`
+  );
+  if (typeof module.DEFAULT_ENTERPRISE_ORIGIN !== 'string') {
+    throw new Error(
+      'Packaged Daemon DEFAULT_ENTERPRISE_ORIGIN is missing'
+    );
+  }
+  return assertEnterpriseReleaseTransport({
+    mode: packageMode,
+    origin: module.DEFAULT_ENTERPRISE_ORIGIN
+  });
 }
 
 function defaultElectronCache() {

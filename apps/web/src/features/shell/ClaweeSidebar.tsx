@@ -1,3 +1,4 @@
+import type { EnterpriseSessionResponse } from '@clawee/protocol';
 import { useEffect, useRef, useState } from 'react';
 import {
   Archive,
@@ -21,6 +22,7 @@ import {
   SquarePen,
   Trash2,
   TriangleAlert,
+  UserRound,
   type LucideIcon
 } from 'lucide-react';
 import type { ActiveView } from '../../app/app-state.js';
@@ -45,11 +47,13 @@ export function ClaweeSidebar(props: {
   collapsed?: boolean;
   autoCollapsed?: boolean;
   colorMode?: ColorMode;
+  enterpriseSession?: EnterpriseSessionResponse;
   onNewConversation(projectId?: string): void;
   onSelectProject(projectId: string): void;
   onSelectConversation(conversationId: string): void;
   onSelectTask(threadId: string): void;
   onOpenView(view: ActiveView): void;
+  onOpenAccount(): void;
   onOpenSettings(): void;
   onToggleCollapsed(): void;
   onAddProject?(): void;
@@ -67,6 +71,11 @@ export function ClaweeSidebar(props: {
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const collapsed = props.collapsed === true;
   const autoCollapsed = props.autoCollapsed === true;
+  const account = props.enterpriseSession?.account;
+  const accountTitle = account?.name ?? '企业账户';
+  const accountLabel = account === undefined
+    ? '企业账户'
+    : `${account.name} ${account.email}`;
   const fullLogoSrc = props.colorMode === 'light' ? '/logo-v2-black.svg' : '/logo-v2-white.svg';
   const globalActions: Array<{
     label: string;
@@ -474,16 +483,30 @@ export function ClaweeSidebar(props: {
 
       <div className="sidebar-bottom">
         <button
-          className="settings-button"
+          className="sidebar-account-button"
           type="button"
-          aria-label="设置 账户"
-          title={collapsed ? '设置' : undefined}
+          aria-label={accountLabel}
+          aria-current={props.activeView === 'account' ? 'page' : undefined}
+          title={collapsed ? accountTitle : undefined}
+          onClick={props.onOpenAccount}
+        >
+          <span className="sidebar-account-avatar" aria-hidden="true">
+            <UserRound size={16} strokeWidth={2} />
+          </span>
+          <span className="sidebar-account-copy">
+            <strong>{accountTitle}</strong>
+            {account === undefined ? null : <small>{account.email}</small>}
+          </span>
+        </button>
+        <button
+          className="sidebar-settings-button"
+          type="button"
+          aria-label="设置"
+          aria-current={props.activeView === 'settings' ? 'page' : undefined}
+          title="设置"
           onClick={props.onOpenSettings}
         >
-          <span className="settings-avatar" aria-hidden="true">
-            <Settings size={16} strokeWidth={2} />
-          </span>
-          <span>设置</span>
+          <Settings size={17} strokeWidth={2} aria-hidden="true" />
         </button>
       </div>
     </nav>

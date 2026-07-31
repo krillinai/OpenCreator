@@ -22,6 +22,9 @@ import {
   findDeepLink
 } from './deep-link-manager.js';
 import { exportDesktopDiagnostics } from './diagnostics.js';
+import {
+  resolveDesktopEnterpriseLaunchConfig
+} from './enterprise-launch-config-2026-07-30.js';
 import { createDesktopLogger } from './logger.js';
 import {
   openExternal,
@@ -60,6 +63,10 @@ if (!hasSingleInstanceLock) {
 }
 
 async function launchDesktop(): Promise<void> {
+  const enterpriseLaunchConfig = resolveDesktopEnterpriseLaunchConfig(
+    process.argv,
+    process.env
+  );
   const pendingRoutes: string[] = [];
   let windowManager: WindowManager | undefined;
   let bootstrap: BootstrapController | undefined;
@@ -130,7 +137,8 @@ async function launchDesktop(): Promise<void> {
     daemonEntryPath,
     dataDir,
     defaultProjectRoot,
-    development
+    development,
+    ...enterpriseLaunchConfig
   });
   windowManager = new WindowManager({
     preloadPath,

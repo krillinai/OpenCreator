@@ -75,4 +75,39 @@ describe('daemon production startup', () => {
       codexHome: '/tmp/legacy-codex-home'
     });
   });
+
+  it('accepts only an authorized loopback enterprise e2e identity', () => {
+    expect(resolveProductionServerEnvironment({
+      CLAWEE_ENTERPRISE_ORIGIN: 'http://127.0.0.1:1904',
+      CLAWEE_ENTERPRISE_E2E_AUTHORIZED: 'packaged-app',
+      CLAWEE_ENTERPRISE_E2E_RUN_ID: '123e4567-e89b-42d3-a456-426614174000'
+    })).toMatchObject({
+      enterpriseOrigin: 'http://127.0.0.1:1904',
+      enterpriseE2ERunId: '123e4567-e89b-42d3-a456-426614174000'
+    });
+
+    for (const env of [
+      {
+        CLAWEE_ENTERPRISE_ORIGIN: 'http://127.0.0.1:1904',
+        CLAWEE_ENTERPRISE_E2E_RUN_ID: '123e4567-e89b-42d3-a456-426614174000'
+      },
+      {
+        CLAWEE_ENTERPRISE_ORIGIN: 'https://enterprise.example',
+        CLAWEE_ENTERPRISE_E2E_AUTHORIZED: 'packaged-app',
+        CLAWEE_ENTERPRISE_E2E_RUN_ID: '123e4567-e89b-42d3-a456-426614174000'
+      },
+      {
+        CLAWEE_ENTERPRISE_ORIGIN: 'http://localhost:1904',
+        CLAWEE_ENTERPRISE_E2E_AUTHORIZED: 'packaged-app',
+        CLAWEE_ENTERPRISE_E2E_RUN_ID: 'not-a-uuid'
+      },
+      {
+        CLAWEE_ENTERPRISE_KEYRING_SERVICE: 'arbitrary-service'
+      }
+    ]) {
+      expect(() => resolveProductionServerEnvironment(env)).toThrow(
+        'ENTERPRISE_E2E_CONFIG_FORBIDDEN'
+      );
+    }
+  });
 });

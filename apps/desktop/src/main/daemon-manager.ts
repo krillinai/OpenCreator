@@ -32,6 +32,8 @@ export type DaemonStartInput = {
   defaultProjectRoot: string;
   requireProbe: boolean;
   probeVerified: boolean;
+  enterpriseOrigin?: string;
+  enterpriseE2ERunId?: string;
   startupTimeoutMs?: number;
 };
 
@@ -93,16 +95,7 @@ export class DaemonManager extends EventEmitter<DaemonManagerEvents> {
       };
       const child = utilityProcess.fork(input.entryPath, [], {
         cwd: input.cwd,
-        env: {
-          ...input.env,
-          CLAWEE_CODEX_BIN: input.codexBin,
-          CODEX_HOME: input.codexHome,
-          CLAWEE_DATA_DIR: input.dataDir,
-          CLAWEE_DEFAULT_CWD: input.defaultCwd,
-          CLAWEE_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot,
-          CLAWEE_REQUIRE_CODEX_PROBE: input.requireProbe ? '1' : '0',
-          CLAWEE_CODEX_PROBE_VERIFIED: input.probeVerified ? '1' : '0'
-        },
+        env: buildDaemonEnvironment(input),
         serviceName: 'Clawee Runtime',
         stdio: 'pipe'
       });
@@ -269,6 +262,40 @@ export class DaemonManager extends EventEmitter<DaemonManagerEvents> {
     }));
     if (force) this.codexPids.clear();
   }
+}
+
+export function buildDaemonEnvironment(
+  input: DaemonStartInput
+): NodeJS.ProcessEnv {
+  const env = { ...input.env };
+  const enterpriseKeys = new Set([
+    'CLAWEE_ENTERPRISE_ORIGIN',
+    'CLAWEE_ENTERPRISE_E2E_RUN_ID',
+    'CLAWEE_ENTERPRISE_E2E_AUTHORIZED',
+    'CLAWEE_ENTERPRISE_KEYRING_SERVICE',
+    'CLAWEE_ENTERPRISE_KEYRING_ACCOUNT'
+  ]);
+  for (const key of Object.keys(env)) {
+    if (enterpriseKeys.has(key.toUpperCase())) delete env[key];
+  }
+
+  Object.assign(env, {
+    CLAWEE_CODEX_BIN: input.codexBin,
+    CODEX_HOME: input.codexHome,
+    CLAWEE_DATA_DIR: input.dataDir,
+    CLAWEE_DEFAULT_CWD: input.defaultCwd,
+    CLAWEE_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot,
+    CLAWEE_REQUIRE_CODEX_PROBE: input.requireProbe ? '1' : '0',
+    CLAWEE_CODEX_PROBE_VERIFIED: input.probeVerified ? '1' : '0'
+  });
+  if (input.enterpriseOrigin !== undefined) {
+    env.CLAWEE_ENTERPRISE_ORIGIN = input.enterpriseOrigin;
+  }
+  if (input.enterpriseE2ERunId !== undefined) {
+    env.CLAWEE_ENTERPRISE_E2E_RUN_ID = input.enterpriseE2ERunId;
+    env.CLAWEE_ENTERPRISE_E2E_AUTHORIZED = 'packaged-app';
+  }
+  return env;
 }
 
 export type DaemonOutputState = {

@@ -80,6 +80,16 @@ describe('app state', () => {
     expect(state.rightPanelMode).toBe('closed');
   });
 
+  it('opens the enterprise account as a primary view', () => {
+    const state = reduceAppState(initialAppState, {
+      type: 'set_active_view',
+      activeView: 'account'
+    });
+
+    expect(state.activeView).toBe('account');
+    expect(state.rightPanelMode).toBe('closed');
+  });
+
   it('opens the file workspace inside the conversation view and closes other detail panels', () => {
     const state = reduceAppState(
       { ...initialAppState, activeView: 'conversation', rightPanelMode: 'run_detail' },

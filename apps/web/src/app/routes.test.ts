@@ -25,6 +25,7 @@ describe('app routes', () => {
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });
     expect(parseRoute('#/tasks')).toEqual({ view: 'tasks' });
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
+    expect(parseRoute('#/account')).toEqual({ view: 'account' });
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
   });
@@ -37,6 +38,21 @@ describe('app routes', () => {
 
     expect(formatRoute(route)).toBe('#/schedules?scheduleId=schedule+1');
     expect(parseRoute(formatRoute(route))).toEqual(route);
+  });
+
+  it('round-trips the enterprise plugin source', () => {
+    const route = {
+      view: 'plugins' as const,
+      source: 'enterprise' as const
+    };
+
+    expect(formatRoute(route)).toBe('#/plugins?source=enterprise');
+    expect(parseRoute(formatRoute(route))).toEqual(route);
+  });
+
+  it('falls back to the public market for unsupported plugin sources', () => {
+    expect(parseRoute('#/plugins?source=private')).toEqual({ view: 'plugins' });
+    expect(parseRoute('#/plugins?source=%E0%A4%A')).toEqual({ view: 'plugins' });
   });
 
   it('round-trips file routes with thread and workspace paths', () => {
@@ -56,6 +72,7 @@ describe('app routes', () => {
     expect(formatRoute({ view: 'schedules' })).toBe('#/schedules');
     expect(formatRoute({ view: 'tasks' })).toBe('#/tasks');
     expect(formatRoute({ view: 'plugins' })).toBe('#/plugins');
+    expect(formatRoute({ view: 'account' })).toBe('#/account');
     expect(formatRoute({ view: 'settings' })).toBe('#/settings');
     expect(formatRoute({ view: 'capabilities' })).toBe('#/capabilities');
     expect(formatRoute({ view: 'files', path: 'docs/a b.html' }))
