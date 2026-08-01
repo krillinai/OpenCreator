@@ -1,7 +1,7 @@
 import {
-  CheckCircle2,
-  Download,
+  Check,
   Info,
+  Plus,
   RefreshCw,
 } from 'lucide-react';
 import type { MouseEvent } from 'react';
@@ -32,11 +32,11 @@ export function SkillMarketCard({
   onUpdate(skillId: string): void;
   onUse(skillId: string): void;
 }) {
-  const tags = getCardTags(item);
   const actionReasonId =
     action.reason && action.showReason !== false
       ? `skill-market-action-reason-${sanitizeId(item.id)}`
       : undefined;
+  const topAction = action.kind === 'install' || action.kind === 'use';
 
   function handleAction(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -46,6 +46,25 @@ export function SkillMarketCard({
     if (action.kind === 'update') onUpdate(item.id);
     if (action.kind === 'use') onUse(item.id);
   }
+
+  const actionButton = (
+    <button
+      aria-label={topAction ? action.label : undefined}
+      aria-describedby={topAction ? undefined : actionReasonId}
+      className={[
+        'skill-market-action-button',
+        `skill-market-action-button--${action.kind}`,
+        action.showReason === false ? 'skill-market-action-button--quiet-disabled' : '',
+      ].filter(Boolean).join(' ')}
+      disabled={action.disabled}
+      onClick={handleAction}
+      title={action.reason}
+      type="button"
+    >
+      {getActionIcon(action.kind)}
+      {topAction ? null : <span>{action.label}</span>}
+    </button>
+  );
 
   return (
     <article
@@ -65,7 +84,6 @@ export function SkillMarketCard({
             <SkillAuthorAvatar name={item.entry.creator.name} src={item.entry.creator.avatarUrl} />
             <span className="skill-market-card__identity-copy">
               <span className="skill-market-card__title">{item.title}</span>
-              <span className="skill-market-card__author">{item.entry.creator.name}</span>
             </span>
           </span>
 
@@ -75,15 +93,9 @@ export function SkillMarketCard({
         </span>
       </button>
 
-      <div className="skill-market-card__action-row">
-        <span className="skill-market-card__tags" aria-label="标签">
-          {tags.map((tag) => (
-            <span key={tag}>{tag}</span>
-          ))}
-        </span>
-        {item.status === 'installed_unknown_version' ? (
-          <span className="skill-market-version-note">版本未知</span>
-        ) : null}
+      {topAction ? actionButton : null}
+
+      {topAction ? null : <div className="skill-market-card__action-row">
         {actionReasonId ? (
           <span
             className="skill-market-action-reason"
@@ -94,22 +106,8 @@ export function SkillMarketCard({
             <span className="skill-market-visually-hidden">{action.reason}</span>
           </span>
         ) : null}
-        <button
-          aria-describedby={actionReasonId}
-          className={[
-            'skill-market-action-button',
-            `skill-market-action-button--${action.kind}`,
-            action.showReason === false ? 'skill-market-action-button--quiet-disabled' : '',
-          ].filter(Boolean).join(' ')}
-          disabled={action.disabled}
-          onClick={handleAction}
-          title={action.reason}
-          type="button"
-        >
-          {getActionIcon(action.kind)}
-          <span>{action.label}</span>
-        </button>
-      </div>
+        {actionButton}
+      </div>}
 
       {item.operationError ? (
         <p className="skill-market-inline-error" role="alert">
@@ -180,29 +178,8 @@ export function getSkillMarketAction(
 
 function getActionIcon(kind: SkillMarketAction['kind']) {
   if (kind === 'update') return <RefreshCw size={15} aria-hidden="true" />;
-  if (kind === 'use') return <CheckCircle2 size={15} aria-hidden="true" />;
-  return <Download size={15} aria-hidden="true" />;
-}
-
-function getCardTags(item: SkillMarketViewEntry): string[] {
-  const tags: string[] = [];
-  const seen = new Set<string>();
-  const candidates = [
-    item.subcategory,
-    ...item.entry.tasks,
-    ...item.entry.platforms,
-    item.category.name,
-  ];
-
-  for (const candidate of candidates) {
-    const tag = candidate.trim();
-    const key = tag.toLocaleLowerCase();
-    if (tag.length === 0 || seen.has(key)) continue;
-    seen.add(key);
-    tags.push(tag);
-    if (tags.length === 2) break;
-  }
-  return tags;
+  if (kind === 'use') return <Check size={16} aria-hidden="true" />;
+  return <Plus size={16} aria-hidden="true" />;
 }
 
 function sanitizeId(value: string): string {

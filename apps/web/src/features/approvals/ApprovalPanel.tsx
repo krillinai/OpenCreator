@@ -1,5 +1,5 @@
 import type { RuntimeApproval } from '@clawee/protocol';
-import { Check, ShieldAlert, X } from 'lucide-react';
+import { Check, ChevronDown, FilePenLine, ShieldCheck, SquareTerminal, X } from 'lucide-react';
 
 export function ApprovalPanel(props: {
   approval: RuntimeApproval;
@@ -13,20 +13,31 @@ export function ApprovalPanel(props: {
     props.approval.details,
     props.approval.summary
   );
+  const approvalCopy = getApprovalCopy(props.approval.kind);
+  const ApprovalIcon = approvalCopy.icon;
   return (
     <section
       className={`approval-panel approval-${props.approval.risk}`}
       aria-label={props.approval.title}
     >
-      <div className="approval-heading">
-        <ShieldAlert aria-hidden="true" size={18} />
-        <div>
-          <strong>{props.approval.title}</strong>
-          <span>{formatApprovalStatus(props.approval.status)}</span>
-        </div>
+      <div className="approval-context">
+        <ApprovalIcon aria-hidden="true" size={15} />
+        <span>{approvalCopy.source}</span>
       </div>
-      {showSummary ? <p>{props.approval.summary}</p> : null}
-      <ApprovalDetails details={props.approval.details} />
+      <div className="approval-copy">
+        <strong>{approvalCopy.question}</strong>
+        {showSummary ? <p>{props.approval.summary}</p> : null}
+        {!pending ? <span>{formatApprovalStatus(props.approval.status)}</span> : null}
+      </div>
+      {hasApprovalDetails(props.approval.details) ? (
+        <details className="approval-disclosure">
+          <summary>
+            <span>查看操作详情</span>
+            <ChevronDown aria-hidden="true" size={14} />
+          </summary>
+          <ApprovalDetails details={props.approval.details} />
+        </details>
+      ) : null}
       {props.approval.status === 'expired' ? (
         <p className="approval-resolution">
           审批已过期，本次任务不会继续执行。
@@ -39,29 +50,47 @@ export function ApprovalPanel(props: {
       ) : null}
       {props.error ? <p className="inline-error">{props.error}</p> : null}
       {pending ? (
-        <div className="approval-actions">
-          <button
-            type="button"
-            className="approval-reject"
-            disabled={props.resolving}
-            onClick={() => props.onReject(props.approval.id)}
-          >
-            <X aria-hidden="true" size={15} />
-            拒绝
-          </button>
-          <button
-            type="button"
-            className="approval-approve"
-            disabled={props.resolving}
-            onClick={() => props.onApprove(props.approval.id)}
-          >
-            <Check aria-hidden="true" size={15} />
-            批准
-          </button>
+        <div className="approval-footer">
+          <span className="approval-scope">仅本次</span>
+          <div className="approval-actions">
+            <button
+              type="button"
+              className="approval-reject"
+              disabled={props.resolving}
+              onClick={() => props.onReject(props.approval.id)}
+            >
+              <X aria-hidden="true" size={14} />
+              拒绝
+            </button>
+            <button
+              type="button"
+              className="approval-approve"
+              disabled={props.resolving}
+              onClick={() => props.onApprove(props.approval.id)}
+            >
+              <Check aria-hidden="true" size={14} />
+              允许一次
+            </button>
+          </div>
         </div>
       ) : null}
     </section>
   );
+}
+
+function getApprovalCopy(kind: RuntimeApproval['kind']): {
+  source: string;
+  question: string;
+  icon: typeof SquareTerminal;
+} {
+  switch (kind) {
+    case 'command_execution':
+      return { source: '终端', question: '允许 Clawee 执行这条命令？', icon: SquareTerminal };
+    case 'file_change':
+      return { source: '文件', question: '允许 Clawee 修改项目文件？', icon: FilePenLine };
+    case 'permissions':
+      return { source: '权限', question: '允许 Clawee 获取这项权限？', icon: ShieldCheck };
+  }
 }
 
 function approvalDetailsContainSummary(
@@ -94,6 +123,14 @@ function ApprovalDetails(props: { details: Record<string, unknown> }) {
       {host ? <Detail label="网络目标" value={formatNetwork(network!)} code /> : null}
     </dl>
   );
+}
+
+function hasApprovalDetails(details: Record<string, unknown>): boolean {
+  const network = isRecord(details.network) ? details.network : undefined;
+  return stringValue(details.command) !== undefined
+    || stringValue(details.cwd) !== undefined
+    || stringValue(details.grantRoot) !== undefined
+    || stringValue(network?.host) !== undefined;
 }
 
 function Detail(props: { label: string; value: string; code?: boolean }) {

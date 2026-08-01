@@ -1,14 +1,15 @@
 import { Fragment, type MouseEvent, type ReactNode } from 'react';
+import { Blocks } from 'lucide-react';
 
 export type MarkdownVariant = 'assistant' | 'user' | 'process' | 'tool' | 'diagnostic' | 'document';
 export type MarkdownLinkClickHandler = (href: string, event: MouseEvent<HTMLAnchorElement>) => void;
 
 const WORKSPACE_FILE_EXTENSIONS = [
-  'md', 'markdown', 'txt', 'json', 'jsonl', 'yaml', 'yml', 'toml',
-  'js', 'jsx', 'ts', 'tsx', 'css', 'scss', 'html', 'htm', 'xml', 'csv',
+  'markdown', 'md', 'txt', 'jsonl', 'json', 'yaml', 'yml', 'toml',
+  'jsx', 'js', 'tsx', 'ts', 'css', 'scss', 'html', 'htm', 'xml', 'csv',
   'py', 'go', 'rs', 'java', 'kt', 'kts', 'swift', 'c', 'cc', 'cpp', 'h', 'hpp',
   'sh', 'bash', 'zsh', 'sql', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp',
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'mp3', 'wav', 'mp4', 'mov', 'webm'
+  'pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'mp3', 'wav', 'mp4', 'mov', 'webm'
 ].join('|');
 const WORKSPACE_FILE_PATH_SOURCE =
   `(?:~\\/|\\.{1,2}\\/|\\/)?(?:[^\\s\`<>"'()\\[\\]{}，。！？；：,;!?]+\\/)*`
@@ -18,8 +19,45 @@ function createWorkspaceFilePathRegex(flags = 'giu'): RegExp {
   return new RegExp(WORKSPACE_FILE_PATH_SOURCE, flags);
 }
 
+const SKILL_NAME_ACRONYMS = new Set(['ai', 'api', 'aso', 'b2b', 'cso', 'geo', 'gtm', 'icp', 'ltv', 'mcp', 'roi', 'seo']);
+const OFFICIAL_SITE_ICONS: Record<string, string> = {
+  'workbuddy.cn': '/site-icons/workbuddy.svg',
+  'www.workbuddy.cn': '/site-icons/workbuddy.svg'
+};
+
+function formatSkillName(reference: string): string {
+  return reference
+    .slice(1)
+    .split(/[-_.:]+/u)
+    .filter(Boolean)
+    .map(part => (
+      SKILL_NAME_ACRONYMS.has(part.toLowerCase())
+        ? part.toUpperCase()
+        : `${part.charAt(0).toUpperCase()}${part.slice(1)}`
+    ))
+    .join(' ');
+}
+
+function getSiteIconUrl(href: string): string | undefined {
+  if (!/^https?:/iu.test(href)) return undefined;
+  const url = new URL(href);
+  return OFFICIAL_SITE_ICONS[url.hostname.toLowerCase()] ?? `${url.origin}/favicon.ico`;
+}
+
 export function isWorkspaceFilePath(value: string): boolean {
   return new RegExp(`^(?:${WORKSPACE_FILE_PATH_SOURCE})$`, 'iu').test(value.trim());
+}
+
+export function extractWorkspaceFilePaths(text: string): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  for (const match of text.matchAll(createWorkspaceFilePathRegex())) {
+    const path = match[0];
+    if (seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+  }
+  return paths;
 }
 
 export function isSafeHref(href: string, allowRelative: boolean): boolean {
@@ -55,6 +93,7 @@ function renderLink(
     allowRelative: boolean;
     onLinkClick?: MarkdownLinkClickHandler;
     bare?: boolean;
+    siteIcon?: boolean;
     allowWorkspaceFile?: boolean;
   }
 ): ReactNode {
@@ -69,6 +108,7 @@ function renderLink(
     );
   }
   const external = /^(?:https?:|mailto:)/i.test(href);
+  const siteIconUrl = options.siteIcon ? getSiteIconUrl(href) : undefined;
   return (
     <a
       key={key}
@@ -78,7 +118,18 @@ function renderLink(
       rel={external ? 'noreferrer noopener' : undefined}
       onClick={event => options.onLinkClick?.(href, event)}
     >
-      {label}
+      {siteIconUrl ? (
+        <img
+          className="md-link-site-icon"
+          src={siteIconUrl}
+          alt=""
+          aria-hidden="true"
+          onError={event => {
+            event.currentTarget.hidden = true;
+          }}
+        />
+      ) : null}
+      <span className="md-link-label">{label}</span>
     </a>
   );
 }
@@ -126,7 +177,8 @@ function pushTextWithLinks(
             className="md-skill-reference"
             title={`Skill：${reference.slice(1)}`}
           >
-            {reference}
+            <Blocks aria-hidden="true" size={14} strokeWidth={1.8} />
+            <span>{formatSkillName(reference)}</span>
           </span>
         );
         skillLastIndex = skillRe.lastIndex;
@@ -162,7 +214,11 @@ function pushTextWithLinks(
   while ((match = urlRe.exec(text))) {
     if (match.index > lastIndex) pushPlain(text.slice(lastIndex, match.index));
     const [href, suffix] = splitTrailingAutolinkPunctuation(match[1]!);
-    output.push(renderLink(href, href, `${baseKey}-${key++}`, { ...options, bare: true }));
+    output.push(renderLink(href, href, `${baseKey}-${key++}`, {
+      ...options,
+      bare: true,
+      siteIcon: options.linkifySkills
+    }));
     if (suffix) pushPlain(suffix);
     lastIndex = urlRe.lastIndex;
   }
@@ -222,7 +278,12 @@ export function renderInlineMarkdown(
       }));
     } else if (match[6]) {
       const [href, suffix] = splitTrailingAutolinkPunctuation(match[6]);
-      output.push(renderLink(href, href, key++, { allowRelative, onLinkClick: options.onLinkClick, bare: true }));
+      output.push(renderLink(href, href, key++, {
+        allowRelative,
+        onLinkClick: options.onLinkClick,
+        bare: true,
+        siteIcon: userVariant
+      }));
       if (suffix) output.push(<Fragment key={key++}>{suffix}</Fragment>);
     } else if (!userVariant && match[7]) {
       output.push(<strong key={key++}>{match[7].slice(2, -2)}</strong>);

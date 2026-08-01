@@ -86,7 +86,7 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
   const refreshRequests = requests.splice(0);
   expectLoadRequestBudget(refreshRequests, taskThreadIds);
 
-  await page.getByRole('button', { name: '已安排' }).click();
+  await page.getByRole('button', { name: '定时任务' }).click();
   await expect(page.getByRole('heading', { name: '已安排的任务' })).toBeVisible();
   await expect(page.getByRole('button', { name: /^打开任务会话 性能任务/ }))
     .toHaveCount(SCHEDULE_COUNT);

@@ -7,8 +7,8 @@ import type {
   ScheduleResponse,
   UpdateScheduleRequest,
 } from '@clawee/protocol';
-import { ChevronDown, LoaderCircle, Save, X } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { Check, ChevronDown, Clock3, LoaderCircle, Save, X } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { ClaweeProject } from '../projects/project-model.js';
 import {
   cronToScheduleFrequency,
@@ -54,27 +54,20 @@ export function ScheduleEditor(props: {
   onSubmit(values: ScheduleEditorValues): void;
 }) {
   const [values, setValues] = useState(props.initialValues);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     setValues(props.initialValues);
   }, [props.initialValues]);
 
-  const formLabel = props.mode === 'create' ? '创建计划任务' : `编辑${values.name || '计划任务'}`;
-  const projectOptions = props.projects.some(project => project.cwd === values.cwd)
-    ? props.projects
-    : [
-        ...props.projects,
-        {
-          id: `schedule-current-${values.cwd}`,
-          name: values.cwd || '当前项目',
-          cwd: values.cwd,
-          sandbox: 'workspace-write' as const,
-          profile: values.profile,
-          model: values.model || null,
-          reasoning: values.reasoning || null,
-        },
-      ];
+  useEffect(() => {
+    if (props.errors === undefined || Object.keys(props.errors).length === 0) return;
+    const firstInvalidField = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+    firstInvalidField?.focus();
+    firstInvalidField?.scrollIntoView?.({ block: 'center' });
+  }, [props.errors]);
 
+  const formLabel = props.mode === 'create' ? '创建定时任务' : `编辑${values.name || '定时任务'}`;
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     props.onSubmit(values);
@@ -127,9 +120,9 @@ export function ScheduleEditor(props: {
   }
 
   return (
-    <form className="schedule-editor" aria-label={formLabel} onSubmit={submit}>
+    <form ref={formRef} className="schedule-editor" aria-label={formLabel} onSubmit={submit}>
       <header className="schedule-editor__topbar">
-        <strong>{props.mode === 'create' ? '创建计划任务' : '编辑计划任务'}</strong>
+        <strong>{props.mode === 'create' ? '创建定时任务' : '编辑定时任务'}</strong>
         <button
           className="schedule-icon-button schedule-icon-button--plain"
           type="button"
@@ -156,11 +149,14 @@ export function ScheduleEditor(props: {
             ) : null}
 
             <label className="schedule-title-field">
-              <span>已安排任务标题</span>
+              <span>
+                标题
+                <small>必填</small>
+              </span>
               <input
-                aria-label="已安排任务标题"
+                aria-label="定时任务标题"
                 value={values.name}
-                placeholder="例如：每日简报"
+                placeholder="输入任务标题"
                 aria-invalid={props.errors?.name ? 'true' : undefined}
                 onChange={event => update('name', event.target.value)}
               />
@@ -170,11 +166,12 @@ export function ScheduleEditor(props: {
             </label>
 
             <label className="schedule-prompt-field">
+              <span>描述</span>
               <textarea
                 aria-label="任务内容"
                 value={values.prompt}
-                placeholder="描述 Clawee 应该做什么"
-                rows={5}
+                placeholder="描述需要帮你做什么..."
+                rows={3}
                 aria-invalid={props.errors?.prompt ? 'true' : undefined}
                 onChange={event => update('prompt', event.target.value)}
               />
@@ -183,34 +180,9 @@ export function ScheduleEditor(props: {
               ) : null}
             </label>
 
-            <section className="schedule-editor-group" aria-labelledby="schedule-details-heading">
-              <h2 id="schedule-details-heading">详情</h2>
-              <div className="schedule-setting-list">
-                <SettingRow label="运行于">
-                  <span className="schedule-setting-value">新任务</span>
-                </SettingRow>
-                <SettingRow label="项目">
-                  <SelectControl
-                    ariaLabel="项目"
-                    value={values.cwd}
-                    onChange={value => update('cwd', value)}
-                  >
-                    {projectOptions.map(project => (
-                      <option key={`${project.id}-${project.cwd}`} value={project.cwd}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </SelectControl>
-                </SettingRow>
-              </div>
-              {props.errors?.cwd ? (
-                <small className="schedule-field__error">{props.errors.cwd}</small>
-              ) : null}
-            </section>
-
             <section className="schedule-editor-group" aria-labelledby="schedule-frequency-heading">
-              <h2 id="schedule-frequency-heading">频率</h2>
-              <div className="schedule-setting-list">
+              <h2 id="schedule-frequency-heading">执行频率</h2>
+              <div className="schedule-setting-list schedule-setting-list--time-popover">
                 <SettingRow label="重复">
                   <SelectControl
                     ariaLabel="重复"
@@ -260,14 +232,11 @@ export function ScheduleEditor(props: {
                           <span>分钟</span>
                         </div>
                       ) : (
-                        <input
-                          className="schedule-time-input"
-                          aria-label="执行时间"
-                          type="time"
+                        <ScheduleTimePicker
                           value={values.frequency.time}
-                          onChange={event => update('frequency', {
+                          onChange={time => update('frequency', {
                             ...values.frequency,
-                            time: event.target.value,
+                            time,
                           })}
                         />
                       )}
@@ -309,11 +278,11 @@ export function ScheduleEditor(props: {
               ) : null}
             </section>
 
-            <details className="schedule-editor-advanced">
-              <summary>
-                <span>更多运行设置</span>
-                <ChevronDown size={16} aria-hidden="true" />
-              </summary>
+            <section
+              className="schedule-editor-advanced"
+              aria-labelledby="schedule-advanced-heading"
+            >
+              <h2 id="schedule-advanced-heading">请选择访问权限</h2>
               <div className="schedule-setting-list">
                 <SettingRow label="权限">
                   <SelectControl
@@ -338,51 +307,8 @@ export function ScheduleEditor(props: {
                     <option value="danger-full-access">完全访问权限</option>
                   </SelectControl>
                 </SettingRow>
-                <SettingRow label="时区">
-                  <input
-                    className="schedule-setting-input"
-                    aria-label="时区"
-                    value={values.timezone}
-                    onChange={event => update('timezone', event.target.value)}
-                  />
-                </SettingRow>
-                <SettingRow label="最长运行">
-                  <div className="schedule-timeout-control">
-                    <input
-                      aria-label="最长运行分钟"
-                      type="number"
-                      min="1"
-                      value={values.timeoutMinutes}
-                      placeholder="默认"
-                      onChange={event => update('timeoutMinutes', event.target.value)}
-                    />
-                    <span>分钟</span>
-                  </div>
-                </SettingRow>
-                <SettingRow label="任务重叠时">
-                  <SelectControl
-                    ariaLabel="任务重叠时"
-                    value={values.concurrencyPolicy}
-                    onChange={value => update(
-                      'concurrencyPolicy',
-                      value as ScheduleConcurrencyPolicy
-                    )}
-                  >
-                    <option value="skip">跳过本次</option>
-                    <option value="queue">排队执行</option>
-                    <option value="parallel">同时执行</option>
-                  </SelectControl>
-                </SettingRow>
               </div>
-              {props.errors?.timezone ? (
-                <small className="schedule-field__error">{props.errors.timezone}</small>
-              ) : null}
-              {props.errors?.timeoutMinutes ? (
-                <small className="schedule-field__error">
-                  {props.errors.timeoutMinutes}
-                </small>
-              ) : null}
-            </details>
+            </section>
 
             <label className="schedule-editor__enabled">
               <input
@@ -406,7 +332,7 @@ export function ScheduleEditor(props: {
               取消
             </button>
             <button
-              className="schedule-button schedule-button--primary"
+              className="schedule-button schedule-button--secondary"
               type="submit"
               disabled={props.saving}
             >
@@ -421,6 +347,95 @@ export function ScheduleEditor(props: {
         </>
       )}
     </form>
+  );
+}
+
+function ScheduleTimePicker(props: {
+  value: string;
+  onChange(value: string): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const hour = props.value.slice(0, 2);
+  const minute = props.value.slice(3, 5);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnOutsidePress(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    rootRef.current
+      ?.querySelectorAll<HTMLElement>('[aria-selected="true"]')
+      .forEach(element => element.scrollIntoView?.({ block: 'center' }));
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="schedule-time-picker" ref={rootRef}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label="执行时间"
+        className="schedule-time-picker__trigger"
+        type="button"
+        onClick={() => setOpen(current => !current)}
+      >
+        <span>{props.value}</span>
+        <Clock3 size={15} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="schedule-time-picker__popover" role="dialog" aria-label="选择执行时间">
+          <TimeColumn
+            label="小时"
+            selected={hour}
+            values={Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'))}
+            onSelect={nextHour => props.onChange(`${nextHour}:${minute}`)}
+          />
+          <TimeColumn
+            label="分钟"
+            selected={minute}
+            values={Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))}
+            onSelect={nextMinute => props.onChange(`${hour}:${nextMinute}`)}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TimeColumn(props: {
+  label: string;
+  selected: string;
+  values: string[];
+  onSelect(value: string): void;
+}) {
+  return (
+    <div className="schedule-time-picker__column" role="listbox" aria-label={props.label}>
+      {props.values.map(value => {
+        const selected = value === props.selected;
+        return (
+          <button
+            aria-label={`${props.label} ${value}`}
+            aria-selected={selected}
+            key={value}
+            role="option"
+            type="button"
+            onClick={() => props.onSelect(value)}
+          >
+            <span>{value}</span>
+            {selected ? <Check size={14} aria-hidden="true" /> : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -461,23 +476,15 @@ export function validateScheduleEditorValues(
 ): ScheduleEditorErrors {
   const errors: ScheduleEditorErrors = {};
   if (values.name.trim().length === 0) errors.name = '请输入任务标题';
-  if (values.prompt.trim().length === 0) errors.prompt = '请描述 Clawee 应该做什么';
+  if (values.prompt.trim().length === 0) errors.prompt = '请描述需要帮你做什么';
   try {
     scheduleFrequencyToCron(values.frequency);
   } catch {
     errors.frequency = '请选择执行频率';
   }
-  if (values.timezone.trim().length === 0) errors.timezone = '请输入时区';
-  if (values.cwd.trim().length === 0) errors.cwd = '请选择项目';
+  if (values.cwd.trim().length === 0) errors.form = '当前项目不可用，请先选择或创建项目';
   if (values.profile.trim().length === 0) {
     errors.form = '当前项目的运行配置不可用，请先在项目设置中修复';
-  }
-  if (
-    values.timeoutMinutes.trim().length > 0
-    && (!Number.isFinite(Number(values.timeoutMinutes))
-      || Number(values.timeoutMinutes) <= 0)
-  ) {
-    errors.timeoutMinutes = '最长运行时间必须大于 0 分钟';
   }
   return errors;
 }

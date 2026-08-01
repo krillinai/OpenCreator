@@ -77,10 +77,11 @@ describe('ScheduleThreadHeader', () => {
     expect(getSchedule).toHaveBeenCalledWith('schedule-1');
     const dialog = await screen.findByRole('dialog', { name: '编辑任务 每日总结' });
     expect(dialog).toBeInTheDocument();
+    expect(screen.getByText('编辑定时任务')).toBeInTheDocument();
     expect(dialog.parentElement).toHaveClass('schedule-thread-editor-backdrop');
     expect(dialog.parentElement?.parentElement).toBe(document.body);
-    await user.clear(screen.getByLabelText('已安排任务标题'));
-    await user.type(screen.getByLabelText('已安排任务标题'), '每周总结');
+    await user.clear(screen.getByLabelText('定时任务标题'));
+    await user.type(screen.getByLabelText('定时任务标题'), '每周总结');
     await user.click(screen.getByRole('button', { name: '保存更改' }));
 
     expect(updateSchedule).toHaveBeenCalledWith('schedule-1', expect.objectContaining({

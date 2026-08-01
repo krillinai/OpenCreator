@@ -5,6 +5,7 @@ import type {
 } from '@clawee/protocol';
 import { FolderCog, FolderMinus, FolderPlus, RefreshCw, Save, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
 import type { ClaweeProject } from './project-model.js';
 
 const reasoningOptions: Array<{ value: '' | ReasoningEffort; label: string }> = [
@@ -33,6 +34,8 @@ export function ProjectManagementDialog(props: {
   onAddProjectDirectory?(): void | Promise<void>;
 }) {
   const [editingProjectId, setEditingProjectId] = useState<string>();
+  const [projectPendingRemoval, setProjectPendingRemoval] = useState<ClaweeProject>();
+  const [removingProjectId, setRemovingProjectId] = useState<string>();
   const [assignmentByThreadId, setAssignmentByThreadId] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -126,7 +129,11 @@ export function ProjectManagementDialog(props: {
                           <span>{project.directoryState === 'missing' ? '修复目录' : '更换目录'}</span>
                         </button>
                       ) : null}
-                      <button type="button" onClick={() => void props.onArchive(project.id)}>
+                      <button
+                        type="button"
+                        disabled={props.busy || removingProjectId === project.id}
+                        onClick={() => setProjectPendingRemoval(project)}
+                      >
                         <FolderMinus size={15} aria-hidden="true" />
                         <span>移除</span>
                       </button>
@@ -238,6 +245,26 @@ export function ProjectManagementDialog(props: {
           </section>
         </div>
       </section>
+      <ConfirmDialog
+        open={projectPendingRemoval !== undefined}
+        title="移除项目"
+        description={projectPendingRemoval === undefined
+          ? '项目目录和文件不会被删除。'
+          : `确认从 Clawee 中移除“${projectPendingRemoval.name}”？项目目录和文件不会被删除。`}
+        confirmLabel="移除项目"
+        destructive
+        busy={removingProjectId !== undefined}
+        onCancel={() => setProjectPendingRemoval(undefined)}
+        onConfirm={() => {
+          if (projectPendingRemoval === undefined || removingProjectId !== undefined) return;
+          const projectId = projectPendingRemoval.id;
+          setRemovingProjectId(projectId);
+          void props.onArchive(projectId).finally(() => {
+            setRemovingProjectId(undefined);
+            setProjectPendingRemoval(undefined);
+          });
+        }}
+      />
     </div>
   );
 }

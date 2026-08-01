@@ -13,7 +13,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Circle,
   Folder,
   FolderPlus,
   ListPlus,
@@ -635,7 +634,7 @@ export function Composer(props: {
       ) : null}
       <form
         ref={composerRef}
-        className="clawee-composer"
+        className={`clawee-composer${props.showProjectSelector === false ? ' without-project-selector' : ''}`}
         onSubmit={(event) => {
           event.preventDefault();
           void submitPrompt();
@@ -975,8 +974,8 @@ export function Composer(props: {
                 setOpenMenu(openMenu === 'model' ? null : 'model');
               }}
             >
-              <Circle aria-hidden="true" size={9} />
               <span>{selectedModel.label}</span>
+              <ChevronDown aria-hidden="true" size={13} />
             </button>
             {openMenu === 'model' ? (
               <div className="composer-popover composer-model-menu" role="menu" aria-label="模型">

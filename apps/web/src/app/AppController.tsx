@@ -38,9 +38,14 @@ import { beginPaneResize } from '../components/layout/pane-resize-2026-07-29.js'
 import { Timeline, type TimelineHandle } from '../components/timeline/Timeline.js';
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
-import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
+import {
+  ConversationEmptyState,
+  ConversationStarterTags
+} from '../features/conversation/ConversationEmptyState.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
 import { MemorySuggestion } from '../features/conversation/MemorySuggestion.js';
+import { ApprovalPanel } from '../features/approvals/ApprovalPanel.js';
+import { shouldShowComposerProjectSelector } from '../features/conversation/composer-visibility.js';
 import { useThreadHistory } from '../features/conversation/use-thread-history.js';
 import { DetailPanel } from '../features/details/DetailPanel.js';
 import { getSkillMarketDisplayTitle } from '../features/plugins/skill-market-model.js';
@@ -222,7 +227,7 @@ const DEFAULT_PERMISSION_STORAGE_KEY = 'clawee.preferences.defaultPermission';
 const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v3';
 const SCHEDULE_DRAFT_TITLE = '任务草稿';
 const SCHEDULE_CREATION_DRAFT =
-  '我们一起来设置一个已安排任务吧。首先，说明已安排任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。';
+  '我们一起来设置一个定时任务吧。首先，说明定时任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。';
 const CapabilitiesPage = lazy(() => import('../features/capabilities/CapabilitiesPage.js'));
 const EnterpriseAccountPage = lazy(
   () => import('../features/account/EnterpriseAccountPage-2026-07-30.js')
@@ -2941,14 +2946,15 @@ export function AppController(props: AppControllerProps) {
 
   async function useMarketSkill(skillId: string, projectId: string) {
     setSkillMarketUseError(undefined);
-    const entry = getSkillMarketEntry(skillId);
-    if (entry === undefined) {
+    const isSkillCreator = skillId === 'skill-creator';
+    const entry = isSkillCreator ? undefined : getSkillMarketEntry(skillId);
+    if (!isSkillCreator && entry === undefined) {
       setSkillMarketUseError({ skillId, error: '未找到这个 Skill' });
       return;
     }
     await useSkillByName({
       skillName: skillId,
-      title: getSkillMarketDisplayTitle(entry),
+      title: isSkillCreator ? '创建技能' : getSkillMarketDisplayTitle(entry!),
       projectId,
       onError: error => setSkillMarketUseError(
         error === undefined ? undefined : { skillId, error }
@@ -3029,6 +3035,37 @@ export function AppController(props: AppControllerProps) {
     } finally {
       if (isCurrentThreadRuntime(generation, activeThreadService)) {
         skillMarketUseInFlightRef.current = false;
+      }
+    }
+  }
+
+  async function uploadLocalSkill() {
+    const selectDirectory = hostBridge.selectProjectDirectory;
+    const activeRuntimeClient = runtimeClient;
+    const activeCapabilityService = capabilityService;
+    const activeSkillMarketService = skillMarketService;
+    if (selectDirectory === undefined) return;
+    if (activeRuntimeClient === null || activeCapabilityService === null || activeSkillMarketService === null) {
+      setSkillMarketLoadError('本地服务暂不可用，无法上传技能');
+      return;
+    }
+
+    try {
+      const sourcePath = await selectDirectory();
+      if (sourcePath === null) return;
+      setSkillMarketLoadError(undefined);
+      await activeRuntimeClient.post('/codex/skills/install', {
+        sourcePath,
+        confirmWriteToCodexHome: true
+      });
+      await refreshSkillMarketState(
+        skillMarketRuntimeGenerationRef.current,
+        activeCapabilityService,
+        activeSkillMarketService
+      );
+    } catch (error) {
+      if (mountedRef.current) {
+        setSkillMarketLoadError(getRuntimeErrorMessage(error, '上传技能失败，请重试'));
       }
     }
   }
@@ -3478,7 +3515,11 @@ export function AppController(props: AppControllerProps) {
             || replayDeduper.shouldAppend(item)
           )
         ) {
-          getTimelineEventBatcher(threadId).push(item);
+          const timelineBatcher = getTimelineEventBatcher(threadId);
+          timelineBatcher.push(item);
+          if (event.type === 'approval') {
+            timelineBatcher.flush();
+          }
         }
         if (event.type === 'done') {
           runEventControllersRef.current.delete(runId);
@@ -3958,45 +3999,49 @@ export function AppController(props: AppControllerProps) {
     if (timelineRef.current?.scrollBy(event.deltaY) !== true) return;
     event.preventDefault();
   }
+  const conversationEmpty = timelineItems.length === 0;
+  const pendingComposerApproval = [...timelineItems].reverse().find(item => (
+    item.kind === 'approval' && item.approval.status === 'pending'
+  ));
   const conversationPage = (
-    <section className="conversation-page">
-      <ConversationHeader
-        title={
-          selectedConversation?.title
-          ?? selectedScheduleTask?.name
-          ?? selectedThread?.title
-          ?? '新对话'
-        }
-        statusLabel={getConnectionStatusLabel(connectionState)}
-        statusHealthy={connectionState.status === 'connected'}
-        taskToolbar={
-          selectedScheduleTask?.bindingStatus === 'ready'
-          && selectedSchedule !== undefined
-          && selectedSidebarTask !== undefined
-          && scheduleService !== null ? (
-            <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
-              <ScheduleThreadHeader
-                schedule={selectedSchedule}
-                status={selectedSidebarTask.status}
-                nextRunLabel={selectedSidebarTask.nextRunLabel}
-                service={scheduleService}
-                projects={projects}
-                profiles={codexProfiles?.profiles}
-                onRunNow={runScheduleNow}
-                onScheduleChanged={handleScheduleChanged}
-              />
-            </Suspense>
-          ) : undefined
-        }
-        fileWorkspaceOpen={fileWorkspaceOpen}
-        onOpenLocation={() => {
-          if (fileWorkspaceOpen) {
-            closeFileWorkspace();
-            return;
+    <section className={`conversation-page${conversationEmpty ? ' is-empty' : ''}`}>
+      {conversationEmpty ? null : (
+        <ConversationHeader
+          title={
+            selectedConversation?.title
+            ?? selectedScheduleTask?.name
+            ?? selectedThread?.title
+            ?? '新对话'
           }
-          openPrimaryView('files');
-        }}
-      />
+          taskToolbar={
+            selectedScheduleTask?.bindingStatus === 'ready'
+            && selectedSchedule !== undefined
+            && selectedSidebarTask !== undefined
+            && scheduleService !== null ? (
+              <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
+                <ScheduleThreadHeader
+                  schedule={selectedSchedule}
+                  status={selectedSidebarTask.status}
+                  nextRunLabel={selectedSidebarTask.nextRunLabel}
+                  service={scheduleService}
+                  projects={projects}
+                  profiles={codexProfiles?.profiles}
+                  onRunNow={runScheduleNow}
+                  onScheduleChanged={handleScheduleChanged}
+                />
+              </Suspense>
+            ) : undefined
+          }
+          fileWorkspaceOpen={fileWorkspaceOpen}
+          onOpenLocation={() => {
+            if (fileWorkspaceOpen) {
+              closeFileWorkspace();
+              return;
+            }
+            openPrimaryView('files');
+          }}
+        />
+      )}
       <div className="conversation-body">
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
         {projectLoadError ? <p className="inline-error">{projectLoadError}</p> : null}
@@ -4007,8 +4052,8 @@ export function AppController(props: AppControllerProps) {
             {threadConfigUpdateError}
           </div>
         ) : null}
-        {timelineItems.length === 0 ? (
-          <ConversationEmptyState projectName={currentProject?.name} />
+        {conversationEmpty ? (
+          <ConversationEmptyState />
         ) : (
           <Timeline
             ref={timelineRef}
@@ -4050,6 +4095,24 @@ export function AppController(props: AppControllerProps) {
         ) : null}
       </div>
       <div className="composer-wrap" onWheel={handleComposerWheel}>
+        {pendingComposerApproval?.kind === 'approval' ? (
+          <div
+            className="composer-approval-overlay"
+            data-search-target={
+              timelineApprovalTarget?.approvalId === pendingComposerApproval.approval.id
+                ? 'true'
+                : undefined
+            }
+          >
+            <ApprovalPanel
+              approval={pendingComposerApproval.approval}
+              resolving={resolvingApprovalIds.has(pendingComposerApproval.approval.id)}
+              error={approvalErrors[pendingComposerApproval.approval.id]}
+              onApprove={id => void resolveApproval(id, 'approve')}
+              onReject={id => void resolveApproval(id, 'reject')}
+            />
+          </div>
+        ) : null}
         {pendingMemorySuggestion !== undefined && memoryService !== null ? (
           <MemorySuggestion
             key={pendingMemorySuggestion.id}
@@ -4065,9 +4128,10 @@ export function AppController(props: AppControllerProps) {
           projectId={currentProject?.id ?? ''}
           projectName={currentProjectName}
           projects={projects}
-          showProjectSelector={
-            selectedThread === undefined || selectedThread.purpose === 'conversation'
-          }
+          showProjectSelector={shouldShowComposerProjectSelector({
+            conversationEmpty,
+            threadPurpose: selectedThread?.purpose
+          })}
           permission={effectiveComposerConfig.permission}
           profile={effectiveComposerConfig.profile}
           model={effectiveComposerConfig.model}
@@ -4127,6 +4191,7 @@ export function AppController(props: AppControllerProps) {
           }}
           onSubmit={submitPrompt}
         />
+        {conversationEmpty ? <ConversationStarterTags /> : null}
       </div>
     </section>
   );
@@ -4271,6 +4336,12 @@ export function AppController(props: AppControllerProps) {
       onInstall={skillId => void installMarketSkill(skillId)}
       onUpdate={skillId => void updateMarketSkill(skillId)}
       onUse={(skillId, projectId) => void useMarketSkill(skillId, projectId)}
+      onCreateSkill={() => void useMarketSkill('skill-creator', currentProject?.id ?? '')}
+      onUploadSkill={
+        hostBridge.selectProjectDirectory === undefined
+          ? undefined
+          : () => void uploadLocalSkill()
+      }
       onSourceChange={source => {
         navigateToRoute(
           source === 'enterprise'
@@ -4832,6 +4903,8 @@ function toWorkspaceRelativePath(path: string, thread: ThreadResponse | undefine
 
   return stripWorkspaceRoot(trimmedPath, thread.canonicalCwd)
     ?? stripWorkspaceRoot(trimmedPath, thread.cwd)
+    ?? stripWorkspaceRootByName(trimmedPath, thread.canonicalCwd)
+    ?? stripWorkspaceRootByName(trimmedPath, thread.cwd)
     ?? normalizeWorkspacePath(trimmedPath).replace(/^\.\//, '');
 }
 
@@ -4843,6 +4916,21 @@ function stripWorkspaceRoot(path: string, root: string): string | undefined {
   return normalizedPath.startsWith(`${normalizedRoot}/`)
     ? normalizedPath.slice(normalizedRoot.length + 1)
     : undefined;
+}
+
+function stripWorkspaceRootByName(path: string, root: string): string | undefined {
+  const normalizedPath = normalizeWorkspacePath(path);
+  if (!normalizedPath.startsWith('/')) return undefined;
+
+  const normalizedRoot = normalizeWorkspacePath(root).replace(/\/+$/, '');
+  const rootName = normalizedRoot.split('/').at(-1);
+  if (rootName === undefined || rootName.length === 0) return undefined;
+
+  const marker = `/${rootName}/`;
+  const markerIndex = normalizedPath.lastIndexOf(marker);
+  return markerIndex < 0
+    ? undefined
+    : normalizedPath.slice(markerIndex + marker.length);
 }
 
 function normalizeWorkspacePath(path: string): string {

@@ -14,19 +14,27 @@ import {
 } from './SchedulesView.js';
 
 describe('SchedulesView', () => {
-  it('closes the create menu on outside pointer presses and Escape', async () => {
+  it('opens the manual editor directly without a Clawee creation menu', async () => {
     const user = userEvent.setup();
     renderView();
 
     await user.click(await screen.findByRole('button', { name: /创建/ }));
-    expect(screen.getByRole('menu')).toBeInTheDocument();
-
-    fireEvent.pointerDown(screen.getByRole('searchbox', { name: '搜索已安排任务' }));
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /创建/ }));
+    expect(screen.queryByText('使用 Clawee 创建')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '创建定时任务' })).toBeInTheDocument();
+    expect(screen.getByText('标题')).toBeInTheDocument();
+    expect(screen.getByText('描述')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '执行频率' })).toBeInTheDocument();
+    expect(screen.getByLabelText('任务内容')).toHaveAttribute(
+      'placeholder',
+      '描述需要帮你做什么...'
+    );
+    expect(screen.queryByRole('heading', { name: '详情' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('定时任务标题')).toHaveAttribute('placeholder', '输入任务标题');
+    expect(screen.getByRole('heading', { name: '请选择访问权限' })).toBeInTheDocument();
+    expect(screen.getByText('请选择访问权限').closest('details')).toBeNull();
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: '创建定时任务' })).not.toBeInTheDocument();
   });
 
   it('renders a simple searchable list with friendly schedules and status filters', async () => {
@@ -48,17 +56,17 @@ describe('SchedulesView', () => {
       }),
     });
 
-    expect(await screen.findByRole('heading', { name: '已安排的任务' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '定时任务' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '每日总结' })).toBeInTheDocument();
     expect(screen.getByText('每天 18:00')).toBeInTheDocument();
     expect(screen.queryByText('0 18 * * *')).not.toBeInTheDocument();
     expect(screen.getByText('建议')).toBeInTheDocument();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索已安排任务' }), '每周');
+    await user.type(screen.getByRole('searchbox', { name: '搜索定时任务' }), '每周');
     expect(screen.getByRole('heading', { name: '每周回顾' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '每日总结' })).not.toBeInTheDocument();
 
-    await user.clear(screen.getByRole('searchbox', { name: '搜索已安排任务' }));
+    await user.clear(screen.getByRole('searchbox', { name: '搜索定时任务' }));
     await user.click(screen.getByRole('button', { name: '已暂停' }));
     expect(screen.getByRole('heading', { name: '每周回顾' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '每日总结' })).not.toBeInTheDocument();
@@ -95,15 +103,23 @@ describe('SchedulesView', () => {
       }),
     });
 
-    await openCreateMenu(user, '手动设置');
+    await openCreateEditor(user);
     expect(screen.queryByLabelText('Cron 表达式')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('运行配置')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('项目')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('模型')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('推理')).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText('已安排任务标题'), '每日简报');
+    expect(screen.queryByText('运行于')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('时区')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('最长运行分钟')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('任务重叠时')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('定时任务标题'), '每日简报');
     await user.type(screen.getByLabelText('任务内容'), '总结今天的项目进展');
     await user.selectOptions(screen.getByLabelText('重复'), 'weekdays');
-    fireEvent.change(screen.getByLabelText('执行时间'), { target: { value: '08:00' } });
+    await user.click(screen.getByRole('button', { name: '执行时间' }));
+    expect(screen.getByRole('dialog', { name: '选择执行时间' })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: '小时 08' }));
+    await user.click(screen.getByRole('option', { name: '分钟 00' }));
     await user.click(screen.getByRole('button', { name: '创建任务' }));
 
     expect(createSchedule).toHaveBeenCalledWith({
@@ -123,19 +139,8 @@ describe('SchedulesView', () => {
       id: 'schedule-created',
       threadId: 'thread-created'
     }));
-    expect(onOpenTask).toHaveBeenCalledWith('thread-created');
-  });
-
-  it('opens Clawee schedule creation in a new conversation', async () => {
-    const user = userEvent.setup();
-    const onCreateWithClawee = vi.fn();
-    renderView({ onCreateWithClawee });
-
-    await openCreateMenu(user, '使用 Clawee 创建');
-
-    expect(onCreateWithClawee).toHaveBeenCalledTimes(1);
-    expect(screen.queryByLabelText('使用 Clawee 创建计划任务')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('告诉 Clawee 要安排什么')).not.toBeInTheDocument();
+    expect(onOpenTask).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '创建定时任务' })).not.toBeInTheDocument();
   });
 
   it('prefills suggested tasks without creating them immediately', async () => {
@@ -149,7 +154,7 @@ describe('SchedulesView', () => {
     });
 
     await user.click(await screen.findByRole('button', { name: /每日简报/ }));
-    expect(screen.getByLabelText('已安排任务标题')).toHaveValue('每日简报');
+    expect(screen.getByLabelText('定时任务标题')).toHaveValue('每日简报');
     expect(screen.getByLabelText('重复')).toHaveValue('weekdays');
     expect(createSchedule).not.toHaveBeenCalled();
   });
@@ -170,13 +175,14 @@ describe('SchedulesView', () => {
       }),
     });
 
-    await openCreateMenu(user, '手动设置');
+    await openCreateEditor(user);
     await user.click(screen.getByRole('button', { name: '创建任务' }));
     expect(screen.getByText('请输入任务标题')).toBeInTheDocument();
-    expect(screen.getByText('请描述 Clawee 应该做什么')).toBeInTheDocument();
+    expect(screen.getByText('请描述需要帮你做什么')).toBeInTheDocument();
+    expect(screen.getByLabelText('定时任务标题')).toHaveFocus();
     expect(createSchedule).not.toHaveBeenCalled();
 
-    await user.type(screen.getByLabelText('已安排任务标题'), '目录检查');
+    await user.type(screen.getByLabelText('定时任务标题'), '目录检查');
     await user.type(screen.getByLabelText('任务内容'), '检查项目状态');
     await user.click(screen.getByRole('button', { name: '创建任务' }));
 
@@ -200,19 +206,20 @@ describe('SchedulesView', () => {
           profile: 'review',
           model: 'gpt-5.6',
           reasoning: 'high',
+          timeoutMs: 120_000,
+          concurrencyPolicy: 'queue',
         })),
         updateSchedule,
       }),
     });
 
     await user.click(await screen.findByRole('button', { name: '编辑每日总结' }));
+    expect(await screen.findByText('编辑定时任务')).toBeInTheDocument();
     expect(await screen.findByDisplayValue('完整的每日总结执行指令')).toBeInTheDocument();
     expect(screen.getByLabelText('重复')).toHaveValue('advanced');
     expect(screen.getByText(/旧版高级计划/)).toBeInTheDocument();
-    await user.clear(screen.getByLabelText('已安排任务标题'));
-    await user.type(screen.getByLabelText('已安排任务标题'), '每月总结');
-    await user.click(screen.getByText('更多运行设置'));
-    await user.selectOptions(screen.getByLabelText('任务重叠时'), 'queue');
+    await user.clear(screen.getByLabelText('定时任务标题'));
+    await user.type(screen.getByLabelText('定时任务标题'), '每月总结');
     await user.click(screen.getByRole('button', { name: '保存更改' }));
 
     expect(updateSchedule).toHaveBeenCalledWith('schedule-1', expect.objectContaining({
@@ -223,7 +230,7 @@ describe('SchedulesView', () => {
       profile: 'review',
       model: 'gpt-5.6',
       reasoning: 'high',
-      timeoutMs: null,
+      timeoutMs: 120_000,
     }));
     expect(onScheduleChanged).toHaveBeenCalledWith(expect.objectContaining({
       id: 'schedule-1',
@@ -318,17 +325,13 @@ describe('SchedulesView', () => {
         }),
       }),
     }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载已安排的任务');
+    expect(await screen.findByRole('alert')).toHaveTextContent('无法加载定时任务');
     expect(screen.getByRole('button', { name: '重新加载' })).toBeInTheDocument();
   });
 });
 
-async function openCreateMenu(
-  user: ReturnType<typeof userEvent.setup>,
-  item: '手动设置' | '使用 Clawee 创建'
-) {
+async function openCreateEditor(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: /创建/ }));
-  await user.click(screen.getByRole('menuitem', { name: new RegExp(item) }));
 }
 
 function renderView(overrides: Partial<Parameters<typeof createView>[0]> = {}) {

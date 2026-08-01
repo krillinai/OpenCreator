@@ -1,4 +1,5 @@
 .schedules-view {
+  position: relative;
   min-height: 0;
   height: 100%;
   overflow: auto;
@@ -13,13 +14,6 @@
   padding: 32px 28px 48px;
 }
 
-.schedules-view__inner--editing {
-  height: 100%;
-  min-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
 .schedules-view__header {
   display: flex;
   align-items: flex-start;
@@ -30,7 +24,7 @@
 .schedules-view__header h1 {
   margin: 0;
   font-size: 28px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.2;
   letter-spacing: 0;
 }
@@ -57,7 +51,7 @@
   justify-content: center;
   gap: 7px;
   padding: 0 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .schedule-button--primary {
@@ -153,7 +147,7 @@
 
 .schedule-create-menu__popover small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .schedules-search {
@@ -203,7 +197,7 @@
 .schedules-filters button.is-active {
   background: var(--surface-3);
   color: var(--text);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .schedules-state,
@@ -284,7 +278,7 @@
   margin: 0;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 680;
+  font-weight: 600;
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -314,7 +308,7 @@
   align-items: center;
   gap: 4px;
   color: var(--warning);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .schedule-row__content > p {
@@ -333,7 +327,7 @@
   flex-wrap: wrap;
   gap: 4px 12px;
   color: var(--subtle);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .schedule-row__run-link {
@@ -345,7 +339,7 @@
   padding: 0;
   color: var(--accent-strong);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .schedule-row__error {
@@ -401,7 +395,7 @@
   margin: 0 0 10px;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .schedule-suggestion-list {
@@ -440,7 +434,7 @@
 
 .schedule-suggestion-list strong small {
   color: var(--subtle);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -475,23 +469,46 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
+.schedule-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--scrim) 62%, transparent);
+}
+
+.schedule-editor-dialog {
+  width: min(760px, 100%);
+  height: min(820px, calc(100vh - 48px));
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--shadow-base) 28%, transparent);
+}
+
 .schedule-editor__topbar {
   min-height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--border);
 }
 
 .schedule-editor__topbar strong {
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .schedule-editor__scroll {
   min-height: 0;
   overflow: auto;
-  padding: 28px 10px 36px 0;
+  padding: 24px 20px 32px;
   scrollbar-gutter: stable;
 }
 
@@ -512,23 +529,37 @@
 }
 
 .schedule-title-field > span,
+.schedule-prompt-field > span,
 .schedule-editor-group > h2 {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
+}
+
+.schedule-title-field > span,
+.schedule-prompt-field > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.schedule-title-field > span small {
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .schedule-title-field input {
   min-width: 0;
-  height: 48px;
-  padding: 0 2px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   outline: 0;
-  background: transparent;
+  background: var(--surface-2);
   color: var(--text);
-  font-size: 22px;
-  font-weight: 620;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .schedule-title-field input:focus {
@@ -541,7 +572,7 @@
 
 .schedule-prompt-field textarea {
   width: 100%;
-  min-height: 126px;
+  min-height: 88px;
   resize: vertical;
   padding: 14px;
   border: 1px solid var(--border);
@@ -563,7 +594,7 @@
 
 .schedule-field__error {
   color: var(--danger);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .schedule-editor-group {
@@ -579,6 +610,12 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
+}
+
+.schedule-setting-list--time-popover {
+  position: relative;
+  overflow: visible;
+  z-index: 2;
 }
 
 .schedule-setting-row {
@@ -599,7 +636,7 @@
 .schedule-setting-row > span:first-child {
   color: var(--text);
   font-size: 12px;
-  font-weight: 620;
+  font-weight: 600;
 }
 
 .schedule-setting-value {
@@ -648,7 +685,83 @@
   color: var(--subtle);
 }
 
-.schedule-time-input {
+.schedule-time-picker {
+  position: relative;
+  justify-self: end;
+}
+
+.schedule-time-picker__trigger {
+  min-width: 86px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-time-picker__trigger:hover,
+.schedule-time-picker__trigger[aria-expanded="true"] {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.schedule-time-picker__popover {
+  position: absolute;
+  z-index: 12;
+  right: 0;
+  bottom: calc(100% + 5px);
+  width: 218px;
+  height: 242px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--popover);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--shadow-base) 18%, transparent);
+}
+
+.schedule-time-picker__column {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 4px;
+  border-left: 1px solid var(--border);
+}
+
+.schedule-time-picker__column:first-child {
+  border-left: 0;
+}
+
+.schedule-time-picker__column button {
+  width: 100%;
+  height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  align-items: center;
+  padding: 0 8px 0 10px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.schedule-time-picker__column button:hover {
+  background: var(--state-hover-bg);
+  color: var(--text);
+}
+
+.schedule-time-picker__column button[aria-selected="true"] {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.schedule-time-picker__column button svg {
   justify-self: end;
 }
 
@@ -689,7 +802,7 @@
   border: 1px solid var(--border);
   border-radius: 50%;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .schedule-day-picker button.is-selected {
@@ -710,25 +823,14 @@
   margin-top: 18px;
 }
 
-.schedule-editor-advanced > summary {
+.schedule-editor-advanced > h2 {
+  margin: 0;
   min-height: 38px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  cursor: pointer;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 620;
-  list-style: none;
-}
-
-.schedule-editor-advanced > summary::-webkit-details-marker {
-  display: none;
-}
-
-.schedule-editor-advanced[open] > summary svg {
-  transform: rotate(180deg);
+  font-weight: 600;
 }
 
 .schedule-editor-advanced .schedule-setting-list {
@@ -756,7 +858,7 @@
 
 .schedule-editor__enabled small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .schedule-editor__actions {
@@ -765,6 +867,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  padding: 0 20px;
   border-top: 1px solid var(--border);
   background: var(--bg);
 }
@@ -790,11 +893,6 @@
 @media (max-width: 760px) {
   .schedules-view__inner {
     padding: 22px 12px 36px;
-  }
-
-  .schedules-view__inner--editing {
-    padding-top: 0;
-    padding-bottom: 0;
   }
 
   .schedules-view__header {
@@ -837,11 +935,11 @@
   }
 
   .schedule-editor__scroll {
-    padding-top: 20px;
+    padding: 20px 16px 28px;
   }
 
   .schedule-title-field input {
-    font-size: 19px;
+    font-size: 14px;
   }
 
   .schedule-setting-row {
@@ -857,7 +955,15 @@
   }
 
   .schedule-editor__actions {
-    padding: 0;
+    padding: 0 16px;
+  }
+
+  .schedule-editor-overlay {
+    padding: 12px;
+  }
+
+  .schedule-editor-dialog {
+    height: calc(100vh - 24px);
   }
 }
 

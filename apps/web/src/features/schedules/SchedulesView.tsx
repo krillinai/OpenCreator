@@ -10,11 +10,9 @@ import type {
 import {
   Bell,
   CalendarClock,
-  ChevronDown,
   CirclePlay,
   ExternalLink,
   LoaderCircle,
-  MessageCircle,
   MoreHorizontal,
   Pencil,
   PencilLine,
@@ -101,12 +99,8 @@ export function SchedulesView(props: SchedulesViewProps) {
   const [editor, setEditor] = useState<EditorState>();
   const [editorErrors, setEditorErrors] = useState<ScheduleEditorErrors>({});
   const [saving, setSaving] = useState(false);
-  const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const [creatingWithClawee, setCreatingWithClawee] = useState(false);
-  const [createWithClaweeError, setCreateWithClaweeError] = useState<string>();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ScheduleFilter>('all');
-  const createMenuRef = useRef<HTMLDivElement>(null);
   const requestGenerationRef = useRef(0);
   const openedExternalEditIdRef = useRef<string>();
 
@@ -126,7 +120,7 @@ export function SchedulesView(props: SchedulesViewProps) {
       setSchedules(response.schedules);
     } catch {
       if (generation !== requestGenerationRef.current) return;
-      setLoadError('无法加载已安排的任务');
+      setLoadError('无法加载定时任务');
     } finally {
       if (generation === requestGenerationRef.current && showLoading) setLoading(false);
     }
@@ -152,24 +146,6 @@ export function SchedulesView(props: SchedulesViewProps) {
   }, [loadSchedules, props.connected, props.pollIntervalMs, props.service]);
 
   useEffect(() => {
-    if (!createMenuOpen) return;
-    function closeMenu(event: MouseEvent) {
-      if (!createMenuRef.current?.contains(event.target as Node)) {
-        setCreateMenuOpen(false);
-      }
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setCreateMenuOpen(false);
-    }
-    document.addEventListener('pointerdown', closeMenu);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeMenu);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [createMenuOpen]);
-
-  useEffect(() => {
     const scheduleId = props.editScheduleId;
     if (scheduleId === undefined) {
       openedExternalEditIdRef.current = undefined;
@@ -181,6 +157,18 @@ export function SchedulesView(props: SchedulesViewProps) {
     openedExternalEditIdRef.current = scheduleId;
     void openEditEditor(schedule);
   }, [props.editScheduleId, schedules]);
+
+  useEffect(() => {
+    if (editor === undefined) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setEditor(undefined);
+        setEditorErrors({});
+      }
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [editor]);
 
   const filteredSchedules = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -212,7 +200,6 @@ export function SchedulesView(props: SchedulesViewProps) {
     source: 'manual' | 'suggestion' = 'manual',
     override?: Partial<ScheduleEditorValues>
   ) {
-    setCreateMenuOpen(false);
     setEditorErrors({});
     setEditor({
       mode: 'create',
@@ -222,20 +209,6 @@ export function SchedulesView(props: SchedulesViewProps) {
         ...override,
       },
     });
-  }
-
-  async function openClaweeConversation() {
-    if (creatingWithClawee) return;
-    setCreateMenuOpen(false);
-    setCreateWithClaweeError(undefined);
-    setCreatingWithClawee(true);
-    try {
-      await props.onCreateWithClawee();
-    } catch (error) {
-      setCreateWithClaweeError(errorMessage(error, '无法创建 Clawee 对话，请重试'));
-    } finally {
-      setCreatingWithClawee(false);
-    }
   }
 
   async function openEditEditor(schedule: ScheduleResponse) {
@@ -283,10 +256,10 @@ export function SchedulesView(props: SchedulesViewProps) {
       const saved = editor.mode === 'create'
         ? await props.service.createSchedule(createScheduleRequest(values))
         : await props.service.updateSchedule(editor.scheduleId, createScheduleUpdate(values));
+      setEditor(undefined);
+      setEditorErrors({});
       setSchedules(current => upsertSchedule(current, saved));
       props.onScheduleChanged(saved);
-      setEditor(undefined);
-      if (editor.mode === 'create') props.onOpenTask(saved.threadId);
     } catch (error) {
       setEditorErrors(mapScheduleError(error));
     } finally {
@@ -370,78 +343,30 @@ export function SchedulesView(props: SchedulesViewProps) {
 
   return (
     <section className="schedules-view">
-      <div
-        className={`schedules-view__inner${
-          editor ? ' schedules-view__inner--editing' : ''
-        }`}
-      >
-        {editor ? (
-          <ScheduleEditor
-            mode={editor.mode}
-            initialValues={editor.values}
-            projects={props.projects}
-            loading={editor.mode === 'edit' && editor.loading}
-            saving={saving}
-            errors={editorErrors}
-            onCancel={closeEditor}
-            onSubmit={values => void saveEditor(values)}
-          />
-        ) : (
-          <>
+      <div className="schedules-view__inner">
+        <>
             <header className="schedules-view__header">
               <div>
-                <h1>已安排的任务</h1>
-                <p>让 Clawee 安排任务、设置提醒或定期处理工作</p>
+                <h1>定时任务</h1>
+                <p>安排任务、设置提醒或定期处理工作</p>
               </div>
-              <div className="schedule-create-menu" ref={createMenuRef}>
-                <button
-                  aria-expanded={createMenuOpen}
-                  aria-haspopup="menu"
-                  className="schedule-button schedule-button--primary"
-                  type="button"
-                  onClick={() => setCreateMenuOpen(open => !open)}
-                >
-                  <Plus size={16} />
-                  创建
-                  <ChevronDown size={14} />
-                </button>
-                {createMenuOpen ? (
-                  <div className="schedule-create-menu__popover" role="menu">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={creatingWithClawee}
-                      onClick={() => void openClaweeConversation()}
-                    >
-                      <MessageCircle size={17} />
-                      <span>
-                        <strong>使用 Clawee 创建</strong>
-                        <small>在新对话中设置任务</small>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => openCreateEditor('manual')}
-                    >
-                      <PencilLine size={17} />
-                      <span>
-                        <strong>手动设置</strong>
-                        <small>直接选择时间和项目</small>
-                      </span>
-                    </button>
-                  </div>
-                ) : null}
-              </div>
+              <button
+                className="schedule-button schedule-button--secondary"
+                type="button"
+                onClick={() => openCreateEditor('manual')}
+              >
+                <Plus size={16} />
+                创建
+              </button>
             </header>
 
             <label className="schedules-search">
               <Search size={17} aria-hidden="true" />
               <input
-                aria-label="搜索已安排任务"
+                aria-label="搜索定时任务"
                 type="search"
                 value={query}
-                placeholder="搜索已安排任务"
+                placeholder="搜索定时任务"
                 onChange={event => setQuery(event.target.value)}
               />
             </label>
@@ -460,16 +385,10 @@ export function SchedulesView(props: SchedulesViewProps) {
               ))}
             </div>
 
-            {createWithClaweeError ? (
-              <p className="schedule-form-error" role="alert">
-                {createWithClaweeError}
-              </p>
-            ) : null}
-
             {loading ? (
               <div className="schedules-state" role="status">
                 <LoaderCircle size={24} className="schedule-spin" />
-                正在加载已安排的任务
+                正在加载定时任务
               </div>
             ) : loadError ? (
               <div className="schedules-state schedules-state--error" role="alert">
@@ -487,7 +406,7 @@ export function SchedulesView(props: SchedulesViewProps) {
               <div className="schedules-empty">
                 <CalendarClock size={24} aria-hidden="true" />
                 <strong>
-                  {schedules.length === 0 ? '还没有已安排的任务' : '没有找到匹配的任务'}
+                  {schedules.length === 0 ? '还没有定时任务' : '没有找到匹配的任务'}
                 </strong>
                 <span>
                   {schedules.length === 0
@@ -638,8 +557,33 @@ export function SchedulesView(props: SchedulesViewProps) {
                 </div>
               </section>
             ) : null}
-          </>
-        )}
+          {editor ? (
+            <div
+              className="schedule-editor-overlay"
+              onMouseDown={event => {
+                if (event.target === event.currentTarget) closeEditor();
+              }}
+            >
+              <div
+                aria-label={editor.mode === 'create' ? '创建定时任务' : '编辑定时任务'}
+                aria-modal="true"
+                className="schedule-editor-dialog"
+                role="dialog"
+              >
+                <ScheduleEditor
+                  mode={editor.mode}
+                  initialValues={editor.values}
+                  projects={props.projects}
+                  loading={editor.mode === 'edit' && editor.loading}
+                  saving={saving}
+                  errors={editorErrors}
+                  onCancel={closeEditor}
+                  onSubmit={values => void saveEditor(values)}
+                />
+              </div>
+            </div>
+          ) : null}
+        </>
       </div>
     </section>
   );
@@ -672,7 +616,7 @@ function mapScheduleError(error: unknown): ScheduleEditorErrors {
   const message = error instanceof Error ? error.message : '';
   const normalized = message.toLowerCase();
   if (normalized.includes('cwd') || normalized.includes('directory')) {
-    return { cwd: '项目目录不存在或无法访问' };
+    return { form: '项目目录不存在或无法访问' };
   }
   if (normalized.includes('cron')) return { frequency: '执行频率无效' };
   if (normalized.includes('timezone')) return { timezone: '时区无效' };

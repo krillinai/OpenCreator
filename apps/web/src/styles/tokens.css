@@ -1,15 +1,20 @@
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0c0d0f;
-  --conversation-bg: #0c0d0f;
-  --sidebar: #0b0c0e;
+  --surface-page: #0c0d0f;
+  --surface-sidebar: #111214;
+  --surface-input: #18191c;
+  --surface-popover: #242529;
+  --bg: var(--surface-page);
+  --conversation-bg: var(--surface-page);
+  --sidebar: var(--surface-sidebar);
   --sidebar-hover: #18191c;
   --surface: #18191c;
   --surface-2: #1f2023;
   --surface-3: #282a2e;
-  --popover: #282a2e;
+  --popover: var(--surface-popover);
   --border: rgba(245, 245, 246, 0.1);
+  --border-hairline: rgba(245, 245, 246, 0.08);
   --border-strong: rgba(245, 245, 246, 0.3);
   --text: #f4f4f5;
   --muted: rgba(244, 244, 245, 0.7);
@@ -31,12 +36,29 @@
   --status-disconnected-soft: rgba(248, 113, 113, 0.18);
   --shadow-base: #050506;
   --shadow: 0 22px 60px rgba(5, 5, 6, 0.42);
+  --shadow-popover: 0 12px 32px rgba(5, 5, 6, 0.34);
+  --shadow-dialog: 0 24px 64px rgba(5, 5, 6, 0.44);
   --control-disabled: linear-gradient(180deg, #414348, #292b2f);
   --control-disabled-text: rgba(244, 244, 245, 0.48);
   --ambient-glow: rgba(244, 244, 245, 0.11);
   --scrim: rgba(5, 5, 6, 0.7);
   --logo-filter: grayscale(1) contrast(1.08) brightness(1.08);
-  --radius: 10px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius: var(--radius-lg);
+  --control-compact-sm: 30px;
+  --control-compact-md: 32px;
+  --control-compact-lg: 34px;
+  --control-touch: 44px;
+  --conversation-content-max: 816px;
+  --conversation-gutter: clamp(18px, 5vw, 72px);
+  --state-hover-bg: color-mix(in srgb, var(--text) 6%, transparent);
+  --state-pressed-bg: color-mix(in srgb, var(--text) 10%, transparent);
+  --state-border-hover: color-mix(in srgb, var(--text) 24%, transparent);
+  --state-focus-ring: color-mix(in srgb, var(--accent-strong) 72%, transparent);
+  --state-disabled-opacity: 0.46;
+  --state-pressed-opacity: 0.86;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-display: Georgia, "Times New Roman", ui-serif, serif;
   --font-mono: "SF Mono", "JetBrains Mono", "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -44,15 +66,20 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #fafafa;
-  --conversation-bg: #fafafa;
-  --sidebar: #ededee;
-  --sidebar-hover: #e1e1e3;
+  --surface-page: #fafafa;
+  --surface-sidebar: #f3f3f4;
+  --surface-input: #ffffff;
+  --surface-popover: #ffffff;
+  --bg: var(--surface-page);
+  --conversation-bg: var(--surface-page);
+  --sidebar: var(--surface-sidebar);
+  --sidebar-hover: #e9e9eb;
   --surface: #fafafa;
   --surface-2: #f0f0f1;
   --surface-3: #e4e4e6;
-  --popover: #fafafa;
+  --popover: var(--surface-popover);
   --border: rgba(24, 24, 27, 0.12);
+  --border-hairline: rgba(24, 24, 27, 0.07);
   --border-strong: rgba(24, 24, 27, 0.32);
   --text: #18181b;
   --muted: rgba(24, 24, 27, 0.68);
@@ -74,11 +101,16 @@
   --status-disconnected-soft: rgba(220, 38, 38, 0.12);
   --shadow-base: #18181b;
   --shadow: 0 18px 48px rgba(24, 24, 27, 0.12);
+  --shadow-popover: 0 12px 28px rgba(24, 24, 27, 0.14);
+  --shadow-dialog: 0 24px 60px rgba(24, 24, 27, 0.18);
   --control-disabled: linear-gradient(180deg, #e4e4e6, #d8d8db);
   --control-disabled-text: rgba(24, 24, 27, 0.46);
   --ambient-glow: rgba(24, 24, 27, 0.07);
   --scrim: rgba(24, 24, 27, 0.56);
   --logo-filter: grayscale(1) contrast(1.12) brightness(0.78);
+  --state-hover-bg: color-mix(in srgb, var(--text) 5%, transparent);
+  --state-pressed-bg: color-mix(in srgb, var(--text) 9%, transparent);
+  --state-border-hover: color-mix(in srgb, var(--text) 18%, transparent);
 }
 
 :root[data-accent="blue"] {

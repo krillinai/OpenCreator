@@ -156,6 +156,34 @@ describe('ProjectManagementDialog', () => {
     expect(screen.queryByRole('button', { name: '更换目录' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '修复目录' })).not.toBeInTheDocument();
   });
+
+  it('confirms before removing a project from project management', async () => {
+    const user = userEvent.setup();
+    const onArchive = vi.fn(async () => undefined);
+    render(
+      <ProjectManagementDialog
+        open
+        projects={[project({ name: '内容项目' })]}
+        archivedProjects={[]}
+        unassignedThreads={[]}
+        onClose={vi.fn()}
+        onUpdate={vi.fn(async () => undefined)}
+        onArchive={onArchive}
+        onRestore={vi.fn(async () => undefined)}
+        onAssignThread={vi.fn(async () => undefined)}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '移除' }));
+    expect(screen.getByRole('alertdialog', { name: '移除项目' })).toBeInTheDocument();
+    expect(screen.getByText('确认从 Clawee 中移除“内容项目”？项目目录和文件不会被删除。'))
+      .toBeInTheDocument();
+    expect(onArchive).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '移除项目' }));
+    expect(onArchive).toHaveBeenCalledWith('project-active');
+    expect(screen.queryByRole('alertdialog', { name: '移除项目' })).not.toBeInTheDocument();
+  });
 });
 
 function project(overrides: Partial<ProjectResponse> = {}): ProjectResponse {

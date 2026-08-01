@@ -53,6 +53,7 @@ export function SkillDetailModal({
   });
   const actionReasonId = action.reason ? `skill-market-modal-action-reason-${sanitizeId(item.id)}` : undefined;
   const riskNotes = getRiskNotes(item);
+  const detailTags = getDetailTags(item);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -134,11 +135,18 @@ export function SkillDetailModal({
               <h2 id="skill-market-detail-title">{item.title}</h2>
               <div className="skill-market-detail-meta">
                 <span className="skill-market-detail-author">{item.entry.creator.name}</span>
-                <span>{item.category.name}</span>
-                {item.status === 'installed_unknown_version' ? <span>版本未知</span> : null}
               </div>
             </div>
           </div>
+          <button
+            aria-label="关闭详情"
+            className="skill-market-detail-head__close"
+            onClick={onClose}
+            title="关闭详情"
+            type="button"
+          >
+            <X size={17} aria-hidden="true" />
+          </button>
         </header>
 
         <div
@@ -147,11 +155,10 @@ export function SkillDetailModal({
         >
           <div className="skill-market-detail-layout">
             <section className="skill-market-detail-block skill-market-detail-description">
-              <h3>描述</h3>
               <p>{item.entry.summary || item.entry.tagline}</p>
-              {item.entry.tasks.length > 0 ? (
+              {detailTags.length > 0 ? (
                 <div className="skill-market-detail-chip-list" aria-label="适合场景">
-                  {item.entry.tasks.slice(0, 8).map((task) => (
+                  {detailTags.map((task) => (
                     <span key={task}>{task}</span>
                   ))}
                 </div>
@@ -161,8 +168,8 @@ export function SkillDetailModal({
             <section className="skill-market-detail-block skill-market-detail-workflow-section">
               <h3 className="skill-market-visually-hidden">输入与产出</h3>
               <div className="skill-market-detail-workflow">
-                <DetailList title="需要输入" items={item.entry.inputs} />
-                <DetailList title="会产出" items={item.entry.outputs} />
+                <DetailList title="输入" items={item.entry.inputs} />
+                <DetailList title="产出" items={item.entry.outputs} />
               </div>
             </section>
 
@@ -379,6 +386,10 @@ function getRiskNotes(item: SkillMarketViewEntry): string[] {
   if (item.entry.risks.readsLocalFiles) notes.unshift('会读取本地文件，请确认资料范围。');
   if (item.entry.risks.privateDataRisk) notes.unshift('涉及私密资料时需先脱敏。');
   return notes.length > 0 ? notes : ['使用前确认输入资料、版权和发布平台要求。'];
+}
+
+function getDetailTags(item: SkillMarketViewEntry): string[] {
+  return Array.from(new Set([item.category.name, ...item.entry.tasks])).slice(0, 5);
 }
 
 function handleAction(

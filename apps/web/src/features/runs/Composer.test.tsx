@@ -63,7 +63,10 @@ describe('Composer', () => {
     expect(permissionButton).toHaveAttribute('title', '更改项目权限');
     expect(permissionButton.querySelectorAll('svg')).toHaveLength(2);
     expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
+    const modelButton = screen.getByRole('button', { name: '选择模型 默认模型' });
+    expect(modelButton).toBeInTheDocument();
+    expect(modelButton.querySelector('.lucide-circle')).not.toBeInTheDocument();
+    expect(modelButton.querySelector('.lucide-chevron-down')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     expect(screen.queryByText('跟随全局配置')).not.toBeInTheDocument();
     expect(screen.queryByText('本地模式')).not.toBeInTheDocument();
@@ -72,7 +75,7 @@ describe('Composer', () => {
   });
 
   it('hides the project selector for a project-independent task draft', () => {
-    render(
+    const { container } = render(
       <Composer
         {...defaultProps}
         showProjectSelector={false}
@@ -82,6 +85,7 @@ describe('Composer', () => {
 
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: '选择项目' })).not.toBeInTheDocument();
+    expect(container.querySelector('.clawee-composer')).toHaveClass('without-project-selector');
     expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
   });
 
@@ -131,7 +135,9 @@ describe('Composer', () => {
     expect(screen.getByRole('menu', { name: '新建项目' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('menuitem', { name: '新建空白项目' }));
-    expect(screen.getByRole('dialog', { name: '创建项目' })).toBeInTheDocument();
+    const createProjectDialog = screen.getByRole('dialog', { name: '创建项目' });
+    expect(createProjectDialog).toBeInTheDocument();
+    expect(createProjectDialog.parentElement?.parentElement).toBe(document.body);
     await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), '我的项目');
     await user.click(screen.getByRole('button', { name: '创建' }));
     expect(onCreateBlankProject).toHaveBeenCalledWith('我的项目');

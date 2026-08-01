@@ -8,19 +8,13 @@ describe('ConversationHeader', () => {
     render(
       <ConversationHeader
         title="整理本周项目进展"
-        statusLabel="正在等待本地服务"
-        statusHealthy={false}
         onOpenLocation={vi.fn()}
       />
     );
 
     expect(screen.getByRole('heading', { name: '整理本周项目进展' })).toBeInTheDocument();
     expect(screen.queryByText('content-design')).not.toBeInTheDocument();
-    expect(screen.getByRole('status', { name: '正在等待本地服务' })).toHaveClass(
-      'connection-indicator',
-      'is-unhealthy'
-    );
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '文件' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '详情' })).not.toBeInTheDocument();
   });

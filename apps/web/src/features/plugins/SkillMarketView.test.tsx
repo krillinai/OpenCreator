@@ -48,8 +48,8 @@ describe('SkillMarketView', () => {
 
     const heading = screen.getByRole('heading', { level: 1, name: '插件' });
     expect(heading).toBeInTheDocument();
-    expect(heading.querySelector('.lucide-plug')).toBeInTheDocument();
-    expect(screen.getAllByText('55 个 Skill')).toHaveLength(2);
+    expect(heading.querySelector('.lucide-blocks')).toBeInTheDocument();
+    expect(screen.queryByText('55 个 Skill')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
     expect(screen.getByText('已显示 12 / 55')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '加载更多 Skill' })).not.toBeInTheDocument();
@@ -69,8 +69,46 @@ describe('SkillMarketView', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: '场景' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /我的收藏/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: '排序' })).toHaveValue('recommended');
+    expect(screen.queryByRole('combobox', { name: '排序' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: '分类' })).not.toBeInTheDocument();
+  });
+
+  it('添加技能菜单可以创建或上传技能，并在操作后关闭', async () => {
+    const user = userEvent.setup();
+    const onCreateSkill = vi.fn();
+    const onUploadSkill = vi.fn();
+    renderSkillMarket({ onCreateSkill, onUploadSkill });
+
+    const trigger = screen.getByRole('button', { name: '添加技能' });
+    await user.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(screen.getByText('通过对话生成新的技能')).toBeInTheDocument();
+    expect(screen.getByText('选择包含 SKILL.md 的文件夹')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: /创建技能/ }));
+    expect(onCreateSkill).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    await user.click(screen.getByRole('menuitem', { name: /上传技能/ }));
+    expect(onUploadSkill).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('添加技能菜单支持 Escape、外部点击，并隐藏不可用的上传入口', async () => {
+    const user = userEvent.setup();
+    renderSkillMarket({ onCreateSkill: vi.fn() });
+
+    const trigger = screen.getByRole('button', { name: '添加技能' });
+    await user.click(trigger);
+    expect(screen.queryByRole('menuitem', { name: /上传技能/ })).not.toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    await user.click(trigger);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('超宽屏下哨兵持续可见时自动加载全部批次', async () => {
@@ -118,7 +156,7 @@ describe('SkillMarketView', () => {
     expect(screen.queryByTestId('skill-market-scroll-sentinel')).not.toBeInTheDocument();
   });
 
-  it('通过平铺的分类和场景联动筛选并可一次重置', async () => {
+  it('通过一级分类筛选并可一次重置', async () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
@@ -134,17 +172,9 @@ describe('SkillMarketView', () => {
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(
       Math.min(categoryResult.entries.length, 12)
     );
-    expect(categoryResult.subcategories.length).toBeGreaterThan(0);
+    expect(screen.queryByRole('group', { name: '场景' })).not.toBeInTheDocument();
 
-    const firstSubcategory = categoryResult.subcategories[0]!;
-    await user.click(screen.getByRole('button', {
-      name: `${firstSubcategory.label} ${firstSubcategory.count}`,
-    }));
-    expect(screen.getAllByTestId('skill-market-card')).toHaveLength(
-      Math.min(firstSubcategory.count, 12)
-    );
-
-    await user.click(screen.getByRole('button', { name: '重置筛选' }));
+    await user.click(screen.getByRole('button', { name: '全部 55' }));
     expect(screen.getByRole('button', { name: '全部 55' })).toHaveAttribute(
       'aria-pressed',
       'true'
@@ -173,36 +203,6 @@ describe('SkillMarketView', () => {
     expect(visibleIds.length).toBeGreaterThan(0);
   });
 
-  it('排序菜单只保留推荐与已安装优先，并可切换后重置', async () => {
-    const user = userEvent.setup();
-    const skills = createSkillsResponse([
-      createSkill({ id: 'frontend-slides', status: 'valid' }),
-    ]);
-    const records = [createRecord({ skillId: 'frontend-slides', marketRevision: 1 })];
-    renderSkillMarket({ skills, installRecords: records });
-
-    const installedSortedIds = filterAndSortSkillMarketEntries({
-      entries: skillMarketCatalog,
-      skills,
-      records,
-      sort: 'installed',
-    }).entries.map((entry) => entry.id);
-    const sort = screen.getByRole('combobox', { name: '排序' });
-
-    expect(within(sort).getAllByRole('option').map((option) => option.textContent)).toEqual([
-      '推荐优先',
-      '已安装优先',
-    ]);
-    await user.selectOptions(sort, 'installed');
-
-    expect(
-      screen.getAllByTestId('skill-market-card').map((card) => card.getAttribute('data-skill-id'))
-    ).toEqual(installedSortedIds.slice(0, 12));
-
-    await user.click(screen.getByRole('button', { name: '重置筛选' }));
-    expect(sort).toHaveValue('recommended');
-  });
-
   it('筛选变化后重置首屏批次，加载更多后安装状态仍保持正确', async () => {
     const user = userEvent.setup();
     const onInstall = vi.fn();
@@ -229,10 +229,10 @@ describe('SkillMarketView', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toBeInTheDocument();
     expect(within(dialog).getByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '描述' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '描述' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '输入与产出' })).toBeInTheDocument();
-    expect(screen.getByText('需要输入')).toBeInTheDocument();
-    expect(screen.getByText('会产出')).toBeInTheDocument();
+    expect(screen.getByText('输入')).toBeInTheDocument();
+    expect(screen.getByText('产出')).toBeInTheDocument();
     expect(screen.getByText('精选案例')).toBeInTheDocument();
     expect(screen.getByText('使用前注意')).toBeInTheDocument();
     expect(dialog.querySelector('.skill-market-detail-layout')).toBeInTheDocument();
@@ -252,10 +252,11 @@ describe('SkillMarketView', () => {
     expect(dialog.querySelector('.skill-market-modal__body')).not.toContainElement(title);
     expect(meta!.firstElementChild).toHaveClass('skill-market-detail-author');
     expect(meta!.firstElementChild).toHaveTextContent('zarazhangrui');
+    expect(meta!.children).toHaveLength(1);
     expect(within(dialog).queryByRole('button', { name: /收藏/ })).not.toBeInTheDocument();
     expect(within(dialog).queryByText(/位用户/)).not.toBeInTheDocument();
     expect(dialog.querySelector('.skill-market-case__caption svg')).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: '关闭详情' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '关闭详情' })).toBeInTheDocument();
   });
 
   it('案例超过三个时全部渲染在单行横滑轨道中', async () => {
@@ -361,7 +362,7 @@ describe('SkillMarketView', () => {
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = screen.getByRole('dialog');
-    const firstButton = within(dialog).getByRole('button', { name: '预览 编辑风格演示页' });
+    const firstButton = within(dialog).getByRole('button', { name: '关闭详情' });
     firstButton.focus();
 
     await user.tab({ shift: true });
@@ -445,7 +446,7 @@ describe('SkillMarketView', () => {
     expect(onInstall).toHaveBeenCalledWith('videocaptioner');
   });
 
-  it('卡片精简低优先级信息，并让高信号标签与安装按钮位于同一操作行', () => {
+  it('卡片只保留名称、用途和主操作，完整标签留在详情中', () => {
     const entry = createMarketEntry({
       category: 'video-subtitle',
       subcategory: '字幕生成',
@@ -456,22 +457,20 @@ describe('SkillMarketView', () => {
     renderSkillMarket({ catalogOverride: [entry] });
 
     const card = getSkillCard('test-skill');
-    const tags = within(card).getByLabelText('标签');
-    expect([...tags.querySelectorAll(':scope > span')].map((tag) => tag.textContent)).toEqual([
-      '字幕生成',
-      '转录',
-    ]);
+    expect(within(card).queryByLabelText('标签')).not.toBeInTheDocument();
     expect(card.querySelector('.skill-market-card__cover')).not.toBeInTheDocument();
     expect(within(card).getByAltText('Clawee')).toBeInTheDocument();
+    expect(within(card).queryByText('Clawee')).not.toBeInTheDocument();
     expect(within(card).queryByRole('button', { name: /收藏/ })).not.toBeInTheDocument();
     expect(within(card).queryByLabelText('使用人数')).not.toBeInTheDocument();
 
-    const actionRow = card.querySelector('.skill-market-card__action-row');
-    expect(actionRow).toContainElement(tags);
-    expect(actionRow).toContainElement(within(card).getByRole('button', { name: '安装' }));
+    const installButton = within(card).getByRole('button', { name: '安装' });
+    expect(installButton).toHaveClass('skill-market-action-button--install');
+    expect(card).toContainElement(installButton);
+    expect(card.querySelector('.skill-market-card__action-row')).not.toBeInTheDocument();
   });
 
-  it('外部安装同名有效 Skill 显示“使用”和“版本未知”', async () => {
+  it('外部安装同名有效 Skill 只显示可使用状态', async () => {
     const user = userEvent.setup();
     renderSkillMarket({
       skills: createSkillsResponse([
@@ -482,7 +481,7 @@ describe('SkillMarketView', () => {
     await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
     const card = getSkillCard('frontend-slides');
 
-    expect(within(card).getByText('版本未知')).toBeInTheDocument();
+    expect(within(card).queryByText('版本未知')).not.toBeInTheDocument();
     expect(within(card).getByRole('button', { name: '使用' })).toBeEnabled();
   });
 
@@ -893,6 +892,8 @@ function createProps({
   onInstall = vi.fn(),
   onUpdate = vi.fn(),
   onUse = vi.fn(),
+  onCreateSkill,
+  onUploadSkill,
   catalogOverride,
 }: {
   connected?: boolean;
@@ -907,6 +908,8 @@ function createProps({
   onInstall?: (skillId: string) => void;
   onUpdate?: (skillId: string) => void;
   onUse?: (skillId: string, projectId: string) => void;
+  onCreateSkill?: () => void;
+  onUploadSkill?: () => void;
   catalogOverride?: typeof skillMarketCatalog;
 } = {}) {
   return {
@@ -922,6 +925,8 @@ function createProps({
     onInstall,
     onUpdate,
     onUse,
+    onCreateSkill,
+    onUploadSkill,
     catalogOverride,
   };
 }

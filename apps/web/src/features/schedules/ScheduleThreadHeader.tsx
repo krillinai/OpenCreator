@@ -252,7 +252,7 @@ export function ScheduleThreadHeader(props: {
             {editorValues === undefined ? (
               <div className="schedule-thread-editor-loading">
                 <header>
-                  <strong>编辑计划任务</strong>
+                  <strong>编辑定时任务</strong>
                   <button
                     type="button"
                     aria-label="取消编辑"

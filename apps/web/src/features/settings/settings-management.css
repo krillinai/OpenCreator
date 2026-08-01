@@ -28,10 +28,10 @@
   justify-content: center;
   gap: 7px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   color: var(--text);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .settings-primary-button {
@@ -67,7 +67,7 @@
 .settings-inline-warning {
   padding: 9px 11px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface-2);
   overflow-wrap: anywhere;
 }
@@ -138,9 +138,9 @@
   flex: 0 0 auto;
   padding: 2px 6px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .settings-item__title span[data-status="configured"],
@@ -234,7 +234,7 @@
   gap: 6px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .settings-form-grid input,
@@ -244,7 +244,7 @@
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--text);
   font: inherit;
@@ -285,7 +285,7 @@
   margin-bottom: 6px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .settings-env-editor > div {
@@ -317,7 +317,7 @@
   gap: 7px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .cleanup-retention-input {
@@ -331,7 +331,7 @@
   height: 36px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--text);
   font: inherit;
@@ -408,7 +408,7 @@
   gap: 6px;
   padding: 10px 11px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface-2);
 }
 
@@ -479,7 +479,7 @@
 .cleanup-result__counts strong {
   padding: 9px 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface-2);
   font-size: 12px;
   text-align: center;
@@ -516,7 +516,7 @@
 .diagnostics-overview span,
 .diagnostics-overview small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .diagnostics-overview strong {
@@ -549,7 +549,7 @@
   padding: 11px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--text);
   font: 12px/1.55 var(--font-mono);
@@ -601,7 +601,7 @@
   gap: 6px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .memory-toolbar input,
@@ -611,7 +611,7 @@
   height: 36px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--text);
   font: inherit;
@@ -703,7 +703,7 @@
 
 .memory-item__main > code {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -717,9 +717,9 @@
 .summary-list header span {
   padding: 2px 6px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .memory-item__meta span[data-status="enabled"] {
@@ -746,7 +746,7 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--muted);
 }
@@ -792,7 +792,7 @@
   min-height: 30px;
   padding: 0 9px;
   border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--border));
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: inherit;
 }

@@ -34,9 +34,13 @@ describe('ApprovalPanel', () => {
       />
     );
 
+    expect(screen.getByText('终端')).toBeInTheDocument();
+    expect(screen.getByText('允许 Clawee 执行这条命令？')).toBeInTheDocument();
+    expect(screen.getByText('仅本次')).toBeInTheDocument();
+    expect(screen.getByText('查看操作详情')).toBeInTheDocument();
     expect(screen.getByText('rm -rf build')).toBeInTheDocument();
     expect(screen.getByText('/workspace')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '批准' }));
+    fireEvent.click(screen.getByRole('button', { name: '允许一次' }));
     fireEvent.click(screen.getByRole('button', { name: '拒绝' }));
 
     expect(onApprove).toHaveBeenCalledWith('approval_1');
@@ -53,7 +57,7 @@ describe('ApprovalPanel', () => {
     );
 
     expect(screen.getByText('已拒绝')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '允许一次' })).not.toBeInTheDocument();
   });
 
   it('explains an expired approval without exposing technical codes', () => {

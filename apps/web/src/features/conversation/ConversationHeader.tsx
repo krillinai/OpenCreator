@@ -1,10 +1,8 @@
-import { MapPin } from 'lucide-react';
+import { PanelLeftClose } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export function ConversationHeader(props: {
   title: string;
-  statusLabel?: string;
-  statusHealthy?: boolean;
   taskToolbar?: ReactNode;
   fileWorkspaceOpen?: boolean;
   onOpenLocation(): void;
@@ -14,26 +12,18 @@ export function ConversationHeader(props: {
       <div className="conversation-title">
         <div className="conversation-title-row">
           <h1>{props.title}</h1>
-          {props.statusLabel ? (
-            <span
-              aria-label={props.statusLabel}
-              className={`connection-indicator ${props.statusHealthy ? 'is-healthy' : 'is-unhealthy'}`}
-              role="status"
-              title={props.statusLabel}
-            />
-          ) : null}
         </div>
       </div>
       <div className="conversation-actions">
         <button
-          className="toolbar-button"
+          className="sidebar-collapse-button conversation-file-button"
           type="button"
+          aria-label="文件"
           aria-pressed={props.fileWorkspaceOpen === true}
           title={props.fileWorkspaceOpen ? '收起文件工作区' : '打开文件工作区'}
           onClick={props.onOpenLocation}
         >
-          <MapPin aria-hidden="true" size={16} />
-          <span>文件</span>
+          <PanelLeftClose aria-hidden="true" size={18} strokeWidth={1.85} />
         </button>
       </div>
       {props.taskToolbar ? (

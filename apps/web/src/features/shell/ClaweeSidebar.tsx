@@ -2,6 +2,7 @@ import type { EnterpriseSessionResponse } from '@clawee/protocol';
 import { useEffect, useRef, useState } from 'react';
 import {
   Archive,
+  Blocks,
   CircleAlert,
   Clock3,
   Folder,
@@ -14,7 +15,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PauseCircle,
-  Plug,
   Search,
   Settings,
   Settings2,
@@ -26,6 +26,7 @@ import {
   type LucideIcon
 } from 'lucide-react';
 import type { ActiveView } from '../../app/app-state.js';
+import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
 import type { ColorMode } from '../../styles/color-mode.js';
 import type {
   ClaweeConversation,
@@ -68,6 +69,11 @@ export function ClaweeSidebar(props: {
   const [projectMenuId, setProjectMenuId] = useState<string>();
   const [archivingConversationId, setArchivingConversationId] = useState<string>();
   const [deletingDraftThreadId, setDeletingDraftThreadId] = useState<string>();
+  const [draftPendingDeletion, setDraftPendingDeletion] = useState<{ threadId: string }>();
+  const [projectPendingRemoval, setProjectPendingRemoval] = useState<{
+    id: string;
+    name: string;
+  }>();
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const collapsed = props.collapsed === true;
   const autoCollapsed = props.autoCollapsed === true;
@@ -85,8 +91,8 @@ export function ClaweeSidebar(props: {
   }> = [
     { label: '新对话', icon: SquarePen, onClick: () => props.onNewConversation() },
     { label: '搜索', icon: Search, view: 'search', onClick: () => props.onOpenView('search') },
-    { label: '已安排', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') },
-    { label: '插件', icon: Plug, view: 'plugins', onClick: () => props.onOpenView('plugins') }
+    { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') },
+    { label: '插件', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') }
   ];
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
   const selectedTaskThread = props.tasks.some(
@@ -135,7 +141,7 @@ export function ClaweeSidebar(props: {
           >
             <img
               className="sidebar-logo-image sidebar-logo-mark"
-              src="/logo-v2-white-logo.svg"
+              src={props.colorMode === 'light' ? '/logo-v2-black-logo.svg' : '/logo-v2-white-logo.svg'}
               alt="Clawee"
             />
             <PanelLeftOpen className="sidebar-expand-icon" size={19} strokeWidth={1.85} aria-hidden="true" />
@@ -143,7 +149,7 @@ export function ClaweeSidebar(props: {
         ) : (
           <>
             <div className="sidebar-logo-lockup">
-              <img className="sidebar-logo-image sidebar-logo-full" src={fullLogoSrc} alt="Clawee" />
+              <span className="sidebar-logo-word">Clawee</span>
             </div>
             <button
               className="sidebar-collapse-button"
@@ -303,7 +309,7 @@ export function ClaweeSidebar(props: {
                                 title="仅从项目列表移除，不会删除本机文件"
                                 onClick={() => {
                                   setProjectMenuId(undefined);
-                                  props.onArchiveProject?.(project.id);
+                                  setProjectPendingRemoval({ id: project.id, name: project.name });
                                 }}
                               >
                                 <FolderMinus size={15} strokeWidth={1.9} aria-hidden="true" />
@@ -451,19 +457,9 @@ export function ClaweeSidebar(props: {
                         aria-label={`删除草稿 ${task.name}`}
                         title="删除草稿"
                         disabled={deletingDraftThreadId === task.threadId}
-                        onClick={async () => {
-                          if (
-                            task.threadId === undefined
-                            || !window.confirm(`删除“${task.name}”？此操作不会删除项目文件。`)
-                          ) {
-                            return;
-                          }
-                          setDeletingDraftThreadId(task.threadId);
-                          try {
-                            await props.onDeleteTaskDraft?.(task.threadId);
-                          } finally {
-                            setDeletingDraftThreadId(undefined);
-                          }
+                        onClick={() => {
+                          if (task.threadId === undefined) return;
+                          setDraftPendingDeletion({ threadId: task.threadId });
                         }}
                       >
                         {deletingDraftThreadId === task.threadId ? (
@@ -509,6 +505,39 @@ export function ClaweeSidebar(props: {
           <Settings size={17} strokeWidth={2} aria-hidden="true" />
         </button>
       </div>
+      <ConfirmDialog
+        open={projectPendingRemoval !== undefined}
+        title="移除项目"
+        description={projectPendingRemoval === undefined
+          ? '项目目录和文件不会被删除。'
+          : `确认从 Clawee 中移除“${projectPendingRemoval.name}”？项目目录和文件不会被删除。`}
+        confirmLabel="移除项目"
+        destructive
+        onCancel={() => setProjectPendingRemoval(undefined)}
+        onConfirm={() => {
+          if (projectPendingRemoval === undefined) return;
+          props.onArchiveProject?.(projectPendingRemoval.id);
+          setProjectPendingRemoval(undefined);
+        }}
+      />
+      <ConfirmDialog
+        open={draftPendingDeletion !== undefined}
+        title="删除任务草稿"
+        description="此操作不会删除项目文件。"
+        confirmLabel="删除草稿"
+        destructive
+        busy={deletingDraftThreadId !== undefined}
+        onCancel={() => setDraftPendingDeletion(undefined)}
+        onConfirm={() => {
+          if (draftPendingDeletion === undefined || deletingDraftThreadId !== undefined) return;
+          const { threadId } = draftPendingDeletion;
+          setDeletingDraftThreadId(threadId);
+          void Promise.resolve(props.onDeleteTaskDraft?.(threadId)).finally(() => {
+            setDeletingDraftThreadId(undefined);
+            setDraftPendingDeletion(undefined);
+          });
+        }}
+      />
     </nav>
   );
 }

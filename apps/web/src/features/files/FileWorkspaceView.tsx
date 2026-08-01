@@ -67,6 +67,8 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
   const loadedPathsRef = useRef(new Set<string>());
   const openRequestIdRef = useRef(0);
   const mountedRef = useRef(true);
+  const selectedPathRef = useRef(props.selectedPath);
+  selectedPathRef.current = props.selectedPath;
 
   const thread = props.selectedThread;
   const service = props.workspaceFileService ?? undefined;
@@ -159,10 +161,10 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
         setTruncatedPaths(directory.truncated ? [''] : []);
         setWorkspaceMessage(directory.warnings[0]);
 
-        const requestedPath = props.selectedPath?.trim();
+        const requestedPath = selectedPathRef.current?.trim();
         const recentPath = recentPathStorageKey ? readRecentPath(recentPathStorageKey) : undefined;
         const nextPath = requestedPath && requestedPath.length > 0
-          ? requestedPath
+          ? resolveDirectoryFilePath(requestedPath, directory.nodes)
           : recentPath ?? chooseSuggestedPath(directory);
         if (nextPath) {
           await openFilePath(nextPath, { skipDirtyConfirm: true });
@@ -192,7 +194,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     ) {
       return;
     }
-    void openFilePath(requestedPath, { skipDirtyConfirm: true });
+    void openFilePath(resolveDirectoryFilePath(requestedPath, nodes), { skipDirtyConfirm: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.selectedPath]);
 
@@ -599,6 +601,20 @@ function isBlobMeta(meta: WorkspaceFileMeta): boolean {
 
 function workspaceModeForMeta(meta?: WorkspaceFileMeta): FileEditorMode {
   return meta !== undefined && isPreviewable(meta) ? 'preview' : defaultModeForMeta(meta);
+}
+
+function resolveDirectoryFilePath(
+  requestedPath: string,
+  nodes: WorkspaceDirectoryResponse['nodes']
+): string {
+  const normalizedRequestedPath = requestedPath.replace(/\\/g, '/').replace(/^\.\//, '');
+  const exactMatch = nodes.find(node => node.type === 'file' && node.path === normalizedRequestedPath);
+  if (exactMatch !== undefined) return exactMatch.path;
+
+  const requestedName = normalizedRequestedPath.split('/').at(-1);
+  if (requestedName === undefined || requestedName.length === 0) return normalizedRequestedPath;
+  const nameMatches = nodes.filter(node => node.type === 'file' && node.name === requestedName);
+  return nameMatches.length === 1 ? nameMatches[0]!.path : normalizedRequestedPath;
 }
 
 function humanizeError(error: unknown, fallback: string): string {

@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { extractWorkspaceFilePaths } from './markdown-inline.js';
 
 describe('MarkdownRenderer', () => {
   beforeEach(() => {
@@ -188,12 +189,35 @@ describe('MarkdownRenderer', () => {
       />
     );
 
-    expect(screen.getByText('$zhiyu-brainstorm')).toHaveClass('md-skill-reference');
-    expect(screen.getByText('$zhiyu-brainstorm')).toHaveAttribute(
+    const skill = screen.getByText('Zhiyu Brainstorm').closest('.md-skill-reference');
+    expect(skill).toBeInTheDocument();
+    expect(skill).toHaveAttribute(
       'title',
       'Skill：zhiyu-brainstorm'
     );
     expect(screen.getByText(/分析需求，再继续执行/)).toBeInTheDocument();
+  });
+
+  it('formats skill acronyms as readable labels', () => {
+    render(<MarkdownRenderer variant="user" text="$seo-audit https://www.workbuddy.cn/" />);
+
+    expect(screen.getByText('SEO Audit')).toBeInTheDocument();
+    expect(screen.queryByText('$seo-audit')).not.toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'https://www.workbuddy.cn/' });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://www.workbuddy.cn/'
+    );
+    expect(link.querySelector('img')).toHaveAttribute(
+      'src',
+      '/site-icons/workbuddy.svg'
+    );
+  });
+
+  it('extracts unique workspace files for final artifact cards', () => {
+    expect(extractWorkspaceFilePaths(
+      '打开 reports/aso-audit.html，也可以查看 `reports/aso-audit.html` 和 data/score.xlsx。'
+    )).toEqual(['reports/aso-audit.html', 'data/score.xlsx']);
   });
 
   it('does not throw on nested or multiline emphasis', () => {

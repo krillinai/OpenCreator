@@ -65,11 +65,12 @@ describe('ClaweeSidebar', () => {
   it('renders global actions, projects with nested conversations, and the settings footer action', () => {
     renderSidebar();
 
-    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-v2-white.svg');
+    expect(screen.getByText('Clawee')).toHaveClass('sidebar-logo-word');
+    expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '已安排' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
@@ -97,10 +98,11 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
   });
 
-  it('uses the black logo in light mode', () => {
+  it('keeps the text-only wordmark in light mode', () => {
     renderSidebar({ colorMode: 'light' });
 
-    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-v2-black.svg');
+    expect(screen.getByText('Clawee')).toHaveClass('sidebar-logo-word');
+    expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
   });
 
   it('selects projects without conversations', async () => {
@@ -220,7 +222,6 @@ describe('ClaweeSidebar', () => {
 
   it('deletes only task drafts after confirmation', async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const onDeleteTaskDraft = vi.fn(async () => undefined);
 
     renderSidebar({
@@ -233,9 +234,29 @@ describe('ClaweeSidebar', () => {
 
     await user.click(screen.getByRole('button', { name: '删除草稿 任务草稿' }));
 
-    expect(confirm).toHaveBeenCalledWith('删除“任务草稿”？此操作不会删除项目文件。');
+    expect(screen.getByRole('alertdialog', { name: '删除任务草稿' })).toBeInTheDocument();
+    expect(screen.getByText('此操作不会删除项目文件。')).toBeInTheDocument();
+    expect(onDeleteTaskDraft).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: '删除草稿' }));
     expect(onDeleteTaskDraft).toHaveBeenCalledWith('thread-draft');
+    expect(screen.queryByRole('alertdialog', { name: '删除任务草稿' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '删除草稿 正式任务' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a task draft when its deletion is cancelled', async () => {
+    const user = userEvent.setup();
+    const onDeleteTaskDraft = vi.fn();
+
+    renderSidebar({
+      tasks: [createTask({ id: 'draft', name: '任务草稿', status: 'draft' })],
+      onDeleteTaskDraft
+    });
+
+    await user.click(screen.getByRole('button', { name: '删除草稿 任务草稿' }));
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(onDeleteTaskDraft).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog', { name: '删除任务草稿' })).not.toBeInTheDocument();
   });
 
   it('collapses the selected project when clicking it again', async () => {
@@ -360,7 +381,7 @@ describe('ClaweeSidebar', () => {
     expect(onAddProject).toHaveBeenCalledTimes(1);
   });
 
-  it('removes a Runtime project from its action menu without implying file deletion', async () => {
+  it('confirms before removing a Runtime project without implying file deletion', async () => {
     const user = userEvent.setup();
     const onArchiveProject = vi.fn();
 
@@ -374,7 +395,27 @@ describe('ClaweeSidebar', () => {
     expect(remove).toHaveAttribute('title', '仅从项目列表移除，不会删除本机文件');
     await user.click(remove);
 
+    expect(screen.getByRole('alertdialog', { name: '移除项目' })).toBeInTheDocument();
+    expect(screen.getByText('确认从 Clawee 中移除“content-design”？项目目录和文件不会被删除。'))
+      .toBeInTheDocument();
+    expect(onArchiveProject).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: '移除项目' }));
+
     expect(onArchiveProject).toHaveBeenCalledWith('content-design');
+    expect(screen.queryByRole('alertdialog', { name: '移除项目' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a project when removal is cancelled', async () => {
+    const user = userEvent.setup();
+    const onArchiveProject = vi.fn();
+    renderSidebar({ projects, onArchiveProject });
+
+    await user.click(screen.getByRole('button', { name: '项目操作 content-design' }));
+    await user.click(screen.getByRole('menuitem', { name: '移除项目 content-design' }));
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(onArchiveProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog', { name: '移除项目' })).not.toBeInTheDocument();
   });
 
   it('shows directory replacement only when the host provides that capability', async () => {

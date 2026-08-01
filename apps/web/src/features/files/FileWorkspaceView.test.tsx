@@ -83,6 +83,89 @@ describe('FileWorkspaceView', () => {
     expect(await screen.findByRole('heading', { name: 'Generated' })).toBeInTheDocument();
   });
 
+  it('目录加载期间 selectedPath 更新时打开最新目标文件', async () => {
+    const thread = createThread();
+    let resolveDirectory: ((directory: WorkspaceDirectoryResponse) => void) | undefined;
+    const directoryPromise = new Promise<WorkspaceDirectoryResponse>((resolve) => {
+      resolveDirectory = resolve;
+    });
+    const service = createService({
+      metas: {
+        'xiaodoujia-apple-aso-audit.html': createMeta({
+          path: 'xiaodoujia-apple-aso-audit.html',
+          name: 'xiaodoujia-apple-aso-audit.html',
+          kind: 'html',
+          mime: 'text/html'
+        })
+      },
+      contents: {
+        'xiaodoujia-apple-aso-audit.html': '<h1>ASO Audit</h1>'
+      }
+    });
+    service.listDirectory.mockImplementation(async () => directoryPromise);
+
+    const view = render(
+      <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
+    );
+    view.rerender(
+      <FileWorkspaceView
+        selectedThread={thread}
+        selectedPath="xiaodoujia-apple-aso-audit.html"
+        workspaceFileService={service}
+        onClose={vi.fn()}
+      />
+    );
+
+    resolveDirectory?.(createDirectory({
+      suggestedOpenPath: 'README.md',
+      nodes: [
+        fileNode('README.md', 'markdown'),
+        fileNode('xiaodoujia-apple-aso-audit.html', 'html')
+      ]
+    }));
+
+    expect(await screen.findByTitle('xiaodoujia-apple-aso-audit.html HTML 预览')).toBeInTheDocument();
+    expect(service.getMeta).not.toHaveBeenCalledWith(thread.id, 'README.md');
+  });
+
+  it('外部路径前缀不一致时使用文件树中的真实路径打开文件', async () => {
+    const thread = createThread();
+    const service = createService({
+      directories: {
+        '': createDirectory({
+          nodes: [fileNode('xiaodoujia-apple-aso-audit.html', 'html')]
+        })
+      },
+      metas: {
+        'xiaodoujia-apple-aso-audit.html': createMeta({
+          path: 'xiaodoujia-apple-aso-audit.html',
+          name: 'xiaodoujia-apple-aso-audit.html',
+          kind: 'html',
+          mime: 'text/html'
+        })
+      },
+      contents: {
+        'xiaodoujia-apple-aso-audit.html': '<h1>ASO Audit</h1>'
+      }
+    });
+
+    render(
+      <FileWorkspaceView
+        selectedThread={thread}
+        selectedPath="/private/runtime/another-root/xiaodoujia-apple-aso-audit.html"
+        workspaceFileService={service}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByTitle('xiaodoujia-apple-aso-audit.html HTML 预览')).toBeInTheDocument();
+    expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'xiaodoujia-apple-aso-audit.html');
+    expect(service.getMeta).not.toHaveBeenCalledWith(
+      thread.id,
+      '/private/runtime/another-root/xiaodoujia-apple-aso-audit.html'
+    );
+  });
+
   it('点击目录时调用 listDirectory 并合并节点', async () => {
     const user = userEvent.setup();
     const thread = createThread();

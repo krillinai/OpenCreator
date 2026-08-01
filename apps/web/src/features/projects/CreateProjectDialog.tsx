@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export function CreateProjectDialog(props: {
   open: boolean;
@@ -30,7 +31,7 @@ export function CreateProjectDialog(props: {
     }
   };
 
-  return (
+  return createPortal(
     <div
       className="composer-project-name-backdrop"
       onMouseDown={event => {
@@ -45,7 +46,7 @@ export function CreateProjectDialog(props: {
       >
         <header>
           <strong>创建项目</strong>
-          <span>项目会创建在 Clawee 默认项目目录中</span>
+          <span>将在目录中新建文件夹</span>
         </header>
         {props.error ? <p className="inline-error" role="alert">{props.error}</p> : null}
         <label>
@@ -91,6 +92,7 @@ export function CreateProjectDialog(props: {
           </button>
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }

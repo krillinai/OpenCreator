@@ -35,6 +35,21 @@ function hexChannels(value: string): number[] {
 }
 
 describe('app CSS visual contracts', () => {
+  it('keeps body copy readable and navigation or status text at 12px or larger', () => {
+    const productCss = [appCss, skillMarketCss, schedulesCss, settingsCss, taskCenterCss].join('\n');
+
+    expect(cssBlock('body')).toContain('font: 13px/1.45 var(--font);');
+    expect(productCss).not.toMatch(/font(?:-size)?:[^;}]*(?:10|11)(?:\.\d+)?px/);
+  });
+
+  it('uses only the 400, 500, and 600 weight scale with tabular figures', () => {
+    const productCss = [appCss, skillMarketCss, schedulesCss, settingsCss, taskCenterCss].join('\n');
+
+    expect(cssBlock('body')).toContain('font-variant-numeric: tabular-nums;');
+    expect(productCss).not.toMatch(/font-weight:\s*(?!400|500|600)\d{3}/);
+    expect(productCss).not.toMatch(/font:\s*(?!400|500|600)\d{3}\s/);
+  });
+
   it('uses complete light and dark neutral theme tokens outside approvals', () => {
     const neutralTokensCss = tokensCss.split(':root[data-accent="blue"]')[0]!;
     const themeSources = [
@@ -64,8 +79,64 @@ describe('app CSS visual contracts', () => {
     expect(tokensCss).toContain('color-scheme: light;');
     expect(tokensCss).toContain('--accent: #d7d7da;');
     expect(tokensCss).toContain('--accent: #303035;');
+    expect(tokensCss).toContain('--surface-page: #fafafa;');
+    expect(tokensCss).toContain('--surface-sidebar: #f3f3f4;');
+    expect(tokensCss).toContain('--surface-input: #ffffff;');
+    expect(tokensCss).toContain('--surface-popover: #ffffff;');
+    expect(tokensCss).toContain('--sidebar: var(--surface-sidebar);');
+    expect(tokensCss).toContain('--sidebar-hover: #e9e9eb;');
     expect(colorChannels.length).toBeGreaterThan(0);
     expect(colorChannels.every(channels => Math.max(...channels) - Math.min(...channels) <= 8)).toBe(true);
+  });
+
+  it('assigns page, sidebar, composer, and popover surfaces by semantic role', () => {
+    expect(tokensCss).toContain('--bg: var(--surface-page);');
+    expect(tokensCss).toContain('--conversation-bg: var(--surface-page);');
+    expect(tokensCss).toContain('--popover: var(--surface-popover);');
+    expect(cssBlock('.clawee-sidebar-pane')).toContain('background: var(--sidebar);');
+    expect(cssBlock('.clawee-composer::after')).toContain('background: var(--surface-input);');
+    expect(cssBlock('.composer-popover')).toContain('background: var(--popover);');
+  });
+
+  it('limits ordinary corner radii to the 4px, 6px, and 8px scale', () => {
+    const productCss = [appCss, skillMarketCss, schedulesCss, settingsCss, taskCenterCss].join('\n');
+    const radiusValues = Array.from(
+      productCss.matchAll(/border(?:-[a-z]+){0,2}-radius:\s*([^;]+);/g),
+      match => match[1]!.trim()
+    );
+    const allowedRadiusPart = /^(?:0|4px|6px|8px|50%|999px|var\(--radius\))$/;
+
+    expect(tokensCss).toContain('--radius-sm: 4px;');
+    expect(tokensCss).toContain('--radius-md: 6px;');
+    expect(tokensCss).toContain('--radius-lg: 8px;');
+    expect(tokensCss).toContain('--radius: var(--radius-lg);');
+    expect(radiusValues.length).toBeGreaterThan(0);
+    expect(radiusValues.every(value => value.split(/\s+/).every(part => allowedRadiusPart.test(part)))).toBe(true);
+  });
+
+  it('uses compact desktop control sizes and 44px mobile touch targets', () => {
+    expect(tokensCss).toContain('--control-compact-sm: 30px;');
+    expect(tokensCss).toContain('--control-compact-md: 32px;');
+    expect(tokensCss).toContain('--control-compact-lg: 34px;');
+    expect(tokensCss).toContain('--control-touch: 44px;');
+    expect(cssBlock('.sidebar-row')).toContain('height: var(--control-compact-md);');
+    expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
+    expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?button,[\s\S]*?min-height:\s*var\(--control-touch\) !important;/);
+    expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-task-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
+  });
+
+  it('uses shared hover, pressed, focus-visible, and disabled states', () => {
+    expect(tokensCss).toContain('--state-hover-bg:');
+    expect(tokensCss).toContain('--state-pressed-bg:');
+    expect(tokensCss).toContain('--state-border-hover:');
+    expect(tokensCss).toContain('--state-focus-ring:');
+    expect(tokensCss).toContain('--state-disabled-opacity: 0.46;');
+    expect(tokensCss).toContain('--state-pressed-opacity: 0.86;');
+    expect(cssBlock('button:disabled')).toContain('opacity: var(--state-disabled-opacity);');
+    expect(cssBlock('button:not(:disabled):active')).toContain('opacity: var(--state-pressed-opacity);');
+    expect(appCss).toMatch(/:where\(button, \[role="button"\]\)\[aria-disabled="true"\]\s*\{[^}]*opacity:\s*var\(--state-disabled-opacity\);[^}]*pointer-events:\s*none;/);
+    expect(appCss).toMatch(/:where\(input, textarea, select\):not\(:disabled\):hover\s*\{[^}]*border-color:\s*var\(--state-border-hover\);/);
+    expect(appCss).toMatch(/:where\(button, \[role="button"\], input, textarea, select\):focus-visible\s*\{[^}]*outline:\s*2px solid var\(--state-focus-ring\);/);
   });
 
   it('defines selectable accent tokens for both light and dark modes', () => {
@@ -91,11 +162,13 @@ describe('app CSS visual contracts', () => {
     expect(projectTree).toContain('grid-auto-rows: max-content;');
     expect(projectTree).toContain('margin-right: -12px;');
     expect(projectTree).toContain('padding: 0 12px 4px 0;');
-    expect(sidebarRow).toContain('height: 40px;');
+    expect(sidebarRow).toContain('height: var(--control-compact-md);');
+    expect(sidebarRow).toContain('font-size: 12px;');
     expect(sidebarRow).toContain('gap: 4px;');
     expect(sidebarRow).toContain('padding: 0 6px;');
-    expect(projectRow).toContain('font-weight: 520;');
-    expect(appCss).toMatch(/\.conversation-row\s*\{[^}]*padding:\s*0 10px 0 32px;/);
+    expect(projectRow).toContain('font-weight: 400;');
+    expect(appCss).toMatch(/\.conversation-row\s*\{[^}]*padding:\s*0 10px 0 29px;/);
+    expect(cssBlock('.sidebar-row svg')).toContain('width: 16px;');
     expect(currentProjectIcon).toContain('color: var(--accent);');
     expect(selectedConversationRow).toContain('background: var(--accent-soft);');
     expect(selectedConversationRow).not.toContain('border-color');
@@ -105,6 +178,12 @@ describe('app CSS visual contracts', () => {
     expect(settingsButton).toContain('width: 36px;');
     expect(settingsButton).toContain('height: 36px;');
     expect(settingsButton).toContain('padding: 0;');
+    expect(appCss).toContain(
+      '.sidebar-conversation-row-shell:hover .sidebar-conversation-archive'
+    );
+    expect(appCss).not.toContain(
+      '.nested-conversation-row[aria-current="page"] + .sidebar-conversation-archive'
+    );
   });
 
   it('keeps the conversation run indicator compact and motion-aware', () => {
@@ -118,7 +197,10 @@ describe('app CSS visual contracts', () => {
     expect(spinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
     expect(appCss).toMatch(/@keyframes conversation-run-spin\s*\{[^}]*transform:\s*rotate\(360deg\);/);
     expect(appCss).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.conversation-run-spinner\s*\{[^}]*animation:\s*none;/
+      /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.conversation-run-spinner,\s*\.process-live-activity-icon\.is-running\s*\{[^}]*animation:\s*none;/
+    );
+    expect(cssBlock('.process-live-activity-icon.is-running')).toContain(
+      'animation: conversation-run-spin 900ms linear infinite;'
     );
   });
 
@@ -131,9 +213,9 @@ describe('app CSS visual contracts', () => {
     expect(taskSection).toContain('min-height: 0;');
     expect(taskSection).toContain('max-height: 220px;');
     expect(taskList).toContain('overflow-y: auto;');
-    expect(taskList).toContain('grid-auto-rows: 44px;');
-    expect(taskRow).toContain('height: 44px;');
-    expect(taskRow).toContain('min-height: 44px;');
+    expect(taskList).toContain('grid-auto-rows: 34px;');
+    expect(taskRow).toContain('height: 34px;');
+    expect(taskRow).toContain('min-height: 34px;');
     expect(taskSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
     expect(appCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.sidebar-task-spinner\s*\{[^}]*animation:\s*none;/
@@ -177,7 +259,7 @@ describe('app CSS visual contracts', () => {
 
     expect(dialog).toContain('width: min(760px, 100%);');
     expect(dialog).toContain('height: min(720px, calc(100dvh - 48px));');
-    expect(scroll).toContain('padding: 28px 10px 36px 0;');
+    expect(scroll).toContain('padding: 24px 20px 32px;');
     expect(scroll).toContain('scrollbar-gutter: stable;');
   });
 
@@ -204,8 +286,9 @@ describe('app CSS visual contracts', () => {
     const mainPane = cssBlock('.clawee-main-pane');
 
     expect(appCss).toMatch(/html,\nbody,\n#root\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;[^}]*background:\s*var\(--bg\);/);
-    expect(tokensCss).toContain('--bg: #0c0d0f;\n  --conversation-bg: #0c0d0f;');
-    expect(tokensCss).toContain('--bg: #fafafa;\n  --conversation-bg: #fafafa;');
+    expect(tokensCss).toContain('--surface-page: #0c0d0f;');
+    expect(tokensCss).toContain('--surface-page: #fafafa;');
+    expect(tokensCss).toContain('--bg: var(--surface-page);\n  --conversation-bg: var(--surface-page);');
     expect(mainPane).toContain('background: var(--conversation-bg);');
     expect(mainPane).toContain('overflow: hidden;');
   });
@@ -223,9 +306,9 @@ describe('app CSS visual contracts', () => {
     expect(conversationHeader).toContain('background: var(--conversation-bg);');
     expect(conversationHeader).not.toMatch(/background:\s*(?:linear-gradient|color-mix)/);
     expect(appCss).not.toContain('.conversation-project');
-    expect(composer).toContain('background: var(--surface);');
+    expect(composer).toContain('background: var(--composer-project-background);');
     expect(composer).not.toMatch(/background:\s*(?:linear-gradient|color-mix)/);
-    expect(appCss).toMatch(/\.clawee-sidebar-pane\s*\{[^}]*background:\s*var\(--sidebar\);/);
+    expect(appCss).toMatch(/\.clawee-sidebar-pane\s*\{[^}]*background:\s*var\(--sidebar\);[^}]*border-right:\s*1px solid var\(--border-hairline\);/);
   });
 
   it('keeps the desktop shell inside short viewports', () => {
@@ -252,7 +335,7 @@ describe('app CSS visual contracts', () => {
     const action = cssBlock('.markdown-prose .md-code-action');
 
     expect(action).toContain('min-height: 26px;');
-    expect(action).toContain('font-size: 11px;');
+    expect(action).toContain('font-size: 12px;');
   });
 
   it('keeps the desktop skill market scrollable inside the fixed app shell', () => {
@@ -261,36 +344,40 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('uses a compact toolbar with sorting and workflow navigation', () => {
+  it('uses a compact toolbar with an add menu and workflow navigation', () => {
     const toolbar = skillMarketCssBlock('.skill-market__toolbar');
     const filterRow = skillMarketCssBlock('.skill-market-filter-row');
     const categoryLine = skillMarketCssBlock('.skill-market-category-line');
-    const statusControls = skillMarketCssBlock('.skill-market-status-controls');
     const searchFocus = skillMarketCssBlock('.skill-market-search input:focus-visible');
-    const sort = skillMarketCssBlock('.skill-market-sort');
+    const addTrigger = skillMarketCssBlock('.skill-market-add__trigger');
 
     expect(toolbar).toContain('display: flex;');
     expect(toolbar).toContain('justify-content: flex-end;');
     expect(filterRow).toContain('display: flex;');
     expect(filterRow).toContain('overflow-x: auto;');
     expect(categoryLine).toContain('justify-content: space-between;');
-    expect(statusControls).toContain('flex: 0 0 auto;');
-    expect(sort).toContain('height: 40px;');
+    expect(addTrigger).toContain('height: 34px;');
     expect(searchFocus).toContain('outline: none;');
     expect(skillMarketCss).not.toContain('.skill-market-filter-selects');
     expect(skillMarketCss).not.toContain('.skill-market-filter-shell');
     expect(skillMarketCss).not.toContain('.skill-market-chip-row');
   });
 
-  it('centers the collapsed sidebar logo inside its square button', () => {
+  it('uses a wordmark in the expanded sidebar and centers the collapsed logo button', () => {
     const brandButton = cssBlock('.sidebar-brand-button');
-    const fullLogo = cssBlock('.sidebar-logo-full');
+    const wordmark = cssBlock('.sidebar-logo-word');
     const logoMark = cssBlock('.sidebar-logo-mark');
 
     expect(brandButton).toContain('padding: 0;');
-    expect(fullLogo).toContain('transform: translateX(-11px);');
-    expect(logoMark).toContain('width: 38px;');
-    expect(logoMark).toContain('height: 38px;');
+    expect(wordmark).toContain('font-size: 17px;');
+    expect(wordmark).toContain('font-weight: 600;');
+    expect(appCss).not.toContain('.sidebar-logo-full');
+    expect(appCss).toMatch(
+      /\n\.sidebar-collapse-button\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/
+    );
+    expect(logoMark).toContain('width: 16px;');
+    expect(logoMark).toContain('height: 16px;');
+    expect(appCss).toMatch(/\n\.sidebar-brand-button\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/);
     expect(appCss).not.toContain('.sidebar-logo-mark-crop');
   });
 
@@ -318,7 +405,7 @@ describe('app CSS visual contracts', () => {
     const tagline = skillMarketCssBlock('.skill-market-card__tagline');
     const avatar = skillMarketCssBlock('.skill-market-avatar--small');
 
-    expect(card).toContain('min-height: 176px;');
+    expect(card).toContain('min-height: 142px;');
     expect(cardOpen).toContain('flex-direction: column;');
     expect(identity).toContain('align-items: center;');
     expect(body).toContain('flex-direction: column;');
@@ -329,10 +416,10 @@ describe('app CSS visual contracts', () => {
     expect(skillMarketCss).not.toContain('.skill-market-task-row');
   });
 
-  it('scales the skill market grid from five columns down to one', () => {
+  it('scales the skill market grid from four columns down to one', () => {
     const grid = skillMarketCssBlock('.skill-market-grid');
 
-    expect(grid).toContain('grid-template-columns: repeat(5, minmax(0, 1fr));');
+    expect(grid).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
     expect(skillMarketCss).toMatch(
       /@media \(max-width: 1920px\)[\s\S]*?\.skill-market-grid\s*\{[^}]*repeat\(4, minmax\(0, 1fr\)\)/
     );
@@ -347,7 +434,7 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('uses a single-column skill detail with real media cases and a fixed primary action', () => {
+  it('uses a single-column skill detail with real media cases and a compact primary action', () => {
     const modal = skillMarketCssBlock('.skill-market-modal');
     const body = skillMarketCssBlock('.skill-market-modal__body');
     const head = skillMarketCssBlock('.skill-market-detail-head');
@@ -371,12 +458,12 @@ describe('app CSS visual contracts', () => {
     const previewMedia = skillMarketCssBlock('.skill-market-case__media--preview');
     const primary = skillMarketCssBlock('.skill-market-modal__primary');
 
-    expect(modal).toContain('width: min(600px, 100%);');
+    expect(modal).toContain('width: min(720px, 100%);');
     expect(modal).toContain('max-height: min(800px, calc(100dvh - 64px));');
     expect(modal).toContain('outline: none;');
     expect(modal).toContain('grid-template-rows: auto minmax(0, 1fr) auto;');
-    expect(body).toContain('padding: 4px 24px 26px;');
-    expect(head).toContain('padding: 24px 24px 16px;');
+    expect(body).toContain('padding: 8px 24px 24px;');
+    expect(head).toContain('padding: 22px 24px 14px;');
     expect(head).toContain('background: var(--surface);');
     expect(identity).toContain('display: flex;');
     expect(author).toContain('border: 0;');
@@ -386,34 +473,34 @@ describe('app CSS visual contracts', () => {
     expect(skillMarketCss).not.toContain('.skill-market-detail-bookmark');
     expect(skillMarketCss).not.toContain('.skill-market-detail-users');
     expect(description).not.toContain('border-top');
-    expect(risk).toContain('padding: 12px 14px;');
+    expect(risk).toContain('padding: 0;');
     expect(riskList).toContain('gap: 4px;');
     expect(riskItem).toContain('font-size: 12px;');
     expect(riskItem).toContain('line-height: 1.35;');
-    expect(layout).toContain('gap: 22px;');
+    expect(layout).toContain('gap: 20px;');
     expect(layout).toContain('margin-top: 0;');
     expect(layout).not.toContain('grid-template-columns');
     expect(workflow).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
-    expect(workflow).toContain('gap: 10px;');
-    expect(workflowList).toContain('min-height: 78px;');
-    expect(workflowList).toContain('padding: 10px 12px;');
-    expect(workflowTitle).toContain('margin: 0 0 8px;');
-    expect(workflowItems).toContain('gap: 5px;');
-    expect(workflowItem).toContain('padding: 4px 7px;');
-    expect(workflowItem).toContain('font-size: 10px;');
+    expect(workflow).toContain('gap: 20px;');
+    expect(workflowList).toContain('min-height: 36px;');
+    expect(workflowList).toContain('padding: 0;');
+    expect(workflowTitle).toContain('margin: 0;');
+    expect(workflowItems).toContain('gap: 0;');
+    expect(workflowItem).toContain('padding: 0;');
+    expect(workflowItem).toContain('font-size: 12px;');
     expect(caseList).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
     expect(scrollableCaseList).toContain('grid-auto-flow: column;');
-    expect(scrollableCaseList).toContain('grid-auto-columns: calc((100% - 24px) / 3.2);');
+    expect(scrollableCaseList).toContain('grid-auto-columns: calc((100% - 12px) / 2.2);');
     expect(scrollableCaseList).toContain('overflow-x: auto;');
     expect(caseMedia).toContain('aspect-ratio: 16 / 9;');
     expect(caseMedia).toContain('object-fit: contain;');
     expect(caseCaption).toContain('min-height: 32px;');
-    expect(caseCaption).toContain('justify-content: center;');
-    expect(caseCaption).toContain('text-align: center;');
+    expect(caseCaption).toContain('justify-content: flex-start;');
+    expect(caseCaption).toContain('text-align: left;');
     expect(skillMarketCss).not.toContain('.skill-market-case__caption svg');
     expect(preview).toContain('width: min(1180px, 100%);');
     expect(previewMedia).toContain('max-height: calc(100dvh - 140px);');
-    expect(primary).toContain('width: 100%;');
+    expect(primary).toContain('width: auto;');
     expect(skillMarketCss).not.toContain('.skill-market-modal__toolbar');
     expect(skillMarketCss).not.toContain('.skill-market-detail-head__cover');
     expect(skillMarketCss).not.toContain('.skill-market-detail-grid');
@@ -429,10 +516,12 @@ describe('app CSS visual contracts', () => {
     const composerQueueItem = cssBlock('.composer-queue-item');
 
     expect(composerWrap).toContain('position: relative;');
-    expect(composerWrap).toContain('padding: 0 clamp(18px, 4vw, 52px) 24px;');
+    expect(tokensCss).toContain('--conversation-content-max: 816px;');
+    expect(tokensCss).toContain('--conversation-gutter: clamp(18px, 5vw, 72px);');
+    expect(composerWrap).toContain('padding: 0 var(--conversation-gutter) 24px;');
     expect(composerWrap).toContain('background: transparent;');
     expect(appCss).not.toContain('.composer-wrap::before');
-    expect(composerStack).toContain('width: min(940px, 100%);');
+    expect(composerStack).toContain('width: min(var(--conversation-content-max), 100%);');
     expect(composerStack).toContain('display: grid;');
     expect(composer).toContain('position: relative;');
     expect(composer).toContain('z-index: 1;');
@@ -451,32 +540,84 @@ describe('app CSS visual contracts', () => {
     expect(composerTextarea).toContain('line-height: 22px;');
     expect(composerTextarea).toContain('resize: none;');
     expect(composerTextarea).not.toContain('resize: vertical;');
+    expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*order:\s*10;/);
+    expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*margin:\s*2px -18px -10px;/);
+    expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*border-top:\s*0;/);
+    expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*border-radius:\s*0 0 8px 8px;/);
     expect(appCss).toMatch(/\.composer-select,\n\.composer-model-button\s*\{[^}]*padding:\s*0 2px;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/);
+    expect(appCss).toMatch(/\.composer-select,\n\.composer-model-button\s*\{[^}]*font-size:\s*12px;[^}]*font-weight:\s*400;/);
+    expect(cssBlock('.composer-project-button')).toContain('font-size: 12px;');
+    expect(cssBlock('.composer-popover')).toContain('border: 1px solid #343438;');
+    expect(cssBlock('.composer-popover')).toContain('background: var(--popover);');
+    expect(cssBlock('.composer-popover')).toContain('opacity: 1;');
+    expect(appCss).toMatch(/:root\[data-theme="light"\] \.composer-popover,[\s\S]*?\.composer-project-create-menu\s*\{[^}]*background:\s*var\(--surface-popover\);[^}]*border-color:\s*#dedee1;[^}]*opacity:\s*1;/);
+    expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
+    expect(cssBlock('.composer-menu-item strong')).toContain('font-size: 12px;');
+    expect(cssBlock('.composer-menu-item strong')).toContain('font-weight: 400;');
+    expect(cssBlock('.composer-control-wrap[data-composer-menu-root="model"] .composer-popover')).toContain('left: 0;');
+    expect(cssBlock('.composer-control-wrap[data-composer-menu-root="model"] .composer-popover')).toContain('right: auto;');
+    expect(cssBlock('.composer-project-option span')).toContain('font-size: 12px;');
+    expect(cssBlock('.composer-project-option span')).toContain('font-weight: 400;');
+    expect(cssBlock('.composer-popover.composer-project-popover')).toContain('border: 1px solid #343438;');
+    expect(cssBlock(':root[data-theme="light"] .composer-popover.composer-project-popover')).toContain('border-color: #e8e8ea;');
+    expect(cssBlock('.composer-project-search')).toContain('border: 0;');
+    expect(cssBlock(':root[data-theme="light"] .composer-project-search')).toContain('background: #f3f3f4;');
+    expect(cssBlock(':root[data-theme="light"] .composer-project-create')).toContain('border-top-color: #eeeeef;');
     expect(appCss).toMatch(/\.composer-send\s*\{[^}]*width:\s*38px;[^}]*height:\s*38px;/);
+    expect(appCss).toMatch(/\n\.composer-icon-button\s*\{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/);
+    expect(cssBlock('.composer-icon-button:hover')).toContain('color-mix(in srgb, var(--text) 4%, transparent)');
     expect(appCss).toMatch(
-      /@media \(max-height: 560px\) and \(min-width: 921px\)\s*\{[\s\S]*?\.composer-wrap\s*\{[^}]*padding:\s*0 clamp\(18px, 4vw, 52px\) 10px;/
+      /@media \(max-height: 560px\) and \(min-width: 921px\)\s*\{[\s\S]*?\.composer-wrap\s*\{[^}]*padding:\s*0 var\(--conversation-gutter\) 10px;/
     );
     expect(cssBlock('.timeline-end-spacer')).toContain('min-height: clamp(72px, 10vh, 112px);');
     expect(cssBlock('.app-drop-shell')).toContain('height: 100%;');
     expect(cssBlock('.project-drop-overlay')).toContain('pointer-events: none;');
   });
 
-  it('keeps the empty-state title centered without the large decorative logo', () => {
-    const title = cssBlock('.conversation-empty-state h2');
-    const lightTitle = cssBlock(':root[data-theme="light"] .conversation-empty-state h2');
+  it('centers the empty composer beneath a compact greeting without decorative controls', () => {
+    const emptyPage = cssBlock('.conversation-page.is-empty');
+    const title = cssBlock('.conversation-empty-greeting h2');
+    const subtitle = cssBlock('.conversation-empty-greeting p');
+    const emptyComposer = cssBlock('.conversation-page.is-empty .composer-wrap');
     const lightComposer = cssBlock(':root[data-theme="light"] .clawee-composer');
 
     expect(appCss).not.toContain('.conversation-empty-logo-bg');
-    expect(title).toContain('font-size: 48px;');
-    expect(lightTitle).toContain('text-shadow: none;');
-    expect(lightComposer).toContain('border-color: color-mix(in srgb, var(--text) 16%, transparent);');
-    expect(lightComposer).toContain('background: var(--surface);');
+    expect(appCss).not.toContain('日常办公');
+    expect(appCss).not.toContain('代码开发');
+    expect(emptyPage).toContain('grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);');
+    expect(cssBlock('.conversation-empty-greeting')).toContain('width: min(760px, 100%);');
+    expect(cssBlock('.conversation-empty-greeting')).toContain('justify-items: start;');
+    expect(cssBlock('.conversation-empty-greeting')).toContain('text-align: left;');
+    expect(title).toContain('font-family: var(--font);');
+    expect(title).toContain('font-size: 30px;');
+    expect(subtitle).toContain('font-size: 30px;');
+    expect(emptyComposer).toContain('align-self: start;');
+    expect(appCss).toMatch(/\.conversation-page\.is-empty \.conversation-empty-greeting,\n\.conversation-page\.is-empty \.conversation-starter-tags\s*\{[^}]*width:\s*min\(740px, 100%\);/);
+    expect(cssBlock('.conversation-page.is-empty .composer-stack')).toContain('width: min(740px, 100%);');
+    expect(appCss).toMatch(/\.conversation-page\.is-empty \.clawee-composer textarea\s*\{[^}]*min-height:\s*72px;/);
+    expect(appCss).toMatch(
+      /\.conversation-page\.is-empty \.conversation-empty-state,\n\.conversation-page\.is-empty \.composer-wrap\s*\{[^}]*transform:\s*translateY\(clamp\(-150px, -14vh, -108px\)\);/
+    );
+    expect(tokensCss).toContain('--border-hairline: rgba(245, 245, 246, 0.08);');
+    expect(tokensCss).toContain('--border-hairline: rgba(24, 24, 27, 0.07);');
+    expect(cssBlock('.clawee-composer')).toContain('border: 1px solid var(--border-hairline);');
+    expect(cssBlock('.clawee-composer.without-project-selector')).toContain(
+      'background: var(--surface-input);'
+    );
+    expect(cssBlock('.clawee-composer.without-project-selector::after')).toContain('inset: 0;');
+    expect(cssBlock('.clawee-composer::before')).toContain('border: 0;');
+    expect(cssBlock('.clawee-composer::before')).toContain('z-index: 0;');
+    expect(lightComposer).toContain('--composer-project-background: #eeeeef;');
+    expect(lightComposer).toContain('background: var(--composer-project-background);');
+    expect(cssBlock(':root[data-theme="light"] .clawee-composer::after')).toContain('background: var(--surface-input);');
     expect(lightComposer).toContain('backdrop-filter: none;');
     expect(lightComposer).not.toContain('linear-gradient');
     expect(lightComposer).not.toContain('inset');
     expect(appCss).toMatch(/:root\[data-theme="light"\] \.clawee-composer \.composer-icon-button,[\s\S]*?\.composer-submit-menu-button\s*\{[^}]*box-shadow:\s*none;/);
-    expect(appCss).toMatch(/\.conversation-empty-state h2\s*\{[^}]*font-size:\s*38px;/);
-    expect(appCss).toMatch(/\.conversation-empty-state h2\s*\{[^}]*font-size:\s*30px;/);
+    expect(appCss).toMatch(/\.conversation-empty-greeting h2\s*\{[^}]*font-size:\s*26px;/);
+    expect(appCss).toMatch(/\.conversation-empty-greeting h2\s*\{[^}]*font-size:\s*23px;/);
+    expect(appCss).toMatch(/\.conversation-empty-greeting p\s*\{[^}]*font-size:\s*26px;/);
+    expect(appCss).toMatch(/\.conversation-empty-greeting p\s*\{[^}]*font-size:\s*23px;/);
   });
 
   it('styles the color mode selector as a compact product control', () => {
@@ -571,8 +712,9 @@ describe('app CSS visual contracts', () => {
   it('uses a solid conversation background without dynamic background assets', () => {
     const conversationPage = cssBlock('.conversation-page');
 
-    expect(tokensCss).toContain('--conversation-bg: #0c0d0f;');
-    expect(tokensCss).toContain('--conversation-bg: #fafafa;');
+    expect(tokensCss).toContain('--surface-page: #0c0d0f;');
+    expect(tokensCss).toContain('--surface-page: #fafafa;');
+    expect(tokensCss).toContain('--conversation-bg: var(--surface-page);');
     expect(conversationPage).toContain('background: var(--conversation-bg);');
     expect(appCss).not.toContain('.conversation-lightfall-bg');
     expect(appControllerTsx).not.toContain('Lightfall');
@@ -641,7 +783,7 @@ describe('app CSS visual contracts', () => {
     expect(submitMenuButton).not.toContain('linear-gradient');
     expect(disabledSend).toContain('background: var(--surface-3);');
     expect(disabledSend).toContain('color: var(--control-disabled-text);');
-    expect(disabledSendIcon).toContain('color: var(--control-disabled-text);');
+    expect(disabledSendIcon).toContain('color: #fff;');
   });
 
   it('keeps composer image attachments as compact square previews', () => {
@@ -682,9 +824,12 @@ describe('app CSS visual contracts', () => {
     const virtualItem = cssBlock('.timeline-virtual-item');
     const timelineItem = cssBlock('.timeline-item');
     const messageMeta = cssBlock('.timeline-message-meta');
+    const assistantMessageMeta = cssBlock('.timeline-assistant_message .timeline-message-meta');
+    const assistantProse = cssBlock('.markdown-prose[data-variant="assistant"]');
 
-    expect(virtualItem).toContain('padding: 8px clamp(18px, 5vw, 72px);');
+    expect(virtualItem).toContain('padding: 8px var(--conversation-gutter);');
     expect(timelineItem).toContain('gap: 6px;');
+    expect(userBubble).toContain('padding: 10px 14px;');
     expect(userBubble).toContain('border: 0;');
     expect(userBubble).toContain('border-top-right-radius: 0;');
     expect(userBubble).not.toContain('border-bottom-right-radius: 6px;');
@@ -692,10 +837,14 @@ describe('app CSS visual contracts', () => {
     expect(assistantBubble).toContain('border: 0;');
     expect(assistantBubble).toContain('border-radius: 0;');
     expect(assistantBubble).toContain('background: transparent;');
+    expect(assistantProse).toContain('font-size: 14px;');
+    expect(assistantProse).toContain('line-height: 1.68;');
     expect(messageMeta).toContain('min-height: 24px;');
     expect(messageMeta).toContain('padding: 0 4px;');
     expect(messageMeta).toContain('opacity: 0;');
     expect(messageMeta).toContain('pointer-events: none;');
+    expect(assistantMessageMeta).toContain('justify-content: flex-start;');
+    expect(assistantMessageMeta).toContain('padding-left: 0;');
     expect(appCss).toContain('.timeline-user_message:hover .timeline-message-meta');
     expect(appCss).toContain('.timeline-assistant_message:hover .timeline-message-meta');
     expect(appCss).toContain('.timeline-message-meta.is-latest-assistant');
@@ -705,23 +854,22 @@ describe('app CSS visual contracts', () => {
     expect(appCss).toContain('@media (hover: none)');
   });
 
-  it('uses a compact red or green connection status dot without visible text', () => {
-    const indicator = cssBlock('.connection-indicator');
-    const healthy = cssBlock('.connection-indicator.is-healthy');
-    const unhealthy = cssBlock('.connection-indicator.is-unhealthy');
+  it('keeps the conversation header compact and leaves connection state to the connection panel', () => {
+    const conversationHeader = cssBlock('.conversation-header');
+    const conversationTitle = cssBlock('.conversation-title h1');
     const connected = cssBlock('.connection-status-dot.connected');
     const disconnected = cssBlock(
       '.connection-status-dot.disconnected,\n.connection-status-dot.invalid_token'
     );
 
-    expect(indicator).toContain('width: 8px;');
-    expect(indicator).toContain('height: 8px;');
+    expect(conversationHeader).not.toContain('border-bottom:');
+    expect(conversationTitle).toContain('font-size: 14px;');
+    expect(conversationTitle).toContain('font-weight: 500;');
+    expect(appCss).not.toContain('.connection-indicator');
     expect(tokensCss).toContain('--status-connected: #34d399;');
     expect(tokensCss).toContain('--status-connected: #16a34a;');
     expect(tokensCss).toContain('--status-disconnected: #f87171;');
     expect(tokensCss).toContain('--status-disconnected: #dc2626;');
-    expect(healthy).toContain('background: var(--status-connected);');
-    expect(unhealthy).toContain('background: var(--status-disconnected);');
     expect(connected).toContain('background: var(--status-connected);');
     expect(disconnected).toContain('background: var(--status-disconnected);');
     expect(appCss).not.toContain('.connection-pill');
@@ -736,12 +884,20 @@ describe('app CSS visual contracts', () => {
     expect(processDetails).not.toContain('border-bottom: 1px solid var(--border);');
   });
 
-  it('gives approval cards a restrained orange-tinted background', () => {
+  it('renders approvals as compact neutral floating confirmations', () => {
     const approvalBubble = cssBlock('.timeline-approval .timeline-bubble');
+    const approvalPanel = cssBlock('.approval-panel');
+    const approvalTitle = cssBlock('.approval-copy strong');
+    const approvalApprove = cssBlock('.approval-approve');
 
-    expect(approvalBubble).toContain(
-      'background: color-mix(in srgb, #f59e0b 8%, var(--surface-2));'
-    );
+    expect(approvalBubble).toContain('border: 1px solid var(--border-hairline);');
+    expect(approvalBubble).toContain('background: var(--surface-popover);');
+    expect(approvalPanel).toContain('padding: 14px 16px;');
+    expect(approvalTitle).toContain('font-size: 14px;');
+    expect(approvalTitle).toContain('font-weight: 500;');
+    expect(approvalApprove).toContain('background: var(--text);');
+    expect(approvalApprove).toContain('color: var(--bg);');
+    expect(appCss).not.toContain('color-mix(in srgb, #f59e0b 8%, var(--surface-2))');
   });
 
   it('shows the assistant avatar as the logo without a container background', () => {
@@ -754,11 +910,16 @@ describe('app CSS visual contracts', () => {
     expect(assistantAvatar).toContain('border-color: transparent;');
     expect(assistantAvatar).toContain('background: transparent;');
     expect(assistantAvatar).toContain('box-shadow: none;');
+    expect(assistantAvatar).toContain('width: 18px;');
+    expect(assistantAvatar).toContain('height: 18px;');
     expect(assistantAvatar).not.toMatch(/linear-gradient|var\(--accent/i);
     expect(assistantHeader).toContain('gap: 4px;');
     expect(assistantKind).toContain('font-size: 13px;');
-    expect(assistantKind).toContain('font-weight: 680;');
+    expect(assistantKind).toContain('font-weight: 600;');
     expect(assistantLogo).toContain("url('/logo-v2-white-logo.svg')");
+    expect(cssBlock('.timeline-assistant_message .timeline-avatar-logo')).toContain('width: 16px;');
+    expect(cssBlock('.timeline-assistant_message .timeline-avatar-logo')).toContain('height: 16px;');
+    expect(cssBlock('.timeline-assistant_message .timeline-avatar-logo')).toContain('background-size: 30px 30px;');
     expect(assistantLogo).toContain('width: 24px;');
     expect(assistantLogo).toContain('height: 24px;');
     expect(assistantLogo).toContain('background-position: calc(50% - 1px) center;');
@@ -767,12 +928,20 @@ describe('app CSS visual contracts', () => {
     expect(appCss).not.toContain('/logo-cor.png');
   });
 
-  it('globally disables blur and shadow effects', () => {
+  it('reserves shadows for menus and floating overlays', () => {
     expect(appCss).toMatch(
       /\*,\s*\*::before,\s*\*::after\s*\{[^}]*box-shadow:\s*none !important;[^}]*text-shadow:\s*none !important;[^}]*backdrop-filter:\s*none !important;[^}]*-webkit-backdrop-filter:\s*none !important;[^}]*filter:\s*none !important;/
     );
     expect(appCss).toMatch(
       /html\.is-window-resizing \*,\s*html\.is-window-resizing \*::before,\s*html\.is-window-resizing \*::after\s*\{[^}]*transition:\s*none !important;[^}]*animation-play-state:\s*paused !important;/
     );
+    expect(tokensCss).toContain('--shadow-popover:');
+    expect(tokensCss).toContain('--shadow-dialog:');
+    expect(appCss).toMatch(/\.clawee-composer\s*\{[^}]*box-shadow:\s*none !important;/);
+    expect(appCss).not.toMatch(/\.clawee-composer::before\s*\{[^}]*box-shadow:[^}]*!important;/);
+    expect(appCss).toMatch(/\.composer-popover,[\s\S]*?\.timeline-approval \.timeline-bubble\s*\{[^}]*box-shadow:\s*var\(--shadow-popover\) !important;/);
+    expect(appCss).toMatch(/\.project-drop-overlay,[\s\S]*?\.file-workspace-toast\s*\{[^}]*box-shadow:\s*var\(--shadow-dialog\) !important;/);
+    expect(appCss).not.toMatch(/\.composer-project-context\s*\{[^}]*box-shadow:[^}]*!important;/);
+    expect(cssBlock(':root[data-theme="light"] .composer-project-context')).toContain('background: var(--composer-project-background);');
   });
 });

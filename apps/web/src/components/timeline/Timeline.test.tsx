@@ -1,10 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Timeline } from './Timeline.js';
 import type { TimelineItem } from './timeline-model.js';
 
 vi.mock('react-virtuoso', async () => import('../../test/react-virtuoso-mock.js'));
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('Timeline', () => {
   it('renders and targets a public schedule trigger without exposing execution rules', () => {
@@ -31,54 +35,8 @@ describe('Timeline', () => {
     );
   });
 
-  it('renders a runtime approval and forwards the decision', async () => {
-    const user = userEvent.setup();
-    const onApproveApproval = vi.fn();
-    const onRejectApproval = vi.fn();
-
+  it('excludes pending approvals from the timeline without scrolling it', () => {
     const { container } = render(
-      <Timeline
-        items={[{
-          kind: 'approval',
-          id: 'event_approval_1',
-          runId: 'run_1',
-          approval: {
-            id: 'approval_1',
-            runId: 'run_1',
-            threadId: 'thread_1',
-            turnId: 'turn_1',
-            itemId: 'item_1',
-            requestId: 'rpc_1',
-            kind: 'command_execution',
-            status: 'pending',
-            risk: 'high',
-            title: '允许执行命令',
-            summary: '删除构建目录',
-            details: { command: 'rm -rf build', cwd: '/workspace' },
-            requestedAt: '2026-07-12T10:00:00.000Z',
-            expiresAt: '2026-07-12T10:10:00.000Z'
-          },
-          source: 'runtime'
-        }]}
-        targetApprovalId="approval_1"
-        onApproveApproval={onApproveApproval}
-        onRejectApproval={onRejectApproval}
-      />
-    );
-
-    expect(screen.getByText('需要确认')).toBeInTheDocument();
-    expect(screen.getByText('rm -rf build')).toBeInTheDocument();
-    expect(document.querySelector('.timeline-end-spacer')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '批准' }));
-
-    expect(onApproveApproval).toHaveBeenCalledWith('approval_1');
-    expect(container.querySelector('[data-search-target="true"]')).toHaveTextContent(
-      '允许执行命令'
-    );
-  });
-
-  it('keeps a pending approval fully above the composer safety area', async () => {
-    render(
       <Timeline
         items={[{
           kind: 'approval',
@@ -108,14 +66,16 @@ describe('Timeline', () => {
       />
     );
 
-    const scroller = screen.getByTestId('virtuoso-scroller');
-    await waitFor(() => expect(scroller.scrollTop).toBeGreaterThanOrEqual(96));
+    expect(container.querySelector('.timeline-approval-overlay')).not.toBeInTheDocument();
+    expect(screen.queryByText('允许 Clawee 执行这条命令？')).not.toBeInTheDocument();
+    expect(container.querySelector('.timeline-approval')).not.toBeInTheDocument();
+    expect(screen.getByTestId('virtuoso-scroller').scrollTop).toBe(0);
   });
 
   it.each(['approved', 'rejected', 'expired', 'canceled'] as const)(
-    'hides %s approval cards after they are resolved',
+    'collapses %s approval cards into a lightweight resolution row',
     (status) => {
-      render(
+      const { container } = render(
         <Timeline
           items={[{
             kind: 'approval',
@@ -144,8 +104,47 @@ describe('Timeline', () => {
 
       expect(screen.queryByText('已处理的审批')).not.toBeInTheDocument();
       expect(screen.queryByText('不应继续显示')).not.toBeInTheDocument();
+      const expected = {
+        approved: '已允许执行命令',
+        rejected: '已拒绝执行命令',
+        expired: '权限申请已过期',
+        canceled: '权限申请已取消'
+      }[status];
+      expect(screen.getByText(expected)).toBeInTheDocument();
+      expect(container.querySelector('.timeline-approval-resolved')).toBeInTheDocument();
+      expect(container.querySelector('.approval-panel')).not.toBeInTheDocument();
     }
   );
+
+  it('keeps the approved network target in the lightweight approval record', () => {
+    render(
+      <Timeline
+        items={[{
+          kind: 'approval',
+          id: 'event_approval_network',
+          runId: 'run_network',
+          approval: {
+            id: 'approval_network',
+            runId: 'run_network',
+            turnId: 'turn_network',
+            itemId: 'item_network',
+            requestId: 'rpc_network',
+            kind: 'permissions',
+            status: 'approved',
+            risk: 'medium',
+            title: '允许访问网站',
+            summary: '访问 Apple App Store',
+            details: { network: { protocol: 'https', host: 'apps.apple.com' } },
+            requestedAt: '2026-07-24T10:00:00.000Z',
+            expiresAt: '2026-07-24T10:10:00.000Z'
+          },
+          source: 'runtime'
+        }]}
+      />
+    );
+
+    expect(screen.getByText('已允许访问 apps.apple.com')).toBeInTheDocument();
+  });
 
   it('renders image metadata and a local preview with the user message', () => {
     render(
@@ -263,6 +262,11 @@ describe('Timeline', () => {
       'datetime',
       '2026-07-25T12:09:00.000Z'
     );
+    const latestReplyMeta = replies[1]?.querySelector('.timeline-message-meta');
+    expect(latestReplyMeta?.children[0]).toBe(
+      screen.getAllByRole('button', { name: '复制回复' })[1]
+    );
+    expect(latestReplyMeta?.children[1]).toBe(latestReplyMeta?.querySelector('time'));
     expect(screen.queryByRole('button', { name: '编辑消息' })).not.toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: '复制回复' })[1]!);
@@ -324,7 +328,7 @@ describe('Timeline', () => {
     ).toHaveTextContent('目标运行结果');
   });
 
-  it('defers rendering completed process steps until the process is expanded', async () => {
+  it('does not expose completed tool history when the process is expanded', async () => {
     const user = userEvent.setup();
     const items: TimelineItem[] = [
       ...Array.from({ length: 50 }, (_, index): TimelineItem => ({
@@ -357,8 +361,8 @@ describe('Timeline', () => {
 
     await user.click(screen.getByText('已完成'));
 
-    expect(container.querySelectorAll('.process-step')).toHaveLength(1);
-    expect(screen.getByText('正在执行本地命令（50 次）')).toBeInTheDocument();
+    expect(container.querySelectorAll('.process-step')).toHaveLength(0);
+    expect(screen.queryByText(/执行本地命令/)).not.toBeInTheDocument();
     expect(screen.queryByText('echo 49')).not.toBeInTheDocument();
   });
 
@@ -462,10 +466,10 @@ describe('Timeline', () => {
 
     expect(screen.getByText('please inspect the run')).toBeInTheDocument();
     expect(screen.getByText('I am checking the logs')).toBeInTheDocument();
-    expect(screen.getByText('Clawee')).toBeInTheDocument();
+    expect(screen.queryByText('Clawee')).not.toBeInTheDocument();
     expect(container.querySelector('.timeline-user_message .timeline-item-header')).not.toBeInTheDocument();
-    expect(container.querySelector('.timeline-assistant_message .timeline-avatar-logo')).toBeInTheDocument();
-    expect(container.querySelector('.timeline-assistant_message .timeline-avatar img')).not.toBeInTheDocument();
+    expect(container.querySelector('.timeline-assistant_message .timeline-item-header')).not.toBeInTheDocument();
+    expect(container.querySelector('.timeline-assistant_message .timeline-avatar-logo')).not.toBeInTheDocument();
     expect(screen.queryByText('Codex')).not.toBeInTheDocument();
     expect(screen.queryByText('Mock Agent')).not.toBeInTheDocument();
     expect(screen.queryByText('{"type":"user_message","text":"please inspect the run"}')).not.toBeInTheDocument();
@@ -490,7 +494,7 @@ describe('Timeline', () => {
     expect(
       screen.queryByText('{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"command":"pnpm test"}}')
     ).not.toBeInTheDocument();
-    expect(screen.getByText('已完成：运行测试')).toBeInTheDocument();
+    expect(screen.getByText('已运行测试')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(
       screen.queryByText('{"type":"tool_result","toolCallId":"call_1","output":"test output","exitCode":0,"isError":false}')
@@ -537,12 +541,141 @@ describe('Timeline', () => {
     );
 
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
-    expect(screen.getByText('思考中')).toBeInTheDocument();
+    expect(screen.getByText('正在思考')).toBeInTheDocument();
     expect(screen.queryByText(/等待 Clawee 返回过程/)).not.toBeInTheDocument();
     expect(screen.queryByText(/当前动态/)).not.toBeInTheDocument();
     expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
     expect(container.querySelector('.process-detail')).not.toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
+  });
+
+  it('hides internal skill context budget warnings from the user timeline', () => {
+    const { container } = render(
+      <Timeline
+        items={[
+          {
+            kind: 'run_status',
+            id: 'status_budget_warning',
+            runId: 'run_budget_warning',
+            label: 'running',
+            source: 'runtime'
+          },
+          {
+            kind: 'diagnostic',
+            id: 'diagnostic_budget_warning',
+            runId: 'run_budget_warning',
+            severity: 'warning',
+            message: 'Skill descriptions were shortened to fit the 2% skills context budget. Codex can still see every skill.',
+            content: 'Skill descriptions were shortened to fit the 2% skills context budget.',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('正在思考')).toBeInTheDocument();
+    expect(screen.queryByText('warning')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Skill descriptions were shortened/)).not.toBeInTheDocument();
+    expect(container.querySelector('.process-step-diagnostic')).not.toBeInTheDocument();
+  });
+
+  it('switches long-running work to a live elapsed label and freezes it on completion', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-07-30T10:00:00.000Z');
+    const runningItem: TimelineItem = {
+      kind: 'run_status',
+      id: 'status_elapsed',
+      runId: 'run_elapsed',
+      timestamp: '2026-07-30T10:00:00.000Z',
+      label: 'running',
+      source: 'runtime'
+    };
+    const { container, rerender } = render(<Timeline items={[runningItem]} />);
+
+    expect(screen.getByText('正在思考')).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(11_000));
+
+    expect(screen.getByText('已处理 11秒')).toBeInTheDocument();
+    expect(container.querySelector('.process-summary-spinner')).not.toBeInTheDocument();
+
+    rerender(
+      <Timeline
+        items={[
+          runningItem,
+          {
+            kind: 'done',
+            id: 'done_elapsed',
+            runId: 'run_elapsed',
+            timestamp: '2026-07-30T10:00:11.000Z',
+            status: 'succeeded',
+            content: '{"type":"done","status":"succeeded"}',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(screen.getByText('已处理 11秒')).toBeInTheDocument();
+    expect(container.querySelector('.timeline-process')).toHaveClass('is-complete');
+    expect(container.querySelector('.process-summary-chevron')).toBeInTheDocument();
+  });
+
+  it('uses reconciled terminal run status to stop timing and keeps the summary above the final reply', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-07-30T10:04:00.000Z');
+    const { container } = render(
+      <Timeline
+        items={[
+          {
+            kind: 'user_message',
+            id: 'user_terminal',
+            runId: 'run_terminal',
+            runStatus: 'succeeded',
+            timestamp: '2026-07-30T10:00:00.000Z',
+            text: '现在几点',
+            source: 'runtime'
+          },
+          {
+            kind: 'assistant_message',
+            id: 'assistant_terminal',
+            runId: 'run_terminal',
+            timestamp: '2026-07-30T10:03:52.000Z',
+            text: '现在是 2026年7月30日 15:13:37（北京时间）。',
+            source: 'runtime'
+          },
+          {
+            kind: 'tool_step',
+            id: 'tool_terminal',
+            runId: 'run_terminal',
+            timestamp: '2026-07-30T10:00:01.000Z',
+            name: 'exec_command',
+            content: '{"type":"tool_use","toolCallId":"time","name":"exec_command","input":{"command":"date"}}',
+            source: 'runtime'
+          },
+          {
+            kind: 'tool_step',
+            id: 'tool_terminal_result',
+            runId: 'run_terminal',
+            timestamp: '2026-07-30T10:03:52.000Z',
+            name: 'exec_command',
+            content: '{"type":"tool_result","toolCallId":"time","output":"done"}',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('已处理 3分51秒')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(screen.getByText('已处理 3分51秒')).toBeInTheDocument();
+
+    const process = container.querySelector('.timeline-process');
+    const reply = container.querySelector('.timeline-assistant_message');
+    expect(process).not.toBeNull();
+    expect(reply).not.toBeNull();
+    expect(process!.compareDocumentPosition(reply!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 
   it('renders local request errors outside the thinking process', () => {
@@ -606,9 +739,13 @@ describe('Timeline', () => {
 
     await user.click(screen.getByRole('link', { name: '放假.md' }));
     await user.click(screen.getByRole('link', { name: 'docs/report.pdf' }));
+    await user.click(screen.getByRole('button', { name: '打开成果 docs/report.pdf' }));
 
     expect(onOpenFile).toHaveBeenNthCalledWith(1, '放假.md');
     expect(onOpenFile).toHaveBeenNthCalledWith(2, 'docs/report.pdf');
+    expect(onOpenFile).toHaveBeenNthCalledWith(3, 'docs/report.pdf');
+    expect(screen.getByText('PDF 文档')).toBeInTheDocument();
+    expect(screen.getByLabelText('任务成果')).toBeInTheDocument();
   });
 
   it('keeps user messages conservative while still rendering code and safe links', () => {
@@ -667,7 +804,7 @@ describe('Timeline', () => {
       />
     );
 
-    expect(screen.getByText('思考中')).toBeInTheDocument();
+    expect(screen.getByText('正在思考')).toBeInTheDocument();
     expect(screen.getByText('我会读取上下文再执行任务。')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).toHaveAttribute('open');
     expect(container.querySelector('.process-caret')).not.toBeInTheDocument();
@@ -700,7 +837,7 @@ describe('Timeline', () => {
     }));
     const { container, rerender } = render(<Timeline items={activeItems} />);
 
-    await user.click(screen.getByText('思考中'));
+    await user.click(screen.getByText('正在思考'));
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
 
     rerender(<Timeline items={[...activeItems, ...fillerItems]} />);
@@ -836,6 +973,39 @@ describe('Timeline', () => {
     }
   });
 
+  it('collapses terminal failures into one user-facing message', () => {
+    const { container } = render(
+      <Timeline
+        items={[
+          {
+            kind: 'diagnostic',
+            id: 'diagnostic_timeout',
+            runId: 'run_timeout',
+            severity: 'error',
+            message: 'Codex app-server inactivity timeout after 600000ms',
+            content: '{"type":"diagnostic","severity":"error"}',
+            source: 'runtime'
+          },
+          {
+            kind: 'done',
+            id: 'done_timeout',
+            runId: 'run_timeout',
+            status: 'failed',
+            terminationReason: 'inactivity_timeout',
+            content: '{"type":"done","status":"failed","terminationReason":"inactivity_timeout"}',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('任务长时间无响应，已自动停止')).toBeInTheDocument();
+    expect(screen.queryByText('Codex app-server inactivity timeout after 600000ms')).not.toBeInTheDocument();
+    expect(screen.queryByText('failed')).not.toBeInTheDocument();
+    expect(screen.queryByText(/terminationReason/u)).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.process-step')).toHaveLength(1);
+  });
+
   it('does not show opaque toolCallId in the main title when tool_use is missing', () => {
     render(
       <Timeline
@@ -852,7 +1022,7 @@ describe('Timeline', () => {
       />
     );
 
-    expect(screen.getByText('操作已完成')).toBeInTheDocument();
+    expect(screen.queryByText('操作已完成')).not.toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_missing')).not.toBeInTheDocument();
   });
 
@@ -880,7 +1050,35 @@ describe('Timeline', () => {
     expect(screen.queryByText(content)).not.toBeInTheDocument();
   });
 
-  it('replaces matched tool uses with completed state and groups consecutive equal activities', () => {
+  it('replaces the live activity when the next tool starts', () => {
+    const firstTool: TimelineItem = {
+      kind: 'tool_step',
+      id: 'tool_read',
+      runId: 'run_1',
+      name: 'exec_command',
+      content: '{"type":"tool_use","toolCallId":"call_read","name":"exec_command","input":{"command":"pwd"}}',
+      source: 'runtime'
+    };
+    const nextTool: TimelineItem = {
+      kind: 'tool_step',
+      id: 'tool_test',
+      runId: 'run_1',
+      name: 'exec_command',
+      content: '{"type":"tool_use","toolCallId":"call_test","name":"exec_command","input":{"command":"pnpm test"}}',
+      source: 'runtime'
+    };
+    const { container, rerender } = render(<Timeline items={[firstTool]} />);
+
+    expect(screen.getByText('正在查看项目内容')).toBeInTheDocument();
+
+    rerender(<Timeline items={[firstTool, nextTool]} />);
+
+    expect(screen.queryByText('正在查看项目内容')).not.toBeInTheDocument();
+    expect(screen.getByText('正在运行测试')).toBeInTheDocument();
+    expect(container.querySelectorAll('.process-step-tool_step')).toHaveLength(1);
+  });
+
+  it('keeps only the latest tool activity instead of accumulating tool history', () => {
     const items: TimelineItem[] = Array.from({ length: 3 }, (_, index) => [
       {
         kind: 'tool_step' as const,
@@ -913,9 +1111,162 @@ describe('Timeline', () => {
 
     const { container } = render(<Timeline items={items} />);
 
-    expect(screen.getByText('已完成：执行本地命令（3 次）')).toBeInTheDocument();
+    expect(screen.getByText('已执行本地命令')).toBeInTheDocument();
     expect(screen.queryByText('正在执行本地命令')).not.toBeInTheDocument();
     expect(container.querySelectorAll('.process-step-tool_step')).toHaveLength(1);
+    expect(container.querySelector('.process-step-tool_step')).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('merges an approved command into its completed local command step', () => {
+    const items: TimelineItem[] = [
+      {
+        kind: 'tool_step',
+        id: 'command_use',
+        runId: 'run_approved_command',
+        name: 'exec_command',
+        content: JSON.stringify({
+          type: 'tool_use',
+          toolCallId: 'command_call',
+          name: 'exec_command',
+          input: { command: 'open https://example.com' }
+        }),
+        source: 'runtime'
+      },
+      {
+        kind: 'tool_step',
+        id: 'command_result',
+        runId: 'run_approved_command',
+        name: 'command_call',
+        content: JSON.stringify({
+          type: 'tool_result',
+          toolCallId: 'command_call',
+          output: '',
+          exitCode: 0,
+          isError: false
+        }),
+        source: 'runtime'
+      },
+      {
+        kind: 'approval',
+        id: 'approval_resolved',
+        runId: 'run_approved_command',
+        approval: {
+          id: 'approval_command',
+          runId: 'run_approved_command',
+          threadId: 'thread_approved_command',
+          turnId: 'turn_approved_command',
+          itemId: 'item_approved_command',
+          requestId: 'request_approved_command',
+          kind: 'command_execution',
+          status: 'approved',
+          risk: 'high',
+          title: '允许执行命令',
+          summary: '打开网页',
+          details: { command: 'open https://example.com' },
+          requestedAt: '2026-07-30T08:00:00.000Z',
+          expiresAt: '2026-07-30T08:10:00.000Z',
+          resolvedAt: '2026-07-30T08:01:00.000Z'
+        },
+        source: 'runtime'
+      }
+    ];
+
+    render(<Timeline items={items} />);
+
+    expect(screen.getByText('已允许并执行本地命令')).toBeInTheDocument();
+    expect(screen.queryByText('已允许执行命令')).not.toBeInTheDocument();
+    expect(screen.queryByText('已执行本地命令')).not.toBeInTheDocument();
+  });
+
+  it('keeps completed business milestones while hiding generic command history', async () => {
+    const user = userEvent.setup();
+    const items: TimelineItem[] = [
+      {
+        kind: 'tool_step',
+        id: 'browser_use',
+        runId: 'run_1',
+        name: 'browser_open',
+        content: '{"type":"tool_use","toolCallId":"browser_call","name":"browser_open","input":{"url":"https://example.com"}}',
+        source: 'runtime'
+      },
+      {
+        kind: 'tool_step',
+        id: 'browser_result',
+        runId: 'run_1',
+        name: 'browser_call',
+        content: '{"type":"tool_result","toolCallId":"browser_call","output":"done","isError":false}',
+        source: 'runtime'
+      },
+      {
+        kind: 'tool_step',
+        id: 'command_use',
+        runId: 'run_1',
+        name: 'exec_command',
+        content: '{"type":"tool_use","toolCallId":"command_call","name":"exec_command","input":{"command":"echo done"}}',
+        source: 'runtime'
+      },
+      {
+        kind: 'tool_step',
+        id: 'command_result',
+        runId: 'run_1',
+        name: 'command_call',
+        content: '{"type":"tool_result","toolCallId":"command_call","output":"done","isError":false}',
+        source: 'runtime'
+      },
+      {
+        kind: 'done',
+        id: 'done_1',
+        runId: 'run_1',
+        status: 'succeeded',
+        content: '{"type":"done","status":"succeeded"}',
+        source: 'runtime'
+      }
+    ];
+
+    const { container } = render(<Timeline items={items} />);
+    await user.click(screen.getByText('已完成'));
+
+    expect(screen.getByText('已使用浏览器')).toBeInTheDocument();
+    expect(screen.queryByText(/执行本地命令/u)).not.toBeInTheDocument();
+    expect(screen.queryByText('echo done')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.process-milestone-icon')).toHaveLength(1);
+  });
+
+  it('groups adjacent completed milestones by business activity', () => {
+    const items: TimelineItem[] = Array.from({ length: 3 }, (_, index) => [
+      {
+        kind: 'tool_step' as const,
+        id: `image_use_${index}`,
+        runId: 'run_1',
+        name: 'view_image',
+        content: JSON.stringify({
+          type: 'tool_use',
+          toolCallId: `image_call_${index}`,
+          name: 'view_image',
+          input: { path: `/tmp/${index}.png` }
+        }),
+        source: 'runtime' as const
+      },
+      {
+        kind: 'tool_step' as const,
+        id: `image_result_${index}`,
+        runId: 'run_1',
+        name: `image_call_${index}`,
+        content: JSON.stringify({
+          type: 'tool_result',
+          toolCallId: `image_call_${index}`,
+          output: 'done',
+          isError: false
+        }),
+        source: 'runtime' as const
+      }
+    ]).flat();
+
+    const { container } = render(<Timeline items={items} />);
+
+    expect(screen.getByText('已查看图片（3 次）')).toBeInTheDocument();
+    expect(screen.queryByText('已查看图片')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('.process-milestone-icon')).toHaveLength(1);
   });
 
   it('folds intermediate Codex agent messages into the run process and leaves only the final answer as Clawee reply', async () => {
@@ -986,7 +1337,7 @@ describe('Timeline', () => {
     expect(screen.getByText('我会先确认当前目录，再读取相关文件做判断。')).toBeInTheDocument();
     expect(screen.queryByText('正在查看项目内容')).not.toBeInTheDocument();
     expect(screen.queryByText('pwd')).not.toBeInTheDocument();
-    expect(screen.getByText('已完成：查看项目内容')).toBeInTheDocument();
+    expect(screen.getByText('已读取文件')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
     expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
@@ -1018,7 +1369,7 @@ describe('Timeline', () => {
       />
     );
 
-    expect(screen.getByText('耗时 1分5秒')).toBeInTheDocument();
+    expect(screen.getByText('已处理 1分5秒')).toBeInTheDocument();
   });
 
   it('renders reasoning summaries as the main process content', () => {
@@ -1047,6 +1398,79 @@ describe('Timeline', () => {
     expect(screen.getByText('然后调用本地工具完成任务。')).toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
+  });
+
+  it('keeps strategy narration and replaces short internal statuses with one Chinese live activity', () => {
+    const { rerender } = render(
+      <Timeline
+        items={[
+          {
+            kind: 'run_status',
+            id: 'status_strategy',
+            runId: 'run_strategy',
+            label: 'running',
+            source: 'runtime'
+          },
+          {
+            kind: 'reasoning_summary',
+            id: 'strategy',
+            runId: 'run_strategy',
+            text: '我会先确认可访问性和索引信号，再检查首页内容与技术要素。',
+            source: 'runtime'
+          },
+          {
+            kind: 'reasoning_summary',
+            id: 'planning',
+            runId: 'run_strategy',
+            text: 'Planning skill reference review',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('我会先确认可访问性和索引信号，再检查首页内容与技术要素。')).toBeInTheDocument();
+    expect(screen.getByText('正在确认执行方案')).toBeInTheDocument();
+    expect(screen.queryByText('Planning skill reference review')).not.toBeInTheDocument();
+
+    rerender(
+      <Timeline
+        items={[
+          {
+            kind: 'run_status',
+            id: 'status_strategy',
+            runId: 'run_strategy',
+            label: 'running',
+            source: 'runtime'
+          },
+          {
+            kind: 'reasoning_summary',
+            id: 'strategy',
+            runId: 'run_strategy',
+            text: '我会先确认可访问性和索引信号，再检查首页内容与技术要素。',
+            source: 'runtime'
+          },
+          {
+            kind: 'reasoning_summary',
+            id: 'planning',
+            runId: 'run_strategy',
+            text: 'Planning skill reference review',
+            source: 'runtime'
+          },
+          {
+            kind: 'reasoning_summary',
+            id: 'inspect',
+            runId: 'run_strategy',
+            text: 'Inspecting site with curl',
+            source: 'runtime'
+          }
+        ]}
+      />
+    );
+
+    expect(screen.queryByText('正在确认执行方案')).not.toBeInTheDocument();
+    expect(screen.getByText('正在检查网站可访问性')).toBeInTheDocument();
+    expect(screen.queryByText('Inspecting site with curl')).not.toBeInTheDocument();
   });
 
   it('opens a file change card by path', async () => {

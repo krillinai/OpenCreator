@@ -412,7 +412,7 @@ describe('App', () => {
     render(<App fileService={createFileService()} />);
 
     expect(await screen.findByRole('button', { name: '新对话' })).toBeInTheDocument();
-    expect(await screen.findByText('先添加项目后开始对话')).toBeInTheDocument();
+    expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
@@ -506,7 +506,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '已安排' }));
+    await user.click(screen.getByRole('button', { name: '定时任务' }));
 
     expect(await screen.findByRole('heading', { name: '每日总结' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Clawee：已安排' })).not.toBeInTheDocument();
@@ -680,7 +680,7 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('button', { name: '已安排' }));
+    await user.click(await screen.findByRole('button', { name: '定时任务' }));
     await user.click(await screen.findByRole('button', { name: '立即运行每日总结' }));
 
     expect(window.location.hash).toBe('#/thread/thread-schedule-1');
@@ -761,8 +761,8 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '已安排' }));
-    expect(await screen.findByRole('heading', { name: '已安排的任务' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '定时任务' }));
+    expect(await screen.findByRole('heading', { name: '定时任务' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^创建$/ }));
     await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
@@ -787,7 +787,7 @@ describe('App', () => {
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     await waitFor(() => {
       expect(textbox).toHaveValue(
-        '我们一起来设置一个已安排任务吧。首先，说明已安排任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。'
+        '我们一起来设置一个定时任务吧。首先，说明定时任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。'
       );
       expect(textbox).toHaveFocus();
     });
@@ -802,7 +802,8 @@ describe('App', () => {
         && call.init?.method === 'POST'
       ))).toBe(true);
     });
-    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
+    expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /任务草稿.*草稿/ })).not.toBeInTheDocument();
   });
 
@@ -905,7 +906,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '已安排' }));
+    await user.click(screen.getByRole('button', { name: '定时任务' }));
     await user.click(await screen.findByRole('button', { name: /^创建$/ }));
     await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
 
@@ -1002,7 +1003,7 @@ describe('App', () => {
       expect(screen.getByRole('button', { name: 'customer-agent' }))
         .toHaveAttribute('data-current-project', 'true');
     });
-    await user.click(screen.getByRole('button', { name: '已安排' }));
+    await user.click(screen.getByRole('button', { name: '定时任务' }));
     await user.click(await screen.findByRole('button', { name: /^创建$/ }));
     await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
 
@@ -1115,7 +1116,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '已安排' }));
+    await user.click(screen.getByRole('button', { name: '定时任务' }));
     await user.click(await screen.findByRole('button', { name: /^创建$/ }));
     await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
     const textbox = await screen.findByRole('textbox', { name: '输入任务' });
@@ -1436,7 +1437,7 @@ describe('App', () => {
     expect(await findTimelineUserMessage('执行长任务')).toBeInTheDocument();
     expect(document.querySelectorAll('.timeline-user_message')).toHaveLength(1);
     expect(await screen.findByText('后台完成后的内容')).toBeInTheDocument();
-    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
+    await user.click(screen.getByText(/^(?:已完成|已处理 .+)$/));
     expect(screen.getAllByText('切换前的实时进度')).toHaveLength(1);
     expect(subscriptions).toHaveLength(1);
   });
@@ -1737,7 +1738,7 @@ describe('App', () => {
     expect(subscriptions[0]?.fromSeq).toBe(0);
     expect(subscriptions[1]?.fromSeq).toBe(1);
     expect(await screen.findByText('第二段内容')).toBeInTheDocument();
-    await user.click(await screen.findByText(/^(?:已完成|耗时 .+)$/));
+    await user.click(await screen.findByText(/^(?:已完成|已处理 .+)$/));
     expect(await screen.findAllByText('第一段内容')).toHaveLength(1);
     expect(screen.queryByText('SSE connection closed unexpectedly')).not.toBeInTheDocument();
     await waitFor(() => {
@@ -3059,13 +3060,13 @@ describe('App', () => {
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
-    expect(await screen.findByText(/^(?:已完成|耗时 .+)$/)).toBeInTheDocument();
+    expect(await screen.findByText(/^(?:已完成|已处理 .+)$/)).toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
     expect(screen.queryByText('排队中')).not.toBeInTheDocument();
     expect(screen.queryByText('处理中')).not.toBeInTheDocument();
 
-    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
+    await user.click(screen.getByText(/^(?:已完成|已处理 .+)$/));
 
     expect(await screen.findByText('我会先确认输入要求。')).toBeInTheDocument();
     expect(await screen.findByText('然后返回指定文本。')).toBeInTheDocument();
@@ -3175,11 +3176,13 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));
 
-    expect(await screen.findByText('rm -rf build')).toBeInTheDocument();
+    expect(await screen.findByText('允许 Clawee 执行这条命令？')).toBeInTheDocument();
+    expect(document.querySelector('.composer-approval-overlay')).toBeInTheDocument();
+    await user.click(screen.getByText('查看操作详情'));
+    expect(screen.getByText('rm -rf build')).toBeInTheDocument();
     const timelineScroller = screen.getByTestId('virtuoso-scroller');
     const composerWrap = document.querySelector<HTMLElement>('.composer-wrap');
     const composerInput = screen.getByRole('textbox', { name: '输入任务' });
@@ -3197,11 +3200,11 @@ describe('App', () => {
     fireEvent.wheel(composerInput, { deltaY: 80 });
     expect(timelineScroller.scrollTop).toBe(160);
 
-    await user.click(screen.getByRole('button', { name: '批准' }));
+    await user.click(screen.getByRole('button', { name: '允许一次' }));
 
     await waitFor(() => {
       expect(screen.queryByText('rm -rf build')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '允许一次' })).not.toBeInTheDocument();
     });
     expect(fetchCalls.some(call => (
       call.url.endsWith('/approvals/approval_1/approve')
@@ -3266,10 +3269,10 @@ describe('App', () => {
     expect(await screen.findByText('OK')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(container.querySelector('.timeline-process details')).not.toHaveAttribute('open');
-    expect(screen.getByText(/^(?:已完成|耗时 .+)$/)).toBeInTheDocument();
+    expect(screen.getByText(/^(?:已完成|已处理 .+)$/)).toBeInTheDocument();
     expect(screen.queryByText('正在思考')).not.toBeInTheDocument();
 
-    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
+    await user.click(screen.getByText(/^(?:已完成|已处理 .+)$/));
 
     expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
     expect(screen.queryByText('queued')).not.toBeInTheDocument();
@@ -3316,7 +3319,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
-    expect(await screen.findByText('思考中')).toBeInTheDocument();
+    expect(await screen.findByText('正在思考')).toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
 
     await act(async () => {
@@ -3508,9 +3511,9 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
-    expect(await screen.findByText(/^(?:已完成|耗时 .+)$/)).toBeInTheDocument();
+    expect(await screen.findByText(/^(?:已完成|已处理 .+)$/)).toBeInTheDocument();
 
-    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
+    await user.click(screen.getByText(/^(?:已完成|已处理 .+)$/));
 
     expect(screen.getByText('我会先确认当前目录，再读取必要文件。')).toBeInTheDocument();
     expect(screen.queryByText('正在查看项目内容')).not.toBeInTheDocument();
@@ -3585,8 +3588,9 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '新对话' }));
 
-    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
-    expect(screen.getByText('要在 content-design 中处理什么？')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
+    expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /选择项目 / })).toBeInTheDocument();
     expect(screen.queryByText(prompt)).not.toBeInTheDocument();
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
@@ -3627,7 +3631,7 @@ describe('App', () => {
         name: '选择项目 默认项目'
       })).toBeInTheDocument();
       expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
-      expect(screen.getByText('要在 默认项目 中处理什么？')).toBeInTheDocument();
+      expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
       expect(findPostCalls(fetchCalls, '/projects/default')).toHaveLength(1);
 
       firstRender.unmount();
@@ -4244,8 +4248,8 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '选择项目 primary' }));
     await user.click(screen.getByRole('option', { name: 'secondary' }));
 
-    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
-    expect(screen.getByText('要在 secondary 中处理什么？')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
+    expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
     expect(screen.queryByText(prompt)).not.toBeInTheDocument();
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
@@ -4812,9 +4816,10 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /真实 Codex 历史会话/ }));
 
     expect(await findTimelineUserMessage('分析这个 skill 是干什么的')).toBeInTheDocument();
-    expect(await screen.findByText(/^(?:已完成|耗时 .+)$/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /选择项目 / })).not.toBeInTheDocument();
+    expect(await screen.findByText(/^(?:已完成|已处理 .+)$/)).toBeInTheDocument();
 
-    await user.click(screen.getByText(/^(?:已完成|耗时 .+)$/));
+    await user.click(screen.getByText(/^(?:已完成|已处理 .+)$/));
 
     expect(screen.getByText('先读取 skill 说明。')).toBeInTheDocument();
     expect(screen.getByText('这个 skill 用于分析选品资料。')).toBeInTheDocument();
@@ -5041,7 +5046,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /无 Turn ID 的分页会话/ }));
-    await user.click(await screen.findByText(/^(?:已完成|耗时 .+)$/));
+    await user.click(await screen.findByText(/^(?:已完成|已处理 .+)$/));
 
     expect(screen.getByText('当前任务的处理过程')).toBeInTheDocument();
 
@@ -5289,7 +5294,7 @@ describe('App', () => {
 
     expect(await findTimelineUserMessage('保持当前内容')).toBeInTheDocument();
     expect(screen.getByText('当前内容仍然可见。')).toBeInTheDocument();
-    expect(screen.queryByText('要在 content-design 中处理什么？')).not.toBeInTheDocument();
+    expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
   });
 
   it('replaces the previous transcript with a loading state while switching conversations', async () => {
@@ -5492,11 +5497,10 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
     await user.click(screen.getByRole('button', { name: '文件' }));
 
-    expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
+    expect(await screen.findByLabelText('会话和文件工作区')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '文件' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('heading', { name: '真实文件会话' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Workspace' })).toBeInTheDocument();
@@ -5510,10 +5514,10 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '文件' })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('点击聊天回复中的生成文件链接会直接打开对应文件', async () => {
+  it('点击聊天回复中的成果卡片会直接打开对应文件', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
-    const absoluteChangedPath = '/Users/test/develop/clawee/clawee-agent/docs/generated.md';
+    const absoluteChangedPath = '/private/runtime/workspaces/clawee-agent/xiaodoujia-apple-aso-audit.html';
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -5578,13 +5582,13 @@ describe('App', () => {
               }
             },
             {
-              path: 'docs/generated.md',
-              name: 'generated.md',
-              depth: 1,
+              path: 'xiaodoujia-apple-aso-audit.html',
+              name: 'xiaodoujia-apple-aso-audit.html',
+              depth: 0,
               type: 'file',
               meta: {
-                kind: 'markdown',
-                mime: 'text/markdown',
+                kind: 'html',
+                mime: 'text/html',
                 size: 1,
                 mtimeMs: 1,
                 previewable: true,
@@ -5597,13 +5601,13 @@ describe('App', () => {
       }
       if (url.includes('/workspace/files/meta?')) {
         const path = new URL(url).searchParams.get('path');
-        if (path !== 'docs/generated.md') throw new Error(`Expected generated.md meta request, got ${path}`);
+        if (path !== 'xiaodoujia-apple-aso-audit.html') throw new Error(`Expected HTML meta request, got ${path}`);
         return jsonResponse({
-          path: 'docs/generated.md',
-          name: 'generated.md',
+          path: 'xiaodoujia-apple-aso-audit.html',
+          name: 'xiaodoujia-apple-aso-audit.html',
           type: 'file',
-          kind: 'markdown',
-          mime: 'text/markdown',
+          kind: 'html',
+          mime: 'text/html',
           size: 1,
           mtimeMs: 1,
           versionToken: 'v1',
@@ -5614,14 +5618,14 @@ describe('App', () => {
       }
       if (url.includes('/workspace/files/content?')) {
         const path = new URL(url).searchParams.get('path');
-        if (path !== 'docs/generated.md') throw new Error(`Expected generated.md content request, got ${path}`);
+        if (path !== 'xiaodoujia-apple-aso-audit.html') throw new Error(`Expected HTML content request, got ${path}`);
         return jsonResponse({
           meta: {
-            path: 'docs/generated.md',
-            name: 'generated.md',
+            path: 'xiaodoujia-apple-aso-audit.html',
+            name: 'xiaodoujia-apple-aso-audit.html',
             type: 'file',
-            kind: 'markdown',
-            mime: 'text/markdown',
+            kind: 'html',
+            mime: 'text/html',
             size: 1,
             mtimeMs: 1,
             versionToken: 'v1',
@@ -5629,7 +5633,7 @@ describe('App', () => {
             editable: true,
             readonly: false
           },
-          content: '# Generated',
+          content: '<h1>Generated</h1>',
           encoding: 'utf8'
         });
       }
@@ -5645,15 +5649,18 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
-    await user.click(await screen.findByRole('link', { name: absoluteChangedPath }));
+    await user.click(await screen.findByRole('button', { name: `打开成果 ${absoluteChangedPath}` }));
 
-    expect(screen.getByLabelText('会话和文件工作区')).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: 'Generated' })).toBeInTheDocument();
+    expect(await screen.findByLabelText('会话和文件工作区')).toBeInTheDocument();
+    expect(await screen.findByTitle('xiaodoujia-apple-aso-audit.html HTML 预览')).toBeInTheDocument();
+    expect(screen.queryByText('选择一个文件')).not.toBeInTheDocument();
     expect(screen.queryByText('已编辑 docs/atoms.md')).not.toBeInTheDocument();
     expect(
-      fetchCalls.some(call => call.url.includes('/workspace/files/meta?') && call.url.includes('path=docs%2Fgenerated.md'))
+      fetchCalls.some(call => (
+        call.url.includes('/workspace/files/meta?')
+        && call.url.includes('path=xiaodoujia-apple-aso-audit.html')
+      ))
     ).toBe(true);
   });
 
@@ -6356,8 +6363,8 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '返回应用' }));
 
-    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
-    expect(await screen.findByText('先添加项目后开始对话')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
+    expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
   });
 
   it('uses a solid conversation background without a dynamic background setting', async () => {
@@ -6365,7 +6372,7 @@ describe('App', () => {
 
     render(<App fileService={createFileService()} />);
 
-    expect(await screen.findByRole('heading', { name: '新对话' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(document.querySelector('.conversation-page')).not.toHaveAttribute('data-background-mode');
     expect(document.querySelector('.conversation-page')).not.toHaveAttribute('data-dynamic-background');
@@ -6520,7 +6527,7 @@ describe('App', () => {
     });
     const scheduleTaskThread = createThreadResponse({
       id: 'thread-schedule-task',
-      title: '已安排任务',
+      title: '定时任务',
       purpose: 'schedule_task',
       scheduleId: 'schedule-1',
       sandbox: 'workspace-write'

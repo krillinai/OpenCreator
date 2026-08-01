@@ -218,7 +218,7 @@ async function createManualSchedule(
 
 async function openSchedules(page: Page) {
   await openSidebar(page);
-  await page.getByRole('button', { name: '已安排' }).click();
+  await page.getByRole('button', { name: '定时任务' }).click();
   await expect(page.getByRole('heading', { name: '已安排的任务' })).toBeVisible();
 }
 
