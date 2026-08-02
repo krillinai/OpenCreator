@@ -122,7 +122,8 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
     },
     agents: [
       agent({ collectorId: 'collector-shanghai', agentId: 'agent-research', employeeName: '林夏', name: '研究助理', workspace: '~/develop/market-research', usage: { inputTokens: 31_400, cachedInputTokens: 14_800, outputTokens: 9_200, reasoningOutputTokens: 3_700 }, completedTurns: 11, sessionCount: 1, sessionTitle: '快速资料核验', promptSummary: '核验今日竞品发布信息', assistantSummary: '已交叉验证 4 个信息来源', toolName: 'WebSearch', subagentName: '资料检索' }),
-      agent({ collectorId: 'collector-beijing', agentId: 'agent-customer', employeeName: '周宁', name: '客户洞察', workspace: '~/develop/customer-success', usage: { inputTokens: 22_600, cachedInputTokens: 8_700, outputTokens: 7_100, reasoningOutputTokens: 2_600 }, completedTurns: 8, sessionCount: 1, sessionTitle: '今日客户反馈', promptSummary: '整理今日升级反馈', assistantSummary: '已归纳 3 项阻碍和跟进建议', toolName: 'ReadFile', subagentName: '反馈归类' })
+      agent({ collectorId: 'collector-beijing', agentId: 'agent-customer', employeeName: '周宁', name: '客户洞察', workspace: '~/develop/customer-success', usage: { inputTokens: 22_600, cachedInputTokens: 8_700, outputTokens: 7_100, reasoningOutputTokens: 2_600 }, completedTurns: 8, sessionCount: 1, sessionTitle: '今日客户反馈', promptSummary: '整理今日升级反馈', assistantSummary: '已归纳 3 项阻碍和跟进建议', toolName: 'ReadFile', subagentName: '反馈归类' }),
+      agent({ collectorId: 'collector-hangzhou', agentId: 'agent-analysis', employeeName: '陈默', name: '数据分析', workspace: '~/develop/data-platform', usage: { inputTokens: 8_600, cachedInputTokens: 3_100, outputTokens: 2_400, reasoningOutputTokens: 900 }, completedTurns: 3, sessionCount: 1, sessionTitle: '指标口径核对', promptSummary: '检查今日指标口径差异', assistantSummary: '已定位 2 处口径差异', toolName: 'QueryData', subagentName: '口径核验' })
     ]
   },
   '7d': {
@@ -137,12 +138,14 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
       modelDistribution: ['gpt-5.3-codex 62%', 'gpt-5.2 24%', '其他 14%'], agentDistribution: ['研究助理 48%', '代码审查 32%', '资料整理 20%'],
       recentTurns: [
         { agentName: '研究助理', task: '汇总竞品发布动态', model: 'gpt-5.3-codex', tokens: 18_420, time: '10:24', collectorId: 'collector-shanghai', agentId: 'agent-research' },
-        { agentName: '代码审查', task: '检查工作区变更', model: 'gpt-5.3-codex', tokens: 9_860, time: '昨天', collectorId: 'collector-shanghai', agentId: 'agent-research' }
+        { agentName: '代码审查', task: '检查工作区变更', model: 'gpt-5.3-codex', tokens: 9_860, time: '昨天', collectorId: 'collector-shanghai', agentId: 'agent-code-review' }
       ]
     },
     agents: [
       agent({ collectorId: 'collector-shanghai', agentId: 'agent-research', employeeName: '林夏', name: '研究助理', workspace: '~/develop/market-research', usage: { inputTokens: 142_300, cachedInputTokens: 68_700, outputTokens: 42_320, reasoningOutputTokens: 19_400 }, completedTurns: 36, sessionCount: 2, sessionTitle: '竞品周报研究', promptSummary: '对比本周主要竞品的产品更新与市场动作', assistantSummary: '已整理 6 项发布动态，并标注对现有路线的影响', toolName: 'WebSearch', subagentName: '资料检索' }),
-      agent({ collectorId: 'collector-beijing', agentId: 'agent-customer', employeeName: '周宁', name: '客户洞察', workspace: '~/develop/customer-success', usage: { inputTokens: 118_400, cachedInputTokens: 52_300, outputTokens: 31_600, reasoningOutputTokens: 10_800 }, completedTurns: 29, sessionCount: 3, sessionTitle: '续约风险归因', promptSummary: '分析本周高风险客户反馈', assistantSummary: '已识别 5 个风险信号及对应负责人', toolName: 'ReadFile', subagentName: '反馈归类' })
+      agent({ collectorId: 'collector-shanghai', agentId: 'agent-code-review', employeeName: '林夏', name: '代码审查', workspace: '~/develop/clawee-client', usage: { inputTokens: 7_480, cachedInputTokens: 3_120, outputTokens: 2_380, reasoningOutputTokens: 940 }, completedTurns: 4, sessionCount: 1, sessionTitle: '检查工作区变更', promptSummary: '检查当前工作区的前端变更', assistantSummary: '已标记 2 项可维护性建议', toolName: 'ReadFile', subagentName: '测试检查' }),
+      agent({ collectorId: 'collector-beijing', agentId: 'agent-customer', employeeName: '周宁', name: '客户洞察', workspace: '~/develop/customer-success', usage: { inputTokens: 118_400, cachedInputTokens: 52_300, outputTokens: 31_600, reasoningOutputTokens: 10_800 }, completedTurns: 29, sessionCount: 3, sessionTitle: '续约风险归因', promptSummary: '分析本周高风险客户反馈', assistantSummary: '已识别 5 个风险信号及对应负责人', toolName: 'ReadFile', subagentName: '反馈归类' }),
+      agent({ collectorId: 'collector-hangzhou', agentId: 'agent-analysis', employeeName: '陈默', name: '数据分析', workspace: '~/develop/data-platform', usage: { inputTokens: 48_200, cachedInputTokens: 19_600, outputTokens: 14_800, reasoningOutputTokens: 5_400 }, completedTurns: 18, sessionCount: 2, sessionTitle: '周度指标校验', promptSummary: '核对本周业务指标口径', assistantSummary: '已整理异常指标及修复建议', toolName: 'QueryData', subagentName: '口径核验' })
     ]
   },
   '30d': {
@@ -159,7 +162,8 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
     },
     agents: [
       agent({ collectorId: 'collector-shanghai', agentId: 'agent-research', employeeName: '林夏', name: '研究助理', workspace: '~/develop/market-research', usage: { inputTokens: 548_600, cachedInputTokens: 274_100, outputTokens: 156_400, reasoningOutputTokens: 61_200 }, completedTurns: 148, sessionCount: 11, sessionTitle: '月度市场脉络复盘', promptSummary: '汇总本月竞品与市场变化', assistantSummary: '已形成月度变化脉络和 8 项建议', toolName: 'WebSearch', subagentName: '资料检索' }),
-      agent({ collectorId: 'collector-beijing', agentId: 'agent-customer', employeeName: '周宁', name: '客户洞察', workspace: '~/develop/customer-success', usage: { inputTokens: 439_800, cachedInputTokens: 201_300, outputTokens: 127_200, reasoningOutputTokens: 45_800 }, completedTurns: 121, sessionCount: 9, sessionTitle: '月度客户健康复盘', promptSummary: '归纳本月客户健康变化', assistantSummary: '已输出分层风险清单与行动项', toolName: 'ReadFile', subagentName: '反馈归类' })
+      agent({ collectorId: 'collector-beijing', agentId: 'agent-customer', employeeName: '周宁', name: '客户洞察', workspace: '~/develop/customer-success', usage: { inputTokens: 439_800, cachedInputTokens: 201_300, outputTokens: 127_200, reasoningOutputTokens: 45_800 }, completedTurns: 121, sessionCount: 9, sessionTitle: '月度客户健康复盘', promptSummary: '归纳本月客户健康变化', assistantSummary: '已输出分层风险清单与行动项', toolName: 'ReadFile', subagentName: '反馈归类' }),
+      agent({ collectorId: 'collector-hangzhou', agentId: 'agent-analysis', employeeName: '陈默', name: '数据分析', workspace: '~/develop/data-platform', usage: { inputTokens: 176_400, cachedInputTokens: 72_100, outputTokens: 51_600, reasoningOutputTokens: 18_900 }, completedTurns: 61, sessionCount: 5, sessionTitle: '月度数据质量复盘', promptSummary: '复盘本月数据质量异常', assistantSummary: '已形成数据质量问题清单', toolName: 'QueryData', subagentName: '质量核验' })
     ]
   }
 };

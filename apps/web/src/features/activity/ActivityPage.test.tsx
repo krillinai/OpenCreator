@@ -39,6 +39,16 @@ describe('ActivityPage static prototype', () => {
       agentId: 'agent-research',
       range: '7d'
     });
+
+    await user.clear(screen.getByRole('searchbox', { name: '搜索员工' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索员工' }), '陈默');
+    await user.click(screen.getByRole('button', { name: /查看陈默的 Agent/ }));
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      view: 'activity-agent',
+      collectorId: 'collector-hangzhou',
+      agentId: 'agent-analysis',
+      range: '7d'
+    });
   });
 
   it('renders partial and missing usage explicitly', () => {
@@ -77,6 +87,20 @@ describe('ActivityPage static prototype', () => {
     expect(screen.getByText('汇总竞品发布动态')).toBeInTheDocument();
     expect(screen.getByText('gpt-5.3-codex 62%')).toBeInTheDocument();
     expect(screen.queryByText('快速资料核验')).not.toBeInTheDocument();
+  });
+
+  it('maps each recent turn to its own route-specific Agent detail', async () => {
+    const onNavigate = vi.fn();
+    const user = userEvent.setup();
+    render(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={onNavigate} />);
+    await user.click(screen.getByRole('button', { name: '员工视图' }));
+    await user.click(screen.getByRole('button', { name: '查看代码审查详情' }));
+    expect(onNavigate).toHaveBeenCalledWith({
+      view: 'activity-agent',
+      collectorId: 'collector-shanghai',
+      agentId: 'agent-code-review',
+      range: '7d'
+    });
   });
 
   it('shows detail activity while exposing only sanitized tool metadata', () => {
