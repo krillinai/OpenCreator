@@ -12,3 +12,4 @@ test-results/
 codex-main/
 open-design-main/
 .gstack/
+.worktrees/
