@@ -25,6 +25,7 @@ describe('app routes', () => {
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });
     expect(parseRoute('#/tasks')).toEqual({ view: 'tasks' });
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
+    expect(parseRoute('#/knowledge')).toEqual({ view: 'knowledge' });
     expect(parseRoute('#/account')).toEqual({ view: 'account' });
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
@@ -80,6 +81,7 @@ describe('app routes', () => {
     expect(formatRoute({ view: 'schedules' })).toBe('#/schedules');
     expect(formatRoute({ view: 'tasks' })).toBe('#/tasks');
     expect(formatRoute({ view: 'plugins' })).toBe('#/plugins');
+    expect(formatRoute({ view: 'knowledge' })).toBe('#/knowledge');
     expect(formatRoute({ view: 'account' })).toBe('#/account');
     expect(formatRoute({ view: 'settings' })).toBe('#/settings');
     expect(formatRoute({ view: 'capabilities' })).toBe('#/capabilities');

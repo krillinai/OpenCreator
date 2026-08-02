@@ -7,6 +7,7 @@ export type AppRoute =
   | { view: 'activity'; range: ActivityRange }
   | { view: 'activity-agent'; collectorId: string; agentId: string; range: ActivityRange }
   | { view: 'plugins'; source?: 'enterprise' }
+  | { view: 'knowledge' }
   | { view: 'account' }
   | { view: 'capabilities' }
   | { view: 'settings' }
@@ -51,6 +52,7 @@ export function parseRoute(hash: string): AppRoute {
       ? { view: 'plugins', source: 'enterprise' }
       : { view: 'plugins' };
   }
+  if (path === '#/knowledge') return { view: 'knowledge' };
   if (path === '#/account') return { view: 'account' };
   if (path === '#/capabilities') return { view: 'capabilities' };
   if (path === '#/settings') return { view: 'settings' };
@@ -95,6 +97,8 @@ export function formatRoute(route: AppRoute): string {
       return route.source === 'enterprise'
         ? '#/plugins?source=enterprise'
         : '#/plugins';
+    case 'knowledge':
+      return '#/knowledge';
     case 'account':
       return '#/account';
     case 'capabilities':

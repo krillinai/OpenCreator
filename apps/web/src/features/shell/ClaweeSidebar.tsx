@@ -11,6 +11,7 @@ import {
   FolderMinus,
   FolderPlus,
   FolderOpen,
+  LibraryBig,
   LoaderCircle,
   MoreHorizontal,
   PanelLeftClose,
@@ -94,7 +95,8 @@ export function ClaweeSidebar(props: {
     { label: 'Agent 活动', icon: Activity, view: 'activity', onClick: () => props.onOpenView('activity') },
     { label: '搜索', icon: Search, view: 'search', onClick: () => props.onOpenView('search') },
     { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') },
-    { label: '插件', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') }
+    { label: '插件', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') },
+    { label: '知识库', icon: LibraryBig, view: 'knowledge', onClick: () => props.onOpenView('knowledge') }
   ];
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
   const selectedTaskThread = props.tasks.some(

@@ -8,6 +8,7 @@ export type ActiveView =
   | 'tasks'
   | 'activity'
   | 'plugins'
+  | 'knowledge'
   | 'account'
   | 'settings'
   | 'files';

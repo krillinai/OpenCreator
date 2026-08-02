@@ -234,6 +234,10 @@ const EnterpriseAccountPage = lazy(
 );
 const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
+const KnowledgePage = lazy(async () => {
+  const module = await import('../features/knowledge/KnowledgePage.js');
+  return { default: module.KnowledgePage };
+});
 const ScheduleThreadHeader = lazy(async () => {
   const module = await import('../features/schedules/ScheduleThreadHeader.js');
   return { default: module.ScheduleThreadHeader };
@@ -2570,6 +2574,7 @@ export function AppController(props: AppControllerProps) {
       case 'activity':
       case 'activity-agent':
       case 'plugins':
+      case 'knowledge':
       case 'account':
       case 'settings':
         closeMobileSidebar();
@@ -4293,6 +4298,8 @@ export function AppController(props: AppControllerProps) {
         : { view: 'activity', range: '7d' }}
       onNavigate={navigateToRoute}
     />
+  ) : state.activeView === 'knowledge' ? (
+    <KnowledgePage />
   ) : state.activeView === 'settings' ? (
     <SettingsPage
       runtimeStatus={runtimeStatus}
@@ -4640,6 +4647,7 @@ function createInitialState(
     case 'activity':
     case 'activity-agent':
     case 'plugins':
+    case 'knowledge':
     case 'account':
     case 'settings':
       return {
@@ -4675,6 +4683,8 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
       return { view: 'activity', range: '7d' };
     case 'plugins':
       return { view: 'plugins' };
+    case 'knowledge':
+      return { view: 'knowledge' };
     case 'account':
       return { view: 'account' };
     case 'settings':

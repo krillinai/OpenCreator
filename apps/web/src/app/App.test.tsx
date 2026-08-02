@@ -138,6 +138,19 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '近 30 天' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('restores the enterprise knowledge base from direct and history routes', async () => {
+    window.location.hash = '#/knowledge';
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '知识库' })).toHaveAttribute('aria-current', 'page');
+    window.history.replaceState(null, '', '#/plugins');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(await screen.findByLabelText('Skill 功能目录')).toBeInTheDocument();
+    window.history.replaceState(null, '', '#/knowledge');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(await screen.findByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
+  });
+
   it('updates the copyable URL when navigating between primary pages', async () => {
     const user = userEvent.setup();
     render(<App />);
