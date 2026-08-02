@@ -12,6 +12,12 @@ import type {
 } from './credential-store-2026-07-30.js';
 import { EnterpriseCredentialStoreError } from './credential-store-2026-07-30.js';
 import type {
+  EnterpriseAgentIdentityStore
+} from './agent-identity-2026-08-02.js';
+import {
+  EnterpriseAgentIdentityStoreError
+} from './agent-identity-2026-08-02.js';
+import type {
   EnterpriseHttpClient,
   EnterpriseLoginResult
 } from './http-client-2026-07-30.js';
@@ -41,6 +47,7 @@ export class EnterpriseSessionError extends Error {
 }
 
 export function createEnterpriseSessionManager(input: {
+  agentIdentityStore: EnterpriseAgentIdentityStore;
   credentialStore: EnterpriseCredentialStore;
   httpClient: EnterpriseHttpClient;
   transportSecurity: EnterpriseTransportSecurity;
@@ -102,13 +109,17 @@ export function createEnterpriseSessionManager(input: {
           503
         );
       }
-      throw error;
+      publish(operationGeneration, signedOutSnapshot());
+      throw new EnterpriseSessionError(
+        'ENTERPRISE_PROTOCOL_ERROR',
+        500
+      );
     }
   }
 
   async function clearCredential(
     operationGeneration: number,
-    reason: EnterpriseSessionReason
+    reason?: EnterpriseSessionReason
   ): Promise<void> {
     try {
       await input.credentialStore.delete();
@@ -128,13 +139,36 @@ export function createEnterpriseSessionManager(input: {
           503
         );
       }
-      throw error;
+      publish(operationGeneration, signedOutSnapshot());
+      throw new EnterpriseSessionError(
+        'ENTERPRISE_PROTOCOL_ERROR',
+        500
+      );
+    }
+  }
+
+  async function readAgentId(operationGeneration: number): Promise<string> {
+    try {
+      return await input.agentIdentityStore.getOrCreate();
+    } catch (error) {
+      publish(operationGeneration, signedOutSnapshot());
+      if (error instanceof EnterpriseAgentIdentityStoreError) {
+        throw new EnterpriseSessionError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          500
+        );
+      }
+      throw new EnterpriseSessionError(
+        'ENTERPRISE_PROTOCOL_ERROR',
+        500
+      );
     }
   }
 
   async function validateAuthenticatedSession(request: {
     operationGeneration: number;
     credential: EnterpriseCredential;
+    expectedAgentId: string;
     persist: boolean;
   }): Promise<EnterpriseSessionResponse> {
     let me;
@@ -182,8 +216,22 @@ export function createEnterpriseSessionManager(input: {
             503
           );
         }
+        await rejectUnusableCredential(request);
+        throw sessionErrorFromHttp(error);
       }
-      throw error;
+      await rejectUnusableCredential(request);
+      throw new EnterpriseSessionError(
+        'ENTERPRISE_PROTOCOL_ERROR',
+        500
+      );
+    }
+
+    if (me.agentId !== request.expectedAgentId) {
+      await rejectUnusableCredential(request);
+      throw new EnterpriseSessionError(
+        'ENTERPRISE_PROTOCOL_ERROR',
+        502
+      );
     }
 
     if (me.status !== 'active') {
@@ -239,7 +287,11 @@ export function createEnterpriseSessionManager(input: {
             503
           );
         }
-        throw error;
+        publish(request.operationGeneration, signedOutSnapshot());
+        throw new EnterpriseSessionError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          500
+        );
       }
     }
 
@@ -259,17 +311,29 @@ export function createEnterpriseSessionManager(input: {
 
   async function authenticateNew(
     operationGeneration: number,
-    request: EnterpriseLoginRequest
+    request: EnterpriseLoginRequest,
+    agentId: string
   ): Promise<EnterpriseSessionResponse> {
     let login: EnterpriseLoginResult;
     try {
-      login = await input.httpClient.login(request);
+      login = await input.httpClient.login(request, agentId);
     } catch (error) {
       publish(operationGeneration, signedOutSnapshot());
       if (error instanceof EnterpriseHttpError) {
         throw sessionErrorFromHttp(error);
       }
-      throw error;
+      throw new EnterpriseSessionError(
+        'ENTERPRISE_PROTOCOL_ERROR',
+        500
+      );
+    }
+    if (login.agentId !== agentId) {
+      await revokeQuietly(login.accessToken);
+      publish(operationGeneration, signedOutSnapshot());
+      throw new EnterpriseSessionError(
+        'ENTERPRISE_PROTOCOL_ERROR',
+        502
+      );
     }
     return validateAuthenticatedSession({
       operationGeneration,
@@ -277,6 +341,7 @@ export function createEnterpriseSessionManager(input: {
         accessToken: login.accessToken,
         expiresAt: login.expiresAt
       },
+      expectedAgentId: agentId,
       persist: true
     });
   }
@@ -290,11 +355,26 @@ export function createEnterpriseSessionManager(input: {
       publish(operationGeneration, next);
       return next;
     }
+    const agentId = await readAgentId(operationGeneration);
     return validateAuthenticatedSession({
       operationGeneration,
       credential: stored,
+      expectedAgentId: agentId,
       persist: false
     });
+  }
+
+  async function rejectUnusableCredential(request: {
+    operationGeneration: number;
+    credential: EnterpriseCredential;
+    persist: boolean;
+  }): Promise<void> {
+    if (request.persist) {
+      await revokeQuietly(request.credential.accessToken);
+      publish(request.operationGeneration, signedOutSnapshot());
+      return;
+    }
+    await clearCredential(request.operationGeneration);
   }
 
   async function revokeQuietly(accessToken: string): Promise<void> {
@@ -308,7 +388,14 @@ export function createEnterpriseSessionManager(input: {
   return {
     startRestore() {
       const operationGeneration = beginOperation();
-      void refreshForGeneration(operationGeneration).catch(() => undefined);
+      void refreshForGeneration(operationGeneration).catch(error => {
+        if (snapshot.status === 'checking') {
+          publish(operationGeneration, signedOutSnapshot());
+        }
+        console.warn(
+          `Enterprise session restore failed [${sessionErrorCode(error)}]`
+        );
+      });
     },
 
     getSnapshot() {
@@ -320,17 +407,35 @@ export function createEnterpriseSessionManager(input: {
     },
 
     async login(request) {
-      return authenticateNew(beginOperation(), request);
+      const operationGeneration = beginOperation();
+      const agentId = await readAgentId(operationGeneration);
+      return authenticateNew(operationGeneration, request, agentId);
     },
 
     async register(request) {
       const operationGeneration = beginOperation();
-      await input.httpClient.register(request);
+      const agentId = await readAgentId(operationGeneration);
       try {
-        return await authenticateNew(operationGeneration, {
-          email: request.email,
-          password: request.password
-        });
+        await input.httpClient.register(request, agentId);
+      } catch (error) {
+        publish(operationGeneration, signedOutSnapshot());
+        if (error instanceof EnterpriseHttpError) {
+          throw sessionErrorFromHttp(error);
+        }
+        throw new EnterpriseSessionError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          500
+        );
+      }
+      try {
+        return await authenticateNew(
+          operationGeneration,
+          {
+            email: request.email,
+            password: request.password
+          },
+          agentId
+        );
       } catch {
         const email = request.email.trim().toLowerCase();
         throw new EnterpriseSessionError(
@@ -379,7 +484,23 @@ export function createEnterpriseSessionManager(input: {
             503
           );
         }
-        throw error;
+        if (operationGeneration === generation) credential = stored;
+        publish(operationGeneration, {
+          status: 'service_unavailable',
+          ...(accountCache === undefined
+            ? {}
+            : { account: accountCache }),
+          expiresAt: stored.expiresAt,
+          reason: 'service_unavailable',
+          transportSecurity: input.transportSecurity
+        });
+        if (error instanceof EnterpriseHttpError) {
+          throw sessionErrorFromHttp(error);
+        }
+        throw new EnterpriseSessionError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          500
+        );
       }
 
       await clearCredential(operationGeneration, 'session_expired');
@@ -421,4 +542,14 @@ function sessionErrorFromHttp(error: EnterpriseHttpError): EnterpriseSessionErro
     default:
       return new EnterpriseSessionError(error.code, error.statusCode ?? 500);
   }
+}
+
+function sessionErrorCode(error: unknown): string {
+  if (
+    error instanceof EnterpriseSessionError
+    || error instanceof EnterpriseHttpError
+  ) {
+    return error.code;
+  }
+  return 'ENTERPRISE_PROTOCOL_ERROR';
 }

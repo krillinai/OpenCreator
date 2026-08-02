@@ -9,6 +9,9 @@ import type {
   EnterpriseCredentialStore
 } from '../../src/enterprise/credential-store-2026-07-30.js';
 import type {
+  EnterpriseAgentIdentityStore
+} from '../../src/enterprise/agent-identity-2026-08-02.js';
+import type {
   EnterpriseHttpClient,
   EnterpriseMeResult
 } from '../../src/enterprise/http-client-2026-07-30.js';
@@ -18,6 +21,7 @@ import type {
 
 let server: FastifyInstance | undefined;
 let tempDir = '';
+const agentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
 
 afterEach(async () => {
   await server?.close();
@@ -34,6 +38,7 @@ describe('enterprise runtime API', () => {
       token: 'secret',
       dataDir: tempDir,
       codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
       enterpriseCredentialStore: createStore({
         accessToken: 'enterprise-token',
         expiresAt: '2026-07-31T10:00:00Z'
@@ -52,6 +57,7 @@ describe('enterprise runtime API', () => {
 
     me.resolve({
       account: { email: 'user@example.com', name: 'User' },
+      agentId,
       status: 'active',
       frontendAllowed: true
     });
@@ -70,6 +76,7 @@ describe('enterprise runtime API', () => {
       token: 'secret',
       dataDir: tempDir,
       codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
       enterpriseCredentialStore: createStore(),
       enterpriseHttpClient: client,
       enterpriseOrigin: 'http://127.0.0.1:1904'
@@ -106,6 +113,7 @@ describe('enterprise runtime API', () => {
       token: 'secret',
       dataDir: tempDir,
       codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
       enterpriseCredentialStore: createStore(),
       enterpriseHttpClient: createClient(),
       enterpriseOrigin: 'https://enterprise.example',
@@ -172,12 +180,14 @@ function createClient(
     register: vi.fn(async () => undefined),
     login: vi.fn(async () => ({
       account: { email: 'user@example.com', name: 'User' },
+      agentId,
       accessToken: 'enterprise-token',
       tokenType: 'Bearer' as const,
       expiresAt: '2026-07-31T10:00:00Z'
     })),
     getMe: vi.fn(async () => ({
       account: { email: 'user@example.com', name: 'User' },
+      agentId,
       status: 'active',
       frontendAllowed: true
     })),
@@ -190,6 +200,12 @@ function createClient(
       throw new Error('not implemented');
     }),
     ...overrides
+  };
+}
+
+function createAgentIdentityStore(): EnterpriseAgentIdentityStore {
+  return {
+    getOrCreate: vi.fn(async () => agentId)
   };
 }
 

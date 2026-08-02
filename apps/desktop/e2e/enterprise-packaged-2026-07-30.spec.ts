@@ -44,6 +44,8 @@ const enterpriseEmail = 'packaged-e2e@example.com';
 const enterprisePassword = 'packaged-e2e-password';
 const enterpriseSkillName = 'enterprise-review';
 const keyringService = 'com.clawee.enterprise.e2e';
+const agentIdPattern =
+  /^clawee_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 test.describe.configure({ mode: 'serial' });
 
@@ -114,6 +116,9 @@ test('实际打包 App 可登录、恢复企业会话、安装并使用 Skill', 
         name: 'Packaged E2E'
       }
     });
+    const persistedAgentId = readPersistedAgentId(userData);
+    expect(persistedAgentId).toMatch(agentIdPattern);
+    expect(server.agentIdentity()).toBe(persistedAgentId);
 
     const previous = app;
     await closePackagedApp(previous);
@@ -129,6 +134,8 @@ test('实际打包 App 可登录、恢复企业会话、安装并使用 Skill', 
         name: 'Packaged E2E'
       }
     });
+    expect(readPersistedAgentId(userData)).toBe(persistedAgentId);
+    expect(server.agentIdentity()).toBe(persistedAgentId);
     await expect(app.page.getByRole('button', {
       name: `Packaged E2E ${enterpriseEmail}`
     })).toBeVisible();
@@ -188,7 +195,8 @@ test('实际打包 App 可登录、恢复企业会话、安装并使用 Skill', 
       && request.path === '/api/v1/auth/login'
     ));
     expect(login).toMatchObject({
-      bodyKeys: ['client_id', 'email', 'password'],
+      bodyKeys: ['agent_id', 'client_id', 'email', 'password'],
+      agentId: persistedAgentId,
       clientId: 'clawee-agent',
       cookiePresent: false
     });
@@ -256,6 +264,7 @@ type EnterpriseRequestRecord = {
   method: string;
   path: string;
   bodyKeys: string[];
+  agentId?: string;
   clientId?: string;
   authorizationPresent: boolean;
   cookiePresent: boolean;
@@ -265,6 +274,7 @@ class FakeEnterpriseServer {
   private server: Server | undefined;
   private readonly requests: EnterpriseRequestRecord[] = [];
   private readonly token = `packaged-e2e-${randomUUID()}`;
+  private agentId: string | undefined;
   private readonly packageBytes = createZip([{
     name: 'SKILL.md',
     data: [
@@ -310,6 +320,10 @@ class FakeEnterpriseServer {
     }));
   }
 
+  agentIdentity(): string | undefined {
+    return this.agentId;
+  }
+
   async close(): Promise<void> {
     const current = this.server;
     this.server = undefined;
@@ -335,6 +349,9 @@ class FakeEnterpriseServer {
       method: request.method ?? 'GET',
       path: url.pathname,
       bodyKeys,
+      ...(isRecord(body) && typeof body.agent_id === 'string'
+        ? { agentId: body.agent_id }
+        : {}),
       ...(isRecord(body) && typeof body.client_id === 'string'
         ? { clientId: body.client_id }
         : {}),
@@ -360,13 +377,17 @@ class FakeEnterpriseServer {
         || body.email !== enterpriseEmail
         || body.password !== enterprisePassword
         || body.client_id !== 'clawee-agent'
+        || typeof body.agent_id !== 'string'
+        || !agentIdPattern.test(body.agent_id)
       ) {
         sendJson(response, 401, { error: { code: 'unauthorized' } });
         return;
       }
+      this.agentId = body.agent_id;
       sendJson(response, 200, {
         data: {
           account: enterpriseAccount(),
+          agent: enterpriseAgent(this.agentId),
           access_token: this.token,
           token_type: 'Bearer',
           expires_at: '2099-07-30T12:00:00.000Z'
@@ -379,6 +400,7 @@ class FakeEnterpriseServer {
       sendJson(response, 200, {
         data: {
           account: enterpriseAccount(),
+          agent: enterpriseAgent(this.requireAgentId()),
           applications: { frontend: true }
         }
       });
@@ -436,6 +458,13 @@ class FakeEnterpriseServer {
       package_sha256: this.packageSha256,
       updated_at: '2026-07-30T12:00:00.000Z'
     };
+  }
+
+  private requireAgentId(): string {
+    if (this.agentId === undefined) {
+      throw new Error('Fake enterprise session has no agent identity');
+    }
+    return this.agentId;
   }
 }
 
@@ -545,6 +574,26 @@ function enterpriseAccount() {
     name: 'Packaged E2E',
     status: 'active'
   };
+}
+
+function enterpriseAgent(agentId: string) {
+  return {
+    agent_id: agentId,
+    name: 'Packaged E2E'
+  };
+}
+
+function readPersistedAgentId(userData: string): string {
+  const path = join(userData, 'daemon', 'enterprise-agent.json');
+  const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (
+    !isRecord(value)
+    || value.version !== 1
+    || typeof value.agentId !== 'string'
+  ) {
+    throw new Error(`Invalid persisted enterprise agent identity: ${path}`);
+  }
+  return value.agentId;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

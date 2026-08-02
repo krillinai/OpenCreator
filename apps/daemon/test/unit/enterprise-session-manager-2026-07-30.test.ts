@@ -8,6 +8,9 @@ import {
   EnterpriseSessionError
 } from '../../src/enterprise/session-manager-2026-07-30.js';
 import type {
+  EnterpriseAgentIdentityStore
+} from '../../src/enterprise/agent-identity-2026-08-02.js';
+import type {
   EnterpriseHttpClient,
   EnterpriseMeResult
 } from '../../src/enterprise/http-client-2026-07-30.js';
@@ -17,6 +20,7 @@ const credential: EnterpriseCredential = {
   accessToken: 'enterprise-session-token',
   expiresAt: '2026-07-31T10:00:00Z'
 };
+const agentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
 
 describe('enterprise session manager', () => {
   it('starts restore asynchronously and publishes a valid session later', async () => {
@@ -26,6 +30,7 @@ describe('enterprise session manager', () => {
       getMe: vi.fn(async () => me.promise)
     });
     const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
       credentialStore: store,
       httpClient: client,
       transportSecurity: 'secure_https'
@@ -71,6 +76,7 @@ describe('enterprise session manager', () => {
       getMe: vi.fn(async () => me)
     });
     const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
       credentialStore: store,
       httpClient: client,
       transportSecurity: 'secure_https'
@@ -91,6 +97,7 @@ describe('enterprise session manager', () => {
   it('deletes expired saved credentials but preserves them on service failure', async () => {
     const expiredStore = createStore(credential);
     const expired = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
       credentialStore: expiredStore,
       httpClient: createClient({
         getMe: vi.fn(async () => {
@@ -116,6 +123,7 @@ describe('enterprise session manager', () => {
 
     const offlineStore = createStore(credential);
     const offline = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
       credentialStore: offlineStore,
       httpClient: createClient({
         getMe: vi.fn(async () => {
@@ -152,6 +160,7 @@ describe('enterprise session manager', () => {
       })
     });
     const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
       credentialStore: store,
       httpClient: client,
       transportSecurity: 'secure_https'
@@ -171,6 +180,7 @@ describe('enterprise session manager', () => {
   it('returns registered-login-required without exposing the password', async () => {
     const password = 'password-that-must-not-escape';
     const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
       credentialStore: createStore(),
       httpClient: createClient({
         login: vi.fn(async () => {
@@ -203,6 +213,131 @@ describe('enterprise session manager', () => {
     });
     expect(String(error)).not.toContain(password);
   });
+
+  it('settles asynchronous restore after a protocol failure', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const store = createStore(credential);
+    const protocolClient = createClient({
+      getMe: vi.fn(async () => {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          200
+        );
+      })
+    });
+    const restoring = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
+      credentialStore: store,
+      httpClient: protocolClient,
+      transportSecurity: 'secure_https'
+    });
+
+    restoring.startRestore();
+    await vi.waitFor(() => {
+      expect(restoring.getSnapshot()).toEqual({
+        status: 'signed_out',
+        transportSecurity: 'secure_https'
+      });
+    });
+    expect(store.delete).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      'Enterprise session restore failed [ENTERPRISE_PROTOCOL_ERROR]'
+    );
+    warn.mockRestore();
+  });
+
+  it('sends one stable agent id through login and validation', async () => {
+    const login = vi.fn(async () => ({
+      account: { email: 'user@example.com', name: 'User' },
+      agentId,
+      accessToken: credential.accessToken,
+      tokenType: 'Bearer' as const,
+      expiresAt: credential.expiresAt
+    }));
+    const getMe = vi.fn(async () => activeMe());
+    const loggingIn = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
+      credentialStore: createStore(),
+      httpClient: createClient({ getMe, login }),
+      transportSecurity: 'secure_https'
+    });
+    const request = {
+      email: 'user@example.com',
+      password: 'password-123'
+    };
+
+    await expect(loggingIn.login(request)).resolves.toMatchObject({
+      status: 'signed_in'
+    });
+    expect(login).toHaveBeenCalledWith(request, agentId);
+    expect(getMe).toHaveBeenCalledWith(credential.accessToken);
+  });
+
+  it('rejects mismatched agent identities without persisting a session', async () => {
+    const store = createStore();
+    const logout = vi.fn(async () => undefined);
+    const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
+      credentialStore: store,
+      httpClient: createClient({
+        login: vi.fn(async () => ({
+          account: { email: 'user@example.com', name: 'User' },
+          agentId: 'clawee_123e4567-e89b-42d3-a456-426614174000',
+          accessToken: credential.accessToken,
+          tokenType: 'Bearer' as const,
+          expiresAt: credential.expiresAt
+        })),
+        logout
+      }),
+      transportSecurity: 'secure_https'
+    });
+
+    await expect(manager.login({
+      email: 'user@example.com',
+      password: 'password-123'
+    })).rejects.toMatchObject({
+      code: 'ENTERPRISE_PROTOCOL_ERROR',
+      statusCode: 502
+    });
+    expect(logout).toHaveBeenCalledWith(credential.accessToken);
+    expect(store.write).not.toHaveBeenCalled();
+    expect(manager.getSnapshot()).toEqual({
+      status: 'signed_out',
+      transportSecurity: 'secure_https'
+    });
+  });
+
+  it('settles registration when the remote request fails', async () => {
+    const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
+      credentialStore: createStore(),
+      httpClient: createClient({
+        register: vi.fn(async () => {
+          throw new EnterpriseHttpError(
+            'ENTERPRISE_AGENT_ID_CONFLICT',
+            'response',
+            409,
+            'agent_id_conflict'
+          );
+        })
+      }),
+      transportSecurity: 'secure_https'
+    });
+
+    await expect(manager.register({
+      email: 'user@example.com',
+      name: 'User',
+      password: 'password-123'
+    })).rejects.toMatchObject({
+      code: 'ENTERPRISE_AGENT_ID_CONFLICT',
+      statusCode: 409
+    });
+    expect(manager.getSnapshot()).toEqual({
+      status: 'signed_out',
+      transportSecurity: 'secure_https'
+    });
+  });
 });
 
 function createStore(
@@ -231,6 +366,7 @@ function createClient(
     register: vi.fn(async () => undefined),
     login: vi.fn(async () => ({
       account: { email: 'user@example.com', name: 'User' },
+      agentId,
       accessToken: credential.accessToken,
       tokenType: 'Bearer' as const,
       expiresAt: credential.expiresAt
@@ -254,8 +390,15 @@ function activeMe(): EnterpriseMeResult {
       email: 'user@example.com',
       name: 'User'
     },
+    agentId,
     status: 'active',
     frontendAllowed: true
+  };
+}
+
+function createAgentIdentityStore(): EnterpriseAgentIdentityStore {
+  return {
+    getOrCreate: vi.fn(async () => agentId)
   };
 }
 

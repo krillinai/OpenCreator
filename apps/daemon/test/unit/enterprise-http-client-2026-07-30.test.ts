@@ -9,6 +9,7 @@ import {
 } from '../../src/enterprise/http-client-2026-07-30.js';
 
 const ORIGIN = 'https://enterprise.example';
+const AGENT_ID = 'clawee_550e8400-e29b-41d4-a716-446655440000';
 const createdDirectories: string[] = [];
 
 afterEach(() => {
@@ -18,12 +19,14 @@ afterEach(() => {
 });
 
 describe('enterprise HTTP client', () => {
-  it('register omits client_id and discards set-cookie before automatic login can run', async () => {
+  it('register sends the fixed client and stable agent identity', async () => {
     const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect(JSON.parse(String(init?.body))).toEqual({
         email: 'user@example.com',
         name: 'User',
-        password: 'password-123'
+        password: 'password-123',
+        client_id: 'clawee-agent',
+        agent_id: AGENT_ID
       });
       return new Response(JSON.stringify({
         data: {
@@ -48,7 +51,7 @@ describe('enterprise HTTP client', () => {
       email: 'user@example.com',
       name: 'User',
       password: 'password-123'
-    })).resolves.toBeUndefined();
+    }, AGENT_ID)).resolves.toBeUndefined();
 
     expect(fetch).toHaveBeenCalledOnce();
     expect(String(fetch.mock.calls[0]?.[0])).toBe(`${ORIGIN}/api/v1/auth/register`);
@@ -66,7 +69,8 @@ describe('enterprise HTTP client', () => {
       expect(JSON.parse(String(init?.body))).toEqual({
         email: 'user@example.com',
         password: 'password-123',
-        client_id: 'clawee-agent'
+        client_id: 'clawee-agent',
+        agent_id: AGENT_ID
       });
       return jsonResponse({
         data: {
@@ -75,6 +79,10 @@ describe('enterprise HTTP client', () => {
             email: 'user@example.com',
             name: 'User',
             status: 'active'
+          },
+          agent: {
+            agent_id: AGENT_ID,
+            name: 'User'
           },
           access_token: 'enterprise-access-token',
           token_type: 'Bearer',
@@ -87,14 +95,91 @@ describe('enterprise HTTP client', () => {
     await expect(client.login({
       email: 'user@example.com',
       password: 'password-123'
-    })).resolves.toEqual({
+    }, AGENT_ID)).resolves.toEqual({
       account: {
         email: 'user@example.com',
         name: 'User'
       },
+      agentId: AGENT_ID,
       accessToken: 'enterprise-access-token',
       tokenType: 'Bearer',
       expiresAt: '2026-07-31T10:00:00Z'
+    });
+  });
+
+  it('requires the authenticated agent identity from the current account response', async () => {
+    const fetch = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) => (
+        jsonResponse({
+          data: {
+            account: {
+              user_id: 'usr_secret',
+              email: 'user@example.com',
+              name: 'User',
+              status: 'active'
+            },
+            agent: {
+              agent_id: AGENT_ID,
+              name: 'User'
+            },
+            applications: {
+              frontend: true
+            }
+          }
+        })
+      )
+    );
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.getMe('enterprise-access-token')).resolves.toEqual({
+      account: {
+        email: 'user@example.com',
+        name: 'User'
+      },
+      agentId: AGENT_ID,
+      status: 'active',
+      frontendAllowed: true
+    });
+
+    expect(fetch.mock.calls[0]?.[1]).toMatchObject({
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Bearer enterprise-access-token'
+      },
+      method: 'GET'
+    });
+  });
+
+  it.each([
+    {
+      status: 403,
+      upstreamCode: 'agent_forbidden',
+      code: 'ENTERPRISE_AGENT_FORBIDDEN'
+    },
+    {
+      status: 409,
+      upstreamCode: 'agent_id_conflict',
+      code: 'ENTERPRISE_AGENT_ID_CONFLICT'
+    }
+  ])('maps $upstreamCode authentication failures', async ({
+    status,
+    upstreamCode,
+    code
+  }) => {
+    const fetch = vi.fn(async () => jsonResponse({
+      error: {
+        code: upstreamCode
+      }
+    }, status));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.login({
+      email: 'user@example.com',
+      password: 'password-123'
+    }, AGENT_ID)).rejects.toMatchObject({
+      code,
+      statusCode: status,
+      upstreamCode
     });
   });
 

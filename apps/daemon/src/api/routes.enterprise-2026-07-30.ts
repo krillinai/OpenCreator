@@ -155,6 +155,10 @@ function enterpriseErrorMessage(code: RuntimeErrorCode): string {
       return 'Enterprise account is inactive';
     case 'ENTERPRISE_FRONTEND_FORBIDDEN':
       return 'Enterprise frontend access is unavailable';
+    case 'ENTERPRISE_AGENT_FORBIDDEN':
+      return 'Enterprise agent access is unavailable';
+    case 'ENTERPRISE_AGENT_ID_CONFLICT':
+      return 'Enterprise agent identity belongs to another account';
     case 'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE':
       return 'Secure credential storage is unavailable';
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':

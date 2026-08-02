@@ -1033,6 +1033,81 @@ describe('Composer', () => {
     }
   });
 
+  it('caps the slash menu height to the space above the composer inside a clipping container', async () => {
+    const user = userEvent.setup();
+    let composerTop = 340;
+    const getBoundingClientRect = vi.spyOn(
+      HTMLElement.prototype,
+      'getBoundingClientRect'
+    ).mockImplementation(function getRect(this: HTMLElement) {
+      if (this.dataset.slashMenuBoundary === 'true') {
+        return {
+          x: 0,
+          y: 48,
+          width: 840,
+          height: 792,
+          top: 48,
+          right: 840,
+          bottom: 840,
+          left: 0,
+          toJSON: () => ({})
+        };
+      }
+      if (this.classList.contains('composer-input-wrap')) {
+        return {
+          x: 80,
+          y: composerTop,
+          width: 680,
+          height: 72,
+          top: composerTop,
+          right: 760,
+          bottom: composerTop + 72,
+          left: 80,
+          toJSON: () => ({})
+        };
+      }
+      return {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        toJSON: () => ({})
+      };
+    });
+
+    render(
+      <div data-slash-menu-boundary="true" style={{ overflow: 'hidden' }}>
+        <Composer
+          {...defaultProps}
+          slashCommands={Array.from({ length: 12 }, (_, index) => ({
+            id: `skill:skill-${index + 1}`,
+            category: 'skill' as const,
+            label: `skill-${index + 1}`,
+            description: `第 ${index + 1} 个 Skill`,
+            insertText: `$skill-${index + 1} `
+          }))}
+        />
+      </div>
+    );
+
+    await user.type(screen.getByRole('textbox', { name: '输入任务' }), '/');
+
+    const menu = screen.getByRole('listbox', { name: '能力菜单' });
+    expect(menu.style.getPropertyValue('--composer-slash-menu-available-height'))
+      .toBe('272px');
+
+    composerTop = 300;
+    fireEvent(window, new Event('resize'));
+
+    expect(menu.style.getPropertyValue('--composer-slash-menu-available-height'))
+      .toBe('232px');
+    getBoundingClientRect.mockRestore();
+  });
+
   it('renders queued messages above the input and forwards Steer and delete actions', async () => {
     const user = userEvent.setup();
     const onSteerQueuedRun = vi.fn();

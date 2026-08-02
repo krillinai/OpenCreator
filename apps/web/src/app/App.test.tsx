@@ -202,7 +202,7 @@ describe('App', () => {
       throw new Error(`Unexpected request ${url}`);
     };
 
-    const firstRender = render(
+    render(
       <App
         fileService={createFileService()}
         hostBridge={hostBridge}
@@ -310,10 +310,11 @@ describe('App', () => {
       name: /每日总结/
     }));
 
-    expect(await screen.findByText('允许写入文件')).toBeInTheDocument();
-    expect(document.querySelector('[data-search-target="true"]')).toHaveTextContent(
-      '允许写入文件'
-    );
+    const approvalRegion = await screen.findByRole('region', {
+      name: '允许写入文件'
+    });
+    expect(document.querySelector('[data-search-target="true"]'))
+      .toContainElement(approvalRegion);
     expect(screen.queryByRole('heading', { name: '运行详情' })).not.toBeInTheDocument();
     expect(window.location.hash).toBe(
       '#/thread/thread_approval_task?runId=run_approval_task&approvalId=approval_task'
@@ -692,7 +693,7 @@ describe('App', () => {
     }
   });
 
-  it('opens Clawee schedule creation as a new draft conversation', async () => {
+  it('opens schedule creation directly in the manual editor', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
@@ -765,49 +766,14 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: '定时任务' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^创建$/ }));
-    await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
-
-    const createThreadCall = await waitFor(() => {
-      const call = fetchCalls.find(item => item.url.endsWith('/threads') && item.init?.method === 'POST');
-      expect(call).toBeDefined();
-      return call!;
-    });
-    const createThreadBody = JSON.parse(String(createThreadCall.init?.body)) as Record<string, unknown>;
-    expect(createThreadBody).toMatchObject({
-      title: '任务草稿',
-      workspaceMode: 'managed',
-      profile: 'default',
-      sandbox: 'workspace-write',
-      purpose: 'schedule_draft'
-    });
-    expect(createThreadBody).not.toHaveProperty('cwd');
-    expect(window.location.hash).toBe('#/thread/thread_schedule_builder');
-    expect(await screen.findByRole('heading', { name: '任务草稿' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
-    const textbox = screen.getByRole('textbox', { name: '输入任务' });
-    await waitFor(() => {
-      expect(textbox).toHaveValue(
-        '我们一起来设置一个定时任务吧。首先，说明定时任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。'
-      );
-      expect(textbox).toHaveFocus();
-    });
-    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled();
-    expect(fetchCalls.some(call => call.url.endsWith('/runs'))).toBe(false);
-
-    await user.click(screen.getByRole('button', { name: '删除草稿 任务草稿' }));
-
-    await waitFor(() => {
-      expect(fetchCalls.some(call => (
-        call.url.endsWith('/threads/thread_schedule_builder/archive')
-        && call.init?.method === 'POST'
-      ))).toBe(true);
-    });
-    expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
-    expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /任务草稿.*草稿/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '创建定时任务' })).toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.queryByText('使用 Clawee 创建')).not.toBeInTheDocument();
+    expect(findPostCall(fetchCalls, '/threads')).toBeUndefined();
+    expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
   });
 
-  it('runs schedule draft prompts through the normal Agent flow and keeps incomplete drafts', async () => {
+  it('does not start an Agent run when opening schedule creation', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
@@ -908,32 +874,17 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '定时任务' }));
     await user.click(await screen.findByRole('button', { name: /^创建$/ }));
-    await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
-
-    const textbox = await screen.findByRole('textbox', { name: '输入任务' });
-    await waitFor(() => expect(textbox).toHaveFocus());
-    await user.clear(textbox);
-    await user.type(textbox, '每天生成 100 字文稿');
-    await user.click(screen.getByRole('button', { name: '发送' }));
-
-    const createRunCall = await waitFor(() => {
-      const call = findPostCall(fetchCalls, '/runs');
-      expect(call).toBeDefined();
-      return call!;
-    });
-    expect(JSON.parse(String(createRunCall.init?.body))).toMatchObject({
-      threadId: 'thread_schedule_builder',
-      prompt: '每天生成 100 字文稿',
-      resumeMode: 'auto'
-    });
+    expect(screen.getByRole('dialog', { name: '创建定时任务' })).toBeInTheDocument();
+    expect(screen.getByLabelText('定时任务标题')).toBeInTheDocument();
+    expect(screen.getByLabelText('任务内容')).toBeInTheDocument();
+    expect(findPostCall(fetchCalls, '/threads')).toBeUndefined();
+    expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
     expect(findPostCall(fetchCalls, '/schedules')).toBeUndefined();
-    expect(await screen.findByText('你希望每天几点执行这项任务？')).toBeInTheDocument();
-    await waitFor(() => expect(scheduleListCalls).toBeGreaterThanOrEqual(2));
-    expect(await screen.findByRole('heading', { name: '任务草稿' })).toBeInTheDocument();
+    expect(scheduleListCalls).toBeGreaterThanOrEqual(1);
     expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
   });
 
-  it('creates schedule drafts in the task area and shows the thread workspace permission', async () => {
+  it('keeps the current project selected while editing a new schedule', async () => {
     const user = userEvent.setup();
     const [customerProject] = persistProjects('/Users/test/project/customer-agent');
     window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
@@ -1005,33 +956,16 @@ describe('App', () => {
     });
     await user.click(screen.getByRole('button', { name: '定时任务' }));
     await user.click(await screen.findByRole('button', { name: /^创建$/ }));
-    await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
-
-    const createThreadCall = await waitFor(() => {
-      const call = findPostCall(fetchCalls, '/threads');
-      expect(call).toBeDefined();
-      return call!;
-    });
-    const createThreadBody = JSON.parse(String(createThreadCall.init?.body)) as Record<string, unknown>;
-    expect(createThreadBody).toMatchObject({
-      workspaceMode: 'managed',
-      sandbox: 'workspace-write',
-      purpose: 'schedule_draft'
-    });
-    expect(createThreadBody).not.toHaveProperty('cwd');
-    expect(await screen.findByRole('button', { name: /任务草稿.*草稿/ }))
-      .toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('dialog', { name: '创建定时任务' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'customer-agent' }))
-      .not.toHaveAttribute('data-current-project');
-    expect(screen.queryByRole('button', { name: /选择项目/ }))
-      .not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' }))
-      .toBeInTheDocument();
+      .toHaveAttribute('data-current-project', 'true');
+    expect(screen.getByRole('heading', { name: '请选择访问权限' })).toBeInTheDocument();
+    expect(findPostCall(fetchCalls, '/threads')).toBeUndefined();
     expect(within(screen.getByLabelText('customer-agent 对话')).queryByText('任务草稿'))
       .not.toBeInTheDocument();
   });
 
-  it('refreshes a draft into its bound task thread after the Agent creates a schedule', async () => {
+  it('does not reconcile schedule drafts when the manual editor opens', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     let scheduleListCalls = 0;
@@ -1118,14 +1052,9 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '定时任务' }));
     await user.click(await screen.findByRole('button', { name: /^创建$/ }));
-    await user.click(screen.getByRole('menuitem', { name: /使用 Clawee 创建/ }));
-    const textbox = await screen.findByRole('textbox', { name: '输入任务' });
-    await user.clear(textbox);
-    await user.type(textbox, '每天 18:00 生成 100 字文稿');
-    await user.click(screen.getByRole('button', { name: '发送' }));
-
-    expect(await screen.findByRole('heading', { name: '每日文稿' })).toBeInTheDocument();
-    expect(await screen.findByLabelText('任务管理')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: '创建定时任务' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '每日文稿' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
     expect(scheduleListCalls).toBeGreaterThanOrEqual(2);
   });
 
@@ -2498,7 +2427,7 @@ describe('App', () => {
     await showSkillMarketCard(user, 'frontend-slides');
     expect(screen.getByRole('alert')).toHaveTextContent('安装记录加载失败');
     const card = getSkillMarketCard('frontend-slides');
-    expect(within(card).getByText('版本未知')).toBeInTheDocument();
+    expect(within(card).queryByText('版本未知')).not.toBeInTheDocument();
     expect(within(card).getByRole('button', { name: '使用' })).toBeEnabled();
     expect(within(card).queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
   });
@@ -2908,7 +2837,7 @@ describe('App', () => {
     await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '安装' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('安装记录刷新失败');
-    expect(within(getSkillMarketCard('frontend-slides')).getByText('版本未知')).toBeInTheDocument();
+    expect(within(getSkillMarketCard('frontend-slides')).queryByText('版本未知')).not.toBeInTheDocument();
     expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled();
     expect(screen.queryByText('安装失败，请重试')).not.toBeInTheDocument();
   });
@@ -3176,6 +3105,7 @@ describe('App', () => {
       />
     );
 
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));
 
@@ -3518,7 +3448,7 @@ describe('App', () => {
     expect(screen.getByText('我会先确认当前目录，再读取必要文件。')).toBeInTheDocument();
     expect(screen.queryByText('正在查看项目内容')).not.toBeInTheDocument();
     expect(screen.queryByText('pwd')).not.toBeInTheDocument();
-    expect(screen.getByText('已完成：查看项目内容')).toBeInTheDocument();
+    expect(screen.getByText('已读取文件')).toBeInTheDocument();
     expect(screen.queryByText('工具完成 call_1')).not.toBeInTheDocument();
     expect(screen.getByText('当前目录是 /repo，检查已完成。')).toBeInTheDocument();
     expect(container.querySelectorAll('.timeline-assistant_message')).toHaveLength(1);
@@ -3882,6 +3812,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '项目操作 官网资料' }));
     await user.click(screen.getByRole('menuitem', { name: '移除项目 官网资料' }));
+    await user.click(screen.getByRole('button', { name: '移除项目' }));
 
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: '官网资料' })).not.toBeInTheDocument();
@@ -4245,8 +4176,7 @@ describe('App', () => {
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
     expect(await screen.findByText('周报已整理。')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '选择项目 primary' }));
-    await user.click(screen.getByRole('option', { name: 'secondary' }));
+    await user.click(screen.getByRole('button', { name: '在 secondary 中新建会话' }));
 
     expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
@@ -4366,8 +4296,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(subscriptionSequence).toBe(1));
 
-    await user.click(screen.getByRole('button', { name: '选择项目 primary' }));
-    await user.click(screen.getByRole('option', { name: 'secondary' }));
+    await user.click(screen.getByRole('button', { name: '在 secondary 中新建会话' }));
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), '新任务');
     await user.click(screen.getByRole('button', { name: '发送' }));
     await waitFor(() => expect(subscriptionSequence).toBe(2));

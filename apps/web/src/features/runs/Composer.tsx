@@ -119,6 +119,9 @@ const TEXTAREA_MIN_HEIGHT = Math.ceil(
   TEXTAREA_LINE_HEIGHT * TEXTAREA_MIN_VISIBLE_LINES + TEXTAREA_VERTICAL_PADDING
 );
 const TEXTAREA_MAX_HEIGHT = Math.ceil(TEXTAREA_LINE_HEIGHT * TEXTAREA_MAX_VISIBLE_LINES + TEXTAREA_VERTICAL_PADDING);
+const COMPOSER_POPOVER_GAP = 8;
+const COMPOSER_POPOVER_VIEWPORT_MARGIN = 12;
+const CLIPPING_OVERFLOW_VALUES = new Set(['auto', 'clip', 'hidden', 'scroll']);
 
 export function Composer(props: {
   disabled?: boolean;
@@ -179,6 +182,7 @@ export function Composer(props: {
   const [permissionUpdating, setPermissionUpdating] = useState(false);
   const composerRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const slashMenuRootRef = useRef<HTMLDivElement | null>(null);
   const slashMenuRef = useRef<HTMLDivElement | null>(null);
   const projectSearchRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -389,6 +393,55 @@ export function Composer(props: {
       activeOption.scrollIntoView({ block: 'nearest' });
     }
   }, [filteredSlashCommands.length, slashTrigger?.activeIndex]);
+
+  useLayoutEffect(() => {
+    if (!slashMenuOpen) return;
+
+    const menu = slashMenuRef.current;
+    const root = slashMenuRootRef.current;
+    if (menu === null || root === null) return;
+
+    const clippingAncestors = findClippingAncestors(root);
+    const updateAvailableHeight = () => {
+      const boundaryTop = clippingAncestors.reduce(
+        (top, ancestor) => Math.max(top, ancestor.getBoundingClientRect().top),
+        window.visualViewport?.offsetTop ?? 0
+      );
+      const availableHeight = Math.max(
+        0,
+        Math.floor(
+          root.getBoundingClientRect().top
+          - boundaryTop
+          - COMPOSER_POPOVER_GAP
+          - COMPOSER_POPOVER_VIEWPORT_MARGIN
+        )
+      );
+      menu.style.setProperty(
+        '--composer-slash-menu-available-height',
+        `${availableHeight}px`
+      );
+    };
+
+    updateAvailableHeight();
+    window.addEventListener('resize', updateAvailableHeight);
+    const visualViewport = window.visualViewport;
+    visualViewport?.addEventListener('resize', updateAvailableHeight);
+    visualViewport?.addEventListener('scroll', updateAvailableHeight);
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(updateAvailableHeight);
+    resizeObserver?.observe(root);
+    for (const ancestor of clippingAncestors) resizeObserver?.observe(ancestor);
+
+    return () => {
+      window.removeEventListener('resize', updateAvailableHeight);
+      visualViewport?.removeEventListener('resize', updateAvailableHeight);
+      visualViewport?.removeEventListener('scroll', updateAvailableHeight);
+      resizeObserver?.disconnect();
+      menu.style.removeProperty('--composer-slash-menu-available-height');
+    };
+  }, [slashMenuOpen]);
 
   const updatePrompt = (value: string, caret: number) => {
     promptRevisionRef.current += 1;
@@ -762,6 +815,7 @@ export function Composer(props: {
         onRetry={(localId) => void uploadAttachment(localId)}
       />
       <div
+        ref={slashMenuRootRef}
         className={`composer-input-wrap${selectedSkillCommand === undefined ? '' : ' has-skill-chip'}`}
         data-composer-menu-root="slash"
       >
@@ -1095,6 +1149,23 @@ function groupSlashCommands(commands: ComposerSlashCommand[]): Array<{
 function nextSlashCommandIndex(current: number, length: number, delta: 1 | -1): number {
   if (length <= 0) return 0;
   return (current + delta + length) % length;
+}
+
+function findClippingAncestors(element: HTMLElement): HTMLElement[] {
+  const ancestors: HTMLElement[] = [];
+  let ancestor = element.parentElement;
+  while (ancestor !== null) {
+    const style = window.getComputedStyle(ancestor);
+    if (
+      CLIPPING_OVERFLOW_VALUES.has(style.overflow)
+      || CLIPPING_OVERFLOW_VALUES.has(style.overflowX)
+      || CLIPPING_OVERFLOW_VALUES.has(style.overflowY)
+    ) {
+      ancestors.push(ancestor);
+    }
+    ancestor = ancestor.parentElement;
+  }
+  return ancestors;
 }
 
 function findLeadingSkillCommand(

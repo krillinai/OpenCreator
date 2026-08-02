@@ -495,6 +495,68 @@ test('packaged app persists Clawee projects when Codex app-server is unavailable
   }
 });
 
+test('打包 App 首页 Skills 菜单保持在内容区内', async ({}, testInfo) => {
+  const fixture = await launchPackagedDesktop('success');
+  const skillsDir = join(fixture.root, 'codex-home', 'skills');
+  for (let index = 1; index <= 16; index += 1) {
+    const skillDir = join(skillsDir, `viewport-skill-${index}`);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      [
+        '---',
+        `name: viewport-skill-${index}`,
+        `description: 第 ${index} 个视口边界测试 Skill`,
+        '---',
+        ''
+      ].join('\n')
+    );
+  }
+
+  try {
+    await waitForWorkspace(fixture.page);
+    await fixture.page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForWorkspace(fixture.page);
+
+    const textbox = fixture.page.getByRole('textbox', { name: '输入任务' });
+    await expect(textbox).toBeEnabled();
+    await textbox.fill('/');
+
+    const menu = fixture.page.getByRole('listbox', { name: '能力菜单' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('option')).toHaveCount(16);
+
+    const geometry = await fixture.page.evaluate(() => {
+      const menuElement = document.querySelector<HTMLElement>('.composer-slash-menu');
+      const inputRoot = document.querySelector<HTMLElement>('.composer-input-wrap');
+      const boundary = document.querySelector<HTMLElement>('.conversation-page');
+      if (menuElement === null || inputRoot === null || boundary === null) {
+        throw new Error('无法读取 Skills 菜单定位元素');
+      }
+      const menuRect = menuElement.getBoundingClientRect();
+      const inputRect = inputRoot.getBoundingClientRect();
+      const boundaryRect = boundary.getBoundingClientRect();
+      return {
+        menuTop: menuRect.top,
+        menuBottom: menuRect.bottom,
+        menuHeight: menuRect.height,
+        menuScrollHeight: menuElement.scrollHeight,
+        inputTop: inputRect.top,
+        boundaryTop: boundaryRect.top
+      };
+    });
+
+    expect(geometry.menuTop).toBeGreaterThanOrEqual(geometry.boundaryTop + 11);
+    expect(geometry.menuBottom).toBeLessThanOrEqual(geometry.inputTop - 7);
+    expect(geometry.menuHeight).toBeLessThan(geometry.menuScrollHeight);
+    await fixture.page.screenshot({
+      path: testInfo.outputPath('skills-menu-viewport-2026-08-02.png')
+    });
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
 test('后台 Probe 失败时仍进入工作台并暴露诊断状态', async () => {
   const fixture = await launchPackagedDesktop('probe-failure');
   try {

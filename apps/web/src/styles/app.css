@@ -2557,6 +2557,18 @@ html.is-pane-resizing * {
   user-select: none !important;
 }
 
+.app-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .conversation-header {
   min-height: 56px;
   display: flex;
@@ -4007,7 +4019,11 @@ html.is-pane-resizing * {
   right: 0;
   bottom: calc(100% + 8px);
   left: 0;
-  max-height: min(360px, 54vh);
+  max-height: min(
+    360px,
+    54vh,
+    var(--composer-slash-menu-available-height, 360px)
+  );
   overflow: auto;
 }
 

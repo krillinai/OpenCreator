@@ -19,9 +19,14 @@ const accountSchema = z.object({
   name: z.string(),
   status: z.string()
 });
+const agentSchema = z.object({
+  agent_id: z.string().min(1),
+  name: z.string()
+});
 const loginResponseSchema = z.object({
   data: z.object({
     account: accountSchema,
+    agent: agentSchema,
     access_token: z.string().min(1),
     token_type: z.literal('Bearer'),
     expires_at: z.string().datetime({ offset: true })
@@ -30,6 +35,7 @@ const loginResponseSchema = z.object({
 const meResponseSchema = z.object({
   data: z.object({
     account: accountSchema,
+    agent: agentSchema,
     applications: z.object({
       frontend: z.boolean()
     })
@@ -69,6 +75,7 @@ export type EnterpriseRemoteSkillDetail = EnterpriseRemoteSkill & {
 
 export type EnterpriseLoginResult = {
   account: EnterpriseAccountSummary;
+  agentId: string;
   accessToken: string;
   tokenType: 'Bearer';
   expiresAt: string;
@@ -76,6 +83,7 @@ export type EnterpriseLoginResult = {
 
 export type EnterpriseMeResult = {
   account: EnterpriseAccountSummary;
+  agentId: string;
   status: string;
   frontendAllowed: boolean;
 };
@@ -89,8 +97,8 @@ export type EnterpriseDownloadInput = {
 };
 
 export type EnterpriseHttpClient = {
-  register(input: EnterpriseRegisterRequest): Promise<void>;
-  login(input: EnterpriseLoginRequest): Promise<EnterpriseLoginResult>;
+  register(input: EnterpriseRegisterRequest, agentId: string): Promise<void>;
+  login(input: EnterpriseLoginRequest, agentId: string): Promise<EnterpriseLoginResult>;
   getMe(accessToken: string): Promise<EnterpriseMeResult>;
   logout(accessToken: string): Promise<void>;
   listSkills(accessToken: string): Promise<EnterpriseRemoteSkill[]>;
@@ -203,24 +211,27 @@ export function createEnterpriseHttpClient(input: {
   }
 
   return {
-    async register(request) {
+    async register(request, agentId) {
       await requestWithoutResult({
         body: {
           email: request.email,
           ...(request.name === undefined ? {} : { name: request.name }),
-          password: request.password
+          password: request.password,
+          client_id: 'clawee-agent',
+          agent_id: agentId
         },
         method: 'POST',
         path: '/api/v1/auth/register'
       });
     },
 
-    async login(request) {
+    async login(request, agentId) {
       const response = await requestJson({
         body: {
           email: request.email,
           password: request.password,
-          client_id: 'clawee-agent'
+          client_id: 'clawee-agent',
+          agent_id: agentId
         },
         method: 'POST',
         path: '/api/v1/auth/login',
@@ -228,6 +239,7 @@ export function createEnterpriseHttpClient(input: {
       });
       return {
         account: accountSummary(response.data.account),
+        agentId: response.data.agent.agent_id,
         accessToken: response.data.access_token,
         tokenType: response.data.token_type,
         expiresAt: response.data.expires_at
@@ -243,6 +255,7 @@ export function createEnterpriseHttpClient(input: {
       });
       return {
         account: accountSummary(response.data.account),
+        agentId: response.data.agent.agent_id,
         status: response.data.account.status,
         frontendAllowed: response.data.applications.frontend
       };
@@ -439,8 +452,14 @@ function mapResponseCode(
 ): RuntimeErrorCode {
   if (statusCode === 400) return 'ENTERPRISE_INVALID_REQUEST';
   if (statusCode === 401) return 'ENTERPRISE_UNAUTHORIZED';
+  if (statusCode === 403 && upstreamCode === 'agent_forbidden') {
+    return 'ENTERPRISE_AGENT_FORBIDDEN';
+  }
   if (statusCode === 403) return 'ENTERPRISE_FORBIDDEN';
   if (statusCode === 404) return 'ENTERPRISE_SKILL_NOT_FOUND';
+  if (statusCode === 409 && upstreamCode === 'agent_id_conflict') {
+    return 'ENTERPRISE_AGENT_ID_CONFLICT';
+  }
   if (statusCode === 409 || upstreamCode === 'version_changed') {
     return 'ENTERPRISE_SKILL_VERSION_CHANGED';
   }

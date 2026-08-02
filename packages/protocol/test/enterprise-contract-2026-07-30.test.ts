@@ -74,6 +74,8 @@ describe('enterprise runtime contract', () => {
     };
     const codes: RuntimeErrorCode[] = [
       'ENTERPRISE_UNAUTHORIZED',
+      'ENTERPRISE_AGENT_FORBIDDEN',
+      'ENTERPRISE_AGENT_ID_CONFLICT',
       'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE',
       'ENTERPRISE_SKILL_PACKAGE_INVALID',
       'ENTERPRISE_SKILL_INSTALL_FAILED'

@@ -287,6 +287,7 @@ export function AppController(props: AppControllerProps) {
   const [runtimeThreads, setRuntimeThreads] = useState<ThreadResponse[]>([]);
   const [runtimeSchedules, setRuntimeSchedules] = useState<ScheduleResponse[]>([]);
   const [runtimeTasks, setRuntimeTasks] = useState<TaskItem[]>([]);
+  const [runtimeWorkspaceReady, setRuntimeWorkspaceReady] = useState(false);
   const [threadLoadError, setThreadLoadError] = useState<string>();
   const [projectLoadError, setProjectLoadError] = useState<string>();
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
@@ -961,6 +962,7 @@ export function AppController(props: AppControllerProps) {
       || projectService === null
       || threadService === null
     ) {
+      setRuntimeWorkspaceReady(false);
       if (connectionState.status !== 'connected') {
         setProjects([]);
         setArchivedProjects([]);
@@ -971,6 +973,7 @@ export function AppController(props: AppControllerProps) {
       };
     }
 
+    setRuntimeWorkspaceReady(false);
     const activeProjectService = projectService;
     const activeThreadService = threadService;
     async function loadRuntimeWorkspace() {
@@ -1058,6 +1061,8 @@ export function AppController(props: AppControllerProps) {
         dispatch({ type: 'set_current_project', projectId: undefined });
         setProjectLoadError('无法迁移或加载项目，请稍后重试');
         setThreadLoadError(undefined);
+      } finally {
+        if (!canceled) setRuntimeWorkspaceReady(true);
       }
     }
 
@@ -4000,12 +4005,15 @@ export function AppController(props: AppControllerProps) {
     event.preventDefault();
   }
   const conversationEmpty = timelineItems.length === 0;
+  const showConversationHeader = selectedThread !== undefined
+    || selectedScheduleTask !== undefined
+    || selectedConversation !== undefined;
   const pendingComposerApproval = [...timelineItems].reverse().find(item => (
     item.kind === 'approval' && item.approval.status === 'pending'
   ));
   const conversationPage = (
     <section className={`conversation-page${conversationEmpty ? ' is-empty' : ''}`}>
-      {conversationEmpty ? null : (
+      {showConversationHeader ? (
         <ConversationHeader
           title={
             selectedConversation?.title
@@ -4041,7 +4049,7 @@ export function AppController(props: AppControllerProps) {
             openPrimaryView('files');
           }}
         />
-      )}
+      ) : null}
       <div className="conversation-body">
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
         {projectLoadError ? <p className="inline-error">{projectLoadError}</p> : null}
@@ -4389,6 +4397,16 @@ export function AppController(props: AppControllerProps) {
       onDragLeave={handleProjectDragLeave}
       onDrop={(event) => void handleProjectDrop(event)}
     >
+      <span
+        className="app-visually-hidden"
+        role="status"
+        aria-label={
+          connectionState.status === 'connected' && runtimeWorkspaceReady
+            ? getConnectionStatusLabel(connectionState)
+            : '正在加载本地运行内核'
+        }
+        aria-live="polite"
+      />
       <WorkbenchLayout
       sidebar={
         <ClaweeSidebar

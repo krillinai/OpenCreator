@@ -354,6 +354,10 @@ function formatAccountError(error: unknown): string {
       return '该企业账户当前不可用。';
     case 'ENTERPRISE_FRONTEND_FORBIDDEN':
       return '该账户没有 Clawee 企业前端访问权限。';
+    case 'ENTERPRISE_AGENT_FORBIDDEN':
+      return '当前 Clawee Agent 状态不可用。';
+    case 'ENTERPRISE_AGENT_ID_CONFLICT':
+      return '当前 Clawee Agent 已绑定到其他企业账户。';
     case 'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE':
       return '系统安全凭据存储不可用，无法保存企业会话。';
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':

@@ -22,8 +22,11 @@ describe('Codex process launcher', () => {
     const child = spawnCodexProcess(bin, ['hello'], {
       stdio: ['ignore', 'pipe', 'pipe']
     });
-    const output = await collect(child.stdout);
-    const code = await new Promise<number | null>(resolve => child.once('exit', resolve));
+    const exit = new Promise<number | null>(resolve => child.once('exit', resolve));
+    const [output, code] = await Promise.all([
+      collect(child.stdout),
+      exit
+    ]);
 
     expect(code).toBe(0);
     expect(output).toBe('hello');
@@ -38,8 +41,11 @@ describe('Codex process launcher', () => {
     const child = spawnCodexProcess(bin, ['hello'], {
       stdio: ['ignore', 'pipe', 'pipe']
     });
-    const output = await collect(child.stdout);
-    const code = await new Promise<number | null>(resolve => child.once('exit', resolve));
+    const exit = new Promise<number | null>(resolve => child.once('exit', resolve));
+    const [output, code] = await Promise.all([
+      collect(child.stdout),
+      exit
+    ]);
 
     expect(code).toBe(0);
     expect(output).toBe('hello');

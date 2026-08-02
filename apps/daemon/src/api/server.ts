@@ -83,6 +83,10 @@ import {
   createEnterpriseSkillManager,
   type EnterpriseSkillManager
 } from '../enterprise/skill-manager-2026-07-30.js';
+import {
+  createEnterpriseAgentIdentityStore,
+  type EnterpriseAgentIdentityStore
+} from '../enterprise/agent-identity-2026-08-02.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerAttachmentRoutes } from './routes.attachments.js';
@@ -134,6 +138,7 @@ export type BuildServerInput = {
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
   allowedWebOrigins?: string[];
+  enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
   enterpriseCredentialStore?: EnterpriseCredentialStore;
   enterpriseHttpClient?: EnterpriseHttpClient;
   enterpriseOrigin?: string;
@@ -166,6 +171,9 @@ export async function buildServer(input: BuildServerInput) {
     input.enterpriseHttpClient ??
     createEnterpriseHttpClient({ origin: enterpriseOrigin.origin });
   const enterpriseSessionManager = createEnterpriseSessionManager({
+    agentIdentityStore:
+      input.enterpriseAgentIdentityStore
+      ?? createEnterpriseAgentIdentityStore({ dataDir }),
     credentialStore:
       input.enterpriseCredentialStore ?? createUnavailableCredentialStore(),
     httpClient: enterpriseHttpClient,
