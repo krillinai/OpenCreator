@@ -51,7 +51,7 @@ export function ActivityPage(props: {
           </div>
         </header>
         <div className="activity-partial-banner" role="status">
-          当前展示静态采样数据，陈默的 Token 用量尚未上报。
+          当前展示静态采样数据；管理员汇总中，陈默的聚合 Token 用量尚未上报。
         </div>
         {role === 'admin' ? (
           <AdminView range={props.route.range} onNavigate={props.onNavigate} />
@@ -120,7 +120,7 @@ function EmployeeView(props: { range: ActivityRange; onNavigate(route: AppRoute)
       </div>
       <section className="activity-section">
         <div className="activity-section__header"><div><h2>最近轮次</h2><span>最近完成</span></div></div>
-        <div className="activity-table-wrap"><table aria-label="最近轮次"><thead><tr><th>Agent</th><th>任务</th><th>模型</th><th>Token</th><th>时间</th><th /></tr></thead><tbody>{employeeView.recentTurns.map(turn => <tr key={`${turn.agentId}-${turn.task}`}><td><strong>{turn.agentName}</strong></td><td>{turn.task}</td><td>{turn.model}</td><td>{new Intl.NumberFormat('zh-CN').format(turn.tokens)}</td><td>{turn.time}</td><td><button className="activity-row-link" aria-label={`查看${turn.agentName}详情`} onClick={() => props.onNavigate({ view: 'activity-agent', collectorId: turn.collectorId, agentId: turn.agentId, range: props.range })}><ChevronRight size={16} /></button></td></tr>)}</tbody></table></div>
+        <div className="activity-table-wrap"><table aria-label="最近轮次"><thead><tr><th>Agent</th><th>任务</th><th>模型</th><th>Token</th><th>时间</th><th /></tr></thead><tbody>{employeeView.recentTurns.map(turn => <tr key={`${turn.agentId}-${turn.task}`}><td><strong>{turn.agentName}</strong></td><td>{turn.task}</td><td>{turn.model}</td><td>{formatTokenUsage(turn.usage)}</td><td>{turn.time}</td><td><button className="activity-row-link" aria-label={`查看${turn.agentName}详情`} onClick={() => props.onNavigate({ view: 'activity-agent', collectorId: turn.collectorId, agentId: turn.agentId, range: props.range })}><ChevronRight size={16} /></button></td></tr>)}</tbody></table></div>
       </section>
     </div>
   );
@@ -135,7 +135,7 @@ function AgentDetail(props: { route: Extract<AppRoute, { view: 'activity-agent' 
     <StaticDataNotice />
     <header className="activity-detail-header">
       <button className="activity-icon-button" aria-label="返回 Agent 活动" onClick={() => props.onNavigate({ view: 'activity', range: props.route.range })}><ArrowLeft size={18} /></button>
-      <div className="activity-agent-icon"><Bot size={20} /></div>
+      <div className="activity-agent-icon"><Bot size={20} aria-hidden="true" /></div>
       <div><div className="activity-title-row"><h1>{detail.name}</h1><span className="activity-status">{detail.status}</span><span className="activity-partial-label">部分数据</span></div><p>{detail.employeeName} · {detail.collectorId} · {detail.workspace}</p></div>
       <RangeControl range={props.route.range} onChange={range => props.onNavigate({ ...props.route, range })} />
     </header>
@@ -147,20 +147,21 @@ function AgentDetail(props: { route: Extract<AppRoute, { view: 'activity-agent' 
           <div className="activity-list"><article><div className="activity-list__meta"><strong>{detail.sessionTitle}</strong><span>最近更新</span></div><p><b>提示摘要</b> {detail.promptSummary}</p><p><b>回答摘要</b> {detail.assistantSummary}</p></article></div>
         </section>
         <div className="activity-detail-side">
-          <section className="activity-section"><div className="activity-section__header"><div><h2>活动记录</h2><span>已脱敏</span></div></div><ToolActivity name={detail.toolName} type="工具调用" status="成功" time="10:22" duration="1.8 秒" icon="T" /></section>
-          <section className="activity-section"><div className="activity-section__header"><div><h2>子 Agent</h2><span>1 个</span></div></div><div className="activity-subagents"><p><Users size={15} /><strong>{detail.subagentName}</strong><span>已完成 · {Math.max(1, Math.round(detail.completedTurns / 3))} 轮</span></p></div></section>
+          <section className="activity-section"><div className="activity-section__header"><div><h2>活动记录</h2><span>已脱敏</span></div></div><ToolActivity activity={detail.toolActivity} /></section>
+          <section className="activity-section"><div className="activity-section__header"><div><h2>子 Agent</h2><span>{detail.subagents.length} 个</span></div></div><div className="activity-subagents">{detail.subagents.map(item => <p key={item.id}><Users size={15} aria-hidden="true" /><strong>{item.name}</strong><span>{item.status === 'completed' ? '已完成' : '运行中'} · {item.completedTurns} 轮</span></p>)}</div></section>
         </div>
       </div>
     </div>
   </div></main>;
 }
 
-function MetricGrid({ metrics }: { metrics: string[][] }) { return <div className="activity-metrics">{metrics.map(([label, value]) => <div className="activity-metric" key={label}><span>{label}</span><strong data-testid={label === '总 Token' ? 'total-tokens' : undefined}>{value}</strong></div>)}</div>; }
-function TrendPanel({ title, trend }: { title: string; trend: ActivitySnapshot['trend'] }) { return <section className="activity-panel"><div className="activity-panel__heading"><h2>{title}</h2><span>{trend.granularity}</span></div><div className="activity-trend" aria-label={title} data-granularity={trend.granularity}>{trend.values.map((value, index) => <i key={index} style={{ height: `${value}%` }} />)}</div><div className="activity-chart-labels"><span>{trend.startLabel}</span><span>{trend.endLabel}</span></div></section>; }
-function Distribution({ title, items }: { title: string; items: string[] }) { return <section className="activity-panel"><div className="activity-panel__heading"><h2>{title}</h2></div><div className="activity-distribution">{items.map((item, index) => <p key={item}><i data-tone={index} /><span>{item}</span></p>)}</div></section>; }
+function MetricGrid({ metrics }: { metrics: string[][] }) { return <div className={`activity-metrics activity-metrics--${metrics.length}`}>{metrics.map(([label, value]) => <div className="activity-metric" key={label}><span>{label}</span><strong data-testid={label === '总 Token' ? 'total-tokens' : undefined}>{value}</strong></div>)}</div>; }
+function TrendPanel({ title, trend }: { title: string; trend: ActivitySnapshot['trend'] }) { const totals = trend.points.map(point => calculateTotal(point.usage)); const max = Math.max(...totals, 1); return <section className="activity-panel"><div className="activity-panel__heading"><h2>{title}</h2><span>{trend.granularity}</span></div><div className="activity-trend" aria-label={title} data-granularity={trend.granularity}>{trend.points.map((point, index) => <i key={point.label} role="img" aria-label={`${point.label} ${formatTokenUsage(point.usage)} Token`} title={`${point.label} · ${formatTokenUsage(point.usage)} Token`} style={{ height: `${Math.max(4, totals[index]! / max * 100)}%` }} />)}</div><div className="activity-chart-labels"><span>{trend.startLabel}</span><span>{trend.endLabel}</span></div></section>; }
+function Distribution({ title, items }: { title: string; items: ActivitySnapshot['employeeView']['modelDistribution'] }) { return <section className="activity-panel"><div className="activity-panel__heading"><h2>{title}</h2></div><div className="activity-distribution">{items.map((item, index) => <p key={item.id}><i data-tone={index} /><span>{item.label} {new Intl.NumberFormat('zh-CN', { style: 'percent' }).format(item.share)}</span></p>)}</div></section>; }
 function TokenBreakdown({ usage }: { usage: TokenUsage }) { const fields = [['输入 Token', usage.inputTokens], ['缓存输入', usage.cachedInputTokens], ['输出 Token', usage.outputTokens], ['推理输出', usage.reasoningOutputTokens]] as const; return <section className="activity-panel"><div className="activity-panel__heading"><h2>Token 构成</h2><span>缓存/推理为子集</span></div><div className="activity-breakdown">{fields.map(([label, value]) => <div key={label}><span>{label}</span><strong>{new Intl.NumberFormat('zh-CN').format(value)}</strong></div>)}</div></section>; }
-function ToolActivity(props: { name: string; type: string; status: string; time: string; duration: string; icon: string }) { return <div className="activity-tool-row"><span className="activity-tool-icon">{props.icon}</span><div><strong>{props.name}</strong><div className="activity-tool-meta"><span>{props.type}</span><span>{props.status}</span><span>{props.time}</span><span>{props.duration}</span></div></div></div>; }
+function ToolActivity({ activity }: { activity: ActivitySnapshot['agents'][number]['toolActivity'] }) { return <div className="activity-tool-row"><span className="activity-tool-icon">T</span><div><strong>{activity.name}</strong><div className="activity-tool-meta"><span>工具调用</span><span>{activity.status === 'success' ? '成功' : '失败'}</span><span>{new Date(activity.occurredAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>{activity.durationMs === undefined ? null : <span>{(activity.durationMs / 1_000).toFixed(1)} 秒</span>}</div></div></div>; }
 function RangeControl({ range, onChange }: { range: ActivityRange; onChange(range: ActivityRange): void }) { return <SegmentedControl label="时间范围" options={rangeOptions} value={range} onChange={value => onChange(value as ActivityRange)} />; }
 function SegmentedControl(props: { label: string; options: Array<{ value: string; label: string }>; value: string; onChange(value: string): void }) { return <div className="activity-segmented" role="group" aria-label={props.label}>{props.options.map(option => <button key={option.value} type="button" aria-pressed={props.value === option.value} onClick={() => props.onChange(option.value)}>{option.label}</button>)}</div>; }
 function StaticDataNotice() { return <div className="activity-static-notice" role="note">静态示例数据，非实时遥测</div>; }
 function formatNumber(value: number) { return new Intl.NumberFormat('zh-CN').format(value); }
+function calculateTotal(usage: TokenUsage) { return usage.inputTokens + usage.outputTokens; }

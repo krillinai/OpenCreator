@@ -22,14 +22,16 @@ export type TrendSeries = {
   granularity: '小时' | '每日' | '周';
   startLabel: string;
   endLabel: string;
-  values: number[];
+  points: Array<{ label: string; usage: TokenUsage }>;
 };
+
+export type DistributionItem = { id: string; label: string; share: number };
 
 export type RecentTurn = {
   agentName: string;
   task: string;
   model: string;
-  tokens: number;
+  usage: TokenUsage;
   time: string;
   collectorId: string;
   agentId: string;
@@ -48,8 +50,8 @@ export type AgentFixture = {
   sessionTitle: string;
   promptSummary: string;
   assistantSummary: string;
-  toolName: string;
-  subagentName: string;
+  toolActivity: { name: string; type: 'tool_call'; status: 'success' | 'failed'; occurredAt: string; durationMs?: number };
+  subagents: Array<{ id: string; name: string; status: 'completed' | 'running'; completedTurns: number }>;
 };
 
 export type ActivitySnapshot = {
@@ -65,8 +67,8 @@ export type ActivitySnapshot = {
     usage: TokenUsage;
     activeAgents: number;
     completedTurns: number;
-    modelDistribution: string[];
-    agentDistribution: string[];
+    modelDistribution: DistributionItem[];
+    agentDistribution: DistributionItem[];
     recentTurns: RecentTurn[];
   };
   agents: AgentFixture[];
@@ -102,8 +104,27 @@ function employee(index: number, activeAgents: number, completedTurns: number, u
   return { ...employeeIdentities[index]!, activeAgents, completedTurns, ...(usage === undefined ? {} : { usage }) };
 }
 
-function agent(input: Omit<AgentFixture, 'status'>): AgentFixture {
-  return { ...input, status: '运行中' };
+type AgentInput = Omit<AgentFixture, 'status' | 'toolActivity' | 'subagents'> & {
+  toolName: string;
+  subagentName: string;
+};
+
+function agent(input: AgentInput): AgentFixture {
+  const { toolName, subagentName, ...detail } = input;
+  return {
+    ...detail,
+    status: '运行中',
+    toolActivity: { name: toolName, type: 'tool_call', status: 'success', occurredAt: '2026-08-02T10:22:00+08:00', durationMs: 1_800 },
+    subagents: [{ id: `${input.agentId}-subagent`, name: subagentName, status: 'completed', completedTurns: Math.max(1, Math.round(input.completedTurns / 3)) }]
+  };
+}
+
+function usage(inputTokens: number, outputTokens: number): TokenUsage {
+  return { inputTokens, cachedInputTokens: Math.round(inputTokens * .45), outputTokens, reasoningOutputTokens: Math.round(outputTokens * .35) };
+}
+
+function distribution(items: Array<[string, string, number]>): DistributionItem[] {
+  return items.map(([id, label, share]) => ({ id, label, share }));
 }
 
 export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
@@ -114,11 +135,11 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
       employee(1, 2, 9, { inputTokens: 28_400, cachedInputTokens: 11_300, outputTokens: 8_600, reasoningOutputTokens: 3_200 }),
       employee(2, 1, 3)
     ],
-    trend: { granularity: '小时', startLabel: '00:00', endLabel: '现在', values: [24, 31, 46, 62, 55, 79, 68, 86] },
+    trend: { granularity: '小时', startLabel: '00:00', endLabel: '现在', points: [['00:00', 9_400], ['04:00', 12_100], ['08:00', 19_600], ['10:00', 27_800], ['12:00', 23_400], ['14:00', 34_700], ['16:00', 29_600], ['现在', 27_600]].map(([label, total]) => ({ label: String(label), usage: usage(Number(total) * .75, Number(total) * .25) })) },
     employeeView: {
       usage: { inputTokens: 39_200, cachedInputTokens: 18_600, outputTokens: 11_800, reasoningOutputTokens: 4_100 }, activeAgents: 3, completedTurns: 14,
-      modelDistribution: ['gpt-5.3-codex 74%', 'gpt-5.2 18%', '其他 8%'], agentDistribution: ['研究助理 56%', '代码审查 29%', '资料整理 15%'],
-      recentTurns: [{ agentName: '研究助理', task: '快速资料核验', model: 'gpt-5.3-codex', tokens: 6_240, time: '10:24', collectorId: 'collector-shanghai', agentId: 'agent-research' }]
+      modelDistribution: distribution([['gpt-5.3-codex', 'gpt-5.3-codex', 0.74], ['gpt-5.2', 'gpt-5.2', 0.18], ['other', '其他', 0.08]]), agentDistribution: distribution([['agent-research', '研究助理', 0.56], ['agent-code-review', '代码审查', 0.29], ['agent-organize', '资料整理', 0.15]]),
+      recentTurns: [{ agentName: '研究助理', task: '快速资料核验', model: 'gpt-5.3-codex', usage: usage(4_680, 1_560), time: '10:24', collectorId: 'collector-shanghai', agentId: 'agent-research' }]
     },
     agents: [
       agent({ collectorId: 'collector-shanghai', agentId: 'agent-research', employeeName: '林夏', name: '研究助理', workspace: '~/develop/market-research', usage: { inputTokens: 31_400, cachedInputTokens: 14_800, outputTokens: 9_200, reasoningOutputTokens: 3_700 }, completedTurns: 11, sessionCount: 1, sessionTitle: '快速资料核验', promptSummary: '核验今日竞品发布信息', assistantSummary: '已交叉验证 4 个信息来源', toolName: 'WebSearch', subagentName: '资料检索' }),
@@ -132,13 +153,13 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
       employee(0, 4, 128, { inputTokens: 482_000, cachedInputTokens: 251_000, outputTokens: 126_500, reasoningOutputTokens: 48_200 }),
       employee(1, 3, 94, { inputTokens: 391_400, cachedInputTokens: 180_200, outputTokens: 101_600, reasoningOutputTokens: 31_400 }), employee(2, 1, 18)
     ],
-    trend: { granularity: '每日', startLabel: '周一', endLabel: '今天', values: [42, 58, 49, 72, 64, 88, 79] },
+    trend: { granularity: '每日', startLabel: '周一', endLabel: '今天', points: [['周一', 246_000], ['周二', 318_000], ['周三', 271_000], ['周四', 392_000], ['周五', 351_000], ['周六', 467_000], ['今天', 283_800]].map(([label, total]) => ({ label: String(label), usage: usage(Number(total) * .78, Number(total) * .22) })) },
     employeeView: {
       usage: { inputTokens: 482_000, cachedInputTokens: 251_000, outputTokens: 126_500, reasoningOutputTokens: 48_200 }, activeAgents: 4, completedTurns: 128,
-      modelDistribution: ['gpt-5.3-codex 62%', 'gpt-5.2 24%', '其他 14%'], agentDistribution: ['研究助理 48%', '代码审查 32%', '资料整理 20%'],
+      modelDistribution: distribution([['gpt-5.3-codex', 'gpt-5.3-codex', 0.62], ['gpt-5.2', 'gpt-5.2', 0.24], ['other', '其他', 0.14]]), agentDistribution: distribution([['agent-research', '研究助理', 0.48], ['agent-code-review', '代码审查', 0.32], ['agent-organize', '资料整理', 0.20]]),
       recentTurns: [
-        { agentName: '研究助理', task: '汇总竞品发布动态', model: 'gpt-5.3-codex', tokens: 18_420, time: '10:24', collectorId: 'collector-shanghai', agentId: 'agent-research' },
-        { agentName: '代码审查', task: '检查工作区变更', model: 'gpt-5.3-codex', tokens: 9_860, time: '昨天', collectorId: 'collector-shanghai', agentId: 'agent-code-review' }
+        { agentName: '研究助理', task: '汇总竞品发布动态', model: 'gpt-5.3-codex', usage: usage(13_800, 4_620), time: '10:24', collectorId: 'collector-shanghai', agentId: 'agent-research' },
+        { agentName: '代码审查', task: '检查工作区变更', model: 'gpt-5.3-codex', usage: usage(7_480, 2_380), time: '昨天', collectorId: 'collector-shanghai', agentId: 'agent-code-review' }
       ]
     },
     agents: [
@@ -154,11 +175,11 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
       employee(0, 7, 492, { inputTokens: 1_786_000, cachedInputTokens: 891_000, outputTokens: 472_600, reasoningOutputTokens: 176_400 }),
       employee(1, 6, 407, { inputTokens: 1_421_000, cachedInputTokens: 680_000, outputTokens: 381_200, reasoningOutputTokens: 142_100 }), employee(2, 2, 61)
     ],
-    trend: { granularity: '周', startLabel: '第 1 周', endLabel: '本周', values: [46, 59, 71, 84, 68] },
+    trend: { granularity: '周', startLabel: '第 1 周', endLabel: '本周', points: [['第 1 周', 1_426_000], ['第 2 周', 1_735_000], ['第 3 周', 1_968_000], ['第 4 周', 2_214_000], ['本周', 1_399_600]].map(([label, total]) => ({ label: String(label), usage: usage(Number(total) * .79, Number(total) * .21) })) },
     employeeView: {
       usage: { inputTokens: 1_786_000, cachedInputTokens: 891_000, outputTokens: 472_600, reasoningOutputTokens: 176_400 }, activeAgents: 7, completedTurns: 492,
-      modelDistribution: ['gpt-5.3-codex 58%', 'gpt-5.2 29%', '其他 13%'], agentDistribution: ['研究助理 44%', '代码审查 36%', '资料整理 20%'],
-      recentTurns: [{ agentName: '研究助理', task: '月度市场脉络复盘', model: 'gpt-5.3-codex', tokens: 42_680, time: '7 月 31 日', collectorId: 'collector-shanghai', agentId: 'agent-research' }]
+      modelDistribution: distribution([['gpt-5.3-codex', 'gpt-5.3-codex', 0.58], ['gpt-5.2', 'gpt-5.2', 0.29], ['other', '其他', 0.13]]), agentDistribution: distribution([['agent-research', '研究助理', 0.44], ['agent-code-review', '代码审查', 0.36], ['agent-organize', '资料整理', 0.20]]),
+      recentTurns: [{ agentName: '研究助理', task: '月度市场脉络复盘', model: 'gpt-5.3-codex', usage: usage(31_900, 10_780), time: '7 月 31 日', collectorId: 'collector-shanghai', agentId: 'agent-research' }]
     },
     agents: [
       agent({ collectorId: 'collector-shanghai', agentId: 'agent-research', employeeName: '林夏', name: '研究助理', workspace: '~/develop/market-research', usage: { inputTokens: 548_600, cachedInputTokens: 274_100, outputTokens: 156_400, reasoningOutputTokens: 61_200 }, completedTurns: 148, sessionCount: 11, sessionTitle: '月度市场脉络复盘', promptSummary: '汇总本月竞品与市场变化', assistantSummary: '已形成月度变化脉络和 8 项建议', toolName: 'WebSearch', subagentName: '资料检索' }),
