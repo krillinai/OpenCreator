@@ -3213,6 +3213,12 @@ describe('App', () => {
   it('shows a thinking indicator while the runtime has started but has not emitted assistant text yet', async () => {
     const user = userEvent.setup();
     const prompt = '你都会做什么';
+    const animationFrames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -3232,7 +3238,10 @@ describe('App', () => {
     });
     let releaseSse!: () => void;
     const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
-      input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 1));
+      input.onEvent({
+        ...createRuntimeEvent('status', { type: 'status', label: 'running' }, 1),
+        ts: new Date().toISOString()
+      });
       resolveRunningEvent();
       await new Promise<void>(resolve => {
         releaseSse = resolve;
@@ -3255,7 +3264,11 @@ describe('App', () => {
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
     await runningEventReceived;
-    expect(await screen.findByText('正在思考')).toBeInTheDocument();
+    expect(animationFrames.length).toBeGreaterThan(0);
+    await act(async () => {
+      for (const callback of animationFrames.splice(0)) callback(performance.now());
+    });
+    expect(screen.getByText('正在思考')).toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
 
     await act(async () => {
