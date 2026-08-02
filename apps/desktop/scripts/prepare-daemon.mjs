@@ -113,6 +113,10 @@ function pruneDeploymentRoot() {
     if (allowed.has(entry)) continue;
     rmSync(resolve(targetDir, entry), { recursive: true, force: true });
   }
+  rmSync(
+    resolve(targetDir, 'node_modules/.pnpm/node_modules/@clawee/daemon'),
+    { force: true }
+  );
 }
 
 function pruneDevelopmentArtifacts(root) {

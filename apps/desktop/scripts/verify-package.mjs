@@ -421,6 +421,9 @@ function treeSize(root) {
 function walk(root, visitor) {
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
+    if (entry.isSymbolicLink() && !existsSync(path)) {
+      throw new Error(`Desktop package contains a broken symbolic link: ${path}`);
+    }
     visitor(path);
     if (entry.isDirectory()) walk(path, visitor);
   }
