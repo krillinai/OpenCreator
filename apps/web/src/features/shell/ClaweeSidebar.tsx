@@ -2,6 +2,7 @@ import type { EnterpriseSessionResponse } from '@clawee/protocol';
 import { useEffect, useRef, useState } from 'react';
 import {
   Archive,
+  Activity,
   Blocks,
   CircleAlert,
   Clock3,
@@ -90,6 +91,7 @@ export function ClaweeSidebar(props: {
     onClick(): void;
   }> = [
     { label: '新对话', icon: SquarePen, onClick: () => props.onNewConversation() },
+    { label: 'Agent 活动', icon: Activity, view: 'activity', onClick: () => props.onOpenView('activity') },
     { label: '搜索', icon: Search, view: 'search', onClick: () => props.onOpenView('search') },
     { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') },
     { label: '插件', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') }

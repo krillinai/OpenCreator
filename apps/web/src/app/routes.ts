@@ -4,6 +4,8 @@ export type AppRoute =
   | { view: 'search' }
   | { view: 'schedules'; scheduleId?: string }
   | { view: 'tasks' }
+  | { view: 'activity'; range: ActivityRange }
+  | { view: 'activity-agent'; collectorId: string; agentId: string; range: ActivityRange }
   | { view: 'plugins'; source?: 'enterprise' }
   | { view: 'account' }
   | { view: 'capabilities' }
@@ -12,6 +14,15 @@ export type AppRoute =
 
 export function parseRoute(hash: string): AppRoute {
   const [path = '', query = ''] = hash.split('?', 2);
+  if (path.startsWith('#/activity/agent/')) {
+    const parts = path.slice('#/activity/agent/'.length).split('/');
+    const collectorId = safeDecodeURIComponent(parts[0] ?? '');
+    const agentId = safeDecodeURIComponent(parts[1] ?? '');
+    if (collectorId === undefined || agentId === undefined || !collectorId || !agentId || parts.length !== 2) {
+      return { view: 'home' };
+    }
+    return { view: 'activity-agent', collectorId, agentId, range: parseActivityRange(query) };
+  }
   if (path.startsWith('#/thread/')) {
     const threadId = safeDecodeURIComponent(path.slice('#/thread/'.length));
     const fields = parseQuery(query);
@@ -33,6 +44,7 @@ export function parseRoute(hash: string): AppRoute {
     };
   }
   if (path === '#/tasks') return { view: 'tasks' };
+  if (path === '#/activity') return { view: 'activity', range: parseActivityRange(query) };
   if (path === '#/plugins') {
     const fields = parseQuery(query);
     return fields.source === 'enterprise'
@@ -75,6 +87,10 @@ export function formatRoute(route: AppRoute): string {
     }
     case 'tasks':
       return '#/tasks';
+    case 'activity':
+      return `#/activity?range=${route.range}`;
+    case 'activity-agent':
+      return `#/activity/agent/${encodeURIComponent(route.collectorId)}/${encodeURIComponent(route.agentId)}?range=${route.range}`;
     case 'plugins':
       return route.source === 'enterprise'
         ? '#/plugins?source=enterprise'
@@ -93,6 +109,13 @@ export function formatRoute(route: AppRoute): string {
       return suffix.length === 0 ? '#/files' : `#/files?${suffix}`;
     }
   }
+}
+
+export type ActivityRange = 'today' | '7d' | '30d';
+
+function parseActivityRange(query: string): ActivityRange {
+  const value = new URLSearchParams(query).get('range');
+  return value === 'today' || value === '30d' ? value : '7d';
 }
 
 function parseQuery(query: string): {

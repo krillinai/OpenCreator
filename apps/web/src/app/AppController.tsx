@@ -242,6 +242,10 @@ const SchedulesPage = lazy(() => import('../features/schedules/SchedulesPage.js'
 const SearchPage = lazy(() => import('../features/search/SearchPage.js'));
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage.js'));
 const TaskCenterPage = lazy(() => import('../features/tasks/TaskCenterPage.js'));
+const ActivityPage = lazy(async () => {
+  const module = await import('../features/activity/ActivityPage.js');
+  return { default: module.ActivityPage };
+});
 
 type PersistedNavigation = {
   currentProjectId?: string;
@@ -4280,6 +4284,13 @@ export function AppController(props: AppControllerProps) {
         handleScheduleChanged(updated);
       }}
     />
+  ) : state.activeView === 'activity' ? (
+    <ActivityPage
+      route={props.route.view === 'activity' || props.route.view === 'activity-agent'
+        ? props.route
+        : { view: 'activity', range: '7d' }}
+      onNavigate={navigateToRoute}
+    />
   ) : state.activeView === 'settings' ? (
     <SettingsPage
       runtimeStatus={runtimeStatus}
@@ -4624,12 +4635,14 @@ function createInitialState(
     case 'search':
     case 'schedules':
     case 'tasks':
+    case 'activity':
+    case 'activity-agent':
     case 'plugins':
     case 'account':
     case 'settings':
       return {
         ...persistedState,
-        activeView: route.view,
+        activeView: route.view === 'activity-agent' ? 'activity' : route.view,
         rightPanelMode: 'closed'
       };
     case 'files':
@@ -4656,6 +4669,8 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
       return { view: 'schedules' };
     case 'tasks':
       return { view: 'tasks' };
+    case 'activity':
+      return { view: 'activity', range: '7d' };
     case 'plugins':
       return { view: 'plugins' };
     case 'account':

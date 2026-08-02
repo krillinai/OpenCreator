@@ -6,6 +6,7 @@ export type ActiveView =
   | 'search'
   | 'schedules'
   | 'tasks'
+  | 'activity'
   | 'plugins'
   | 'account'
   | 'settings'
