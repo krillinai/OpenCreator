@@ -475,11 +475,13 @@ rl.on('line', line => {
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
     currentThreadId = message.params.threadId || ('thread-' + process.pid + '-' + (++threadSequence));
     currentModel = message.params.model;
-    send({ id: message.id, result: { thread: { id: currentThreadId } } });
     if (message.params.model === 'close-stdin-before-turn') {
       fs.closeSync(0);
+      send({ id: message.id, result: { thread: { id: currentThreadId } } });
       setInterval(() => {}, 1000);
+      return;
     }
+    send({ id: message.id, result: { thread: { id: currentThreadId } } });
     return;
   }
   if (message.method === 'config/mcpServer/reload') {

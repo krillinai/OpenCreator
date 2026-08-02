@@ -3226,9 +3226,14 @@ describe('App', () => {
       if (url.endsWith('/runs')) return jsonResponse({ id: 'run_1', threadId: 'thread_from_api', status: 'running' }, { status: 202 });
       throw new Error(`Unexpected request ${url}`);
     };
+    let resolveRunningEvent!: () => void;
+    const runningEventReceived = new Promise<void>(resolve => {
+      resolveRunningEvent = resolve;
+    });
     let releaseSse!: () => void;
     const subscribeRunEvents = async (input: SubscribeRunEventsInput) => {
       input.onEvent(createRuntimeEvent('status', { type: 'status', label: 'running' }, 1));
+      resolveRunningEvent();
       await new Promise<void>(resolve => {
         releaseSse = resolve;
       });
@@ -3249,6 +3254,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
+    await runningEventReceived;
     expect(await screen.findByText('正在思考')).toBeInTheDocument();
     expect(screen.queryByText('running')).not.toBeInTheDocument();
 
