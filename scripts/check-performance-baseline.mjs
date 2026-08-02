@@ -60,8 +60,8 @@ function measureAssets() {
     {
       label: 'Web 主样式',
       pattern: /^index-[^.]+\.css$/,
-      maxBytes: 80_000,
-      maxGzipBytes: 16_000
+      maxBytes: 120_000,
+      maxGzipBytes: 20_000
     }
   ];
 

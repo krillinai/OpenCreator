@@ -4,6 +4,14 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  fast-uri@>=3.0.0 <=3.1.3: 3.1.4
+  find-my-way@<=9.6.0: 9.7.0
+  postcss@<=8.5.17: 8.5.18
+  brace-expansion@<1.1.17: 1.1.17
+  brace-expansion@>=2.0.0 <2.1.3: 2.1.3
+  brace-expansion@>=4.0.0 <5.0.8: 5.0.8
+
 importers:
 
   .:
@@ -1343,15 +1351,15 @@ packages:
     resolution: {integrity: sha512-d0II/GO9uf9lfUHH2BQsjxzRJZBdsjgsBiW4BvhWk/3qoKwQFjIDVN19PfX8F2D/r9PCMTtLWjYVCFrpeYUzsw==}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
-  brace-expansion@1.1.16:
-    resolution: {integrity: sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw==}
+  brace-expansion@1.1.17:
+    resolution: {integrity: sha512-w+aeW/mkgM4PyRMOJCgi3fOrTm5Q8QY1OSfn2TO2iuDj3ezIHqejmuxbjfPrqUkgqRew1iqkyAn0tr0ZwHD9+w==}
 
-  brace-expansion@2.1.2:
-    resolution: {integrity: sha512-w5JZcKgdhDOgOwm8H+KgbosopHMuGcl6qbulwjtz3SM7I7P3yW1eAjzMPLrIE+NQ9vjgANKHWeMHnrT0OXW1oA==}
+  brace-expansion@2.1.3:
+    resolution: {integrity: sha512-DRdx5neNsG/QXbniLFWi2YmC/68oeOOmKz6zOjVk6ZS1ZLXgLIKqVEc6hWsmkjBbgii0SwaBTcJ5XKj5gzY/4A==}
 
-  brace-expansion@5.0.7:
-    resolution: {integrity: sha512-7oFy703dxfY3/NLxC1fh2SUCQ0H9rmAY+5EpDVfXjUTTs+HEwR2nYaqLv+GWcTsumwxPfiz6CzCNkwXwBUwqCA==}
-    engines: {node: 18 || 20 || >=22}
+  brace-expansion@5.0.8:
+    resolution: {integrity: sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg==}
+    engines: {node: 20 || >=22}
 
   browserslist@4.28.4:
     resolution: {integrity: sha512-MTc8i/x9jBQd1iMw2CFGS+rwMa07eYjLR0CCTLDACl9xhxy+nIs3KeML/biicXtk9JrZ6dnnTatmc7ErPXIxqw==}
@@ -1764,8 +1772,8 @@ packages:
   fast-querystring@1.1.2:
     resolution: {integrity: sha512-g6KuKWmFXc0fID8WWH0jit4g0AGBoJhCkJMb1RmbsSEUNvQ+ZC8D6CUZ+GtF8nMzSPXnhiePyyqqipzNNEnHjg==}
 
-  fast-uri@3.1.3:
-    resolution: {integrity: sha512-i70LwGWUduXqzicKXWshooq+sWL1K3WUU5rKZNG/0i3a1OSoX3HqhH5WbWwTmqWfor4urUakGPiRQcleRZTwOg==}
+  fast-uri@3.1.4:
+    resolution: {integrity: sha512-8JnbkQ4juDyvYs4mgFGQqg4yCYtFDtUtmp2QIQq11ZZe5CFQ5wcqm1rqDgAh/QdMySuBnPzMUiJUNZG5N/AiQw==}
 
   fastify-plugin@5.1.0:
     resolution: {integrity: sha512-FAIDA8eovSt5qcDgcBvDuX/v0Cjz0ohGhENZ/wpc3y+oZCY2afZ9Baqql3g/lC+OHRnciQol4ww7tuthOb9idw==}
@@ -1795,8 +1803,8 @@ packages:
     resolution: {integrity: sha512-S8KoZgRZN+a5rNwqTxlZZePjT/4cnm0ROV70LedRHZ0p8u9fRID0hJUZQpkKLzro8LfmC8sx23bY6tVNxv8pQA==}
     engines: {node: '>= 18.0.0'}
 
-  find-my-way@9.6.0:
-    resolution: {integrity: sha512-Zf4Xve4RymLl7NgaavNebZ01joJ8MfVerOG43wy7SHLO+r+K0C6d/SE0BiR7AV5V1VOCFlOP7ecdo+I4qmiHrQ==}
+  find-my-way@9.7.0:
+    resolution: {integrity: sha512-f2JHn75x2JlwUwLenZypgczR7YWMb/uO9BvUXtus+JMgkbIkLADd38cI4EiV+OQqrGo1Zlq6V8wnqMJ8e62wUQ==}
     engines: {node: '>=20'}
 
   form-data@4.0.6:
@@ -2376,8 +2384,8 @@ packages:
     resolution: {integrity: sha512-uysumyrvkUX0rX/dEVqt8gC3sTBzd4zoWfLeS29nb53imdaXVvLINYXTI2GNqzaMuvacNx4uJQ8+b3zXR0pkgQ==}
     engines: {node: '>=10.4.0'}
 
-  postcss@8.5.16:
-    resolution: {integrity: sha512-vuwillviilfKZsg0VGj5R/YwwcHx4SLsIOI/7K6mQkWx+l5cUHTjj5g0AasTBcyXsbfTgrwsUNmVUb5xVwyPwg==}
+  postcss@8.5.18:
+    resolution: {integrity: sha512-xdB1oSLHbz1vRWgCDalrCqEFTWzFlhqFC5tIHLMOSUIjhm3XXQ1qrFy8S/ESr1JYRRXqM3c1QFiMZUJdUTqyMQ==}
     engines: {node: ^10 || ^12 || >=14}
 
   postject@1.0.0-alpha.6:
@@ -3617,7 +3625,7 @@ snapshots:
     dependencies:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
-      fast-uri: 3.1.3
+      fast-uri: 3.1.4
 
   '@fastify/cors@11.2.0':
     dependencies:
@@ -4132,7 +4140,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.3
+      fast-uri: 3.1.4
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -4267,16 +4275,16 @@ snapshots:
   boolean@3.2.0:
     optional: true
 
-  brace-expansion@1.1.16:
+  brace-expansion@1.1.17:
     dependencies:
       balanced-match: 1.0.2
       concat-map: 0.0.1
 
-  brace-expansion@2.1.2:
+  brace-expansion@2.1.3:
     dependencies:
       balanced-match: 1.0.2
 
-  brace-expansion@5.0.7:
+  brace-expansion@5.0.8:
     dependencies:
       balanced-match: 4.0.4
 
@@ -4779,7 +4787,7 @@ snapshots:
       '@fastify/merge-json-schemas': 0.2.1
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
-      fast-uri: 3.1.3
+      fast-uri: 3.1.4
       json-schema-ref-resolver: 3.0.0
       rfdc: 1.4.1
 
@@ -4787,7 +4795,7 @@ snapshots:
     dependencies:
       fast-decode-uri-component: 1.0.1
 
-  fast-uri@3.1.3: {}
+  fast-uri@3.1.4: {}
 
   fastify-plugin@5.1.0: {}
 
@@ -4800,7 +4808,7 @@ snapshots:
       abstract-logging: 2.0.1
       avvio: 9.2.0
       fast-json-stringify: 6.4.0
-      find-my-way: 9.6.0
+      find-my-way: 9.7.0
       light-my-request: 6.6.0
       pino: 10.3.1
       process-warning: 5.0.0
@@ -4834,7 +4842,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  find-my-way@9.6.0:
+  find-my-way@9.7.0:
     dependencies:
       fast-deep-equal: 3.1.3
       fast-querystring: 1.1.2
@@ -5227,19 +5235,19 @@ snapshots:
 
   minimatch@10.2.5:
     dependencies:
-      brace-expansion: 5.0.7
+      brace-expansion: 5.0.8
 
   minimatch@3.1.5:
     dependencies:
-      brace-expansion: 1.1.16
+      brace-expansion: 1.1.17
 
   minimatch@5.1.9:
     dependencies:
-      brace-expansion: 2.1.2
+      brace-expansion: 2.1.3
 
   minimatch@9.0.9:
     dependencies:
-      brace-expansion: 2.1.2
+      brace-expansion: 2.1.3
 
   minimist@1.2.8: {}
 
@@ -5394,7 +5402,7 @@ snapshots:
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
 
-  postcss@8.5.16:
+  postcss@8.5.18:
     dependencies:
       nanoid: 3.3.15
       picocolors: 1.1.1
@@ -6017,7 +6025,7 @@ snapshots:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.5)
       picomatch: 4.0.5
-      postcss: 8.5.16
+      postcss: 8.5.18
       rollup: 4.62.2
       tinyglobby: 0.2.17
     optionalDependencies:
@@ -6032,7 +6040,7 @@ snapshots:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.5)
       picomatch: 4.0.5
-      postcss: 8.5.16
+      postcss: 8.5.18
       rollup: 4.62.2
       tinyglobby: 0.2.17
     optionalDependencies:

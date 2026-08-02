@@ -87,7 +87,7 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
   expectLoadRequestBudget(refreshRequests, taskThreadIds);
 
   await page.getByRole('button', { name: '定时任务' }).click();
-  await expect(page.getByRole('heading', { name: '已安排的任务' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '定时任务' })).toBeVisible();
   await expect(page.getByRole('button', { name: /^打开任务会话 性能任务/ }))
     .toHaveCount(SCHEDULE_COUNT);
   const schedulesSample = await readPerformanceSample(page);
@@ -95,7 +95,7 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
   expect(scheduleRequests.length).toBeLessThanOrEqual(MAX_SCHEDULE_VIEW_REQUESTS);
   expect(taskHistoryRequests(scheduleRequests, taskThreadIds)).toEqual([]);
 
-  const scheduleSearch = page.getByRole('searchbox', { name: '搜索已安排任务' });
+  const scheduleSearch = page.getByRole('searchbox', { name: '搜索定时任务' });
   await scheduleSearch.fill('性能任务 100');
   await expect(page.getByRole('button', { name: '打开任务会话 性能任务 100' }))
     .toBeVisible();

@@ -28,5 +28,15 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^3.2.7"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-uri@>=3.0.0 <=3.1.3": "3.1.4",
+      "find-my-way@<=9.6.0": "9.7.0",
+      "postcss@<=8.5.17": "8.5.18",
+      "brace-expansion@<1.1.17": "1.1.17",
+      "brace-expansion@>=2.0.0 <2.1.3": "2.1.3",
+      "brace-expansion@>=4.0.0 <5.0.8": "5.0.8"
+    }
   }
 }
