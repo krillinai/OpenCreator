@@ -47,6 +47,38 @@ describe('ActivityPage static prototype', () => {
     expect(screen.getByText('暂无用量数据')).toBeInTheDocument();
   });
 
+  it('changes totals and trend granularity coherently across time ranges', () => {
+    const onNavigate = vi.fn();
+    const { rerender } = render(
+      <ActivityPage route={{ view: 'activity', range: 'today' }} onNavigate={onNavigate} />
+    );
+
+    expect(screen.getByTestId('total-tokens')).toHaveTextContent('184,200');
+    expect(screen.getByLabelText('Token 趋势')).toHaveAttribute('data-granularity', '小时');
+    expect(screen.getByText('00:00')).toBeInTheDocument();
+
+    rerender(<ActivityPage route={{ view: 'activity', range: '30d' }} onNavigate={onNavigate} />);
+    expect(screen.getByTestId('total-tokens')).toHaveTextContent('8,742,600');
+    expect(screen.getByLabelText('Token 趋势')).toHaveAttribute('data-granularity', '周');
+    expect(screen.getByText('第 1 周')).toBeInTheDocument();
+    expect(screen.queryByText('00:00')).not.toBeInTheDocument();
+  });
+
+  it('changes employee distributions and recent rows with the selected range', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <ActivityPage route={{ view: 'activity', range: 'today' }} onNavigate={vi.fn()} />
+    );
+    await user.click(screen.getByRole('button', { name: '员工视图' }));
+    expect(screen.getByText('快速资料核验')).toBeInTheDocument();
+    expect(screen.getByText('gpt-5.3-codex 74%')).toBeInTheDocument();
+
+    rerender(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={vi.fn()} />);
+    expect(screen.getByText('汇总竞品发布动态')).toBeInTheDocument();
+    expect(screen.getByText('gpt-5.3-codex 62%')).toBeInTheDocument();
+    expect(screen.queryByText('快速资料核验')).not.toBeInTheDocument();
+  });
+
   it('shows detail activity while exposing only sanitized tool metadata', () => {
     render(<ActivityPage route={{ view: 'activity-agent', collectorId: 'collector-shanghai', agentId: 'agent-research', range: '7d' }} onNavigate={vi.fn()} />);
 
@@ -59,5 +91,24 @@ describe('ActivityPage static prototype', () => {
     expect(screen.getByText('1.8 秒')).toBeInTheDocument();
     expect(screen.queryByText(/private customer query/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/raw tool response/i)).not.toBeInTheDocument();
+    expect(screen.getByText('静态示例数据，非实时遥测')).toBeInTheDocument();
+  });
+
+  it('uses route IDs for distinct employee and agent details', () => {
+    const { rerender } = render(<ActivityPage route={{ view: 'activity-agent', collectorId: 'collector-shanghai', agentId: 'agent-research', range: '7d' }} onNavigate={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: '研究助理' })).toBeInTheDocument();
+    expect(screen.getByText(/林夏 · collector-shanghai/)).toBeInTheDocument();
+
+    rerender(<ActivityPage route={{ view: 'activity-agent', collectorId: 'collector-beijing', agentId: 'agent-customer', range: '7d' }} onNavigate={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: '客户洞察' })).toBeInTheDocument();
+    expect(screen.getByText(/周宁 · collector-beijing/)).toBeInTheDocument();
+    expect(screen.queryByText(/林夏 · collector-shanghai/)).not.toBeInTheDocument();
+  });
+
+  it('shows a recoverable empty state for an unknown agent route', () => {
+    render(<ActivityPage route={{ view: 'activity-agent', collectorId: 'unknown', agentId: 'missing', range: '7d' }} onNavigate={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: '未找到 Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '返回 Agent 活动' })).toBeInTheDocument();
+    expect(screen.getByText('静态示例数据，非实时遥测')).toBeInTheDocument();
   });
 });

@@ -115,6 +115,29 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '搜索' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('restores activity list and detail views from browser history routes', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/activity?range=7d';
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Agent 活动' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agent 活动' })).toHaveAttribute('aria-current', 'page');
+
+    await user.click(screen.getByRole('button', { name: '今天' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/activity?range=today'));
+    expect(screen.getByTestId('total-tokens')).toHaveTextContent('184,200');
+
+    window.history.replaceState(null, '', '#/plugins');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(await screen.findByLabelText('Skill 功能目录')).toBeInTheDocument();
+
+    window.history.replaceState(null, '', '#/activity/agent/collector-beijing/agent-customer?range=30d');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(await screen.findByRole('heading', { name: '客户洞察' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agent 活动' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '近 30 天' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('updates the copyable URL when navigating between primary pages', async () => {
     const user = userEvent.setup();
     render(<App />);

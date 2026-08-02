@@ -13,6 +13,8 @@
 .activity-segmented button { min-height: 29px; padding: 0 9px; border-radius: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .activity-segmented button[aria-pressed="true"] { color: var(--text); background: var(--surface-3); box-shadow: 0 0 0 1px var(--border-hairline); }
 .activity-partial-banner { margin-bottom: 16px; padding: 8px 10px; border-left: 3px solid var(--warning); background: color-mix(in srgb, var(--warning) 8%, transparent); color: var(--muted); font-size: 12px; }
+.activity-static-notice { width: fit-content; margin: 0 0 14px auto; padding: 4px 7px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); background: var(--surface); font-size: 11px; }
+.activity-empty-state { min-height: 320px; display: grid; place-items: center; align-content: center; gap: 10px; color: var(--muted); text-align: center; }.activity-empty-state h1, .activity-empty-state p { margin: 0; }.activity-empty-state h1 { color: var(--text); font-size: 18px; }.activity-back-button { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 0 10px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface-2); }
 .activity-content { display: grid; gap: 16px; }
 .activity-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
 .activity-metric { min-width: 0; display: grid; gap: 6px; padding: 14px 16px; border-right: 1px solid var(--border); }

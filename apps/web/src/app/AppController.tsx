@@ -2567,13 +2567,15 @@ export function AppController(props: AppControllerProps) {
       case 'search':
       case 'schedules':
       case 'tasks':
+      case 'activity':
+      case 'activity-agent':
       case 'plugins':
       case 'account':
       case 'settings':
         closeMobileSidebar();
         dispatch({
           type: 'set_active_view',
-          activeView: route.view
+          activeView: route.view === 'activity-agent' ? 'activity' : route.view
         });
         return;
       case 'files':
