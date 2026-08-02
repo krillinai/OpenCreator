@@ -1,9 +1,11 @@
 import {
   existsSync,
+  realpathSync,
   readdirSync,
   statSync
 } from 'node:fs';
-import { basename, join } from 'node:path';
+import { createRequire } from 'node:module';
+import { basename, dirname, join } from 'node:path';
 
 export function resolveKeyringTarget(
   platform,
@@ -62,12 +64,15 @@ export function assertKeyringArtifacts(deploymentRoot, input) {
   assertFile(join(loaderRoot, 'package.json'), 'Keyring loader package');
   assertFile(join(loaderRoot, 'index.js'), 'Keyring loader');
 
-  const packageRoot = join(
-    deploymentRoot,
-    'node_modules',
-    '@napi-rs',
-    target.packageName.slice('@napi-rs/'.length)
-  );
+  const loaderRequire = createRequire(join(realpathSync(loaderRoot), 'package.json'));
+  let packageRoot;
+  try {
+    packageRoot = dirname(loaderRequire.resolve(`${target.packageName}/package.json`));
+  } catch {
+    throw new Error(
+      `Keyring platform package is missing for ${target.packageName}`
+    );
+  }
   assertFile(join(packageRoot, 'package.json'), 'Keyring platform package');
   const nativeFiles = [];
   walk(packageRoot, path => {

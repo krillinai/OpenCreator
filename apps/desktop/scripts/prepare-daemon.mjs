@@ -53,7 +53,6 @@ rmSync(targetDir, { recursive: true, force: true });
 await runStage('部署 Daemon 生产依赖', 'pnpm', [
   '--frozen-lockfile',
   ...(deployOffline ? ['--offline'] : []),
-  '--config.node-linker=hoisted',
   '--config.ignore-scripts=true',
   '--filter',
   '@clawee/daemon',
@@ -119,7 +118,6 @@ function pruneDeploymentRoot() {
 function pruneDevelopmentArtifacts(root) {
   const removableDirectories = new Set([
     '.bin',
-    '.pnpm',
     '__tests__',
     'example',
     'examples',

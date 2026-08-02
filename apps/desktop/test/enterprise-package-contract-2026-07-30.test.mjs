@@ -1,6 +1,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   writeFileSync
 } from 'node:fs';
@@ -60,6 +61,31 @@ describe('Desktop enterprise package contract', () => {
       platform: 'darwin',
       arch: 'arm64'
     })).toThrow('Keyring');
+  });
+
+  it('resolves the target package from an isolated loader dependency layout', () => {
+    const root = deploymentFixture();
+    const target = resolveKeyringTarget('darwin', 'arm64');
+    const optionalRoot = join(
+      root,
+      'node_modules',
+      '@napi-rs',
+      'keyring',
+      'node_modules',
+      '@napi-rs',
+      'keyring-darwin-arm64'
+    );
+    mkdirSync(optionalRoot, { recursive: true });
+    writeFileSync(join(optionalRoot, 'package.json'), '{}');
+    writeFileSync(join(optionalRoot, target.nativeFile), 'native');
+
+    expect(assertKeyringArtifacts(root, {
+      platform: 'darwin',
+      arch: 'arm64'
+    })).toMatchObject({
+      ...target,
+      packageRoot: realpathSync(optionalRoot)
+    });
   });
 
   it('allows HTTP only for unpacked dir builds', () => {
