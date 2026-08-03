@@ -2,7 +2,6 @@ import type { EnterpriseSessionResponse } from '@clawee/protocol';
 import { useEffect, useRef, useState } from 'react';
 import {
   Archive,
-  Activity,
   Blocks,
   CircleAlert,
   Clock3,
@@ -11,7 +10,6 @@ import {
   FolderMinus,
   FolderPlus,
   FolderOpen,
-  LibraryBig,
   LoaderCircle,
   MoreHorizontal,
   PanelLeftClose,
@@ -92,11 +90,9 @@ export function ClaweeSidebar(props: {
     onClick(): void;
   }> = [
     { label: '新对话', icon: SquarePen, onClick: () => props.onNewConversation() },
-    { label: 'Agent 活动', icon: Activity, view: 'activity', onClick: () => props.onOpenView('activity') },
     { label: '搜索', icon: Search, view: 'search', onClick: () => props.onOpenView('search') },
     { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') },
-    { label: '插件', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') },
-    { label: '知识库', icon: LibraryBig, view: 'knowledge', onClick: () => props.onOpenView('knowledge') }
+    { label: '插件', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') }
   ];
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
   const selectedTaskThread = props.tasks.some(

@@ -25,18 +25,9 @@ describe('app routes', () => {
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });
     expect(parseRoute('#/tasks')).toEqual({ view: 'tasks' });
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
-    expect(parseRoute('#/knowledge')).toEqual({ view: 'knowledge' });
     expect(parseRoute('#/account')).toEqual({ view: 'account' });
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
-    expect(parseRoute('#/activity')).toEqual({ view: 'activity', range: '7d' });
-    expect(parseRoute('#/activity?range=today')).toEqual({ view: 'activity', range: 'today' });
-    expect(parseRoute('#/activity/agent/collector%2Fone/agent%201?range=30d')).toEqual({
-      view: 'activity-agent',
-      collectorId: 'collector/one',
-      agentId: 'agent 1',
-      range: '30d'
-    });
   });
 
   it('round-trips a schedule editor target', () => {
@@ -81,17 +72,9 @@ describe('app routes', () => {
     expect(formatRoute({ view: 'schedules' })).toBe('#/schedules');
     expect(formatRoute({ view: 'tasks' })).toBe('#/tasks');
     expect(formatRoute({ view: 'plugins' })).toBe('#/plugins');
-    expect(formatRoute({ view: 'knowledge' })).toBe('#/knowledge');
     expect(formatRoute({ view: 'account' })).toBe('#/account');
     expect(formatRoute({ view: 'settings' })).toBe('#/settings');
     expect(formatRoute({ view: 'capabilities' })).toBe('#/capabilities');
-    expect(formatRoute({ view: 'activity', range: '7d' })).toBe('#/activity?range=7d');
-    expect(formatRoute({
-      view: 'activity-agent',
-      collectorId: 'collector/one',
-      agentId: 'agent 1',
-      range: 'today'
-    })).toBe('#/activity/agent/collector%2Fone/agent%201?range=today');
     expect(formatRoute({ view: 'files', path: 'docs/a b.html' }))
       .toBe('#/files?path=docs%2Fa+b.html');
   });

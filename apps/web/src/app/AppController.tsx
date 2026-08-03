@@ -234,10 +234,6 @@ const EnterpriseAccountPage = lazy(
 );
 const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
-const KnowledgePage = lazy(async () => {
-  const module = await import('../features/knowledge/KnowledgePage.js');
-  return { default: module.KnowledgePage };
-});
 const ScheduleThreadHeader = lazy(async () => {
   const module = await import('../features/schedules/ScheduleThreadHeader.js');
   return { default: module.ScheduleThreadHeader };
@@ -246,10 +242,6 @@ const SchedulesPage = lazy(() => import('../features/schedules/SchedulesPage.js'
 const SearchPage = lazy(() => import('../features/search/SearchPage.js'));
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage.js'));
 const TaskCenterPage = lazy(() => import('../features/tasks/TaskCenterPage.js'));
-const ActivityPage = lazy(async () => {
-  const module = await import('../features/activity/ActivityPage.js');
-  return { default: module.ActivityPage };
-});
 
 type PersistedNavigation = {
   currentProjectId?: string;
@@ -2571,16 +2563,13 @@ export function AppController(props: AppControllerProps) {
       case 'search':
       case 'schedules':
       case 'tasks':
-      case 'activity':
-      case 'activity-agent':
       case 'plugins':
-      case 'knowledge':
       case 'account':
       case 'settings':
         closeMobileSidebar();
         dispatch({
           type: 'set_active_view',
-          activeView: route.view === 'activity-agent' ? 'activity' : route.view
+          activeView: route.view
         });
         return;
       case 'files':
@@ -4291,15 +4280,6 @@ export function AppController(props: AppControllerProps) {
         handleScheduleChanged(updated);
       }}
     />
-  ) : state.activeView === 'activity' ? (
-    <ActivityPage
-      route={props.route.view === 'activity' || props.route.view === 'activity-agent'
-        ? props.route
-        : { view: 'activity', range: '7d' }}
-      onNavigate={navigateToRoute}
-    />
-  ) : state.activeView === 'knowledge' ? (
-    <KnowledgePage />
   ) : state.activeView === 'settings' ? (
     <SettingsPage
       runtimeStatus={runtimeStatus}
@@ -4644,15 +4624,12 @@ function createInitialState(
     case 'search':
     case 'schedules':
     case 'tasks':
-    case 'activity':
-    case 'activity-agent':
     case 'plugins':
-    case 'knowledge':
     case 'account':
     case 'settings':
       return {
         ...persistedState,
-        activeView: route.view === 'activity-agent' ? 'activity' : route.view,
+        activeView: route.view,
         rightPanelMode: 'closed'
       };
     case 'files':
@@ -4679,12 +4656,8 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
       return { view: 'schedules' };
     case 'tasks':
       return { view: 'tasks' };
-    case 'activity':
-      return { view: 'activity', range: '7d' };
     case 'plugins':
       return { view: 'plugins' };
-    case 'knowledge':
-      return { view: 'knowledge' };
     case 'account':
       return { view: 'account' };
     case 'settings':
