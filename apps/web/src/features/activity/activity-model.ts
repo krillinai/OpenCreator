@@ -26,6 +26,7 @@ export type TrendSeries = {
 };
 
 export type DistributionItem = { id: string; label: string; share: number };
+export type UsageDistributionItem = DistributionItem & { invocationCount: number };
 
 export type RecentTurn = {
   agentName: string;
@@ -60,6 +61,8 @@ export type ActivitySnapshot = {
     activeEmployees: number;
     activeAgents: number;
     completedTurns: number;
+    skillDistribution: UsageDistributionItem[];
+    mcpDistribution: UsageDistributionItem[];
   };
   employees: EmployeeUsage[];
   trend: TrendSeries;
@@ -69,6 +72,8 @@ export type ActivitySnapshot = {
     completedTurns: number;
     modelDistribution: DistributionItem[];
     agentDistribution: DistributionItem[];
+    skillDistribution: UsageDistributionItem[];
+    mcpDistribution: UsageDistributionItem[];
     recentTurns: RecentTurn[];
   };
   agents: AgentFixture[];
@@ -127,9 +132,13 @@ function distribution(items: Array<[string, string, number]>): DistributionItem[
   return items.map(([id, label, share]) => ({ id, label, share }));
 }
 
+function usageDistribution(items: Array<[string, string, number, number]>): UsageDistributionItem[] {
+  return items.map(([id, label, invocationCount, share]) => ({ id, label, invocationCount, share }));
+}
+
 export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
   today: {
-    organization: { usage: { inputTokens: 142_800, cachedInputTokens: 61_200, outputTokens: 41_400, reasoningOutputTokens: 16_800 }, activeEmployees: 7, activeAgents: 14, completedTurns: 58 },
+    organization: { usage: { inputTokens: 142_800, cachedInputTokens: 61_200, outputTokens: 41_400, reasoningOutputTokens: 16_800 }, activeEmployees: 7, activeAgents: 14, completedTurns: 58, skillDistribution: usageDistribution([['web-research', '网页检索', 7, .44], ['code-review', '代码审查', 5, .31], ['document-summary', '文档总结', 4, .25]]), mcpDistribution: usageDistribution([['filesystem', 'filesystem', 9, .5], ['github', 'github', 6, .33], ['browser', 'browser', 3, .17]]) },
     employees: [
       employee(0, 3, 14, { inputTokens: 39_200, cachedInputTokens: 18_600, outputTokens: 11_800, reasoningOutputTokens: 4_100 }),
       employee(1, 2, 9, { inputTokens: 28_400, cachedInputTokens: 11_300, outputTokens: 8_600, reasoningOutputTokens: 3_200 }),
@@ -139,6 +148,7 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
     employeeView: {
       usage: { inputTokens: 39_200, cachedInputTokens: 18_600, outputTokens: 11_800, reasoningOutputTokens: 4_100 }, activeAgents: 3, completedTurns: 14,
       modelDistribution: distribution([['gpt-5.3-codex', 'gpt-5.3-codex', 0.74], ['gpt-5.2', 'gpt-5.2', 0.18], ['other', '其他', 0.08]]), agentDistribution: distribution([['agent-research', '研究助理', 0.56], ['agent-code-review', '代码审查', 0.29], ['agent-organize', '资料整理', 0.15]]),
+      skillDistribution: usageDistribution([['research', '资料检索', 4, .5], ['summarize', '文档总结', 3, .375], ['review', '代码审查', 1, .125]]), mcpDistribution: usageDistribution([['filesystem', 'filesystem', 5, .5], ['browser', 'browser', 3, .3], ['github', 'github', 2, .2]]),
       recentTurns: [{ agentName: '研究助理', task: '快速资料核验', model: 'gpt-5.3-codex', usage: usage(4_680, 1_560), time: '10:24', collectorId: 'collector-shanghai', agentId: 'agent-research' }]
     },
     agents: [
@@ -148,7 +158,7 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
     ]
   },
   '7d': {
-    organization: { usage: { inputTokens: 1_842_600, cachedInputTokens: 912_400, outputTokens: 486_200, reasoningOutputTokens: 184_900 }, activeEmployees: 12, activeAgents: 31, completedTurns: 684 },
+    organization: { usage: { inputTokens: 1_842_600, cachedInputTokens: 912_400, outputTokens: 486_200, reasoningOutputTokens: 184_900 }, activeEmployees: 12, activeAgents: 31, completedTurns: 684, skillDistribution: usageDistribution([['web-research', '网页检索', 18, .38], ['code-review', '代码审查', 16, .34], ['document-summary', '文档总结', 13, .28]]), mcpDistribution: usageDistribution([['filesystem', 'filesystem', 37, .43], ['github', 'github', 29, .34], ['browser', 'browser', 20, .23]]) },
     employees: [
       employee(0, 4, 128, { inputTokens: 482_000, cachedInputTokens: 251_000, outputTokens: 126_500, reasoningOutputTokens: 48_200 }),
       employee(1, 3, 94, { inputTokens: 391_400, cachedInputTokens: 180_200, outputTokens: 101_600, reasoningOutputTokens: 31_400 }), employee(2, 1, 18)
@@ -157,6 +167,7 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
     employeeView: {
       usage: { inputTokens: 482_000, cachedInputTokens: 251_000, outputTokens: 126_500, reasoningOutputTokens: 48_200 }, activeAgents: 4, completedTurns: 128,
       modelDistribution: distribution([['gpt-5.3-codex', 'gpt-5.3-codex', 0.62], ['gpt-5.2', 'gpt-5.2', 0.24], ['other', '其他', 0.14]]), agentDistribution: distribution([['agent-research', '研究助理', 0.48], ['agent-code-review', '代码审查', 0.32], ['agent-organize', '资料整理', 0.20]]),
+      skillDistribution: usageDistribution([['code-review', '代码审查', 12, .4], ['research', '资料检索', 10, .33], ['summarize', '文档总结', 8, .27]]), mcpDistribution: usageDistribution([['filesystem', 'filesystem', 21, .48], ['github', 'github', 14, .32], ['browser', 'browser', 9, .2]]),
       recentTurns: [
         { agentName: '研究助理', task: '汇总竞品发布动态', model: 'gpt-5.3-codex', usage: usage(13_800, 4_620), time: '10:24', collectorId: 'collector-shanghai', agentId: 'agent-research' },
         { agentName: '代码审查', task: '检查工作区变更', model: 'gpt-5.3-codex', usage: usage(7_480, 2_380), time: '昨天', collectorId: 'collector-shanghai', agentId: 'agent-code-review' }
@@ -170,7 +181,7 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
     ]
   },
   '30d': {
-    organization: { usage: { inputTokens: 6_934_200, cachedInputTokens: 3_402_100, outputTokens: 1_808_400, reasoningOutputTokens: 672_300 }, activeEmployees: 18, activeAgents: 46, completedTurns: 2_741 },
+    organization: { usage: { inputTokens: 6_934_200, cachedInputTokens: 3_402_100, outputTokens: 1_808_400, reasoningOutputTokens: 672_300 }, activeEmployees: 18, activeAgents: 46, completedTurns: 2_741, skillDistribution: usageDistribution([['web-research', '网页检索', 84, .35], ['code-review', '代码审查', 79, .33], ['document-summary', '文档总结', 77, .32]]), mcpDistribution: usageDistribution([['filesystem', 'filesystem', 148, .4], ['github', 'github', 126, .34], ['browser', 'browser', 96, .26]]) },
     employees: [
       employee(0, 7, 492, { inputTokens: 1_786_000, cachedInputTokens: 891_000, outputTokens: 472_600, reasoningOutputTokens: 176_400 }),
       employee(1, 6, 407, { inputTokens: 1_421_000, cachedInputTokens: 680_000, outputTokens: 381_200, reasoningOutputTokens: 142_100 }), employee(2, 2, 61)
@@ -179,6 +190,7 @@ export const activitySnapshots: Record<ActivityRange, ActivitySnapshot> = {
     employeeView: {
       usage: { inputTokens: 1_786_000, cachedInputTokens: 891_000, outputTokens: 472_600, reasoningOutputTokens: 176_400 }, activeAgents: 7, completedTurns: 492,
       modelDistribution: distribution([['gpt-5.3-codex', 'gpt-5.3-codex', 0.58], ['gpt-5.2', 'gpt-5.2', 0.29], ['other', '其他', 0.13]]), agentDistribution: distribution([['agent-research', '研究助理', 0.44], ['agent-code-review', '代码审查', 0.36], ['agent-organize', '资料整理', 0.20]]),
+      skillDistribution: usageDistribution([['code-review', '代码审查', 46, .41], ['research', '资料检索', 38, .34], ['summarize', '文档总结', 28, .25]]), mcpDistribution: usageDistribution([['filesystem', 'filesystem', 83, .46], ['github', 'github', 58, .32], ['browser', 'browser', 40, .22]]),
       recentTurns: [{ agentName: '研究助理', task: '月度市场脉络复盘', model: 'gpt-5.3-codex', usage: usage(31_900, 10_780), time: '7 月 31 日', collectorId: 'collector-shanghai', agentId: 'agent-research' }]
     },
     agents: [

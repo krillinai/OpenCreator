@@ -41,6 +41,10 @@ describe('activity token usage', () => {
       for (const turn of snapshot.employeeView.recentTurns) {
         expect(findAgentFixture(range as keyof typeof activitySnapshots, turn.collectorId, turn.agentId)?.name).toBe(turn.agentName);
       }
+      for (const items of [snapshot.organization.skillDistribution, snapshot.organization.mcpDistribution, snapshot.employeeView.skillDistribution, snapshot.employeeView.mcpDistribution]) {
+        expect(items.reduce((total, item) => total + item.share, 0)).toBeCloseTo(1);
+        expect(items.every(item => item.invocationCount > 0)).toBe(true);
+      }
     }
   });
 });

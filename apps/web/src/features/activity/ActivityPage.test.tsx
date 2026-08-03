@@ -15,11 +15,16 @@ describe('ActivityPage static prototype', () => {
     expect(screen.getByText('输入 Token')).toBeInTheDocument();
     expect(screen.getByText('缓存输入')).toBeInTheDocument();
     expect(screen.getByText('推理输出')).toBeInTheDocument();
+    expect(screen.getByText('Skill 使用分布')).toBeInTheDocument();
+    expect(screen.getByText('MCP 使用分布')).toBeInTheDocument();
+    expect(screen.getByText('网页检索').closest('p')).toHaveTextContent('18 次 · 38%');
 
     await user.click(screen.getByRole('button', { name: '员工视图' }));
     expect(screen.getByText('我的 Token')).toBeInTheDocument();
     expect(screen.getByText('模型分布')).toBeInTheDocument();
     expect(screen.getByText('Agent 分布')).toBeInTheDocument();
+    expect(screen.getByText('代码审查', { selector: '.activity-distribution--usage span' }).closest('p')).toHaveTextContent('12 次 · 40%');
+    expect(screen.getByText('filesystem').closest('p')).toHaveTextContent('21 次 · 48%');
     expect(screen.getByRole('table', { name: '最近轮次' })).toBeInTheDocument();
   });
 
@@ -82,10 +87,12 @@ describe('ActivityPage static prototype', () => {
     await user.click(screen.getByRole('button', { name: '员工视图' }));
     expect(screen.getByText('快速资料核验')).toBeInTheDocument();
     expect(screen.getByText('gpt-5.3-codex 74%')).toBeInTheDocument();
+    expect(screen.getByText('资料检索').closest('p')).toHaveTextContent('4 次 · 50%');
 
     rerender(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={vi.fn()} />);
     expect(screen.getByText('汇总竞品发布动态')).toBeInTheDocument();
     expect(screen.getByText('gpt-5.3-codex 62%')).toBeInTheDocument();
+    expect(screen.getByText('代码审查', { selector: '.activity-distribution--usage span' }).closest('p')).toHaveTextContent('12 次 · 40%');
     expect(screen.queryByText('快速资料核验')).not.toBeInTheDocument();
   });
 
