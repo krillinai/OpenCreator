@@ -69,10 +69,15 @@ describe('ClaweeSidebar', () => {
     expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agent 活动' })).toBeInTheDocument();
+    const primaryActions = screen.getByRole('button', { name: '新对话' }).parentElement;
+    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: 'Agent 活动' }));
     expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '知识库' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '插件' }).nextElementSibling).toBe(screen.getByRole('button', { name: '知识库' }));
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
@@ -84,6 +89,46 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '企业账户' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
+  });
+
+  it('opens the knowledge base and exposes selected and collapsed states', async () => {
+    const onOpenView = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = renderSidebar({ onOpenView });
+    await user.click(screen.getByRole('button', { name: '知识库' }));
+    expect(onOpenView).toHaveBeenCalledWith('knowledge');
+    rerender(<ClaweeSidebar projects={projects} conversations={conversations} tasks={[]} activeView="knowledge" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '知识库' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '知识库' })).toHaveAttribute('title', '知识库');
+  });
+
+  it('opens Agent activity and exposes its selected and collapsed states', async () => {
+    const onOpenView = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = renderSidebar({ onOpenView });
+
+    await user.click(screen.getByRole('button', { name: 'Agent 活动' }));
+    expect(onOpenView).toHaveBeenCalledWith('activity');
+
+    rerender(
+      <ClaweeSidebar
+        projects={projects}
+        conversations={conversations}
+        tasks={[]}
+        activeView="activity"
+        collapsed
+        onNewConversation={vi.fn()}
+        onSelectProject={vi.fn()}
+        onSelectConversation={vi.fn()}
+        onSelectTask={vi.fn()}
+        onOpenView={onOpenView}
+        onOpenAccount={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onToggleCollapsed={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Agent 活动' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Agent 活动' })).toHaveAttribute('title', 'Agent 活动');
   });
 
   it('expands projects with conversations without selecting the project', async () => {
