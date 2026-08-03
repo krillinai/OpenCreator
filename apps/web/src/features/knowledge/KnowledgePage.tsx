@@ -1,48 +1,182 @@
-import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, ChevronRight, FileText, Search } from 'lucide-react';
-import { knowledgeCategories, knowledgeDocuments, queryKnowledgeDocuments, type KnowledgeDocument, type KnowledgeFilter } from './knowledge-model.js';
+import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { ArrowUp, Bot, Building2, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
+import {
+  createKnowledgeAnswer,
+  getAccessibleKnowledgeScopes,
+  getKnowledgeProfile,
+  getKnowledgeSuggestions,
+  type KnowledgeAccessLevel,
+  type KnowledgeEvidence,
+  type KnowledgeProfile,
+  type KnowledgeRole
+} from './knowledge-model.js';
 import './knowledge.css';
 
-const categoryLabels = Object.fromEntries(knowledgeCategories.map(item => [item.id, item.label]));
-const visibilityLabels = { all_employees: '全体员工', department: '部门可见', restricted: '指定成员' } as const;
-const statusLabels = { synced: '已同步', stale: '待更新', processing: '同步中' } as const;
+type KnowledgeMessage = {
+  id: string;
+  role: 'assistant' | 'user';
+  text: string;
+  evidence?: KnowledgeEvidence[];
+};
+
+const accessLevelLabels: Record<KnowledgeAccessLevel, string> = {
+  organization: '全员可用',
+  team: '所属团队',
+  restricted: '受限范围'
+};
 
 export function KnowledgePage() {
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<KnowledgeFilter>('all');
-  const filtered = useMemo(() => queryKnowledgeDocuments(knowledgeDocuments, query, category), [query, category]);
-  const [selectedId, setSelectedId] = useState(knowledgeDocuments[0]!.id);
-  const selected = filtered.find(item => item.id === selectedId) ?? filtered[0];
-  useEffect(() => { if (selected !== undefined && selected.id !== selectedId) setSelectedId(selected.id); }, [selected, selectedId]);
-  const spaces = new Set(knowledgeDocuments.map(item => item.spaceId)).size;
-  const sources = new Set(knowledgeDocuments.map(item => item.source.type)).size;
-  const stale = knowledgeDocuments.filter(item => item.syncStatus !== 'synced').length;
+  const nextMessageId = useRef(0);
+  const [role, setRole] = useState<KnowledgeRole>('employee');
+  const [draft, setDraft] = useState('');
+  const [messages, setMessages] = useState<KnowledgeMessage[]>(() => [
+    createWelcomeMessage(getKnowledgeProfile('employee'))
+  ]);
+  const profile = getKnowledgeProfile(role);
+  const scopes = getAccessibleKnowledgeScopes(role);
+  const suggestions = getKnowledgeSuggestions(role);
 
-  return <main className="knowledge-page"><div className="knowledge-page__inner">
-    <header className="knowledge-header">
-      <div><div className="knowledge-title-row"><h1>企业知识库</h1><span>静态示例</span></div><p>统一查看企业制度、产品资料、客户经验与研发文档</p></div>
-      <label className="knowledge-search"><Search size={16} aria-hidden="true" /><input type="search" aria-label="搜索企业知识库" placeholder="搜索标题、空间或标签" value={query} onChange={event => setQuery(event.target.value)} /></label>
-    </header>
-    <div className="knowledge-notice" role="note">静态示例数据，未连接企业知识服务</div>
-    <section className="knowledge-metrics" aria-label="知识库概览">
-      {[['知识条目', knowledgeDocuments.length], ['知识空间', spaces], ['连接来源', sources], ['待更新', stale]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
-    </section>
-    <div className="knowledge-toolbar"><div className="knowledge-tabs" role="group" aria-label="知识分类">{knowledgeCategories.map(item => <button type="button" key={item.id} aria-pressed={category === item.id} onClick={() => setCategory(item.id)}>{item.label}</button>)}</div><span>{filtered.length} 条结果</span></div>
-    {filtered.length === 0 ? <section className="knowledge-empty"><BookOpen size={24} aria-hidden="true" /><h2>没有匹配的知识条目</h2><p>尝试更换关键词或知识分类。</p></section> : <div className="knowledge-workbench">
-      <section className="knowledge-list-panel"><div className="knowledge-panel-heading"><h2>知识文档</h2><span>按更新时间排序</span></div><ul className="knowledge-list" aria-label="知识文档">{filtered.map(item => <li key={item.id}><button type="button" data-selected={selected?.id === item.id} onClick={() => setSelectedId(item.id)}><FileText size={17} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.spaceName} · {item.source.label} · {formatDate(item.updatedAt)}</small></span><em data-status={item.syncStatus}>{statusLabels[item.syncStatus]}</em><ChevronRight size={16} aria-hidden="true" /></button></li>)}</ul></section>
-      {selected === undefined ? null : <KnowledgeDetail document={selected} />}
-    </div>}
-  </div></main>;
+  function switchRole(nextRole: KnowledgeRole) {
+    if (nextRole === role) return;
+    const nextProfile = getKnowledgeProfile(nextRole);
+    setRole(nextRole);
+    setDraft('');
+    setMessages([createWelcomeMessage(nextProfile)]);
+  }
+
+  function sendQuestion(value: string) {
+    const question = value.trim();
+    if (question.length === 0) return;
+    const answer = createKnowledgeAnswer(role, question);
+    const id = `${role}-${nextMessageId.current++}`;
+    setMessages(current => [
+      ...current,
+      { id: `${id}-user`, role: 'user', text: question },
+      { id: `${id}-assistant`, role: 'assistant', text: answer.text, evidence: answer.evidence }
+    ]);
+    setDraft('');
+  }
+
+  function submitQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    sendQuestion(draft);
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    sendQuestion(draft);
+  }
+
+  return (
+    <main className="knowledge-page">
+      <div className="knowledge-page__inner">
+        <header className="knowledge-header">
+          <div>
+            <div className="knowledge-title-row">
+              <h1>企业知识库</h1>
+              <span>静态示例</span>
+            </div>
+            <p>直接提问，回答会自动遵循当前身份的知识权限</p>
+          </div>
+          <div className="knowledge-role-switch" role="group" aria-label="知识库视图">
+            <button type="button" aria-pressed={role === 'employee'} onClick={() => switchRole('employee')}>员工视图</button>
+            <button type="button" aria-pressed={role === 'admin'} onClick={() => switchRole('admin')}>管理员视图</button>
+          </div>
+        </header>
+
+        <div className="knowledge-notice" role="note">
+          静态示例数据，未连接企业知识服务
+        </div>
+
+        <div className="knowledge-workbench">
+          <section className="knowledge-conversation" aria-label="知识对话">
+            <div className="knowledge-conversation__body" role="log" aria-live="polite">
+              <div className="knowledge-conversation__intro">
+                <span><Sparkles size={15} aria-hidden="true" />权限内推荐</span>
+                <div className="knowledge-suggestions">
+                  {suggestions.map(suggestion => (
+                    <button key={suggestion} type="button" onClick={() => sendQuestion(suggestion)}>
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="knowledge-messages">
+                {messages.map(message => (
+                  <article className="knowledge-message" data-role={message.role} key={message.id}>
+                    <div className="knowledge-message__avatar" aria-hidden="true">
+                      {message.role === 'assistant' ? <Bot size={17} /> : <UserRound size={16} />}
+                    </div>
+                    <div className="knowledge-message__content">
+                      <strong>{message.role === 'assistant' ? '知识助手' : profile.name}</strong>
+                      <p className="knowledge-message__text">{message.text}</p>
+                      {message.evidence && message.evidence.length > 0 ? (
+                        <div className="knowledge-evidence" aria-label="回答依据">
+                          {message.evidence.map(item => (
+                            <span key={item.scopeId}>{item.label} · {item.count} 条依据</span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <form className="knowledge-composer" onSubmit={submitQuestion}>
+              <textarea
+                aria-label="询问企业知识"
+                onChange={event => setDraft(event.target.value)}
+                onKeyDown={handleComposerKeyDown}
+                placeholder="询问制度、产品、客户流程或其他企业知识"
+                rows={2}
+                value={draft}
+              />
+              <button type="submit" aria-label="发送" disabled={draft.trim().length === 0} title="发送">
+                <ArrowUp size={18} aria-hidden="true" />
+              </button>
+            </form>
+          </section>
+
+          <aside className="knowledge-permissions" aria-label="当前知识权限">
+            <header>
+              <span className="knowledge-profile-icon" aria-hidden="true">
+                {role === 'admin' ? <Building2 size={18} /> : <UserRound size={18} />}
+              </span>
+              <div><strong>{profile.name}</strong><span>{profile.department} · {profile.roleLabel}</span></div>
+            </header>
+            <div className="knowledge-permission-status">
+              <ShieldCheck size={15} aria-hidden="true" />
+              <span>已按当前身份过滤</span>
+            </div>
+            <div className="knowledge-permission-heading">
+              <h2>可询问范围</h2>
+              <span>{scopes.length} 个知识域</span>
+            </div>
+            <ul className="knowledge-scope-list">
+              {scopes.map(scope => (
+                <li key={scope.id}>
+                  <div><strong>{scope.name}</strong><span>{scope.summary}</span></div>
+                  <small>{accessLevelLabels[scope.accessLevel]} · {scope.itemCount} 条知识</small>
+                </li>
+              ))}
+            </ul>
+            <p className="knowledge-permission-footnote">回答只使用你有权访问的企业知识。</p>
+          </aside>
+        </div>
+      </div>
+    </main>
+  );
 }
 
-function KnowledgeDetail({ document }: { document: KnowledgeDocument }) {
-  return <article className="knowledge-detail">
-    <div className="knowledge-detail__heading"><div><span>{categoryLabels[document.category]}</span><h2>{document.title}</h2><p>{document.summary}</p></div><span data-status={document.syncStatus}>{statusLabels[document.syncStatus]}</span></div>
-    <dl><div><dt>知识空间</dt><dd>{document.spaceName}</dd></div><div><dt>来源</dt><dd>{document.source.label}</dd></div><div><dt>所有者</dt><dd>{document.owner.name} · {document.owner.department}</dd></div><div><dt>可见范围</dt><dd>{visibilityLabels[document.visibility]}</dd></div><div><dt>更新时间</dt><dd>{formatDate(document.updatedAt)}</dd></div></dl>
-    <section><h3>内容节选</h3><p>{document.excerpt}</p></section>
-    <div className="knowledge-tags" aria-label="标签">{document.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
-    <small>静态示例详情，不代表实时权限或同步状态</small>
-  </article>;
+function createWelcomeMessage(profile: KnowledgeProfile): KnowledgeMessage {
+  return {
+    id: `welcome-${profile.id}`,
+    role: 'assistant',
+    text: profile.id === 'admin'
+      ? '你好，企业管理员。你可以询问全企业知识，我会在回答中标注使用的知识域。'
+      : `上午好，${profile.name}。你可以直接询问公司制度、产品资料和客户成功相关问题。`
+  };
 }
-
-function formatDate(value: string) { return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value)); }
