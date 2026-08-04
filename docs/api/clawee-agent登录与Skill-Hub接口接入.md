@@ -14,15 +14,17 @@
 2. 使用已注册账号登录 Clawee。
 3. 查询当前登录账号和会话状态。
 4. 注销并撤销当前服务会话。
-5. 查询服务侧启用的 MCP 连接器、Tool 和当前 Agent 的有效授权状态。
-6. 获取企业 Skill Hub 中已发布的 Skill。
-7. 获取 Skill 当前发布版本详情。
-8. 下载指定发布版本的 Skill ZIP 包。
-9. 校验并安装 Skill 到本机 Codex Skills 目录。
-10. 根据远端版本信息识别可安装、已安装和可更新状态。
-11. 获取当前账户授权的知识库列表。
-12. 获取授权知识库的文档列表。
-13. 向具有上传权限的知识库上传文档。
+5. 获取当前账户的 Collector 注册码和一键安装命令。
+6. 执行 Collector 首次安装或更新。
+7. 查询服务侧启用的 MCP 连接器、Tool 和当前 Agent 的有效授权状态。
+8. 获取企业 Skill Hub 中已发布的 Skill。
+9. 获取 Skill 当前发布版本详情。
+10. 下载指定发布版本的 Skill ZIP 包。
+11. 校验并安装 Skill 到本机 Codex Skills 目录。
+12. 根据远端版本信息识别可安装、已安装和可更新状态。
+13. 获取当前账户授权的知识库列表。
+14. 获取授权知识库的文档列表。
+15. 向具有上传权限的知识库上传文档。
 
 本次接入不包括：
 
@@ -45,11 +47,12 @@
 2. 校验账号和密码。
 3. 为 `clawee-agent` 签发应用端 Bearer JWT。
 4. 校验会话、账号状态和 Token 有效性。
-5. 返回服务侧启用的 MCP 连接器、Tool 和当前 Agent 的授权状态。
-6. 返回已发布 Skill 的元数据和版本信息。
-7. 分发经过服务端校验的 Skill ZIP 包。
-8. 按当前账户数据权限返回知识库和文档，并代理经过校验的文档上传。
-9. 返回稳定的 HTTP 状态码和业务错误码。
+5. 为 Clawee 查询或隐式创建当前账户的 Collector 注册码，并返回一键安装命令。
+6. 返回服务侧启用的 MCP 连接器、Tool 和当前 Agent 的授权状态。
+7. 返回已发布 Skill 的元数据和版本信息。
+8. 分发经过服务端校验的 Skill ZIP 包。
+9. 按当前账户数据权限返回知识库和文档，并代理经过校验的文档上传。
+10. 返回稳定的 HTTP 状态码和业务错误码。
 
 ### 3.2 Clawee Daemon
 
@@ -58,11 +61,12 @@ Clawee Daemon 是企业服务的唯一调用方，负责：
 1. 代理注册、登录、当前账号查询和注销请求。
 2. 在首次注册或登录前生成并持久化稳定的 `agent_id`，并保存企业服务地址和企业会话 Token。
 3. 为 Clawee Web 与 Desktop 提供统一的本地登录状态。
-4. 获取 Skill 列表、详情和 ZIP 包。
-5. 校验 ZIP 包 SHA-256，安全解压到临时目录。
-6. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
-7. 保存企业 Skill 安装记录，并计算更新状态。
-8. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
+4. 从当前账号接口读取 Collector 一键安装命令，并按操作系统执行首次安装或更新。
+5. 获取 Skill 列表、详情和 ZIP 包。
+6. 校验 ZIP 包 SHA-256，安全解压到临时目录。
+7. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
+8. 保存企业 Skill 安装记录，并计算更新状态。
+9. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
 
 ### 3.3 Clawee Web 与 Desktop
 
@@ -404,6 +408,18 @@ Authorization: Bearer <enterprise_access_token>
       "agent_id": "clawee_550e8400-e29b-41d4-a716-446655440000",
       "name": "张三"
     },
+    "collector_registration": {
+      "exists": true,
+      "registration_code": "reg_xxx",
+      "created_by": "张三",
+      "created_at": "2026-08-04T10:00:00Z",
+      "used_count": 0,
+      "revoked": false,
+      "install_url": "http://1.13.175.31:1904/office/collectors/install?code=reg_xxx",
+      "install_script_url": "http://1.13.175.31:1904/office/collectors/install.sh?code=reg_xxx",
+      "install_command": "curl -fsSL 'http://1.13.175.31:1904/office/collectors/install.sh?code=reg_xxx' | sh",
+      "install_powershell_command": "irm 'http://1.13.175.31:1904/office/collectors/install.ps1?code=reg_xxx' | iex"
+    },
     "applications": {
       "frontend": true,
       "admin": false
@@ -416,14 +432,27 @@ Authorization: Bearer <enterprise_access_token>
 
 Clawee 依赖 `account`、`agent.agent_id` 和 `applications.frontend`。后台角色和权限不参与 Clawee 应用端授权判断。`agent.agent_id` 必须与本地配置一致；缺失或不一致时不得恢复为已登录状态。
 
+`collector_registration` 只对 `client_id=clawee-agent` 的登录态返回。企业服务会查询当前账户的有效注册码；没有有效注册码时在账户级事务锁内隐式生成一次，已有有效注册码时直接复用。重复或并发调用 `/api/v1/auth/me` 不得轮换注册码，并且最终只能返回同一个有效注册码。
+
+Daemon 根据本机系统选择一键安装命令：
+
+1. macOS 和 Linux 执行 `install_command`。
+2. Windows 执行 `install_powershell_command`。
+3. 安装脚本同时用于首次安装和后续更新；Daemon 不得自行拼接注册码、服务地址或安装脚本 URL。
+4. `registration_code`、`install_url`、`install_script_url` 和两种完整安装命令都包含敏感注册码，不得写入日志、审计数据、诊断包、React 状态持久化或普通配置文件。
+5. 命令执行失败不代表企业登录失效。Daemon 保留有效 Token 和 `agent_id`，单独返回 Collector 安装或更新失败状态，允许用户重试。
+
+企业服务无法查询或创建注册码时，`/api/v1/auth/me` 返回 `500 collector_registration_failed`；Collector 注册码服务未启用时返回 `503 collector_registration_unavailable`。这两种情况按“企业服务暂不可用”处理，不得清除仍可能有效的 Token。
+
 启动恢复流程：
 
 1. Daemon 读取安全存储中的企业 Token。
 2. 没有 Token 时返回“未登录”，不请求企业服务。
 3. 有 Token 时调用 `/api/v1/auth/me`。
-4. 返回 `200`、账号为 active 且 `agent.agent_id` 与本地配置一致时恢复登录状态。
-5. 返回 `401` 时删除本地 Token 并进入未登录状态。
-6. 网络失败或 `5xx` 时进入“企业服务暂不可用”，不得误删仍可能有效的 Token。
+4. 返回 `200`、账号为 active 且 `agent.agent_id` 与本地配置一致时恢复登录状态，然后读取 `collector_registration` 并按当前操作系统执行一键安装或更新命令。
+5. Collector 安装或更新失败不改变登录状态；保留企业会话并返回独立的 Collector 错误状态。
+6. 返回 `401` 时删除本地 Token 并进入未登录状态。
+7. 网络失败或 `5xx` 时进入“企业服务暂不可用”，不得误删仍可能有效的 Token。
 
 ## 9. 注销接口
 
@@ -771,6 +800,7 @@ Clawee 应同时读取：
 4. 带有敏感 Query 参数的原始 URL。
 5. 操作系统安全凭据存储内容。
 6. 知识库文档内容和 Multipart 原始请求体。
+7. Collector 注册码、带注册码的安装 URL 和一键安装命令。
 
 诊断导出前必须再次执行敏感字段脱敏。
 
@@ -789,6 +819,9 @@ Clawee 应同时读取：
 9. 应用重启后可以通过 `/api/v1/auth/me` 恢复或拒绝会话。
 10. `401` 会清除本地 Token 但保留 `agent_id`，网络错误不会误清除 Token。
 11. 注销成功后原 Token 无法继续访问 Skill 接口，后续登录继续使用原 `agent_id`。
+12. Clawee 首次调用 `/api/v1/auth/me` 时，没有有效 Collector 注册码的账户会隐式生成一个注册码并返回双平台安装命令。
+13. 重复及并发调用 `/api/v1/auth/me` 返回同一有效注册码，不会隐式轮换。
+14. Daemon 按操作系统执行服务端返回的安装命令，并且不会记录注册码或完整命令。
 
 ### 21.2 Skill Hub
 
@@ -833,7 +866,7 @@ GET  /api/v1/app/knowledge-bases/documents?knowledge_base_id=<knowledge_base_id>
 POST /api/v1/app/knowledge-bases/documents
 ```
 
-Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。后续 MCP 能力目录请求优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`；知识库 HTTP 接口则使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安装完整性、回滚以及知识库交互。
+Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。后续 MCP 能力目录请求优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`；知识库 HTTP 接口则使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份、Collector 接入信息、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安装完整性、回滚以及知识库交互。
 
 ## 23. MCP 能力目录接口
 
