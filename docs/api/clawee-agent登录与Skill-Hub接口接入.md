@@ -1,8 +1,8 @@
-# Clawee Agent 登录、MCP 能力目录与 Skill Hub 接口接入文档
+# Clawee Agent 登录、MCP 能力目录、Skill Hub 与知识库接口接入文档
 
 ## 1. 文档目的
 
-本文定义 Clawee Agent 接入企业 MCP Gateway 登录、MCP 能力目录和 Skill Hub 所需的 HTTP API、调用流程、错误处理和 Clawee 侧实现约束。
+本文定义 Clawee Agent 接入企业 MCP Gateway 登录、MCP 能力目录、Skill Hub 和账户授权知识库所需的 HTTP API、调用流程、错误处理和 Clawee 侧实现约束。
 
 本文面向 Clawee Web、Desktop 和 Daemon 的开发与测试人员。接口提供方为 `claw-mcp`，下文统一称为“企业服务”。
 
@@ -20,6 +20,9 @@
 8. 下载指定发布版本的 Skill ZIP 包。
 9. 校验并安装 Skill 到本机 Codex Skills 目录。
 10. 根据远端版本信息识别可安装、已安装和可更新状态。
+11. 获取当前账户授权的知识库列表。
+12. 获取授权知识库的文档列表。
+13. 向具有上传权限的知识库上传文档。
 
 本次接入不包括：
 
@@ -29,6 +32,8 @@
 4. 由企业服务操作用户本地文件或 Codex Skills 目录。
 5. OAuth Device Flow、Refresh Token 或跨设备同步。
 6. 用企业 Skill Hub 替换 Clawee 现有公共 Skill Market。
+7. 在 Clawee 内管理知识库或账户数据授权。
+8. 在本阶段迁移 MCP 知识检索的 Agent Grant 判定。
 
 ## 3. 职责边界
 
@@ -43,7 +48,8 @@
 5. 返回服务侧启用的 MCP 连接器、Tool 和当前 Agent 的授权状态。
 6. 返回已发布 Skill 的元数据和版本信息。
 7. 分发经过服务端校验的 Skill ZIP 包。
-8. 返回稳定的 HTTP 状态码和业务错误码。
+8. 按当前账户数据权限返回知识库和文档，并代理经过校验的文档上传。
+9. 返回稳定的 HTTP 状态码和业务错误码。
 
 ### 3.2 Clawee Daemon
 
@@ -56,12 +62,13 @@ Clawee Daemon 是企业服务的唯一调用方，负责：
 5. 校验 ZIP 包 SHA-256，安全解压到临时目录。
 6. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
 7. 保存企业 Skill 安装记录，并计算更新状态。
+8. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
 
 ### 3.3 Clawee Web 与 Desktop
 
 Clawee Web 与 Desktop 只调用本地 Daemon，不直接请求企业服务。
 
-通用登录和 Skill Hub 业务必须由 Web/Desktop 共用的 Daemon API 和 Service 实现。Desktop Bridge 不得单独实现企业登录、Skill 列表或安装逻辑。
+通用登录、Skill Hub 和知识库业务必须由 Web/Desktop 共用的 Daemon API 和 Service 实现。Desktop Bridge 不得单独实现企业登录、Skill 列表、知识库访问、文档上传或安装逻辑。
 
 ## 4. 总体调用链路
 
@@ -165,6 +172,9 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 | 获取已发布 Skill 列表 | `GET` | `/api/v1/app/skills` | Bearer JWT |
 | 获取已发布 Skill 详情 | `GET` | `/api/v1/app/skills/detail?skill_id=...` | Bearer JWT |
 | 下载指定 Skill 版本 | `GET` | `/api/v1/app/skills/package?skill_id=...&version_id=...` | Bearer JWT |
+| 获取授权知识库列表 | `GET` | `/api/v1/app/knowledge-bases` | Bearer JWT |
+| 获取知识库文档列表 | `GET` | `/api/v1/app/knowledge-bases/documents?knowledge_base_id=...` | Bearer JWT |
+| 上传知识库文档 | `POST` | `/api/v1/app/knowledge-bases/documents` | Bearer JWT |
 | 服务连通性检查 | `GET` | `/healthz` | 无 |
 
 Clawee 不得调用历史兼容路径 `/auth/*`、`/api/v1/skills/*` 或任何 `/api/v1/admin/*` 接口。
@@ -737,6 +747,8 @@ Clawee 应同时读取：
 | 注册、登录、当前账号、注销 | 15 秒 |
 | Skill 列表和详情 | 15 秒 |
 | Skill ZIP 下载 | 120 秒 |
+| 知识库和文档列表 | 15 秒 |
+| 文档上传 | 5 分钟 |
 
 下载必须采用流式写入和增量 SHA-256，不应把完整 ZIP 同时保存在多个内存副本中。客户端应限制响应大小，并与企业服务当前 50 MiB 原始 ZIP 上限保持一致。
 
@@ -749,6 +761,7 @@ Clawee 应同时读取：
 3. 请求 ID。
 4. `skill_id`、`version_id`、`name` 和 `package_sha256`。
 5. 下载字节数、耗时和失败阶段。
+6. `knowledge_base_id`、`document_id`、文件名、文件大小和上传失败阶段。
 
 禁止记录：
 
@@ -757,6 +770,7 @@ Clawee 应同时读取：
 3. Skill ZIP 内容和 `SKILL.md` 全文。
 4. 带有敏感 Query 参数的原始 URL。
 5. 操作系统安全凭据存储内容。
+6. 知识库文档内容和 Multipart 原始请求体。
 
 诊断导出前必须再次执行敏感字段脱敏。
 
@@ -788,6 +802,16 @@ Clawee 应同时读取：
 8. 企业 Skill 与公共市场同名时不会静默覆盖未知来源 Skill。
 9. Web 与 Desktop 在相同数据下显示相同状态并调用相同 Runtime API。
 
+### 21.3 知识库
+
+1. Web 与 Desktop 通过同一 Daemon API 获取知识库和文档，不直接请求企业服务。
+2. 知识库列表只展示企业服务返回的当前账户授权项，并使用响应中的 `permissions` 控制上传入口。
+3. 读取未授权知识库时，将 `404 knowledge_base_not_found` 作为不可访问处理，不探测资源是否真实存在。
+4. 只有 `permissions.read=true` 且 `permissions.upload=true` 时允许发起上传。
+5. 上传只包含一个 `knowledge_base_id` 和一个 `file`，文件不经过 React 渲染进程持久化。
+6. 上传结果未知时不自动重试，避免产生重复文档。
+7. Web 与 Desktop 在相同账户授权下展示相同列表、权限状态和上传结果。
+
 ## 22. 接口契约摘要
 
 Clawee 正式依赖以下稳定契约：
@@ -803,9 +827,13 @@ GET  /api/v1/app/agents/mcp-catalog
 GET  /api/v1/app/skills
 GET  /api/v1/app/skills/detail?skill_id=<skill_id>
 GET  /api/v1/app/skills/package?skill_id=<skill_id>&version_id=<version_id>
+
+GET  /api/v1/app/knowledge-bases
+GET  /api/v1/app/knowledge-bases/documents?knowledge_base_id=<knowledge_base_id>
+POST /api/v1/app/knowledge-bases/documents
 ```
 
-Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。后续 MCP 能力目录请求优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份、MCP 能力目录和 Skill 分发，Clawee 负责本地安装及其完整性和回滚。
+Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。后续 MCP 能力目录请求优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`；知识库 HTTP 接口则使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安装完整性、回滚以及知识库交互。
 
 ## 23. MCP 能力目录接口
 
@@ -895,3 +923,177 @@ Clawee 请求不需要传递 `agent_id`。服务端优先从已认证的 `clawee
 | `403` | `agent_context_mismatch` | 请求中的 `agent_id` 与会话不一致；按客户端状态错误处理，不得尝试切换 Agent |
 | `403` | `agent_forbidden` | 会话绑定 Agent 已停用或不可用；保留本地 `agent_id`，提示重新登录或联系管理员 |
 | `500` | `internal_error` | 保留登录状态，允许用户手动重试 |
+
+## 24. 知识库接口
+
+知识库 HTTP 接口按 JWT 当前账户授权，不按 Clawee 当前 Agent 的 MCP Grant 授权。服务端仍会在请求进入 `/api/v1/app/*` 时校验 JWT 绑定的 Agent 属于当前账户且状态为 `active`。
+
+服务端知识库动作固定为：
+
+| 动作 | 当前语义 |
+| --- | --- |
+| `read` | 知识库在列表中可见，并允许读取其文档列表 |
+| `upload` | 允许上传文档，同时必须具有 `read` |
+| `search` | 为下一阶段账户级 Agent 检索授权预留 |
+
+本阶段 `search` 只存储在账户数据授权中，不参与现有 MCP `knowledge.search` 判定。Clawee 不得因为 `permissions.search=true` 绕过 MCP 能力目录或 Agent Grant 调用检索 Tool。
+
+### 24.1 `GET /api/v1/app/knowledge-bases`
+
+返回当前账户具有 `read` 权限的知识库。
+
+请求：
+
+```http
+GET /api/v1/app/knowledge-bases HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+成功响应：`200 OK`
+
+```json
+{
+  "data": [
+    {
+      "knowledge_base_id": "kb_123",
+      "name": "公司制度",
+      "description": "公司制度和员工手册",
+      "status": "active",
+      "document_count": 12,
+      "permissions": {
+        "read": true,
+        "upload": true,
+        "search": false
+      }
+    }
+  ],
+  "meta": {
+    "next_cursor": "",
+    "has_next": false
+  }
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `knowledge_base_id` | string | 企业服务内部的不透明知识库标识 |
+| `name` | string | 展示名称 |
+| `description` | string | 知识库说明 |
+| `status` | string | 当前状态；客户端必须保留未知状态兼容能力 |
+| `document_count` | number | 当前文档数量 |
+| `permissions.read` | boolean | 是否允许读取；当前列表返回项固定为 `true` |
+| `permissions.upload` | boolean | 是否允许上传文档 |
+| `permissions.search` | boolean | 是否存在预留的账户检索授权，不代表 MCP Tool 已授权 |
+
+Clawee 必须以列表和 `permissions` 为准，不缓存推导出的扩大权限。重新登录、用户刷新或收到权限相关错误后应重新拉取列表。
+
+### 24.2 `GET /api/v1/app/knowledge-bases/documents`
+
+请求 Query：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `knowledge_base_id` | 是 | 知识库列表返回的不透明 ID |
+
+请求示例：
+
+```http
+GET /api/v1/app/knowledge-bases/documents?knowledge_base_id=kb_123 HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+成功响应：`200 OK`
+
+```json
+{
+  "data": [
+    {
+      "document_id": "doc_123",
+      "knowledge_base_id": "kb_123",
+      "name": "员工手册.pdf",
+      "size_bytes": 102400,
+      "mime_type": "application/pdf",
+      "status": "ready",
+      "error_message": "",
+      "uploaded_by": "usr_123",
+      "created_at": "2026-08-04T08:00:00Z",
+      "updated_at": "2026-08-04T08:01:00Z"
+    }
+  ],
+  "meta": {
+    "next_cursor": "",
+    "has_next": false
+  }
+}
+```
+
+当前账户没有该知识库的 `read` 权限时返回 `404 knowledge_base_not_found`。该状态同时隐藏未授权资源是否存在，Clawee 不得用其他 ID 重试探测。
+
+### 24.3 `POST /api/v1/app/knowledge-bases/documents`
+
+上传单个知识库文档。当前账户必须同时具有目标知识库的 `read` 和 `upload` 权限。
+
+请求：
+
+```http
+POST /api/v1/app/knowledge-bases/documents HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+Content-Type: multipart/form-data; boundary=...
+```
+
+Multipart 表单：
+
+| 字段 | 数量 | 说明 |
+| --- | --- | --- |
+| `knowledge_base_id` | 1 | 目标知识库 ID |
+| `file` | 1 | 待上传文档 |
+
+Daemon 构造 Multipart 时必须先写入 `knowledge_base_id` part，再写入 `file` part，使企业服务可以在接收文件内容前完成账户授权。
+
+允许的文件扩展名为 `.pdf`、`.docx`、`.md`、`.txt`、`.xlsx`、`.csv`，单文件最大 50 MiB。企业服务同时校验扩展名、文件内容和实际大小，Clawee 侧的文件选择限制不能替代服务端校验。
+
+成功响应：`201 Created`
+
+```json
+{
+  "data": {
+    "document_id": "doc_456",
+    "knowledge_base_id": "kb_123",
+    "name": "员工手册.pdf",
+    "size_bytes": 102400,
+    "mime_type": "application/pdf",
+    "status": "processing",
+    "error_message": "",
+    "uploaded_by": "usr_123",
+    "created_at": "2026-08-04T08:00:00Z",
+    "updated_at": "2026-08-04T08:00:00Z"
+  }
+}
+```
+
+Daemon 上传约束：
+
+1. 文件选择和上传使用 Web/Desktop 共用的 Runtime API；Desktop Bridge 只可负责系统文件选择能力。
+2. Daemon 从受控本地路径流式构造 Multipart，请求体不得经过 React 状态、浏览器存储或诊断导出。
+3. 缺少 `read` 时服务端返回 `404 knowledge_base_not_found`；具有 `read` 但缺少 `upload` 时返回 `403 document_upload_forbidden`。
+4. 返回 `201` 后刷新文档列表，按服务端 `status` 展示处理状态。
+5. 网络断开或结果未知时不得自动重复上传。用户再次发起前应刷新文档列表。
+
+### 24.4 错误处理
+
+| HTTP | `error.code` | Clawee 行为 |
+| --- | --- | --- |
+| `400` | `invalid_request` | 文件、表单或知识库 ID 不合法；终止操作，不自动重试 |
+| `401` | `unauthorized` | 清除本地 Token，进入未登录状态 |
+| `403` | `agent_forbidden` | 当前绑定 Agent 不可用；停止应用接口请求 |
+| `403` | `document_upload_forbidden` | 保留登录状态，刷新知识库列表并禁用上传入口 |
+| `404` | `knowledge_base_not_found` | 刷新知识库列表，不区分未授权与资源不存在 |
+| `404` | `not_found` | 已授权资源或文档已不存在；刷新列表 |
+| `409` | `conflict` | 资源状态不允许当前操作；刷新列表和状态 |
+| `502` | `knowledge_provider_error` | 底层知识库暂不可用；保留登录状态，允许用户稍后重试 |
+| `500` | `internal_error` | 保留登录状态，记录脱敏诊断并允许手动重试 |
