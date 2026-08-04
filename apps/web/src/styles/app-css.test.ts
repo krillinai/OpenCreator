@@ -120,6 +120,7 @@ describe('app CSS visual contracts', () => {
     expect(tokensCss).toContain('--control-compact-lg: 34px;');
     expect(tokensCss).toContain('--control-touch: 44px;');
     expect(cssBlock('.sidebar-row')).toContain('height: var(--control-compact-md);');
+    expect(cssBlock('.sidebar-primary .sidebar-row')).toContain('height: var(--control-compact-sm);');
     expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
     expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?button,[\s\S]*?min-height:\s*var\(--control-touch\) !important;/);
     expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-task-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
@@ -363,20 +364,41 @@ describe('app CSS visual contracts', () => {
     expect(skillMarketCss).not.toContain('.skill-market-chip-row');
   });
 
-  it('uses a wordmark in the expanded sidebar and centers the collapsed logo button', () => {
+  it('highlights only card use action text while keeping the button transparent', () => {
+    const useActionHover = skillMarketCssBlock('.skill-market-card > .skill-market-action-button--use:hover:not(:disabled)');
+
+    expect(skillMarketCss).toMatch(
+      /\.skill-market-card > \.skill-market-action-button--use\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;[^}]*color:\s*var\(--accent-strong\);[^}]*box-shadow:\s*0 1px 4px color-mix\(in srgb, var\(--text\) 16%, transparent\);/
+    );
+    expect(skillMarketCss).toMatch(
+      /\.enterprise-skill-row\.skill-market-card > \.enterprise-skill-action--use\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;[^}]*color:\s*var\(--accent-strong\);/
+    );
+    expect(useActionHover).toContain('background: transparent;');
+    expect(useActionHover).toContain('color: var(--accent-strong);');
+    expect(useActionHover).toContain('box-shadow: 0 2px 6px color-mix(in srgb, var(--text) 20%, transparent);');
+  });
+
+  it('uses a compact wordmark image in the expanded sidebar and centers the collapsed logo button', () => {
     const brandButton = cssBlock('.sidebar-brand-button');
-    const wordmark = cssBlock('.sidebar-logo-word');
+    const logoLockup = cssBlock('.sidebar-logo-lockup');
+    const wordmark = cssBlock('.sidebar-brand-lockup-logo');
     const logoMark = cssBlock('.sidebar-logo-mark');
+    const productName = cssBlock('.sidebar-logo-word');
+    const productVersion = cssBlock('.sidebar-brand-version');
 
     expect(brandButton).toContain('padding: 0;');
-    expect(wordmark).toContain('font-size: 17px;');
-    expect(wordmark).toContain('font-weight: 600;');
+    expect(logoLockup).toContain('justify-content: flex-start;');
+    expect(logoLockup).toContain('padding-top: 10px;');
+    expect(wordmark).toContain('width: 72px;');
+    expect(wordmark).toContain('height: 17px;');
+    expect(productName).toContain('font-size: 12px;');
+    expect(productVersion).toContain('font-size: 12px;');
     expect(appCss).not.toContain('.sidebar-logo-full');
     expect(appCss).toMatch(
       /\n\.sidebar-collapse-button\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/
     );
-    expect(logoMark).toContain('width: 16px;');
-    expect(logoMark).toContain('height: 16px;');
+    expect(logoMark).toContain('width: 28px;');
+    expect(logoMark).toContain('height: 28px;');
     expect(appCss).toMatch(/\n\.sidebar-brand-button\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/);
     expect(appCss).not.toContain('.sidebar-logo-mark-crop');
   });
@@ -741,21 +763,27 @@ describe('app CSS visual contracts', () => {
     const topBar = cssBlock('.file-top-bar');
     const titleRow = cssBlock('.file-top-bar-title-row');
     const controlRow = cssBlock('.file-top-bar-control-row');
+    const topBarPathGroup = cssBlock('.file-top-bar-path-group');
     const topBarPath = cssBlock('.file-top-bar-path');
+    const pathOpenButton = cssBlock('.file-top-bar-path-open-button');
     const topBarActions = cssBlock('.file-top-bar-actions');
     const hiddenEditorToolbar = cssBlock('.file-editor-pane[data-toolbar="hidden"]');
 
     expect(workspace).toContain('grid-template-rows: auto minmax(0, 1fr);');
     expect(conversationFileLayout).toContain('420px');
-    expect(conversationFileLayout).toContain('calc(100% - 426px)');
-    expect(conversationFileLayout).toContain('minmax(420px, 1fr)');
+    expect(conversationFileLayout).toContain('var(--conversation-pane-width, calc(60% - 6px))');
+    expect(conversationFileLayout).toContain('calc(100% - 286px)');
+    expect(conversationFileLayout).toContain('minmax(280px, 1fr)');
     expect(topBar).toContain('min-height: 72px;');
     expect(topBar).toContain('padding: 12px 16px 12px 18px;');
     expect(topBar).toContain('grid-template-rows: auto auto;');
     expect(titleRow).toContain('justify-content: space-between;');
     expect(controlRow).toContain('justify-content: space-between;');
     expect(topBarPath).toContain('font-size: 12px;');
-    expect(topBarPath).toContain('flex: 1 1 auto;');
+    expect(topBarPath).toContain('flex: 0 1 auto;');
+    expect(topBarPathGroup).toContain('flex: 1 1 auto;');
+    expect(pathOpenButton).toContain('width: 28px;');
+    expect(pathOpenButton).toContain('flex: 0 0 auto;');
     expect(topBarActions).toContain('flex: 0 0 auto;');
     expect(hiddenEditorToolbar).toContain('grid-template-rows: auto minmax(0, 1fr);');
   });

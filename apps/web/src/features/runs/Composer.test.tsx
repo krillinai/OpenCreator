@@ -71,7 +71,7 @@ describe('Composer', () => {
     expect(screen.queryByText('跟随全局配置')).not.toBeInTheDocument();
     expect(screen.queryByText('本地模式')).not.toBeInTheDocument();
     expect(screen.queryByText('open-clawee')).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText('需要帮你做点什么？输入 / 调用插件')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('输入 / 调用插件')).toBeInTheDocument();
   });
 
   it('hides the project selector for a project-independent task draft', () => {
@@ -220,6 +220,7 @@ describe('Composer', () => {
 
     await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
+    await user.click(screen.getByRole('button', { name: '开启' }));
 
     await user.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
     await user.click(screen.getByRole('menuitemradio', { name: /默认模型 超高/ }));
@@ -240,7 +241,6 @@ describe('Composer', () => {
 
   it('shows only two permission levels and keeps request approval when full access is canceled', async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const onPermissionChange = vi.fn();
     render(
       <Composer
@@ -257,7 +257,11 @@ describe('Composer', () => {
     expect(screen.queryByText('工作区读写')).not.toBeInTheDocument();
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
 
-    expect(confirm).toHaveBeenCalledTimes(1);
+    const dialog = screen.getByRole('alertdialog', { name: '开启完全访问权限' });
+    expect(dialog).toHaveTextContent('仅在你信任当前项目时开启');
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(screen.queryByRole('alertdialog', { name: '开启完全访问权限' })).not.toBeInTheDocument();
     expect(onPermissionChange).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
   });
@@ -275,6 +279,7 @@ describe('Composer', () => {
 
     await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
+    await user.click(screen.getByRole('button', { name: '开启' }));
 
     expect(onPermissionChange).toHaveBeenCalledWith('danger-full-access');
     expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();

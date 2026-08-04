@@ -181,7 +181,7 @@ type ActiveRunEventController = {
 };
 
 const CONVERSATION_PANE_MIN_WIDTH = 420;
-const FILE_WORKSPACE_MIN_WIDTH = 420;
+const FILE_WORKSPACE_MIN_WIDTH = 280;
 const CONVERSATION_FILE_RESIZE_HANDLE_WIDTH = 6;
 const DESKTOP_SIDEBAR_EXPANDED_WIDTH = 248;
 const MOBILE_NAVIGATION_MAX_WIDTH = 920;
@@ -234,9 +234,21 @@ const EnterpriseAccountPage = lazy(
 );
 const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
+const ConnectionsPage = lazy(async () => {
+  const module = await import('../features/connections/ConnectionsPage.js');
+  return { default: module.ConnectionsPage };
+});
 const KnowledgePage = lazy(async () => {
   const module = await import('../features/knowledge/KnowledgePage.js');
   return { default: module.KnowledgePage };
+});
+const SharedDrivePage = lazy(async () => {
+  const module = await import('../features/drive/SharedDrivePage.js');
+  return { default: module.SharedDrivePage };
+});
+const DashboardPage = lazy(async () => {
+  const module = await import('../features/dashboard/DashboardPage.js');
+  return { default: module.DashboardPage };
 });
 const ScheduleThreadHeader = lazy(async () => {
   const module = await import('../features/schedules/ScheduleThreadHeader.js');
@@ -344,9 +356,9 @@ export function AppController(props: AppControllerProps) {
   >();
   const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
   const activePluginSource =
-    props.route.view === 'plugins' && props.route.source === 'enterprise'
-      ? 'enterprise'
-      : 'public';
+    props.route.view === 'plugins' && props.route.source === 'public'
+      ? 'public'
+      : 'enterprise';
 
   useEffect(() => {
     if (threadConfigUpdateError === undefined) return;
@@ -414,6 +426,7 @@ export function AppController(props: AppControllerProps) {
   const runRegistryRef = useRef(runRegistry);
   const pendingRunStartsByIdRef = useRef<PendingRunStartsById>({});
   const conversationFileLayoutRef = useRef<HTMLElement | null>(null);
+  const followedFileWorkspaceThreadIdRef = useRef<string>();
   const allowInitialRuntimeProjectFocusRef = useRef(
     props.route.view === 'home' && persistedNavigation === null
   );
@@ -2505,6 +2518,12 @@ export function AppController(props: AppControllerProps) {
     setTimelineApprovalTarget(undefined);
     const conversation = conversations.find(item => item.id === conversationId);
     const alreadySelected = conversationId === state.selectedThreadId;
+    const followOpenFileWorkspace = !alreadySelected
+      && state.activeView === 'conversation'
+      && state.rightPanelMode === 'file';
+    followedFileWorkspaceThreadIdRef.current = followOpenFileWorkspace
+      ? conversationId
+      : undefined;
     if (conversation !== undefined && conversation.projectId !== state.currentProjectId) {
       dispatch({ type: 'select_project', projectId: conversation.projectId });
     }
@@ -2528,6 +2547,9 @@ export function AppController(props: AppControllerProps) {
     setRunsLoadedThreadId(undefined);
     showTimelineForThread(conversationId, [], false);
     dispatch({ type: 'select_thread', threadId: conversationId });
+    if (followOpenFileWorkspace) {
+      dispatch({ type: 'open_files' });
+    }
     if (options.updateRoute !== false) {
       navigateToRoute({ view: 'thread', threadId: conversationId });
     }
@@ -2571,10 +2593,13 @@ export function AppController(props: AppControllerProps) {
       case 'search':
       case 'schedules':
       case 'tasks':
+      case 'dashboard':
       case 'activity':
       case 'activity-agent':
       case 'plugins':
+      case 'connections':
       case 'knowledge':
+      case 'drive':
       case 'account':
       case 'settings':
         closeMobileSidebar();
@@ -2602,6 +2627,7 @@ export function AppController(props: AppControllerProps) {
   function openPrimaryView(activeView: ActiveView) {
     closeMobileSidebar();
     if (activeView === 'files') {
+      followedFileWorkspaceThreadIdRef.current = undefined;
       dispatch({ type: 'open_files' });
       navigateToRoute({
         view: 'files',
@@ -2615,11 +2641,13 @@ export function AppController(props: AppControllerProps) {
   }
 
   function closeFileWorkspace() {
+    followedFileWorkspaceThreadIdRef.current = undefined;
     dispatch({ type: 'close_file_workspace' });
     navigateToRoute(routeForConversation(state.selectedThreadId));
   }
 
   function selectWorkspaceFile(path: string) {
+    followedFileWorkspaceThreadIdRef.current = undefined;
     dispatch({ type: 'select_workspace_file', path });
     navigateToRoute({
       view: 'files',
@@ -2775,7 +2803,7 @@ export function AppController(props: AppControllerProps) {
       || connectionStatusRef.current !== 'connected'
       || enterpriseSessionRef.current.status !== 'signed_in'
     ) {
-      throw new Error('企业 Skill Hub 暂不可用');
+      throw new Error('企业Skills暂不可用');
     }
     const generation = enterpriseHubGenerationRef.current;
     try {
@@ -3877,6 +3905,7 @@ export function AppController(props: AppControllerProps) {
   }
 
   function openTimelineFile(path: string) {
+    followedFileWorkspaceThreadIdRef.current = undefined;
     const workspacePath = toWorkspaceRelativePath(path, selectedThread);
     dispatch({ type: 'select_workspace_file', path: workspacePath });
     navigateToRoute({
@@ -3940,7 +3969,9 @@ export function AppController(props: AppControllerProps) {
   function adjustConversationPaneWidth(delta: number) {
     const layout = conversationFileLayoutRef.current;
     const rect = layout?.getBoundingClientRect();
-    const fallbackWidth = rect ? Math.round(rect.width * 0.42) : 420;
+    const fallbackWidth = rect
+      ? Math.round(rect.width * 0.6) - CONVERSATION_FILE_RESIZE_HANDLE_WIDTH
+      : 760;
     const maxWidth = rect
       ? Math.max(
           CONVERSATION_PANE_MIN_WIDTH,
@@ -4016,6 +4047,8 @@ export function AppController(props: AppControllerProps) {
     event.preventDefault();
   }
   const conversationEmpty = timelineItems.length === 0;
+  const showConversationEmptyState = conversationEmpty
+    && (selectedThread === undefined || selectedThread.purpose === 'conversation');
   const showConversationHeader = selectedThread !== undefined
     || selectedScheduleTask !== undefined
     || selectedConversation !== undefined;
@@ -4023,7 +4056,7 @@ export function AppController(props: AppControllerProps) {
     item.kind === 'approval' && item.approval.status === 'pending'
   ));
   const conversationPage = (
-    <section className={`conversation-page${conversationEmpty ? ' is-empty' : ''}`}>
+    <section className={`conversation-page${showConversationEmptyState ? ' is-empty' : ''}`}>
       {showConversationHeader ? (
         <ConversationHeader
           title={
@@ -4071,7 +4104,7 @@ export function AppController(props: AppControllerProps) {
             {threadConfigUpdateError}
           </div>
         ) : null}
-        {conversationEmpty ? (
+        {showConversationEmptyState ? (
           <ConversationEmptyState />
         ) : (
           <Timeline
@@ -4236,6 +4269,13 @@ export function AppController(props: AppControllerProps) {
         selectedThread={selectedThread}
         selectedPath={state.workspaceTargetPath}
         workspaceFileService={workspaceFileService}
+        onWorkspaceAvailabilityChange={(threadId, hasEntries) => {
+          if (followedFileWorkspaceThreadIdRef.current !== threadId) return;
+          followedFileWorkspaceThreadIdRef.current = undefined;
+          if (hasEntries || selectedThreadIdRef.current !== threadId) return;
+          dispatch({ type: 'close_file_workspace' });
+          navigateToRoute(routeForConversation(threadId));
+        }}
         onClose={closeFileWorkspace}
         onSelectPath={selectWorkspaceFile}
         onOpenExternal={(url) => void hostBridge.openExternal(url)}
@@ -4291,6 +4331,8 @@ export function AppController(props: AppControllerProps) {
         handleScheduleChanged(updated);
       }}
     />
+  ) : state.activeView === 'dashboard' ? (
+    <DashboardPage />
   ) : state.activeView === 'activity' ? (
     <ActivityPage
       route={props.route.view === 'activity' || props.route.view === 'activity-agent'
@@ -4300,6 +4342,10 @@ export function AppController(props: AppControllerProps) {
     />
   ) : state.activeView === 'knowledge' ? (
     <KnowledgePage />
+  ) : state.activeView === 'drive' ? (
+    <SharedDrivePage />
+  ) : state.activeView === 'connections' ? (
+    <ConnectionsPage />
   ) : state.activeView === 'settings' ? (
     <SettingsPage
       runtimeStatus={runtimeStatus}
@@ -4364,16 +4410,10 @@ export function AppController(props: AppControllerProps) {
       onInstall={skillId => void installMarketSkill(skillId)}
       onUpdate={skillId => void updateMarketSkill(skillId)}
       onUse={(skillId, projectId) => void useMarketSkill(skillId, projectId)}
-      onCreateSkill={() => void useMarketSkill('skill-creator', currentProject?.id ?? '')}
-      onUploadSkill={
-        hostBridge.selectProjectDirectory === undefined
-          ? undefined
-          : () => void uploadLocalSkill()
-      }
       onSourceChange={source => {
         navigateToRoute(
-          source === 'enterprise'
-            ? { view: 'plugins', source: 'enterprise' }
+          source === 'public'
+            ? { view: 'plugins', source: 'public' }
             : { view: 'plugins' }
         );
       }}
@@ -4399,7 +4439,11 @@ export function AppController(props: AppControllerProps) {
         onLoadDetail: loadEnterpriseSkillDetail,
         onInstall: skillId => void installEnterpriseSkill(skillId),
         onUpdate: skillId => void updateEnterpriseSkill(skillId),
-        onUse: (skill, projectId) => void useEnterpriseSkill(skill, projectId)
+        onUse: (skill, projectId) => void useEnterpriseSkill(skill, projectId),
+        onCreateSkill: () => void useMarketSkill('skill-creator', currentProject?.id ?? ''),
+        onUploadSkill: hostBridge.selectProjectDirectory === undefined
+          ? undefined
+          : () => void uploadLocalSkill()
       }}
     />
   ) : state.activeView === 'conversation' ? (
@@ -4644,10 +4688,13 @@ function createInitialState(
     case 'search':
     case 'schedules':
     case 'tasks':
+    case 'dashboard':
     case 'activity':
     case 'activity-agent':
     case 'plugins':
+    case 'connections':
     case 'knowledge':
+    case 'drive':
     case 'account':
     case 'settings':
       return {
@@ -4679,12 +4726,18 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
       return { view: 'schedules' };
     case 'tasks':
       return { view: 'tasks' };
+    case 'dashboard':
+      return { view: 'dashboard' };
     case 'activity':
       return { view: 'activity', range: '7d' };
     case 'plugins':
       return { view: 'plugins' };
+    case 'connections':
+      return { view: 'connections' };
     case 'knowledge':
       return { view: 'knowledge' };
+    case 'drive':
+      return { view: 'drive' };
     case 'account':
       return { view: 'account' };
     case 'settings':
@@ -5027,7 +5080,7 @@ function formatEnterpriseSkillError(error: unknown, fallback: string): string {
   if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
   switch (error.code) {
     case 'ENTERPRISE_FORBIDDEN':
-      return '当前账户没有企业 Skill Hub 访问权限';
+      return '当前账户没有企业Skills访问权限';
     case 'ENTERPRISE_SKILL_NOT_FOUND':
       return '该企业 Skill 已下架或不存在';
     case 'ENTERPRISE_SKILL_VERSION_CHANGED':
@@ -5044,7 +5097,7 @@ function formatEnterpriseSkillError(error: unknown, fallback: string): string {
     case 'ENTERPRISE_RATE_LIMITED':
       return '企业服务请求过于频繁，请稍后重试';
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':
-      return '企业 Skill Hub 暂时不可用';
+      return '企业Skills暂时不可用';
     default:
       return error.message.trim().length > 0 ? error.message : fallback;
   }

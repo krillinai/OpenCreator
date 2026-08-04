@@ -32,6 +32,7 @@ import type {
   RunSubmissionMode
 } from '@clawee/protocol';
 import type { ClaweeProject, ProjectPermission } from '../projects/project-model.js';
+import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
 import { CreateProjectDialog } from '../projects/CreateProjectDialog.js';
 import {
   AttachmentTray,
@@ -180,6 +181,7 @@ export function Composer(props: {
   const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [permissionUpdating, setPermissionUpdating] = useState(false);
+  const [pendingPermission, setPendingPermission] = useState<ProjectPermission>();
   const composerRef = useRef<HTMLFormElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const slashMenuRootRef = useRef<HTMLDivElement | null>(null);
@@ -643,6 +645,20 @@ export function Composer(props: {
     addFiles(files);
   }
 
+  async function applyPermission(permission: ProjectPermission) {
+    setPermissionUpdating(true);
+    try {
+      const accepted = await props.onPermissionChange?.(permission);
+      if (accepted !== false) {
+        setSelectedPermission(permission);
+        setOpenMenu(null);
+      }
+    } finally {
+      setPermissionUpdating(false);
+      setPendingPermission(undefined);
+    }
+  }
+
   return (
     <div className="composer-stack">
       {(props.queuedItems?.length ?? 0) > 0 ? (
@@ -847,7 +863,7 @@ export function Composer(props: {
           placeholder={
             props.disabled
               ? props.disabledReason ?? '当前对话不可用'
-              : '需要帮你做点什么？输入 / 调用插件'
+              : '输入 / 调用插件'
           }
         />
         {slashMenuOpen ? (
@@ -975,30 +991,20 @@ export function Composer(props: {
                     role="menuitemradio"
                     aria-checked={selectedPermission === option.value}
                     disabled={permissionUpdating}
-                    onClick={async () => {
+                    onClick={() => {
                       if (
                         option.value === 'danger-full-access'
                         && selectedPermission !== 'danger-full-access'
-                        && !window.confirm(
-                          '完全访问权限允许 Clawee 访问本机文件并执行本地操作。确定要开启吗？'
-                        )
                       ) {
+                        setOpenMenu(null);
+                        setPendingPermission(option.value);
                         return;
                       }
                       if (option.value === selectedPermission) {
                         setOpenMenu(null);
                         return;
                       }
-                      setPermissionUpdating(true);
-                      try {
-                        const accepted = await props.onPermissionChange?.(option.value);
-                        if (accepted !== false) {
-                          setSelectedPermission(option.value);
-                          setOpenMenu(null);
-                        }
-                      } finally {
-                        setPermissionUpdating(false);
-                      }
+                      void applyPermission(option.value);
                     }}
                   >
                     <span className="composer-menu-icon" aria-hidden="true">
@@ -1089,6 +1095,19 @@ export function Composer(props: {
         </div>
       </div>
       </form>
+      <ConfirmDialog
+        open={pendingPermission === 'danger-full-access'}
+        title="开启完全访问权限"
+        description="完全访问权限允许 Clawee 访问本机文件并执行本地操作。仅在你信任当前项目时开启。"
+        confirmLabel="开启"
+        busy={permissionUpdating}
+        onCancel={() => setPendingPermission(undefined)}
+        onConfirm={() => {
+          if (pendingPermission !== undefined && !permissionUpdating) {
+            void applyPermission(pendingPermission);
+          }
+        }}
+      />
     </div>
   );
 }

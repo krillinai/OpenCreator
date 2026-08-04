@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { ActivityPage } from './ActivityPage.js';
 
 describe('ActivityPage static prototype', () => {
-  it('switches between complete administrator and employee workbench views', async () => {
-    const user = userEvent.setup();
+  it('renders the administrator workbench without an employee view switch', () => {
     render(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={vi.fn()} />);
 
-    expect(screen.getByRole('heading', { name: 'Agent 活动' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '管理员视图' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: 'Agent动态' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '管理员视图' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '员工视图' })).not.toBeInTheDocument();
     expect(screen.getByText('活跃员工')).toBeInTheDocument();
     expect(screen.getByRole('table', { name: '员工用量' })).toBeInTheDocument();
     expect(screen.getByText('输入 Token')).toBeInTheDocument();
@@ -18,14 +18,6 @@ describe('ActivityPage static prototype', () => {
     expect(screen.getByText('Skill 使用分布')).toBeInTheDocument();
     expect(screen.getByText('MCP 使用分布')).toBeInTheDocument();
     expect(screen.getByText('网页检索').closest('p')).toHaveTextContent('18 次 · 38%');
-
-    await user.click(screen.getByRole('button', { name: '员工视图' }));
-    expect(screen.getByText('我的 Token')).toBeInTheDocument();
-    expect(screen.getByText('模型分布')).toBeInTheDocument();
-    expect(screen.getByText('Agent 分布')).toBeInTheDocument();
-    expect(screen.getByText('代码审查', { selector: '.activity-distribution--usage span' }).closest('p')).toHaveTextContent('12 次 · 40%');
-    expect(screen.getByText('filesystem').closest('p')).toHaveTextContent('21 次 · 48%');
-    expect(screen.getByRole('table', { name: '最近轮次' })).toBeInTheDocument();
   });
 
   it('searches employees and navigates rows to representative agent details', async () => {
@@ -62,6 +54,37 @@ describe('ActivityPage static prototype', () => {
     expect(screen.getByText('暂无用量数据')).toBeInTheDocument();
   });
 
+  it('switches to a static conversation and returns to the data view', async () => {
+    const user = userEvent.setup();
+    render(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: '对话分析' }));
+    expect(screen.getByRole('region', { name: 'Agent动态对话' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '询问 Agent动态' })).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: '员工用量' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '哪位员工的 Token 用量最高？' }));
+    expect(screen.getByText(/Token 用量最高的是林夏/)).toBeInTheDocument();
+    const evidence = screen.getByText('近 7 天 · 员工用量汇总');
+    expect(evidence).toHaveProperty('tagName', 'SPAN');
+    expect(evidence.closest('a, button')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '返回数据视图' }));
+    expect(screen.getByRole('table', { name: '员工用量' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Agent动态对话' })).not.toBeInTheDocument();
+  });
+
+  it('keeps conversations in the administrator data scope', async () => {
+    const user = userEvent.setup();
+    render(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: '对话分析' }));
+    expect(screen.getByRole('button', { name: '哪位员工的 Token 用量最高？' })).toBeInTheDocument();
+    expect(screen.queryByText('员工视图')).not.toBeInTheDocument();
+    expect(screen.getByText('管理员视图')).toBeInTheDocument();
+    expect(screen.getByText(/组织活动数据已准备好/)).toBeInTheDocument();
+  });
+
   it('changes totals and trend granularity coherently across time ranges', () => {
     const onNavigate = vi.fn();
     const { rerender } = render(
@@ -77,37 +100,6 @@ describe('ActivityPage static prototype', () => {
     expect(screen.getByLabelText('Token 趋势')).toHaveAttribute('data-granularity', '周');
     expect(screen.getByText('第 1 周')).toBeInTheDocument();
     expect(screen.queryByText('00:00')).not.toBeInTheDocument();
-  });
-
-  it('changes employee distributions and recent rows with the selected range', async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(
-      <ActivityPage route={{ view: 'activity', range: 'today' }} onNavigate={vi.fn()} />
-    );
-    await user.click(screen.getByRole('button', { name: '员工视图' }));
-    expect(screen.getByText('快速资料核验')).toBeInTheDocument();
-    expect(screen.getByText('gpt-5.3-codex 74%')).toBeInTheDocument();
-    expect(screen.getByText('资料检索').closest('p')).toHaveTextContent('4 次 · 50%');
-
-    rerender(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={vi.fn()} />);
-    expect(screen.getByText('汇总竞品发布动态')).toBeInTheDocument();
-    expect(screen.getByText('gpt-5.3-codex 62%')).toBeInTheDocument();
-    expect(screen.getByText('代码审查', { selector: '.activity-distribution--usage span' }).closest('p')).toHaveTextContent('12 次 · 40%');
-    expect(screen.queryByText('快速资料核验')).not.toBeInTheDocument();
-  });
-
-  it('maps each recent turn to its own route-specific Agent detail', async () => {
-    const onNavigate = vi.fn();
-    const user = userEvent.setup();
-    render(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={onNavigate} />);
-    await user.click(screen.getByRole('button', { name: '员工视图' }));
-    await user.click(screen.getByRole('button', { name: '查看代码审查详情' }));
-    expect(onNavigate).toHaveBeenCalledWith({
-      view: 'activity-agent',
-      collectorId: 'collector-shanghai',
-      agentId: 'agent-code-review',
-      range: '7d'
-    });
   });
 
   it('shows detail activity while exposing only sanitized tool metadata', () => {
@@ -139,7 +131,7 @@ describe('ActivityPage static prototype', () => {
   it('shows a recoverable empty state for an unknown agent route', () => {
     render(<ActivityPage route={{ view: 'activity-agent', collectorId: 'unknown', agentId: 'missing', range: '7d' }} onNavigate={vi.fn()} />);
     expect(screen.getByRole('heading', { name: '未找到 Agent' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '返回 Agent 活动' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '返回 Agent动态' })).toBeInTheDocument();
     expect(screen.getByText('静态示例数据，非实时遥测')).toBeInTheDocument();
   });
 });

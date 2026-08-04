@@ -11,7 +11,10 @@ import {
   FolderMinus,
   FolderPlus,
   FolderOpen,
+  HardDrive,
   LibraryBig,
+  Link2,
+  LayoutDashboard,
   LoaderCircle,
   MoreHorizontal,
   PanelLeftClose,
@@ -79,6 +82,7 @@ export function ClaweeSidebar(props: {
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const collapsed = props.collapsed === true;
   const autoCollapsed = props.autoCollapsed === true;
+  const logoColor = props.colorMode === 'light' ? 'black' : 'white';
   const account = props.enterpriseSession?.account;
   const accountTitle = account?.name ?? '企业账户';
   const accountLabel = account === undefined
@@ -91,12 +95,14 @@ export function ClaweeSidebar(props: {
     view?: ActiveView;
     onClick(): void;
   }> = [
-    { label: '新对话', icon: SquarePen, onClick: () => props.onNewConversation() },
-    { label: 'Agent 活动', icon: Activity, view: 'activity', onClick: () => props.onOpenView('activity') },
-    { label: '搜索', icon: Search, view: 'search', onClick: () => props.onOpenView('search') },
-    { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') },
-    { label: '插件', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') },
-    { label: '知识库', icon: LibraryBig, view: 'knowledge', onClick: () => props.onOpenView('knowledge') }
+    { label: '新建任务', icon: SquarePen, onClick: () => props.onNewConversation() },
+    { label: '数据看板', icon: LayoutDashboard, view: 'dashboard', onClick: () => props.onOpenView('dashboard') },
+    { label: 'Agent动态', icon: Activity, view: 'activity', onClick: () => props.onOpenView('activity') },
+    { label: '企业Skill中心', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') },
+    { label: '系统连接', icon: Link2, view: 'connections', onClick: () => props.onOpenView('connections') },
+    { label: '企业知识库', icon: LibraryBig, view: 'knowledge', onClick: () => props.onOpenView('knowledge') },
+    { label: '共享网盘', icon: HardDrive, view: 'drive', onClick: () => props.onOpenView('drive') },
+    { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') }
   ];
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
   const selectedTaskThread = props.tasks.some(
@@ -143,27 +149,51 @@ export function ClaweeSidebar(props: {
             title={autoCollapsed ? '窗口较窄，关闭文件工作区后可展开侧栏' : '展开侧栏'}
             onClick={autoCollapsed ? undefined : props.onToggleCollapsed}
           >
-            <img
-              className="sidebar-logo-image sidebar-logo-mark"
-              src={props.colorMode === 'light' ? '/logo-v2-black-logo.svg' : '/logo-v2-white-logo.svg'}
-              alt="Clawee"
-            />
+            <span className="sidebar-logo-mark">
+              <img
+                className="sidebar-logo-image"
+                src={`/krillinai-mark-${logoColor}.png`}
+                alt="KrillinAI"
+              />
+            </span>
             <PanelLeftOpen className="sidebar-expand-icon" size={19} strokeWidth={1.85} aria-hidden="true" />
           </button>
         ) : (
           <>
             <div className="sidebar-logo-lockup">
-              <span className="sidebar-logo-word">Clawee</span>
+              <span className="sidebar-brand-lockup-logo">
+                <img
+                  className="sidebar-logo-image"
+                  src={`/krillinai-wordmark-${logoColor}.png`}
+                  alt="KrillinAI"
+                />
+              </span>
+              <span className="sidebar-brand-product">
+                <span className="sidebar-logo-word">Clawee</span>
+                <span className="sidebar-brand-version">v0.1.0</span>
+              </span>
             </div>
-            <button
-              className="sidebar-collapse-button"
-              type="button"
-              aria-label="收起侧栏"
-              title="收起侧栏"
-              onClick={props.onToggleCollapsed}
-            >
-              <PanelLeftClose size={18} strokeWidth={1.85} aria-hidden="true" />
-            </button>
+            <div className="sidebar-brand-actions">
+              <button
+                className="sidebar-collapse-button sidebar-search-button"
+                type="button"
+                aria-label="搜索"
+                title="搜索"
+                aria-current={props.activeView === 'search' ? 'page' : undefined}
+                onClick={() => props.onOpenView('search')}
+              >
+                <Search size={18} strokeWidth={1.85} aria-hidden="true" />
+              </button>
+              <button
+                className="sidebar-collapse-button"
+                type="button"
+                aria-label="收起侧栏"
+                title="收起侧栏"
+                onClick={props.onToggleCollapsed}
+              >
+                <PanelLeftClose size={18} strokeWidth={1.85} aria-hidden="true" />
+              </button>
+            </div>
           </>
         )}
       </div>

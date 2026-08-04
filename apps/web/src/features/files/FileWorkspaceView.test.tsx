@@ -25,6 +25,39 @@ describe('FileWorkspaceView', () => {
     expect(screen.getByText('请选择或创建一个会话后查看文件')).toBeInTheDocument();
   });
 
+  it('切换线程后上报根目录是否包含内容', async () => {
+    const firstThread = createThread({ id: 'thread-with-files' });
+    const emptyThread = createThread({ id: 'thread-empty' });
+    const onWorkspaceAvailabilityChange = vi.fn();
+    const service = createService();
+    service.listDirectory.mockImplementation(async (threadId: string) => createDirectory({
+      threadId,
+      nodes: threadId === firstThread.id ? [fileNode('README.md', 'markdown')] : []
+    }));
+
+    const view = render(
+      <FileWorkspaceView
+        selectedThread={firstThread}
+        workspaceFileService={service}
+        onWorkspaceAvailabilityChange={onWorkspaceAvailabilityChange}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(onWorkspaceAvailabilityChange).toHaveBeenCalledWith(firstThread.id, true));
+
+    view.rerender(
+      <FileWorkspaceView
+        selectedThread={emptyThread}
+        workspaceFileService={service}
+        onWorkspaceAvailabilityChange={onWorkspaceAvailabilityChange}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(onWorkspaceAvailabilityChange).toHaveBeenCalledWith(emptyThread.id, false));
+  });
+
   it('加载根目录后自动打开 suggestedOpenPath，并记录最近打开文件', async () => {
     const thread = createThread();
     const service = createService({
@@ -426,15 +459,18 @@ describe('FileWorkspaceView', () => {
     const pathNav = within(toolbar).getByLabelText('文件路径');
     expect(pathNav).toHaveTextContent('repo/scripts/notes.md');
     expect(within(pathNav).queryByRole('button', { name: '复制路径' })).not.toBeInTheDocument();
+    const pathGroup = toolbar.querySelector('.file-top-bar-path-group');
+    if (!(pathGroup instanceof HTMLElement)) throw new Error('Expected file toolbar path group');
+    expect(within(pathGroup).getByRole('button', { name: '打开文件' })).toBeEnabled();
     expect(within(controlRow).getByRole('button', { name: '预览' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(controlRow).getByRole('button', { name: '编辑' })).toHaveAttribute('aria-pressed', 'false');
     expect(within(controlRow).getByRole('button', { name: '保存' })).toBeDisabled();
-    expect(within(controlRow).getByRole('button', { name: '打开文件' })).toBeEnabled();
     expect(within(controlRow).getByRole('button', { name: '展开目录树' })).toBeEnabled();
 
     const actions = toolbar.querySelector('.file-top-bar-actions');
     if (!(actions instanceof HTMLElement)) throw new Error('Expected file toolbar actions');
     expect(within(actions).queryByRole('button', { name: '复制路径' })).not.toBeInTheDocument();
+    expect(within(actions).queryByRole('button', { name: '打开文件' })).not.toBeInTheDocument();
     expect(within(actions).queryByRole('button', { name: '关闭文件工作区' })).not.toBeInTheDocument();
 
     const modeButtons = within(toolbar).getAllByRole('button')

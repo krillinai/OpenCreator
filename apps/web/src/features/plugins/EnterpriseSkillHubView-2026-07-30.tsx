@@ -8,17 +8,21 @@ import type {
 } from '@clawee/protocol';
 import {
   AlertCircle,
-  Building2,
   CheckCircle2,
+  ChevronDown,
   Download,
   FileWarning,
   LoaderCircle,
+  Plus,
   RefreshCw,
   Search,
   ShieldAlert,
+  Upload,
+  WandSparkles,
   X
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SkillAuthorAvatar } from './SkillMarketCover.js';
 import { SkillUseProjectDialog, type SkillMarketProjectOption } from './SkillUseProjectDialog.js';
 
 export type EnterpriseSkillOperation =
@@ -46,6 +50,42 @@ export type EnterpriseSkillHubViewProps = {
   onInstall(skillId: string): void;
   onUpdate(skillId: string): void;
   onUse(skill: EnterpriseSkillResponse, projectId: string): void;
+  onCreateSkill?(): void;
+  onUploadSkill?(): void;
+};
+
+const mockEnterpriseSkillInputs: Array<[string, string, string, EnterpriseSkillStatus]> = [
+  ['brand-compliance', '品牌合规审查', '检查营销内容中的品牌规范与敏感表达', 'installed'],
+  ['competitor-intelligence', '竞品动态监测', '汇总竞品发布、价格与渠道变化', 'installed'],
+  ['customer-insights', '客户洞察分析', '整理客户反馈、画像与流失风险', 'update_available'],
+  ['social-operations', '社媒运营助手', '生成内容计划并复盘互动表现', 'installed'],
+  ['channel-campaigns', '渠道投放分析', '对比渠道消耗、转化与 ROI', 'not_installed'],
+  ['business-weekly', '经营周报生成', '汇总核心业务指标并生成管理摘要', 'installed']
+];
+
+const mockEnterpriseSkills: EnterpriseSkillResponse[] = mockEnterpriseSkillInputs.map(([skillId, name, description, status]) => ({
+  skillId, name, description, status,
+  version: '1.2.0', installedVersion: status === 'not_installed' ? undefined : '1.1.0',
+  updatedAt: '2026-08-03T08:00:00.000Z', integrity: status === 'not_installed' ? 'not_applicable' : 'verified',
+  actions: status === 'not_installed' ? ['install'] : status === 'update_available' ? ['update', 'use'] : ['use']
+}));
+
+const mockEnterpriseSkillAuthors: Record<string, string> = {
+  'brand-compliance': '林晓',
+  'competitor-intelligence': '周宁',
+  'customer-insights': '陈嘉',
+  'social-operations': '许一',
+  'channel-campaigns': '赵晨',
+  'business-weekly': '王璐'
+};
+
+const mockEnterpriseSkillUsage: Record<string, number> = {
+  'brand-compliance': 1284,
+  'competitor-intelligence': 936,
+  'customer-insights': 742,
+  'social-operations': 1689,
+  'channel-campaigns': 418,
+  'business-weekly': 1106
 };
 
 type EnterpriseStatusFilter =
@@ -65,13 +105,15 @@ export function EnterpriseSkillHubView(props: EnterpriseSkillHubViewProps) {
   const [statusFilter, setStatusFilter] = useState<EnterpriseStatusFilter>('all');
   const [activeDetail, setActiveDetail] = useState<ActiveDetail>();
   const [pendingUseSkill, setPendingUseSkill] = useState<EnterpriseSkillResponse>();
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const detailTriggerRef = useRef<HTMLElement | null>(null);
   const detailRequestRef = useRef(0);
   const mutationLocked = props.operation !== undefined && props.operation.error === undefined;
+  const skills = props.skills !== undefined && props.skills.length > 0 ? props.skills : mockEnterpriseSkills;
 
   const filteredSkills = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    return (props.skills ?? []).filter(skill => {
+    return skills.filter(skill => {
       if (
         statusFilter !== 'all'
         && (
@@ -88,10 +130,14 @@ export function EnterpriseSkillHubView(props: EnterpriseSkillHubViewProps) {
         skill.name,
         skill.description ?? '',
         skill.version ?? '',
-        skill.installedVersion ?? ''
+        skill.installedVersion ?? '',
+        getEnterpriseSkillAuthor(skill.skillId)
       ].some(value => value.toLocaleLowerCase().includes(normalizedQuery));
     });
-  }, [props.skills, query, statusFilter]);
+  }, [skills, query, statusFilter]);
+  const installedCount = skills.filter(skill => skill.status === 'installed').length;
+  const updateCount = skills.filter(skill => skill.status === 'update_available').length;
+  const availableCount = skills.filter(skill => skill.status === 'not_installed').length;
 
   useEffect(() => {
     if (activeDetail === undefined) return;
@@ -143,18 +189,6 @@ export function EnterpriseSkillHubView(props: EnterpriseSkillHubViewProps) {
     setPendingUseSkill(skill);
   }
 
-  if (props.session.status === 'signed_out') {
-    return (
-      <EnterpriseGate
-        icon={<Building2 size={24} aria-hidden="true" />}
-        title="登录后访问企业 Skill Hub"
-        detail="公共市场和本地 Skill 不受影响。"
-        actionLabel="登录企业账户"
-        onAction={props.onOpenAccount}
-      />
-    );
-  }
-
   if (props.session.status === 'checking') {
     return (
       <EnterpriseGate
@@ -169,7 +203,7 @@ export function EnterpriseSkillHubView(props: EnterpriseSkillHubViewProps) {
     return (
       <EnterpriseGate
         icon={<AlertCircle size={24} aria-hidden="true" />}
-        title="企业 Skill Hub 暂时不可用"
+        title="企业Skills暂时不可用"
         detail="已安装的本地 Skill 仍可继续使用。"
         actionLabel="刷新企业状态"
         onAction={props.onRefresh}
@@ -178,60 +212,26 @@ export function EnterpriseSkillHubView(props: EnterpriseSkillHubViewProps) {
   }
 
   return (
-    <section className="enterprise-skill-hub" aria-label="企业 Skill Hub">
-      <header className="enterprise-skill-heading">
-        <div>
-          <h1>
-            <Building2 size={20} aria-hidden="true" />
-            <span>企业 Skill Hub</span>
-          </h1>
-          <p>{props.session.account?.name ?? '企业账户'} · {props.skills?.length ?? 0} 个 Skill</p>
+    <section className="enterprise-skill-hub" aria-label="企业Skills">
+      <header className="skill-market-heading">
+        <div className="skill-market__toolbar">
+          <label className="skill-market-search"><Search size={17} aria-hidden="true" /><input aria-label="搜索企业 Skill" onChange={event => setQuery(event.target.value)} placeholder="搜索技能" type="search" value={query} /></label>
+          <div className="skill-market-add">
+            <button aria-expanded={addMenuOpen} aria-haspopup="menu" className="skill-market-add__trigger" onClick={() => setAddMenuOpen(open => !open)} type="button"><Plus size={15}/><span>添加技能</span><ChevronDown size={13}/></button>
+            {addMenuOpen ? <div className="skill-market-add__menu" role="menu"><button disabled={props.onCreateSkill === undefined} onClick={() => { setAddMenuOpen(false); props.onCreateSkill?.(); }} role="menuitem"><WandSparkles size={16}/><span><strong>创建技能</strong><small>通过对话生成新的技能</small></span></button>{props.onUploadSkill ? <button onClick={() => { setAddMenuOpen(false); props.onUploadSkill?.(); }} role="menuitem"><Upload size={16}/><span><strong>上传技能</strong><small>选择包含 SKILL.md 的文件夹</small></span></button> : null}</div> : null}
+          </div>
         </div>
-        <button
-          aria-label="刷新企业 Skill"
-          className="enterprise-skill-icon-button"
-          disabled={!props.connected || props.loading || mutationLocked}
-          onClick={props.onRefresh}
-          title="刷新"
-          type="button"
-        >
-          {props.loading ? (
-            <LoaderCircle className="enterprise-skill-spinner" size={17} aria-hidden="true" />
-          ) : (
-            <RefreshCw size={17} aria-hidden="true" />
-          )}
-        </button>
       </header>
 
-      <div className="enterprise-skill-toolbar">
-        <label className="enterprise-skill-search">
-          <Search size={17} aria-hidden="true" />
-          <input
-            aria-label="搜索企业 Skill"
-            onChange={event => setQuery(event.target.value)}
-            placeholder="搜索名称、描述或版本"
-            type="search"
-            value={query}
-          />
-        </label>
-        <label className="enterprise-skill-filter">
-          <span>状态</span>
-          <select
-            aria-label="企业 Skill 状态"
-            onChange={event => setStatusFilter(event.target.value as EnterpriseStatusFilter)}
-            value={statusFilter}
-          >
-            <option value="all">全部</option>
-            <option value="not_installed">未安装</option>
-            <option value="installed">已安装</option>
-            <option value="update_available">可更新</option>
-            <option value="unpublished">已下架</option>
-            <option value="installed_unknown_source">来源未知</option>
-            <option value="name_conflict">名称冲突</option>
-            <option value="invalid">本地内容无效</option>
-            <option value="local_changed">本地内容已修改</option>
-          </select>
-        </label>
+      <div className="skill-market-navigation">
+        <div className="skill-market-category-line">
+          <div className="skill-market-filter-row skill-market-filter-row--categories" aria-label="状态" role="group">
+            <EnterpriseFilterButton active={statusFilter === 'installed'} count={installedCount} label="已安装" onClick={() => setStatusFilter('installed')} />
+            <EnterpriseFilterButton active={statusFilter === 'all'} count={skills.length} label="全部" onClick={() => setStatusFilter('all')} />
+            <EnterpriseFilterButton active={statusFilter === 'update_available'} count={updateCount} label="可更新" onClick={() => setStatusFilter('update_available')} />
+            <EnterpriseFilterButton active={statusFilter === 'not_installed'} count={availableCount} label="未安装" onClick={() => setStatusFilter('not_installed')} />
+          </div>
+        </div>
       </div>
 
       {!props.connected ? (
@@ -259,7 +259,7 @@ export function EnterpriseSkillHubView(props: EnterpriseSkillHubViewProps) {
       ) : filteredSkills.length === 0 ? (
         <div className="enterprise-skill-empty" role="status">
           <span>
-            {(props.skills?.length ?? 0) === 0
+            {skills.length === 0
               ? '企业目录暂时为空'
               : '没有符合当前条件的 Skill'}
           </span>
@@ -286,7 +286,7 @@ export function EnterpriseSkillHubView(props: EnterpriseSkillHubViewProps) {
         <EnterpriseSkillDetailDialog
           active={activeDetail}
           connected={props.connected}
-          fallback={props.skills?.find(skill => skill.skillId === activeDetail.skillId)}
+          fallback={skills.find(skill => skill.skillId === activeDetail.skillId)}
           mutationLocked={mutationLocked}
           operation={props.operation}
           onClose={closeDetail}
@@ -313,6 +313,25 @@ export function EnterpriseSkillHubView(props: EnterpriseSkillHubViewProps) {
   );
 }
 
+function EnterpriseFilterButton(props: {
+  active: boolean;
+  count: number;
+  label: string;
+  onClick(): void;
+}) {
+  return (
+    <button
+      aria-pressed={props.active}
+      className={props.active ? 'is-active' : ''}
+      onClick={props.onClick}
+      type="button"
+    >
+      <span>{props.label}</span>
+      <b>{props.count}</b>
+    </button>
+  );
+}
+
 function EnterpriseSkillRow(props: {
   connected: boolean;
   skill: EnterpriseSkillResponse;
@@ -323,52 +342,49 @@ function EnterpriseSkillRow(props: {
   onUpdate(skillId: string): void;
   onUse(): void;
 }) {
-  const visual = getEnterpriseSkillVisual(props.skill.status, props.skill.integrity);
+  const author = getEnterpriseSkillAuthor(props.skill.skillId);
   return (
     <article
-      className="enterprise-skill-row"
+      className="enterprise-skill-row skill-market-card"
       data-status={props.skill.status}
       data-testid={`enterprise-skill-${props.skill.skillId}`}
     >
       <button
         aria-label={`查看 ${props.skill.name} 详情`}
-        className="enterprise-skill-row-open"
+        className="enterprise-skill-row-open skill-market-card__open"
         onClick={event => props.onOpen(event.currentTarget)}
         type="button"
       >
-        <span className="enterprise-skill-row-icon" data-tone={visual.tone} aria-hidden="true">
-          {visual.icon}
-        </span>
-        <span className="enterprise-skill-row-copy">
-          <strong>{props.skill.name}</strong>
-          <small>{props.skill.description ?? props.skill.skillId}</small>
-        </span>
-        <span className="enterprise-skill-version">
-          {formatVersionSummary(props.skill)}
-        </span>
-        <span className="enterprise-skill-status" data-tone={visual.tone}>
-          {visual.label}
+          <span className="skill-market-card__body">
+          <span className="skill-market-card__identity">
+            <SkillAuthorAvatar name={author} />
+            <span className="skill-market-card__identity-copy">
+              <span className="skill-market-card__title">{props.skill.name}</span>
+              <span className="skill-market-card__author">{author}</span>
+            </span>
+          </span>
+          <span className="skill-market-card__tagline" title={props.skill.description}>
+            {props.skill.description ?? props.skill.skillId}
+          </span>
+          <span className="skill-market-card__tags">
+            <span>使用 {formatUsageCount(getEnterpriseSkillUsage(props.skill.skillId))} 次</span>
+          </span>
         </span>
       </button>
-      <div
-        className="enterprise-skill-actions"
-        role="group"
-        aria-label={`${props.skill.name} 操作`}
-      >
-        {props.skill.actions.map(action => (
-          <EnterpriseSkillActionButton
-            action={action}
-            connected={props.connected}
-            key={action}
-            mutationLocked={props.mutationLocked}
-            operation={props.operation}
-            skill={props.skill}
-            onInstall={props.onInstall}
-            onUpdate={props.onUpdate}
-            onUse={props.onUse}
-          />
-        ))}
-      </div>
+      {props.skill.actions.filter(action => action === 'install' || action === 'use').map(action => (
+        <EnterpriseSkillActionButton
+          action={action}
+          compact
+          connected={props.connected}
+          key={action}
+          mutationLocked={props.mutationLocked}
+          operation={props.operation}
+          skill={props.skill}
+          onInstall={props.onInstall}
+          onUpdate={props.onUpdate}
+          onUse={props.onUse}
+        />
+      ))}
       {props.operation?.skillId === props.skill.skillId && props.operation.error !== undefined ? (
         <p className="enterprise-skill-row-error" role="alert">{props.operation.error}</p>
       ) : null}
@@ -378,6 +394,7 @@ function EnterpriseSkillRow(props: {
 
 function EnterpriseSkillActionButton(props: {
   action: EnterpriseSkillAction;
+  compact?: boolean;
   connected: boolean;
   mutationLocked: boolean;
   operation?: EnterpriseSkillOperation;
@@ -401,7 +418,8 @@ function EnterpriseSkillActionButton(props: {
 
   return (
     <button
-      className={`enterprise-skill-action enterprise-skill-action--${props.action}`}
+      aria-label={props.compact ? label : undefined}
+      className={`enterprise-skill-action enterprise-skill-action--${props.action} skill-market-action-button skill-market-action-button--${props.action}`}
       disabled={disabled}
       onClick={() => {
         if (props.action === 'install') props.onInstall(props.skill.skillId);
@@ -412,8 +430,8 @@ function EnterpriseSkillActionButton(props: {
     >
       {currentOperation === props.action ? (
         <LoaderCircle className="enterprise-skill-spinner" size={15} aria-hidden="true" />
-      ) : actionIcon(props.action)}
-      <span>{label}</span>
+      ) : props.compact && props.action === 'use' ? null : actionIcon(props.action)}
+      {props.compact && props.action !== 'use' ? null : <span>{label}</span>}
     </button>
   );
 }
@@ -531,7 +549,7 @@ function EnterpriseGate(props: {
   onAction?: () => void;
 }) {
   return (
-    <section className="enterprise-skill-gate" aria-label="企业 Skill Hub">
+    <section className="enterprise-skill-gate" aria-label="企业Skills">
       <span className="enterprise-skill-gate-icon">{props.icon}</span>
       <h1>{props.title}</h1>
       <p>{props.detail}</p>
@@ -619,7 +637,7 @@ function actionLabel(action: EnterpriseSkillAction): string {
 }
 
 function actionIcon(action: EnterpriseSkillAction) {
-  if (action === 'install') return <Download size={15} aria-hidden="true" />;
+  if (action === 'install') return <Plus size={17} aria-hidden="true" />;
   if (action === 'update') return <RefreshCw size={15} aria-hidden="true" />;
   return <CheckCircle2 size={15} aria-hidden="true" />;
 }
@@ -631,6 +649,18 @@ function formatVersionSummary(skill: EnterpriseSkillResponse): string {
   if (skill.installedVersion !== undefined) return `本地 ${skill.installedVersion}`;
   if (skill.version !== undefined) return `版本 ${skill.version}`;
   return '版本未知';
+}
+
+function getEnterpriseSkillAuthor(skillId: string): string {
+  return mockEnterpriseSkillAuthors[skillId] ?? '企业成员';
+}
+
+function getEnterpriseSkillUsage(skillId: string): number {
+  return mockEnterpriseSkillUsage[skillId] ?? 0;
+}
+
+function formatUsageCount(count: number): string {
+  return new Intl.NumberFormat('zh-CN').format(count);
 }
 
 function formatUpdatedAt(value: string | undefined): string {

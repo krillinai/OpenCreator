@@ -32,14 +32,18 @@ describe('EnterpriseSkillHubView', () => {
       ]
     });
 
-    expectRow('not-installed', '未安装', ['安装']);
-    expectRow('invalid', '本地内容无效', []);
-    expectRow('unknown-source', '来源未知', ['使用']);
-    expectRow('name-conflict', '名称冲突', []);
-    expectRow('installed', '已安装', ['使用']);
-    expectRow('update-ready', '可更新', ['更新', '使用']);
-    expectRow('unpublished', '已下架', ['使用']);
-    expectRow('local-changed', '本地内容已修改', ['使用']);
+    expectRow('not-installed', ['安装']);
+    expectRow('invalid', []);
+    expectRow('unknown-source', ['使用']);
+    expectRow('name-conflict', []);
+    expectRow('installed', ['使用']);
+    expectRow('update-ready', ['使用']);
+    expectRow('unpublished', ['使用']);
+    expectRow('local-changed', ['使用']);
+    const installed = screen.getByTestId('enterprise-skill-installed');
+    const useButton = within(installed).getByRole('button', { name: '使用' });
+    expect(useButton).toHaveTextContent('使用');
+    expect(useButton.querySelector('svg')).not.toBeInTheDocument();
   });
 
   it('loads detail on demand and restores trigger focus', async () => {
@@ -67,7 +71,7 @@ describe('EnterpriseSkillHubView', () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it('gates signed-out, checking, and unavailable sessions without hiding refresh actions', () => {
+  it('shows mock enterprise skills without a redundant login gate', () => {
     const view = renderHub({
       session: {
         status: 'signed_out',
@@ -75,7 +79,14 @@ describe('EnterpriseSkillHubView', () => {
       }
     });
 
-    expect(screen.getByRole('button', { name: '登录企业账户' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '登录企业账户' })).not.toBeInTheDocument();
+    expect(screen.getByText('品牌合规审查')).toBeInTheDocument();
+    expect(screen.getByLabelText('林晓')).toHaveClass('skill-market-avatar');
+    expect(screen.getByText('林晓')).toBeInTheDocument();
+    expect(screen.getByText('使用 1,284 次')).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: '搜索企业 Skill' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '添加技能' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '刷新企业 Skill' })).not.toBeInTheDocument();
 
     view.rerender(createHub({
       session: {
@@ -92,19 +103,30 @@ describe('EnterpriseSkillHubView', () => {
         transportSecurity: 'secure_https'
       }
     }));
-    expect(screen.getByText('企业 Skill Hub 暂时不可用')).toBeInTheDocument();
+    expect(screen.getByText('企业Skills暂时不可用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '刷新企业状态' })).toBeInTheDocument();
+  });
+
+  it('shows an employee avatar without a redundant uploader line', () => {
+    renderHub({
+      skills: [createSkill('employee-upload', 'installed', 'verified', ['use'])]
+    });
+
+    const row = screen.getByTestId('enterprise-skill-employee-upload');
+    expect(within(row).getByLabelText('企业成员')).toHaveClass(
+      'skill-market-avatar',
+      'skill-market-avatar--small'
+    );
+    expect(within(row).getByText('企业成员')).toHaveClass('skill-market-card__author');
   });
 });
 
-function expectRow(skillId: string, statusLabel: string, actions: string[]) {
+function expectRow(skillId: string, actions: string[]) {
   const row = screen.getByTestId(`enterprise-skill-${skillId}`);
-  expect(within(row).getByText(statusLabel)).toBeInTheDocument();
-  const actionGroup = within(row).getByRole('group', {
-    name: `${skillId} 操作`
-  });
   expect(
-    within(actionGroup).queryAllByRole('button').map(button => button.textContent)
+    within(row).queryAllByRole('button')
+      .filter(button => button.classList.contains('enterprise-skill-action'))
+      .map(button => button.getAttribute('aria-label') ?? button.textContent)
   ).toEqual(actions);
 }
 

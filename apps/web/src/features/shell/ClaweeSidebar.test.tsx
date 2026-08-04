@@ -65,19 +65,34 @@ describe('ClaweeSidebar', () => {
   it('renders global actions, projects with nested conversations, and the settings footer action', () => {
     renderSidebar();
 
+    expect(screen.getByRole('img', { name: 'KrillinAI' })).toHaveAttribute(
+      'src',
+      '/krillinai-wordmark-white.png'
+    );
     expect(screen.getByText('Clawee')).toHaveClass('sidebar-logo-word');
+    expect(screen.getByText('v0.1.0')).toHaveClass('sidebar-brand-version');
+    expect(screen.queryByText('Coca-Cola')).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '新对话' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Agent 活动' })).toBeInTheDocument();
-    const primaryActions = screen.getByRole('button', { name: '新对话' }).parentElement;
-    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: 'Agent 活动' }));
-    expect(screen.getByRole('button', { name: '搜索' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新建任务' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '数据看板' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Agent动态' })).toBeInTheDocument();
+    const primaryActions = screen.getByRole('button', { name: '新建任务' }).parentElement;
+    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: '数据看板' }));
+    expect(primaryActions?.children[2]).toBe(screen.getByRole('button', { name: 'Agent动态' }));
+    const searchButton = screen.getByRole('button', { name: '搜索' });
+    expect(searchButton.nextElementSibling).toBe(screen.getByRole('button', { name: '收起侧栏' }));
+    expect(primaryActions).not.toContainElement(searchButton);
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '知识库' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '插件' }).nextElementSibling).toBe(screen.getByRole('button', { name: '知识库' }));
+    expect(screen.getByRole('button', { name: '企业Skill中心' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '系统连接' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '企业知识库' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '共享网盘' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '企业Skill中心' }).nextElementSibling).toBe(screen.getByRole('button', { name: '系统连接' }));
+    expect(screen.getByRole('button', { name: '系统连接' }).nextElementSibling).toBe(screen.getByRole('button', { name: '企业知识库' }));
+    expect(screen.getByRole('button', { name: '企业知识库' }).nextElementSibling).toBe(screen.getByRole('button', { name: '共享网盘' }));
+    expect(screen.getByRole('button', { name: '共享网盘' }).nextElementSibling).toBe(screen.getByRole('button', { name: '定时任务' }));
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
@@ -91,15 +106,26 @@ describe('ClaweeSidebar', () => {
     expect(screen.queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
   });
 
+  it('opens the dashboard and exposes selected and collapsed states', async () => {
+    const onOpenView = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = renderSidebar({ onOpenView });
+    await user.click(screen.getByRole('button', { name: '数据看板' }));
+    expect(onOpenView).toHaveBeenCalledWith('dashboard');
+    rerender(<ClaweeSidebar projects={projects} conversations={conversations} tasks={[]} activeView="dashboard" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '数据看板' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '数据看板' })).toHaveAttribute('title', '数据看板');
+  });
+
   it('opens the knowledge base and exposes selected and collapsed states', async () => {
     const onOpenView = vi.fn();
     const user = userEvent.setup();
     const { rerender } = renderSidebar({ onOpenView });
-    await user.click(screen.getByRole('button', { name: '知识库' }));
+    await user.click(screen.getByRole('button', { name: '企业知识库' }));
     expect(onOpenView).toHaveBeenCalledWith('knowledge');
     rerender(<ClaweeSidebar projects={projects} conversations={conversations} tasks={[]} activeView="knowledge" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '知识库' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: '知识库' })).toHaveAttribute('title', '知识库');
+    expect(screen.getByRole('button', { name: '企业知识库' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '企业知识库' })).toHaveAttribute('title', '企业知识库');
   });
 
   it('opens Agent activity and exposes its selected and collapsed states', async () => {
@@ -107,7 +133,7 @@ describe('ClaweeSidebar', () => {
     const user = userEvent.setup();
     const { rerender } = renderSidebar({ onOpenView });
 
-    await user.click(screen.getByRole('button', { name: 'Agent 活动' }));
+    await user.click(screen.getByRole('button', { name: 'Agent动态' }));
     expect(onOpenView).toHaveBeenCalledWith('activity');
 
     rerender(
@@ -127,8 +153,8 @@ describe('ClaweeSidebar', () => {
         onToggleCollapsed={vi.fn()}
       />
     );
-    expect(screen.getByRole('button', { name: 'Agent 活动' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: 'Agent 活动' })).toHaveAttribute('title', 'Agent 活动');
+    expect(screen.getByRole('button', { name: 'Agent动态' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Agent动态' })).toHaveAttribute('title', 'Agent动态');
   });
 
   it('expands projects with conversations without selecting the project', async () => {
@@ -143,9 +169,11 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
   });
 
-  it('keeps the text-only wordmark in light mode', () => {
+  it('uses the black KrillinAI wordmark in light mode', () => {
     renderSidebar({ colorMode: 'light' });
 
+    expect(screen.getByRole('img', { name: 'KrillinAI' }))
+      .toHaveAttribute('src', '/krillinai-wordmark-black.png');
     expect(screen.getByText('Clawee')).toHaveClass('sidebar-logo-word');
     expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
   });
@@ -501,12 +529,12 @@ describe('ClaweeSidebar', () => {
 
     renderSidebar({ onNewConversation });
 
-    await user.click(screen.getByRole('button', { name: '新对话' }));
+    await user.click(screen.getByRole('button', { name: '新建任务' }));
 
     expect(onNewConversation).toHaveBeenCalledTimes(1);
   });
 
-  it('opens search from the primary action', async () => {
+  it('opens search from the header action', async () => {
     const user = userEvent.setup();
     const onOpenView = vi.fn();
 
@@ -515,6 +543,12 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: '搜索' }));
 
     expect(onOpenView).toHaveBeenCalledWith('search');
+  });
+
+  it('marks the header search action as selected', () => {
+    renderSidebar({ activeView: 'search' });
+
+    expect(screen.getByRole('button', { name: '搜索' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('does not expose the internal task center in primary navigation', () => {
@@ -545,7 +579,7 @@ describe('ClaweeSidebar', () => {
     });
 
     expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Clawee' })).toHaveAttribute('src', '/logo-v2-white-logo.svg');
+    expect(screen.getByRole('img', { name: 'KrillinAI' })).toHaveAttribute('src', '/krillinai-mark-white.png');
     expect(screen.queryByRole('button', { name: '收起侧栏' })).not.toBeInTheDocument();
     expect(screen.queryByText('项目')).not.toBeInTheDocument();
     expect(screen.queryByText('折叠时隐藏的任务')).not.toBeInTheDocument();

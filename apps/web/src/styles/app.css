@@ -2503,10 +2503,10 @@ select:focus-visible {
   grid-template-columns:
     minmax(
       420px,
-      min(var(--conversation-pane-width, 34%), calc(100% - 426px))
+      min(var(--conversation-pane-width, calc(60% - 6px)), calc(100% - 286px))
     )
     6px
-    minmax(420px, 1fr);
+    minmax(280px, 1fr);
   background: var(--bg);
 }
 
@@ -2854,6 +2854,7 @@ html.is-pane-resizing * {
 .file-top-bar-control-row,
 .file-top-bar-actions,
 .file-top-bar-title,
+.file-top-bar-path-group,
 .file-top-bar-path,
 .file-path-actions,
 .file-path-breadcrumbs {
@@ -2892,11 +2893,16 @@ html.is-pane-resizing * {
 }
 
 .file-top-bar-path {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   max-width: min(680px, 54vw);
   color: var(--muted);
   font-size: 12px;
   flex-wrap: nowrap;
+}
+
+.file-top-bar-path-group {
+  flex: 1 1 auto;
+  gap: 6px;
 }
 
 .file-top-bar-path span {
@@ -2913,6 +2919,13 @@ html.is-pane-resizing * {
 .file-toolbar-icon-button {
   width: 34px;
   height: 34px;
+}
+
+.file-top-bar-path-open-button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  color: var(--muted);
 }
 
 .file-top-save-button {
@@ -4315,17 +4328,29 @@ html.is-pane-resizing * {
   min-width: 0;
   min-height: 42px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   padding: 0 8px 0 6px;
 }
 
 .sidebar-logo-lockup {
+  flex: 1 1 auto;
   min-width: 0;
   height: 42px;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 2px;
+  padding-top: 10px;
+}
+
+.sidebar-brand-actions {
+  flex: 0 0 auto;
+  display: flex;
   align-items: center;
+  gap: 2px;
 }
 
 .sidebar-logo-image {
@@ -4333,16 +4358,50 @@ html.is-pane-resizing * {
   object-fit: contain;
 }
 
+.sidebar-brand-lockup-logo {
+  display: block;
+  width: 72px;
+  max-width: 100%;
+  height: 17px;
+}
+
+.sidebar-brand-lockup-logo .sidebar-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.sidebar-brand-product {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 12px;
+  white-space: nowrap;
+}
+
 .sidebar-logo-word {
-  color: var(--text);
-  font-size: 17px;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1;
+}
+
+.sidebar-brand-version {
+  color: color-mix(in srgb, var(--text) 32%, transparent);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .sidebar-logo-mark {
-  width: 16px;
-  height: 16px;
+  display: block;
+  width: 28px;
+  height: 28px;
+}
+
+.sidebar-logo-mark .sidebar-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .sidebar-collapse-button,
@@ -4374,6 +4433,11 @@ html.is-pane-resizing * {
 
 .sidebar-collapse-button:hover {
   border-color: transparent;
+}
+
+.sidebar-search-button[aria-current="page"] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .sidebar-brand-button {
@@ -4784,6 +4848,11 @@ html.is-pane-resizing * {
   padding: 0 6px;
   font-size: 12px;
   font-weight: 400;
+}
+
+.sidebar-primary .sidebar-row {
+  height: var(--control-compact-sm);
+  min-height: var(--control-compact-sm);
 }
 
 .project-row {

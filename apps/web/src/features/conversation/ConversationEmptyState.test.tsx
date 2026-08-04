@@ -19,9 +19,9 @@ describe('ConversationEmptyState', () => {
   });
 
   it.each([
-    [8, '上午好，朋友'],
-    [14, '下午好，朋友'],
-    [20, '晚上好，朋友']
+    [8, '上午好，小林'],
+    [14, '下午好，小林'],
+    [20, '晚上好，小林']
   ])('uses the local time period at %i:00', (hour, expected) => {
     render(<ConversationEmptyState now={new Date(2026, 6, 29, hour)} />);
 

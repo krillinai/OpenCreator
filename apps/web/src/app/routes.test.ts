@@ -24,8 +24,11 @@ describe('app routes', () => {
     expect(parseRoute('#/search')).toEqual({ view: 'search' });
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });
     expect(parseRoute('#/tasks')).toEqual({ view: 'tasks' });
+    expect(parseRoute('#/dashboard')).toEqual({ view: 'dashboard' });
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
+    expect(parseRoute('#/connections')).toEqual({ view: 'connections' });
     expect(parseRoute('#/knowledge')).toEqual({ view: 'knowledge' });
+    expect(parseRoute('#/drive')).toEqual({ view: 'drive' });
     expect(parseRoute('#/account')).toEqual({ view: 'account' });
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
@@ -59,6 +62,12 @@ describe('app routes', () => {
     expect(parseRoute(formatRoute(route))).toEqual(route);
   });
 
+  it('round-trips the public plugin source', () => {
+    const route = { view: 'plugins' as const, source: 'public' as const };
+    expect(formatRoute(route)).toBe('#/plugins?source=public');
+    expect(parseRoute(formatRoute(route))).toEqual(route);
+  });
+
   it('falls back to the public market for unsupported plugin sources', () => {
     expect(parseRoute('#/plugins?source=private')).toEqual({ view: 'plugins' });
     expect(parseRoute('#/plugins?source=%E0%A4%A')).toEqual({ view: 'plugins' });
@@ -80,8 +89,11 @@ describe('app routes', () => {
     expect(formatRoute({ view: 'search' })).toBe('#/search');
     expect(formatRoute({ view: 'schedules' })).toBe('#/schedules');
     expect(formatRoute({ view: 'tasks' })).toBe('#/tasks');
+    expect(formatRoute({ view: 'dashboard' })).toBe('#/dashboard');
     expect(formatRoute({ view: 'plugins' })).toBe('#/plugins');
+    expect(formatRoute({ view: 'connections' })).toBe('#/connections');
     expect(formatRoute({ view: 'knowledge' })).toBe('#/knowledge');
+    expect(formatRoute({ view: 'drive' })).toBe('#/drive');
     expect(formatRoute({ view: 'account' })).toBe('#/account');
     expect(formatRoute({ view: 'settings' })).toBe('#/settings');
     expect(formatRoute({ view: 'capabilities' })).toBe('#/capabilities');

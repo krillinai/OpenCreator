@@ -29,6 +29,7 @@ type FileWorkspaceViewProps = {
   selectedThread?: ThreadResponse;
   selectedPath?: string;
   workspaceFileService?: WorkspaceFileService | null;
+  onWorkspaceAvailabilityChange?(threadId: string, hasEntries: boolean): void;
   onClose(): void;
   onSelectPath?(path: string): void;
   onOpenExternal?(url: string): void;
@@ -154,6 +155,7 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
           return;
         }
 
+        props.onWorkspaceAvailabilityChange?.(currentThread.id, directory.nodes.length > 0);
         loadedPathsRef.current.add('');
         setRootName(directory.rootName);
         setRootPathLabel(directory.rootPathLabel);

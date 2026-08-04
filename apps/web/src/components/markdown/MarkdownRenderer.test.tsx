@@ -198,6 +198,15 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByText(/分析需求，再继续执行/)).toBeInTheDocument();
   });
 
+  it('keeps dollar amounts literal in user messages', () => {
+    const { container } = render(
+      <MarkdownRenderer variant="user" text="44:33 Raising $300M in Six Months" />
+    );
+
+    expect(container).toHaveTextContent('44:33 Raising $300M in Six Months');
+    expect(container.querySelector('.md-skill-reference')).not.toBeInTheDocument();
+  });
+
   it('formats skill acronyms as readable labels', () => {
     render(<MarkdownRenderer variant="user" text="$seo-audit https://www.workbuddy.cn/" />);
 

@@ -10,7 +10,7 @@ const starterTags = [
 ] as const;
 
 export function ConversationEmptyState(props: { nickname?: string; now?: Date }) {
-  const nickname = props.nickname?.trim() || readStoredNickname() || '朋友';
+  const nickname = props.nickname?.trim() || readStoredNickname() || '小林';
   const greeting = timePeriodGreeting(props.now ?? new Date());
 
   return (

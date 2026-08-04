@@ -1,5 +1,4 @@
 import {
-  Check,
   Info,
   Plus,
   RefreshCw,
@@ -62,7 +61,7 @@ export function SkillMarketCard({
       type="button"
     >
       {getActionIcon(action.kind)}
-      {topAction ? null : <span>{action.label}</span>}
+      {topAction && action.kind !== 'use' ? null : <span>{action.label}</span>}
     </button>
   );
 
@@ -178,7 +177,7 @@ export function getSkillMarketAction(
 
 function getActionIcon(kind: SkillMarketAction['kind']) {
   if (kind === 'update') return <RefreshCw size={15} aria-hidden="true" />;
-  if (kind === 'use') return <Check size={16} aria-hidden="true" />;
+  if (kind === 'use') return null;
   return <Plus size={16} aria-hidden="true" />;
 }
 

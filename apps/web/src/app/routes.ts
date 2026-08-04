@@ -4,10 +4,13 @@ export type AppRoute =
   | { view: 'search' }
   | { view: 'schedules'; scheduleId?: string }
   | { view: 'tasks' }
+  | { view: 'dashboard' }
   | { view: 'activity'; range: ActivityRange }
   | { view: 'activity-agent'; collectorId: string; agentId: string; range: ActivityRange }
-  | { view: 'plugins'; source?: 'enterprise' }
+  | { view: 'plugins'; source?: 'enterprise' | 'public' }
+  | { view: 'connections' }
   | { view: 'knowledge' }
+  | { view: 'drive' }
   | { view: 'account' }
   | { view: 'capabilities' }
   | { view: 'settings' }
@@ -45,14 +48,17 @@ export function parseRoute(hash: string): AppRoute {
     };
   }
   if (path === '#/tasks') return { view: 'tasks' };
+  if (path === '#/dashboard') return { view: 'dashboard' };
   if (path === '#/activity') return { view: 'activity', range: parseActivityRange(query) };
   if (path === '#/plugins') {
     const fields = parseQuery(query);
-    return fields.source === 'enterprise'
-      ? { view: 'plugins', source: 'enterprise' }
+    return fields.source === 'enterprise' || fields.source === 'public'
+      ? { view: 'plugins', source: fields.source }
       : { view: 'plugins' };
   }
+  if (path === '#/connections') return { view: 'connections' };
   if (path === '#/knowledge') return { view: 'knowledge' };
+  if (path === '#/drive') return { view: 'drive' };
   if (path === '#/account') return { view: 'account' };
   if (path === '#/capabilities') return { view: 'capabilities' };
   if (path === '#/settings') return { view: 'settings' };
@@ -89,16 +95,22 @@ export function formatRoute(route: AppRoute): string {
     }
     case 'tasks':
       return '#/tasks';
+    case 'dashboard':
+      return '#/dashboard';
     case 'activity':
       return `#/activity?range=${route.range}`;
     case 'activity-agent':
       return `#/activity/agent/${encodeURIComponent(route.collectorId)}/${encodeURIComponent(route.agentId)}?range=${route.range}`;
     case 'plugins':
-      return route.source === 'enterprise'
-        ? '#/plugins?source=enterprise'
-        : '#/plugins';
+      return route.source === undefined
+        ? '#/plugins'
+        : `#/plugins?source=${route.source}`;
+    case 'connections':
+      return '#/connections';
     case 'knowledge':
       return '#/knowledge';
+    case 'drive':
+      return '#/drive';
     case 'account':
       return '#/account';
     case 'capabilities':
@@ -128,7 +140,7 @@ function parseQuery(query: string): {
   runId?: string;
   approvalId?: string;
   scheduleId?: string;
-  source?: 'enterprise';
+  source?: 'enterprise' | 'public';
 } {
   const fields: {
     threadId?: string;
@@ -136,7 +148,7 @@ function parseQuery(query: string): {
     runId?: string;
     approvalId?: string;
     scheduleId?: string;
-    source?: 'enterprise';
+    source?: 'enterprise' | 'public';
   } = {};
   for (const pair of query.split('&')) {
     if (pair.length === 0) continue;
@@ -149,7 +161,7 @@ function parseQuery(query: string): {
     if (key === 'runId') fields.runId = value;
     if (key === 'approvalId') fields.approvalId = value;
     if (key === 'scheduleId') fields.scheduleId = value;
-    if (key === 'source' && value === 'enterprise') fields.source = value;
+    if (key === 'source' && (value === 'enterprise' || value === 'public')) fields.source = value;
   }
   return fields;
 }

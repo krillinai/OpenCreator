@@ -6,9 +6,12 @@ export type ActiveView =
   | 'search'
   | 'schedules'
   | 'tasks'
+  | 'dashboard'
   | 'activity'
   | 'plugins'
+  | 'connections'
   | 'knowledge'
+  | 'drive'
   | 'account'
   | 'settings'
   | 'files';

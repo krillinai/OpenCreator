@@ -4,17 +4,18 @@ import { describe, expect, it, vi } from 'vitest';
 import PluginsPage, { type PluginsPageProps } from './PluginsPage.js';
 
 describe('PluginsPage', () => {
-  it('defaults to the public market and gates enterprise skills by session', async () => {
+  it('defaults to enterprise skills and keeps the skill market second', async () => {
     const user = userEvent.setup();
     const onSourceChange = vi.fn();
     const view = render(<PluginsPage {...createProps({ onSourceChange })} />);
 
-    expect(screen.getByRole('tab', { name: '公共市场', selected: true }))
+    expect(screen.getByRole('tab', { name: '企业Skills', selected: true }))
       .toBeInTheDocument();
-    expect(screen.getByLabelText('Skill 功能目录')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '企业Skills' }).nextElementSibling)
+      .toBe(screen.getByRole('tab', { name: 'Skill市场' }));
 
-    await user.click(screen.getByRole('tab', { name: '企业 Skill Hub' }));
-    expect(onSourceChange).toHaveBeenCalledWith('enterprise');
+    await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
+    expect(onSourceChange).toHaveBeenCalledWith('public');
 
     view.rerender(
       <PluginsPage
@@ -31,9 +32,10 @@ describe('PluginsPage', () => {
       />
     );
 
-    expect(screen.getByRole('tab', { name: '企业 Skill Hub', selected: true }))
+    expect(screen.getByRole('tab', { name: '企业Skills', selected: true }))
       .toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '登录企业账户' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '登录企业账户' })).not.toBeInTheDocument();
+    expect(screen.getByText('品牌合规审查')).toBeInTheDocument();
   });
 });
 

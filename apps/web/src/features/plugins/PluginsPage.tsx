@@ -15,22 +15,11 @@ export type PluginsPageProps = SkillMarketViewProps & {
 };
 
 export default function PluginsPage(props: PluginsPageProps) {
-  const source = props.source ?? 'public';
+  const source = props.source ?? 'enterprise';
   return (
     <section className="plugins-page" aria-label="插件">
       <header className="plugins-source-header">
         <div className="plugins-source-tabs" role="tablist" aria-label="Skill 来源">
-          <button
-            aria-controls="plugins-source-public"
-            aria-selected={source === 'public'}
-            id="plugins-source-public-tab"
-            onClick={() => props.onSourceChange('public')}
-            role="tab"
-            tabIndex={source === 'public' ? 0 : -1}
-            type="button"
-          >
-            公共市场
-          </button>
           <button
             aria-controls="plugins-source-enterprise"
             aria-selected={source === 'enterprise'}
@@ -40,7 +29,18 @@ export default function PluginsPage(props: PluginsPageProps) {
             tabIndex={source === 'enterprise' ? 0 : -1}
             type="button"
           >
-            企业 Skill Hub
+            企业Skills
+          </button>
+          <button
+            aria-controls="plugins-source-public"
+            aria-selected={source === 'public'}
+            id="plugins-source-public-tab"
+            onClick={() => props.onSourceChange('public')}
+            role="tab"
+            tabIndex={source === 'public' ? 0 : -1}
+            type="button"
+          >
+            Skill市场
           </button>
         </div>
       </header>

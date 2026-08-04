@@ -5,14 +5,9 @@ import type {
 import { skillMarketCatalog, type SkillMarketEntry } from '@clawee/skill-market';
 import {
   AlertCircle,
-  Blocks,
   CheckCircle2,
-  ChevronDown,
   Loader2,
-  Plus,
   Search,
-  Upload,
-  WandSparkles,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -56,8 +51,6 @@ export type SkillMarketViewProps = {
   onInstall(skillId: string): void;
   onUpdate(skillId: string): void;
   onUse(skillId: string, projectId: string): void;
-  onCreateSkill?(): void;
-  onUploadSkill?(): void;
 };
 
 type SkillMarketViewInternalProps = SkillMarketViewProps & {
@@ -77,8 +70,6 @@ export function SkillMarketView({
   onInstall,
   onUpdate,
   onUse,
-  onCreateSkill,
-  onUploadSkill,
   catalogOverride,
 }: SkillMarketViewInternalProps) {
   const catalog = catalogOverride ?? skillMarketCatalog;
@@ -88,10 +79,8 @@ export function SkillMarketView({
   const [activeEntry, setActiveEntry] = useState<SkillMarketViewEntry | null>(null);
   const [pendingUseEntry, setPendingUseEntry] = useState<SkillMarketViewEntry | null>(null);
   const [visibleCount, setVisibleCount] = useState(skillMarketInitialVisibleCount);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const addMenuRef = useRef<HTMLDivElement | null>(null);
 
   const baseResult = useMemo(
     () =>
@@ -143,23 +132,6 @@ export function SkillMarketView({
     return () => observer.disconnect();
   }, [filteredResult.entries.length, page.hasMore, page.visibleCount]);
 
-  useEffect(() => {
-    if (!addMenuOpen) return;
-    function closeOnPointerDown(event: PointerEvent) {
-      if (addMenuRef.current?.contains(event.target as Node)) return;
-      setAddMenuOpen(false);
-    }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setAddMenuOpen(false);
-    }
-    document.addEventListener('pointerdown', closeOnPointerDown);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeOnPointerDown);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [addMenuOpen]);
-
   const installedCount = baseResult.entries.filter((entry) => entry.installed).length;
   const mutationLocked = operation !== undefined && operation.error === undefined;
   const skillsKnown = skills !== undefined;
@@ -196,13 +168,6 @@ export function SkillMarketView({
   return (
     <section className="skill-market" aria-label="Skill 功能目录">
       <header className="skill-market-heading">
-        <div className="skill-market-heading__title">
-          <h1>
-            <Blocks size={19} strokeWidth={1.9} aria-hidden="true" />
-            <span>插件</span>
-          </h1>
-        </div>
-
         <div className="skill-market__toolbar">
           <label className="skill-market-search">
             <Search size={17} aria-hidden="true" />
@@ -217,49 +182,6 @@ export function SkillMarketView({
               value={query}
             />
           </label>
-
-          <div className="skill-market-add" ref={addMenuRef}>
-            <button
-              aria-expanded={addMenuOpen}
-              aria-haspopup="menu"
-              className="skill-market-add__trigger"
-              onClick={() => setAddMenuOpen(open => !open)}
-              type="button"
-            >
-              <Plus size={15} aria-hidden="true" />
-              <span>添加技能</span>
-              <ChevronDown size={13} aria-hidden="true" />
-            </button>
-            {addMenuOpen ? (
-              <div className="skill-market-add__menu" role="menu">
-                <button
-                  disabled={onCreateSkill === undefined}
-                  onClick={() => {
-                    setAddMenuOpen(false);
-                    onCreateSkill?.();
-                  }}
-                  role="menuitem"
-                  type="button"
-                >
-                  <WandSparkles size={16} aria-hidden="true" />
-                  <span><strong>创建技能</strong><small>通过对话生成新的技能</small></span>
-                </button>
-                {onUploadSkill !== undefined ? (
-                  <button
-                    onClick={() => {
-                      setAddMenuOpen(false);
-                      onUploadSkill();
-                    }}
-                    role="menuitem"
-                    type="button"
-                  >
-                    <Upload size={16} aria-hidden="true" />
-                    <span><strong>上传技能</strong><small>选择包含 SKILL.md 的文件夹</small></span>
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
 
         </div>
       </header>

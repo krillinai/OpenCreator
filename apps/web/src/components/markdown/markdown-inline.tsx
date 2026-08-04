@@ -163,7 +163,7 @@ function pushTextWithLinks(
   function pushPlain(value: string) {
     if (!value) return;
     if (options.linkifySkills) {
-      const skillRe = /\$[A-Za-z0-9][A-Za-z0-9._:-]*/g;
+      const skillRe = /\$[A-Za-z][A-Za-z0-9._:-]*/g;
       let skillLastIndex = 0;
       let skillMatch: RegExpExecArray | null;
       while ((skillMatch = skillRe.exec(value))) {

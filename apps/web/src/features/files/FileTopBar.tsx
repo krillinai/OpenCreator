@@ -41,13 +41,27 @@ export function FileTopBar(props: FileTopBarProps) {
       </div>
 
       <div className="file-top-bar-control-row">
-        <nav className="file-top-bar-path" aria-label="文件路径">
-          <span>{props.rootName ?? '工作区'}</span>
-          {segments.flatMap((segment, index) => [
-            <span className="file-top-bar-path-separator" key={`${props.path ?? ''}:separator:${index}`}>/</span>,
-            <span key={`${props.path ?? ''}:${index}`}>{segment}</span>
-          ])}
-        </nav>
+        <div className="file-top-bar-path-group">
+          <nav className="file-top-bar-path" aria-label="文件路径">
+            <span>{props.rootName ?? '工作区'}</span>
+            {segments.flatMap((segment, index) => [
+              <span className="file-top-bar-path-separator" key={`${props.path ?? ''}:separator:${index}`}>/</span>,
+              <span key={`${props.path ?? ''}:${index}`}>{segment}</span>
+            ])}
+          </nav>
+          {props.onOpenFile ? (
+            <button
+              className="icon-button file-top-bar-path-open-button"
+              type="button"
+              aria-label="打开文件"
+              title="打开文件"
+              disabled={!props.path}
+              onClick={props.onOpenFile}
+            >
+              <FolderOpen aria-hidden="true" size={15} />
+            </button>
+          ) : null}
+        </div>
 
         <div className="file-top-bar-actions">
           {props.canToggleMode && props.mode && props.onModeChange ? (
@@ -76,18 +90,6 @@ export function FileTopBar(props: FileTopBarProps) {
               onClick={() => props.onSave?.()}
             >
               保存
-            </button>
-          ) : null}
-          {props.onOpenFile ? (
-            <button
-              className="icon-button file-toolbar-icon-button"
-              type="button"
-              aria-label="打开文件"
-              title="打开文件"
-              disabled={!props.path}
-              onClick={props.onOpenFile}
-            >
-              <FolderOpen aria-hidden="true" size={16} />
             </button>
           ) : null}
           {props.onToggleTree ? (

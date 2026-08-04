@@ -1,6 +1,23 @@
-import { useState } from 'react';
-import { ArrowLeft, Bot, ChevronRight, Search, Users } from 'lucide-react';
+import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  ArrowLeft,
+  ArrowUp,
+  BarChart3,
+  Bot,
+  ChevronRight,
+  MessageSquareText,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  UserRound,
+  Users
+} from 'lucide-react';
 import type { AppRoute } from '../../app/routes.js';
+import {
+  createActivityChatAnswer,
+  getActivityChatSuggestions,
+  getActivityRangeLabel
+} from './activity-chat-model.js';
 import {
   activitySnapshots,
   findAgentFixture,
@@ -12,7 +29,14 @@ import {
 import './activity.css';
 
 type ActivityRoute = Extract<AppRoute, { view: 'activity' | 'activity-agent' }>;
-type PrototypeRole = 'admin' | 'employee';
+type ActivityMode = 'overview' | 'conversation';
+
+type ActivityChatMessage = {
+  id: string;
+  role: 'assistant' | 'user';
+  text: string;
+  evidence?: string[];
+};
 
 const rangeOptions: Array<{ value: ActivityRange; label: string }> = [
   { value: 'today', label: '今天' },
@@ -24,7 +48,7 @@ export function ActivityPage(props: {
   route: ActivityRoute;
   onNavigate(route: AppRoute): void;
 }) {
-  const [role, setRole] = useState<PrototypeRole>('admin');
+  const [mode, setMode] = useState<ActivityMode>('overview');
   if (props.route.view === 'activity-agent') {
     return <AgentDetail route={props.route} onNavigate={props.onNavigate} />;
   }
@@ -34,33 +58,140 @@ export function ActivityPage(props: {
         <header className="activity-header">
           <div>
             <div className="activity-title-row">
-              <h1>Agent 活动</h1>
+              <h1>Agent动态</h1>
               <span className="activity-static-label">静态原型</span>
               <span className="activity-partial-label">部分数据</span>
             </div>
-            <p>团队 Agent 用量与执行概览</p>
+            <p>{mode === 'conversation' ? '通过对话分析 Agent 用量与执行情况' : '团队 Agent 用量与执行概览'}</p>
           </div>
           <div className="activity-header__controls">
-            <SegmentedControl
-              label="原型视图"
-              options={[{ value: 'admin', label: '管理员视图' }, { value: 'employee', label: '员工视图' }]}
-              value={role}
-              onChange={value => setRole(value as PrototypeRole)}
-            />
+            <button
+              className="activity-conversation-toggle"
+              type="button"
+              aria-pressed={mode === 'conversation'}
+              onClick={() => setMode(current => current === 'overview' ? 'conversation' : 'overview')}
+            >
+              {mode === 'conversation' ? <BarChart3 size={15} aria-hidden="true" /> : <MessageSquareText size={15} aria-hidden="true" />}
+              {mode === 'conversation' ? '返回数据视图' : '对话分析'}
+            </button>
             <RangeControl range={props.route.range} onChange={range => props.onNavigate({ view: 'activity', range })} />
           </div>
         </header>
         <div className="activity-partial-banner" role="status">
           当前展示静态采样数据；管理员汇总中，陈默的聚合 Token 用量尚未上报。
         </div>
-        {role === 'admin' ? (
-          <AdminView range={props.route.range} onNavigate={props.onNavigate} />
+        {mode === 'conversation' ? (
+          <ActivityConversation key={props.route.range} range={props.route.range} />
         ) : (
-          <EmployeeView range={props.route.range} onNavigate={props.onNavigate} />
+          <AdminView range={props.route.range} onNavigate={props.onNavigate} />
         )}
       </div>
     </main>
   );
+}
+
+function ActivityConversation(props: { range: ActivityRange }) {
+  const nextMessageId = useRef(0);
+  const [draft, setDraft] = useState('');
+  const [messages, setMessages] = useState<ActivityChatMessage[]>(() => [
+    createActivityWelcome(props.range)
+  ]);
+  const suggestions = getActivityChatSuggestions('admin');
+  const rangeLabel = getActivityRangeLabel(props.range);
+  const scopes = ['组织 Token 汇总', '员工用量', 'Skill 使用', 'MCP 使用', 'Agent 执行'];
+
+  function sendQuestion(value: string) {
+    const question = value.trim();
+    if (question.length === 0) return;
+    const answer = createActivityChatAnswer('admin', props.range, question);
+    const id = `admin-${props.range}-${nextMessageId.current++}`;
+    setMessages(current => [
+      ...current,
+      { id: `${id}-user`, role: 'user', text: question },
+      { id: `${id}-assistant`, role: 'assistant', text: answer.text, evidence: answer.evidence }
+    ]);
+    setDraft('');
+  }
+
+  function submitQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    sendQuestion(draft);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    sendQuestion(draft);
+  }
+
+  return (
+    <div className="activity-conversation-workbench">
+      <section className="activity-conversation" aria-label="Agent动态对话">
+        <div className="activity-conversation__body" role="log" aria-live="polite">
+          <div className="activity-conversation__intro">
+            <span><Sparkles size={15} aria-hidden="true" />按当前范围提问</span>
+            <div className="activity-conversation__suggestions">
+              {suggestions.map(suggestion => (
+                <button key={suggestion} type="button" onClick={() => sendQuestion(suggestion)}>
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="activity-conversation__messages">
+            {messages.map(message => (
+              <article className="activity-conversation-message" data-role={message.role} key={message.id}>
+                <span className="activity-conversation-message__avatar" aria-hidden="true">
+                  {message.role === 'assistant' ? <Bot size={17} /> : <UserRound size={16} />}
+                </span>
+                <div className="activity-conversation-message__content">
+                  <strong>{message.role === 'assistant' ? '活动助手' : '管理员'}</strong>
+                  <p>{message.text}</p>
+                  {message.evidence && message.evidence.length > 0 ? (
+                    <div className="activity-conversation-evidence" aria-label="回答依据">
+                      {message.evidence.map(item => <span key={item}>{item}</span>)}
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+        <form className="activity-conversation-composer" onSubmit={submitQuestion}>
+          <textarea
+            aria-label="询问 Agent动态"
+            onChange={event => setDraft(event.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="询问 Token、Skill、MCP 或 Agent 执行情况"
+            rows={2}
+            value={draft}
+          />
+          <button type="submit" aria-label="发送" disabled={draft.trim().length === 0} title="发送">
+            <ArrowUp size={18} aria-hidden="true" />
+          </button>
+        </form>
+      </section>
+      <aside className="activity-conversation-context" aria-label="当前分析范围">
+        <header>
+          <span aria-hidden="true"><ShieldCheck size={18} /></span>
+          <div><strong>管理员视图</strong><small>{rangeLabel} · 静态采样</small></div>
+        </header>
+        <div className="activity-conversation-context__status">回答已按当前身份过滤</div>
+        <div className="activity-conversation-context__heading"><h2>可分析数据</h2><span>{scopes.length} 类</span></div>
+        <ul>{scopes.map(scope => <li key={scope}>{scope}</li>)}</ul>
+        <p>可分析组织汇总和员工用量。</p>
+      </aside>
+    </div>
+  );
+}
+
+function createActivityWelcome(range: ActivityRange): ActivityChatMessage {
+  const rangeLabel = getActivityRangeLabel(range);
+  return {
+    id: `welcome-admin-${range}`,
+    role: 'assistant',
+    text: `${rangeLabel}组织活动数据已准备好。你可以询问 Token、员工用量、Skill、MCP 和 Agent 执行情况。`
+  };
 }
 
 function AdminView(props: { range: ActivityRange; onNavigate(route: AppRoute): void }) {
@@ -111,38 +242,15 @@ function AdminView(props: { range: ActivityRange; onNavigate(route: AppRoute): v
   );
 }
 
-function EmployeeView(props: { range: ActivityRange; onNavigate(route: AppRoute): void }) {
-  const snapshot = activitySnapshots[props.range];
-  const employeeView = snapshot.employeeView;
-  return (
-    <div className="activity-content">
-      <MetricGrid metrics={[["我的 Token", formatTokenUsage(employeeView.usage)], ['活跃 Agent', String(employeeView.activeAgents)], ['完成轮次', String(employeeView.completedTurns)]]} />
-      <div className="activity-overview-grid activity-overview-grid--three">
-        <TrendPanel title="我的 Token 趋势" trend={snapshot.trend} />
-        <Distribution title="模型分布" items={employeeView.modelDistribution} />
-        <Distribution title="Agent 分布" items={employeeView.agentDistribution} />
-      </div>
-      <div className="activity-usage-grid">
-        <UsageDistribution title="Skill 使用分布" items={employeeView.skillDistribution} />
-        <UsageDistribution title="MCP 使用分布" items={employeeView.mcpDistribution} />
-      </div>
-      <section className="activity-section">
-        <div className="activity-section__header"><div><h2>最近轮次</h2><span>最近完成</span></div></div>
-        <div className="activity-table-wrap"><table aria-label="最近轮次"><thead><tr><th>Agent</th><th>任务</th><th>模型</th><th>Token</th><th>时间</th><th /></tr></thead><tbody>{employeeView.recentTurns.map(turn => <tr key={`${turn.agentId}-${turn.task}`}><td><strong>{turn.agentName}</strong></td><td>{turn.task}</td><td>{turn.model}</td><td>{formatTokenUsage(turn.usage)}</td><td>{turn.time}</td><td><button className="activity-row-link" aria-label={`查看${turn.agentName}详情`} onClick={() => props.onNavigate({ view: 'activity-agent', collectorId: turn.collectorId, agentId: turn.agentId, range: props.range })}><ChevronRight size={16} /></button></td></tr>)}</tbody></table></div>
-      </section>
-    </div>
-  );
-}
-
 function AgentDetail(props: { route: Extract<AppRoute, { view: 'activity-agent' }>; onNavigate(route: AppRoute): void }) {
   const detail = findAgentFixture(props.route.range, props.route.collectorId, props.route.agentId);
   if (detail === undefined) {
-    return <main className="activity-page"><div className="activity-page__inner"><StaticDataNotice /><section className="activity-empty-state"><Bot size={24} aria-hidden="true" /><h1>未找到 Agent</h1><p>当前静态样例中没有匹配的 Agent 记录。</p><button className="activity-back-button" onClick={() => props.onNavigate({ view: 'activity', range: props.route.range })}><ArrowLeft size={16} />返回 Agent 活动</button></section></div></main>;
+    return <main className="activity-page"><div className="activity-page__inner"><StaticDataNotice /><section className="activity-empty-state"><Bot size={24} aria-hidden="true" /><h1>未找到 Agent</h1><p>当前静态样例中没有匹配的 Agent 记录。</p><button className="activity-back-button" onClick={() => props.onNavigate({ view: 'activity', range: props.route.range })}><ArrowLeft size={16} />返回 Agent动态</button></section></div></main>;
   }
   return <main className="activity-page"><div className="activity-page__inner">
     <StaticDataNotice />
     <header className="activity-detail-header">
-      <button className="activity-icon-button" aria-label="返回 Agent 活动" onClick={() => props.onNavigate({ view: 'activity', range: props.route.range })}><ArrowLeft size={18} /></button>
+      <button className="activity-icon-button" aria-label="返回 Agent动态" onClick={() => props.onNavigate({ view: 'activity', range: props.route.range })}><ArrowLeft size={18} /></button>
       <div className="activity-agent-icon"><Bot size={20} aria-hidden="true" /></div>
       <div><div className="activity-title-row"><h1>{detail.name}</h1><span className="activity-status">{detail.status}</span><span className="activity-partial-label">部分数据</span></div><p>{detail.employeeName} · {detail.collectorId} · {detail.workspace}</p></div>
       <RangeControl range={props.route.range} onChange={range => props.onNavigate({ ...props.route, range })} />
@@ -165,7 +273,6 @@ function AgentDetail(props: { route: Extract<AppRoute, { view: 'activity-agent' 
 
 function MetricGrid({ metrics }: { metrics: string[][] }) { return <div className={`activity-metrics activity-metrics--${metrics.length}`}>{metrics.map(([label, value]) => <div className="activity-metric" key={label}><span>{label}</span><strong data-testid={label === '总 Token' ? 'total-tokens' : undefined}>{value}</strong></div>)}</div>; }
 function TrendPanel({ title, trend }: { title: string; trend: ActivitySnapshot['trend'] }) { const totals = trend.points.map(point => calculateTotal(point.usage)); const max = Math.max(...totals, 1); return <section className="activity-panel"><div className="activity-panel__heading"><h2>{title}</h2><span>{trend.granularity}</span></div><div className="activity-trend" aria-label={title} data-granularity={trend.granularity}>{trend.points.map((point, index) => <i key={point.label} role="img" aria-label={`${point.label} ${formatTokenUsage(point.usage)} Token`} title={`${point.label} · ${formatTokenUsage(point.usage)} Token`} style={{ height: `${Math.max(4, totals[index]! / max * 100)}%` }} />)}</div><div className="activity-chart-labels"><span>{trend.startLabel}</span><span>{trend.endLabel}</span></div></section>; }
-function Distribution({ title, items }: { title: string; items: ActivitySnapshot['employeeView']['modelDistribution'] }) { return <section className="activity-panel"><div className="activity-panel__heading"><h2>{title}</h2></div><div className="activity-distribution">{items.map((item, index) => <p key={item.id}><i data-tone={index} /><span>{item.label} {new Intl.NumberFormat('zh-CN', { style: 'percent' }).format(item.share)}</span></p>)}</div></section>; }
 function UsageDistribution({ title, items }: { title: string; items: ActivitySnapshot['organization']['skillDistribution'] }) { return <section className="activity-panel"><div className="activity-panel__heading"><h2>{title}</h2><span>{items.reduce((total, item) => total + item.invocationCount, 0)} 次调用</span></div><div className="activity-distribution activity-distribution--usage">{items.map((item, index) => <p key={item.id}><i data-tone={index} /><span>{item.label}</span><strong>{item.invocationCount} 次 · {new Intl.NumberFormat('zh-CN', { style: 'percent' }).format(item.share)}</strong></p>)}</div></section>; }
 function TokenBreakdown({ usage }: { usage: TokenUsage }) { const fields = [['输入 Token', usage.inputTokens], ['缓存输入', usage.cachedInputTokens], ['输出 Token', usage.outputTokens], ['推理输出', usage.reasoningOutputTokens]] as const; return <section className="activity-panel"><div className="activity-panel__heading"><h2>Token 构成</h2><span>缓存/推理为子集</span></div><div className="activity-breakdown">{fields.map(([label, value]) => <div key={label}><span>{label}</span><strong>{new Intl.NumberFormat('zh-CN').format(value)}</strong></div>)}</div></section>; }
 function ToolActivity({ activity }: { activity: ActivitySnapshot['agents'][number]['toolActivity'] }) { return <div className="activity-tool-row"><span className="activity-tool-icon">T</span><div><strong>{activity.name}</strong><div className="activity-tool-meta"><span>工具调用</span><span>{activity.status === 'success' ? '成功' : '失败'}</span><span>{new Date(activity.occurredAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>{activity.durationMs === undefined ? null : <span>{(activity.durationMs / 1_000).toFixed(1)} 秒</span>}</div></div></div>; }

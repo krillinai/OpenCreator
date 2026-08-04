@@ -24,7 +24,7 @@ describe('skill market runtime exports', () => {
         '-e',
         [
           "const market = await import('@clawee/skill-market');",
-          "if (market.skillMarketCatalog.length !== 55) throw new Error('catalog import failed');",
+          "if (market.skillMarketCatalog.length !== 53) throw new Error('catalog import failed');",
           "const { buildServer } = await import('./dist/api/server.js');",
           "const { mkdtempSync, rmSync } = await import('node:fs');",
           "const { tmpdir } = await import('node:os');",
