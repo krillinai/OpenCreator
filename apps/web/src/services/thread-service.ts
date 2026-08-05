@@ -15,7 +15,7 @@ export function createThreadService(client: RuntimeClient) {
       try {
         const [interactive, scheduleTasks] = await Promise.all([
           client.get<ThreadListResponse>(
-            '/threads?status=active&excludePurpose=schedule_task&limit=50'
+            '/threads?status=active&purpose=conversation&limit=50'
           ),
           client.get<ThreadListResponse>(
             '/threads?status=active&purpose=schedule_task&limit=100'
@@ -33,6 +33,33 @@ export function createThreadService(client: RuntimeClient) {
     },
     createThread(input: CreateThreadRequest): Promise<{ thread: ThreadResponse }> {
       return client.post('/threads', input);
+    },
+    getLatestKnowledgeThread(): Promise<{ thread: ThreadResponse | null }> {
+      return client.get('/enterprise/knowledge-conversations/latest');
+    },
+    createKnowledgeThread(): Promise<{ thread: ThreadResponse }> {
+      return client.post('/enterprise/knowledge-conversations', {});
+    },
+    getKnowledgeThread(threadId: string): Promise<{ thread: ThreadResponse }> {
+      return client.get(`/enterprise/knowledge-conversations/${encodeURIComponent(threadId)}`);
+    },
+    listKnowledgeThreadRuns(threadId: string): Promise<ThreadRunsResponse> {
+      return client.get(
+        `/enterprise/knowledge-conversations/${encodeURIComponent(threadId)}/runs?limit=50`
+      );
+    },
+    getKnowledgeThreadHistory(
+      threadId: string,
+      query: ThreadHistoryQuery = {}
+    ): Promise<ThreadHistoryResponse> {
+      const params = new URLSearchParams();
+      if (query.limit !== undefined) params.set('limit', String(query.limit));
+      if (query.before !== undefined) params.set('before', query.before);
+      if (query.targetItemId !== undefined) params.set('targetItemId', query.targetItemId);
+      const suffix = params.size === 0 ? '' : `?${params.toString()}`;
+      return client.get(
+        `/enterprise/knowledge-conversations/${encodeURIComponent(threadId)}/history${suffix}`
+      );
     },
     getThread(threadId: string): Promise<{ thread: ThreadResponse }> {
       return client.get(`/threads/${encodeURIComponent(threadId)}`);
@@ -64,7 +91,7 @@ function hasExpectedPurposePartitions(
   interactive: ThreadListResponse,
   scheduleTasks: ThreadListResponse
 ): boolean {
-  return interactive.threads.every(thread => thread.purpose !== 'schedule_task')
+  return interactive.threads.every(thread => thread.purpose === 'conversation')
     && scheduleTasks.threads.every(thread => thread.purpose === 'schedule_task');
 }
 

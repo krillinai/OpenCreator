@@ -401,7 +401,7 @@ describe('ClaweeSidebar', () => {
       onOpenSettings,
       enterpriseSession: {
         status: 'signed_in',
-        account: { email: 'member@example.com', name: 'Member' },
+        account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
         transportSecurity: 'secure_https'
       },
       activeView: 'account'
@@ -424,7 +424,7 @@ describe('ClaweeSidebar', () => {
         collapsed
         enterpriseSession={{
           status: 'signed_in',
-          account: { email: 'member@example.com', name: 'Member' },
+          account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
           transportSecurity: 'secure_https'
         }}
         onNewConversation={vi.fn()}

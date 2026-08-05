@@ -114,6 +114,29 @@ describe('thread manager', () => {
     expect(thread.cwd).toContain(join('workspaces', thread.id));
   });
 
+  it('creates account-owned managed knowledge threads and isolates account queries', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-thread-'));
+    const database = openTestDatabase(tempDir);
+    const manager = createThreadManager({ db: database, dataDir: tempDir });
+
+    const thread = manager.createKnowledgeThread({
+      enterpriseSubjectId: 'acct_a',
+      title: 'Knowledge conversation',
+      profile: 'default'
+    });
+
+    expect(thread).toMatchObject({
+      projectId: null,
+      enterpriseSubjectId: 'acct_a',
+      purpose: 'knowledge_conversation',
+      workspaceMode: 'managed',
+      sandbox: 'read-only'
+    });
+    expect(thread.cwd).toContain(join('workspaces', thread.id));
+    expect(manager.listKnowledgeThreads('acct_b')).toEqual([]);
+    expect(manager.listKnowledgeThreads('acct_a')).toEqual([thread]);
+  });
+
   it('stores an absolute managed workspace when dataDir is relative', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-relative-'));
     const database = openTestDatabase(tempDir);

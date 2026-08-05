@@ -4630,7 +4630,7 @@ html.is-pane-resizing * {
 .sidebar-task-copy strong {
   color: var(--text);
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .sidebar-task-copy span {
@@ -4685,7 +4685,7 @@ html.is-pane-resizing * {
   padding: 0 16px;
   color: var(--subtle);
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 18px;
 }
 
@@ -4883,7 +4883,7 @@ html.is-pane-resizing * {
   gap: 4px;
   padding: 0 6px;
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .sidebar-primary .sidebar-row {
@@ -4892,7 +4892,7 @@ html.is-pane-resizing * {
 }
 
 .project-row {
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .project-row[data-current-project="true"] .project-icon {
@@ -4943,7 +4943,7 @@ html.is-pane-resizing * {
 
 .conversation-row strong {
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .conversation-row-meta {

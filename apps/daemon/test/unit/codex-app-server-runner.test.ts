@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startCodexAppServer } from '../../src/codex/app-server-runner.js';
+import { buildCodexAppServerArgs } from '../../src/codex/app-server-host-2026-07-28.js';
 
 let tempDir = '';
 
@@ -12,6 +13,29 @@ afterEach(() => {
 });
 
 describe('codex app-server runner', () => {
+  it('places knowledge isolation flags before the app-server subcommand', () => {
+    const args = buildCodexAppServerArgs({
+      profile: 'default',
+      builtInTools: {
+        shell: false,
+        fileRead: false,
+        fileWrite: false,
+        applyPatch: false,
+        webSearch: false
+      },
+      mcpServers: [{
+        name: 'clawee_knowledge',
+        url: 'http://127.0.0.1:43123/internal/agent-tools/mcp/knowledge',
+        enabledTools: ['knowledge.search'],
+        required: true
+      }]
+    });
+
+    expect(args).not.toContain('--ignore-user-config');
+    expect(args.slice(-2)).toEqual(['app-server', '--stdio']);
+    expect(args).toContain('mcp_servers.clawee_knowledge.enabled_tools=["knowledge.search"]');
+  });
+
   it('responds to a real command approval request and completes the turn', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
     const fake = createFakeAppServer(tempDir, 'accept');

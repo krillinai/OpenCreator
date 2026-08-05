@@ -35,6 +35,16 @@ export type EnterpriseSessionManager = {
   close(): Promise<void>;
 };
 
+export type EnterpriseIdentity = {
+  subjectId: string;
+  agentId: string;
+  accessToken: string;
+};
+
+export type EnterpriseIdentityProvider = {
+  requireIdentity(): Promise<EnterpriseIdentity>;
+};
+
 export class EnterpriseSessionError extends Error {
   constructor(
     readonly code: RuntimeErrorCode,
@@ -51,7 +61,7 @@ export function createEnterpriseSessionManager(input: {
   credentialStore: EnterpriseCredentialStore;
   httpClient: EnterpriseHttpClient;
   transportSecurity: EnterpriseTransportSecurity;
-}): EnterpriseSessionManager {
+}): EnterpriseSessionManager & EnterpriseIdentityProvider {
   let generation = 0;
   let closed = false;
   let credential: EnterpriseCredential | undefined;
@@ -516,6 +526,33 @@ export function createEnterpriseSessionManager(input: {
         throw new EnterpriseSessionError('ENTERPRISE_UNAUTHORIZED', 401);
       }
       return stored.accessToken;
+    },
+
+    async requireIdentity() {
+      const operationGeneration = beginOperation();
+      const stored = await readCredential(operationGeneration);
+      if (stored === undefined) {
+        publish(operationGeneration, signedOutSnapshot());
+        throw new EnterpriseSessionError('ENTERPRISE_UNAUTHORIZED', 401);
+      }
+      const agentId = await readAgentId(operationGeneration);
+      const verified = await validateAuthenticatedSession({
+        operationGeneration,
+        credential: stored,
+        expectedAgentId: agentId,
+        persist: false
+      });
+      if (operationGeneration !== generation) {
+        throw new EnterpriseSessionError('ENTERPRISE_UNAUTHORIZED', 401);
+      }
+      if (verified.status !== 'signed_in' || verified.account === undefined) {
+        throw new EnterpriseSessionError('ENTERPRISE_UNAUTHORIZED', 401);
+      }
+      return {
+        subjectId: verified.account.subjectId,
+        agentId,
+        accessToken: stored.accessToken
+      };
     },
 
     async invalidateUnauthorized(reason = 'session_expired') {

@@ -8,6 +8,7 @@ import type {
   CodexSkillMarketMutationResponse,
   CreateThreadRequest,
   CreateScheduleRequest,
+  EnterpriseAccountSummary,
   RunDiagnosticsResponse,
   RunRequest,
   RunScheduleNowResponse,
@@ -115,6 +116,21 @@ describe('protocol shape', () => {
     };
 
     expect(request.purpose).toBe('schedule_draft');
+  });
+
+  it('allows project-independent enterprise knowledge conversations', () => {
+    const request: CreateThreadRequest = {
+      purpose: 'knowledge_conversation'
+    };
+    const purpose: ThreadPurpose = 'knowledge_conversation';
+    const account: EnterpriseAccountSummary = {
+      subjectId: 'acct_01JZ8W6A2M4S',
+      email: 'user@example.com',
+      name: 'User'
+    };
+
+    expect(request.purpose).toBe(purpose);
+    expect(account.subjectId).toBe('acct_01JZ8W6A2M4S');
   });
 
   it('includes stable thread history cursor error codes', () => {

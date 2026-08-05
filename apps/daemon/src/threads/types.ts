@@ -12,6 +12,7 @@ export type RuntimeThread = {
   scheduleId?: string;
   title: string | null;
   projectId: string | null;
+  enterpriseSubjectId: string | null;
   origin: ThreadOrigin;
   codexThreadId?: string | null;
   cwd: string;
@@ -58,6 +59,15 @@ export type CreateRuntimeThreadInput = {
   purpose?: ThreadPurpose;
 };
 
+export type CreateKnowledgeThreadInput = {
+  enterpriseSubjectId: string;
+  workspaceRoot?: string;
+  title?: string;
+  profile?: string;
+  model?: string;
+  reasoning?: ReasoningEffort;
+};
+
 export type UpdateRuntimeThreadInput = {
   sandbox: SandboxMode;
 };
@@ -91,6 +101,7 @@ export class ThreadManagerError extends Error {
 export type ThreadManager = {
   createConversationThread(request: CreateConversationThreadInput): RuntimeThread;
   createScheduleThread(request: CreateScheduleThreadInput): RuntimeThread;
+  createKnowledgeThread(request: CreateKnowledgeThreadInput): RuntimeThread;
   createThread(request: CreateRuntimeThreadInput): RuntimeThread;
   assertRunnableThread(id: string): RuntimeThread;
   getThread(id: string): RuntimeThread | undefined;
@@ -102,6 +113,10 @@ export type ThreadManager = {
     excludePurpose?: ThreadPurpose;
     limit?: number;
   }): RuntimeThread[];
+  listKnowledgeThreads(
+    enterpriseSubjectId: string,
+    filter?: { status?: 'active' | 'archived' | 'all'; limit?: number }
+  ): RuntimeThread[];
   listPublicThreads(filter?: {
     status?: 'active' | 'archived' | 'all';
     purpose?: ThreadPurpose;

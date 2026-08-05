@@ -486,7 +486,11 @@ export type RunContextResponse = {
   items: RunContextItem[];
 };
 
-export type ThreadPurpose = 'conversation' | 'schedule_draft' | 'schedule_task';
+export type ThreadPurpose =
+  | 'conversation'
+  | 'knowledge_conversation'
+  | 'schedule_draft'
+  | 'schedule_task';
 
 export type ProjectResponse = {
   id: string;
@@ -567,6 +571,13 @@ export type CreateThreadRequest =
       model?: string;
       reasoning?: ReasoningEffort;
       sandbox?: SandboxMode;
+    }
+  | {
+      purpose: 'knowledge_conversation';
+      title?: string;
+      profile?: string;
+      model?: string;
+      reasoning?: ReasoningEffort;
     }
   | {
       purpose: 'schedule_draft';
@@ -759,6 +770,7 @@ export type EnterpriseTransportSecurity =
   | 'secure_https';
 
 export type EnterpriseAccountSummary = {
+  subjectId: string;
   email: string;
   name: string;
 };

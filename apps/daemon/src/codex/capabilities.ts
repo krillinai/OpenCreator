@@ -35,6 +35,14 @@ export type RuntimeCapabilityMatrix = {
   resumeContextContinuityVerified: boolean;
   appServer?: boolean;
   appServerApprovals?: boolean;
+  knowledgeToolIsolation?: boolean;
+  knowledgeBuiltInTools?: {
+    shell: boolean;
+    fileRead: boolean;
+    fileWrite: boolean;
+    applyPatch: boolean;
+    webSearch: boolean;
+  };
   mcpList: boolean;
   mcpGet: boolean;
   mcpAdd: boolean;
@@ -127,10 +135,16 @@ export function parseCodexCapabilityMatrix(input: {
   mcpHelp: string;
   mcpAddHelp: string;
   appServerHelp?: string;
+  featuresOutput?: string;
   resumeContextContinuityVerified?: boolean;
   checkedAt?: string;
 }): RuntimeCapabilityMatrix {
   const exec = parseCodexExecHelp(input.execHelp);
+  const knowledgeBuiltInTools = knowledgeBuiltInToolCapabilities(
+    input.execHelp,
+    input.appServerHelp ?? '',
+    input.featuresOutput ?? ''
+  );
 
   return {
     codexVersion: input.versionOutput.trim(),
@@ -159,6 +173,8 @@ export function parseCodexCapabilityMatrix(input: {
     appServerApprovals:
       input.appServerHelp?.includes('generate-json-schema')
       && input.appServerHelp.includes('generate-ts'),
+    knowledgeBuiltInTools,
+    knowledgeToolIsolation: Object.values(knowledgeBuiltInTools).every(Boolean),
     mcpList: hasMcpCommand(input.mcpHelp, 'list'),
     mcpGet: hasMcpCommand(input.mcpHelp, 'get'),
     mcpAdd: hasMcpCommand(input.mcpHelp, 'add'),
@@ -193,6 +209,7 @@ export function collectCodexCapabilityMatrix(
   const mcpHelp = runCodexInfo(codexBin, ['mcp', '--help'], input.timeoutMs);
   const mcpAddHelp = runCodexInfo(codexBin, ['mcp', 'add', '--help'], input.timeoutMs);
   const appServerHelp = runCodexInfo(codexBin, ['app-server', '--help'], input.timeoutMs);
+  const features = runCodexInfo(codexBin, ['features', 'list'], input.timeoutMs);
 
   const matrix = parseCodexCapabilityMatrix({
     versionOutput: version.output.trim() || 'unknown',
@@ -201,6 +218,7 @@ export function collectCodexCapabilityMatrix(
     mcpHelp: mcpHelp.output,
     mcpAddHelp: mcpAddHelp.output,
     appServerHelp: appServerHelp.output,
+    featuresOutput: features.output,
     resumeContextContinuityVerified: input.resumeContextContinuityVerified,
     checkedAt: input.checkedAt
   });
@@ -211,7 +229,8 @@ export function collectCodexCapabilityMatrix(
     ...resumeHelp.warnings,
     ...mcpHelp.warnings,
     ...mcpAddHelp.warnings,
-    ...appServerHelp.warnings
+    ...appServerHelp.warnings,
+    ...features.warnings
   );
   if (!isResumeExecutionSupported(matrix)) {
     matrix.warnings.push('Codex resume execution support was not verified from help output.');
@@ -230,14 +249,16 @@ export async function collectCodexCapabilityMatrixAsync(
     resumeHelp,
     mcpHelp,
     mcpAddHelp,
-    appServerHelp
+    appServerHelp,
+    features
   ] = await Promise.all([
     runCodexInfoAsync(codexBin, ['--version'], input.timeoutMs, input.signal),
     runCodexInfoAsync(codexBin, ['exec', '--help'], input.timeoutMs, input.signal),
     runCodexInfoAsync(codexBin, ['exec', 'resume', '--help'], input.timeoutMs, input.signal),
     runCodexInfoAsync(codexBin, ['mcp', '--help'], input.timeoutMs, input.signal),
     runCodexInfoAsync(codexBin, ['mcp', 'add', '--help'], input.timeoutMs, input.signal),
-    runCodexInfoAsync(codexBin, ['app-server', '--help'], input.timeoutMs, input.signal)
+    runCodexInfoAsync(codexBin, ['app-server', '--help'], input.timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['features', 'list'], input.timeoutMs, input.signal)
   ]);
 
   const matrix = parseCodexCapabilityMatrix({
@@ -247,6 +268,7 @@ export async function collectCodexCapabilityMatrixAsync(
     mcpHelp: mcpHelp.output,
     mcpAddHelp: mcpAddHelp.output,
     appServerHelp: appServerHelp.output,
+    featuresOutput: features.output,
     resumeContextContinuityVerified: input.resumeContextContinuityVerified,
     checkedAt: input.checkedAt
   });
@@ -256,7 +278,8 @@ export async function collectCodexCapabilityMatrixAsync(
     ...resumeHelp.warnings,
     ...mcpHelp.warnings,
     ...mcpAddHelp.warnings,
-    ...appServerHelp.warnings
+    ...appServerHelp.warnings,
+    ...features.warnings
   );
   if (!isResumeExecutionSupported(matrix)) {
     matrix.warnings.push('Codex resume execution support was not verified from help output.');
@@ -269,11 +292,12 @@ export async function collectStartupCapabilityMatrixAsync(
 ): Promise<RuntimeCapabilityMatrix> {
   const codexBin = input.codexBin ?? 'codex';
   const timeoutMs = input.timeoutMs ?? STARTUP_CAPABILITY_TIMEOUT_MS;
-  const [version, execHelp, resumeHelp, appServerHelp] = await Promise.all([
+  const [version, execHelp, resumeHelp, appServerHelp, features] = await Promise.all([
     runCodexInfoAsync(codexBin, ['--version'], timeoutMs, input.signal),
     runCodexInfoAsync(codexBin, ['exec', '--help'], timeoutMs, input.signal),
     runCodexInfoAsync(codexBin, ['exec', 'resume', '--help'], timeoutMs, input.signal),
-    runCodexInfoAsync(codexBin, ['app-server', '--help'], timeoutMs, input.signal)
+    runCodexInfoAsync(codexBin, ['app-server', '--help'], timeoutMs, input.signal),
+    runCodexInfoAsync(codexBin, ['features', 'list'], timeoutMs, input.signal)
   ]);
   const matrix = parseCodexCapabilityMatrix({
     versionOutput: version.output.trim() || 'unknown',
@@ -282,15 +306,50 @@ export async function collectStartupCapabilityMatrixAsync(
     mcpHelp: '',
     mcpAddHelp: '',
     appServerHelp: appServerHelp.output,
+    featuresOutput: features.output,
     checkedAt: input.checkedAt
   });
   matrix.warnings.push(
     ...version.warnings,
     ...execHelp.warnings,
     ...resumeHelp.warnings,
-    ...appServerHelp.warnings
+    ...appServerHelp.warnings,
+    ...features.warnings
   );
   return matrix;
+}
+
+function knowledgeBuiltInToolCapabilities(
+  execHelp: string,
+  appServerHelp: string,
+  featuresOutput: string
+): NonNullable<RuntimeCapabilityMatrix['knowledgeBuiltInTools']> {
+  const required = [
+    'shell_tool',
+    'unified_exec',
+    'shell_snapshot',
+    'browser_use',
+    'computer_use',
+    'in_app_browser',
+    'image_generation',
+    'multi_agent',
+    'plugins',
+    'apps'
+  ];
+  const isolationBase = execHelp.includes('--ignore-user-config')
+    && appServerHelp.includes('--disable')
+    && required.every(name => new RegExp(`^${name}\\s+`, 'm').test(featuresOutput));
+  const shell = isolationBase
+    && ['shell_tool', 'unified_exec', 'shell_snapshot'].every(name => (
+      new RegExp(`^${name}\\s+`, 'm').test(featuresOutput)
+    ));
+  return {
+    shell,
+    fileRead: shell,
+    fileWrite: shell,
+    applyPatch: shell,
+    webSearch: isolationBase
+  };
 }
 
 export function isResumeExecutionSupported(matrix: RuntimeCapabilityMatrix): boolean {
@@ -340,6 +399,14 @@ export function createUnknownCapabilityMatrix(
     execImages: false,
     resumeImages: false,
     resumeContextContinuityVerified: false,
+    knowledgeToolIsolation: false,
+    knowledgeBuiltInTools: {
+      shell: false,
+      fileRead: false,
+      fileWrite: false,
+      applyPatch: false,
+      webSearch: false
+    },
     mcpList: false,
     mcpGet: false,
     mcpAdd: false,

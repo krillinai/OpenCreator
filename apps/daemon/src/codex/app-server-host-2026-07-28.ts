@@ -2,6 +2,8 @@ import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
 import type { ChildProcess } from 'node:child_process';
 import {
   buildCodexMcpConfigArgs,
+  codexToolIsolationArgs,
+  type BuiltInToolPolicy,
   type CodexMcpServerConfig
 } from './argv.js';
 import {
@@ -88,6 +90,7 @@ export type CodexAppServerHostInput = {
   cwd: string;
   profile: string;
   mcpServers?: CodexMcpServerConfig[];
+  builtInTools?: BuiltInToolPolicy;
   env?: Record<string, string>;
   spawnTimeoutMs?: number;
   forceKillGraceMs?: number;
@@ -861,8 +864,12 @@ export function createCodexAppServerHost(
 export function buildCodexAppServerArgs(input: {
   profile: string;
   mcpServers?: CodexMcpServerConfig[];
+  builtInTools?: BuiltInToolPolicy;
 }): string[] {
   return [
+    ...(input.builtInTools === undefined
+      ? []
+      : codexToolIsolationArgs(input.builtInTools)),
     ...(normalizeProfile(input.profile) === 'default'
       ? []
       : ['--profile', normalizeProfile(input.profile)]),

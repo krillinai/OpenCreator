@@ -63,7 +63,7 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
       connected: true,
       session: {
         status: 'signed_in',
-        account: { email: 'member@example.com', name: 'Member' },
+        account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
         transportSecurity: 'secure_https'
       },
       skills: [],

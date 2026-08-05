@@ -69,7 +69,9 @@ export async function registerThreadRoutes(
     const threads = manager.listPublicThreads({
       status,
       purpose,
-      excludePurpose,
+      excludePurpose: purpose === undefined && excludePurpose === undefined
+        ? 'knowledge_conversation'
+        : excludePurpose,
       assignment,
       limit
     });
@@ -79,7 +81,7 @@ export async function registerThreadRoutes(
   server.get('/threads/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const thread = manager.getPublicThread(id);
-    if (thread === undefined) {
+    if (thread === undefined || thread.purpose === 'knowledge_conversation') {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
     return { thread: toThreadResponse(thread) };
@@ -88,7 +90,7 @@ export async function registerThreadRoutes(
   server.get('/threads/:id/runs', async (request, reply) => {
     const { id } = request.params as { id: string };
     const thread = manager.getPublicThread(id);
-    if (thread === undefined) {
+    if (thread === undefined || thread.purpose === 'knowledge_conversation') {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
 
@@ -113,7 +115,7 @@ export async function registerThreadRoutes(
   server.get('/threads/:id/history', async (request, reply) => {
     const { id } = request.params as { id: string };
     const thread = manager.getPublicThread(id);
-    if (thread === undefined) {
+    if (thread === undefined || thread.purpose === 'knowledge_conversation') {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
 
@@ -208,7 +210,7 @@ export async function registerThreadRoutes(
     if (!body.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
 
     const existing = manager.getPublicThread(id);
-    if (existing === undefined) {
+    if (existing === undefined || existing.purpose === 'knowledge_conversation') {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
     if (existing.purpose === 'schedule_task') {
@@ -242,7 +244,7 @@ export async function registerThreadRoutes(
   server.post('/threads/:id/archive', async (request, reply) => {
     const { id } = request.params as { id: string };
     const existing = manager.getPublicThread(id);
-    if (existing === undefined) {
+    if (existing === undefined || existing.purpose === 'knowledge_conversation') {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
     if (existing.purpose === 'schedule_task') {
@@ -360,6 +362,9 @@ function parseCreateThreadRequest(
   if (!isPlainObject(body)) return { ok: false, message: 'body must be an object' };
 
   const input = body as Record<string, unknown>;
+  if (input.enterpriseSubjectId !== undefined) {
+    return { ok: false, message: 'enterpriseSubjectId is server controlled' };
+  }
   if (input.purpose === 'schedule_draft') {
     if (input.projectId !== undefined) {
       return { ok: false, message: 'schedule drafts must not specify projectId' };

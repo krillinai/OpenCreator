@@ -1,5 +1,6 @@
 import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
-import type { CodexMcpServerConfig } from './argv.js';
+import type { BuiltInToolPolicy, CodexMcpServerConfig } from './argv.js';
+import { createCodexProbeHome } from './probe-home.js';
 import {
   buildCodexAppServerArgs,
   createCodexAppServerHost,
@@ -33,6 +34,7 @@ export type StartCodexAppServerInput = {
   inactivityTimeoutMs?: number;
   forceKillGraceMs?: number;
   mcpServers?: CodexMcpServerConfig[];
+  builtInTools?: BuiltInToolPolicy;
   env?: Record<string, string>;
   onNotification?: (notification: Record<string, unknown>) => Promise<void> | void;
   onThreadStarted?: (threadId: string) => Promise<void> | void;
@@ -46,12 +48,16 @@ export type StartCodexAppServerInput = {
 export function startCodexAppServer(
   input: StartCodexAppServerInput
 ): CodexAppServerProcess {
+  const isolatedHome = input.builtInTools !== undefined
+    ? createCodexProbeHome(input.codexHome)
+    : undefined;
   const host = createCodexAppServerHost({
     codexBin: input.codexBin,
-    codexHome: input.codexHome,
+    codexHome: isolatedHome?.path ?? input.codexHome,
     cwd: input.cwd,
     profile: input.profile,
     mcpServers: input.mcpServers,
+    builtInTools: input.builtInTools,
     env: input.env,
     spawnTimeoutMs: input.spawnTimeoutMs,
     forceKillGraceMs: input.forceKillGraceMs
@@ -77,10 +83,12 @@ export function startCodexAppServer(
     result: process.result.then(
       async result => {
         await host.close('one_shot_completed');
+        isolatedHome?.cleanup();
         return result;
       },
       async error => {
         await host.close('one_shot_failed').catch(() => undefined);
+        isolatedHome?.cleanup();
         throw error;
       }
     )

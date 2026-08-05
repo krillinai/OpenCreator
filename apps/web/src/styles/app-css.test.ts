@@ -165,9 +165,13 @@ describe('app CSS visual contracts', () => {
     expect(projectTree).toContain('padding: 0 12px 4px 0;');
     expect(sidebarRow).toContain('height: var(--control-compact-md);');
     expect(sidebarRow).toContain('font-size: 12px;');
+    expect(sidebarRow).toContain('font-weight: 500;');
     expect(sidebarRow).toContain('gap: 4px;');
     expect(sidebarRow).toContain('padding: 0 6px;');
-    expect(projectRow).toContain('font-weight: 400;');
+    expect(projectRow).toContain('font-weight: 500;');
+    expect(cssBlock('.conversation-row strong')).toContain('font-weight: 500;');
+    expect(cssBlock('.sidebar-task-copy strong')).toContain('font-weight: 500;');
+    expect(cssBlock('.sidebar-section h2')).toContain('font-weight: 500;');
     expect(appCss).toMatch(/\.conversation-row\s*\{[^}]*padding:\s*0 10px 0 29px;/);
     expect(cssBlock('.sidebar-row svg')).toContain('width: 16px;');
     expect(currentProjectIcon).toContain('color: var(--accent);');

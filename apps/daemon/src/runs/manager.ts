@@ -11,13 +11,15 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import type { ApprovalManager } from '../approvals/manager.js';
-import type {
-  AgentScheduleRunInjector,
-  AgentToolRunInjection
+import {
+  AgentToolPolicyError,
+  type AgentScheduleRunInjector,
+  type AgentToolRunInjection
 } from '../agent-tools/run-injection.js';
 import {
   buildCodexExecArgs,
   buildCodexResumeArgs,
+  type BuiltInToolPolicy,
   type CodexMcpServerConfig
 } from '../codex/argv.js';
 import {
@@ -293,7 +295,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         options.runtimeTransport === 'app-server'
         && options.persistentAppServerExecutor !== undefined
         && (runInput.createdBy ?? 'api') === 'api'
-        && thread !== undefined;
+        && thread !== undefined
+        && thread.purpose !== 'knowledge_conversation';
       if (usePersistentAppServer) {
         const queuedRun: QueuedRun = {
           id,
@@ -830,7 +833,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           });
     } catch (error) {
       return failBeforeSpawnAndRelease({
-        code: 'AGENT_TOOL_INJECTION_FAILED',
+        code: error instanceof AgentToolPolicyError
+          ? error.code
+          : 'AGENT_TOOL_INJECTION_FAILED',
         message: error instanceof Error ? error.message : String(error),
         terminationReason: 'stream_error'
       });
@@ -846,7 +851,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       resolvedResumeMode,
       resolvedCodexThreadId,
       options.runtimeTransport,
-      agentToolInjection?.mcpServers
+      agentToolInjection?.mcpServers,
+      agentToolInjection?.builtInTools
     );
     if (codexArgs === undefined) {
       return failBeforeSpawnAndRelease({
@@ -1116,7 +1122,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           codexHome: options.codexHome,
           profile: executionRunInput.profile,
           mcpServers: agentToolInjection?.mcpServers,
-          env: agentToolInjection?.env
+          env: agentToolInjection?.env,
+          builtInTools: agentToolInjection?.builtInTools
         });
       }
 
@@ -1134,7 +1141,8 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           resolvedResumeMode,
           resolvedCodexThreadId,
           options.runtimeTransport,
-          agentToolInjection?.mcpServers
+          agentToolInjection?.mcpServers,
+          agentToolInjection?.builtInTools
         );
         stdoutLines.length = 0;
         stderr = '';
@@ -2146,7 +2154,8 @@ function buildRunArgv(
   input: ResolvedCreateRunInput,
   resumeMode: ResolvedResumeMode,
   codexThreadId?: string,
-  mcpServers?: CodexMcpServerConfig[]
+  mcpServers?: CodexMcpServerConfig[],
+  builtInTools?: BuiltInToolPolicy
 ): string[] | undefined {
   if (resumeMode === 'resume_thread') {
     if (codexThreadId === undefined) return undefined;
@@ -2156,7 +2165,8 @@ function buildRunArgv(
       model: input.model,
       reasoning: input.reasoning,
       imagePaths: input.imagePaths,
-      mcpServers
+      mcpServers,
+      builtInTools
     });
   }
 
@@ -2167,7 +2177,8 @@ function buildRunArgv(
     model: input.model,
     reasoning: input.reasoning,
     imagePaths: input.imagePaths,
-    mcpServers
+    mcpServers,
+    builtInTools
   });
 }
 
@@ -2176,15 +2187,17 @@ function buildRuntimeArgv(
   resumeMode: ResolvedResumeMode,
   codexThreadId: string | undefined,
   runtimeTransport: RunManagerOptions['runtimeTransport'],
-  mcpServers?: CodexMcpServerConfig[]
+  mcpServers?: CodexMcpServerConfig[],
+  builtInTools?: BuiltInToolPolicy
 ): string[] | undefined {
   if (runtimeTransport === 'app-server') {
     return buildCodexAppServerArgs({
       profile: input.profile,
-      mcpServers
+      mcpServers,
+      builtInTools
     });
   }
-  return buildRunArgv(input, resumeMode, codexThreadId, mcpServers);
+  return buildRunArgv(input, resumeMode, codexThreadId, mcpServers, builtInTools);
 }
 
 function buildThreadRunDiagnosticsMetadata(input: {

@@ -188,7 +188,11 @@ function createSessionManager(): EnterpriseSessionManager {
     startRestore: vi.fn(),
     getSnapshot: vi.fn(() => ({
       status: 'signed_in' as const,
-      account: { email: 'member@example.com', name: 'Member' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'member@example.com',
+        name: 'Member'
+      },
       transportSecurity: 'secure_https' as const
     })),
     refresh: vi.fn(),
@@ -218,6 +222,8 @@ function createHttpClient(
       meta: { nextCursor: '', hasNext: false }
     })),
     uploadKnowledgeDocument: vi.fn(async () => knowledgeDocument()),
+    hasKnowledgeSearchGrant: vi.fn(async () => false),
+    searchKnowledge: vi.fn(async () => []),
     listSkills: vi.fn(async () => []),
     getSkillDetail: vi.fn(),
     downloadSkillPackage: vi.fn(),

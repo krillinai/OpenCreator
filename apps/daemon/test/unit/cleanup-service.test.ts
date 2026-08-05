@@ -380,6 +380,7 @@ function makeThreadRow(overrides: Partial<ThreadRow> & { id: string }): ThreadRo
     title: null,
     codex_thread_id: null,
     project_id: null,
+    enterprise_subject_id: null,
     origin: 'clawee_created',
     cwd: tempDir,
     canonical_cwd: tempDir,

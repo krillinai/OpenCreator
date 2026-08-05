@@ -986,6 +986,7 @@ function runtimeThread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
     scheduleId: 'schedule-1',
     title: '每日总结',
     projectId: null,
+    enterpriseSubjectId: null,
     origin: 'clawee_created',
     codexThreadId: null,
     cwd: '/workspace/current',
