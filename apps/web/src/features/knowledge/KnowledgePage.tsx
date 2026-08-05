@@ -18,9 +18,13 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode
 } from 'react';
+import { beginPaneResize } from '../../components/layout/pane-resize-2026-07-29.js';
 import './knowledge.css';
 
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
@@ -60,9 +64,11 @@ export type KnowledgePageProps = {
 
 export function KnowledgePage(props: KnowledgePageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const conversationLayoutRef = useRef<HTMLElement | null>(null);
   const [mobileDocumentsOpen, setMobileDocumentsOpen] = useState(false);
   const [fileSelectionError, setFileSelectionError] = useState<string>();
   const [mode, setMode] = useState<'list' | 'conversation'>('list');
+  const [conversationPaneWidth, setConversationPaneWidth] = useState<number>();
   const selectedKnowledgeBase = props.knowledgeBases?.find(
     item => item.knowledgeBaseId === props.selectedKnowledgeBaseId
   );
@@ -97,6 +103,32 @@ export function KnowledgePage(props: KnowledgePageProps) {
     }
     setFileSelectionError(undefined);
     props.onUpload(file);
+  }
+
+  function updateConversationPaneWidth(clientX: number) {
+    const rect = conversationLayoutRef.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    setConversationPaneWidth(Math.min(
+      Math.max(clientX - rect.left, 420),
+      Math.max(420, rect.width - 366)
+    ));
+  }
+
+  function resizeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const rect = conversationLayoutRef.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    const current = conversationPaneWidth ?? Math.round(rect.width * 0.6) - 6;
+    const delta = event.key === 'ArrowLeft' ? -24 : 24;
+    setConversationPaneWidth(Math.min(
+      Math.max(current + delta, 420),
+      Math.max(420, rect.width - 366)
+    ));
+  }
+
+  function beginConversationResize(event: ReactMouseEvent<HTMLDivElement>) {
+    beginPaneResize(event, updateConversationPaneWidth);
   }
 
   if (!props.connected) {
@@ -363,7 +395,14 @@ export function KnowledgePage(props: KnowledgePageProps) {
             )}
           </section>
         </div>
-        <section className="knowledge-conversation" hidden={mode !== 'conversation'}>
+        <section
+          ref={conversationLayoutRef}
+          className="conversation-file-layout knowledge-conversation"
+          hidden={mode !== 'conversation'}
+          style={conversationPaneWidth === undefined
+            ? undefined
+            : ({ '--conversation-pane-width': `${conversationPaneWidth}px` } as CSSProperties)}
+        >
           <div className="knowledge-conversation__main">
             {props.conversation ?? (
               <KnowledgeEmpty
@@ -373,6 +412,16 @@ export function KnowledgePage(props: KnowledgePageProps) {
               />
             )}
           </div>
+          <div
+            className="pane-resize-handle conversation-file-resize-handle"
+            role="separator"
+            aria-label="调整知识对话和列表区域宽度"
+            aria-orientation="vertical"
+            aria-valuenow={conversationPaneWidth}
+            tabIndex={0}
+            onMouseDown={beginConversationResize}
+            onKeyDown={resizeWithKeyboard}
+          />
           <aside className="knowledge-conversation__context" aria-label="对话知识库范围">
             <div className="knowledge-conversation__context-heading">
               <div>

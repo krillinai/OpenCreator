@@ -255,6 +255,8 @@ describe('KnowledgePage', () => {
     expect(screen.getByText('知识库对话工作区')).toBeVisible();
     expect(screen.getByRole('complementary', { name: '对话知识库范围' }))
       .toBeVisible();
+    expect(screen.getByRole('separator', { name: '调整知识对话和列表区域宽度' }))
+      .toBeVisible();
     expect(screen.getByRole('button', { name: '返回列表视图' }))
       .toBeInTheDocument();
     expect(screen.getByRole('button', { name: '刷新企业知识库' }))

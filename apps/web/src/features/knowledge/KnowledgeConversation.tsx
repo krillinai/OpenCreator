@@ -30,8 +30,8 @@ export function KnowledgeConversation(props: KnowledgeConversationProps) {
   }
 
   return (
-    <div className="knowledge-conversation__workspace">
-      <div className="knowledge-conversation__timeline" aria-live="polite">
+    <section className="conversation-page knowledge-conversation__workspace">
+      <div className="conversation-body knowledge-conversation__timeline" aria-live="polite">
         {messages.length === 0 ? (
           <div className="knowledge-conversation__empty">
             <strong>询问企业知识库</strong>
@@ -43,9 +43,10 @@ export function KnowledgeConversation(props: KnowledgeConversationProps) {
           </div>
         ))}
       </div>
-      <form className="knowledge-conversation__composer" onSubmit={submit}>
-        {error === undefined ? null : <p role="alert">{error}</p>}
-        <div>
+      <div className="composer-wrap">
+        <form className="clawee-composer knowledge-conversation__composer" onSubmit={submit}>
+          {error === undefined ? null : <p role="alert">{error}</p>}
+          <div>
           <textarea
             aria-label="询问企业知识库"
             placeholder="询问企业知识库"
@@ -63,8 +64,9 @@ export function KnowledgeConversation(props: KnowledgeConversationProps) {
               ? <LoaderCircle className="knowledge-spinner" size={17} aria-hidden="true" />
               : <Send size={17} aria-hidden="true" />}
           </button>
-        </div>
-      </form>
-    </div>
+          </div>
+        </form>
+      </div>
+    </section>
   );
 }
