@@ -145,7 +145,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
 
   return (
     <main className="knowledge-page">
-      <div className="knowledge-page__inner">
+      <div className="knowledge-page__inner" data-mode={mode}>
         <header className="knowledge-header">
           <div>
             <h1>企业知识库</h1>
@@ -376,7 +376,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
           <aside className="knowledge-conversation__context" aria-label="对话知识库范围">
             <div className="knowledge-conversation__context-heading">
               <div>
-                <strong>知识库</strong>
+                <strong>企业知识库</strong>
                 <span>{props.knowledgeBases?.length ?? 0} 个可访问项</span>
               </div>
             </div>

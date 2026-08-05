@@ -12,6 +12,13 @@
   padding: 28px clamp(18px, 2.4vw, 32px) 36px;
 }
 
+.knowledge-page__inner[data-mode="conversation"] {
+  width: 100%;
+  max-width: none;
+  padding-right: 18px;
+  padding-left: 18px;
+}
+
 .knowledge-header {
   display: flex;
   align-items: flex-start;
@@ -70,23 +77,26 @@
 }
 
 .knowledge-conversation {
+  height: calc(100vh - 124px);
   min-height: 620px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 18px;
-}
-
-.knowledge-conversation__main {
-  min-width: 0;
-  min-height: 620px;
+  grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   overflow: hidden;
 }
 
+.knowledge-conversation__main {
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  overflow: clip;
+}
+
 .knowledge-conversation__workspace {
-  min-height: 620px;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   background: var(--bg);
@@ -94,9 +104,11 @@
 
 .knowledge-conversation__context {
   min-width: 0;
-  align-self: start;
-  padding-left: 18px;
+  min-height: 0;
+  padding: 0;
   border-left: 1px solid var(--border);
+  background: var(--surface-2);
+  overflow: auto;
 }
 
 .knowledge-conversation__context-heading,
@@ -105,7 +117,9 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  padding: 3px 0 12px;
+  min-height: 58px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .knowledge-conversation__context-heading div {
@@ -134,6 +148,10 @@
   list-style: none;
 }
 
+.knowledge-conversation__library-list {
+  padding: 6px;
+}
+
 .knowledge-conversation__library-list button {
   width: 100%;
   min-height: 42px;
@@ -141,8 +159,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 6px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: var(--text);
   background: transparent;
   text-align: left;
@@ -151,7 +170,8 @@
 .knowledge-conversation__library-list button:hover,
 .knowledge-conversation__library-list button[aria-current="page"] {
   color: var(--accent-strong);
-  background: var(--surface-2);
+  border-color: var(--border);
+  background: var(--surface);
 }
 
 .knowledge-conversation__library-list strong {
@@ -170,8 +190,8 @@
 }
 
 .knowledge-conversation__documents {
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: 6px;
+  padding: 0 16px 16px;
   border-top: 1px solid var(--border);
 }
 
@@ -739,7 +759,7 @@
   }
 
   .knowledge-conversation__context {
-    padding: 16px 0 0;
+    padding: 0;
     border-top: 1px solid var(--border);
     border-left: 0;
   }
