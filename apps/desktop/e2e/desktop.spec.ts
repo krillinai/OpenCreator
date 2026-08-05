@@ -321,11 +321,46 @@ test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可
       sandbox: 'workspace-write'
     });
 
+    await fixture.page.addInitScript(threadId => {
+      const originalFetch = window.fetch.bind(window);
+      let releaseHistory: (() => void) | undefined;
+      const historyGate = new Promise<void>(resolve => {
+        releaseHistory = resolve;
+      });
+      Object.defineProperty(window, '__claweeReleaseHistoryLoad', {
+        configurable: true,
+        value: () => releaseHistory?.()
+      });
+      window.fetch = async (...args: Parameters<typeof fetch>) => {
+        const input = args[0];
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes(`/threads/${threadId}/history?`)) {
+          await historyGate;
+        }
+        return await originalFetch(...args);
+      };
+    }, createdThread.body.thread.id);
     await fixture.page.evaluate(threadId => {
       window.location.hash = `#/thread/${threadId}`;
     }, createdThread.body.thread.id);
     await fixture.page.reload({ waitUntil: 'domcontentloaded' });
     await waitForWorkspace(fixture.page);
+
+    await expect(fixture.page.getByRole('status', {
+      name: '正在加载会话历史'
+    })).toBeVisible();
+    await expect(fixture.page.locator('.conversation-page')).not.toHaveClass(/is-empty/);
+    await expect(fixture.page.getByText('需要帮你做点什么')).toHaveCount(0);
+    await expect(fixture.page.getByText('数据分析')).toHaveCount(0);
+    await fixture.page.evaluate(() => {
+      (
+        window as Window & { __claweeReleaseHistoryLoad?: () => void }
+      ).__claweeReleaseHistoryLoad?.();
+    });
+    await expect(fixture.page.getByRole('status', {
+      name: '正在加载会话历史'
+    })).toHaveCount(0);
+    await expect(fixture.page.locator('.conversation-page')).toHaveClass(/is-empty/);
 
     const title = fixture.page.getByRole('heading', { name: 'hello' });
     const fileButton = fixture.page

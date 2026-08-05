@@ -802,6 +802,81 @@ describe('App', () => {
       .toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('waits for restored conversation history before showing the empty conversation layout', async () => {
+    const [project] = persistProjects('/Users/test/develop/clean');
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: project.id,
+      selectedThreadId: 'thread-restored-loading'
+    }));
+    const history = createDeferred<Response>();
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.windowChrome = {
+      integratedTitleBar: true,
+      titleBarHeight: 38,
+      trafficLightInset: 76
+    };
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const thread = createThreadResponse({
+      id: 'thread-restored-loading',
+      title: 'hello',
+      projectId: project.id,
+      cwd: project.cwd,
+      canonicalCwd: project.cwd
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [thread] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/history?limit=50`)) {
+        return history.promise;
+      }
+      if (url.endsWith(`/threads/${thread.id}/runs?limit=50`)) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '正在加载会话历史' }))
+      .toBeInTheDocument();
+    expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
+    expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
+    expect(screen.queryByText('数据分析')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
+
+    history.resolve(jsonResponse({
+      threadId: thread.id,
+      codexThreadId: null,
+      items: []
+    }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('status', { name: '正在加载会话历史' }))
+        .not.toBeInTheDocument();
+    });
+    expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
+    expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
+    expect(screen.getByText('数据分析')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /选择项目/ })).toBeInTheDocument();
+  });
+
   it('keeps a browser conversation title inside the conversation page', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();

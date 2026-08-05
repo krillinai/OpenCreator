@@ -91,6 +91,37 @@ test('browser first launch uses the Runtime default project without desktop-only
   ))).toHaveLength(1);
 });
 
+test('restored conversations wait for history before entering the empty layout', async ({
+  page,
+  runtime
+}) => {
+  let releaseHistory: (() => void) | undefined;
+  const historyGate = new Promise<void>(resolve => {
+    releaseHistory = resolve;
+  });
+  await page.route('**/.clawee/runtime/threads/*/history?**', async route => {
+    await historyGate;
+    await route.fallback();
+  });
+
+  await runtime.openApp(page);
+  await page.goto(`${runtime.origin}/#/thread/${runtime.ordinaryThreadId}`);
+
+  await expect(page.getByRole('status', { name: '正在加载会话历史' })).toBeVisible();
+  await expect(page.locator('.conversation-page')).not.toHaveClass(/is-empty/);
+  await expect(page.getByText('需要帮你做点什么')).toHaveCount(0);
+  await expect(page.getByText('数据分析')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /选择项目/ })).toHaveCount(0);
+
+  releaseHistory?.();
+
+  await expect(page.getByRole('status', { name: '正在加载会话历史' })).toHaveCount(0);
+  await expect(page.locator('.conversation-page')).toHaveClass(/is-empty/);
+  await expect(page.getByText('需要帮你做点什么')).toBeVisible();
+  await expect(page.getByText('数据分析')).toBeVisible();
+  await expect(page.getByRole('button', { name: /选择项目/ })).toBeVisible();
+});
+
 test('Clawee owns projects and mapped sessions across reloads', async ({ page, runtime }) => {
   runtime.configureInvocations([{
     threadId: 'codex-owned-e2e',

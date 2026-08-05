@@ -4531,7 +4531,11 @@ export function AppController(props: AppControllerProps) {
     event.preventDefault();
   }
   const conversationEmpty = timelineItems.length === 0;
-  const showConversationEmptyState = conversationEmpty
+  const conversationHistoryPending =
+    state.selectedThreadId !== undefined
+    && historyLoadedThreadId !== state.selectedThreadId;
+  const conversationConfirmedEmpty = conversationEmpty && !conversationHistoryPending;
+  const showConversationEmptyState = conversationConfirmedEmpty
     && (selectedThread === undefined || selectedThread.purpose === 'conversation');
   const showConversationHeader = selectedThread !== undefined
     || selectedScheduleTask !== undefined
@@ -4691,7 +4695,7 @@ export function AppController(props: AppControllerProps) {
           projectName={currentProjectName}
           projects={projects}
           showProjectSelector={shouldShowComposerProjectSelector({
-            conversationEmpty,
+            conversationEmpty: conversationConfirmedEmpty,
             threadPurpose: selectedThread?.purpose
           })}
           permission={effectiveComposerConfig.permission}
@@ -4758,7 +4762,7 @@ export function AppController(props: AppControllerProps) {
           }}
           onSubmit={submitPrompt}
         />
-        {conversationEmpty ? <ConversationStarterTags /> : null}
+        {conversationConfirmedEmpty ? <ConversationStarterTags /> : null}
       </div>
     </section>
   );
