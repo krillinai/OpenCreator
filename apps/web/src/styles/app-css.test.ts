@@ -123,7 +123,7 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.sidebar-primary .sidebar-row')).toContain('height: var(--control-compact-sm);');
     expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
     expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?button,[\s\S]*?min-height:\s*var\(--control-touch\) !important;/);
-    expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-task-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
+    expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-recent-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
   });
 
   it('uses shared hover, pressed, focus-visible, and disabled states', () => {
@@ -205,21 +205,30 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('keeps task rows stable, scrollable, and motion-aware', () => {
-    const taskSection = cssBlock('.sidebar-task-section');
-    const taskList = cssBlock('.sidebar-task-list');
-    const taskRow = cssBlock('.sidebar-task-row');
-    const taskSpinner = cssBlock('.sidebar-task-spinner');
+  it('lets projects use content height while recent rows fill and scroll through the remainder', () => {
+    const projectSection = cssBlock('.sidebar-project-section');
+    const recentSection = cssBlock('.sidebar-recent-section');
+    const recentList = cssBlock('.sidebar-recent-list');
+    const recentRow = cssBlock('.sidebar-recent-row');
+    const recentSpinner = cssBlock('.sidebar-recent-spinner');
 
-    expect(taskSection).toContain('min-height: 0;');
-    expect(taskSection).toContain('max-height: 220px;');
-    expect(taskList).toContain('overflow-y: auto;');
-    expect(taskList).toContain('grid-auto-rows: 34px;');
-    expect(taskRow).toContain('height: 34px;');
-    expect(taskRow).toContain('min-height: 34px;');
-    expect(taskSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
     expect(appCss).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.sidebar-task-spinner\s*\{[^}]*animation:\s*none;/
+      /\n\.clawee-sidebar\s*\{[^}]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\) auto;/
+    );
+    expect(cssBlock('.clawee-sidebar[data-collapsed="true"]'))
+      .toContain('grid-template-rows: auto auto minmax(0, 1fr);');
+    expect(projectSection).toContain('max-height: min(38vh, 360px);');
+    expect(recentSection).toContain('min-height: 0;');
+    expect(recentList).toContain('overflow-y: auto;');
+    expect(recentList).toContain('grid-auto-rows: 30px;');
+    expect(recentRow).toContain('height: 30px;');
+    expect(recentRow).toContain('min-height: 30px;');
+    expect(recentSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
+    expect(appCss).toMatch(
+      /@media \(max-width: 480px\)\s*\{[\s\S]*?\.sidebar-project-tree\s*\{[^}]*overflow-y:\s*auto;/
+    );
+    expect(appCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.sidebar-recent-spinner\s*\{[^}]*animation:\s*none;/
     );
   });
 

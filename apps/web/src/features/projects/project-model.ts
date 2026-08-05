@@ -26,6 +26,7 @@ export type ClaweeConversation = {
   id: string;
   projectId: string;
   title: string;
+  updatedAt: string;
   updatedLabel: string;
 };
 

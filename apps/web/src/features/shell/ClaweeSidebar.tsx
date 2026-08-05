@@ -37,15 +37,32 @@ import type {
   ClaweeConversation,
   ClaweeProject
 } from '../projects/project-model.js';
-import type {
-  SidebarTaskStatus,
-  SidebarTaskSummary
-} from './sidebar-task-model.js';
+import type { SidebarTaskStatus } from './sidebar-task-model.js';
+
+type SidebarRecentItemBase = {
+  id: string;
+  title: string;
+  updatedAt: string;
+  updatedLabel: string;
+};
+
+export type SidebarRecentItem =
+  | (SidebarRecentItemBase & {
+      kind: 'conversation';
+      threadId: string;
+      running: boolean;
+    })
+  | (SidebarRecentItemBase & {
+      kind: 'task';
+      threadId?: string;
+      status: SidebarTaskStatus;
+      unread: boolean;
+    });
 
 export function ClaweeSidebar(props: {
   projects: ClaweeProject[];
   conversations: ClaweeConversation[];
-  tasks: SidebarTaskSummary[];
+  recentItems: SidebarRecentItem[];
   runningConversationIds?: ReadonlySet<string>;
   currentProjectId?: string;
   selectedConversationId?: string;
@@ -105,8 +122,8 @@ export function ClaweeSidebar(props: {
     { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') }
   ];
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
-  const selectedTaskThread = props.tasks.some(
-    task => task.threadId === props.selectedConversationId
+  const selectedTaskThread = props.recentItems.some(
+    item => item.kind === 'task' && item.threadId === props.selectedConversationId
   );
 
   for (const conversation of props.conversations) {
@@ -218,7 +235,10 @@ export function ClaweeSidebar(props: {
       </div>
 
       {collapsed ? null : (
-        <section className="sidebar-section" aria-labelledby="clawee-projects-heading">
+        <section
+          className="sidebar-section sidebar-project-section"
+          aria-labelledby="clawee-projects-heading"
+        >
           <div className="sidebar-section-heading">
             <h2 id="clawee-projects-heading">项目</h2>
             {props.onAddProject || props.onManageProjects ? (
@@ -435,69 +455,100 @@ export function ClaweeSidebar(props: {
 
       {collapsed ? null : (
         <section
-          className="sidebar-section sidebar-task-section"
-          aria-labelledby="clawee-tasks-heading"
+          className="sidebar-section sidebar-recent-section"
+          aria-labelledby="clawee-recent-heading"
         >
-          <h2 id="clawee-tasks-heading">任务</h2>
-          {props.tasks.length === 0 ? (
-            <p className="sidebar-empty">暂无任务</p>
+          <h2 id="clawee-recent-heading">最近</h2>
+          {props.recentItems.length === 0 ? (
+            <p className="sidebar-empty">暂无最近会话</p>
           ) : (
-            <div className="sidebar-task-list" aria-label="任务会话">
-              {props.tasks.map(task => {
-                const visual = taskStatusVisual(task.status);
-                const StatusIcon = visual.icon;
-                const disabled = task.status === 'repair_required' || task.threadId === undefined;
-                const detail = task.status === 'idle'
-                  ? task.nextRunLabel ?? visual.label
-                  : visual.label;
+            <div className="sidebar-recent-list" aria-label="最近会话">
+              {props.recentItems.map(item => {
+                const taskVisual = item.kind === 'task'
+                  ? taskStatusVisual(item.status)
+                  : undefined;
+                const StatusIcon = taskVisual?.icon;
+                const disabled = item.kind === 'task'
+                  && (item.status === 'repair_required' || item.threadId === undefined);
+                const detail = item.kind === 'task' && item.status !== 'idle'
+                  ? taskVisual?.label ?? item.updatedLabel
+                  : item.updatedLabel;
                 const canDeleteDraft =
-                  task.status === 'draft'
-                  && task.threadId !== undefined
+                  item.kind === 'task'
+                  && item.status === 'draft'
+                  && item.threadId !== undefined
                   && props.onDeleteTaskDraft !== undefined;
                 return (
                   <div
-                    className="sidebar-task-row-shell"
-                    data-status={task.status}
-                    key={task.id}
+                    className="sidebar-recent-row-shell"
+                    data-kind={item.kind}
+                    data-status={item.kind === 'task' ? item.status : undefined}
+                    data-has-action={canDeleteDraft ? 'true' : 'false'}
+                    key={item.id}
                   >
                     <button
                       type="button"
-                      className="sidebar-task-row"
-                      data-status={task.status}
-                      aria-current={task.threadId === props.selectedConversationId ? 'page' : undefined}
+                      role="link"
+                      className="sidebar-recent-row"
+                      data-kind={item.kind}
+                      data-status={item.kind === 'task' ? item.status : undefined}
+                      aria-label={
+                        item.kind === 'conversation' && item.running
+                          ? `${item.title} 正在运行 ${detail}`
+                          : undefined
+                      }
+                      aria-current={item.threadId === props.selectedConversationId ? 'page' : undefined}
                       disabled={disabled}
                       onClick={() => {
-                        if (task.threadId !== undefined) props.onSelectTask(task.threadId);
+                        if (item.threadId === undefined) return;
+                        if (item.kind === 'task') props.onSelectTask(item.threadId);
+                        else props.onSelectConversation(item.threadId);
                       }}
                     >
-                      <StatusIcon
-                        className={task.status === 'running' ? 'sidebar-task-spinner' : 'sidebar-task-icon'}
-                        size={16}
-                        strokeWidth={2}
-                        aria-hidden="true"
-                      />
-                      <span className="sidebar-task-copy">
-                        <strong>{task.name}</strong>
-                        <span>{detail}</span>
+                      <span className="sidebar-recent-title">
+                        {StatusIcon ? (
+                          <StatusIcon
+                            className={
+                              item.kind === 'task' && item.status === 'running'
+                                ? 'sidebar-recent-spinner'
+                                : 'sidebar-recent-status-icon'
+                            }
+                            size={15}
+                            strokeWidth={2}
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        <strong>{item.title}</strong>
                       </span>
-                      {task.unread ? (
-                        <span className="sidebar-task-unread" aria-label="未读更新" />
-                      ) : null}
+                      <span className="sidebar-recent-meta">
+                        {item.kind === 'conversation' && item.running ? (
+                          <LoaderCircle
+                            className="sidebar-recent-spinner"
+                            size={13}
+                            strokeWidth={2}
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        <span>{detail}</span>
+                        {item.kind === 'task' && item.unread ? (
+                          <span className="sidebar-recent-unread" aria-label="未读更新" />
+                        ) : null}
+                      </span>
                     </button>
                     {canDeleteDraft ? (
                       <button
                         type="button"
-                        className="sidebar-task-delete"
-                        aria-label={`删除草稿 ${task.name}`}
+                        className="sidebar-recent-delete"
+                        aria-label={`删除草稿 ${item.title}`}
                         title="删除草稿"
-                        disabled={deletingDraftThreadId === task.threadId}
+                        disabled={deletingDraftThreadId === item.threadId}
                         onClick={() => {
-                          if (task.threadId === undefined) return;
-                          setDraftPendingDeletion({ threadId: task.threadId });
+                          if (item.threadId === undefined) return;
+                          setDraftPendingDeletion({ threadId: item.threadId });
                         }}
                       >
-                        {deletingDraftThreadId === task.threadId ? (
-                          <LoaderCircle className="sidebar-task-spinner" size={15} aria-hidden="true" />
+                        {deletingDraftThreadId === item.threadId ? (
+                          <LoaderCircle className="sidebar-recent-spinner" size={15} aria-hidden="true" />
                         ) : (
                           <Trash2 size={15} aria-hidden="true" />
                         )}

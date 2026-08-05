@@ -111,7 +111,10 @@ import type {
   RuntimeStatus
 } from '../features/settings/ClaweeSettingsView.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
-import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
+import {
+  ClaweeSidebar,
+  type SidebarRecentItem
+} from '../features/shell/ClaweeSidebar.js';
 import {
   createScheduleDraftSidebarSummaries,
   createSidebarTaskSummaries
@@ -679,6 +682,47 @@ export function AppController(props: AppControllerProps) {
     () => [...scheduleDraftSidebarTasks, ...scheduleSidebarTasks],
     [scheduleDraftSidebarTasks, scheduleSidebarTasks]
   );
+  const recentSidebarItems = useMemo<SidebarRecentItem[]>(() => {
+    const threadById = new Map(runtimeThreads.map(thread => [thread.id, thread]));
+    const scheduleById = new Map(runtimeSchedules.map(schedule => [schedule.id, schedule]));
+    const conversationItems: SidebarRecentItem[] = conversations.map(conversation => ({
+      id: `conversation:${conversation.id}`,
+      kind: 'conversation',
+      threadId: conversation.id,
+      title: conversation.title,
+      updatedAt: conversation.updatedAt,
+      updatedLabel: conversation.updatedLabel,
+      running: runningThreadIds.has(conversation.id)
+    }));
+    const taskItems: SidebarRecentItem[] = sidebarTasks.map(task => {
+      const threadUpdatedAt = task.threadId === undefined
+        ? undefined
+        : threadById.get(task.threadId)?.updatedAt;
+      const scheduleUpdatedAt = scheduleById.get(task.id)?.updatedAt;
+      const updatedAt = latestRuntimeTimestamp(
+        threadUpdatedAt,
+        scheduleUpdatedAt
+      ) ?? new Date(0).toISOString();
+      return {
+        id: `task:${task.id}`,
+        kind: 'task',
+        ...(task.threadId === undefined ? {} : { threadId: task.threadId }),
+        title: task.name,
+        updatedAt,
+        updatedLabel: formatRelativeTime(updatedAt),
+        status: task.status,
+        unread: task.unread
+      };
+    });
+
+    return [...conversationItems, ...taskItems].sort(compareRecentSidebarItems);
+  }, [
+    conversations,
+    runtimeSchedules,
+    runtimeThreads,
+    runningThreadIds,
+    sidebarTasks
+  ]);
   const runningConversationIds = runningThreadIds;
   const selectedThreadExists = state.selectedThreadId !== undefined
     && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
@@ -4180,6 +4224,21 @@ export function AppController(props: AppControllerProps) {
 
   function handleScheduleChanged(schedule: ScheduleResponse) {
     setRuntimeSchedules(previous => upsertSchedule(previous, schedule));
+    if (runtimeThreadsRef.current.some(thread => thread.id === schedule.threadId)) return;
+
+    const activeThreadService = threadServiceRef.current;
+    if (activeThreadService === null) return;
+    void activeThreadService.getThread(schedule.threadId).then(response => {
+      if (
+        !mountedRef.current
+        || threadServiceRef.current !== activeThreadService
+      ) {
+        return;
+      }
+      setRuntimeThreads(previous => upsertThread(previous, response.thread));
+    }).catch(() => {
+      // The schedule list remains usable; opening the task retries the thread lookup.
+    });
   }
 
   function handleScheduleDeleted(schedule: ScheduleResponse) {
@@ -5022,7 +5081,7 @@ export function AppController(props: AppControllerProps) {
         <ClaweeSidebar
           projects={projects}
           conversations={conversations}
-          tasks={sidebarTasks}
+          recentItems={recentSidebarItems}
           runningConversationIds={runningConversationIds}
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
@@ -5523,6 +5582,7 @@ function mapThreadToConversation(
     id: thread.id,
     projectId: thread.projectId,
     title: thread.title ?? thread.codexThreadId ?? thread.id,
+    updatedAt: thread.updatedAt,
     updatedLabel: formatRelativeTime(thread.updatedAt)
   };
 }
@@ -5588,15 +5648,51 @@ function normalizePathForCompare(path: string): string {
   return path.replace(/^~(?=\/)/, '').replace(/\/+$/, '');
 }
 
-export function formatRelativeTime(iso: string): string {
+function compareRecentSidebarItems(
+  left: SidebarRecentItem,
+  right: SidebarRecentItem
+): number {
+  const leftTimestamp = parseRuntimeTimestamp(left.updatedAt);
+  const rightTimestamp = parseRuntimeTimestamp(right.updatedAt);
+  if (Number.isFinite(leftTimestamp) && Number.isFinite(rightTimestamp)) {
+    const timestampDifference = rightTimestamp - leftTimestamp;
+    if (timestampDifference !== 0) return timestampDifference;
+  } else if (Number.isFinite(leftTimestamp)) {
+    return -1;
+  } else if (Number.isFinite(rightTimestamp)) {
+    return 1;
+  }
+  return right.id.localeCompare(left.id);
+}
+
+function latestRuntimeTimestamp(
+  ...values: Array<string | undefined>
+): string | undefined {
+  let latest: string | undefined;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (value === undefined) continue;
+    const timestamp = parseRuntimeTimestamp(value);
+    if (!Number.isFinite(timestamp) || timestamp < latestTimestamp) continue;
+    latest = value;
+    latestTimestamp = timestamp;
+  }
+  return latest;
+}
+
+function parseRuntimeTimestamp(iso: string): number {
   const sqliteUtc = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d{1,3})?$/.exec(
     iso
   );
-  const timestamp = Date.parse(
+  return Date.parse(
     sqliteUtc === null
       ? iso
       : `${sqliteUtc[1]}T${sqliteUtc[2]}${sqliteUtc[3] ?? ''}Z`
   );
+}
+
+export function formatRelativeTime(iso: string): string {
+  const timestamp = parseRuntimeTimestamp(iso);
   if (!Number.isFinite(timestamp)) return '';
 
   const diffMs = Math.max(0, Date.now() - timestamp);

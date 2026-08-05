@@ -1127,7 +1127,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
 
-    await user.click(await screen.findByRole('button', { name: /每日总结/ }));
+    await user.click(await screen.findByRole('link', { name: /每日总结/ }));
 
     expect(await screen.findByLabelText('任务管理')).toBeInTheDocument();
     expect(document.querySelector('.clawee-main-titlebar')).toHaveTextContent('每日总结');
@@ -4764,7 +4764,9 @@ describe('App', () => {
 
     expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.queryByText(prompt)).not.toBeInTheDocument();
+    expect(Array.from(document.querySelectorAll('.timeline-user_message')).some(
+      message => message.textContent?.includes(prompt)
+    )).toBe(false);
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
 
@@ -5114,18 +5116,21 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread-conversation',
               title: '普通会话',
-              purpose: 'conversation'
+              purpose: 'conversation',
+              updatedAt: '2026-08-03T00:00:00.000Z'
             }),
             createThreadResponse({
               id: 'thread-draft',
               title: '任务草稿',
-              purpose: 'schedule_draft'
+              purpose: 'schedule_draft',
+              updatedAt: '2026-08-05T00:00:00.000Z'
             }),
             createThreadResponse({
               id: 'thread-task',
               title: '任务线程旧标题',
               purpose: 'schedule_task',
-              scheduleId: 'schedule-1'
+              scheduleId: 'schedule-1',
+              updatedAt: '2026-08-01T00:00:00.000Z'
             })
           ]
         });
@@ -5136,7 +5141,8 @@ describe('App', () => {
             createScheduleResponse({
               id: 'schedule-1',
               threadId: 'thread-task',
-              name: '每日总结'
+              name: '每日总结',
+              updatedAt: '2026-08-04T00:00:00.000Z'
             })
           ]
         });
@@ -5153,15 +5159,23 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('button', { name: /普通会话/ })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /任务草稿.*草稿/ }))
-      .toHaveClass('sidebar-task-row');
+    const recentList = await screen.findByLabelText('最近会话');
+    expect(within(recentList).getByRole('link', { name: /普通会话/ }))
+      .toBeInTheDocument();
+    expect(within(recentList).getByRole('link', { name: /任务草稿.*草稿/ }))
+      .toHaveClass('sidebar-recent-row');
     expect(within(screen.getByLabelText('content-design 对话')).queryByText('任务草稿'))
       .not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /任务线程旧标题/ })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(requestedUrls.some(url => url.endsWith('/schedules'))).toBe(true);
     });
+    expect(within(recentList).getByRole('link', { name: /每日总结/ }))
+      .toBeInTheDocument();
+    expect(
+      Array.from(recentList.querySelectorAll('.sidebar-recent-row strong'))
+        .map(element => element.textContent)
+    ).toEqual(['任务草稿', '每日总结', '普通会话']);
     expect(requestedUrls.some(url => url.includes('/history'))).toBe(false);
   });
 
@@ -5245,10 +5259,11 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('button', { name: /普通会话/ }));
+    const recentList = await screen.findByLabelText('最近会话');
+    await user.click(within(recentList).getByRole('link', { name: /普通会话/ }));
     expect(await screen.findByText('旧会话内容')).toBeInTheDocument();
 
-    await user.click(await screen.findByRole('button', { name: /每日总结/ }));
+    await user.click(await within(recentList).findByRole('link', { name: /每日总结/ }));
 
     expect(screen.queryByText('旧会话内容')).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: '正在加载会话历史' })).toBeInTheDocument();

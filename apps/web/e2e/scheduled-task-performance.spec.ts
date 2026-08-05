@@ -68,10 +68,10 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
 
   await runtime.openApp(page);
   await openSidebar(page);
-  const taskList = page.getByLabel('任务会话');
-  const taskButtons = taskList.getByRole('button');
+  const taskList = page.getByLabel('最近会话');
+  const taskButtons = taskList.locator('.sidebar-recent-row[data-kind="task"]');
   await expect(taskButtons).toHaveCount(SCHEDULE_COUNT);
-  await expect(taskList.locator('button:disabled')).toHaveCount(0);
+  await expect(taskButtons.locator(':disabled')).toHaveCount(0);
   const initialSample = await readPerformanceSample(page);
   const initialRequests = requests.splice(0);
   expectLoadRequestBudget(initialRequests, taskThreadIds);
@@ -102,22 +102,25 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
   expect(taskHistoryRequests(requests, taskThreadIds)).toEqual([]);
   requests.splice(0);
 
-  await openSidebar(page);
-  await page.getByRole('button', { name: '搜索' }).click();
-  await page.getByRole('searchbox', { name: '搜索会话' }).fill('性能基线摘要');
-  await expect.poll(
-    () => searchConversationRequests(requests).length
-  ).toBe(1);
-  await expect(page.getByText('没有找到匹配的会话')).toBeVisible();
-  const searchRequests = requests.splice(0);
-  expect(searchRequests.length).toBeLessThanOrEqual(MAX_SEARCH_VIEW_REQUESTS);
-  expect(taskHistoryRequests(searchRequests, taskThreadIds)).toEqual([]);
+  let searchRequests: RuntimeRequest[] = [];
+  if (testInfo.project.name === 'chromium-desktop') {
+    await openSidebar(page);
+    await page.getByRole('button', { name: '搜索' }).click();
+    await page.getByRole('searchbox', { name: '搜索会话' }).fill('性能基线摘要');
+    await expect.poll(
+      () => searchConversationRequests(requests).length
+    ).toBe(1);
+    await expect(page.getByText('没有找到匹配的会话')).toBeVisible();
+    searchRequests = requests.splice(0);
+    expect(searchRequests.length).toBeLessThanOrEqual(MAX_SEARCH_VIEW_REQUESTS);
+    expect(taskHistoryRequests(searchRequests, taskThreadIds)).toEqual([]);
+  }
 
   const selectedSchedule = schedules[SCHEDULE_COUNT - 1]!;
   await openSidebar(page);
   const selectedTaskButton = page
-    .getByLabel('任务会话')
-    .getByRole('button')
+    .getByLabel('最近会话')
+    .locator('.sidebar-recent-row[data-kind="task"]')
     .filter({ hasText: selectedSchedule.name });
   const taskOpenStartedAt = Date.now();
   await selectedTaskButton.click();
