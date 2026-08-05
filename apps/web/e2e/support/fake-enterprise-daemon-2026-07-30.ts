@@ -10,6 +10,7 @@ export type FakeEnterpriseState = {
   session: 'signed_out' | 'signed_in';
   installed: boolean;
   createdThread: boolean;
+  uploadedKnowledgeDocument: boolean;
 };
 
 const runtimePrefix = '/.clawee/runtime';
@@ -33,7 +34,8 @@ export class FakeEnterpriseDaemon {
   private state: FakeEnterpriseState = {
     session: 'signed_out',
     installed: false,
-    createdThread: false
+    createdThread: false,
+    uploadedKnowledgeDocument: false
   };
   private requests: FakeEnterpriseRequest[] = [];
   private unknownPaths: string[] = [];
@@ -42,7 +44,8 @@ export class FakeEnterpriseDaemon {
     this.state = {
       session: 'signed_out',
       installed: false,
-      createdThread: false
+      createdThread: false,
+      uploadedKnowledgeDocument: false
     };
     this.requests = [];
     this.unknownPaths = [];
@@ -83,6 +86,7 @@ export class FakeEnterpriseDaemon {
 
     if (path === '/healthz') return fulfill(route, { ok: true });
     if (path === '/codex/status') return fulfill(route, codexStatus());
+    if (path === '/codex/models') return fulfill(route, codexModels());
     if (path === '/projects/migrations/local-storage-v1' && request.method() === 'POST') {
       return fulfill(route, {
         status: 'applied',
@@ -121,6 +125,39 @@ export class FakeEnterpriseDaemon {
     if (path === '/enterprise/logout' && request.method() === 'POST') {
       this.state.session = 'signed_out';
       return fulfill(route, sessionResponse('signed_out'));
+    }
+    if (path === '/enterprise/knowledge-bases' && request.method() === 'GET') {
+      return fulfill(route, {
+        knowledgeBases: [enterpriseKnowledgeBase(
+          this.state.uploadedKnowledgeDocument ? 2 : 1
+        )],
+        meta: { nextCursor: '', hasNext: false },
+        refreshedAt: '2026-08-05T08:00:00.000Z'
+      });
+    }
+    if (
+      path === '/enterprise/knowledge-bases/kb-enterprise/documents'
+      && request.method() === 'GET'
+    ) {
+      return fulfill(route, {
+        documents: [
+          enterpriseKnowledgeDocument(),
+          ...(this.state.uploadedKnowledgeDocument
+            ? [uploadedKnowledgeDocument()]
+            : [])
+        ],
+        meta: { nextCursor: '', hasNext: false },
+        refreshedAt: '2026-08-05T08:00:00.000Z'
+      });
+    }
+    if (
+      path.startsWith('/enterprise/knowledge-bases/kb-enterprise/documents?')
+      && request.method() === 'POST'
+    ) {
+      this.state.uploadedKnowledgeDocument = true;
+      return fulfill(route, {
+        document: uploadedKnowledgeDocument()
+      }, 201);
     }
     if (path === '/enterprise/skills' && request.method() === 'GET') {
       return fulfill(route, {
@@ -247,6 +284,51 @@ function enterpriseSkill(installed: boolean) {
   };
 }
 
+function enterpriseKnowledgeBase(documentCount: number) {
+  return {
+    knowledgeBaseId: 'kb-enterprise',
+    name: '企业制度',
+    description: '公司制度和员工手册',
+    status: 'active',
+    documentCount,
+    permissions: {
+      read: true,
+      upload: true,
+      search: false
+    }
+  };
+}
+
+function enterpriseKnowledgeDocument() {
+  return {
+    documentId: 'doc-handbook',
+    knowledgeBaseId: 'kb-enterprise',
+    name: '员工手册.pdf',
+    sizeBytes: 102400,
+    mimeType: 'application/pdf',
+    status: 'ready',
+    errorMessage: '',
+    uploadedBy: 'member@example.com',
+    createdAt: '2026-08-04T08:00:00.000Z',
+    updatedAt: '2026-08-04T08:01:00.000Z'
+  };
+}
+
+function uploadedKnowledgeDocument() {
+  return {
+    documentId: 'doc-release',
+    knowledgeBaseId: 'kb-enterprise',
+    name: '发布流程.md',
+    sizeBytes: 18,
+    mimeType: 'text/markdown',
+    status: 'processing',
+    errorMessage: '',
+    uploadedBy: 'member@example.com',
+    createdAt: '2026-08-05T08:00:00.000Z',
+    updatedAt: '2026-08-05T08:00:00.000Z'
+  };
+}
+
 function localSkill() {
   return {
     id: 'enterprise-name',
@@ -294,6 +376,28 @@ function codexStatus() {
     codexHomeWritable: true,
     capabilities: {},
     diagnostics: []
+  };
+}
+
+function codexModels() {
+  return {
+    models: [
+      {
+        id: 'gpt-5.6-sol',
+        model: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6 Sol',
+        description: 'Latest model',
+        supportedReasoningEfforts: [
+          { reasoningEffort: 'low', description: 'Fast' },
+          { reasoningEffort: 'medium', description: 'Balanced' },
+          { reasoningEffort: 'high', description: 'Deep' },
+          { reasoningEffort: 'xhigh', description: 'Deepest' }
+        ],
+        defaultReasoningEffort: 'medium',
+        inputModalities: ['text', 'image'],
+        isDefault: true
+      }
+    ]
   };
 }
 

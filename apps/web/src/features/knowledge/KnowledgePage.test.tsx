@@ -1,76 +1,286 @@
+import type {
+  EnterpriseKnowledgeBaseResponse,
+  EnterpriseKnowledgeDocumentResponse,
+  EnterpriseSessionResponse
+} from '@clawee/protocol';
 import { render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
-import { KnowledgePage } from './KnowledgePage.js';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  KnowledgePage,
+  type KnowledgePageProps
+} from './KnowledgePage.js';
 
-describe('KnowledgePage static enterprise conversation', () => {
-  it('renders a conversation workbench without document browsing controls', () => {
-    render(<KnowledgePage />);
+const signedInSession: EnterpriseSessionResponse = {
+  status: 'signed_in',
+  account: { email: 'member@example.com', name: '企业成员' },
+  transportSecurity: 'secure_https'
+};
+
+const writableKnowledgeBase = createKnowledgeBase({
+  knowledgeBaseId: 'kb-product',
+  name: '产品资料',
+  documentCount: 2,
+  permissions: { read: true, upload: true, search: true }
+});
+
+const readOnlyKnowledgeBase = createKnowledgeBase({
+  knowledgeBaseId: 'kb-policy',
+  name: '公司制度',
+  documentCount: 0,
+  permissions: { read: true, upload: false, search: true }
+});
+
+describe('KnowledgePage', () => {
+  it('renders Runtime, session, service, and login gates with explicit actions', async () => {
+    const user = userEvent.setup();
+    const onRefresh = vi.fn();
+    const onOpenAccount = vi.fn();
+    const view = renderKnowledge({
+      connected: false,
+      onRefresh,
+      onOpenAccount
+    });
+
+    expect(screen.getByRole('heading', { name: '正在等待本地 Runtime' }))
+      .toBeInTheDocument();
+
+    view.rerender(createKnowledge({
+      session: {
+        status: 'checking',
+        transportSecurity: 'secure_https'
+      },
+      onRefresh,
+      onOpenAccount
+    }));
+    expect(screen.getByRole('heading', { name: '正在验证企业会话' }))
+      .toBeInTheDocument();
+
+    view.rerender(createKnowledge({
+      session: {
+        status: 'service_unavailable',
+        reason: 'service_unavailable',
+        transportSecurity: 'secure_https'
+      },
+      onRefresh,
+      onOpenAccount
+    }));
+    await user.click(screen.getByRole('button', { name: '重新加载' }));
+    expect(onRefresh).toHaveBeenCalledOnce();
+
+    view.rerender(createKnowledge({
+      session: {
+        status: 'signed_out',
+        transportSecurity: 'secure_https'
+      },
+      onRefresh,
+      onOpenAccount
+    }));
+    await user.click(screen.getByRole('button', { name: '登录企业账户' }));
+    expect(onOpenAccount).toHaveBeenCalledOnce();
+  });
+
+  it('renders only authorized knowledge bases and loads the selected document list', async () => {
+    const user = userEvent.setup();
+    const onSelectKnowledgeBase = vi.fn();
+    renderKnowledge({
+      knowledgeBases: [writableKnowledgeBase, readOnlyKnowledgeBase],
+      selectedKnowledgeBaseId: writableKnowledgeBase.knowledgeBaseId,
+      documents: [
+        createDocument({
+          documentId: 'doc-ready',
+          name: '产品手册.pdf',
+          status: 'ready',
+          sizeBytes: 1536
+        }),
+        createDocument({
+          documentId: 'doc-failed',
+          name: '旧版说明.md',
+          status: 'failed',
+          errorMessage: '内容解析失败'
+        })
+      ],
+      onSelectKnowledgeBase
+    });
 
     expect(screen.getByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
-    expect(screen.getByText('静态示例数据，未连接企业知识服务')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '询问企业知识' })).toBeInTheDocument();
-    expect(screen.getByText('小林')).toBeInTheDocument();
-    const permissions = screen.getByRole('complementary', { name: '当前知识权限' });
-    expect(within(permissions).getByText('公司制度')).toBeInTheDocument();
-    expect(within(permissions).getByText('产品资料')).toBeInTheDocument();
-    expect(within(permissions).getByText('客户成功')).toBeInTheDocument();
-    expect(screen.queryByText('研发知识')).not.toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: '知识文档' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    const libraryPane = screen.getByRole('navigation', { name: '授权知识库' });
+    expect(within(libraryPane).getByText('产品资料')).toBeInTheDocument();
+    expect(within(libraryPane).getByText('公司制度')).toBeInTheDocument();
+    expect(within(libraryPane).getByText('可上传')).toBeInTheDocument();
+
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('产品手册.pdf')).toBeInTheDocument();
+    expect(within(table).getByText('1.5 KiB')).toBeInTheDocument();
+    expect(within(table).getByText('处理失败')).toBeInTheDocument();
+    expect(within(table).getByText('内容解析失败')).toBeInTheDocument();
+
+    await user.click(within(libraryPane).getByRole('button', { name: /公司制度/ }));
+    expect(onSelectKnowledgeBase).toHaveBeenCalledWith('kb-policy');
   });
 
-  it('sends a question and renders non-interactive evidence', async () => {
-    const user = userEvent.setup();
-    render(<KnowledgePage />);
+  it('only exposes upload for a knowledge base with upload permission', () => {
+    const view = renderKnowledge({
+      knowledgeBases: [readOnlyKnowledgeBase],
+      selectedKnowledgeBaseId: readOnlyKnowledgeBase.knowledgeBaseId,
+      documents: []
+    });
 
-    const textbox = screen.getByRole('textbox', { name: '询问企业知识' });
-    await user.type(textbox, '客户退款需要谁审批？');
-    await user.click(screen.getByRole('button', { name: '发送' }));
+    expect(screen.queryByRole('button', { name: '上传文档' }))
+      .not.toBeInTheDocument();
+    expect(screen.getByText('该知识库当前没有可显示的文档。'))
+      .toBeInTheDocument();
 
-    expect(screen.getByText('客户退款需要谁审批？', { selector: '.knowledge-message__text' })).toBeInTheDocument();
-    expect(screen.getByText(/客户成功负责人/)).toBeInTheDocument();
-    const evidence = screen.getByText('客户成功知识域 · 2 条依据');
-    expect(evidence).toHaveProperty('tagName', 'SPAN');
-    expect(evidence.closest('a, button')).toBeNull();
-    expect(textbox).toHaveValue('');
+    view.rerender(createKnowledge({
+      knowledgeBases: [writableKnowledgeBase],
+      selectedKnowledgeBaseId: writableKnowledgeBase.knowledgeBaseId,
+      documents: []
+    }));
+    expect(screen.getByRole('button', { name: '上传文档' })).toBeInTheDocument();
+    expect(screen.getByText('可以上传首个文档，处理完成后会在此显示状态。'))
+      .toBeInTheDocument();
   });
 
-  it('switches identities and clears answers that exceed the new permission scope', async () => {
-    const user = userEvent.setup();
-    render(<KnowledgePage />);
+  it('validates file type and size before upload, then submits a valid file', async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const onUpload = vi.fn();
+    renderKnowledge({
+      knowledgeBases: [writableKnowledgeBase],
+      selectedKnowledgeBaseId: writableKnowledgeBase.knowledgeBaseId,
+      documents: [],
+      onUpload
+    });
 
-    await user.click(screen.getByRole('button', { name: '管理员视图' }));
-    expect(screen.getByText('企业管理员')).toBeInTheDocument();
-    expect(screen.getByText('研发知识')).toBeInTheDocument();
+    const input = screen.getByLabelText('选择知识库文档');
+    await user.upload(input, new File(['script'], 'script.exe'));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '仅支持 PDF、DOCX、Markdown、TXT、XLSX 和 CSV 文件。'
+    );
+    expect(onUpload).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Runtime 和 Desktop 如何通信？' }));
-    expect(screen.getByText('研发知识域 · 2 条依据')).toBeInTheDocument();
+    const oversized = new File(['large'], 'large.pdf', {
+      type: 'application/pdf'
+    });
+    Object.defineProperty(oversized, 'size', {
+      configurable: true,
+      value: 50 * 1024 * 1024 + 1
+    });
+    await user.upload(input, oversized);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '单个文档不能超过 50 MiB。'
+    );
+    expect(onUpload).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: '员工视图' }));
-    expect(screen.getByText('小林')).toBeInTheDocument();
-    expect(screen.queryByText('研发知识')).not.toBeInTheDocument();
-    expect(screen.queryByText('研发知识域 · 2 条依据')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Web 与 Desktop 的通用业务/)).not.toBeInTheDocument();
+    const valid = new File(['manual'], 'manual.pdf', {
+      type: 'application/pdf'
+    });
+    await user.upload(input, valid);
+    expect(onUpload).toHaveBeenCalledWith(valid);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('disables empty submissions and supports Enter or Shift+Enter', async () => {
+  it('shows upload progress and errors without resizing the command surface', () => {
+    const view = renderKnowledge({
+      knowledgeBases: [writableKnowledgeBase],
+      selectedKnowledgeBaseId: writableKnowledgeBase.knowledgeBaseId,
+      documents: [],
+      upload: { fileName: 'manual.pdf', status: 'uploading' }
+    });
+
+    expect(screen.getByRole('button', { name: '上传中' })).toBeDisabled();
+    expect(screen.getByLabelText('选择知识库文档')).toBeDisabled();
+
+    view.rerender(createKnowledge({
+      knowledgeBases: [writableKnowledgeBase],
+      selectedKnowledgeBaseId: writableKnowledgeBase.knowledgeBaseId,
+      documents: [],
+      upload: {
+        fileName: 'manual.pdf',
+        status: 'failed',
+        error: '文档上传失败'
+      },
+      uploadNotice: 'manual.pdf 已提交处理'
+    }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('文档上传失败');
+    expect(screen.getByRole('status')).toHaveTextContent('manual.pdf 已提交处理');
+  });
+
+  it('supports the mobile drill-down and back interaction', async () => {
     const user = userEvent.setup();
-    render(<KnowledgePage />);
+    const view = renderKnowledge({
+      knowledgeBases: [writableKnowledgeBase],
+      documents: []
+    });
+    const workbench = view.container.querySelector('.knowledge-workbench');
+    expect(workbench).toHaveAttribute('data-mobile-documents-open', 'false');
 
-    const textbox = screen.getByRole('textbox', { name: '询问企业知识' });
-    const send = screen.getByRole('button', { name: '发送' });
-    expect(send).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /产品资料/ }));
+    expect(workbench).toHaveAttribute('data-mobile-documents-open', 'true');
 
-    await user.type(textbox, '报销材料{Shift>}{Enter}{/Shift}多久提交');
-    expect(textbox).toHaveValue('报销材料\n多久提交');
-    expect(screen.queryByText('报销材料\n多久提交', { selector: '.knowledge-message__text' })).not.toBeInTheDocument();
-
-    await user.keyboard('{Enter}');
-    expect(
-      Array.from(screen.getByRole('log').querySelectorAll('.knowledge-message__text'))
-        .some(element => element.textContent === '报销材料\n多久提交')
-    ).toBe(true);
-    expect(screen.getByText(/10 个工作日/)).toBeInTheDocument();
+    view.rerender(createKnowledge({
+      knowledgeBases: [writableKnowledgeBase],
+      selectedKnowledgeBaseId: writableKnowledgeBase.knowledgeBaseId,
+      documents: []
+    }));
+    await user.click(screen.getByRole('button', { name: '返回知识库列表' }));
+    expect(workbench).toHaveAttribute('data-mobile-documents-open', 'false');
   });
 });
+
+function renderKnowledge(overrides: Partial<KnowledgePageProps> = {}) {
+  return render(createKnowledge(overrides));
+}
+
+function createKnowledge(overrides: Partial<KnowledgePageProps> = {}) {
+  return (
+    <KnowledgePage
+      connected
+      session={signedInSession}
+      knowledgeBases={[]}
+      knowledgeBasesLoading={false}
+      documentsLoading={false}
+      onOpenAccount={vi.fn()}
+      onRefresh={vi.fn()}
+      onSelectKnowledgeBase={vi.fn()}
+      onUpload={vi.fn()}
+      {...overrides}
+    />
+  );
+}
+
+function createKnowledgeBase(
+  overrides: Partial<EnterpriseKnowledgeBaseResponse> = {}
+): EnterpriseKnowledgeBaseResponse {
+  return {
+    knowledgeBaseId: 'kb-default',
+    name: '知识库',
+    description: '企业授权内容',
+    status: 'active',
+    documentCount: 0,
+    permissions: {
+      read: true,
+      upload: false,
+      search: false
+    },
+    ...overrides
+  };
+}
+
+function createDocument(
+  overrides: Partial<EnterpriseKnowledgeDocumentResponse> = {}
+): EnterpriseKnowledgeDocumentResponse {
+  return {
+    documentId: 'doc-default',
+    knowledgeBaseId: writableKnowledgeBase.knowledgeBaseId,
+    name: '文档.pdf',
+    sizeBytes: 1024,
+    mimeType: 'application/pdf',
+    status: 'ready',
+    errorMessage: '',
+    uploadedBy: 'member@example.com',
+    createdAt: '2026-08-05T08:00:00.000Z',
+    updatedAt: '2026-08-05T09:00:00.000Z',
+    ...overrides
+  };
+}

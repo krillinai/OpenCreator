@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event';
 import { StrictMode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { CodexModelResponse } from '@clawee/protocol';
 import { Composer } from './Composer.js';
 
 const projects = [
@@ -45,6 +46,39 @@ const defaultProps = {
   onSelectProject: vi.fn(),
   onSubmit: vi.fn()
 };
+
+const codexModels: CodexModelResponse[] = [
+  {
+    id: 'gpt-5.6-sol',
+    model: 'gpt-5.6-sol',
+    displayName: 'GPT-5.6 Sol',
+    description: 'Latest model',
+    supportedReasoningEfforts: [
+      { reasoningEffort: 'low', description: 'Fast' },
+      { reasoningEffort: 'medium', description: 'Balanced' },
+      { reasoningEffort: 'high', description: 'Deep' },
+      { reasoningEffort: 'xhigh', description: 'Deepest' }
+    ],
+    defaultReasoningEffort: 'medium',
+    inputModalities: ['text', 'image'],
+    isDefault: true
+  },
+  {
+    id: 'gpt-5.5',
+    model: 'gpt-5.5',
+    displayName: 'GPT-5.5',
+    description: 'Previous model',
+    supportedReasoningEfforts: [
+      { reasoningEffort: 'low', description: 'Fast' },
+      { reasoningEffort: 'medium', description: 'Balanced' },
+      { reasoningEffort: 'high', description: 'Deep' },
+      { reasoningEffort: 'xhigh', description: 'Deepest' }
+    ],
+    defaultReasoningEffort: 'medium',
+    inputModalities: ['text', 'image'],
+    isDefault: false
+  }
+];
 
 describe('Composer', () => {
   afterEach(() => {
@@ -216,14 +250,26 @@ describe('Composer', () => {
   it('opens menus and submits selected permission and model config', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    render(<Composer {...defaultProps} permission="workspace-write" onSubmit={onSubmit} />);
+    render(
+      <Composer
+        {...defaultProps}
+        permission="workspace-write"
+        models={codexModels}
+        onSubmit={onSubmit}
+      />
+    );
 
     await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
     await user.click(screen.getByRole('button', { name: '开启' }));
 
-    await user.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
-    await user.click(screen.getByRole('menuitemradio', { name: /默认模型 超高/ }));
+    await user.click(screen.getByRole('button', { name: '选择模型 GPT-5.6 Sol' }));
+    expect(screen.getByRole('menuitemradio', { name: /GPT-5.6 Sol/ }))
+      .toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
 
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     await user.type(textbox, '  hello  ');
@@ -232,11 +278,65 @@ describe('Composer', () => {
     expect(onSubmit).toHaveBeenCalledWith('hello', {
       permission: 'danger-full-access',
       profile: 'default',
-      model: null,
+      model: 'gpt-5.5',
       reasoning: 'xhigh'
     }, []);
     expect(textbox).toHaveValue('');
     await waitFor(() => expect(textbox).toHaveFocus());
+  });
+
+  it('shows an unavailable persisted model without replacing it silently', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        model="gpt-5.4"
+        models={codexModels}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '选择模型 gpt-5.4 · 不可用' }))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole('button', {
+      name: '选择模型 gpt-5.4 · 不可用'
+    }));
+
+    expect(screen.getByRole('menuitemradio', { name: /gpt-5.4 · 不可用/ }))
+      .toBeDisabled();
+    expect(screen.getAllByRole('menuitemradio', { name: /GPT-5\.(6|5)/ }))
+      .toHaveLength(2);
+  });
+
+  it('prevents selecting a text-only model after an image is attached', async () => {
+    const user = userEvent.setup();
+    mockObjectUrls();
+    const textOnlyModel: CodexModelResponse = {
+      ...codexModels[1]!,
+      id: 'gpt-5.5-text',
+      model: 'gpt-5.5-text',
+      displayName: 'GPT-5.5 Text',
+      inputModalities: ['text']
+    };
+    render(
+      <Composer
+        {...defaultProps}
+        models={[codexModels[0]!, textOnlyModel]}
+        imageInputSupported
+        onUploadAttachment={async () => attachment()}
+      />
+    );
+
+    await user.upload(
+      screen.getByLabelText('选择图片'),
+      new File(['png'], 'screen.png', { type: 'image/png' })
+    );
+    await screen.findByRole('img', { name: 'screen.png' });
+    await user.click(screen.getByRole('button', { name: '选择模型 GPT-5.6 Sol' }));
+
+    expect(screen.getByRole('menuitemradio', { name: /GPT-5.5 Text/ }))
+      .toBeDisabled();
+    expect(screen.getByRole('menuitemradio', { name: /GPT-5.5 Text/ }))
+      .toHaveTextContent('当前任务包含图片，无法选择');
   });
 
   it('shows only two permission levels and keeps request approval when full access is canceled', async () => {

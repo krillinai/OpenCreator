@@ -16,6 +16,9 @@ import type {
   EnterpriseMeResult
 } from '../../src/enterprise/http-client-2026-07-30.js';
 import type {
+  EnterpriseKnowledgeManager
+} from '../../src/enterprise/knowledge-manager-2026-08-05.js';
+import type {
   EnterpriseSkillManager
 } from '../../src/enterprise/skill-manager-2026-07-30.js';
 
@@ -144,6 +147,120 @@ describe('enterprise runtime API', () => {
     expect(enterpriseSkillManager.updateSkill).toHaveBeenCalledWith('skill_1');
   });
 
+  it('exposes knowledge list, document list, and binary upload routes', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    const enterpriseKnowledgeManager = createKnowledgeManager();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
+      enterpriseCredentialStore: createStore(),
+      enterpriseHttpClient: createClient(),
+      enterpriseKnowledgeManager,
+      enterpriseOrigin: 'https://enterprise.example'
+    });
+
+    const list = await authRequest('GET', '/enterprise/knowledge-bases');
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toMatchObject({
+      knowledgeBases: [{
+        knowledgeBaseId: 'kb_123',
+        permissions: { read: true, upload: true }
+      }]
+    });
+
+    const documents = await authRequest(
+      'GET',
+      '/enterprise/knowledge-bases/kb_123/documents'
+    );
+    expect(documents.statusCode).toBe(200);
+    expect(documents.json()).toMatchObject({
+      documents: [{
+        documentId: 'doc_123',
+        knowledgeBaseId: 'kb_123'
+      }]
+    });
+
+    const content = Buffer.from('enterprise manual');
+    const query = new URLSearchParams({
+      fileName: '员工手册.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: String(content.byteLength)
+    });
+    const upload = await server.inject({
+      method: 'POST',
+      url: `/enterprise/knowledge-bases/kb_123/documents?${query.toString()}`,
+      headers: {
+        authorization: 'Bearer secret',
+        'content-type': 'application/vnd.clawee.knowledge-document'
+      },
+      payload: content
+    });
+    expect(upload.statusCode).toBe(201);
+    expect(upload.json()).toMatchObject({
+      document: {
+        documentId: 'doc_upload',
+        knowledgeBaseId: 'kb_123',
+        status: 'processing'
+      }
+    });
+    expect(enterpriseKnowledgeManager.uploadDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        knowledgeBaseId: 'kb_123',
+        fileName: '员工手册.pdf',
+        mimeType: 'application/pdf',
+        expectedSizeBytes: content.byteLength
+      })
+    );
+    const uploadInput = vi.mocked(
+      enterpriseKnowledgeManager.uploadDocument
+    ).mock.calls[0]?.[0];
+    const chunks: Buffer[] = [];
+    for await (const chunk of uploadInput!.content) {
+      chunks.push(Buffer.from(chunk));
+    }
+    expect(Buffer.concat(chunks)).toEqual(content);
+  });
+
+  it('returns a knowledge-specific error when the binary body is too large', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    const enterpriseKnowledgeManager = createKnowledgeManager();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
+      enterpriseCredentialStore: createStore(),
+      enterpriseHttpClient: createClient(),
+      enterpriseKnowledgeDocumentMaxBytes: 8,
+      enterpriseKnowledgeManager,
+      enterpriseOrigin: 'https://enterprise.example'
+    });
+
+    const content = Buffer.from('123456789');
+    const query = new URLSearchParams({
+      fileName: 'large.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: String(content.byteLength)
+    });
+    const response = await server.inject({
+      method: 'POST',
+      url: `/enterprise/knowledge-bases/kb_123/documents?${query.toString()}`,
+      headers: {
+        authorization: 'Bearer secret',
+        'content-type': 'application/vnd.clawee.knowledge-document'
+      },
+      payload: content
+    });
+
+    expect(response.statusCode).toBe(413);
+    expect(response.json()).toMatchObject({
+      error: { code: 'ENTERPRISE_DOCUMENT_TOO_LARGE' }
+    });
+    expect(enterpriseKnowledgeManager.uploadDocument).not.toHaveBeenCalled();
+  });
+
   async function authRequest(
     method: 'GET' | 'POST',
     url: string,
@@ -192,6 +309,17 @@ function createClient(
       frontendAllowed: true
     })),
     logout: vi.fn(async () => undefined),
+    listKnowledgeBases: vi.fn(async () => ({
+      knowledgeBases: [],
+      meta: { nextCursor: '', hasNext: false }
+    })),
+    listKnowledgeDocuments: vi.fn(async () => ({
+      documents: [],
+      meta: { nextCursor: '', hasNext: false }
+    })),
+    uploadKnowledgeDocument: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
     listSkills: vi.fn(async () => []),
     getSkillDetail: vi.fn(async () => {
       throw new Error('not implemented');
@@ -267,6 +395,56 @@ function createEnterpriseSkillManager(): EnterpriseSkillManager {
       skill: { ...skill, actions: [...skill.actions] },
       localSkill,
       operation: { ...operation, operation: 'overwrite' as const }
+    }))
+  };
+}
+
+function createKnowledgeManager(): EnterpriseKnowledgeManager {
+  const knowledgeBase = {
+    knowledgeBaseId: 'kb_123',
+    name: '公司制度',
+    description: '公司制度和员工手册',
+    status: 'active',
+    documentCount: 1,
+    permissions: {
+      read: true,
+      upload: true,
+      search: false
+    }
+  };
+  const document = {
+    documentId: 'doc_123',
+    knowledgeBaseId: 'kb_123',
+    name: '员工手册.pdf',
+    sizeBytes: 102400,
+    mimeType: 'application/pdf',
+    status: 'ready',
+    errorMessage: '',
+    uploadedBy: 'usr_123',
+    createdAt: '2026-08-04T08:00:00Z',
+    updatedAt: '2026-08-04T08:01:00Z'
+  };
+  return {
+    listKnowledgeBases: vi.fn(async () => ({
+      knowledgeBases: [knowledgeBase],
+      meta: { nextCursor: '', hasNext: false },
+      refreshedAt: '2026-08-05T08:00:00.000Z'
+    })),
+    listDocuments: vi.fn(async () => ({
+      documents: [document],
+      meta: { nextCursor: '', hasNext: false },
+      refreshedAt: '2026-08-05T08:00:00.000Z'
+    })),
+    uploadDocument: vi.fn(async input => ({
+      document: {
+        ...document,
+        documentId: 'doc_upload',
+        name: input.fileName,
+        sizeBytes: input.expectedSizeBytes,
+        mimeType: input.mimeType,
+        status: 'processing',
+        updatedAt: '2026-08-05T08:00:00Z'
+      }
     }))
   };
 }

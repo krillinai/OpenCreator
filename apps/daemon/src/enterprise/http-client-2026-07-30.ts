@@ -1,13 +1,16 @@
 import type {
   EnterpriseAccountSummary,
+  EnterpriseListMeta,
   EnterpriseLoginRequest,
   EnterpriseRegisterRequest,
   RuntimeErrorCode
 } from '@clawee/protocol';
 import { createHash } from 'node:crypto';
+import { openAsBlob } from 'node:fs';
 import { open, rm } from 'node:fs/promises';
 import { z } from 'zod';
 import {
+  ENTERPRISE_DOCUMENT_UPLOAD_TIMEOUT_MS,
   ENTERPRISE_DOWNLOAD_TIMEOUT_MS,
   ENTERPRISE_JSON_TIMEOUT_MS,
   ENTERPRISE_PACKAGE_MAX_BYTES,
@@ -58,6 +61,46 @@ const skillDetailResponseSchema = z.object({
     changelog: z.string().optional()
   })
 });
+const listMetaSchema = z.object({
+  next_cursor: z.string(),
+  has_next: z.boolean()
+});
+const knowledgePermissionsSchema = z.object({
+  read: z.boolean(),
+  upload: z.boolean(),
+  search: z.boolean()
+});
+const remoteKnowledgeBaseSchema = z.object({
+  knowledge_base_id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  status: z.string(),
+  document_count: z.number().int().nonnegative(),
+  permissions: knowledgePermissionsSchema
+});
+const knowledgeBaseListResponseSchema = z.object({
+  data: z.array(remoteKnowledgeBaseSchema),
+  meta: listMetaSchema
+});
+const remoteKnowledgeDocumentSchema = z.object({
+  document_id: z.string().min(1),
+  knowledge_base_id: z.string().min(1),
+  name: z.string().min(1),
+  size_bytes: z.number().int().nonnegative(),
+  mime_type: z.string(),
+  status: z.string(),
+  error_message: z.string(),
+  uploaded_by: z.string(),
+  created_at: z.string().datetime({ offset: true }),
+  updated_at: z.string().datetime({ offset: true })
+});
+const knowledgeDocumentListResponseSchema = z.object({
+  data: z.array(remoteKnowledgeDocumentSchema),
+  meta: listMetaSchema
+});
+const knowledgeDocumentUploadResponseSchema = z.object({
+  data: remoteKnowledgeDocumentSchema
+});
 
 export type EnterpriseRemoteSkill = {
   skillId: string;
@@ -71,6 +114,32 @@ export type EnterpriseRemoteSkill = {
 
 export type EnterpriseRemoteSkillDetail = EnterpriseRemoteSkill & {
   changelog?: string;
+};
+
+export type EnterpriseRemoteKnowledgeBase = {
+  knowledgeBaseId: string;
+  name: string;
+  description: string;
+  status: string;
+  documentCount: number;
+  permissions: {
+    read: boolean;
+    upload: boolean;
+    search: boolean;
+  };
+};
+
+export type EnterpriseRemoteKnowledgeDocument = {
+  documentId: string;
+  knowledgeBaseId: string;
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+  status: string;
+  errorMessage: string;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type EnterpriseLoginResult = {
@@ -101,6 +170,24 @@ export type EnterpriseHttpClient = {
   login(input: EnterpriseLoginRequest, agentId: string): Promise<EnterpriseLoginResult>;
   getMe(accessToken: string): Promise<EnterpriseMeResult>;
   logout(accessToken: string): Promise<void>;
+  listKnowledgeBases(accessToken: string): Promise<{
+    knowledgeBases: EnterpriseRemoteKnowledgeBase[];
+    meta: EnterpriseListMeta;
+  }>;
+  listKnowledgeDocuments(
+    accessToken: string,
+    knowledgeBaseId: string
+  ): Promise<{
+    documents: EnterpriseRemoteKnowledgeDocument[];
+    meta: EnterpriseListMeta;
+  }>;
+  uploadKnowledgeDocument(input: {
+    accessToken: string;
+    knowledgeBaseId: string;
+    filePath: string;
+    fileName: string;
+    mimeType: string;
+  }): Promise<EnterpriseRemoteKnowledgeDocument>;
   listSkills(accessToken: string): Promise<EnterpriseRemoteSkill[]>;
   getSkillDetail(
     accessToken: string,
@@ -130,6 +217,7 @@ export function createEnterpriseHttpClient(input: {
   fetch?: typeof globalThis.fetch;
   jsonTimeoutMs?: number;
   downloadTimeoutMs?: number;
+  documentUploadTimeoutMs?: number;
   maxPackageBytes?: number;
 } = {}): EnterpriseHttpClient {
   const { origin } = resolveEnterpriseOrigin(input.origin);
@@ -137,6 +225,8 @@ export function createEnterpriseHttpClient(input: {
   const jsonTimeoutMs = input.jsonTimeoutMs ?? ENTERPRISE_JSON_TIMEOUT_MS;
   const downloadTimeoutMs =
     input.downloadTimeoutMs ?? ENTERPRISE_DOWNLOAD_TIMEOUT_MS;
+  const documentUploadTimeoutMs =
+    input.documentUploadTimeoutMs ?? ENTERPRISE_DOCUMENT_UPLOAD_TIMEOUT_MS;
   const maxPackageBytes =
     input.maxPackageBytes ?? ENTERPRISE_PACKAGE_MAX_BYTES;
 
@@ -146,6 +236,7 @@ export function createEnterpriseHttpClient(input: {
     body?: unknown;
     accessToken?: string;
     schema: z.ZodType<T>;
+    domain?: EnterpriseHttpDomain;
   }): Promise<T> {
     let response: Response;
     try {
@@ -162,7 +253,9 @@ export function createEnterpriseHttpClient(input: {
       );
     }
 
-    if (!response.ok) throw await createResponseError(response);
+    if (!response.ok) {
+      throw await createResponseError(response, request.domain);
+    }
 
     let value: unknown;
     try {
@@ -191,6 +284,7 @@ export function createEnterpriseHttpClient(input: {
     path: string;
     body?: unknown;
     accessToken?: string;
+    domain?: EnterpriseHttpDomain;
   }): Promise<void> {
     let response: Response;
     try {
@@ -207,7 +301,9 @@ export function createEnterpriseHttpClient(input: {
       );
     }
 
-    if (!response.ok) throw await createResponseError(response);
+    if (!response.ok) {
+      throw await createResponseError(response, request.domain);
+    }
   }
 
   return {
@@ -272,6 +368,7 @@ export function createEnterpriseHttpClient(input: {
     async listSkills(accessToken) {
       const response = await requestJson({
         accessToken,
+        domain: 'skill',
         method: 'GET',
         path: '/api/v1/app/skills',
         schema: skillListResponseSchema
@@ -283,6 +380,7 @@ export function createEnterpriseHttpClient(input: {
       const query = new URLSearchParams({ skill_id: skillId });
       const response = await requestJson({
         accessToken,
+        domain: 'skill',
         method: 'GET',
         path: `/api/v1/app/skills/detail?${query.toString()}`,
         schema: skillDetailResponseSchema
@@ -293,6 +391,91 @@ export function createEnterpriseHttpClient(input: {
           ? {}
           : { changelog: response.data.changelog })
       };
+    },
+
+    async listKnowledgeBases(accessToken) {
+      const response = await requestJson({
+        accessToken,
+        domain: 'knowledge',
+        method: 'GET',
+        path: '/api/v1/app/knowledge-bases',
+        schema: knowledgeBaseListResponseSchema
+      });
+      return {
+        knowledgeBases: response.data.map(mapRemoteKnowledgeBase),
+        meta: mapListMeta(response.meta)
+      };
+    },
+
+    async listKnowledgeDocuments(accessToken, knowledgeBaseId) {
+      const query = new URLSearchParams({
+        knowledge_base_id: knowledgeBaseId
+      });
+      const response = await requestJson({
+        accessToken,
+        domain: 'knowledge',
+        method: 'GET',
+        path: `/api/v1/app/knowledge-bases/documents?${query.toString()}`,
+        schema: knowledgeDocumentListResponseSchema
+      });
+      return {
+        documents: response.data.map(mapRemoteKnowledgeDocument),
+        meta: mapListMeta(response.meta)
+      };
+    },
+
+    async uploadKnowledgeDocument(request) {
+      const file = await openAsBlob(request.filePath, {
+        type: request.mimeType
+      });
+      const form = new FormData();
+      form.append('knowledge_base_id', request.knowledgeBaseId);
+      form.append('file', file, request.fileName);
+
+      let response: Response;
+      try {
+        response = await fetchImpl(
+          new URL('/api/v1/app/knowledge-bases/documents', origin),
+          {
+            body: form,
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${request.accessToken}`
+            },
+            method: 'POST',
+            signal: AbortSignal.timeout(documentUploadTimeoutMs)
+          }
+        );
+      } catch {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SERVICE_UNAVAILABLE',
+          'request'
+        );
+      }
+
+      if (!response.ok) {
+        throw await createResponseError(response, 'knowledge');
+      }
+
+      let value: unknown;
+      try {
+        value = await response.json();
+      } catch {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          response.status
+        );
+      }
+      const parsed = knowledgeDocumentUploadResponseSchema.safeParse(value);
+      if (!parsed.success) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          response.status
+        );
+      }
+      return mapRemoteKnowledgeDocument(parsed.data.data);
     },
 
     async downloadSkillPackage(request) {
@@ -320,7 +503,9 @@ export function createEnterpriseHttpClient(input: {
         );
       }
 
-      if (!response.ok) throw await createResponseError(response);
+      if (!response.ok) {
+        throw await createResponseError(response, 'skill');
+      }
 
       const declaredLength = parseContentLength(response.headers.get('content-length'));
       if (declaredLength !== undefined && declaredLength > maxPackageBytes) {
@@ -421,7 +606,53 @@ function mapRemoteSkill(
   };
 }
 
-async function createResponseError(response: Response): Promise<EnterpriseHttpError> {
+function mapRemoteKnowledgeBase(
+  knowledgeBase: z.infer<typeof remoteKnowledgeBaseSchema>
+): EnterpriseRemoteKnowledgeBase {
+  return {
+    knowledgeBaseId: knowledgeBase.knowledge_base_id,
+    name: knowledgeBase.name,
+    description: knowledgeBase.description,
+    status: knowledgeBase.status,
+    documentCount: knowledgeBase.document_count,
+    permissions: {
+      read: knowledgeBase.permissions.read,
+      upload: knowledgeBase.permissions.upload,
+      search: knowledgeBase.permissions.search
+    }
+  };
+}
+
+function mapRemoteKnowledgeDocument(
+  document: z.infer<typeof remoteKnowledgeDocumentSchema>
+): EnterpriseRemoteKnowledgeDocument {
+  return {
+    documentId: document.document_id,
+    knowledgeBaseId: document.knowledge_base_id,
+    name: document.name,
+    sizeBytes: document.size_bytes,
+    mimeType: document.mime_type,
+    status: document.status,
+    errorMessage: document.error_message,
+    uploadedBy: document.uploaded_by,
+    createdAt: document.created_at,
+    updatedAt: document.updated_at
+  };
+}
+
+function mapListMeta(meta: z.infer<typeof listMetaSchema>): EnterpriseListMeta {
+  return {
+    nextCursor: meta.next_cursor,
+    hasNext: meta.has_next
+  };
+}
+
+type EnterpriseHttpDomain = 'general' | 'skill' | 'knowledge';
+
+async function createResponseError(
+  response: Response,
+  domain: EnterpriseHttpDomain = 'general'
+): Promise<EnterpriseHttpError> {
   let upstreamCode: string | undefined;
   let requestId = response.headers.get('x-request-id') ?? undefined;
   try {
@@ -437,7 +668,7 @@ async function createResponseError(response: Response): Promise<EnterpriseHttpEr
   }
 
   return new EnterpriseHttpError(
-    mapResponseCode(response.status, upstreamCode),
+    mapResponseCode(response.status, upstreamCode, domain),
     'response',
     response.status,
     upstreamCode,
@@ -448,23 +679,57 @@ async function createResponseError(response: Response): Promise<EnterpriseHttpEr
 
 function mapResponseCode(
   statusCode: number,
-  upstreamCode?: string
+  upstreamCode: string | undefined,
+  domain: EnterpriseHttpDomain
 ): RuntimeErrorCode {
   if (statusCode === 400) return 'ENTERPRISE_INVALID_REQUEST';
   if (statusCode === 401) return 'ENTERPRISE_UNAUTHORIZED';
   if (statusCode === 403 && upstreamCode === 'agent_forbidden') {
     return 'ENTERPRISE_AGENT_FORBIDDEN';
   }
+  if (
+    statusCode === 403
+    && upstreamCode === 'document_upload_forbidden'
+  ) {
+    return 'ENTERPRISE_DOCUMENT_UPLOAD_FORBIDDEN';
+  }
   if (statusCode === 403) return 'ENTERPRISE_FORBIDDEN';
+  if (statusCode === 404 && domain === 'knowledge') {
+    return 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND';
+  }
   if (statusCode === 404) return 'ENTERPRISE_SKILL_NOT_FOUND';
   if (statusCode === 409 && upstreamCode === 'agent_id_conflict') {
     return 'ENTERPRISE_AGENT_ID_CONFLICT';
   }
+  if (
+    statusCode === 409
+    && (
+      domain === 'knowledge'
+      || upstreamCode === 'conflict'
+    )
+  ) {
+    return 'ENTERPRISE_KNOWLEDGE_CONFLICT';
+  }
   if (statusCode === 409 || upstreamCode === 'version_changed') {
     return 'ENTERPRISE_SKILL_VERSION_CHANGED';
   }
+  if (statusCode === 413 && domain === 'knowledge') {
+    return 'ENTERPRISE_DOCUMENT_TOO_LARGE';
+  }
   if (statusCode === 413) return 'ENTERPRISE_SKILL_PACKAGE_TOO_LARGE';
+  if (statusCode === 415 && domain === 'knowledge') {
+    return 'ENTERPRISE_DOCUMENT_TYPE_UNSUPPORTED';
+  }
   if (statusCode === 429) return 'ENTERPRISE_RATE_LIMITED';
+  if (
+    statusCode === 502
+    && (
+      domain === 'knowledge'
+      || upstreamCode === 'knowledge_provider_error'
+    )
+  ) {
+    return 'ENTERPRISE_KNOWLEDGE_PROVIDER_ERROR';
+  }
   if (statusCode >= 500) return 'ENTERPRISE_SERVICE_UNAVAILABLE';
   return 'ENTERPRISE_PROTOCOL_ERROR';
 }

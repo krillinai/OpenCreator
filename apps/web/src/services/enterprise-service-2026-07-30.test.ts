@@ -48,14 +48,53 @@ describe('enterprise service', () => {
     expect(post).toHaveBeenCalledWith(`/enterprise/skills/${encoded}/install`);
     expect(post).toHaveBeenCalledWith(`/enterprise/skills/${encoded}/update`);
   });
+
+  it('uses exact knowledge routes and streams document files as binary', async () => {
+    const get = vi.fn(async (_path: string) => ({}));
+    const post = vi.fn(async (_path: string, _body?: unknown) => ({}));
+    const postBinary = vi.fn(async (
+      _path: string,
+      _body: BodyInit,
+      _contentType?: string
+    ) => ({}));
+    const service = createEnterpriseService(
+      createClient({ get, post, postBinary })
+    );
+    const file = new File(['policy'], '制度 2026.pdf', {
+      type: 'application/pdf'
+    });
+
+    await service.listKnowledgeBases();
+    await service.listKnowledgeDocuments('kb/公司制度');
+    await service.uploadKnowledgeDocument({
+      knowledgeBaseId: 'kb/公司制度',
+      file
+    });
+
+    const encoded = 'kb%2F%E5%85%AC%E5%8F%B8%E5%88%B6%E5%BA%A6';
+    expect(get).toHaveBeenCalledWith('/enterprise/knowledge-bases');
+    expect(get).toHaveBeenCalledWith(
+      `/enterprise/knowledge-bases/${encoded}/documents`
+    );
+    expect(postBinary).toHaveBeenCalledWith(
+      `/enterprise/knowledge-bases/${encoded}/documents?fileName=%E5%88%B6%E5%BA%A6+2026.pdf&mimeType=application%2Fpdf&sizeBytes=6`,
+      file,
+      'application/vnd.clawee.knowledge-document'
+    );
+  });
 });
 
 function createClient(
   overrides: {
     get?: (path: string) => Promise<unknown>;
     post?: (path: string, body?: unknown) => Promise<unknown>;
+    postBinary?: (
+      path: string,
+      body: BodyInit,
+      contentType?: string
+    ) => Promise<unknown>;
   }
-): Pick<RuntimeClient, 'get' | 'post'> {
+): Pick<RuntimeClient, 'get' | 'post' | 'postBinary'> {
   return {
     get<T>(path: string): Promise<T> {
       if (overrides.get) return overrides.get(path) as Promise<T>;
@@ -68,6 +107,16 @@ function createClient(
         ) as Promise<T>;
       }
       throw new Error(`Unexpected post: ${path}`);
+    },
+    postBinary<T>(
+      path: string,
+      body: BodyInit,
+      contentType?: string
+    ): Promise<T> {
+      if (overrides.postBinary) {
+        return overrides.postBinary(path, body, contentType) as Promise<T>;
+      }
+      throw new Error(`Unexpected binary post: ${path}`);
     }
   };
 }

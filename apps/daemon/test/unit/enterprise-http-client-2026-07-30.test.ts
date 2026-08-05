@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -147,6 +153,187 @@ describe('enterprise HTTP client', () => {
         Authorization: 'Bearer enterprise-access-token'
       },
       method: 'GET'
+    });
+  });
+
+  it('maps authorized knowledge bases and document list fields', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{
+          knowledge_base_id: 'kb_123',
+          name: '公司制度',
+          description: '公司制度和员工手册',
+          status: 'active',
+          document_count: 12,
+          permissions: {
+            read: true,
+            upload: true,
+            search: false
+          }
+        }],
+        meta: {
+          next_cursor: 'kb_cursor',
+          has_next: true
+        }
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{
+          document_id: 'doc_123',
+          knowledge_base_id: 'kb_123',
+          name: '员工手册.pdf',
+          size_bytes: 102400,
+          mime_type: 'application/pdf',
+          status: 'ready',
+          error_message: '',
+          uploaded_by: 'usr_123',
+          created_at: '2026-08-04T08:00:00Z',
+          updated_at: '2026-08-04T08:01:00Z'
+        }],
+        meta: {
+          next_cursor: '',
+          has_next: false
+        }
+      }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.listKnowledgeBases('enterprise-access-token')).resolves.toEqual({
+      knowledgeBases: [{
+        knowledgeBaseId: 'kb_123',
+        name: '公司制度',
+        description: '公司制度和员工手册',
+        status: 'active',
+        documentCount: 12,
+        permissions: {
+          read: true,
+          upload: true,
+          search: false
+        }
+      }],
+      meta: {
+        nextCursor: 'kb_cursor',
+        hasNext: true
+      }
+    });
+    await expect(
+      client.listKnowledgeDocuments('enterprise-access-token', 'kb_123')
+    ).resolves.toEqual({
+      documents: [{
+        documentId: 'doc_123',
+        knowledgeBaseId: 'kb_123',
+        name: '员工手册.pdf',
+        sizeBytes: 102400,
+        mimeType: 'application/pdf',
+        status: 'ready',
+        errorMessage: '',
+        uploadedBy: 'usr_123',
+        createdAt: '2026-08-04T08:00:00Z',
+        updatedAt: '2026-08-04T08:01:00Z'
+      }],
+      meta: {
+        nextCursor: '',
+        hasNext: false
+      }
+    });
+
+    expect(String(fetch.mock.calls[0]?.[0])).toBe(
+      `${ORIGIN}/api/v1/app/knowledge-bases`
+    );
+    expect(String(fetch.mock.calls[1]?.[0])).toBe(
+      `${ORIGIN}/api/v1/app/knowledge-bases/documents?knowledge_base_id=kb_123`
+    );
+    expect(fetch.mock.calls[1]?.[1]).toMatchObject({
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Bearer enterprise-access-token'
+      },
+      method: 'GET'
+    });
+  });
+
+  it('uploads knowledge documents with authorization before file content', async () => {
+    const directory = createTempDirectory();
+    const filePath = join(directory, 'manual.pdf');
+    writeFileSync(filePath, 'enterprise manual');
+    const fetch = vi.fn(async (
+      url: string | URL | Request,
+      init?: RequestInit
+    ) => {
+      expect(String(url)).toBe(
+        `${ORIGIN}/api/v1/app/knowledge-bases/documents`
+      );
+      expect(init).toMatchObject({
+        headers: {
+          Accept: 'application/json',
+          Authorization: 'Bearer enterprise-access-token'
+        },
+        method: 'POST'
+      });
+      expect(init?.headers).not.toHaveProperty('Content-Type');
+      expect(init?.body).toBeInstanceOf(FormData);
+      const entries = Array.from((init!.body as FormData).entries());
+      expect(entries.map(([name]) => name)).toEqual([
+        'knowledge_base_id',
+        'file'
+      ]);
+      expect(entries[0]?.[1]).toBe('kb_123');
+      const file = entries[1]?.[1];
+      expect(file).toBeInstanceOf(Blob);
+      expect((file as File).name).toBe('员工手册.pdf');
+      expect((file as Blob).type).toBe('application/pdf');
+      expect(await (file as Blob).text()).toBe('enterprise manual');
+      return jsonResponse({
+        data: {
+          document_id: 'doc_456',
+          knowledge_base_id: 'kb_123',
+          name: '员工手册.pdf',
+          size_bytes: 17,
+          mime_type: 'application/pdf',
+          status: 'processing',
+          error_message: '',
+          uploaded_by: 'usr_123',
+          created_at: '2026-08-05T08:00:00Z',
+          updated_at: '2026-08-05T08:00:00Z'
+        }
+      }, 201);
+    });
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.uploadKnowledgeDocument({
+      accessToken: 'enterprise-access-token',
+      knowledgeBaseId: 'kb_123',
+      filePath,
+      fileName: '员工手册.pdf',
+      mimeType: 'application/pdf'
+    })).resolves.toMatchObject({
+      documentId: 'doc_456',
+      knowledgeBaseId: 'kb_123',
+      status: 'processing'
+    });
+  });
+
+  it.each([
+    [403, 'document_upload_forbidden', 'ENTERPRISE_DOCUMENT_UPLOAD_FORBIDDEN'],
+    [404, 'knowledge_base_not_found', 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND'],
+    [409, 'conflict', 'ENTERPRISE_KNOWLEDGE_CONFLICT'],
+    [413, 'document_too_large', 'ENTERPRISE_DOCUMENT_TOO_LARGE'],
+    [415, 'document_type_unsupported', 'ENTERPRISE_DOCUMENT_TYPE_UNSUPPORTED'],
+    [502, 'knowledge_provider_error', 'ENTERPRISE_KNOWLEDGE_PROVIDER_ERROR']
+  ])('maps knowledge error %s %s to %s', async (
+    status,
+    upstreamCode,
+    code
+  ) => {
+    const fetch = vi.fn(async () => jsonResponse({
+      error: { code: upstreamCode }
+    }, status));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(
+      client.listKnowledgeDocuments('enterprise-access-token', 'kb_123')
+    ).rejects.toMatchObject({
+      code,
+      statusCode: status,
+      upstreamCode
     });
   });
 

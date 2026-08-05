@@ -31,8 +31,16 @@ export class RuntimeClient {
     return this.request<T>(path, { method: 'POST', body });
   }
 
-  async postBinary<T = unknown>(path: string, body: BodyInit): Promise<T> {
-    const response = await this.rawRequest(path, { method: 'POST', binaryBody: body });
+  async postBinary<T = unknown>(
+    path: string,
+    body: BodyInit,
+    contentType = 'application/octet-stream'
+  ): Promise<T> {
+    const response = await this.rawRequest(path, {
+      method: 'POST',
+      binaryBody: body,
+      binaryContentType: contentType
+    });
     return await readJson(response) as T;
   }
 
@@ -52,14 +60,22 @@ export class RuntimeClient {
 
   async rawRequest(
     path: string,
-    input: { method: string; body?: unknown; binaryBody?: BodyInit }
+    input: {
+      method: string;
+      body?: unknown;
+      binaryBody?: BodyInit;
+      binaryContentType?: string;
+    }
   ): Promise<Response> {
     const headers: Record<string, string> = {};
     if (path !== '/healthz' && this.token !== undefined && this.token.length > 0) {
       headers.Authorization = `Bearer ${this.token}`;
     }
     if (input.body !== undefined) headers['Content-Type'] = 'application/json';
-    if (input.binaryBody !== undefined) headers['Content-Type'] = 'application/octet-stream';
+    if (input.binaryBody !== undefined) {
+      headers['Content-Type'] =
+        input.binaryContentType ?? 'application/octet-stream';
+    }
 
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method: input.method,

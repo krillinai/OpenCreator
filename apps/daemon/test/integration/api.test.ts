@@ -18,10 +18,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type Database from 'better-sqlite3';
+import type { CodexModelListResponse } from '@clawee/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
 import type { CodexSessionProvider } from '../../src/codex/sessions/app-server-provider.js';
+import type { CodexModelCatalog } from '../../src/codex/model-catalog-2026-08-05.js';
 import type { CodexSkillSourceInstaller } from '../../src/codex/skills/source-installer.js';
 import { createProjectManager } from '../../src/projects/manager.js';
 import { SchedulerError, type SchedulerService } from '../../src/scheduler/service.js';
@@ -1202,6 +1204,61 @@ describe('runtime api', () => {
         skillsRuntimeBehaviorVerified: false
       }
     });
+  });
+
+  it('returns the filtered Codex model catalog with auth', async () => {
+    const close = vi.fn(async () => undefined);
+    const codexModelCatalog: CodexModelCatalog = {
+      listModels: vi.fn(async () => ({
+        models: [{
+          id: 'gpt-5.6-sol',
+          model: 'gpt-5.6-sol',
+          displayName: 'GPT-5.6 Sol',
+          description: 'Latest model',
+          supportedReasoningEfforts: [
+            { reasoningEffort: 'medium', description: 'Balanced' },
+            { reasoningEffort: 'xhigh', description: 'Deep reasoning' }
+          ],
+          defaultReasoningEffort: 'medium',
+          inputModalities: ['text', 'image'],
+          isDefault: true
+        }]
+      } satisfies CodexModelListResponse)),
+      close
+    };
+    server = await buildServer({ token: 'secret', codexModelCatalog });
+
+    const unauthorized = await server.inject({
+      method: 'GET',
+      url: '/codex/models'
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/codex/models',
+      headers: { authorization: 'Bearer secret' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      models: [{
+        id: 'gpt-5.6-sol',
+        model: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6 Sol',
+        description: 'Latest model',
+        supportedReasoningEfforts: [
+          { reasoningEffort: 'medium', description: 'Balanced' },
+          { reasoningEffort: 'xhigh', description: 'Deep reasoning' }
+        ],
+        defaultReasoningEffort: 'medium',
+        inputModalities: ['text', 'image'],
+        isDefault: true
+      }]
+    });
+
+    await server.close();
+    server = undefined;
+    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it('lists profiles from an isolated codex home', async () => {

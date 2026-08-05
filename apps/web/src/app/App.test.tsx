@@ -5,12 +5,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   AgentEventEnvelope,
   AgentEventPayload,
+  CodexModelListResponse,
   CodexMcpListResponse,
   CodexSkillListResponse,
   CodexSkillMarketInstallRecordResponse,
   CodexSkillResponse,
   CodexStatusResponse,
   CreateScheduleRequest,
+  EnterpriseKnowledgeBaseResponse,
+  EnterpriseKnowledgeDocumentResponse,
   EnterpriseSessionResponse,
   EnterpriseSkillListResponse,
   EnterpriseSkillResponse,
@@ -157,6 +160,245 @@ describe('App', () => {
     window.history.replaceState(null, '', '#/knowledge');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
     expect(await screen.findByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
+  });
+
+  it('loads authorized knowledge documents and refreshes both lists after upload', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/knowledge';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    let knowledgeBaseRequests = 0;
+    let documentRequests = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      if (url.endsWith('/enterprise/session')) {
+        return jsonResponse(createEnterpriseSessionResponse());
+      }
+      if (url.endsWith('/enterprise/knowledge-bases')) {
+        knowledgeBaseRequests += 1;
+        return jsonResponse(createKnowledgeBaseListResponse([
+          createKnowledgeBaseResponse()
+        ]));
+      }
+      if (
+        url.includes('/enterprise/knowledge-bases/kb-product/documents?')
+        && init?.method === 'POST'
+      ) {
+        return jsonResponse({
+          document: createKnowledgeDocumentResponse({
+            documentId: 'doc-upload',
+            name: '发布流程.md',
+            mimeType: 'text/markdown',
+            status: 'processing'
+          })
+        }, { status: 201 });
+      }
+      if (url.endsWith('/enterprise/knowledge-bases/kb-product/documents')) {
+        documentRequests += 1;
+        return jsonResponse(createKnowledgeDocumentListResponse(
+          documentRequests === 1
+            ? [createKnowledgeDocumentResponse()]
+            : [
+                createKnowledgeDocumentResponse(),
+                createKnowledgeDocumentResponse({
+                  documentId: 'doc-upload',
+                  name: '发布流程.md',
+                  mimeType: 'text/markdown',
+                  status: 'processing'
+                })
+              ]
+        ));
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('heading', { name: '产品资料' }))
+      .toBeInTheDocument();
+    expect(await screen.findByText('产品手册.pdf')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /产品资料/ }));
+    expect(screen.getByText('产品手册.pdf')).toBeInTheDocument();
+
+    const file = new File(['# 发布流程'], '发布流程.md', {
+      type: 'text/markdown'
+    });
+    await user.upload(screen.getByLabelText('选择知识库文档'), file);
+
+    expect(await screen.findByText('发布流程.md 已提交处理，请关注文档状态'))
+      .toBeInTheDocument();
+    expect(await screen.findByText('发布流程.md')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(knowledgeBaseRequests).toBe(2);
+      expect(documentRequests).toBeGreaterThanOrEqual(2);
+    });
+    const uploadCalls = fetchCalls.filter(call => (
+      call.url.includes('/enterprise/knowledge-bases/kb-product/documents?')
+      && call.init?.method === 'POST'
+    ));
+    expect(uploadCalls).toHaveLength(1);
+    expect(new Headers(uploadCalls[0]?.init?.headers).get('Content-Type'))
+      .toBe('application/vnd.clawee.knowledge-document');
+    expect(uploadCalls[0]?.init?.body).toBe(file);
+  });
+
+  it('turns a knowledge list 401 into the signed-out gate', async () => {
+    window.location.hash = '#/knowledge';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = createKnowledgeRuntimeFetch((url) => {
+      if (url.endsWith('/enterprise/knowledge-bases')) {
+        return jsonResponse({
+          error: {
+            code: 'ENTERPRISE_SESSION_EXPIRED',
+            message: 'Enterprise session expired'
+          }
+        }, { status: 401 });
+      }
+      return undefined;
+    });
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '登录企业账户' }))
+        .toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: '企业知识库' }))
+        .toBeInTheDocument();
+    });
+  });
+
+  it('refreshes permissions and disables upload after a 403', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/knowledge';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    let knowledgeBaseRequests = 0;
+    const runtimeFetch = createKnowledgeRuntimeFetch((url, init) => {
+      if (url.endsWith('/enterprise/knowledge-bases')) {
+        knowledgeBaseRequests += 1;
+        return jsonResponse(createKnowledgeBaseListResponse([
+          createKnowledgeBaseResponse({
+            permissions: {
+              read: true,
+              upload: knowledgeBaseRequests === 1,
+              search: false
+            }
+          })
+        ]));
+      }
+      if (
+        url.includes('/enterprise/knowledge-bases/kb-product/documents?')
+        && init?.method === 'POST'
+      ) {
+        return jsonResponse({
+          error: {
+            code: 'ENTERPRISE_DOCUMENT_UPLOAD_FORBIDDEN',
+            message: 'Enterprise document upload is forbidden'
+          }
+        }, { status: 403 });
+      }
+      if (url.endsWith('/enterprise/knowledge-bases/kb-product/documents')) {
+        return jsonResponse(createKnowledgeDocumentListResponse());
+      }
+      return undefined;
+    });
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await user.upload(
+      await screen.findByLabelText('选择知识库文档'),
+      new File(['manual'], 'manual.pdf', { type: 'application/pdf' })
+    );
+
+    expect(await screen.findByRole('alert'))
+      .toHaveTextContent('当前账户已没有该知识库的上传权限');
+    await waitFor(() => {
+      expect(knowledgeBaseRequests).toBe(2);
+      expect(screen.queryByRole('button', { name: '上传文档' }))
+        .not.toBeInTheDocument();
+    });
+  });
+
+  it('refreshes the authorized list when a selected knowledge base returns 404', async () => {
+    window.location.hash = '#/knowledge';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    let knowledgeBaseRequests = 0;
+    const runtimeFetch = createKnowledgeRuntimeFetch((url) => {
+      if (url.endsWith('/enterprise/knowledge-bases')) {
+        knowledgeBaseRequests += 1;
+        return jsonResponse(createKnowledgeBaseListResponse(
+          knowledgeBaseRequests === 1 ? [createKnowledgeBaseResponse()] : []
+        ));
+      }
+      if (url.endsWith('/enterprise/knowledge-bases/kb-product/documents')) {
+        return jsonResponse({
+          error: {
+            code: 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND',
+            message: 'Enterprise knowledge base was not found'
+          }
+        }, { status: 404 });
+      }
+      return undefined;
+    });
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('暂无可访问知识库')).toBeInTheDocument();
+      expect(knowledgeBaseRequests).toBe(2);
+      expect(screen.queryByText('产品资料')).not.toBeInTheDocument();
+    });
   });
 
   it('updates the copyable URL when navigating between primary pages', async () => {
@@ -458,6 +700,9 @@ describe('App', () => {
 
     expect(await screen.findByRole('button', { name: '新建任务' })).toBeInTheDocument();
     expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      name: /^(上午|下午|晚上)好$/
+    })).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
@@ -470,6 +715,46 @@ describe('App', () => {
     expect(screen.queryByText('Codex Runtime Workbench')).not.toBeInTheDocument();
     expect(screen.queryByText('Runtime 地址')).not.toBeInTheDocument();
     expect(screen.queryByText(/Token|API Key|连接 Runtime/)).not.toBeInTheDocument();
+  });
+
+  it('uses the signed-in enterprise account name in the homepage greeting', async () => {
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      if (url.endsWith('/enterprise/session')) {
+        return jsonResponse(createEnterpriseSessionResponse({
+          account: {
+            email: 'lin@example.com',
+            name: '林晓'
+          }
+        }));
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('heading', {
+      name: /^(上午|下午|晚上)好，林晓$/
+    })).toBeInTheDocument();
   });
 
   it('does not allow chat submission before the local runtime is connected', async () => {
@@ -2042,6 +2327,7 @@ describe('App', () => {
       });
       const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
       let skillRequests = 0;
+      let localSkillRequests = 0;
       const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         const projectApiResponse = handleDefaultProjectApiRequest(url, init);
@@ -2066,6 +2352,15 @@ describe('App', () => {
                   actions: ['use']
                 })]
           ));
+        }
+        if (url.endsWith('/codex/skills')) {
+          localSkillRequests += 1;
+          return jsonResponse(createSkillListResponse([
+            createSkillResponse({
+              id: 'enterprise-name',
+              name: 'enterprise-name'
+            })
+          ]));
         }
         if (
           url.endsWith(`/enterprise/skills/enterprise-skill/${kind}`)
@@ -2102,6 +2397,7 @@ describe('App', () => {
       await user.click(within(skill).getByRole('button', { name: actionLabel }));
 
       await waitFor(() => expect(skillRequests).toBe(2));
+      await waitFor(() => expect(localSkillRequests).toBe(1));
       const mutationCalls = fetchCalls.filter(call => (
         call.url.endsWith(`/enterprise/skills/enterprise-skill/${kind}`)
         && call.init?.method === 'POST'
@@ -2110,6 +2406,7 @@ describe('App', () => {
       expect(mutationCalls[0]?.init?.body).toBeUndefined();
       expect(new Headers(mutationCalls[0]?.init?.headers).has('Content-Type')).toBe(false);
       expect(skillRequests).toBe(2);
+      expect(localSkillRequests).toBe(1);
       expect(within(screen.getByTestId('enterprise-skill-enterprise-skill'))
         .getByRole('button', { name: '使用' })).toBeEnabled();
     }
@@ -6357,6 +6654,7 @@ describe('App', () => {
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) return jsonResponse(createCodexModelListResponse());
       if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
       if (url.endsWith('/codex/profiles')) {
         return jsonResponse({
@@ -6387,6 +6685,7 @@ describe('App', () => {
               canonicalCwd: '~',
               profile: 'default',
               sandbox: 'danger-full-access',
+              model: 'gpt-5.5',
               reasoning: 'xhigh'
             })
           },
@@ -6411,9 +6710,15 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
-    await user.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
-    await user.click(screen.getByRole('menuitemradio', { name: /默认模型 超高/ }));
-    await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
+    await user.click(screen.getByRole('button', { name: '开启' }));
+    await user.click(await screen.findByRole('button', {
+      name: '选择模型 GPT-5.6 Sol'
+    }));
+    await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await user.type(textbox, prompt);
+    await waitFor(() => expect(textbox).toHaveValue(prompt));
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     await findTimelineUserMessage(prompt);
@@ -6422,13 +6727,14 @@ describe('App', () => {
       title: prompt,
       profile: 'default',
       sandbox: 'danger-full-access',
+      model: 'gpt-5.5',
       reasoning: 'xhigh'
     });
-    expect(createThreadBody).not.toHaveProperty('model');
     expect(JSON.parse(String(findPostCall(fetchCalls, '/runs')?.init?.body))).toEqual({
       threadId: 'thread_configured_from_chat',
       prompt,
       resumeMode: 'auto',
+      model: 'gpt-5.5',
       reasoning: 'xhigh'
     });
   });
@@ -6446,6 +6752,7 @@ describe('App', () => {
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) return jsonResponse(createCodexModelListResponse());
       if (url.endsWith('/threads?status=active&limit=50')) {
         return jsonResponse({
           threads: [
@@ -6453,6 +6760,7 @@ describe('App', () => {
               id: 'thread_existing',
               title: '已有会话',
               sandbox: 'read-only',
+              model: 'gpt-5.6-sol',
               reasoning: null
             })
           ]
@@ -6476,8 +6784,11 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /已有会话/ }));
-    await user.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
-    await user.click(screen.getByRole('menuitemradio', { name: /默认模型 超高/ }));
+    await user.click(await screen.findByRole('button', {
+      name: '选择模型 GPT-5.6 Sol'
+    }));
+    await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));
 
@@ -7364,6 +7675,88 @@ function createEnterpriseSkillResponse(
   };
 }
 
+function createKnowledgeBaseListResponse(
+  knowledgeBases: EnterpriseKnowledgeBaseResponse[] = []
+) {
+  return {
+    knowledgeBases,
+    meta: { nextCursor: '', hasNext: false },
+    refreshedAt: '2026-08-05T08:00:00.000Z'
+  };
+}
+
+function createKnowledgeBaseResponse(
+  overrides: Partial<EnterpriseKnowledgeBaseResponse> = {}
+): EnterpriseKnowledgeBaseResponse {
+  return {
+    knowledgeBaseId: 'kb-product',
+    name: '产品资料',
+    description: '产品手册与发布流程',
+    status: 'active',
+    documentCount: 1,
+    permissions: {
+      read: true,
+      upload: true,
+      search: false
+    },
+    ...overrides
+  };
+}
+
+function createKnowledgeDocumentListResponse(
+  documents: EnterpriseKnowledgeDocumentResponse[] = []
+) {
+  return {
+    documents,
+    meta: { nextCursor: '', hasNext: false },
+    refreshedAt: '2026-08-05T08:00:00.000Z'
+  };
+}
+
+function createKnowledgeDocumentResponse(
+  overrides: Partial<EnterpriseKnowledgeDocumentResponse> = {}
+): EnterpriseKnowledgeDocumentResponse {
+  return {
+    documentId: 'doc-product',
+    knowledgeBaseId: 'kb-product',
+    name: '产品手册.pdf',
+    sizeBytes: 1536,
+    mimeType: 'application/pdf',
+    status: 'ready',
+    errorMessage: '',
+    uploadedBy: 'member@example.com',
+    createdAt: '2026-08-05T08:00:00.000Z',
+    updatedAt: '2026-08-05T08:01:00.000Z',
+    ...overrides
+  };
+}
+
+function createKnowledgeRuntimeFetch(
+  handleKnowledgeRequest: (
+    url: string,
+    init?: RequestInit
+  ) => Response | undefined
+) {
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+    if (projectApiResponse !== undefined) return projectApiResponse;
+    if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+    if (url.endsWith('/codex/status')) {
+      return jsonResponse(createCodexStatusResponse());
+    }
+    if (url.endsWith('/threads?status=active&limit=50')) {
+      return jsonResponse({ threads: [] });
+    }
+    if (url.endsWith('/enterprise/session')) {
+      return jsonResponse(createEnterpriseSessionResponse());
+    }
+    const response = handleKnowledgeRequest(url, init);
+    if (response !== undefined) return response;
+    throw new Error(`Unexpected request ${url}`);
+  };
+}
+
 function getSkillMarketCard(skillId: string): HTMLElement {
   const card = document.querySelector(`[data-testid="skill-market-card"][data-skill-id="${skillId}"]`);
   if (!(card instanceof HTMLElement)) throw new Error(`Expected skill market card: ${skillId}`);
@@ -7395,6 +7788,43 @@ function createCodexStatusResponse(overrides: Partial<CodexStatusResponse> = {})
     capabilities: {},
     diagnostics: [],
     ...overrides
+  };
+}
+
+function createCodexModelListResponse(): CodexModelListResponse {
+  return {
+    models: [
+      {
+        id: 'gpt-5.6-sol',
+        model: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6 Sol',
+        description: 'Latest model',
+        supportedReasoningEfforts: [
+          { reasoningEffort: 'low', description: 'Fast' },
+          { reasoningEffort: 'medium', description: 'Balanced' },
+          { reasoningEffort: 'high', description: 'Deep' },
+          { reasoningEffort: 'xhigh', description: 'Deepest' }
+        ],
+        defaultReasoningEffort: 'medium',
+        inputModalities: ['text', 'image'],
+        isDefault: true
+      },
+      {
+        id: 'gpt-5.5',
+        model: 'gpt-5.5',
+        displayName: 'GPT-5.5',
+        description: 'Previous model',
+        supportedReasoningEfforts: [
+          { reasoningEffort: 'low', description: 'Fast' },
+          { reasoningEffort: 'medium', description: 'Balanced' },
+          { reasoningEffort: 'high', description: 'Deep' },
+          { reasoningEffort: 'xhigh', description: 'Deepest' }
+        ],
+        defaultReasoningEffort: 'medium',
+        inputModalities: ['text', 'image'],
+        isDefault: false
+      }
+    ]
   };
 }
 

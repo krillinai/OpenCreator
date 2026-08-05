@@ -19,13 +19,21 @@ describe('ConversationEmptyState', () => {
   });
 
   it.each([
-    [8, '上午好，小林'],
-    [14, '下午好，小林'],
-    [20, '晚上好，小林']
-  ])('uses the local time period at %i:00', (hour, expected) => {
+    [8, '上午好'],
+    [14, '下午好'],
+    [20, '晚上好']
+  ])('uses the local time period without a fallback nickname at %i:00', (hour, expected) => {
     render(<ConversationEmptyState now={new Date(2026, 6, 29, hour)} />);
 
     expect(screen.getByRole('heading', { name: expected })).toBeInTheDocument();
+  });
+
+  it('treats a blank login name as unavailable', () => {
+    render(
+      <ConversationEmptyState nickname="   " now={new Date(2026, 6, 29, 9)} />
+    );
+
+    expect(screen.getByRole('heading', { name: '上午好' })).toBeInTheDocument();
   });
 });
 

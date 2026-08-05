@@ -3965,6 +3965,42 @@ html.is-pane-resizing * {
   min-width: 168px;
 }
 
+.composer-model-menu {
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(520px, 70dvh);
+  overflow-y: auto;
+}
+
+.composer-model-section {
+  display: grid;
+  gap: 2px;
+}
+
+.composer-model-section + .composer-model-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.composer-model-section-label {
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.composer-model-status {
+  padding: 9px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.composer-model-status-error {
+  color: var(--danger);
+}
+
 .composer-menu-item {
   width: 100%;
   min-height: var(--control-compact-lg);

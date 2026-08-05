@@ -35,6 +35,10 @@ import {
 } from '../codex/capabilities.js';
 import { createCodexAppServerClient } from '../codex/app-server-client.js';
 import { resolveCodexHome } from '../codex/home.js';
+import {
+  createCodexModelCatalog,
+  type CodexModelCatalog
+} from '../codex/model-catalog-2026-08-05.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
 import { createMemoryService } from '../memory/service.js';
 import { createNotificationService } from '../notifications/service.js';
@@ -84,6 +88,10 @@ import {
   type EnterpriseSkillManager
 } from '../enterprise/skill-manager-2026-07-30.js';
 import {
+  createEnterpriseKnowledgeManager,
+  type EnterpriseKnowledgeManager
+} from '../enterprise/knowledge-manager-2026-08-05.js';
+import {
   createEnterpriseAgentIdentityStore,
   type EnterpriseAgentIdentityStore
 } from '../enterprise/agent-identity-2026-08-02.js';
@@ -108,6 +116,9 @@ import { registerTaskRoutes } from './routes.tasks.js';
 import { registerThreadRoutes } from './routes.threads.js';
 import { registerWorkspaceFileRoutes } from './routes.workspace-files.js';
 import { registerEnterpriseRoutes } from './routes.enterprise-2026-07-30.js';
+import {
+  registerEnterpriseKnowledgeRoutes
+} from './routes.enterprise-knowledge-2026-08-05.js';
 
 export type BuildServerInput = {
   token: string;
@@ -135,6 +146,7 @@ export type BuildServerInput = {
   persistentAppServerEnabled?: boolean;
   codexThreadRotationRunThreshold?: number;
   codexSessionProvider?: CodexSessionProvider;
+  codexModelCatalog?: CodexModelCatalog;
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
   allowedWebOrigins?: string[];
@@ -144,6 +156,8 @@ export type BuildServerInput = {
   enterpriseOrigin?: string;
   enterpriseE2ERunId?: string;
   enterpriseSkillManager?: EnterpriseSkillManager;
+  enterpriseKnowledgeManager?: EnterpriseKnowledgeManager;
+  enterpriseKnowledgeDocumentMaxBytes?: number;
 };
 
 const ATTACHMENT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
@@ -212,6 +226,12 @@ export async function buildServer(input: BuildServerInput) {
       codexHome
     })
   });
+  const codexModelCatalog = input.codexModelCatalog ?? createCodexModelCatalog({
+    client: createCodexAppServerClient({
+      codexBin,
+      codexHome
+    })
+  });
   const workspaceFileService = createWorkspaceFileService({
     getThread: (id) => threadManager.getPublicThread(id),
     revealExecutor: createDefaultRevealExecutor()
@@ -237,6 +257,14 @@ export async function buildServer(input: BuildServerInput) {
       skillManager,
       publicRecords: skillMarketRecords,
       records: enterpriseInstallRecords
+    });
+  const enterpriseKnowledgeManager =
+    input.enterpriseKnowledgeManager ??
+    createEnterpriseKnowledgeManager({
+      dataDir,
+      sessionManager: enterpriseSessionManager,
+      httpClient: enterpriseHttpClient,
+      maxDocumentBytes: input.enterpriseKnowledgeDocumentMaxBytes
     });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const notificationService = createNotificationService({ db });
@@ -352,13 +380,24 @@ export async function buildServer(input: BuildServerInput) {
   }, ATTACHMENT_CLEANUP_INTERVAL_MS);
   attachmentCleanupTimer.unref();
 
-  server.setErrorHandler((error, _request, reply) => {
+  server.setErrorHandler((error, request, reply) => {
     if ((error as { code?: string }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
       return reply
         .code(400)
         .send(apiError('VALIDATION_FAILED', 'body must be valid JSON'));
     }
     if ((error as { code?: string }).code === 'FST_ERR_CTP_BODY_TOO_LARGE') {
+      if (
+        request.method === 'POST'
+        && request.url.startsWith('/enterprise/knowledge-bases/')
+      ) {
+        return reply
+          .code(413)
+          .send(apiError(
+            'ENTERPRISE_DOCUMENT_TOO_LARGE',
+            'Enterprise document is too large'
+          ));
+      }
       return reply
         .code(413)
         .send(apiError('ATTACHMENT_TOO_LARGE', 'Attachment exceeds the configured size limit'));
@@ -382,6 +421,7 @@ export async function buildServer(input: BuildServerInput) {
     await capture(() => scheduler.stop());
     await capture(() => runManager.close());
     await capture(() => codexSessionProvider.close());
+    await capture(() => codexModelCatalog.close());
     await capture(() => agentCapabilityTokens.close());
     if (ownsDb) {
       await capture(() => {
@@ -403,12 +443,18 @@ export async function buildServer(input: BuildServerInput) {
     codexBin,
     codexHome: resolvedCodexHome,
     capabilities,
+    modelCatalog: codexModelCatalog,
     getAvailabilityProbe: input.getCodexAvailabilityProbe
   });
   await registerEnterpriseRoutes(server, {
     sessionManager: enterpriseSessionManager,
     skillManager: enterpriseSkillManager
   });
+  await registerEnterpriseKnowledgeRoutes(
+    server,
+    enterpriseKnowledgeManager,
+    { maxDocumentBytes: input.enterpriseKnowledgeDocumentMaxBytes }
+  );
   await registerProfileRoutes(server, {
     codexHome: resolvedCodexHome,
     profileManager,

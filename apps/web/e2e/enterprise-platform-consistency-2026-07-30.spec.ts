@@ -27,7 +27,7 @@ type PlatformResult = {
   unknownRequests: string[];
 };
 
-test('企业账户与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
+test('企业账户、知识库与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
   browser,
   runtime
 }, testInfo) => {
@@ -57,7 +57,8 @@ test('企业账户与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', asy
   expect(browserResult.state).toEqual({
     session: 'signed_in',
     installed: true,
-    createdThread: true
+    createdThread: true,
+    uploadedKnowledgeDocument: true
   });
   expect(desktopResult.state).toEqual(browserResult.state);
   expect(requestInventory(desktopResult.requests)).toEqual(
@@ -81,6 +82,95 @@ test('企业账户与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', asy
       `${checkpointName} 截图像素`
     ).toBe(true);
   }
+});
+
+test('企业知识库在 390px 视口下逐级浏览且不产生页面级溢出', async ({
+  page,
+  runtime
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-mobile',
+    '移动端知识库规格固定使用 390x844 Chromium 视口'
+  );
+
+  const fakeDaemon = new FakeEnterpriseDaemon();
+  await fakeDaemon.attach(page);
+  await installPlatformEnvironment(page, 'browser');
+  await page.goto(`${runtime.origin}/#/account`);
+  await expect(page.getByRole('heading', { name: '登录企业账户' })).toBeVisible();
+  await page.getByLabel('邮箱').fill('member@example.com');
+  await page.getByLabel('密码').fill('enterprise-secret');
+  await page.locator('.enterprise-account-primary-action').click();
+  await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
+
+  await page.evaluate(() => {
+    window.location.hash = '#/knowledge';
+  });
+  await expect(page.getByRole('heading', { name: '企业知识库' })).toBeVisible();
+  await expect(page.locator('.knowledge-library-pane')).toBeVisible();
+  await expect(page.locator('.knowledge-documents-pane')).toBeHidden();
+
+  await page.locator('.knowledge-library-list button').click();
+  await expect(page.locator('.knowledge-library-pane')).toBeHidden();
+  await expect(page.locator('.knowledge-documents-pane')).toBeVisible();
+  await expect(page.getByText('员工手册.pdf')).toBeVisible();
+  await page.getByLabel('选择知识库文档').setInputFiles({
+    name: '发布流程.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# 发布流程')
+  });
+  await expect(page.getByText('发布流程.md 已提交处理，请关注文档状态'))
+    .toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const pageElement = document.querySelector<HTMLElement>('.knowledge-page')!;
+    const header = document.querySelector<HTMLElement>('.knowledge-documents-header')!;
+    const back = document.querySelector<HTMLElement>('.knowledge-mobile-back')!;
+    const heading = document.querySelector<HTMLElement>('.knowledge-documents-heading')!;
+    const upload = document.querySelector<HTMLElement>('.knowledge-upload-button')!;
+    const content = document.querySelector<HTMLElement>('.knowledge-document-content')!;
+    const rect = (element: HTMLElement) => {
+      const value = element.getBoundingClientRect();
+      return {
+        left: value.left,
+        right: value.right,
+        top: value.top,
+        bottom: value.bottom
+      };
+    };
+    return {
+      viewportWidth: window.innerWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      pageClientWidth: pageElement.clientWidth,
+      pageScrollWidth: pageElement.scrollWidth,
+      headerClientWidth: header.clientWidth,
+      headerScrollWidth: header.scrollWidth,
+      contentClientWidth: content.clientWidth,
+      contentScrollWidth: content.scrollWidth,
+      back: rect(back),
+      heading: rect(heading),
+      upload: rect(upload)
+    };
+  });
+
+  expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  expect(layout.pageScrollWidth).toBeLessThanOrEqual(layout.pageClientWidth);
+  expect(layout.headerScrollWidth).toBeLessThanOrEqual(layout.headerClientWidth);
+  expect(layout.contentScrollWidth).toBeGreaterThan(layout.contentClientWidth);
+  expect(rectanglesOverlap(layout.back, layout.heading)).toBe(false);
+  expect(rectanglesOverlap(layout.heading, layout.upload)).toBe(false);
+
+  await testInfo.attach('mobile-knowledge.png', {
+    body: await page.locator('.clawee-shell').screenshot({
+      animations: 'disabled'
+    }),
+    contentType: 'image/png'
+  });
+
+  await page.getByRole('button', { name: '返回知识库列表' }).click();
+  await expect(page.locator('.knowledge-library-pane')).toBeVisible();
+  await expect(page.locator('.knowledge-documents-pane')).toBeHidden();
+  expect(fakeDaemon.unknownRequestPaths()).toEqual([]);
 });
 
 async function runPlatform(input: {
@@ -124,8 +214,30 @@ async function runPlatform(input: {
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
 
-    await page.getByRole('button', { name: '插件', exact: true }).click();
-    await page.getByRole('tab', { name: '企业 Skill Hub' }).click();
+    await page.getByRole('button', { name: '企业知识库', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '企业制度' })).toBeVisible();
+    await expect(page.getByText('员工手册.pdf')).toBeVisible();
+    await page.getByLabel('选择知识库文档').setInputFiles({
+      name: '发布流程.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# 发布流程')
+    });
+    await expect(page.getByText('发布流程.md 已提交处理，请关注文档状态'))
+      .toBeVisible();
+    await expect(page.getByText('发布流程.md', { exact: true })).toBeVisible();
+    checkpoints.knowledge = await captureCheckpoint(page, [
+      '.clawee-sidebar-pane',
+      '.clawee-main-pane',
+      '.knowledge-page',
+      '.knowledge-workbench',
+      '.knowledge-document-table'
+    ]);
+
+    await page.getByRole('button', { name: '企业Skill中心', exact: true }).click();
+    await expect(page.getByRole('tab', {
+      name: '企业Skills',
+      selected: true
+    })).toBeVisible();
     await expect(page.getByTestId('enterprise-skill-enterprise-skill')).toBeVisible();
     checkpoints.hub = await captureCheckpoint(page, [
       '.clawee-sidebar-pane',
@@ -152,8 +264,9 @@ async function runPlatform(input: {
     await projectDialog.getByRole('button', { name: '在 企业项目 中使用' }).click();
 
     await expect(page.getByRole('heading', { name: 'enterprise-name' })).toBeVisible();
+    await expect(page.getByLabel('已选择 Skill enterprise-name')).toBeVisible();
     await expect(page.getByRole('textbox', { name: '输入任务' }))
-      .toHaveValue('$enterprise-name ');
+      .toHaveValue('');
     await expect(page).toHaveURL(/#\/thread\/thread-enterprise-skill$/);
     checkpoints.conversation = await captureCheckpoint(page, [
       '.clawee-sidebar-pane',
@@ -290,6 +403,18 @@ function normalizeText(value: string): string {
     .map(line => line.trim().replace(/\s+/g, ' '))
     .filter(Boolean)
     .join('\n');
+}
+
+function rectanglesOverlap(
+  left: { left: number; right: number; top: number; bottom: number },
+  right: { left: number; right: number; top: number; bottom: number }
+): boolean {
+  return !(
+    left.right <= right.left
+    || right.right <= left.left
+    || left.bottom <= right.top
+    || right.bottom <= left.top
+  );
 }
 
 function requestInventory(requests: FakeEnterpriseRequest[]): string[] {

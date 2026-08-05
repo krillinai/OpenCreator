@@ -1,6 +1,7 @@
 import type {
   AttachmentResponse,
   ApprovalDecisionResponse,
+  CodexModelListResponse,
   CodexMcpListResponse,
   CodexProfileListResponse,
   CodexSkillListResponse,
@@ -8,6 +9,8 @@ import type {
   ConversationSearchResult,
   CreateMemoryRequest,
   CreateThreadRequest,
+  EnterpriseKnowledgeBaseResponse,
+  EnterpriseKnowledgeDocumentResponse,
   EnterpriseLoginRequest,
   EnterpriseRegisterRequest,
   EnterpriseSessionResponse,
@@ -63,6 +66,9 @@ import type {
   EnterpriseSkillOperation,
   EnterpriseSkillUseError
 } from '../features/plugins/EnterpriseSkillHubView-2026-07-30.js';
+import type {
+  KnowledgeUploadState
+} from '../features/knowledge/KnowledgePage.js';
 import {
   findProjectById,
   groupThreadsByPurpose,
@@ -128,6 +134,7 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createProjectService } from '../services/project-service.js';
 import { createMcpService } from '../services/mcp-service.js';
 import { createMemoryService } from '../services/memory-service.js';
+import { createModelService } from '../services/model-service-2026-08-05.js';
 import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
@@ -338,11 +345,36 @@ export function AppController(props: AppControllerProps) {
   const [enterpriseSkillUseError, setEnterpriseSkillUseError] =
     useState<EnterpriseSkillUseError>();
   const [enterpriseSkillsReloadKey, setEnterpriseSkillsReloadKey] = useState(0);
+  const [enterpriseKnowledgeBases, setEnterpriseKnowledgeBases] =
+    useState<EnterpriseKnowledgeBaseResponse[]>();
+  const [enterpriseKnowledgeBasesLoading, setEnterpriseKnowledgeBasesLoading] =
+    useState(false);
+  const [enterpriseKnowledgeBasesError, setEnterpriseKnowledgeBasesError] =
+    useState<string>();
+  const [selectedEnterpriseKnowledgeBaseId, setSelectedEnterpriseKnowledgeBaseId] =
+    useState<string>();
+  const [enterpriseKnowledgeDocuments, setEnterpriseKnowledgeDocuments] =
+    useState<EnterpriseKnowledgeDocumentResponse[]>();
+  const [enterpriseKnowledgeDocumentsLoading, setEnterpriseKnowledgeDocumentsLoading] =
+    useState(false);
+  const [enterpriseKnowledgeDocumentsError, setEnterpriseKnowledgeDocumentsError] =
+    useState<string>();
+  const [enterpriseKnowledgeUpload, setEnterpriseKnowledgeUpload] =
+    useState<KnowledgeUploadState>();
+  const [enterpriseKnowledgeUploadNotice, setEnterpriseKnowledgeUploadNotice] =
+    useState<string>();
+  const [enterpriseKnowledgeBasesReloadKey, setEnterpriseKnowledgeBasesReloadKey] =
+    useState(0);
+  const [enterpriseKnowledgeDocumentsReloadKey, setEnterpriseKnowledgeDocumentsReloadKey] =
+    useState(0);
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
   const [pendingMemorySuggestion, setPendingMemorySuggestion] = useState<{ id: number; content: string }>();
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
+  const [codexModels, setCodexModels] = useState<CodexModelListResponse>();
+  const [codexModelsLoading, setCodexModelsLoading] = useState(false);
+  const [codexModelsLoadError, setCodexModelsLoadError] = useState<string>();
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
   const [codexProfiles, setCodexProfiles] = useState<CodexProfileListResponse>();
@@ -449,10 +481,12 @@ export function AppController(props: AppControllerProps) {
   const skillMarketRuntimeGenerationRef = useRef(0);
   const enterpriseRuntimeGenerationRef = useRef(0);
   const enterpriseHubGenerationRef = useRef(0);
+  const enterpriseKnowledgeGenerationRef = useRef(0);
   const capabilityLoadGenerationRef = useRef<number>();
   const profileLoadGenerationRef = useRef<number>();
   const skillMarketLoadGenerationRef = useRef<number>();
   const enterpriseSkillMutationInFlightRef = useRef(false);
+  const enterpriseKnowledgeUploadInFlightRef = useRef(false);
   const mobileSidebarHistoryEntryRef = useRef(false);
   const defaultPermissionAppliedByThreadRef = useRef(new Map<string, SandboxMode>());
   const defaultPermissionSyncFailuresRef = useRef(new Set<string>());
@@ -519,6 +553,10 @@ export function AppController(props: AppControllerProps) {
   );
   const profileService = useMemo(
     () => runtimeClient === null ? null : createProfileService(runtimeClient),
+    [runtimeClient]
+  );
+  const modelService = useMemo(
+    () => runtimeClient === null ? null : createModelService(runtimeClient),
     [runtimeClient]
   );
   const diagnosticsService = useMemo(
@@ -880,6 +918,40 @@ export function AppController(props: AppControllerProps) {
 
   useEffect(() => {
     let canceled = false;
+
+    if (connectionState.status !== 'connected' || modelService === null) {
+      setCodexModels(undefined);
+      setCodexModelsLoading(false);
+      setCodexModelsLoadError(undefined);
+      return () => {
+        canceled = true;
+      };
+    }
+
+    setCodexModelsLoading(true);
+    setCodexModelsLoadError(undefined);
+    modelService
+      .listModels()
+      .then(response => {
+        if (!canceled) setCodexModels(response);
+      })
+      .catch(() => {
+        if (!canceled) {
+          setCodexModels(undefined);
+          setCodexModelsLoadError('无法加载模型列表');
+        }
+      })
+      .finally(() => {
+        if (!canceled) setCodexModelsLoading(false);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [connectionState.status, modelService]);
+
+  useEffect(() => {
+    let canceled = false;
     const loadVersion = connectionConfigVersionRef.current;
 
     readHostRuntimeConfig(loadVersion, () => canceled);
@@ -1127,10 +1199,14 @@ export function AppController(props: AppControllerProps) {
     scheduleServiceRef.current = scheduleService;
     skillMarketRuntimeGenerationRef.current += 1;
     enterpriseRuntimeGenerationRef.current += 1;
+    enterpriseKnowledgeGenerationRef.current += 1;
     skillMarketMutationInFlightRef.current = false;
     skillMarketUseInFlightRef.current = false;
+    enterpriseKnowledgeUploadInFlightRef.current = false;
     setSkillMarketOperation(undefined);
     setSkillMarketUseError(undefined);
+    setEnterpriseKnowledgeUpload(undefined);
+    setEnterpriseKnowledgeUploadNotice(undefined);
   }, [
     capabilityService,
     connectionState.status,
@@ -1203,9 +1279,13 @@ export function AppController(props: AppControllerProps) {
 
   useEffect(() => {
     enterpriseHubGenerationRef.current += 1;
+    enterpriseKnowledgeGenerationRef.current += 1;
     enterpriseSkillMutationInFlightRef.current = false;
+    enterpriseKnowledgeUploadInFlightRef.current = false;
     setEnterpriseSkillOperation(undefined);
     setEnterpriseSkillUseError(undefined);
+    setEnterpriseKnowledgeUpload(undefined);
+    setEnterpriseKnowledgeUploadNotice(undefined);
 
     if (
       connectionState.status !== 'connected'
@@ -1215,6 +1295,13 @@ export function AppController(props: AppControllerProps) {
       setEnterpriseSkills(undefined);
       setEnterpriseSkillsLoading(false);
       setEnterpriseSkillsLoadError(undefined);
+      setEnterpriseKnowledgeBases(undefined);
+      setEnterpriseKnowledgeBasesLoading(false);
+      setEnterpriseKnowledgeBasesError(undefined);
+      setSelectedEnterpriseKnowledgeBaseId(undefined);
+      setEnterpriseKnowledgeDocuments(undefined);
+      setEnterpriseKnowledgeDocumentsLoading(false);
+      setEnterpriseKnowledgeDocumentsError(undefined);
     }
   }, [
     connectionState.status,
@@ -1270,6 +1357,190 @@ export function AppController(props: AppControllerProps) {
     enterpriseService,
     enterpriseSession.status,
     enterpriseSkillsReloadKey,
+    state.activeView
+  ]);
+
+  useEffect(() => {
+    if (
+      state.activeView !== 'knowledge'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      return;
+    }
+
+    let canceled = false;
+    const generation = enterpriseKnowledgeGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    setEnterpriseKnowledgeBasesLoading(true);
+    setEnterpriseKnowledgeBasesError(undefined);
+
+    void activeEnterpriseService.listKnowledgeBases()
+      .then(response => {
+        if (
+          canceled
+          || !isCurrentEnterpriseKnowledgeRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          return;
+        }
+        setEnterpriseKnowledgeBases(response.knowledgeBases);
+        setSelectedEnterpriseKnowledgeBaseId(previous => (
+          previous !== undefined
+          && response.knowledgeBases.some(
+            item => item.knowledgeBaseId === previous
+          )
+            ? previous
+            : response.knowledgeBases[0]?.knowledgeBaseId
+        ));
+      })
+      .catch(error => {
+        if (
+          canceled
+          || !isCurrentEnterpriseKnowledgeRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          return;
+        }
+        setEnterpriseKnowledgeBases(undefined);
+        setSelectedEnterpriseKnowledgeBaseId(undefined);
+        setEnterpriseKnowledgeDocuments(undefined);
+        if (isEnterpriseUnauthorized(error)) {
+          setEnterpriseSession({
+            status: 'signed_out',
+            reason: 'session_expired',
+            transportSecurity: enterpriseSessionRef.current.transportSecurity
+          });
+        } else {
+          setEnterpriseKnowledgeBasesError(
+            formatEnterpriseKnowledgeError(
+              error,
+              '企业知识库加载失败'
+            )
+          );
+        }
+      })
+      .finally(() => {
+        if (
+          !canceled
+          && isCurrentEnterpriseKnowledgeRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          setEnterpriseKnowledgeBasesLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    enterpriseKnowledgeBasesReloadKey,
+    enterpriseService,
+    enterpriseSession.status,
+    state.activeView
+  ]);
+
+  useEffect(() => {
+    if (
+      state.activeView !== 'knowledge'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+      || selectedEnterpriseKnowledgeBaseId === undefined
+    ) {
+      if (selectedEnterpriseKnowledgeBaseId === undefined) {
+        setEnterpriseKnowledgeDocuments(undefined);
+        setEnterpriseKnowledgeDocumentsLoading(false);
+        setEnterpriseKnowledgeDocumentsError(undefined);
+      }
+      return;
+    }
+
+    let canceled = false;
+    const generation = enterpriseKnowledgeGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    const knowledgeBaseId = selectedEnterpriseKnowledgeBaseId;
+    setEnterpriseKnowledgeDocuments(undefined);
+    setEnterpriseKnowledgeDocumentsLoading(true);
+    setEnterpriseKnowledgeDocumentsError(undefined);
+
+    void activeEnterpriseService.listKnowledgeDocuments(knowledgeBaseId)
+      .then(response => {
+        if (
+          canceled
+          || !isCurrentEnterpriseKnowledgeRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          return;
+        }
+        setEnterpriseKnowledgeDocuments(response.documents);
+      })
+      .catch(error => {
+        if (
+          canceled
+          || !isCurrentEnterpriseKnowledgeRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          return;
+        }
+        setEnterpriseKnowledgeDocuments(undefined);
+        if (isEnterpriseUnauthorized(error)) {
+          setEnterpriseSession({
+            status: 'signed_out',
+            reason: 'session_expired',
+            transportSecurity: enterpriseSessionRef.current.transportSecurity
+          });
+        } else if (
+          error instanceof ApiClientError
+          && error.code === 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND'
+        ) {
+          setSelectedEnterpriseKnowledgeBaseId(undefined);
+          setEnterpriseKnowledgeBasesReloadKey(current => current + 1);
+          setEnterpriseKnowledgeDocumentsError(
+            '该知识库已不可访问，正在刷新授权列表'
+          );
+        } else {
+          setEnterpriseKnowledgeDocumentsError(
+            formatEnterpriseKnowledgeError(
+              error,
+              '知识库文档加载失败'
+            )
+          );
+        }
+      })
+      .finally(() => {
+        if (
+          !canceled
+          && isCurrentEnterpriseKnowledgeRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          setEnterpriseKnowledgeDocumentsLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    enterpriseKnowledgeDocumentsReloadKey,
+    enterpriseService,
+    enterpriseSession.status,
+    selectedEnterpriseKnowledgeBaseId,
     state.activeView
   ]);
 
@@ -2071,7 +2342,7 @@ export function AppController(props: AppControllerProps) {
     input: EnterpriseLoginRequest
   ): Promise<EnterpriseSessionResponse> {
     const response = await runEnterpriseSessionMutation(service => service.login(input));
-    returnToEnterpriseHubAfterSignIn(response);
+    returnToEnterpriseViewAfterSignIn(response);
     return response;
   }
 
@@ -2079,7 +2350,7 @@ export function AppController(props: AppControllerProps) {
     input: EnterpriseRegisterRequest
   ): Promise<EnterpriseSessionResponse> {
     const response = await runEnterpriseSessionMutation(service => service.register(input));
-    returnToEnterpriseHubAfterSignIn(response);
+    returnToEnterpriseViewAfterSignIn(response);
     return response;
   }
 
@@ -2091,17 +2362,19 @@ export function AppController(props: AppControllerProps) {
     return runEnterpriseSessionMutation(service => service.refreshSession());
   }
 
-  function returnToEnterpriseHubAfterSignIn(response: EnterpriseSessionResponse) {
+  function returnToEnterpriseViewAfterSignIn(response: EnterpriseSessionResponse) {
     if (response.status !== 'signed_in') return;
     const returnRoute = enterpriseReturnRouteRef.current;
-    if (
-      returnRoute?.view !== 'plugins'
-      || returnRoute.source !== 'enterprise'
-    ) {
-      return;
-    }
+    if (returnRoute === undefined) return;
+    const activeView =
+      returnRoute.view === 'plugins' && returnRoute.source === 'enterprise'
+        ? 'plugins'
+        : returnRoute.view === 'knowledge'
+          ? 'knowledge'
+          : undefined;
+    if (activeView === undefined) return;
     enterpriseReturnRouteRef.current = undefined;
-    dispatch({ type: 'set_active_view', activeView: 'plugins' });
+    dispatch({ type: 'set_active_view', activeView });
     navigateToRoute(returnRoute);
   }
 
@@ -2776,6 +3049,17 @@ export function AppController(props: AppControllerProps) {
       && enterpriseServiceRef.current === activeEnterpriseService;
   }
 
+  function isCurrentEnterpriseKnowledgeRuntime(
+    generation: number,
+    activeEnterpriseService: EnterpriseService
+  ) {
+    return mountedRef.current
+      && enterpriseKnowledgeGenerationRef.current === generation
+      && connectionStatusRef.current === 'connected'
+      && enterpriseSessionRef.current.status === 'signed_in'
+      && enterpriseServiceRef.current === activeEnterpriseService;
+  }
+
   async function refreshEnterpriseSkillListOnce(
     generation: number,
     activeEnterpriseService: EnterpriseService
@@ -2792,6 +3076,123 @@ export function AppController(props: AppControllerProps) {
       return;
     }
     void refreshEnterpriseSession();
+  }
+
+  function refreshEnterpriseKnowledge() {
+    setEnterpriseKnowledgeUploadNotice(undefined);
+    setEnterpriseKnowledgeUpload(undefined);
+    if (enterpriseSessionRef.current.status === 'signed_in') {
+      setEnterpriseKnowledgeBasesReloadKey(current => current + 1);
+      setEnterpriseKnowledgeDocumentsReloadKey(current => current + 1);
+      return;
+    }
+    void refreshEnterpriseSession();
+  }
+
+  function selectEnterpriseKnowledgeBase(knowledgeBaseId: string) {
+    if (knowledgeBaseId !== selectedEnterpriseKnowledgeBaseId) {
+      setSelectedEnterpriseKnowledgeBaseId(knowledgeBaseId);
+      setEnterpriseKnowledgeDocuments(undefined);
+      setEnterpriseKnowledgeDocumentsError(undefined);
+    }
+    setEnterpriseKnowledgeUpload(undefined);
+    setEnterpriseKnowledgeUploadNotice(undefined);
+  }
+
+  async function uploadEnterpriseKnowledgeDocument(file: File) {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    const knowledgeBase = enterpriseKnowledgeBases?.find(
+      item => item.knowledgeBaseId === selectedEnterpriseKnowledgeBaseId
+    );
+    if (
+      activeEnterpriseService === null
+      || connectionStatusRef.current !== 'connected'
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || knowledgeBase === undefined
+      || knowledgeBase.permissions.read !== true
+      || knowledgeBase.permissions.upload !== true
+      || enterpriseKnowledgeUploadInFlightRef.current
+    ) {
+      return;
+    }
+
+    const generation = enterpriseKnowledgeGenerationRef.current;
+    enterpriseKnowledgeUploadInFlightRef.current = true;
+    setEnterpriseKnowledgeUpload({
+      fileName: file.name,
+      status: 'uploading'
+    });
+    setEnterpriseKnowledgeUploadNotice(undefined);
+    try {
+      await activeEnterpriseService.uploadKnowledgeDocument({
+        knowledgeBaseId: knowledgeBase.knowledgeBaseId,
+        file
+      });
+      if (
+        !isCurrentEnterpriseKnowledgeRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      setEnterpriseKnowledgeUpload(undefined);
+      setEnterpriseKnowledgeUploadNotice(
+        `${file.name} 已提交处理，请关注文档状态`
+      );
+      setEnterpriseKnowledgeBasesReloadKey(current => current + 1);
+      setEnterpriseKnowledgeDocumentsReloadKey(current => current + 1);
+    } catch (error) {
+      if (
+        !isCurrentEnterpriseKnowledgeRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      if (isEnterpriseUnauthorized(error)) {
+        setEnterpriseSession({
+          status: 'signed_out',
+          reason: 'session_expired',
+          transportSecurity: enterpriseSessionRef.current.transportSecurity
+        });
+        setEnterpriseKnowledgeUpload(undefined);
+        return;
+      }
+
+      let message = formatEnterpriseKnowledgeError(
+        error,
+        '文档上传失败'
+      );
+      if (error instanceof ApiClientError) {
+        if (error.code === 'ENTERPRISE_DOCUMENT_UPLOAD_FORBIDDEN') {
+          message = '当前账户已没有该知识库的上传权限';
+          setEnterpriseKnowledgeBasesReloadKey(current => current + 1);
+        } else if (error.code === 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND') {
+          message = '该知识库已不可访问，正在刷新授权列表';
+          setSelectedEnterpriseKnowledgeBaseId(undefined);
+          setEnterpriseKnowledgeBasesReloadKey(current => current + 1);
+        } else if (error.code === 'ENTERPRISE_KNOWLEDGE_CONFLICT') {
+          message = '知识库状态已变化，请刷新后重新选择文件';
+          setEnterpriseKnowledgeBasesReloadKey(current => current + 1);
+          setEnterpriseKnowledgeDocumentsReloadKey(current => current + 1);
+        } else if (
+          error.code === 'ENTERPRISE_SERVICE_UNAVAILABLE'
+          || error.code === 'ENTERPRISE_KNOWLEDGE_PROVIDER_ERROR'
+        ) {
+          message = '上传结果未知，请先刷新文档列表，再决定是否重新上传';
+          setEnterpriseKnowledgeDocumentsReloadKey(current => current + 1);
+        }
+      }
+      setEnterpriseKnowledgeUpload({
+        fileName: file.name,
+        status: 'failed',
+        error: message
+      });
+    } finally {
+      enterpriseKnowledgeUploadInFlightRef.current = false;
+    }
   }
 
   async function loadEnterpriseSkillDetail(
@@ -2846,6 +3247,8 @@ export function AppController(props: AppControllerProps) {
     }
 
     const generation = enterpriseHubGenerationRef.current;
+    const capabilityGeneration = skillMarketRuntimeGenerationRef.current;
+    const activeCapabilityService = capabilityServiceRef.current;
     enterpriseSkillMutationInFlightRef.current = true;
     setEnterpriseSkillOperation({ skillId, kind });
     try {
@@ -2855,6 +3258,20 @@ export function AppController(props: AppControllerProps) {
         await activeEnterpriseService.updateSkill(skillId);
       }
       await refreshEnterpriseSkillListOnce(generation, activeEnterpriseService);
+      if (activeCapabilityService !== null) {
+        try {
+          const response = await activeCapabilityService.listSkills();
+          if (isCurrentCapabilityRuntime(
+            capabilityGeneration,
+            activeCapabilityService
+          )) {
+            setCodexSkills(response);
+            setCapabilitiesLoadError(undefined);
+          }
+        } catch {
+          // The enterprise mutation succeeded; capability refresh can retry later.
+        }
+      }
       if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
         setEnterpriseSkillOperation(undefined);
       }
@@ -4105,7 +4522,13 @@ export function AppController(props: AppControllerProps) {
           </div>
         ) : null}
         {showConversationEmptyState ? (
-          <ConversationEmptyState />
+          <ConversationEmptyState
+            nickname={
+              enterpriseSession.status === 'signed_in'
+                ? enterpriseSession.account?.name
+                : undefined
+            }
+          />
         ) : (
           <Timeline
             ref={timelineRef}
@@ -4188,6 +4611,9 @@ export function AppController(props: AppControllerProps) {
           profile={effectiveComposerConfig.profile}
           model={effectiveComposerConfig.model}
           reasoning={effectiveComposerConfig.reasoning}
+          models={codexModels?.models}
+          modelsLoading={codexModelsLoading}
+          modelsError={codexModelsLoadError}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
           running={currentRunBusy}
@@ -4341,7 +4767,27 @@ export function AppController(props: AppControllerProps) {
       onNavigate={navigateToRoute}
     />
   ) : state.activeView === 'knowledge' ? (
-    <KnowledgePage />
+    <KnowledgePage
+      connected={connectionState.status === 'connected'}
+      session={enterpriseSession}
+      knowledgeBases={enterpriseKnowledgeBases}
+      knowledgeBasesLoading={enterpriseKnowledgeBasesLoading}
+      knowledgeBasesError={enterpriseKnowledgeBasesError}
+      selectedKnowledgeBaseId={selectedEnterpriseKnowledgeBaseId}
+      documents={enterpriseKnowledgeDocuments}
+      documentsLoading={enterpriseKnowledgeDocumentsLoading}
+      documentsError={enterpriseKnowledgeDocumentsError}
+      upload={enterpriseKnowledgeUpload}
+      uploadNotice={enterpriseKnowledgeUploadNotice}
+      onOpenAccount={() => {
+        enterpriseReturnRouteRef.current = { view: 'knowledge' };
+        dispatch({ type: 'set_active_view', activeView: 'account' });
+        navigateToRoute({ view: 'account' });
+      }}
+      onRefresh={refreshEnterpriseKnowledge}
+      onSelectKnowledgeBase={selectEnterpriseKnowledgeBase}
+      onUpload={file => void uploadEnterpriseKnowledgeDocument(file)}
+    />
   ) : state.activeView === 'drive' ? (
     <SharedDrivePage />
   ) : state.activeView === 'connections' ? (
@@ -5098,6 +5544,35 @@ function formatEnterpriseSkillError(error: unknown, fallback: string): string {
       return '企业服务请求过于频繁，请稍后重试';
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':
       return '企业Skills暂时不可用';
+    default:
+      return error.message.trim().length > 0 ? error.message : fallback;
+  }
+}
+
+function formatEnterpriseKnowledgeError(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
+  switch (error.code) {
+    case 'ENTERPRISE_FORBIDDEN':
+      return '当前账户没有企业知识库访问权限';
+    case 'ENTERPRISE_AGENT_FORBIDDEN':
+      return '当前设备的企业 Agent 无法访问知识库';
+    case 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND':
+      return '该知识库不存在或当前账户已无权访问';
+    case 'ENTERPRISE_DOCUMENT_UPLOAD_FORBIDDEN':
+      return '当前账户没有该知识库的上传权限';
+    case 'ENTERPRISE_DOCUMENT_TOO_LARGE':
+      return '单个文档不能超过 50 MiB';
+    case 'ENTERPRISE_DOCUMENT_TYPE_UNSUPPORTED':
+      return '仅支持 PDF、DOCX、Markdown、TXT、XLSX 和 CSV 文件';
+    case 'ENTERPRISE_KNOWLEDGE_CONFLICT':
+      return '知识库状态已变化，请刷新后重试';
+    case 'ENTERPRISE_RATE_LIMITED':
+      return '企业知识服务请求过于频繁，请稍后重试';
+    case 'ENTERPRISE_KNOWLEDGE_PROVIDER_ERROR':
+    case 'ENTERPRISE_SERVICE_UNAVAILABLE':
+      return '企业知识服务暂时不可用';
+    case 'ENTERPRISE_PROTOCOL_ERROR':
+      return '企业知识服务返回了无法识别的数据';
     default:
       return error.message.trim().length > 0 ? error.message : fallback;
   }

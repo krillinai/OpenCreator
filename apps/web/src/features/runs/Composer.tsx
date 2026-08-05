@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import type {
   AttachmentResponse,
+  CodexModelResponse,
   ReasoningEffort,
   RunSubmissionMode
 } from '@clawee/protocol';
@@ -75,13 +76,6 @@ type ComposerAttachmentDraft = AttachmentTrayItem & {
   attachment?: AttachmentResponse;
 };
 
-type ComposerModelOption = {
-  id: 'default' | 'high' | 'xhigh';
-  label: string;
-  model: string | null;
-  reasoning: ReasoningEffort | null;
-};
-
 type SlashTrigger = {
   start: number;
   end: number;
@@ -104,12 +98,6 @@ const permissionOptions: Array<{
     label: '完全访问权限',
     description: '允许访问本机文件并执行本地操作'
   }
-];
-
-const modelOptions: ComposerModelOption[] = [
-  { id: 'default', label: '默认模型', model: null, reasoning: null },
-  { id: 'high', label: '默认模型 高', model: null, reasoning: 'high' },
-  { id: 'xhigh', label: '默认模型 超高', model: null, reasoning: 'xhigh' }
 ];
 
 const TEXTAREA_MIN_VISIBLE_LINES = 2;
@@ -138,6 +126,9 @@ export function Composer(props: {
   profile: string;
   model: string | null;
   reasoning: ReasoningEffort | null;
+  models?: readonly CodexModelResponse[];
+  modelsLoading?: boolean;
+  modelsError?: string;
   slashCommands?: ComposerSlashCommand[];
   slashCommandsLoading?: boolean;
   slashCommandsError?: string;
@@ -173,7 +164,10 @@ export function Composer(props: {
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(
     normalizePermission(props.permission)
   );
-  const [selectedModel, setSelectedModel] = useState(() => modelOptionForConfig(props.model, props.reasoning));
+  const [selectedModel, setSelectedModel] = useState<string | null>(props.model);
+  const [selectedReasoning, setSelectedReasoning] = useState<ReasoningEffort | null>(
+    props.reasoning
+  );
   const [openMenu, setOpenMenu] = useState<
     'project' | 'add' | 'permission' | 'model' | null
   >(null);
@@ -196,6 +190,24 @@ export function Composer(props: {
   const promptRevisionRef = useRef(0);
   const trimmedPrompt = prompt.trim();
   const activeFloatingMenu = openMenu ?? (slashTrigger === null ? null : 'slash');
+  const availableModels = props.models ?? [];
+  const resolvedSelectedModel = resolveSelectedModel(availableModels, selectedModel);
+  const selectedModelLabel = modelSelectionLabel(
+    resolvedSelectedModel,
+    selectedModel,
+    props.modelsLoading === true
+  );
+  const selectedModelSupportsImages =
+    resolvedSelectedModel?.inputModalities.includes('image');
+  const canAttachImages =
+    props.imageInputSupported === true && selectedModelSupportsImages !== false;
+  const imageInputNotice = selectedModelSupportsImages === false
+    ? `${selectedModelLabel} 不支持图片输入`
+    : props.imageInputUnsupportedReason;
+  const attachmentsSupportedByModel =
+    attachmentDrafts.length === 0 || selectedModelSupportsImages !== false;
+  const selectedReasoningOptions =
+    resolvedSelectedModel?.supportedReasoningEfforts ?? [];
 
   attachmentDraftsRef.current = attachmentDrafts;
 
@@ -212,7 +224,8 @@ export function Composer(props: {
   }, [props.permission, props.projectName]);
 
   useEffect(() => {
-    setSelectedModel(modelOptionForConfig(props.model, props.reasoning));
+    setSelectedModel(props.model);
+    setSelectedReasoning(props.reasoning);
   }, [props.model, props.reasoning, props.projectName]);
 
   useEffect(() => {
@@ -332,7 +345,8 @@ export function Composer(props: {
     !props.disabled
     && !submitting
     && trimmedPrompt.length > 0
-    && attachmentsSettled;
+    && attachmentsSettled
+    && attachmentsSupportedByModel;
   const showStopAction = props.running === true && !canSubmit;
   const submitPrompt = async () => {
     if (!canSubmit) return;
@@ -349,8 +363,8 @@ export function Composer(props: {
       const config = {
         permission: selectedPermission,
         profile: props.profile,
-        model: selectedModel.model,
-        reasoning: selectedModel.reasoning
+        model: selectedModel,
+        reasoning: selectedReasoning
       };
       accepted = props.running
         ? await props.onSubmit(trimmedPrompt, config, attachments, 'enqueue')
@@ -598,7 +612,7 @@ export function Composer(props: {
   }
 
   function addFiles(files: Iterable<File>) {
-    if (props.imageInputSupported !== true || props.onUploadAttachment === undefined) return;
+    if (!canAttachImages || props.onUploadAttachment === undefined) return;
     const available = Math.max(0, 8 - attachmentDraftsRef.current.length);
     const images = Array.from(files)
       .filter(file => file.type.startsWith('image/'))
@@ -709,7 +723,7 @@ export function Composer(props: {
           void submitPrompt();
         }}
         onDragOver={(event) => {
-          if (props.imageInputSupported === true) event.preventDefault();
+          if (canAttachImages) event.preventDefault();
         }}
         onDrop={handleDrop}
       >
@@ -931,7 +945,7 @@ export function Composer(props: {
                   className="composer-menu-item"
                   type="button"
                   role="menuitem"
-                  disabled={props.imageInputSupported !== true}
+                  disabled={!canAttachImages}
                   onClick={() => {
                     setOpenMenu(null);
                     fileInputRef.current?.click();
@@ -940,8 +954,8 @@ export function Composer(props: {
                   <Paperclip aria-hidden="true" size={15} />
                   <span>添加图片</span>
                 </button>
-                {props.imageInputSupported !== true && props.imageInputUnsupportedReason ? (
-                  <p className="composer-menu-notice">{props.imageInputUnsupportedReason}</p>
+                {!canAttachImages && imageInputNotice !== undefined ? (
+                  <p className="composer-menu-notice">{imageInputNotice}</p>
                 ) : null}
               </div>
             ) : null}
@@ -952,7 +966,7 @@ export function Composer(props: {
               aria-label="选择图片"
               accept="image/png,image/jpeg,image/gif,image/webp"
               multiple
-              disabled={props.imageInputSupported !== true}
+              disabled={!canAttachImages}
               onChange={(event) => {
                 addFiles(event.currentTarget.files ?? []);
                 event.currentTarget.value = '';
@@ -1027,39 +1041,124 @@ export function Composer(props: {
             <button
               className="composer-model-button"
               type="button"
-              aria-label={`选择模型 ${selectedModel.label}`}
+              aria-label={`选择模型 ${selectedModelLabel}`}
               aria-expanded={openMenu === 'model'}
               onClick={() => {
                 setSlashTrigger(null);
                 setOpenMenu(openMenu === 'model' ? null : 'model');
               }}
             >
-              <span>{selectedModel.label}</span>
+              <span>{selectedModelLabel}</span>
               <ChevronDown aria-hidden="true" size={13} />
             </button>
             {openMenu === 'model' ? (
               <div className="composer-popover composer-model-menu" role="menu" aria-label="模型">
-                {modelOptions.map(option => (
+                <div className="composer-model-section" role="presentation">
+                  <div className="composer-model-section-label">模型</div>
+                  {props.modelsLoading === true && availableModels.length === 0 ? (
+                    <div className="composer-model-status" role="status">正在加载模型</div>
+                  ) : null}
+                  {props.modelsError !== undefined && availableModels.length === 0 ? (
+                    <div className="composer-model-status composer-model-status-error">
+                      {props.modelsError}
+                    </div>
+                  ) : null}
+                  {availableModels.length === 0 && props.modelsLoading !== true ? (
+                    <div className="composer-model-status">暂无可用模型</div>
+                  ) : null}
+                  {selectedModel !== null && resolvedSelectedModel === undefined ? (
+                    <button
+                      className="composer-menu-item"
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked="true"
+                      disabled
+                    >
+                      <span className="composer-menu-icon" aria-hidden="true">
+                        <Check size={15} />
+                      </span>
+                      <span>
+                        <strong>{selectedModel} · 不可用</strong>
+                        <small>该模型不在当前可用目录中</small>
+                      </span>
+                    </button>
+                  ) : null}
+                  {availableModels.map(option => {
+                    const imageBlocked =
+                      attachmentDrafts.length > 0
+                      && !option.inputModalities.includes('image');
+                    return (
+                      <button
+                        key={option.id}
+                        className="composer-menu-item"
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={resolvedSelectedModel?.model === option.model}
+                        disabled={imageBlocked}
+                        onClick={() => {
+                          setSelectedModel(option.model);
+                          setSelectedReasoning(current => (
+                            isReasoningAvailable(option, current) ? current : null
+                          ));
+                        }}
+                      >
+                        <span className="composer-menu-icon" aria-hidden="true">
+                          {resolvedSelectedModel?.model === option.model ? <Check size={15} /> : null}
+                        </span>
+                        <span>
+                          <strong>{option.displayName}</strong>
+                          <small>{modelOptionDescription(option, imageBlocked)}</small>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="composer-model-section" role="presentation">
+                  <div className="composer-model-section-label">推理强度</div>
                   <button
-                    key={option.id}
                     className="composer-menu-item"
                     type="button"
                     role="menuitemradio"
-                    aria-checked={selectedModel.id === option.id}
+                    aria-checked={selectedReasoning === null || selectedReasoning === 'default'}
                     onClick={() => {
-                      setSelectedModel(option);
+                      setSelectedReasoning(null);
                       setOpenMenu(null);
                     }}
                   >
                     <span className="composer-menu-icon" aria-hidden="true">
-                      {selectedModel.id === option.id ? <Check size={15} /> : null}
+                      {selectedReasoning === null || selectedReasoning === 'default'
+                        ? <Check size={15} />
+                        : null}
                     </span>
                     <span>
-                      <strong>{option.label}</strong>
-                      <small>{modelOptionDescription(option)}</small>
+                      <strong>默认</strong>
+                      <small>跟随 Codex 配置</small>
                     </span>
                   </button>
-                ))}
+                  {selectedReasoningOptions.map(option => (
+                    <button
+                      key={option.reasoningEffort}
+                      className="composer-menu-item"
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selectedReasoning === option.reasoningEffort}
+                      onClick={() => {
+                        setSelectedReasoning(option.reasoningEffort);
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <span className="composer-menu-icon" aria-hidden="true">
+                        {selectedReasoning === option.reasoningEffort
+                          ? <Check size={15} />
+                          : null}
+                      </span>
+                      <span>
+                        <strong>{reasoningEffortLabel(option.reasoningEffort)}</strong>
+                        <small>{reasoningEffortDescription(option.reasoningEffort)}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
           </div>
@@ -1116,16 +1215,63 @@ function normalizePermission(permission: ProjectPermission): ProjectPermission {
   return permission === 'danger-full-access' ? permission : 'workspace-write';
 }
 
-function modelOptionForConfig(model: string | null, reasoning: ReasoningEffort | null): ComposerModelOption {
-  if (model === null && reasoning === 'xhigh') return modelOptions[2]!;
-  if (model === null && reasoning === 'high') return modelOptions[1]!;
-  return modelOptions[0]!;
+function resolveSelectedModel(
+  models: readonly CodexModelResponse[],
+  selectedModel: string | null
+): CodexModelResponse | undefined {
+  if (selectedModel !== null) {
+    return models.find(option => option.model === selectedModel);
+  }
+  return models.find(option => option.isDefault) ?? models[0];
 }
 
-function modelOptionDescription(option: ComposerModelOption): string {
-  if (option.id === 'xhigh') return '更充分的推理过程';
-  if (option.id === 'high') return '较强推理能力';
-  return '使用本机默认配置';
+function modelSelectionLabel(
+  resolvedModel: CodexModelResponse | undefined,
+  selectedModel: string | null,
+  loading: boolean
+): string {
+  if (resolvedModel !== undefined) return resolvedModel.displayName;
+  if (selectedModel !== null) return `${selectedModel} · 不可用`;
+  return loading ? '正在加载模型' : '默认模型';
+}
+
+function modelOptionDescription(
+  option: CodexModelResponse,
+  imageBlocked: boolean
+): string {
+  if (imageBlocked) return '当前任务包含图片，无法选择';
+  const details = [
+    option.isDefault ? 'Codex 当前默认模型' : undefined,
+    option.inputModalities.includes('image') ? '支持图片输入' : '仅支持文本输入'
+  ].filter((detail): detail is string => detail !== undefined);
+  return details.join(' · ');
+}
+
+function isReasoningAvailable(
+  model: CodexModelResponse,
+  reasoning: ReasoningEffort | null
+): boolean {
+  return reasoning === null
+    || reasoning === 'default'
+    || model.supportedReasoningEfforts.some(
+      option => option.reasoningEffort === reasoning
+    );
+}
+
+function reasoningEffortLabel(reasoning: ReasoningEffort): string {
+  if (reasoning === 'low') return '低';
+  if (reasoning === 'medium') return '中';
+  if (reasoning === 'high') return '高';
+  if (reasoning === 'xhigh') return '超高';
+  return '默认';
+}
+
+function reasoningEffortDescription(reasoning: ReasoningEffort): string {
+  if (reasoning === 'low') return '更快响应，适合简单任务';
+  if (reasoning === 'medium') return '平衡速度与推理深度';
+  if (reasoning === 'high') return '增强复杂任务的推理深度';
+  if (reasoning === 'xhigh') return '使用最充分的推理深度';
+  return '跟随 Codex 配置';
 }
 
 function findSlashTrigger(value: string, caret: number): SlashTrigger | null {

@@ -303,6 +303,15 @@ function createHttpClient(): EnterpriseHttpClient {
     login: vi.fn(),
     getMe: vi.fn(),
     logout: vi.fn(),
+    listKnowledgeBases: vi.fn(async () => ({
+      knowledgeBases: [],
+      meta: { nextCursor: '', hasNext: false }
+    })),
+    listKnowledgeDocuments: vi.fn(async () => ({
+      documents: [],
+      meta: { nextCursor: '', hasNext: false }
+    })),
+    uploadKnowledgeDocument: vi.fn(),
     listSkills: vi.fn(async () => [remoteSkill()]),
     getSkillDetail: vi.fn(async () => remoteDetail()),
     downloadSkillPackage: vi.fn(async () => ({

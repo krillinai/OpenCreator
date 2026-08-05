@@ -43,13 +43,14 @@ const fakeCodexScript = join(e2eDir, 'fixtures', 'fake-codex.mjs');
 const enterpriseEmail = 'packaged-e2e@example.com';
 const enterprisePassword = 'packaged-e2e-password';
 const enterpriseSkillName = 'enterprise-review';
+const enterpriseKnowledgeBaseId = 'kb_packaged_e2e';
 const keyringService = 'com.clawee.enterprise.e2e';
 const agentIdPattern =
   /^clawee_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 test.describe.configure({ mode: 'serial' });
 
-test('实际打包 App 可登录、恢复企业会话、安装并使用 Skill', async () => {
+test('实际打包 App 可登录、使用企业知识库并安装 Skill', async () => {
   const runId = randomUUID();
   const root = mkdtempSync(join(tmpdir(), 'clawee-enterprise-packaged-'));
   const codexHome = join(root, 'codex-home');
@@ -140,8 +141,32 @@ test('实际打包 App 可登录、恢复企业会话、安装并使用 Skill', 
       name: `Packaged E2E ${enterpriseEmail}`
     })).toBeVisible();
 
-    await app.page.getByRole('button', { name: '插件' }).click();
-    await app.page.getByRole('tab', { name: '企业 Skill Hub' }).click();
+    await app.page.getByRole('button', {
+      name: '企业知识库',
+      exact: true
+    }).click();
+    await expect(app.page.getByRole('heading', {
+      name: '企业制度'
+    })).toBeVisible();
+    await expect(app.page.getByText('员工手册.pdf')).toBeVisible();
+    await app.page.getByLabel('选择知识库文档').setInputFiles({
+      name: '发布流程.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# 发布流程')
+    });
+    await expect(app.page.getByText(
+      '发布流程.md 已提交处理，请关注文档状态'
+    )).toBeVisible();
+    await expect(app.page.getByText('发布流程.md', { exact: true })).toBeVisible();
+
+    await app.page.getByRole('button', {
+      name: '企业Skill中心',
+      exact: true
+    }).click();
+    await expect(app.page.getByRole('tab', {
+      name: '企业Skills',
+      selected: true
+    })).toBeVisible();
     const skillRow = app.page.getByTestId('enterprise-skill-skill_enterprise_review');
     await expect(skillRow).toBeVisible();
     await expect(skillRow).toHaveAttribute('data-status', 'not_installed');
@@ -167,9 +192,11 @@ test('实际打包 App 可登录、恢复企业会话、安装并使用 Skill', 
     await useDialog.getByRole('button', {
       name: '在 默认项目 中使用'
     }).click();
-    await expect(app.page.getByRole('textbox', { name: '输入任务' })).toHaveValue(
-      `$${enterpriseSkillName} `
-    );
+    await expect(app.page.getByLabel(
+      `已选择 Skill ${enterpriseSkillName}`
+    )).toBeVisible();
+    await expect(app.page.getByRole('textbox', { name: '输入任务' }))
+      .toHaveValue('');
     await expect.poll(() => app!.page.evaluate(() => window.location.hash))
       .toMatch(/^#\/thread\//);
 
@@ -219,6 +246,22 @@ test('实际打包 App 可登录、恢复企业会话、安装并使用 Skill', 
       expect.objectContaining({
         method: 'GET',
         path: '/api/v1/app/skills/package',
+        authorizationPresent: true
+      }),
+      expect.objectContaining({
+        method: 'GET',
+        path: '/api/v1/app/knowledge-bases',
+        authorizationPresent: true
+      }),
+      expect.objectContaining({
+        method: 'GET',
+        path: '/api/v1/app/knowledge-bases/documents',
+        authorizationPresent: true
+      }),
+      expect.objectContaining({
+        method: 'POST',
+        path: '/api/v1/app/knowledge-bases/documents',
+        bodyKeys: ['knowledge_base_id', 'file'],
         authorizationPresent: true
       }),
       expect.objectContaining({
@@ -275,6 +318,7 @@ class FakeEnterpriseServer {
   private readonly requests: EnterpriseRequestRecord[] = [];
   private readonly token = `packaged-e2e-${randomUUID()}`;
   private agentId: string | undefined;
+  private uploadedKnowledgeDocument = false;
   private readonly packageBytes = createZip([{
     name: 'SKILL.md',
     data: [
@@ -343,8 +387,11 @@ class FakeEnterpriseServer {
     response: ServerResponse
   ): Promise<void> {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-    const body = await readJsonBody(request);
-    const bodyKeys = isRecord(body) ? Object.keys(body).sort() : [];
+    const requestBody = await readRequestBody(request);
+    const body = requestBody.json;
+    const bodyKeys = isRecord(body)
+      ? Object.keys(body).sort()
+      : requestBody.multipartFieldNames;
     this.requests.push({
       method: request.method ?? 'GET',
       path: url.pathname,
@@ -413,6 +460,55 @@ class FakeEnterpriseServer {
       return;
     }
 
+    if (
+      request.method === 'GET'
+      && url.pathname === '/api/v1/app/knowledge-bases'
+    ) {
+      sendJson(response, 200, {
+        data: [this.remoteKnowledgeBase()],
+        meta: { next_cursor: '', has_next: false }
+      });
+      return;
+    }
+
+    if (
+      request.method === 'GET'
+      && url.pathname === '/api/v1/app/knowledge-bases/documents'
+      && url.searchParams.get('knowledge_base_id') === enterpriseKnowledgeBaseId
+    ) {
+      sendJson(response, 200, {
+        data: [
+          this.remoteKnowledgeDocument(),
+          ...(this.uploadedKnowledgeDocument
+            ? [this.remoteUploadedKnowledgeDocument()]
+            : [])
+        ],
+        meta: { next_cursor: '', has_next: false }
+      });
+      return;
+    }
+
+    if (
+      request.method === 'POST'
+      && url.pathname === '/api/v1/app/knowledge-bases/documents'
+    ) {
+      if (
+        requestBody.multipartFieldNames.join(',') !== 'knowledge_base_id,file'
+        || !requestBody.raw.includes(Buffer.from(enterpriseKnowledgeBaseId))
+        || !requestBody.raw.includes(Buffer.from('发布流程.md'))
+      ) {
+        sendJson(response, 400, {
+          error: { code: 'invalid_knowledge_upload' }
+        });
+        return;
+      }
+      this.uploadedKnowledgeDocument = true;
+      sendJson(response, 201, {
+        data: this.remoteUploadedKnowledgeDocument()
+      });
+      return;
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/v1/app/skills') {
       sendJson(response, 200, { data: [this.remoteSkill()] });
       return;
@@ -457,6 +553,51 @@ class FakeEnterpriseServer {
       version: '1.0.0',
       package_sha256: this.packageSha256,
       updated_at: '2026-07-30T12:00:00.000Z'
+    };
+  }
+
+  private remoteKnowledgeBase() {
+    return {
+      knowledge_base_id: enterpriseKnowledgeBaseId,
+      name: '企业制度',
+      description: '公司制度和员工手册',
+      status: 'active',
+      document_count: this.uploadedKnowledgeDocument ? 2 : 1,
+      permissions: {
+        read: true,
+        upload: true,
+        search: false
+      }
+    };
+  }
+
+  private remoteKnowledgeDocument() {
+    return {
+      document_id: 'doc_packaged_handbook',
+      knowledge_base_id: enterpriseKnowledgeBaseId,
+      name: '员工手册.pdf',
+      size_bytes: 102400,
+      mime_type: 'application/pdf',
+      status: 'ready',
+      error_message: '',
+      uploaded_by: enterpriseEmail,
+      created_at: '2026-08-04T08:00:00.000Z',
+      updated_at: '2026-08-04T08:01:00.000Z'
+    };
+  }
+
+  private remoteUploadedKnowledgeDocument() {
+    return {
+      document_id: 'doc_packaged_release',
+      knowledge_base_id: enterpriseKnowledgeBaseId,
+      name: '发布流程.md',
+      size_bytes: Buffer.byteLength('# 发布流程'),
+      mime_type: 'text/markdown',
+      status: 'processing',
+      error_message: '',
+      uploaded_by: enterpriseEmail,
+      created_at: '2026-08-05T08:00:00.000Z',
+      updated_at: '2026-08-05T08:00:00.000Z'
     };
   }
 
@@ -543,7 +684,11 @@ function createKeyringEntry(runId: string): {
   );
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+async function readRequestBody(request: IncomingMessage): Promise<{
+  raw: Buffer;
+  json?: unknown;
+  multipartFieldNames: string[];
+}> {
   const chunks: Buffer[] = [];
   let bytes = 0;
   for await (const chunk of request) {
@@ -552,8 +697,30 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
     if (bytes > 1024 * 1024) throw new Error('Fake request body too large');
     chunks.push(value);
   }
-  if (chunks.length === 0) return undefined;
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+  const raw = Buffer.concat(chunks);
+  const contentType = request.headers['content-type'] ?? '';
+  if (raw.length === 0) {
+    return { raw, multipartFieldNames: [] };
+  }
+  if (contentType.startsWith('application/json')) {
+    return {
+      raw,
+      json: JSON.parse(raw.toString('utf8')) as unknown,
+      multipartFieldNames: []
+    };
+  }
+  if (contentType.startsWith('multipart/form-data')) {
+    return {
+      raw,
+      multipartFieldNames: Array.from(
+        raw.toString('utf8').matchAll(
+          /content-disposition:\s*form-data;\s*name="([^"]+)"/gi
+        ),
+        match => match[1]!
+      )
+    };
+  }
+  return { raw, multipartFieldNames: [] };
 }
 
 function sendJson(

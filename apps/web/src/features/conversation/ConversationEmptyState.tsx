@@ -1,7 +1,5 @@
 import { BarChart3, Megaphone, Sparkles, TrendingUp } from 'lucide-react';
 
-const NICKNAME_STORAGE_KEY = 'clawee.user.nickname';
-
 const starterTags = [
   { label: '数据分析', icon: BarChart3 },
   { label: '获客转化', icon: TrendingUp },
@@ -10,13 +8,16 @@ const starterTags = [
 ] as const;
 
 export function ConversationEmptyState(props: { nickname?: string; now?: Date }) {
-  const nickname = props.nickname?.trim() || readStoredNickname() || '小林';
+  const nickname = props.nickname?.trim() || undefined;
   const greeting = timePeriodGreeting(props.now ?? new Date());
+  const greetingText = nickname === undefined
+    ? `${greeting}好`
+    : `${greeting}好，${nickname}`;
 
   return (
     <section className="conversation-empty-state" aria-labelledby="conversation-empty-title">
       <div className="conversation-empty-greeting">
-        <h2 id="conversation-empty-title">{greeting}好，{nickname}</h2>
+        <h2 id="conversation-empty-title">{greetingText}</h2>
         <p>需要帮你做点什么</p>
       </div>
     </section>
@@ -41,12 +42,4 @@ export function timePeriodGreeting(now: Date): '上午' | '下午' | '晚上' {
   if (hour < 12) return '上午';
   if (hour < 18) return '下午';
   return '晚上';
-}
-
-function readStoredNickname(): string | undefined {
-  try {
-    return window.localStorage.getItem(NICKNAME_STORAGE_KEY)?.trim() || undefined;
-  } catch {
-    return undefined;
-  }
 }

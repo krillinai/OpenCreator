@@ -45,6 +45,28 @@ export type CodexStatusResponse = {
   availabilityProbe?: CodexAvailabilityProbe;
 };
 
+export type CodexModelReasoningEffortOption = {
+  reasoningEffort: ReasoningEffort;
+  description: string;
+};
+
+export type CodexModelInputModality = 'text' | 'image';
+
+export type CodexModelResponse = {
+  id: string;
+  model: string;
+  displayName: string;
+  description: string;
+  supportedReasoningEfforts: CodexModelReasoningEffortOption[];
+  defaultReasoningEffort: ReasoningEffort | null;
+  inputModalities: CodexModelInputModality[];
+  isDefault: boolean;
+};
+
+export type CodexModelListResponse = {
+  models: CodexModelResponse[];
+};
+
 export type WorkspaceFileKind =
   | 'directory'
   | 'markdown'
@@ -758,6 +780,55 @@ export type EnterpriseRegisterRequest = {
   email: string;
   name?: string;
   password: string;
+};
+
+export type EnterpriseListMeta = {
+  nextCursor: string;
+  hasNext: boolean;
+};
+
+export type EnterpriseKnowledgePermissions = {
+  read: boolean;
+  upload: boolean;
+  search: boolean;
+};
+
+export type EnterpriseKnowledgeBaseResponse = {
+  knowledgeBaseId: string;
+  name: string;
+  description: string;
+  status: string;
+  documentCount: number;
+  permissions: EnterpriseKnowledgePermissions;
+};
+
+export type EnterpriseKnowledgeBaseListResponse = {
+  knowledgeBases: EnterpriseKnowledgeBaseResponse[];
+  meta: EnterpriseListMeta;
+  refreshedAt: string;
+};
+
+export type EnterpriseKnowledgeDocumentResponse = {
+  documentId: string;
+  knowledgeBaseId: string;
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+  status: string;
+  errorMessage: string;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EnterpriseKnowledgeDocumentListResponse = {
+  documents: EnterpriseKnowledgeDocumentResponse[];
+  meta: EnterpriseListMeta;
+  refreshedAt: string;
+};
+
+export type EnterpriseKnowledgeDocumentUploadResponse = {
+  document: EnterpriseKnowledgeDocumentResponse;
 };
 
 export type EnterpriseSkillStatus =
