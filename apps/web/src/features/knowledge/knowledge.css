@@ -84,8 +84,6 @@
     minmax(420px, min(var(--conversation-pane-width, calc(60% - 6px)), calc(100% - 366px)))
     6px
     minmax(360px, 1fr);
-  border: 1px solid var(--border);
-  border-radius: 8px;
   background: var(--surface);
   overflow: hidden;
 }
