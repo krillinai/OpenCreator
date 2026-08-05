@@ -542,6 +542,9 @@ export function createEnterpriseSessionManager(input: {
         expectedAgentId: agentId,
         persist: false
       });
+      if (operationGeneration !== generation) {
+        throw new EnterpriseSessionError('ENTERPRISE_UNAUTHORIZED', 401);
+      }
       if (verified.status !== 'signed_in' || verified.account === undefined) {
         throw new EnterpriseSessionError('ENTERPRISE_UNAUTHORIZED', 401);
       }

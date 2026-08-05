@@ -279,6 +279,27 @@ describe('enterprise session manager', () => {
     expect(getMe).toHaveBeenCalledWith(credential.accessToken);
   });
 
+  it('fails a stale identity check after a concurrent logout', async () => {
+    const me = deferred<EnterpriseMeResult>();
+    const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
+      credentialStore: createStore(credential),
+      httpClient: createClient({ getMe: vi.fn(async () => me.promise) }),
+      transportSecurity: 'secure_https'
+    });
+
+    const identity = manager.requireIdentity();
+    await vi.waitFor(() => expect(manager.getSnapshot().status).toBe('checking'));
+    await manager.logout();
+    me.resolve(activeMe());
+
+    await expect(identity).rejects.toMatchObject({
+      code: 'ENTERPRISE_UNAUTHORIZED',
+      statusCode: 401
+    });
+    expect(manager.getSnapshot().status).toBe('signed_out');
+  });
+
   it('rejects mismatched agent identities without persisting a session', async () => {
     const store = createStore();
     const logout = vi.fn(async () => undefined);
