@@ -178,7 +178,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
   return (
     <main className="knowledge-page">
       <div className="knowledge-page__inner" data-mode={mode}>
-        <header className="knowledge-header">
+        {mode === 'list' ? <header className="knowledge-header">
           <div>
             <h1>企业知识库</h1>
             <p>查看当前账户有权访问的知识库和文档</p>
@@ -204,7 +204,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
               <RefreshCw size={16} aria-hidden="true" />
             </button>
           </div>
-        </header>
+        </header> : null}
 
         {props.knowledgeBasesError !== undefined ? (
           <p className="knowledge-banner knowledge-banner--error" role="alert">
@@ -404,6 +404,15 @@ export function KnowledgePage(props: KnowledgePageProps) {
             : ({ '--conversation-pane-width': `${conversationPaneWidth}px` } as CSSProperties)}
         >
           <div className="knowledge-conversation__main">
+            <header className="knowledge-conversation__pane-header">
+              <strong>对话知识库</strong>
+              <button
+                type="button"
+                onClick={() => setMode('list')}
+              >
+                返回列表视图
+              </button>
+            </header>
             {props.conversation ?? (
               <KnowledgeEmpty
                 icon={<MessageSquareText size={22} aria-hidden="true" />}
@@ -428,6 +437,15 @@ export function KnowledgePage(props: KnowledgePageProps) {
                 <strong>企业知识库</strong>
                 <span>{props.knowledgeBases?.length ?? 0} 个可访问项</span>
               </div>
+              <button
+                className="knowledge-icon-button"
+                type="button"
+                aria-label="刷新企业知识库"
+                title="刷新"
+                onClick={props.onRefresh}
+              >
+                <RefreshCw size={15} aria-hidden="true" />
+              </button>
             </div>
             <ul className="knowledge-conversation__library-list">
               {props.knowledgeBases?.map(knowledgeBase => (
