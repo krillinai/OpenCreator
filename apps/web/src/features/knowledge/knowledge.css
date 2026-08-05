@@ -74,6 +74,102 @@
   border-top: 1px solid var(--border);
 }
 
+.knowledge-conversation__workspace {
+  min-height: 620px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: var(--bg);
+}
+
+.knowledge-conversation__timeline {
+  min-height: 0;
+  padding: 28px clamp(16px, 4vw, 48px);
+  overflow: auto;
+}
+
+.knowledge-conversation__empty {
+  min-height: 360px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.knowledge-conversation__empty strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.knowledge-conversation__message {
+  width: fit-content;
+  max-width: min(76%, 720px);
+  margin: 0 0 16px auto;
+  padding: 10px 13px;
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface-3);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-conversation__composer {
+  width: min(820px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 0 0 20px;
+}
+
+.knowledge-conversation__composer > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: end;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.knowledge-conversation__composer textarea {
+  width: 100%;
+  min-height: 58px;
+  max-height: 180px;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.knowledge-conversation__composer textarea:focus {
+  outline: 0;
+}
+
+.knowledge-conversation__composer button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.knowledge-conversation__composer button:disabled {
+  color: var(--subtle);
+  background: var(--surface-3);
+}
+
+.knowledge-conversation__composer p {
+  margin: 0 0 7px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
 .knowledge-conversation[hidden],
 .knowledge-workbench[hidden] {
   display: none;

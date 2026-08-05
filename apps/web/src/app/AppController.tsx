@@ -69,6 +69,7 @@ import type {
 import type {
   KnowledgeUploadState
 } from '../features/knowledge/KnowledgePage.js';
+import { KnowledgeConversation } from '../features/knowledge/KnowledgeConversation.js';
 import {
   findProjectById,
   groupThreadsByPurpose,
@@ -365,6 +366,8 @@ export function AppController(props: AppControllerProps) {
     useState<string>();
   const [enterpriseKnowledgeBasesReloadKey, setEnterpriseKnowledgeBasesReloadKey] =
     useState(0);
+  const [enterpriseKnowledgeThreadId, setEnterpriseKnowledgeThreadId] =
+    useState<string>();
   const [enterpriseKnowledgeDocumentsReloadKey, setEnterpriseKnowledgeDocumentsReloadKey] =
     useState(0);
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
@@ -3089,6 +3092,19 @@ export function AppController(props: AppControllerProps) {
     void refreshEnterpriseSession();
   }
 
+  async function sendEnterpriseKnowledgePrompt(prompt: string) {
+    if (threadService === null || runService === null) {
+      throw new Error('本地运行内核未连接');
+    }
+    let threadId = enterpriseKnowledgeThreadId;
+    if (threadId === undefined) {
+      const created = await threadService.createKnowledgeThread();
+      threadId = created.thread.id;
+      setEnterpriseKnowledgeThreadId(threadId);
+    }
+    await runService.startKnowledgeRun({ threadId, prompt });
+  }
+
   function selectEnterpriseKnowledgeBase(knowledgeBaseId: string) {
     if (knowledgeBaseId !== selectedEnterpriseKnowledgeBaseId) {
       setSelectedEnterpriseKnowledgeBaseId(knowledgeBaseId);
@@ -4779,6 +4795,12 @@ export function AppController(props: AppControllerProps) {
       documentsError={enterpriseKnowledgeDocumentsError}
       upload={enterpriseKnowledgeUpload}
       uploadNotice={enterpriseKnowledgeUploadNotice}
+      conversation={(
+        <KnowledgeConversation
+          disabled={connectionState.status !== 'connected'}
+          onSend={sendEnterpriseKnowledgePrompt}
+        />
+      )}
       onOpenAccount={() => {
         enterpriseReturnRouteRef.current = { view: 'knowledge' };
         dispatch({ type: 'set_active_view', activeView: 'account' });

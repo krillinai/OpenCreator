@@ -21,7 +21,7 @@ import { apiError } from './errors.js';
 export async function registerKnowledgeConversationRoutes(
   server: FastifyInstance,
   manager: KnowledgeConversationManager,
-  runManager: Pick<RunManager, 'getLastEventSeq' | 'listRunsByThread'>,
+  runManager: Pick<RunManager, 'getLastEventSeq' | 'listRunsByThread' | 'startRun'>,
   options: {
     attachmentService?: AttachmentService;
     sessionProvider: Pick<CodexSessionProvider, 'listTurns'>;
@@ -85,6 +85,36 @@ export async function registerKnowledgeConversationRoutes(
       return sendKnowledgeError(reply, error);
     }
   });
+
+  server.post<{ Body: unknown }>(
+    '/enterprise/knowledge-conversations/:id/runs',
+    async (request, reply) => {
+      try {
+        const { id } = request.params as { id: string };
+        const thread = await manager.requireOwnedThread(id);
+        const body = request.body as Record<string, unknown> | null;
+        const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+        if (prompt.length === 0 || prompt.length > 100_000) {
+          return reply.code(400).send(apiError('VALIDATION_FAILED', 'prompt is invalid'));
+        }
+        const run = runManager.startRun({
+          prompt,
+          publicPrompt: prompt,
+          threadId: thread.id,
+          resumeMode: 'auto',
+          createdBy: 'api',
+          submissionMode: 'enqueue'
+        });
+        return reply.code(202).send({
+          ...run,
+          lastEventSeq: runManager.getLastEventSeq(run.id),
+          attachments: []
+        } satisfies RunResponse);
+      } catch (error) {
+        return sendKnowledgeError(reply, error);
+      }
+    }
+  );
 
   server.get('/enterprise/knowledge-conversations/:id/history', async (request, reply) => {
     try {
