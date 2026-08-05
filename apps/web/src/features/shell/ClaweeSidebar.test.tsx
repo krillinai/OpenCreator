@@ -220,6 +220,18 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('clears the conversation highlight outside the conversation view', () => {
+    renderSidebar({
+      activeView: 'knowledge',
+      selectedConversationId: 'weekly-progress-brief'
+    });
+
+    expect(screen.getByRole('button', { name: '企业知识库' }))
+      .toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '整理本周项目进展 4天' }))
+      .not.toHaveAttribute('aria-current');
+  });
+
   it('shows a spinning status for conversations with an active run', () => {
     renderSidebar({
       runningConversationIds: new Set(['weekly-progress-brief'])

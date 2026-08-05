@@ -370,7 +370,12 @@ export function ClaweeSidebar(props: {
                             <button
                               type="button"
                               className="conversation-row nested-conversation-row"
-                              aria-current={conversation.id === props.selectedConversationId ? 'page' : undefined}
+                              aria-current={
+                                props.activeView === 'conversation'
+                                && conversation.id === props.selectedConversationId
+                                  ? 'page'
+                                  : undefined
+                              }
                               onClick={() => props.onSelectConversation(conversation.id)}
                             >
                               <strong>{conversation.title}</strong>
@@ -464,7 +469,12 @@ export function ClaweeSidebar(props: {
                       type="button"
                       className="sidebar-task-row"
                       data-status={task.status}
-                      aria-current={task.threadId === props.selectedConversationId ? 'page' : undefined}
+                      aria-current={
+                        props.activeView === 'conversation'
+                        && task.threadId === props.selectedConversationId
+                          ? 'page'
+                          : undefined
+                      }
                       disabled={disabled}
                       onClick={() => {
                         if (task.threadId !== undefined) props.onSelectTask(task.threadId);
