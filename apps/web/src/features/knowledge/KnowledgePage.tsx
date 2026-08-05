@@ -364,13 +364,56 @@ export function KnowledgePage(props: KnowledgePageProps) {
           </section>
         </div>
         <section className="knowledge-conversation" hidden={mode !== 'conversation'}>
-          {props.conversation ?? (
-            <KnowledgeEmpty
-              icon={<MessageSquareText size={22} aria-hidden="true" />}
-              title="对话知识库"
-              detail="知识库对话服务正在准备中。"
-            />
-          )}
+          <div className="knowledge-conversation__main">
+            {props.conversation ?? (
+              <KnowledgeEmpty
+                icon={<MessageSquareText size={22} aria-hidden="true" />}
+                title="对话知识库"
+                detail="知识库对话服务正在准备中。"
+              />
+            )}
+          </div>
+          <aside className="knowledge-conversation__context" aria-label="对话知识库范围">
+            <div className="knowledge-conversation__context-heading">
+              <div>
+                <strong>知识库</strong>
+                <span>{props.knowledgeBases?.length ?? 0} 个可访问项</span>
+              </div>
+            </div>
+            <ul className="knowledge-conversation__library-list">
+              {props.knowledgeBases?.map(knowledgeBase => (
+                <li key={knowledgeBase.knowledgeBaseId}>
+                  <button
+                    type="button"
+                    aria-current={knowledgeBase.knowledgeBaseId === props.selectedKnowledgeBaseId
+                      ? 'page'
+                      : undefined}
+                    onClick={() => props.onSelectKnowledgeBase(knowledgeBase.knowledgeBaseId)}
+                  >
+                    <strong>{knowledgeBase.name}</strong>
+                    <span>{knowledgeBase.documentCount} 个文档</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {selectedKnowledgeBase === undefined ? null : (
+              <div className="knowledge-conversation__documents">
+                <div>
+                  <strong>{selectedKnowledgeBase.name}</strong>
+                  <span>文档</span>
+                </div>
+                {props.documentsLoading ? (
+                  <span>正在加载...</span>
+                ) : (
+                  <ul>
+                    {props.documents?.map(document => (
+                      <li key={document.documentId}>{document.name}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </aside>
         </section>
       </div>
     </main>
