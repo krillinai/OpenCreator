@@ -735,6 +735,7 @@ describe('App', () => {
       if (url.endsWith('/enterprise/session')) {
         return jsonResponse(createEnterpriseSessionResponse({
           account: {
+            subjectId: 'acct-lin',
             email: 'lin@example.com',
             name: '林晓'
           }
@@ -7643,6 +7644,7 @@ function createEnterpriseSessionResponse(
   return {
     status: 'signed_in',
     account: {
+      subjectId: 'acct-member',
       email: 'member@example.com',
       name: 'Member'
     },

@@ -9,6 +9,7 @@ import {
   FolderOpen,
   LoaderCircle,
   LogIn,
+  MessageSquareText,
   RefreshCw,
   Upload,
   WifiOff
@@ -50,6 +51,7 @@ export type KnowledgePageProps = {
   documentsError?: string;
   upload?: KnowledgeUploadState;
   uploadNotice?: string;
+  conversation?: ReactNode;
   onOpenAccount(): void;
   onRefresh(): void;
   onSelectKnowledgeBase(knowledgeBaseId: string): void;
@@ -60,6 +62,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [mobileDocumentsOpen, setMobileDocumentsOpen] = useState(false);
   const [fileSelectionError, setFileSelectionError] = useState<string>();
+  const [mode, setMode] = useState<'list' | 'conversation'>('list');
   const selectedKnowledgeBase = props.knowledgeBases?.find(
     item => item.knowledgeBaseId === props.selectedKnowledgeBaseId
   );
@@ -149,11 +152,16 @@ export function KnowledgePage(props: KnowledgePageProps) {
             <p>查看当前账户有权访问的知识库和文档</p>
           </div>
           <div className="knowledge-header__actions">
-            {props.session.account !== undefined ? (
-              <span className="knowledge-account">
-                {props.session.account.name || props.session.account.email}
-              </span>
-            ) : null}
+            <button
+              className="knowledge-view-toggle"
+              type="button"
+              onClick={() => setMode(current => (
+                current === 'list' ? 'conversation' : 'list'
+              ))}
+            >
+              <MessageSquareText size={16} aria-hidden="true" />
+              <span>{mode === 'list' ? '对话知识库' : '返回列表视图'}</span>
+            </button>
             <button
               className="knowledge-icon-button"
               type="button"
@@ -175,6 +183,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
         <div
           className="knowledge-workbench"
           data-mobile-documents-open={mobileDocumentsOpen}
+          hidden={mode !== 'list'}
         >
           <nav className="knowledge-library-pane" aria-label="授权知识库">
             <div className="knowledge-pane-heading">
@@ -245,17 +254,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
                     <ArrowLeft size={17} aria-hidden="true" />
                   </button>
                   <div className="knowledge-documents-heading">
-                    <div>
-                      <h2>{selectedKnowledgeBase.name}</h2>
-                      <p>{selectedKnowledgeBase.description || '暂无说明'}</p>
-                    </div>
-                    <div className="knowledge-documents-heading__meta">
-                      <KnowledgeStatus
-                        value={selectedKnowledgeBase.status}
-                        kind="library"
-                      />
-                      <span>{selectedKnowledgeBase.documentCount} 个文档</span>
-                    </div>
+                    <h2>{selectedKnowledgeBase.name}</h2>
                   </div>
                   {selectedKnowledgeBase.permissions.upload ? (
                     <>
@@ -341,7 +340,6 @@ export function KnowledgePage(props: KnowledgePageProps) {
                             <tr key={document.documentId}>
                               <td>
                                 <strong>{document.name}</strong>
-                                <span>{formatMimeType(document.mimeType)}</span>
                                 {document.errorMessage ? (
                                   <small>{document.errorMessage}</small>
                                 ) : null}
@@ -365,6 +363,15 @@ export function KnowledgePage(props: KnowledgePageProps) {
             )}
           </section>
         </div>
+        <section className="knowledge-conversation" hidden={mode !== 'conversation'}>
+          {props.conversation ?? (
+            <KnowledgeEmpty
+              icon={<MessageSquareText size={22} aria-hidden="true" />}
+              title="对话知识库"
+              detail="知识库对话服务正在准备中。"
+            />
+          )}
+        </section>
       </div>
     </main>
   );
@@ -485,11 +492,4 @@ function formatDate(value: string): string {
     hour: '2-digit',
     minute: '2-digit'
   }).format(timestamp);
-}
-
-function formatMimeType(value: string): string {
-  const normalized = value.trim();
-  if (normalized.length === 0) return '未知类型';
-  const subtype = normalized.split('/').at(-1);
-  return subtype?.toUpperCase() ?? normalized;
 }

@@ -27,7 +27,7 @@ describe('EnterpriseAccountPage', () => {
     view.rerender(createAccount({
       session: {
         status: 'signed_in',
-        account: { email: 'member@example.com', name: 'Member' },
+        account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
         expiresAt: '2026-08-30T12:00:00.000Z',
         transportSecurity: 'secure_https'
       }
@@ -99,7 +99,7 @@ describe('EnterpriseAccountPage', () => {
     view.rerender(createAccount({
       session: {
         status: 'service_unavailable',
-        account: { email: 'member@example.com', name: 'Member' },
+        account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
         reason: 'service_unavailable',
         transportSecurity: 'secure_https'
       }
@@ -112,7 +112,7 @@ describe('EnterpriseAccountPage', () => {
     view.rerender(createAccount({
       session: {
         status: 'signed_in',
-        account: { email: 'member@example.com', name: 'Member' },
+        account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
         expiresAt: '2026-08-30T12:00:00.000Z',
         transportSecurity: 'secure_https'
       }
