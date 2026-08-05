@@ -288,60 +288,12 @@
   overflow-wrap: anywhere;
 }
 
-.knowledge-conversation__composer {
-  width: min(820px, calc(100% - 36px));
-  margin: 0 auto;
-  padding: 0 0 20px;
-}
-
 .knowledge-conversation__workspace > .composer-wrap {
   padding-top: 0;
 }
 
-.knowledge-conversation__composer > div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
-  align-items: end;
-  gap: 8px;
-  padding: 9px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.knowledge-conversation__composer textarea {
-  width: 100%;
-  min-height: 58px;
-  max-height: 180px;
-  padding: 6px;
-  border: 0;
-  background: transparent;
-  font-size: 13px;
-  line-height: 1.5;
-  resize: vertical;
-}
-
-.knowledge-conversation__composer textarea:focus {
-  outline: 0;
-}
-
-.knowledge-conversation__composer button {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  color: var(--on-accent);
-  background: var(--accent);
-}
-
-.knowledge-conversation__composer button:disabled {
-  color: var(--subtle);
-  background: var(--surface-3);
-}
-
-.knowledge-conversation__composer p {
-  margin: 0 0 7px;
+.knowledge-conversation__composer-error {
+  margin: 0 0 8px;
   color: var(--danger);
   font-size: 12px;
 }

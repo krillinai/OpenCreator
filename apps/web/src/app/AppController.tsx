@@ -4798,6 +4798,9 @@ export function AppController(props: AppControllerProps) {
       conversation={(
         <KnowledgeConversation
           disabled={connectionState.status !== 'connected'}
+          models={codexModels?.models}
+          modelsLoading={codexModelsLoading}
+          modelsError={codexModelsLoadError}
           onSend={sendEnterpriseKnowledgePrompt}
         />
       )}
