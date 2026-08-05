@@ -210,7 +210,7 @@ export async function registerThreadRoutes(
     if (!body.ok) return reply.code(400).send(apiError('VALIDATION_FAILED', body.message));
 
     const existing = manager.getPublicThread(id);
-    if (existing === undefined) {
+    if (existing === undefined || existing.purpose === 'knowledge_conversation') {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
     if (existing.purpose === 'schedule_task') {
@@ -244,7 +244,7 @@ export async function registerThreadRoutes(
   server.post('/threads/:id/archive', async (request, reply) => {
     const { id } = request.params as { id: string };
     const existing = manager.getPublicThread(id);
-    if (existing === undefined) {
+    if (existing === undefined || existing.purpose === 'knowledge_conversation') {
       return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
     }
     if (existing.purpose === 'schedule_task') {

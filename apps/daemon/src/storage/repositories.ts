@@ -621,6 +621,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   }>(`
     ${threadSelect}
     WHERE (@status = 'all' OR threads.status = @status)
+      AND threads.purpose <> 'knowledge_conversation'
       AND (@purpose IS NULL OR threads.purpose = @purpose)
       AND (@excludePurpose IS NULL OR threads.purpose <> @excludePurpose)
       AND (
