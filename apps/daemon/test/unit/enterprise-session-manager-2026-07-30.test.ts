@@ -47,6 +47,7 @@ describe('enterprise session manager', () => {
       expect(manager.getSnapshot()).toEqual({
         status: 'signed_in',
         account: {
+          subjectId: 'acct_01JZ8W6A2M4S',
           email: 'user@example.com',
           name: 'User'
         },
@@ -249,7 +250,11 @@ describe('enterprise session manager', () => {
 
   it('sends one stable agent id through login and validation', async () => {
     const login = vi.fn(async () => ({
-      account: { email: 'user@example.com', name: 'User' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
       agentId,
       accessToken: credential.accessToken,
       tokenType: 'Bearer' as const,
@@ -282,7 +287,11 @@ describe('enterprise session manager', () => {
       credentialStore: store,
       httpClient: createClient({
         login: vi.fn(async () => ({
-          account: { email: 'user@example.com', name: 'User' },
+          account: {
+            subjectId: 'acct_01JZ8W6A2M4S',
+            email: 'user@example.com',
+            name: 'User'
+          },
           agentId: 'clawee_123e4567-e89b-42d3-a456-426614174000',
           accessToken: credential.accessToken,
           tokenType: 'Bearer' as const,
@@ -365,7 +374,11 @@ function createClient(
   return {
     register: vi.fn(async () => undefined),
     login: vi.fn(async () => ({
-      account: { email: 'user@example.com', name: 'User' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
       agentId,
       accessToken: credential.accessToken,
       tokenType: 'Bearer' as const,
@@ -398,6 +411,7 @@ function createClient(
 function activeMe(): EnterpriseMeResult {
   return {
     account: {
+      subjectId: 'acct_01JZ8W6A2M4S',
       email: 'user@example.com',
       name: 'User'
     },

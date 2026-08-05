@@ -81,6 +81,7 @@ describe('enterprise HTTP client', () => {
       return jsonResponse({
         data: {
           account: {
+            account_id: 'acct_01JZ8W6A2M4S',
             user_id: 'usr_secret',
             email: 'user@example.com',
             name: 'User',
@@ -103,6 +104,7 @@ describe('enterprise HTTP client', () => {
       password: 'password-123'
     }, AGENT_ID)).resolves.toEqual({
       account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
         email: 'user@example.com',
         name: 'User'
       },
@@ -119,6 +121,7 @@ describe('enterprise HTTP client', () => {
         jsonResponse({
           data: {
             account: {
+              account_id: 'acct_01JZ8W6A2M4S',
               user_id: 'usr_secret',
               email: 'user@example.com',
               name: 'User',
@@ -139,6 +142,7 @@ describe('enterprise HTTP client', () => {
 
     await expect(client.getMe('enterprise-access-token')).resolves.toEqual({
       account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
         email: 'user@example.com',
         name: 'User'
       },
@@ -153,6 +157,33 @@ describe('enterprise HTTP client', () => {
         Authorization: 'Bearer enterprise-access-token'
       },
       method: 'GET'
+    });
+  });
+
+  it('rejects an authenticated account response without account_id', async () => {
+    const fetch = vi.fn(async () => jsonResponse({
+      data: {
+        account: {
+          email: 'user@example.com',
+          name: 'User',
+          status: 'active'
+        },
+        agent: {
+          agent_id: AGENT_ID,
+          name: 'User'
+        },
+        access_token: 'enterprise-access-token',
+        token_type: 'Bearer',
+        expires_at: '2026-07-31T10:00:00Z'
+      }
+    }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.login({
+      email: 'user@example.com',
+      password: 'password-123'
+    }, AGENT_ID)).rejects.toMatchObject({
+      code: 'ENTERPRISE_PROTOCOL_ERROR'
     });
   });
 

@@ -188,7 +188,11 @@ function createSessionManager(): EnterpriseSessionManager {
     startRestore: vi.fn(),
     getSnapshot: vi.fn(() => ({
       status: 'signed_in' as const,
-      account: { email: 'member@example.com', name: 'Member' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'member@example.com',
+        name: 'Member'
+      },
       transportSecurity: 'secure_https' as const
     })),
     refresh: vi.fn(),

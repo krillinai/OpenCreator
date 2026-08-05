@@ -59,7 +59,11 @@ describe('enterprise runtime API', () => {
     });
 
     me.resolve({
-      account: { email: 'user@example.com', name: 'User' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
       agentId,
       status: 'active',
       frontendAllowed: true
@@ -296,14 +300,22 @@ function createClient(
   return {
     register: vi.fn(async () => undefined),
     login: vi.fn(async () => ({
-      account: { email: 'user@example.com', name: 'User' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
       agentId,
       accessToken: 'enterprise-token',
       tokenType: 'Bearer' as const,
       expiresAt: '2026-07-31T10:00:00Z'
     })),
     getMe: vi.fn(async () => ({
-      account: { email: 'user@example.com', name: 'User' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
       agentId,
       status: 'active',
       frontendAllowed: true

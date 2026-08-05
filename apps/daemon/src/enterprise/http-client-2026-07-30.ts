@@ -18,6 +18,7 @@ import {
 } from './config-2026-07-30.js';
 
 const accountSchema = z.object({
+  account_id: z.string().min(1),
   email: z.string().min(1),
   name: z.string(),
   status: z.string()
@@ -585,6 +586,7 @@ function jsonHeaders(
 
 function accountSummary(account: z.infer<typeof accountSchema>): EnterpriseAccountSummary {
   return {
+    subjectId: account.account_id,
     email: account.email,
     name: account.name
   };

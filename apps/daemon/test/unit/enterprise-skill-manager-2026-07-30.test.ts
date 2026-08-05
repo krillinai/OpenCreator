@@ -283,7 +283,11 @@ function createSessionManager(): EnterpriseSessionManager {
     startRestore() {},
     getSnapshot: () => ({
       status: 'signed_in',
-      account: { email: 'user@example.com', name: 'User' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
       expiresAt: '2026-07-31T10:00:00Z',
       transportSecurity: 'secure_https'
     }),
