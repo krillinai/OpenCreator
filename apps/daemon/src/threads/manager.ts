@@ -84,6 +84,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     createKnowledgeThread(request: CreateKnowledgeThreadInput): RuntimeThread {
       return createRuntimeThread({
         ...request,
+        managedWorkspaceRoot: request.workspaceRoot,
         workspaceMode: 'managed',
         sandbox: 'read-only',
         purpose: 'knowledge_conversation',
@@ -312,12 +313,13 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     projectId: string | null;
     origin: RuntimeThread['origin'];
     enterpriseSubjectId?: string | null;
+    managedWorkspaceRoot?: string;
   }): RuntimeThread {
     const id = `thread_${nanoid(10)}`;
     const workspaceMode = request.workspaceMode ?? 'managed';
     const cwd =
       workspaceMode === 'managed'
-        ? resolve(input.dataDir, 'workspaces', id)
+        ? resolve(request.managedWorkspaceRoot ?? resolve(input.dataDir, 'workspaces'), id)
         : normalizeExternalCwd(request.cwd ?? process.cwd(), input.homeDir ?? homedir());
     mkdirSync(cwd, { recursive: true });
     const canonicalCwd = request.canonicalCwd ?? realpathSync(cwd);

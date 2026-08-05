@@ -61,6 +61,7 @@ export type CreateRuntimeThreadInput = {
 
 export type CreateKnowledgeThreadInput = {
   enterpriseSubjectId: string;
+  workspaceRoot?: string;
   title?: string;
   profile?: string;
   model?: string;

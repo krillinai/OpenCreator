@@ -82,6 +82,7 @@ import {
 } from '../enterprise/http-client-2026-07-30.js';
 import { resolveEnterpriseOrigin } from '../enterprise/config-2026-07-30.js';
 import { createEnterpriseSessionManager } from '../enterprise/session-manager-2026-07-30.js';
+import { createKnowledgeConversationManager } from '../enterprise/knowledge-conversation-2026-08-05.js';
 import { createEnterpriseInstallRecordRepository } from '../enterprise/install-records-2026-07-30.js';
 import {
   createEnterpriseSkillManager,
@@ -114,6 +115,7 @@ import { registerSkillMarketRoutes } from './routes.skill-market.js';
 import { registerSkillRoutes } from './routes.skills.js';
 import { registerTaskRoutes } from './routes.tasks.js';
 import { registerThreadRoutes } from './routes.threads.js';
+import { registerKnowledgeConversationRoutes } from './routes.knowledge-conversation-2026-08-05.js';
 import { registerWorkspaceFileRoutes } from './routes.workspace-files.js';
 import { registerEnterpriseRoutes } from './routes.enterprise-2026-07-30.js';
 import {
@@ -220,6 +222,11 @@ export async function buildServer(input: BuildServerInput) {
       : join(input.defaultProjectRoot, 'Clawee')
   });
   const threadManager = createThreadManager({ db, dataDir, projectManager });
+  const knowledgeConversationManager = createKnowledgeConversationManager({
+    dataDir,
+    sessionManager: enterpriseSessionManager,
+    threadManager
+  });
   const codexSessionProvider = input.codexSessionProvider ?? createCodexSessionProvider({
     client: createCodexAppServerClient({
       codexBin,
@@ -538,6 +545,15 @@ export async function buildServer(input: BuildServerInput) {
       });
     }
   });
+  await registerKnowledgeConversationRoutes(
+    server,
+    knowledgeConversationManager,
+    runManager,
+    {
+      attachmentService,
+      sessionProvider: codexSessionProvider
+    }
+  );
 
   if (input.schedulerAutostart === true) scheduler.start();
   return server;
