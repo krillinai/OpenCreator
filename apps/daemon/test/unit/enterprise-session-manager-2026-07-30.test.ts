@@ -418,6 +418,8 @@ function createClient(
     uploadKnowledgeDocument: vi.fn(async () => {
       throw new Error('not implemented');
     }),
+    hasKnowledgeSearchGrant: vi.fn(async () => false),
+    searchKnowledge: vi.fn(async () => []),
     listSkills: vi.fn(async () => []),
     getSkillDetail: vi.fn(async () => {
       throw new Error('not implemented');

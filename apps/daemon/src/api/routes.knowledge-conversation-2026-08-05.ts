@@ -164,7 +164,14 @@ function isEmptyObject(value: unknown): boolean {
 
 function sendKnowledgeError(reply: FastifyReply, error: unknown) {
   if (error instanceof KnowledgeConversationError) {
-    return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+    return reply.code(error.statusCode).send(apiError(
+      error.code,
+      error.code === 'THREAD_NOT_FOUND'
+        ? 'Thread not found'
+        : error.code === 'KNOWLEDGE_SEARCH_NOT_GRANTED'
+          ? 'Knowledge search is not granted'
+          : 'Enterprise knowledge is unavailable'
+    ));
   }
   if (error instanceof EnterpriseSessionError) {
     return reply.code(error.statusCode).send(apiError(error.code, 'Enterprise operation failed'));

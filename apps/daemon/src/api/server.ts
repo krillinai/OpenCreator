@@ -22,7 +22,10 @@ import {
   registerAgentToolRoutes,
   type AgentScheduleOperations
 } from '../agent-tools/internal-routes.js';
-import { registerAgentScheduleMcpRoute } from '../agent-tools/mcp-routes.js';
+import {
+  registerAgentScheduleMcpRoute,
+  registerKnowledgeMcpRoute
+} from '../agent-tools/mcp-routes.js';
 import {
   createAgentScheduleProcessInjector,
   createAgentScheduleRunInjector
@@ -225,7 +228,8 @@ export async function buildServer(input: BuildServerInput) {
   const knowledgeConversationManager = createKnowledgeConversationManager({
     dataDir,
     sessionManager: enterpriseSessionManager,
-    threadManager
+    threadManager,
+    httpClient: enterpriseHttpClient
   });
   const codexSessionProvider = input.codexSessionProvider ?? createCodexSessionProvider({
     client: createCodexAppServerClient({
@@ -288,12 +292,12 @@ export async function buildServer(input: BuildServerInput) {
     capabilities.appServerApprovals === true ? 'app-server' : 'exec';
   const getAgentToolBaseUrl = () =>
     resolveListeningOrigin(server.server.address());
-  const agentToolInjector = input.agentToolsEnabled !== true
-    ? undefined
-    : createAgentScheduleRunInjector({
-        capabilities: agentCapabilityTokens,
-        getBaseUrl: getAgentToolBaseUrl
-      });
+  const agentToolInjector = createAgentScheduleRunInjector({
+    capabilities: agentCapabilityTokens,
+    getBaseUrl: getAgentToolBaseUrl,
+    knowledgeToolIsolationSupported: capabilities.knowledgeToolIsolation === true,
+    scheduleToolsEnabled: input.agentToolsEnabled === true
+  });
   const agentToolProcessInjector = input.agentToolsEnabled !== true
     ? undefined
     : createAgentScheduleProcessInjector({
@@ -495,6 +499,10 @@ export async function buildServer(input: BuildServerInput) {
       getBaseUrl: () => resolveListeningOrigin(server.server.address())
     });
   }
+  await registerKnowledgeMcpRoute(server, {
+    capabilities: agentCapabilityTokens,
+    manager: knowledgeConversationManager
+  });
   await registerCleanupRoutes(server, cleanupService);
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes

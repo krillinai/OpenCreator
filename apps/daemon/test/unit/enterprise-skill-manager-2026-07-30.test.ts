@@ -316,6 +316,8 @@ function createHttpClient(): EnterpriseHttpClient {
       meta: { nextCursor: '', hasNext: false }
     })),
     uploadKnowledgeDocument: vi.fn(),
+    hasKnowledgeSearchGrant: vi.fn(async () => false),
+    searchKnowledge: vi.fn(async () => []),
     listSkills: vi.fn(async () => [remoteSkill()]),
     getSkillDetail: vi.fn(async () => remoteDetail()),
     downloadSkillPackage: vi.fn(async () => ({

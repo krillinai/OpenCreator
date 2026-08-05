@@ -25,6 +25,63 @@ afterEach(() => {
 });
 
 describe('enterprise HTTP client', () => {
+  it('decodes the exact knowledge search grant and forwards only query and limit', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: { tools: [{ name: 'knowledge.search', enabled: true }] }
+      }))
+      .mockImplementationOnce(async (_url: string | URL | Request, init?: RequestInit) => {
+        expect(JSON.parse(String(init?.body))).toEqual({ query: 'leave policy', limit: 5 });
+        return jsonResponse({
+          data: {
+            results: [{
+              title: 'Leave policy',
+              knowledge_base_name: 'HR',
+              document_name: 'Handbook',
+              excerpt: 'Annual leave is 12 days.',
+              internal_document_id: 'must-be-stripped'
+            }]
+          }
+        });
+      });
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.hasKnowledgeSearchGrant('enterprise-access-token')).resolves.toBe(true);
+    await expect(client.searchKnowledge({
+      accessToken: 'enterprise-access-token',
+      query: 'leave policy',
+      limit: 5
+    })).resolves.toEqual([{
+      title: 'Leave policy',
+      knowledgeBaseName: 'HR',
+      documentName: 'Handbook',
+      excerpt: 'Annual leave is 12 days.'
+    }]);
+    expect(fetch.mock.calls.map(call => String(call[0]))).toEqual([
+      `${ORIGIN}/api/v1/app/mcp-grants`,
+      `${ORIGIN}/api/v1/app/knowledge/search`
+    ]);
+    expect(fetch.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer enterprise-access-token'
+      })
+    });
+  });
+
+  it('rejects unknown enterprise MCP grant tool names', async () => {
+    const client = createEnterpriseHttpClient({
+      origin: ORIGIN,
+      fetch: vi.fn(async () => jsonResponse({
+        data: { tools: [{ name: 'filesystem.read', enabled: true }] }
+      }))
+    });
+
+    await expect(
+      client.hasKnowledgeSearchGrant('enterprise-access-token')
+    ).rejects.toMatchObject({ code: 'ENTERPRISE_PROTOCOL_ERROR' });
+  });
+
   it('register sends the fixed client and stable agent identity', async () => {
     const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect(JSON.parse(String(init?.body))).toEqual({

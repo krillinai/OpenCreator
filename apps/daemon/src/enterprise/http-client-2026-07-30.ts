@@ -102,6 +102,24 @@ const knowledgeDocumentListResponseSchema = z.object({
 const knowledgeDocumentUploadResponseSchema = z.object({
   data: remoteKnowledgeDocumentSchema
 });
+const mcpGrantResponseSchema = z.object({
+  data: z.object({
+    tools: z.array(z.object({
+      name: z.literal('knowledge.search'),
+      enabled: z.boolean()
+    }))
+  })
+});
+const knowledgeSearchResponseSchema = z.object({
+  data: z.object({
+    results: z.array(z.object({
+      title: z.string(),
+      knowledge_base_name: z.string(),
+      document_name: z.string(),
+      excerpt: z.string()
+    }))
+  })
+});
 
 export type EnterpriseRemoteSkill = {
   skillId: string;
@@ -141,6 +159,13 @@ export type EnterpriseRemoteKnowledgeDocument = {
   uploadedBy: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type EnterpriseKnowledgeSearchSource = {
+  title: string;
+  knowledgeBaseName: string;
+  documentName: string;
+  excerpt: string;
 };
 
 export type EnterpriseLoginResult = {
@@ -189,6 +214,12 @@ export type EnterpriseHttpClient = {
     fileName: string;
     mimeType: string;
   }): Promise<EnterpriseRemoteKnowledgeDocument>;
+  hasKnowledgeSearchGrant(accessToken: string): Promise<boolean>;
+  searchKnowledge(input: {
+    accessToken: string;
+    query: string;
+    limit: number;
+  }): Promise<EnterpriseKnowledgeSearchSource[]>;
   listSkills(accessToken: string): Promise<EnterpriseRemoteSkill[]>;
   getSkillDetail(
     accessToken: string,
@@ -477,6 +508,35 @@ export function createEnterpriseHttpClient(input: {
         );
       }
       return mapRemoteKnowledgeDocument(parsed.data.data);
+    },
+
+    async hasKnowledgeSearchGrant(accessToken) {
+      const response = await requestJson({
+        accessToken,
+        method: 'GET',
+        path: '/api/v1/app/mcp-grants',
+        schema: mcpGrantResponseSchema
+      });
+      return response.data.tools.some(tool => (
+        tool.name === 'knowledge.search' && tool.enabled
+      ));
+    },
+
+    async searchKnowledge(request) {
+      const response = await requestJson({
+        accessToken: request.accessToken,
+        body: { query: request.query, limit: request.limit },
+        domain: 'knowledge',
+        method: 'POST',
+        path: '/api/v1/app/knowledge/search',
+        schema: knowledgeSearchResponseSchema
+      });
+      return response.data.results.map(result => ({
+        title: result.title,
+        knowledgeBaseName: result.knowledge_base_name,
+        documentName: result.document_name,
+        excerpt: result.excerpt
+      }));
     },
 
     async downloadSkillPackage(request) {

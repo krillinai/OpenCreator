@@ -1,4 +1,4 @@
-import type { CodexMcpServerConfig } from '../codex/argv.js';
+import type { BuiltInToolPolicy, CodexMcpServerConfig } from '../codex/argv.js';
 import type { RuntimeThread } from '../threads/types.js';
 import {
   type AgentCapabilityScope,
@@ -9,14 +9,18 @@ import {
   type AgentScheduleToolName
 } from './schedule-tools.js';
 import { AGENT_SCHEDULE_MCP_ROUTE } from './internal-routes.js';
+import { KNOWLEDGE_SEARCH_TOOL_NAME } from './knowledge-tools-2026-08-05.js';
 
 export const AGENT_SCHEDULE_MCP_SERVER_NAME = 'clawee_schedule';
+export const AGENT_KNOWLEDGE_MCP_SERVER_NAME = 'clawee_knowledge';
+export const AGENT_KNOWLEDGE_MCP_ROUTE = '/internal/agent-tools/mcp/knowledge';
 export const AGENT_TOOL_BASE_URL_ENV = 'CLAWEE_AGENT_TOOL_URL';
 export const AGENT_TOOL_CAPABILITY_TOKEN_ENV = 'CLAWEE_AGENT_CAPABILITY_TOKEN';
 
 export type AgentToolRunInjection = {
   mcpServers: CodexMcpServerConfig[];
   env: Record<string, string>;
+  builtInTools?: BuiltInToolPolicy;
 };
 
 export type AgentScheduleRunInjector = {
@@ -61,11 +65,57 @@ export function createAgentScheduleRunInjector(input: {
   capabilities: AgentCapabilityTokenStore;
   getBaseUrl(): string | undefined;
   env?: NodeJS.ProcessEnv;
+  knowledgeToolIsolationSupported?: boolean;
+  scheduleToolsEnabled?: boolean;
 }): AgentScheduleRunInjector {
   return {
     prepare(run) {
       const baseUrl = input.getBaseUrl();
+
+      if (run.thread.purpose === 'knowledge_conversation') {
+        if (
+          input.knowledgeToolIsolationSupported !== true
+          || baseUrl === undefined
+        ) {
+          throw new AgentToolPolicyError(
+            'KNOWLEDGE_TOOL_POLICY_UNAVAILABLE',
+            'Codex knowledge tool isolation is unavailable'
+          );
+        }
+        const issued = input.capabilities.issue({
+          runId: run.runId,
+          threadId: run.thread.id,
+          createdBy: run.createdBy,
+          scopes: ['knowledge:search']
+        });
+        const noProxy = loopbackNoProxy(input.env ?? process.env);
+        return {
+          builtInTools: {
+            shell: false,
+            fileRead: false,
+            fileWrite: false,
+            applyPatch: false,
+            webSearch: false
+          },
+          mcpServers: [{
+            name: AGENT_KNOWLEDGE_MCP_SERVER_NAME,
+            url: `${baseUrl}${AGENT_KNOWLEDGE_MCP_ROUTE}`,
+            bearerTokenEnvVar: AGENT_TOOL_CAPABILITY_TOKEN_ENV,
+            enabledTools: [KNOWLEDGE_SEARCH_TOOL_NAME],
+            required: true,
+            startupTimeoutSec: 10,
+            toolTimeoutSec: 30
+          }],
+          env: {
+            [AGENT_TOOL_CAPABILITY_TOKEN_ENV]: issued.token,
+            NO_PROXY: noProxy,
+            no_proxy: noProxy
+          }
+        };
+      }
+
       if (baseUrl === undefined) return undefined;
+      if (input.scheduleToolsEnabled === false) return undefined;
 
       const allowed = allowedTools(run.createdBy, run.thread);
       const scopes = allowed.map(tool => tool.scope);
@@ -94,6 +144,13 @@ export function createAgentScheduleRunInjector(input: {
       };
     }
   };
+}
+
+export class AgentToolPolicyError extends Error {
+  constructor(readonly code: 'KNOWLEDGE_TOOL_POLICY_UNAVAILABLE', message: string) {
+    super(message);
+    this.name = 'AgentToolPolicyError';
+  }
 }
 
 export function createAgentScheduleProcessInjector(input: {

@@ -8,6 +8,7 @@ export type BuildCodexExecArgsInput = {
   reasoning?: ReasoningEffort;
   imagePaths?: string[];
   mcpServers?: CodexMcpServerConfig[];
+  builtInTools?: BuiltInToolPolicy;
 };
 
 export type BuildCodexResumeArgsInput = {
@@ -19,6 +20,15 @@ export type BuildCodexResumeArgsInput = {
   reasoning?: ReasoningEffort;
   imagePaths?: string[];
   mcpServers?: CodexMcpServerConfig[];
+  builtInTools?: BuiltInToolPolicy;
+};
+
+export type BuiltInToolPolicy = {
+  shell: boolean;
+  fileRead: boolean;
+  fileWrite: boolean;
+  applyPatch: boolean;
+  webSearch: boolean;
 };
 
 type CodexMcpServerCommonConfig = {
@@ -49,6 +59,10 @@ export type CodexMcpServerConfig = CodexMcpServerCommonConfig & (
 export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
   const args = ['exec', '--json', '--skip-git-repo-check'];
 
+  if (input.builtInTools !== undefined) {
+    args.push('--ignore-user-config', ...codexToolIsolationArgs(input.builtInTools));
+  }
+
   if (input.profile) args.push('-p', input.profile);
   args.push('-C', input.cwd);
   args.push('--sandbox', input.sandbox);
@@ -63,7 +77,11 @@ export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
 }
 
 export function buildCodexResumeArgs(input: BuildCodexResumeArgsInput): string[] {
-  const args = ['exec', 'resume', '--json', '--skip-git-repo-check'];
+  const args = ['exec'];
+  if (input.builtInTools !== undefined) {
+    args.push('--ignore-user-config', ...codexToolIsolationArgs(input.builtInTools));
+  }
+  args.push('resume', '--json', '--skip-git-repo-check');
 
   args.push('-c', `sandbox_mode="${input.sandbox}"`);
   if (input.model) args.push('--model', input.model);
@@ -75,6 +93,33 @@ export function buildCodexResumeArgs(input: BuildCodexResumeArgsInput): string[]
   args.push(input.codexThreadId);
 
   return args;
+}
+
+export function codexToolIsolationArgs(policy: BuiltInToolPolicy): string[] {
+  if (Object.values(policy).some(enabled => enabled)) {
+    throw new Error('Knowledge built-in tool policy must disable every tool');
+  }
+  const disabled = [
+    'hooks',
+    'plugins',
+    'apps',
+    'multi_agent',
+    'browser_use',
+    'computer_use',
+    'in_app_browser',
+    'image_generation',
+    'tool_suggest',
+    'shell_tool',
+    'unified_exec',
+    'shell_snapshot'
+  ];
+  return [
+    '-c', 'mcp_servers={}',
+    '-c', 'plugins={}',
+    '-c', 'web_search="disabled"',
+    '-c', 'notify=[]',
+    ...disabled.flatMap(feature => ['--disable', feature])
+  ];
 }
 
 export function buildCodexMcpConfigArgs(

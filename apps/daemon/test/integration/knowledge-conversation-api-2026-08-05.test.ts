@@ -142,6 +142,8 @@ function enterpriseClient(subject: () => string): EnterpriseHttpClient {
     listKnowledgeBases: vi.fn(),
     listKnowledgeDocuments: vi.fn(),
     uploadKnowledgeDocument: vi.fn(),
+    hasKnowledgeSearchGrant: vi.fn(async () => false),
+    searchKnowledge: vi.fn(async () => []),
     listSkills: vi.fn(),
     getSkillDetail: vi.fn(),
     downloadSkillPackage: vi.fn()
