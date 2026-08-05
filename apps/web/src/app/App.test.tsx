@@ -739,6 +739,117 @@ describe('App', () => {
     expect(shell?.style.getPropertyValue('--clawee-titlebar-height')).toBe('38px');
     expect(shell?.style.getPropertyValue('--clawee-traffic-light-inset')).toBe('76px');
     expect(document.querySelector('.desktop-titlebar-drag-region')).toBeInTheDocument();
+    expect(document.querySelector('.clawee-main-titlebar')).not.toBeInTheDocument();
+  });
+
+  it('moves a desktop conversation title into the integrated titlebar without duplicating it', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.windowChrome = {
+      integratedTitleBar: true,
+      titleBarHeight: 38,
+      trafficLightInset: 76
+    };
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const thread = createThreadResponse({
+      id: 'thread-integrated-title',
+      title: 'hello'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [thread] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/history?limit=50`)) {
+        return jsonResponse({ threadId: thread.id, codexThreadId: null, items: [] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/runs?limit=50`)) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /hello/ }));
+
+    const mainTitlebar = document.querySelector<HTMLElement>('.clawee-main-titlebar');
+    expect(mainTitlebar).toBeInTheDocument();
+    expect(within(mainTitlebar!).getByRole('heading', { name: 'hello' })).toBeInTheDocument();
+    expect(document.querySelector('.conversation-page > .conversation-header')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'hello' })).toHaveLength(1);
+
+    await user.click(within(mainTitlebar!).getByRole('button', { name: '文件' }));
+
+    expect(await screen.findByLabelText('会话和文件工作区')).toBeInTheDocument();
+    expect(within(mainTitlebar!).getByRole('button', { name: '文件' }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps a browser conversation title inside the conversation page', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const thread = createThreadResponse({
+      id: 'thread-browser-title',
+      title: '浏览器会话标题'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [thread] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/history?limit=50`)) {
+        return jsonResponse({ threadId: thread.id, codexThreadId: null, items: [] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/runs?limit=50`)) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /浏览器会话标题/ }));
+
+    const conversationPage = document.querySelector<HTMLElement>('.conversation-page');
+    expect(conversationPage).toBeInTheDocument();
+    expect(within(conversationPage!).getByRole('heading', {
+      name: '浏览器会话标题'
+    })).toBeInTheDocument();
+    expect(conversationPage?.querySelector(':scope > .conversation-header')).toBeInTheDocument();
+    expect(document.querySelector('.clawee-main-titlebar')).not.toBeInTheDocument();
   });
 
   it('uses the signed-in enterprise account name in the homepage greeting', async () => {
@@ -878,6 +989,12 @@ describe('App', () => {
   it('shows task management only inside a bound schedule thread', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.windowChrome = {
+      integratedTitleBar: true,
+      titleBarHeight: 38,
+      trafficLightInset: 76
+    };
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
@@ -938,6 +1055,10 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /每日总结/ }));
 
     expect(await screen.findByLabelText('任务管理')).toBeInTheDocument();
+    expect(document.querySelector('.clawee-main-titlebar')).toHaveTextContent('每日总结');
+    expect(document.querySelector('.conversation-task-strip--standalone'))
+      .toContainElement(screen.getByLabelText('任务管理'));
+    expect(document.querySelector('.conversation-page > .conversation-header')).not.toBeInTheDocument();
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '立即运行任务' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '暂停任务' })).toBeInTheDocument();

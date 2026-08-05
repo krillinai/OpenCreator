@@ -240,6 +240,40 @@ describe('app CSS visual contracts', () => {
     );
   });
 
+  it('uses the main pane titlebar as the desktop conversation chrome', () => {
+    const mainPaneWithHeader = cssBlock(
+      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-pane[data-has-main-header="true"]'
+    );
+    const mainTitlebar = cssBlock(
+      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar'
+    );
+    const titlebarHeader = cssBlock(
+      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar .conversation-header'
+    );
+    const titlebarButton = cssBlock(
+      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar button'
+    );
+    const integratedPage = cssBlock('.conversation-page.has-integrated-header');
+    const integratedTaskPage = cssBlock(
+      '.conversation-page.has-integrated-header.has-task-strip'
+    );
+
+    expect(mainPaneWithHeader).toContain(
+      'grid-template-rows: var(--clawee-titlebar-height, 38px) minmax(0, 1fr);'
+    );
+    expect(mainPaneWithHeader).toContain('padding-top: 0;');
+    expect(mainTitlebar).toContain('-webkit-app-region: drag;');
+    expect(mainTitlebar).toContain('z-index: 81;');
+    expect(titlebarHeader).toContain('height: 100%;');
+    expect(titlebarHeader).toContain('min-height: 0;');
+    expect(titlebarHeader).toContain('padding: 0 12px 0 18px;');
+    expect(titlebarButton).toContain('-webkit-app-region: no-drag;');
+    expect(integratedPage).toContain('grid-template-rows: minmax(0, 1fr) auto;');
+    expect(integratedTaskPage).toContain(
+      'grid-template-rows: auto minmax(0, 1fr) auto;'
+    );
+  });
+
   it('keeps the schedule select chevron inside the native select click target', () => {
     const control = schedulesCssBlock('.schedule-select-control');
     const select = schedulesCssBlock('.schedule-select-control select');

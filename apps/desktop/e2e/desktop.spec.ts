@@ -298,6 +298,96 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
   }
 });
 
+test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可点击', async ({}, testInfo) => {
+  const fixture = await launchPackagedDesktop('success');
+  const projectDir = join(fixture.root, 'titlebar-workspace');
+  mkdirSync(projectDir, { recursive: true });
+  writeFileSync(join(projectDir, 'README.md'), '# titlebar workspace\n');
+
+  try {
+    await waitForWorkspace(fixture.page);
+    const createdProject = await runtimeRequest<{
+      project: { id: string };
+    }>(fixture.page, 'POST', '/projects', {
+      cwd: projectDir,
+      name: '标题栏验证项目',
+      sandbox: 'workspace-write'
+    });
+    const createdThread = await runtimeRequest<{
+      thread: { id: string };
+    }>(fixture.page, 'POST', '/threads', {
+      projectId: createdProject.body.project.id,
+      title: 'hello',
+      sandbox: 'workspace-write'
+    });
+
+    await fixture.page.evaluate(threadId => {
+      window.location.hash = `#/thread/${threadId}`;
+    }, createdThread.body.thread.id);
+    await fixture.page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForWorkspace(fixture.page);
+
+    const title = fixture.page.getByRole('heading', { name: 'hello' });
+    const fileButton = fixture.page
+      .locator('.clawee-main-titlebar')
+      .getByRole('button', { name: '文件', exact: true });
+    await expect(title).toBeVisible();
+    await expect(fileButton).toBeVisible();
+
+    if (process.platform === 'darwin') {
+      const titlebarLayout = await fixture.page.evaluate(() => {
+        const mainPane = document.querySelector<HTMLElement>('.clawee-main-pane')!;
+        const titlebar = document.querySelector<HTMLElement>('.clawee-main-titlebar')!;
+        const title = titlebar.querySelector<HTMLElement>('h1')!;
+        const fileButton = titlebar.querySelector<HTMLElement>('.conversation-file-button')!;
+        const conversationPage = document.querySelector<HTMLElement>('.conversation-page')!;
+        const titlebarRect = titlebar.getBoundingClientRect();
+        const titleRect = title.getBoundingClientRect();
+        const fileButtonRect = fileButton.getBoundingClientRect();
+        const conversationPageRect = conversationPage.getBoundingClientRect();
+        return {
+          titleCount: document.querySelectorAll('.conversation-header h1').length,
+          mainPanePaddingTop: getComputedStyle(mainPane).paddingTop,
+          titlebarRect: {
+            y: titlebarRect.y,
+            height: titlebarRect.height
+          },
+          titleRect: {
+            y: titleRect.y,
+            bottom: titleRect.bottom
+          },
+          fileButtonRect: {
+            y: fileButtonRect.y,
+            bottom: fileButtonRect.bottom
+          },
+          conversationPageY: conversationPageRect.y
+        };
+      });
+
+      expect(titlebarLayout.titleCount).toBe(1);
+      expect(titlebarLayout.mainPanePaddingTop).toBe('0px');
+      expect(titlebarLayout.titlebarRect.y).toBe(0);
+      expect(titlebarLayout.titlebarRect.height).toBe(38);
+      expect(titlebarLayout.titleRect.y).toBeGreaterThanOrEqual(0);
+      expect(titlebarLayout.titleRect.bottom).toBeLessThanOrEqual(38);
+      expect(titlebarLayout.fileButtonRect.y).toBeGreaterThanOrEqual(0);
+      expect(titlebarLayout.fileButtonRect.bottom).toBeLessThanOrEqual(38);
+      expect(titlebarLayout.conversationPageY).toBeGreaterThanOrEqual(37);
+      expect(titlebarLayout.conversationPageY).toBeLessThanOrEqual(39);
+
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('conversation-titlebar-2026-08-05.png')
+      });
+    }
+
+    await fileButton.click();
+    await expect(fixture.page.getByLabel('会话和文件工作区')).toBeVisible();
+    await expect(fileButton).toHaveAttribute('aria-pressed', 'true');
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
 test('打包 App 可稳定预览隐藏正文和本地图片，并阻止用户脚本', async () => {
   const fixture = await launchPackagedDesktop('success');
   const projectDir = join(fixture.root, 'html-preview-project');

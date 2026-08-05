@@ -38,6 +38,34 @@ describe('WorkbenchLayout', () => {
     expect(screen.getByRole('main')).not.toHaveClass('has-detail');
   });
 
+  it('renders an optional main titlebar before the main content', () => {
+    render(
+      <WorkbenchLayout
+        sidebar={<div>左侧</div>}
+        mainHeader={<div>会话标题</div>}
+        main={<div>工作区</div>}
+      />
+    );
+
+    const mainPane = screen.getByLabelText('Clawee 工作区');
+    expect(mainPane).toHaveAttribute('data-has-main-header', 'true');
+    expect(mainPane.querySelector('.clawee-main-titlebar')).toHaveTextContent('会话标题');
+    expect(mainPane.querySelector('.clawee-main-content')).toHaveTextContent('工作区');
+  });
+
+  it('keeps the main titlebar slot absent when no header is provided', () => {
+    render(
+      <WorkbenchLayout
+        sidebar={<div>左侧</div>}
+        main={<div>工作区</div>}
+      />
+    );
+
+    const mainPane = screen.getByLabelText('Clawee 工作区');
+    expect(mainPane).not.toHaveAttribute('data-has-main-header');
+    expect(mainPane.querySelector('.clawee-main-titlebar')).not.toBeInTheDocument();
+  });
+
   it('marks the shell as sidebar collapsed', () => {
     render(
       <WorkbenchLayout

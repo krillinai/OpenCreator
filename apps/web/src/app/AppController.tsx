@@ -4536,47 +4536,67 @@ export function AppController(props: AppControllerProps) {
   const showConversationHeader = selectedThread !== undefined
     || selectedScheduleTask !== undefined
     || selectedConversation !== undefined;
+  const conversationTitle = selectedConversation?.title
+    ?? selectedScheduleTask?.name
+    ?? selectedThread?.title
+    ?? '新对话';
+  const conversationTaskToolbar =
+    selectedScheduleTask?.bindingStatus === 'ready'
+    && selectedSchedule !== undefined
+    && selectedSidebarTask !== undefined
+    && scheduleService !== null ? (
+      <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
+        <ScheduleThreadHeader
+          schedule={selectedSchedule}
+          status={selectedSidebarTask.status}
+          nextRunLabel={selectedSidebarTask.nextRunLabel}
+          service={scheduleService}
+          projects={projects}
+          profiles={codexProfiles?.profiles}
+          onRunNow={runScheduleNow}
+          onScheduleChanged={handleScheduleChanged}
+        />
+      </Suspense>
+    ) : undefined;
+  const useIntegratedConversationTitleBar =
+    integratedTitleBar?.integratedTitleBar === true
+    && state.activeView === 'conversation'
+    && showConversationHeader;
+  const conversationHeader = showConversationHeader ? (
+    <ConversationHeader
+      title={conversationTitle}
+      taskToolbar={
+        useIntegratedConversationTitleBar ? undefined : conversationTaskToolbar
+      }
+      fileWorkspaceOpen={fileWorkspaceOpen}
+      onOpenLocation={() => {
+        if (fileWorkspaceOpen) {
+          closeFileWorkspace();
+          return;
+        }
+        openPrimaryView('files');
+      }}
+    />
+  ) : undefined;
   const pendingComposerApproval = [...timelineItems].reverse().find(item => (
     item.kind === 'approval' && item.approval.status === 'pending'
   ));
   const conversationPage = (
-    <section className={`conversation-page${showConversationEmptyState ? ' is-empty' : ''}`}>
-      {showConversationHeader ? (
-        <ConversationHeader
-          title={
-            selectedConversation?.title
-            ?? selectedScheduleTask?.name
-            ?? selectedThread?.title
-            ?? '新对话'
-          }
-          taskToolbar={
-            selectedScheduleTask?.bindingStatus === 'ready'
-            && selectedSchedule !== undefined
-            && selectedSidebarTask !== undefined
-            && scheduleService !== null ? (
-              <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
-                <ScheduleThreadHeader
-                  schedule={selectedSchedule}
-                  status={selectedSidebarTask.status}
-                  nextRunLabel={selectedSidebarTask.nextRunLabel}
-                  service={scheduleService}
-                  projects={projects}
-                  profiles={codexProfiles?.profiles}
-                  onRunNow={runScheduleNow}
-                  onScheduleChanged={handleScheduleChanged}
-                />
-              </Suspense>
-            ) : undefined
-          }
-          fileWorkspaceOpen={fileWorkspaceOpen}
-          onOpenLocation={() => {
-            if (fileWorkspaceOpen) {
-              closeFileWorkspace();
-              return;
-            }
-            openPrimaryView('files');
-          }}
-        />
+    <section
+      className={[
+        'conversation-page',
+        showConversationEmptyState ? 'is-empty' : undefined,
+        useIntegratedConversationTitleBar ? 'has-integrated-header' : undefined,
+        useIntegratedConversationTitleBar && conversationTaskToolbar !== undefined
+          ? 'has-task-strip'
+          : undefined
+      ].filter(Boolean).join(' ')}
+    >
+      {useIntegratedConversationTitleBar ? null : conversationHeader}
+      {useIntegratedConversationTitleBar && conversationTaskToolbar !== undefined ? (
+        <div className="conversation-task-strip conversation-task-strip--standalone">
+          {conversationTaskToolbar}
+        </div>
       ) : null}
       <div className="conversation-body">
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
@@ -5043,6 +5063,9 @@ export function AppController(props: AppControllerProps) {
           }}
           onToggleCollapsed={() => setSidebarCollapsed((currentValue) => !currentValue)}
         />
+      }
+      mainHeader={
+        useIntegratedConversationTitleBar ? conversationHeader : undefined
       }
       main={(
         <Suspense fallback={<PageLoading />}>

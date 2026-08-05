@@ -77,6 +77,26 @@ body,
   padding-top: var(--clawee-titlebar-height, 38px);
 }
 
+.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-pane[data-has-main-header="true"] {
+  grid-template-rows: var(--clawee-titlebar-height, 38px) minmax(0, 1fr);
+  padding-top: 0;
+}
+
+.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar {
+  position: relative;
+  z-index: 81;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--conversation-bg);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar button {
+  -webkit-app-region: no-drag;
+}
+
 .project-drop-overlay {
   position: absolute;
   inset: 12px;
@@ -2518,6 +2538,18 @@ select:focus-visible {
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.conversation-page.has-integrated-header {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.conversation-page.has-integrated-header.has-task-strip {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.conversation-page.is-empty.has-integrated-header {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+}
+
 .conversation-file-layout {
   position: relative;
   isolation: isolate;
@@ -2604,6 +2636,14 @@ html.is-pane-resizing * {
   background: var(--conversation-bg);
 }
 
+.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar .conversation-header {
+  height: 100%;
+  min-height: 0;
+  gap: 8px;
+  padding: 0 12px 0 18px;
+  -webkit-app-region: drag;
+}
+
 .conversation-header--task {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2612,6 +2652,11 @@ html.is-pane-resizing * {
 .conversation-task-strip {
   min-width: 0;
   grid-column: 1 / -1;
+}
+
+.conversation-task-strip--standalone {
+  padding: 0 22px 10px;
+  background: var(--conversation-bg);
 }
 
 .schedule-thread-header {
@@ -5997,6 +6042,10 @@ html.is-pane-resizing * {
     overflow: hidden;
   }
 
+  .clawee-main-pane[data-has-main-header="true"] {
+    grid-template-rows: var(--clawee-titlebar-height, 38px) auto minmax(0, 1fr);
+  }
+
   .clawee-sidebar-pane {
     position: fixed;
     inset: 0 auto 0 0;
@@ -6239,6 +6288,10 @@ html.is-pane-resizing * {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     padding: 10px 12px;
+  }
+
+  .conversation-task-strip--standalone {
+    padding: 0 12px 10px;
   }
 
   .schedule-thread-header {
