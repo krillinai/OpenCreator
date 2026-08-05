@@ -152,6 +152,8 @@
 .knowledge-conversation__context {
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   padding: 0;
   border-left: 0;
   background: var(--surface-2);
@@ -197,7 +199,8 @@
 }
 
 .knowledge-conversation__library-list {
-  padding: 6px;
+  padding: 6px 10px 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 .knowledge-conversation__library-list button {
@@ -207,9 +210,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  position: relative;
+  padding: 9px 8px 9px 12px;
+  border: 0;
+  border-radius: 4px;
   color: var(--text);
   background: transparent;
   text-align: left;
@@ -217,9 +221,31 @@
 
 .knowledge-conversation__library-list button:hover,
 .knowledge-conversation__library-list button[aria-current="page"] {
-  color: var(--accent-strong);
-  border-color: var(--border);
-  background: var(--surface);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.knowledge-conversation__library-list button[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 2px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.knowledge-conversation__library-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.knowledge-conversation__library-name svg {
+  flex: none;
+  color: var(--muted);
 }
 
 .knowledge-conversation__library-list strong {
@@ -231,26 +257,47 @@
   white-space: nowrap;
 }
 
-.knowledge-conversation__library-list span {
+.knowledge-conversation__library-list button > span:last-child {
   flex: none;
   color: var(--muted);
   font-size: 10px;
 }
 
 .knowledge-conversation__documents {
-  margin-top: 6px;
+  min-height: 0;
+  flex: 1;
+  margin-top: 0;
   padding: 0 16px 16px;
-  border-top: 1px solid var(--border);
 }
 
 .knowledge-conversation__documents li {
-  padding: 9px 6px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 6px;
   border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.knowledge-conversation__documents li svg {
+  flex: none;
+  color: var(--subtle);
+}
+
+.knowledge-conversation__documents li span {
+  min-width: 0;
   color: var(--muted);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.knowledge-conversation__documents li:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 
 .knowledge-conversation__timeline {

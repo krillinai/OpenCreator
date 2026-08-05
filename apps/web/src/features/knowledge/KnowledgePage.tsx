@@ -457,7 +457,10 @@ export function KnowledgePage(props: KnowledgePageProps) {
                       : undefined}
                     onClick={() => props.onSelectKnowledgeBase(knowledgeBase.knowledgeBaseId)}
                   >
-                    <strong>{knowledgeBase.name}</strong>
+                    <span className="knowledge-conversation__library-name">
+                      <FolderOpen size={14} aria-hidden="true" />
+                      <strong>{knowledgeBase.name}</strong>
+                    </span>
                     <span>{knowledgeBase.documentCount} 个文档</span>
                   </button>
                 </li>
@@ -466,15 +469,18 @@ export function KnowledgePage(props: KnowledgePageProps) {
             {selectedKnowledgeBase === undefined ? null : (
               <div className="knowledge-conversation__documents">
                 <div>
-                  <strong>{selectedKnowledgeBase.name}</strong>
-                  <span>文档</span>
+                  <strong>文档</strong>
+                  <span>{props.documents?.length ?? selectedKnowledgeBase.documentCount} 个</span>
                 </div>
                 {props.documentsLoading ? (
                   <span>正在加载...</span>
                 ) : (
                   <ul>
                     {props.documents?.map(document => (
-                      <li key={document.documentId}>{document.name}</li>
+                      <li key={document.documentId}>
+                        <FileText size={14} aria-hidden="true" />
+                        <span>{document.name}</span>
+                      </li>
                     ))}
                   </ul>
                 )}
