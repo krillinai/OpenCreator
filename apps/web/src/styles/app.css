@@ -52,6 +52,31 @@ body,
   min-height: 0;
 }
 
+.desktop-titlebar-drag-region {
+  display: none;
+}
+
+.app-drop-shell[data-integrated-title-bar="true"] .desktop-titlebar-drag-region {
+  position: absolute;
+  z-index: 80;
+  top: 0;
+  right: 0;
+  left: var(--clawee-traffic-light-inset, 76px);
+  display: block;
+  height: var(--clawee-titlebar-height, 38px);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.app-drop-shell[data-integrated-title-bar="true"] .clawee-sidebar {
+  padding-top: calc(13px + var(--clawee-titlebar-height, 38px));
+}
+
+.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-pane,
+.app-drop-shell[data-integrated-title-bar="true"] .clawee-detail-pane {
+  padding-top: var(--clawee-titlebar-height, 38px);
+}
+
 .project-drop-overlay {
   position: absolute;
   inset: 12px;

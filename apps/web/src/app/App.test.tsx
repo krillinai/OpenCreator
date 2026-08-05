@@ -34,6 +34,12 @@ import type { ClaweeProject } from '../features/projects/project-model.js';
 import type { HostBridge } from '../host/bridge.js';
 import type { SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
+import {
+  readCachedModelCatalog,
+  readRecentModelConfig,
+  writeCachedModelCatalog,
+  writeRecentModelConfig
+} from '../services/model-service-2026-08-05.js';
 
 vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
 
@@ -715,6 +721,24 @@ describe('App', () => {
     expect(screen.queryByText('Codex Runtime Workbench')).not.toBeInTheDocument();
     expect(screen.queryByText('Runtime 地址')).not.toBeInTheDocument();
     expect(screen.queryByText(/Token|API Key|连接 Runtime/)).not.toBeInTheDocument();
+  });
+
+  it('adds a title bar safe area only when the host exposes the capability', async () => {
+    const hostBridge = createHostBridge();
+    hostBridge.windowChrome = {
+      integratedTitleBar: true,
+      titleBarHeight: 38,
+      trafficLightInset: 76
+    };
+
+    render(<App fileService={createFileService()} hostBridge={hostBridge} />);
+
+    await screen.findByRole('button', { name: '新建任务' });
+    const shell = document.querySelector<HTMLElement>('.app-drop-shell');
+    expect(shell).toHaveAttribute('data-integrated-title-bar', 'true');
+    expect(shell?.style.getPropertyValue('--clawee-titlebar-height')).toBe('38px');
+    expect(shell?.style.getPropertyValue('--clawee-traffic-light-inset')).toBe('76px');
+    expect(document.querySelector('.desktop-titlebar-drag-region')).toBeInTheDocument();
   });
 
   it('uses the signed-in enterprise account name in the homepage greeting', async () => {
@@ -6566,6 +6590,223 @@ describe('App', () => {
     expect(window.localStorage.getItem(PROJECTS_STORAGE_KEY)).toBe(legacyProjects);
   });
 
+  it('shows the cached model catalog immediately and replaces it after refresh', async () => {
+    const cachedCatalog = createCodexModelListResponse();
+    cachedCatalog.models[0]!.displayName = 'Cached GPT';
+    const liveCatalog = createCodexModelListResponse();
+    liveCatalog.models[0]!.displayName = 'Live GPT';
+    writeCachedModelCatalog(cachedCatalog, '2026-08-05T08:00:00.000Z');
+    const modelResponse = createDeferred<Response>();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) return modelResponse.promise;
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '选择模型 Cached GPT' }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
+      .toBeInTheDocument();
+
+    modelResponse.resolve(jsonResponse(liveCatalog));
+
+    expect(await screen.findByRole('button', { name: '选择模型 Live GPT' }))
+      .toBeInTheDocument();
+    expect(readCachedModelCatalog()?.models[0]?.displayName).toBe('Live GPT');
+  });
+
+  it('keeps cached models when the Runtime refresh fails', async () => {
+    const user = userEvent.setup();
+    const cachedCatalog = createCodexModelListResponse();
+    cachedCatalog.models[0]!.displayName = 'Cached GPT';
+    writeCachedModelCatalog(cachedCatalog, '2026-08-05T08:00:00.000Z');
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) throw new Error('model catalog unavailable');
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
+      .toBeInTheDocument();
+    const modelButton = await screen.findByRole('button', {
+      name: '选择模型 Cached GPT'
+    });
+    await user.click(modelButton);
+
+    expect(await screen.findByText('模型目录刷新失败，当前使用本地缓存'))
+      .toBeInTheDocument();
+    expect(screen.queryByText('暂无可用模型')).not.toBeInTheDocument();
+  });
+
+  it('shows a clear model error when refresh fails without a cache', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) throw new Error('model catalog unavailable');
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
+      .toBeInTheDocument();
+    await user.click(await screen.findByRole('button', {
+      name: '选择模型 默认模型'
+    }));
+
+    expect(await screen.findByText('无法加载模型列表')).toBeInTheDocument();
+    expect(screen.queryByText('暂无可用模型')).not.toBeInTheDocument();
+  });
+
+  it('restores the recent model config for a new conversation', async () => {
+    const user = userEvent.setup();
+    writeRecentModelConfig({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) return jsonResponse(createCodexModelListResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '选择模型 GPT-5.5' }))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '选择模型 GPT-5.5' }));
+    expect(screen.getByRole('menuitemradio', { name: /^超高 / }))
+      .toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('prefers explicit project model config over the recent selection', async () => {
+    const user = userEvent.setup();
+    writeRecentModelConfig({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
+    testRuntimeProjects = [
+      createTestProject('/Users/test/develop/content-design', {
+        model: 'gpt-5.6-sol',
+        reasoning: 'medium'
+      })
+    ];
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) return jsonResponse(createCodexModelListResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: '选择模型 GPT-5.6 Sol' }))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '选择模型 GPT-5.6 Sol' }));
+    expect(screen.getByRole('menuitemradio', { name: /^中 / }))
+      .toHaveAttribute('aria-checked', 'true');
+  });
+
   it('creates a runtime thread before starting the first run in a new conversation', async () => {
     const user = userEvent.setup();
     const prompt = '跟进今天客户沟通';
@@ -6716,6 +6957,10 @@ describe('App', () => {
     }));
     await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
     await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
+    expect(readRecentModelConfig()).toEqual({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     await user.type(textbox, prompt);
     await waitFor(() => expect(textbox).toHaveValue(prompt));
@@ -6742,6 +6987,10 @@ describe('App', () => {
   it('does not override immutable thread config when sending in an existing conversation', async () => {
     const user = userEvent.setup();
     const prompt = '继续处理这个会话';
+    writeRecentModelConfig({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];

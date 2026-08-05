@@ -93,7 +93,7 @@ test('Finder 最小 PATH 下可发现 ChatGPT 应用内置的 Codex', async () =
   }
 });
 
-test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON、二进制和 SSE', async () => {
+test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON、二进制和 SSE', async ({}, testInfo) => {
   const fixture = await launchPackagedDesktop('success');
   try {
     await waitForWorkspace(fixture.page);
@@ -117,6 +117,7 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
       requireType: typeof (window as Window & { require?: unknown }).require,
       processType: typeof (window as Window & { process?: unknown }).process,
       bridgeKind: window.claweeDesktop?.kind,
+      windowChrome: window.claweeDesktop?.windowChrome,
       resolveDroppedFilePathType: typeof window.claweeDesktop?.resolveDroppedFilePath,
       connection: await window.claweeDesktop?.readConnectionConfig()
     }));
@@ -124,11 +125,66 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
       requireType: 'undefined',
       processType: 'undefined',
       bridgeKind: 'desktop',
+      windowChrome: process.platform === 'darwin'
+        ? {
+            integratedTitleBar: true,
+            titleBarHeight: 38,
+            trafficLightInset: 76
+          }
+        : {
+            integratedTitleBar: false
+          },
       resolveDroppedFilePathType: 'function'
     });
     expect(security.connection).toEqual({
       baseUrl: '/.clawee/runtime'
     });
+    if (process.platform === 'darwin') {
+      const titleBarLayout = await fixture.page.evaluate(() => {
+        const dragRegion = document.querySelector<HTMLElement>(
+          '.desktop-titlebar-drag-region'
+        )!;
+        const sidebar = document.querySelector<HTMLElement>('.clawee-sidebar')!;
+        const mainPane = document.querySelector<HTMLElement>('.clawee-main-pane')!;
+        const dragRect = dragRegion.getBoundingClientRect();
+        return {
+          shellCapability: document.querySelector('.app-drop-shell')
+            ?.getAttribute('data-integrated-title-bar'),
+          dragRect: {
+            x: dragRect.x,
+            y: dragRect.y,
+            height: dragRect.height
+          },
+          sidebarPaddingTop: getComputedStyle(sidebar).paddingTop,
+          mainPaddingTop: getComputedStyle(mainPane).paddingTop
+        };
+      });
+      expect(titleBarLayout).toEqual({
+        shellCapability: 'true',
+        dragRect: {
+          x: 76,
+          y: 0,
+          height: 38
+        },
+        sidebarPaddingTop: '51px',
+        mainPaddingTop: '38px'
+      });
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('integrated-titlebar-2026-08-05.png')
+      });
+      const previousTheme = await fixture.page.evaluate(() => {
+        const value = document.documentElement.dataset.theme;
+        document.documentElement.dataset.theme = 'light';
+        return value;
+      });
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('integrated-titlebar-light-2026-08-05.png')
+      });
+      await fixture.page.evaluate(theme => {
+        if (theme === undefined) delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = theme;
+      }, previousTheme);
+    }
 
     const mainPid = requiredPid(fixture.process.pid);
     const daemonPid = await waitForDaemonUtilityPid(mainPid);

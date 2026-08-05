@@ -134,7 +134,13 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createProjectService } from '../services/project-service.js';
 import { createMcpService } from '../services/mcp-service.js';
 import { createMemoryService } from '../services/memory-service.js';
-import { createModelService } from '../services/model-service-2026-08-05.js';
+import {
+  createModelService,
+  readCachedModelCatalog,
+  readRecentModelConfig,
+  writeRecentModelConfig,
+  type RecentModelConfig
+} from '../services/model-service-2026-08-05.js';
 import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
@@ -301,6 +307,13 @@ export function AppController(props: AppControllerProps) {
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
+  const integratedTitleBar = hostBridge.windowChrome;
+  const appShellStyle = integratedTitleBar === undefined
+    ? undefined
+    : {
+        '--clawee-titlebar-height': `${integratedTitleBar.titleBarHeight}px`,
+        '--clawee-traffic-light-inset': `${integratedTitleBar.trafficLightInset}px`
+      } as CSSProperties;
   const runtimeFetch = useMemo(() => props.runtimeFetch ?? globalThis.fetch.bind(globalThis), [props.runtimeFetch]);
   const subscribeRunEvents = props.subscribeRunEvents ?? defaultSubscribeRunEvents;
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
@@ -372,9 +385,14 @@ export function AppController(props: AppControllerProps) {
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
   const [pendingMemorySuggestion, setPendingMemorySuggestion] = useState<{ id: number; content: string }>();
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
-  const [codexModels, setCodexModels] = useState<CodexModelListResponse>();
+  const [recentComposerModelConfig, setRecentComposerModelConfig] =
+    useState<RecentModelConfig | null>(readRecentModelConfig);
+  const [codexModels, setCodexModels] = useState<CodexModelListResponse | undefined>(
+    readCachedModelCatalog
+  );
   const [codexModelsLoading, setCodexModelsLoading] = useState(false);
   const [codexModelsLoadError, setCodexModelsLoadError] = useState<string>();
+  const [codexModelsNotice, setCodexModelsNotice] = useState<string>();
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
   const [codexProfiles, setCodexProfiles] = useState<CodexProfileListResponse>();
@@ -509,10 +527,12 @@ export function AppController(props: AppControllerProps) {
   const nextComposerFocusRequestIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
+  const codexModelsRef = useRef(codexModels);
   runRegistryRef.current = runRegistry;
   runtimeThreadsRef.current = runtimeThreads;
   currentProjectIdRef.current = state.currentProjectId;
   enterpriseSessionRef.current = enterpriseSession;
+  codexModelsRef.current = codexModels;
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -920,25 +940,39 @@ export function AppController(props: AppControllerProps) {
     let canceled = false;
 
     if (connectionState.status !== 'connected' || modelService === null) {
-      setCodexModels(undefined);
+      setCodexModels(current => current ?? readCachedModelCatalog());
       setCodexModelsLoading(false);
       setCodexModelsLoadError(undefined);
+      setCodexModelsNotice(undefined);
       return () => {
         canceled = true;
       };
     }
 
+    const cachedModels = readCachedModelCatalog();
+    if (cachedModels !== undefined) setCodexModels(cachedModels);
     setCodexModelsLoading(true);
     setCodexModelsLoadError(undefined);
+    setCodexModelsNotice(undefined);
     modelService
       .listModels()
       .then(response => {
-        if (!canceled) setCodexModels(response);
+        if (!canceled) {
+          setCodexModels(response);
+          setCodexModelsNotice(undefined);
+        }
       })
       .catch(() => {
         if (!canceled) {
-          setCodexModels(undefined);
-          setCodexModelsLoadError('无法加载模型列表');
+          const fallbackModels = readCachedModelCatalog()
+            ?? codexModelsRef.current;
+          if (fallbackModels !== undefined && fallbackModels.models.length > 0) {
+            setCodexModels(fallbackModels);
+            setCodexModelsNotice('模型目录刷新失败，当前使用本地缓存');
+          } else {
+            setCodexModels(undefined);
+            setCodexModelsLoadError('无法加载模型列表');
+          }
         }
       })
       .finally(() => {
@@ -2488,6 +2522,7 @@ export function AppController(props: AppControllerProps) {
     closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
+    setComposerRunConfig(null);
     showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
@@ -2969,7 +3004,11 @@ export function AppController(props: AppControllerProps) {
     permission: ComposerRunConfig['permission']
   ): Promise<boolean> {
     const baseConfig = composerRunConfig
-      ?? defaultComposerRunConfig(currentProject, defaultPermission);
+      ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      );
 
     if (selectedThread === undefined) {
       setComposerRunConfig({ ...baseConfig, permission });
@@ -3007,6 +3046,22 @@ export function AppController(props: AppControllerProps) {
       }
       return false;
     }
+  }
+
+  function handleComposerModelConfigChange(
+    config: Pick<ComposerRunConfig, 'model' | 'reasoning'>
+  ) {
+    if (selectedThread !== undefined) return;
+    setRecentComposerModelConfig(config);
+    writeRecentModelConfig(config);
+    setComposerRunConfig(current => ({
+      ...(current ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      )),
+      ...config
+    }));
   }
 
   function isCurrentSkillMarketRuntime(
@@ -3458,7 +3513,11 @@ export function AppController(props: AppControllerProps) {
       input.onError('未找到所选项目');
       return;
     }
-    const config = defaultComposerRunConfig(project, defaultPermission);
+    const config = defaultComposerRunConfig(
+      project,
+      defaultPermission,
+      recentComposerModelConfig
+    );
     const generation = skillMarketRuntimeGenerationRef.current;
     skillMarketUseInFlightRef.current = true;
 
@@ -3553,7 +3612,11 @@ export function AppController(props: AppControllerProps) {
 
     const effectiveConfig = config
       ?? composerRunConfig
-      ?? defaultComposerRunConfig(currentProject, defaultPermission);
+      ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      );
     setComposerRunConfig(effectiveConfig);
     const pendingRunStartId = createTimelineId('pending_start');
     updatePendingRunStart({
@@ -4446,7 +4509,11 @@ export function AppController(props: AppControllerProps) {
     && workspaceNeedsCompactSidebar;
   const effectiveSidebarCollapsed = sidebarCollapsed || sidebarAutoCollapsed;
   const effectiveComposerConfig = selectedThread === undefined
-    ? composerRunConfig ?? defaultComposerRunConfig(currentProject, defaultPermission)
+    ? composerRunConfig ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      )
     : {
         permission: fromRuntimeSandbox(selectedThread.sandbox),
         profile: selectedThread.profile,
@@ -4614,6 +4681,7 @@ export function AppController(props: AppControllerProps) {
           models={codexModels?.models}
           modelsLoading={codexModelsLoading}
           modelsError={codexModelsLoadError}
+          modelsNotice={codexModelsNotice}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
           running={currentRunBusy}
@@ -4647,6 +4715,7 @@ export function AppController(props: AppControllerProps) {
               : addProjectDirectory
           }
           onPermissionChange={handleComposerPermissionChange}
+          onModelConfigChange={handleComposerModelConfigChange}
           onDraftApplied={handleComposerDraftApplied}
           onFocusRequestApplied={handleComposerFocusRequestApplied}
           onCancel={() => void cancelActiveRun()}
@@ -4901,12 +4970,19 @@ export function AppController(props: AppControllerProps) {
   return (
     <div
       className="app-drop-shell"
+      data-integrated-title-bar={
+        integratedTitleBar?.integratedTitleBar === true ? 'true' : undefined
+      }
       data-project-drop-root="true"
+      style={appShellStyle}
       onDragEnter={handleProjectDragEnter}
       onDragOver={handleProjectDragOver}
       onDragLeave={handleProjectDragLeave}
       onDrop={(event) => void handleProjectDrop(event)}
     >
+      {integratedTitleBar?.integratedTitleBar === true ? (
+        <div className="desktop-titlebar-drag-region" aria-hidden="true" />
+      ) : null}
       <span
         className="app-visually-hidden"
         role="status"
@@ -5598,13 +5674,22 @@ function buildThreadRequest(
 
 function defaultComposerRunConfig(
   project: ClaweeProject | undefined,
-  defaultPermission: DefaultPermissionPreference
+  defaultPermission: DefaultPermissionPreference,
+  recentModelConfig: RecentModelConfig | null
 ): ComposerRunConfig {
+  const projectHasModelConfig = project !== undefined
+    && (project.model !== null || project.reasoning !== null);
+  const modelConfig = projectHasModelConfig
+    ? {
+        model: project.model,
+        reasoning: project.reasoning
+      }
+    : recentModelConfig;
   return {
     permission: resolveDefaultPermission(project, defaultPermission),
     profile: project?.profile ?? 'default',
-    model: project?.model ?? null,
-    reasoning: (project?.reasoning ?? null) as ComposerRunConfig['reasoning']
+    model: modelConfig?.model ?? null,
+    reasoning: modelConfig?.reasoning ?? null
   };
 }
 

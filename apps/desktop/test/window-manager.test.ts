@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DebouncedWindowStateWriter } from '../src/main/window-manager.js';
+import {
+  DebouncedWindowStateWriter,
+  nativeWindowChromeOptions
+} from '../src/main/window-manager.js';
 
 describe('Window state debounce', () => {
   it('coalesces move and resize bursts and flushes the final state', () => {
@@ -16,5 +19,19 @@ describe('Window state debounce', () => {
     vi.advanceTimersByTime(500);
     expect(write).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+});
+
+describe('Native window chrome', () => {
+  it('uses an inset native title bar on macOS', () => {
+    expect(nativeWindowChromeOptions('darwin')).toEqual({
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 12, y: 12 }
+    });
+  });
+
+  it('keeps the platform title bar outside macOS', () => {
+    expect(nativeWindowChromeOptions('win32')).toEqual({});
+    expect(nativeWindowChromeOptions('linux')).toEqual({});
   });
 });
