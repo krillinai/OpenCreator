@@ -139,7 +139,6 @@ describe('enterprise HTTP client', () => {
         data: {
           account: {
             account_id: 'acct_01JZ8W6A2M4S',
-            user_id: 'usr_secret',
             email: 'user@example.com',
             name: 'User',
             status: 'active'
@@ -179,7 +178,6 @@ describe('enterprise HTTP client', () => {
           data: {
             account: {
               account_id: 'acct_01JZ8W6A2M4S',
-              user_id: 'usr_secret',
               email: 'user@example.com',
               name: 'User',
               status: 'active'
@@ -217,7 +215,32 @@ describe('enterprise HTTP client', () => {
     });
   });
 
-  it('rejects an authenticated account response without account_id', async () => {
+  it('accepts the documented user_id as the stable account subject', async () => {
+    const fetch = vi.fn(async () => jsonResponse({
+      data: {
+        account: {
+          user_id: 'usr_123',
+          email: 'user@example.com',
+          name: 'User',
+          status: 'active'
+        },
+        agent: { agent_id: AGENT_ID, name: 'User' },
+        access_token: 'enterprise-access-token',
+        token_type: 'Bearer',
+        expires_at: '2026-07-31T10:00:00Z'
+      }
+    }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.login({
+      email: 'user@example.com',
+      password: 'password-123'
+    }, AGENT_ID)).resolves.toMatchObject({
+      account: { subjectId: 'usr_123' }
+    });
+  });
+
+  it('rejects an authenticated account response without a stable account id', async () => {
     const fetch = vi.fn(async () => jsonResponse({
       data: {
         account: {

@@ -18,10 +18,28 @@ import {
 } from './config-2026-07-30.js';
 
 const accountSchema = z.object({
-  account_id: z.string().min(1),
+  account_id: z.string().min(1).optional(),
+  user_id: z.string().min(1).optional(),
   email: z.string().min(1),
   name: z.string(),
   status: z.string()
+}).superRefine((account, context) => {
+  if (account.account_id === undefined && account.user_id === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A stable account identifier is required'
+    });
+  }
+  if (
+    account.account_id !== undefined
+    && account.user_id !== undefined
+    && account.account_id !== account.user_id
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Account identifiers do not match'
+    });
+  }
 });
 const agentSchema = z.object({
   agent_id: z.string().min(1),
@@ -646,7 +664,7 @@ function jsonHeaders(
 
 function accountSummary(account: z.infer<typeof accountSchema>): EnterpriseAccountSummary {
   return {
-    subjectId: account.account_id,
+    subjectId: account.account_id ?? account.user_id!,
     email: account.email,
     name: account.name
   };
