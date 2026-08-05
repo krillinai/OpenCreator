@@ -31,7 +31,7 @@ describe('codex app-server runner', () => {
       }]
     });
 
-    expect(args[0]).toBe('--ignore-user-config');
+    expect(args).not.toContain('--ignore-user-config');
     expect(args.slice(-2)).toEqual(['app-server', '--stdio']);
     expect(args).toContain('mcp_servers.clawee_knowledge.enabled_tools=["knowledge.search"]');
   });

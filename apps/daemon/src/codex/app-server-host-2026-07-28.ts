@@ -869,7 +869,7 @@ export function buildCodexAppServerArgs(input: {
   return [
     ...(input.builtInTools === undefined
       ? []
-      : ['--ignore-user-config', ...codexToolIsolationArgs(input.builtInTools)]),
+      : codexToolIsolationArgs(input.builtInTools)),
     ...(normalizeProfile(input.profile) === 'default'
       ? []
       : ['--profile', normalizeProfile(input.profile)]),
