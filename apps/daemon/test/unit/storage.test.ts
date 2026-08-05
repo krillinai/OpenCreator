@@ -148,7 +148,8 @@ describe('runtime storage', () => {
     ]));
     expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining([
       'project_id',
-      'origin'
+      'origin',
+      'enterprise_subject_id'
     ]));
 
     const projectIndexes = db.prepare(`
@@ -208,6 +209,33 @@ describe('runtime storage', () => {
         purpose: 'conversation'
       });
     }).toThrow();
+  });
+
+  it('indexes and filters knowledge threads by exact enterprise subject', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-knowledge-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threads = createThreadRepository(db);
+    const base = {
+      cwd: tempDir,
+      canonicalCwd: tempDir,
+      workspaceMode: 'managed',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active' as const,
+      purpose: 'knowledge_conversation' as const
+    };
+    threads.insertThread({ id: 'thread_a', enterpriseSubjectId: 'acct_a', ...base });
+    threads.insertThread({ id: 'thread_b', enterpriseSubjectId: 'acct_b', ...base });
+
+    expect(threads.listKnowledgeThreads({
+      enterpriseSubjectId: 'acct_a',
+      status: 'active',
+      limit: 10
+    }).map(thread => thread.id)).toEqual(['thread_a']);
+    expect(db.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index' AND name = 'idx_threads_knowledge_subject_updated'
+    `).get()).toEqual({ name: 'idx_threads_knowledge_subject_updated' });
   });
 
   it('assigns only unowned Clawee conversation threads to projects', () => {
@@ -879,7 +907,12 @@ it('migrates legacy storage and preserves existing thread operations', () => {
   const threads = createThreadRepository(db);
 
   expect(columnNames(db, 'runs')).toEqual(expect.arrayContaining(['resume_mode', 'queue_state', 'timeout_ms']));
-  expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining(['title', 'archived_at', 'purpose']));
+  expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining([
+    'title',
+    'archived_at',
+    'purpose',
+    'enterprise_subject_id'
+  ]));
   expect(columnNames(db, 'schedules')).toContain('thread_id');
   expect(runs.getRun('legacy_run_1')?.queue_state).toBe('none');
   expect(threads.getThread('legacy_thread_1')?.purpose).toBe('conversation');

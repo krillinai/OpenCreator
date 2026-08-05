@@ -15,6 +15,7 @@ import { createThreadRepository, type ThreadRow } from '../storage/repositories.
 import { createConversationTitle } from './conversation-title.js';
 import type {
   CreateConversationThreadInput,
+  CreateKnowledgeThreadInput,
   CreateRuntimeThreadInput,
   CreateScheduleThreadInput,
   RuntimeThread,
@@ -80,6 +81,17 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       });
     },
 
+    createKnowledgeThread(request: CreateKnowledgeThreadInput): RuntimeThread {
+      return createRuntimeThread({
+        ...request,
+        workspaceMode: 'managed',
+        sandbox: 'read-only',
+        purpose: 'knowledge_conversation',
+        projectId: null,
+        origin: 'clawee_created'
+      });
+    },
+
     createThread(request: CreateRuntimeThreadInput): RuntimeThread {
       return createRuntimeThread({
         ...request,
@@ -137,6 +149,14 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       limit?: number;
     }): RuntimeThread[] {
       return threads.listThreads(filter).map(mapThreadRow);
+    },
+
+    listKnowledgeThreads(enterpriseSubjectId, filter = {}): RuntimeThread[] {
+      return threads.listKnowledgeThreads({
+        enterpriseSubjectId,
+        status: filter.status,
+        limit: filter.limit
+      }).map(mapThreadRow);
     },
 
     listPublicThreads(filter = {}): RuntimeThread[] {
@@ -291,6 +311,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     purpose?: RuntimeThread['purpose'];
     projectId: string | null;
     origin: RuntimeThread['origin'];
+    enterpriseSubjectId?: string | null;
   }): RuntimeThread {
     const id = `thread_${nanoid(10)}`;
     const workspaceMode = request.workspaceMode ?? 'managed';
@@ -305,6 +326,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       id,
       title: request.title === undefined ? null : createConversationTitle(request.title),
       projectId: request.projectId,
+      enterpriseSubjectId: request.enterpriseSubjectId ?? null,
       origin: request.origin,
       cwd,
       canonicalCwd,
@@ -331,6 +353,7 @@ function mapThreadRow(row: ThreadRow): RuntimeThread {
     ...(row.schedule_id === null ? {} : { scheduleId: row.schedule_id }),
     title: row.title === null ? null : createConversationTitle(row.title),
     projectId: row.project_id,
+    enterpriseSubjectId: row.enterprise_subject_id,
     origin: row.origin,
     codexThreadId: row.codex_thread_id,
     cwd: row.cwd,

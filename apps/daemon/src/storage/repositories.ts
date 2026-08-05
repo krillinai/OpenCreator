@@ -171,6 +171,7 @@ export type InsertThreadInput = {
   title?: string | null;
   codexThreadId?: string | null;
   projectId?: string | null;
+  enterpriseSubjectId?: string | null;
   origin?: ThreadOrigin;
   cwd: string;
   canonicalCwd: string;
@@ -191,6 +192,7 @@ export type ThreadRow = {
   title: string | null;
   codex_thread_id: string | null;
   project_id: string | null;
+  enterprise_subject_id: string | null;
   origin: ThreadOrigin;
   cwd: string;
   canonical_cwd: string;
@@ -216,6 +218,11 @@ export type ThreadRepository = {
     status?: 'active' | 'archived' | 'all';
     purpose?: ThreadPurpose;
     excludePurpose?: ThreadPurpose;
+    limit?: number;
+  }): ThreadRow[];
+  listKnowledgeThreads(input: {
+    enterpriseSubjectId: string;
+    status?: 'active' | 'archived' | 'all';
     limit?: number;
   }): ThreadRow[];
   listPublicThreads(input?: {
@@ -560,10 +567,12 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   `;
   const insert = db.prepare(`
     INSERT INTO threads (
-      id, title, codex_thread_id, project_id, origin, cwd, canonical_cwd, workspace_mode,
+      id, title, codex_thread_id, project_id, enterprise_subject_id, origin,
+      cwd, canonical_cwd, workspace_mode,
       profile, sandbox, model, reasoning, status, purpose, created_at, updated_at
     ) VALUES (
-      @id, @title, @codexThreadId, @projectId, @origin, @cwd, @canonicalCwd, @workspaceMode,
+      @id, @title, @codexThreadId, @projectId, @enterpriseSubjectId, @origin,
+      @cwd, @canonicalCwd, @workspaceMode,
       @profile, @sandbox, @model, @reasoning, @status, @purpose,
       COALESCE(@createdAt, CURRENT_TIMESTAMP), COALESCE(@updatedAt, CURRENT_TIMESTAMP)
     )
@@ -588,6 +597,18 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     WHERE (@status = 'all' OR threads.status = @status)
       AND (@purpose IS NULL OR threads.purpose = @purpose)
       AND (@excludePurpose IS NULL OR threads.purpose <> @excludePurpose)
+    ORDER BY threads.updated_at DESC, threads.id DESC
+    LIMIT @limit
+  `);
+  const listKnowledge = db.prepare<{
+    enterpriseSubjectId: string;
+    status: 'active' | 'archived' | 'all';
+    limit: number;
+  }>(`
+    ${threadSelect}
+    WHERE threads.enterprise_subject_id = @enterpriseSubjectId
+      AND threads.purpose = 'knowledge_conversation'
+      AND (@status = 'all' OR threads.status = @status)
     ORDER BY threads.updated_at DESC, threads.id DESC
     LIMIT @limit
   `);
@@ -753,6 +774,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         title: null,
         codexThreadId: null,
         projectId: null,
+        enterpriseSubjectId: null,
         origin: 'clawee_created',
         model: null,
         reasoning: null,
@@ -773,6 +795,13 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         status: input.status ?? 'active',
         purpose: input.purpose ?? null,
         excludePurpose: input.excludePurpose ?? null,
+        limit: input.limit ?? 50
+      }) as ThreadRow[];
+    },
+    listKnowledgeThreads(input): ThreadRow[] {
+      return listKnowledge.all({
+        enterpriseSubjectId: input.enterpriseSubjectId,
+        status: input.status ?? 'active',
         limit: input.limit ?? 50
       }) as ThreadRow[];
     },

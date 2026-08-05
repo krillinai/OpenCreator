@@ -86,6 +86,7 @@ export function migrate(db: Database.Database): void {
       title TEXT,
       codex_thread_id TEXT,
       project_id TEXT,
+      enterprise_subject_id TEXT,
       origin TEXT NOT NULL DEFAULT 'clawee_created',
       cwd TEXT NOT NULL,
       canonical_cwd TEXT NOT NULL,
@@ -408,6 +409,7 @@ export function migrate(db: Database.Database): void {
     'project_id',
     'project_id TEXT REFERENCES projects(id) ON DELETE RESTRICT'
   );
+  ensureColumn(db, 'threads', 'enterprise_subject_id', 'enterprise_subject_id TEXT');
   ensureColumn(
     db,
     'threads',
@@ -445,6 +447,8 @@ export function migrate(db: Database.Database): void {
       ON threads(project_id);
     CREATE INDEX IF NOT EXISTS idx_threads_origin
       ON threads(origin);
+    CREATE INDEX IF NOT EXISTS idx_threads_knowledge_subject_updated
+      ON threads(enterprise_subject_id, purpose, status, updated_at DESC, id DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_unique_codex_thread_id
       ON threads(codex_thread_id)
       WHERE codex_thread_id IS NOT NULL;
