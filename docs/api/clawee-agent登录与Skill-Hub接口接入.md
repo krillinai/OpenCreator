@@ -16,7 +16,7 @@
 4. 注销并撤销当前服务会话。
 5. 获取当前账户的 Collector 注册码和一键安装命令。
 6. 执行 Collector 首次安装或更新。
-7. 查询服务侧启用的 MCP 连接器、Tool 和当前 Agent 的有效授权状态。
+7. 获取当前 Agent 的 MCP Token，并查询全部 upstream MCP endpoint、Tool 和当前 Agent 的有效授权状态。
 8. 获取企业 Skill Hub 中已发布的 Skill。
 9. 获取 Skill 当前发布版本详情。
 10. 下载指定发布版本的 Skill ZIP 包。
@@ -50,7 +50,7 @@
 3. 为 `clawee-agent` 签发应用端 Bearer JWT。
 4. 校验会话、账号状态和 Token 有效性。
 5. 为 Clawee 查询或隐式创建当前账户的 Collector 注册码，并返回一键安装命令。
-6. 返回服务侧启用的 MCP 连接器、Tool 和当前 Agent 的授权状态。
+6. 向当前 Clawee 会话下发其绑定 Agent 的 MCP Token，并返回全部 upstream 的受治理 MCP endpoint、Tool 和当前 Agent 的授权状态。
 7. 返回已发布 Skill 的元数据和版本信息。
 8. 分发经过服务端校验的 Skill ZIP 包。
 9. 按当前账户数据权限返回知识库和文档，并代理经过校验的文档上传。
@@ -64,11 +64,13 @@ Clawee Daemon 是企业服务的唯一调用方，负责：
 2. 在首次注册或登录前生成并持久化稳定的 `agent_id`，并保存企业服务地址和企业会话 Token。
 3. 为 Clawee Web 与 Desktop 提供统一的本地登录状态。
 4. 从当前账号接口读取 Collector 一键安装命令，并按操作系统执行首次安装或更新。
-5. 获取 Skill 列表、详情和 ZIP 包。
-6. 校验 ZIP 包 SHA-256，安全解压到临时目录。
-7. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
-8. 保存企业 Skill 安装记录，并计算更新状态。
-9. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
+5. 获取当前会话绑定 Agent 的 MCP Token，将其保存到系统安全凭据存储，并且不得返回给 Web 或 Desktop 渲染进程。
+6. 获取全部 upstream MCP endpoint 和 Tool 授权目录，供本地展示和安装受治理的企业 MCP。
+7. 获取 Skill 列表、详情和 ZIP 包。
+8. 校验 ZIP 包 SHA-256，安全解压到临时目录。
+9. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
+10. 保存企业 Skill 安装记录，并计算更新状态。
+11. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
 
 ### 3.3 Clawee Web 与 Desktop
 
@@ -174,6 +176,7 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 | 账号登录 | `POST` | `/api/v1/auth/login` | 无 |
 | 查询当前账号 | `GET` | `/api/v1/auth/me` | Bearer JWT |
 | 注销当前会话 | `POST` | `/api/v1/auth/logout` | Bearer JWT |
+| 获取当前 Agent MCP Token | `POST` | `/api/v1/app/agents/token/reveal` | Bearer JWT |
 | 获取 MCP 能力目录 | `GET` | `/api/v1/app/agents/mcp-catalog` | Bearer JWT |
 | 获取已发布 Skill 列表 | `GET` | `/api/v1/app/skills` | Bearer JWT |
 | 获取已发布 Skill 详情 | `GET` | `/api/v1/app/skills/detail?skill_id=...` | Bearer JWT |
@@ -852,6 +855,15 @@ Clawee 应同时读取：
 6. 上传结果未知时不自动重试，避免产生重复文档。
 7. Web 与 Desktop 在相同账户授权下展示相同列表、权限状态和上传结果。
 
+### 21.4 MCP 接入
+
+1. Clawee Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal`，请求无需传递 `agent_id`。
+2. Token 响应只包含 Agent Token 明文和基础信息，不包含 `mcp_config`、Authorization Header 或重复兼容字段。
+3. Agent MCP Token 只写入系统安全凭据存储，不进入 React、普通配置、SQLite、日志和诊断包。
+4. MCP 能力目录返回全部未删除 upstream 及其 `/mcp/servers/{upstream_id}` 受治理 endpoint，禁用 upstream 仍返回并明确标记状态。
+5. 每个 upstream 返回其全部 Tool，`authorized` 仅在 upstream、Tool 和有效 Grant 同时可用时为 `true`。
+6. 目录不返回企业内部 upstream 原始 URL、upstream Token、凭据引用或授权数据范围。
+
 ## 22. 接口契约摘要
 
 Clawee 正式依赖以下稳定契约：
@@ -862,6 +874,7 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/me
 POST /api/v1/auth/logout
 
+POST /api/v1/app/agents/token/reveal
 GET  /api/v1/app/agents/mcp-catalog
 
 GET  /api/v1/app/skills
@@ -879,13 +892,84 @@ GET  /api/v1/app/shared-files/content?file_id=<file_id>
 POST /api/v1/app/shared-files/content?space_id=<space_id>&logical_path=<logical_path>
 ```
 
-Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。后续 MCP 能力目录请求优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`；知识库 HTTP 接口则使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份、Collector 接入信息、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安装完整性、回滚以及知识库交互。
+Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal` 获取绑定 Agent 的 MCP Token，再通过 MCP 能力目录获取全部 upstream 的受治理 endpoint 和 Tool 授权状态；这两个接口都优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。知识库 HTTP 接口使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token 或 Agent MCP Token；企业服务负责身份、Collector 接入信息、MCP Token、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安全存储、MCP 安装完整性、回滚以及知识库交互。
 
-## 23. MCP 能力目录接口
+## 23. MCP Token 与能力目录接口
 
-### 23.1 `GET /api/v1/app/agents/mcp-catalog`
+### 23.1 `POST /api/v1/app/agents/token/reveal`
 
-返回企业服务当前启用的 MCP 上游连接器、启用的 Tool，以及 Clawee 当前登录会话所绑定 Agent 的有效授权状态。该接口为只读目录，不提供授权申请或修改能力。
+返回 Clawee 当前登录会话所绑定 Agent 的现有 active MCP Token 及基础信息。该接口只读取 Token，不创建、不轮换、不吊销 Token，也不返回 MCP 配置或 Tool 授权目录。
+
+请求：
+
+```http
+POST /api/v1/app/agents/token/reveal HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+Clawee 请求不需要请求体，也不需要传递 `agent_id`。服务端从已认证的 `clawee-agent` Principal 和 Session 中读取绑定的 Agent ID。若客户端显式传入 `agent_id`，该值只用于一致性校验，不能用于切换 Agent：
+
+```json
+{}
+```
+
+成功响应：
+
+```json
+{
+  "data": {
+    "token_id": "token_clawee_123",
+    "agent_id": "clawee_550e8400-e29b-41d4-a716-446655440000",
+    "token": "agt_xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "token_type": "Bearer",
+    "fingerprint": "a1b2c3d4e5f6",
+    "status": "active",
+    "expires_at": null,
+    "scopes": [
+      "mcp:call"
+    ],
+    "created_at": "2026-08-06T10:00:00Z"
+  }
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `token_id` | string | Agent MCP Token 的不透明记录 ID |
+| `agent_id` | string | Token 所属 Agent；Clawee 必须校验其与本地 `agent_id` 一致 |
+| `token` | string | 调用企业 MCP endpoint 时使用的 Bearer Token 明文 |
+| `token_type` | string | 固定为 `Bearer` |
+| `fingerprint` | string | Token 指纹，用于诊断和识别，不可代替 Token 调用 MCP |
+| `status` | string | 当前返回值固定为 `active` |
+| `expires_at` | string \| null | Token 到期时间；无到期时间时为 `null` |
+| `scopes` | string[] | Token Scope；当前必须包含 `mcp:call` |
+| `created_at` | string | Token 创建时间 |
+
+Clawee 处理要求：
+
+1. 仅 Daemon 可以调用并读取该响应；React 渲染进程不得读取 `token`。
+2. Daemon 必须把 `token` 写入系统安全凭据存储，不得写入普通配置、SQLite、日志或诊断包。
+3. MCP 配置中不得持久化 Token 明文；应只保存 endpoint 和环境变量名，由 Daemon 启动 Agent Runtime 时注入 Token。
+4. 重复调用 `reveal` 返回当前 active Token，不会隐式轮换。
+5. 返回 `404 not_found` 表示当前 Agent 没有可读取的 active Token、Token 已过期或历史 Token 不可恢复；不得把应用端 Bearer JWT 当作 MCP Token 使用。
+
+错误处理：
+
+| HTTP 状态 | `error.code` | Clawee 处理 |
+| --- | --- | --- |
+| `400` | `invalid_request` | 请求 JSON 无效；不重试、不更换 `agent_id` |
+| `401` | `unauthorized` | 应用 Token 缺失、过期或会话失效；清除本地应用 Token 并进入未登录状态 |
+| `403` | `agent_context_mismatch` | 请求中的 `agent_id` 与会话不一致；按客户端状态错误处理 |
+| `403` | `agent_forbidden` | 会话绑定 Agent 已停用；不得继续安装或启动企业 MCP |
+| `404` | `not_found` | 当前 Agent 没有可读取的 active MCP Token；停止安装并提示重新签发 Token |
+| `500/503` | `internal_error` | 保留登录状态，不覆盖本地已有 MCP Token，允许用户手动重试 |
+
+### 23.2 `GET /api/v1/app/agents/mcp-catalog`
+
+返回企业服务中全部未删除 upstream MCP、每个 upstream 对应的 Gateway MCP endpoint、其 Tool 列表，以及 Clawee 当前登录会话所绑定 Agent 的有效授权状态。该接口为只读目录，不提供授权申请或修改能力。
 
 请求：
 
@@ -907,29 +991,39 @@ Clawee 请求不需要传递 `agent_id`。服务端优先从已认证的 `clawee
 {
   "data": {
     "agent_id": "clawee_550e8400-e29b-41d4-a716-446655440000",
-    "connectors": [
+    "upstreams": [
       {
         "id": "crm-main",
         "name": "CRM",
         "domain": "sales",
+        "mcp_endpoint": "http://1.13.175.31:1904/mcp/servers/crm-main",
+        "upstream_transport": "streamable_http",
+        "namespace": "crm",
+        "status": "active",
         "tools": [
           {
             "id": "cap_customer_search",
-            "name": "crm.customer.search",
+            "upstream_name": "customer.search",
+            "name": "customer.search",
+            "exposed_name": "crm.customer.search",
             "title": "查询客户",
             "description": "按条件查询客户资料",
             "risk_level": "low",
             "confirm_required": false,
+            "status": "active",
             "authorized": true,
             "authorization_expires_at": "2026-08-31T16:00:00Z"
           },
           {
             "id": "cap_customer_delete",
-            "name": "crm.customer.delete",
+            "upstream_name": "customer.delete",
+            "name": "customer.delete",
+            "exposed_name": "crm.customer.delete",
             "title": "删除客户",
             "description": "删除指定客户记录",
             "risk_level": "high",
             "confirm_required": true,
+            "status": "active",
             "authorized": false,
             "authorization_expires_at": null
           }
@@ -945,21 +1039,28 @@ Clawee 请求不需要传递 `agent_id`。服务端优先从已认证的 `clawee
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `agent_id` | string | 本次授权判断实际使用的会话 Agent ID；Clawee 必须校验其与本地 `agent_id` 一致 |
-| `connectors` | array | 当前所有启用的 MCP 上游连接器；没有可用连接器时为空数组 |
-| `connectors[].id` | string | 连接器的不透明标识 |
-| `connectors[].name` | string | 连接器展示名称 |
-| `connectors[].domain` | string | 连接器所属业务域 |
-| `connectors[].tools` | array | 该连接器下所有启用的 Tool；无启用 Tool 时为空数组 |
+| `upstreams` | array | 当前全部未删除 upstream MCP；没有 upstream 时为空数组 |
+| `upstreams[].id` | string | upstream 的不透明标识 |
+| `upstreams[].name` | string | upstream 展示名称 |
+| `upstreams[].domain` | string | upstream 所属业务域 |
+| `upstreams[].mcp_endpoint` | string | 由本项目 Gateway 暴露的受治理 MCP endpoint；Clawee 安装 MCP 时使用该地址 |
+| `upstreams[].upstream_transport` | string | Gateway 连接企业内部 upstream 时使用的 transport |
+| `upstreams[].namespace` | string | upstream 在聚合 Gateway 中使用的 Tool 命名空间 |
+| `upstreams[].status` | string | upstream 当前状态；非 `active` endpoint 不可调用 |
+| `upstreams[].tools` | array | 该 upstream 下的全部 Tool；没有 Tool 时为空数组 |
 | `tools[].id` | string | Tool 能力的不透明标识 |
-| `tools[].name` | string | Agent 调用时使用的 Tool 名称 |
+| `tools[].upstream_name` | string | 企业内部 upstream 原始 Tool 名称 |
+| `tools[].name` | string | 通过当前 `mcp_endpoint` 调用时使用的 endpoint 本地 Tool 名称 |
+| `tools[].exposed_name` | string | 通过聚合 `/mcp` endpoint 调用时使用的带 namespace Tool 名称 |
 | `tools[].title` | string | Tool 展示名称 |
 | `tools[].description` | string | Tool 功能说明 |
 | `tools[].risk_level` | string | 风险等级 |
 | `tools[].confirm_required` | boolean | 调用时是否需要用户确认 |
-| `tools[].authorized` | boolean | 当前会话 Agent 是否拥有有效授权；客户端必须以此字段为准 |
+| `tools[].status` | string | Tool 当前状态；非 `active` Tool 不可调用 |
+| `tools[].authorized` | boolean | 当前会话 Agent 是否可以通过该 endpoint 调用此 Tool；只有 upstream 和 Tool 均为 `active` 且存在有效 Grant 时才为 `true` |
 | `tools[].authorization_expires_at` | string \| null | 当前有效授权的到期时间；永久授权、无授权或授权已失效时为 `null` |
 
-接口会返回已授权和未授权的启用 Tool。禁用连接器和禁用 Tool 不返回；响应不包含上游地址、连接凭证、授权数据范围等敏感信息。当前目录不分页，客户端必须忽略未来新增字段。
+接口会返回全部未删除 upstream，以及每个 upstream 下已授权、未授权、启用和停用的 Tool。`mcp_endpoint` 始终指向本项目 Gateway 的 `/mcp/servers/{upstream_id}` 受治理入口，不返回企业内部 upstream 原始 URL、upstream Token、凭据引用或授权数据范围。软删除 upstream 不返回。当前目录不分页，客户端必须忽略未来新增字段。
 
 错误处理：
 
