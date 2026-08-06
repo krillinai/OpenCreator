@@ -250,11 +250,13 @@ describe('Composer', () => {
   it('opens menus and submits selected permission and model config', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
+    const onModelConfigChange = vi.fn();
     render(
       <Composer
         {...defaultProps}
         permission="workspace-write"
         models={codexModels}
+        onModelConfigChange={onModelConfigChange}
         onSubmit={onSubmit}
       />
     );
@@ -270,6 +272,10 @@ describe('Composer', () => {
       .toBeInTheDocument();
     await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
     await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
+    expect(onModelConfigChange).toHaveBeenLastCalledWith({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
 
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     await user.type(textbox, '  hello  ');

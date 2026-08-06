@@ -111,7 +111,10 @@ import type {
   RuntimeStatus
 } from '../features/settings/ClaweeSettingsView.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
-import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
+import {
+  ClaweeSidebar,
+  type SidebarRecentItem
+} from '../features/shell/ClaweeSidebar.js';
 import {
   createScheduleDraftSidebarSummaries,
   createSidebarTaskSummaries
@@ -134,7 +137,13 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createProjectService } from '../services/project-service.js';
 import { createMcpService } from '../services/mcp-service.js';
 import { createMemoryService } from '../services/memory-service.js';
-import { createModelService } from '../services/model-service-2026-08-05.js';
+import {
+  createModelService,
+  readCachedModelCatalog,
+  readRecentModelConfig,
+  writeRecentModelConfig,
+  type RecentModelConfig
+} from '../services/model-service-2026-08-05.js';
 import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
@@ -301,6 +310,13 @@ export function AppController(props: AppControllerProps) {
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
+  const integratedTitleBar = hostBridge.windowChrome;
+  const appShellStyle = integratedTitleBar === undefined
+    ? undefined
+    : {
+        '--clawee-titlebar-height': `${integratedTitleBar.titleBarHeight}px`,
+        '--clawee-traffic-light-inset': `${integratedTitleBar.trafficLightInset}px`
+      } as CSSProperties;
   const runtimeFetch = useMemo(() => props.runtimeFetch ?? globalThis.fetch.bind(globalThis), [props.runtimeFetch]);
   const subscribeRunEvents = props.subscribeRunEvents ?? defaultSubscribeRunEvents;
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
@@ -372,9 +388,14 @@ export function AppController(props: AppControllerProps) {
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
   const [pendingMemorySuggestion, setPendingMemorySuggestion] = useState<{ id: number; content: string }>();
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
-  const [codexModels, setCodexModels] = useState<CodexModelListResponse>();
+  const [recentComposerModelConfig, setRecentComposerModelConfig] =
+    useState<RecentModelConfig | null>(readRecentModelConfig);
+  const [codexModels, setCodexModels] = useState<CodexModelListResponse | undefined>(
+    readCachedModelCatalog
+  );
   const [codexModelsLoading, setCodexModelsLoading] = useState(false);
   const [codexModelsLoadError, setCodexModelsLoadError] = useState<string>();
+  const [codexModelsNotice, setCodexModelsNotice] = useState<string>();
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
   const [codexProfiles, setCodexProfiles] = useState<CodexProfileListResponse>();
@@ -509,10 +530,12 @@ export function AppController(props: AppControllerProps) {
   const nextComposerFocusRequestIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
+  const codexModelsRef = useRef(codexModels);
   runRegistryRef.current = runRegistry;
   runtimeThreadsRef.current = runtimeThreads;
   currentProjectIdRef.current = state.currentProjectId;
   enterpriseSessionRef.current = enterpriseSession;
+  codexModelsRef.current = codexModels;
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -659,6 +682,47 @@ export function AppController(props: AppControllerProps) {
     () => [...scheduleDraftSidebarTasks, ...scheduleSidebarTasks],
     [scheduleDraftSidebarTasks, scheduleSidebarTasks]
   );
+  const recentSidebarItems = useMemo<SidebarRecentItem[]>(() => {
+    const threadById = new Map(runtimeThreads.map(thread => [thread.id, thread]));
+    const scheduleById = new Map(runtimeSchedules.map(schedule => [schedule.id, schedule]));
+    const conversationItems: SidebarRecentItem[] = conversations.map(conversation => ({
+      id: `conversation:${conversation.id}`,
+      kind: 'conversation',
+      threadId: conversation.id,
+      title: conversation.title,
+      updatedAt: conversation.updatedAt,
+      updatedLabel: conversation.updatedLabel,
+      running: runningThreadIds.has(conversation.id)
+    }));
+    const taskItems: SidebarRecentItem[] = sidebarTasks.map(task => {
+      const threadUpdatedAt = task.threadId === undefined
+        ? undefined
+        : threadById.get(task.threadId)?.updatedAt;
+      const scheduleUpdatedAt = scheduleById.get(task.id)?.updatedAt;
+      const updatedAt = latestRuntimeTimestamp(
+        threadUpdatedAt,
+        scheduleUpdatedAt
+      ) ?? new Date(0).toISOString();
+      return {
+        id: `task:${task.id}`,
+        kind: 'task',
+        ...(task.threadId === undefined ? {} : { threadId: task.threadId }),
+        title: task.name,
+        updatedAt,
+        updatedLabel: formatRelativeTime(updatedAt),
+        status: task.status,
+        unread: task.unread
+      };
+    });
+
+    return [...conversationItems, ...taskItems].sort(compareRecentSidebarItems);
+  }, [
+    conversations,
+    runtimeSchedules,
+    runtimeThreads,
+    runningThreadIds,
+    sidebarTasks
+  ]);
   const runningConversationIds = runningThreadIds;
   const selectedThreadExists = state.selectedThreadId !== undefined
     && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
@@ -920,25 +984,39 @@ export function AppController(props: AppControllerProps) {
     let canceled = false;
 
     if (connectionState.status !== 'connected' || modelService === null) {
-      setCodexModels(undefined);
+      setCodexModels(current => current ?? readCachedModelCatalog());
       setCodexModelsLoading(false);
       setCodexModelsLoadError(undefined);
+      setCodexModelsNotice(undefined);
       return () => {
         canceled = true;
       };
     }
 
+    const cachedModels = readCachedModelCatalog();
+    if (cachedModels !== undefined) setCodexModels(cachedModels);
     setCodexModelsLoading(true);
     setCodexModelsLoadError(undefined);
+    setCodexModelsNotice(undefined);
     modelService
       .listModels()
       .then(response => {
-        if (!canceled) setCodexModels(response);
+        if (!canceled) {
+          setCodexModels(response);
+          setCodexModelsNotice(undefined);
+        }
       })
       .catch(() => {
         if (!canceled) {
-          setCodexModels(undefined);
-          setCodexModelsLoadError('无法加载模型列表');
+          const fallbackModels = readCachedModelCatalog()
+            ?? codexModelsRef.current;
+          if (fallbackModels !== undefined && fallbackModels.models.length > 0) {
+            setCodexModels(fallbackModels);
+            setCodexModelsNotice('模型目录刷新失败，当前使用本地缓存');
+          } else {
+            setCodexModels(undefined);
+            setCodexModelsLoadError('无法加载模型列表');
+          }
         }
       })
       .finally(() => {
@@ -2488,6 +2566,7 @@ export function AppController(props: AppControllerProps) {
     closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
+    setComposerRunConfig(null);
     showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
@@ -2969,7 +3048,11 @@ export function AppController(props: AppControllerProps) {
     permission: ComposerRunConfig['permission']
   ): Promise<boolean> {
     const baseConfig = composerRunConfig
-      ?? defaultComposerRunConfig(currentProject, defaultPermission);
+      ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      );
 
     if (selectedThread === undefined) {
       setComposerRunConfig({ ...baseConfig, permission });
@@ -3007,6 +3090,22 @@ export function AppController(props: AppControllerProps) {
       }
       return false;
     }
+  }
+
+  function handleComposerModelConfigChange(
+    config: Pick<ComposerRunConfig, 'model' | 'reasoning'>
+  ) {
+    if (selectedThread !== undefined) return;
+    setRecentComposerModelConfig(config);
+    writeRecentModelConfig(config);
+    setComposerRunConfig(current => ({
+      ...(current ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      )),
+      ...config
+    }));
   }
 
   function isCurrentSkillMarketRuntime(
@@ -3458,7 +3557,11 @@ export function AppController(props: AppControllerProps) {
       input.onError('未找到所选项目');
       return;
     }
-    const config = defaultComposerRunConfig(project, defaultPermission);
+    const config = defaultComposerRunConfig(
+      project,
+      defaultPermission,
+      recentComposerModelConfig
+    );
     const generation = skillMarketRuntimeGenerationRef.current;
     skillMarketUseInFlightRef.current = true;
 
@@ -3553,7 +3656,11 @@ export function AppController(props: AppControllerProps) {
 
     const effectiveConfig = config
       ?? composerRunConfig
-      ?? defaultComposerRunConfig(currentProject, defaultPermission);
+      ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      );
     setComposerRunConfig(effectiveConfig);
     const pendingRunStartId = createTimelineId('pending_start');
     updatePendingRunStart({
@@ -4117,6 +4224,21 @@ export function AppController(props: AppControllerProps) {
 
   function handleScheduleChanged(schedule: ScheduleResponse) {
     setRuntimeSchedules(previous => upsertSchedule(previous, schedule));
+    if (runtimeThreadsRef.current.some(thread => thread.id === schedule.threadId)) return;
+
+    const activeThreadService = threadServiceRef.current;
+    if (activeThreadService === null) return;
+    void activeThreadService.getThread(schedule.threadId).then(response => {
+      if (
+        !mountedRef.current
+        || threadServiceRef.current !== activeThreadService
+      ) {
+        return;
+      }
+      setRuntimeThreads(previous => upsertThread(previous, response.thread));
+    }).catch(() => {
+      // The schedule list remains usable; opening the task retries the thread lookup.
+    });
   }
 
   function handleScheduleDeleted(schedule: ScheduleResponse) {
@@ -4446,7 +4568,11 @@ export function AppController(props: AppControllerProps) {
     && workspaceNeedsCompactSidebar;
   const effectiveSidebarCollapsed = sidebarCollapsed || sidebarAutoCollapsed;
   const effectiveComposerConfig = selectedThread === undefined
-    ? composerRunConfig ?? defaultComposerRunConfig(currentProject, defaultPermission)
+    ? composerRunConfig ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      )
     : {
         permission: fromRuntimeSandbox(selectedThread.sandbox),
         profile: selectedThread.profile,
@@ -4464,52 +4590,76 @@ export function AppController(props: AppControllerProps) {
     event.preventDefault();
   }
   const conversationEmpty = timelineItems.length === 0;
-  const showConversationEmptyState = conversationEmpty
+  const conversationHistoryPending =
+    state.selectedThreadId !== undefined
+    && historyLoadedThreadId !== state.selectedThreadId;
+  const conversationConfirmedEmpty = conversationEmpty && !conversationHistoryPending;
+  const showConversationEmptyState = conversationConfirmedEmpty
     && (selectedThread === undefined || selectedThread.purpose === 'conversation');
   const showConversationHeader = selectedThread !== undefined
     || selectedScheduleTask !== undefined
     || selectedConversation !== undefined;
+  const conversationTitle = selectedConversation?.title
+    ?? selectedScheduleTask?.name
+    ?? selectedThread?.title
+    ?? '新对话';
+  const conversationTaskToolbar =
+    selectedScheduleTask?.bindingStatus === 'ready'
+    && selectedSchedule !== undefined
+    && selectedSidebarTask !== undefined
+    && scheduleService !== null ? (
+      <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
+        <ScheduleThreadHeader
+          schedule={selectedSchedule}
+          status={selectedSidebarTask.status}
+          nextRunLabel={selectedSidebarTask.nextRunLabel}
+          service={scheduleService}
+          projects={projects}
+          profiles={codexProfiles?.profiles}
+          onRunNow={runScheduleNow}
+          onScheduleChanged={handleScheduleChanged}
+        />
+      </Suspense>
+    ) : undefined;
+  const useIntegratedConversationTitleBar =
+    integratedTitleBar?.integratedTitleBar === true
+    && state.activeView === 'conversation'
+    && showConversationHeader;
+  const conversationHeader = showConversationHeader ? (
+    <ConversationHeader
+      title={conversationTitle}
+      taskToolbar={
+        useIntegratedConversationTitleBar ? undefined : conversationTaskToolbar
+      }
+      fileWorkspaceOpen={fileWorkspaceOpen}
+      onOpenLocation={() => {
+        if (fileWorkspaceOpen) {
+          closeFileWorkspace();
+          return;
+        }
+        openPrimaryView('files');
+      }}
+    />
+  ) : undefined;
   const pendingComposerApproval = [...timelineItems].reverse().find(item => (
     item.kind === 'approval' && item.approval.status === 'pending'
   ));
   const conversationPage = (
-    <section className={`conversation-page${showConversationEmptyState ? ' is-empty' : ''}`}>
-      {showConversationHeader ? (
-        <ConversationHeader
-          title={
-            selectedConversation?.title
-            ?? selectedScheduleTask?.name
-            ?? selectedThread?.title
-            ?? '新对话'
-          }
-          taskToolbar={
-            selectedScheduleTask?.bindingStatus === 'ready'
-            && selectedSchedule !== undefined
-            && selectedSidebarTask !== undefined
-            && scheduleService !== null ? (
-              <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
-                <ScheduleThreadHeader
-                  schedule={selectedSchedule}
-                  status={selectedSidebarTask.status}
-                  nextRunLabel={selectedSidebarTask.nextRunLabel}
-                  service={scheduleService}
-                  projects={projects}
-                  profiles={codexProfiles?.profiles}
-                  onRunNow={runScheduleNow}
-                  onScheduleChanged={handleScheduleChanged}
-                />
-              </Suspense>
-            ) : undefined
-          }
-          fileWorkspaceOpen={fileWorkspaceOpen}
-          onOpenLocation={() => {
-            if (fileWorkspaceOpen) {
-              closeFileWorkspace();
-              return;
-            }
-            openPrimaryView('files');
-          }}
-        />
+    <section
+      className={[
+        'conversation-page',
+        showConversationEmptyState ? 'is-empty' : undefined,
+        useIntegratedConversationTitleBar ? 'has-integrated-header' : undefined,
+        useIntegratedConversationTitleBar && conversationTaskToolbar !== undefined
+          ? 'has-task-strip'
+          : undefined
+      ].filter(Boolean).join(' ')}
+    >
+      {useIntegratedConversationTitleBar ? null : conversationHeader}
+      {useIntegratedConversationTitleBar && conversationTaskToolbar !== undefined ? (
+        <div className="conversation-task-strip conversation-task-strip--standalone">
+          {conversationTaskToolbar}
+        </div>
       ) : null}
       <div className="conversation-body">
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
@@ -4604,7 +4754,7 @@ export function AppController(props: AppControllerProps) {
           projectName={currentProjectName}
           projects={projects}
           showProjectSelector={shouldShowComposerProjectSelector({
-            conversationEmpty,
+            conversationEmpty: conversationConfirmedEmpty,
             threadPurpose: selectedThread?.purpose
           })}
           permission={effectiveComposerConfig.permission}
@@ -4614,6 +4764,7 @@ export function AppController(props: AppControllerProps) {
           models={codexModels?.models}
           modelsLoading={codexModelsLoading}
           modelsError={codexModelsLoadError}
+          modelsNotice={codexModelsNotice}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
           running={currentRunBusy}
@@ -4647,6 +4798,7 @@ export function AppController(props: AppControllerProps) {
               : addProjectDirectory
           }
           onPermissionChange={handleComposerPermissionChange}
+          onModelConfigChange={handleComposerModelConfigChange}
           onDraftApplied={handleComposerDraftApplied}
           onFocusRequestApplied={handleComposerFocusRequestApplied}
           onCancel={() => void cancelActiveRun()}
@@ -4669,7 +4821,7 @@ export function AppController(props: AppControllerProps) {
           }}
           onSubmit={submitPrompt}
         />
-        {conversationEmpty ? <ConversationStarterTags /> : null}
+        {conversationConfirmedEmpty ? <ConversationStarterTags /> : null}
       </div>
     </section>
   );
@@ -4901,12 +5053,19 @@ export function AppController(props: AppControllerProps) {
   return (
     <div
       className="app-drop-shell"
+      data-integrated-title-bar={
+        integratedTitleBar?.integratedTitleBar === true ? 'true' : undefined
+      }
       data-project-drop-root="true"
+      style={appShellStyle}
       onDragEnter={handleProjectDragEnter}
       onDragOver={handleProjectDragOver}
       onDragLeave={handleProjectDragLeave}
       onDrop={(event) => void handleProjectDrop(event)}
     >
+      {integratedTitleBar?.integratedTitleBar === true ? (
+        <div className="desktop-titlebar-drag-region" aria-hidden="true" />
+      ) : null}
       <span
         className="app-visually-hidden"
         role="status"
@@ -4922,7 +5081,7 @@ export function AppController(props: AppControllerProps) {
         <ClaweeSidebar
           projects={projects}
           conversations={conversations}
-          tasks={sidebarTasks}
+          recentItems={recentSidebarItems}
           runningConversationIds={runningConversationIds}
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
@@ -4967,6 +5126,9 @@ export function AppController(props: AppControllerProps) {
           }}
           onToggleCollapsed={() => setSidebarCollapsed((currentValue) => !currentValue)}
         />
+      }
+      mainHeader={
+        useIntegratedConversationTitleBar ? conversationHeader : undefined
       }
       main={(
         <Suspense fallback={<PageLoading />}>
@@ -5420,6 +5582,7 @@ function mapThreadToConversation(
     id: thread.id,
     projectId: thread.projectId,
     title: thread.title ?? thread.codexThreadId ?? thread.id,
+    updatedAt: thread.updatedAt,
     updatedLabel: formatRelativeTime(thread.updatedAt)
   };
 }
@@ -5485,15 +5648,51 @@ function normalizePathForCompare(path: string): string {
   return path.replace(/^~(?=\/)/, '').replace(/\/+$/, '');
 }
 
-export function formatRelativeTime(iso: string): string {
+function compareRecentSidebarItems(
+  left: SidebarRecentItem,
+  right: SidebarRecentItem
+): number {
+  const leftTimestamp = parseRuntimeTimestamp(left.updatedAt);
+  const rightTimestamp = parseRuntimeTimestamp(right.updatedAt);
+  if (Number.isFinite(leftTimestamp) && Number.isFinite(rightTimestamp)) {
+    const timestampDifference = rightTimestamp - leftTimestamp;
+    if (timestampDifference !== 0) return timestampDifference;
+  } else if (Number.isFinite(leftTimestamp)) {
+    return -1;
+  } else if (Number.isFinite(rightTimestamp)) {
+    return 1;
+  }
+  return right.id.localeCompare(left.id);
+}
+
+function latestRuntimeTimestamp(
+  ...values: Array<string | undefined>
+): string | undefined {
+  let latest: string | undefined;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (value === undefined) continue;
+    const timestamp = parseRuntimeTimestamp(value);
+    if (!Number.isFinite(timestamp) || timestamp < latestTimestamp) continue;
+    latest = value;
+    latestTimestamp = timestamp;
+  }
+  return latest;
+}
+
+function parseRuntimeTimestamp(iso: string): number {
   const sqliteUtc = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d{1,3})?$/.exec(
     iso
   );
-  const timestamp = Date.parse(
+  return Date.parse(
     sqliteUtc === null
       ? iso
       : `${sqliteUtc[1]}T${sqliteUtc[2]}${sqliteUtc[3] ?? ''}Z`
   );
+}
+
+export function formatRelativeTime(iso: string): string {
+  const timestamp = parseRuntimeTimestamp(iso);
   if (!Number.isFinite(timestamp)) return '';
 
   const diffMs = Math.max(0, Date.now() - timestamp);
@@ -5598,13 +5797,22 @@ function buildThreadRequest(
 
 function defaultComposerRunConfig(
   project: ClaweeProject | undefined,
-  defaultPermission: DefaultPermissionPreference
+  defaultPermission: DefaultPermissionPreference,
+  recentModelConfig: RecentModelConfig | null
 ): ComposerRunConfig {
+  const projectHasModelConfig = project !== undefined
+    && (project.model !== null || project.reasoning !== null);
+  const modelConfig = projectHasModelConfig
+    ? {
+        model: project.model,
+        reasoning: project.reasoning
+      }
+    : recentModelConfig;
   return {
     permission: resolveDefaultPermission(project, defaultPermission),
     profile: project?.profile ?? 'default',
-    model: project?.model ?? null,
-    reasoning: (project?.reasoning ?? null) as ComposerRunConfig['reasoning']
+    model: modelConfig?.model ?? null,
+    reasoning: modelConfig?.reasoning ?? null
   };
 }
 

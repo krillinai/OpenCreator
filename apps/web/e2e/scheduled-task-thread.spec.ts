@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures/runtime.js';
 
-test('手动创建后进入专属会话，并可暂停、恢复、编辑和删除', async ({ page, runtime }) => {
+test('手动创建后可从最近进入专属会话，并可暂停、恢复、编辑和删除', async ({ page, runtime }) => {
   await runtime.openApp(page);
   await openSchedules(page);
   await createManualSchedule(page, {
@@ -10,7 +10,7 @@ test('手动创建后进入专属会话，并可暂停、恢复、编辑和删�
   });
 
   await expect(page.getByRole('heading', { name: '每日端到端简报' })).toBeVisible();
-  await expectTaskInSidebar(page, '每日端到端简报');
+  await selectTask(page, '每日端到端简报');
 
   await page.getByRole('button', { name: '暂停任务' }).click();
   await expect(page.getByRole('status', { name: '任务状态' })).toContainText('已暂停');
@@ -20,7 +20,7 @@ test('手动创建后进入专属会话，并可暂停、恢复、编辑和删�
   await page.getByRole('button', { name: '编辑任务' }).click();
   const editor = page.getByRole('dialog', { name: '编辑任务 每日端到端简报' });
   await expect(editor).toBeVisible();
-  await editor.getByLabel('已安排任务标题').fill('每周端到端简报');
+  await editor.getByLabel('定时任务标题').fill('每周端到端简报');
   await editor.getByRole('button', { name: '保存更改' }).click();
   await expect(page.getByRole('heading', { name: '每周端到端简报' })).toBeVisible();
   await expectTaskInSidebar(page, '每周端到端简报');
@@ -39,14 +39,13 @@ test('连续立即执行只排队一次，结果追加到同一会话且切换�
     { message: '第一次专属任务结果', initialDelayMs: 800 },
     { message: '第二次专属任务结果' }
   ]);
-  await runtime.openApp(page);
-  await openSchedules(page);
-  await createManualSchedule(page, {
+  await runtime.createSchedule({
     name: '连续运行任务',
     prompt: '连续生成两次结果',
     concurrencyPolicy: 'queue'
   });
-  await expect(page.getByRole('heading', { name: '连续运行任务' })).toBeVisible();
+  await runtime.openApp(page);
+  await selectTask(page, '连续运行任务');
   const taskUrl = page.url();
 
   const runNow = page.getByRole('button', { name: '立即运行任务' });
@@ -90,41 +89,6 @@ test('运行中刷新后恢复活动 Run 和 SSE', async ({ page, runtime }) => 
   await expectNoHorizontalOverflow(page);
 });
 
-test('Clawee 创建流程将草稿会话原位绑定为任务会话', async ({ page, runtime }) => {
-  runtime.configureInvocations([
-    {
-      message: '已创建每日稿件检查任务',
-      agentSchedule: {
-        name: '每日稿件检查',
-        cron: '0 18 * * *',
-        timezone: 'Asia/Shanghai',
-        prompt: '检查当天稿件是否完整',
-        enabled: true,
-        concurrencyPolicy: 'skip',
-        misfirePolicy: 'skip'
-      }
-    }
-  ]);
-  await runtime.openApp(page);
-  await openSchedules(page);
-  await page.getByRole('button', { name: '创建' }).click();
-  await page.getByRole('menuitem', { name: /使用 Clawee 创建/ }).click();
-
-  await expect(page.getByRole('heading', { name: '任务草稿' })).toBeVisible();
-  const draftUrl = page.url();
-  const composer = page.getByRole('textbox', { name: '输入任务' });
-  await expect(composer).toHaveValue(/设置一个已安排任务/);
-  await composer.fill('每天 18 点检查当天稿件是否完整');
-  await page.getByRole('button', { name: '发送' }).click();
-
-  await expect(page.getByRole('heading', { name: '每日稿件检查' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '立即运行任务' })).toBeVisible();
-  await expectTaskInSidebar(page, '每日稿件检查');
-  await expect(page).toHaveURL(draftUrl);
-  await expect(page.getByText('已创建每日稿件检查任务')).toBeVisible();
-  await expectNoHorizontalOverflow(page);
-});
-
 test('审批通知进入正确任务，批准后成功通知可打开 HTML 结果', async ({ page, runtime }) => {
   runtime.configureInvocations([
     {
@@ -152,7 +116,7 @@ test('审批通知进入正确任务，批准后成功通知可打开 HTML 结�
   ));
   const approval = page.getByRole('region', { name: '允许执行命令' });
   await expect(approval).toBeVisible();
-  await approval.getByRole('button', { name: '批准' }).click();
+  await approval.getByRole('button', { name: '允许一次' }).click();
 
   await openSidebar(page);
   await page.getByRole('button', { name: /普通会话/ }).click();
@@ -201,25 +165,21 @@ async function createManualSchedule(
   input: {
     name: string;
     prompt: string;
-    concurrencyPolicy?: 'skip' | 'queue' | 'parallel';
   }
 ) {
-  await page.getByRole('button', { name: '创建' }).click();
-  await page.getByRole('menuitem', { name: /手动设置/ }).click();
-  await page.getByLabel('已安排任务标题').fill(input.name);
-  await page.getByLabel('任务内容').fill(input.prompt);
-  await page.getByLabel('重复').selectOption('hourly');
-  if (input.concurrencyPolicy !== undefined) {
-    await page.getByText('更多运行设置').click();
-    await page.getByLabel('任务重叠时').selectOption(input.concurrencyPolicy);
-  }
-  await page.getByRole('button', { name: '创建任务' }).click();
+  await page.getByRole('button', { name: '创建', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: '创建定时任务' });
+  await expect(editor).toBeVisible();
+  await editor.getByLabel('定时任务标题').fill(input.name);
+  await editor.getByLabel('任务内容').fill(input.prompt);
+  await editor.getByLabel('重复').selectOption('hourly');
+  await editor.getByRole('button', { name: '创建任务' }).click();
 }
 
 async function openSchedules(page: Page) {
   await openSidebar(page);
   await page.getByRole('button', { name: '定时任务' }).click();
-  await expect(page.getByRole('heading', { name: '已安排的任务' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '定时任务' })).toBeVisible();
 }
 
 async function selectTask(page: Page, name: string) {
@@ -241,7 +201,7 @@ async function expectTaskAbsentFromSidebar(page: Page, name: string) {
 }
 
 function taskButton(page: Page, name: string): Locator {
-  return page.getByLabel('任务会话').getByRole('button', { name: new RegExp(escapeRegExp(name)) });
+  return page.getByLabel('最近会话').getByRole('link', { name: new RegExp(escapeRegExp(name)) });
 }
 
 async function openSidebar(page: Page) {

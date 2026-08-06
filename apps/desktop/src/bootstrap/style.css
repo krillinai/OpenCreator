@@ -26,12 +26,25 @@ button {
 }
 
 .bootstrap-shell {
+  position: relative;
   display: grid;
   min-height: 100vh;
   place-items: center;
   padding: 32px;
   background:
     linear-gradient(180deg, #f8fafb 0%, #eef1f3 100%);
+}
+
+:root[data-integrated-title-bar="true"] .bootstrap-shell::before {
+  position: fixed;
+  z-index: 10;
+  top: 0;
+  right: 0;
+  left: var(--clawee-traffic-light-inset, 76px);
+  height: var(--clawee-titlebar-height, 38px);
+  content: "";
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
 .bootstrap-panel {

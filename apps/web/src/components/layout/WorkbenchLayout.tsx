@@ -3,6 +3,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 
 export function WorkbenchLayout(props: {
   sidebar: ReactNode;
+  mainHeader?: ReactNode;
   main: ReactNode;
   detail?: ReactNode;
   detailOpen?: boolean;
@@ -86,7 +87,14 @@ export function WorkbenchLayout(props: {
         </button>
         {props.sidebar}
       </aside>
-      <section className="clawee-main-pane" aria-label="Clawee 工作区">
+      <section
+        className="clawee-main-pane"
+        aria-label="Clawee 工作区"
+        data-has-main-header={props.mainHeader === undefined ? undefined : 'true'}
+      >
+        {props.mainHeader === undefined ? null : (
+          <div className="clawee-main-titlebar">{props.mainHeader}</div>
+        )}
         <div className="mobile-navigation-toolbar">
           <button
             aria-expanded={mobileSidebarOpen}

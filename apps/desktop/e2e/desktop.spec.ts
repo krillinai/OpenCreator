@@ -93,7 +93,7 @@ test('Finder 最小 PATH 下可发现 ChatGPT 应用内置的 Codex', async () =
   }
 });
 
-test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON、二进制和 SSE', async () => {
+test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON、二进制和 SSE', async ({}, testInfo) => {
   const fixture = await launchPackagedDesktop('success');
   try {
     await waitForWorkspace(fixture.page);
@@ -117,6 +117,7 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
       requireType: typeof (window as Window & { require?: unknown }).require,
       processType: typeof (window as Window & { process?: unknown }).process,
       bridgeKind: window.claweeDesktop?.kind,
+      windowChrome: window.claweeDesktop?.windowChrome,
       resolveDroppedFilePathType: typeof window.claweeDesktop?.resolveDroppedFilePath,
       connection: await window.claweeDesktop?.readConnectionConfig()
     }));
@@ -124,11 +125,66 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
       requireType: 'undefined',
       processType: 'undefined',
       bridgeKind: 'desktop',
+      windowChrome: process.platform === 'darwin'
+        ? {
+            integratedTitleBar: true,
+            titleBarHeight: 38,
+            trafficLightInset: 76
+          }
+        : {
+            integratedTitleBar: false
+          },
       resolveDroppedFilePathType: 'function'
     });
     expect(security.connection).toEqual({
       baseUrl: '/.clawee/runtime'
     });
+    if (process.platform === 'darwin') {
+      const titleBarLayout = await fixture.page.evaluate(() => {
+        const dragRegion = document.querySelector<HTMLElement>(
+          '.desktop-titlebar-drag-region'
+        )!;
+        const sidebar = document.querySelector<HTMLElement>('.clawee-sidebar')!;
+        const mainPane = document.querySelector<HTMLElement>('.clawee-main-pane')!;
+        const dragRect = dragRegion.getBoundingClientRect();
+        return {
+          shellCapability: document.querySelector('.app-drop-shell')
+            ?.getAttribute('data-integrated-title-bar'),
+          dragRect: {
+            x: dragRect.x,
+            y: dragRect.y,
+            height: dragRect.height
+          },
+          sidebarPaddingTop: getComputedStyle(sidebar).paddingTop,
+          mainPaddingTop: getComputedStyle(mainPane).paddingTop
+        };
+      });
+      expect(titleBarLayout).toEqual({
+        shellCapability: 'true',
+        dragRect: {
+          x: 76,
+          y: 0,
+          height: 38
+        },
+        sidebarPaddingTop: '51px',
+        mainPaddingTop: '38px'
+      });
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('integrated-titlebar-2026-08-05.png')
+      });
+      const previousTheme = await fixture.page.evaluate(() => {
+        const value = document.documentElement.dataset.theme;
+        document.documentElement.dataset.theme = 'light';
+        return value;
+      });
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('integrated-titlebar-light-2026-08-05.png')
+      });
+      await fixture.page.evaluate(theme => {
+        if (theme === undefined) delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = theme;
+      }, previousTheme);
+    }
 
     const mainPid = requiredPid(fixture.process.pid);
     const daemonPid = await waitForDaemonUtilityPid(mainPid);
@@ -237,6 +293,131 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
     await pageClosed;
     expect(isProcessAlive(mainPid)).toBe(true);
     expect(findDaemonUtilityPid(mainPid)).toBe(daemonPid);
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
+test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可点击', async ({}, testInfo) => {
+  const fixture = await launchPackagedDesktop('success');
+  const projectDir = join(fixture.root, 'titlebar-workspace');
+  mkdirSync(projectDir, { recursive: true });
+  writeFileSync(join(projectDir, 'README.md'), '# titlebar workspace\n');
+
+  try {
+    await waitForWorkspace(fixture.page);
+    const createdProject = await runtimeRequest<{
+      project: { id: string };
+    }>(fixture.page, 'POST', '/projects', {
+      cwd: projectDir,
+      name: '标题栏验证项目',
+      sandbox: 'workspace-write'
+    });
+    const createdThread = await runtimeRequest<{
+      thread: { id: string };
+    }>(fixture.page, 'POST', '/threads', {
+      projectId: createdProject.body.project.id,
+      title: 'hello',
+      sandbox: 'workspace-write'
+    });
+
+    await fixture.page.addInitScript(threadId => {
+      const originalFetch = window.fetch.bind(window);
+      let releaseHistory: (() => void) | undefined;
+      const historyGate = new Promise<void>(resolve => {
+        releaseHistory = resolve;
+      });
+      Object.defineProperty(window, '__claweeReleaseHistoryLoad', {
+        configurable: true,
+        value: () => releaseHistory?.()
+      });
+      window.fetch = async (...args: Parameters<typeof fetch>) => {
+        const input = args[0];
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes(`/threads/${threadId}/history?`)) {
+          await historyGate;
+        }
+        return await originalFetch(...args);
+      };
+    }, createdThread.body.thread.id);
+    await fixture.page.evaluate(threadId => {
+      window.location.hash = `#/thread/${threadId}`;
+    }, createdThread.body.thread.id);
+    await fixture.page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForWorkspace(fixture.page);
+
+    await expect(fixture.page.getByRole('status', {
+      name: '正在加载会话历史'
+    })).toBeVisible();
+    await expect(fixture.page.locator('.conversation-page')).not.toHaveClass(/is-empty/);
+    await expect(fixture.page.getByText('需要帮你做点什么')).toHaveCount(0);
+    await expect(fixture.page.getByText('数据分析')).toHaveCount(0);
+    await fixture.page.evaluate(() => {
+      (
+        window as Window & { __claweeReleaseHistoryLoad?: () => void }
+      ).__claweeReleaseHistoryLoad?.();
+    });
+    await expect(fixture.page.getByRole('status', {
+      name: '正在加载会话历史'
+    })).toHaveCount(0);
+    await expect(fixture.page.locator('.conversation-page')).toHaveClass(/is-empty/);
+
+    const title = fixture.page.getByRole('heading', { name: 'hello' });
+    const fileButton = fixture.page
+      .locator('.clawee-main-titlebar')
+      .getByRole('button', { name: '文件', exact: true });
+    await expect(title).toBeVisible();
+    await expect(fileButton).toBeVisible();
+
+    if (process.platform === 'darwin') {
+      const titlebarLayout = await fixture.page.evaluate(() => {
+        const mainPane = document.querySelector<HTMLElement>('.clawee-main-pane')!;
+        const titlebar = document.querySelector<HTMLElement>('.clawee-main-titlebar')!;
+        const title = titlebar.querySelector<HTMLElement>('h1')!;
+        const fileButton = titlebar.querySelector<HTMLElement>('.conversation-file-button')!;
+        const conversationPage = document.querySelector<HTMLElement>('.conversation-page')!;
+        const titlebarRect = titlebar.getBoundingClientRect();
+        const titleRect = title.getBoundingClientRect();
+        const fileButtonRect = fileButton.getBoundingClientRect();
+        const conversationPageRect = conversationPage.getBoundingClientRect();
+        return {
+          titleCount: document.querySelectorAll('.conversation-header h1').length,
+          mainPanePaddingTop: getComputedStyle(mainPane).paddingTop,
+          titlebarRect: {
+            y: titlebarRect.y,
+            height: titlebarRect.height
+          },
+          titleRect: {
+            y: titleRect.y,
+            bottom: titleRect.bottom
+          },
+          fileButtonRect: {
+            y: fileButtonRect.y,
+            bottom: fileButtonRect.bottom
+          },
+          conversationPageY: conversationPageRect.y
+        };
+      });
+
+      expect(titlebarLayout.titleCount).toBe(1);
+      expect(titlebarLayout.mainPanePaddingTop).toBe('0px');
+      expect(titlebarLayout.titlebarRect.y).toBe(0);
+      expect(titlebarLayout.titlebarRect.height).toBe(38);
+      expect(titlebarLayout.titleRect.y).toBeGreaterThanOrEqual(0);
+      expect(titlebarLayout.titleRect.bottom).toBeLessThanOrEqual(38);
+      expect(titlebarLayout.fileButtonRect.y).toBeGreaterThanOrEqual(0);
+      expect(titlebarLayout.fileButtonRect.bottom).toBeLessThanOrEqual(38);
+      expect(titlebarLayout.conversationPageY).toBeGreaterThanOrEqual(37);
+      expect(titlebarLayout.conversationPageY).toBeLessThanOrEqual(39);
+
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('conversation-titlebar-2026-08-05.png')
+      });
+    }
+
+    await fileButton.click();
+    await expect(fixture.page.getByLabel('会话和文件工作区')).toBeVisible();
+    await expect(fileButton).toHaveAttribute('aria-pressed', 'true');
   } finally {
     await closeFixture(fixture);
   }

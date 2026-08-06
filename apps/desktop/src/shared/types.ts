@@ -67,6 +67,19 @@ export type DesktopPreferences = {
   closeBehavior: DesktopSettings['closeBehavior'];
 };
 
+export const DESKTOP_TITLE_BAR_HEIGHT = 38;
+export const DESKTOP_TRAFFIC_LIGHT_INSET = 76;
+
+export type DesktopWindowChrome =
+  | {
+      integratedTitleBar: false;
+    }
+  | {
+      integratedTitleBar: true;
+      titleBarHeight: number;
+      trafficLightInset: number;
+    };
+
 export type DesktopHostResult =
   | { ok: true }
   | { ok: false; code: 'UNSUPPORTED' | 'FAILED'; message: string };
@@ -81,6 +94,7 @@ export type DesktopHostNotification = {
 
 export type DesktopApi = {
   kind: 'desktop';
+  windowChrome?: DesktopWindowChrome;
   readConnectionConfig(): Promise<DesktopConnectionConfig | null>;
   subscribeConnectionConfig(
     listener: (connection: DesktopConnectionConfig | null) => void

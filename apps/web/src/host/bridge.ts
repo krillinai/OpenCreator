@@ -18,8 +18,15 @@ export type DesktopPreferences = {
   closeBehavior: 'hide' | 'quit';
 };
 
+export type HostWindowChrome = {
+  integratedTitleBar: true;
+  titleBarHeight: number;
+  trafficLightInset: number;
+};
+
 export type HostBridge = {
   kind: 'browser' | 'desktop';
+  windowChrome?: HostWindowChrome;
   readConnectionConfig(): Promise<ConnectionConfig | null>;
   openExternal(url: string): Promise<void>;
   revealPath(path: string): Promise<HostBridgeResult>;

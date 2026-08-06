@@ -34,6 +34,12 @@ import type { ClaweeProject } from '../features/projects/project-model.js';
 import type { HostBridge } from '../host/bridge.js';
 import type { SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
+import {
+  readCachedModelCatalog,
+  readRecentModelConfig,
+  writeCachedModelCatalog,
+  writeRecentModelConfig
+} from '../services/model-service-2026-08-05.js';
 
 vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
 
@@ -717,6 +723,210 @@ describe('App', () => {
     expect(screen.queryByText(/Token|API Key|连接 Runtime/)).not.toBeInTheDocument();
   });
 
+  it('adds a title bar safe area only when the host exposes the capability', async () => {
+    const hostBridge = createHostBridge();
+    hostBridge.windowChrome = {
+      integratedTitleBar: true,
+      titleBarHeight: 38,
+      trafficLightInset: 76
+    };
+
+    render(<App fileService={createFileService()} hostBridge={hostBridge} />);
+
+    await screen.findByRole('button', { name: '新建任务' });
+    const shell = document.querySelector<HTMLElement>('.app-drop-shell');
+    expect(shell).toHaveAttribute('data-integrated-title-bar', 'true');
+    expect(shell?.style.getPropertyValue('--clawee-titlebar-height')).toBe('38px');
+    expect(shell?.style.getPropertyValue('--clawee-traffic-light-inset')).toBe('76px');
+    expect(document.querySelector('.desktop-titlebar-drag-region')).toBeInTheDocument();
+    expect(document.querySelector('.clawee-main-titlebar')).not.toBeInTheDocument();
+  });
+
+  it('moves a desktop conversation title into the integrated titlebar without duplicating it', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.windowChrome = {
+      integratedTitleBar: true,
+      titleBarHeight: 38,
+      trafficLightInset: 76
+    };
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const thread = createThreadResponse({
+      id: 'thread-integrated-title',
+      title: 'hello'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [thread] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/history?limit=50`)) {
+        return jsonResponse({ threadId: thread.id, codexThreadId: null, items: [] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/runs?limit=50`)) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /hello/ }));
+
+    const mainTitlebar = document.querySelector<HTMLElement>('.clawee-main-titlebar');
+    expect(mainTitlebar).toBeInTheDocument();
+    expect(within(mainTitlebar!).getByRole('heading', { name: 'hello' })).toBeInTheDocument();
+    expect(document.querySelector('.conversation-page > .conversation-header')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'hello' })).toHaveLength(1);
+
+    await user.click(within(mainTitlebar!).getByRole('button', { name: '文件' }));
+
+    expect(await screen.findByLabelText('会话和文件工作区')).toBeInTheDocument();
+    expect(within(mainTitlebar!).getByRole('button', { name: '文件' }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('waits for restored conversation history before showing the empty conversation layout', async () => {
+    const [project] = persistProjects('/Users/test/develop/clean');
+    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+      currentProjectId: project.id,
+      selectedThreadId: 'thread-restored-loading'
+    }));
+    const history = createDeferred<Response>();
+    const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.windowChrome = {
+      integratedTitleBar: true,
+      titleBarHeight: 38,
+      trafficLightInset: 76
+    };
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const thread = createThreadResponse({
+      id: 'thread-restored-loading',
+      title: 'hello',
+      projectId: project.id,
+      cwd: project.cwd,
+      canonicalCwd: project.cwd
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [thread] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/history?limit=50`)) {
+        return history.promise;
+      }
+      if (url.endsWith(`/threads/${thread.id}/runs?limit=50`)) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '正在加载会话历史' }))
+      .toBeInTheDocument();
+    expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
+    expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
+    expect(screen.queryByText('数据分析')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
+
+    history.resolve(jsonResponse({
+      threadId: thread.id,
+      codexThreadId: null,
+      items: []
+    }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('status', { name: '正在加载会话历史' }))
+        .not.toBeInTheDocument();
+    });
+    expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
+    expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
+    expect(screen.getByText('数据分析')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /选择项目/ })).toBeInTheDocument();
+  });
+
+  it('keeps a browser conversation title inside the conversation page', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const thread = createThreadResponse({
+      id: 'thread-browser-title',
+      title: '浏览器会话标题'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [thread] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/history?limit=50`)) {
+        return jsonResponse({ threadId: thread.id, codexThreadId: null, items: [] });
+      }
+      if (url.endsWith(`/threads/${thread.id}/runs?limit=50`)) {
+        return jsonResponse({ runs: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /浏览器会话标题/ }));
+
+    const conversationPage = document.querySelector<HTMLElement>('.conversation-page');
+    expect(conversationPage).toBeInTheDocument();
+    expect(within(conversationPage!).getByRole('heading', {
+      name: '浏览器会话标题'
+    })).toBeInTheDocument();
+    expect(conversationPage?.querySelector(':scope > .conversation-header')).toBeInTheDocument();
+    expect(document.querySelector('.clawee-main-titlebar')).not.toBeInTheDocument();
+  });
+
   it('uses the signed-in enterprise account name in the homepage greeting', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
@@ -854,6 +1064,12 @@ describe('App', () => {
   it('shows task management only inside a bound schedule thread', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
+    hostBridge.kind = 'desktop';
+    hostBridge.windowChrome = {
+      integratedTitleBar: true,
+      titleBarHeight: 38,
+      trafficLightInset: 76
+    };
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
@@ -911,9 +1127,13 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
 
-    await user.click(await screen.findByRole('button', { name: /每日总结/ }));
+    await user.click(await screen.findByRole('link', { name: /每日总结/ }));
 
     expect(await screen.findByLabelText('任务管理')).toBeInTheDocument();
+    expect(document.querySelector('.clawee-main-titlebar')).toHaveTextContent('每日总结');
+    expect(document.querySelector('.conversation-task-strip--standalone'))
+      .toContainElement(screen.getByLabelText('任务管理'));
+    expect(document.querySelector('.conversation-page > .conversation-header')).not.toBeInTheDocument();
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '立即运行任务' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '暂停任务' })).toBeInTheDocument();
@@ -4544,7 +4764,9 @@ describe('App', () => {
 
     expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.queryByText(prompt)).not.toBeInTheDocument();
+    expect(Array.from(document.querySelectorAll('.timeline-user_message')).some(
+      message => message.textContent?.includes(prompt)
+    )).toBe(false);
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
 
@@ -4894,18 +5116,21 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread-conversation',
               title: '普通会话',
-              purpose: 'conversation'
+              purpose: 'conversation',
+              updatedAt: '2026-08-03T00:00:00.000Z'
             }),
             createThreadResponse({
               id: 'thread-draft',
               title: '任务草稿',
-              purpose: 'schedule_draft'
+              purpose: 'schedule_draft',
+              updatedAt: '2026-08-05T00:00:00.000Z'
             }),
             createThreadResponse({
               id: 'thread-task',
               title: '任务线程旧标题',
               purpose: 'schedule_task',
-              scheduleId: 'schedule-1'
+              scheduleId: 'schedule-1',
+              updatedAt: '2026-08-01T00:00:00.000Z'
             })
           ]
         });
@@ -4916,7 +5141,8 @@ describe('App', () => {
             createScheduleResponse({
               id: 'schedule-1',
               threadId: 'thread-task',
-              name: '每日总结'
+              name: '每日总结',
+              updatedAt: '2026-08-04T00:00:00.000Z'
             })
           ]
         });
@@ -4933,15 +5159,23 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('button', { name: /普通会话/ })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /任务草稿.*草稿/ }))
-      .toHaveClass('sidebar-task-row');
+    const recentList = await screen.findByLabelText('最近会话');
+    expect(within(recentList).getByRole('link', { name: /普通会话/ }))
+      .toBeInTheDocument();
+    expect(within(recentList).getByRole('link', { name: /任务草稿.*草稿/ }))
+      .toHaveClass('sidebar-recent-row');
     expect(within(screen.getByLabelText('content-design 对话')).queryByText('任务草稿'))
       .not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /任务线程旧标题/ })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(requestedUrls.some(url => url.endsWith('/schedules'))).toBe(true);
     });
+    expect(within(recentList).getByRole('link', { name: /每日总结/ }))
+      .toBeInTheDocument();
+    expect(
+      Array.from(recentList.querySelectorAll('.sidebar-recent-row strong'))
+        .map(element => element.textContent)
+    ).toEqual(['任务草稿', '每日总结', '普通会话']);
     expect(requestedUrls.some(url => url.includes('/history'))).toBe(false);
   });
 
@@ -5025,10 +5259,11 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('button', { name: /普通会话/ }));
+    const recentList = await screen.findByLabelText('最近会话');
+    await user.click(within(recentList).getByRole('link', { name: /普通会话/ }));
     expect(await screen.findByText('旧会话内容')).toBeInTheDocument();
 
-    await user.click(await screen.findByRole('button', { name: /每日总结/ }));
+    await user.click(await within(recentList).findByRole('link', { name: /每日总结/ }));
 
     expect(screen.queryByText('旧会话内容')).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: '正在加载会话历史' })).toBeInTheDocument();
@@ -6566,6 +6801,223 @@ describe('App', () => {
     expect(window.localStorage.getItem(PROJECTS_STORAGE_KEY)).toBe(legacyProjects);
   });
 
+  it('shows the cached model catalog immediately and replaces it after refresh', async () => {
+    const cachedCatalog = createCodexModelListResponse();
+    cachedCatalog.models[0]!.displayName = 'Cached GPT';
+    const liveCatalog = createCodexModelListResponse();
+    liveCatalog.models[0]!.displayName = 'Live GPT';
+    writeCachedModelCatalog(cachedCatalog, '2026-08-05T08:00:00.000Z');
+    const modelResponse = createDeferred<Response>();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) return modelResponse.promise;
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '选择模型 Cached GPT' }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
+      .toBeInTheDocument();
+
+    modelResponse.resolve(jsonResponse(liveCatalog));
+
+    expect(await screen.findByRole('button', { name: '选择模型 Live GPT' }))
+      .toBeInTheDocument();
+    expect(readCachedModelCatalog()?.models[0]?.displayName).toBe('Live GPT');
+  });
+
+  it('keeps cached models when the Runtime refresh fails', async () => {
+    const user = userEvent.setup();
+    const cachedCatalog = createCodexModelListResponse();
+    cachedCatalog.models[0]!.displayName = 'Cached GPT';
+    writeCachedModelCatalog(cachedCatalog, '2026-08-05T08:00:00.000Z');
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) throw new Error('model catalog unavailable');
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
+      .toBeInTheDocument();
+    const modelButton = await screen.findByRole('button', {
+      name: '选择模型 Cached GPT'
+    });
+    await user.click(modelButton);
+
+    expect(await screen.findByText('模型目录刷新失败，当前使用本地缓存'))
+      .toBeInTheDocument();
+    expect(screen.queryByText('暂无可用模型')).not.toBeInTheDocument();
+  });
+
+  it('shows a clear model error when refresh fails without a cache', async () => {
+    const user = userEvent.setup();
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) throw new Error('model catalog unavailable');
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
+      .toBeInTheDocument();
+    await user.click(await screen.findByRole('button', {
+      name: '选择模型 默认模型'
+    }));
+
+    expect(await screen.findByText('无法加载模型列表')).toBeInTheDocument();
+    expect(screen.queryByText('暂无可用模型')).not.toBeInTheDocument();
+  });
+
+  it('restores the recent model config for a new conversation', async () => {
+    const user = userEvent.setup();
+    writeRecentModelConfig({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) return jsonResponse(createCodexModelListResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('status', { name: '本地运行内核正常' }))
+      .toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '选择模型 GPT-5.5' }))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '选择模型 GPT-5.5' }));
+    expect(screen.getByRole('menuitemradio', { name: /^超高 / }))
+      .toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('prefers explicit project model config over the recent selection', async () => {
+    const user = userEvent.setup();
+    writeRecentModelConfig({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
+    testRuntimeProjects = [
+      createTestProject('/Users/test/develop/content-design', {
+        model: 'gpt-5.6-sol',
+        reasoning: 'medium'
+      })
+    ];
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.endsWith('/codex/models')) return jsonResponse(createCodexModelListResponse());
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: '选择模型 GPT-5.6 Sol' }))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '选择模型 GPT-5.6 Sol' }));
+    expect(screen.getByRole('menuitemradio', { name: /^中 / }))
+      .toHaveAttribute('aria-checked', 'true');
+  });
+
   it('creates a runtime thread before starting the first run in a new conversation', async () => {
     const user = userEvent.setup();
     const prompt = '跟进今天客户沟通';
@@ -6716,6 +7168,10 @@ describe('App', () => {
     }));
     await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
     await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
+    expect(readRecentModelConfig()).toEqual({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     await user.type(textbox, prompt);
     await waitFor(() => expect(textbox).toHaveValue(prompt));
@@ -6742,6 +7198,10 @@ describe('App', () => {
   it('does not override immutable thread config when sending in an existing conversation', async () => {
     const user = userEvent.setup();
     const prompt = '继续处理这个会话';
+    writeRecentModelConfig({
+      model: 'gpt-5.5',
+      reasoning: 'xhigh'
+    });
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
