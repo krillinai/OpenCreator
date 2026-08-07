@@ -45,13 +45,14 @@ const enterpriseEmail = 'packaged-e2e@example.com';
 const enterprisePassword = 'packaged-e2e-password';
 const enterpriseSkillName = 'enterprise-review';
 const enterpriseKnowledgeBaseId = 'kb_packaged_e2e';
-const keyringService = 'com.clawee.enterprise.e2e';
+const enterpriseKeyringService = 'com.clawee.enterprise.e2e';
+const enterpriseMcpKeyringService = 'com.clawee.enterprise.mcp.e2e';
 const agentIdPattern =
   /^clawee_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 test.describe.configure({ mode: 'serial' });
 
-test('实际打包 App 可登录、使用企业知识库并安装 Skill', async () => {
+test('实际打包 App 可登录、管理系统连接、使用企业知识库并安装 Skill', async () => {
   const runId = randomUUID();
   const root = mkdtempSync(join(tmpdir(), 'clawee-enterprise-packaged-'));
   const codexHome = join(root, 'codex-home');
@@ -146,6 +147,41 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
     await expect(app.page.getByRole('button', {
       name: `Packaged E2E ${enterpriseEmail}`
     })).toBeVisible();
+
+    await app.page.getByRole('button', {
+      name: '系统连接',
+      exact: true
+    }).click();
+    await expect(app.page.getByRole('heading', {
+      name: '系统连接'
+    })).toBeVisible();
+    const mcpCard = app.page.locator(
+      '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+    );
+    await expect(mcpCard.getByRole('heading', {
+      name: '客户关系管理'
+    })).toBeVisible();
+    await expect(mcpCard.getByText('企业授权：1/2 项工具')).toBeVisible();
+    await mcpCard.getByRole('button', { name: '安装' }).click();
+    const mcpSwitch = mcpCard.getByRole('switch', {
+      name: '客户关系管理 MCP'
+    });
+    await expect(mcpSwitch).toHaveAttribute('aria-checked', 'false');
+    await mcpSwitch.click();
+    await expect(mcpSwitch).toHaveAttribute('aria-checked', 'true');
+    const localMcpState = await app.page.evaluate(async () => {
+      const response = await fetch('/.clawee/runtime/enterprise/mcp');
+      return await response.json() as Record<string, unknown>;
+    });
+    expect(localMcpState).toMatchObject({
+      tokenStatus: 'ready',
+      upstreams: [{
+        upstreamId: 'crm-main',
+        installed: true,
+        enabled: true
+      }]
+    });
+    expect(JSON.stringify(localMcpState)).not.toMatch(/packaged-e2e-mcp-/);
 
     await app.page.getByRole('button', {
       name: '企业知识库',
@@ -245,6 +281,16 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
         authorizationPresent: true
       }),
       expect.objectContaining({
+        method: 'POST',
+        path: '/api/v1/app/agents/token/reveal',
+        authorizationPresent: true
+      }),
+      expect.objectContaining({
+        method: 'GET',
+        path: '/api/v1/app/agents/mcp-catalog',
+        authorizationPresent: true
+      }),
+      expect.objectContaining({
         method: 'GET',
         path: '/api/v1/app/skills/detail',
         authorizationPresent: true
@@ -287,10 +333,16 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
         cleanupError ??= error;
       });
     }
-    await deleteE2ECredential(runId).catch(() => {
+    await deleteE2ECredential(runId, enterpriseKeyringService).catch(() => {
       console.error(
         `企业 E2E Keyring 最佳努力清理失败：runId=${runId} `
-        + `service=${keyringService} account=clawee-agent:${runId}`
+        + `service=${enterpriseKeyringService} account=clawee-agent:${runId}`
+      );
+    });
+    await deleteE2ECredential(runId, enterpriseMcpKeyringService).catch(() => {
+      console.error(
+        `企业 MCP E2E Keyring 最佳努力清理失败：runId=${runId} `
+        + `service=${enterpriseMcpKeyringService} account=clawee-agent-mcp:${runId}`
       );
     });
     await server.close().catch(error => {
@@ -302,7 +354,7 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
     if (cleanupError !== undefined) {
       console.error(
         `企业 E2E 清理失败：runId=${runId} `
-        + `service=${keyringService} account=clawee-agent:${runId}`
+        + `service=${enterpriseKeyringService} account=clawee-agent:${runId}`
       );
       throw cleanupError;
     }
@@ -323,6 +375,7 @@ class FakeEnterpriseServer {
   private server: Server | undefined;
   private readonly requests: EnterpriseRequestRecord[] = [];
   private readonly token = `packaged-e2e-${randomUUID()}`;
+  private readonly mcpToken = `packaged-e2e-mcp-${randomUUID()}`;
   private agentId: string | undefined;
   private uploadedKnowledgeDocument = false;
   private readonly packageBytes = createZip([{
@@ -469,6 +522,75 @@ class FakeEnterpriseServer {
     if (request.method === 'POST' && url.pathname === '/api/v1/auth/logout') {
       response.statusCode = 204;
       response.end();
+      return;
+    }
+
+    if (
+      request.method === 'POST'
+      && url.pathname === '/api/v1/app/agents/token/reveal'
+    ) {
+      sendJson(response, 200, {
+        data: {
+          token_id: 'token_packaged_e2e',
+          agent_id: this.requireAgentId(),
+          token: this.mcpToken,
+          token_type: 'Bearer',
+          fingerprint: createHash('sha256')
+            .update(this.mcpToken)
+            .digest('hex'),
+          status: 'active',
+          expires_at: null,
+          scopes: ['mcp:call'],
+          created_at: '2026-08-07T08:00:00.000Z'
+        }
+      });
+      return;
+    }
+
+    if (
+      request.method === 'GET'
+      && url.pathname === '/api/v1/app/agents/mcp-catalog'
+    ) {
+      sendJson(response, 200, {
+        data: {
+          agent_id: this.requireAgentId(),
+          upstreams: [{
+            id: 'crm-main',
+            name: '客户关系管理',
+            domain: 'sales',
+            mcp_endpoint:
+              `http://${request.headers.host ?? '127.0.0.1'}/mcp/servers/crm-main`,
+            upstream_transport: 'streamable_http',
+            namespace: 'crm',
+            status: 'active',
+            tools: [{
+              id: 'cap_customer_search',
+              upstream_name: 'customer.search',
+              name: 'customer.search',
+              exposed_name: 'crm.customer.search',
+              title: '查询客户',
+              description: '按条件查询客户资料',
+              risk_level: 'low',
+              confirm_required: false,
+              status: 'active',
+              authorized: true,
+              authorization_expires_at: null
+            }, {
+              id: 'cap_customer_update',
+              upstream_name: 'customer.update',
+              name: 'customer.update',
+              exposed_name: 'crm.customer.update',
+              title: '更新客户',
+              description: '更新客户资料',
+              risk_level: 'medium',
+              confirm_required: true,
+              status: 'active',
+              authorized: false,
+              authorization_expires_at: null
+            }]
+          }]
+        }
+      });
       return;
     }
 
@@ -689,8 +811,11 @@ function writeEnterpriseClientConfig(
   );
 }
 
-async function deleteE2ECredential(runId: string): Promise<void> {
-  const entry = createKeyringEntry(runId);
+async function deleteE2ECredential(
+  runId: string,
+  service: string
+): Promise<void> {
+  const entry = createKeyringEntry(runId, service);
   await Promise.race([
     entry.deletePassword().catch(() => undefined),
     new Promise<never>((_resolve, reject) => {
@@ -702,7 +827,7 @@ async function deleteE2ECredential(runId: string): Promise<void> {
   ]);
 }
 
-function createKeyringEntry(runId: string): {
+function createKeyringEntry(runId: string, service: string): {
   deletePassword(): Promise<unknown>;
 } {
   const requireFromDaemon = createRequire(
@@ -717,8 +842,10 @@ function createKeyringEntry(runId: string): {
     };
   };
   return new keyring.AsyncEntry(
-    keyringService,
-    `clawee-agent:${runId}`
+    service,
+    service === enterpriseMcpKeyringService
+      ? `clawee-agent-mcp:${runId}`
+      : `clawee-agent:${runId}`
   );
 }
 

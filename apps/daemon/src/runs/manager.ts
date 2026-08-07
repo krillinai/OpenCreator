@@ -12,8 +12,8 @@ import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import type { ApprovalManager } from '../approvals/manager.js';
 import type {
-  AgentScheduleRunInjector,
-  AgentToolRunInjection
+  AgentToolRunInjection,
+  RunMcpInjector
 } from '../agent-tools/run-injection.js';
 import {
   buildCodexExecArgs,
@@ -97,7 +97,7 @@ export type RunManagerOptions = {
   codexThreadRotationRunThreshold?: number;
   onRunTerminal?(runId: string): void;
   logWriterFactory?(runDir: string): OrderedLogWriter;
-  agentToolInjector?: AgentScheduleRunInjector;
+  agentToolInjector?: RunMcpInjector;
   persistentAppServerExecutor?: PersistentAppServerExecutor;
 };
 
@@ -820,22 +820,6 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     }
 
     let agentToolInjection: AgentToolRunInjection | undefined;
-    try {
-      agentToolInjection = usePersistentAppServer || thread === undefined
-        ? undefined
-        : options.agentToolInjector?.prepare({
-            runId: id,
-            thread,
-            createdBy: runInput.createdBy ?? 'api'
-          });
-    } catch (error) {
-      return failBeforeSpawnAndRelease({
-        code: 'AGENT_TOOL_INJECTION_FAILED',
-        message: error instanceof Error ? error.message : String(error),
-        terminationReason: 'stream_error'
-      });
-    }
-
     const stdoutLines: string[] = [];
     let stderr = '';
     let seq = lastSeqForRun(id);
@@ -959,6 +943,29 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         attachmentIds: executionRunInput.attachmentIds ?? [],
         contextItemIds: executionRunInput.contextItems?.map(item => item.sourceId) ?? []
       });
+    }
+
+    async function prepareRunInjection(): Promise<void> {
+      agentToolInjection = usePersistentAppServer || thread === undefined
+        ? undefined
+        : await options.agentToolInjector?.prepare({
+            runId: id,
+            thread,
+            createdBy: runInput.createdBy ?? 'api'
+          });
+      codexArgs = buildRuntimeArgv(
+        executionRunInput,
+        resolvedResumeMode,
+        resolvedCodexThreadId,
+        options.runtimeTransport,
+        agentToolInjection?.mcpServers
+      );
+      if (codexArgs === undefined) {
+        throw new Error(
+          'CODEX_THREAD_ID_MISSING: unable to build Codex runtime arguments'
+        );
+      }
+      writeCurrentRunMeta();
     }
 
     function rotationDiagnostics(): Record<string, unknown> {
@@ -1240,11 +1247,13 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         const terminationReason = appServerErrorToTerminationReason(errorMessage);
         const publicStatus: 'failed' | 'canceled' =
           terminationReason === 'user_canceled' ? 'canceled' : 'failed';
-        const errorCode = bindingConflict
-          ? 'THREAD_CODEX_ID_CONFLICT'
-          : rotation === undefined
-            ? errorCodeForTermination(terminationReason)
-            : 'THREAD_CODEX_ROTATION_FAILED';
+        const injectionErrorCode = runtimeInjectionErrorCode(error);
+        const errorCode = injectionErrorCode
+          ?? (bindingConflict
+            ? 'THREAD_CODEX_ID_CONFLICT'
+            : rotation === undefined
+              ? errorCodeForTermination(terminationReason)
+              : 'THREAD_CODEX_ROTATION_FAILED');
         options.approvalManager?.cancelRun(id, 'run_failed');
         await safePublish(publishError(id, ++seq, errorCode, errorMessage, publish));
         await finalizeRun({
@@ -1291,16 +1300,27 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         return createdRun(publicStatus);
       }
 
-      let currentProcess = startAppServerAttempt();
+      let currentProcess:
+        | ReturnType<typeof startCodexAppServer>
+        | PersistentAppServerExecution
+        | undefined;
+      let cancelRequested = false;
       updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
-      const done = currentProcess.result.then(handleAppServerResult, handleAppServerError);
+      const done = prepareRunInjection()
+        .then(() => {
+          currentProcess = startAppServerAttempt();
+          if (cancelRequested) currentProcess.cancel();
+          return currentProcess.result;
+        })
+        .then(handleAppServerResult, handleAppServerError);
 
       activeRuns.set(id, {
         cancel() {
+          cancelRequested = true;
           updateStatus(id, 'running', 'canceling');
           options.approvalManager?.cancelRun(id, 'run_canceled');
           void publishStatus(id, ++seq, 'canceling', publish).catch(() => undefined);
-          currentProcess.cancel();
+          currentProcess?.cancel();
         },
         done
       });
@@ -1548,13 +1568,15 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       const terminationReason = missingCodexThreadId ? 'stream_error' : errorToTerminationReason(error);
       const publicStatus: 'failed' | 'canceled' =
         terminationReason === 'user_canceled' ? 'canceled' : 'failed';
-      const errorCode = missingCodexThreadId
-        ? 'CODEX_THREAD_ID_MISSING'
-        : bindingConflict
-          ? 'THREAD_CODEX_ID_CONFLICT'
-          : rotation === undefined
-            ? errorCodeForTermination(terminationReason)
-            : 'THREAD_CODEX_ROTATION_FAILED';
+      const injectionErrorCode = runtimeInjectionErrorCode(error);
+      const errorCode = injectionErrorCode
+        ?? (missingCodexThreadId
+          ? 'CODEX_THREAD_ID_MISSING'
+          : bindingConflict
+            ? 'THREAD_CODEX_ID_CONFLICT'
+            : rotation === undefined
+              ? errorCodeForTermination(terminationReason)
+              : 'THREAD_CODEX_ROTATION_FAILED');
       const finalErrorMessage = missingCodexThreadId
         ? CODEX_THREAD_ID_MISSING_MESSAGE
         : bindingConflict
@@ -1611,15 +1633,23 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       return createdRun(publicStatus);
     }
 
-    let currentProcess = startExecAttempt();
+    let currentProcess: ReturnType<typeof startCodexExec> | undefined;
+    let cancelRequested = false;
     updateStatus(id, 'running', 'running', { startedAt: new Date().toISOString() });
-    const done = currentProcess.result.then(handleExecResult, handleExecError);
+    const done = prepareRunInjection()
+      .then(() => {
+        currentProcess = startExecAttempt();
+        if (cancelRequested) currentProcess.cancel();
+        return currentProcess.result;
+      })
+      .then(handleExecResult, handleExecError);
 
     activeRuns.set(id, {
       cancel() {
+        cancelRequested = true;
         updateStatus(id, 'running', 'canceling');
         void publishStatus(id, ++seq, 'canceling', publish).catch(() => undefined);
-        currentProcess.cancel();
+        currentProcess?.cancel();
       },
       done
     });
@@ -2140,6 +2170,18 @@ async function withTimeout<T>(
 
 function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function runtimeInjectionErrorCode(error: unknown): string | undefined {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && typeof error.code === 'string'
+  ) {
+    return error.code;
+  }
+  return undefined;
 }
 
 function buildRunArgv(

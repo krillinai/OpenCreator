@@ -648,6 +648,13 @@ export function AppController(props: AppControllerProps) {
     () => runtimeClient === null ? null : createEnterpriseService(runtimeClient),
     [runtimeClient]
   );
+  const handleEnterpriseSessionExpired = useCallback(() => {
+    setEnterpriseSession({
+      status: 'signed_out',
+      reason: 'session_expired',
+      transportSecurity: enterpriseSessionRef.current.transportSecurity
+    });
+  }, []);
   const workspaceFileService = useMemo(
     () => runtimeClient === null ? null : createWorkspaceFileService(runtimeClient),
     [runtimeClient]
@@ -2720,7 +2727,9 @@ export function AppController(props: AppControllerProps) {
           ? 'knowledge'
           : returnRoute.view === 'drive'
             ? 'drive'
-          : undefined;
+            : returnRoute.view === 'connections'
+              ? 'connections'
+              : undefined;
     if (activeView === undefined) return;
     enterpriseReturnRouteRef.current = undefined;
     dispatch({ type: 'set_active_view', activeView });
@@ -5661,7 +5670,18 @@ export function AppController(props: AppControllerProps) {
       }}
     />
   ) : state.activeView === 'connections' ? (
-    <ConnectionsPage />
+    <ConnectionsPage
+      connected={connectionState.status === 'connected'}
+      session={enterpriseSession}
+      service={enterpriseService}
+      onOpenAccount={() => {
+        enterpriseReturnRouteRef.current = { view: 'connections' };
+        dispatch({ type: 'set_active_view', activeView: 'account' });
+        navigateToRoute({ view: 'account' });
+      }}
+      onRefreshSession={refreshEnterpriseSession}
+      onSessionExpired={handleEnterpriseSessionExpired}
+    />
   ) : state.activeView === 'settings' ? (
     <SettingsPage
       runtimeStatus={runtimeStatus}

@@ -19,6 +19,9 @@ import type {
   EnterpriseKnowledgeManager
 } from '../../src/enterprise/knowledge-manager-2026-08-05.js';
 import type {
+  EnterpriseMcpManager
+} from '../../src/enterprise/mcp-manager-2026-08-07.js';
+import type {
   EnterpriseSharedDriveManager
 } from '../../src/enterprise/shared-drive-manager-2026-08-06.js';
 import type {
@@ -75,9 +78,29 @@ describe('enterprise runtime API', () => {
     });
   });
 
+  it('cleans up MCP runtime state when startup restore finds no session', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    const enterpriseMcpManager = createMcpManager();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
+      enterpriseCredentialStore: createStore(),
+      enterpriseHttpClient: createClient(),
+      enterpriseMcpManager,
+      enterpriseOrigin: 'https://enterprise.example'
+    });
+
+    await vi.waitFor(() => {
+      expect(enterpriseMcpManager.handleSessionSignedOut).toHaveBeenCalled();
+    });
+  });
+
   it('returns session responses without token fields and validates credentials locally', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
     const client = createClient();
+    const enterpriseMcpManager = createMcpManager();
     server = await buildServer({
       token: 'secret',
       dataDir: tempDir,
@@ -85,6 +108,7 @@ describe('enterprise runtime API', () => {
       enterpriseAgentIdentityStore: createAgentIdentityStore(),
       enterpriseCredentialStore: createStore(),
       enterpriseHttpClient: client,
+      enterpriseMcpManager,
       enterpriseOrigin: 'http://127.0.0.1:1904'
     });
 
@@ -110,6 +134,15 @@ describe('enterprise runtime API', () => {
     });
     expect(JSON.stringify(payload)).not.toContain('enterprise-token');
     expect(JSON.stringify(payload)).not.toContain('accessToken');
+    expect(enterpriseMcpManager.handleSessionAuthenticated)
+      .toHaveBeenCalledOnce();
+
+    vi.mocked(enterpriseMcpManager.handleSessionAuthenticated).mockClear();
+    const refreshed = await authRequest('POST', '/enterprise/session/refresh');
+    expect(refreshed.statusCode).toBe(200);
+    expect(refreshed.json()).toMatchObject({ status: 'signed_in' });
+    expect(enterpriseMcpManager.handleSessionAuthenticated)
+      .not.toHaveBeenCalled();
   });
 
   it('exposes enterprise skill list detail install and update routes', async () => {
@@ -148,6 +181,47 @@ describe('enterprise runtime API', () => {
     ).toBe(200);
     expect(enterpriseSkillManager.installSkill).toHaveBeenCalledWith('skill_1');
     expect(enterpriseSkillManager.updateSkill).toHaveBeenCalledWith('skill_1');
+  });
+
+  it('exposes MCP catalog refresh and local preference routes without token fields', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    const enterpriseMcpManager = createMcpManager();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
+      enterpriseCredentialStore: createStore(),
+      enterpriseHttpClient: createClient(),
+      enterpriseMcpManager,
+      enterpriseOrigin: 'https://enterprise.example'
+    });
+
+    const list = await authRequest('GET', '/enterprise/mcp');
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toMatchObject({
+      tokenStatus: 'ready',
+      upstreams: [{
+        upstreamId: 'crm-main',
+        installed: false,
+        enabled: false
+      }]
+    });
+    expect(JSON.stringify(list.json())).not.toContain('agent-mcp-secret');
+
+    expect(
+      (await authRequest('POST', '/enterprise/mcp/refresh')).statusCode
+    ).toBe(200);
+    const updated = await authRequest(
+      'PATCH',
+      '/enterprise/mcp/upstreams/crm-main/preference',
+      { installed: true, enabled: false }
+    );
+    expect(updated.statusCode).toBe(200);
+    expect(enterpriseMcpManager.updatePreference).toHaveBeenCalledWith(
+      'crm-main',
+      { installed: true, enabled: false }
+    );
   });
 
   it('exposes knowledge list, document list, and binary upload routes', async () => {
@@ -413,7 +487,7 @@ describe('enterprise runtime API', () => {
   });
 
   async function authRequest(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     url: string,
     payload?: object
   ) {
@@ -460,6 +534,20 @@ function createClient(
       frontendAllowed: true
     })),
     logout: vi.fn(async () => undefined),
+    revealAgentMcpToken: vi.fn(async () => ({
+      tokenId: 'token_1',
+      agentId,
+      token: 'agent-mcp-token',
+      tokenType: 'Bearer' as const,
+      fingerprint: 'fingerprint-1',
+      expiresAt: null,
+      scopes: ['mcp:call'],
+      createdAt: '2026-08-07T00:00:00Z'
+    })),
+    getMcpCatalog: vi.fn(async () => ({
+      agentId,
+      upstreams: []
+    })),
     listKnowledgeBases: vi.fn(async () => ({
       knowledgeBases: [],
       meta: { nextCursor: '', hasNext: false }
@@ -506,6 +594,34 @@ function createClient(
 function createAgentIdentityStore(): EnterpriseAgentIdentityStore {
   return {
     getOrCreate: vi.fn(async () => agentId)
+  };
+}
+
+function createMcpManager(): EnterpriseMcpManager {
+  const response = {
+    agentId,
+    tokenStatus: 'ready' as const,
+    upstreams: [{
+      upstreamId: 'crm-main',
+      name: 'CRM',
+      domain: 'sales',
+      endpoint: 'https://enterprise.example/mcp/servers/crm-main',
+      upstreamTransport: 'streamable_http',
+      namespace: 'crm',
+      status: 'active',
+      installed: false,
+      enabled: false,
+      tools: []
+    }],
+    refreshedAt: '2026-08-07T10:00:00.000Z'
+  };
+  return {
+    listConnections: vi.fn(async () => response),
+    refreshConnections: vi.fn(async () => response),
+    updatePreference: vi.fn(async () => response),
+    prepareRuntime: vi.fn(async () => undefined),
+    handleSessionAuthenticated: vi.fn(),
+    handleSessionSignedOut: vi.fn(async () => undefined)
   };
 }
 

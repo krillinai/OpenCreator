@@ -17,6 +17,18 @@ export const AGENT_TOOL_CAPABILITY_TOKEN_ENV = 'CLAWEE_AGENT_CAPABILITY_TOKEN';
 export type AgentToolRunInjection = {
   mcpServers: CodexMcpServerConfig[];
   env: Record<string, string>;
+  configurationFingerprint?: string;
+};
+
+export type RunMcpInjector = {
+  prepare(input: {
+    runId: string;
+    thread: RuntimeThread;
+    createdBy: 'api' | 'schedule';
+  }):
+    | AgentToolRunInjection
+    | undefined
+    | Promise<AgentToolRunInjection | undefined>;
 };
 
 export type AgentScheduleRunInjector = {

@@ -53,6 +53,48 @@ const meResponseSchema = z.object({
     })
   })
 });
+const agentMcpTokenResponseSchema = z.object({
+  data: z.object({
+    token_id: z.string().min(1),
+    agent_id: z.string().min(1),
+    token: z.string().min(1),
+    token_type: z.literal('Bearer'),
+    fingerprint: z.string().min(1),
+    status: z.literal('active'),
+    expires_at: z.string().datetime({ offset: true }).nullable(),
+    scopes: z.array(z.string().min(1)),
+    created_at: z.string().datetime({ offset: true })
+  })
+});
+const remoteMcpToolSchema = z.object({
+  id: z.string().min(1),
+  upstream_name: z.string().min(1),
+  name: z.string().min(1),
+  exposed_name: z.string().min(1),
+  title: z.string(),
+  description: z.string(),
+  risk_level: z.string().min(1),
+  confirm_required: z.boolean(),
+  status: z.string().min(1),
+  authorized: z.boolean(),
+  authorization_expires_at: z.string().datetime({ offset: true }).nullable()
+});
+const remoteMcpUpstreamSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  domain: z.string(),
+  mcp_endpoint: z.string().url(),
+  upstream_transport: z.string().min(1),
+  namespace: z.string().min(1),
+  status: z.string().min(1),
+  tools: z.array(remoteMcpToolSchema)
+});
+const mcpCatalogResponseSchema = z.object({
+  data: z.object({
+    agent_id: z.string().min(1),
+    upstreams: z.array(remoteMcpUpstreamSchema)
+  })
+});
 const remoteSkillSchema = z.object({
   skill_id: z.string().min(1),
   name: z.string().min(1),
@@ -175,6 +217,47 @@ export type EnterpriseRemoteSkill = {
   version: string;
   packageSha256: string;
   updatedAt: string;
+};
+
+export type EnterpriseAgentMcpToken = {
+  tokenId: string;
+  agentId: string;
+  token: string;
+  tokenType: 'Bearer';
+  fingerprint: string;
+  expiresAt: string | null;
+  scopes: string[];
+  createdAt: string;
+};
+
+export type EnterpriseRemoteMcpTool = {
+  toolId: string;
+  upstreamName: string;
+  name: string;
+  exposedName: string;
+  title: string;
+  description: string;
+  riskLevel: string;
+  confirmRequired: boolean;
+  status: string;
+  authorized: boolean;
+  authorizationExpiresAt: string | null;
+};
+
+export type EnterpriseRemoteMcpUpstream = {
+  upstreamId: string;
+  name: string;
+  domain: string;
+  endpoint: string;
+  upstreamTransport: string;
+  namespace: string;
+  status: string;
+  tools: EnterpriseRemoteMcpTool[];
+};
+
+export type EnterpriseRemoteMcpCatalog = {
+  agentId: string;
+  upstreams: EnterpriseRemoteMcpUpstream[];
 };
 
 export type EnterpriseRemoteSkillDetail = EnterpriseRemoteSkill & {
@@ -309,6 +392,8 @@ export type EnterpriseHttpClient = {
   login(input: EnterpriseLoginRequest, agentId: string): Promise<EnterpriseLoginResult>;
   getMe(accessToken: string): Promise<EnterpriseMeResult>;
   logout(accessToken: string): Promise<void>;
+  revealAgentMcpToken(accessToken: string): Promise<EnterpriseAgentMcpToken>;
+  getMcpCatalog(accessToken: string): Promise<EnterpriseRemoteMcpCatalog>;
   listKnowledgeBases(accessToken: string): Promise<{
     knowledgeBases: EnterpriseRemoteKnowledgeBase[];
     meta: EnterpriseListMeta;
@@ -542,6 +627,47 @@ export function createEnterpriseHttpClient(input: {
         method: 'POST',
         path: '/api/v1/auth/logout'
       });
+    },
+
+    async revealAgentMcpToken(accessToken) {
+      const response = await requestJson({
+        accessToken,
+        domain: 'mcp-token',
+        method: 'POST',
+        path: '/api/v1/app/agents/token/reveal',
+        schema: agentMcpTokenResponseSchema
+      });
+      if (!response.data.scopes.includes('mcp:call')) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          200
+        );
+      }
+      return {
+        tokenId: response.data.token_id,
+        agentId: response.data.agent_id,
+        token: response.data.token,
+        tokenType: response.data.token_type,
+        fingerprint: response.data.fingerprint,
+        expiresAt: response.data.expires_at,
+        scopes: [...response.data.scopes],
+        createdAt: response.data.created_at
+      };
+    },
+
+    async getMcpCatalog(accessToken) {
+      const response = await requestJson({
+        accessToken,
+        domain: 'mcp',
+        method: 'GET',
+        path: '/api/v1/app/agents/mcp-catalog',
+        schema: mcpCatalogResponseSchema
+      });
+      return {
+        agentId: response.data.agent_id,
+        upstreams: response.data.upstreams.map(mapRemoteMcpUpstream)
+      };
     },
 
     async listSkills(accessToken) {
@@ -1015,6 +1141,33 @@ function mapRemoteSkill(
   };
 }
 
+function mapRemoteMcpUpstream(
+  upstream: z.infer<typeof remoteMcpUpstreamSchema>
+): EnterpriseRemoteMcpUpstream {
+  return {
+    upstreamId: upstream.id,
+    name: upstream.name,
+    domain: upstream.domain,
+    endpoint: upstream.mcp_endpoint,
+    upstreamTransport: upstream.upstream_transport,
+    namespace: upstream.namespace,
+    status: upstream.status,
+    tools: upstream.tools.map(tool => ({
+      toolId: tool.id,
+      upstreamName: tool.upstream_name,
+      name: tool.name,
+      exposedName: tool.exposed_name,
+      title: tool.title,
+      description: tool.description,
+      riskLevel: tool.risk_level,
+      confirmRequired: tool.confirm_required,
+      status: tool.status,
+      authorized: tool.authorized,
+      authorizationExpiresAt: tool.authorization_expires_at
+    }))
+  };
+}
+
 function mapRemoteKnowledgeBase(
   knowledgeBase: z.infer<typeof remoteKnowledgeBaseSchema>
 ): EnterpriseRemoteKnowledgeBase {
@@ -1136,7 +1289,13 @@ function mapCollectorRegistration(
   };
 }
 
-type EnterpriseHttpDomain = 'general' | 'skill' | 'knowledge' | 'shared-file';
+type EnterpriseHttpDomain =
+  | 'general'
+  | 'skill'
+  | 'knowledge'
+  | 'shared-file'
+  | 'mcp'
+  | 'mcp-token';
 
 async function createResponseError(
   response: Response,
@@ -1192,6 +1351,12 @@ function mapResponseCode(
     return 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN';
   }
   if (statusCode === 403) return 'ENTERPRISE_FORBIDDEN';
+  if (statusCode === 404 && domain === 'mcp-token') {
+    return 'ENTERPRISE_MCP_TOKEN_NOT_FOUND';
+  }
+  if (statusCode === 404 && domain === 'mcp') {
+    return 'ENTERPRISE_MCP_UPSTREAM_NOT_FOUND';
+  }
   if (
     statusCode === 404
     && upstreamCode === 'shared_space_not_found'

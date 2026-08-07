@@ -2281,6 +2281,9 @@ function createControllablePersistentExecutor(): {
     isBusy() {
       return activeRunId !== undefined;
     },
+    async invalidate() {
+      return undefined;
+    },
     async close() {
       if (activeRunId !== undefined) {
         completions.get(activeRunId)?.resolve('interrupted');

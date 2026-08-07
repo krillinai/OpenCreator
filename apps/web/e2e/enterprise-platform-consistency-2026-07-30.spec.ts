@@ -27,7 +27,7 @@ type PlatformResult = {
   unknownRequests: string[];
 };
 
-test('企业账户、知识库、共享网盘与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
+test('企业账户、系统连接、知识库、共享网盘与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
   browser,
   page,
   runtime
@@ -58,6 +58,8 @@ test('企业账户、知识库、共享网盘与 Skill Hub 在 Browser/Desktop B
   expect(browserResult.state).toEqual({
     session: 'signed_in',
     installed: true,
+    mcpInstalled: true,
+    mcpEnabled: true,
     createdThread: true,
     uploadedKnowledgeDocument: true,
     savedSharedFile: true
@@ -184,6 +186,95 @@ test('企业知识库在 390px 视口下逐级浏览且不产生页面级溢出'
   expect(fakeDaemon.unknownRequestPaths()).toEqual([]);
 });
 
+test('系统连接在 390px 视口下可安装和开启且不产生溢出或重叠', async ({
+  page,
+  runtime
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-mobile',
+    '移动端系统连接规格固定使用 390x844 Chromium 视口'
+  );
+
+  const fakeDaemon = new FakeEnterpriseDaemon();
+  await fakeDaemon.attach(page);
+  await installPlatformEnvironment(page, 'browser');
+  await page.goto(`${runtime.origin}/#/account`);
+  await page.getByLabel('邮箱').fill('member@example.com');
+  await page.getByLabel('密码').fill('enterprise-secret');
+  await page.locator('.enterprise-account-primary-action').click();
+  await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
+
+  await page.evaluate(() => {
+    window.location.hash = '#/connections';
+  });
+  await expect(page.getByRole('heading', { name: '系统连接' })).toBeVisible();
+  const card = page.locator(
+    '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+  );
+  await card.getByRole('button', { name: '安装' }).click();
+  const toggle = card.getByRole('switch', { name: '客户关系管理 MCP' });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+  const layout = await page.evaluate(() => {
+    const pageElement = document.querySelector<HTMLElement>('.connections-page')!;
+    const inner = document.querySelector<HTMLElement>('.connections-page__inner')!;
+    const header = document.querySelector<HTMLElement>('.connections-header')!;
+    const actions = document.querySelector<HTMLElement>('.connections-header__actions')!;
+    const cardElement = document.querySelector<HTMLElement>(
+      '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+    )!;
+    const footer = cardElement.querySelector<HTMLElement>('footer')!;
+    const label = footer.querySelector<HTMLElement>('.connection-toggle-label')!;
+    const toggleElement = footer.querySelector<HTMLElement>('.connection-switch')!;
+    const rect = (element: HTMLElement) => {
+      const value = element.getBoundingClientRect();
+      return {
+        left: value.left,
+        right: value.right,
+        top: value.top,
+        bottom: value.bottom
+      };
+    };
+    return {
+      viewportWidth: window.innerWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      pageClientWidth: pageElement.clientWidth,
+      pageScrollWidth: pageElement.scrollWidth,
+      innerClientWidth: inner.clientWidth,
+      innerScrollWidth: inner.scrollWidth,
+      headerClientWidth: header.clientWidth,
+      headerScrollWidth: header.scrollWidth,
+      actionsClientWidth: actions.clientWidth,
+      actionsScrollWidth: actions.scrollWidth,
+      cardClientWidth: cardElement.clientWidth,
+      cardScrollWidth: cardElement.scrollWidth,
+      label: rect(label),
+      toggle: rect(toggleElement)
+    };
+  });
+
+  expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  expect(layout.pageScrollWidth).toBeLessThanOrEqual(layout.pageClientWidth);
+  expect(layout.innerScrollWidth).toBeLessThanOrEqual(layout.innerClientWidth);
+  expect(layout.headerScrollWidth).toBeLessThanOrEqual(layout.headerClientWidth);
+  expect(layout.actionsScrollWidth).toBeLessThanOrEqual(layout.actionsClientWidth);
+  expect(layout.cardScrollWidth).toBeLessThanOrEqual(layout.cardClientWidth);
+  expect(rectanglesOverlap(layout.label, layout.toggle)).toBe(false);
+  expect(fakeDaemon.snapshot()).toMatchObject({
+    mcpInstalled: true,
+    mcpEnabled: true
+  });
+  expect(fakeDaemon.unknownRequestPaths()).toEqual([]);
+
+  await testInfo.attach('mobile-connections.png', {
+    body: await page.locator('.clawee-shell').screenshot({
+      animations: 'disabled'
+    }),
+    contentType: 'image/png'
+  });
+});
+
 async function runPlatform(input: {
   browser: Browser;
   fakeDaemon: FakeEnterpriseDaemon;
@@ -227,6 +318,26 @@ async function runPlatform(input: {
     await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
+
+    await page.getByRole('button', { name: '系统连接', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '系统连接' })).toBeVisible();
+    const mcpCard = page.locator(
+      '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+    );
+    await expect(mcpCard.getByRole('heading', { name: '客户关系管理' })).toBeVisible();
+    await expect(mcpCard.getByText('企业授权：1/2 项工具')).toBeVisible();
+    await mcpCard.getByRole('button', { name: '安装' }).click();
+    const mcpSwitch = mcpCard.getByRole('switch', { name: '客户关系管理 MCP' });
+    await expect(mcpSwitch).toHaveAttribute('aria-checked', 'false');
+    await mcpSwitch.click();
+    await expect(mcpSwitch).toHaveAttribute('aria-checked', 'true');
+    checkpoints.connections = await captureCheckpoint(page, [
+      '.clawee-sidebar-pane',
+      '.clawee-main-pane',
+      '.connections-page',
+      '.connections-summary',
+      '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+    ]);
 
     await page.getByRole('button', { name: '企业知识库', exact: true }).click();
     await expect(page.getByRole('heading', { name: '企业制度' })).toBeVisible();

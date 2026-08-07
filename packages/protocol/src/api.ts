@@ -793,6 +793,47 @@ export type EnterpriseRegisterRequest = {
   password: string;
 };
 
+export type EnterpriseMcpTokenStatus = 'ready' | 'missing';
+
+export type EnterpriseMcpToolResponse = {
+  toolId: string;
+  upstreamName: string;
+  name: string;
+  exposedName: string;
+  title: string;
+  description: string;
+  riskLevel: string;
+  confirmRequired: boolean;
+  status: string;
+  authorized: boolean;
+  authorizationExpiresAt: string | null;
+};
+
+export type EnterpriseMcpUpstreamResponse = {
+  upstreamId: string;
+  name: string;
+  domain: string;
+  endpoint: string;
+  upstreamTransport: string;
+  namespace: string;
+  status: string;
+  installed: boolean;
+  enabled: boolean;
+  tools: EnterpriseMcpToolResponse[];
+};
+
+export type EnterpriseMcpCatalogResponse = {
+  agentId: string;
+  tokenStatus: EnterpriseMcpTokenStatus;
+  upstreams: EnterpriseMcpUpstreamResponse[];
+  refreshedAt: string;
+};
+
+export type EnterpriseMcpPreferenceUpdateRequest = {
+  installed?: boolean;
+  enabled?: boolean;
+};
+
 export type EnterpriseListMeta = {
   nextCursor: string;
   hasNext: boolean;

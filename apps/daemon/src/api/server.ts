@@ -25,7 +25,9 @@ import {
 import { registerAgentScheduleMcpRoute } from '../agent-tools/mcp-routes.js';
 import {
   createAgentScheduleProcessInjector,
-  createAgentScheduleRunInjector
+  createAgentScheduleRunInjector,
+  type AgentToolRunInjection,
+  type RunMcpInjector
 } from '../agent-tools/run-injection.js';
 import {
   createUnknownCapabilityMatrix,
@@ -103,6 +105,19 @@ import {
   createEnterpriseAgentIdentityStore,
   type EnterpriseAgentIdentityStore
 } from '../enterprise/agent-identity-2026-08-02.js';
+import {
+  createEnterpriseMcpManager,
+  type EnterpriseMcpManager
+} from '../enterprise/mcp-manager-2026-08-07.js';
+import {
+  createEnterpriseMcpPreferenceRepository
+} from '../enterprise/mcp-preferences-2026-08-07.js';
+import type {
+  EnterpriseMcpTokenStore
+} from '../enterprise/mcp-token-store-2026-08-07.js';
+import {
+  EnterpriseMcpTokenStoreError
+} from '../enterprise/mcp-token-store-2026-08-07.js';
 import { requireAuth } from './auth.js';
 import { apiError } from './errors.js';
 import { registerAttachmentRoutes } from './routes.attachments.js';
@@ -164,11 +179,13 @@ export type BuildServerInput = {
   enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
   enterpriseConfigPath?: string;
   enterpriseCredentialStore?: EnterpriseCredentialStore;
+  enterpriseMcpTokenStore?: EnterpriseMcpTokenStore;
   enterpriseCollectorInstaller?: EnterpriseCollectorInstaller;
   enterpriseHttpClient?: EnterpriseHttpClient;
   enterpriseOrigin?: string;
   enterpriseE2ERunId?: string;
   enterpriseSkillManager?: EnterpriseSkillManager;
+  enterpriseMcpManager?: EnterpriseMcpManager;
   enterpriseKnowledgeManager?: EnterpriseKnowledgeManager;
   enterpriseKnowledgeDocumentMaxBytes?: number;
   enterpriseSharedDriveManager?: EnterpriseSharedDriveManager;
@@ -208,6 +225,7 @@ export async function buildServer(input: BuildServerInput) {
   if (input.enterpriseConfigPath !== undefined) {
     await enterpriseAgentIdentityStore.getOrCreate();
   }
+  let handleEnterpriseSessionSignedOut: (() => void) | undefined;
   const enterpriseSessionManager = createEnterpriseSessionManager({
     agentIdentityStore: enterpriseAgentIdentityStore,
     collectorInstaller:
@@ -216,9 +234,11 @@ export async function buildServer(input: BuildServerInput) {
     credentialStore:
       input.enterpriseCredentialStore ?? createUnavailableCredentialStore(),
     httpClient: enterpriseHttpClient,
-    transportSecurity: enterpriseOrigin.transportSecurity
+    transportSecurity: enterpriseOrigin.transportSecurity,
+    onSignedOut() {
+      handleEnterpriseSessionSignedOut?.();
+    }
   });
-  enterpriseSessionManager.startRestore();
   const codexBin = input.codexBin ?? 'codex';
   const defaultCwd = input.defaultCwd ?? process.cwd();
   const resolvedCodexHome =
@@ -300,6 +320,35 @@ export async function buildServer(input: BuildServerInput) {
       projectManager,
       maxFileBytes: input.enterpriseSharedFileMaxBytes
     });
+  const enterpriseMcpPreferences =
+    createEnterpriseMcpPreferenceRepository(db);
+  let persistentAppServerExecutor:
+    | ReturnType<typeof createPersistentAppServerExecutor>
+    | undefined;
+  const enterpriseMcpManager =
+    input.enterpriseMcpManager ??
+    createEnterpriseMcpManager({
+      enterpriseOrigin: enterpriseOrigin.origin,
+      agentIdentityStore: enterpriseAgentIdentityStore,
+      sessionManager: enterpriseSessionManager,
+      httpClient: enterpriseHttpClient,
+      tokenStore:
+        input.enterpriseMcpTokenStore ?? createUnavailableMcpTokenStore(),
+      preferences: enterpriseMcpPreferences,
+      onRuntimeConfigurationChanged(reason) {
+        void persistentAppServerExecutor?.invalidate(reason).catch(error => {
+          console.warn(
+            `Persistent app-server invalidation failed: ${formatError(error)}`
+          );
+        });
+      }
+    });
+  handleEnterpriseSessionSignedOut = () => {
+    void enterpriseMcpManager.handleSessionSignedOut().catch(error => {
+      console.warn(`Enterprise MCP sign-out cleanup failed: ${formatError(error)}`);
+    });
+  };
+  enterpriseSessionManager.startRestore();
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const notificationService = createNotificationService({ db });
   const approvalManager = input.approvalManager ?? createApprovalManager({ db });
@@ -315,7 +364,7 @@ export async function buildServer(input: BuildServerInput) {
     capabilities.appServerApprovals === true ? 'app-server' : 'exec';
   const getAgentToolBaseUrl = () =>
     resolveListeningOrigin(server.server.address());
-  const agentToolInjector = input.agentToolsEnabled !== true
+  const scheduleRunInjector = input.agentToolsEnabled !== true
     ? undefined
     : createAgentScheduleRunInjector({
         capabilities: agentCapabilityTokens,
@@ -327,14 +376,24 @@ export async function buildServer(input: BuildServerInput) {
         capabilities: agentCapabilityTokens,
         getBaseUrl: getAgentToolBaseUrl
       });
-  const persistentAppServerExecutor =
+  const enterpriseMcpRunInjector: RunMcpInjector = {
+    prepare(run) {
+      return enterpriseMcpManager.prepareRuntime(run);
+    }
+  };
+  const agentToolInjector = combineRunInjectors(
+    scheduleRunInjector,
+    enterpriseMcpRunInjector
+  );
+  persistentAppServerExecutor =
     input.runManager === undefined
     && input.persistentAppServerEnabled !== false
     && runtimeTransport === 'app-server'
       ? createPersistentAppServerExecutor({
           codexBin,
           codexHome,
-          processInjector: agentToolProcessInjector
+          processInjector: agentToolProcessInjector,
+          runtimeInjector: enterpriseMcpRunInjector
         })
       : undefined;
   const runManager =
@@ -493,7 +552,8 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerEnterpriseRoutes(server, {
     sessionManager: enterpriseSessionManager,
-    skillManager: enterpriseSkillManager
+    skillManager: enterpriseSkillManager,
+    mcpManager: enterpriseMcpManager
   });
   await registerEnterpriseKnowledgeRoutes(
     server,
@@ -603,6 +663,48 @@ function createUnavailableCredentialStore(): EnterpriseCredentialStore {
     },
     async delete() {
       throw new EnterpriseCredentialStoreError('delete');
+    }
+  };
+}
+
+function createUnavailableMcpTokenStore(): EnterpriseMcpTokenStore {
+  return {
+    async read() {
+      return undefined;
+    },
+    async write() {
+      throw new EnterpriseMcpTokenStoreError('write');
+    },
+    async delete() {
+      throw new EnterpriseMcpTokenStoreError('delete');
+    }
+  };
+}
+
+function combineRunInjectors(
+  ...injectors: Array<RunMcpInjector | undefined>
+): RunMcpInjector | undefined {
+  const active = injectors.filter(
+    (injector): injector is RunMcpInjector => injector !== undefined
+  );
+  if (active.length === 0) return undefined;
+  return {
+    async prepare(run) {
+      const prepared = (
+        await Promise.all(active.map(injector => injector.prepare(run)))
+      ).filter(
+        (injection): injection is AgentToolRunInjection =>
+          injection !== undefined
+      );
+      if (prepared.length === 0) return undefined;
+      return {
+        mcpServers: prepared.flatMap(injection => injection.mcpServers),
+        env: Object.assign({}, ...prepared.map(injection => injection.env)),
+        configurationFingerprint: prepared
+          .map(injection => injection.configurationFingerprint)
+          .filter((value): value is string => value !== undefined)
+          .join(':')
+      };
     }
   };
 }

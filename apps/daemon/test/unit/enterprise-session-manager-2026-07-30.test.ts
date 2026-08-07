@@ -501,6 +501,8 @@ function createClient(
     })),
     getMe: vi.fn(async () => activeMe()),
     logout: vi.fn(async () => undefined),
+    revealAgentMcpToken: vi.fn(),
+    getMcpCatalog: vi.fn(),
     listKnowledgeBases: vi.fn(async () => ({
       knowledgeBases: [],
       meta: { nextCursor: '', hasNext: false }

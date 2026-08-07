@@ -209,6 +209,8 @@ function createHttpClient(
     login: vi.fn(),
     getMe: vi.fn(),
     logout: vi.fn(),
+    revealAgentMcpToken: vi.fn(),
+    getMcpCatalog: vi.fn(),
     listKnowledgeBases: vi.fn(async () => ({
       knowledgeBases: [knowledgeBase()],
       meta: { nextCursor: '', hasNext: false }
