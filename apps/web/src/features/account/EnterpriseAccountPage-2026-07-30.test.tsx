@@ -119,6 +119,8 @@ describe('EnterpriseAccountPage', () => {
     }));
 
     expect(screen.getByText('Member')).toBeInTheDocument();
+    expect(screen.getByText('企业采集器安装失败')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重试安装' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument();
   });
 });

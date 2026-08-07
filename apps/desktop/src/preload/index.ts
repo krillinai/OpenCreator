@@ -5,9 +5,22 @@ import type {
   DesktopBootstrapState,
   DesktopConnectionConfig
 } from '../shared/types.js';
+import {
+  DESKTOP_TITLE_BAR_HEIGHT,
+  DESKTOP_TRAFFIC_LIGHT_INSET
+} from '../shared/types.js';
 
 const api: DesktopApi = {
   kind: 'desktop',
+  windowChrome: process.platform === 'darwin'
+    ? {
+        integratedTitleBar: true,
+        titleBarHeight: DESKTOP_TITLE_BAR_HEIGHT,
+        trafficLightInset: DESKTOP_TRAFFIC_LIGHT_INSET
+      }
+    : {
+        integratedTitleBar: false
+      },
   readConnectionConfig: () => ipcRenderer.invoke(desktopIpc.readConnection),
   subscribeConnectionConfig(listener) {
     return subscribe(desktopIpc.connectionChanged, listener);

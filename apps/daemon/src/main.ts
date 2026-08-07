@@ -24,6 +24,7 @@ import { createRuntimeToken } from './security/token.js';
 import { installGracefulShutdown } from './shutdown.js';
 import {
   createProductionServerInput,
+  resolveEnterpriseStartupArguments,
   resolveProductionServerEnvironment
 } from './startup.js';
 import { acquireRuntimeLock } from './runtime-lock.js';
@@ -48,6 +49,7 @@ await main().catch(error => {
 async function main(): Promise<void> {
   const token = createRuntimeToken();
   const environment = resolveProductionServerEnvironment();
+  const enterprise = resolveEnterpriseStartupArguments();
   const codexBin = environment.codexBin ?? 'codex';
   const dataDir = resolve(environment.dataDir ?? '.runtime');
   const codexHome = environment.codexHome === undefined
@@ -92,12 +94,13 @@ async function main(): Promise<void> {
     token,
     capabilities,
     enterpriseCredentialStore: createSystemEnterpriseCredentialStore({
-      e2eRunId: environment.enterpriseE2ERunId
+      e2eRunId: enterprise.enterpriseE2ERunId
     }),
     getCodexAvailabilityProbe: () => availabilityProbe,
     persistentAppServerEnabled:
       process.env.CLAWEE_PERSISTENT_APP_SERVER !== '0',
-    ...environment
+    ...environment,
+    ...enterprise
   }));
   const address = await server.listen({ host: '127.0.0.1', port: 0 });
   capabilityResolution.startBackgroundRefresh();

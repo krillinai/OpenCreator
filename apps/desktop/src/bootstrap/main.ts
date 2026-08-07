@@ -16,6 +16,11 @@ type BootstrapState = {
 };
 
 type BootstrapApi = {
+  windowChrome?: {
+    integratedTitleBar: boolean;
+    titleBarHeight?: number;
+    trafficLightInset?: number;
+  };
   readBootstrapState(): Promise<BootstrapState>;
   subscribeBootstrapState(listener: (state: BootstrapState) => void): () => void;
   retryBootstrap(): Promise<unknown>;
@@ -34,6 +39,21 @@ declare global {
 
 const api = window.claweeDesktop;
 if (api === undefined) throw new Error('Clawee Desktop bridge is unavailable');
+if (
+  api.windowChrome?.integratedTitleBar === true
+  && typeof api.windowChrome.titleBarHeight === 'number'
+  && typeof api.windowChrome.trafficLightInset === 'number'
+) {
+  document.documentElement.dataset.integratedTitleBar = 'true';
+  document.documentElement.style.setProperty(
+    '--clawee-titlebar-height',
+    `${api.windowChrome.titleBarHeight}px`
+  );
+  document.documentElement.style.setProperty(
+    '--clawee-traffic-light-inset',
+    `${api.windowChrome.trafficLightInset}px`
+  );
+}
 
 const title = element('status-title');
 const detail = element('status-detail');

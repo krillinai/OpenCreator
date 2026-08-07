@@ -1,33 +1,35 @@
 # Clawee 企业账户登录与 Skill Hub 接入方案
 
-> 状态：草案
-> 体量判断：复杂。该交付同时涉及外部认证、系统安全凭据、Web/Desktop 共用状态、企业 Skill 分发、本地安装事务、来源冲突和发布安全；登录与企业 Skill Hub 不能独立验收，因此保持一份内聚方案。
-> 设计确认：已完成（D-1 至 D-3）
+> 状态：已实施，待 HTTPS 发布
+> 体量判断：登录与 Collector 安装采用直接链路；企业 Skill Hub 仍涉及外部认证、系统安全凭据、Web/Desktop 共用状态、本地安装事务、来源冲突和发布安全，因此保持一份内聚方案。
+> 设计确认：已完成（D-1 至 D-4）
 > Reviewer 原始结论：REVISE
 > 流程结论：PASS
-> 用户批准：已批准（2026-07-30）
+> 用户批准：已批准（2026-07-30）；强制登录与 Collector 自动安装补充需求已批准（2026-08-06）
 
 ## 背景、目标与非目标
 
-Clawee 已具备 Web/Desktop 共用 React 界面、本地 Daemon Runtime API、公共 Skill 市场和本地 Skill 安装事务。本方案在不阻断本地工作流的前提下，接入企业服务的普通账号注册、登录、会话恢复和企业 Skill Hub。
+Clawee 已具备 Web/Desktop 共用 React 界面、本地 Daemon Runtime API、公共 Skill 市场和本地 Skill 安装事务。本方案接入企业服务的普通账号注册、强制登录、会话恢复、Collector 自动安装和企业 Skill Hub。
 
 ### 目标
 
-1. 用户可以注册或登录企业账户，并在应用重启后恢复有效会话。
-2. 未登录或企业服务不可用时，Clawee 本地功能和公共插件市场继续可用。
-3. 公共市场与企业 Skill Hub 在同一插件页面按来源明确分区。
-4. 企业 Token 只存在于 Daemon 和操作系统安全凭据存储，不进入渲染进程。
-5. 企业 Skill 的查询、下载、校验、安装、更新和回滚全部由 Daemon 完成。
-6. Web 与 Desktop 使用同一 Runtime API、状态模型和界面行为。
+1. 用户必须注册或登录企业账户后才能进入 Clawee 工作区，并在应用重启后恢复有效会话。
+2. 登录或会话恢复成功后，Daemon 从 `/api/v1/auth/me` 读取 `collector_registration`，按当前操作系统自动执行安装命令。
+3. Collector 安装在后台执行，不延迟登录成功；安装失败不清除企业会话，并允许用户重试。
+4. 公共市场与企业 Skill Hub 在同一插件页面按来源明确分区。
+5. 企业 Token、Collector 注册码和完整安装命令只存在于 Daemon 内存及必要的安全边界，不进入渲染进程、普通配置或日志。
+6. 企业 Skill 的查询、下载、校验、安装、更新和回滚全部由 Daemon 完成。
+7. Web 与 Desktop 使用同一 Runtime API、状态模型和界面行为。
 
 ### 非目标
 
 1. 找回密码、验证码、OAuth、SSO、Refresh Token 和跨设备会话同步。
 2. 企业管理员、发布、上传、下架或 `/api/v1/admin/*` 能力。
-3. 以企业登录限制 Clawee 本地项目、对话、任务、设置或公共市场。
+3. 提供跳过登录、离线进入工作区或游客模式。
 4. 用企业 Skill Hub 替换公共市场，或改变公共市场已有目录和安装规则。
 5. 向普通用户开放企业服务 Origin 编辑。
-6. 首版下载进度事件、自动重试安装、企业 Skill 排行榜或视觉封面体系。
+6. Collector 卸载、脚本内容解析、客户端拼接注册码或安装 URL。
+7. 首版下载进度事件、自动重试安装、企业 Skill 排行榜或视觉封面体系。
 
 ## 用户需求原文
 
@@ -36,6 +38,9 @@ Clawee 已具备 Web/Desktop 共用 React 界面、本地 Daemon Runtime API、�
 3. `没问题,继续`
 4. `没问题,继续`
 5. `没问题,继续`
+6. `企业服务先用http,真实部署会用https`
+7. `本质上只要有登录返回的信息,就可以拿到安装脚本`
+8. `没问题,开始执行`
 
 ## 事实基线与假设
 
@@ -65,22 +70,24 @@ Clawee 已具备 Web/Desktop 共用 React 界面、本地 Daemon Runtime API、�
 
 | 设计部分 | 核心决定 | 用户确认原话 |
 | --- | --- | --- |
-| D-1 产品边界与入口 | 采用可选登录；侧栏账户区与设置分离；插件页按公共市场和企业 Skill Hub 分区；企业账户使用工作区内独立页面。 | `没问题,继续` |
+| D-1 产品边界与入口 | 采用强制登录；Runtime 连通但企业会话未进入 `signed_in` 时仅显示登录/注册页；登录后账户管理仍使用工作区内独立页面。 | `没问题,开始执行` |
 | D-2 登录、注册与会话状态流 | 登录/注册分段表单；注册后自动登录；四态会话模型；Daemon 固定企业请求参数并持有安全凭据；注销失败不误清本地 Token。 | `没问题,继续` |
 | D-3 企业 Skill Hub、异常处理与验收 | 企业 Hub 使用紧凑列表；Daemon 合并远端、本地扫描和来源记录；安装更新执行摘要校验和事务回滚；HTTP 仅用于受控联调并设置 HTTPS 发布门。 | `没问题,继续` |
+| D-4 Collector 自动安装 | 登录、注册后登录和启动恢复共用 `/auth/me` 响应；Daemon 直接选择并执行服务端返回的平台安装命令，后台安装且失败不影响登录，账户页提供状态和重试。 | `本质上只要有登录返回的信息,就可以拿到安装脚本` |
 
 ## 需求与业务规则
 
 | ID | 类型 | 优先级 | 描述 |
 | --- | --- | --- | --- |
-| FR-1 | 功能需求 | P0 | 未登录时，Clawee 本地项目、对话、任务、设置和公共市场仍可完整使用。 |
+| FR-1 | 功能需求 | P0 | Runtime 连通后，企业会话不是 `signed_in` 时只显示登录/注册入口，不允许进入工作区。 |
 | FR-2 | 功能需求 | P0 | 用户可从侧栏账户区进入企业账户页面，并完成登录或注册并登录。 |
 | FR-3 | 功能需求 | P0 | 应用可展示、刷新并恢复 `signed_out`、`checking`、`signed_in`、`service_unavailable` 四种企业会话状态。 |
 | FR-4 | 功能需求 | P0 | 插件页提供公共市场与企业 Skill Hub 两个来源视图，公共市场保持默认且现有行为不变。 |
 | FR-5 | 功能需求 | P0 | 已登录用户可浏览企业 Skill，查看详情，并按合并状态安装、更新或使用。 |
 | FR-6 | 功能需求 | P0 | 企业 Skill 下载后必须完成 SHA-256、ZIP 安全、Skill 结构和名称校验后才能写入本机。 |
 | FR-7 | 功能需求 | P0 | 企业 Skill 安装或更新失败时不留下半安装状态，更新失败可恢复旧 Skill。 |
-| FR-8 | 功能需求 | P1 | 已安装企业 Skill 在注销、远端离线或远端下架后仍保留在本机并可按本地有效性继续使用。 |
+| FR-8 | 功能需求 | P1 | 已安装企业 Skill 在注销、远端离线或远端下架后仍保留在本机；重新建立有效登录后可按本地有效性继续使用。 |
+| FR-9 | 功能需求 | P0 | 登录、注册后登录或启动恢复成功时，Daemon 自动执行 `/auth/me` 返回的当前平台 Collector 安装命令。 |
 | BR-1 | 业务规则 | P0 | 注册请求不得传 `client_id`；注册成功后由 Daemon 使用 `client_id=clawee-agent` 自动登录。 |
 | BR-2 | 业务规则 | P0 | 只有注册、后续登录和 `/auth/me` 权限验证都成功时，注册流程才进入 `signed_in`；注册响应 Cookie 必须丢弃。 |
 | BR-3 | 业务规则 | P0 | 登录和注销不得自动重试；安装和更新不得在未知结果后自动重复本地写入。 |
@@ -89,11 +96,14 @@ Clawee 已具备 Web/Desktop 共用 React 界面、本地 Daemon Runtime API、�
 | BR-6 | 业务规则 | P0 | 企业 Skill 的安装状态以本地扫描、企业安装记录、安装后内容摘要和当前远端发布元数据共同计算。 |
 | BR-7 | 业务规则 | P0 | 同名未知来源、已被本地修改或属于其他来源的 Skill 不得被企业安装、更新静默覆盖；安装和更新必须在 Skill 写锁内、文件写入前重新核验。 |
 | BR-8 | 业务规则 | P1 | 企业列表和详情可有限退避重试；`401/403/404/409`、参数错误和写操作不按网络错误循环重试。 |
+| BR-9 | 业务规则 | P0 | macOS/Linux 仅执行 `install_command`，Windows 仅执行 `install_powershell_command`；客户端不得拼接注册码、URL 或命令。 |
+| BR-10 | 业务规则 | P0 | Collector 安装异步执行且同一时刻最多一个任务；失败不清除登录状态，手动刷新可重新读取 `/auth/me` 并重试。 |
 | NFR-1 | 安全约束 | P0 | 企业 Token 不得出现在 React 状态、Runtime API 响应、浏览器存储、SQLite 明文字段、普通设置或诊断包中。 |
 | NFR-2 | 安全约束 | P0 | 密码不得持久化或写入日志、诊断和缓存；提交成功、页面卸载或模式切换时清理密码状态。 |
 | NFR-3 | 安全约束 | P0 | 企业 Token 只允许写入操作系统安全凭据存储；安全存储不可用时不得降级为明文持久化。 |
 | NFR-4 | 兼容约束 | P0 | Web 与 Desktop 必须复用相同 Protocol 类型、Daemon API、Service 和 React 页面，不在 Desktop Bridge 中复制企业业务；一致性必须通过同 Fake Daemon、同内容视口的自动化对比和当前工作区实际打包 App 验证。 |
 | NFR-5 | 发布约束 | P0 | 当前 HTTP Origin 仅允许受控联调；账户页不展示连接协议说明；面向正式用户发布前必须切换 HTTPS。 |
+| NFR-6 | 安全约束 | P0 | Collector 完整命令、注册码及脚本输出不得进入 Runtime 响应、React 状态、日志、诊断包或普通配置；只返回脱敏状态和错误码。 |
 
 ## 方案比较与推荐
 
@@ -101,17 +111,17 @@ Clawee 已具备 Web/Desktop 共用 React 界面、本地 Daemon Runtime API、�
 
 | 方案 | 影响 | 结论 |
 | --- | --- | --- |
-| 可选登录 | 本地功能不依赖企业可用性，只对企业 Hub 建立认证门槛。 | 采用 |
-| 启动强制登录 | 企业服务故障会阻断 Clawee 本地工作，扩大外部依赖故障面。 | 排除 |
+| 启动强制登录 | 满足 Clawee 安装后必须登录的产品约束；未登录或会话失效时不进入工作区。 | 采用 |
+| 可选登录 | 企业服务故障时仍可使用本地功能，但不满足当前产品约束。 | 排除 |
 | 首次可跳过引导 | 增加首次启动状态和引导维护，但不改善核心任务。 | 首版排除 |
 
 ### 登录承载方式
 
 | 方案 | 影响 | 结论 |
 | --- | --- | --- |
-| 工作区内账户页面 | 可承载登录、注册、离线、账户摘要和注销，移动端也沿用现有导航。 | 采用 |
+| 登录前全屏门禁 + 登录后工作区账户页 | 登录边界清晰，登录后仍可承载账户摘要、Collector 状态、重试和注销。 | 采用 |
 | 登录弹窗 | 注册部分成功、离线和账户管理状态过多，弹窗会变得拥挤且难以恢复上下文。 | 排除 |
-| 独立全屏登录壳 | 视觉上接近强制登录，破坏可选登录边界。 | 排除 |
+| 仅工作区内账户页面 | 未登录时仍暴露工作区，不满足强制登录边界。 | 排除 |
 
 ### 企业 Skill 展示方式
 
@@ -125,27 +135,28 @@ Clawee 已具备 Web/Desktop 共用 React 界面、本地 Daemon Runtime API、�
 
 | DEC ID | 决策 | 理由 | 约束范围 |
 | --- | --- | --- | --- |
-| DEC-1 | 企业认证采用可选登录，永不作为 Clawee 本地工作区启动门。 | 隔离企业服务故障，符合公共市场共存边界。 | 路由、启动恢复、页面门槛 |
+| DEC-1 | 企业认证是 Clawee 工作区启动门；Runtime 连通后仅 `signed_in` 会话可进入工作区。 | 满足安装后必须登录的产品约束，并让 Web/Desktop 共享同一门禁。 | 路由、启动恢复、页面门槛 |
 | DEC-2 | 企业账户为工作区内独立视图；侧栏底部拆为账户区与独立设置图标。 | 保留稳定入口，容纳完整会话状态，避免弹窗膨胀。 | Web UI、移动端导航 |
 | DEC-3 | Daemon 是企业服务和企业 Token 的唯一所有者；Runtime API 只返回脱敏会话和业务数据。 | 保证 Web/Desktop 复用并阻止 Token 进入渲染进程。 | Protocol、Daemon、Web/Desktop |
 | DEC-4 | 会话使用四态模型；仅 active 账号且 `applications.frontend=true` 可进入 `signed_in`，认证或应用权限不满足时清除会话，网络故障保留安全存储中的 Token。 | 区分无会话、验证中、有效会话、权限失效和服务暂不可用，保证登录、恢复与刷新语义一致。 | 登录、启动恢复、手动刷新、401、权限撤销、5xx |
 | DEC-5 | 企业 Skill 状态由远端目录、本地 Skill 扫描、带来源安装记录和本地内容摘要合并计算，并在写锁内重新核验。 | 文件系统是真实安装状态，来源记录和内容摘要负责版本、手工修改与竞态冲突语义。 | 列表、详情、安装、更新 |
 | DEC-6 | 企业安装复用现有 Skill 写事务，但下载器和记录模型与公共市场来源分离；任何覆盖前必须在写锁内验证来源归属和已安装内容摘要。 | 复用成熟回滚边界，同时阻止下载期间的手工替换或其他来源占用被静默覆盖。 | Daemon 安装器、数据库、并发写入 |
 | DEC-7 | HTTP 仅允许受控联调，账户页保持简洁；HTTPS 是正式发布硬门。 | 当前接口固定为 HTTP，客户端无法补偿链路明文风险，安全边界由受控环境和发布门保证。 | 配置、UI、发布验收 |
+| DEC-8 | Collector 安装命令直接取自 `/auth/me` 并由 Daemon 按平台异步执行；登录结果与安装结果解耦。 | 保持安装链路简单，同时避免注册码进入前端或安装失败误伤有效会话。 | HTTP Client、会话管理、Collector Installer、账户状态 |
 
 ## 详细设计
 
 ### 信息架构与界面
 
-1. 增加 `account` 视图，使用现有 WorkbenchLayout，不建立独立全屏外壳。
+1. 未登录时使用独立登录门禁；登录成功后进入现有 WorkbenchLayout，并保留 `account` 视图。
 2. 侧栏展开时，账户区显示头像缩写、名称或邮箱和会话状态；设置使用独立齿轮图标按钮。
 3. 侧栏收起时，账户与设置均为固定尺寸图标按钮，使用 Tooltip 和无障碍名称。
-4. 未登录账户页默认显示“登录”，并以分段控件切换“注册”。
+4. 登录门禁默认显示“登录”，并以分段控件切换“注册”。
 5. 登录字段为邮箱、密码；注册字段为名称、邮箱、密码、确认密码。
 6. 注册按钮文案为“注册并登录”；注册成功但自动登录失败时切到登录模式、预填邮箱并明确提示账号已创建。
-7. 已登录账户页展示名称、邮箱、会话有效期和退出登录；不展示 Token、后台角色、权限或服务端内部 ID。
+7. 已登录账户页展示名称、邮箱、会话有效期、Collector 状态和退出登录；安装失败时提供“重试安装”，不展示 Token、安装命令、后台角色、权限或服务端内部 ID。
 8. 插件页增加“公共市场 / 企业 Skill Hub”来源 Tab；公共市场默认选中，现有筛选和卡片行为保持不变。
-9. 未登录的企业 Tab 显示登录门槛；从此处登录成功后返回企业 Tab。
+9. 未登录时整个工作区不可见，因此插件页不再维护独立的未登录分支。
 10. 企业列表使用搜索、状态筛选、刷新和紧凑行；详情弹窗展示描述、版本、更新时间、更新日志和本地状态。
 
 ### Runtime API
@@ -165,6 +176,10 @@ type EnterpriseSessionResponse = {
     email: string;
     name: string;
   };
+  collector?: {
+    status: "installing" | "installed" | "failed";
+    errorCode?: string;
+  };
   expiresAt?: string;
 };
 
@@ -182,8 +197,8 @@ type EnterpriseRegisterRequest = {
 
 | Runtime API | 行为 |
 | --- | --- |
-| `GET /enterprise/session` | 返回 Daemon 当前会话快照；若启动验证仍在进行则返回 `checking`。 |
-| `POST /enterprise/session/refresh` | 使用已保存 Token 手动执行 `/auth/me`；无 Token 时返回 `signed_out`。 |
+| `GET /enterprise/session` | 返回 Daemon 当前会话快照；若启动验证仍在进行则返回 `checking`，Collector 只返回脱敏安装状态。 |
+| `POST /enterprise/session/refresh` | 使用已保存 Token 手动执行 `/auth/me`；无 Token 时返回 `signed_out`；有有效 Collector 命令时重新触发安装。 |
 | `POST /enterprise/register` | 先注册并丢弃响应 Cookie，再使用同一邮箱密码登录；只返回最终会话状态。 |
 | `POST /enterprise/login` | 固定 `client_id=clawee-agent` 登录，通过 `/auth/me` 验证应用权限后安全保存 Token。 |
 | `POST /enterprise/logout` | 按远端结果决定是否清理本地安全凭据。 |
@@ -204,6 +219,10 @@ Daemon 启动
      -> checking
      -> /auth/me 200 且 account.active 且 applications.frontend=true
         -> signed_in
+        -> collector_registration 有效
+           -> Collector installing
+           -> 安装成功：Collector installed
+           -> 安装失败：Collector failed，企业会话仍保持 signed_in
      -> /auth/me 200 且 account 非 active
         -> 删除 Token 和账号缓存
         -> signed_out + ENTERPRISE_ACCOUNT_INACTIVE
@@ -222,7 +241,9 @@ Daemon 启动
 
 账户显示信息可以保存为不含 Token 的本地缓存，用于 `service_unavailable` 展示；注销成功或认证失效时删除。
 
-Web 收到 `checking` 后以短间隔读取会话快照，最长等待一次 `/auth/me` 的 15 秒超时窗口；进入任一终态后停止读取。超过窗口仍未收敛时展示“验证时间过长”和手动重新检测，不建立持续轮询。
+会话进入 `signed_in` 后立即解除登录门禁，不等待 Collector 安装完成。Daemon 从同一次 `/auth/me` 响应中取得 `collector_registration`，macOS/Linux 执行 `install_command`，Windows 执行 `install_powershell_command`；命令最多执行 5 分钟，同一时刻只运行一个安装任务，标准输出和错误输出均不进入日志。
+
+Web 收到 `checking` 或 `collector.status=installing` 后以短间隔读取会话快照，最长轮询 15 秒；会话验证或安装状态收敛后停止读取。超过窗口仍未收敛时停止自动轮询，保留当前会话和 Collector 状态，用户可在账户页手动重新检测。
 
 ### 表单交互
 
@@ -240,6 +261,8 @@ Web 收到 `checking` 后以短间隔读取会话快照，最长等待一次 `/a
 3. 不允许以文件权限、SQLite、环境变量或普通配置作为持久化降级。
 4. 企业 HTTP Client 记录方法、路径模板、状态码、请求 ID、耗时和失败阶段；不记录请求体、Authorization、Cookie 或原始敏感 URL。
 5. 通用脱敏规则增加 `access_token`、`expires_at`、`enterprise` 认证对象和 Bearer Header 覆盖测试。
+6. `collector_registration` 只在 Daemon HTTP Client 与 Collector Installer 之间传递；Runtime Protocol 仅暴露 `installing`、`installed`、`failed` 和脱敏错误码。
+7. Collector 子进程使用忽略输出模式，日志不得包含完整命令、注册码、安装 URL 或脚本输出。
 
 ### 企业 Skill 聚合状态
 
@@ -294,6 +317,7 @@ ZIP 校验必须拒绝绝对路径、Windows 盘符、`..` 越界、反斜杠规
 | `403 forbidden` | 保留会话，企业 Hub 显示无权限。 |
 | `/auth/me` 返回非 active 账号 | 清除 Token 和账号缓存，返回 `ENTERPRISE_ACCOUNT_INACTIVE`，切换 `signed_out`。 |
 | `/auth/me` 返回 `applications.frontend=false` | 清除 Token 和账号缓存，返回 `ENTERPRISE_FRONTEND_FORBIDDEN`，切换 `signed_out`。 |
+| `/auth/me` 返回 `collector_registration_failed` 或 `collector_registration_unavailable` | 保留仍可能有效的 Token，会话进入 `service_unavailable`，不执行安装命令。 |
 | `404 not_found` | 刷新目录并终止当前详情、安装或更新。 |
 | `409 version_changed` | 刷新版本，由用户重新发起。 |
 | `413 package_too_large` | 终止操作，不重试。 |
@@ -302,6 +326,7 @@ ZIP 校验必须拒绝绝对路径、Windows 盘符、`..` 越界、反斜杠规
 | 锁内来源归属变化 | 返回 `ENTERPRISE_SKILL_SOURCE_CONFLICT`，不写文件或记录。 |
 | 锁内本地内容摘要变化 | 返回 `ENTERPRISE_SKILL_LOCAL_CHANGED`，不写文件或记录。 |
 | 安全存储失败 | 不进入持久登录，返回明确错误并尝试撤销远端会话。 |
+| Collector 命令非零退出、启动失败或超时 | 会话保持 `signed_in`；Collector 返回脱敏失败码，账户页允许刷新并重试。 |
 | 校验、解压、安装、记录失败 | 删除临时内容，保持或恢复原本地 Skill 与记录。 |
 
 ## 异常、兼容、迁移与回滚
@@ -325,11 +350,11 @@ ZIP 校验必须拒绝绝对路径、Windows 盘符、`..` 越界、反斜杠规
 
 1. 先在固定 HTTP Origin 的受控环境完成接口联调；账户页面保持简洁，不展示连接协议说明。
 2. 正式用户发布前必须将配置切换到 HTTPS 并通过注册、登录、下载和注销验收。
-3. 企业登录或企业 Hub 故障不阻止应用启动，也不需要关闭公共市场。
+3. 企业会话未建立或失效时显示登录门禁；企业服务暂不可用时保留有效 Token，并在门禁或账户页提供重新检测。
 
 ### 回滚
 
-1. UI 可通过移除企业入口回滚，不影响本地项目和公共市场数据。
+1. 强制登录门禁可通过回滚 `requireEnterpriseLogin` 入口恢复为旧的可选登录行为，不改变本地项目和公共市场数据。
 2. Daemon 企业路由停用后，现有企业 Skill 文件和安装记录保留，不自动删除。
 3. 数据库新增表保持向后兼容，旧版本忽略即可。
 4. 单次 Skill 更新失败由写事务恢复旧 Skill；安装失败不保留新目录或记录。
@@ -338,7 +363,7 @@ ZIP 校验必须拒绝绝对路径、Windows 盘符、`..` 越界、反斜杠规
 
 | AC ID | 关联需求 | 前置条件 | 操作 | 可观察结果 | 验证层级 |
 | --- | --- | --- | --- | --- | --- |
-| AC-1 | FR-1、DEC-1 | 无企业 Token或企业服务离线 | 启动应用并使用本地功能、公共市场 | 应用不显示全局登录门；本地功能和公共市场可操作 | Web 集成 / E2E |
+| AC-1 | FR-1、DEC-1 | 无企业 Token、Token 失效或企业服务离线 | 启动应用 | Runtime 连通后显示登录门禁且工作区不可见；有效会话恢复为 `signed_in` 后才进入工作区 | Web 集成 / E2E |
 | AC-2 | FR-2、BR-1、BR-2 | 使用未注册邮箱 | 在注册模式提交有效名称、邮箱和密码 | Daemon 注册时不传 `client_id` 且丢弃 Cookie，再以 `clawee-agent` 登录并通过 `/auth/me` 权限验证；全部成功才显示已登录 | Daemon 集成 / Web 集成 |
 | AC-3 | FR-3、BR-4、NFR-1 | 安全存储分别为空、有效 Token、失效 Token、非 active 账号、`frontend=false`、网络失败 | 执行登录、启动恢复和手动刷新 | 三条入口使用同一判定：有效权限得到 `signed_in`；失效、非 active 或无 frontend 权限均清 Token/缓存并以对应提示进入 `signed_out`；网络失败保留 Token 并进入 `service_unavailable` | Daemon 单元 / 集成 / Web 组件 |
 | AC-4 | BR-5 | 已登录 | 分别模拟注销 `204`、`401`、网络失败 | 前两者清理本地会话；网络失败保留 Token 并显示未完成 | Daemon 集成 / Web 集成 |
@@ -347,28 +372,31 @@ ZIP 校验必须拒绝绝对路径、Windows 盘符、`..` 越界、反斜杠规
 | AC-7 | FR-5、BR-6、BR-7 | 构造各类本地 Skill 与来源记录，并允许下载期间改变本地状态 | 加载企业列表后发起安装或更新 | 七种状态及按钮符合状态表；写锁内发现手工替换、公共市场占用、未知来源或企业记录变化时返回稳定冲突，文件和原记录均不改变 | Daemon 并发/事务单元 / Web 组件 |
 | AC-8 | FR-6 | 企业包包含摘要错误、越界路径、符号链接、重复路径、超限或无效 Skill | 发起安装 | 每种包均被拒绝，临时文件被清理，本地 Skill 和记录不改变 | Daemon 安全测试 |
 | AC-9 | FR-7、BR-7、DEC-6 | 已有可更新企业 Skill 和记录的本地内容摘要 | 分别在锁内前置核验、覆盖、记录写入和清理阶段注入来源变化、手工修改或失败 | 冲突发生时不写入；事务失败时旧 Skill 可恢复；企业记录、内容摘要和最终文件一致，无半安装目录 | Daemon 并发 / 事务集成 |
-| AC-10 | FR-8 | 已安装企业 Skill | 注销、断网或远端下架后使用 Skill | 本地 Skill 不被删除；有效 Skill 仍可通过对话调用；下架项不可更新 | Daemon / Web 集成 |
+| AC-10 | FR-8 | 已安装企业 Skill | 注销、断网或远端下架 | 本地 Skill 文件不被删除；重新登录进入工作区后仍可调用有效 Skill；下架项不可更新 | Daemon / Web 集成 |
 | AC-11 | BR-3、BR-8 | 模拟登录、注销、429、409 和网络错误 | 执行对应操作 | 登录、注销、安装、更新不自动重复；读取请求仅按规则有限重试 | Daemon 单元 |
 | AC-12 | NFR-5、DEC-7 | Origin 为 HTTP 或 HTTPS | 打开账户页并执行发布验收 | 账户页不展示连接协议说明；HTTP 只允许联调目录；正式发布配置为 HTTPS 时通过安全门 | Web 组件 / 发布验收 |
 | AC-13 | NFR-4 | 从当前工作区重新构建 Web 和实际 Desktop App | 启动打包 App，访问 `clawee-app://`，通过 Runtime 代理执行注册或登录、会话恢复、企业列表及至少一次企业操作，并校验嵌入资源 | Preload Bridge、Runtime 代理和通用流程可用；`apps/web/dist` 与 App 内嵌 Web 文件列表及内容哈希完全一致 | 实际打包 App E2E / 打包校验 |
+| AC-14 | FR-9、BR-9、BR-10、NFR-6、DEC-8 | `/auth/me` 返回有效 `collector_registration` | 分别在 Unix、Windows 模拟登录、恢复、成功、非零退出和超时 | Daemon 选择正确平台命令并异步执行；登录不等待安装；成功变为 `installed`，失败保持 `signed_in` 并返回脱敏错误码；Runtime、日志和诊断中无命令或注册码 | Daemon 单元 / Web 组件 / 打包 App E2E |
 
 ## 测试策略
 
 1. Protocol 测试覆盖请求、响应、状态联合类型、企业错误码和 Token 字段缺失约束。
 2. Daemon HTTP Client 使用可控假服务验证 `snake_case` 映射、超时、Retry-After、错误包装和日志脱敏。
 3. 会话测试使用可替换的安全凭据 Store，覆盖启动恢复、401 清理、5xx 保留、注册部分成功、安全写入失败和注销网络失败。
-4. 企业 Skill 聚合测试覆盖远端列表、本地扫描、公共记录和企业记录的组合，不以数据库记录替代文件系统真相。
-5. 安装器测试使用真实 ZIP 字节覆盖摘要、路径、文件类型、条目数量、膨胀、名称、事务提交和回滚。
-6. Web 组件测试覆盖登录/注册、提交锁、字段错误、离线账户、来源 Tab、列表状态、详情和可访问性焦点。
-7. Web/Desktop 一致性测试必须使用同一 Fake Daemon、相同企业账号和 Skill 数据、相同本地偏好及相同内容视口，分别通过 Browser Bridge 和 Desktop Bridge 验证登录、会话恢复、来源 Tab、企业列表、一次企业操作、可见文案、关键尺寸、Runtime 请求和持久化结果。
-8. 实际打包 App E2E 必须从当前工作区重新构建 Web 和 Desktop，验证 Preload Bridge、`clawee-app://`、Runtime 代理、注册或登录、会话恢复、企业列表和至少一次企业操作，并比较 `apps/web/dist` 与 App 内嵌 Web 文件列表和内容哈希。
-9. 真实企业服务只用于受控契约冒烟，不在测试资产中保存账号密码；未完成实际打包 App 验证时不得声明 Web/Desktop 已一致或功能可发布。
+4. Collector Installer 测试覆盖 Unix、Windows、并发去重、非零退出、启动失败、超时和关闭；断言子进程输出被忽略且错误只包含稳定码。
+5. 企业会话测试覆盖登录、注册后登录和启动恢复触发 Collector，安装成功/失败不影响登录，以及手动刷新重试。
+6. 企业 Skill 聚合测试覆盖远端列表、本地扫描、公共记录和企业记录的组合，不以数据库记录替代文件系统真相。
+7. Skill 安装器测试使用真实 ZIP 字节覆盖摘要、路径、文件类型、条目数量、膨胀、名称、事务提交和回滚。
+8. Web 组件测试覆盖强制登录门禁、登录/注册、提交锁、字段错误、Collector 状态与重试、来源 Tab、列表状态、详情和可访问性焦点。
+9. Web/Desktop 一致性测试必须使用同一 Fake Daemon、相同企业账号和 Skill 数据、相同本地偏好及相同内容视口，分别通过 Browser Bridge 和 Desktop Bridge 验证强制登录、会话恢复、来源 Tab、企业列表、一次企业操作、可见文案、关键尺寸、Runtime 请求和持久化结果。
+10. 实际打包 App E2E 必须从当前工作区重新构建 Web 和 Desktop，验证 Preload Bridge、`clawee-app://`、Runtime 代理、注册或登录、Collector 安装、会话恢复、企业列表和至少一次企业操作，并比较 `apps/web/dist` 与 App 内嵌 Web 文件列表和内容哈希。
+11. 真实企业服务只用于受控契约冒烟，不在测试资产中保存账号密码；未完成实际打包 App 验证时不得声明 Web/Desktop 已一致或功能可发布。
 
 ## 风险与未决问题
 
 ### 风险
 
-1. 当前企业 Origin 使用 HTTP，密码和 Token 在网络链路中为明文；仅允许在受控联调环境使用，并由 HTTPS 发布硬门阻止正式发布，客户端无法补偿。
+1. 当前企业 Origin 使用 HTTP，密码、Token 和 Collector 安装命令在网络链路中可被篡改；执行被篡改脚本会形成远程代码执行风险，因此仅允许在隔离、可信网络内联调，并由 HTTPS 发布硬门阻止正式发布，客户端无法补偿。
 2. 操作系统安全凭据后端涉及平台差异；缺少后端的平台将无法持久登录，但不得回退明文。
 3. 企业 Skill ZIP 是可执行工作流内容；即使来自企业服务，仍必须保留本地安全校验和来源冲突保护。
 4. AppController 当前已承担较多编排职责；实现应保持企业领域 Service 边界，避免继续把 HTTP、状态计算和凭据语义堆入 UI 控制器。
@@ -380,6 +408,8 @@ ZIP 校验必须拒绝绝对路径、Windows 盘符、`..` 越界、反斜杠规
 ## 独立审核记录
 
 ### Reviewer 原始输出
+
+> 以下为 2026-07-30 的历史审核原文。其中“可选登录”结论已被 2026-08-06 经用户批准的 DEC-1 替代，不再代表当前方案。
 
 ```text
 ## 审核结论

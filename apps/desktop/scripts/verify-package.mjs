@@ -23,7 +23,8 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  assertKeyringArtifacts
+  assertKeyringArtifacts,
+  readEnterpriseGatewayPackageConfig
 } from './enterprise-package-contract-2026-07-30.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -47,6 +48,12 @@ const resourcesDir = platformResourcesDir(packageRoot);
 const appAsar = join(resourcesDir, 'app.asar');
 const daemonDir = join(resourcesDir, 'daemon');
 const webDir = join(resourcesDir, 'web');
+const enterpriseGatewayConfigFilename = 'config.toml';
+const enterpriseGatewayConfigPath = join(
+  resourcesDir,
+  'deployment',
+  enterpriseGatewayConfigFilename
+);
 const sourceWebDir = resolve(desktopDir, '../web/dist');
 const executable = packagedExecutable(packageRoot);
 
@@ -63,6 +70,7 @@ assertExists(join(
   'better_sqlite3.node'
 ));
 assertExists(join(webDir, 'index.html'));
+assertExists(enterpriseGatewayConfigPath);
 const keyring = assertKeyringArtifacts(daemonDir, {
   platform: targetPlatform,
   arch: targetArch,
@@ -72,6 +80,7 @@ const keyring = assertKeyringArtifacts(daemonDir, {
 assertAsarContents();
 assertBrandingContents();
 assertDaemonContents();
+assertEnterpriseGatewayConfig();
 assertWebContents();
 assertNoLocalData();
 assertSize('app.asar', appAsar, 80 * 1024 * 1024);
@@ -201,6 +210,24 @@ function assertDaemonContents() {
       throw new Error(`Daemon resources contain a development artifact: ${path}`);
     }
   });
+}
+
+function assertEnterpriseGatewayConfig() {
+  const config = readEnterpriseGatewayPackageConfig(
+    enterpriseGatewayConfigPath,
+    manifest.mode ?? 'dir'
+  );
+  if (typeof manifest.packageRoot !== 'string') return;
+  const configHash = hashBuffer(readFileSync(enterpriseGatewayConfigPath));
+  if (
+    manifest.enterpriseOrigin !== config.gateway
+    || manifest.enterpriseTransportSecurity !== config.transportSecurity
+    || manifest.enterpriseGatewayConfigHash !== configHash
+  ) {
+    throw new Error(
+      'Packaged enterprise gateway configuration does not match the build manifest'
+    );
+  }
 }
 
 function assertSameFile(label, left, right) {

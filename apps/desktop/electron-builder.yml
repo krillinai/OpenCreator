@@ -40,6 +40,8 @@ extraResources:
       - "!**/{test,tests,__tests__,example,examples}/**/*"
   - from: .pack/daemon/package.json
     to: daemon/package.json
+  - from: .pack/deployment
+    to: deployment
   - from: ../web/dist
     to: web
   - from: resources

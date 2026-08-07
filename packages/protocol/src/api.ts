@@ -775,9 +775,20 @@ export type EnterpriseAccountSummary = {
   name: string;
 };
 
+export type EnterpriseCollectorStatus =
+  | 'installing'
+  | 'installed'
+  | 'failed';
+
+export type EnterpriseCollectorState = {
+  status: EnterpriseCollectorStatus;
+  errorCode?: string;
+};
+
 export type EnterpriseSessionResponse = {
   status: EnterpriseSessionStatus;
   account?: EnterpriseAccountSummary;
+  collector?: EnterpriseCollectorState;
   expiresAt?: string;
   reason?: EnterpriseSessionReason;
   transportSecurity: EnterpriseTransportSecurity;
@@ -841,6 +852,86 @@ export type EnterpriseKnowledgeDocumentListResponse = {
 
 export type EnterpriseKnowledgeDocumentUploadResponse = {
   document: EnterpriseKnowledgeDocumentResponse;
+};
+
+export type EnterpriseSharedSpacePermissions = {
+  read: boolean;
+  write: boolean;
+};
+
+export type EnterpriseSharedSpaceResponse = {
+  spaceId: string;
+  name: string;
+  description: string;
+  updatedAt: string;
+  permissions: EnterpriseSharedSpacePermissions;
+};
+
+export type EnterpriseSharedSpaceListMeta = EnterpriseListMeta & {
+  maxFileSizeBytes: number;
+};
+
+export type EnterpriseSharedSpaceListResponse = {
+  spaces: EnterpriseSharedSpaceResponse[];
+  meta: EnterpriseSharedSpaceListMeta;
+  refreshedAt: string;
+};
+
+export type EnterpriseSharedFileResponse = {
+  fileId: string;
+  spaceId: string;
+  spaceName: string;
+  logicalPath: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  contentType: string;
+  revision: number;
+  createdByUserId?: string;
+  createdByAgentId?: string;
+  updatedByUserId: string;
+  updatedByAgentId: string;
+  createdAt?: string;
+  updatedAt: string;
+};
+
+export type EnterpriseSharedFileListResponse = {
+  files: EnterpriseSharedFileResponse[];
+  meta: EnterpriseListMeta;
+  refreshedAt: string;
+};
+
+export type EnterpriseSharedFileDetailResponse = {
+  file: EnterpriseSharedFileResponse;
+};
+
+export type EnterpriseSharedFileMutationResponse = {
+  fileId: string;
+  spaceId: string;
+  logicalPath: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  contentType: string;
+  revision: number;
+  created: boolean;
+  reconciled?: boolean;
+  updatedAt: string;
+};
+
+export type EnterpriseSharedFileDownloadRequest = {
+  projectId: string;
+  overwrite?: boolean;
+};
+
+export type EnterpriseSharedFileDownloadResponse = {
+  fileId: string;
+  projectId: string;
+  relativePath: string;
+  sizeBytes: number;
+  sha256: string;
+  revision: number;
+  overwritten: boolean;
 };
 
 export type EnterpriseSkillStatus =

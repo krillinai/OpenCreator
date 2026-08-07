@@ -1,11 +1,16 @@
 import {
   existsSync,
+  readFileSync,
   realpathSync,
   readdirSync,
   statSync
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, join } from 'node:path';
+import { parse, stringify } from '@iarna/toml';
+
+const ENTERPRISE_AGENT_ID_PATTERN =
+  /^clawee_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function resolveKeyringTarget(
   platform,
@@ -115,6 +120,45 @@ export function assertEnterpriseReleaseTransport(input) {
     origin: url.origin,
     transportSecurity
   };
+}
+
+export function readEnterpriseGatewayPackageConfig(path, mode) {
+  let parsed;
+  try {
+    parsed = parse(readFileSync(path, 'utf8'));
+  } catch {
+    throw new Error(`ENTERPRISE_CONFIG_INVALID: ${path}`);
+  }
+  if (
+    parsed === null
+    || typeof parsed !== 'object'
+    || Array.isArray(parsed)
+    || typeof parsed.gateway !== 'string'
+    || Object.keys(parsed).some(key => (
+      key !== 'gateway' && key !== 'agent_id'
+    ))
+    || (
+      parsed.agent_id !== undefined
+      && (
+        typeof parsed.agent_id !== 'string'
+        || !ENTERPRISE_AGENT_ID_PATTERN.test(parsed.agent_id)
+      )
+    )
+  ) {
+    throw new Error(`ENTERPRISE_CONFIG_INVALID: ${path}`);
+  }
+  const release = assertEnterpriseReleaseTransport({
+    mode,
+    origin: parsed.gateway.trim()
+  });
+  return {
+    gateway: release.origin,
+    transportSecurity: release.transportSecurity
+  };
+}
+
+export function serializeEnterpriseGatewayPackageConfig(gateway) {
+  return stringify({ gateway });
 }
 
 export function detectLinuxLibc() {

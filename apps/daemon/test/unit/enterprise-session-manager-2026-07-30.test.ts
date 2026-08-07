@@ -7,6 +7,9 @@ import {
   createEnterpriseSessionManager,
   EnterpriseSessionError
 } from '../../src/enterprise/session-manager-2026-07-30.js';
+import {
+  EnterpriseCollectorInstallError
+} from '../../src/enterprise/collector-installer-2026-08-06.js';
 import type {
   EnterpriseAgentIdentityStore
 } from '../../src/enterprise/agent-identity-2026-08-02.js';
@@ -441,6 +444,14 @@ function activeMe(): EnterpriseMeResult {
     agentId,
     status: 'active',
     frontendAllowed: true
+  };
+}
+
+function collectorRegistration() {
+  return {
+    installCommand: "curl -fsSL 'http://enterprise/install.sh?code=secret' | sh",
+    installPowershellCommand:
+      "irm 'http://enterprise/install.ps1?code=secret' | iex"
   };
 }
 

@@ -4,8 +4,12 @@ import {
   screen,
   shell
 } from 'electron';
+import type { BrowserWindowConstructorOptions } from 'electron';
 import type { SettingsStore } from './settings-store.js';
-import type { DesktopStartupMetrics } from '../shared/types.js';
+import {
+  DESKTOP_TITLE_BAR_HEIGHT,
+  type DesktopStartupMetrics
+} from '../shared/types.js';
 
 const WORKSPACE_READY_TIMEOUT_MS = 10_000;
 
@@ -84,6 +88,7 @@ export class WindowManager {
     const bounds = visibleBounds(settings.window);
     const window = new BrowserWindow({
       ...bounds,
+      ...nativeWindowChromeOptions(process.platform),
       minWidth: 980,
       minHeight: 680,
       show: false,
@@ -278,6 +283,22 @@ export class WindowManager {
     this.workspaceReady = undefined;
     pending.reject(error);
   }
+}
+
+export function nativeWindowChromeOptions(
+  platform: NodeJS.Platform
+): Pick<
+  BrowserWindowConstructorOptions,
+  'titleBarStyle' | 'trafficLightPosition'
+> {
+  if (platform !== 'darwin') return {};
+  return {
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: {
+      x: 12,
+      y: Math.floor((DESKTOP_TITLE_BAR_HEIGHT - 14) / 2)
+    }
+  };
 }
 
 function visibleBounds(

@@ -1,8 +1,8 @@
-# Clawee Agent 登录、MCP 能力目录、Skill Hub 与知识库接口接入文档
+# Clawee Agent 登录、MCP 能力目录、Skill Hub、知识库与共享文件接口接入文档
 
 ## 1. 文档目的
 
-本文定义 Clawee Agent 接入企业 MCP Gateway 登录、MCP 能力目录、Skill Hub 和账户授权知识库所需的 HTTP API、调用流程、错误处理和 Clawee 侧实现约束。
+本文定义 Clawee Agent 接入企业 MCP Gateway 登录、MCP 能力目录、Skill Hub、账户授权知识库和共享文件空间所需的 HTTP API、调用流程、错误处理和 Clawee 侧实现约束。
 
 本文面向 Clawee Web、Desktop 和 Daemon 的开发与测试人员。接口提供方为 `claw-mcp`，下文统一称为“企业服务”。
 
@@ -16,7 +16,7 @@
 4. 注销并撤销当前服务会话。
 5. 获取当前账户的 Collector 注册码和一键安装命令。
 6. 执行 Collector 首次安装或更新。
-7. 查询服务侧启用的 MCP 连接器、Tool 和当前 Agent 的有效授权状态。
+7. 获取当前 Agent 的 MCP Token，并查询全部 upstream MCP endpoint、Tool 和当前 Agent 的有效授权状态。
 8. 获取企业 Skill Hub 中已发布的 Skill。
 9. 获取 Skill 当前发布版本详情。
 10. 下载指定发布版本的 Skill ZIP 包。
@@ -25,6 +25,8 @@
 13. 获取当前账户授权的知识库列表。
 14. 获取授权知识库的文档列表。
 15. 向具有上传权限的知识库上传文档。
+16. 分页查询当前账户授权的共享文件空间和文件。
+17. 查询、流式下载、新建和按 revision 替换共享文件。
 
 本次接入不包括：
 
@@ -48,7 +50,7 @@
 3. 为 `clawee-agent` 签发应用端 Bearer JWT。
 4. 校验会话、账号状态和 Token 有效性。
 5. 为 Clawee 查询或隐式创建当前账户的 Collector 注册码，并返回一键安装命令。
-6. 返回服务侧启用的 MCP 连接器、Tool 和当前 Agent 的授权状态。
+6. 向当前 Clawee 会话下发其绑定 Agent 的 MCP Token，并返回全部 upstream 的受治理 MCP endpoint、Tool 和当前 Agent 的授权状态。
 7. 返回已发布 Skill 的元数据和版本信息。
 8. 分发经过服务端校验的 Skill ZIP 包。
 9. 按当前账户数据权限返回知识库和文档，并代理经过校验的文档上传。
@@ -62,11 +64,13 @@ Clawee Daemon 是企业服务的唯一调用方，负责：
 2. 在首次注册或登录前生成并持久化稳定的 `agent_id`，并保存企业服务地址和企业会话 Token。
 3. 为 Clawee Web 与 Desktop 提供统一的本地登录状态。
 4. 从当前账号接口读取 Collector 一键安装命令，并按操作系统执行首次安装或更新。
-5. 获取 Skill 列表、详情和 ZIP 包。
-6. 校验 ZIP 包 SHA-256，安全解压到临时目录。
-7. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
-8. 保存企业 Skill 安装记录，并计算更新状态。
-9. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
+5. 获取当前会话绑定 Agent 的 MCP Token，将其保存到系统安全凭据存储，并且不得返回给 Web 或 Desktop 渲染进程。
+6. 获取全部 upstream MCP endpoint 和 Tool 授权目录，供本地展示和安装受治理的企业 MCP。
+7. 获取 Skill 列表、详情和 ZIP 包。
+8. 校验 ZIP 包 SHA-256，安全解压到临时目录。
+9. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
+10. 保存企业 Skill 安装记录，并计算更新状态。
+11. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
 
 ### 3.3 Clawee Web 与 Desktop
 
@@ -172,6 +176,7 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 | 账号登录 | `POST` | `/api/v1/auth/login` | 无 |
 | 查询当前账号 | `GET` | `/api/v1/auth/me` | Bearer JWT |
 | 注销当前会话 | `POST` | `/api/v1/auth/logout` | Bearer JWT |
+| 获取当前 Agent MCP Token | `POST` | `/api/v1/app/agents/token/reveal` | Bearer JWT |
 | 获取 MCP 能力目录 | `GET` | `/api/v1/app/agents/mcp-catalog` | Bearer JWT |
 | 获取已发布 Skill 列表 | `GET` | `/api/v1/app/skills` | Bearer JWT |
 | 获取已发布 Skill 详情 | `GET` | `/api/v1/app/skills/detail?skill_id=...` | Bearer JWT |
@@ -179,6 +184,11 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 | 获取授权知识库列表 | `GET` | `/api/v1/app/knowledge-bases` | Bearer JWT |
 | 获取知识库文档列表 | `GET` | `/api/v1/app/knowledge-bases/documents?knowledge_base_id=...` | Bearer JWT |
 | 上传知识库文档 | `POST` | `/api/v1/app/knowledge-bases/documents` | Bearer JWT |
+| 获取授权共享空间 | `GET` | `/api/v1/app/shared-spaces` | Bearer JWT |
+| 查询共享文件 | `GET` | `/api/v1/app/shared-files` | Bearer JWT |
+| 查询共享文件详情 | `GET` | `/api/v1/app/shared-files/detail?file_id=...` | Bearer JWT |
+| 下载共享文件 | `GET` | `/api/v1/app/shared-files/content?file_id=...` | Bearer JWT |
+| 新建或替换共享文件 | `POST` | `/api/v1/app/shared-files/content?space_id=...&logical_path=...` | Bearer JWT |
 | 服务连通性检查 | `GET` | `/healthz` | 无 |
 
 Clawee 不得调用历史兼容路径 `/auth/*`、`/api/v1/skills/*` 或任何 `/api/v1/admin/*` 接口。
@@ -845,6 +855,15 @@ Clawee 应同时读取：
 6. 上传结果未知时不自动重试，避免产生重复文档。
 7. Web 与 Desktop 在相同账户授权下展示相同列表、权限状态和上传结果。
 
+### 21.4 MCP 接入
+
+1. Clawee Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal`，请求无需传递 `agent_id`。
+2. Token 响应只包含 Agent Token 明文和基础信息，不包含 `mcp_config`、Authorization Header 或重复兼容字段。
+3. Agent MCP Token 只写入系统安全凭据存储，不进入 React、普通配置、SQLite、日志和诊断包。
+4. MCP 能力目录返回全部未删除 upstream 及其 `/mcp/servers/{upstream_id}` 受治理 endpoint，禁用 upstream 仍返回并明确标记状态。
+5. 每个 upstream 返回其全部 Tool，`authorized` 仅在 upstream、Tool 和有效 Grant 同时可用时为 `true`。
+6. 目录不返回企业内部 upstream 原始 URL、upstream Token、凭据引用或授权数据范围。
+
 ## 22. 接口契约摘要
 
 Clawee 正式依赖以下稳定契约：
@@ -855,6 +874,7 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/me
 POST /api/v1/auth/logout
 
+POST /api/v1/app/agents/token/reveal
 GET  /api/v1/app/agents/mcp-catalog
 
 GET  /api/v1/app/skills
@@ -864,15 +884,92 @@ GET  /api/v1/app/skills/package?skill_id=<skill_id>&version_id=<version_id>
 GET  /api/v1/app/knowledge-bases
 GET  /api/v1/app/knowledge-bases/documents?knowledge_base_id=<knowledge_base_id>
 POST /api/v1/app/knowledge-bases/documents
+
+GET  /api/v1/app/shared-spaces
+GET  /api/v1/app/shared-files
+GET  /api/v1/app/shared-files/detail?file_id=<file_id>
+GET  /api/v1/app/shared-files/content?file_id=<file_id>
+POST /api/v1/app/shared-files/content?space_id=<space_id>&logical_path=<logical_path>
 ```
 
-Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。后续 MCP 能力目录请求优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`；知识库 HTTP 接口则使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token；企业服务负责身份、Collector 接入信息、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安装完整性、回滚以及知识库交互。
+Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal` 获取绑定 Agent 的 MCP Token，再通过 MCP 能力目录获取全部 upstream 的受治理 endpoint 和 Tool 授权状态；这两个接口都优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。知识库 HTTP 接口使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token 或 Agent MCP Token；企业服务负责身份、Collector 接入信息、MCP Token、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安全存储、MCP 安装完整性、回滚以及知识库交互。
 
-## 23. MCP 能力目录接口
+## 23. MCP Token 与能力目录接口
 
-### 23.1 `GET /api/v1/app/agents/mcp-catalog`
+### 23.1 `POST /api/v1/app/agents/token/reveal`
 
-返回企业服务当前启用的 MCP 上游连接器、启用的 Tool，以及 Clawee 当前登录会话所绑定 Agent 的有效授权状态。该接口为只读目录，不提供授权申请或修改能力。
+返回 Clawee 当前登录会话所绑定 Agent 的现有 active MCP Token 及基础信息。该接口只读取 Token，不创建、不轮换、不吊销 Token，也不返回 MCP 配置或 Tool 授权目录。
+
+请求：
+
+```http
+POST /api/v1/app/agents/token/reveal HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+Clawee 请求不需要请求体，也不需要传递 `agent_id`。服务端从已认证的 `clawee-agent` Principal 和 Session 中读取绑定的 Agent ID。若客户端显式传入 `agent_id`，该值只用于一致性校验，不能用于切换 Agent：
+
+```json
+{}
+```
+
+成功响应：
+
+```json
+{
+  "data": {
+    "token_id": "token_clawee_123",
+    "agent_id": "clawee_550e8400-e29b-41d4-a716-446655440000",
+    "token": "agt_xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "token_type": "Bearer",
+    "fingerprint": "a1b2c3d4e5f6",
+    "status": "active",
+    "expires_at": null,
+    "scopes": [
+      "mcp:call"
+    ],
+    "created_at": "2026-08-06T10:00:00Z"
+  }
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `token_id` | string | Agent MCP Token 的不透明记录 ID |
+| `agent_id` | string | Token 所属 Agent；Clawee 必须校验其与本地 `agent_id` 一致 |
+| `token` | string | 调用企业 MCP endpoint 时使用的 Bearer Token 明文 |
+| `token_type` | string | 固定为 `Bearer` |
+| `fingerprint` | string | Token 指纹，用于诊断和识别，不可代替 Token 调用 MCP |
+| `status` | string | 当前返回值固定为 `active` |
+| `expires_at` | string \| null | Token 到期时间；无到期时间时为 `null` |
+| `scopes` | string[] | Token Scope；当前必须包含 `mcp:call` |
+| `created_at` | string | Token 创建时间 |
+
+Clawee 处理要求：
+
+1. 仅 Daemon 可以调用并读取该响应；React 渲染进程不得读取 `token`。
+2. Daemon 必须把 `token` 写入系统安全凭据存储，不得写入普通配置、SQLite、日志或诊断包。
+3. MCP 配置中不得持久化 Token 明文；应只保存 endpoint 和环境变量名，由 Daemon 启动 Agent Runtime 时注入 Token。
+4. 重复调用 `reveal` 返回当前 active Token，不会隐式轮换。
+5. 返回 `404 not_found` 表示当前 Agent 没有可读取的 active Token、Token 已过期或历史 Token 不可恢复；不得把应用端 Bearer JWT 当作 MCP Token 使用。
+
+错误处理：
+
+| HTTP 状态 | `error.code` | Clawee 处理 |
+| --- | --- | --- |
+| `400` | `invalid_request` | 请求 JSON 无效；不重试、不更换 `agent_id` |
+| `401` | `unauthorized` | 应用 Token 缺失、过期或会话失效；清除本地应用 Token 并进入未登录状态 |
+| `403` | `agent_context_mismatch` | 请求中的 `agent_id` 与会话不一致；按客户端状态错误处理 |
+| `403` | `agent_forbidden` | 会话绑定 Agent 已停用；不得继续安装或启动企业 MCP |
+| `404` | `not_found` | 当前 Agent 没有可读取的 active MCP Token；停止安装并提示重新签发 Token |
+| `500/503` | `internal_error` | 保留登录状态，不覆盖本地已有 MCP Token，允许用户手动重试 |
+
+### 23.2 `GET /api/v1/app/agents/mcp-catalog`
+
+返回企业服务中全部未删除 upstream MCP、每个 upstream 对应的 Gateway MCP endpoint、其 Tool 列表，以及 Clawee 当前登录会话所绑定 Agent 的有效授权状态。该接口为只读目录，不提供授权申请或修改能力。
 
 请求：
 
@@ -894,29 +991,39 @@ Clawee 请求不需要传递 `agent_id`。服务端优先从已认证的 `clawee
 {
   "data": {
     "agent_id": "clawee_550e8400-e29b-41d4-a716-446655440000",
-    "connectors": [
+    "upstreams": [
       {
         "id": "crm-main",
         "name": "CRM",
         "domain": "sales",
+        "mcp_endpoint": "http://1.13.175.31:1904/mcp/servers/crm-main",
+        "upstream_transport": "streamable_http",
+        "namespace": "crm",
+        "status": "active",
         "tools": [
           {
             "id": "cap_customer_search",
-            "name": "crm.customer.search",
+            "upstream_name": "customer.search",
+            "name": "customer.search",
+            "exposed_name": "crm.customer.search",
             "title": "查询客户",
             "description": "按条件查询客户资料",
             "risk_level": "low",
             "confirm_required": false,
+            "status": "active",
             "authorized": true,
             "authorization_expires_at": "2026-08-31T16:00:00Z"
           },
           {
             "id": "cap_customer_delete",
-            "name": "crm.customer.delete",
+            "upstream_name": "customer.delete",
+            "name": "customer.delete",
+            "exposed_name": "crm.customer.delete",
             "title": "删除客户",
             "description": "删除指定客户记录",
             "risk_level": "high",
             "confirm_required": true,
+            "status": "active",
             "authorized": false,
             "authorization_expires_at": null
           }
@@ -932,21 +1039,28 @@ Clawee 请求不需要传递 `agent_id`。服务端优先从已认证的 `clawee
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `agent_id` | string | 本次授权判断实际使用的会话 Agent ID；Clawee 必须校验其与本地 `agent_id` 一致 |
-| `connectors` | array | 当前所有启用的 MCP 上游连接器；没有可用连接器时为空数组 |
-| `connectors[].id` | string | 连接器的不透明标识 |
-| `connectors[].name` | string | 连接器展示名称 |
-| `connectors[].domain` | string | 连接器所属业务域 |
-| `connectors[].tools` | array | 该连接器下所有启用的 Tool；无启用 Tool 时为空数组 |
+| `upstreams` | array | 当前全部未删除 upstream MCP；没有 upstream 时为空数组 |
+| `upstreams[].id` | string | upstream 的不透明标识 |
+| `upstreams[].name` | string | upstream 展示名称 |
+| `upstreams[].domain` | string | upstream 所属业务域 |
+| `upstreams[].mcp_endpoint` | string | 由本项目 Gateway 暴露的受治理 MCP endpoint；Clawee 安装 MCP 时使用该地址 |
+| `upstreams[].upstream_transport` | string | Gateway 连接企业内部 upstream 时使用的 transport |
+| `upstreams[].namespace` | string | upstream 在聚合 Gateway 中使用的 Tool 命名空间 |
+| `upstreams[].status` | string | upstream 当前状态；非 `active` endpoint 不可调用 |
+| `upstreams[].tools` | array | 该 upstream 下的全部 Tool；没有 Tool 时为空数组 |
 | `tools[].id` | string | Tool 能力的不透明标识 |
-| `tools[].name` | string | Agent 调用时使用的 Tool 名称 |
+| `tools[].upstream_name` | string | 企业内部 upstream 原始 Tool 名称 |
+| `tools[].name` | string | 通过当前 `mcp_endpoint` 调用时使用的 endpoint 本地 Tool 名称 |
+| `tools[].exposed_name` | string | 通过聚合 `/mcp` endpoint 调用时使用的带 namespace Tool 名称 |
 | `tools[].title` | string | Tool 展示名称 |
 | `tools[].description` | string | Tool 功能说明 |
 | `tools[].risk_level` | string | 风险等级 |
 | `tools[].confirm_required` | boolean | 调用时是否需要用户确认 |
-| `tools[].authorized` | boolean | 当前会话 Agent 是否拥有有效授权；客户端必须以此字段为准 |
+| `tools[].status` | string | Tool 当前状态；非 `active` Tool 不可调用 |
+| `tools[].authorized` | boolean | 当前会话 Agent 是否可以通过该 endpoint 调用此 Tool；只有 upstream 和 Tool 均为 `active` 且存在有效 Grant 时才为 `true` |
 | `tools[].authorization_expires_at` | string \| null | 当前有效授权的到期时间；永久授权、无授权或授权已失效时为 `null` |
 
-接口会返回已授权和未授权的启用 Tool。禁用连接器和禁用 Tool 不返回；响应不包含上游地址、连接凭证、授权数据范围等敏感信息。当前目录不分页，客户端必须忽略未来新增字段。
+接口会返回全部未删除 upstream，以及每个 upstream 下已授权、未授权、启用和停用的 Tool。`mcp_endpoint` 始终指向本项目 Gateway 的 `/mcp/servers/{upstream_id}` 受治理入口，不返回企业内部 upstream 原始 URL、upstream Token、凭据引用或授权数据范围。软删除 upstream 不返回。当前目录不分页，客户端必须忽略未来新增字段。
 
 错误处理：
 
@@ -1130,3 +1244,323 @@ Daemon 上传约束：
 | `409` | `conflict` | 资源状态不允许当前操作；刷新列表和状态 |
 | `502` | `knowledge_provider_error` | 底层知识库暂不可用；保留登录状态，允许用户稍后重试 |
 | `500` | `internal_error` | 保留登录状态，记录脱敏诊断并允许手动重试 |
+
+## 25. 共享文件空间接口
+
+共享文件空间是企业服务中的文件数据权限边界。Clawee 只调用 `/api/v1/app/*` 应用端接口，不调用共享空间后台管理接口。空间创建和成员授权由企业管理员完成；Clawee 使用当前登录账户和会话绑定 Agent 的 Bearer JWT 查询及读写已经授权的空间。
+
+所有共享文件接口必须满足以下认证条件：
+
+1. 请求携带 `Authorization: Bearer <enterprise_access_token>`。
+2. Token 由 `client_id=clawee-agent` 的登录流程签发，并绑定非空 `agent_id`。
+3. 账号、Session、Agent 归属和 Agent 状态均有效。
+4. 读取操作要求账户具有空间 `read` 授权；新建和替换要求空间 `write` 授权。
+5. 未授权空间或文件与真实不存在资源使用相同的 `404` 响应，Clawee 不得通过枚举 ID、搜索数量或错误差异探测资源。
+
+### 25.1 `GET /api/v1/app/shared-spaces`
+
+分页返回当前账户具有 `read` 授权的共享空间。
+
+Query 参数：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `limit` | 否 | 分页大小；默认 `50`，最小 `1`，最大 `100` |
+| `cursor` | 否 | 上一页返回的不透明游标；首次请求不传 |
+
+请求示例：
+
+```http
+GET /api/v1/app/shared-spaces?limit=50 HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+成功响应：`200 OK`
+
+```json
+{
+  "data": [
+    {
+      "space_id": "space_01JXYZ",
+      "name": "季度方案",
+      "description": "跨团队方案文件",
+      "updated_at": "2026-08-05T08:30:00Z"
+    }
+  ],
+  "meta": {
+    "next_cursor": "",
+    "has_next": false,
+    "max_file_size_bytes": 1073741824
+  }
+}
+```
+
+空间按 `updated_at DESC, space_id ASC` 排序。`updated_at` 只表示空间名称或说明的更新时间，不随成员增删或文件上传变化。Clawee 必须读取 `max_file_size_bytes` 进行上传前校验，但不得假设该字段会替代服务端限制。
+
+### 25.2 `GET /api/v1/app/shared-files`
+
+分页查询当前账户可读取的共享文件。`space_id` 为空时跨当前账户的全部授权空间查询。
+
+Query 参数：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `space_id` | 否 | 限定一个已授权共享空间 |
+| `query` | 否 | 去除首尾空白后，同时对 `file_id` 和 `file_name` 做大小写不敏感的包含匹配；最多 200 个字符 |
+| `logical_path_prefix` | 否 | 限定逻辑路径前缀，可以以 `/` 结尾 |
+| `limit` | 否 | 分页大小；默认 `50`，最小 `1`，最大 `100` |
+| `cursor` | 否 | 上一页返回的不透明游标；连续翻页时其他查询参数必须保持不变 |
+
+请求示例：
+
+```http
+GET /api/v1/app/shared-files?space_id=space_01JXYZ&query=design&logical_path_prefix=docs%2F&limit=50 HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+成功响应：`200 OK`
+
+```json
+{
+  "data": [
+    {
+      "file_id": "file_01JXYZ",
+      "space_id": "space_01JXYZ",
+      "space_name": "季度方案",
+      "logical_path": "docs/design.md",
+      "file_name": "design.md",
+      "size_bytes": 12345,
+      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "content_type": "text/markdown",
+      "revision": 3,
+      "updated_by_user_id": "usr_123",
+      "updated_by_agent_id": "clawee_123",
+      "updated_at": "2026-08-05T08:30:00Z"
+    }
+  ],
+  "meta": {
+    "next_cursor": "opaque_cursor",
+    "has_next": true
+  }
+}
+```
+
+文件统一按 `updated_at DESC, file_id ASC` 排序。`%` 和 `_` 在 `query` 中按普通字符处理，不具有 SQL 通配符语义。指定的 `space_id` 不存在或当前账户无权读取时返回 `404 shared_space_not_found`。
+
+### 25.3 `GET /api/v1/app/shared-files/detail`
+
+按稳定 `file_id` 查询当前文件元数据，不返回文件正文。
+
+Query 参数：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `file_id` | 是 | 文件列表返回的不透明文件标识 |
+
+请求示例：
+
+```http
+GET /api/v1/app/shared-files/detail?file_id=file_01JXYZ HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+成功响应：`200 OK`
+
+```json
+{
+  "data": {
+    "file_id": "file_01JXYZ",
+    "space_id": "space_01JXYZ",
+    "space_name": "季度方案",
+    "logical_path": "docs/design.md",
+    "file_name": "design.md",
+    "size_bytes": 12345,
+    "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "content_type": "text/markdown",
+    "revision": 3,
+    "created_by_user_id": "usr_123",
+    "created_by_agent_id": "clawee_123",
+    "updated_by_user_id": "usr_456",
+    "updated_by_agent_id": "clawee_456",
+    "created_at": "2026-08-04T08:00:00Z",
+    "updated_at": "2026-08-05T08:30:00Z"
+  }
+}
+```
+
+文件不存在或当前账户无权读取时返回 `404 shared_file_not_found`。
+
+### 25.4 `GET /api/v1/app/shared-files/content`
+
+流式下载文件当前内容。成功响应体是原始文件字节，不使用 JSON 包装。
+
+Query 参数：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `file_id` | 是 | 文件列表或详情返回的不透明文件标识 |
+
+请求示例：
+
+```http
+GET /api/v1/app/shared-files/content?file_id=file_01JXYZ HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Accept: application/octet-stream
+```
+
+成功响应：`200 OK`
+
+```http
+Content-Type: text/markdown
+Content-Length: 12345
+Content-Disposition: attachment; filename*=UTF-8''design.md
+ETag: "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+X-Shared-File-ID: file_01JXYZ
+X-File-Revision: 3
+X-Content-SHA256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+```
+
+Daemon 下载约束：
+
+1. 必须将响应体流式写入目标目录内的临时文件，不得把完整正文读入内存或返回给 React 渲染进程。
+2. 下载完成后同时校验实际字节数、`Content-Length` 和 `X-Content-SHA256`；校验失败时删除临时文件。
+3. 校验成功后再原子替换用户指定的本地目标文件。是否允许覆盖必须由本地 MCP Tool 的明确参数表达。
+4. `X-File-Revision` 是后续替换上传使用的并发校验值，必须与下载结果一起返回给调用方。
+5. `storage_key` 和服务器物理路径不会出现在响应中，Daemon 不得推导或构造这些内部字段。
+6. 存储对象在响应头发送前不可用时返回 JSON `500 storage_unavailable`；响应流开始后中断时，以长度或摘要校验失败处理。
+
+### 25.5 `POST /api/v1/app/shared-files/content`
+
+使用原始 HTTP 请求体流式新建文件或替换当前内容。请求不是 Multipart，也不使用 JSON 或 Base64 包装正文。
+
+Query 参数：
+
+| 参数 | 新建 | 替换 | 说明 |
+| --- | --- | --- | --- |
+| `space_id` | 必填 | 必填 | 目标共享空间 ID |
+| `logical_path` | 必填 | 必填 | 空间内逻辑路径，必须进行 URL 编码 |
+| `expected_revision` | 不传 | 必填 | 最近一次详情或下载得到的正整数 revision |
+
+必须提供的请求头：
+
+| 请求头 | 必填 | 说明 |
+| --- | --- | --- |
+| `Authorization` | 是 | `Bearer <enterprise_access_token>` |
+| `Content-Length` | 是 | 原始文件字节数，允许 `0`；不得使用未知长度或仅依赖 chunked 传输 |
+| `X-Content-SHA256` | 是 | 原始文件内容的 64 位小写十六进制 SHA-256 |
+| `Content-Type` | 否 | 文件 MIME；未提供时保存为 `application/octet-stream`，最多 255 字节 |
+
+新建请求示例：
+
+```http
+POST /api/v1/app/shared-files/content?space_id=space_01JXYZ&logical_path=docs%2Fdesign.md HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Content-Type: text/markdown
+Content-Length: 12345
+X-Content-SHA256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+
+<原始文件字节流>
+```
+
+替换请求示例：
+
+```http
+POST /api/v1/app/shared-files/content?space_id=space_01JXYZ&logical_path=docs%2Fdesign.md&expected_revision=3 HTTP/1.1
+Authorization: Bearer <enterprise_access_token>
+Content-Type: text/markdown
+Content-Length: 12345
+X-Content-SHA256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+
+<原始文件字节流>
+```
+
+新建成功返回 `201 Created`；替换成功返回 `200 OK`：
+
+```json
+{
+  "data": {
+    "file_id": "file_01JXYZ",
+    "space_id": "space_01JXYZ",
+    "logical_path": "docs/design.md",
+    "file_name": "design.md",
+    "size_bytes": 12345,
+    "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "content_type": "text/markdown",
+    "revision": 4,
+    "created": false,
+    "updated_at": "2026-08-05T08:30:00Z"
+  }
+}
+```
+
+上传语义：
+
+1. 新建时不得传 `expected_revision`。相同 `space_id + logical_path` 已存在时返回 `409 file_already_exists`。
+2. 替换时必须传最近读取的 `expected_revision`。服务端仅在当前 revision 相等时切换内容，并将 revision 加一。
+3. revision 已变化时返回 `409 revision_conflict`，错误详情包含 `current_revision`。Daemon 必须重新下载并交由调用方合并，不得自动覆盖或自动使用新 revision 重试。
+4. 网络中断、请求超时、超限、长度不符、摘要不符、权限变化、revision 冲突或服务端失败时，不得把本次内容视为上传成功。
+5. 新建请求结果未知时，Daemon 不得盲目自动重试。应先按空间和路径查询文件并比对摘要，再决定是否由用户重试。
+6. `local_path` 只存在于 Codex 与本地 MCP Server 之间，不得作为 Query、Header 或正文元数据发送给企业服务。
+
+### 25.6 路径、大小和分页限制
+
+| 项目 | 限制 |
+| --- | --- |
+| 单文件大小 | 最大 `1073741824` 字节（1 GiB），允许空文件 |
+| `logical_path` | UTF-8 编码后最多 512 字节 |
+| 单个路径片段和文件名 | UTF-8 编码后最多 255 字节 |
+| `query` | 最多 200 个字符 |
+| 分页大小 | 默认 50，最小 1，最大 100 |
+| `cursor` | 最多 2048 字节，不透明 URL-safe Base64 字符串 |
+| SHA-256 | 64 位小写十六进制字符串 |
+
+`logical_path` 使用 `/` 分隔，并遵循以下规则：
+
+1. 不允许空路径、绝对路径、反斜杠、NUL、空片段、`.` 或 `..` 片段。
+2. 不允许以 `/` 开头或结尾，不允许连续 `/`。
+3. 不做 Unicode 大小写或兼容等价归一化；路径按原字符串精确判定唯一。
+4. `logical_path_prefix` 可以以 `/` 结尾，其余片段规则相同。
+5. Daemon 的本地路径校验、允许根目录、符号链接防护和临时文件原子替换是独立责任，服务端逻辑路径校验不能替代本地文件安全检查。
+
+### 25.7 错误处理
+
+错误响应继续使用第 5.5 节的统一 JSON 结构。
+
+| HTTP | `error.code` | 场景 | Clawee 行为 |
+| --- | --- | --- | --- |
+| `400` | `invalid_request` | 查询参数、请求头或 revision 格式无效 | 修正请求，不重试原请求 |
+| `400` | `invalid_logical_path` | 逻辑路径不符合规则 | 拒绝调用并提示路径无效 |
+| `400` | `invalid_digest` | SHA-256 格式不是 64 位小写十六进制 | 重新计算摘要后由用户重试 |
+| `400` | `invalid_cursor` | 游标无法解码或缺少排序字段 | 清空游标并重新查询 |
+| `401` | `unauthorized` | Token 缺失、过期或 Session 失效 | 清除本地 Token，进入未登录状态 |
+| `403` | `agent_forbidden` | Agent 未绑定、被禁用或归属失效 | 停止文件请求，保留本地 `agent_id` 并要求重新登录或联系管理员 |
+| `404` | `shared_space_not_found` | 空间不存在或当前账户无权访问 | 刷新空间列表，不探测资源 |
+| `404` | `shared_file_not_found` | 文件不存在或当前账户无权访问 | 刷新文件列表，不探测资源 |
+| `409` | `file_already_exists` | 新建路径已存在 | 查询现有文件并显式决定是否替换 |
+| `409` | `revision_conflict` | 替换时 revision 已变化 | 使用 `current_revision` 提示冲突，重新下载，不自动覆盖 |
+| `411` | `length_required` | 上传缺少 `Content-Length` | 补充长度后重新发起 |
+| `413` | `file_too_large` | 声明或实际内容超过 1 GiB | 终止上传，不重试同一文件 |
+| `422` | `content_length_mismatch` | 实际字节数与声明不一致 | 重新读取本地文件并重新计算长度和摘要 |
+| `422` | `digest_mismatch` | 服务端计算摘要与声明不一致 | 重新读取本地文件，不自动重复发送旧请求体 |
+| `500` | `storage_unavailable` | 服务端文件存储不可用 | 保留本地文件和登录状态，允许稍后手动重试 |
+| `500` | `internal_error` | 数据库或未知服务端错误 | 保留本地状态，记录脱敏诊断并允许手动重试 |
+
+`revision_conflict` 示例：
+
+```json
+{
+  "error": {
+    "code": "revision_conflict",
+    "message": "文件已被其他成员修改",
+    "details": [
+      {
+        "field": "expected_revision",
+        "current_revision": 4
+      }
+    ]
+  }
+}
+```

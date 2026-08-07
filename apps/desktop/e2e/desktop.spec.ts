@@ -7,6 +7,7 @@ import {
   rmSync,
   writeFileSync
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import {
   delimiter,
@@ -30,6 +31,13 @@ import {
   waitForProcessExit,
   type PackagedApp
 } from './packaged-app.js';
+import {
+  FakeEnterpriseAuthServer,
+  deleteEnterpriseE2ECredential,
+  desktopE2EEnterpriseEmail,
+  desktopE2EEnterprisePassword,
+  writeEnterpriseE2EConfig
+} from './fake-enterprise-auth-2026-08-06.js';
 
 const e2eDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(e2eDir, '..');
@@ -37,13 +45,24 @@ const fakeCodexScript = join(e2eDir, 'fixtures', 'fake-codex.mjs');
 
 test.describe.configure({ mode: 'serial' });
 
+const enterpriseServer = new FakeEnterpriseAuthServer();
+let enterpriseOrigin = '';
+
+test.beforeAll(async () => {
+  enterpriseOrigin = await enterpriseServer.start();
+});
+
+test.afterAll(async () => {
+  await enterpriseServer.close();
+});
+
 test('Finder 最小 PATH 下可发现 nvm 安装的 Codex', async () => {
   const fixture = await launchPackagedDesktop('success', {
     codexLocation: 'nvm',
     minimalPath: true
   });
   try {
-    await waitForWorkspace(fixture.page);
+    await waitForRuntimeReady(fixture.page);
     const state = await fixture.page.evaluate(
       () => window.claweeDesktop?.readBootstrapState()
     );
@@ -72,7 +91,7 @@ test('Finder 最小 PATH 下可发现 ChatGPT 应用内置的 Codex', async () =
     misleadingCodexWrapper: true
   });
   try {
-    await waitForWorkspace(fixture.page);
+    await waitForRuntimeReady(fixture.page);
     const state = await fixture.page.evaluate(
       () => window.claweeDesktop?.readBootstrapState()
     );
@@ -93,7 +112,7 @@ test('Finder 最小 PATH 下可发现 ChatGPT 应用内置的 Codex', async () =
   }
 });
 
-test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON、二进制和 SSE', async () => {
+test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON、二进制和 SSE', async ({}, testInfo) => {
   const fixture = await launchPackagedDesktop('success');
   try {
     await waitForWorkspace(fixture.page);
@@ -117,6 +136,7 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
       requireType: typeof (window as Window & { require?: unknown }).require,
       processType: typeof (window as Window & { process?: unknown }).process,
       bridgeKind: window.claweeDesktop?.kind,
+      windowChrome: window.claweeDesktop?.windowChrome,
       resolveDroppedFilePathType: typeof window.claweeDesktop?.resolveDroppedFilePath,
       connection: await window.claweeDesktop?.readConnectionConfig()
     }));
@@ -124,11 +144,66 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
       requireType: 'undefined',
       processType: 'undefined',
       bridgeKind: 'desktop',
+      windowChrome: process.platform === 'darwin'
+        ? {
+            integratedTitleBar: true,
+            titleBarHeight: 38,
+            trafficLightInset: 76
+          }
+        : {
+            integratedTitleBar: false
+          },
       resolveDroppedFilePathType: 'function'
     });
     expect(security.connection).toEqual({
       baseUrl: '/.clawee/runtime'
     });
+    if (process.platform === 'darwin') {
+      const titleBarLayout = await fixture.page.evaluate(() => {
+        const dragRegion = document.querySelector<HTMLElement>(
+          '.desktop-titlebar-drag-region'
+        )!;
+        const sidebar = document.querySelector<HTMLElement>('.clawee-sidebar')!;
+        const mainPane = document.querySelector<HTMLElement>('.clawee-main-pane')!;
+        const dragRect = dragRegion.getBoundingClientRect();
+        return {
+          shellCapability: document.querySelector('.app-drop-shell')
+            ?.getAttribute('data-integrated-title-bar'),
+          dragRect: {
+            x: dragRect.x,
+            y: dragRect.y,
+            height: dragRect.height
+          },
+          sidebarPaddingTop: getComputedStyle(sidebar).paddingTop,
+          mainPaddingTop: getComputedStyle(mainPane).paddingTop
+        };
+      });
+      expect(titleBarLayout).toEqual({
+        shellCapability: 'true',
+        dragRect: {
+          x: 76,
+          y: 0,
+          height: 38
+        },
+        sidebarPaddingTop: '51px',
+        mainPaddingTop: '38px'
+      });
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('integrated-titlebar-2026-08-05.png')
+      });
+      const previousTheme = await fixture.page.evaluate(() => {
+        const value = document.documentElement.dataset.theme;
+        document.documentElement.dataset.theme = 'light';
+        return value;
+      });
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('integrated-titlebar-light-2026-08-05.png')
+      });
+      await fixture.page.evaluate(theme => {
+        if (theme === undefined) delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = theme;
+      }, previousTheme);
+    }
 
     const mainPid = requiredPid(fixture.process.pid);
     const daemonPid = await waitForDaemonUtilityPid(mainPid);
@@ -237,6 +312,131 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
     await pageClosed;
     expect(isProcessAlive(mainPid)).toBe(true);
     expect(findDaemonUtilityPid(mainPid)).toBe(daemonPid);
+  } finally {
+    await closeFixture(fixture);
+  }
+});
+
+test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可点击', async ({}, testInfo) => {
+  const fixture = await launchPackagedDesktop('success');
+  const projectDir = join(fixture.root, 'titlebar-workspace');
+  mkdirSync(projectDir, { recursive: true });
+  writeFileSync(join(projectDir, 'README.md'), '# titlebar workspace\n');
+
+  try {
+    await waitForWorkspace(fixture.page);
+    const createdProject = await runtimeRequest<{
+      project: { id: string };
+    }>(fixture.page, 'POST', '/projects', {
+      cwd: projectDir,
+      name: '标题栏验证项目',
+      sandbox: 'workspace-write'
+    });
+    const createdThread = await runtimeRequest<{
+      thread: { id: string };
+    }>(fixture.page, 'POST', '/threads', {
+      projectId: createdProject.body.project.id,
+      title: 'hello',
+      sandbox: 'workspace-write'
+    });
+
+    await fixture.page.addInitScript(threadId => {
+      const originalFetch = window.fetch.bind(window);
+      let releaseHistory: (() => void) | undefined;
+      const historyGate = new Promise<void>(resolve => {
+        releaseHistory = resolve;
+      });
+      Object.defineProperty(window, '__claweeReleaseHistoryLoad', {
+        configurable: true,
+        value: () => releaseHistory?.()
+      });
+      window.fetch = async (...args: Parameters<typeof fetch>) => {
+        const input = args[0];
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes(`/threads/${threadId}/history?`)) {
+          await historyGate;
+        }
+        return await originalFetch(...args);
+      };
+    }, createdThread.body.thread.id);
+    await fixture.page.evaluate(threadId => {
+      window.location.hash = `#/thread/${threadId}`;
+    }, createdThread.body.thread.id);
+    await fixture.page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForWorkspace(fixture.page);
+
+    await expect(fixture.page.getByRole('status', {
+      name: '正在加载会话历史'
+    })).toBeVisible();
+    await expect(fixture.page.locator('.conversation-page')).not.toHaveClass(/is-empty/);
+    await expect(fixture.page.getByText('需要帮你做点什么')).toHaveCount(0);
+    await expect(fixture.page.getByText('数据分析')).toHaveCount(0);
+    await fixture.page.evaluate(() => {
+      (
+        window as Window & { __claweeReleaseHistoryLoad?: () => void }
+      ).__claweeReleaseHistoryLoad?.();
+    });
+    await expect(fixture.page.getByRole('status', {
+      name: '正在加载会话历史'
+    })).toHaveCount(0);
+    await expect(fixture.page.locator('.conversation-page')).toHaveClass(/is-empty/);
+
+    const title = fixture.page.getByRole('heading', { name: 'hello' });
+    const fileButton = fixture.page
+      .locator('.clawee-main-titlebar')
+      .getByRole('button', { name: '文件', exact: true });
+    await expect(title).toBeVisible();
+    await expect(fileButton).toBeVisible();
+
+    if (process.platform === 'darwin') {
+      const titlebarLayout = await fixture.page.evaluate(() => {
+        const mainPane = document.querySelector<HTMLElement>('.clawee-main-pane')!;
+        const titlebar = document.querySelector<HTMLElement>('.clawee-main-titlebar')!;
+        const title = titlebar.querySelector<HTMLElement>('h1')!;
+        const fileButton = titlebar.querySelector<HTMLElement>('.conversation-file-button')!;
+        const conversationPage = document.querySelector<HTMLElement>('.conversation-page')!;
+        const titlebarRect = titlebar.getBoundingClientRect();
+        const titleRect = title.getBoundingClientRect();
+        const fileButtonRect = fileButton.getBoundingClientRect();
+        const conversationPageRect = conversationPage.getBoundingClientRect();
+        return {
+          titleCount: document.querySelectorAll('.conversation-header h1').length,
+          mainPanePaddingTop: getComputedStyle(mainPane).paddingTop,
+          titlebarRect: {
+            y: titlebarRect.y,
+            height: titlebarRect.height
+          },
+          titleRect: {
+            y: titleRect.y,
+            bottom: titleRect.bottom
+          },
+          fileButtonRect: {
+            y: fileButtonRect.y,
+            bottom: fileButtonRect.bottom
+          },
+          conversationPageY: conversationPageRect.y
+        };
+      });
+
+      expect(titlebarLayout.titleCount).toBe(1);
+      expect(titlebarLayout.mainPanePaddingTop).toBe('0px');
+      expect(titlebarLayout.titlebarRect.y).toBe(0);
+      expect(titlebarLayout.titlebarRect.height).toBe(38);
+      expect(titlebarLayout.titleRect.y).toBeGreaterThanOrEqual(0);
+      expect(titlebarLayout.titleRect.bottom).toBeLessThanOrEqual(38);
+      expect(titlebarLayout.fileButtonRect.y).toBeGreaterThanOrEqual(0);
+      expect(titlebarLayout.fileButtonRect.bottom).toBeLessThanOrEqual(38);
+      expect(titlebarLayout.conversationPageY).toBeGreaterThanOrEqual(37);
+      expect(titlebarLayout.conversationPageY).toBeLessThanOrEqual(39);
+
+      await fixture.page.screenshot({
+        path: testInfo.outputPath('conversation-titlebar-2026-08-05.png')
+      });
+    }
+
+    await fileButton.click();
+    await expect(fixture.page.getByLabel('会话和文件工作区')).toBeVisible();
+    await expect(fileButton).toHaveAttribute('aria-pressed', 'true');
   } finally {
     await closeFixture(fixture);
   }
@@ -453,6 +653,7 @@ test('packaged app persists Clawee projects when Codex app-server is unavailable
     await closePackagedApp(previous);
     fixture = {
       ...await relaunchPackagedApp(previous),
+      enterpriseRunId: previous.enterpriseRunId,
       root: previous.root,
       stateDir: previous.stateDir
     };
@@ -720,6 +921,7 @@ test('退出期间会回收仍在 Probe 中的 Codex 子进程', async () => {
 });
 
 type DesktopFixture = PackagedApp & {
+  enterpriseRunId: string;
   root: string;
   stateDir: string;
 };
@@ -741,7 +943,10 @@ async function launchPackagedDesktop(
   const stateDir = join(root, 'fake-codex-state');
   const codexHome = join(root, 'codex-home');
   const userData = join(root, 'user-data');
+  const enterpriseRunId = randomUUID();
+  const enterpriseConfigPath = join(root, '.clawee', 'config.toml');
   writeCodexShim(binDir);
+  writeEnterpriseE2EConfig(enterpriseConfigPath, enterpriseOrigin);
   if (options.misleadingCodexWrapper === true) {
     writeMisleadingCodexWrapper(join(root, '.local', 'bin'));
   }
@@ -750,7 +955,9 @@ async function launchPackagedDesktop(
     executablePath: packagedExecutable(desktopDir),
     args: [
       `--user-data-dir=${userData}`,
-      '--disable-gpu'
+      '--disable-gpu',
+      `--clawee-enterprise-e2e=${enterpriseRunId}`,
+      `--clawee-enterprise-e2e-config=${enterpriseConfigPath}`
     ],
     env: {
       ...withoutElectronRunAsNode(process.env),
@@ -758,13 +965,18 @@ async function launchPackagedDesktop(
         ? minimalSystemPath()
         : `${binDir}${delimiter}${process.env.PATH ?? ''}`,
       SHELL: process.platform === 'win32' ? process.env.ComSpec : '/bin/false',
-      HOME: root,
-      USERPROFILE: root,
+      ...(options.minimalPath
+        ? {
+            HOME: root,
+            USERPROFILE: root
+          }
+        : {}),
       CLAWEE_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
       CODEX_HOME: codexHome,
       CLAWEE_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
       CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
       CLAWEE_E2E_FAKE_CODEX_MODE: mode,
+      CLAWEE_ENTERPRISE_E2E_RUN_ID: enterpriseRunId,
       ...(mode === 'workspace-failure'
         ? {
             CLAWEE_E2E_IGNORE_FIRST_WORKSPACE_READY: '1',
@@ -774,7 +986,7 @@ async function launchPackagedDesktop(
     },
     timeoutMs: 30_000
   });
-  return { ...app, root, stateDir };
+  return { ...app, enterpriseRunId, root, stateDir };
 }
 
 function minimalSystemPath(): string {
@@ -787,6 +999,20 @@ function minimalSystemPath(): string {
 }
 
 async function waitForWorkspace(page: Page): Promise<void> {
+  await waitForRuntimeReady(page);
+  const workspace = page.locator('.clawee-shell');
+  if (!await workspace.isVisible().catch(() => false)) {
+    await expect(page.getByRole('heading', {
+      name: '登录企业账户'
+    })).toBeVisible();
+    await page.getByLabel('邮箱').fill(desktopE2EEnterpriseEmail);
+    await page.getByLabel('密码').fill(desktopE2EEnterprisePassword);
+    await page.locator('.enterprise-account-primary-action').click();
+  }
+  await expect(workspace).toBeVisible();
+}
+
+async function waitForRuntimeReady(page: Page): Promise<void> {
   await page.waitForURL(url => (
     url.protocol === 'clawee-app:'
     && url.hostname === 'app'
@@ -816,7 +1042,24 @@ async function runtimeRequest<T>(
 }
 
 async function closeFixture(fixture: DesktopFixture): Promise<void> {
+  const logoutCompleted = await fixture.page.evaluate(async () => {
+    const response = await fetch('/.clawee/runtime/enterprise/logout', {
+      method: 'POST',
+      signal: AbortSignal.timeout(2_000)
+    }).catch(() => undefined);
+    return response !== undefined && (
+      response.ok || response.status === 401
+    );
+  }).catch(() => false);
   await closePackagedApp(fixture);
+  if (!logoutCompleted) {
+    await deleteEnterpriseE2ECredential(fixture.enterpriseRunId).catch(() => {
+      console.error(
+        `Desktop E2E Keyring 最佳努力清理失败：`
+        + `runId=${fixture.enterpriseRunId}`
+      );
+    });
+  }
   if (process.env.CLAWEE_E2E_KEEP_TEMP !== '1') {
     rmSync(fixture.root, { recursive: true, force: true });
   }
@@ -1021,5 +1264,10 @@ function withoutElectronRunAsNode(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env };
   delete next.ELECTRON_RUN_AS_NODE;
   delete next.CLAWEE_UPDATE_URL;
+  delete next.CLAWEE_ENTERPRISE_ORIGIN;
+  delete next.CLAWEE_ENTERPRISE_E2E_AUTHORIZED;
+  delete next.CLAWEE_ENTERPRISE_E2E_RUN_ID;
+  delete next.CLAWEE_ENTERPRISE_KEYRING_SERVICE;
+  delete next.CLAWEE_ENTERPRISE_KEYRING_ACCOUNT;
   return next;
 }

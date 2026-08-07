@@ -18,6 +18,12 @@ import {
   EnterpriseAgentIdentityStoreError
 } from './agent-identity-2026-08-02.js';
 import type {
+  EnterpriseCollectorInstaller
+} from './collector-installer-2026-08-06.js';
+import {
+  EnterpriseCollectorInstallError
+} from './collector-installer-2026-08-06.js';
+import type {
   EnterpriseHttpClient,
   EnterpriseLoginResult
 } from './http-client-2026-07-30.js';
@@ -58,6 +64,7 @@ export class EnterpriseSessionError extends Error {
 
 export function createEnterpriseSessionManager(input: {
   agentIdentityStore: EnterpriseAgentIdentityStore;
+  collectorInstaller?: EnterpriseCollectorInstaller;
   credentialStore: EnterpriseCredentialStore;
   httpClient: EnterpriseHttpClient;
   transportSecurity: EnterpriseTransportSecurity;
@@ -309,14 +316,56 @@ export function createEnterpriseSessionManager(input: {
       credential = request.credential;
       accountCache = me.account;
     }
+    const shouldInstallCollector =
+      input.collectorInstaller !== undefined
+      && me.collectorRegistration !== undefined;
     const next: EnterpriseSessionResponse = {
       status: 'signed_in',
       account: me.account,
+      ...(shouldInstallCollector
+        ? { collector: { status: 'installing' as const } }
+        : {}),
       expiresAt: request.credential.expiresAt,
       transportSecurity: input.transportSecurity
     };
     publish(request.operationGeneration, next);
+    if (shouldInstallCollector) {
+      void input.collectorInstaller!
+        .install(me.collectorRegistration!)
+        .then(() => {
+          publishCollectorState(request.operationGeneration, {
+            status: 'installed'
+          });
+        })
+        .catch(error => {
+          const errorCode = error instanceof EnterpriseCollectorInstallError
+            ? error.code
+            : 'COLLECTOR_INSTALL_FAILED';
+          publishCollectorState(request.operationGeneration, {
+            status: 'failed',
+            errorCode
+          });
+          console.warn(`Enterprise collector installation failed [${errorCode}]`);
+        });
+    }
     return next;
+  }
+
+  function publishCollectorState(
+    operationGeneration: number,
+    collector: NonNullable<EnterpriseSessionResponse['collector']>
+  ): void {
+    if (
+      closed
+      || operationGeneration !== generation
+      || snapshot.status !== 'signed_in'
+    ) {
+      return;
+    }
+    snapshot = {
+      ...snapshot,
+      collector
+    };
   }
 
   async function authenticateNew(
@@ -564,6 +613,7 @@ export function createEnterpriseSessionManager(input: {
       generation += 1;
       credential = undefined;
       accountCache = undefined;
+      await input.collectorInstaller?.close();
     }
   };
 }

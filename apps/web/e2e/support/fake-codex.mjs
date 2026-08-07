@@ -70,6 +70,17 @@ readline.on('line', line => {
     return;
   }
 
+  if (message.method === 'model/list') {
+    send({
+      id: message.id,
+      result: {
+        data: [],
+        nextCursor: null
+      }
+    });
+    return;
+  }
+
   if (message.method === 'thread/turns/list') {
     const turns = readTurns(message.params?.threadId);
     const limit = Number(message.params?.limit ?? turns.length);

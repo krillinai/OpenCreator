@@ -123,7 +123,7 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.sidebar-primary .sidebar-row')).toContain('height: var(--control-compact-sm);');
     expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
     expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?button,[\s\S]*?min-height:\s*var\(--control-touch\) !important;/);
-    expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-task-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
+    expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-recent-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
   });
 
   it('uses shared hover, pressed, focus-visible, and disabled states', () => {
@@ -209,21 +209,30 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('keeps task rows stable, scrollable, and motion-aware', () => {
-    const taskSection = cssBlock('.sidebar-task-section');
-    const taskList = cssBlock('.sidebar-task-list');
-    const taskRow = cssBlock('.sidebar-task-row');
-    const taskSpinner = cssBlock('.sidebar-task-spinner');
+  it('lets projects use content height while recent rows fill and scroll through the remainder', () => {
+    const projectSection = cssBlock('.sidebar-project-section');
+    const recentSection = cssBlock('.sidebar-recent-section');
+    const recentList = cssBlock('.sidebar-recent-list');
+    const recentRow = cssBlock('.sidebar-recent-row');
+    const recentSpinner = cssBlock('.sidebar-recent-spinner');
 
-    expect(taskSection).toContain('min-height: 0;');
-    expect(taskSection).toContain('max-height: 220px;');
-    expect(taskList).toContain('overflow-y: auto;');
-    expect(taskList).toContain('grid-auto-rows: 34px;');
-    expect(taskRow).toContain('height: 34px;');
-    expect(taskRow).toContain('min-height: 34px;');
-    expect(taskSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
     expect(appCss).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.sidebar-task-spinner\s*\{[^}]*animation:\s*none;/
+      /\n\.clawee-sidebar\s*\{[^}]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\) auto;/
+    );
+    expect(cssBlock('.clawee-sidebar[data-collapsed="true"]'))
+      .toContain('grid-template-rows: auto auto minmax(0, 1fr);');
+    expect(projectSection).toContain('max-height: min(38vh, 360px);');
+    expect(recentSection).toContain('min-height: 0;');
+    expect(recentList).toContain('overflow-y: auto;');
+    expect(recentList).toContain('grid-auto-rows: 30px;');
+    expect(recentRow).toContain('height: 30px;');
+    expect(recentRow).toContain('min-height: 30px;');
+    expect(recentSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
+    expect(appCss).toMatch(
+      /@media \(max-width: 480px\)\s*\{[\s\S]*?\.sidebar-project-tree\s*\{[^}]*overflow-y:\s*auto;/
+    );
+    expect(appCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.sidebar-recent-spinner\s*\{[^}]*animation:\s*none;/
     );
   });
 
@@ -241,6 +250,40 @@ describe('app CSS visual contracts', () => {
     expect(taskActions).toContain('flex: 0 0 auto;');
     expect(appCss).toMatch(
       /@media \(max-width: 720px\)\s*\{[\s\S]*?\.schedule-thread-header\s*\{[^}]*align-items:\s*flex-start;/
+    );
+  });
+
+  it('uses the main pane titlebar as the desktop conversation chrome', () => {
+    const mainPaneWithHeader = cssBlock(
+      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-pane[data-has-main-header="true"]'
+    );
+    const mainTitlebar = cssBlock(
+      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar'
+    );
+    const titlebarHeader = cssBlock(
+      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar .conversation-header'
+    );
+    const titlebarButton = cssBlock(
+      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar button'
+    );
+    const integratedPage = cssBlock('.conversation-page.has-integrated-header');
+    const integratedTaskPage = cssBlock(
+      '.conversation-page.has-integrated-header.has-task-strip'
+    );
+
+    expect(mainPaneWithHeader).toContain(
+      'grid-template-rows: var(--clawee-titlebar-height, 38px) minmax(0, 1fr);'
+    );
+    expect(mainPaneWithHeader).toContain('padding-top: 0;');
+    expect(mainTitlebar).toContain('-webkit-app-region: drag;');
+    expect(mainTitlebar).toContain('z-index: 81;');
+    expect(titlebarHeader).toContain('height: 100%;');
+    expect(titlebarHeader).toContain('min-height: 0;');
+    expect(titlebarHeader).toContain('padding: 0 12px 0 18px;');
+    expect(titlebarButton).toContain('-webkit-app-region: no-drag;');
+    expect(integratedPage).toContain('grid-template-rows: minmax(0, 1fr) auto;');
+    expect(integratedTaskPage).toContain(
+      'grid-template-rows: auto minmax(0, 1fr) auto;'
     );
   });
 

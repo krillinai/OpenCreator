@@ -129,6 +129,7 @@ export function Composer(props: {
   models?: readonly CodexModelResponse[];
   modelsLoading?: boolean;
   modelsError?: string;
+  modelsNotice?: string;
   slashCommands?: ComposerSlashCommand[];
   slashCommandsLoading?: boolean;
   slashCommandsError?: string;
@@ -143,6 +144,7 @@ export function Composer(props: {
   onPermissionChange?(
     permission: ProjectPermission
   ): boolean | void | Promise<boolean | void>;
+  onModelConfigChange?(config: Pick<ComposerRunConfig, 'model' | 'reasoning'>): void;
   onDraftApplied?(id: number): void;
   onFocusRequestApplied?(id: number): void;
   onCancel?(): void;
@@ -1063,7 +1065,14 @@ export function Composer(props: {
                       {props.modelsError}
                     </div>
                   ) : null}
-                  {availableModels.length === 0 && props.modelsLoading !== true ? (
+                  {props.modelsNotice !== undefined && availableModels.length > 0 ? (
+                    <div className="composer-model-status" role="status">
+                      {props.modelsNotice}
+                    </div>
+                  ) : null}
+                  {availableModels.length === 0
+                    && props.modelsLoading !== true
+                    && props.modelsError === undefined ? (
                     <div className="composer-model-status">暂无可用模型</div>
                   ) : null}
                   {selectedModel !== null && resolvedSelectedModel === undefined ? (
@@ -1096,10 +1105,18 @@ export function Composer(props: {
                         aria-checked={resolvedSelectedModel?.model === option.model}
                         disabled={imageBlocked}
                         onClick={() => {
+                          const nextReasoning = isReasoningAvailable(
+                            option,
+                            selectedReasoning
+                          )
+                            ? selectedReasoning
+                            : null;
                           setSelectedModel(option.model);
-                          setSelectedReasoning(current => (
-                            isReasoningAvailable(option, current) ? current : null
-                          ));
+                          setSelectedReasoning(nextReasoning);
+                          props.onModelConfigChange?.({
+                            model: option.model,
+                            reasoning: nextReasoning
+                          });
                         }}
                       >
                         <span className="composer-menu-icon" aria-hidden="true">
@@ -1122,6 +1139,10 @@ export function Composer(props: {
                     aria-checked={selectedReasoning === null || selectedReasoning === 'default'}
                     onClick={() => {
                       setSelectedReasoning(null);
+                      props.onModelConfigChange?.({
+                        model: selectedModel,
+                        reasoning: null
+                      });
                       setOpenMenu(null);
                     }}
                   >
@@ -1144,6 +1165,10 @@ export function Composer(props: {
                       aria-checked={selectedReasoning === option.reasoningEffort}
                       onClick={() => {
                         setSelectedReasoning(option.reasoningEffort);
+                        props.onModelConfigChange?.({
+                          model: selectedModel,
+                          reasoning: option.reasoningEffort
+                        });
                         setOpenMenu(null);
                       }}
                     >

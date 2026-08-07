@@ -11,6 +11,7 @@ export type FakeEnterpriseState = {
   installed: boolean;
   createdThread: boolean;
   uploadedKnowledgeDocument: boolean;
+  savedSharedFile: boolean;
 };
 
 const runtimePrefix = '/.clawee/runtime';
@@ -35,8 +36,10 @@ export class FakeEnterpriseDaemon {
     session: 'signed_out',
     installed: false,
     createdThread: false,
-    uploadedKnowledgeDocument: false
+    uploadedKnowledgeDocument: false,
+    savedSharedFile: false
   };
+  private sharedFileDownloadAttempts = 0;
   private requests: FakeEnterpriseRequest[] = [];
   private unknownPaths: string[] = [];
 
@@ -45,8 +48,10 @@ export class FakeEnterpriseDaemon {
       session: 'signed_out',
       installed: false,
       createdThread: false,
-      uploadedKnowledgeDocument: false
+      uploadedKnowledgeDocument: false,
+      savedSharedFile: false
     };
+    this.sharedFileDownloadAttempts = 0;
     this.requests = [];
     this.unknownPaths = [];
   }
@@ -159,6 +164,61 @@ export class FakeEnterpriseDaemon {
         document: uploadedKnowledgeDocument()
       }, 201);
     }
+    if (path === '/enterprise/shared-spaces?limit=100' && request.method() === 'GET') {
+      return fulfill(route, {
+        spaces: [enterpriseSharedSpace()],
+        meta: {
+          nextCursor: '',
+          hasNext: false,
+          maxFileSizeBytes: 1024 * 1024 * 1024
+        },
+        refreshedAt: '2026-08-06T08:00:00.000Z'
+      });
+    }
+    if (path === '/enterprise/shared-files?limit=100' && request.method() === 'GET') {
+      return fulfill(route, {
+        files: [enterpriseSharedFile()],
+        meta: { nextCursor: '', hasNext: false },
+        refreshedAt: '2026-08-06T08:00:00.000Z'
+      });
+    }
+    if (
+      path === '/enterprise/shared-files/file-design/download'
+      && request.method() === 'POST'
+    ) {
+      this.sharedFileDownloadAttempts += 1;
+      const download = readObjectBody(request.postData());
+      if (download.projectId !== project.id) {
+        return fulfill(route, {
+          error: {
+            code: 'PROJECT_NOT_FOUND',
+            message: 'Project was not found'
+          }
+        }, 404);
+      }
+      if (
+        this.sharedFileDownloadAttempts === 1
+        && download.overwrite !== true
+      ) {
+        return fulfill(route, {
+          error: {
+            code: 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS',
+            message: 'The project already contains this file',
+            details: { relativePath: 'docs/design.md' }
+          }
+        }, 409);
+      }
+      this.state.savedSharedFile = true;
+      return fulfill(route, {
+        fileId: 'file-design',
+        projectId: String(download.projectId ?? ''),
+        relativePath: 'docs/design.md',
+        sizeBytes: 13,
+        sha256: 'a'.repeat(64),
+        revision: 3,
+        overwritten: download.overwrite === true
+      });
+    }
     if (path === '/enterprise/skills' && request.method() === 'GET') {
       return fulfill(route, {
         skills: [enterpriseSkill(this.state.installed)],
@@ -241,15 +301,20 @@ export class FakeEnterpriseDaemon {
 }
 
 function readBodyKeys(raw: string | null): { keys: string[] } {
-  if (raw === null || raw.length === 0) return { keys: [] };
+  const value = readObjectBody(raw);
+  return { keys: Object.keys(value).sort() };
+}
+
+function readObjectBody(raw: string | null): Record<string, unknown> {
+  if (raw === null || raw.length === 0) return {};
   try {
     const value = JSON.parse(raw) as unknown;
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      return { keys: [] };
+      return {};
     }
-    return { keys: Object.keys(value).sort() };
+    return value as Record<string, unknown>;
   } catch {
-    return { keys: [] };
+    return {};
   }
 }
 
@@ -260,6 +325,9 @@ function sessionResponse(status: 'signed_out' | 'signed_in') {
         account: {
           email: 'member@example.com',
           name: 'Enterprise Member'
+        },
+        collector: {
+          status: 'installed'
         },
         expiresAt: '2026-08-30T12:00:00.000Z',
         transportSecurity: 'secure_https'
@@ -326,6 +394,38 @@ function uploadedKnowledgeDocument() {
     uploadedBy: 'member@example.com',
     createdAt: '2026-08-05T08:00:00.000Z',
     updatedAt: '2026-08-05T08:00:00.000Z'
+  };
+}
+
+function enterpriseSharedSpace() {
+  return {
+    spaceId: 'space-design',
+    name: '设计资料',
+    description: '产品设计规范与交付文件',
+    updatedAt: '2026-08-06T08:00:00.000Z',
+    permissions: {
+      read: true,
+      write: false
+    }
+  };
+}
+
+function enterpriseSharedFile() {
+  return {
+    fileId: 'file-design',
+    spaceId: 'space-design',
+    spaceName: '设计资料',
+    logicalPath: 'docs/design.md',
+    fileName: 'design.md',
+    sizeBytes: 13,
+    sha256: 'a'.repeat(64),
+    contentType: 'text/markdown',
+    revision: 3,
+    createdByUserId: 'designer@example.com',
+    updatedByUserId: 'designer@example.com',
+    updatedByAgentId: '',
+    createdAt: '2026-08-05T08:00:00.000Z',
+    updatedAt: '2026-08-06T08:00:00.000Z'
   };
 }
 

@@ -14,6 +14,8 @@ import type {
   EnterpriseLoginRequest,
   EnterpriseRegisterRequest,
   EnterpriseSessionResponse,
+  EnterpriseSharedFileResponse,
+  EnterpriseSharedSpaceResponse,
   EnterpriseSkillDetailResponse,
   EnterpriseSkillResponse,
   RunDiagnosticsResponse,
@@ -112,7 +114,10 @@ import type {
   RuntimeStatus
 } from '../features/settings/ClaweeSettingsView.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
-import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
+import {
+  ClaweeSidebar,
+  type SidebarRecentItem
+} from '../features/shell/ClaweeSidebar.js';
 import {
   createScheduleDraftSidebarSummaries,
   createSidebarTaskSummaries
@@ -135,7 +140,13 @@ import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createProjectService } from '../services/project-service.js';
 import { createMcpService } from '../services/mcp-service.js';
 import { createMemoryService } from '../services/memory-service.js';
-import { createModelService } from '../services/model-service-2026-08-05.js';
+import {
+  createModelService,
+  readCachedModelCatalog,
+  readRecentModelConfig,
+  writeRecentModelConfig,
+  type RecentModelConfig
+} from '../services/model-service-2026-08-05.js';
 import { createNotificationService } from '../services/notification-service.js';
 import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
@@ -280,6 +291,7 @@ export type AppControllerProps = {
   fileService?: AppFileService;
   capabilitiesView?: CapabilitiesViewProps;
   hostBridge?: HostBridge;
+  requireEnterpriseLogin?: boolean;
   runtimeFetch?: typeof fetch;
   subscribeRunEvents?: (input: SubscribeRunEventsInput) => Promise<void>;
   route: AppRoute;
@@ -302,6 +314,13 @@ export function AppController(props: AppControllerProps) {
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
+  const integratedTitleBar = hostBridge.windowChrome;
+  const appShellStyle = integratedTitleBar === undefined
+    ? undefined
+    : {
+        '--clawee-titlebar-height': `${integratedTitleBar.titleBarHeight}px`,
+        '--clawee-traffic-light-inset': `${integratedTitleBar.trafficLightInset}px`
+      } as CSSProperties;
   const runtimeFetch = useMemo(() => props.runtimeFetch ?? globalThis.fetch.bind(globalThis), [props.runtimeFetch]);
   const subscribeRunEvents = props.subscribeRunEvents ?? defaultSubscribeRunEvents;
   const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
@@ -370,14 +389,51 @@ export function AppController(props: AppControllerProps) {
     useState<string>();
   const [enterpriseKnowledgeDocumentsReloadKey, setEnterpriseKnowledgeDocumentsReloadKey] =
     useState(0);
+  const [enterpriseSharedSpaces, setEnterpriseSharedSpaces] =
+    useState<EnterpriseSharedSpaceResponse[]>();
+  const [enterpriseSharedSpacesLoading, setEnterpriseSharedSpacesLoading] =
+    useState(false);
+  const [enterpriseSharedSpacesError, setEnterpriseSharedSpacesError] =
+    useState<string>();
+  const [enterpriseSharedSpacesMeta, setEnterpriseSharedSpacesMeta] = useState({
+    nextCursor: '',
+    hasNext: false,
+    maxFileSizeBytes: 1024 * 1024 * 1024
+  });
+  const [selectedEnterpriseSharedSpaceId, setSelectedEnterpriseSharedSpaceId] =
+    useState<string>();
+  const [enterpriseSharedFiles, setEnterpriseSharedFiles] =
+    useState<EnterpriseSharedFileResponse[]>();
+  const [enterpriseSharedFilesLoading, setEnterpriseSharedFilesLoading] =
+    useState(false);
+  const [enterpriseSharedFilesError, setEnterpriseSharedFilesError] =
+    useState<string>();
+  const [enterpriseSharedFilesMeta, setEnterpriseSharedFilesMeta] = useState({
+    nextCursor: '',
+    hasNext: false
+  });
+  const [enterpriseSharedQuery, setEnterpriseSharedQuery] = useState('');
+  const [enterpriseSharedOperation, setEnterpriseSharedOperation] =
+    useState<SharedDriveOperationState>();
+  const [enterpriseSharedNotice, setEnterpriseSharedNotice] =
+    useState<string>();
+  const [enterpriseSharedSpacesReloadKey, setEnterpriseSharedSpacesReloadKey] =
+    useState(0);
+  const [enterpriseSharedFilesReloadKey, setEnterpriseSharedFilesReloadKey] =
+    useState(0);
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
   const [pendingMemorySuggestion, setPendingMemorySuggestion] = useState<{ id: number; content: string }>();
   const [composerRunConfig, setComposerRunConfig] = useState<ComposerRunConfig | null>(null);
-  const [codexModels, setCodexModels] = useState<CodexModelListResponse>();
+  const [recentComposerModelConfig, setRecentComposerModelConfig] =
+    useState<RecentModelConfig | null>(readRecentModelConfig);
+  const [codexModels, setCodexModels] = useState<CodexModelListResponse | undefined>(
+    readCachedModelCatalog
+  );
   const [codexModelsLoading, setCodexModelsLoading] = useState(false);
   const [codexModelsLoadError, setCodexModelsLoadError] = useState<string>();
+  const [codexModelsNotice, setCodexModelsNotice] = useState<string>();
   const [codexSkills, setCodexSkills] = useState<CodexSkillListResponse>();
   const [codexMcp, setCodexMcp] = useState<CodexMcpListResponse>();
   const [codexProfiles, setCodexProfiles] = useState<CodexProfileListResponse>();
@@ -485,11 +541,15 @@ export function AppController(props: AppControllerProps) {
   const enterpriseRuntimeGenerationRef = useRef(0);
   const enterpriseHubGenerationRef = useRef(0);
   const enterpriseKnowledgeGenerationRef = useRef(0);
+  const enterpriseSharedDriveGenerationRef = useRef(0);
   const capabilityLoadGenerationRef = useRef<number>();
   const profileLoadGenerationRef = useRef<number>();
   const skillMarketLoadGenerationRef = useRef<number>();
   const enterpriseSkillMutationInFlightRef = useRef(false);
   const enterpriseKnowledgeUploadInFlightRef = useRef(false);
+  const enterpriseSharedSpacesLoadInFlightRef = useRef(false);
+  const enterpriseSharedFilesLoadInFlightRef = useRef(false);
+  const enterpriseSharedMutationInFlightRef = useRef(false);
   const mobileSidebarHistoryEntryRef = useRef(false);
   const defaultPermissionAppliedByThreadRef = useRef(new Map<string, SandboxMode>());
   const defaultPermissionSyncFailuresRef = useRef(new Set<string>());
@@ -512,10 +572,12 @@ export function AppController(props: AppControllerProps) {
   const nextComposerFocusRequestIdRef = useRef(0);
   const composerAttachmentDraftIdsRef = useRef(new Map<string, string>());
   const retainedAttachmentPreviewUrlsRef = useRef(new Map<string, string>());
+  const codexModelsRef = useRef(codexModels);
   runRegistryRef.current = runRegistry;
   runtimeThreadsRef.current = runtimeThreads;
   currentProjectIdRef.current = state.currentProjectId;
   enterpriseSessionRef.current = enterpriseSession;
+  codexModelsRef.current = codexModels;
 
   const runtimeClient = useMemo(
     () => connectionConfig === null ? null : new RuntimeClient({ ...connectionConfig, fetchImpl: runtimeFetch }),
@@ -662,6 +724,47 @@ export function AppController(props: AppControllerProps) {
     () => [...scheduleDraftSidebarTasks, ...scheduleSidebarTasks],
     [scheduleDraftSidebarTasks, scheduleSidebarTasks]
   );
+  const recentSidebarItems = useMemo<SidebarRecentItem[]>(() => {
+    const threadById = new Map(runtimeThreads.map(thread => [thread.id, thread]));
+    const scheduleById = new Map(runtimeSchedules.map(schedule => [schedule.id, schedule]));
+    const conversationItems: SidebarRecentItem[] = conversations.map(conversation => ({
+      id: `conversation:${conversation.id}`,
+      kind: 'conversation',
+      threadId: conversation.id,
+      title: conversation.title,
+      updatedAt: conversation.updatedAt,
+      updatedLabel: conversation.updatedLabel,
+      running: runningThreadIds.has(conversation.id)
+    }));
+    const taskItems: SidebarRecentItem[] = sidebarTasks.map(task => {
+      const threadUpdatedAt = task.threadId === undefined
+        ? undefined
+        : threadById.get(task.threadId)?.updatedAt;
+      const scheduleUpdatedAt = scheduleById.get(task.id)?.updatedAt;
+      const updatedAt = latestRuntimeTimestamp(
+        threadUpdatedAt,
+        scheduleUpdatedAt
+      ) ?? new Date(0).toISOString();
+      return {
+        id: `task:${task.id}`,
+        kind: 'task',
+        ...(task.threadId === undefined ? {} : { threadId: task.threadId }),
+        title: task.name,
+        updatedAt,
+        updatedLabel: formatRelativeTime(updatedAt),
+        status: task.status,
+        unread: task.unread
+      };
+    });
+
+    return [...conversationItems, ...taskItems].sort(compareRecentSidebarItems);
+  }, [
+    conversations,
+    runtimeSchedules,
+    runtimeThreads,
+    runningThreadIds,
+    sidebarTasks
+  ]);
   const runningConversationIds = runningThreadIds;
   const selectedThreadExists = state.selectedThreadId !== undefined
     && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
@@ -923,25 +1026,39 @@ export function AppController(props: AppControllerProps) {
     let canceled = false;
 
     if (connectionState.status !== 'connected' || modelService === null) {
-      setCodexModels(undefined);
+      setCodexModels(current => current ?? readCachedModelCatalog());
       setCodexModelsLoading(false);
       setCodexModelsLoadError(undefined);
+      setCodexModelsNotice(undefined);
       return () => {
         canceled = true;
       };
     }
 
+    const cachedModels = readCachedModelCatalog();
+    if (cachedModels !== undefined) setCodexModels(cachedModels);
     setCodexModelsLoading(true);
     setCodexModelsLoadError(undefined);
+    setCodexModelsNotice(undefined);
     modelService
       .listModels()
       .then(response => {
-        if (!canceled) setCodexModels(response);
+        if (!canceled) {
+          setCodexModels(response);
+          setCodexModelsNotice(undefined);
+        }
       })
       .catch(() => {
         if (!canceled) {
-          setCodexModels(undefined);
-          setCodexModelsLoadError('无法加载模型列表');
+          const fallbackModels = readCachedModelCatalog()
+            ?? codexModelsRef.current;
+          if (fallbackModels !== undefined && fallbackModels.models.length > 0) {
+            setCodexModels(fallbackModels);
+            setCodexModelsNotice('模型目录刷新失败，当前使用本地缓存');
+          } else {
+            setCodexModels(undefined);
+            setCodexModelsLoadError('无法加载模型列表');
+          }
         }
       })
       .finally(() => {
@@ -1203,13 +1320,19 @@ export function AppController(props: AppControllerProps) {
     skillMarketRuntimeGenerationRef.current += 1;
     enterpriseRuntimeGenerationRef.current += 1;
     enterpriseKnowledgeGenerationRef.current += 1;
+    enterpriseSharedDriveGenerationRef.current += 1;
     skillMarketMutationInFlightRef.current = false;
     skillMarketUseInFlightRef.current = false;
     enterpriseKnowledgeUploadInFlightRef.current = false;
+    enterpriseSharedSpacesLoadInFlightRef.current = false;
+    enterpriseSharedFilesLoadInFlightRef.current = false;
+    enterpriseSharedMutationInFlightRef.current = false;
     setSkillMarketOperation(undefined);
     setSkillMarketUseError(undefined);
     setEnterpriseKnowledgeUpload(undefined);
     setEnterpriseKnowledgeUploadNotice(undefined);
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
   }, [
     capabilityService,
     connectionState.status,
@@ -1283,12 +1406,18 @@ export function AppController(props: AppControllerProps) {
   useEffect(() => {
     enterpriseHubGenerationRef.current += 1;
     enterpriseKnowledgeGenerationRef.current += 1;
+    enterpriseSharedDriveGenerationRef.current += 1;
     enterpriseSkillMutationInFlightRef.current = false;
     enterpriseKnowledgeUploadInFlightRef.current = false;
+    enterpriseSharedSpacesLoadInFlightRef.current = false;
+    enterpriseSharedFilesLoadInFlightRef.current = false;
+    enterpriseSharedMutationInFlightRef.current = false;
     setEnterpriseSkillOperation(undefined);
     setEnterpriseSkillUseError(undefined);
     setEnterpriseKnowledgeUpload(undefined);
     setEnterpriseKnowledgeUploadNotice(undefined);
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
 
     if (
       connectionState.status !== 'connected'
@@ -1305,6 +1434,23 @@ export function AppController(props: AppControllerProps) {
       setEnterpriseKnowledgeDocuments(undefined);
       setEnterpriseKnowledgeDocumentsLoading(false);
       setEnterpriseKnowledgeDocumentsError(undefined);
+      setEnterpriseSharedSpaces(undefined);
+      setEnterpriseSharedSpacesLoading(false);
+      setEnterpriseSharedSpacesError(undefined);
+      setSelectedEnterpriseSharedSpaceId(undefined);
+      setEnterpriseSharedFiles(undefined);
+      setEnterpriseSharedFilesLoading(false);
+      setEnterpriseSharedFilesError(undefined);
+      setEnterpriseSharedQuery('');
+      setEnterpriseSharedSpacesMeta({
+        nextCursor: '',
+        hasNext: false,
+        maxFileSizeBytes: 1024 * 1024 * 1024
+      });
+      setEnterpriseSharedFilesMeta({
+        nextCursor: '',
+        hasNext: false
+      });
     }
   }, [
     connectionState.status,
@@ -1544,6 +1690,201 @@ export function AppController(props: AppControllerProps) {
     enterpriseService,
     enterpriseSession.status,
     selectedEnterpriseKnowledgeBaseId,
+    state.activeView
+  ]);
+
+  useEffect(() => {
+    if (
+      state.activeView !== 'drive'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      return;
+    }
+
+    let canceled = false;
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    enterpriseSharedSpacesLoadInFlightRef.current = true;
+    setEnterpriseSharedSpaces(undefined);
+    setEnterpriseSharedSpacesLoading(true);
+    setEnterpriseSharedSpacesError(undefined);
+
+    void activeEnterpriseService.listSharedSpaces({ limit: 100 })
+      .then(response => {
+        if (
+          canceled
+          || !isCurrentEnterpriseSharedDriveRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          return;
+        }
+        setEnterpriseSharedSpaces(response.spaces);
+        setEnterpriseSharedSpacesMeta(response.meta);
+        setSelectedEnterpriseSharedSpaceId(previous => {
+          if (
+            previous === undefined
+            || response.spaces.some(space => space.spaceId === previous)
+            || response.meta.hasNext
+          ) {
+            return previous;
+          }
+          return undefined;
+        });
+      })
+      .catch(error => {
+        if (
+          canceled
+          || !isCurrentEnterpriseSharedDriveRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          return;
+        }
+        setEnterpriseSharedSpaces(undefined);
+        setSelectedEnterpriseSharedSpaceId(undefined);
+        setEnterpriseSharedFiles(undefined);
+        if (isEnterpriseUnauthorized(error)) {
+          setEnterpriseSession({
+            status: 'signed_out',
+            reason: 'session_expired',
+            transportSecurity: enterpriseSessionRef.current.transportSecurity
+          });
+        } else {
+          setEnterpriseSharedSpacesError(
+            formatEnterpriseSharedDriveError(
+              error,
+              '共享空间加载失败'
+            )
+          );
+        }
+      })
+      .finally(() => {
+        if (
+          !canceled
+          && isCurrentEnterpriseSharedDriveRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          enterpriseSharedSpacesLoadInFlightRef.current = false;
+          setEnterpriseSharedSpacesLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    enterpriseService,
+    enterpriseSession.status,
+    enterpriseSharedSpacesReloadKey,
+    state.activeView
+  ]);
+
+  useEffect(() => {
+    if (
+      state.activeView !== 'drive'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      return;
+    }
+
+    let canceled = false;
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    enterpriseSharedFilesLoadInFlightRef.current = true;
+    setEnterpriseSharedFiles(undefined);
+    setEnterpriseSharedFilesLoading(true);
+    setEnterpriseSharedFilesError(undefined);
+
+    void activeEnterpriseService.listSharedFiles({
+      ...(selectedEnterpriseSharedSpaceId === undefined
+        ? {}
+        : { spaceId: selectedEnterpriseSharedSpaceId }),
+      ...(enterpriseSharedQuery.length === 0
+        ? {}
+        : { query: enterpriseSharedQuery }),
+      limit: 100
+    })
+      .then(response => {
+        if (
+          canceled
+          || !isCurrentEnterpriseSharedDriveRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          return;
+        }
+        setEnterpriseSharedFiles(response.files);
+        setEnterpriseSharedFilesMeta(response.meta);
+      })
+      .catch(error => {
+        if (
+          canceled
+          || !isCurrentEnterpriseSharedDriveRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          return;
+        }
+        setEnterpriseSharedFiles(undefined);
+        if (isEnterpriseUnauthorized(error)) {
+          setEnterpriseSession({
+            status: 'signed_out',
+            reason: 'session_expired',
+            transportSecurity: enterpriseSessionRef.current.transportSecurity
+          });
+        } else if (
+          error instanceof ApiClientError
+          && error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
+        ) {
+          setSelectedEnterpriseSharedSpaceId(undefined);
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+          setEnterpriseSharedFilesError(
+            '该共享空间已不可访问，正在刷新授权列表'
+          );
+        } else {
+          setEnterpriseSharedFilesError(
+            formatEnterpriseSharedDriveError(
+              error,
+              '共享文件加载失败'
+            )
+          );
+        }
+      })
+      .finally(() => {
+        if (
+          !canceled
+          && isCurrentEnterpriseSharedDriveRuntime(
+            generation,
+            activeEnterpriseService
+          )
+        ) {
+          enterpriseSharedFilesLoadInFlightRef.current = false;
+          setEnterpriseSharedFilesLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    enterpriseService,
+    enterpriseSession.status,
+    enterpriseSharedFilesReloadKey,
+    enterpriseSharedQuery,
+    selectedEnterpriseSharedSpaceId,
     state.activeView
   ]);
 
@@ -2319,7 +2660,10 @@ export function AppController(props: AppControllerProps) {
       ) {
         setEnterpriseSession(response);
         setEnterpriseCheckingTimedOut(false);
-        if (response.status === 'checking') {
+        if (
+          response.status === 'checking'
+          || response.collector?.status === 'installing'
+        ) {
           setEnterpriseSessionProbeKey(current => current + 1);
         }
       }
@@ -2374,6 +2718,8 @@ export function AppController(props: AppControllerProps) {
         ? 'plugins'
         : returnRoute.view === 'knowledge'
           ? 'knowledge'
+          : returnRoute.view === 'drive'
+            ? 'drive'
           : undefined;
     if (activeView === undefined) return;
     enterpriseReturnRouteRef.current = undefined;
@@ -2491,6 +2837,7 @@ export function AppController(props: AppControllerProps) {
     closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
+    setComposerRunConfig(null);
     showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
@@ -2972,7 +3319,11 @@ export function AppController(props: AppControllerProps) {
     permission: ComposerRunConfig['permission']
   ): Promise<boolean> {
     const baseConfig = composerRunConfig
-      ?? defaultComposerRunConfig(currentProject, defaultPermission);
+      ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      );
 
     if (selectedThread === undefined) {
       setComposerRunConfig({ ...baseConfig, permission });
@@ -3010,6 +3361,22 @@ export function AppController(props: AppControllerProps) {
       }
       return false;
     }
+  }
+
+  function handleComposerModelConfigChange(
+    config: Pick<ComposerRunConfig, 'model' | 'reasoning'>
+  ) {
+    if (selectedThread !== undefined) return;
+    setRecentComposerModelConfig(config);
+    writeRecentModelConfig(config);
+    setComposerRunConfig(current => ({
+      ...(current ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      )),
+      ...config
+    }));
   }
 
   function isCurrentSkillMarketRuntime(
@@ -3058,6 +3425,17 @@ export function AppController(props: AppControllerProps) {
   ) {
     return mountedRef.current
       && enterpriseKnowledgeGenerationRef.current === generation
+      && connectionStatusRef.current === 'connected'
+      && enterpriseSessionRef.current.status === 'signed_in'
+      && enterpriseServiceRef.current === activeEnterpriseService;
+  }
+
+  function isCurrentEnterpriseSharedDriveRuntime(
+    generation: number,
+    activeEnterpriseService: EnterpriseService
+  ) {
+    return mountedRef.current
+      && enterpriseSharedDriveGenerationRef.current === generation
       && connectionStatusRef.current === 'connected'
       && enterpriseSessionRef.current.status === 'signed_in'
       && enterpriseServiceRef.current === activeEnterpriseService;
@@ -3208,6 +3586,405 @@ export function AppController(props: AppControllerProps) {
       });
     } finally {
       enterpriseKnowledgeUploadInFlightRef.current = false;
+    }
+  }
+
+  function refreshEnterpriseSharedDrive() {
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+    if (enterpriseSessionRef.current.status === 'signed_in') {
+      setEnterpriseSharedSpacesReloadKey(current => current + 1);
+      setEnterpriseSharedFilesReloadKey(current => current + 1);
+      return;
+    }
+    void refreshEnterpriseSession();
+  }
+
+  function selectEnterpriseSharedSpace(spaceId?: string) {
+    if (spaceId !== selectedEnterpriseSharedSpaceId) {
+      setSelectedEnterpriseSharedSpaceId(spaceId);
+      setEnterpriseSharedFiles(undefined);
+      setEnterpriseSharedFilesError(undefined);
+    }
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+  }
+
+  function searchEnterpriseSharedFiles(query: string) {
+    setEnterpriseSharedQuery(query.trim());
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+  }
+
+  async function loadMoreEnterpriseSharedSpaces() {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedSpacesLoadInFlightRef.current
+      || !enterpriseSharedSpacesMeta.hasNext
+      || enterpriseSharedSpacesMeta.nextCursor.length === 0
+    ) {
+      return;
+    }
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedSpacesLoadInFlightRef.current = true;
+    setEnterpriseSharedSpacesLoading(true);
+    setEnterpriseSharedSpacesError(undefined);
+    try {
+      const response = await activeEnterpriseService.listSharedSpaces({
+        limit: 100,
+        cursor: enterpriseSharedSpacesMeta.nextCursor
+      });
+      if (
+        !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      setEnterpriseSharedSpaces(previous => mergeSharedSpaces(
+        previous ?? [],
+        response.spaces
+      ));
+      setEnterpriseSharedSpacesMeta(response.meta);
+    } catch (error) {
+      if (
+        !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      if (isEnterpriseUnauthorized(error)) {
+        setEnterpriseSession({
+          status: 'signed_out',
+          reason: 'session_expired',
+          transportSecurity: enterpriseSessionRef.current.transportSecurity
+        });
+      } else {
+        setEnterpriseSharedSpacesError(
+          formatEnterpriseSharedDriveError(error, '更多共享空间加载失败')
+        );
+      }
+    } finally {
+      if (
+        isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        enterpriseSharedSpacesLoadInFlightRef.current = false;
+        setEnterpriseSharedSpacesLoading(false);
+      }
+    }
+  }
+
+  async function loadMoreEnterpriseSharedFiles() {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedFilesLoadInFlightRef.current
+      || !enterpriseSharedFilesMeta.hasNext
+      || enterpriseSharedFilesMeta.nextCursor.length === 0
+    ) {
+      return;
+    }
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedFilesLoadInFlightRef.current = true;
+    setEnterpriseSharedFilesLoading(true);
+    setEnterpriseSharedFilesError(undefined);
+    try {
+      const response = await activeEnterpriseService.listSharedFiles({
+        ...(selectedEnterpriseSharedSpaceId === undefined
+          ? {}
+          : { spaceId: selectedEnterpriseSharedSpaceId }),
+        ...(enterpriseSharedQuery.length === 0
+          ? {}
+          : { query: enterpriseSharedQuery }),
+        limit: 100,
+        cursor: enterpriseSharedFilesMeta.nextCursor
+      });
+      if (
+        !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      setEnterpriseSharedFiles(previous => mergeSharedFiles(
+        previous ?? [],
+        response.files
+      ));
+      setEnterpriseSharedFilesMeta(response.meta);
+    } catch (error) {
+      if (
+        !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      if (isEnterpriseUnauthorized(error)) {
+        setEnterpriseSession({
+          status: 'signed_out',
+          reason: 'session_expired',
+          transportSecurity: enterpriseSessionRef.current.transportSecurity
+        });
+      } else {
+        setEnterpriseSharedFilesError(
+          formatEnterpriseSharedDriveError(error, '更多共享文件加载失败')
+        );
+      }
+    } finally {
+      if (
+        isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        enterpriseSharedFilesLoadInFlightRef.current = false;
+        setEnterpriseSharedFilesLoading(false);
+      }
+    }
+  }
+
+  async function uploadEnterpriseSharedFile(spaceId: string, file: File) {
+    const space = enterpriseSharedSpaces?.find(item => item.spaceId === spaceId);
+    if (space?.permissions.write !== true) return;
+    await mutateEnterpriseSharedFile({
+      kind: 'upload',
+      spaceId,
+      logicalPath: file.name,
+      file
+    });
+  }
+
+  async function replaceEnterpriseSharedFile(
+    target: EnterpriseSharedFileResponse,
+    file: File
+  ) {
+    const space = enterpriseSharedSpaces?.find(
+      item => item.spaceId === target.spaceId
+    );
+    if (space?.permissions.write !== true) return;
+    await mutateEnterpriseSharedFile({
+      kind: 'replace',
+      spaceId: target.spaceId,
+      logicalPath: target.logicalPath,
+      expectedRevision: target.revision,
+      file,
+      fileId: target.fileId
+    });
+  }
+
+  async function mutateEnterpriseSharedFile(request: {
+    kind: 'upload' | 'replace';
+    spaceId: string;
+    logicalPath: string;
+    expectedRevision?: number;
+    file: File;
+    fileId?: string;
+  }) {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedMutationInFlightRef.current
+    ) {
+      return;
+    }
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedMutationInFlightRef.current = true;
+    setEnterpriseSharedNotice(undefined);
+    setEnterpriseSharedOperation({
+      kind: request.kind,
+      ...(request.fileId === undefined ? {} : { fileId: request.fileId }),
+      fileName: request.logicalPath,
+      status: 'working'
+    });
+    try {
+      const response = await activeEnterpriseService.uploadSharedFile({
+        spaceId: request.spaceId,
+        logicalPath: request.logicalPath,
+        ...(request.expectedRevision === undefined
+          ? {}
+          : { expectedRevision: request.expectedRevision }),
+        file: request.file
+      });
+      if (
+        !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      setEnterpriseSharedOperation(undefined);
+      setEnterpriseSharedNotice(
+        response.reconciled
+          ? `${response.logicalPath} 已在服务端确认创建成功`
+          : request.kind === 'upload'
+            ? `${response.logicalPath} 已上传`
+            : `${response.logicalPath} 已替换为 revision ${response.revision}`
+      );
+      setEnterpriseSharedFilesReloadKey(current => current + 1);
+    } catch (error) {
+      if (
+        !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      if (isEnterpriseUnauthorized(error)) {
+        setEnterpriseSession({
+          status: 'signed_out',
+          reason: 'session_expired',
+          transportSecurity: enterpriseSessionRef.current.transportSecurity
+        });
+        setEnterpriseSharedOperation(undefined);
+        return;
+      }
+      let message = formatEnterpriseSharedDriveError(
+        error,
+        request.kind === 'upload' ? '共享文件上传失败' : '共享文件替换失败'
+      );
+      if (error instanceof ApiClientError) {
+        if (error.code === 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT') {
+          const currentRevision = error.details?.currentRevision;
+          message = typeof currentRevision === 'number'
+            ? `远端文件已更新到 revision ${currentRevision}，请刷新后重新替换`
+            : '远端文件已被其他成员修改，请刷新后重新替换';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (
+          error.code === 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN'
+          || error.code === 'ENTERPRISE_FORBIDDEN'
+        ) {
+          message = '当前账户已没有该共享空间的写入权限';
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+        } else if (error.code === 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS') {
+          message = '相同网盘路径已存在，请在文件列表中选择替换';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (
+          error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
+          || error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
+        ) {
+          message = '共享空间或文件已不可访问，正在刷新列表';
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (error.code === 'ENTERPRISE_SERVICE_UNAVAILABLE') {
+          message = request.kind === 'upload'
+            ? '上传结果未知，请刷新文件列表后再决定是否重试'
+            : '替换结果未知，请刷新并核对 revision 后再操作';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        }
+      }
+      setEnterpriseSharedOperation({
+        kind: request.kind,
+        ...(request.fileId === undefined ? {} : { fileId: request.fileId }),
+        fileName: request.logicalPath,
+        status: 'failed',
+        error: message
+      });
+    } finally {
+      enterpriseSharedMutationInFlightRef.current = false;
+    }
+  }
+
+  async function downloadEnterpriseSharedFile(
+    target: EnterpriseSharedFileResponse,
+    overwrite: boolean
+  ) {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || currentProject === undefined
+      || enterpriseSharedMutationInFlightRef.current
+    ) {
+      return;
+    }
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedMutationInFlightRef.current = true;
+    setEnterpriseSharedNotice(undefined);
+    setEnterpriseSharedOperation({
+      kind: 'download',
+      fileId: target.fileId,
+      fileName: target.logicalPath,
+      status: 'working'
+    });
+    try {
+      const response = await activeEnterpriseService.downloadSharedFile({
+        fileId: target.fileId,
+        projectId: currentProject.id,
+        ...(overwrite ? { overwrite: true } : {})
+      });
+      if (
+        !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      setEnterpriseSharedOperation(undefined);
+      setEnterpriseSharedNotice(
+        `${response.relativePath} 已${response.overwritten ? '覆盖保存' : '保存'}到项目“${currentProject.name}”`
+      );
+    } catch (error) {
+      if (
+        !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )
+      ) {
+        return;
+      }
+      if (isEnterpriseUnauthorized(error)) {
+        setEnterpriseSession({
+          status: 'signed_out',
+          reason: 'session_expired',
+          transportSecurity: enterpriseSessionRef.current.transportSecurity
+        });
+        setEnterpriseSharedOperation(undefined);
+        return;
+      }
+      if (
+        error instanceof ApiClientError
+        && error.code === 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS'
+        && !overwrite
+      ) {
+        setEnterpriseSharedOperation({
+          kind: 'download',
+          fileId: target.fileId,
+          fileName: target.logicalPath,
+          status: 'requires_overwrite',
+          error: `项目中已存在 ${target.logicalPath}，再次点击覆盖按钮确认替换`
+        });
+        return;
+      }
+      if (
+        error instanceof ApiClientError
+        && error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
+      ) {
+        setEnterpriseSharedFilesReloadKey(current => current + 1);
+      }
+      setEnterpriseSharedOperation({
+        kind: 'download',
+        fileId: target.fileId,
+        fileName: target.logicalPath,
+        status: 'failed',
+        error: formatEnterpriseSharedDriveError(error, '文件保存到项目失败')
+      });
+    } finally {
+      enterpriseSharedMutationInFlightRef.current = false;
     }
   }
 
@@ -3474,7 +4251,11 @@ export function AppController(props: AppControllerProps) {
       input.onError('未找到所选项目');
       return;
     }
-    const config = defaultComposerRunConfig(project, defaultPermission);
+    const config = defaultComposerRunConfig(
+      project,
+      defaultPermission,
+      recentComposerModelConfig
+    );
     const generation = skillMarketRuntimeGenerationRef.current;
     skillMarketUseInFlightRef.current = true;
 
@@ -3569,7 +4350,11 @@ export function AppController(props: AppControllerProps) {
 
     const effectiveConfig = config
       ?? composerRunConfig
-      ?? defaultComposerRunConfig(currentProject, defaultPermission);
+      ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      );
     setComposerRunConfig(effectiveConfig);
     const pendingRunStartId = createTimelineId('pending_start');
     updatePendingRunStart({
@@ -4133,6 +4918,21 @@ export function AppController(props: AppControllerProps) {
 
   function handleScheduleChanged(schedule: ScheduleResponse) {
     setRuntimeSchedules(previous => upsertSchedule(previous, schedule));
+    if (runtimeThreadsRef.current.some(thread => thread.id === schedule.threadId)) return;
+
+    const activeThreadService = threadServiceRef.current;
+    if (activeThreadService === null) return;
+    void activeThreadService.getThread(schedule.threadId).then(response => {
+      if (
+        !mountedRef.current
+        || threadServiceRef.current !== activeThreadService
+      ) {
+        return;
+      }
+      setRuntimeThreads(previous => upsertThread(previous, response.thread));
+    }).catch(() => {
+      // The schedule list remains usable; opening the task retries the thread lookup.
+    });
   }
 
   function handleScheduleDeleted(schedule: ScheduleResponse) {
@@ -4462,7 +5262,11 @@ export function AppController(props: AppControllerProps) {
     && workspaceNeedsCompactSidebar;
   const effectiveSidebarCollapsed = sidebarCollapsed || sidebarAutoCollapsed;
   const effectiveComposerConfig = selectedThread === undefined
-    ? composerRunConfig ?? defaultComposerRunConfig(currentProject, defaultPermission)
+    ? composerRunConfig ?? defaultComposerRunConfig(
+        currentProject,
+        defaultPermission,
+        recentComposerModelConfig
+      )
     : {
         permission: fromRuntimeSandbox(selectedThread.sandbox),
         profile: selectedThread.profile,
@@ -4480,52 +5284,76 @@ export function AppController(props: AppControllerProps) {
     event.preventDefault();
   }
   const conversationEmpty = timelineItems.length === 0;
-  const showConversationEmptyState = conversationEmpty
+  const conversationHistoryPending =
+    state.selectedThreadId !== undefined
+    && historyLoadedThreadId !== state.selectedThreadId;
+  const conversationConfirmedEmpty = conversationEmpty && !conversationHistoryPending;
+  const showConversationEmptyState = conversationConfirmedEmpty
     && (selectedThread === undefined || selectedThread.purpose === 'conversation');
   const showConversationHeader = selectedThread !== undefined
     || selectedScheduleTask !== undefined
     || selectedConversation !== undefined;
+  const conversationTitle = selectedConversation?.title
+    ?? selectedScheduleTask?.name
+    ?? selectedThread?.title
+    ?? '新对话';
+  const conversationTaskToolbar =
+    selectedScheduleTask?.bindingStatus === 'ready'
+    && selectedSchedule !== undefined
+    && selectedSidebarTask !== undefined
+    && scheduleService !== null ? (
+      <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
+        <ScheduleThreadHeader
+          schedule={selectedSchedule}
+          status={selectedSidebarTask.status}
+          nextRunLabel={selectedSidebarTask.nextRunLabel}
+          service={scheduleService}
+          projects={projects}
+          profiles={codexProfiles?.profiles}
+          onRunNow={runScheduleNow}
+          onScheduleChanged={handleScheduleChanged}
+        />
+      </Suspense>
+    ) : undefined;
+  const useIntegratedConversationTitleBar =
+    integratedTitleBar?.integratedTitleBar === true
+    && state.activeView === 'conversation'
+    && showConversationHeader;
+  const conversationHeader = showConversationHeader ? (
+    <ConversationHeader
+      title={conversationTitle}
+      taskToolbar={
+        useIntegratedConversationTitleBar ? undefined : conversationTaskToolbar
+      }
+      fileWorkspaceOpen={fileWorkspaceOpen}
+      onOpenLocation={() => {
+        if (fileWorkspaceOpen) {
+          closeFileWorkspace();
+          return;
+        }
+        openPrimaryView('files');
+      }}
+    />
+  ) : undefined;
   const pendingComposerApproval = [...timelineItems].reverse().find(item => (
     item.kind === 'approval' && item.approval.status === 'pending'
   ));
   const conversationPage = (
-    <section className={`conversation-page${showConversationEmptyState ? ' is-empty' : ''}`}>
-      {showConversationHeader ? (
-        <ConversationHeader
-          title={
-            selectedConversation?.title
-            ?? selectedScheduleTask?.name
-            ?? selectedThread?.title
-            ?? '新对话'
-          }
-          taskToolbar={
-            selectedScheduleTask?.bindingStatus === 'ready'
-            && selectedSchedule !== undefined
-            && selectedSidebarTask !== undefined
-            && scheduleService !== null ? (
-              <Suspense fallback={<div className="schedule-thread-header" aria-hidden="true" />}>
-                <ScheduleThreadHeader
-                  schedule={selectedSchedule}
-                  status={selectedSidebarTask.status}
-                  nextRunLabel={selectedSidebarTask.nextRunLabel}
-                  service={scheduleService}
-                  projects={projects}
-                  profiles={codexProfiles?.profiles}
-                  onRunNow={runScheduleNow}
-                  onScheduleChanged={handleScheduleChanged}
-                />
-              </Suspense>
-            ) : undefined
-          }
-          fileWorkspaceOpen={fileWorkspaceOpen}
-          onOpenLocation={() => {
-            if (fileWorkspaceOpen) {
-              closeFileWorkspace();
-              return;
-            }
-            openPrimaryView('files');
-          }}
-        />
+    <section
+      className={[
+        'conversation-page',
+        showConversationEmptyState ? 'is-empty' : undefined,
+        useIntegratedConversationTitleBar ? 'has-integrated-header' : undefined,
+        useIntegratedConversationTitleBar && conversationTaskToolbar !== undefined
+          ? 'has-task-strip'
+          : undefined
+      ].filter(Boolean).join(' ')}
+    >
+      {useIntegratedConversationTitleBar ? null : conversationHeader}
+      {useIntegratedConversationTitleBar && conversationTaskToolbar !== undefined ? (
+        <div className="conversation-task-strip conversation-task-strip--standalone">
+          {conversationTaskToolbar}
+        </div>
       ) : null}
       <div className="conversation-body">
         {treeLoadError ? <p className="inline-error">{treeLoadError}</p> : null}
@@ -4620,7 +5448,7 @@ export function AppController(props: AppControllerProps) {
           projectName={currentProjectName}
           projects={projects}
           showProjectSelector={shouldShowComposerProjectSelector({
-            conversationEmpty,
+            conversationEmpty: conversationConfirmedEmpty,
             threadPurpose: selectedThread?.purpose
           })}
           permission={effectiveComposerConfig.permission}
@@ -4630,6 +5458,7 @@ export function AppController(props: AppControllerProps) {
           models={codexModels?.models}
           modelsLoading={codexModelsLoading}
           modelsError={codexModelsLoadError}
+          modelsNotice={codexModelsNotice}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
           running={currentRunBusy}
@@ -4663,6 +5492,7 @@ export function AppController(props: AppControllerProps) {
               : addProjectDirectory
           }
           onPermissionChange={handleComposerPermissionChange}
+          onModelConfigChange={handleComposerModelConfigChange}
           onDraftApplied={handleComposerDraftApplied}
           onFocusRequestApplied={handleComposerFocusRequestApplied}
           onCancel={() => void cancelActiveRun()}
@@ -4685,7 +5515,7 @@ export function AppController(props: AppControllerProps) {
           }}
           onSubmit={submitPrompt}
         />
-        {conversationEmpty ? <ConversationStarterTags /> : null}
+        {conversationConfirmedEmpty ? <ConversationStarterTags /> : null}
       </div>
     </section>
   );
@@ -4814,7 +5644,44 @@ export function AppController(props: AppControllerProps) {
       onUpload={file => void uploadEnterpriseKnowledgeDocument(file)}
     />
   ) : state.activeView === 'drive' ? (
-    <SharedDrivePage />
+    <SharedDrivePage
+      connected={connectionState.status === 'connected'}
+      session={enterpriseSession}
+      spaces={enterpriseSharedSpaces}
+      spacesLoading={enterpriseSharedSpacesLoading}
+      spacesError={enterpriseSharedSpacesError}
+      spacesHasNext={enterpriseSharedSpacesMeta.hasNext}
+      selectedSpaceId={selectedEnterpriseSharedSpaceId}
+      files={enterpriseSharedFiles}
+      filesLoading={enterpriseSharedFilesLoading}
+      filesError={enterpriseSharedFilesError}
+      filesHasNext={enterpriseSharedFilesMeta.hasNext}
+      query={enterpriseSharedQuery}
+      maxFileSizeBytes={enterpriseSharedSpacesMeta.maxFileSizeBytes}
+      currentProjectId={currentProject?.id}
+      currentProjectName={currentProjectName}
+      operation={enterpriseSharedOperation}
+      notice={enterpriseSharedNotice}
+      onOpenAccount={() => {
+        enterpriseReturnRouteRef.current = { view: 'drive' };
+        dispatch({ type: 'set_active_view', activeView: 'account' });
+        navigateToRoute({ view: 'account' });
+      }}
+      onRefresh={refreshEnterpriseSharedDrive}
+      onLoadMoreSpaces={() => void loadMoreEnterpriseSharedSpaces()}
+      onSelectSpace={selectEnterpriseSharedSpace}
+      onSearch={searchEnterpriseSharedFiles}
+      onLoadMoreFiles={() => void loadMoreEnterpriseSharedFiles()}
+      onUpload={(spaceId, file) => {
+        void uploadEnterpriseSharedFile(spaceId, file);
+      }}
+      onReplace={(target, file) => {
+        void replaceEnterpriseSharedFile(target, file);
+      }}
+      onDownload={(target, overwrite) => {
+        void downloadEnterpriseSharedFile(target, overwrite);
+      }}
+    />
   ) : state.activeView === 'connections' ? (
     <ConnectionsPage />
   ) : state.activeView === 'settings' ? (
@@ -4923,15 +5790,60 @@ export function AppController(props: AppControllerProps) {
     <PlaceholderView label={getPlaceholderLabel(state.activeView)} />
   );
 
+  if (
+    props.requireEnterpriseLogin !== false
+    &&
+    connectionState.status === 'connected'
+    && enterpriseSession.status !== 'signed_in'
+  ) {
+    return (
+      <div
+        className="app-drop-shell enterprise-access-gate"
+        data-integrated-title-bar={
+          integratedTitleBar?.integratedTitleBar === true ? 'true' : undefined
+        }
+        style={appShellStyle}
+      >
+        {integratedTitleBar?.integratedTitleBar === true ? (
+          <div className="desktop-titlebar-drag-region" aria-hidden="true" />
+        ) : null}
+        <span
+          className="app-visually-hidden"
+          role="status"
+          aria-label={getConnectionStatusLabel(connectionState)}
+        />
+        <Suspense fallback={<PageLoading />}>
+          <EnterpriseAccountPage
+            required
+            connected
+            session={enterpriseSession}
+            checkingTimedOut={enterpriseCheckingTimedOut}
+            onLogin={loginEnterprise}
+            onRegister={registerEnterprise}
+            onLogout={logoutEnterprise}
+            onRefresh={refreshEnterpriseSession}
+          />
+        </Suspense>
+      </div>
+    );
+  }
+
   return (
     <div
       className="app-drop-shell"
+      data-integrated-title-bar={
+        integratedTitleBar?.integratedTitleBar === true ? 'true' : undefined
+      }
       data-project-drop-root="true"
+      style={appShellStyle}
       onDragEnter={handleProjectDragEnter}
       onDragOver={handleProjectDragOver}
       onDragLeave={handleProjectDragLeave}
       onDrop={(event) => void handleProjectDrop(event)}
     >
+      {integratedTitleBar?.integratedTitleBar === true ? (
+        <div className="desktop-titlebar-drag-region" aria-hidden="true" />
+      ) : null}
       <span
         className="app-visually-hidden"
         role="status"
@@ -4947,7 +5859,7 @@ export function AppController(props: AppControllerProps) {
         <ClaweeSidebar
           projects={projects}
           conversations={conversations}
-          tasks={sidebarTasks}
+          recentItems={recentSidebarItems}
           runningConversationIds={runningConversationIds}
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
@@ -4992,6 +5904,9 @@ export function AppController(props: AppControllerProps) {
           }}
           onToggleCollapsed={() => setSidebarCollapsed((currentValue) => !currentValue)}
         />
+      }
+      mainHeader={
+        useIntegratedConversationTitleBar ? conversationHeader : undefined
       }
       main={(
         <Suspense fallback={<PageLoading />}>
@@ -5264,7 +6179,12 @@ export async function pollEnterpriseSessionUntilSettled(input: {
     if (isAborted()) return;
 
     input.onSession(response);
-    if (response.status !== 'checking') return;
+    if (
+      response.status !== 'checking'
+      && response.collector?.status !== 'installing'
+    ) {
+      return;
+    }
 
     const elapsed = now() - startedAt;
     if (elapsed >= timeoutMs) {
@@ -5445,6 +6365,7 @@ function mapThreadToConversation(
     id: thread.id,
     projectId: thread.projectId,
     title: thread.title ?? thread.codexThreadId ?? thread.id,
+    updatedAt: thread.updatedAt,
     updatedLabel: formatRelativeTime(thread.updatedAt)
   };
 }
@@ -5510,15 +6431,51 @@ function normalizePathForCompare(path: string): string {
   return path.replace(/^~(?=\/)/, '').replace(/\/+$/, '');
 }
 
-export function formatRelativeTime(iso: string): string {
+function compareRecentSidebarItems(
+  left: SidebarRecentItem,
+  right: SidebarRecentItem
+): number {
+  const leftTimestamp = parseRuntimeTimestamp(left.updatedAt);
+  const rightTimestamp = parseRuntimeTimestamp(right.updatedAt);
+  if (Number.isFinite(leftTimestamp) && Number.isFinite(rightTimestamp)) {
+    const timestampDifference = rightTimestamp - leftTimestamp;
+    if (timestampDifference !== 0) return timestampDifference;
+  } else if (Number.isFinite(leftTimestamp)) {
+    return -1;
+  } else if (Number.isFinite(rightTimestamp)) {
+    return 1;
+  }
+  return right.id.localeCompare(left.id);
+}
+
+function latestRuntimeTimestamp(
+  ...values: Array<string | undefined>
+): string | undefined {
+  let latest: string | undefined;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (value === undefined) continue;
+    const timestamp = parseRuntimeTimestamp(value);
+    if (!Number.isFinite(timestamp) || timestamp < latestTimestamp) continue;
+    latest = value;
+    latestTimestamp = timestamp;
+  }
+  return latest;
+}
+
+function parseRuntimeTimestamp(iso: string): number {
   const sqliteUtc = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d{1,3})?$/.exec(
     iso
   );
-  const timestamp = Date.parse(
+  return Date.parse(
     sqliteUtc === null
       ? iso
       : `${sqliteUtc[1]}T${sqliteUtc[2]}${sqliteUtc[3] ?? ''}Z`
   );
+}
+
+export function formatRelativeTime(iso: string): string {
+  const timestamp = parseRuntimeTimestamp(iso);
   if (!Number.isFinite(timestamp)) return '';
 
   const diffMs = Math.max(0, Date.now() - timestamp);
@@ -5603,6 +6560,76 @@ function formatEnterpriseKnowledgeError(error: unknown, fallback: string): strin
   }
 }
 
+function formatEnterpriseSharedDriveError(
+  error: unknown,
+  fallback: string
+): string {
+  if (!(error instanceof ApiClientError)) {
+    return getRuntimeErrorMessage(error, fallback);
+  }
+  switch (error.code) {
+    case 'ENTERPRISE_FORBIDDEN':
+      return '当前账户没有共享网盘访问权限';
+    case 'ENTERPRISE_AGENT_FORBIDDEN':
+      return '当前设备的企业 Agent 无法访问共享网盘';
+    case 'ENTERPRISE_SHARED_SPACE_NOT_FOUND':
+      return '该共享空间不存在或当前账户已无权访问';
+    case 'ENTERPRISE_SHARED_FILE_NOT_FOUND':
+      return '该共享文件不存在或当前账户已无权访问';
+    case 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN':
+      return '当前账户没有该共享空间的写入权限';
+    case 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS':
+      return '相同网盘路径已存在';
+    case 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT':
+      return '远端文件已被其他成员修改';
+    case 'ENTERPRISE_SHARED_FILE_TOO_LARGE':
+      return '共享文件超过服务端允许大小';
+    case 'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH':
+    case 'ENTERPRISE_SHARED_FILE_DIGEST_MISMATCH':
+      return '共享文件完整性校验失败';
+    case 'ENTERPRISE_SHARED_FILE_STORAGE_UNAVAILABLE':
+    case 'ENTERPRISE_SERVICE_UNAVAILABLE':
+      return '企业文件服务暂时不可用';
+    case 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS':
+      return '当前项目中已存在同路径文件';
+    case 'ENTERPRISE_SHARED_FILE_LOCAL_WRITE_FAILED':
+      return '文件无法写入当前项目';
+    case 'PROJECT_NOT_FOUND':
+      return '当前项目不存在';
+    case 'PROJECT_ARCHIVED':
+      return '当前项目已归档，无法写入文件';
+    case 'PROJECT_DIRECTORY_UNAVAILABLE':
+      return '当前项目目录不可用';
+    case 'PATH_ESCAPE':
+    case 'PATH_IGNORED':
+      return '远端文件路径不能写入当前项目';
+    case 'ENTERPRISE_RATE_LIMITED':
+      return '企业文件服务请求过于频繁，请稍后重试';
+    case 'ENTERPRISE_PROTOCOL_ERROR':
+      return '企业文件服务返回了无法识别的数据';
+    default:
+      return error.message.trim().length > 0 ? error.message : fallback;
+  }
+}
+
+function mergeSharedSpaces(
+  current: EnterpriseSharedSpaceResponse[],
+  incoming: EnterpriseSharedSpaceResponse[]
+): EnterpriseSharedSpaceResponse[] {
+  const merged = new Map(current.map(space => [space.spaceId, space]));
+  for (const space of incoming) merged.set(space.spaceId, space);
+  return Array.from(merged.values());
+}
+
+function mergeSharedFiles(
+  current: EnterpriseSharedFileResponse[],
+  incoming: EnterpriseSharedFileResponse[]
+): EnterpriseSharedFileResponse[] {
+  const merged = new Map(current.map(file => [file.fileId, file]));
+  for (const file of incoming) merged.set(file.fileId, file);
+  return Array.from(merged.values());
+}
+
 function buildThreadRequest(
   prompt: string,
   project: ClaweeProject,
@@ -5623,13 +6650,22 @@ function buildThreadRequest(
 
 function defaultComposerRunConfig(
   project: ClaweeProject | undefined,
-  defaultPermission: DefaultPermissionPreference
+  defaultPermission: DefaultPermissionPreference,
+  recentModelConfig: RecentModelConfig | null
 ): ComposerRunConfig {
+  const projectHasModelConfig = project !== undefined
+    && (project.model !== null || project.reasoning !== null);
+  const modelConfig = projectHasModelConfig
+    ? {
+        model: project.model,
+        reasoning: project.reasoning
+      }
+    : recentModelConfig;
   return {
     permission: resolveDefaultPermission(project, defaultPermission),
     profile: project?.profile ?? 'default',
-    model: project?.model ?? null,
-    reasoning: (project?.reasoning ?? null) as ComposerRunConfig['reasoning']
+    model: modelConfig?.model ?? null,
+    reasoning: modelConfig?.reasoning ?? null
   };
 }
 

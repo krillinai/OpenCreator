@@ -1,8 +1,10 @@
-export const DEFAULT_ENTERPRISE_ORIGIN = 'http://1.13.175.31:1904';
+export const DEFAULT_ENTERPRISE_ORIGIN = 'https://enterprise.invalid';
 export const ENTERPRISE_JSON_TIMEOUT_MS = 15_000;
 export const ENTERPRISE_DOWNLOAD_TIMEOUT_MS = 120_000;
 export const ENTERPRISE_DOCUMENT_UPLOAD_TIMEOUT_MS = 5 * 60_000;
 export const ENTERPRISE_PACKAGE_MAX_BYTES = 50 * 1024 * 1024;
+export const ENTERPRISE_SHARED_FILE_TRANSFER_TIMEOUT_MS = 30 * 60_000;
+export const ENTERPRISE_SHARED_FILE_MAX_BYTES = 1024 * 1024 * 1024;
 
 export type EnterpriseOriginConfig = {
   origin: string;

@@ -7,6 +7,11 @@ import type {
 
 type DesktopApi = {
   kind: 'desktop';
+  windowChrome?: {
+    integratedTitleBar: boolean;
+    titleBarHeight?: number;
+    trafficLightInset?: number;
+  };
   readConnectionConfig(): Promise<ConnectionConfig | null>;
   subscribeConnectionConfig(
     listener: (connection: ConnectionConfig | null) => void
@@ -50,8 +55,18 @@ export type DesktopHostBridge = HostBridge & {
 export function readDesktopHostBridge(): DesktopHostBridge | undefined {
   const api = window.claweeDesktop;
   if (api?.kind !== 'desktop') return undefined;
+  const windowChrome = api.windowChrome?.integratedTitleBar === true
+    && typeof api.windowChrome.titleBarHeight === 'number'
+    && typeof api.windowChrome.trafficLightInset === 'number'
+    ? {
+        integratedTitleBar: true as const,
+        titleBarHeight: api.windowChrome.titleBarHeight,
+        trafficLightInset: api.windowChrome.trafficLightInset
+      }
+    : undefined;
   return {
     kind: 'desktop',
+    ...(windowChrome === undefined ? {} : { windowChrome }),
     readConnectionConfig: () => api.readConnectionConfig(),
     subscribeConnectionConfig: listener => api.subscribeConnectionConfig(listener),
     restartRuntime: () => api.restartRuntime(),

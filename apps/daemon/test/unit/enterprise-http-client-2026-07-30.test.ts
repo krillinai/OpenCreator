@@ -186,6 +186,13 @@ describe('enterprise HTTP client', () => {
               agent_id: AGENT_ID,
               name: 'User'
             },
+            collector_registration: {
+              exists: true,
+              revoked: false,
+              install_command: "curl -fsSL 'http://enterprise/install.sh?code=secret' | sh",
+              install_powershell_command:
+                "irm 'http://enterprise/install.ps1?code=secret' | iex"
+            },
             applications: {
               frontend: true
             }
@@ -203,7 +210,13 @@ describe('enterprise HTTP client', () => {
       },
       agentId: AGENT_ID,
       status: 'active',
-      frontendAllowed: true
+      frontendAllowed: true,
+      collectorRegistration: {
+        installCommand:
+          "curl -fsSL 'http://enterprise/install.sh?code=secret' | sh",
+        installPowershellCommand:
+          "irm 'http://enterprise/install.ps1?code=secret' | iex"
+      }
     });
 
     expect(fetch.mock.calls[0]?.[1]).toMatchObject({
@@ -419,6 +432,253 @@ describe('enterprise HTTP client', () => {
       documentId: 'doc_456',
       knowledgeBaseId: 'kb_123',
       status: 'processing'
+    });
+  });
+
+  it('maps shared spaces, files, details, and conservative write permissions', async () => {
+    const remoteFile = {
+      file_id: 'file_1',
+      space_id: 'space_1',
+      space_name: '设计资料',
+      logical_path: 'docs/design.md',
+      file_name: 'design.md',
+      size_bytes: 13,
+      sha256: 'a'.repeat(64),
+      content_type: 'text/markdown',
+      revision: 3,
+      updated_by_user_id: 'usr_1',
+      updated_by_agent_id: 'agent_1',
+      updated_at: '2026-08-06T08:00:00Z'
+    };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            space_id: 'space_1',
+            name: '设计资料',
+            description: '团队设计文件',
+            updated_at: '2026-08-06T07:30:00Z'
+          },
+          {
+            space_id: 'space_2',
+            name: '发布资料',
+            description: '',
+            updated_at: '2026-08-06T07:20:00Z',
+            permissions: { read: true }
+          }
+        ],
+        meta: {
+          next_cursor: 'space-next',
+          has_next: true,
+          max_file_size_bytes: 1073741824
+        }
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [remoteFile],
+        meta: { next_cursor: '', has_next: false }
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          ...remoteFile,
+          created_by_user_id: 'usr_creator',
+          created_by_agent_id: 'agent_creator',
+          created_at: '2026-08-05T08:00:00Z'
+        }
+      }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.listSharedSpaces('enterprise-access-token', {
+      limit: 50,
+      cursor: 'space cursor'
+    })).resolves.toEqual({
+      spaces: [
+        {
+          spaceId: 'space_1',
+          name: '设计资料',
+          description: '团队设计文件',
+          updatedAt: '2026-08-06T07:30:00Z',
+          permissions: { read: true, write: false }
+        },
+        {
+          spaceId: 'space_2',
+          name: '发布资料',
+          description: '',
+          updatedAt: '2026-08-06T07:20:00Z',
+          permissions: { read: true, write: false }
+        }
+      ],
+      meta: {
+        nextCursor: 'space-next',
+        hasNext: true,
+        maxFileSizeBytes: 1073741824
+      }
+    });
+    await expect(client.listSharedFiles({
+      accessToken: 'enterprise-access-token',
+      spaceId: 'space_1',
+      query: 'design',
+      logicalPathPrefix: 'docs/',
+      limit: 100,
+      cursor: 'file cursor'
+    })).resolves.toMatchObject({
+      files: [{
+        fileId: 'file_1',
+        logicalPath: 'docs/design.md',
+        revision: 3
+      }],
+      meta: { nextCursor: '', hasNext: false }
+    });
+    await expect(
+      client.getSharedFileDetail('enterprise-access-token', 'file/中文')
+    ).resolves.toMatchObject({
+      fileId: 'file_1',
+      createdByUserId: 'usr_creator',
+      createdByAgentId: 'agent_creator',
+      createdAt: '2026-08-05T08:00:00Z'
+    });
+
+    expect(String(fetch.mock.calls[0]?.[0])).toBe(
+      `${ORIGIN}/api/v1/app/shared-spaces?limit=50&cursor=space+cursor`
+    );
+    expect(String(fetch.mock.calls[1]?.[0])).toBe(
+      `${ORIGIN}/api/v1/app/shared-files?space_id=space_1&query=design&logical_path_prefix=docs%2F&limit=100&cursor=file+cursor`
+    );
+    expect(String(fetch.mock.calls[2]?.[0])).toBe(
+      `${ORIGIN}/api/v1/app/shared-files/detail?file_id=file%2F%E4%B8%AD%E6%96%87`
+    );
+  });
+
+  it('streams shared downloads and removes files when integrity checks fail', async () => {
+    const directory = createTempDirectory();
+    const content = Buffer.from('shared design');
+    const sha256 = createHash('sha256').update(content).digest('hex');
+    const headers = {
+      'content-length': String(content.byteLength),
+      'content-type': 'text/markdown',
+      'x-content-sha256': sha256,
+      'x-file-revision': '3',
+      'x-shared-file-id': 'file_1'
+    };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(binaryResponse([
+        content.subarray(0, 5),
+        content.subarray(5)
+      ], headers))
+      .mockResolvedValueOnce(binaryResponse([content], {
+        ...headers,
+        'x-content-sha256': 'f'.repeat(64)
+      }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+    const validPath = join(directory, 'valid.md');
+    const invalidPath = join(directory, 'invalid.md');
+
+    await expect(client.downloadSharedFileContent({
+      accessToken: 'enterprise-access-token',
+      fileId: 'file_1',
+      destinationPath: validPath
+    })).resolves.toEqual({
+      bytes: content.byteLength,
+      sha256,
+      revision: 3,
+      contentType: 'text/markdown'
+    });
+    expect(readFileSync(validPath)).toEqual(content);
+
+    await expect(client.downloadSharedFileContent({
+      accessToken: 'enterprise-access-token',
+      fileId: 'file_1',
+      destinationPath: invalidPath
+    })).rejects.toMatchObject({
+      code: 'ENTERPRISE_SHARED_FILE_DIGEST_MISMATCH',
+      stage: 'download'
+    });
+    expect(existsSync(invalidPath)).toBe(false);
+    expect(String(fetch.mock.calls[0]?.[0])).toBe(
+      `${ORIGIN}/api/v1/app/shared-files/content?file_id=file_1`
+    );
+  });
+
+  it('uploads shared files as the raw body with length, digest, and revision', async () => {
+    const directory = createTempDirectory();
+    const filePath = join(directory, 'design.md');
+    const content = Buffer.from('shared design');
+    const sha256 = createHash('sha256').update(content).digest('hex');
+    writeFileSync(filePath, content);
+    const fetch = vi.fn(async (
+      url: string | URL | Request,
+      init?: RequestInit
+    ) => {
+      expect(String(url)).toBe(
+        `${ORIGIN}/api/v1/app/shared-files/content?space_id=space_1&logical_path=docs%2Fdesign.md&expected_revision=3`
+      );
+      expect(init).toMatchObject({
+        headers: {
+          Accept: 'application/json',
+          Authorization: 'Bearer enterprise-access-token',
+          'Content-Length': String(content.byteLength),
+          'Content-Type': 'text/markdown',
+          'X-Content-SHA256': sha256
+        },
+        method: 'POST'
+      });
+      expect(init?.body).toBeInstanceOf(Blob);
+      expect(await (init!.body as Blob).arrayBuffer())
+        .toEqual(content.buffer.slice(
+          content.byteOffset,
+          content.byteOffset + content.byteLength
+        ));
+      return jsonResponse({
+        data: {
+          file_id: 'file_1',
+          space_id: 'space_1',
+          logical_path: 'docs/design.md',
+          file_name: 'design.md',
+          size_bytes: content.byteLength,
+          sha256,
+          content_type: 'text/markdown',
+          revision: 4,
+          created: false,
+          updated_at: '2026-08-06T08:00:00Z'
+        }
+      });
+    });
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.uploadSharedFileContent({
+      accessToken: 'enterprise-access-token',
+      spaceId: 'space_1',
+      logicalPath: 'docs/design.md',
+      expectedRevision: 3,
+      filePath,
+      sizeBytes: content.byteLength,
+      sha256,
+      contentType: 'text/markdown'
+    })).resolves.toMatchObject({
+      fileId: 'file_1',
+      revision: 4,
+      created: false
+    });
+  });
+
+  it('normalizes revision conflict details for the Runtime API', async () => {
+    const fetch = vi.fn(async () => jsonResponse({
+      error: {
+        code: 'revision_conflict',
+        details: [{
+          field: 'expected_revision',
+          current_revision: 4
+        }]
+      }
+    }, 409));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.listSharedFiles({
+      accessToken: 'enterprise-access-token'
+    })).rejects.toMatchObject({
+      code: 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT',
+      statusCode: 409,
+      upstreamCode: 'revision_conflict',
+      details: { currentRevision: 4 }
     });
   });
 

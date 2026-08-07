@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertEnterpriseReleaseTransport,
   assertKeyringArtifacts,
+  readEnterpriseGatewayPackageConfig,
   resolveKeyringTarget
 } from '../scripts/enterprise-package-contract-2026-07-30.mjs';
 
@@ -111,6 +112,44 @@ describe('Desktop enterprise package contract', () => {
       origin: 'https://enterprise.example',
       transportSecurity: 'secure_https'
     });
+  });
+
+  it('reads gateway configuration without packaging the local agent id', () => {
+    const root = mkdtempSync(join(tmpdir(), 'clawee-gateway-contract-'));
+    tempRoots.push(root);
+    const path = join(root, 'gateway.json');
+    writeFileSync(path, 'gateway = "https://enterprise.example/"\n');
+
+    expect(readEnterpriseGatewayPackageConfig(path, 'release')).toEqual({
+      gateway: 'https://enterprise.example',
+      transportSecurity: 'secure_https'
+    });
+
+    writeFileSync(
+      path,
+      'gateway = "https://enterprise.example"\n'
+      + 'agent_id = "clawee_550e8400-e29b-41d4-a716-446655440000"\n'
+    );
+    expect(readEnterpriseGatewayPackageConfig(path, 'release')).toEqual({
+      gateway: 'https://enterprise.example',
+      transportSecurity: 'secure_https'
+    });
+
+    writeFileSync(
+      path,
+      'gateway = "https://enterprise.example"\nextra = true\n'
+    );
+    expect(() => readEnterpriseGatewayPackageConfig(path, 'release')).toThrow(
+      'ENTERPRISE_CONFIG_INVALID'
+    );
+
+    writeFileSync(
+      path,
+      'gateway = "https://enterprise.example"\nagent_id = "invalid"\n'
+    );
+    expect(() => readEnterpriseGatewayPackageConfig(path, 'release')).toThrow(
+      'ENTERPRISE_CONFIG_INVALID'
+    );
   });
 });
 

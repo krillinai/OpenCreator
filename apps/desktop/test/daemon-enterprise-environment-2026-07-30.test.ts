@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDaemonArguments,
   buildDaemonEnvironment,
   type DaemonStartInput
 } from '../src/main/daemon-manager.js';
@@ -7,7 +8,7 @@ import {
 const runId = '123e4567-e89b-42d3-a456-426614174000';
 
 describe('Daemon enterprise environment', () => {
-  it('removes inherited enterprise identity and writes only typed values', () => {
+  it('removes inherited enterprise configuration from the child environment', () => {
     const environment = buildDaemonEnvironment(createInput({
       env: {
         PATH: '/usr/bin',
@@ -18,20 +19,31 @@ describe('Daemon enterprise environment', () => {
         CLAWEE_ENTERPRISE_KEYRING_SERVICE: 'attacker-service',
         CLAWEE_ENTERPRISE_KEYRING_ACCOUNT: 'attacker-account',
         clawee_enterprise_keyring_account: 'lowercase-attacker-account'
-      },
-      enterpriseOrigin: 'http://127.0.0.1:1904',
-      enterpriseE2ERunId: runId
+      }
     }));
 
     expect(environment).toMatchObject({
-      PATH: '/usr/bin',
-      CLAWEE_ENTERPRISE_ORIGIN: 'http://127.0.0.1:1904',
-      CLAWEE_ENTERPRISE_E2E_RUN_ID: runId,
-      CLAWEE_ENTERPRISE_E2E_AUTHORIZED: 'packaged-app'
+      PATH: '/usr/bin'
     });
+    expect(environment.CLAWEE_ENTERPRISE_ORIGIN).toBeUndefined();
+    expect(environment.CLAWEE_ENTERPRISE_E2E_RUN_ID).toBeUndefined();
+    expect(environment.CLAWEE_ENTERPRISE_E2E_AUTHORIZED).toBeUndefined();
     expect(environment.CLAWEE_ENTERPRISE_KEYRING_SERVICE).toBeUndefined();
     expect(environment.CLAWEE_ENTERPRISE_KEYRING_ACCOUNT).toBeUndefined();
     expect(environment.clawee_enterprise_keyring_account).toBeUndefined();
+  });
+
+  it('passes the gateway config path and E2E identity as typed arguments', () => {
+    expect(buildDaemonArguments(createInput({
+      enterpriseE2ERunId: runId
+    }))).toEqual([
+      '--clawee-enterprise-config=/tmp/enterprise-gateway.json',
+      `--clawee-enterprise-e2e-run-id=${runId}`,
+      '--clawee-enterprise-e2e-authorized=packaged-app'
+    ]);
+    expect(buildDaemonArguments(createInput())).toEqual([
+      '--clawee-enterprise-config=/tmp/enterprise-gateway.json'
+    ]);
   });
 
   it('does not pass enterprise overrides during an ordinary launch', () => {
@@ -67,6 +79,7 @@ function createInput(
     defaultProjectRoot: '/tmp/project',
     requireProbe: false,
     probeVerified: true,
+    enterpriseConfigPath: '/tmp/enterprise-gateway.json',
     ...overrides
   };
 }

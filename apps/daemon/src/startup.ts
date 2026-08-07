@@ -3,8 +3,15 @@ import type {
   ScheduleBindingRepairResult,
   ScheduleCoordinator
 } from './scheduler/coordinator.js';
-import { resolveEnterpriseOrigin } from './enterprise/config-2026-07-30.js';
 import { resolveEnterpriseCredentialIdentity } from './enterprise/credential-store-2026-07-30.js';
+import { readEnterpriseClientConfig } from './enterprise/client-config-2026-08-06.js';
+
+const ENTERPRISE_CONFIG_ARGUMENT = '--clawee-enterprise-config';
+const ENTERPRISE_E2E_RUN_ID_ARGUMENT = '--clawee-enterprise-e2e-run-id';
+const ENTERPRISE_E2E_AUTHORIZED_ARGUMENT =
+  '--clawee-enterprise-e2e-authorized';
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function resolveProductionServerEnvironment(
   env: NodeJS.ProcessEnv = process.env
@@ -15,10 +22,8 @@ export function resolveProductionServerEnvironment(
   | 'codexHome'
   | 'defaultCwd'
   | 'defaultProjectRoot'
-  | 'enterpriseOrigin'
-  | 'enterpriseE2ERunId'
 > {
-  const enterprise = resolveEnterpriseEnvironment(env);
+  assertEnterpriseEnvironmentUnused(env);
   return {
     ...optionalEnvironmentValue('dataDir', env.CLAWEE_DATA_DIR),
     ...optionalEnvironmentValue('codexBin', env.CLAWEE_CODEX_BIN),
@@ -30,8 +35,52 @@ export function resolveProductionServerEnvironment(
     ...optionalEnvironmentValue(
       'defaultProjectRoot',
       env.CLAWEE_DEFAULT_PROJECT_ROOT
-    ),
-    ...enterprise
+    )
+  };
+}
+
+export function resolveEnterpriseStartupArguments(
+  argv: readonly string[] = process.argv,
+  readConfig: (path: string) => string = path =>
+    readEnterpriseClientConfig(path).gateway
+): Pick<
+  BuildServerInput,
+  'enterpriseConfigPath' | 'enterpriseOrigin' | 'enterpriseE2ERunId'
+> {
+  const configPath = singleArgumentValue(argv, ENTERPRISE_CONFIG_ARGUMENT);
+  if (configPath === undefined) {
+    throw new Error('ENTERPRISE_CONFIG_REQUIRED');
+  }
+  const enterpriseOrigin = readConfig(configPath);
+  const runId = singleArgumentValue(argv, ENTERPRISE_E2E_RUN_ID_ARGUMENT);
+  const authorized = singleArgumentValue(
+    argv,
+    ENTERPRISE_E2E_AUTHORIZED_ARGUMENT
+  );
+  const hasE2EConfiguration = runId !== undefined || authorized !== undefined;
+  if (!hasE2EConfiguration) {
+    return {
+      enterpriseConfigPath: configPath,
+      enterpriseOrigin
+    };
+  }
+  if (
+    runId === undefined
+    || authorized !== 'packaged-app'
+    || !UUID_PATTERN.test(runId)
+    || !isLoopbackOrigin(enterpriseOrigin)
+  ) {
+    throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
+  }
+  try {
+    resolveEnterpriseCredentialIdentity(runId);
+  } catch {
+    throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
+  }
+  return {
+    enterpriseConfigPath: configPath,
+    enterpriseOrigin,
+    enterpriseE2ERunId: runId
   };
 }
 
@@ -65,54 +114,17 @@ function optionalEnvironmentValue<Key extends keyof BuildServerInput>(
     : { [key]: normalized } as Record<Key, string>;
 }
 
-function resolveEnterpriseEnvironment(
-  env: NodeJS.ProcessEnv
-): Pick<BuildServerInput, 'enterpriseOrigin' | 'enterpriseE2ERunId'> {
-  if (
-    hasValue(env.CLAWEE_ENTERPRISE_KEYRING_SERVICE) ||
-    hasValue(env.CLAWEE_ENTERPRISE_KEYRING_ACCOUNT)
-  ) {
-    throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
+function assertEnterpriseEnvironmentUnused(env: NodeJS.ProcessEnv): void {
+  const forbiddenKeys = [
+    'CLAWEE_ENTERPRISE_ORIGIN',
+    'CLAWEE_ENTERPRISE_E2E_AUTHORIZED',
+    'CLAWEE_ENTERPRISE_E2E_RUN_ID',
+    'CLAWEE_ENTERPRISE_KEYRING_SERVICE',
+    'CLAWEE_ENTERPRISE_KEYRING_ACCOUNT'
+  ];
+  if (forbiddenKeys.some(key => hasValue(env[key]))) {
+    throw new Error('ENTERPRISE_ENV_CONFIG_FORBIDDEN');
   }
-
-  const originValue = normalizedValue(env.CLAWEE_ENTERPRISE_ORIGIN);
-  const authorized = normalizedValue(env.CLAWEE_ENTERPRISE_E2E_AUTHORIZED);
-  const runId = normalizedValue(env.CLAWEE_ENTERPRISE_E2E_RUN_ID);
-  const hasE2EConfiguration = authorized !== undefined || runId !== undefined;
-
-  let enterpriseOrigin: string | undefined;
-  if (originValue !== undefined) {
-    try {
-      enterpriseOrigin = resolveEnterpriseOrigin(originValue).origin;
-    } catch {
-      if (hasE2EConfiguration) {
-        throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
-      }
-      throw new Error('ENTERPRISE_ORIGIN_INVALID');
-    }
-  }
-
-  if (!hasE2EConfiguration) {
-    return enterpriseOrigin === undefined ? {} : { enterpriseOrigin };
-  }
-  if (
-    authorized !== 'packaged-app' ||
-    runId === undefined ||
-    enterpriseOrigin === undefined ||
-    !isLoopbackOrigin(enterpriseOrigin)
-  ) {
-    throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
-  }
-  try {
-    resolveEnterpriseCredentialIdentity(runId);
-  } catch {
-    throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
-  }
-
-  return {
-    enterpriseOrigin,
-    enterpriseE2ERunId: runId
-  };
 }
 
 function isLoopbackOrigin(origin: string): boolean {
@@ -127,6 +139,30 @@ function isLoopbackOrigin(origin: string): boolean {
 
 function hasValue(value: string | undefined): boolean {
   return normalizedValue(value) !== undefined;
+}
+
+function singleArgumentValue(
+  argv: readonly string[],
+  name: string
+): string | undefined {
+  const matches = argv.filter(argument => (
+    argument === name || argument.startsWith(`${name}=`)
+  ));
+  if (matches.length > 1 || matches[0] === name) {
+    throw new Error(
+      name === ENTERPRISE_CONFIG_ARGUMENT
+        ? 'ENTERPRISE_CONFIG_INVALID'
+        : 'ENTERPRISE_E2E_CONFIG_FORBIDDEN'
+    );
+  }
+  if (matches.length === 0) return undefined;
+  const value = normalizedValue(matches[0]!.slice(name.length + 1));
+  if (value !== undefined) return value;
+  throw new Error(
+    name === ENTERPRISE_CONFIG_ARGUMENT
+      ? 'ENTERPRISE_CONFIG_INVALID'
+      : 'ENTERPRISE_E2E_CONFIG_FORBIDDEN'
+  );
 }
 
 function normalizedValue(value: string | undefined): string | undefined {
