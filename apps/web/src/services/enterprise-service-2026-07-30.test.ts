@@ -82,6 +82,62 @@ describe('enterprise service', () => {
       'application/vnd.clawee.knowledge-document'
     );
   });
+
+  it('uses shared drive pagination, transfer, and project download routes', async () => {
+    const get = vi.fn(async (_path: string) => ({}));
+    const post = vi.fn(async (_path: string, _body?: unknown) => ({}));
+    const postBinary = vi.fn(async (
+      _path: string,
+      _body: BodyInit,
+      _contentType?: string
+    ) => ({}));
+    const service = createEnterpriseService(
+      createClient({ get, post, postBinary })
+    );
+    const file = new File(['drive'], '方案.md', {
+      type: 'text/markdown'
+    });
+
+    await service.listSharedSpaces({ limit: 50, cursor: 'space cursor' });
+    await service.listSharedFiles({
+      spaceId: 'space/季度',
+      query: 'design',
+      logicalPathPrefix: 'docs/',
+      limit: 100,
+      cursor: 'file cursor'
+    });
+    await service.getSharedFileDetail('file/方案');
+    await service.uploadSharedFile({
+      spaceId: 'space/季度',
+      logicalPath: 'docs/方案.md',
+      expectedRevision: 3,
+      file
+    });
+    await service.downloadSharedFile({
+      fileId: 'file/方案',
+      projectId: 'project_1',
+      overwrite: true
+    });
+
+    expect(get).toHaveBeenCalledWith(
+      '/enterprise/shared-spaces?limit=50&cursor=space+cursor'
+    );
+    expect(get).toHaveBeenCalledWith(
+      '/enterprise/shared-files?spaceId=space%2F%E5%AD%A3%E5%BA%A6&query=design&logicalPathPrefix=docs%2F&limit=100&cursor=file+cursor'
+    );
+    expect(get).toHaveBeenCalledWith(
+      '/enterprise/shared-files/file%2F%E6%96%B9%E6%A1%88'
+    );
+    expect(postBinary).toHaveBeenCalledWith(
+      '/enterprise/shared-spaces/space%2F%E5%AD%A3%E5%BA%A6/files?logicalPath=docs%2F%E6%96%B9%E6%A1%88.md&contentType=text%2Fmarkdown&sizeBytes=5&expectedRevision=3',
+      file,
+      'application/vnd.clawee.shared-file'
+    );
+    expect(post).toHaveBeenCalledWith(
+      '/enterprise/shared-files/file%2F%E6%96%B9%E6%A1%88/download',
+      { projectId: 'project_1', overwrite: true }
+    );
+  });
 });
 
 function createClient(

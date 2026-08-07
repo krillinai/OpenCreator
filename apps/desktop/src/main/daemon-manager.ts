@@ -32,7 +32,7 @@ export type DaemonStartInput = {
   defaultProjectRoot: string;
   requireProbe: boolean;
   probeVerified: boolean;
-  enterpriseOrigin?: string;
+  enterpriseConfigPath: string;
   enterpriseE2ERunId?: string;
   startupTimeoutMs?: number;
 };
@@ -93,7 +93,7 @@ export class DaemonManager extends EventEmitter<DaemonManagerEvents> {
         buffer: '',
         droppingFrame: false
       };
-      const child = utilityProcess.fork(input.entryPath, [], {
+      const child = utilityProcess.fork(input.entryPath, buildDaemonArguments(input), {
         cwd: input.cwd,
         env: buildDaemonEnvironment(input),
         serviceName: 'Clawee Runtime',
@@ -288,14 +288,19 @@ export function buildDaemonEnvironment(
     CLAWEE_REQUIRE_CODEX_PROBE: input.requireProbe ? '1' : '0',
     CLAWEE_CODEX_PROBE_VERIFIED: input.probeVerified ? '1' : '0'
   });
-  if (input.enterpriseOrigin !== undefined) {
-    env.CLAWEE_ENTERPRISE_ORIGIN = input.enterpriseOrigin;
-  }
-  if (input.enterpriseE2ERunId !== undefined) {
-    env.CLAWEE_ENTERPRISE_E2E_RUN_ID = input.enterpriseE2ERunId;
-    env.CLAWEE_ENTERPRISE_E2E_AUTHORIZED = 'packaged-app';
-  }
   return env;
+}
+
+export function buildDaemonArguments(input: DaemonStartInput): string[] {
+  return [
+    `--clawee-enterprise-config=${input.enterpriseConfigPath}`,
+    ...(input.enterpriseE2ERunId === undefined
+      ? []
+      : [
+          `--clawee-enterprise-e2e-run-id=${input.enterpriseE2ERunId}`,
+          '--clawee-enterprise-e2e-authorized=packaged-app'
+        ])
+  ];
 }
 
 export type DaemonOutputState = {

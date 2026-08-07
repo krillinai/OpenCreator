@@ -41,7 +41,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
     dataDir: string;
     defaultProjectRoot: string;
     development: boolean;
-    enterpriseOrigin?: string;
+    enterpriseConfigPath: string;
     enterpriseE2ERunId?: string;
   }) {
     super();
@@ -292,9 +292,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       defaultProjectRoot: this.input.defaultProjectRoot,
       requireProbe,
       probeVerified,
-      ...(this.input.enterpriseOrigin === undefined
-        ? {}
-        : { enterpriseOrigin: this.input.enterpriseOrigin }),
+      enterpriseConfigPath: this.input.enterpriseConfigPath,
       ...(this.input.enterpriseE2ERunId === undefined
         ? {}
         : { enterpriseE2ERunId: this.input.enterpriseE2ERunId })

@@ -102,6 +102,9 @@ importers:
       '@electron/fuses':
         specifier: 1.8.0
         version: 1.8.0
+      '@iarna/toml':
+        specifier: 2.2.5
+        version: 2.2.5
       '@types/node':
         specifier: ^22.10.7
         version: 22.20.0

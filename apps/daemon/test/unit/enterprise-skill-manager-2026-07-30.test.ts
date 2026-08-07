@@ -312,6 +312,11 @@ function createHttpClient(): EnterpriseHttpClient {
       meta: { nextCursor: '', hasNext: false }
     })),
     uploadKnowledgeDocument: vi.fn(),
+    listSharedSpaces: vi.fn(),
+    listSharedFiles: vi.fn(),
+    getSharedFileDetail: vi.fn(),
+    downloadSharedFileContent: vi.fn(),
+    uploadSharedFileContent: vi.fn(),
     listSkills: vi.fn(async () => [remoteSkill()]),
     getSkillDetail: vi.fn(async () => remoteDetail()),
     downloadSkillPackage: vi.fn(async () => ({

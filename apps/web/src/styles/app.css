@@ -5246,6 +5246,10 @@ html.is-pane-resizing * {
   color: var(--text);
 }
 
+.enterprise-access-gate .enterprise-account-page {
+  padding-top: max(72px, calc(var(--clawee-titlebar-height, 0px) + 48px));
+}
+
 .enterprise-account-status,
 .enterprise-account-error,
 .enterprise-account-notice,
@@ -5409,6 +5413,24 @@ html.is-pane-resizing * {
   font-size: 12px;
 }
 
+.enterprise-account-profile-copy .enterprise-collector-state {
+  margin-top: 5px;
+}
+
+.enterprise-collector-state.is-installed {
+  color: var(--success);
+}
+
+.enterprise-collector-state.is-failed {
+  color: var(--danger);
+}
+
+.enterprise-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .enterprise-account-form-panel {
   max-width: 520px;
   margin-top: 0;
@@ -5504,9 +5526,13 @@ html.is-pane-resizing * {
   }
 
   .enterprise-account-session-panel .enterprise-account-secondary-action,
-  .enterprise-account-profile .enterprise-account-secondary-action {
+  .enterprise-account-profile .enterprise-account-actions {
     grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .enterprise-account-actions .enterprise-account-secondary-action {
+    flex: 1;
   }
 }
 

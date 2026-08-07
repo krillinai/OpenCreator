@@ -25,6 +25,7 @@ type AccountOperation = 'login' | 'register' | 'refresh' | 'logout';
 
 export type EnterpriseAccountPageProps = {
   connected: boolean;
+  required?: boolean;
   session: EnterpriseSessionResponse;
   checkingTimedOut?: boolean;
   onLogin(input: EnterpriseLoginRequest): Promise<EnterpriseSessionResponse>;
@@ -197,7 +198,11 @@ export function EnterpriseAccountPage(props: EnterpriseAccountPageProps) {
                 <span>{props.session.account.email}</span>
               </p>
             ) : (
-              <p>服务恢复后可重新检测，不影响本地工作。</p>
+              <p>
+                {props.required
+                  ? '服务恢复后请重新检测，完成登录后才能继续使用 Clawee。'
+                  : '服务恢复后可重新检测，不影响本地工作。'}
+              </p>
             )}
           </div>
           <button
@@ -226,20 +231,42 @@ export function EnterpriseAccountPage(props: EnterpriseAccountPageProps) {
             {props.session.expiresAt !== undefined ? (
               <small>会话有效期至 {formatExpiry(props.session.expiresAt)}</small>
             ) : null}
+            {props.session.collector !== undefined ? (
+              <small className={`enterprise-collector-state is-${props.session.collector.status}`}>
+                {formatCollectorState(props.session.collector.status)}
+              </small>
+            ) : null}
           </div>
-          <button
-            className="enterprise-account-secondary-action"
-            type="button"
-            disabled={operation !== undefined || !props.connected}
-            onClick={() => void runSessionOperation('logout')}
-          >
-            {operation === 'logout' ? (
-              <LoaderCircle className="enterprise-account-spinner" size={16} aria-hidden="true" />
-            ) : (
-              <LogOut size={16} aria-hidden="true" />
-            )}
-            <span>退出登录</span>
-          </button>
+          <div className="enterprise-account-actions">
+            {props.session.collector?.status === 'failed' ? (
+              <button
+                className="enterprise-account-secondary-action"
+                type="button"
+                disabled={operation !== undefined || !props.connected}
+                onClick={() => void runSessionOperation('refresh')}
+              >
+                {operation === 'refresh' ? (
+                  <LoaderCircle className="enterprise-account-spinner" size={16} aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={16} aria-hidden="true" />
+                )}
+                <span>重试安装</span>
+              </button>
+            ) : null}
+            <button
+              className="enterprise-account-secondary-action"
+              type="button"
+              disabled={operation !== undefined || !props.connected}
+              onClick={() => void runSessionOperation('logout')}
+            >
+              {operation === 'logout' ? (
+                <LoaderCircle className="enterprise-account-spinner" size={16} aria-hidden="true" />
+              ) : (
+                <LogOut size={16} aria-hidden="true" />
+              )}
+              <span>退出登录</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="enterprise-account-panel enterprise-account-form-panel">
@@ -249,7 +276,11 @@ export function EnterpriseAccountPage(props: EnterpriseAccountPageProps) {
             </div>
             <div>
               <h2>{mode === 'login' ? '登录企业账户' : '创建企业账户'}</h2>
-              <p>登录后可浏览、安装和更新企业 Skill。</p>
+              <p>
+                {props.required
+                  ? '登录后 Clawee 将自动安装并连接企业采集器。'
+                  : '登录后可浏览、安装和更新企业 Skill。'}
+              </p>
             </div>
           </div>
 
@@ -380,6 +411,19 @@ function formatExpiry(value: string): string {
     hour: '2-digit',
     minute: '2-digit'
   }).format(date);
+}
+
+function formatCollectorState(
+  status: NonNullable<EnterpriseSessionResponse['collector']>['status']
+): string {
+  switch (status) {
+    case 'installing':
+      return '正在安装企业采集器';
+    case 'installed':
+      return '企业采集器已安装';
+    case 'failed':
+      return '企业采集器安装失败';
+  }
 }
 
 export default EnterpriseAccountPage;

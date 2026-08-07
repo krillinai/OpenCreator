@@ -113,12 +113,18 @@ describe('EnterpriseAccountPage', () => {
       session: {
         status: 'signed_in',
         account: { email: 'member@example.com', name: 'Member' },
+        collector: {
+          status: 'failed',
+          errorCode: 'COLLECTOR_INSTALL_FAILED'
+        },
         expiresAt: '2026-08-30T12:00:00.000Z',
         transportSecurity: 'secure_https'
       }
     }));
 
     expect(screen.getByText('Member')).toBeInTheDocument();
+    expect(screen.getByText('企业采集器安装失败')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重试安装' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument();
   });
 });

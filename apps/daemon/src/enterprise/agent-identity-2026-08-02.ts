@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import {
+  ENTERPRISE_AGENT_ID_PATTERN,
+  readEnterpriseClientConfig,
+  serializeEnterpriseClientConfig,
+  type EnterpriseClientConfig
+} from './client-config-2026-08-06.js';
 
 const FILE_NAME = 'enterprise-agent.json';
-const AGENT_ID_PATTERN =
-  /^clawee_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type EnterpriseAgentIdentityStore = {
   getOrCreate(): Promise<string>;
@@ -20,10 +24,14 @@ export class EnterpriseAgentIdentityStoreError extends Error {
 }
 
 export function createEnterpriseAgentIdentityStore(input: {
-  dataDir: string;
+  configPath: string;
+  legacyDataDir?: string;
   generateId?: () => string;
 }): EnterpriseAgentIdentityStore {
-  const path = join(input.dataDir, FILE_NAME);
+  const path = resolve(input.configPath);
+  const legacyPath = input.legacyDataDir === undefined
+    ? undefined
+    : join(input.legacyDataDir, FILE_NAME);
   const generateId = input.generateId ?? (() => `clawee_${randomUUID()}`);
   let pending: Promise<string> | undefined;
 
@@ -38,22 +46,38 @@ export function createEnterpriseAgentIdentityStore(input: {
   };
 
   async function loadOrCreate(): Promise<string> {
-    const existing = await readExisting(path);
-    if (existing !== undefined) return existing;
+    const config = await readConfig(path);
+    if (config.agentId !== undefined) return config.agentId;
 
-    const agentId = generateId();
-    if (!AGENT_ID_PATTERN.test(agentId)) {
+    const agentId = (
+      legacyPath === undefined ? undefined : await readLegacyIdentity(legacyPath)
+    ) ?? generateId();
+    if (!ENTERPRISE_AGENT_ID_PATTERN.test(agentId)) {
       throw new EnterpriseAgentIdentityStoreError('validate');
     }
     await writeAtomic(path, {
-      version: 1,
+      ...config,
       agentId
     });
     return agentId;
   }
 }
 
-async function readExisting(path: string): Promise<string | undefined> {
+async function readConfig(path: string): Promise<EnterpriseClientConfig> {
+  let raw: string;
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch {
+    throw new EnterpriseAgentIdentityStoreError('read');
+  }
+  try {
+    return readEnterpriseClientConfig(path, () => raw);
+  } catch {
+    throw new EnterpriseAgentIdentityStoreError('validate');
+  }
+}
+
+async function readLegacyIdentity(path: string): Promise<string | undefined> {
   let raw: string;
   try {
     raw = await readFile(path, 'utf8');
@@ -69,7 +93,7 @@ async function readExisting(path: string): Promise<string | undefined> {
       || Object.keys(value).length !== 2
       || value.version !== 1
       || typeof value.agentId !== 'string'
-      || !AGENT_ID_PATTERN.test(value.agentId)
+      || !ENTERPRISE_AGENT_ID_PATTERN.test(value.agentId)
     ) {
       throw new Error('invalid enterprise agent identity');
     }
@@ -81,7 +105,7 @@ async function readExisting(path: string): Promise<string | undefined> {
 
 async function writeAtomic(
   path: string,
-  value: { version: 1; agentId: string }
+  value: EnterpriseClientConfig & { agentId: string }
 ): Promise<void> {
   const parent = dirname(path);
   await mkdir(parent, { recursive: true });
@@ -92,7 +116,7 @@ async function writeAtomic(
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
     handle = await open(temporary, 'wx', 0o600);
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    await handle.writeFile(serializeEnterpriseClientConfig(value), 'utf8');
     await handle.sync();
     await handle.close();
     handle = undefined;

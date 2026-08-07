@@ -7,6 +7,9 @@ import {
   createEnterpriseSessionManager,
   EnterpriseSessionError
 } from '../../src/enterprise/session-manager-2026-07-30.js';
+import {
+  EnterpriseCollectorInstallError
+} from '../../src/enterprise/collector-installer-2026-08-06.js';
 import type {
   EnterpriseAgentIdentityStore
 } from '../../src/enterprise/agent-identity-2026-08-02.js';
@@ -274,6 +277,131 @@ describe('enterprise session manager', () => {
     expect(getMe).toHaveBeenCalledWith(credential.accessToken);
   });
 
+  it('installs the collector after authentication without blocking sign-in', async () => {
+    const installation = deferred<void>();
+    const install = vi.fn(async () => installation.promise);
+    const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
+      collectorInstaller: {
+        install,
+        close: vi.fn(async () => undefined)
+      },
+      credentialStore: createStore(),
+      httpClient: createClient({
+        getMe: vi.fn(async () => ({
+          ...activeMe(),
+          collectorRegistration: collectorRegistration()
+        }))
+      }),
+      transportSecurity: 'secure_https'
+    });
+
+    await expect(manager.login({
+      email: 'user@example.com',
+      password: 'password-123'
+    })).resolves.toMatchObject({
+      status: 'signed_in',
+      collector: { status: 'installing' }
+    });
+    expect(install).toHaveBeenCalledWith(collectorRegistration());
+
+    installation.resolve(undefined);
+    await vi.waitFor(() => {
+      expect(manager.getSnapshot()).toMatchObject({
+        status: 'signed_in',
+        collector: { status: 'installed' }
+      });
+    });
+  });
+
+  it.each([
+    { operation: 'restore' as const },
+    { operation: 'refresh' as const },
+    { operation: 'register' as const }
+  ])('installs the collector after $operation authentication', async ({ operation }) => {
+    const install = vi.fn(async () => undefined);
+    const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
+      collectorInstaller: {
+        install,
+        close: vi.fn(async () => undefined)
+      },
+      credentialStore: createStore(
+        operation === 'register' ? undefined : credential
+      ),
+      httpClient: createClient({
+        getMe: vi.fn(async () => ({
+          ...activeMe(),
+          collectorRegistration: collectorRegistration()
+        }))
+      }),
+      transportSecurity: 'secure_https'
+    });
+
+    if (operation === 'restore') {
+      manager.startRestore();
+    } else if (operation === 'refresh') {
+      await manager.refresh();
+    } else {
+      await manager.register({
+        email: 'user@example.com',
+        name: 'User',
+        password: 'password-123'
+      });
+    }
+
+    await vi.waitFor(() => {
+      expect(manager.getSnapshot()).toMatchObject({
+        status: 'signed_in',
+        collector: { status: 'installed' }
+      });
+    });
+    expect(install).toHaveBeenCalledOnce();
+    expect(install).toHaveBeenCalledWith(collectorRegistration());
+  });
+
+  it('keeps the authenticated session when collector installation fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const manager = createEnterpriseSessionManager({
+      agentIdentityStore: createAgentIdentityStore(),
+      collectorInstaller: {
+        install: vi.fn(async () => {
+          throw new EnterpriseCollectorInstallError(
+            'COLLECTOR_INSTALL_FAILED'
+          );
+        }),
+        close: vi.fn(async () => undefined)
+      },
+      credentialStore: createStore(),
+      httpClient: createClient({
+        getMe: vi.fn(async () => ({
+          ...activeMe(),
+          collectorRegistration: collectorRegistration()
+        }))
+      }),
+      transportSecurity: 'secure_https'
+    });
+
+    await expect(manager.login({
+      email: 'user@example.com',
+      password: 'password-123'
+    })).resolves.toMatchObject({ status: 'signed_in' });
+    await vi.waitFor(() => {
+      expect(manager.getSnapshot()).toMatchObject({
+        status: 'signed_in',
+        collector: {
+          status: 'failed',
+          errorCode: 'COLLECTOR_INSTALL_FAILED'
+        }
+      });
+    });
+    expect(JSON.stringify(manager.getSnapshot())).not.toContain('secret');
+    expect(warn).toHaveBeenCalledWith(
+      'Enterprise collector installation failed [COLLECTOR_INSTALL_FAILED]'
+    );
+    warn.mockRestore();
+  });
+
   it('rejects mismatched agent identities without persisting a session', async () => {
     const store = createStore();
     const logout = vi.fn(async () => undefined);
@@ -384,6 +512,27 @@ function createClient(
     uploadKnowledgeDocument: vi.fn(async () => {
       throw new Error('not implemented');
     }),
+    listSharedSpaces: vi.fn(async () => ({
+      spaces: [],
+      meta: {
+        nextCursor: '',
+        hasNext: false,
+        maxFileSizeBytes: 1024 * 1024 * 1024
+      }
+    })),
+    listSharedFiles: vi.fn(async () => ({
+      files: [],
+      meta: { nextCursor: '', hasNext: false }
+    })),
+    getSharedFileDetail: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
+    downloadSharedFileContent: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
+    uploadSharedFileContent: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
     listSkills: vi.fn(async () => []),
     getSkillDetail: vi.fn(async () => {
       throw new Error('not implemented');
@@ -404,6 +553,14 @@ function activeMe(): EnterpriseMeResult {
     agentId,
     status: 'active',
     frontendAllowed: true
+  };
+}
+
+function collectorRegistration() {
+  return {
+    installCommand: "curl -fsSL 'http://enterprise/install.sh?code=secret' | sh",
+    installPowershellCommand:
+      "irm 'http://enterprise/install.ps1?code=secret' | iex"
   };
 }
 

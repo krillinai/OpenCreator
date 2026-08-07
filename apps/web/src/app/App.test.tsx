@@ -15,6 +15,8 @@ import type {
   EnterpriseKnowledgeBaseResponse,
   EnterpriseKnowledgeDocumentResponse,
   EnterpriseSessionResponse,
+  EnterpriseSharedFileResponse,
+  EnterpriseSharedSpaceResponse,
   EnterpriseSkillListResponse,
   EnterpriseSkillResponse,
   ProjectResponse,
@@ -24,7 +26,10 @@ import type {
   TaskItem,
   ThreadResponse
 } from '@clawee/protocol';
-import { App } from './App.js';
+import {
+  App as ProductionApp,
+  type AppProps
+} from './App.js';
 import {
   formatRelativeTime,
   pollEnterpriseSessionUntilSettled
@@ -44,6 +49,10 @@ import {
 vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
 
 let testRuntimeProjects: ProjectResponse[] | undefined;
+
+function App(props: AppProps = {}) {
+  return <ProductionApp requireEnterpriseLogin={false} {...props} />;
+}
 
 describe('App', () => {
   it('treats timezone-less Runtime timestamps as UTC before formatting relative time', () => {
@@ -110,6 +119,37 @@ describe('App', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('keeps polling while the collector installation is still running', async () => {
+    const installing = {
+      status: 'signed_in' as const,
+      account: { email: 'member@example.com', name: 'Member' },
+      collector: { status: 'installing' as const },
+      transportSecurity: 'secure_https' as const
+    };
+    const installed = {
+      ...installing,
+      collector: { status: 'installed' as const }
+    };
+    const readSession = vi.fn()
+      .mockResolvedValueOnce(installing)
+      .mockResolvedValueOnce(installed);
+    const sessions: EnterpriseSessionResponse[] = [];
+    const wait = vi.fn(async () => undefined);
+
+    await pollEnterpriseSessionUntilSettled({
+      readSession,
+      onSession: session => sessions.push(session),
+      onTimeout: vi.fn(),
+      onError: vi.fn(),
+      now: () => 0,
+      wait
+    });
+
+    expect(readSession).toHaveBeenCalledTimes(2);
+    expect(wait).toHaveBeenCalledOnce();
+    expect(sessions).toEqual([installing, installed]);
   });
 
   it('restores a primary page directly from its URL', async () => {
@@ -405,6 +445,107 @@ describe('App', () => {
       expect(knowledgeBaseRequests).toBe(2);
       expect(screen.queryByText('产品资料')).not.toBeInTheDocument();
     });
+  });
+
+  it('loads shared drive data from Runtime and saves into the current project with explicit overwrite', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/drive';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const project = readTestRuntimeProjects()[0]!;
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    let downloadRequests = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) {
+        return jsonResponse(createCodexStatusResponse());
+      }
+      if (url.endsWith('/threads?status=active&limit=50')) {
+        return jsonResponse({ threads: [] });
+      }
+      if (url.endsWith('/enterprise/session')) {
+        return jsonResponse(createEnterpriseSessionResponse());
+      }
+      if (url.endsWith('/enterprise/shared-spaces?limit=100')) {
+        return jsonResponse(createSharedSpaceListResponse([
+          createSharedSpaceResponse()
+        ]));
+      }
+      if (url.endsWith('/enterprise/shared-files?limit=100')) {
+        return jsonResponse(createSharedFileListResponse([
+          createSharedFileResponse()
+        ]));
+      }
+      if (
+        url.endsWith('/enterprise/shared-files/file-design/download')
+        && init?.method === 'POST'
+      ) {
+        downloadRequests += 1;
+        if (downloadRequests === 1) {
+          return jsonResponse({
+            error: {
+              code: 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS',
+              message: 'The project already contains this file',
+              details: { relativePath: 'docs/design.md' }
+            }
+          }, { status: 409 });
+        }
+        return jsonResponse({
+          fileId: 'file-design',
+          projectId: project.id,
+          relativePath: 'docs/design.md',
+          sizeBytes: 13,
+          sha256: 'a'.repeat(64),
+          revision: 3,
+          overwritten: true
+        });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('heading', { name: '共享网盘' }))
+      .toBeInTheDocument();
+    expect(await screen.findByText('design.md')).toBeInTheDocument();
+    expect(screen.getByText(`当前项目：${project.name}`)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '上传文件' }))
+      .not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: '保存 design.md 到当前项目' })
+    );
+    await user.click(
+      await screen.findByRole('button', { name: '覆盖保存 design.md' })
+    );
+
+    expect(await screen.findByText(
+      `docs/design.md 已覆盖保存到项目“${project.name}”`
+    )).toBeInTheDocument();
+    const downloadCalls = fetchCalls.filter(call => (
+      call.url.endsWith('/enterprise/shared-files/file-design/download')
+      && call.init?.method === 'POST'
+    ));
+    expect(downloadCalls).toHaveLength(2);
+    expect(downloadCalls.map(call => JSON.parse(String(call.init?.body))))
+      .toEqual([
+        { projectId: project.id },
+        { projectId: project.id, overwrite: true }
+      ]);
   });
 
   it('updates the copyable URL when navigating between primary pages', async () => {
@@ -2451,7 +2592,7 @@ describe('App', () => {
     });
   });
 
-  it('restores the enterprise source route and loads skills only when signed in', async () => {
+  it('requires enterprise login before showing the workspace', async () => {
     window.location.hash = '#/plugins?source=enterprise';
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
@@ -2479,6 +2620,7 @@ describe('App', () => {
 
     const signedOutRender = render(
       <App
+        requireEnterpriseLogin
         fileService={createFileService()}
         hostBridge={hostBridge}
         runtimeFetch={runtimeFetch}
@@ -2486,12 +2628,12 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('tab', {
-      name: '企业Skills',
-      selected: true
+    expect(await screen.findByRole('heading', {
+      name: '登录企业账户'
     })).toBeInTheDocument();
-    expect(await screen.findByTestId('enterprise-skill-brand-compliance')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '登录企业账户' })).not.toBeInTheDocument();
+    expect(screen.getByText('登录后 Clawee 将自动安装并连接企业采集器。'))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: '企业Skills' })).not.toBeInTheDocument();
     expect(window.location.hash).toBe('#/plugins?source=enterprise');
     expect(skillRequests).toBe(0);
 
@@ -8187,6 +8329,63 @@ function createKnowledgeDocumentResponse(
     uploadedBy: 'member@example.com',
     createdAt: '2026-08-05T08:00:00.000Z',
     updatedAt: '2026-08-05T08:01:00.000Z',
+    ...overrides
+  };
+}
+
+function createSharedSpaceListResponse(
+  spaces: EnterpriseSharedSpaceResponse[] = []
+) {
+  return {
+    spaces,
+    meta: {
+      nextCursor: '',
+      hasNext: false,
+      maxFileSizeBytes: 1073741824
+    },
+    refreshedAt: '2026-08-06T08:00:00.000Z'
+  };
+}
+
+function createSharedSpaceResponse(
+  overrides: Partial<EnterpriseSharedSpaceResponse> = {}
+): EnterpriseSharedSpaceResponse {
+  return {
+    spaceId: 'space-design',
+    name: '设计资料',
+    description: '团队设计文件',
+    updatedAt: '2026-08-06T07:30:00Z',
+    permissions: { read: true, write: false },
+    ...overrides
+  };
+}
+
+function createSharedFileListResponse(
+  files: EnterpriseSharedFileResponse[] = []
+) {
+  return {
+    files,
+    meta: { nextCursor: '', hasNext: false },
+    refreshedAt: '2026-08-06T08:00:00.000Z'
+  };
+}
+
+function createSharedFileResponse(
+  overrides: Partial<EnterpriseSharedFileResponse> = {}
+): EnterpriseSharedFileResponse {
+  return {
+    fileId: 'file-design',
+    spaceId: 'space-design',
+    spaceName: '设计资料',
+    logicalPath: 'docs/design.md',
+    fileName: 'design.md',
+    sizeBytes: 13,
+    sha256: 'a'.repeat(64),
+    contentType: 'text/markdown',
+    revision: 3,
+    updatedByUserId: 'usr_1',
+    updatedByAgentId: 'agent_1',
+    updatedAt: '2026-08-06T08:00:00Z',
     ...overrides
   };
 }

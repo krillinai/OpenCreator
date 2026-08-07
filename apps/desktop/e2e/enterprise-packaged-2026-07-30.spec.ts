@@ -23,6 +23,7 @@ import {
   resolve
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse } from '@iarna/toml';
 import {
   expect,
   test,
@@ -56,13 +57,16 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
   const codexHome = join(root, 'codex-home');
   const stateDir = join(root, 'fake-codex-state');
   const userData = join(root, 'user-data');
+  const homeDir = join(root, 'home');
   const binDir = join(root, 'bin');
   const server = new FakeEnterpriseServer();
   let app: PackagedApp | undefined;
   let cleanupError: unknown;
 
-  writeCodexShim(binDir);
+  const codexBin = writeCodexShim(binDir);
+  writeDesktopSettings(userData, codexBin);
   const origin = await server.start();
+  writeEnterpriseClientConfig(homeDir, origin);
 
   try {
     app = await launchPackagedApp({
@@ -70,7 +74,10 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
       args: [
         `--user-data-dir=${userData}`,
         '--disable-gpu',
-        `--clawee-enterprise-e2e=${runId}`
+        `--clawee-enterprise-e2e=${runId}`,
+        `--clawee-enterprise-e2e-config=${
+          join(homeDir, '.clawee', 'config.toml')
+        }`
       ],
       env: {
         ...withoutElectronRunAsNode(process.env),
@@ -80,7 +87,6 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
         CODEX_HOME: codexHome,
         CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
         CLAWEE_E2E_FAKE_CODEX_MODE: 'success',
-        CLAWEE_ENTERPRISE_ORIGIN: origin,
         CLAWEE_ENTERPRISE_E2E_RUN_ID: runId
       },
       timeoutMs: 45_000
@@ -92,10 +98,6 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
     ).toMatchObject({ status: 'signed_out' });
     expect(app.page.url()).toContain('clawee-app://app/');
 
-    await app.page.getByRole('button', {
-      name: '企业账户',
-      exact: true
-    }).click();
     await expect(app.page.getByRole('heading', {
       name: '登录企业账户'
     })).toBeVisible();
@@ -103,21 +105,22 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
     await app.page.getByLabel('密码').fill(enterprisePassword);
     await app.page.locator('.enterprise-account-primary-action').click();
 
-    await expect(app.page.getByText('已连接企业账户')).toBeVisible();
-    await expect(
-      app.page.getByRole('region', { name: '企业账户' })
-        .getByText(enterpriseEmail)
-    ).toBeVisible();
+    await expect(app.page.getByRole('button', {
+      name: `Packaged E2E ${enterpriseEmail}`
+    })).toBeVisible();
     await expect.poll(
       () => readEnterpriseSession(app!.page)
     ).toMatchObject({
       status: 'signed_in',
+      collector: {
+        status: 'installed'
+      },
       account: {
         email: enterpriseEmail,
         name: 'Packaged E2E'
       }
     });
-    const persistedAgentId = readPersistedAgentId(userData);
+    const persistedAgentId = readPersistedAgentId(homeDir);
     expect(persistedAgentId).toMatch(agentIdPattern);
     expect(server.agentIdentity()).toBe(persistedAgentId);
 
@@ -130,12 +133,15 @@ test('实际打包 App 可登录、使用企业知识库并安装 Skill', async 
       () => readEnterpriseSession(app!.page)
     ).toMatchObject({
       status: 'signed_in',
+      collector: {
+        status: 'installed'
+      },
       account: {
         email: enterpriseEmail,
         name: 'Packaged E2E'
       }
     });
-    expect(readPersistedAgentId(userData)).toBe(persistedAgentId);
+    expect(readPersistedAgentId(homeDir)).toBe(persistedAgentId);
     expect(server.agentIdentity()).toBe(persistedAgentId);
     await expect(app.page.getByRole('button', {
       name: `Packaged E2E ${enterpriseEmail}`
@@ -448,6 +454,12 @@ class FakeEnterpriseServer {
         data: {
           account: enterpriseAccount(),
           agent: enterpriseAgent(this.requireAgentId()),
+          collector_registration: {
+            exists: true,
+            revoked: false,
+            install_command: 'exit 0',
+            install_powershell_command: 'exit 0'
+          },
           applications: { frontend: true }
         }
       });
@@ -625,7 +637,7 @@ async function readEnterpriseSession(page: Page): Promise<Record<string, unknown
   });
 }
 
-function writeCodexShim(binDir: string): void {
+function writeCodexShim(binDir: string): string {
   mkdirSync(binDir, { recursive: true });
   const scriptPath = process.platform === 'win32'
     ? join(binDir, 'codex.cmd')
@@ -637,6 +649,20 @@ function writeCodexShim(binDir: string): void {
       : `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`
   );
   if (process.platform !== 'win32') chmodSync(scriptPath, 0o755);
+  return scriptPath;
+}
+
+function writeDesktopSettings(userData: string, codexBin: string): void {
+  mkdirSync(userData, { recursive: true });
+  writeFileSync(
+    join(userData, 'desktop-settings.json'),
+    `${JSON.stringify({
+      closeBehavior: 'quit',
+      notificationsEnabled: false,
+      codexBin,
+      successfulCodexBin: codexBin
+    }, null, 2)}\n`
+  );
 }
 
 function withoutElectronRunAsNode(
@@ -649,6 +675,18 @@ function withoutElectronRunAsNode(
   delete next.CLAWEE_ENTERPRISE_KEYRING_SERVICE;
   delete next.CLAWEE_ENTERPRISE_KEYRING_ACCOUNT;
   return next;
+}
+
+function writeEnterpriseClientConfig(
+  homeDir: string,
+  gateway: string
+): void {
+  const claweeHome = join(homeDir, '.clawee');
+  mkdirSync(claweeHome, { recursive: true });
+  writeFileSync(
+    join(claweeHome, 'config.toml'),
+    `gateway = ${JSON.stringify(gateway)}\n`
+  );
 }
 
 async function deleteE2ECredential(runId: string): Promise<void> {
@@ -750,17 +788,16 @@ function enterpriseAgent(agentId: string) {
   };
 }
 
-function readPersistedAgentId(userData: string): string {
-  const path = join(userData, 'daemon', 'enterprise-agent.json');
-  const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
+function readPersistedAgentId(homeDir: string): string {
+  const path = join(homeDir, '.clawee', 'config.toml');
+  const value: unknown = parse(readFileSync(path, 'utf8'));
   if (
     !isRecord(value)
-    || value.version !== 1
-    || typeof value.agentId !== 'string'
+    || typeof value.agent_id !== 'string'
   ) {
     throw new Error(`Invalid persisted enterprise agent identity: ${path}`);
   }
-  return value.agentId;
+  return value.agent_id;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

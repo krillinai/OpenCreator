@@ -27,6 +27,7 @@
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
+    "@iarna/toml": "2.2.5",
     "@electron/asar": "^3.4.1",
     "@electron/fuses": "1.8.0",
     "@types/node": "^22.10.7",

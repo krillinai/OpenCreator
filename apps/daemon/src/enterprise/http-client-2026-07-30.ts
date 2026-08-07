@@ -14,6 +14,8 @@ import {
   ENTERPRISE_DOWNLOAD_TIMEOUT_MS,
   ENTERPRISE_JSON_TIMEOUT_MS,
   ENTERPRISE_PACKAGE_MAX_BYTES,
+  ENTERPRISE_SHARED_FILE_MAX_BYTES,
+  ENTERPRISE_SHARED_FILE_TRANSFER_TIMEOUT_MS,
   resolveEnterpriseOrigin
 } from './config-2026-07-30.js';
 
@@ -35,10 +37,17 @@ const loginResponseSchema = z.object({
     expires_at: z.string().datetime({ offset: true })
   })
 });
+const collectorRegistrationSchema = z.object({
+  exists: z.boolean(),
+  revoked: z.boolean().optional(),
+  install_command: z.string().min(1).optional(),
+  install_powershell_command: z.string().min(1).optional()
+});
 const meResponseSchema = z.object({
   data: z.object({
     account: accountSchema,
     agent: agentSchema,
+    collector_registration: collectorRegistrationSchema.optional(),
     applications: z.object({
       frontend: z.boolean()
     })
@@ -101,6 +110,62 @@ const knowledgeDocumentListResponseSchema = z.object({
 const knowledgeDocumentUploadResponseSchema = z.object({
   data: remoteKnowledgeDocumentSchema
 });
+const sharedSpacePermissionsSchema = z.object({
+  read: z.boolean().optional(),
+  write: z.boolean().optional()
+});
+const remoteSharedSpaceSchema = z.object({
+  space_id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  updated_at: z.string().datetime({ offset: true }),
+  permissions: sharedSpacePermissionsSchema.optional()
+});
+const sharedSpaceListResponseSchema = z.object({
+  data: z.array(remoteSharedSpaceSchema),
+  meta: listMetaSchema.extend({
+    max_file_size_bytes: z.number().int().nonnegative()
+  })
+});
+const remoteSharedFileSchema = z.object({
+  file_id: z.string().min(1),
+  space_id: z.string().min(1),
+  space_name: z.string(),
+  logical_path: z.string().min(1),
+  file_name: z.string().min(1),
+  size_bytes: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  content_type: z.string(),
+  revision: z.number().int().positive(),
+  updated_by_user_id: z.string(),
+  updated_by_agent_id: z.string(),
+  updated_at: z.string().datetime({ offset: true })
+});
+const sharedFileListResponseSchema = z.object({
+  data: z.array(remoteSharedFileSchema),
+  meta: listMetaSchema
+});
+const sharedFileDetailResponseSchema = z.object({
+  data: remoteSharedFileSchema.extend({
+    created_by_user_id: z.string(),
+    created_by_agent_id: z.string(),
+    created_at: z.string().datetime({ offset: true })
+  })
+});
+const sharedFileMutationResponseSchema = z.object({
+  data: z.object({
+    file_id: z.string().min(1),
+    space_id: z.string().min(1),
+    logical_path: z.string().min(1),
+    file_name: z.string().min(1),
+    size_bytes: z.number().int().nonnegative(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    content_type: z.string(),
+    revision: z.number().int().positive(),
+    created: z.boolean(),
+    updated_at: z.string().datetime({ offset: true })
+  })
+});
 
 export type EnterpriseRemoteSkill = {
   skillId: string;
@@ -142,6 +207,48 @@ export type EnterpriseRemoteKnowledgeDocument = {
   updatedAt: string;
 };
 
+export type EnterpriseRemoteSharedSpace = {
+  spaceId: string;
+  name: string;
+  description: string;
+  updatedAt: string;
+  permissions: {
+    read: boolean;
+    write: boolean;
+  };
+};
+
+export type EnterpriseRemoteSharedFile = {
+  fileId: string;
+  spaceId: string;
+  spaceName: string;
+  logicalPath: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  contentType: string;
+  revision: number;
+  createdByUserId?: string;
+  createdByAgentId?: string;
+  updatedByUserId: string;
+  updatedByAgentId: string;
+  createdAt?: string;
+  updatedAt: string;
+};
+
+export type EnterpriseRemoteSharedFileMutation = {
+  fileId: string;
+  spaceId: string;
+  logicalPath: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  contentType: string;
+  revision: number;
+  created: boolean;
+  updatedAt: string;
+};
+
 export type EnterpriseLoginResult = {
   account: EnterpriseAccountSummary;
   agentId: string;
@@ -155,6 +262,12 @@ export type EnterpriseMeResult = {
   agentId: string;
   status: string;
   frontendAllowed: boolean;
+  collectorRegistration?: EnterpriseCollectorRegistration;
+};
+
+export type EnterpriseCollectorRegistration = {
+  installCommand: string;
+  installPowershellCommand: string;
 };
 
 export type EnterpriseDownloadInput = {
@@ -163,6 +276,32 @@ export type EnterpriseDownloadInput = {
   versionId: string;
   expectedSha256: string;
   destinationPath: string;
+};
+
+export type EnterpriseSharedFileListInput = {
+  accessToken: string;
+  spaceId?: string;
+  query?: string;
+  logicalPathPrefix?: string;
+  limit?: number;
+  cursor?: string;
+};
+
+export type EnterpriseSharedFileDownloadInput = {
+  accessToken: string;
+  fileId: string;
+  destinationPath: string;
+};
+
+export type EnterpriseSharedFileUploadInput = {
+  accessToken: string;
+  spaceId: string;
+  logicalPath: string;
+  expectedRevision?: number;
+  filePath: string;
+  sizeBytes: number;
+  sha256: string;
+  contentType: string;
 };
 
 export type EnterpriseHttpClient = {
@@ -188,6 +327,32 @@ export type EnterpriseHttpClient = {
     fileName: string;
     mimeType: string;
   }): Promise<EnterpriseRemoteKnowledgeDocument>;
+  listSharedSpaces(
+    accessToken: string,
+    input?: { limit?: number; cursor?: string }
+  ): Promise<{
+    spaces: EnterpriseRemoteSharedSpace[];
+    meta: EnterpriseListMeta & { maxFileSizeBytes: number };
+  }>;
+  listSharedFiles(input: EnterpriseSharedFileListInput): Promise<{
+    files: EnterpriseRemoteSharedFile[];
+    meta: EnterpriseListMeta;
+  }>;
+  getSharedFileDetail(
+    accessToken: string,
+    fileId: string
+  ): Promise<EnterpriseRemoteSharedFile>;
+  downloadSharedFileContent(
+    input: EnterpriseSharedFileDownloadInput
+  ): Promise<{
+    bytes: number;
+    sha256: string;
+    revision: number;
+    contentType: string;
+  }>;
+  uploadSharedFileContent(
+    input: EnterpriseSharedFileUploadInput
+  ): Promise<EnterpriseRemoteSharedFileMutation>;
   listSkills(accessToken: string): Promise<EnterpriseRemoteSkill[]>;
   getSkillDetail(
     accessToken: string,
@@ -201,11 +366,12 @@ export type EnterpriseHttpClient = {
 export class EnterpriseHttpError extends Error {
   constructor(
     readonly code: RuntimeErrorCode,
-    readonly stage: 'request' | 'response' | 'decode' | 'download',
+    readonly stage: 'request' | 'response' | 'decode' | 'download' | 'upload',
     readonly statusCode?: number,
     readonly upstreamCode?: string,
     readonly retryAfterMs?: number,
-    readonly requestId?: string
+    readonly requestId?: string,
+    readonly details?: Record<string, unknown>
   ) {
     super(`${code}: enterprise HTTP ${stage} failed`);
     this.name = 'EnterpriseHttpError';
@@ -219,6 +385,8 @@ export function createEnterpriseHttpClient(input: {
   downloadTimeoutMs?: number;
   documentUploadTimeoutMs?: number;
   maxPackageBytes?: number;
+  sharedFileTransferTimeoutMs?: number;
+  maxSharedFileBytes?: number;
 } = {}): EnterpriseHttpClient {
   const { origin } = resolveEnterpriseOrigin(input.origin);
   const fetchImpl = input.fetch ?? globalThis.fetch;
@@ -229,6 +397,11 @@ export function createEnterpriseHttpClient(input: {
     input.documentUploadTimeoutMs ?? ENTERPRISE_DOCUMENT_UPLOAD_TIMEOUT_MS;
   const maxPackageBytes =
     input.maxPackageBytes ?? ENTERPRISE_PACKAGE_MAX_BYTES;
+  const sharedFileTransferTimeoutMs =
+    input.sharedFileTransferTimeoutMs
+    ?? ENTERPRISE_SHARED_FILE_TRANSFER_TIMEOUT_MS;
+  const maxSharedFileBytes =
+    input.maxSharedFileBytes ?? ENTERPRISE_SHARED_FILE_MAX_BYTES;
 
   async function requestJson<T>(request: {
     method: 'GET' | 'POST';
@@ -349,11 +522,17 @@ export function createEnterpriseHttpClient(input: {
         path: '/api/v1/auth/me',
         schema: meResponseSchema
       });
+      const collectorRegistration = mapCollectorRegistration(
+        response.data.collector_registration
+      );
       return {
         account: accountSummary(response.data.account),
         agentId: response.data.agent.agent_id,
         status: response.data.account.status,
-        frontendAllowed: response.data.applications.frontend
+        frontendAllowed: response.data.applications.frontend,
+        ...(collectorRegistration === undefined
+          ? {}
+          : { collectorRegistration })
       };
     },
 
@@ -476,6 +655,236 @@ export function createEnterpriseHttpClient(input: {
         );
       }
       return mapRemoteKnowledgeDocument(parsed.data.data);
+    },
+
+    async listSharedSpaces(accessToken, input = {}) {
+      const query = new URLSearchParams();
+      if (input.limit !== undefined) query.set('limit', String(input.limit));
+      if (input.cursor !== undefined) query.set('cursor', input.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      const response = await requestJson({
+        accessToken,
+        domain: 'shared-file',
+        method: 'GET',
+        path: `/api/v1/app/shared-spaces${suffix}`,
+        schema: sharedSpaceListResponseSchema
+      });
+      return {
+        spaces: response.data.map(mapRemoteSharedSpace),
+        meta: {
+          ...mapListMeta(response.meta),
+          maxFileSizeBytes: response.meta.max_file_size_bytes
+        }
+      };
+    },
+
+    async listSharedFiles(request) {
+      const query = new URLSearchParams();
+      if (request.spaceId !== undefined) query.set('space_id', request.spaceId);
+      if (request.query !== undefined) query.set('query', request.query);
+      if (request.logicalPathPrefix !== undefined) {
+        query.set('logical_path_prefix', request.logicalPathPrefix);
+      }
+      if (request.limit !== undefined) query.set('limit', String(request.limit));
+      if (request.cursor !== undefined) query.set('cursor', request.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      const response = await requestJson({
+        accessToken: request.accessToken,
+        domain: 'shared-file',
+        method: 'GET',
+        path: `/api/v1/app/shared-files${suffix}`,
+        schema: sharedFileListResponseSchema
+      });
+      return {
+        files: response.data.map(mapRemoteSharedFile),
+        meta: mapListMeta(response.meta)
+      };
+    },
+
+    async getSharedFileDetail(accessToken, fileId) {
+      const query = new URLSearchParams({ file_id: fileId });
+      const response = await requestJson({
+        accessToken,
+        domain: 'shared-file',
+        method: 'GET',
+        path: `/api/v1/app/shared-files/detail?${query.toString()}`,
+        schema: sharedFileDetailResponseSchema
+      });
+      return mapRemoteSharedFile(response.data);
+    },
+
+    async downloadSharedFileContent(request) {
+      const query = new URLSearchParams({ file_id: request.fileId });
+      let response: Response;
+      try {
+        response = await fetchImpl(
+          new URL(`/api/v1/app/shared-files/content?${query.toString()}`, origin),
+          {
+            headers: {
+              Accept: 'application/octet-stream',
+              Authorization: `Bearer ${request.accessToken}`
+            },
+            method: 'GET',
+            signal: AbortSignal.timeout(sharedFileTransferTimeoutMs)
+          }
+        );
+      } catch {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SERVICE_UNAVAILABLE',
+          'request'
+        );
+      }
+
+      if (!response.ok) {
+        throw await createResponseError(response, 'shared-file');
+      }
+      const declaredLength = requireContentLength(
+        response.headers.get('content-length')
+      );
+      if (declaredLength > maxSharedFileBytes) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SHARED_FILE_TOO_LARGE',
+          'download',
+          response.status
+        );
+      }
+      const expectedSha256 = requireSha256Header(
+        response.headers.get('x-content-sha256')
+      );
+      const revision = requirePositiveIntegerHeader(
+        response.headers.get('x-file-revision')
+      );
+      const responseFileId = response.headers.get('x-shared-file-id');
+      if (responseFileId !== request.fileId || response.body === null) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'download',
+          response.status
+        );
+      }
+
+      const hash = createHash('sha256');
+      const reader = response.body.getReader();
+      let handle: Awaited<ReturnType<typeof open>> | undefined;
+      let bytes = 0;
+      try {
+        handle = await open(request.destinationPath, 'wx', 0o600);
+        while (true) {
+          const result = await reader.read();
+          if (result.done) break;
+          bytes += result.value.byteLength;
+          if (bytes > maxSharedFileBytes || bytes > declaredLength) {
+            throw new EnterpriseHttpError(
+              'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH',
+              'download',
+              response.status
+            );
+          }
+          hash.update(result.value);
+          await writeAll(handle, result.value);
+        }
+        const sha256 = hash.digest('hex');
+        if (bytes !== declaredLength) {
+          throw new EnterpriseHttpError(
+            'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH',
+            'download',
+            response.status
+          );
+        }
+        if (sha256 !== expectedSha256) {
+          throw new EnterpriseHttpError(
+            'ENTERPRISE_SHARED_FILE_DIGEST_MISMATCH',
+            'download',
+            response.status
+          );
+        }
+        await handle.close();
+        handle = undefined;
+        return {
+          bytes,
+          sha256,
+          revision,
+          contentType:
+            response.headers.get('content-type') ?? 'application/octet-stream'
+        };
+      } catch (error) {
+        await handle?.close().catch(() => undefined);
+        await rm(request.destinationPath, { force: true }).catch(() => undefined);
+        if (error instanceof EnterpriseHttpError) throw error;
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SHARED_FILE_STORAGE_UNAVAILABLE',
+          'download',
+          response.status
+        );
+      } finally {
+        reader.releaseLock();
+      }
+    },
+
+    async uploadSharedFileContent(request) {
+      const file = await openAsBlob(request.filePath, {
+        type: request.contentType
+      });
+      if (file.size !== request.sizeBytes) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH',
+          'upload'
+        );
+      }
+      const query = new URLSearchParams({
+        space_id: request.spaceId,
+        logical_path: request.logicalPath
+      });
+      if (request.expectedRevision !== undefined) {
+        query.set('expected_revision', String(request.expectedRevision));
+      }
+
+      let response: Response;
+      try {
+        response = await fetchImpl(
+          new URL(`/api/v1/app/shared-files/content?${query.toString()}`, origin),
+          {
+            body: file,
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${request.accessToken}`,
+              'Content-Length': String(request.sizeBytes),
+              'Content-Type': request.contentType,
+              'X-Content-SHA256': request.sha256
+            },
+            method: 'POST',
+            signal: AbortSignal.timeout(sharedFileTransferTimeoutMs)
+          }
+        );
+      } catch {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SERVICE_UNAVAILABLE',
+          'request'
+        );
+      }
+      if (!response.ok) {
+        throw await createResponseError(response, 'shared-file');
+      }
+
+      let value: unknown;
+      try {
+        value = await response.json();
+      } catch {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          response.status
+        );
+      }
+      const parsed = sharedFileMutationResponseSchema.safeParse(value);
+      if (!parsed.success) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          response.status
+        );
+      }
+      return mapRemoteSharedFileMutation(parsed.data.data);
     },
 
     async downloadSkillPackage(request) {
@@ -640,6 +1049,68 @@ function mapRemoteKnowledgeDocument(
   };
 }
 
+function mapRemoteSharedSpace(
+  space: z.infer<typeof remoteSharedSpaceSchema>
+): EnterpriseRemoteSharedSpace {
+  return {
+    spaceId: space.space_id,
+    name: space.name,
+    description: space.description,
+    updatedAt: space.updated_at,
+    permissions: {
+      read: space.permissions?.read ?? true,
+      write: space.permissions?.write ?? false
+    }
+  };
+}
+
+function mapRemoteSharedFile(
+  file: z.infer<typeof remoteSharedFileSchema> & {
+    created_by_user_id?: string;
+    created_by_agent_id?: string;
+    created_at?: string;
+  }
+): EnterpriseRemoteSharedFile {
+  return {
+    fileId: file.file_id,
+    spaceId: file.space_id,
+    spaceName: file.space_name,
+    logicalPath: file.logical_path,
+    fileName: file.file_name,
+    sizeBytes: file.size_bytes,
+    sha256: file.sha256,
+    contentType: file.content_type,
+    revision: file.revision,
+    ...(file.created_by_user_id === undefined
+      ? {}
+      : { createdByUserId: file.created_by_user_id }),
+    ...(file.created_by_agent_id === undefined
+      ? {}
+      : { createdByAgentId: file.created_by_agent_id }),
+    updatedByUserId: file.updated_by_user_id,
+    updatedByAgentId: file.updated_by_agent_id,
+    ...(file.created_at === undefined ? {} : { createdAt: file.created_at }),
+    updatedAt: file.updated_at
+  };
+}
+
+function mapRemoteSharedFileMutation(
+  file: z.infer<typeof sharedFileMutationResponseSchema>['data']
+): EnterpriseRemoteSharedFileMutation {
+  return {
+    fileId: file.file_id,
+    spaceId: file.space_id,
+    logicalPath: file.logical_path,
+    fileName: file.file_name,
+    sizeBytes: file.size_bytes,
+    sha256: file.sha256,
+    contentType: file.content_type,
+    revision: file.revision,
+    created: file.created,
+    updatedAt: file.updated_at
+  };
+}
+
 function mapListMeta(meta: z.infer<typeof listMetaSchema>): EnterpriseListMeta {
   return {
     nextCursor: meta.next_cursor,
@@ -647,7 +1118,25 @@ function mapListMeta(meta: z.infer<typeof listMetaSchema>): EnterpriseListMeta {
   };
 }
 
-type EnterpriseHttpDomain = 'general' | 'skill' | 'knowledge';
+function mapCollectorRegistration(
+  registration: z.infer<typeof collectorRegistrationSchema> | undefined
+): EnterpriseCollectorRegistration | undefined {
+  if (
+    registration === undefined
+    || !registration.exists
+    || registration.revoked === true
+    || registration.install_command === undefined
+    || registration.install_powershell_command === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    installCommand: registration.install_command,
+    installPowershellCommand: registration.install_powershell_command
+  };
+}
+
+type EnterpriseHttpDomain = 'general' | 'skill' | 'knowledge' | 'shared-file';
 
 async function createResponseError(
   response: Response,
@@ -655,6 +1144,7 @@ async function createResponseError(
 ): Promise<EnterpriseHttpError> {
   let upstreamCode: string | undefined;
   let requestId = response.headers.get('x-request-id') ?? undefined;
+  let details: Record<string, unknown> | undefined;
   try {
     const value: unknown = await response.json();
     if (isPlainObject(value) && isPlainObject(value.error)) {
@@ -662,6 +1152,7 @@ async function createResponseError(
       if (typeof value.error.request_id === 'string') {
         requestId = value.error.request_id;
       }
+      details = mapUpstreamErrorDetails(upstreamCode, value.error.details);
     }
   } catch {
     // Error bodies are intentionally discarded.
@@ -673,7 +1164,8 @@ async function createResponseError(
     response.status,
     upstreamCode,
     parseRetryAfter(response.headers.get('retry-after')),
-    requestId
+    requestId,
+    details
   );
 }
 
@@ -693,9 +1185,30 @@ function mapResponseCode(
   ) {
     return 'ENTERPRISE_DOCUMENT_UPLOAD_FORBIDDEN';
   }
+  if (
+    statusCode === 403
+    && upstreamCode === 'shared_file_write_forbidden'
+  ) {
+    return 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN';
+  }
   if (statusCode === 403) return 'ENTERPRISE_FORBIDDEN';
+  if (
+    statusCode === 404
+    && upstreamCode === 'shared_space_not_found'
+  ) {
+    return 'ENTERPRISE_SHARED_SPACE_NOT_FOUND';
+  }
+  if (
+    statusCode === 404
+    && upstreamCode === 'shared_file_not_found'
+  ) {
+    return 'ENTERPRISE_SHARED_FILE_NOT_FOUND';
+  }
   if (statusCode === 404 && domain === 'knowledge') {
     return 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND';
+  }
+  if (statusCode === 404 && domain === 'shared-file') {
+    return 'ENTERPRISE_SHARED_FILE_NOT_FOUND';
   }
   if (statusCode === 404) return 'ENTERPRISE_SKILL_NOT_FOUND';
   if (statusCode === 409 && upstreamCode === 'agent_id_conflict') {
@@ -710,13 +1223,43 @@ function mapResponseCode(
   ) {
     return 'ENTERPRISE_KNOWLEDGE_CONFLICT';
   }
+  if (
+    statusCode === 409
+    && upstreamCode === 'file_already_exists'
+  ) {
+    return 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS';
+  }
+  if (
+    statusCode === 409
+    && upstreamCode === 'revision_conflict'
+  ) {
+    return 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT';
+  }
+  if (statusCode === 409 && domain === 'shared-file') {
+    return 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT';
+  }
   if (statusCode === 409 || upstreamCode === 'version_changed') {
     return 'ENTERPRISE_SKILL_VERSION_CHANGED';
+  }
+  if (statusCode === 413 && domain === 'shared-file') {
+    return 'ENTERPRISE_SHARED_FILE_TOO_LARGE';
   }
   if (statusCode === 413 && domain === 'knowledge') {
     return 'ENTERPRISE_DOCUMENT_TOO_LARGE';
   }
   if (statusCode === 413) return 'ENTERPRISE_SKILL_PACKAGE_TOO_LARGE';
+  if (
+    statusCode === 422
+    && upstreamCode === 'content_length_mismatch'
+  ) {
+    return 'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH';
+  }
+  if (
+    statusCode === 422
+    && upstreamCode === 'digest_mismatch'
+  ) {
+    return 'ENTERPRISE_SHARED_FILE_DIGEST_MISMATCH';
+  }
   if (statusCode === 415 && domain === 'knowledge') {
     return 'ENTERPRISE_DOCUMENT_TYPE_UNSUPPORTED';
   }
@@ -730,8 +1273,51 @@ function mapResponseCode(
   ) {
     return 'ENTERPRISE_KNOWLEDGE_PROVIDER_ERROR';
   }
+  if (
+    statusCode >= 500
+    && upstreamCode === 'storage_unavailable'
+  ) {
+    return 'ENTERPRISE_SHARED_FILE_STORAGE_UNAVAILABLE';
+  }
   if (statusCode >= 500) return 'ENTERPRISE_SERVICE_UNAVAILABLE';
   return 'ENTERPRISE_PROTOCOL_ERROR';
+}
+
+function mapUpstreamErrorDetails(
+  upstreamCode: string | undefined,
+  value: unknown
+): Record<string, unknown> | undefined {
+  if (upstreamCode !== 'revision_conflict') {
+    return isPlainObject(value) ? value : undefined;
+  }
+  if (isPlainObject(value)) {
+    const currentRevision =
+      value.currentRevision ?? value.current_revision;
+    return isPositiveSafeInteger(currentRevision)
+      ? { currentRevision }
+      : value;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  for (const item of value) {
+    if (
+      isPlainObject(item)
+      && item.field === 'expected_revision'
+      && isPositiveSafeInteger(item.current_revision)
+    ) {
+      return { currentRevision: item.current_revision };
+    }
+  }
+  return undefined;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+  return (
+    typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value > 0
+  );
 }
 
 function parseContentLength(value: string | null): number | undefined {
@@ -750,6 +1336,44 @@ function parseContentLength(value: string | null): number | undefined {
     );
   }
   return parsed;
+}
+
+function requireContentLength(value: string | null): number {
+  const parsed = parseContentLength(value);
+  if (parsed === undefined) {
+    throw new EnterpriseHttpError(
+      'ENTERPRISE_PROTOCOL_ERROR',
+      'download'
+    );
+  }
+  return parsed;
+}
+
+function requirePositiveIntegerHeader(value: string | null): number {
+  if (value === null || !/^[1-9]\d*$/.test(value)) {
+    throw new EnterpriseHttpError(
+      'ENTERPRISE_PROTOCOL_ERROR',
+      'download'
+    );
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new EnterpriseHttpError(
+      'ENTERPRISE_PROTOCOL_ERROR',
+      'download'
+    );
+  }
+  return parsed;
+}
+
+function requireSha256Header(value: string | null): string {
+  if (value === null || !/^[0-9a-f]{64}$/.test(value)) {
+    throw new EnterpriseHttpError(
+      'ENTERPRISE_PROTOCOL_ERROR',
+      'download'
+    );
+  }
+  return value;
 }
 
 function parseRetryAfter(value: string | null): number | undefined {

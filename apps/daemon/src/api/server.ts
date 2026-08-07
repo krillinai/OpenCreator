@@ -80,6 +80,10 @@ import {
   createEnterpriseHttpClient,
   type EnterpriseHttpClient
 } from '../enterprise/http-client-2026-07-30.js';
+import {
+  createEnterpriseCollectorInstaller,
+  type EnterpriseCollectorInstaller
+} from '../enterprise/collector-installer-2026-08-06.js';
 import { resolveEnterpriseOrigin } from '../enterprise/config-2026-07-30.js';
 import { createEnterpriseSessionManager } from '../enterprise/session-manager-2026-07-30.js';
 import { createEnterpriseInstallRecordRepository } from '../enterprise/install-records-2026-07-30.js';
@@ -91,6 +95,10 @@ import {
   createEnterpriseKnowledgeManager,
   type EnterpriseKnowledgeManager
 } from '../enterprise/knowledge-manager-2026-08-05.js';
+import {
+  createEnterpriseSharedDriveManager,
+  type EnterpriseSharedDriveManager
+} from '../enterprise/shared-drive-manager-2026-08-06.js';
 import {
   createEnterpriseAgentIdentityStore,
   type EnterpriseAgentIdentityStore
@@ -119,6 +127,9 @@ import { registerEnterpriseRoutes } from './routes.enterprise-2026-07-30.js';
 import {
   registerEnterpriseKnowledgeRoutes
 } from './routes.enterprise-knowledge-2026-08-05.js';
+import {
+  registerEnterpriseDriveRoutes
+} from './routes.enterprise-drive-2026-08-06.js';
 
 export type BuildServerInput = {
   token: string;
@@ -151,13 +162,17 @@ export type BuildServerInput = {
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
   allowedWebOrigins?: string[];
   enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
+  enterpriseConfigPath?: string;
   enterpriseCredentialStore?: EnterpriseCredentialStore;
+  enterpriseCollectorInstaller?: EnterpriseCollectorInstaller;
   enterpriseHttpClient?: EnterpriseHttpClient;
   enterpriseOrigin?: string;
   enterpriseE2ERunId?: string;
   enterpriseSkillManager?: EnterpriseSkillManager;
   enterpriseKnowledgeManager?: EnterpriseKnowledgeManager;
   enterpriseKnowledgeDocumentMaxBytes?: number;
+  enterpriseSharedDriveManager?: EnterpriseSharedDriveManager;
+  enterpriseSharedFileMaxBytes?: number;
 };
 
 const ATTACHMENT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
@@ -184,10 +199,20 @@ export async function buildServer(input: BuildServerInput) {
   const enterpriseHttpClient =
     input.enterpriseHttpClient ??
     createEnterpriseHttpClient({ origin: enterpriseOrigin.origin });
+  const enterpriseAgentIdentityStore =
+    input.enterpriseAgentIdentityStore
+    ?? createEnterpriseAgentIdentityStore({
+      configPath: input.enterpriseConfigPath ?? join(dataDir, 'config.toml'),
+      legacyDataDir: dataDir
+    });
+  if (input.enterpriseConfigPath !== undefined) {
+    await enterpriseAgentIdentityStore.getOrCreate();
+  }
   const enterpriseSessionManager = createEnterpriseSessionManager({
-    agentIdentityStore:
-      input.enterpriseAgentIdentityStore
-      ?? createEnterpriseAgentIdentityStore({ dataDir }),
+    agentIdentityStore: enterpriseAgentIdentityStore,
+    collectorInstaller:
+      input.enterpriseCollectorInstaller
+      ?? createEnterpriseCollectorInstaller(),
     credentialStore:
       input.enterpriseCredentialStore ?? createUnavailableCredentialStore(),
     httpClient: enterpriseHttpClient,
@@ -265,6 +290,15 @@ export async function buildServer(input: BuildServerInput) {
       sessionManager: enterpriseSessionManager,
       httpClient: enterpriseHttpClient,
       maxDocumentBytes: input.enterpriseKnowledgeDocumentMaxBytes
+    });
+  const enterpriseSharedDriveManager =
+    input.enterpriseSharedDriveManager ??
+    createEnterpriseSharedDriveManager({
+      dataDir,
+      sessionManager: enterpriseSessionManager,
+      httpClient: enterpriseHttpClient,
+      projectManager,
+      maxFileBytes: input.enterpriseSharedFileMaxBytes
     });
   const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const notificationService = createNotificationService({ db });
@@ -398,6 +432,17 @@ export async function buildServer(input: BuildServerInput) {
             'Enterprise document is too large'
           ));
       }
+      if (
+        request.method === 'POST'
+        && request.url.startsWith('/enterprise/shared-spaces/')
+      ) {
+        return reply
+          .code(413)
+          .send(apiError(
+            'ENTERPRISE_SHARED_FILE_TOO_LARGE',
+            'Enterprise shared file is too large'
+          ));
+      }
       return reply
         .code(413)
         .send(apiError('ATTACHMENT_TOO_LARGE', 'Attachment exceeds the configured size limit'));
@@ -454,6 +499,11 @@ export async function buildServer(input: BuildServerInput) {
     server,
     enterpriseKnowledgeManager,
     { maxDocumentBytes: input.enterpriseKnowledgeDocumentMaxBytes }
+  );
+  await registerEnterpriseDriveRoutes(
+    server,
+    enterpriseSharedDriveManager,
+    { maxFileBytes: input.enterpriseSharedFileMaxBytes }
   );
   await registerProfileRoutes(server, {
     codexHome: resolvedCodexHome,

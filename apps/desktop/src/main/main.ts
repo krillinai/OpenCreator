@@ -25,6 +25,10 @@ import { exportDesktopDiagnostics } from './diagnostics.js';
 import {
   resolveDesktopEnterpriseLaunchConfig
 } from './enterprise-launch-config-2026-07-30.js';
+import {
+  ENTERPRISE_CONFIG_FILENAME,
+  prepareEnterpriseUserConfig
+} from './enterprise-user-config-2026-08-06.js';
 import { createDesktopLogger } from './logger.js';
 import {
   openExternal,
@@ -63,10 +67,6 @@ if (!hasSingleInstanceLock) {
 }
 
 async function launchDesktop(): Promise<void> {
-  const enterpriseLaunchConfig = resolveDesktopEnterpriseLaunchConfig(
-    process.argv,
-    process.env
-  );
   const pendingRoutes: string[] = [];
   let windowManager: WindowManager | undefined;
   let bootstrap: BootstrapController | undefined;
@@ -108,6 +108,25 @@ async function launchDesktop(): Promise<void> {
     ?? app.getPath('documents');
   const logDir = join(userData, 'logs');
   const logger = createDesktopLogger(join(logDir, 'desktop-main.log'));
+  const bundledEnterpriseConfigPath = development
+    ? resolve(appRoot, '../../config', ENTERPRISE_CONFIG_FILENAME)
+    : join(
+        process.resourcesPath,
+        'deployment',
+        ENTERPRISE_CONFIG_FILENAME
+      );
+  const enterpriseLaunchConfig = resolveDesktopEnterpriseLaunchConfig(
+    process.argv,
+    process.env
+  );
+  const enterpriseUserConfig = prepareEnterpriseUserConfig({
+    bundledPath: bundledEnterpriseConfigPath,
+    userPath: enterpriseLaunchConfig.enterpriseE2EConfigPath
+      ?? join(app.getPath('home'), '.clawee', ENTERPRISE_CONFIG_FILENAME)
+  });
+  logger.info('Enterprise gateway config loaded', {
+    path: enterpriseUserConfig.path
+  });
   const settings = createSettingsStore(join(userData, 'desktop-settings.json'));
   const daemon = new DaemonManager(logger);
   const tray = new TrayManager();
@@ -138,7 +157,12 @@ async function launchDesktop(): Promise<void> {
     dataDir,
     defaultProjectRoot,
     development,
-    ...enterpriseLaunchConfig
+    enterpriseConfigPath: enterpriseUserConfig.path,
+    ...(enterpriseLaunchConfig.enterpriseE2ERunId === undefined
+      ? {}
+      : {
+          enterpriseE2ERunId: enterpriseLaunchConfig.enterpriseE2ERunId
+        })
   });
   windowManager = new WindowManager({
     preloadPath,

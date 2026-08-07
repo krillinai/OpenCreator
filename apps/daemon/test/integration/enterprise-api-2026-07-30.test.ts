@@ -19,6 +19,9 @@ import type {
   EnterpriseKnowledgeManager
 } from '../../src/enterprise/knowledge-manager-2026-08-05.js';
 import type {
+  EnterpriseSharedDriveManager
+} from '../../src/enterprise/shared-drive-manager-2026-08-06.js';
+import type {
   EnterpriseSkillManager
 } from '../../src/enterprise/skill-manager-2026-07-30.js';
 
@@ -261,6 +264,154 @@ describe('enterprise runtime API', () => {
     expect(enterpriseKnowledgeManager.uploadDocument).not.toHaveBeenCalled();
   });
 
+  it('exposes shared drive list, detail, raw upload, and project download routes', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    const enterpriseSharedDriveManager = createSharedDriveManager();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
+      enterpriseCredentialStore: createStore(),
+      enterpriseHttpClient: createClient(),
+      enterpriseSharedDriveManager,
+      enterpriseOrigin: 'https://enterprise.example'
+    });
+
+    const spaces = await authRequest(
+      'GET',
+      '/enterprise/shared-spaces?limit=50&cursor=space-cursor'
+    );
+    expect(spaces.statusCode).toBe(200);
+    expect(spaces.json()).toMatchObject({
+      spaces: [{
+        spaceId: 'space_1',
+        permissions: { read: true, write: false }
+      }],
+      meta: { maxFileSizeBytes: 1073741824 }
+    });
+    expect(enterpriseSharedDriveManager.listSpaces).toHaveBeenCalledWith({
+      limit: 50,
+      cursor: 'space-cursor'
+    });
+
+    const files = await authRequest(
+      'GET',
+      '/enterprise/shared-files?spaceId=space_1&query=design&logicalPathPrefix=docs%2F&limit=100'
+    );
+    expect(files.statusCode).toBe(200);
+    expect(files.json()).toMatchObject({
+      files: [{
+        fileId: 'file_1',
+        logicalPath: 'docs/design.md',
+        revision: 3
+      }]
+    });
+    expect(enterpriseSharedDriveManager.listFiles).toHaveBeenCalledWith({
+      spaceId: 'space_1',
+      query: 'design',
+      logicalPathPrefix: 'docs/',
+      limit: 100
+    });
+
+    const detail = await authRequest(
+      'GET',
+      '/enterprise/shared-files/file%2Fdesign'
+    );
+    expect(detail.statusCode).toBe(200);
+    expect(enterpriseSharedDriveManager.getFileDetail)
+      .toHaveBeenCalledWith('file/design');
+
+    const content = Buffer.from('shared design');
+    const uploadQuery = new URLSearchParams({
+      logicalPath: 'docs/design.md',
+      contentType: 'text/markdown',
+      sizeBytes: String(content.byteLength),
+      expectedRevision: '3'
+    });
+    const upload = await server.inject({
+      method: 'POST',
+      url: `/enterprise/shared-spaces/space%2Fdesign/files?${uploadQuery.toString()}`,
+      headers: {
+        authorization: 'Bearer secret',
+        'content-type': 'application/vnd.clawee.shared-file'
+      },
+      payload: content
+    });
+    expect(upload.statusCode).toBe(200);
+    expect(upload.json()).toMatchObject({
+      fileId: 'file_1',
+      logicalPath: 'docs/design.md',
+      revision: 4,
+      created: false
+    });
+    expect(enterpriseSharedDriveManager.uploadFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        spaceId: 'space/design',
+        logicalPath: 'docs/design.md',
+        expectedRevision: 3,
+        contentType: 'text/markdown',
+        expectedSizeBytes: content.byteLength
+      })
+    );
+
+    const download = await authRequest(
+      'POST',
+      '/enterprise/shared-files/file%2Fdesign/download',
+      { projectId: 'project_1', overwrite: true }
+    );
+    expect(download.statusCode).toBe(200);
+    expect(download.json()).toMatchObject({
+      fileId: 'file/design',
+      projectId: 'project_1',
+      relativePath: 'docs/design.md',
+      overwritten: true
+    });
+    expect(enterpriseSharedDriveManager.downloadToProject).toHaveBeenCalledWith({
+      fileId: 'file/design',
+      projectId: 'project_1',
+      overwrite: true
+    });
+  });
+
+  it('returns a shared-file-specific error when the raw body is too large', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    const enterpriseSharedDriveManager = createSharedDriveManager();
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
+      enterpriseCredentialStore: createStore(),
+      enterpriseHttpClient: createClient(),
+      enterpriseSharedDriveManager,
+      enterpriseSharedFileMaxBytes: 8,
+      enterpriseOrigin: 'https://enterprise.example'
+    });
+
+    const content = Buffer.from('123456789');
+    const query = new URLSearchParams({
+      logicalPath: 'large.bin',
+      contentType: 'application/octet-stream',
+      sizeBytes: String(content.byteLength)
+    });
+    const response = await server.inject({
+      method: 'POST',
+      url: `/enterprise/shared-spaces/space_1/files?${query.toString()}`,
+      headers: {
+        authorization: 'Bearer secret',
+        'content-type': 'application/vnd.clawee.shared-file'
+      },
+      payload: content
+    });
+
+    expect(response.statusCode).toBe(413);
+    expect(response.json()).toMatchObject({
+      error: { code: 'ENTERPRISE_SHARED_FILE_TOO_LARGE' }
+    });
+    expect(enterpriseSharedDriveManager.uploadFile).not.toHaveBeenCalled();
+  });
+
   async function authRequest(
     method: 'GET' | 'POST',
     url: string,
@@ -318,6 +469,27 @@ function createClient(
       meta: { nextCursor: '', hasNext: false }
     })),
     uploadKnowledgeDocument: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
+    listSharedSpaces: vi.fn(async () => ({
+      spaces: [],
+      meta: {
+        nextCursor: '',
+        hasNext: false,
+        maxFileSizeBytes: 1024 * 1024 * 1024
+      }
+    })),
+    listSharedFiles: vi.fn(async () => ({
+      files: [],
+      meta: { nextCursor: '', hasNext: false }
+    })),
+    getSharedFileDetail: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
+    downloadSharedFileContent: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
+    uploadSharedFileContent: vi.fn(async () => {
       throw new Error('not implemented');
     }),
     listSkills: vi.fn(async () => []),
@@ -445,6 +617,74 @@ function createKnowledgeManager(): EnterpriseKnowledgeManager {
         status: 'processing',
         updatedAt: '2026-08-05T08:00:00Z'
       }
+    }))
+  };
+}
+
+function createSharedDriveManager(): EnterpriseSharedDriveManager {
+  const file = {
+    fileId: 'file_1',
+    spaceId: 'space_1',
+    spaceName: '设计资料',
+    logicalPath: 'docs/design.md',
+    fileName: 'design.md',
+    sizeBytes: 13,
+    sha256: 'a'.repeat(64),
+    contentType: 'text/markdown',
+    revision: 3,
+    updatedByUserId: 'usr_1',
+    updatedByAgentId: 'agent_1',
+    updatedAt: '2026-08-06T08:00:00Z'
+  };
+  return {
+    listSpaces: vi.fn(async () => ({
+      spaces: [{
+        spaceId: 'space_1',
+        name: '设计资料',
+        description: '团队设计文件',
+        updatedAt: '2026-08-06T07:30:00Z',
+        permissions: { read: true, write: false }
+      }],
+      meta: {
+        nextCursor: '',
+        hasNext: false,
+        maxFileSizeBytes: 1073741824
+      },
+      refreshedAt: '2026-08-06T08:00:00.000Z'
+    })),
+    listFiles: vi.fn(async () => ({
+      files: [file],
+      meta: { nextCursor: '', hasNext: false },
+      refreshedAt: '2026-08-06T08:00:00.000Z'
+    })),
+    getFileDetail: vi.fn(async () => ({ file })),
+    uploadFile: vi.fn(async input => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of input.content) {
+        chunks.push(Buffer.from(chunk));
+      }
+      expect(Buffer.concat(chunks)).toEqual(Buffer.from('shared design'));
+      return {
+        fileId: 'file_1',
+        spaceId: input.spaceId,
+        logicalPath: input.logicalPath,
+        fileName: 'design.md',
+        sizeBytes: input.expectedSizeBytes,
+        sha256: 'b'.repeat(64),
+        contentType: input.contentType,
+        revision: 4,
+        created: false,
+        updatedAt: '2026-08-06T08:01:00Z'
+      };
+    }),
+    downloadToProject: vi.fn(async input => ({
+      fileId: input.fileId,
+      projectId: input.projectId,
+      relativePath: 'docs/design.md',
+      sizeBytes: 13,
+      sha256: 'a'.repeat(64),
+      revision: 3,
+      overwritten: input.overwrite
     }))
   };
 }

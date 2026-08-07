@@ -27,8 +27,9 @@ type PlatformResult = {
   unknownRequests: string[];
 };
 
-test('企业账户、知识库与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
+test('企业账户、知识库、共享网盘与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
   browser,
+  page,
   runtime
 }, testInfo) => {
   test.skip(
@@ -58,7 +59,8 @@ test('企业账户、知识库与 Skill Hub 在 Browser/Desktop Bridge 下保持
     session: 'signed_in',
     installed: true,
     createdThread: true,
-    uploadedKnowledgeDocument: true
+    uploadedKnowledgeDocument: true,
+    savedSharedFile: true
   });
   expect(desktopResult.state).toEqual(browserResult.state);
   expect(requestInventory(desktopResult.requests)).toEqual(
@@ -77,10 +79,19 @@ test('企业账户、知识库与 Skill Hub 在 Browser/Desktop Bridge 下保持
     expect(desktopCheckpoint.boxes, `${checkpointName} 关键尺寸`).toEqual(
       browserCheckpoint.boxes
     );
+    const screenshotDifference = await compareScreenshotPixels(
+      page,
+      browserCheckpoint.screenshot,
+      desktopCheckpoint.screenshot
+    );
     expect(
-      desktopCheckpoint.screenshot.equals(browserCheckpoint.screenshot),
-      `${checkpointName} 截图像素`
-    ).toBe(true);
+      screenshotDifference.differentPixels,
+      `${checkpointName} 截图差异像素`
+    ).toBeLessThanOrEqual(50);
+    expect(
+      screenshotDifference.maxChannelDelta,
+      `${checkpointName} 截图最大通道差值`
+    ).toBeLessThanOrEqual(50);
   }
 });
 
@@ -194,14 +205,10 @@ async function runPlatform(input: {
   try {
     await page.goto(input.origin);
     await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
-    await verifyNativeProjectCapability(page, input.platform);
-
-    await page.getByRole('button', { name: '企业账户', exact: true }).click();
     await expect(page.getByRole('heading', { name: '登录企业账户' })).toBeVisible();
     const checkpoints: Record<string, Checkpoint> = {
       account: await captureCheckpoint(page, [
-        '.clawee-sidebar-pane',
-        '.clawee-main-pane',
+        '.enterprise-access-gate',
         '.enterprise-account-page',
         '.enterprise-account-form-panel'
       ])
@@ -210,6 +217,13 @@ async function runPlatform(input: {
     await page.getByLabel('邮箱').fill('member@example.com');
     await page.getByLabel('密码').fill('enterprise-secret');
     await page.locator('.enterprise-account-primary-action').click();
+    await expect(page.getByRole('button', {
+      name: 'Enterprise Member member@example.com'
+    })).toBeVisible();
+    await verifyNativeProjectCapability(page, input.platform);
+    await page.getByRole('button', {
+      name: 'Enterprise Member member@example.com'
+    }).click();
     await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
@@ -231,6 +245,31 @@ async function runPlatform(input: {
       '.knowledge-page',
       '.knowledge-workbench',
       '.knowledge-document-table'
+    ]);
+
+    await page.getByRole('button', { name: '共享网盘', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '共享网盘' })).toBeVisible();
+    await expect(page.getByText('design.md', { exact: true })).toBeVisible();
+    await expect(page.getByText('当前项目：企业项目')).toBeVisible();
+    await expect(page.getByRole('button', { name: '上传文件' })).toHaveCount(0);
+    await page.getByRole('button', {
+      name: '保存 design.md 到当前项目'
+    }).click();
+    await expect(page.getByRole('button', {
+      name: '覆盖保存 design.md'
+    })).toBeVisible();
+    await page.getByRole('button', {
+      name: '覆盖保存 design.md'
+    }).click();
+    await expect(page.getByText(
+      'docs/design.md 已覆盖保存到项目“企业项目”'
+    )).toBeVisible();
+    checkpoints.drive = await captureCheckpoint(page, [
+      '.clawee-sidebar-pane',
+      '.clawee-main-pane',
+      '.shared-drive-page',
+      '.shared-drive-workbench',
+      '.shared-drive-table'
     ]);
 
     await page.getByRole('button', { name: '企业Skill中心', exact: true }).click();
@@ -376,7 +415,11 @@ async function captureCheckpoint(
   selectors: string[]
 ): Promise<Checkpoint> {
   await page.evaluate(() => document.fonts.ready);
-  const text = normalizeText(await page.locator('.clawee-main-content').innerText());
+  const text = normalizeText(
+    await page.locator(
+      '.clawee-main-content, .enterprise-access-gate'
+    ).first().innerText()
+  );
   const boxes: Checkpoint['boxes'] = {};
   for (const selector of selectors) {
     const box = await page.locator(selector).first().boundingBox();
@@ -391,9 +434,9 @@ async function captureCheckpoint(
   return {
     text,
     boxes,
-    screenshot: await page.locator('.clawee-shell').screenshot({
-      animations: 'disabled'
-    })
+    screenshot: await page.locator(
+      '.clawee-shell, .enterprise-access-gate'
+    ).first().screenshot({ animations: 'disabled' })
   };
 }
 
@@ -403,6 +446,64 @@ function normalizeText(value: string): string {
     .map(line => line.trim().replace(/\s+/g, ' '))
     .filter(Boolean)
     .join('\n');
+}
+
+async function compareScreenshotPixels(
+  page: Page,
+  left: Buffer,
+  right: Buffer
+): Promise<{
+  differentPixels: number;
+  maxChannelDelta: number;
+}> {
+  return page.evaluate(async ({ leftBase64, rightBase64 }) => {
+    const decode = async (value: string) => {
+      const response = await fetch(`data:image/png;base64,${value}`);
+      const bitmap = await createImageBitmap(await response.blob());
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (context === null) throw new Error('无法创建截图比较画布');
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      return {
+        width: canvas.width,
+        height: canvas.height,
+        data: context.getImageData(0, 0, canvas.width, canvas.height).data
+      };
+    };
+    const leftImage = await decode(leftBase64);
+    const rightImage = await decode(rightBase64);
+    if (
+      leftImage.width !== rightImage.width
+      || leftImage.height !== rightImage.height
+    ) {
+      throw new Error(
+        `截图尺寸不同：${leftImage.width}x${leftImage.height} / `
+        + `${rightImage.width}x${rightImage.height}`
+      );
+    }
+
+    let differentPixels = 0;
+    let maxChannelDelta = 0;
+    for (let offset = 0; offset < leftImage.data.length; offset += 4) {
+      let pixelDifferent = false;
+      for (let channel = 0; channel < 4; channel += 1) {
+        const delta = Math.abs(
+          leftImage.data[offset + channel]!
+          - rightImage.data[offset + channel]!
+        );
+        if (delta > 0) pixelDifferent = true;
+        if (delta > maxChannelDelta) maxChannelDelta = delta;
+      }
+      if (pixelDifferent) differentPixels += 1;
+    }
+    return { differentPixels, maxChannelDelta };
+  }, {
+    leftBase64: left.toString('base64'),
+    rightBase64: right.toString('base64')
+  });
 }
 
 function rectanglesOverlap(

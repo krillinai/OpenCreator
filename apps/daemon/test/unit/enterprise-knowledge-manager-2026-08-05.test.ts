@@ -218,6 +218,21 @@ function createHttpClient(
       meta: { nextCursor: '', hasNext: false }
     })),
     uploadKnowledgeDocument: vi.fn(async () => knowledgeDocument()),
+    listSharedSpaces: vi.fn(async () => ({
+      spaces: [],
+      meta: {
+        nextCursor: '',
+        hasNext: false,
+        maxFileSizeBytes: 1024 * 1024 * 1024
+      }
+    })),
+    listSharedFiles: vi.fn(async () => ({
+      files: [],
+      meta: { nextCursor: '', hasNext: false }
+    })),
+    getSharedFileDetail: vi.fn(),
+    downloadSharedFileContent: vi.fn(),
+    uploadSharedFileContent: vi.fn(),
     listSkills: vi.fn(async () => []),
     getSkillDetail: vi.fn(),
     downloadSkillPackage: vi.fn(),
