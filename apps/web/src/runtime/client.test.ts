@@ -64,6 +64,28 @@ describe('RuntimeClient', () => {
     });
   });
 
+  it('throws ApiClientError for successful responses containing an error envelope', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        code: 'ENTERPRISE_PROTOCOL_ERROR',
+        message: 'Enterprise knowledge operation failed'
+      }
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }));
+    const client = new RuntimeClient({
+      baseUrl: 'http://127.0.0.1:60855',
+      token: 'tok',
+      fetchImpl: fetchMock
+    });
+
+    await expect(client.get('/enterprise/knowledge-bases')).rejects.toMatchObject({
+      code: 'ENTERPRISE_PROTOCOL_ERROR',
+      status: 500
+    });
+  });
+
   it('throws ApiClientError for non-JSON error responses', async () => {
     const fetchMock = vi.fn(async () => new Response('Internal Server Error', {
       status: 500,

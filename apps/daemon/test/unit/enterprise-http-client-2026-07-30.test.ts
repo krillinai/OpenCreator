@@ -203,7 +203,7 @@ describe('enterprise HTTP client', () => {
               exposed_name: 'crm.customer.search',
               title: '查询客户',
               description: '查询客户资料',
-              risk_level: 'low',
+              risk_level: '',
               confirm_required: false,
               status: 'active',
               authorized: false,
@@ -230,6 +230,7 @@ describe('enterprise HTTP client', () => {
         endpoint: 'https://enterprise.example/mcp/servers/crm-main',
         tools: [{
           toolId: 'cap_search',
+          riskLevel: '',
           authorized: false
         }]
       }]
@@ -255,7 +256,7 @@ describe('enterprise HTTP client', () => {
           permissions: {
             read: true,
             upload: true,
-            search: false
+            mcp: false
           }
         }],
         meta: {

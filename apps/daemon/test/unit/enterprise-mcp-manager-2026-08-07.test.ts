@@ -52,7 +52,9 @@ describe('enterprise MCP manager', () => {
   });
 
   it('injects every Gateway tool for an enabled upstream without local authorization filtering', async () => {
-    const fixture = createFixture();
+    const fixture = createFixture({}, {
+      isolationServerNames: ['claw-mcp']
+    });
     await fixture.manager.listConnections();
     await fixture.manager.updatePreference('crm-main', {
       installed: true,
@@ -68,13 +70,18 @@ describe('enterprise MCP manager', () => {
       createdBy: 'api'
     });
 
-    expect(injection?.mcpServers).toHaveLength(1);
-    expect(injection?.mcpServers[0]).toMatchObject({
+    expect(injection?.mcpServers).toHaveLength(2);
+    expect(injection?.mcpServers[0]).toEqual({
+      name: 'claw-mcp',
+      enabled: false
+    });
+    expect(injection?.mcpServers[1]).toMatchObject({
       url: 'https://enterprise.example/mcp/servers/crm-main',
       bearerTokenEnvVar: ENTERPRISE_MCP_TOKEN_ENV,
+      enabled: true,
       required: false
     });
-    expect(injection?.mcpServers[0]).not.toHaveProperty('enabledTools');
+    expect(injection?.mcpServers[1]).not.toHaveProperty('enabledTools');
     expect(injection?.env).toEqual({
       [ENTERPRISE_MCP_TOKEN_ENV]: 'agent-mcp-secret'
     });
@@ -82,7 +89,31 @@ describe('enterprise MCP manager', () => {
       runId: 'run_schedule',
       thread: conversationThread(),
       createdBy: 'schedule'
-    })).toBeUndefined();
+    })).toMatchObject({
+      mcpServers: [{
+        name: 'claw-mcp',
+        enabled: false
+      }],
+      env: {}
+    });
+  });
+
+  it('keeps same-Gateway legacy MCP servers disabled when no managed connection is enabled', async () => {
+    const fixture = createFixture({}, {
+      isolationServerNames: ['claw-mcp', 'claw-mcp']
+    });
+
+    expect(await fixture.manager.prepareRuntime({
+      runId: 'run_1',
+      thread: conversationThread(),
+      createdBy: 'api'
+    })).toMatchObject({
+      mcpServers: [{
+        name: 'claw-mcp',
+        enabled: false
+      }],
+      env: {}
+    });
   });
 
   it('keeps installation and enablement separate and closes runtime configuration on change', async () => {
@@ -145,6 +176,23 @@ describe('enterprise MCP manager', () => {
       tokenStatus: 'missing'
     });
     expect(fixture.readStoredToken()).toBeUndefined();
+  });
+
+  it('maps a malformed successful Gateway response to a local 502 error', async () => {
+    const fixture = createFixture({
+      getMcpCatalog: vi.fn(async () => {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          200
+        );
+      })
+    });
+
+    await expect(fixture.manager.listConnections()).rejects.toMatchObject({
+      code: 'ENTERPRISE_PROTOCOL_ERROR',
+      statusCode: 502
+    });
   });
 
   it('invalidates the persistent runtime when a stored MCP token fingerprint changes', async () => {
@@ -253,7 +301,10 @@ describe('enterprise MCP manager', () => {
 });
 
 function createFixture(
-  clientOverrides: Partial<EnterpriseHttpClient> = {}
+  clientOverrides: Partial<EnterpriseHttpClient> = {},
+  options: {
+    isolationServerNames?: string[];
+  } = {}
 ) {
   db = new Database(':memory:');
   migrate(db);
@@ -296,6 +347,7 @@ function createFixture(
     httpClient,
     tokenStore,
     preferences: createEnterpriseMcpPreferenceRepository(db),
+    listRuntimeIsolationServerNames: () => options.isolationServerNames ?? [],
     onRuntimeConfigurationChanged,
     now: () => new Date('2026-08-07T10:00:00Z')
   });

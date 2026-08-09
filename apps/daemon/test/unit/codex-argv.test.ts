@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodexExecArgs, buildCodexResumeArgs } from '../../src/codex/argv.js';
+import {
+  buildCodexExecArgs,
+  buildCodexMcpConfigArgs,
+  buildCodexResumeArgs
+} from '../../src/codex/argv.js';
 
 describe('codex argv', () => {
   it('builds exec args without prompt in argv', () => {
@@ -142,5 +146,15 @@ describe('codex argv', () => {
     expect(resume.at(-1)).toBe('019f-thread');
     expect(JSON.stringify([exec, resume])).not.toContain('clwcap_');
     expect(JSON.stringify([exec, resume])).not.toContain('/usr/bin/node');
+  });
+
+  it('can disable an MCP server inherited from CODEX_HOME without redefining it', () => {
+    expect(buildCodexMcpConfigArgs([{
+      name: 'claw-mcp',
+      enabled: false
+    }])).toEqual([
+      '-c',
+      'mcp_servers.claw-mcp.enabled=false'
+    ]);
   });
 });

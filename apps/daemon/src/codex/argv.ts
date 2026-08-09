@@ -23,14 +23,24 @@ export type BuildCodexResumeArgsInput = {
 
 type CodexMcpServerCommonConfig = {
   name: string;
+  enabled?: boolean;
   enabledTools?: string[];
   required?: boolean;
   startupTimeoutSec?: number;
   toolTimeoutSec?: number;
 };
 
-export type CodexMcpServerConfig = CodexMcpServerCommonConfig & (
-  | {
+export type CodexMcpServerConfig =
+  | (CodexMcpServerCommonConfig & {
+      enabled: false;
+      command?: never;
+      args?: never;
+      envVars?: never;
+      url?: never;
+      bearerTokenEnvVar?: never;
+    })
+  | (CodexMcpServerCommonConfig & (
+    | {
       command: string;
       args?: string[];
       envVars?: string[];
@@ -44,7 +54,7 @@ export type CodexMcpServerConfig = CodexMcpServerCommonConfig & (
       args?: never;
       envVars?: never;
     }
-);
+  ));
 
 export function buildCodexExecArgs(input: BuildCodexExecArgsInput): string[] {
   const args = ['exec', '--json', '--skip-git-repo-check'];
@@ -95,7 +105,7 @@ export function buildCodexMcpConfigArgs(
           JSON.stringify(server.bearerTokenEnvVar)
         );
       }
-    } else {
+    } else if (server.command !== undefined) {
       pushConfig(args, `${prefix}.command`, JSON.stringify(server.command));
       if (server.args !== undefined) {
         pushConfig(args, `${prefix}.args`, JSON.stringify(server.args));
@@ -103,6 +113,9 @@ export function buildCodexMcpConfigArgs(
       if (server.envVars !== undefined) {
         pushConfig(args, `${prefix}.env_vars`, JSON.stringify(server.envVars));
       }
+    }
+    if (server.enabled !== undefined) {
+      pushConfig(args, `${prefix}.enabled`, String(server.enabled));
     }
     if (server.enabledTools !== undefined) {
       pushConfig(args, `${prefix}.enabled_tools`, JSON.stringify(server.enabledTools));

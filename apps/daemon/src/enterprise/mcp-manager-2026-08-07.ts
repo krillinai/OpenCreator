@@ -6,6 +6,7 @@ import type {
 } from '@clawee/protocol';
 import { createHash } from 'node:crypto';
 import type { AgentToolRunInjection } from '../agent-tools/run-injection.js';
+import type { CodexMcpServerConfig } from '../codex/argv.js';
 import type { RuntimeThread } from '../threads/types.js';
 import type {
   EnterpriseAgentIdentityStore
@@ -73,6 +74,7 @@ export function createEnterpriseMcpManager(input: {
   httpClient: EnterpriseHttpClient;
   tokenStore: EnterpriseMcpTokenStore;
   preferences: EnterpriseMcpPreferenceRepository;
+  listRuntimeIsolationServerNames?(): string[];
   onRuntimeConfigurationChanged?(reason: string): void;
   now?: () => Date;
 }): EnterpriseMcpManager {
@@ -305,12 +307,21 @@ export function createEnterpriseMcpManager(input: {
       return responseFrom(current);
     },
     async prepareRuntime(run) {
+      const isolationServerNames = normalizedIsolationServerNames(
+        input.listRuntimeIsolationServerNames?.() ?? []
+      );
+      const isolationServers = isolationServerNames.map(
+        (name): CodexMcpServerConfig => ({
+          name,
+          enabled: false
+        })
+      );
       if (
         run.createdBy !== 'api'
         || run.thread.purpose === 'schedule_task'
         || input.sessionManager.getSnapshot().status !== 'signed_in'
       ) {
-        return undefined;
+        return isolationOnlyInjection(isolationServers, isolationServerNames);
       }
       const agentId = await input.agentIdentityStore.getOrCreate();
       const enabledIds = new Set(
@@ -319,14 +330,18 @@ export function createEnterpriseMcpManager(input: {
           .filter(preference => preference.installed && preference.enabled)
           .map(preference => preference.upstreamId)
       );
-      if (enabledIds.size === 0) return undefined;
+      if (enabledIds.size === 0) {
+        return isolationOnlyInjection(isolationServers, isolationServerNames);
+      }
 
       const current = await currentCache();
       assertAgentId(current.catalog.agentId, agentId);
       const enabledUpstreams = current.catalog.upstreams.filter(upstream =>
         enabledIds.has(upstream.upstreamId)
       );
-      if (enabledUpstreams.length === 0) return undefined;
+      if (enabledUpstreams.length === 0) {
+        return isolationOnlyInjection(isolationServers, isolationServerNames);
+      }
 
       const accessToken = await input.sessionManager.requireAccessToken();
       let token: EnterpriseMcpTokenCredential;
@@ -339,6 +354,7 @@ export function createEnterpriseMcpManager(input: {
       const configurationFingerprint = createHash('sha256')
         .update(JSON.stringify({
           agentId,
+          isolationServerNames,
           tokenFingerprint: token.fingerprint,
           upstreams: enabledUpstreams
             .map(upstream => ({
@@ -352,14 +368,20 @@ export function createEnterpriseMcpManager(input: {
         .digest('hex');
 
       return {
-        mcpServers: enabledUpstreams.map(upstream => ({
-          name: mcpServerName(upstream.upstreamId),
-          url: upstream.endpoint,
-          bearerTokenEnvVar: ENTERPRISE_MCP_TOKEN_ENV,
-          required: false,
-          startupTimeoutSec: 15,
-          toolTimeoutSec: 120
-        })),
+        mcpServers: [
+          ...isolationServers,
+          ...enabledUpstreams.map(
+            (upstream): CodexMcpServerConfig => ({
+              name: mcpServerName(upstream.upstreamId),
+              url: upstream.endpoint,
+              bearerTokenEnvVar: ENTERPRISE_MCP_TOKEN_ENV,
+              enabled: true,
+              required: false,
+              startupTimeoutSec: 15,
+              toolTimeoutSec: 120
+            })
+          )
+        ],
         env: {
           [ENTERPRISE_MCP_TOKEN_ENV]: token.token
         },
@@ -404,6 +426,26 @@ export function createEnterpriseMcpManager(input: {
       return sessionSignOutWork;
     }
   };
+}
+
+function isolationOnlyInjection(
+  servers: CodexMcpServerConfig[],
+  serverNames: string[]
+): AgentToolRunInjection | undefined {
+  if (servers.length === 0) return undefined;
+  return {
+    mcpServers: servers,
+    env: {},
+    configurationFingerprint: createHash('sha256')
+      .update(JSON.stringify({ isolationServerNames: serverNames }))
+      .digest('hex')
+  };
+}
+
+function normalizedIsolationServerNames(names: string[]): string[] {
+  return [...new Set(names)]
+    .filter(name => /^[A-Za-z0-9_-]+$/.test(name))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function assertAgentId(actual: string, expected: string): void {
@@ -454,11 +496,38 @@ function mapManagerError(error: unknown): EnterpriseMcpManagerError {
   if (error instanceof EnterpriseHttpError) {
     return new EnterpriseMcpManagerError(
       error.code,
-      error.statusCode ?? 500
+      managerHttpStatus(error)
     );
   }
   return new EnterpriseMcpManagerError(
     'ENTERPRISE_MCP_RUNTIME_UNAVAILABLE',
     503
   );
+}
+
+function managerHttpStatus(error: EnterpriseHttpError): number {
+  if (error.statusCode !== undefined && error.statusCode >= 400) {
+    return error.statusCode;
+  }
+  switch (error.code) {
+    case 'ENTERPRISE_INVALID_REQUEST':
+      return 400;
+    case 'ENTERPRISE_UNAUTHORIZED':
+    case 'ENTERPRISE_SESSION_EXPIRED':
+      return 401;
+    case 'ENTERPRISE_FORBIDDEN':
+    case 'ENTERPRISE_AGENT_FORBIDDEN':
+      return 403;
+    case 'ENTERPRISE_MCP_TOKEN_NOT_FOUND':
+    case 'ENTERPRISE_MCP_UPSTREAM_NOT_FOUND':
+      return 404;
+    case 'ENTERPRISE_RATE_LIMITED':
+      return 429;
+    case 'ENTERPRISE_SERVICE_UNAVAILABLE':
+      return 503;
+    case 'ENTERPRISE_PROTOCOL_ERROR':
+      return 502;
+    default:
+      return 500;
+  }
 }

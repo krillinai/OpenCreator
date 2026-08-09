@@ -110,6 +110,9 @@ import {
   type EnterpriseMcpManager
 } from '../enterprise/mcp-manager-2026-08-07.js';
 import {
+  listEnterpriseMcpIsolationServerNames
+} from '../enterprise/mcp-isolation-2026-08-07.js';
+import {
   createEnterpriseMcpPreferenceRepository
 } from '../enterprise/mcp-preferences-2026-08-07.js';
 import type {
@@ -335,6 +338,12 @@ export async function buildServer(input: BuildServerInput) {
       tokenStore:
         input.enterpriseMcpTokenStore ?? createUnavailableMcpTokenStore(),
       preferences: enterpriseMcpPreferences,
+      listRuntimeIsolationServerNames() {
+        return listEnterpriseMcpIsolationServerNames({
+          codexHome,
+          enterpriseOrigin: enterpriseOrigin.origin
+        });
+      },
       onRuntimeConfigurationChanged(reason) {
         void persistentAppServerExecutor?.invalidate(reason).catch(error => {
           console.warn(

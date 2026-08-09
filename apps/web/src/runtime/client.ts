@@ -41,7 +41,7 @@ export class RuntimeClient {
       binaryBody: body,
       binaryContentType: contentType
     });
-    return await readJson(response) as T;
+    return await readSuccessfulJson(response) as T;
   }
 
   async patch<T = unknown>(path: string, body: unknown): Promise<T> {
@@ -54,7 +54,7 @@ export class RuntimeClient {
 
   async request<T>(path: string, input: { method: string; body?: unknown }): Promise<T> {
     const response = await this.rawRequest(path, input);
-    const payload = await readJson(response);
+    const payload = await readSuccessfulJson(response);
     return payload as T;
   }
 
@@ -103,6 +103,26 @@ async function readJson(response: Response): Promise<unknown> {
   const text = await response.text();
   if (text.length === 0) return {};
   return JSON.parse(text) as unknown;
+}
+
+async function readSuccessfulJson(response: Response): Promise<unknown> {
+  const payload = await readJson(response);
+  if (!isApiErrorPayload(payload)) return payload;
+  const error = parseApiError(payload);
+  throw new ApiClientError({
+    status: response.status >= 400 ? response.status : 500,
+    code: error.error.code,
+    message: error.error.message,
+    details: error.error.details
+  });
+}
+
+function isApiErrorPayload(payload: unknown): boolean {
+  return (
+    isRecord(payload)
+    && isRecord(payload.error)
+    && typeof payload.error.code === 'string'
+  );
 }
 
 function parseApiError(payload: unknown): ApiErrorPayload {

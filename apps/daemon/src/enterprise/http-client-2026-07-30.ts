@@ -73,7 +73,7 @@ const remoteMcpToolSchema = z.object({
   exposed_name: z.string().min(1),
   title: z.string(),
   description: z.string(),
-  risk_level: z.string().min(1),
+  risk_level: z.string(),
   confirm_required: z.boolean(),
   status: z.string().min(1),
   authorized: z.boolean(),
@@ -119,7 +119,7 @@ const listMetaSchema = z.object({
 const knowledgePermissionsSchema = z.object({
   read: z.boolean(),
   upload: z.boolean(),
-  search: z.boolean()
+  search: z.boolean().optional()
 });
 const remoteKnowledgeBaseSchema = z.object({
   knowledge_base_id: z.string().min(1),
@@ -1180,7 +1180,7 @@ function mapRemoteKnowledgeBase(
     permissions: {
       read: knowledgeBase.permissions.read,
       upload: knowledgeBase.permissions.upload,
-      search: knowledgeBase.permissions.search
+      search: knowledgeBase.permissions.search ?? false
     }
   };
 }

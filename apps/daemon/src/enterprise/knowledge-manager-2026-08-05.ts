@@ -301,7 +301,9 @@ function managerErrorFromHttp(
 ): EnterpriseKnowledgeManagerError {
   return new EnterpriseKnowledgeManagerError(
     error.code,
-    error.statusCode ?? defaultStatusCode(error.code)
+    error.statusCode !== undefined && error.statusCode >= 400
+      ? error.statusCode
+      : defaultStatusCode(error.code)
   );
 }
 
@@ -325,6 +327,7 @@ function defaultStatusCode(code: RuntimeErrorCode): number {
     case 'ENTERPRISE_DOCUMENT_TYPE_UNSUPPORTED':
       return 415;
     case 'ENTERPRISE_KNOWLEDGE_PROVIDER_ERROR':
+    case 'ENTERPRISE_PROTOCOL_ERROR':
       return 502;
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':
       return 503;

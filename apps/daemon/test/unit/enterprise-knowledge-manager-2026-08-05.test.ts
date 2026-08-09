@@ -181,6 +181,28 @@ describe('enterprise knowledge manager', () => {
     });
     expect(sessionManager.invalidateUnauthorized).toHaveBeenCalledOnce();
   });
+
+  it('maps successful upstream protocol failures to a gateway error status', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-manager-'));
+    const manager = createEnterpriseKnowledgeManager({
+      dataDir: tempDir,
+      sessionManager: createSessionManager(),
+      httpClient: createHttpClient({
+        listKnowledgeBases: vi.fn(async () => {
+          throw new EnterpriseHttpError(
+            'ENTERPRISE_PROTOCOL_ERROR',
+            'decode',
+            200
+          );
+        })
+      })
+    });
+
+    await expect(manager.listKnowledgeBases()).rejects.toMatchObject({
+      code: 'ENTERPRISE_PROTOCOL_ERROR',
+      statusCode: 502
+    });
+  });
 });
 
 function createSessionManager(): EnterpriseSessionManager {
