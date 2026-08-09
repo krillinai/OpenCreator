@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "predev": "pnpm --filter @clawee/skill-market build",
-    "dev": "node --import tsx src/main.ts --clawee-enterprise-config=../../config/config.toml",
+    "predev": "pnpm --filter @clawee/skill-market build && node --import tsx scripts/prepare-enterprise-development-config-2026-08-09.ts",
+    "dev": "node --import tsx src/main.ts --clawee-enterprise-config=.runtime/config.toml",
     "prebuild": "pnpm --filter @clawee/skill-market build",
     "build": "tsc -p tsconfig.json",
     "pretypecheck": "pnpm --filter @clawee/skill-market build",
