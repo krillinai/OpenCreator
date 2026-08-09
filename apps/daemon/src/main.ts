@@ -29,6 +29,7 @@ import {
 } from './startup.js';
 import { acquireRuntimeLock } from './runtime-lock.js';
 import { createSystemEnterpriseCredentialStore } from './enterprise/credential-store-2026-07-30.js';
+import { createSystemEnterpriseMcpTokenStore } from './enterprise/mcp-token-store-2026-08-07.js';
 
 type BootstrapPhase = 'starting_runtime';
 
@@ -94,6 +95,9 @@ async function main(): Promise<void> {
     token,
     capabilities,
     enterpriseCredentialStore: createSystemEnterpriseCredentialStore({
+      e2eRunId: enterprise.enterpriseE2ERunId
+    }),
+    enterpriseMcpTokenStore: createSystemEnterpriseMcpTokenStore({
       e2eRunId: enterprise.enterpriseE2ERunId
     }),
     getCodexAvailabilityProbe: () => availabilityProbe,

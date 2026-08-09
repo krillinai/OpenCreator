@@ -49,6 +49,29 @@ describe('enterprise service', () => {
     expect(post).toHaveBeenCalledWith(`/enterprise/skills/${encoded}/update`);
   });
 
+  it('uses MCP catalog refresh and local preference routes', async () => {
+    const get = vi.fn(async (_path: string) => ({}));
+    const post = vi.fn(async (_path: string, _body?: unknown) => ({}));
+    const patch = vi.fn(async (_path: string, _body: unknown) => ({}));
+    const service = createEnterpriseService(
+      createClient({ get, post, patch })
+    );
+
+    await service.listMcpConnections();
+    await service.refreshMcpConnections();
+    await service.updateMcpPreference('crm/华东', {
+      installed: true,
+      enabled: false
+    });
+
+    expect(get).toHaveBeenCalledWith('/enterprise/mcp');
+    expect(post).toHaveBeenCalledWith('/enterprise/mcp/refresh');
+    expect(patch).toHaveBeenCalledWith(
+      '/enterprise/mcp/upstreams/crm%2F%E5%8D%8E%E4%B8%9C/preference',
+      { installed: true, enabled: false }
+    );
+  });
+
   it('uses exact knowledge routes and streams document files as binary', async () => {
     const get = vi.fn(async (_path: string) => ({}));
     const post = vi.fn(async (_path: string, _body?: unknown) => ({}));
@@ -149,8 +172,9 @@ function createClient(
       body: BodyInit,
       contentType?: string
     ) => Promise<unknown>;
+    patch?: (path: string, body: unknown) => Promise<unknown>;
   }
-): Pick<RuntimeClient, 'get' | 'post' | 'postBinary'> {
+): Pick<RuntimeClient, 'get' | 'post' | 'postBinary' | 'patch'> {
   return {
     get<T>(path: string): Promise<T> {
       if (overrides.get) return overrides.get(path) as Promise<T>;
@@ -173,6 +197,12 @@ function createClient(
         return overrides.postBinary(path, body, contentType) as Promise<T>;
       }
       throw new Error(`Unexpected binary post: ${path}`);
+    },
+    patch<T>(path: string, body: unknown): Promise<T> {
+      if (overrides.patch) {
+        return overrides.patch(path, body) as Promise<T>;
+      }
+      throw new Error(`Unexpected patch: ${path}`);
     }
   };
 }

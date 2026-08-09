@@ -9,6 +9,8 @@ export type FakeEnterpriseRequest = {
 export type FakeEnterpriseState = {
   session: 'signed_out' | 'signed_in';
   installed: boolean;
+  mcpInstalled: boolean;
+  mcpEnabled: boolean;
   createdThread: boolean;
   uploadedKnowledgeDocument: boolean;
   savedSharedFile: boolean;
@@ -35,6 +37,8 @@ export class FakeEnterpriseDaemon {
   private state: FakeEnterpriseState = {
     session: 'signed_out',
     installed: false,
+    mcpInstalled: false,
+    mcpEnabled: false,
     createdThread: false,
     uploadedKnowledgeDocument: false,
     savedSharedFile: false
@@ -47,6 +51,8 @@ export class FakeEnterpriseDaemon {
     this.state = {
       session: 'signed_out',
       installed: false,
+      mcpInstalled: false,
+      mcpEnabled: false,
       createdThread: false,
       uploadedKnowledgeDocument: false,
       savedSharedFile: false
@@ -130,6 +136,26 @@ export class FakeEnterpriseDaemon {
     if (path === '/enterprise/logout' && request.method() === 'POST') {
       this.state.session = 'signed_out';
       return fulfill(route, sessionResponse('signed_out'));
+    }
+    if (
+      (path === '/enterprise/mcp' && request.method() === 'GET')
+      || (path === '/enterprise/mcp/refresh' && request.method() === 'POST')
+    ) {
+      return fulfill(route, enterpriseMcpCatalog(this.state));
+    }
+    if (
+      path === '/enterprise/mcp/upstreams/crm-main/preference'
+      && request.method() === 'PATCH'
+    ) {
+      const update = readObjectBody(request.postData());
+      if (typeof update.installed === 'boolean') {
+        this.state.mcpInstalled = update.installed;
+      }
+      if (typeof update.enabled === 'boolean') {
+        this.state.mcpEnabled = update.enabled;
+      }
+      if (!this.state.mcpInstalled) this.state.mcpEnabled = false;
+      return fulfill(route, enterpriseMcpCatalog(this.state));
     }
     if (path === '/enterprise/knowledge-bases' && request.method() === 'GET') {
       return fulfill(route, {
@@ -349,6 +375,50 @@ function enterpriseSkill(installed: boolean) {
     status: installed ? 'installed' : 'not_installed',
     integrity: installed ? 'verified' : 'not_applicable',
     actions: installed ? ['use'] : ['install']
+  };
+}
+
+function enterpriseMcpCatalog(state: FakeEnterpriseState) {
+  return {
+    agentId: 'clawee_550e8400-e29b-41d4-a716-446655440000',
+    tokenStatus: 'ready',
+    upstreams: [{
+      upstreamId: 'crm-main',
+      name: '客户关系管理',
+      domain: 'sales',
+      endpoint: 'https://enterprise.example/mcp/servers/crm-main',
+      upstreamTransport: 'streamable_http',
+      namespace: 'crm',
+      status: 'active',
+      installed: state.mcpInstalled,
+      enabled: state.mcpEnabled,
+      tools: [{
+        toolId: 'cap_search',
+        upstreamName: 'customer.search',
+        name: 'customer.search',
+        exposedName: 'crm.customer.search',
+        title: '查询客户',
+        description: '按条件查询客户资料',
+        riskLevel: 'low',
+        confirmRequired: false,
+        status: 'active',
+        authorized: true,
+        authorizationExpiresAt: null
+      }, {
+        toolId: 'cap_update',
+        upstreamName: 'customer.update',
+        name: 'customer.update',
+        exposedName: 'crm.customer.update',
+        title: '更新客户',
+        description: '更新客户资料',
+        riskLevel: 'medium',
+        confirmRequired: true,
+        status: 'active',
+        authorized: false,
+        authorizationExpiresAt: null
+      }]
+    }],
+    refreshedAt: '2026-08-07T08:00:00.000Z'
   };
 }
 

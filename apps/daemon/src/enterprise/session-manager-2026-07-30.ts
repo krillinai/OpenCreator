@@ -68,6 +68,7 @@ export function createEnterpriseSessionManager(input: {
   credentialStore: EnterpriseCredentialStore;
   httpClient: EnterpriseHttpClient;
   transportSecurity: EnterpriseTransportSecurity;
+  onSignedOut?(): void;
 }): EnterpriseSessionManager & EnterpriseIdentityProvider {
   let generation = 0;
   let closed = false;
@@ -98,6 +99,7 @@ export function createEnterpriseSessionManager(input: {
   ): boolean {
     if (closed || operationGeneration !== generation) return false;
     snapshot = next;
+    if (next.status === 'signed_out') input.onSignedOut?.();
     return true;
   }
 

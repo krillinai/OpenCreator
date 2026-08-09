@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodexExecArgs, buildCodexResumeArgs } from '../../src/codex/argv.js';
+import {
+  buildCodexExecArgs,
+  buildCodexMcpConfigArgs,
+  buildCodexResumeArgs
+} from '../../src/codex/argv.js';
 
 describe('codex argv', () => {
   it('builds exec args without prompt in argv', () => {
@@ -178,5 +182,15 @@ describe('codex argv', () => {
       sandbox: 'read-only',
       builtInTools: { ...builtInTools, shell: true }
     })).toThrow('must disable every tool');
+  });
+
+  it('can disable an MCP server inherited from CODEX_HOME without redefining it', () => {
+    expect(buildCodexMcpConfigArgs([{
+      name: 'claw-mcp',
+      enabled: false
+    }])).toEqual([
+      '-c',
+      'mcp_servers.claw-mcp.enabled=false'
+    ]);
   });
 });

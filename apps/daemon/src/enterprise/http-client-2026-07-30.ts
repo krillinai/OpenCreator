@@ -72,6 +72,48 @@ const meResponseSchema = z.object({
     })
   })
 });
+const agentMcpTokenResponseSchema = z.object({
+  data: z.object({
+    token_id: z.string().min(1),
+    agent_id: z.string().min(1),
+    token: z.string().min(1),
+    token_type: z.literal('Bearer'),
+    fingerprint: z.string().min(1),
+    status: z.literal('active'),
+    expires_at: z.string().datetime({ offset: true }).nullable(),
+    scopes: z.array(z.string().min(1)),
+    created_at: z.string().datetime({ offset: true })
+  })
+});
+const remoteMcpToolSchema = z.object({
+  id: z.string().min(1),
+  upstream_name: z.string().min(1),
+  name: z.string().min(1),
+  exposed_name: z.string().min(1),
+  title: z.string(),
+  description: z.string(),
+  risk_level: z.string(),
+  confirm_required: z.boolean(),
+  status: z.string().min(1),
+  authorized: z.boolean(),
+  authorization_expires_at: z.string().datetime({ offset: true }).nullable()
+});
+const remoteMcpUpstreamSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  domain: z.string(),
+  mcp_endpoint: z.string().url(),
+  upstream_transport: z.string().min(1),
+  namespace: z.string().min(1),
+  status: z.string().min(1),
+  tools: z.array(remoteMcpToolSchema)
+});
+const mcpCatalogResponseSchema = z.object({
+  data: z.object({
+    agent_id: z.string().min(1),
+    upstreams: z.array(remoteMcpUpstreamSchema)
+  })
+});
 const remoteSkillSchema = z.object({
   skill_id: z.string().min(1),
   name: z.string().min(1),
@@ -96,7 +138,7 @@ const listMetaSchema = z.object({
 const knowledgePermissionsSchema = z.object({
   read: z.boolean(),
   upload: z.boolean(),
-  search: z.boolean()
+  search: z.boolean().optional()
 });
 const remoteKnowledgeBaseSchema = z.object({
   knowledge_base_id: z.string().min(1),
@@ -129,6 +171,62 @@ const knowledgeDocumentListResponseSchema = z.object({
 const knowledgeDocumentUploadResponseSchema = z.object({
   data: remoteKnowledgeDocumentSchema
 });
+const sharedSpacePermissionsSchema = z.object({
+  read: z.boolean().optional(),
+  write: z.boolean().optional()
+});
+const remoteSharedSpaceSchema = z.object({
+  space_id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  updated_at: z.string().datetime({ offset: true }),
+  permissions: sharedSpacePermissionsSchema.optional()
+});
+const sharedSpaceListResponseSchema = z.object({
+  data: z.array(remoteSharedSpaceSchema),
+  meta: listMetaSchema.extend({
+    max_file_size_bytes: z.number().int().nonnegative()
+  })
+});
+const remoteSharedFileSchema = z.object({
+  file_id: z.string().min(1),
+  space_id: z.string().min(1),
+  space_name: z.string(),
+  logical_path: z.string().min(1),
+  file_name: z.string().min(1),
+  size_bytes: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  content_type: z.string(),
+  revision: z.number().int().positive(),
+  updated_by_user_id: z.string(),
+  updated_by_agent_id: z.string(),
+  updated_at: z.string().datetime({ offset: true })
+});
+const sharedFileListResponseSchema = z.object({
+  data: z.array(remoteSharedFileSchema),
+  meta: listMetaSchema
+});
+const sharedFileDetailResponseSchema = z.object({
+  data: remoteSharedFileSchema.extend({
+    created_by_user_id: z.string(),
+    created_by_agent_id: z.string(),
+    created_at: z.string().datetime({ offset: true })
+  })
+});
+const sharedFileMutationResponseSchema = z.object({
+  data: z.object({
+    file_id: z.string().min(1),
+    space_id: z.string().min(1),
+    logical_path: z.string().min(1),
+    file_name: z.string().min(1),
+    size_bytes: z.number().int().nonnegative(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    content_type: z.string(),
+    revision: z.number().int().positive(),
+    created: z.boolean(),
+    updated_at: z.string().datetime({ offset: true })
+  })
+});
 const mcpGrantResponseSchema = z.object({
   data: z.object({
     tools: z.array(z.object({
@@ -158,6 +256,47 @@ export type EnterpriseRemoteSkill = {
   updatedAt: string;
 };
 
+export type EnterpriseAgentMcpToken = {
+  tokenId: string;
+  agentId: string;
+  token: string;
+  tokenType: 'Bearer';
+  fingerprint: string;
+  expiresAt: string | null;
+  scopes: string[];
+  createdAt: string;
+};
+
+export type EnterpriseRemoteMcpTool = {
+  toolId: string;
+  upstreamName: string;
+  name: string;
+  exposedName: string;
+  title: string;
+  description: string;
+  riskLevel: string;
+  confirmRequired: boolean;
+  status: string;
+  authorized: boolean;
+  authorizationExpiresAt: string | null;
+};
+
+export type EnterpriseRemoteMcpUpstream = {
+  upstreamId: string;
+  name: string;
+  domain: string;
+  endpoint: string;
+  upstreamTransport: string;
+  namespace: string;
+  status: string;
+  tools: EnterpriseRemoteMcpTool[];
+};
+
+export type EnterpriseRemoteMcpCatalog = {
+  agentId: string;
+  upstreams: EnterpriseRemoteMcpUpstream[];
+};
+
 export type EnterpriseRemoteSkillDetail = EnterpriseRemoteSkill & {
   changelog?: string;
 };
@@ -185,6 +324,48 @@ export type EnterpriseRemoteKnowledgeDocument = {
   errorMessage: string;
   uploadedBy: string;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type EnterpriseRemoteSharedSpace = {
+  spaceId: string;
+  name: string;
+  description: string;
+  updatedAt: string;
+  permissions: {
+    read: boolean;
+    write: boolean;
+  };
+};
+
+export type EnterpriseRemoteSharedFile = {
+  fileId: string;
+  spaceId: string;
+  spaceName: string;
+  logicalPath: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  contentType: string;
+  revision: number;
+  createdByUserId?: string;
+  createdByAgentId?: string;
+  updatedByUserId: string;
+  updatedByAgentId: string;
+  createdAt?: string;
+  updatedAt: string;
+};
+
+export type EnterpriseRemoteSharedFileMutation = {
+  fileId: string;
+  spaceId: string;
+  logicalPath: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  contentType: string;
+  revision: number;
+  created: boolean;
   updatedAt: string;
 };
 
@@ -255,6 +436,8 @@ export type EnterpriseHttpClient = {
   login(input: EnterpriseLoginRequest, agentId: string): Promise<EnterpriseLoginResult>;
   getMe(accessToken: string): Promise<EnterpriseMeResult>;
   logout(accessToken: string): Promise<void>;
+  revealAgentMcpToken(accessToken: string): Promise<EnterpriseAgentMcpToken>;
+  getMcpCatalog(accessToken: string): Promise<EnterpriseRemoteMcpCatalog>;
   listKnowledgeBases(accessToken: string): Promise<{
     knowledgeBases: EnterpriseRemoteKnowledgeBase[];
     meta: EnterpriseListMeta;
@@ -273,6 +456,32 @@ export type EnterpriseHttpClient = {
     fileName: string;
     mimeType: string;
   }): Promise<EnterpriseRemoteKnowledgeDocument>;
+  listSharedSpaces(
+    accessToken: string,
+    input?: { limit?: number; cursor?: string }
+  ): Promise<{
+    spaces: EnterpriseRemoteSharedSpace[];
+    meta: EnterpriseListMeta & { maxFileSizeBytes: number };
+  }>;
+  listSharedFiles(input: EnterpriseSharedFileListInput): Promise<{
+    files: EnterpriseRemoteSharedFile[];
+    meta: EnterpriseListMeta;
+  }>;
+  getSharedFileDetail(
+    accessToken: string,
+    fileId: string
+  ): Promise<EnterpriseRemoteSharedFile>;
+  downloadSharedFileContent(
+    input: EnterpriseSharedFileDownloadInput
+  ): Promise<{
+    bytes: number;
+    sha256: string;
+    revision: number;
+    contentType: string;
+  }>;
+  uploadSharedFileContent(
+    input: EnterpriseSharedFileUploadInput
+  ): Promise<EnterpriseRemoteSharedFileMutation>;
   hasKnowledgeSearchGrant(accessToken: string): Promise<boolean>;
   searchKnowledge(input: {
     accessToken: string;
@@ -470,6 +679,47 @@ export function createEnterpriseHttpClient(input: {
       });
     },
 
+    async revealAgentMcpToken(accessToken) {
+      const response = await requestJson({
+        accessToken,
+        domain: 'mcp-token',
+        method: 'POST',
+        path: '/api/v1/app/agents/token/reveal',
+        schema: agentMcpTokenResponseSchema
+      });
+      if (!response.data.scopes.includes('mcp:call')) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          200
+        );
+      }
+      return {
+        tokenId: response.data.token_id,
+        agentId: response.data.agent_id,
+        token: response.data.token,
+        tokenType: response.data.token_type,
+        fingerprint: response.data.fingerprint,
+        expiresAt: response.data.expires_at,
+        scopes: [...response.data.scopes],
+        createdAt: response.data.created_at
+      };
+    },
+
+    async getMcpCatalog(accessToken) {
+      const response = await requestJson({
+        accessToken,
+        domain: 'mcp',
+        method: 'GET',
+        path: '/api/v1/app/agents/mcp-catalog',
+        schema: mcpCatalogResponseSchema
+      });
+      return {
+        agentId: response.data.agent_id,
+        upstreams: response.data.upstreams.map(mapRemoteMcpUpstream)
+      };
+    },
+
     async listSkills(accessToken) {
       const response = await requestJson({
         accessToken,
@@ -581,6 +831,236 @@ export function createEnterpriseHttpClient(input: {
         );
       }
       return mapRemoteKnowledgeDocument(parsed.data.data);
+    },
+
+    async listSharedSpaces(accessToken, input = {}) {
+      const query = new URLSearchParams();
+      if (input.limit !== undefined) query.set('limit', String(input.limit));
+      if (input.cursor !== undefined) query.set('cursor', input.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      const response = await requestJson({
+        accessToken,
+        domain: 'shared-file',
+        method: 'GET',
+        path: `/api/v1/app/shared-spaces${suffix}`,
+        schema: sharedSpaceListResponseSchema
+      });
+      return {
+        spaces: response.data.map(mapRemoteSharedSpace),
+        meta: {
+          ...mapListMeta(response.meta),
+          maxFileSizeBytes: response.meta.max_file_size_bytes
+        }
+      };
+    },
+
+    async listSharedFiles(request) {
+      const query = new URLSearchParams();
+      if (request.spaceId !== undefined) query.set('space_id', request.spaceId);
+      if (request.query !== undefined) query.set('query', request.query);
+      if (request.logicalPathPrefix !== undefined) {
+        query.set('logical_path_prefix', request.logicalPathPrefix);
+      }
+      if (request.limit !== undefined) query.set('limit', String(request.limit));
+      if (request.cursor !== undefined) query.set('cursor', request.cursor);
+      const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+      const response = await requestJson({
+        accessToken: request.accessToken,
+        domain: 'shared-file',
+        method: 'GET',
+        path: `/api/v1/app/shared-files${suffix}`,
+        schema: sharedFileListResponseSchema
+      });
+      return {
+        files: response.data.map(mapRemoteSharedFile),
+        meta: mapListMeta(response.meta)
+      };
+    },
+
+    async getSharedFileDetail(accessToken, fileId) {
+      const query = new URLSearchParams({ file_id: fileId });
+      const response = await requestJson({
+        accessToken,
+        domain: 'shared-file',
+        method: 'GET',
+        path: `/api/v1/app/shared-files/detail?${query.toString()}`,
+        schema: sharedFileDetailResponseSchema
+      });
+      return mapRemoteSharedFile(response.data);
+    },
+
+    async downloadSharedFileContent(request) {
+      const query = new URLSearchParams({ file_id: request.fileId });
+      let response: Response;
+      try {
+        response = await fetchImpl(
+          new URL(`/api/v1/app/shared-files/content?${query.toString()}`, origin),
+          {
+            headers: {
+              Accept: 'application/octet-stream',
+              Authorization: `Bearer ${request.accessToken}`
+            },
+            method: 'GET',
+            signal: AbortSignal.timeout(sharedFileTransferTimeoutMs)
+          }
+        );
+      } catch {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SERVICE_UNAVAILABLE',
+          'request'
+        );
+      }
+
+      if (!response.ok) {
+        throw await createResponseError(response, 'shared-file');
+      }
+      const declaredLength = requireContentLength(
+        response.headers.get('content-length')
+      );
+      if (declaredLength > maxSharedFileBytes) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SHARED_FILE_TOO_LARGE',
+          'download',
+          response.status
+        );
+      }
+      const expectedSha256 = requireSha256Header(
+        response.headers.get('x-content-sha256')
+      );
+      const revision = requirePositiveIntegerHeader(
+        response.headers.get('x-file-revision')
+      );
+      const responseFileId = response.headers.get('x-shared-file-id');
+      if (responseFileId !== request.fileId || response.body === null) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'download',
+          response.status
+        );
+      }
+
+      const hash = createHash('sha256');
+      const reader = response.body.getReader();
+      let handle: Awaited<ReturnType<typeof open>> | undefined;
+      let bytes = 0;
+      try {
+        handle = await open(request.destinationPath, 'wx', 0o600);
+        while (true) {
+          const result = await reader.read();
+          if (result.done) break;
+          bytes += result.value.byteLength;
+          if (bytes > maxSharedFileBytes || bytes > declaredLength) {
+            throw new EnterpriseHttpError(
+              'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH',
+              'download',
+              response.status
+            );
+          }
+          hash.update(result.value);
+          await writeAll(handle, result.value);
+        }
+        const sha256 = hash.digest('hex');
+        if (bytes !== declaredLength) {
+          throw new EnterpriseHttpError(
+            'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH',
+            'download',
+            response.status
+          );
+        }
+        if (sha256 !== expectedSha256) {
+          throw new EnterpriseHttpError(
+            'ENTERPRISE_SHARED_FILE_DIGEST_MISMATCH',
+            'download',
+            response.status
+          );
+        }
+        await handle.close();
+        handle = undefined;
+        return {
+          bytes,
+          sha256,
+          revision,
+          contentType:
+            response.headers.get('content-type') ?? 'application/octet-stream'
+        };
+      } catch (error) {
+        await handle?.close().catch(() => undefined);
+        await rm(request.destinationPath, { force: true }).catch(() => undefined);
+        if (error instanceof EnterpriseHttpError) throw error;
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SHARED_FILE_STORAGE_UNAVAILABLE',
+          'download',
+          response.status
+        );
+      } finally {
+        reader.releaseLock();
+      }
+    },
+
+    async uploadSharedFileContent(request) {
+      const file = await openAsBlob(request.filePath, {
+        type: request.contentType
+      });
+      if (file.size !== request.sizeBytes) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH',
+          'upload'
+        );
+      }
+      const query = new URLSearchParams({
+        space_id: request.spaceId,
+        logical_path: request.logicalPath
+      });
+      if (request.expectedRevision !== undefined) {
+        query.set('expected_revision', String(request.expectedRevision));
+      }
+
+      let response: Response;
+      try {
+        response = await fetchImpl(
+          new URL(`/api/v1/app/shared-files/content?${query.toString()}`, origin),
+          {
+            body: file,
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${request.accessToken}`,
+              'Content-Length': String(request.sizeBytes),
+              'Content-Type': request.contentType,
+              'X-Content-SHA256': request.sha256
+            },
+            method: 'POST',
+            signal: AbortSignal.timeout(sharedFileTransferTimeoutMs)
+          }
+        );
+      } catch {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_SERVICE_UNAVAILABLE',
+          'request'
+        );
+      }
+      if (!response.ok) {
+        throw await createResponseError(response, 'shared-file');
+      }
+
+      let value: unknown;
+      try {
+        value = await response.json();
+      } catch {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          response.status
+        );
+      }
+      const parsed = sharedFileMutationResponseSchema.safeParse(value);
+      if (!parsed.success) {
+        throw new EnterpriseHttpError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          'decode',
+          response.status
+        );
+      }
+      return mapRemoteSharedFileMutation(parsed.data.data);
     },
 
     async hasKnowledgeSearchGrant(accessToken) {
@@ -741,6 +1221,33 @@ function mapRemoteSkill(
   };
 }
 
+function mapRemoteMcpUpstream(
+  upstream: z.infer<typeof remoteMcpUpstreamSchema>
+): EnterpriseRemoteMcpUpstream {
+  return {
+    upstreamId: upstream.id,
+    name: upstream.name,
+    domain: upstream.domain,
+    endpoint: upstream.mcp_endpoint,
+    upstreamTransport: upstream.upstream_transport,
+    namespace: upstream.namespace,
+    status: upstream.status,
+    tools: upstream.tools.map(tool => ({
+      toolId: tool.id,
+      upstreamName: tool.upstream_name,
+      name: tool.name,
+      exposedName: tool.exposed_name,
+      title: tool.title,
+      description: tool.description,
+      riskLevel: tool.risk_level,
+      confirmRequired: tool.confirm_required,
+      status: tool.status,
+      authorized: tool.authorized,
+      authorizationExpiresAt: tool.authorization_expires_at
+    }))
+  };
+}
+
 function mapRemoteKnowledgeBase(
   knowledgeBase: z.infer<typeof remoteKnowledgeBaseSchema>
 ): EnterpriseRemoteKnowledgeBase {
@@ -753,7 +1260,7 @@ function mapRemoteKnowledgeBase(
     permissions: {
       read: knowledgeBase.permissions.read,
       upload: knowledgeBase.permissions.upload,
-      search: knowledgeBase.permissions.search
+      search: knowledgeBase.permissions.search ?? false
     }
   };
 }
@@ -862,7 +1369,13 @@ function mapCollectorRegistration(
   };
 }
 
-type EnterpriseHttpDomain = 'general' | 'skill' | 'knowledge' | 'shared-file';
+type EnterpriseHttpDomain =
+  | 'general'
+  | 'skill'
+  | 'knowledge'
+  | 'shared-file'
+  | 'mcp'
+  | 'mcp-token';
 
 async function createResponseError(
   response: Response,
@@ -918,6 +1431,12 @@ function mapResponseCode(
     return 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN';
   }
   if (statusCode === 403) return 'ENTERPRISE_FORBIDDEN';
+  if (statusCode === 404 && domain === 'mcp-token') {
+    return 'ENTERPRISE_MCP_TOKEN_NOT_FOUND';
+  }
+  if (statusCode === 404 && domain === 'mcp') {
+    return 'ENTERPRISE_MCP_UPSTREAM_NOT_FOUND';
+  }
   if (
     statusCode === 404
     && upstreamCode === 'shared_space_not_found'

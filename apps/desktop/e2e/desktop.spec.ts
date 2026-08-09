@@ -1001,7 +1001,20 @@ function minimalSystemPath(): string {
 async function waitForWorkspace(page: Page): Promise<void> {
   await waitForRuntimeReady(page);
   const workspace = page.locator('.clawee-shell');
-  if (!await workspace.isVisible().catch(() => false)) {
+  await expect.poll(async () => {
+    const response = await runtimeRequest<{ status?: string }>(
+      page,
+      'GET',
+      '/enterprise/session'
+    );
+    return response.body.status;
+  }).toMatch(/^(signed_in|signed_out)$/);
+  const session = await runtimeRequest<{ status?: string }>(
+    page,
+    'GET',
+    '/enterprise/session'
+  );
+  if (session.body.status === 'signed_out') {
     await expect(page.getByRole('heading', {
       name: '登录企业账户'
     })).toBeVisible();

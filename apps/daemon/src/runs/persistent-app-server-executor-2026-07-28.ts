@@ -1,7 +1,9 @@
 import type { RuntimeThread } from '../threads/types.js';
 import type {
   AgentScheduleProcessInjector,
-  AgentToolProcessInjection
+  AgentToolProcessInjection,
+  AgentToolRunInjection,
+  RunMcpInjector
 } from '../agent-tools/run-injection.js';
 import {
   createCodexAppServerHost,
@@ -51,6 +53,7 @@ export type PersistentAppServerExecution = CodexAppServerProcess & {
 export type PersistentAppServerExecutor = {
   start(input: PersistentAppServerExecutionInput): PersistentAppServerExecution;
   isBusy(): boolean;
+  invalidate(reason: string): Promise<void>;
   close(input?: {
     interruptGraceMs?: number;
     terminateGraceMs?: number;
@@ -61,6 +64,7 @@ export function createPersistentAppServerExecutor(input: {
   codexBin: string;
   codexHome: string;
   processInjector?: AgentScheduleProcessInjector;
+  runtimeInjector?: RunMcpInjector;
   createHost?(input: CodexAppServerHostInput): CodexAppServerHost;
   onLifecycle?(event: PersistentAppServerLifecycleEvent): void;
 }): PersistentAppServerExecutor {
@@ -68,6 +72,7 @@ export function createPersistentAppServerExecutor(input: {
   let host: CodexAppServerHost | undefined;
   let injection: AgentToolProcessInjection | undefined;
   let profile: string | undefined;
+  let runtimeConfigurationFingerprint: string | undefined;
   let activeRunId: string | undefined;
   let activeExecution: PersistentAppServerExecution | undefined;
   let activeLifecycle:
@@ -76,6 +81,8 @@ export function createPersistentAppServerExecutor(input: {
   let busy = false;
   let closing = false;
   let closeWork: Promise<void> | undefined;
+  let idleInvalidationWork: Promise<void> | undefined;
+  let staleReason: string | undefined;
 
   function start(
     run: PersistentAppServerExecutionInput
@@ -103,6 +110,11 @@ export function createPersistentAppServerExecutor(input: {
         injection?.deactivate(run.runId);
         if (host !== undefined && !host.isReusable()) {
           await clearHost('host_not_reusable', run.forceKillGraceMs);
+        }
+        if (host !== undefined && staleReason !== undefined) {
+          const reason = staleReason;
+          staleReason = undefined;
+          await clearHost(reason, run.forceKillGraceMs);
         }
         emitLifecycle('run_cleared', lifecycleProfile, {
           runId: run.runId,
@@ -133,13 +145,35 @@ export function createPersistentAppServerExecutor(input: {
     reused: boolean;
   }> {
     assertOpen();
+    if (idleInvalidationWork !== undefined) {
+      await idleInvalidationWork;
+      assertOpen();
+    }
     const nextProfile = normalizeAppServerProfile(run.profile);
+    const runtimeInjection = await input.runtimeInjector?.prepare({
+      runId: run.runId,
+      thread: run.thread,
+      createdBy: 'api'
+    });
+    const nextRuntimeConfigurationFingerprint =
+      runtimeInjection?.configurationFingerprint ?? '';
+    if (host !== undefined && staleReason !== undefined) {
+      const reason = staleReason;
+      staleReason = undefined;
+      await clearHost(reason, run.forceKillGraceMs);
+      assertOpen();
+    }
     let reused = host !== undefined
       && host.isReusable()
-      && profile === nextProfile;
+      && profile === nextProfile
+      && runtimeConfigurationFingerprint
+        === nextRuntimeConfigurationFingerprint;
     if (host !== undefined && !reused) {
       const previousProfile = profile;
-      await clearHost('profile_changed', run.forceKillGraceMs);
+      const reason = previousProfile !== nextProfile
+        ? 'profile_changed'
+        : 'runtime_configuration_changed';
+      await clearHost(reason, run.forceKillGraceMs);
       assertOpen();
       if (previousProfile !== undefined && previousProfile !== nextProfile) {
         emitLifecycle('profile_restarted', nextProfile, {
@@ -159,13 +193,19 @@ export function createPersistentAppServerExecutor(input: {
       });
       try {
         profile = nextProfile;
+        runtimeConfigurationFingerprint =
+          nextRuntimeConfigurationFingerprint;
+        const processConfiguration = mergeInjections(
+          injection,
+          runtimeInjection
+        );
         host = createHost({
           codexBin: input.codexBin,
           codexHome: input.codexHome,
           cwd: run.cwd,
           profile: nextProfile,
-          mcpServers: injection?.mcpServers,
-          env: injection?.env,
+          mcpServers: processConfiguration?.mcpServers,
+          env: processConfiguration?.env,
           spawnTimeoutMs: run.spawnTimeoutMs,
           forceKillGraceMs: run.forceKillGraceMs,
           onLifecycle(event) {
@@ -240,6 +280,7 @@ export function createPersistentAppServerExecutor(input: {
     host = undefined;
     injection = undefined;
     profile = undefined;
+    runtimeConfigurationFingerprint = undefined;
     try {
       await currentHost?.close(reason, forceKillGraceMs);
     } finally {
@@ -276,6 +317,25 @@ export function createPersistentAppServerExecutor(input: {
     isBusy() {
       return busy;
     },
+    async invalidate(reason) {
+      if (closing) return;
+      if (busy) {
+        staleReason = reason;
+        return;
+      }
+      if (idleInvalidationWork !== undefined) {
+        await idleInvalidationWork;
+        return;
+      }
+      if (host === undefined) return;
+      const work = clearHost(reason).finally(() => {
+        if (idleInvalidationWork === work) {
+          idleInvalidationWork = undefined;
+        }
+      });
+      idleInvalidationWork = work;
+      await work;
+    },
     async close(options = {}) {
       if (closeWork !== undefined) return closeWork;
       closing = true;
@@ -299,6 +359,13 @@ export function createPersistentAppServerExecutor(input: {
             firstError = error;
           }
         }
+        if (idleInvalidationWork !== undefined) {
+          try {
+            await idleInvalidationWork;
+          } catch (error) {
+            firstError ??= error;
+          }
+        }
         if (execution !== undefined) {
           await execution.result.catch(() => undefined);
         }
@@ -306,6 +373,25 @@ export function createPersistentAppServerExecutor(input: {
       })();
       await closeWork;
     }
+  };
+}
+
+function mergeInjections(
+  processInjection: AgentToolProcessInjection | undefined,
+  runtimeInjection: AgentToolRunInjection | undefined
+): AgentToolRunInjection | undefined {
+  if (processInjection === undefined) return runtimeInjection;
+  if (runtimeInjection === undefined) return processInjection;
+  return {
+    mcpServers: [
+      ...processInjection.mcpServers,
+      ...runtimeInjection.mcpServers
+    ],
+    env: {
+      ...processInjection.env,
+      ...runtimeInjection.env
+    },
+    configurationFingerprint: runtimeInjection.configurationFingerprint
   };
 }
 

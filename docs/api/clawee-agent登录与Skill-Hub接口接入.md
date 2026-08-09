@@ -863,6 +863,14 @@ Clawee 应同时读取：
 4. MCP 能力目录返回全部未删除 upstream 及其 `/mcp/servers/{upstream_id}` 受治理 endpoint，禁用 upstream 仍返回并明确标记状态。
 5. 每个 upstream 返回其全部 Tool，`authorized` 仅在 upstream、Tool 和有效 Grant 同时可用时为 `true`。
 6. 目录不返回企业内部 upstream 原始 URL、upstream Token、凭据引用或授权数据范围。
+7. 企业 Grant、用户安装和用户开启是三类独立状态；安装或开启不会创建、修改或撤销企业 Grant。
+8. Clawee 不根据 Catalog 的 `authorized` 字段生成 `enabled_tools`，也不以该字段作为本地安全边界。
+9. Gateway 的 `tools/list` 只返回当前 Agent 可用的 Tool，`tools/call` 每次重新校验 Token、Grant、upstream 和 Tool 状态。
+10. 用户安装 upstream 后默认保持关闭；用户开启后从下一次交互任务开始注入对应 Gateway endpoint。
+11. 用户关闭或卸载 upstream 后不撤销企业 Grant，也不删除共享的 Agent MCP Token。
+12. 企业 MCP 配置和 Token 指纹变化后，空闲的持久 App Server 立即关闭；忙碌进程完成当前 turn 后关闭，下一次运行使用新快照。
+13. 当前阶段定时任务不注入企业 MCP；只有用户发起的交互任务使用企业 MCP。
+14. Web 与 Desktop 通过同一 Daemon API 读取和修改本地 MCP 偏好，渲染相同页面并产生相同 Runtime 配置。
 
 ## 22. 接口契约摘要
 
@@ -892,7 +900,7 @@ GET  /api/v1/app/shared-files/content?file_id=<file_id>
 POST /api/v1/app/shared-files/content?space_id=<space_id>&logical_path=<logical_path>
 ```
 
-Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal` 获取绑定 Agent 的 MCP Token，再通过 MCP 能力目录获取全部 upstream 的受治理 endpoint 和 Tool 授权状态；这两个接口都优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。知识库 HTTP 接口使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token 或 Agent MCP Token；企业服务负责身份、Collector 接入信息、MCP Token、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安全存储、MCP 安装完整性、回滚以及知识库交互。
+Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal` 获取绑定 Agent 的 MCP Token，再通过 MCP 能力目录获取全部 upstream 的受治理 endpoint 和 Tool 授权状态；这两个接口都优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。知识库 HTTP 接口使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token 或 Agent MCP Token；企业服务负责身份、Collector 接入信息、MCP Token、MCP 能力目录、Skill 分发和知识库授权代理，Clawee 负责本地安全存储、企业 MCP 安装与开启偏好、按进程 Runtime 注入、Skill 安装完整性、回滚以及知识库交互。
 
 ## 23. MCP Token 与能力目录接口
 
@@ -964,7 +972,7 @@ Clawee 处理要求：
 | `401` | `unauthorized` | 应用 Token 缺失、过期或会话失效；清除本地应用 Token 并进入未登录状态 |
 | `403` | `agent_context_mismatch` | 请求中的 `agent_id` 与会话不一致；按客户端状态错误处理 |
 | `403` | `agent_forbidden` | 会话绑定 Agent 已停用；不得继续安装或启动企业 MCP |
-| `404` | `not_found` | 当前 Agent 没有可读取的 active MCP Token；停止安装并提示重新签发 Token |
+| `404` | `not_found` | 当前 Agent 没有可读取的 active MCP Token；允许保存安装和开启偏好，但阻止 Runtime 连接并提示重新签发 Token |
 | `500/503` | `internal_error` | 保留登录状态，不覆盖本地已有 MCP Token，允许用户手动重试 |
 
 ### 23.2 `GET /api/v1/app/agents/mcp-catalog`
@@ -1062,6 +1070,8 @@ Clawee 请求不需要传递 `agent_id`。服务端优先从已认证的 `clawee
 
 接口会返回全部未删除 upstream，以及每个 upstream 下已授权、未授权、启用和停用的 Tool。`mcp_endpoint` 始终指向本项目 Gateway 的 `/mcp/servers/{upstream_id}` 受治理入口，不返回企业内部 upstream 原始 URL、upstream Token、凭据引用或授权数据范围。软删除 upstream 不返回。当前目录不分页，客户端必须忽略未来新增字段。
 
+`authorized` 是目录展示字段，不是 Clawee 的本地授权凭证。Clawee 可以展示“企业授权 Tool 数量”，但不得根据该字段决定是否安装 upstream、是否允许用户切换开启状态，也不得把当前 `authorized=true` 的 Tool 固化为 Codex `enabled_tools`。Grant 可能在目录刷新后发生变化，本地缓存无法替代 Gateway 的实时裁决。
+
 错误处理：
 
 | HTTP 状态 | `error.code` | Clawee 处理 |
@@ -1070,6 +1080,81 @@ Clawee 请求不需要传递 `agent_id`。服务端优先从已认证的 `clawee
 | `403` | `agent_context_mismatch` | 请求中的 `agent_id` 与会话不一致；按客户端状态错误处理，不得尝试切换 Agent |
 | `403` | `agent_forbidden` | 会话绑定 Agent 已停用或不可用；保留本地 `agent_id`，提示重新登录或联系管理员 |
 | `500` | `internal_error` | 保留登录状态，允许用户手动重试 |
+
+### 23.3 Clawee 三类状态与正确接入流程
+
+Clawee 必须明确区分以下三类状态：
+
+| 状态 | 所有者 | 持久化位置 | 作用 |
+| --- | --- | --- | --- |
+| 企业授权状态 | 企业管理员和 Gateway | 企业服务 Grant 数据 | 决定 Agent 实际能看到和调用哪些 Tool |
+| 用户安装状态 | 当前 Clawee 用户 | 本地 SQLite 偏好 | 决定该 upstream 是否进入本机用户的连接集合 |
+| 用户开启状态 | 当前 Clawee 用户 | 本地 SQLite 偏好 | 决定下一次交互任务是否向 Codex 注入该 upstream |
+
+三类状态之间不做隐式同步：
+
+1. 企业管理员授权 Tool，不会自动替用户安装或开启 upstream。
+2. 用户安装或开启 upstream，不会向企业服务申请 Grant。
+3. 用户关闭或卸载 upstream，不会撤销企业 Grant。
+4. 用户开启 upstream 后能否实际使用 Tool，由 Gateway 在 MCP 请求时决定。
+5. Catalog 中的授权数量只用于解释当前企业状态，不作为 Clawee 的安全判断。
+
+Clawee 的正确接入流程：
+
+```text
+企业登录成功
+  -> Daemon 使用应用 JWT 获取 MCP Catalog
+  -> Daemon reveal 当前 Agent 的 MCP Token
+  -> MCP Token 写入独立系统安全凭据
+  -> Web/Desktop 从 Daemon 获取 Catalog 和本地安装/开启偏好
+  -> 用户点击“安装”，只写 installed=true、enabled=false
+  -> 用户点击“开启”，只写 enabled=true
+  -> 下一次用户交互任务启动前读取已安装且已开启的 upstream
+  -> 通过 Codex -c mcp_servers.* 注入 Gateway endpoint
+  -> 通过环境变量注入 Agent MCP Token
+  -> Codex 调用 endpoint 的 tools/list
+  -> Gateway 只返回当前 Agent 已授权且 active 的 Tool
+  -> Codex 调用 tools/call
+  -> Gateway 再次校验 Token、Grant、upstream 和 Tool 状态
+  -> Gateway 返回结果或标准 401/403/Tool 不可用错误
+```
+
+本地 Daemon API 固定为：
+
+```text
+GET   /enterprise/mcp
+POST  /enterprise/mcp/refresh
+PATCH /enterprise/mcp/upstreams/:upstreamId/preference
+```
+
+偏好更新规则：
+
+1. 安装操作写入 `installed=true, enabled=false`，安装后不自动开启。
+2. 开启操作要求该 upstream 已经处于 `installed=true`，不得与首次安装合并为同一次请求；开启时只更新 `enabled=true`。
+3. 关闭操作只更新 `enabled=false`。
+4. 卸载操作写入 `installed=false, enabled=false`。
+5. 新发现 upstream 默认 `installed=false, enabled=false`。
+6. 偏好主键包含 `enterprise_origin + agent_id + upstream_id`，不同企业地址或 Agent 之间不得串用。
+
+Runtime 注入规则：
+
+1. 只注入 `installed=true && enabled=true` 的 upstream endpoint。
+2. 不根据 upstream `authorized` Tool 数量决定是否注入 endpoint。
+3. 不向 Codex 写入企业 MCP 全局配置，不修改 `~/.codex/config.toml`。
+4. 使用按进程 `-c mcp_servers.<name>.url=...` 和 `bearer_token_env_var` 注入。
+5. Agent MCP Token 只存在于 Daemon 内存、系统安全凭据和 Codex 子进程环境中。
+6. Token 明文不得进入命令行、React、SQLite、日志、运行元数据或诊断包。
+7. 当前 turn 使用启动时配置快照；用户修改开关后从下一次运行生效。
+8. 持久 App Server 的配置指纹至少包含 Agent ID、Token 指纹、启用 upstream ID 和 endpoint。
+9. 注销、Token 失效、偏好变化或 Catalog endpoint 变化必须使旧持久进程失效。
+10. `confirm_required=true` 的 Tool 应由 Gateway 通过标准 MCP elicitation 发起确认；Gateway 未实现 elicitation 前，不得把 Catalog 字段本身视为已完成确认。
+
+Gateway 必须满足以下安全契约：
+
+1. `tools/list` 只返回当前 Agent 具有有效 Grant 且 upstream、Tool 均为 active 的 Tool。
+2. `tools/call` 不信任先前 `tools/list` 结果，每次重新校验 Token、Grant、授权到期时间、upstream 和 Tool 状态。
+3. 未授权调用返回标准 MCP 错误，并映射明确的 `401/403` 语义。
+4. Clawee 可以在收到权限错误后刷新 Catalog 和页面状态，但不得在客户端复制 Grant 判断逻辑。
 
 ## 24. 知识库接口
 

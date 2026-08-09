@@ -280,6 +280,81 @@ describe('enterprise HTTP client', () => {
     });
   });
 
+  it('reveals the Agent MCP token and maps the governed MCP catalog', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          token_id: 'token_1',
+          agent_id: AGENT_ID,
+          token: 'agent-mcp-secret',
+          token_type: 'Bearer',
+          fingerprint: 'fingerprint-1',
+          status: 'active',
+          expires_at: null,
+          scopes: ['mcp:call'],
+          created_at: '2026-08-07T00:00:00Z'
+        }
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          agent_id: AGENT_ID,
+          upstreams: [{
+            id: 'crm-main',
+            name: 'CRM',
+            domain: 'sales',
+            mcp_endpoint:
+              'https://enterprise.example/mcp/servers/crm-main',
+            upstream_transport: 'streamable_http',
+            namespace: 'crm',
+            status: 'active',
+            tools: [{
+              id: 'cap_search',
+              upstream_name: 'customer.search',
+              name: 'customer.search',
+              exposed_name: 'crm.customer.search',
+              title: '查询客户',
+              description: '查询客户资料',
+              risk_level: '',
+              confirm_required: false,
+              status: 'active',
+              authorized: false,
+              authorization_expires_at: null
+            }]
+          }]
+        }
+      }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(
+      client.revealAgentMcpToken('enterprise-access-token')
+    ).resolves.toMatchObject({
+      agentId: AGENT_ID,
+      token: 'agent-mcp-secret',
+      scopes: ['mcp:call']
+    });
+    await expect(
+      client.getMcpCatalog('enterprise-access-token')
+    ).resolves.toMatchObject({
+      agentId: AGENT_ID,
+      upstreams: [{
+        upstreamId: 'crm-main',
+        endpoint: 'https://enterprise.example/mcp/servers/crm-main',
+        tools: [{
+          toolId: 'cap_search',
+          riskLevel: '',
+          authorized: false
+        }]
+      }]
+    });
+
+    expect(String(fetch.mock.calls[0]?.[0])).toBe(
+      `${ORIGIN}/api/v1/app/agents/token/reveal`
+    );
+    expect(String(fetch.mock.calls[1]?.[0])).toBe(
+      `${ORIGIN}/api/v1/app/agents/mcp-catalog`
+    );
+  });
+
   it('maps authorized knowledge bases and document list fields', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(jsonResponse({
@@ -292,7 +367,7 @@ describe('enterprise HTTP client', () => {
           permissions: {
             read: true,
             upload: true,
-            search: false
+            mcp: false
           }
         }],
         meta: {

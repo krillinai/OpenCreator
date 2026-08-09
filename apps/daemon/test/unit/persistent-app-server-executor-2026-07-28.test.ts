@@ -342,6 +342,124 @@ describe('persistent app-server executor', () => {
     await expect(changing.result).rejects.toThrow('executor is closing');
     expect(createHost).toHaveBeenCalledTimes(1);
   });
+
+  it('restarts when enterprise MCP configuration fingerprint changes', async () => {
+    let fingerprint = 'mcp-v1';
+    const hosts = [
+      fakeHost(201, Promise.resolve()),
+      fakeHost(202, Promise.resolve())
+    ];
+    const createHost = vi.fn(() => hosts[createHost.mock.calls.length - 1]!);
+    const executor = createPersistentAppServerExecutor({
+      codexBin: 'unused',
+      codexHome: 'unused',
+      createHost,
+      runtimeInjector: {
+        prepare: vi.fn(async () => ({
+          mcpServers: [{
+            name: 'enterprise_crm',
+            url: 'https://enterprise.example/mcp/servers/crm',
+            bearerTokenEnvVar: 'CLAWEE_ENTERPRISE_MCP_TOKEN'
+          }],
+          env: {
+            CLAWEE_ENTERPRISE_MCP_TOKEN: 'secret'
+          },
+          configurationFingerprint: fingerprint
+        }))
+      }
+    });
+    executors.push(executor);
+
+    const first = executor.start(runInput({ runId: 'run-mcp-v1' }));
+    expect((await first.started).reused).toBe(false);
+    await first.result;
+
+    const reused = executor.start(runInput({ runId: 'run-mcp-v1-reuse' }));
+    expect((await reused.started).reused).toBe(true);
+    await reused.result;
+
+    fingerprint = 'mcp-v2';
+    const restarted = executor.start(runInput({ runId: 'run-mcp-v2' }));
+    expect((await restarted.started).reused).toBe(false);
+    await restarted.result;
+
+    expect(createHost).toHaveBeenCalledTimes(2);
+    expect(hosts[0]!.close).toHaveBeenCalledWith(
+      'runtime_configuration_changed',
+      undefined
+    );
+  });
+
+  it('invalidates an idle process carrying an old MCP token', async () => {
+    const host = fakeHost(301, Promise.resolve());
+    const executor = createPersistentAppServerExecutor({
+      codexBin: 'unused',
+      codexHome: 'unused',
+      createHost: vi.fn(() => host)
+    });
+    executors.push(executor);
+    const run = executor.start(runInput({ runId: 'run-before-logout' }));
+    await run.started;
+    await run.result;
+
+    await executor.invalidate('enterprise_session_signed_out');
+
+    expect(host.close).toHaveBeenCalledWith(
+      'enterprise_session_signed_out',
+      undefined
+    );
+  });
+
+  it('does not carry an invalidation into the first host when no host exists', async () => {
+    const host = fakeHost(302, Promise.resolve());
+    const executor = createPersistentAppServerExecutor({
+      codexBin: 'unused',
+      codexHome: 'unused',
+      createHost: vi.fn(() => host)
+    });
+    executors.push(executor);
+
+    await executor.invalidate('enterprise_session_changed');
+    const run = executor.start(runInput({ runId: 'run-after-login' }));
+    await run.started;
+    await run.result;
+
+    expect(host.close).not.toHaveBeenCalled();
+  });
+
+  it('waits for idle invalidation to close before creating a replacement host', async () => {
+    let releaseClose!: () => void;
+    const closeResult = new Promise<void>(resolve => {
+      releaseClose = resolve;
+    });
+    const hosts = [
+      fakeHost(303, closeResult),
+      fakeHost(304, Promise.resolve())
+    ];
+    const createHost = vi.fn(() => hosts[createHost.mock.calls.length - 1]!);
+    const executor = createPersistentAppServerExecutor({
+      codexBin: 'unused',
+      codexHome: 'unused',
+      createHost
+    });
+    executors.push(executor);
+    const first = executor.start(runInput({ runId: 'run-before-token-change' }));
+    await first.started;
+    await first.result;
+
+    const invalidation = executor.invalidate('enterprise_mcp_token_changed');
+    const replacement = executor.start(runInput({
+      runId: 'run-after-token-change'
+    }));
+    await Promise.resolve();
+    expect(createHost).toHaveBeenCalledTimes(1);
+
+    releaseClose();
+    await invalidation;
+    expect((await replacement.started).reused).toBe(false);
+    await replacement.result;
+    expect(createHost).toHaveBeenCalledTimes(2);
+  });
 });
 
 function fakeHost(

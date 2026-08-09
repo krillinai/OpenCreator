@@ -6,6 +6,8 @@ import { EnterpriseSessionError } from '../enterprise/session-manager-2026-07-30
 import { EnterpriseHttpError } from '../enterprise/http-client-2026-07-30.js';
 import type { EnterpriseSkillManager } from '../enterprise/skill-manager-2026-07-30.js';
 import { EnterpriseSkillManagerError } from '../enterprise/skill-manager-2026-07-30.js';
+import type { EnterpriseMcpManager } from '../enterprise/mcp-manager-2026-08-07.js';
+import { EnterpriseMcpManagerError } from '../enterprise/mcp-manager-2026-08-07.js';
 import { apiError } from './errors.js';
 
 const loginSchema = z.object({
@@ -17,11 +19,20 @@ const registerSchema = loginSchema.extend({
   name: z.string().trim().min(1).optional()
 }).strict();
 
+const mcpPreferenceSchema = z.object({
+  installed: z.boolean().optional(),
+  enabled: z.boolean().optional()
+}).strict().refine(
+  value => value.installed !== undefined || value.enabled !== undefined,
+  'at least one MCP preference field is required'
+);
+
 export async function registerEnterpriseRoutes(
   server: FastifyInstance,
   input: {
     sessionManager: EnterpriseSessionManager;
     skillManager: EnterpriseSkillManager;
+    mcpManager: EnterpriseMcpManager;
   }
 ): Promise<void> {
   server.get('/enterprise/session', async () => {
@@ -30,7 +41,11 @@ export async function registerEnterpriseRoutes(
 
   server.post('/enterprise/session/refresh', async (_request, reply) => {
     try {
-      return await input.sessionManager.refresh();
+      const session = await input.sessionManager.refresh();
+      if (session.status === 'signed_out') {
+        await input.mcpManager.handleSessionSignedOut();
+      }
+      return session;
     } catch (error) {
       return sendEnterpriseError(reply, error);
     }
@@ -44,7 +59,9 @@ export async function registerEnterpriseRoutes(
       );
     }
     try {
-      return await input.sessionManager.login(parsed.data);
+      const session = await input.sessionManager.login(parsed.data);
+      input.mcpManager.handleSessionAuthenticated();
+      return session;
     } catch (error) {
       return sendEnterpriseError(reply, error);
     }
@@ -58,7 +75,9 @@ export async function registerEnterpriseRoutes(
       );
     }
     try {
-      return await input.sessionManager.register(parsed.data);
+      const session = await input.sessionManager.register(parsed.data);
+      input.mcpManager.handleSessionAuthenticated();
+      return session;
     } catch (error) {
       return sendEnterpriseError(reply, error);
     }
@@ -66,11 +85,52 @@ export async function registerEnterpriseRoutes(
 
   server.post('/enterprise/logout', async (_request, reply) => {
     try {
-      return await input.sessionManager.logout();
+      const session = await input.sessionManager.logout();
+      await input.mcpManager.handleSessionSignedOut();
+      return session;
     } catch (error) {
       return sendEnterpriseError(reply, error);
     }
   });
+
+  server.get('/enterprise/mcp', async (_request, reply) => {
+    try {
+      return await input.mcpManager.listConnections();
+    } catch (error) {
+      return sendEnterpriseError(reply, error);
+    }
+  });
+
+  server.post('/enterprise/mcp/refresh', async (_request, reply) => {
+    try {
+      return await input.mcpManager.refreshConnections();
+    } catch (error) {
+      return sendEnterpriseError(reply, error);
+    }
+  });
+
+  server.patch<{ Params: { upstreamId: string }; Body: unknown }>(
+    '/enterprise/mcp/upstreams/:upstreamId/preference',
+    async (request, reply) => {
+      const parsed = mcpPreferenceSchema.safeParse(request.body);
+      if (
+        request.params.upstreamId.trim().length === 0
+        || !parsed.success
+      ) {
+        return reply.code(400).send(
+          apiError('VALIDATION_FAILED', 'MCP preference is invalid')
+        );
+      }
+      try {
+        return await input.mcpManager.updatePreference(
+          request.params.upstreamId,
+          parsed.data
+        );
+      } catch (error) {
+        return sendEnterpriseError(reply, error);
+      }
+    }
+  );
 
   server.get('/enterprise/skills', async (_request, reply) => {
     try {
@@ -138,6 +198,11 @@ function sendEnterpriseError(reply: FastifyReply, error: unknown) {
       .code(error.statusCode)
       .send(apiError(error.code, enterpriseErrorMessage(error.code)));
   }
+  if (error instanceof EnterpriseMcpManagerError) {
+    return reply
+      .code(error.statusCode)
+      .send(apiError(error.code, enterpriseErrorMessage(error.code)));
+  }
   throw error;
 }
 
@@ -165,6 +230,12 @@ function enterpriseErrorMessage(code: RuntimeErrorCode): string {
       return 'Enterprise service is unavailable';
     case 'ENTERPRISE_FORBIDDEN':
       return 'Enterprise Skill Hub access is forbidden';
+    case 'ENTERPRISE_MCP_TOKEN_NOT_FOUND':
+      return 'Enterprise MCP token is unavailable';
+    case 'ENTERPRISE_MCP_UPSTREAM_NOT_FOUND':
+      return 'Enterprise MCP upstream was not found';
+    case 'ENTERPRISE_MCP_RUNTIME_UNAVAILABLE':
+      return 'Enterprise MCP runtime configuration is unavailable';
     case 'ENTERPRISE_SKILL_NOT_FOUND':
       return 'Enterprise skill was not found';
     case 'ENTERPRISE_SKILL_VERSION_CHANGED':

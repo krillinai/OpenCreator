@@ -3,6 +3,8 @@ import type {
   EnterpriseKnowledgeDocumentListResponse,
   EnterpriseKnowledgeDocumentUploadResponse,
   EnterpriseLoginRequest,
+  EnterpriseMcpCatalogResponse,
+  EnterpriseMcpPreferenceUpdateRequest,
   EnterpriseRegisterRequest,
   EnterpriseSessionResponse,
   EnterpriseSharedFileDetailResponse,
@@ -16,7 +18,7 @@ import type {
 } from '@clawee/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
-type ClientLike = Pick<RuntimeClient, 'get' | 'post' | 'postBinary'>;
+type ClientLike = Pick<RuntimeClient, 'get' | 'post' | 'postBinary' | 'patch'>;
 
 const KNOWLEDGE_DOCUMENT_CONTENT_TYPE =
   'application/vnd.clawee.knowledge-document';
@@ -39,6 +41,21 @@ export function createEnterpriseService(client: ClientLike) {
     },
     logout(): Promise<EnterpriseSessionResponse> {
       return client.post('/enterprise/logout');
+    },
+    listMcpConnections(): Promise<EnterpriseMcpCatalogResponse> {
+      return client.get('/enterprise/mcp');
+    },
+    refreshMcpConnections(): Promise<EnterpriseMcpCatalogResponse> {
+      return client.post('/enterprise/mcp/refresh');
+    },
+    updateMcpPreference(
+      upstreamId: string,
+      input: EnterpriseMcpPreferenceUpdateRequest
+    ): Promise<EnterpriseMcpCatalogResponse> {
+      return client.patch(
+        `/enterprise/mcp/upstreams/${encodeURIComponent(upstreamId)}/preference`,
+        input
+      );
     },
     listKnowledgeBases(): Promise<EnterpriseKnowledgeBaseListResponse> {
       return client.get('/enterprise/knowledge-bases');

@@ -1,92 +1,481 @@
-import { useMemo, useState } from 'react';
+import type {
+  EnterpriseMcpCatalogResponse,
+  EnterpriseMcpPreferenceUpdateRequest,
+  EnterpriseMcpUpstreamResponse,
+  EnterpriseSessionResponse
+} from '@clawee/protocol';
 import {
-  BookOpen,
-  Building2,
-  Check,
-  Cloud,
-  Database,
-  Megaphone,
-  Music2,
+  Cable,
+  Download,
+  KeyRound,
+  LoaderCircle,
+  LogIn,
+  Network,
+  RefreshCw,
   Search,
-  Send,
   ShieldCheck,
-  TrendingUp
+  Trash2,
+  WifiOff
 } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import './connections.css';
 
-type ConnectionStatus = 'available' | 'requestable';
+type ConnectionFilter = 'all' | 'enabled' | 'installed' | 'available';
 
-type EnterpriseConnection = {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  capabilities: string[];
-  scope: string;
-  status: ConnectionStatus;
-  icon: typeof Database;
-  color: string;
+export type EnterpriseMcpConnectionService = {
+  listMcpConnections(): Promise<EnterpriseMcpCatalogResponse>;
+  refreshMcpConnections(): Promise<EnterpriseMcpCatalogResponse>;
+  updateMcpPreference(
+    upstreamId: string,
+    input: EnterpriseMcpPreferenceUpdateRequest
+  ): Promise<EnterpriseMcpCatalogResponse>;
 };
 
-const connections: EnterpriseConnection[] = [
-  { id: 'feishu', name: '飞书', category: '协同办公', description: '读取文档、日历与组织通讯录', capabilities: ['文档检索', '日程查询'], scope: '当前用户可见范围', status: 'available', icon: Send, color: '#3370ff' },
-  { id: 'xiaohongshu', name: '小红书', category: '内容平台', description: '查询账号、笔记与互动表现数据', capabilities: ['笔记检索', '互动分析'], scope: '已授权品牌账号', status: 'available', icon: BookOpen, color: '#ff2442' },
-  { id: 'douyin', name: '抖音', category: '内容平台', description: '查询账号、视频与评论表现数据', capabilities: ['视频检索', '内容分析'], scope: '已授权企业账号', status: 'available', icon: Music2, color: '#19d7d2' },
-  { id: 'ocean-engine', name: '巨量引擎', category: '广告投放', description: '查看广告计划、素材与转化数据', capabilities: ['投放分析', '转化归因'], scope: '需广告账户管理员审批', status: 'requestable', icon: Megaphone, color: '#2f88ff' },
-  { id: 'qichacha', name: '企查查', category: '企业信息', description: '查询企业工商、股东与风险信息', capabilities: ['企业查询', '风险核验'], scope: '需企业数据权限', status: 'requestable', icon: Building2, color: '#1478ff' },
-  { id: 'chanmama', name: '蝉妈妈', category: '电商分析', description: '查看达人、商品与直播电商榜单', capabilities: ['达人分析', '商品洞察'], scope: '需数据服务权限', status: 'requestable', icon: TrendingUp, color: '#ff6b35' }
-];
+export type ConnectionsPageProps = {
+  connected: boolean;
+  session: EnterpriseSessionResponse;
+  service: EnterpriseMcpConnectionService | null;
+  onOpenAccount(): void;
+  onRefreshSession(): Promise<EnterpriseSessionResponse>;
+  onSessionExpired(): void;
+};
 
-export function ConnectionsPage() {
+export function ConnectionsPage(props: ConnectionsPageProps) {
+  const [catalog, setCatalog] = useState<EnterpriseMcpCatalogResponse>();
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string>();
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | ConnectionStatus>('all');
-  const [requested, setRequested] = useState<Set<string>>(() => new Set());
+  const [filter, setFilter] = useState<ConnectionFilter>('all');
+  const [mutatingUpstreamId, setMutatingUpstreamId] = useState<string>();
+
+  useEffect(() => {
+    if (
+      !props.connected
+      || props.session.status !== 'signed_in'
+      || props.service === null
+    ) {
+      setCatalog(undefined);
+      setLoading(false);
+      setLoadError(undefined);
+      setMutatingUpstreamId(undefined);
+      return;
+    }
+
+    let canceled = false;
+    setLoading(true);
+    setLoadError(undefined);
+    void props.service.listMcpConnections()
+      .then(response => {
+        if (!canceled) setCatalog(response);
+      })
+      .catch(error => {
+        if (canceled) return;
+        if (isUnauthorized(error)) props.onSessionExpired();
+        setLoadError(formatConnectionError(error));
+      })
+      .finally(() => {
+        if (!canceled) setLoading(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [
+    props.connected,
+    props.onSessionExpired,
+    props.service,
+    props.session.status
+  ]);
+
+  const upstreams = catalog?.upstreams ?? [];
+  const counts = useMemo(() => ({
+    all: upstreams.length,
+    enabled: upstreams.filter(item => item.enabled).length,
+    installed: upstreams.filter(item => item.installed).length,
+    available: upstreams.filter(item => !item.installed).length
+  }), [upstreams]);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    return connections.filter(item => (
-      (filter === 'all' || item.status === filter)
-      && (normalized.length === 0 || [item.name, item.category, item.description, ...item.capabilities]
-        .some(value => value.toLocaleLowerCase().includes(normalized)))
+    return upstreams.filter(item => (
+      matchesFilter(item, filter)
+      && (
+        normalized.length === 0
+        || [
+          item.name,
+          item.domain,
+          item.namespace,
+          ...item.tools.flatMap(tool => [
+            tool.title,
+            tool.description,
+            tool.name
+          ])
+        ].some(value => value.toLocaleLowerCase().includes(normalized))
+      )
     ));
-  }, [filter, query]);
-  const availableCount = connections.filter(item => item.status === 'available').length;
-  const requestableCount = connections.length - availableCount;
+  }, [filter, query, upstreams]);
+
+  async function refresh() {
+    if (props.service === null || loading) return;
+    setLoading(true);
+    setLoadError(undefined);
+    try {
+      setCatalog(await props.service.refreshMcpConnections());
+    } catch (error) {
+      if (isUnauthorized(error)) props.onSessionExpired();
+      setLoadError(formatConnectionError(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updatePreference(
+    upstream: EnterpriseMcpUpstreamResponse,
+    update: EnterpriseMcpPreferenceUpdateRequest
+  ) {
+    if (props.service === null || mutatingUpstreamId !== undefined) return;
+    setMutatingUpstreamId(upstream.upstreamId);
+    setLoadError(undefined);
+    try {
+      setCatalog(await props.service.updateMcpPreference(
+        upstream.upstreamId,
+        update
+      ));
+    } catch (error) {
+      if (isUnauthorized(error)) props.onSessionExpired();
+      setLoadError(formatConnectionError(error));
+    } finally {
+      setMutatingUpstreamId(undefined);
+    }
+  }
+
+  if (!props.connected) {
+    return (
+      <ConnectionsGate
+        icon={<WifiOff size={22} aria-hidden="true" />}
+        title="正在等待本地 Runtime"
+        detail="系统连接暂不可用，本地项目和会话仍可继续使用。"
+      />
+    );
+  }
+  if (props.session.status === 'checking') {
+    return (
+      <ConnectionsGate
+        icon={<LoaderCircle className="connections-spinner" size={22} aria-hidden="true" />}
+        title="正在验证企业会话"
+        detail="验证完成后会自动加载企业 MCP 目录。"
+      />
+    );
+  }
+  if (props.session.status === 'service_unavailable') {
+    return (
+      <ConnectionsGate
+        icon={<WifiOff size={22} aria-hidden="true" />}
+        title="企业连接服务暂时不可用"
+        detail="服务恢复后可重新加载，不影响本地项目和任务。"
+        actionLabel="重新加载"
+        onAction={() => void props.onRefreshSession()}
+      />
+    );
+  }
+  if (props.session.status !== 'signed_in') {
+    return (
+      <ConnectionsGate
+        icon={<LogIn size={22} aria-hidden="true" />}
+        title="登录后管理系统连接"
+        detail="企业授权由 Gateway 管理，这里只保存当前用户的安装和开启偏好。"
+        actionLabel="登录企业账户"
+        onAction={props.onOpenAccount}
+      />
+    );
+  }
 
   return (
     <main className="connections-page">
       <div className="connections-page__inner">
         <header className="connections-header">
-          <div><h1>系统连接</h1><p>查看已接入的业务平台与当前权限</p></div>
-          <label className="connections-search"><Search size={16} aria-hidden="true" /><input aria-label="搜索系统连接" onChange={event => setQuery(event.target.value)} placeholder="搜索系统或能力" type="search" value={query} /></label>
+          <div>
+            <h1>系统连接</h1>
+            <p>安装并开启当前用户需要使用的企业 MCP</p>
+          </div>
+          <div className="connections-header__actions">
+            <label className="connections-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                aria-label="搜索系统连接"
+                onChange={event => setQuery(event.target.value)}
+                placeholder="搜索系统或工具"
+                type="search"
+                value={query}
+              />
+            </label>
+            <button
+              className="connections-icon-button"
+              type="button"
+              aria-label="刷新系统连接"
+              title="刷新"
+              disabled={loading}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw
+                className={loading ? 'connections-spinner' : undefined}
+                size={16}
+                aria-hidden="true"
+              />
+            </button>
+          </div>
         </header>
 
+        {catalog?.tokenStatus === 'missing' ? (
+          <div className="connections-banner connections-banner--warning" role="status">
+            <KeyRound size={16} aria-hidden="true" />
+            当前 Agent 尚未签发可用的 MCP Token。安装和开启偏好会保留，但运行时暂时无法连接企业 MCP。
+          </div>
+        ) : null}
+        {loadError !== undefined ? (
+          <div className="connections-banner connections-banner--error" role="alert">
+            {loadError}
+          </div>
+        ) : null}
+
         <section className="connections-summary" aria-label="连接概览">
-          <div><Cloud size={18} aria-hidden="true" /><span><strong>{connections.length}</strong><small>已接入系统</small></span></div>
-          <div><ShieldCheck size={18} aria-hidden="true" /><span><strong>{availableCount}</strong><small>已开通</small></span></div>
-          <div><Database size={18} aria-hidden="true" /><span><strong>{requestableCount}</strong><small>可申请</small></span></div>
+          <div>
+            <Network size={18} aria-hidden="true" />
+            <span><strong>{counts.all}</strong><small>企业 MCP</small></span>
+          </div>
+          <div>
+            <Download size={18} aria-hidden="true" />
+            <span>
+              <strong>{counts.installed}</strong>
+              <small>已安装</small>
+            </span>
+          </div>
+          <div>
+            <ShieldCheck size={18} aria-hidden="true" />
+            <span><strong>{counts.enabled}</strong><small>已开启</small></span>
+          </div>
         </section>
 
-        <div className="connections-toolbar" role="group" aria-label="权限状态">
-          {([['all', '全部', connections.length], ['available', '已开通', availableCount], ['requestable', '可申请', requestableCount]] as const).map(([id, label, count]) => (
-            <button aria-pressed={filter === id} key={id} onClick={() => setFilter(id)} type="button"><span>{label}</span><b>{count}</b></button>
+        <div className="connections-toolbar" role="group" aria-label="连接状态">
+          {([
+            ['all', '全部', counts.all],
+            ['enabled', '已开启', counts.enabled],
+            ['installed', '已安装', counts.installed],
+            ['available', '可安装', counts.available]
+          ] as const).map(([id, label, count]) => (
+            <button
+              aria-pressed={filter === id}
+              key={id}
+              onClick={() => setFilter(id)}
+              type="button"
+            >
+              <span>{label}</span><b>{count}</b>
+            </button>
           ))}
         </div>
 
-        {filtered.length === 0 ? <div className="connections-empty">没有找到匹配的系统</div> : (
+        {loading && catalog === undefined ? (
+          <div className="connections-empty">
+            <LoaderCircle className="connections-spinner" size={22} aria-hidden="true" />
+            <span>正在加载企业 MCP</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="connections-empty">
+            {upstreams.length === 0 ? '企业目录中暂无 MCP' : '没有找到匹配的系统'}
+          </div>
+        ) : (
           <section className="connections-grid" aria-label="系统连接目录">
-            {filtered.map(item => {
-              const Icon = item.icon;
-              const submitted = requested.has(item.id);
-              return <article className="connection-card" key={item.id}>
-                <div className="connection-card__head"><span className="connection-card__icon" style={{ '--connection-color': item.color } as React.CSSProperties}><Icon size={21} aria-hidden="true" /></span><div><h2>{item.name}</h2><span>{item.category}</span></div><em data-status={item.status}>{item.status === 'available' ? '已开通' : '可申请'}</em></div>
-                <p>{item.description}</p>
-                <div className="connection-card__capabilities">{item.capabilities.map(capability => <span key={capability}>{capability}</span>)}</div>
-                <footer><small>{item.scope}</small>{item.status === 'available' ? <button className="is-ready" type="button"><Check size={14} aria-hidden="true" />可使用</button> : <button disabled={submitted} onClick={() => setRequested(current => new Set(current).add(item.id))} type="button">{submitted ? <><Check size={14} aria-hidden="true" />申请已提交</> : '申请权限'}</button>}</footer>
-              </article>;
-            })}
+            {filtered.map(upstream => (
+              <ConnectionCard
+                key={upstream.upstreamId}
+                upstream={upstream}
+                busy={mutatingUpstreamId === upstream.upstreamId}
+                blocked={mutatingUpstreamId !== undefined}
+                onUpdate={update => void updatePreference(upstream, update)}
+              />
+            ))}
           </section>
         )}
       </div>
     </main>
   );
+}
+
+function ConnectionCard(props: {
+  upstream: EnterpriseMcpUpstreamResponse;
+  busy: boolean;
+  blocked: boolean;
+  onUpdate(update: EnterpriseMcpPreferenceUpdateRequest): void;
+}) {
+  const authorizedTools = props.upstream.tools.filter(tool => tool.authorized).length;
+  const visibleTools = props.upstream.tools.slice(0, 4);
+  const remainingTools = props.upstream.tools.length - visibleTools.length;
+  const localStatus = props.upstream.enabled
+    ? 'enabled'
+    : props.upstream.installed
+      ? 'installed'
+      : 'available';
+  return (
+    <article
+      className="connection-card"
+      data-testid="enterprise-mcp-card"
+      data-upstream-id={props.upstream.upstreamId}
+    >
+      <div className="connection-card__head">
+        <span className="connection-card__icon">
+          <Cable size={20} aria-hidden="true" />
+        </span>
+        <div>
+          <h2>{props.upstream.name}</h2>
+          <span>{props.upstream.domain || props.upstream.namespace}</span>
+        </div>
+        <em data-status={localStatus}>{connectionStatusLabel(localStatus)}</em>
+      </div>
+
+      <div className="connection-card__meta">
+        <span>{props.upstream.namespace}</span>
+        <span data-upstream-status={props.upstream.status}>
+          {props.upstream.status === 'active' ? '服务正常' : '服务停用'}
+        </span>
+      </div>
+
+      <div className="connection-card__capabilities">
+        {visibleTools.map(tool => (
+          <span key={tool.toolId} title={tool.description || tool.name}>
+            {tool.title || tool.name}
+          </span>
+        ))}
+        {remainingTools > 0 ? <span>+{remainingTools}</span> : null}
+        {props.upstream.tools.length === 0 ? <span>暂无工具</span> : null}
+      </div>
+
+      <p className="connection-card__authorization">
+        企业授权：{authorizedTools}/{props.upstream.tools.length} 项工具
+      </p>
+
+      <footer>
+        {props.upstream.installed ? (
+          <>
+            <button
+              className="connection-remove"
+              type="button"
+              aria-label={`卸载 ${props.upstream.name}`}
+              title="卸载"
+              disabled={props.blocked}
+              onClick={() => props.onUpdate({
+                installed: false,
+                enabled: false
+              })}
+            >
+              {props.busy ? (
+                <LoaderCircle className="connections-spinner" size={15} aria-hidden="true" />
+              ) : (
+                <Trash2 size={15} aria-hidden="true" />
+              )}
+            </button>
+            <span className="connection-toggle-label">
+              {props.upstream.enabled ? '已开启' : '已关闭'}
+            </span>
+            <button
+              className="connection-switch"
+              type="button"
+              role="switch"
+              aria-label={`${props.upstream.name} MCP`}
+              aria-checked={props.upstream.enabled}
+              disabled={props.blocked}
+              onClick={() => props.onUpdate({
+                enabled: !props.upstream.enabled
+              })}
+            />
+          </>
+        ) : (
+          <button
+            className="connection-install"
+            type="button"
+            disabled={props.blocked}
+            onClick={() => props.onUpdate({
+              installed: true,
+              enabled: false
+            })}
+          >
+            {props.busy ? (
+              <LoaderCircle className="connections-spinner" size={15} aria-hidden="true" />
+            ) : (
+              <Download size={15} aria-hidden="true" />
+            )}
+            安装
+          </button>
+        )}
+      </footer>
+    </article>
+  );
+}
+
+function ConnectionsGate(props: {
+  icon: ReactNode;
+  title: string;
+  detail: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <main className="connections-page connections-gate">
+      <div className="connections-gate__icon">{props.icon}</div>
+      <h1>{props.title}</h1>
+      <p>{props.detail}</p>
+      {props.actionLabel !== undefined && props.onAction !== undefined ? (
+        <button type="button" onClick={props.onAction}>
+          {props.actionLabel}
+        </button>
+      ) : null}
+    </main>
+  );
+}
+
+function matchesFilter(
+  item: EnterpriseMcpUpstreamResponse,
+  filter: ConnectionFilter
+): boolean {
+  if (filter === 'enabled') return item.enabled;
+  if (filter === 'installed') return item.installed;
+  if (filter === 'available') return !item.installed;
+  return true;
+}
+
+function connectionStatusLabel(
+  status: Exclude<ConnectionFilter, 'all'>
+): string {
+  if (status === 'enabled') return '已开启';
+  if (status === 'installed') return '已安装';
+  return '可安装';
+}
+
+function isUnauthorized(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { status?: unknown; code?: unknown };
+  return candidate.status === 401
+    || candidate.code === 'ENTERPRISE_UNAUTHORIZED'
+    || candidate.code === 'ENTERPRISE_SESSION_EXPIRED';
+}
+
+function formatConnectionError(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (code === 'ENTERPRISE_MCP_TOKEN_NOT_FOUND') {
+      return '当前 Agent 尚未签发可用的 MCP Token';
+    }
+    if (code === 'ENTERPRISE_AGENT_FORBIDDEN') {
+      return '当前设备的企业 Agent 已停用，请联系管理员';
+    }
+    if (code === 'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE') {
+      return '系统安全凭据存储不可用，无法保存 MCP Token';
+    }
+    if (code === 'ENTERPRISE_SERVICE_UNAVAILABLE') {
+      return '企业连接服务暂时不可用';
+    }
+    if (code === 'ENTERPRISE_PROTOCOL_ERROR') {
+      return '企业连接服务返回了无法识别的数据';
+    }
+  }
+  return error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : '系统连接操作失败';
 }

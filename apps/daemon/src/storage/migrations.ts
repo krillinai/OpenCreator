@@ -141,6 +141,17 @@ export function migrate(db: Database.Database): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS enterprise_mcp_preferences (
+      enterprise_origin TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      upstream_id TEXT NOT NULL,
+      installed INTEGER NOT NULL DEFAULT 0 CHECK(installed IN (0, 1)),
+      enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0, 1)),
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (enterprise_origin, agent_id, upstream_id),
+      CHECK(enabled = 0 OR installed = 1)
+    );
+
     CREATE TABLE IF NOT EXISTS codex_mcp_operations (
       id TEXT PRIMARY KEY,
       operation TEXT NOT NULL,

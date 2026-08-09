@@ -21,6 +21,18 @@ export type AgentToolRunInjection = {
   mcpServers: CodexMcpServerConfig[];
   env: Record<string, string>;
   builtInTools?: BuiltInToolPolicy;
+  configurationFingerprint?: string;
+};
+
+export type RunMcpInjector = {
+  prepare(input: {
+    runId: string;
+    thread: RuntimeThread;
+    createdBy: 'api' | 'schedule';
+  }):
+    | AgentToolRunInjection
+    | undefined
+    | Promise<AgentToolRunInjection | undefined>;
 };
 
 export type AgentScheduleRunInjector = {
