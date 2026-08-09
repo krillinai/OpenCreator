@@ -1,5 +1,8 @@
 import type {
   EnterpriseLoginRequest,
+  EnterpriseQrLoginStartRequest,
+  EnterpriseQrLoginStartResponse,
+  EnterpriseQrLoginStatusResponse,
   EnterpriseRegisterRequest,
   EnterpriseSessionReason,
   EnterpriseSessionResponse,
@@ -35,6 +38,12 @@ export type EnterpriseSessionManager = {
   refresh(): Promise<EnterpriseSessionResponse>;
   login(input: EnterpriseLoginRequest): Promise<EnterpriseSessionResponse>;
   register(input: EnterpriseRegisterRequest): Promise<EnterpriseSessionResponse>;
+  startQrLogin?(
+    input: EnterpriseQrLoginStartRequest
+  ): Promise<EnterpriseQrLoginStartResponse>;
+  pollQrLogin?(
+    requestId: string
+  ): Promise<EnterpriseQrLoginStatusResponse>;
   logout(): Promise<EnterpriseSessionResponse>;
   requireAccessToken(): Promise<string>;
   invalidateUnauthorized(reason?: 'session_expired'): Promise<void>;
@@ -388,6 +397,14 @@ export function createEnterpriseSessionManager(input: {
         500
       );
     }
+    return authenticateLoginResult(operationGeneration, login, agentId);
+  }
+
+  async function authenticateLoginResult(
+    operationGeneration: number,
+    login: EnterpriseLoginResult,
+    agentId: string
+  ): Promise<EnterpriseSessionResponse> {
     if (login.agentId !== agentId) {
       await revokeQuietly(login.accessToken);
       publish(operationGeneration, signedOutSnapshot());
@@ -505,6 +522,75 @@ export function createEnterpriseSessionManager(input: {
           { email }
         );
       }
+    },
+
+    async startQrLogin(request) {
+      const startQrLogin = input.httpClient.startQrLogin;
+      if (startQrLogin === undefined) {
+        throw new EnterpriseSessionError(
+          'ENTERPRISE_SERVICE_UNAVAILABLE',
+          503
+        );
+      }
+      const operationGeneration = generation;
+      const agentId = await readAgentId(operationGeneration);
+      try {
+        return await startQrLogin(request, agentId);
+      } catch (error) {
+        if (error instanceof EnterpriseHttpError) {
+          throw sessionErrorFromHttp(error);
+        }
+        throw new EnterpriseSessionError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          500
+        );
+      }
+    },
+
+    async pollQrLogin(requestId) {
+      const pollQrLogin = input.httpClient.pollQrLogin;
+      if (pollQrLogin === undefined) {
+        throw new EnterpriseSessionError(
+          'ENTERPRISE_SERVICE_UNAVAILABLE',
+          503
+        );
+      }
+      const operationGeneration = generation;
+      const agentId = await readAgentId(operationGeneration);
+      let result;
+      try {
+        result = await pollQrLogin(requestId, agentId);
+      } catch (error) {
+        if (error instanceof EnterpriseHttpError) {
+          throw sessionErrorFromHttp(error);
+        }
+        throw new EnterpriseSessionError(
+          'ENTERPRISE_PROTOCOL_ERROR',
+          500
+        );
+      }
+      if (result.status !== 'signed_in') {
+        return {
+          requestId: result.requestId,
+          provider: result.provider,
+          status: result.status,
+          ...(result.pollAfterMs === undefined
+            ? {}
+            : { pollAfterMs: result.pollAfterMs })
+        };
+      }
+      const authenticationGeneration = beginOperation();
+      const session = await authenticateLoginResult(
+        authenticationGeneration,
+        result.login,
+        agentId
+      );
+      return {
+        requestId: result.requestId,
+        provider: result.provider,
+        status: 'signed_in',
+        session
+      };
     },
 
     async logout() {

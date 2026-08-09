@@ -4,8 +4,56 @@ import {
   type CodexConversationSearchPage,
   type CodexAppServerRequestClient
 } from '../../src/codex/sessions/app-server-provider.js';
+import { CodexAppServerResponseError } from '../../src/codex/app-server-client.js';
 
 describe('Codex app-server session provider', () => {
+  it('resumes a persisted thread before retrying history after an app-server restart', async () => {
+    const request = vi.fn()
+      .mockRejectedValueOnce(new CodexAppServerResponseError(
+        'thread not loaded: codex-thread-persisted',
+        -32600
+      ))
+      .mockResolvedValueOnce({
+        thread: codexThread({
+          id: 'codex-thread-persisted',
+          turns: []
+        })
+      })
+      .mockResolvedValueOnce({
+        data: [],
+        nextCursor: null,
+        backwardsCursor: null
+      });
+    const provider = createCodexSessionProvider({
+      client: fakeClient(request)
+    });
+
+    await expect(provider.listTurns({
+      codexThreadId: 'codex-thread-persisted',
+      limit: 50
+    })).resolves.toEqual({ items: [], hasMore: false });
+
+    expect(request.mock.calls).toEqual([
+      ['thread/turns/list', {
+        threadId: 'codex-thread-persisted',
+        cursor: null,
+        limit: 50,
+        sortDirection: 'desc',
+        itemsView: 'summary'
+      }],
+      ['thread/resume', {
+        threadId: 'codex-thread-persisted'
+      }],
+      ['thread/turns/list', {
+        threadId: 'codex-thread-persisted',
+        cursor: null,
+        limit: 50,
+        sortDirection: 'desc',
+        itemsView: 'summary'
+      }]
+    ]);
+  });
+
   it('maps summary turns in chronological order and reuses a short-lived page cache', async () => {
     const request = vi.fn(async () => ({
       data: [

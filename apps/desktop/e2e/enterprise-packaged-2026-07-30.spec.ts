@@ -100,11 +100,12 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
     expect(app.page.url()).toContain('clawee-app://app/');
 
     await expect(app.page.getByRole('heading', {
-      name: '登录企业账户'
+      name: '欢迎使用 Clawee'
     })).toBeVisible();
     await app.page.getByLabel('邮箱').fill(enterpriseEmail);
     await app.page.getByLabel('密码').fill(enterprisePassword);
-    await app.page.locator('.enterprise-account-primary-action').click();
+    await app.page.getByRole('checkbox').check();
+    await app.page.locator('.enterprise-email-submit').click();
 
     await expect(app.page.getByRole('button', {
       name: `Packaged E2E ${enterpriseEmail}`

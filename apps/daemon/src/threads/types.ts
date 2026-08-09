@@ -27,6 +27,7 @@ export type RuntimeThread = {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;
+  pinnedAt?: string | null;
 };
 
 export type CreateConversationThreadInput = Extract<
@@ -61,15 +62,21 @@ export type CreateRuntimeThreadInput = {
 
 export type CreateKnowledgeThreadInput = {
   enterpriseSubjectId: string;
-  workspaceRoot?: string;
+  projectId: string;
   title?: string;
-  profile?: string;
-  model?: string;
-  reasoning?: ReasoningEffort;
 };
 
+export function isEnterpriseKnowledgeThread(
+  thread: RuntimeThread | undefined
+): boolean {
+  return thread?.enterpriseSubjectId !== null
+    && thread?.enterpriseSubjectId !== undefined;
+}
+
 export type UpdateRuntimeThreadInput = {
-  sandbox: SandboxMode;
+  title?: string;
+  sandbox?: SandboxMode;
+  pinned?: boolean;
 };
 
 export type UpdateScheduleThreadInput = {
@@ -129,6 +136,7 @@ export type ThreadManager = {
   updateScheduleThread(id: string, input: UpdateScheduleThreadInput): RuntimeThread;
   setPurpose(id: string, purpose: ThreadPurpose): RuntimeThread;
   archiveThread(id: string): RuntimeThread;
+  deleteThread(id: string): void;
   archiveScheduleThread(id: string): RuntimeThread;
   archiveCodexThread(codexThreadId: string): RuntimeThread | undefined;
   repairCodexThreadBindings(): {

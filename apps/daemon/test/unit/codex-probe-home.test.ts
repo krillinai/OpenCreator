@@ -10,7 +10,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'toml';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createCodexProbeHome } from '../../src/codex/probe-home.js';
+import {
+  createCodexIsolatedHome,
+  createCodexProbeHome
+} from '../../src/codex/probe-home.js';
 
 let tempDir = '';
 
@@ -20,6 +23,25 @@ afterEach(() => {
 });
 
 describe('Codex Probe 临时 Home', () => {
+  it('为知识会话保留隔离 Home 中的 Codex rollout', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-isolated-home-test-'));
+    const sourceHome = join(tempDir, 'source');
+    const isolatedPath = join(tempDir, 'knowledge', 'codex-home');
+    mkdirSync(sourceHome, { recursive: true });
+    writeFileSync(join(sourceHome, 'auth.json'), '{"token":"secret"}\n');
+
+    const first = createCodexIsolatedHome(sourceHome, isolatedPath);
+    mkdirSync(join(first.path, 'sessions'), { recursive: true });
+    writeFileSync(join(first.path, 'sessions', 'rollout.jsonl'), 'turn\n');
+    first.cleanup();
+    const second = createCodexIsolatedHome(sourceHome, isolatedPath);
+
+    expect(second.path).toBe(isolatedPath);
+    expect(readFileSync(join(second.path, 'sessions', 'rollout.jsonl'), 'utf8')).toBe('turn\n');
+    second.cleanup();
+    expect(existsSync(isolatedPath)).toBe(true);
+  });
+
   it('只保留模型调用所需配置，不复制 Skills、Plugins 或 MCP 凭据', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-probe-home-test-'));
     const sourceHome = join(tempDir, 'source');

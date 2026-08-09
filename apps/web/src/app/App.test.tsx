@@ -31,6 +31,7 @@ import {
   type AppProps
 } from './App.js';
 import {
+  buildComposerSlashCommands,
   formatRelativeTime,
   pollEnterpriseSessionUntilSettled
 } from './AppController.js';
@@ -55,6 +56,30 @@ function App(props: AppProps = {}) {
 }
 
 describe('App', () => {
+  it('maps valid skills and configured MCP servers into Composer commands', () => {
+    expect(buildComposerSlashCommands(createSkillListResponse([
+      createSkillResponse({ id: 'brainstorming', name: 'Brainstorming' })
+    ]), {
+      codexHome: '/tmp/codex',
+      codexHomeMode: 'global',
+      requiresWriteConfirmation: false,
+      servers: [{
+        name: 'github',
+        transport: 'stdio',
+        status: 'configured',
+        envKeys: [],
+        hasSecrets: false,
+        codexHome: '/tmp/codex',
+        codexHomeMode: 'global',
+        diagnostics: []
+      }],
+      diagnostics: []
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ category: 'skill', insertText: '$brainstorming ' }),
+      expect.objectContaining({ category: 'mcp', insertText: '使用 MCP：github ' })
+    ]));
+  });
+
   it('treats timezone-less Runtime timestamps as UTC before formatting relative time', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(
       Date.parse('2026-07-21T07:00:30.000Z')
@@ -206,6 +231,54 @@ describe('App', () => {
     window.history.replaceState(null, '', '#/knowledge');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
     expect(await screen.findByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
+  });
+
+  it('creates a standard conversation in the Runtime default project from knowledge', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/knowledge';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = createKnowledgeRuntimeFetch((url, init) => {
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/enterprise/knowledge-bases')) {
+        return jsonResponse(createKnowledgeBaseListResponse());
+      }
+      if (url.endsWith('/enterprise/knowledge-conversations') && init?.method === 'POST') {
+        const body = readRequestBody(init);
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_knowledge_default',
+            title: '企业知识库对话',
+            projectId: String(body.projectId)
+          })
+        }, { status: 201 });
+      }
+      return undefined;
+    });
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: '对话知识库' }));
+
+    await waitFor(() => expect(window.location.hash).toBe('#/thread/thread_knowledge_default'));
+    const createThreadBody = readRequestBody(
+      fetchCalls.find(call => call.url.endsWith('/enterprise/knowledge-conversations'))!.init!
+    );
+    expect(createThreadBody).toEqual({ projectId: readTestRuntimeProjects()[0]!.id });
+    expect(document.querySelector('.conversation-page'))
+      .toHaveClass('is-empty', 'has-header');
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
   });
 
   it('loads authorized knowledge documents and refreshes both lists after upload', async () => {
@@ -2593,69 +2666,93 @@ describe('App', () => {
     });
   });
 
-  it('requires enterprise login before showing the workspace', async () => {
-    window.location.hash = '#/plugins?source=enterprise';
-    const hostBridge = createHostBridge();
-    hostBridge.readConnectionConfig = async () => ({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
-    });
-    let session = createEnterpriseSessionResponse({ status: 'signed_out', account: undefined });
-    let skillRequests = 0;
-    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-      if (projectApiResponse !== undefined) return projectApiResponse;
-      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
-      if (url.endsWith('/enterprise/session')) return jsonResponse(session);
-      if (url.endsWith('/enterprise/skills')) {
-        skillRequests += 1;
-        return jsonResponse(createEnterpriseSkillListResponse([
-          createEnterpriseSkillResponse()
-        ]));
-      }
-      throw new Error(`Unexpected request ${url}`);
-    };
+  it.each(['browser', 'desktop'] as const)(
+    '%s host requires enterprise login before showing the workspace',
+    async (hostKind) => {
+      window.location.hash = '#/plugins?source=enterprise';
+      const hostBridge: HostBridge = { ...createHostBridge(), kind: hostKind };
+      hostBridge.readConnectionConfig = async () => ({
+        baseUrl: 'http://127.0.0.1:60764',
+        token: 'runtime-token'
+      });
+      let session = createEnterpriseSessionResponse({ status: 'signed_out', account: undefined });
+      let skillRequests = 0;
+      const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+        if (projectApiResponse !== undefined) return projectApiResponse;
+        if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+        if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+        if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+        if (url.endsWith('/enterprise/session')) return jsonResponse(session);
+        if (url.endsWith('/enterprise/skills')) {
+          skillRequests += 1;
+          return jsonResponse(createEnterpriseSkillListResponse([
+            createEnterpriseSkillResponse()
+          ]));
+        }
+        throw new Error(`Unexpected request ${url}`);
+      };
 
-    const signedOutRender = render(
-      <App
-        requireEnterpriseLogin
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
+      const signedOutRender = render(
+        <ProductionApp
+          fileService={createFileService()}
+          hostBridge={hostBridge}
+          runtimeFetch={runtimeFetch}
+          subscribeRunEvents={async () => undefined}
+        />
+      );
 
-    expect(await screen.findByRole('heading', {
-      name: '登录企业账户'
-    })).toBeInTheDocument();
-    expect(screen.getByText('登录后 Clawee 将自动安装并连接企业采集器。'))
-      .toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: '企业Skills' })).not.toBeInTheDocument();
-    expect(window.location.hash).toBe('#/plugins?source=enterprise');
-    expect(skillRequests).toBe(0);
+      expect(await screen.findByRole('heading', {
+        name: '欢迎使用 Clawee'
+      })).toBeInTheDocument();
+      expect(screen.getByText('登录后即可进入企业智能工作台'))
+        .toBeInTheDocument();
+      expect(screen.queryByRole('tab', { name: '企业Skills' })).not.toBeInTheDocument();
+      expect(window.location.hash).toBe('#/plugins?source=enterprise');
+      expect(skillRequests).toBe(0);
 
-    signedOutRender.unmount();
-    session = createEnterpriseSessionResponse();
+      signedOutRender.unmount();
+      session = createEnterpriseSessionResponse();
 
-    render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
+      render(
+        <ProductionApp
+          fileService={createFileService()}
+          hostBridge={hostBridge}
+          runtimeFetch={runtimeFetch}
+          subscribeRunEvents={async () => undefined}
+        />
+      );
 
-    await waitFor(() => {
-      expect(screen.getByTestId('enterprise-skill-enterprise-skill')).toBeInTheDocument();
-    });
-    expect(screen.getByRole('region', { name: '企业Skills' })).toBeInTheDocument();
-    expect(skillRequests).toBe(1);
-  });
+      await waitFor(() => {
+        expect(screen.getByTestId('enterprise-skill-enterprise-skill')).toBeInTheDocument();
+      });
+      expect(screen.getByRole('region', { name: '企业Skills' })).toBeInTheDocument();
+      expect(skillRequests).toBe(1);
+    }
+  );
+
+  it.each(['browser', 'desktop'] as const)(
+    '%s host keeps the workspace hidden while the runtime is unavailable',
+    async (hostKind) => {
+      const hostBridge: HostBridge = { ...createHostBridge(), kind: hostKind };
+
+      render(
+        <ProductionApp
+          fileService={createFileService()}
+          hostBridge={hostBridge}
+          subscribeRunEvents={async () => undefined}
+        />
+      );
+
+      expect(await screen.findByRole('heading', {
+        name: '欢迎使用 Clawee'
+      })).toBeInTheDocument();
+      expect(screen.getByText('连接恢复后即可继续登录。'))
+        .toBeInTheDocument();
+      expect(document.querySelector('.clawee-shell')).toBeNull();
+    }
+  );
 
   it.each([
     {
@@ -4474,6 +4571,8 @@ describe('App', () => {
         name: `${hostKind} 归档会话`
       });
       await user.click(within(conversation).getByRole('button', { name: '归档' }));
+      const archiveDialog = screen.getByRole('alertdialog', { name: '归档对话' });
+      await user.click(within(archiveDialog).getByRole('button', { name: '归档' }));
 
       await waitFor(() => {
         expect(screen.queryByRole('button', {
@@ -6754,6 +6853,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
+    await user.click(screen.getByRole('button', { name: '开启' }));
 
     await waitFor(() => {
       expect(findPatchCall(fetchCalls, '/threads/thread_files')).toBeDefined();
@@ -7591,8 +7691,8 @@ describe('App', () => {
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&excludePurpose=schedule_task&limit=50')) {
-        return jsonResponse({ threads: [ordinaryThread, scheduleDraftThread] });
+      if (url.endsWith('/threads?status=active&purpose=conversation&limit=50')) {
+        return jsonResponse({ threads: [ordinaryThread] });
       }
       if (url.endsWith('/threads?status=active&purpose=schedule_task&limit=100')) {
         return jsonResponse({ threads: [scheduleTaskThread] });
@@ -7624,7 +7724,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: '常规' })).toBeInTheDocument();
     await waitFor(() => {
-      expect(fetchCalls.some(call => call.url.includes('excludePurpose=schedule_task'))).toBe(true);
+      expect(fetchCalls.some(call => call.url.includes('purpose=conversation'))).toBe(true);
     });
 
     await user.selectOptions(
@@ -7764,6 +7864,7 @@ describe('App', () => {
       name: '选择访问权限 请求批准'
     }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
+    await user.click(screen.getByRole('button', { name: '开启' }));
 
     expect(await screen.findByText('任务运行期间不能修改访问权限，请等待当前任务结束'))
       .toBeInTheDocument();

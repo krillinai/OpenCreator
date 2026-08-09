@@ -123,6 +123,9 @@ export class FakeEnterpriseDaemon {
     if (path === '/threads?status=active&purpose=schedule_task&limit=100') {
       return fulfill(route, { threads: [] });
     }
+    if (path === '/threads?status=active&purpose=conversation&limit=50') {
+      return fulfill(route, { threads: [] });
+    }
     if (path.startsWith('/tasks?')) return fulfill(route, { tasks: [], hasMore: false });
     if (path === '/schedules') return fulfill(route, { schedules: [] });
     if (path === '/enterprise/session') return fulfill(route, sessionResponse(this.state.session));
@@ -132,6 +135,31 @@ export class FakeEnterpriseDaemon {
     if (path === '/enterprise/login' && request.method() === 'POST') {
       this.state.session = 'signed_in';
       return fulfill(route, sessionResponse('signed_in'));
+    }
+    if (path === '/enterprise/qr-login' && request.method() === 'POST') {
+      const provider = readObjectBody(request.postData()).provider;
+      if (!['feishu', 'dingtalk', 'wecom'].includes(String(provider))) {
+        return fulfill(route, {
+          error: { code: 'VALIDATION_FAILED', message: 'Invalid provider' }
+        }, 400);
+      }
+      return fulfill(route, {
+        requestId: `qr-${String(provider)}`,
+        provider,
+        qrCodeUrl: onePixelQrCode,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        pollAfterMs: 1000
+      });
+    }
+    if (path.startsWith('/enterprise/qr-login/') && request.method() === 'GET') {
+      const provider = path.slice('/enterprise/qr-login/qr-'.length);
+      this.state.session = 'signed_in';
+      return fulfill(route, {
+        requestId: `qr-${provider}`,
+        provider,
+        status: 'signed_in',
+        session: sessionResponse('signed_in')
+      });
     }
     if (path === '/enterprise/logout' && request.method() === 'POST') {
       this.state.session = 'signed_out';
@@ -349,6 +377,7 @@ function sessionResponse(status: 'signed_out' | 'signed_in') {
     ? {
         status,
         account: {
+          subjectId: 'acct-enterprise-member',
           email: 'member@example.com',
           name: 'Enterprise Member'
         },
@@ -363,6 +392,9 @@ function sessionResponse(status: 'signed_out' | 'signed_in') {
         transportSecurity: 'secure_https'
       };
 }
+
+const onePixelQrCode =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
 function enterpriseSkill(installed: boolean) {
   return {

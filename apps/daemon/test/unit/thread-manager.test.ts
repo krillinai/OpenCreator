@@ -114,25 +114,38 @@ describe('thread manager', () => {
     expect(thread.cwd).toContain(join('workspaces', thread.id));
   });
 
-  it('creates account-owned managed knowledge threads and isolates account queries', () => {
+  it('creates account-owned knowledge conversations inside a project', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-thread-'));
     const database = openTestDatabase(tempDir);
-    const manager = createThreadManager({ db: database, dataDir: tempDir });
+    const projects = createProjectManager({ db: database, homeDir: tempDir });
+    const project = projects.createProject({
+      name: 'Default project',
+      cwd: tempDir,
+      profile: 'project-profile',
+      sandbox: 'workspace-write'
+    });
+    const manager = createThreadManager({
+      db: database,
+      dataDir: tempDir,
+      projectManager: projects
+    });
 
     const thread = manager.createKnowledgeThread({
       enterpriseSubjectId: 'acct_a',
-      title: 'Knowledge conversation',
-      profile: 'default'
+      projectId: project.id,
+      title: 'Knowledge conversation'
     });
 
     expect(thread).toMatchObject({
-      projectId: null,
+      projectId: project.id,
       enterpriseSubjectId: 'acct_a',
-      purpose: 'knowledge_conversation',
-      workspaceMode: 'managed',
+      purpose: 'conversation',
+      workspaceMode: 'external',
+      cwd: project.cwd,
+      canonicalCwd: project.canonicalCwd,
+      profile: 'project-profile',
       sandbox: 'read-only'
     });
-    expect(thread.cwd).toContain(join('workspaces', thread.id));
     expect(manager.listKnowledgeThreads('acct_b')).toEqual([]);
     expect(manager.listKnowledgeThreads('acct_a')).toEqual([thread]);
   });

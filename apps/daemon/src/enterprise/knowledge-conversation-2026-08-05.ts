@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto';
-import { resolve } from 'node:path';
 import type { RuntimeThread, ThreadManager } from '../threads/types.js';
+import { isEnterpriseKnowledgeThread } from '../threads/types.js';
 import type { EnterpriseIdentityProvider } from './session-manager-2026-07-30.js';
 import type {
   EnterpriseHttpClient,
@@ -9,7 +8,7 @@ import type {
 import { EnterpriseHttpError } from './http-client-2026-07-30.js';
 
 export type KnowledgeConversationManager = {
-  create(): Promise<RuntimeThread>;
+  create(projectId: string): Promise<RuntimeThread>;
   latest(): Promise<RuntimeThread | undefined>;
   requireOwnedThread(threadId: string): Promise<RuntimeThread>;
   prepareSearch(threadId: string): Promise<void>;
@@ -33,16 +32,12 @@ export function createKnowledgeConversationManager(input: {
   httpClient: Pick<EnterpriseHttpClient, 'hasKnowledgeSearchGrant' | 'searchKnowledge'>;
 }): KnowledgeConversationManager {
   return {
-    async create() {
+    async create(projectId) {
       const identity = await input.sessionManager.requireIdentity();
       return input.threadManager.createKnowledgeThread({
         enterpriseSubjectId: identity.subjectId,
-        workspaceRoot: resolve(
-          input.dataDir,
-          'enterprise-knowledge',
-          'workspaces',
-          hashSubject(identity.subjectId)
-        )
+        projectId,
+        title: '知识库对话'
       });
     },
 
@@ -59,7 +54,7 @@ export function createKnowledgeConversationManager(input: {
       const thread = input.threadManager.getThread(threadId);
       if (
         thread === undefined
-        || thread.purpose !== 'knowledge_conversation'
+        || !isEnterpriseKnowledgeThread(thread)
         || thread.enterpriseSubjectId !== identity.subjectId
       ) {
         throw new KnowledgeConversationError(404, 'THREAD_NOT_FOUND');
@@ -99,7 +94,7 @@ export function createKnowledgeConversationManager(input: {
     const thread = input.threadManager.getThread(threadId);
     if (
       thread === undefined
-      || thread.purpose !== 'knowledge_conversation'
+      || !isEnterpriseKnowledgeThread(thread)
       || thread.enterpriseSubjectId !== identity.subjectId
     ) {
       throw new KnowledgeConversationError(404, 'THREAD_NOT_FOUND');
@@ -117,8 +112,4 @@ export function createKnowledgeConversationManager(input: {
       throw error;
     }
   }
-}
-
-function hashSubject(subjectId: string): string {
-  return createHash('sha256').update(subjectId).digest('hex');
 }

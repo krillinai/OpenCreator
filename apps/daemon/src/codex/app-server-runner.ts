@@ -1,6 +1,6 @@
 import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
 import type { BuiltInToolPolicy, CodexMcpServerConfig } from './argv.js';
-import { createCodexProbeHome } from './probe-home.js';
+import { createCodexIsolatedHome, createCodexProbeHome } from './probe-home.js';
 import {
   buildCodexAppServerArgs,
   createCodexAppServerHost,
@@ -35,7 +35,9 @@ export type StartCodexAppServerInput = {
   forceKillGraceMs?: number;
   mcpServers?: CodexMcpServerConfig[];
   builtInTools?: BuiltInToolPolicy;
+  isolatedHomePath?: string;
   env?: Record<string, string>;
+  beforeSpawn?: () => Promise<void>;
   onNotification?: (notification: Record<string, unknown>) => Promise<void> | void;
   onThreadStarted?: (threadId: string) => Promise<void> | void;
   onTurnStartWritten?: () => void;
@@ -48,8 +50,25 @@ export type StartCodexAppServerInput = {
 export function startCodexAppServer(
   input: StartCodexAppServerInput
 ): CodexAppServerProcess {
+  if (input.beforeSpawn !== undefined) {
+    let process: CodexAppServerProcess | undefined;
+    let cancelRequested = false;
+    return {
+      cancel() {
+        cancelRequested = true;
+        process?.cancel();
+      },
+      result: input.beforeSpawn().then(() => {
+        if (cancelRequested) throw new Error('Codex app server canceled before spawn');
+        process = startCodexAppServer({ ...input, beforeSpawn: undefined });
+        return process.result;
+      })
+    };
+  }
   const isolatedHome = input.builtInTools !== undefined
-    ? createCodexProbeHome(input.codexHome)
+    ? input.isolatedHomePath === undefined
+      ? createCodexProbeHome(input.codexHome)
+      : createCodexIsolatedHome(input.codexHome, input.isolatedHomePath)
     : undefined;
   const host = createCodexAppServerHost({
     codexBin: input.codexBin,

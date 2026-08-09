@@ -6,14 +6,15 @@ import type {
   TerminationReason
 } from '@clawee/protocol';
 import type Database from 'better-sqlite3';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { nanoid } from 'nanoid';
 import type { ApprovalManager } from '../approvals/manager.js';
-import type {
-  AgentToolRunInjection,
-  RunMcpInjector
+import {
+  isAuthorizedKnowledgeToolApproval,
+  type AgentToolRunInjection,
+  type RunMcpInjector
 } from '../agent-tools/run-injection.js';
 import {
   buildCodexExecArgs,
@@ -44,6 +45,7 @@ import {
 } from '../storage/repositories.js';
 import { normalizeDatabaseTimestamp } from '../storage/database.js';
 import type { RuntimeThread } from '../threads/types.js';
+import { isEnterpriseKnowledgeThread } from '../threads/types.js';
 import { expandHome } from '../platform/paths.js';
 import {
   createOrderedLogWriter,
@@ -100,6 +102,10 @@ export type RunManagerOptions = {
   logWriterFactory?(runDir: string): OrderedLogWriter;
   agentToolInjector?: RunMcpInjector;
   persistentAppServerExecutor?: PersistentAppServerExecutor;
+  beforeRunSpawn?(input: {
+    runId: string;
+    thread: RuntimeThread;
+  }): Promise<void>;
 };
 
 export type RuntimeRun = {
@@ -295,7 +301,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         && options.persistentAppServerExecutor !== undefined
         && (runInput.createdBy ?? 'api') === 'api'
         && thread !== undefined
-        && thread.purpose !== 'knowledge_conversation';
+        && !isEnterpriseKnowledgeThread(thread);
       if (usePersistentAppServer) {
         const queuedRun: QueuedRun = {
           id,
@@ -725,7 +731,22 @@ export function createRunManager(options: RunManagerOptions): RunManager {
     if (
       resolvedResumeMode === 'resume_thread'
       && codexThreadId !== undefined
-      && shouldAutomaticallyRotate(runInput)
+      && thread !== undefined
+      && isEnterpriseKnowledgeThread(thread)
+      && !existsSync(join(thread.cwd, '.codex-runtime', 'sessions'))
+    ) {
+      rotation = {
+        reason: 'resume_failed',
+        previousCodexThreadId: codexThreadId,
+        announced: false
+      };
+      resolvedResumeMode = 'new_thread';
+      resolvedCodexThreadId = undefined;
+    }
+    if (
+      resolvedResumeMode === 'resume_thread'
+      && codexThreadId !== undefined
+      && shouldAutomaticallyRotateRun(runInput, thread)
       && codexThreadRotationRunThreshold > 0
       && (
         (countTerminalRunsByCodexThread.get({
@@ -1034,6 +1055,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           timeoutMs: runTimeouts.timeoutMs,
           spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
           inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
+          beforeSpawn: thread === undefined || options.beforeRunSpawn === undefined
+            ? undefined
+            : () => options.beforeRunSpawn!({ runId: id, thread }),
           async onThreadStarted(parsedCodexThreadId) {
             appServerThreadEstablished = true;
             sawCodexThreadId = true;
@@ -1077,6 +1101,12 @@ export function createRunManager(options: RunManagerOptions): RunManager {
             }));
           },
           async onApprovalRequest(request) {
+            if (
+              thread !== undefined
+              && isAuthorizedKnowledgeToolApproval(thread, request)
+            ) {
+              return 'approved';
+            }
             if (options.approvalManager === undefined) return 'rejected';
             const pending = options.approvalManager.request(
               buildApprovalRequest({
@@ -1128,7 +1158,10 @@ export function createRunManager(options: RunManagerOptions): RunManager {
           profile: executionRunInput.profile,
           mcpServers: agentToolInjection?.mcpServers,
           env: agentToolInjection?.env,
-          builtInTools: agentToolInjection?.builtInTools
+          builtInTools: agentToolInjection?.builtInTools,
+          isolatedHomePath: thread !== undefined && isEnterpriseKnowledgeThread(thread)
+            ? join(thread.cwd, '.codex-runtime')
+            : undefined
         });
       }
 
@@ -1242,9 +1275,14 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         if (
           resolvedResumeMode === 'resume_thread'
           && rotation === undefined
-          && shouldAutomaticallyRotate(runInput)
-          && !appServerThreadEstablished
-          && !appServerTurnStarted
+          && shouldAutomaticallyRotateRun(runInput, thread)
+          && (
+            (!appServerThreadEstablished && !appServerTurnStarted)
+            || (
+              isEnterpriseKnowledgeThread(thread)
+              && errorMessage.toLowerCase().includes('no rollout found')
+            )
+          )
           && isAppServerResumeFailure(errorMessage)
         ) {
           return rotateAppServerAfterResumeFailure();
@@ -1381,6 +1419,9 @@ export function createRunManager(options: RunManagerOptions): RunManager {
         timeoutMs: runTimeouts.timeoutMs,
         spawnTimeoutMs: runTimeouts.spawnTimeoutMs,
         inactivityTimeoutMs: runTimeouts.inactivityTimeoutMs,
+        beforeSpawn: thread === undefined || options.beforeRunSpawn === undefined
+          ? undefined
+          : () => options.beforeRunSpawn!({ runId: id, thread }),
         onStdoutLine: onExecStdoutLine,
         onStderrChunk: onExecStderrChunk
       });
@@ -1436,7 +1477,7 @@ export function createRunManager(options: RunManagerOptions): RunManager {
       if (
         resumeFailureCode !== undefined
         && rotation === undefined
-        && shouldAutomaticallyRotate(runInput)
+        && shouldAutomaticallyRotateRun(runInput, thread)
       ) {
         return rotateExecAfterResumeFailure();
       }
@@ -2501,10 +2542,18 @@ function errorCodeForTermination(reason: TerminationReason): string {
   return 'CODEX_STREAM_ERROR';
 }
 
-function shouldAutomaticallyRotate(input: CreateRunInput): boolean {
-  return input.threadId !== undefined
-    && input.createdBy === 'schedule'
-    && (input.resumeMode === undefined || input.resumeMode === 'auto');
+export function shouldAutomaticallyRotateRun(
+  input: CreateRunInput,
+  thread: RuntimeThread | undefined
+): boolean {
+  if (
+    input.threadId === undefined
+    || (input.resumeMode !== undefined && input.resumeMode !== 'auto')
+  ) {
+    return false;
+  }
+  return input.createdBy === 'schedule'
+    || isEnterpriseKnowledgeThread(thread);
 }
 
 function normalizeRotationRunThreshold(value: number | undefined): number {

@@ -1,5 +1,6 @@
 import type { BuiltInToolPolicy, CodexMcpServerConfig } from '../codex/argv.js';
 import type { RuntimeThread } from '../threads/types.js';
+import { isEnterpriseKnowledgeThread } from '../threads/types.js';
 import {
   type AgentCapabilityScope,
   type AgentCapabilityTokenStore
@@ -84,7 +85,7 @@ export function createAgentScheduleRunInjector(input: {
     prepare(run) {
       const baseUrl = input.getBaseUrl();
 
-      if (run.thread.purpose === 'knowledge_conversation') {
+      if (isEnterpriseKnowledgeThread(run.thread)) {
         if (
           input.knowledgeToolIsolationSupported !== true
           || baseUrl === undefined
@@ -252,4 +253,20 @@ export function allowedTools(
   return TOOL_SCOPES.filter(tool =>
     AGENT_SCHEDULE_TOOL_NAMES.includes(tool.name)
   );
+}
+
+export function isAuthorizedKnowledgeToolApproval(
+  thread: RuntimeThread,
+  request: { method: string; params: unknown }
+): boolean {
+  if (
+    !isEnterpriseKnowledgeThread(thread)
+    || request.method !== 'mcpServer/elicitation/request'
+    || typeof request.params !== 'object'
+    || request.params === null
+  ) {
+    return false;
+  }
+  return (request.params as Record<string, unknown>).serverName
+    === AGENT_KNOWLEDGE_MCP_SERVER_NAME;
 }

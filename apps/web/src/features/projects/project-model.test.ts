@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   findProjectById,
   groupThreadsByPurpose,
-  parseLegacyLocalStorageProjects
+  parseLegacyLocalStorageProjects,
+  sortProjectConversations
 } from './project-model.js';
 
 describe('project model', () => {
@@ -48,6 +49,17 @@ describe('project model', () => {
       scheduleDraftThreads: [draft],
       scheduleTaskThreads: [task]
     });
+  });
+
+  it('sorts pinned conversations first and each group by newest update', () => {
+    const rows = [
+      { id: 'normal', projectId: 'one', title: 'Normal', updatedLabel: '1天', updatedAt: '2026-08-06T10:00:00Z' },
+      { id: 'pinned-old', projectId: 'one', title: 'Old', updatedLabel: '2天', updatedAt: '2026-08-04T10:00:00Z', pinnedAt: '2026-08-05T00:00:00Z' },
+      { id: 'pinned-new', projectId: 'one', title: 'New', updatedLabel: '1天', updatedAt: '2026-08-05T10:00:00Z', pinnedAt: '2026-08-06T00:00:00Z' }
+    ];
+
+    expect(sortProjectConversations(rows).map(row => row.id))
+      .toEqual(['pinned-new', 'pinned-old', 'normal']);
   });
 });
 

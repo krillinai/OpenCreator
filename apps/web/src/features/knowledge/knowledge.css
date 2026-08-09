@@ -94,12 +94,14 @@
 }
 
 .knowledge-conversation__main {
+  position: relative;
+  z-index: 2;
   min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-rows: 58px minmax(0, 1fr);
   background: var(--bg);
-  overflow: clip;
+  overflow: visible;
 }
 
 .knowledge-conversation__pane-header {
@@ -147,6 +149,7 @@
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   background: var(--bg);
+  overflow: visible;
 }
 
 .knowledge-conversation__context {

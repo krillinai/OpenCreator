@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
+  Hammer,
+  Link2,
   ListPlus,
   Paperclip,
   Plus,
@@ -152,6 +154,8 @@ export function Composer(props: {
   onSteerQueuedRun?(runId: string): void;
   onUploadAttachment?(file: File): Promise<AttachmentResponse>;
   onDeleteAttachment?(attachment: AttachmentResponse): Promise<void>;
+  onManageSkills?(): void;
+  onManageConnectors?(): void;
   onSubmit(
     prompt: string,
     config: ComposerRunConfig,
@@ -173,6 +177,8 @@ export function Composer(props: {
   const [openMenu, setOpenMenu] = useState<
     'project' | 'add' | 'permission' | 'model' | null
   >(null);
+  const [addSubmenu, setAddSubmenu] = useState<'skill' | 'mcp' | null>(null);
+  const [addCommandQuery, setAddCommandQuery] = useState('');
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
   const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -193,6 +199,7 @@ export function Composer(props: {
   const trimmedPrompt = prompt.trim();
   const activeFloatingMenu = openMenu ?? (slashTrigger === null ? null : 'slash');
   const availableModels = props.models ?? [];
+  const slashCommands = props.slashCommands ?? [];
   const resolvedSelectedModel = resolveSelectedModel(availableModels, selectedModel);
   const selectedModelLabel = modelSelectionLabel(
     resolvedSelectedModel,
@@ -210,6 +217,15 @@ export function Composer(props: {
     attachmentDrafts.length === 0 || selectedModelSupportsImages !== false;
   const selectedReasoningOptions =
     resolvedSelectedModel?.supportedReasoningEfforts ?? [];
+  const addCommands = slashCommands.filter(command => (
+    command.category === addSubmenu
+    && (
+      addCommandQuery.trim().length === 0
+      || `${command.label} ${command.description}`
+        .toLocaleLowerCase()
+        .includes(addCommandQuery.trim().toLocaleLowerCase())
+    )
+  ));
 
   attachmentDraftsRef.current = attachmentDrafts;
 
@@ -235,6 +251,8 @@ export function Composer(props: {
 
     const closeFloatingMenu = () => {
       setOpenMenu(null);
+      setAddSubmenu(null);
+      setAddCommandQuery('');
       setSlashTrigger(null);
       setProjectQuery('');
       setProjectCreateMenuOpen(false);
@@ -250,6 +268,11 @@ export function Composer(props: {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      if (activeFloatingMenu === 'add' && addSubmenu !== null) {
+        setAddSubmenu(null);
+        setAddCommandQuery('');
+        return;
+      }
       closeFloatingMenu();
     };
 
@@ -259,7 +282,7 @@ export function Composer(props: {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeFloatingMenu]);
+  }, [activeFloatingMenu, addSubmenu]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -325,12 +348,14 @@ export function Composer(props: {
     || project.name.toLocaleLowerCase().includes(normalizedProjectQuery)
     || project.cwd.toLocaleLowerCase().includes(normalizedProjectQuery)
   );
-  const slashCommands = props.slashCommands ?? [];
   const selectedSkillCommand = findLeadingSkillCommand(prompt, slashCommands);
   const selectedSkillPrefix = selectedSkillCommand?.insertText ?? '';
   const visiblePrompt = selectedSkillCommand === undefined
     ? prompt
     : prompt.slice(selectedSkillPrefix.length);
+  const hasComposerContent = visiblePrompt.length > 0
+    || selectedSkillCommand !== undefined
+    || attachmentDrafts.length > 0;
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, slashTrigger?.query ?? ''),
     [slashCommands, slashTrigger?.query]
@@ -530,6 +555,27 @@ export function Composer(props: {
         0,
         nextCaret - (leadingCommand?.insertText.length ?? 0)
       );
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(visibleCaret, visibleCaret);
+    });
+  };
+
+  const applyAddCommand = (command: ComposerSlashCommand) => {
+    const selectionStart = textareaRef.current?.selectionStart ?? prompt.length;
+    const selectionEnd = textareaRef.current?.selectionEnd ?? selectionStart;
+    const nextPrompt = `${prompt.slice(0, selectionStart)}${command.insertText}${prompt.slice(selectionEnd)}`;
+    const nextCaret = selectionStart + command.insertText.length;
+    promptRevisionRef.current += 1;
+    const caretRevision = promptRevisionRef.current;
+    setPrompt(nextPrompt);
+    setOpenMenu(null);
+    setAddSubmenu(null);
+    setAddCommandQuery('');
+
+    window.requestAnimationFrame(() => {
+      if (promptRevisionRef.current !== caretRevision) return;
+      const leadingCommand = findLeadingSkillCommand(nextPrompt, slashCommands);
+      const visibleCaret = Math.max(0, nextCaret - (leadingCommand?.insertText.length ?? 0));
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(visibleCaret, visibleCaret);
     });
@@ -879,7 +925,7 @@ export function Composer(props: {
           placeholder={
             props.disabled
               ? props.disabledReason ?? '当前对话不可用'
-              : '输入 / 调用插件'
+              : hasComposerContent ? '' : '输入 / 调用插件'
           }
         />
         {slashMenuOpen ? (
@@ -936,13 +982,16 @@ export function Composer(props: {
               title="添加文件等"
               onClick={() => {
                 setSlashTrigger(null);
-                setOpenMenu(openMenu === 'add' ? null : 'add');
+                const nextOpen = openMenu === 'add' ? null : 'add';
+                setOpenMenu(nextOpen);
+                setAddSubmenu(null);
+                setAddCommandQuery('');
               }}
             >
               <Plus aria-hidden="true" size={17} />
             </button>
             {openMenu === 'add' ? (
-              <div className="composer-popover composer-popover-compact" role="menu" aria-label="添加上下文">
+              <div className="composer-popover composer-popover-compact composer-add-menu" role="menu" aria-label="添加上下文">
                 <button
                   className="composer-menu-item"
                   type="button"
@@ -954,11 +1003,109 @@ export function Composer(props: {
                   }}
                 >
                   <Paperclip aria-hidden="true" size={15} />
-                  <span>添加图片</span>
+                  <span>添加文件</span>
                 </button>
                 {!canAttachImages && imageInputNotice !== undefined ? (
                   <p className="composer-menu-notice">{imageInputNotice}</p>
                 ) : null}
+                <button
+                  className={`composer-menu-item composer-add-menu-trigger${addSubmenu === 'skill' ? ' is-active' : ''}`}
+                  type="button"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={addSubmenu === 'skill'}
+                  onMouseEnter={() => {
+                    setAddSubmenu('skill');
+                    setAddCommandQuery('');
+                  }}
+                  onClick={() => {
+                    setAddSubmenu('skill');
+                    setAddCommandQuery('');
+                  }}
+                >
+                  <Hammer aria-hidden="true" size={15} />
+                  <span>技能</span>
+                  <ChevronRight aria-hidden="true" size={14} />
+                </button>
+                <button
+                  className={`composer-menu-item composer-add-menu-trigger${addSubmenu === 'mcp' ? ' is-active' : ''}`}
+                  type="button"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={addSubmenu === 'mcp'}
+                  onMouseEnter={() => {
+                    setAddSubmenu('mcp');
+                    setAddCommandQuery('');
+                  }}
+                  onClick={() => {
+                    setAddSubmenu('mcp');
+                    setAddCommandQuery('');
+                  }}
+                >
+                  <Link2 aria-hidden="true" size={15} />
+                  <span>连接器</span>
+                  <ChevronRight aria-hidden="true" size={14} />
+                </button>
+                {addSubmenu === null ? null : (
+                  <div
+                    className="composer-popover composer-add-submenu"
+                    role="menu"
+                    aria-label={addSubmenu === 'skill' ? '技能' : '连接器'}
+                  >
+                    {addSubmenu === 'skill' ? (
+                      <label className="composer-add-search">
+                        <Search aria-hidden="true" size={15} />
+                        <input
+                          aria-label="搜索技能"
+                          type="search"
+                          placeholder="搜索技能"
+                          value={addCommandQuery}
+                          onChange={event => setAddCommandQuery(event.currentTarget.value)}
+                        />
+                      </label>
+                    ) : null}
+                    <div className="composer-add-command-list">
+                      {addCommands.length === 0 ? (
+                        <p className="composer-model-status">
+                          {addSubmenu === 'skill' ? '暂无可用技能' : '暂无已配置连接器'}
+                        </p>
+                      ) : addCommands.map(command => (
+                        <button
+                          key={command.id}
+                          className="composer-menu-item"
+                          type="button"
+                          role="menuitem"
+                          onClick={() => applyAddCommand(command)}
+                        >
+                          <span className="composer-menu-icon" aria-hidden="true">
+                            {addSubmenu === 'skill' ? <Zap size={15} /> : <Link2 size={15} />}
+                          </span>
+                          <span>
+                            <strong>{command.label}</strong>
+                            <small>{command.description}</small>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    {(addSubmenu === 'skill' ? props.onManageSkills : props.onManageConnectors) === undefined ? null : (
+                      <button
+                        className="composer-menu-item composer-add-footer"
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setOpenMenu(null);
+                          setAddSubmenu(null);
+                          (addSubmenu === 'skill' ? props.onManageSkills : props.onManageConnectors)?.();
+                        }}
+                      >
+                        {addSubmenu === 'skill'
+                          ? <Hammer aria-hidden="true" size={15} />
+                          : <Link2 aria-hidden="true" size={15} />}
+                        <span>{addSubmenu === 'skill' ? '管理技能' : '管理连接器'}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : null}
             <input

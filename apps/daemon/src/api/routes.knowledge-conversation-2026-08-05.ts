@@ -6,7 +6,7 @@ import type {
 } from '@clawee/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AttachmentService } from '../attachments/service.js';
-import type { CodexSessionProvider } from '../codex/sessions/app-server-provider.js';
+import type { CodexThreadHistoryPage } from '../codex/sessions/app-server-provider.js';
 import {
   KnowledgeConversationError,
   type KnowledgeConversationManager
@@ -15,7 +15,7 @@ import {
   EnterpriseSessionError
 } from '../enterprise/session-manager-2026-07-30.js';
 import type { RunManager } from '../runs/manager.js';
-import type { RuntimeThread } from '../threads/types.js';
+import { ThreadManagerError, type RuntimeThread } from '../threads/types.js';
 import { apiError } from './errors.js';
 
 export async function registerKnowledgeConversationRoutes(
@@ -24,18 +24,30 @@ export async function registerKnowledgeConversationRoutes(
   runManager: Pick<RunManager, 'getLastEventSeq' | 'listRunsByThread' | 'startRun'>,
   options: {
     attachmentService?: AttachmentService;
-    sessionProvider: Pick<CodexSessionProvider, 'listTurns'>;
+    readHistory(
+      thread: RuntimeThread,
+      options: { limit: number; cursor?: string }
+    ): Promise<CodexThreadHistoryPage>;
   }
 ): Promise<void> {
   server.post<{ Body: unknown }>('/enterprise/knowledge-conversations', async (request, reply) => {
-    if (!isEmptyObject(request.body)) {
+    const body = request.body as Record<string, unknown> | null;
+    if (
+      body === null
+      || typeof body !== 'object'
+      || typeof body.projectId !== 'string'
+      || body.projectId.trim().length === 0
+      || Object.keys(body).some(key => key !== 'projectId')
+    ) {
       return reply.code(400).send(apiError(
         'VALIDATION_FAILED',
-        'body must be an empty object'
+        'projectId is required'
       ));
     }
     try {
-      return reply.code(201).send({ thread: toThreadResponse(await manager.create()) });
+      return reply.code(201).send({
+        thread: toThreadResponse(await manager.create(body.projectId.trim()))
+      });
     } catch (error) {
       return sendKnowledgeError(reply, error);
     }
@@ -134,8 +146,7 @@ export async function registerKnowledgeConversationRoutes(
       const paginationRequested = query.limit !== undefined || query.before !== undefined;
       const history = thread.codexThreadId === undefined || thread.codexThreadId === null
         ? { items: [], ...(paginationRequested ? { hasMore: false } : {}) }
-        : await options.sessionProvider.listTurns({
-            codexThreadId: thread.codexThreadId,
+        : await options.readHistory(thread, {
             limit: limit ?? 50,
             ...(typeof query.before === 'string' ? { cursor: query.before } : {})
           });
@@ -169,7 +180,8 @@ function toThreadResponse(thread: RuntimeThread): ThreadResponse {
     purpose: thread.purpose,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
-    archivedAt: thread.archivedAt
+    archivedAt: thread.archivedAt,
+    pinnedAt: thread.pinnedAt
   };
 }
 
@@ -185,13 +197,6 @@ function hasInvalidString(value: unknown): boolean {
   return value !== undefined && typeof value !== 'string';
 }
 
-function isEmptyObject(value: unknown): boolean {
-  return typeof value === 'object'
-    && value !== null
-    && !Array.isArray(value)
-    && Object.keys(value).length === 0;
-}
-
 function sendKnowledgeError(reply: FastifyReply, error: unknown) {
   if (error instanceof KnowledgeConversationError) {
     return reply.code(error.statusCode).send(apiError(
@@ -205,6 +210,15 @@ function sendKnowledgeError(reply: FastifyReply, error: unknown) {
   }
   if (error instanceof EnterpriseSessionError) {
     return reply.code(error.statusCode).send(apiError(error.code, 'Enterprise operation failed'));
+  }
+  if (error instanceof ThreadManagerError) {
+    if (error.code === 'PROJECT_NOT_FOUND') {
+      return reply.code(404).send(apiError(error.code, error.message));
+    }
+    if (error.code === 'PROJECT_DIRECTORY_UNAVAILABLE') {
+      return reply.code(422).send(apiError(error.code, error.message));
+    }
+    return reply.code(409).send(apiError(error.code, error.message));
   }
   throw error;
 }

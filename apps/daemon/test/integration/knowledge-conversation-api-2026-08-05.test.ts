@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from '../../src/api/server.js';
 import type { EnterpriseCredentialStore } from '../../src/enterprise/credential-store-2026-07-30.js';
@@ -20,7 +19,7 @@ afterEach(async () => {
 });
 
 describe('enterprise knowledge conversation API', () => {
-  it('derives ownership from the verified session and hides knowledge threads elsewhere', async () => {
+  it('creates an owned knowledge conversation in the default project', async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-conversation-'));
     let subjectId = 'acct_subject_a';
     server = await buildServer({
@@ -34,21 +33,23 @@ describe('enterprise knowledge conversation API', () => {
       enterpriseHttpClient: enterpriseClient(() => subjectId)
     });
 
-    const created = await request('POST', '/enterprise/knowledge-conversations', {});
+    const defaultProject = await request('POST', '/projects/default');
+    expect(defaultProject.statusCode).toBe(200);
+    const project = defaultProject.json().project;
+    const created = await request('POST', '/enterprise/knowledge-conversations', {
+      projectId: project.id
+    });
     expect(created.statusCode).toBe(201);
     expect(created.json().thread).toMatchObject({
-      projectId: null,
-      purpose: 'knowledge_conversation'
+      title: '知识库对话',
+      projectId: project.id,
+      purpose: 'conversation',
+      workspaceMode: 'external',
+      cwd: project.cwd,
+      sandbox: 'read-only'
     });
     expect(created.json().thread).not.toHaveProperty('enterpriseSubjectId');
     const threadId = created.json().thread.id as string;
-    expect(created.json().thread.cwd).toBe(resolve(
-      dataDir,
-      'enterprise-knowledge',
-      'workspaces',
-      createHash('sha256').update('acct_subject_a').digest('hex'),
-      threadId
-    ));
 
     const latestForOwner = await request('GET', '/enterprise/knowledge-conversations/latest');
     expect(latestForOwner.statusCode).toBe(200);
@@ -66,21 +67,29 @@ describe('enterprise knowledge conversation API', () => {
     expect((await request('POST', '/enterprise/knowledge-conversations', {
       enterpriseSubjectId: 'acct_subject_b'
     })).statusCode).toBe(400);
+    expect((await request('POST', '/enterprise/knowledge-conversations', {})).statusCode)
+      .toBe(400);
+    expect((await request('POST', '/enterprise/knowledge-conversations', {
+      projectId: 'project_missing'
+    })).statusCode).toBe(404);
 
     const publicList = await request('GET', '/threads?status=active');
     expect(publicList.statusCode).toBe(200);
-    expect(publicList.json().threads).toEqual([]);
+    expect(publicList.json().threads).toEqual([
+      expect.objectContaining({ id: threadId, projectId: project.id })
+    ]);
     expect((await request(
       'GET',
       '/threads?status=active&excludePurpose=schedule_task&limit=50'
-    )).json().threads).toEqual([]);
-    expect((await request('GET', `/threads/${threadId}`)).statusCode).toBe(404);
-    expect((await request('GET', `/threads/${threadId}/history`)).statusCode).toBe(404);
-    expect((await request('GET', `/threads/${threadId}/runs`)).statusCode).toBe(404);
+    )).json().threads).toEqual([
+      expect.objectContaining({ id: threadId, projectId: project.id })
+    ]);
+    expect((await request('GET', `/threads/${threadId}`)).statusCode).toBe(200);
+    expect((await request('GET', `/threads/${threadId}/history`)).statusCode).toBe(200);
+    expect((await request('GET', `/threads/${threadId}/runs`)).statusCode).toBe(200);
     expect((await request('PATCH', `/threads/${threadId}`, {
       sandbox: 'read-only'
-    })).statusCode).toBe(404);
-    expect((await request('POST', `/threads/${threadId}/archive`, {})).statusCode).toBe(404);
+    })).statusCode).toBe(200);
 
     const suppliedSubject = await request('POST', '/threads', {
       purpose: 'schedule_draft',

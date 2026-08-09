@@ -26,6 +26,7 @@ export type RunCodexExecInput = {
   forceKillGraceMs?: number;
   finalKillSettleMs?: number;
   env?: Record<string, string>;
+  beforeSpawn?: () => Promise<void>;
   onStdoutLine?: (line: string) => Promise<void> | void;
   onStderrChunk?: (chunk: string) => Promise<void> | void;
 };
@@ -80,6 +81,28 @@ export type CodexExecProcess = {
 };
 
 export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
+  if (input.beforeSpawn !== undefined) {
+    let process: CodexExecProcess | undefined;
+    let cancelRequested = false;
+    return {
+      cancel() {
+        cancelRequested = true;
+        process?.cancel();
+      },
+      result: input.beforeSpawn().then(() => {
+        if (cancelRequested) {
+          throw new CodexExecError({
+            message: 'Codex exec canceled before spawn',
+            terminationReason: 'canceled',
+            stdoutLines: [],
+            stderr: ''
+          });
+        }
+        process = startCodexExec({ ...input, beforeSpawn: undefined });
+        return process.result;
+      })
+    };
+  }
   let cancelRequested = false;
   let forceKillTimeout: NodeJS.Timeout | undefined;
   let finalKillTimeout: NodeJS.Timeout | undefined;

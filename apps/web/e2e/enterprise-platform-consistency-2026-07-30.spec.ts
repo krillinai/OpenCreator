@@ -27,6 +27,70 @@ type PlatformResult = {
   unknownRequests: string[];
 };
 
+test('未勾选协议时 Browser/Desktop 登录均先确认再提交', async ({
+  browser,
+  runtime
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    '一致性规格内部固定创建 Browser/Desktop Chromium 上下文'
+  );
+
+  const fakeDaemon = new FakeEnterpriseDaemon();
+  const loginRequests: FakeEnterpriseRequest[][] = [];
+
+  for (const platform of ['browser', 'desktop'] satisfies Platform[]) {
+    fakeDaemon.reset();
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      deviceScaleFactor: 1,
+      colorScheme: 'dark',
+      reducedMotion: 'reduce'
+    });
+    const page = await context.newPage();
+    await fakeDaemon.attach(page);
+    await installPlatformEnvironment(page, platform);
+
+    try {
+      await page.goto(runtime.origin);
+      await expect(page.getByRole('heading', { name: '欢迎使用 Clawee' })).toBeVisible();
+
+      const submit = page.locator('.enterprise-email-submit');
+      await expect(submit).toBeDisabled();
+      await page.getByLabel('邮箱').fill('member@example.com');
+      await expect(submit).toBeDisabled();
+      await page.getByLabel('密码').fill('password-123');
+      await expect(submit).toBeEnabled();
+      await submit.click();
+      const dialog = page.getByRole('alertdialog', { name: '服务协议及隐私政策' });
+      await expect(dialog).toBeVisible();
+      await expect(page.getByRole('checkbox')).not.toBeChecked();
+      expect(fakeDaemon.requestLog().filter(request => (
+        request.method === 'POST' && request.path === '/enterprise/login'
+      ))).toHaveLength(0);
+
+      await dialog.getByRole('button', { name: '取消' }).click();
+      await expect(dialog).toBeHidden();
+      await submit.click();
+      await dialog.getByRole('button', { name: '同意并继续' }).click();
+
+      await expect(page.getByRole('button', {
+        name: 'Enterprise Member member@example.com'
+      })).toBeVisible();
+      const submitted = fakeDaemon.requestLog().filter(request => (
+        request.method === 'POST' && request.path === '/enterprise/login'
+      ));
+      expect(submitted).toHaveLength(1);
+      loginRequests.push(submitted);
+      expect(fakeDaemon.unknownRequestPaths()).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }
+
+  expect(loginRequests[1]).toEqual(loginRequests[0]);
+});
+
 test('企业账户、系统连接、知识库、共享网盘与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
   browser,
   page,
@@ -110,10 +174,8 @@ test('企业知识库在 390px 视口下逐级浏览且不产生页面级溢出'
   await fakeDaemon.attach(page);
   await installPlatformEnvironment(page, 'browser');
   await page.goto(`${runtime.origin}/#/account`);
-  await expect(page.getByRole('heading', { name: '登录企业账户' })).toBeVisible();
-  await page.getByLabel('邮箱').fill('member@example.com');
-  await page.getByLabel('密码').fill('enterprise-secret');
-  await page.locator('.enterprise-account-primary-action').click();
+  await expect(page.getByRole('heading', { name: '欢迎使用 Clawee' })).toBeVisible();
+  await loginWithEmail(page);
   await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
 
   await page.evaluate(() => {
@@ -296,18 +358,16 @@ async function runPlatform(input: {
   try {
     await page.goto(input.origin);
     await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '登录企业账户' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '欢迎使用 Clawee' })).toBeVisible();
     const checkpoints: Record<string, Checkpoint> = {
       account: await captureCheckpoint(page, [
         '.enterprise-access-gate',
         '.enterprise-account-page',
-        '.enterprise-account-form-panel'
+        '.enterprise-auth-card'
       ])
     };
 
-    await page.getByLabel('邮箱').fill('member@example.com');
-    await page.getByLabel('密码').fill('enterprise-secret');
-    await page.locator('.enterprise-account-primary-action').click();
+    await loginWithEmail(page);
     await expect(page.getByRole('button', {
       name: 'Enterprise Member member@example.com'
     })).toBeVisible();
@@ -446,6 +506,13 @@ async function runPlatform(input: {
   } finally {
     await context.close();
   }
+}
+
+async function loginWithEmail(page: Page): Promise<void> {
+  await page.getByLabel('邮箱').fill('member@example.com');
+  await page.getByLabel('密码').fill('password-123');
+  await page.getByRole('checkbox').check();
+  await page.locator('.enterprise-email-submit').click();
 }
 
 async function installPlatformEnvironment(page: Page, platform: Platform): Promise<void> {

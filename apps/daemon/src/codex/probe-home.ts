@@ -64,6 +64,22 @@ export function createCodexProbeHome(
   };
 }
 
+export function createCodexIsolatedHome(
+  sourceHome: string,
+  path: string
+): CodexProbeHome {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  chmodSync(path, 0o700);
+  copyRegularFile(join(sourceHome, 'auth.json'), join(path, 'auth.json'));
+  createMinimalProbeConfig(sourceHome, path);
+  return {
+    path,
+    cleanup() {
+      // The isolated session rollout must survive between turns.
+    }
+  };
+}
+
 function createMinimalProbeConfig(sourceHome: string, probeHome: string): void {
   const sourcePath = join(sourceHome, 'config.toml');
   if (!existsSync(sourcePath)) return;

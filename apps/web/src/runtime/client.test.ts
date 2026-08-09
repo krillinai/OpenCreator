@@ -86,6 +86,30 @@ describe('RuntimeClient', () => {
     });
   });
 
+  it('preserves Fastify top-level error details', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      statusCode: 500,
+      code: '-32600',
+      error: 'Internal Server Error',
+      message: 'thread not loaded: codex-thread-persisted'
+    }), {
+      status: 500,
+      headers: { 'content-type': 'application/json' }
+    }));
+    const client = new RuntimeClient({
+      baseUrl: 'http://127.0.0.1:60855',
+      token: 'tok',
+      fetchImpl: fetchMock
+    });
+
+    await expect(client.get('/enterprise/knowledge-conversations/thread/history'))
+      .rejects.toMatchObject({
+        status: 500,
+        code: '-32600',
+        message: 'thread not loaded: codex-thread-persisted'
+      });
+  });
+
   it('throws ApiClientError for non-JSON error responses', async () => {
     const fetchMock = vi.fn(async () => new Response('Internal Server Error', {
       status: 500,

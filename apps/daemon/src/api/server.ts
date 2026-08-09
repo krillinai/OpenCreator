@@ -40,6 +40,7 @@ import {
 } from '../codex/capabilities.js';
 import { createCodexAppServerClient } from '../codex/app-server-client.js';
 import { resolveCodexHome } from '../codex/home.js';
+import { isEnterpriseKnowledgeThread } from '../threads/types.js';
 import {
   createCodexModelCatalog,
   type CodexModelCatalog
@@ -435,6 +436,10 @@ export async function buildServer(input: BuildServerInput) {
       prepareThreadRotationContext: context =>
         memoryService.prepareThreadRotationContext(context),
       agentToolInjector,
+      async beforeRunSpawn({ thread }) {
+        if (!isEnterpriseKnowledgeThread(thread)) return;
+        await knowledgeConversationManager.prepareSearch(thread.id);
+      },
       recordRunContext: (runId, items) => memoryService.recordRunContext(runId, items),
       onRunTerminal(runId) {
         agentCapabilityTokens.revokeRun(runId);
@@ -678,7 +683,26 @@ export async function buildServer(input: BuildServerInput) {
     runManager,
     {
       attachmentService,
-      sessionProvider: codexSessionProvider
+      async readHistory(thread, options) {
+        if (thread.codexThreadId === undefined || thread.codexThreadId === null) {
+          return { items: [], hasMore: false };
+        }
+        const provider = createCodexSessionProvider({
+          client: createCodexAppServerClient({
+            codexBin,
+            codexHome: join(thread.cwd, '.codex-runtime')
+          })
+        });
+        try {
+          return await provider.listTurns({
+            codexThreadId: thread.codexThreadId,
+            limit: options.limit,
+            ...(options.cursor === undefined ? {} : { cursor: options.cursor })
+          });
+        } finally {
+          await provider.close();
+        }
+      }
     }
   );
 

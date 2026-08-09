@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAgentCapabilityTokenStore } from '../../src/agent-tools/capability-token.js';
 import {
   AgentToolPolicyError,
-  createAgentScheduleRunInjector
+  createAgentScheduleRunInjector,
+  isAuthorizedKnowledgeToolApproval
 } from '../../src/agent-tools/run-injection.js';
 import {
   createKnowledgeConversationManager,
@@ -10,8 +11,40 @@ import {
 } from '../../src/enterprise/knowledge-conversation-2026-08-05.js';
 import { EnterpriseHttpError } from '../../src/enterprise/http-client-2026-07-30.js';
 import type { RuntimeThread } from '../../src/threads/types.js';
+import { shouldAutomaticallyRotateRun } from '../../src/runs/manager.js';
 
 describe('knowledge run policy', () => {
+  it('auto-approves only the isolated knowledge MCP server on knowledge threads', () => {
+    const request = {
+      id: 'approval-1',
+      method: 'mcpServer/elicitation/request',
+      params: { serverName: 'clawee_knowledge' }
+    } as const;
+
+    expect(isAuthorizedKnowledgeToolApproval(knowledgeThread(), request)).toBe(true);
+    expect(isAuthorizedKnowledgeToolApproval(
+      { ...knowledgeThread(), purpose: 'conversation' },
+      request
+    )).toBe(true);
+    expect(isAuthorizedKnowledgeToolApproval(knowledgeThread(), {
+      ...request,
+      params: { serverName: 'untrusted_server' }
+    })).toBe(false);
+  });
+
+  it('rotates an automatic knowledge run when its isolated Codex session is unavailable', () => {
+    expect(shouldAutomaticallyRotateRun({
+      threadId: 'thread-a',
+      prompt: 'policy',
+      createdBy: 'api'
+    }, knowledgeThread())).toBe(true);
+    expect(shouldAutomaticallyRotateRun({
+      threadId: 'thread-a',
+      prompt: 'policy',
+      createdBy: 'api'
+    }, { ...knowledgeThread(), purpose: 'conversation' })).toBe(true);
+  });
+
   it('injects only knowledge.search and an explicit all-disabled built-in policy', () => {
     const capabilities = createAgentCapabilityTokenStore();
     const injector = createAgentScheduleRunInjector({
@@ -107,7 +140,7 @@ describe('knowledge run policy', () => {
       runId: 'run-b',
       thread: { ...knowledgeThread(), purpose: 'conversation' },
       createdBy: 'api'
-    })).toBeUndefined();
+    })?.mcpServers[0]?.enabledTools).toEqual(['knowledge.search']);
     capabilities.close();
   });
 

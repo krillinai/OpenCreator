@@ -28,7 +28,19 @@ export type ClaweeConversation = {
   title: string;
   updatedAt: string;
   updatedLabel: string;
+  updatedAt?: string;
+  pinnedAt?: string | null;
 };
+
+export function sortProjectConversations<T extends ClaweeConversation>(
+  conversations: readonly T[]
+): T[] {
+  return [...conversations].sort((left, right) => {
+    const pinOrder = Number(right.pinnedAt != null) - Number(left.pinnedAt != null);
+    if (pinOrder !== 0) return pinOrder;
+    return (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '');
+  });
+}
 
 export const PROJECTS_STORAGE_KEY = 'clawee.projects.v1';
 

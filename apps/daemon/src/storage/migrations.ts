@@ -100,6 +100,7 @@ export function migrate(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       archived_at TEXT,
+      pinned_at TEXT,
       last_error_code TEXT,
       last_error_message TEXT,
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE RESTRICT
@@ -413,6 +414,7 @@ export function migrate(db: Database.Database): void {
 
   ensureColumn(db, 'threads', 'title', 'title TEXT');
   ensureColumn(db, 'threads', 'archived_at', 'archived_at TEXT');
+  ensureColumn(db, 'threads', 'pinned_at', 'pinned_at TEXT');
   ensureColumn(db, 'threads', 'purpose', "purpose TEXT NOT NULL DEFAULT 'conversation'");
   ensureColumn(
     db,

@@ -2,6 +2,9 @@ import type {
   EnterpriseAccountSummary,
   EnterpriseListMeta,
   EnterpriseLoginRequest,
+  EnterpriseQrLoginStartRequest,
+  EnterpriseQrLoginStartResponse,
+  EnterpriseQrProvider,
   EnterpriseRegisterRequest,
   RuntimeErrorCode
 } from '@clawee/protocol';
@@ -55,6 +58,35 @@ const loginResponseSchema = z.object({
     token_type: z.literal('Bearer'),
     expires_at: z.string().datetime({ offset: true })
   })
+});
+const qrProviderSchema = z.enum(['feishu', 'dingtalk', 'wecom']);
+const qrLoginStartResponseSchema = z.object({
+  data: z.object({
+    request_id: z.string().min(1),
+    provider: qrProviderSchema,
+    qr_code_url: z.string().min(1),
+    expires_at: z.string().datetime({ offset: true }),
+    poll_after_ms: z.number().int().min(250).max(10_000)
+  })
+});
+const qrLoginPendingDataSchema = z.object({
+  request_id: z.string().min(1),
+  provider: qrProviderSchema,
+  status: z.enum(['pending', 'scanned', 'expired', 'denied']),
+  poll_after_ms: z.number().int().min(250).max(10_000).optional()
+});
+const qrLoginSignedInDataSchema = z.object({
+  request_id: z.string().min(1),
+  provider: qrProviderSchema,
+  status: z.literal('signed_in'),
+  account: accountSchema,
+  agent: agentSchema,
+  access_token: z.string().min(1),
+  token_type: z.literal('Bearer'),
+  expires_at: z.string().datetime({ offset: true })
+});
+const qrLoginStatusResponseSchema = z.object({
+  data: z.union([qrLoginPendingDataSchema, qrLoginSignedInDataSchema])
 });
 const collectorRegistrationSchema = z.object({
   exists: z.boolean(),
@@ -384,6 +416,18 @@ export type EnterpriseLoginResult = {
   expiresAt: string;
 };
 
+export type EnterpriseQrLoginPollResult = {
+  requestId: string;
+  provider: EnterpriseQrProvider;
+  status: 'pending' | 'scanned' | 'expired' | 'denied';
+  pollAfterMs?: number;
+} | {
+  requestId: string;
+  provider: EnterpriseQrProvider;
+  status: 'signed_in';
+  login: EnterpriseLoginResult;
+};
+
 export type EnterpriseMeResult = {
   account: EnterpriseAccountSummary;
   agentId: string;
@@ -434,6 +478,14 @@ export type EnterpriseSharedFileUploadInput = {
 export type EnterpriseHttpClient = {
   register(input: EnterpriseRegisterRequest, agentId: string): Promise<void>;
   login(input: EnterpriseLoginRequest, agentId: string): Promise<EnterpriseLoginResult>;
+  startQrLogin?(
+    input: EnterpriseQrLoginStartRequest,
+    agentId: string
+  ): Promise<EnterpriseQrLoginStartResponse>;
+  pollQrLogin?(
+    requestId: string,
+    agentId: string
+  ): Promise<EnterpriseQrLoginPollResult>;
   getMe(accessToken: string): Promise<EnterpriseMeResult>;
   logout(accessToken: string): Promise<void>;
   revealAgentMcpToken(accessToken: string): Promise<EnterpriseAgentMcpToken>;
@@ -647,6 +699,60 @@ export function createEnterpriseHttpClient(input: {
         accessToken: response.data.access_token,
         tokenType: response.data.token_type,
         expiresAt: response.data.expires_at
+      };
+    },
+
+    async startQrLogin(request, agentId) {
+      const response = await requestJson({
+        body: {
+          provider: request.provider,
+          client_id: 'clawee-agent',
+          agent_id: agentId
+        },
+        method: 'POST',
+        path: '/api/v1/auth/qr-login',
+        domain: 'auth',
+        schema: qrLoginStartResponseSchema
+      });
+      return {
+        requestId: response.data.request_id,
+        provider: response.data.provider,
+        qrCodeUrl: response.data.qr_code_url,
+        expiresAt: response.data.expires_at,
+        pollAfterMs: response.data.poll_after_ms
+      };
+    },
+
+    async pollQrLogin(requestId, agentId) {
+      const query = new URLSearchParams({ agent_id: agentId });
+      const response = await requestJson({
+        method: 'GET',
+        path: `/api/v1/auth/qr-login/${encodeURIComponent(requestId)}?${query.toString()}`,
+        domain: 'auth',
+        schema: qrLoginStatusResponseSchema
+      });
+      const result = response.data;
+      if (result.status !== 'signed_in') {
+        return {
+          requestId: result.request_id,
+          provider: result.provider,
+          status: result.status,
+          ...(result.poll_after_ms === undefined
+            ? {}
+            : { pollAfterMs: result.poll_after_ms })
+        };
+      }
+      return {
+        requestId: result.request_id,
+        provider: result.provider,
+        status: 'signed_in',
+        login: {
+          account: accountSummary(result.account),
+          agentId: result.agent.agent_id,
+          accessToken: result.access_token,
+          tokenType: result.token_type,
+          expiresAt: result.expires_at
+        }
       };
     },
 
@@ -1371,6 +1477,7 @@ function mapCollectorRegistration(
 
 type EnterpriseHttpDomain =
   | 'general'
+  | 'auth'
   | 'skill'
   | 'knowledge'
   | 'shared-file'
@@ -1454,6 +1561,9 @@ function mapResponseCode(
   }
   if (statusCode === 404 && domain === 'shared-file') {
     return 'ENTERPRISE_SHARED_FILE_NOT_FOUND';
+  }
+  if (statusCode === 404 && domain === 'auth') {
+    return 'ENTERPRISE_SERVICE_UNAVAILABLE';
   }
   if (statusCode === 404) return 'ENTERPRISE_SKILL_NOT_FOUND';
   if (statusCode === 409 && upstreamCode === 'agent_id_conflict') {

@@ -82,13 +82,31 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     },
 
     createKnowledgeThread(request: CreateKnowledgeThreadInput): RuntimeThread {
+      const project = projects.getProject(request.projectId);
+      if (project === undefined) {
+        throw new ThreadManagerError('PROJECT_NOT_FOUND', 'Project not found');
+      }
+      if (project.status === 'archived') {
+        throw new ThreadManagerError('PROJECT_ARCHIVED', 'Project is archived');
+      }
+      if (project.directoryState !== 'available' || project.canonicalCwd === null) {
+        throw new ThreadManagerError(
+          'PROJECT_DIRECTORY_UNAVAILABLE',
+          'Project directory does not exist or is not accessible'
+        );
+      }
       return createRuntimeThread({
-        ...request,
-        managedWorkspaceRoot: request.workspaceRoot,
-        workspaceMode: 'managed',
+        title: request.title,
+        cwd: project.cwd,
+        canonicalCwd: project.canonicalCwd,
+        workspaceMode: 'external',
+        profile: project.profile,
+        model: project.model,
+        reasoning: project.reasoning,
         sandbox: 'read-only',
-        purpose: 'knowledge_conversation',
-        projectId: null,
+        purpose: 'conversation',
+        projectId: project.id,
+        enterpriseSubjectId: request.enterpriseSubjectId,
         origin: 'clawee_created'
       });
     },
@@ -198,7 +216,20 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     updateThread(id: string, request: UpdateRuntimeThreadInput): RuntimeThread {
       const existing = getRequiredThread(id);
       if (existing.purpose === 'schedule_task') throw new Error('THREAD_MANAGED_BY_SCHEDULE');
-      threads.updateThreadSandbox({ id, sandbox: request.sandbox });
+      if (request.sandbox !== undefined) {
+        threads.updateThreadSandbox({ id, sandbox: request.sandbox });
+      }
+      if (request.title !== undefined || request.pinned !== undefined) {
+        threads.updateThread({
+          id,
+          ...(request.title === undefined
+            ? {}
+            : { title: createConversationTitle(request.title) }),
+          ...(request.pinned === undefined
+            ? {}
+            : { pinnedAt: request.pinned ? new Date().toISOString() : null })
+        });
+      }
       return mapThreadRow(threads.getThread(id)!);
     },
 
@@ -231,6 +262,12 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       if (existing.purpose === 'schedule_task') throw new Error('THREAD_MANAGED_BY_SCHEDULE');
       threads.archiveThread(id);
       return mapThreadRow(threads.getThread(id)!);
+    },
+
+    deleteThread(id: string): void {
+      const existing = getRequiredThread(id);
+      if (existing.purpose === 'schedule_task') throw new Error('THREAD_MANAGED_BY_SCHEDULE');
+      threads.deleteThread(id);
     },
 
     archiveScheduleThread(id: string): RuntimeThread {
@@ -369,7 +406,8 @@ function mapThreadRow(row: ThreadRow): RuntimeThread {
     purpose: row.purpose,
     createdAt: normalizeDatabaseTimestamp(row.created_at),
     updatedAt: normalizeDatabaseTimestamp(row.updated_at),
-    archivedAt: normalizeNullableDatabaseTimestamp(row.archived_at)
+    archivedAt: normalizeNullableDatabaseTimestamp(row.archived_at),
+    pinnedAt: normalizeNullableDatabaseTimestamp(row.pinned_at ?? null)
   };
 }
 

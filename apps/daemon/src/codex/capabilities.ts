@@ -80,6 +80,14 @@ export type CodexVersionProbeResult = {
   warning?: string;
 };
 
+export function isReusableCapabilityMatrix(
+  matrix: RuntimeCapabilityMatrix
+): boolean {
+  return typeof matrix.knowledgeToolIsolation === 'boolean'
+    && matrix.knowledgeBuiltInTools !== undefined
+    && Object.values(matrix.knowledgeBuiltInTools).every(value => typeof value === 'boolean');
+}
+
 export async function probeCodexVersionAsync(input: {
   codexBin: string;
   timeoutMs?: number;

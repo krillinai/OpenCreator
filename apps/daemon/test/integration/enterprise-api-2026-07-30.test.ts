@@ -149,6 +149,64 @@ describe('enterprise runtime API', () => {
       .not.toHaveBeenCalled();
   });
 
+  it('exposes QR login through the runtime session boundary', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    const loginResult = {
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
+      agentId,
+      accessToken: 'enterprise-token',
+      tokenType: 'Bearer' as const,
+      expiresAt: '2026-08-08T10:00:00Z'
+    };
+    const client = createClient({
+      startQrLogin: vi.fn(async ({ provider }) => ({
+        requestId: `qr-${provider}`,
+        provider,
+        qrCodeUrl: `https://enterprise.example/${provider}.png`,
+        expiresAt: '2026-08-07T12:01:00Z',
+        pollAfterMs: 1000
+      })),
+      pollQrLogin: vi.fn(async () => ({
+        requestId: 'qr-feishu',
+        provider: 'feishu',
+        status: 'signed_in',
+        login: loginResult
+      }))
+    });
+    server = await buildServer({
+      token: 'secret',
+      dataDir: tempDir,
+      codexHome: join(tempDir, 'codex-home'),
+      enterpriseAgentIdentityStore: createAgentIdentityStore(),
+      enterpriseCredentialStore: createStore(),
+      enterpriseHttpClient: client,
+      enterpriseOrigin: 'https://enterprise.example'
+    });
+
+    const qrStart = await authRequest('POST', '/enterprise/qr-login', {
+      provider: 'feishu'
+    });
+    expect(qrStart.statusCode).toBe(200);
+    expect(qrStart.json()).toMatchObject({
+      requestId: 'qr-feishu',
+      provider: 'feishu'
+    });
+
+    const qrStatus = await authRequest('GET', '/enterprise/qr-login/qr-feishu');
+    expect(qrStatus.statusCode).toBe(200);
+    expect(qrStatus.json()).toMatchObject({
+      requestId: 'qr-feishu',
+      provider: 'feishu',
+      status: 'signed_in',
+      session: { status: 'signed_in' }
+    });
+    expect(JSON.stringify(qrStatus.json())).not.toContain('enterprise-token');
+  });
+
   it('exposes enterprise skill list detail install and update routes', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
     const enterpriseSkillManager = createEnterpriseSkillManager();

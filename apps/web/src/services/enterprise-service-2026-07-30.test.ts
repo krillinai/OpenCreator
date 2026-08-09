@@ -16,6 +16,8 @@ describe('enterprise service', () => {
       name: 'New Member',
       password: 'secret'
     });
+    await service.startQrLogin({ provider: 'feishu' });
+    await service.getQrLoginStatus('qr/request 1');
     await service.logout();
 
     expect(get).toHaveBeenCalledWith('/enterprise/session');
@@ -29,6 +31,10 @@ describe('enterprise service', () => {
       name: 'New Member',
       password: 'secret'
     });
+    expect(post).toHaveBeenCalledWith('/enterprise/qr-login', {
+      provider: 'feishu'
+    });
+    expect(get).toHaveBeenCalledWith('/enterprise/qr-login/qr%2Frequest%201');
     expect(post).toHaveBeenCalledWith('/enterprise/logout');
   });
 

@@ -43,8 +43,11 @@ describe('ConversationStarterTags', () => {
 
     expect(screen.getByLabelText('常用场景')).toBeInTheDocument();
     expect(screen.getByText('数据分析')).toBeInTheDocument();
-    expect(screen.getByText('获客转化')).toBeInTheDocument();
-    expect(screen.getByText('内容创意生成')).toBeInTheDocument();
-    expect(screen.getByText('广告投放')).toBeInTheDocument();
+    expect(screen.getByText('脚本选题生成')).toBeInTheDocument();
+    expect(screen.getByText('广告素材审核')).toBeInTheDocument();
+    expect(screen.getByText('视频发布')).toBeInTheDocument();
+    expect(screen.queryByText('获客转化')).not.toBeInTheDocument();
+    expect(screen.queryByText('内容创意生成')).not.toBeInTheDocument();
+    expect(screen.queryByText('广告投放')).not.toBeInTheDocument();
   });
 });

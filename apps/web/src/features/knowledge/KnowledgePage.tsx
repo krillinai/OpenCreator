@@ -18,13 +18,9 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
   type ChangeEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
   type ReactNode
 } from 'react';
-import { beginPaneResize } from '../../components/layout/pane-resize-2026-07-29.js';
 import './knowledge.css';
 
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
@@ -55,20 +51,17 @@ export type KnowledgePageProps = {
   documentsError?: string;
   upload?: KnowledgeUploadState;
   uploadNotice?: string;
-  conversation?: ReactNode;
   onOpenAccount(): void;
   onRefresh(): void;
+  onStartConversation(): void;
   onSelectKnowledgeBase(knowledgeBaseId: string): void;
   onUpload(file: File): void;
 };
 
 export function KnowledgePage(props: KnowledgePageProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const conversationLayoutRef = useRef<HTMLElement | null>(null);
   const [mobileDocumentsOpen, setMobileDocumentsOpen] = useState(false);
   const [fileSelectionError, setFileSelectionError] = useState<string>();
-  const [mode, setMode] = useState<'list' | 'conversation'>('list');
-  const [conversationPaneWidth, setConversationPaneWidth] = useState<number>();
   const selectedKnowledgeBase = props.knowledgeBases?.find(
     item => item.knowledgeBaseId === props.selectedKnowledgeBaseId
   );
@@ -103,32 +96,6 @@ export function KnowledgePage(props: KnowledgePageProps) {
     }
     setFileSelectionError(undefined);
     props.onUpload(file);
-  }
-
-  function updateConversationPaneWidth(clientX: number) {
-    const rect = conversationLayoutRef.current?.getBoundingClientRect();
-    if (rect === undefined) return;
-    setConversationPaneWidth(Math.min(
-      Math.max(clientX - rect.left, 420),
-      Math.max(420, rect.width - 366)
-    ));
-  }
-
-  function resizeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    const rect = conversationLayoutRef.current?.getBoundingClientRect();
-    if (rect === undefined) return;
-    const current = conversationPaneWidth ?? Math.round(rect.width * 0.6) - 6;
-    const delta = event.key === 'ArrowLeft' ? -24 : 24;
-    setConversationPaneWidth(Math.min(
-      Math.max(current + delta, 420),
-      Math.max(420, rect.width - 366)
-    ));
-  }
-
-  function beginConversationResize(event: ReactMouseEvent<HTMLDivElement>) {
-    beginPaneResize(event, updateConversationPaneWidth);
   }
 
   if (!props.connected) {
@@ -177,8 +144,8 @@ export function KnowledgePage(props: KnowledgePageProps) {
 
   return (
     <main className="knowledge-page">
-      <div className="knowledge-page__inner" data-mode={mode}>
-        {mode === 'list' ? <header className="knowledge-header">
+      <div className="knowledge-page__inner">
+        <header className="knowledge-header">
           <div>
             <h1>企业知识库</h1>
             <p>查看当前账户有权访问的知识库和文档</p>
@@ -187,12 +154,10 @@ export function KnowledgePage(props: KnowledgePageProps) {
             <button
               className="knowledge-view-toggle"
               type="button"
-              onClick={() => setMode(current => (
-                current === 'list' ? 'conversation' : 'list'
-              ))}
+              onClick={props.onStartConversation}
             >
               <MessageSquareText size={16} aria-hidden="true" />
-              <span>{mode === 'list' ? '对话知识库' : '返回列表视图'}</span>
+              <span>对话知识库</span>
             </button>
             <button
               className="knowledge-icon-button"
@@ -204,7 +169,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
               <RefreshCw size={16} aria-hidden="true" />
             </button>
           </div>
-        </header> : null}
+        </header>
 
         {props.knowledgeBasesError !== undefined ? (
           <p className="knowledge-banner knowledge-banner--error" role="alert">
@@ -215,7 +180,6 @@ export function KnowledgePage(props: KnowledgePageProps) {
         <div
           className="knowledge-workbench"
           data-mobile-documents-open={mobileDocumentsOpen}
-          hidden={mode !== 'list'}
         >
           <nav className="knowledge-library-pane" aria-label="授权知识库">
             <div className="knowledge-pane-heading">
@@ -395,99 +359,6 @@ export function KnowledgePage(props: KnowledgePageProps) {
             )}
           </section>
         </div>
-        <section
-          ref={conversationLayoutRef}
-          className="conversation-file-layout knowledge-conversation"
-          hidden={mode !== 'conversation'}
-          style={conversationPaneWidth === undefined
-            ? undefined
-            : ({ '--conversation-pane-width': `${conversationPaneWidth}px` } as CSSProperties)}
-        >
-          <div className="knowledge-conversation__main">
-            <header className="knowledge-conversation__pane-header">
-              <strong>对话知识库</strong>
-              <button
-                type="button"
-                onClick={() => setMode('list')}
-              >
-                返回列表视图
-              </button>
-            </header>
-            {props.conversation ?? (
-              <KnowledgeEmpty
-                icon={<MessageSquareText size={22} aria-hidden="true" />}
-                title="对话知识库"
-                detail="知识库对话服务正在准备中。"
-              />
-            )}
-          </div>
-          <div
-            className="pane-resize-handle conversation-file-resize-handle"
-            role="separator"
-            aria-label="调整知识对话和列表区域宽度"
-            aria-orientation="vertical"
-            aria-valuenow={conversationPaneWidth}
-            tabIndex={0}
-            onMouseDown={beginConversationResize}
-            onKeyDown={resizeWithKeyboard}
-          />
-          <aside className="knowledge-conversation__context" aria-label="对话知识库范围">
-            <div className="knowledge-conversation__context-heading">
-              <div>
-                <strong>企业知识库</strong>
-                <span>{props.knowledgeBases?.length ?? 0} 个可访问项</span>
-              </div>
-              <button
-                className="knowledge-icon-button"
-                type="button"
-                aria-label="刷新企业知识库"
-                title="刷新"
-                onClick={props.onRefresh}
-              >
-                <RefreshCw size={15} aria-hidden="true" />
-              </button>
-            </div>
-            <ul className="knowledge-conversation__library-list">
-              {props.knowledgeBases?.map(knowledgeBase => (
-                <li key={knowledgeBase.knowledgeBaseId}>
-                  <button
-                    type="button"
-                    aria-current={knowledgeBase.knowledgeBaseId === props.selectedKnowledgeBaseId
-                      ? 'page'
-                      : undefined}
-                    onClick={() => props.onSelectKnowledgeBase(knowledgeBase.knowledgeBaseId)}
-                  >
-                    <span className="knowledge-conversation__library-name">
-                      <FolderOpen size={14} aria-hidden="true" />
-                      <strong>{knowledgeBase.name}</strong>
-                    </span>
-                    <span>{knowledgeBase.documentCount} 个文档</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {selectedKnowledgeBase === undefined ? null : (
-              <div className="knowledge-conversation__documents">
-                <div>
-                  <strong>文档</strong>
-                  <span>{props.documents?.length ?? selectedKnowledgeBase.documentCount} 个</span>
-                </div>
-                {props.documentsLoading ? (
-                  <span>正在加载...</span>
-                ) : (
-                  <ul>
-                    {props.documents?.map(document => (
-                      <li key={document.documentId}>
-                        <FileText size={14} aria-hidden="true" />
-                        <span>{document.name}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-          </aside>
-        </section>
       </div>
     </main>
   );

@@ -116,6 +116,19 @@ describe('ThreadService', () => {
     expect(post).toHaveBeenCalledWith('/threads/thread%2Fdraft/archive', {});
   });
 
+  it('permanently deletes a thread through the encoded delete endpoint', async () => {
+    const del = vi.fn(async () => undefined);
+    const client = createClient(vi.fn()) as RuntimeClient & {
+      delete(path: string): Promise<void>;
+    };
+    client.delete = del as RuntimeClient['delete'];
+    const service = createThreadService(client);
+
+    await service.deleteThread('thread/中文');
+
+    expect(del).toHaveBeenCalledWith('/threads/thread%2F%E4%B8%AD%E6%96%87');
+  });
+
   it('uses dedicated account-scoped knowledge conversation endpoints', async () => {
     const get = vi.fn(async (path: string) => (
       path.endsWith('/latest') ? { thread: null } : { thread: createThreadResponse() }
@@ -124,12 +137,14 @@ describe('ThreadService', () => {
     const service = createThreadService(createClient(get, post));
 
     await expect(service.getLatestKnowledgeThread()).resolves.toEqual({ thread: null });
-    await service.createKnowledgeThread();
+    await service.createKnowledgeThread('project-default');
     await service.getKnowledgeThread('thread/knowledge');
     await service.listKnowledgeThreadRuns('thread/knowledge');
     await service.getKnowledgeThreadHistory('thread/knowledge', { limit: 50 });
 
-    expect(post).toHaveBeenCalledWith('/enterprise/knowledge-conversations', {});
+    expect(post).toHaveBeenCalledWith('/enterprise/knowledge-conversations', {
+      projectId: 'project-default'
+    });
     expect(get).toHaveBeenCalledWith(
       '/enterprise/knowledge-conversations/thread%2Fknowledge/history?limit=50'
     );

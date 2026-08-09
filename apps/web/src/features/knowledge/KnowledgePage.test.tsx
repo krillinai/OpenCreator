@@ -242,28 +242,21 @@ describe('KnowledgePage', () => {
     expect(workbench).toHaveAttribute('data-mobile-documents-open', 'false');
   });
 
-  it('switches between the list and knowledge conversation while keeping refresh', async () => {
+  it('starts a standard conversation from the knowledge list', async () => {
     const user = userEvent.setup();
+    const onStartConversation = vi.fn();
     renderKnowledge({
       knowledgeBases: [writableKnowledgeBase],
-      conversation: <div>知识库对话工作区</div>
+      onStartConversation
     });
 
     expect(screen.getByRole('button', { name: '刷新企业知识库' }))
       .toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '对话知识库' }));
-    expect(screen.getByText('知识库对话工作区')).toBeVisible();
-    expect(screen.getByRole('complementary', { name: '对话知识库范围' }))
-      .toBeVisible();
-    expect(screen.getByRole('separator', { name: '调整知识对话和列表区域宽度' }))
-      .toBeVisible();
-    expect(screen.getByRole('button', { name: '返回列表视图' }))
-      .toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '刷新企业知识库' }))
-      .toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: '返回列表视图' }));
+    expect(onStartConversation).toHaveBeenCalledOnce();
     expect(screen.getByRole('navigation', { name: '授权知识库' })).toBeVisible();
+    expect(screen.queryByRole('complementary', { name: '对话知识库范围' }))
+      .not.toBeInTheDocument();
   });
 });
 
@@ -281,6 +274,7 @@ function createKnowledge(overrides: Partial<KnowledgePageProps> = {}) {
       documentsLoading={false}
       onOpenAccount={vi.fn()}
       onRefresh={vi.fn()}
+      onStartConversation={vi.fn()}
       onSelectKnowledgeBase={vi.fn()}
       onUpload={vi.fn()}
       {...overrides}

@@ -171,6 +171,68 @@ describe('enterprise HTTP client', () => {
     });
   });
 
+  it('supports three-provider QR login without exposing tokens', async () => {
+    const authenticated = {
+      account: {
+        account_id: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User',
+        status: 'active'
+      },
+      agent: { agent_id: AGENT_ID, name: 'User' },
+      access_token: 'enterprise-access-token',
+      token_type: 'Bearer',
+      expires_at: '2026-08-08T10:00:00Z'
+    };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          request_id: 'qr_1',
+          provider: 'feishu',
+          qr_code_url: 'https://enterprise.example/qr_1.png',
+          expires_at: '2026-08-07T12:01:00Z',
+          poll_after_ms: 1000
+        }
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          request_id: 'qr_1',
+          provider: 'feishu',
+          status: 'signed_in',
+          ...authenticated
+        }
+      }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.startQrLogin!({ provider: 'feishu' }, AGENT_ID))
+      .resolves.toEqual({
+        requestId: 'qr_1',
+        provider: 'feishu',
+        qrCodeUrl: 'https://enterprise.example/qr_1.png',
+        expiresAt: '2026-08-07T12:01:00Z',
+        pollAfterMs: 1000
+      });
+    await expect(client.pollQrLogin!('qr_1', AGENT_ID)).resolves.toMatchObject({
+      requestId: 'qr_1',
+      provider: 'feishu',
+      status: 'signed_in',
+      login: {
+        agentId: AGENT_ID,
+        accessToken: 'enterprise-access-token'
+      }
+    });
+
+    expect(fetch.mock.calls.map(call => String(call[0]))).toEqual([
+      `${ORIGIN}/api/v1/auth/qr-login`,
+      `${ORIGIN}/api/v1/auth/qr-login/qr_1?agent_id=${encodeURIComponent(AGENT_ID)}`
+    ]);
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+      provider: 'feishu',
+      client_id: 'clawee-agent',
+      agent_id: AGENT_ID
+    });
+  });
+
   it('requires the authenticated agent identity from the current account response', async () => {
     const fetch = vi.fn(
       async (_url: string | URL | Request, _init?: RequestInit) => (

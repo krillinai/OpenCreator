@@ -206,6 +206,7 @@ export type ThreadRow = {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  pinned_at?: string | null;
   last_error_code: string | null;
   last_error_message: string | null;
 };
@@ -236,6 +237,12 @@ export type ThreadRepository = {
   listProfileReferences(profile: string): Array<{ id: string; title: string | null }>;
   archiveLegacyScheduleThreads(): void;
   archiveThread(id: string): void;
+  deleteThread(id: string): void;
+  updateThread(input: {
+    id: string;
+    title?: string;
+    pinnedAt?: string | null;
+  }): void;
   assignProject(input: { id: string; projectId: string }): boolean;
   updateThreadSandbox(input: UpdateThreadSandboxInput): void;
   updateScheduleThread(input: UpdateScheduleThreadRowInput): void;
@@ -607,7 +614,6 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   }>(`
     ${threadSelect}
     WHERE threads.enterprise_subject_id = @enterpriseSubjectId
-      AND threads.purpose = 'knowledge_conversation'
       AND (@status = 'all' OR threads.status = @status)
     ORDER BY threads.updated_at DESC, threads.id DESC
     LIMIT @limit
@@ -689,9 +695,32 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
           AND codex_thread_id IS NOT NULL
       )
   `);
+  const deleteThreadTransaction = db.transaction((id: string) => {
+    db.prepare(`
+      DELETE FROM notification_outbox
+      WHERE thread_id = ? OR run_id IN (SELECT id FROM runs WHERE thread_id = ?)
+    `).run(id, id);
+    db.prepare(`
+      DELETE FROM attachments
+      WHERE thread_id = ? OR run_id IN (SELECT id FROM runs WHERE thread_id = ?)
+    `).run(id, id);
+    db.prepare('DELETE FROM conversation_summaries WHERE thread_id = ?').run(id);
+    db.prepare(`
+      DELETE FROM memories WHERE scope = 'thread' AND scope_key = ?
+    `).run(id);
+    db.prepare('DELETE FROM runs WHERE thread_id = ?').run(id);
+    db.prepare('DELETE FROM threads WHERE id = ?').run(id);
+  });
   const updateSandbox = db.prepare(`
     UPDATE threads
     SET sandbox = @sandbox,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @id
+  `);
+  const updateThread = db.prepare(`
+    UPDATE threads
+    SET title = CASE WHEN @titleSet = 1 THEN @title ELSE title END,
+        pinned_at = CASE WHEN @pinnedAtSet = 1 THEN @pinnedAt ELSE pinned_at END,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = @id
   `);
@@ -826,6 +855,18 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     },
     archiveThread(id: string): void {
       archive.run(id);
+    },
+    deleteThread(id: string): void {
+      deleteThreadTransaction(id);
+    },
+    updateThread(input): void {
+      updateThread.run({
+        id: input.id,
+        titleSet: input.title === undefined ? 0 : 1,
+        title: input.title ?? null,
+        pinnedAtSet: input.pinnedAt === undefined ? 0 : 1,
+        pinnedAt: input.pinnedAt ?? null
+      });
     },
     assignProject(input): boolean {
       return assignProject.run(input).changes === 1;

@@ -5,6 +5,7 @@ import {
   collectCodexCapabilityMatrix,
   createUnknownCapabilityMatrix,
   isResumeExecutionSupported,
+  isReusableCapabilityMatrix,
   parseCodexCapabilityMatrix,
   parseCodexExecHelp,
   probeCodexVersionAsync
@@ -63,6 +64,23 @@ Commands:
 `;
 
 describe('codex capability parsing', () => {
+  it('rejects capability caches created before knowledge isolation was recorded', () => {
+    const legacy = {
+      ...createUnknownCapabilityMatrix(),
+      knowledgeToolIsolation: undefined,
+      knowledgeBuiltInTools: undefined
+    };
+
+    expect(isReusableCapabilityMatrix(legacy)).toBe(false);
+    expect(isReusableCapabilityMatrix(parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.146.0',
+      execHelp: '',
+      resumeHelp: '',
+      mcpHelp: '',
+      mcpAddHelp: ''
+    }))).toBe(true);
+  });
+
   it('accepts a null sync spawn error from successful process creation', () => {
     expect(() => collectCodexCapabilityMatrix({
       codexBin: execPath,

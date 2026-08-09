@@ -270,6 +270,36 @@ export async function registerThreadRoutes(
       throw error;
     }
   });
+
+  server.delete('/threads/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const existing = manager.getPublicThread(id);
+    if (existing === undefined || existing.purpose === 'knowledge_conversation') {
+      return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+    }
+    if (existing.purpose === 'schedule_task') {
+      return reply
+        .code(409)
+        .send(apiError('THREAD_MANAGED_BY_SCHEDULE', 'Thread is managed by a schedule'));
+    }
+    if (runManager.hasActiveRunForThread(id)) {
+      return reply.code(409).send(apiError('THREAD_HAS_ACTIVE_RUN', 'Thread has active run'));
+    }
+    try {
+      manager.deleteThread(id);
+      return reply.code(204).send();
+    } catch (error) {
+      if (error instanceof Error && error.message === 'THREAD_NOT_FOUND') {
+        return reply.code(404).send(apiError('THREAD_NOT_FOUND', 'Thread not found'));
+      }
+      if (error instanceof Error && error.message === 'THREAD_MANAGED_BY_SCHEDULE') {
+        return reply
+          .code(409)
+          .send(apiError('THREAD_MANAGED_BY_SCHEDULE', 'Thread is managed by a schedule'));
+      }
+      throw error;
+    }
+  });
 }
 
 function toThreadResponse(thread: RuntimeThread): ThreadResponse {
@@ -291,7 +321,8 @@ function toThreadResponse(thread: RuntimeThread): ThreadResponse {
     ...(thread.scheduleId === undefined ? {} : { scheduleId: thread.scheduleId }),
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
-    archivedAt: thread.archivedAt
+    archivedAt: thread.archivedAt,
+    pinnedAt: thread.pinnedAt
   };
 }
 
@@ -436,17 +467,38 @@ function parseThreadCreateOptions(
   return { ok: true, value: undefined };
 }
 
-function parseUpdateThreadRequest(body: unknown): ParseResult<Required<UpdateThreadRequest>> {
+function parseUpdateThreadRequest(body: unknown): ParseResult<UpdateThreadRequest> {
   if (body === undefined) return { ok: false, message: 'body must be an object' };
   if (!isPlainObject(body)) return { ok: false, message: 'body must be an object' };
 
   const input = body as Record<string, unknown>;
-  const sandbox = input.sandbox;
-  if (!isOneOf(sandbox, SANDBOX_MODES)) {
-    return { ok: false, message: 'sandbox must be a valid sandbox mode' };
+  if (Object.keys(input).some(key => !['title', 'sandbox', 'pinned'].includes(key))) {
+    return { ok: false, message: 'thread update contains unsupported fields' };
+  }
+  const value: UpdateThreadRequest = {};
+  if (input.title !== undefined) {
+    if (typeof input.title !== 'string' || input.title.trim().length === 0) {
+      return { ok: false, message: 'title must be a non-empty string' };
+    }
+    value.title = input.title.trim();
+  }
+  if (input.sandbox !== undefined) {
+    if (!isOneOf(input.sandbox, SANDBOX_MODES)) {
+      return { ok: false, message: 'sandbox must be a valid sandbox mode' };
+    }
+    value.sandbox = input.sandbox;
+  }
+  if (input.pinned !== undefined) {
+    if (typeof input.pinned !== 'boolean') {
+      return { ok: false, message: 'pinned must be a boolean' };
+    }
+    value.pinned = input.pinned;
+  }
+  if (Object.keys(value).length === 0) {
+    return { ok: false, message: 'thread update must include a field' };
   }
 
-  return { ok: true, value: { sandbox } };
+  return { ok: true, value };
 }
 
 function parseAssignThreadProjectRequest(

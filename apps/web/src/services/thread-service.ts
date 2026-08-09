@@ -37,8 +37,8 @@ export function createThreadService(client: RuntimeClient) {
     getLatestKnowledgeThread(): Promise<{ thread: ThreadResponse | null }> {
       return client.get('/enterprise/knowledge-conversations/latest');
     },
-    createKnowledgeThread(): Promise<{ thread: ThreadResponse }> {
-      return client.post('/enterprise/knowledge-conversations', {});
+    createKnowledgeThread(projectId: string): Promise<{ thread: ThreadResponse }> {
+      return client.post('/enterprise/knowledge-conversations', { projectId });
     },
     getKnowledgeThread(threadId: string): Promise<{ thread: ThreadResponse }> {
       return client.get(`/enterprise/knowledge-conversations/${encodeURIComponent(threadId)}`);
@@ -69,6 +69,9 @@ export function createThreadService(client: RuntimeClient) {
     },
     archiveThread(threadId: string): Promise<{ thread: ThreadResponse }> {
       return client.post(`/threads/${encodeURIComponent(threadId)}/archive`, {});
+    },
+    deleteThread(threadId: string): Promise<void> {
+      return client.delete(`/threads/${encodeURIComponent(threadId)}`);
     },
     listThreadRuns(threadId: string): Promise<ThreadRunsResponse> {
       return client.get(`/threads/${encodeURIComponent(threadId)}/runs?limit=50`);

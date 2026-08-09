@@ -5,6 +5,9 @@ import type {
   EnterpriseLoginRequest,
   EnterpriseMcpCatalogResponse,
   EnterpriseMcpPreferenceUpdateRequest,
+  EnterpriseQrLoginStartRequest,
+  EnterpriseQrLoginStartResponse,
+  EnterpriseQrLoginStatusResponse,
   EnterpriseRegisterRequest,
   EnterpriseSessionResponse,
   EnterpriseSharedFileDetailResponse,
@@ -38,6 +41,14 @@ export function createEnterpriseService(client: ClientLike) {
     },
     register(input: EnterpriseRegisterRequest): Promise<EnterpriseSessionResponse> {
       return client.post('/enterprise/register', input);
+    },
+    startQrLogin(
+      input: EnterpriseQrLoginStartRequest
+    ): Promise<EnterpriseQrLoginStartResponse> {
+      return client.post('/enterprise/qr-login', input);
+    },
+    getQrLoginStatus(requestId: string): Promise<EnterpriseQrLoginStatusResponse> {
+      return client.get(`/enterprise/qr-login/${encodeURIComponent(requestId)}`);
     },
     logout(): Promise<EnterpriseSessionResponse> {
       return client.post('/enterprise/logout');

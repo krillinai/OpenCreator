@@ -443,12 +443,83 @@ describe('Composer', () => {
 
   it('opens the add context menu', async () => {
     const user = userEvent.setup();
-    render(<Composer {...defaultProps} />);
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[
+          {
+            id: 'skill:brainstorming',
+            category: 'skill',
+            label: 'brainstorming',
+            description: '需求梳理和方案发散',
+            insertText: '$brainstorming '
+          },
+          {
+            id: 'mcp:github',
+            category: 'mcp',
+            label: 'github',
+            description: 'stdio · configured',
+            insertText: '使用 MCP：github '
+          }
+        ]}
+      />
+    );
 
     await user.click(screen.getByRole('button', { name: '添加上下文' }));
 
     expect(screen.getByRole('menu', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: '添加图片' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '添加文件' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '技能' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '连接器' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: '技能' }));
+    expect(screen.getByRole('menu', { name: '技能' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /brainstorming/ })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /github/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: /brainstorming/ }));
+    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveAttribute('placeholder', '');
+  });
+
+  it('selects connectors and opens existing capability management', async () => {
+    const user = userEvent.setup();
+    const onManageSkills = vi.fn();
+    const onManageConnectors = vi.fn();
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[
+          {
+            id: 'mcp:github',
+            category: 'mcp',
+            label: 'github',
+            description: 'stdio · configured',
+            insertText: '使用 MCP：github '
+          }
+        ]}
+        onManageSkills={onManageSkills}
+        onManageConnectors={onManageConnectors}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '连接器' }));
+
+    expect(screen.getByRole('menu', { name: '连接器' })).toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: /github/ }));
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveValue('使用 MCP：github ');
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveAttribute('placeholder', '');
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '技能' }));
+    await user.click(screen.getByRole('menuitem', { name: '管理技能' }));
+    expect(onManageSkills).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '连接器' }));
+    await user.click(screen.getByRole('menuitem', { name: '管理连接器' }));
+    expect(onManageConnectors).toHaveBeenCalledTimes(1);
   });
 
   it('is disabled when current thread has an active run', () => {
@@ -655,6 +726,16 @@ describe('Composer', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('hides the default placeholder after entering any text', async () => {
+    const user = userEvent.setup();
+    render(<Composer {...defaultProps} />);
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await user.type(textbox, 'a');
+
+    expect(textbox).toHaveAttribute('placeholder', '');
+  });
+
   it('uploads a selected image, blocks submit while uploading, and submits attachment metadata', async () => {
     const user = userEvent.setup();
     let resolveUpload!: (value: ReturnType<typeof attachment>) => void;
@@ -675,6 +756,7 @@ describe('Composer', () => {
 
     await user.click(screen.getByRole('button', { name: '添加上下文' }));
     await user.upload(screen.getByLabelText('选择图片'), file);
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveAttribute('placeholder', '');
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), '描述图片');
 
     expect(screen.getByRole('status', { name: '正在上传 screen.png' })).toBeInTheDocument();
@@ -798,7 +880,7 @@ describe('Composer', () => {
 
     await user.click(screen.getByRole('button', { name: '添加上下文' }));
 
-    expect(screen.getByRole('menuitem', { name: /添加图片/ })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: /添加文件/ })).toBeDisabled();
     expect(screen.getByText('当前 Codex 版本不支持图片输入，请更新 Codex')).toBeInTheDocument();
     expect(screen.getByLabelText('选择图片')).toBeDisabled();
   });
