@@ -1,5 +1,7 @@
 import {
   mkdtempSync,
+  mkdirSync,
+  readFileSync,
   rmSync,
   writeFileSync
 } from 'node:fs';
@@ -92,6 +94,51 @@ describe('enterprise agent identity store', () => {
     await expect(store.getOrCreate()).resolves.toBe(firstAgentId);
     expect(generateId).not.toHaveBeenCalled();
     expect(readEnterpriseClientConfig(configPath).agentId).toBe(firstAgentId);
+  });
+
+  it('inherits the collector agent id when clawee-agent has none', async () => {
+    const dataDir = createTempDirectory();
+    const configPath = writeConfig(dataDir);
+    const collectorConfigPath = join(dataDir, 'collector', 'config.toml');
+    mkdirSync(join(dataDir, 'collector'));
+    writeFileSync(
+      collectorConfigPath,
+      `office_url = "https://enterprise.example"\nagent_id = "${firstAgentId}"\n`
+    );
+    const generateId = vi.fn(() =>
+      'clawee_123e4567-e89b-42d3-a456-426614174000'
+    );
+    const store = createEnterpriseAgentIdentityStore({
+      configPath,
+      collectorConfigPath,
+      generateId
+    });
+
+    await expect(store.getOrCreate()).resolves.toBe(firstAgentId);
+    expect(generateId).not.toHaveBeenCalled();
+    expect(readEnterpriseClientConfig(configPath).agentId).toBe(firstAgentId);
+  });
+
+  it('keeps the clawee-agent id authoritative over collector config', async () => {
+    const dataDir = createTempDirectory();
+    const configPath = join(dataDir, 'config.toml');
+    writeFileSync(
+      configPath,
+      `gateway = "https://enterprise.example"\nagent_id = "${firstAgentId}"\n`
+    );
+    const collectorConfigPath = join(dataDir, 'collector', 'config.toml');
+    mkdirSync(join(dataDir, 'collector'));
+    writeFileSync(
+      collectorConfigPath,
+      'office_url = "https://enterprise.example"\nagent_id = "clawee_123e4567-e89b-42d3-a456-426614174000"\n'
+    );
+    const store = createEnterpriseAgentIdentityStore({
+      configPath,
+      collectorConfigPath
+    });
+
+    await expect(store.getOrCreate()).resolves.toBe(firstAgentId);
+    expect(readFileSync(collectorConfigPath, 'utf8')).toContain(firstAgentId);
   });
 });
 
