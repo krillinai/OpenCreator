@@ -91,7 +91,7 @@ test('未勾选协议时 Browser/Desktop 登录均先确认再提交', async ({
   expect(loginRequests[1]).toEqual(loginRequests[0]);
 });
 
-test('企业账户、系统连接、知识库、共享网盘与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
+test('企业账户、连接器、知识库、共享网盘与 Skill Hub 在 Browser/Desktop Bridge 下保持一致', async ({
   browser,
   page,
   runtime
@@ -248,13 +248,13 @@ test('企业知识库在 390px 视口下逐级浏览且不产生页面级溢出'
   expect(fakeDaemon.unknownRequestPaths()).toEqual([]);
 });
 
-test('系统连接在 390px 视口下可安装和开启且不产生溢出或重叠', async ({
+test('连接器在 390px 视口下可安装和开启且不产生溢出或重叠', async ({
   page,
   runtime
 }, testInfo) => {
   test.skip(
     testInfo.project.name !== 'chromium-mobile',
-    '移动端系统连接规格固定使用 390x844 Chromium 视口'
+    '移动端连接器规格固定使用 390x844 Chromium 视口'
   );
 
   const fakeDaemon = new FakeEnterpriseDaemon();
@@ -269,7 +269,7 @@ test('系统连接在 390px 视口下可安装和开启且不产生溢出或重�
   await page.evaluate(() => {
     window.location.hash = '#/connections';
   });
-  await expect(page.getByRole('heading', { name: '系统连接' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '连接器' })).toBeVisible();
   const card = page.locator(
     '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
   );
@@ -379,8 +379,8 @@ async function runPlatform(input: {
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
 
-    await page.getByRole('button', { name: '系统连接', exact: true }).click();
-    await expect(page.getByRole('heading', { name: '系统连接' })).toBeVisible();
+    await page.getByRole('button', { name: '连接器', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '连接器' })).toBeVisible();
     const mcpCard = page.locator(
       '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
     );

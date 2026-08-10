@@ -152,7 +152,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
       <ConnectionsGate
         icon={<WifiOff size={22} aria-hidden="true" />}
         title="正在等待本地 Runtime"
-        detail="系统连接暂不可用，本地项目和会话仍可继续使用。"
+        detail="连接器暂不可用，本地项目和会话仍可继续使用。"
       />
     );
   }
@@ -180,7 +180,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     return (
       <ConnectionsGate
         icon={<LogIn size={22} aria-hidden="true" />}
-        title="登录后管理系统连接"
+        title="登录后管理连接器"
         detail="企业授权由 Gateway 管理，这里只保存当前用户的安装和开启偏好。"
         actionLabel="登录企业账户"
         onAction={props.onOpenAccount}
@@ -193,14 +193,14 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
       <div className="connections-page__inner">
         <header className="connections-header">
           <div>
-            <h1>系统连接</h1>
+            <h1>连接器</h1>
             <p>安装并开启当前用户需要使用的企业 MCP</p>
           </div>
           <div className="connections-header__actions">
             <label className="connections-search">
               <Search size={16} aria-hidden="true" />
               <input
-                aria-label="搜索系统连接"
+                aria-label="搜索连接器"
                 onChange={event => setQuery(event.target.value)}
                 placeholder="搜索系统或工具"
                 type="search"
@@ -210,7 +210,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
             <button
               className="connections-icon-button"
               type="button"
-              aria-label="刷新系统连接"
+              aria-label="刷新连接器"
               title="刷新"
               disabled={loading}
               onClick={() => void refresh()}
@@ -282,7 +282,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
             {upstreams.length === 0 ? '企业目录中暂无 MCP' : '没有找到匹配的系统'}
           </div>
         ) : (
-          <section className="connections-grid" aria-label="系统连接目录">
+          <section className="connections-grid" aria-label="连接器目录">
             {filtered.map(upstream => (
               <ConnectionCard
                 key={upstream.upstreamId}
@@ -477,5 +477,5 @@ function formatConnectionError(error: unknown): string {
   }
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
-    : '系统连接操作失败';
+    : '连接器操作失败';
 }

@@ -46,6 +46,11 @@ import type {
   SidebarTaskSummary
 } from './sidebar-task-model.js';
 
+const SIDEBAR_ACTION_MENU_WIDTH = 154;
+const SIDEBAR_ACTION_MENU_MAX_HEIGHT = 104;
+const SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN = 8;
+const SIDEBAR_ACTION_MENU_GAP = 4;
+
 export function ClaweeSidebar(props: {
   projects: ClaweeProject[];
   conversations: ClaweeConversation[];
@@ -88,6 +93,7 @@ export function ClaweeSidebar(props: {
     title: string;
   }>();
   const [conversationMenuId, setConversationMenuId] = useState<string>();
+  const [conversationMenuPosition, setConversationMenuPosition] = useState<{ top: number; left: number }>();
   const [conversationRename, setConversationRename] = useState<{
     id: string;
     originalTitle: string;
@@ -111,6 +117,7 @@ export function ClaweeSidebar(props: {
   }>();
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const conversationMenuRef = useRef<HTMLDivElement>(null);
+  const conversationMenuPortalRef = useRef<HTMLDivElement>(null);
   const taskMenuRef = useRef<HTMLDivElement>(null);
   const taskMenuPortalRef = useRef<HTMLDivElement>(null);
   const renameCanceledRef = useRef(false);
@@ -133,7 +140,7 @@ export function ClaweeSidebar(props: {
     { label: '数据看板', icon: LayoutDashboard, view: 'dashboard', onClick: () => props.onOpenView('dashboard') },
     { label: 'Agent动态', icon: Activity, view: 'activity', onClick: () => props.onOpenView('activity') },
     { label: '企业Skill中心', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') },
-    { label: '系统连接', icon: Link2, view: 'connections', onClick: () => props.onOpenView('connections') },
+    { label: '连接器', icon: Link2, view: 'connections', onClick: () => props.onOpenView('connections') },
     { label: '企业知识库', icon: LibraryBig, view: 'knowledge', onClick: () => props.onOpenView('knowledge') },
     { label: '共享网盘', icon: HardDrive, view: 'drive', onClick: () => props.onOpenView('drive') },
     { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') }
@@ -174,18 +181,27 @@ export function ClaweeSidebar(props: {
   useEffect(() => {
     if (conversationMenuId === undefined) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!conversationMenuRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !conversationMenuRef.current?.contains(target)
+        && !conversationMenuPortalRef.current?.contains(target)
+      ) {
         setConversationMenuId(undefined);
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setConversationMenuId(undefined);
     };
+    const closeOnViewportChange = () => setConversationMenuId(undefined);
     document.addEventListener('pointerdown', closeOnOutsidePointer);
     document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnViewportChange);
+    window.addEventListener('scroll', closeOnViewportChange, true);
     return () => {
       document.removeEventListener('pointerdown', closeOnOutsidePointer);
       document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnViewportChange);
+      window.removeEventListener('scroll', closeOnViewportChange, true);
     };
   }, [conversationMenuId]);
 
@@ -201,11 +217,16 @@ export function ClaweeSidebar(props: {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setTaskMenuId(undefined);
     };
+    const closeOnViewportChange = () => setTaskMenuId(undefined);
     document.addEventListener('pointerdown', closeOnOutsidePointer);
     document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnViewportChange);
+    window.addEventListener('scroll', closeOnViewportChange, true);
     return () => {
       document.removeEventListener('pointerdown', closeOnOutsidePointer);
       document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnViewportChange);
+      window.removeEventListener('scroll', closeOnViewportChange, true);
     };
   }, [taskMenuId]);
 
@@ -518,47 +539,59 @@ export function ClaweeSidebar(props: {
                                   title="更多"
                                   aria-haspopup="menu"
                                   aria-expanded={conversationMenuId === conversation.id}
-                                  onClick={() => setConversationMenuId(current => (
-                                    current === conversation.id ? undefined : conversation.id
-                                  ))}
+                                  onClick={event => {
+                                    const rect = event.currentTarget.getBoundingClientRect();
+                                    setConversationMenuPosition(positionSidebarActionMenu(rect));
+                                    setConversationMenuId(current => (
+                                      current === conversation.id ? undefined : conversation.id
+                                    ));
+                                  }}
                                 >
                                   <MoreHorizontal size={16} strokeWidth={1.9} aria-hidden="true" />
                                 </button>
-                                {conversationMenuId === conversation.id ? (
-                                  <div className="sidebar-conversation-menu" role="menu" aria-label={`${conversation.title} 操作`}>
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      onClick={() => {
-                                        setConversationMenuId(undefined);
-                                        setConversationRename({
-                                          id: conversation.id,
-                                          originalTitle: conversation.title,
-                                          title: conversation.title
-                                        });
-                                      }}
+                                {conversationMenuId === conversation.id && conversationMenuPosition !== undefined
+                                  ? createPortal((
+                                    <div
+                                      className="sidebar-conversation-menu sidebar-conversation-menu--portal"
+                                      role="menu"
+                                      aria-label={`${conversation.title} 操作`}
+                                      ref={conversationMenuPortalRef}
+                                      style={conversationMenuPosition}
                                     >
-                                      <Pencil size={15} strokeWidth={1.9} aria-hidden="true" />
-                                      <span>重命名</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      className="is-destructive"
-                                      disabled={isRunning}
-                                      onClick={() => {
-                                        setConversationMenuId(undefined);
-                                        setConversationPendingDeletion({
-                                          id: conversation.id,
-                                          title: conversation.title
-                                        });
-                                      }}
-                                    >
-                                      <Trash2 size={15} strokeWidth={1.9} aria-hidden="true" />
-                                      <span>删除任务</span>
-                                    </button>
-                                  </div>
-                                ) : null}
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setConversationMenuId(undefined);
+                                          setConversationRename({
+                                            id: conversation.id,
+                                            originalTitle: conversation.title,
+                                            title: conversation.title
+                                          });
+                                        }}
+                                      >
+                                        <Pencil size={15} strokeWidth={1.9} aria-hidden="true" />
+                                        <span>重命名</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="is-destructive"
+                                        disabled={isRunning}
+                                        onClick={() => {
+                                          setConversationMenuId(undefined);
+                                          setConversationPendingDeletion({
+                                            id: conversation.id,
+                                            title: conversation.title
+                                          });
+                                        }}
+                                      >
+                                        <Trash2 size={15} strokeWidth={1.9} aria-hidden="true" />
+                                        <span>删除任务</span>
+                                      </button>
+                                    </div>
+                                  ), document.body)
+                                  : null}
                               </div>
                               {props.onArchiveConversation ? (
                               <button
@@ -721,10 +754,7 @@ export function ClaweeSidebar(props: {
                             aria-expanded={taskMenuId === task.id}
                             onClick={event => {
                               const rect = event.currentTarget.getBoundingClientRect();
-                              setTaskMenuPosition({
-                                top: Math.min(window.innerHeight - 88, rect.bottom + 4),
-                                left: Math.max(8, Math.min(window.innerWidth - 162, rect.right - 154))
-                              });
+                              setTaskMenuPosition(positionSidebarActionMenu(rect));
                               setTaskMenuId(current => current === task.id ? undefined : task.id);
                             }}
                           >
@@ -902,6 +932,25 @@ export function ClaweeSidebar(props: {
       />
     </nav>
   );
+}
+
+function positionSidebarActionMenu(trigger: DOMRect): { top: number; left: number } {
+  return {
+    top: Math.max(
+      SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN,
+      Math.min(
+        window.innerHeight - SIDEBAR_ACTION_MENU_MAX_HEIGHT - SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN,
+        trigger.bottom + SIDEBAR_ACTION_MENU_GAP
+      )
+    ),
+    left: Math.max(
+      SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN,
+      Math.min(
+        window.innerWidth - SIDEBAR_ACTION_MENU_WIDTH - SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN,
+        trigger.right - SIDEBAR_ACTION_MENU_WIDTH
+      )
+    )
+  };
 }
 
 function taskStatusVisual(status: SidebarTaskStatus): {

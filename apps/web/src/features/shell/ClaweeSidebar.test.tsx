@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ClaweeSidebar } from './ClaweeSidebar.js';
@@ -87,11 +87,11 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '企业Skill中心' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '系统连接' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '连接器' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '企业知识库' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '共享网盘' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '企业Skill中心' }).nextElementSibling).toBe(screen.getByRole('button', { name: '系统连接' }));
-    expect(screen.getByRole('button', { name: '系统连接' }).nextElementSibling).toBe(screen.getByRole('button', { name: '企业知识库' }));
+    expect(screen.getByRole('button', { name: '企业Skill中心' }).nextElementSibling).toBe(screen.getByRole('button', { name: '连接器' }));
+    expect(screen.getByRole('button', { name: '连接器' }).nextElementSibling).toBe(screen.getByRole('button', { name: '企业知识库' }));
     expect(screen.getByRole('button', { name: '企业知识库' }).nextElementSibling).toBe(screen.getByRole('button', { name: '共享网盘' }));
     expect(screen.getByRole('button', { name: '共享网盘' }).nextElementSibling).toBe(screen.getByRole('button', { name: '定时任务' }));
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
@@ -421,6 +421,10 @@ describe('ClaweeSidebar', () => {
     expect(onPinConversation).toHaveBeenCalledWith('weekly-progress-brief', true);
 
     await user.click(within(conversation).getByRole('button', { name: '更多' }));
+    const menu = screen.getByRole('menu', { name: '整理本周项目进展 操作' });
+    expect(menu).toHaveClass('sidebar-conversation-menu--portal');
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu).toHaveStyle({ top: '8px', left: '8px' });
     await user.click(screen.getByRole('menuitem', { name: '重命名' }));
     const input = within(conversation).getByRole('textbox', { name: '重命名 整理本周项目进展' });
     await user.clear(input);
@@ -437,6 +441,19 @@ describe('ClaweeSidebar', () => {
     expect(dialog).toHaveTextContent('不会删除项目文件');
     await user.click(within(dialog).getByRole('button', { name: '永久删除' }));
     expect(onDeleteConversation).toHaveBeenCalledWith('weekly-progress-brief');
+  });
+
+  it('closes a portalled conversation menu when the viewport changes', async () => {
+    const user = userEvent.setup();
+    renderSidebar({ onArchiveConversation: vi.fn() });
+    const conversation = screen.getByRole('group', { name: '整理本周项目进展' });
+
+    await user.click(within(conversation).getByRole('button', { name: '更多' }));
+    expect(screen.getByRole('menu', { name: '整理本周项目进展 操作' })).toBeInTheDocument();
+
+    fireEvent(window, new Event('resize'));
+
+    expect(screen.queryByRole('menu', { name: '整理本周项目进展 操作' })).not.toBeInTheDocument();
   });
 
   it('does not allow archiving a conversation while it is running', () => {

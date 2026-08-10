@@ -5037,6 +5037,11 @@ html.is-pane-resizing * {
   box-shadow: var(--shadow-floating);
 }
 
+.sidebar-conversation-menu--portal {
+  position: fixed;
+  z-index: 200;
+}
+
 .sidebar-conversation-menu button {
   min-height: 32px;
   display: grid;

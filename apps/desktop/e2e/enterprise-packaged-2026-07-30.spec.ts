@@ -52,7 +52,7 @@ const agentIdPattern =
 
 test.describe.configure({ mode: 'serial' });
 
-test('实际打包 App 可登录、管理系统连接、使用企业知识库并安装 Skill', async () => {
+test('实际打包 App 可登录、管理连接器、使用企业知识库并安装 Skill', async () => {
   const runId = randomUUID();
   const root = mkdtempSync(join(tmpdir(), 'clawee-enterprise-packaged-'));
   const codexHome = join(root, 'codex-home');
@@ -150,11 +150,11 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
     })).toBeVisible();
 
     await app.page.getByRole('button', {
-      name: '系统连接',
+      name: '连接器',
       exact: true
     }).click();
     await expect(app.page.getByRole('heading', {
-      name: '系统连接'
+      name: '连接器'
     })).toBeVisible();
     const mcpCard = app.page.locator(
       '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
