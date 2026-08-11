@@ -416,7 +416,7 @@ describe('SkillMarketView', () => {
     expect(onInstall).toHaveBeenCalledWith('videocaptioner');
   });
 
-  it('卡片只保留名称、用途和主操作，完整标签留在详情中', () => {
+  it('卡片显示名称、作者昵称、用途和主操作，完整标签留在详情中', () => {
     const entry = createMarketEntry({
       category: 'video-subtitle',
       subcategory: '字幕生成',
@@ -430,7 +430,7 @@ describe('SkillMarketView', () => {
     expect(within(card).queryByLabelText('标签')).not.toBeInTheDocument();
     expect(card.querySelector('.skill-market-card__cover')).not.toBeInTheDocument();
     expect(within(card).getByAltText('Clawee')).toBeInTheDocument();
-    expect(within(card).queryByText('Clawee')).not.toBeInTheDocument();
+    expect(within(card).getByText('Clawee')).toHaveClass('skill-market-card__author');
     expect(within(card).queryByRole('button', { name: /收藏/ })).not.toBeInTheDocument();
     expect(within(card).queryByLabelText('使用人数')).not.toBeInTheDocument();
 

@@ -126,9 +126,6 @@ export function ClaweeSidebar(props: {
   const logoColor = props.colorMode === 'light' ? 'black' : 'white';
   const account = props.enterpriseSession?.account;
   const accountTitle = account?.name ?? '企业账户';
-  const accountLabel = account === undefined
-    ? '企业账户'
-    : `${account.name} ${account.email}`;
   const fullLogoSrc = props.colorMode === 'light' ? '/logo-v2-black.svg' : '/logo-v2-white.svg';
   const globalActions: Array<{
     label: string;
@@ -814,7 +811,7 @@ export function ClaweeSidebar(props: {
         <button
           className="sidebar-account-button"
           type="button"
-          aria-label={accountLabel}
+          aria-label={accountTitle}
           aria-current={props.activeView === 'account' ? 'page' : undefined}
           title={collapsed ? accountTitle : undefined}
           onClick={props.onOpenAccount}
@@ -824,7 +821,6 @@ export function ClaweeSidebar(props: {
           </span>
           <span className="sidebar-account-copy">
             <strong>{accountTitle}</strong>
-            {account === undefined ? null : <small>{account.email}</small>}
           </span>
         </button>
         <button

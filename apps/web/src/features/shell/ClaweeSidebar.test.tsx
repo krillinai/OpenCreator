@@ -492,10 +492,11 @@ describe('ClaweeSidebar', () => {
       activeView: 'account'
     });
 
-    expect(screen.getByRole('button', { name: 'Member member@example.com' }))
+    expect(screen.getByRole('button', { name: 'Member' }))
       .toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText('member@example.com')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).not.toHaveAttribute('aria-current');
-    await user.click(screen.getByRole('button', { name: 'Member member@example.com' }));
+    await user.click(screen.getByRole('button', { name: 'Member' }));
     await user.click(screen.getByRole('button', { name: '设置' }));
     expect(onOpenAccount).toHaveBeenCalledTimes(1);
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
@@ -523,7 +524,7 @@ describe('ClaweeSidebar', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: 'Member member@example.com' }))
+    expect(screen.getByRole('button', { name: 'Member' }))
       .toHaveAttribute('title', 'Member');
     expect(screen.getByRole('button', { name: '设置' })).toHaveAttribute('title', '设置');
   });

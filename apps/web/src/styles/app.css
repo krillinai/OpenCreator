@@ -4775,6 +4775,8 @@ html.is-pane-resizing * {
   background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
+.sidebar-task-row-shell:hover .sidebar-task-row[aria-current="page"],
+.sidebar-task-row-shell:focus-within .sidebar-task-row[aria-current="page"],
 .sidebar-task-row[aria-current="page"] {
   background: var(--accent-soft);
 }
@@ -5224,6 +5226,8 @@ html.is-pane-resizing * {
   padding: 0 10px 0 29px;
 }
 
+.sidebar-conversation-row-shell:hover .nested-conversation-row[aria-current="page"],
+.sidebar-conversation-row-shell:focus-within .nested-conversation-row[aria-current="page"],
 .nested-conversation-row[aria-current="page"] {
   background: var(--accent-soft);
 }
@@ -5338,8 +5342,7 @@ html.is-pane-resizing * {
   gap: 1px;
 }
 
-.sidebar-account-copy strong,
-.sidebar-account-copy small {
+.sidebar-account-copy strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5349,11 +5352,6 @@ html.is-pane-resizing * {
 .sidebar-account-copy strong {
   font-size: 13px;
   font-weight: 600;
-}
-
-.sidebar-account-copy small {
-  color: var(--subtle);
-  font-size: 12px;
 }
 
 .sidebar-settings-button {
@@ -5604,6 +5602,10 @@ html.is-pane-resizing * {
   border-radius: 8px;
   background: color-mix(in srgb, var(--success) 8%, var(--surface-2));
   color: var(--success);
+}
+
+.enterprise-account-profile-icon {
+  align-self: start;
 }
 
 .enterprise-account-profile-copy {

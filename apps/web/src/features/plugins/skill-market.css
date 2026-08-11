@@ -2183,6 +2183,10 @@
   padding-top: 12px;
 }
 
+.enterprise-skill-row .skill-market-card__tags > span {
+  border: 0;
+}
+
 .enterprise-skill-actions.skill-market-card__action-row {
   width: 100%;
   min-height: 38px;
@@ -2248,8 +2252,20 @@
 
 .enterprise-skill-row.skill-market-card > .enterprise-skill-action--use {
   border-color: transparent;
-  background: transparent;
+  background: var(--accent-soft);
   color: var(--accent-strong);
+}
+
+.enterprise-skill-row.skill-market-card > .enterprise-skill-action--use:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent-strong);
+}
+
+.enterprise-skill-row.skill-market-card > .enterprise-skill-action--use:disabled {
+  border-color: transparent;
+  background: var(--surface-3);
+  color: var(--subtle);
 }
 
 .enterprise-skill-action--use.skill-market-action-button,

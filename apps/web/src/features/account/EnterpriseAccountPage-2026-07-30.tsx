@@ -389,24 +389,8 @@ export function EnterpriseAccountPage(props: EnterpriseAccountPageProps) {
             {props.session.expiresAt !== undefined ? (
               <small>会话有效期至 {formatExpiry(props.session.expiresAt)}</small>
             ) : null}
-            {props.session.collector !== undefined ? (
-              <small className={`enterprise-collector-state is-${props.session.collector.status}`}>
-                {formatCollectorState(props.session.collector.status)}
-              </small>
-            ) : null}
           </div>
           <div className="enterprise-account-actions">
-            {props.session.collector?.status === 'failed' ? (
-              <button
-                className="enterprise-account-secondary-action"
-                type="button"
-                disabled={operation !== undefined || !props.connected}
-                onClick={() => void runSessionOperation('refresh')}
-              >
-                <RefreshCw size={16} aria-hidden="true" />
-                <span>重试安装</span>
-              </button>
-            ) : null}
             <button
               className="enterprise-account-secondary-action"
               type="button"
@@ -754,19 +738,6 @@ function formatExpiry(value: string): string {
     hour: '2-digit',
     minute: '2-digit'
   }).format(date);
-}
-
-function formatCollectorState(
-  status: NonNullable<EnterpriseSessionResponse['collector']>['status']
-): string {
-  switch (status) {
-    case 'installing':
-      return '正在安装企业采集器';
-    case 'installed':
-      return '企业采集器已安装';
-    case 'failed':
-      return '企业采集器安装失败';
-  }
 }
 
 export default EnterpriseAccountPage;

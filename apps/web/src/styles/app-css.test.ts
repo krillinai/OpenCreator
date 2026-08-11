@@ -177,6 +177,12 @@ describe('app CSS visual contracts', () => {
     expect(currentProjectIcon).toContain('color: var(--accent);');
     expect(selectedConversationRow).toContain('background: var(--accent-soft);');
     expect(selectedConversationRow).not.toContain('border-color');
+    expect(appCss).toContain(
+      '.sidebar-conversation-row-shell:hover .nested-conversation-row[aria-current="page"]'
+    );
+    expect(appCss).toContain(
+      '.sidebar-conversation-row-shell:focus-within .nested-conversation-row[aria-current="page"]'
+    );
     expect(accountButton).toContain('height: 42px;');
     expect(accountButton).toContain('gap: 7px;');
     expect(accountButton).toContain('padding: 0 6px;');
@@ -255,6 +261,12 @@ describe('app CSS visual contracts', () => {
     );
     expect(appCss).toMatch(
       /\.sidebar-task-action:hover:not\(:disabled\),[^{]+\{[^}]*background: transparent;/
+    );
+    expect(appCss).toContain(
+      '.sidebar-task-row-shell:hover .sidebar-task-row[aria-current="page"]'
+    );
+    expect(appCss).toContain(
+      '.sidebar-task-row-shell:focus-within .sidebar-task-row[aria-current="page"]'
     );
     expect(taskSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
     expect(appCss).toMatch(
@@ -371,6 +383,10 @@ describe('app CSS visual contracts', () => {
     expect(frame).toContain('min-height: 0;');
   });
 
+  it('top-aligns the signed-in enterprise account icon', () => {
+    expect(cssBlock('.enterprise-account-profile-icon')).toContain('align-self: start;');
+  });
+
   it('keeps code block actions compact', () => {
     const action = cssBlock('.markdown-prose .md-code-action');
 
@@ -403,18 +419,30 @@ describe('app CSS visual contracts', () => {
     expect(skillMarketCss).not.toContain('.skill-market-chip-row');
   });
 
-  it('highlights only card use action text while keeping the button transparent', () => {
+  it('gives enterprise use actions a background without a visible border', () => {
     const useActionHover = skillMarketCssBlock('.skill-market-card > .skill-market-action-button--use:hover:not(:disabled)');
+    const enterpriseUseActionHover = skillMarketCssBlock('.enterprise-skill-row.skill-market-card > .enterprise-skill-action--use:hover:not(:disabled)');
+    const enterpriseUseActionDisabled = skillMarketCssBlock('.enterprise-skill-row.skill-market-card > .enterprise-skill-action--use:disabled');
 
     expect(skillMarketCss).toMatch(
       /\.skill-market-card > \.skill-market-action-button--use\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;[^}]*color:\s*var\(--accent-strong\);[^}]*box-shadow:\s*0 1px 4px color-mix\(in srgb, var\(--text\) 16%, transparent\);/
     );
-    expect(skillMarketCss).toMatch(
-      /\.enterprise-skill-row\.skill-market-card > \.enterprise-skill-action--use\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;[^}]*color:\s*var\(--accent-strong\);/
-    );
     expect(useActionHover).toContain('background: transparent;');
     expect(useActionHover).toContain('color: var(--accent-strong);');
     expect(useActionHover).toContain('box-shadow: 0 2px 6px color-mix(in srgb, var(--text) 20%, transparent);');
+    expect(skillMarketCss).toMatch(
+      /\.enterprise-skill-row\.skill-market-card > \.enterprise-skill-action--use\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*var\(--accent-soft\);/
+    );
+    expect(enterpriseUseActionHover).toContain('border-color: transparent;');
+    expect(enterpriseUseActionHover).toContain('background: color-mix(in srgb, var(--accent) 16%, var(--surface));');
+    expect(enterpriseUseActionDisabled).toContain('border-color: transparent;');
+    expect(enterpriseUseActionDisabled).toContain('background: var(--surface-3);');
+  });
+
+  it('renders enterprise skill usage without a border', () => {
+    expect(
+      skillMarketCssBlock('.enterprise-skill-row .skill-market-card__tags > span')
+    ).toContain('border: 0;');
   });
 
   it('uses a compact wordmark image in the expanded sidebar and centers the collapsed logo button', () => {
