@@ -17,22 +17,24 @@
 5. 获取当前账户的 Collector 注册码和一键安装命令。
 6. 执行 Collector 首次安装或更新。
 7. 获取当前 Agent 的 MCP Token，并查询全部 upstream MCP endpoint、Tool 和当前 Agent 的有效授权状态。
-8. 获取企业 Skill Hub 中已发布的 Skill。
-9. 获取 Skill 当前发布版本详情。
-10. 下载指定发布版本的 Skill ZIP 包。
-11. 校验并安装 Skill 到本机 Codex Skills 目录。
-12. 根据远端版本信息识别可安装、已安装和可更新状态。
-13. 获取当前账户授权的知识库列表。
-14. 获取授权知识库的文档列表。
-15. 向具有上传权限的知识库上传文档。
-16. 分页查询当前账户授权的共享文件空间和文件。
-17. 查询、流式下载、新建和按 revision 替换共享文件。
+8. 获取当前账户授权的 Skill 空间及空间动作。
+9. 获取当前账户可读空间中已发布的 Skill。
+10. 获取 Skill 当前发布版本详情。
+11. 下载指定发布版本的 Skill ZIP 包。
+12. 向具有写权限的 Skill 空间上传并发布 Skill。
+13. 校验并安装 Skill 到本机 Codex Skills 目录。
+14. 根据远端版本信息识别可安装、已安装和可更新状态。
+15. 获取当前账户授权的知识库列表。
+16. 获取授权知识库的文档列表。
+17. 向具有上传权限的知识库上传文档。
+18. 分页查询当前账户授权的共享文件空间和文件。
+19. 查询、流式下载、新建和按 revision 替换共享文件。
 
 本次接入不包括：
 
 1. 特殊企业账户、企业身份源或管理员预分配账号。
 2. 调用企业后台 `/api/v1/admin/*` 接口。
-3. 在 Clawee 内上传、发布或下架 Skill。
+3. 在 Clawee 内创建或管理 Skill 空间、管理空间成员、切换当前发布版本或下架 Skill。
 4. 由企业服务操作用户本地文件或 Codex Skills 目录。
 5. OAuth Device Flow、Refresh Token 或跨设备同步。
 6. 用企业 Skill Hub 替换 Clawee 现有公共 Skill Market。
@@ -51,8 +53,8 @@
 4. 校验会话、账号状态和 Token 有效性。
 5. 为 Clawee 查询或隐式创建当前账户的 Collector 注册码，并返回一键安装命令。
 6. 向当前 Clawee 会话下发其绑定 Agent 的 MCP Token，并返回全部 upstream 的受治理 MCP endpoint、Tool 和当前 Agent 的授权状态。
-7. 返回已发布 Skill 的元数据和版本信息。
-8. 分发经过服务端校验的 Skill ZIP 包。
+7. 按当前账户的 Skill 空间授权返回空间、已发布 Skill、详情和版本信息。
+8. 分发经过服务端校验的 Skill ZIP 包，并接收具备空间写权限的 Clawee Agent 上传的新版本。
 9. 按当前账户数据权限返回知识库和文档，并代理经过校验的文档上传。
 10. 返回稳定的 HTTP 状态码和业务错误码。
 
@@ -66,17 +68,18 @@ Clawee Daemon 是企业服务的唯一调用方，负责：
 4. 从当前账号接口读取 Collector 一键安装命令，并按操作系统执行首次安装或更新。
 5. 获取当前会话绑定 Agent 的 MCP Token，将其保存到系统安全凭据存储，并且不得返回给 Web 或 Desktop 渲染进程。
 6. 获取全部 upstream MCP endpoint 和 Tool 授权目录，供本地展示和安装受治理的企业 MCP。
-7. 获取 Skill 列表、详情和 ZIP 包。
-8. 校验 ZIP 包 SHA-256，安全解压到临时目录。
-9. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
-10. 保存企业 Skill 安装记录，并计算更新状态。
-11. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
+7. 获取当前账户授权的 Skill 空间、空间动作、Skill 列表、详情和 ZIP 包。
+8. 仅向同时具有 `read` 和 `write` 的 Skill 空间代理 Skill ZIP 上传。
+9. 校验 ZIP 包 SHA-256，安全解压到临时目录。
+10. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
+11. 保存包含 Skill 空间标识的企业 Skill 安装记录，并计算更新状态。
+12. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
 
 ### 3.3 Clawee Web 与 Desktop
 
 Clawee Web 与 Desktop 只调用本地 Daemon，不直接请求企业服务。
 
-通用登录、Skill Hub 和知识库业务必须由 Web/Desktop 共用的 Daemon API 和 Service 实现。Desktop Bridge 不得单独实现企业登录、Skill 列表、知识库访问、文档上传或安装逻辑。
+通用登录、Skill Hub 和知识库业务必须由 Web/Desktop 共用的 Daemon API 和 Service 实现。Desktop Bridge 不得单独实现企业登录、Skill 空间与列表、Skill 上传、知识库访问、文档上传或安装逻辑。
 
 ## 4. 总体调用链路
 
@@ -152,7 +155,7 @@ Authorization: Bearer <enterprise_access_token>
 }
 ```
 
-当前 Skill 列表一次返回全部已发布 Skill。Clawee 仍应保留读取 `meta` 的能力，以兼容后续游标分页。
+当前 Skill 空间和 Skill 列表一次返回当前账户授权范围内的全部结果。Clawee 仍应保留读取 `meta` 的能力，以兼容后续游标分页。
 
 ### 5.5 错误响应包装
 
@@ -178,9 +181,11 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 | 注销当前会话 | `POST` | `/api/v1/auth/logout` | Bearer JWT |
 | 获取当前 Agent MCP Token | `POST` | `/api/v1/app/agents/token/reveal` | Bearer JWT |
 | 获取 MCP 能力目录 | `GET` | `/api/v1/app/agents/mcp-catalog` | Bearer JWT |
+| 获取授权 Skill 空间 | `GET` | `/api/v1/app/skill-spaces` | Bearer JWT |
 | 获取已发布 Skill 列表 | `GET` | `/api/v1/app/skills` | Bearer JWT |
 | 获取已发布 Skill 详情 | `GET` | `/api/v1/app/skills/detail?skill_id=...` | Bearer JWT |
 | 下载指定 Skill 版本 | `GET` | `/api/v1/app/skills/package?skill_id=...&version_id=...` | Bearer JWT |
+| 上传并发布 Skill | `POST` | `/api/v1/app/skills/versions` | Clawee Bearer JWT |
 | 获取授权知识库列表 | `GET` | `/api/v1/app/knowledge-bases` | Bearer JWT |
 | 获取知识库文档列表 | `GET` | `/api/v1/app/knowledge-bases/documents?knowledge_base_id=...` | Bearer JWT |
 | 上传知识库文档 | `POST` | `/api/v1/app/knowledge-bases/documents` | Bearer JWT |
@@ -489,11 +494,55 @@ Clawee 注销顺序：
 4. 网络失败时保留 Token，并向用户说明远端注销未完成，避免把“只清理本地”误报为已注销。
 5. 注销不删除已安装 Skill 和 Skill 安装记录。
 
-## 10. Skill 列表接口
+## 10. Skill 空间与列表接口
 
-### 10.1 `GET /api/v1/app/skills`
+Skill 空间是 Clawee 账户访问 Skill 的授权边界。空间授权复用企业服务统一的数据资源授权，资源类型为 `skill_space`，动作固定为：
 
-返回当前企业 Skill Hub 中全部已发布 Skill。未发布或已下架 Skill 不出现在列表中。
+| 动作 | 当前用途 |
+| --- | --- |
+| `read` | 查看空间、已发布 Skill、详情和 ZIP 下载 |
+| `write` | 向空间上传 Skill；账户必须同时具有 `read` |
+
+空间成员限制只适用于 Clawee Agent 客户端。企业管理后台仍按后台 RBAC 权限访问全部空间，不要求管理员成为空间成员。Clawee 不得调用管理后台接口创建空间或管理成员。
+
+### 10.1 `GET /api/v1/app/skill-spaces`
+
+返回当前账户具有 `read` 动作的 Skill 空间及权限快照。
+
+请求：
+
+```http
+GET /api/v1/app/skill-spaces HTTP/1.1
+Host: 1.13.175.31:1904
+Accept: application/json
+Authorization: Bearer <enterprise_access_token>
+```
+
+成功响应：`200 OK`
+
+```json
+{
+  "data": [
+    {
+      "space_id": "skillspace_123",
+      "name": "研发技能",
+      "description": "研发团队维护的 Skill",
+      "updated_at": "2026-08-07T09:00:00Z",
+      "actions": ["read", "write"]
+    }
+  ],
+  "meta": {
+    "next_cursor": "",
+    "has_next": false
+  }
+}
+```
+
+`actions` 是当前账户在对应空间上的服务端权限快照。Clawee 不得自行推导或扩大权限；上传入口只能对同时返回 `read` 和 `write` 的空间开放。
+
+### 10.2 `GET /api/v1/app/skills`
+
+返回当前账户具有空间 `read` 权限且存在当前发布版本的 Skill。其他空间的 Skill、未发布或已下架 Skill 不出现在列表中。
 
 请求：
 
@@ -511,6 +560,8 @@ Authorization: Bearer <enterprise_access_token>
   "data": [
     {
       "skill_id": "skill_123",
+      "space_id": "skillspace_123",
+      "space_name": "研发技能",
       "name": "code-review",
       "description": "企业代码审查规范",
       "version_id": "skillver_456",
@@ -531,6 +582,8 @@ Authorization: Bearer <enterprise_access_token>
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `skill_id` | string | 企业服务内部的不透明 Skill 标识，用于详情和下载请求 |
+| `space_id` | string | Skill 所属空间的不透明标识，用于展示归属和安装记录 |
+| `space_name` | string | Skill 所属空间当前名称，仅用于展示 |
 | `name` | string | Skill 包中声明的名称，也是 Clawee 本地安装目录名 |
 | `description` | string | 当前发布版本的说明 |
 | `version_id` | string | 当前发布版本的不透明标识 |
@@ -538,7 +591,7 @@ Authorization: Bearer <enterprise_access_token>
 | `package_sha256` | string | 原始 ZIP 字节的 SHA-256，64 位小写十六进制 |
 | `updated_at` | string | 当前发布状态最近更新时间 |
 
-Clawee 不得对 `version` 做大小比较。是否存在更新以 `version_id` 和 `package_sha256` 为准。
+列表按 `updated_at` 倒序返回。Clawee 不得对 `version` 做大小比较；是否存在更新以 `version_id` 和 `package_sha256` 为准。
 
 ## 11. Skill 详情接口
 
@@ -565,6 +618,8 @@ Authorization: Bearer <enterprise_access_token>
 {
   "data": {
     "skill_id": "skill_123",
+    "space_id": "skillspace_123",
+    "space_name": "研发技能",
     "name": "code-review",
     "description": "企业代码审查规范",
     "version_id": "skillver_456",
@@ -576,9 +631,9 @@ Authorization: Bearer <enterprise_access_token>
 }
 ```
 
-Skill 不存在、未发布或已下架时返回 `404 not_found`。Clawee 收到该错误后应刷新 Skill 列表，并取消本次安装或更新操作。
+Skill 不存在、未发布、已下架或当前账户没有所属空间的 `read` 权限时，统一返回 `404 not_found`，不得据此判断资源是否真实存在。Clawee 收到该错误后应刷新 Skill 空间和 Skill 列表，并取消本次安装或更新操作。
 
-## 12. Skill 包下载接口
+## 12. Skill 包下载与上传接口
 
 ### 12.1 `GET /api/v1/app/skills/package`
 
@@ -618,6 +673,70 @@ Content-Length: 12345
 4. Clawee 收到 `409 version_changed` 后刷新列表或详情，不得继续使用旧元数据重试下载。
 5. Clawee 必须按元数据中的 `package_sha256` 校验原始响应字节。
 6. SHA-256 不一致时立即删除临时文件，记录不含内容和凭证的诊断信息，并重新获取一次元数据；不得安装校验失败的包。
+7. 当前账户没有 Skill 所属空间的 `read` 权限时统一返回 `404 not_found`。
+
+### 12.2 `POST /api/v1/app/skills/versions`
+
+向指定 Skill 空间上传 ZIP 并立即发布为当前版本。该接口只接受有效的 `clawee-agent` Bearer Token，且 Token 绑定的 Agent 必须仍属于当前账户并处于可用状态；普通 Web Token 即使属于同一账户也不能调用。
+
+请求：
+
+```http
+POST /api/v1/app/skills/versions HTTP/1.1
+Host: 1.13.175.31:1904
+Accept: application/json
+Authorization: Bearer <enterprise_access_token>
+Content-Type: multipart/form-data; boundary=...
+```
+
+Multipart 表单必须且只能包含：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `space_id` | text | 是 | 目标 Skill 空间 ID，只允许一个值 |
+| `version` | text | 是 | 版本号，最长 64 个字符 |
+| `changelog` | text | 否 | 更新说明，最多 2000 字 |
+| `package` | file | 是 | 单个 Skill ZIP 包 |
+
+账户必须同时具有目标空间的 `read` 和 `write`。ZIP 可以直接包含 `SKILL.md`，也可以将全部内容放在单一顶层目录中；原始 ZIP 最大 50 MiB，企业服务还会校验 ZIP 路径、条目数、解压后大小和 `SKILL.md` 元数据。
+
+成功响应：`201 Created`
+
+```json
+{
+  "data": {
+    "skill": {
+      "skill_id": "skill_123",
+      "space_id": "skillspace_123",
+      "space_name": "研发技能",
+      "name": "code-review",
+      "current_version_id": "skillver_789"
+    },
+    "version": {
+      "version_id": "skillver_789",
+      "skill_id": "skill_123",
+      "version": "1.3.0",
+      "changelog": "补充安全检查",
+      "package_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "uploaded_by_user_id": "usr_123",
+      "uploaded_by_agent_id": "clawee_550e8400-e29b-41d4-a716-446655440000"
+    }
+  }
+}
+```
+
+上传成功后该版本立即成为当前发布版本。Skill 名称当前全局唯一；如果其他空间已存在同名 Skill，企业服务返回 `409 conflict`，不会覆盖或移动原 Skill。请求结果未知时不得自动重复上传，应先刷新目标空间和 Skill 列表确认结果。
+
+常见失败：
+
+| HTTP | `error.code` | 场景 | Clawee 行为 |
+| --- | --- | --- | --- |
+| `400` | `invalid_request` | Multipart 字段、版本号或字段数量不合法 | 终止上传，修正请求 |
+| `400` | `package_invalid` | ZIP 结构或 `SKILL.md` 不合法 | 展示校验错误，不重试 |
+| `403` | `agent_forbidden` | Token 不是 Clawee Token，或绑定 Agent 不可用 | 停止业务请求并检查登录 Agent |
+| `404` | `skill_space_not_found` | 空间不存在，或当前账户没有空间写权限 | 刷新 Skill 空间列表 |
+| `409` | `conflict` | 同名 Skill、同版本或其他资源状态冲突 | 不自动覆盖，刷新列表确认 |
+| `413` | `package_too_large` | ZIP 原始大小或规范化后大小超过限制 | 终止上传 |
 
 ## 13. 健康检查接口
 
@@ -638,10 +757,14 @@ ok
 | HTTP | `error.code` | 场景 | Clawee 行为 |
 | --- | --- | --- | --- |
 | `400` | `invalid_request` | 缺少或传错参数 | 终止操作，不自动重试 |
+| `400` | `package_invalid` | 上传 ZIP 结构或 `SKILL.md` 不合法 | 终止上传，展示校验错误 |
 | `401` | `unauthorized` | Token 缺失、过期或被撤销 | 清除本地 Token，进入未登录状态 |
 | `403` | `forbidden` | 当前账号无权访问 | 保留登录状态，提示无权访问 |
-| `404` | `not_found` | Skill 不存在、未发布或已下架 | 刷新目录，终止当前操作 |
+| `403` | `agent_forbidden` | 上传请求不是 Clawee Token，或绑定 Agent 不可用 | 停止业务请求并检查登录 Agent |
+| `404` | `not_found` | Skill 不存在、未发布、已下架或无空间读权限 | 刷新空间和 Skill 列表，终止当前操作 |
+| `404` | `skill_space_not_found` | 上传目标空间不存在或当前账户没有写权限 | 刷新 Skill 空间列表，终止上传 |
 | `409` | `version_changed` | 当前发布版本已变化 | 刷新元数据，由用户重新发起安装或更新 |
+| `409` | `conflict` | 同名 Skill、同版本或资源状态冲突 | 刷新列表，不自动覆盖或重复上传 |
 | `413` | `package_too_large` | 包超过服务端限制 | 终止操作，不重试 |
 | `429` | `rate_limited` | 请求过于频繁 | 遵循 `Retry-After`，只重试读取请求 |
 | `500` | `internal_error` | 企业服务内部错误 | 保留登录和本地状态，允许手动重试 |
@@ -650,7 +773,7 @@ ok
 自动重试限制：
 
 1. 登录和注销请求不得自动重试。
-2. Skill 安装和更新不得在未知结果后自动重新执行本地写入。
+2. Skill 上传、安装和更新不得在未知结果后自动重新执行写入。
 3. 列表和详情的网络错误最多进行有限次数退避重试。
 4. `401`、`403`、`404`、`409` 和所有 `4xx` 参数错误不得按普通网络错误循环重试。
 
@@ -695,7 +818,7 @@ type EnterpriseSession = {
 1. 公共市场继续使用 Clawee 内置审核目录和固定 GitHub 来源。
 2. 企业 Skill 使用企业服务动态返回的目录和 ZIP 包。
 3. 企业 Skill 不强制映射为公共市场的分类、封面、GitHub、作者和风险模型。
-4. 企业 Skill 的基础展示字段使用 `name`、`description`、`version` 和 `changelog`。
+4. 企业 Skill 的基础展示字段使用 `space_name`、`name`、`description`、`version` 和 `changelog`。
 5. 公共市场和企业 Skill 出现同名 Skill 时，本地 Codex Skills 目录仍只能存在一份同名 Skill。
 6. 安装前必须根据现有 Skill 来源和安装记录明确展示“安装”“更新”或“名称冲突”，不得静默覆盖未知来源 Skill。
 
@@ -704,6 +827,7 @@ type EnterpriseSession = {
 ```ts
 type EnterpriseSkillInstallRecord = {
   source: "enterprise-skill-hub";
+  spaceId: string;
   skillId: string;
   name: string;
   versionId: string;
@@ -730,7 +854,7 @@ Clawee 应同时读取：
 4. 本地存在但安装记录来源不是企业 Skill Hub：`name_conflict`。
 5. 企业安装记录的 `package_sha256` 等于远端：`installed`。
 6. 企业安装记录的 `package_sha256` 不等于远端：`update_available`。
-7. 远端 Skill 已从列表消失但本地仍存在：保留本地 Skill，标记为 `unpublished`，不得自动删除。
+7. 远端 Skill 已从当前授权列表消失但本地仍存在：保留本地 Skill，标记为 `unavailable`，不得自动删除；客户端不能区分 Skill 已下架、已删除或空间 `read` 权限已撤销。
 
 `version_id` 用于关联企业服务版本，`package_sha256` 是判断安装内容是否变化的最终依据。
 
@@ -741,7 +865,7 @@ Clawee 应同时读取：
 ```text
 用户点击安装
   -> Daemon 获取 Skill 详情
-  -> 记录 skill_id、version_id、package_sha256
+  -> 记录 space_id、skill_id、version_id、package_sha256
   -> 按 skill_id + version_id 下载 ZIP
   -> 对原始 ZIP 字节计算 SHA-256
   -> 安全解压到 Daemon 临时目录
@@ -784,8 +908,9 @@ Clawee 应同时读取：
 | --- | --- |
 | 健康检查 | 5 秒 |
 | 注册、登录、当前账号、注销 | 15 秒 |
-| Skill 列表和详情 | 15 秒 |
+| Skill 空间、列表和详情 | 15 秒 |
 | Skill ZIP 下载 | 120 秒 |
+| Skill ZIP 上传 | 5 分钟 |
 | 知识库和文档列表 | 15 秒 |
 | 文档上传 | 5 分钟 |
 
@@ -798,8 +923,8 @@ Clawee 应同时读取：
 1. 企业服务 Origin。
 2. HTTP 方法、路径模板和状态码。
 3. 请求 ID。
-4. `skill_id`、`version_id`、`name` 和 `package_sha256`。
-5. 下载字节数、耗时和失败阶段。
+4. `space_id`、`skill_id`、`version_id`、`name` 和 `package_sha256`。
+5. Skill ZIP 上传或下载字节数、耗时和失败阶段。
 6. `knowledge_base_id`、`document_id`、文件名、文件大小和上传失败阶段。
 
 禁止记录：
@@ -835,15 +960,18 @@ Clawee 应同时读取：
 
 ### 21.2 Skill Hub
 
-1. 只调用 `/api/v1/app/skills*` 目标接口。
-2. 列表只展示企业服务返回的已发布 Skill。
-3. 下载请求同时携带 `skill_id` 和 `version_id`。
-4. 下载后按 `package_sha256` 校验原始 ZIP。
-5. `409 version_changed` 会刷新元数据，不安装旧版本。
-6. ZIP 校验、解压、安装或记录写入失败时不会留下半安装状态。
-7. 更新失败时可以恢复原 Skill。
-8. 企业 Skill 与公共市场同名时不会静默覆盖未知来源 Skill。
-9. Web 与 Desktop 在相同数据下显示相同状态并调用相同 Runtime API。
+1. 只调用 `/api/v1/app/skill-spaces` 和 `/api/v1/app/skills*` 目标接口，不调用 Skill 空间管理后台接口。
+2. Skill 空间列表只展示企业服务返回的当前账户可读空间，并直接使用 `actions` 控制上传入口。
+3. Skill 列表只展示企业服务返回的当前账户可读空间内已发布 Skill，并保留 `space_id` 和 `space_name`。
+4. 下载请求同时携带 `skill_id` 和 `version_id`。
+5. 下载后按 `package_sha256` 校验原始 ZIP。
+6. `409 version_changed` 会刷新元数据，不安装旧版本。
+7. 上传只允许选择同时具有 `read` 和 `write` 的空间，并且 Multipart 中只提交一个 `space_id`、`version`、可选 `changelog` 和一个 `package`。
+8. 上传结果未知时不会自动重复上传；`404 skill_space_not_found` 会刷新空间权限。
+9. ZIP 校验、解压、安装或记录写入失败时不会留下半安装状态。
+10. 更新失败时可以恢复原 Skill。
+11. 企业 Skill 与公共市场同名时不会静默覆盖未知来源 Skill。
+12. Web 与 Desktop 在相同数据下显示相同状态并调用相同 Runtime API。
 
 ### 21.3 知识库
 
@@ -887,9 +1015,11 @@ POST /api/v1/auth/logout
 POST /api/v1/app/agents/token/reveal
 GET  /api/v1/app/agents/mcp-catalog
 
+GET  /api/v1/app/skill-spaces
 GET  /api/v1/app/skills
 GET  /api/v1/app/skills/detail?skill_id=<skill_id>
 GET  /api/v1/app/skills/package?skill_id=<skill_id>&version_id=<version_id>
+POST /api/v1/app/skills/versions
 
 GET  /api/v1/app/knowledge-bases
 GET  /api/v1/app/knowledge-bases/documents?knowledge_base_id=<knowledge_base_id>
@@ -902,7 +1032,7 @@ GET  /api/v1/app/shared-files/content?file_id=<file_id>
 POST /api/v1/app/shared-files/content?space_id=<space_id>&logical_path=<logical_path>
 ```
 
-Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal` 获取绑定 Agent 的 MCP Token，再通过 MCP 能力目录获取全部 upstream 的受治理 endpoint 和 Tool 授权状态；这两个接口都优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。知识库 HTTP 接口使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token 或 Agent MCP Token；企业服务负责身份、Collector 接入信息、MCP Token、MCP 能力目录、Skill 分发和知识库授权代理。Codex 原生配置负责全部用户 MCP 的安装和开启状态，Codex Runtime 负责工具发现与调用；Clawee 负责统一页面、原生配置操作、企业 Token 安全注入、Skill 安装完整性、回滚以及知识库交互。
+Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal` 获取绑定 Agent 的 MCP Token，再通过 MCP 能力目录获取全部 upstream 的受治理 endpoint 和 Tool 授权状态；这两个接口都优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。Skill Hub 使用账户级 Skill 空间授权：`read` 控制空间、列表、详情和下载，上传必须同时具有 `read` 和 `write`，未授权资源统一按接口约定隐藏。知识库 HTTP 接口使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token 或 Agent MCP Token；企业服务负责身份、Collector 接入信息、MCP Token、MCP 能力目录、Skill 空间授权、Skill 分发与上传校验和知识库授权代理。Codex 原生配置负责全部用户 MCP 的安装和开启状态，Codex Runtime 负责工具发现与调用；Clawee 负责本地安全存储、统一页面、原生配置操作、企业 Token 安全注入、Skill 上传代理、安装完整性、回滚以及知识库交互。
 
 ## 23. MCP Token 与能力目录接口
 

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createEnterpriseCollectorInstaller,
@@ -18,6 +19,7 @@ describe('enterprise collector installer', () => {
     const spawn = vi.fn(() => child);
     const installer = createEnterpriseCollectorInstaller({
       platform: 'darwin',
+      claweeAgentConfigPath: '.runtime/config.toml',
       spawn
     });
 
@@ -30,7 +32,11 @@ describe('enterprise collector installer', () => {
       ['-c', registration.installCommand],
       {
         stdio: 'ignore',
-        windowsHide: true
+        windowsHide: true,
+        env: {
+          ...process.env,
+          CLAWEE_AGENT_CONFIG: resolve('.runtime/config.toml')
+        }
       }
     );
 
@@ -44,6 +50,7 @@ describe('enterprise collector installer', () => {
     const spawn = vi.fn(() => child);
     const installer = createEnterpriseCollectorInstaller({
       platform: 'win32',
+      claweeAgentConfigPath: '.runtime/config.toml',
       spawn
     });
 
@@ -61,7 +68,11 @@ describe('enterprise collector installer', () => {
       ],
       {
         stdio: 'ignore',
-        windowsHide: true
+        windowsHide: true,
+        env: {
+          ...process.env,
+          CLAWEE_AGENT_CONFIG: resolve('.runtime/config.toml')
+        }
       }
     );
 

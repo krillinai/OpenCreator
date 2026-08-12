@@ -3,6 +3,7 @@ import {
   type ChildProcess,
   type SpawnOptions
 } from 'node:child_process';
+import { resolve } from 'node:path';
 import type {
   EnterpriseCollectorRegistration
 } from './http-client-2026-07-30.js';
@@ -27,6 +28,7 @@ export type EnterpriseCollectorInstaller = {
 export function createEnterpriseCollectorInstaller(input: {
   platform?: NodeJS.Platform;
   timeoutMs?: number;
+  claweeAgentConfigPath?: string;
   spawn?: (
     command: string,
     args: readonly string[],
@@ -36,6 +38,9 @@ export function createEnterpriseCollectorInstaller(input: {
   const platform = input.platform ?? process.platform;
   const timeoutMs = input.timeoutMs ?? 5 * 60_000;
   const spawnProcess = input.spawn ?? spawn;
+  const claweeAgentConfigPath = input.claweeAgentConfigPath === undefined
+    ? undefined
+    : resolve(input.claweeAgentConfigPath);
   let active:
     | {
         child: ChildProcess;
@@ -53,7 +58,15 @@ export function createEnterpriseCollectorInstaller(input: {
     try {
       child = spawnProcess(invocation.command, invocation.args, {
         stdio: 'ignore',
-        windowsHide: true
+        windowsHide: true,
+        ...(claweeAgentConfigPath === undefined
+          ? {}
+          : {
+              env: {
+                ...process.env,
+                CLAWEE_AGENT_CONFIG: claweeAgentConfigPath
+              }
+            })
       });
     } catch {
       throw new EnterpriseCollectorInstallError('COLLECTOR_INSTALL_FAILED');

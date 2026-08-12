@@ -216,13 +216,15 @@ export async function buildServer(input: BuildServerInput) {
   const auth = requireAuth(input.token);
   const dataDir = input.dataDir ?? '.runtime';
   const enterpriseOrigin = resolveEnterpriseOrigin(input.enterpriseOrigin);
+  const enterpriseConfigPath =
+    input.enterpriseConfigPath ?? join(dataDir, 'config.toml');
   const enterpriseHttpClient =
     input.enterpriseHttpClient ??
     createEnterpriseHttpClient({ origin: enterpriseOrigin.origin });
   const enterpriseAgentIdentityStore =
     input.enterpriseAgentIdentityStore
     ?? createEnterpriseAgentIdentityStore({
-      configPath: input.enterpriseConfigPath ?? join(dataDir, 'config.toml'),
+      configPath: enterpriseConfigPath,
       legacyDataDir: dataDir
     });
   if (input.enterpriseConfigPath !== undefined) {
@@ -233,7 +235,9 @@ export async function buildServer(input: BuildServerInput) {
     agentIdentityStore: enterpriseAgentIdentityStore,
     collectorInstaller:
       input.enterpriseCollectorInstaller
-      ?? createEnterpriseCollectorInstaller(),
+      ?? createEnterpriseCollectorInstaller({
+        claweeAgentConfigPath: enterpriseConfigPath
+      }),
     credentialStore:
       input.enterpriseCredentialStore ?? createUnavailableCredentialStore(),
     httpClient: enterpriseHttpClient,
