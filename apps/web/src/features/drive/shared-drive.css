@@ -43,14 +43,14 @@
 }
 
 .shared-drive-header h1 {
-  font-size: 21px;
+  font-size: 24px;
 }
 
 .shared-drive-header p,
 .shared-drive-files-header p {
   margin-top: 5px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .shared-drive-header__actions {
@@ -61,7 +61,7 @@
   max-width: 280px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -114,14 +114,14 @@
 
 .shared-drive-pane-heading h2,
 .shared-drive-files-header h2 {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .shared-drive-pane-heading span {
   display: block;
   margin-top: 4px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .shared-drive-space-list {
@@ -137,7 +137,7 @@
 
 .shared-drive-space-list button {
   width: 100%;
-  min-height: 58px;
+  min-height: 64px;
   position: relative;
   display: grid;
   align-content: center;
@@ -163,7 +163,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -172,7 +172,7 @@
 .shared-drive-space-list span {
   min-width: 0;
   overflow: hidden;
-  font-size: 9px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -185,7 +185,7 @@
   border-radius: 4px;
   color: var(--success);
   background: color-mix(in srgb, var(--success) 8%, var(--surface));
-  font-size: 8px;
+  font-size: 12px;
   font-style: normal;
 }
 
@@ -218,7 +218,7 @@
 
 .shared-drive-files-actions form {
   width: min(260px, 34vw);
-  height: 32px;
+  height: 36px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -241,13 +241,13 @@
   outline: 0;
   color: var(--text);
   background: transparent;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .shared-drive-primary-button,
 .shared-drive-load-more,
 .shared-drive-gate button {
-  min-height: 32px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -257,7 +257,7 @@
   border-radius: 6px;
   color: var(--text);
   background: var(--surface);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -293,20 +293,20 @@
 
 .shared-drive-table th,
 .shared-drive-table td {
-  height: 54px;
+  height: 60px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 13px;
   text-align: left;
   vertical-align: middle;
 }
 
 .shared-drive-table th {
-  height: 36px;
+  height: 40px;
   color: var(--subtle);
   background: var(--surface-2);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -315,7 +315,12 @@
 .shared-drive-table th:nth-child(3) { width: 14%; }
 .shared-drive-table th:nth-child(4) { width: 17%; }
 .shared-drive-table th:nth-child(5) { width: 10%; }
-.shared-drive-table th:nth-child(6) { width: 84px; }
+.shared-drive-table th:nth-child(6) { width: 86px; }
+
+.shared-drive-table .shared-drive-actions-cell {
+  padding-right: 12px;
+  padding-left: 12px;
+}
 
 .shared-drive-table tbody tr:hover {
   background: var(--surface-2);
@@ -352,17 +357,18 @@
 
 .shared-drive-file-name strong {
   color: var(--text);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .shared-drive-file-name small {
   color: var(--muted);
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .shared-drive-row-actions {
-  justify-content: flex-end;
+  width: 100%;
+  justify-content: center;
   gap: 5px;
 }
 
@@ -398,7 +404,7 @@
 
 .shared-drive-loading span,
 .shared-drive-empty p {
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .shared-drive-empty > span {
@@ -412,7 +418,7 @@
 
 .shared-drive-empty strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .shared-drive-banner {
@@ -421,7 +427,7 @@
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   background: var(--surface-2);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -469,7 +475,7 @@
 
 .shared-drive-gate p {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .shared-drive-spinner {

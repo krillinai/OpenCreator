@@ -14,7 +14,6 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-  Trash2,
   WifiOff
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -305,14 +304,11 @@ function ConnectionCard(props: {
   blocked: boolean;
   onUpdate(update: EnterpriseMcpPreferenceUpdateRequest): void;
 }) {
-  const authorizedTools = props.upstream.tools.filter(tool => tool.authorized).length;
-  const visibleTools = props.upstream.tools.slice(0, 4);
-  const remainingTools = props.upstream.tools.length - visibleTools.length;
-  const localStatus = props.upstream.enabled
-    ? 'enabled'
-    : props.upstream.installed
-      ? 'installed'
-      : 'available';
+  const description = props.upstream.tools.find(tool => (
+    tool.authorized && tool.description.trim().length > 0
+  ))?.description
+    ?? props.upstream.tools.find(tool => tool.description.trim().length > 0)?.description
+    ?? '企业连接器';
   return (
     <article
       className="connection-card"
@@ -327,65 +323,18 @@ function ConnectionCard(props: {
           <h2>{props.upstream.name}</h2>
           <span>{props.upstream.domain || props.upstream.namespace}</span>
         </div>
-        <em data-status={localStatus}>{connectionStatusLabel(localStatus)}</em>
-      </div>
-
-      <div className="connection-card__meta">
-        <span>{props.upstream.namespace}</span>
-        <span data-upstream-status={props.upstream.status}>
-          {props.upstream.status === 'active' ? '服务正常' : '服务停用'}
-        </span>
-      </div>
-
-      <div className="connection-card__capabilities">
-        {visibleTools.map(tool => (
-          <span key={tool.toolId} title={tool.description || tool.name}>
-            {tool.title || tool.name}
-          </span>
-        ))}
-        {remainingTools > 0 ? <span>+{remainingTools}</span> : null}
-        {props.upstream.tools.length === 0 ? <span>暂无工具</span> : null}
-      </div>
-
-      <p className="connection-card__authorization">
-        企业授权：{authorizedTools}/{props.upstream.tools.length} 项工具
-      </p>
-
-      <footer>
         {props.upstream.installed ? (
-          <>
-            <button
-              className="connection-remove"
-              type="button"
-              aria-label={`卸载 ${props.upstream.name}`}
-              title="卸载"
-              disabled={props.blocked}
-              onClick={() => props.onUpdate({
-                installed: false,
-                enabled: false
-              })}
-            >
-              {props.busy ? (
-                <LoaderCircle className="connections-spinner" size={15} aria-hidden="true" />
-              ) : (
-                <Trash2 size={15} aria-hidden="true" />
-              )}
-            </button>
-            <span className="connection-toggle-label">
-              {props.upstream.enabled ? '已开启' : '已关闭'}
-            </span>
-            <button
-              className="connection-switch"
-              type="button"
-              role="switch"
-              aria-label={`${props.upstream.name} MCP`}
-              aria-checked={props.upstream.enabled}
-              disabled={props.blocked}
-              onClick={() => props.onUpdate({
-                enabled: !props.upstream.enabled
-              })}
-            />
-          </>
+          <button
+            className="connection-switch"
+            type="button"
+            role="switch"
+            aria-label={`${props.upstream.name} MCP`}
+            aria-checked={props.upstream.enabled}
+            disabled={props.blocked}
+            onClick={() => props.onUpdate({
+              enabled: !props.upstream.enabled
+            })}
+          />
         ) : (
           <button
             className="connection-install"
@@ -404,7 +353,12 @@ function ConnectionCard(props: {
             安装
           </button>
         )}
-      </footer>
+      </div>
+
+      <p className="connection-card__description">{description}</p>
+      {props.upstream.status === 'active' ? null : (
+        <em className="connection-card__status">服务停用</em>
+      )}
     </article>
   );
 }
@@ -438,14 +392,6 @@ function matchesFilter(
   if (filter === 'installed') return item.installed;
   if (filter === 'available') return !item.installed;
   return true;
-}
-
-function connectionStatusLabel(
-  status: Exclude<ConnectionFilter, 'all'>
-): string {
-  if (status === 'enabled') return '已开启';
-  if (status === 'installed') return '已安装';
-  return '可安装';
 }
 
 function isUnauthorized(error: unknown): boolean {

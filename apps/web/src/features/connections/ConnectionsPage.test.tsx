@@ -48,7 +48,11 @@ describe('ConnectionsPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'CRM' })).toBeInTheDocument();
-    expect(screen.getByText('企业授权：1/2 项工具')).toBeInTheDocument();
+    expect(screen.getByText('sales')).toBeInTheDocument();
+    expect(screen.getByText('按条件查询客户资料')).toBeInTheDocument();
+    expect(screen.queryByText('企业授权：1/2 项工具')).not.toBeInTheDocument();
+    expect(screen.queryByText('查询客户')).not.toBeInTheDocument();
+    expect(screen.queryByText('服务正常')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '申请权限' })).not.toBeInTheDocument();
     expect(screen.queryByRole('switch', { name: 'CRM MCP' })).not.toBeInTheDocument();
 
@@ -71,6 +75,13 @@ describe('ConnectionsPage', () => {
       'crm-main',
       { enabled: true }
     );
+    expect(screen.queryByRole('button', { name: '卸载 CRM' })).not.toBeInTheDocument();
+    const card = screen.getByTestId('enterprise-mcp-card');
+    expect(card.querySelectorAll(':scope > *')).toHaveLength(2);
+    expect(card.querySelector('.connection-card__head')).not.toBeNull();
+    expect(card.querySelector('.connection-card__description')).not.toBeNull();
+    expect(card.querySelector('footer')).toBeNull();
+    expect(card.querySelector('.connection-card__head .connection-switch')).not.toBeNull();
   });
 
   it('shows the login action without loading the catalog when signed out', async () => {

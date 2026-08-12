@@ -108,7 +108,8 @@ test('实际打包 App 可登录、管理连接器、使用企业知识库并安
     await app.page.locator('.enterprise-email-submit').click();
 
     await expect(app.page.getByRole('button', {
-      name: `Packaged E2E ${enterpriseEmail}`
+      name: 'Packaged E2E',
+      exact: true
     })).toBeVisible();
     await expect.poll(
       () => readEnterpriseSession(app!.page)
@@ -146,8 +147,20 @@ test('实际打包 App 可登录、管理连接器、使用企业知识库并安
     expect(readPersistedAgentId(homeDir)).toBe(persistedAgentId);
     expect(server.agentIdentity()).toBe(persistedAgentId);
     await expect(app.page.getByRole('button', {
-      name: `Packaged E2E ${enterpriseEmail}`
+      name: 'Packaged E2E',
+      exact: true
     })).toBeVisible();
+
+    await app.page.getByRole('button', { name: '添加上下文' }).click();
+    await app.page.getByRole('menuitem', { name: '连接器' }).click();
+    await expect(app.page.getByRole('menuitem', {
+      name: /客户关系管理.*可安装/
+    })).toBeVisible();
+    await expect(app.page.getByRole('searchbox', {
+      name: '搜索连接器'
+    })).toBeVisible();
+    await app.page.keyboard.press('Escape');
+    await app.page.keyboard.press('Escape');
 
     await app.page.getByRole('button', {
       name: '连接器',
@@ -162,7 +175,9 @@ test('实际打包 App 可登录、管理连接器、使用企业知识库并安
     await expect(mcpCard.getByRole('heading', {
       name: '客户关系管理'
     })).toBeVisible();
-    await expect(mcpCard.getByText('企业授权：1/2 项工具')).toBeVisible();
+    await expect(mcpCard.getByText('sales', { exact: true })).toBeVisible();
+    await expect(mcpCard.getByText('按条件查询客户资料', { exact: true })).toBeVisible();
+    await expect(mcpCard.getByText('服务正常')).toHaveCount(0);
     await mcpCard.getByRole('button', { name: '安装' }).click();
     const mcpSwitch = mcpCard.getByRole('switch', {
       name: '客户关系管理 MCP'
@@ -183,6 +198,20 @@ test('实际打包 App 可登录、管理连接器、使用企业知识库并安
       }]
     });
     expect(JSON.stringify(localMcpState)).not.toMatch(/packaged-e2e-mcp-/);
+
+    await app.page.getByRole('button', { name: '新建任务' }).click();
+    const enabledMcpIcon = app.page.getByRole('button', {
+      name: '打开连接器列表，客户关系管理 MCP'
+    });
+    await expect(enabledMcpIcon).toBeVisible();
+    await enabledMcpIcon.click();
+    await expect(app.page.getByRole('switch', {
+      name: '客户关系管理 MCP'
+    })).toHaveAttribute('aria-checked', 'true');
+    await expect(app.page.getByRole('button', {
+      name: '选择更多连接器'
+    })).toBeVisible();
+    await app.page.keyboard.press('Escape');
 
     await app.page.getByRole('button', {
       name: '企业知识库',
@@ -244,7 +273,8 @@ test('实际打包 App 可登录、管理连接器、使用企业知识库并安
       .toMatch(/^#\/thread\//);
 
     await app.page.getByRole('button', {
-      name: `Packaged E2E ${enterpriseEmail}`
+      name: 'Packaged E2E',
+      exact: true
     }).click();
     await app.page.getByRole('button', { name: '退出登录' }).click();
     await expect.poll(

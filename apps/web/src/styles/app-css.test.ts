@@ -647,7 +647,9 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.composer-popover')).toContain('border: 1px solid #343438;');
     expect(cssBlock('.composer-popover')).toContain('background: var(--popover);');
     expect(cssBlock('.composer-popover')).toContain('opacity: 1;');
-    expect(appCss).toMatch(/:root\[data-theme="light"\] \.composer-popover,[\s\S]*?\.composer-project-create-menu\s*\{[^}]*background:\s*var\(--surface-popover\);[^}]*border-color:\s*#dedee1;[^}]*opacity:\s*1;/);
+    expect(cssBlock(':root[data-theme="light"] .composer-popover')).toContain('background: var(--surface-popover);');
+    expect(cssBlock(':root[data-theme="light"] .composer-popover')).toContain('border-color: #dedee1;');
+    expect(cssBlock(':root[data-theme="light"] .composer-popover')).toContain('opacity: 1;');
     expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
     expect(cssBlock('.composer-menu-item strong')).toContain('font-size: 12px;');
     expect(cssBlock('.composer-menu-item strong')).toContain('font-weight: 400;');
@@ -920,6 +922,37 @@ describe('app CSS visual contracts', () => {
       'padding-left: calc(var(--composer-left-baseline) - 6px);'
     );
     expect(iconButton).toContain('width: 38px;');
+  });
+
+  it('keeps enabled MCP icons compact after the permission control', () => {
+    const connectorList = cssBlock('.composer-enabled-connectors');
+    const connectorIcon = cssBlock('.composer-enabled-connector');
+
+    expect(connectorList).toContain('max-width: min(180px, 32vw);');
+    expect(connectorList).toContain('overflow-x: auto;');
+    expect(connectorIcon).toContain('width: 22px;');
+    expect(connectorIcon).toContain('height: 22px;');
+    expect(connectorIcon).toContain('flex: 0 0 22px;');
+    expect(connectorIcon).toContain('border: 0;');
+    expect(connectorIcon).toContain('border-radius: 0;');
+    expect(connectorIcon).toContain('background: transparent;');
+    expect(connectorIcon).toContain('box-shadow: none;');
+    expect(connectorIcon).toContain('letter-spacing: 0;');
+    expect(cssBlock('.composer-enabled-connectors > span + span'))
+      .toContain('margin-left: -5px;');
+  });
+
+  it('uses a compact switch list for the Composer connector shortcut', () => {
+    const card = cssBlock('.composer-connector-card');
+    const item = cssBlock('.composer-connector-quick-item');
+    const connectorSwitch = cssBlock('.composer-connector-switch');
+    const more = cssBlock('.composer-connector-more');
+
+    expect(card).toContain('width: min(260px, calc(100vw - 24px));');
+    expect(item).toContain('grid-template-columns: 22px minmax(0, 1fr) 32px;');
+    expect(connectorSwitch).toContain('width: 30px;');
+    expect(connectorSwitch).toContain('height: 18px;');
+    expect(more).toContain('border-top: 1px solid var(--border);');
   });
 
   it('separates the dark Composer input, project bar, and outer border', () => {

@@ -12,11 +12,14 @@ import type {
   EnterpriseKnowledgeBaseResponse,
   EnterpriseKnowledgeDocumentResponse,
   EnterpriseLoginRequest,
+  EnterpriseMcpCatalogResponse,
   EnterpriseQrLoginStartRequest,
   EnterpriseQrLoginStartResponse,
   EnterpriseQrLoginStatusResponse,
   EnterpriseRegisterRequest,
   EnterpriseSessionResponse,
+  EnterpriseSharedFileResponse,
+  EnterpriseSharedSpaceResponse,
   EnterpriseSkillDetailResponse,
   EnterpriseSkillResponse,
   RunDiagnosticsResponse,
@@ -72,6 +75,9 @@ import type {
 import type {
   KnowledgeUploadState
 } from '../features/knowledge/KnowledgePage.js';
+import type {
+  SharedDriveOperationState
+} from '../features/drive/SharedDrivePage.js';
 import {
   findProjectById,
   groupThreadsByPurpose,
@@ -87,6 +93,7 @@ import { ProjectManagementDialog } from '../features/projects/ProjectManagementD
 import {
   Composer,
   type ComposerAttachment,
+  type ComposerConnector,
   type ComposerDraftRequest,
   type ComposerQueuedItem,
   type ComposerRunConfig,
@@ -373,6 +380,31 @@ export function AppController(props: AppControllerProps) {
     useState(0);
   const [enterpriseKnowledgeDocumentsReloadKey, setEnterpriseKnowledgeDocumentsReloadKey] =
     useState(0);
+  const [enterpriseSharedSpaces, setEnterpriseSharedSpaces] =
+    useState<EnterpriseSharedSpaceResponse[]>();
+  const [enterpriseSharedSpacesLoading, setEnterpriseSharedSpacesLoading] = useState(false);
+  const [enterpriseSharedSpacesError, setEnterpriseSharedSpacesError] = useState<string>();
+  const [enterpriseSharedSpacesMeta, setEnterpriseSharedSpacesMeta] = useState({
+    nextCursor: '',
+    hasNext: false,
+    maxFileSizeBytes: 1024 * 1024 * 1024
+  });
+  const [selectedEnterpriseSharedSpaceId, setSelectedEnterpriseSharedSpaceId] =
+    useState<string>();
+  const [enterpriseSharedFiles, setEnterpriseSharedFiles] =
+    useState<EnterpriseSharedFileResponse[]>();
+  const [enterpriseSharedFilesLoading, setEnterpriseSharedFilesLoading] = useState(false);
+  const [enterpriseSharedFilesError, setEnterpriseSharedFilesError] = useState<string>();
+  const [enterpriseSharedFilesMeta, setEnterpriseSharedFilesMeta] = useState({
+    nextCursor: '',
+    hasNext: false
+  });
+  const [enterpriseSharedQuery, setEnterpriseSharedQuery] = useState('');
+  const [enterpriseSharedOperation, setEnterpriseSharedOperation] =
+    useState<SharedDriveOperationState>();
+  const [enterpriseSharedNotice, setEnterpriseSharedNotice] = useState<string>();
+  const [enterpriseSharedSpacesReloadKey, setEnterpriseSharedSpacesReloadKey] = useState(0);
+  const [enterpriseSharedFilesReloadKey, setEnterpriseSharedFilesReloadKey] = useState(0);
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
@@ -488,11 +520,15 @@ export function AppController(props: AppControllerProps) {
   const enterpriseRuntimeGenerationRef = useRef(0);
   const enterpriseHubGenerationRef = useRef(0);
   const enterpriseKnowledgeGenerationRef = useRef(0);
+  const enterpriseSharedDriveGenerationRef = useRef(0);
   const capabilityLoadGenerationRef = useRef<number>();
   const profileLoadGenerationRef = useRef<number>();
   const skillMarketLoadGenerationRef = useRef<number>();
   const enterpriseSkillMutationInFlightRef = useRef(false);
   const enterpriseKnowledgeUploadInFlightRef = useRef(false);
+  const enterpriseSharedSpacesLoadInFlightRef = useRef(false);
+  const enterpriseSharedFilesLoadInFlightRef = useRef(false);
+  const enterpriseSharedMutationInFlightRef = useRef(false);
   const knowledgeConversationCreateInFlightRef = useRef(false);
   const mobileSidebarHistoryEntryRef = useRef(false);
   const defaultPermissionAppliedByThreadRef = useRef(new Map<string, SandboxMode>());
@@ -597,6 +633,46 @@ export function AppController(props: AppControllerProps) {
       transportSecurity: enterpriseSessionRef.current.transportSecurity
     });
   }, []);
+  const loadComposerConnectors = useCallback(async (): Promise<ComposerConnector[]> => {
+    if (enterpriseService === null || enterpriseSession.status !== 'signed_in') {
+      throw new Error('登录企业账户后可查看连接器目录');
+    }
+    try {
+      return buildComposerConnectors(await enterpriseService.listMcpConnections());
+    } catch (error) {
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+        throw new Error('企业会话已失效，请重新登录');
+      }
+      throw new Error(formatEnterpriseConnectorError(
+        error,
+        '连接器目录加载失败'
+      ));
+    }
+  }, [enterpriseService, enterpriseSession.status, handleEnterpriseSessionExpired]);
+  const toggleComposerConnector = useCallback(async (
+    connectorId: string,
+    enabled: boolean
+  ): Promise<ComposerConnector[]> => {
+    if (enterpriseService === null || enterpriseSession.status !== 'signed_in') {
+      throw new Error('登录企业账户后可管理连接器');
+    }
+    const upstreamId = connectorId.startsWith('enterprise:')
+      ? connectorId.slice('enterprise:'.length)
+      : connectorId;
+    try {
+      return buildComposerConnectors(await enterpriseService.updateMcpPreference(
+        upstreamId,
+        { enabled }
+      ));
+    } catch (error) {
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+        throw new Error('企业会话已失效，请重新登录');
+      }
+      throw new Error(formatEnterpriseConnectorError(error, '连接器状态更新失败'));
+    }
+  }, [enterpriseService, enterpriseSession.status, handleEnterpriseSessionExpired]);
   const workspaceFileService = useMemo(
     () => runtimeClient === null ? null : createWorkspaceFileService(runtimeClient),
     [runtimeClient]
@@ -1216,13 +1292,19 @@ export function AppController(props: AppControllerProps) {
     skillMarketRuntimeGenerationRef.current += 1;
     enterpriseRuntimeGenerationRef.current += 1;
     enterpriseKnowledgeGenerationRef.current += 1;
+    enterpriseSharedDriveGenerationRef.current += 1;
     skillMarketMutationInFlightRef.current = false;
     skillMarketUseInFlightRef.current = false;
     enterpriseKnowledgeUploadInFlightRef.current = false;
+    enterpriseSharedSpacesLoadInFlightRef.current = false;
+    enterpriseSharedFilesLoadInFlightRef.current = false;
+    enterpriseSharedMutationInFlightRef.current = false;
     setSkillMarketOperation(undefined);
     setSkillMarketUseError(undefined);
     setEnterpriseKnowledgeUpload(undefined);
     setEnterpriseKnowledgeUploadNotice(undefined);
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
   }, [
     capabilityService,
     connectionState.status,
@@ -1296,12 +1378,18 @@ export function AppController(props: AppControllerProps) {
   useEffect(() => {
     enterpriseHubGenerationRef.current += 1;
     enterpriseKnowledgeGenerationRef.current += 1;
+    enterpriseSharedDriveGenerationRef.current += 1;
     enterpriseSkillMutationInFlightRef.current = false;
     enterpriseKnowledgeUploadInFlightRef.current = false;
+    enterpriseSharedSpacesLoadInFlightRef.current = false;
+    enterpriseSharedFilesLoadInFlightRef.current = false;
+    enterpriseSharedMutationInFlightRef.current = false;
     setEnterpriseSkillOperation(undefined);
     setEnterpriseSkillUseError(undefined);
     setEnterpriseKnowledgeUpload(undefined);
     setEnterpriseKnowledgeUploadNotice(undefined);
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
 
     if (
       connectionState.status !== 'connected'
@@ -1318,6 +1406,13 @@ export function AppController(props: AppControllerProps) {
       setEnterpriseKnowledgeDocuments(undefined);
       setEnterpriseKnowledgeDocumentsLoading(false);
       setEnterpriseKnowledgeDocumentsError(undefined);
+      setEnterpriseSharedSpaces(undefined);
+      setEnterpriseSharedSpacesLoading(false);
+      setEnterpriseSharedSpacesError(undefined);
+      setSelectedEnterpriseSharedSpaceId(undefined);
+      setEnterpriseSharedFiles(undefined);
+      setEnterpriseSharedFilesLoading(false);
+      setEnterpriseSharedFilesError(undefined);
     }
   }, [
     connectionState.status,
@@ -1461,6 +1556,156 @@ export function AppController(props: AppControllerProps) {
     enterpriseKnowledgeBasesReloadKey,
     enterpriseService,
     enterpriseSession.status,
+    state.activeView
+  ]);
+
+  useEffect(() => {
+    if (
+      state.activeView !== 'drive'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      return;
+    }
+
+    let canceled = false;
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    enterpriseSharedSpacesLoadInFlightRef.current = true;
+    setEnterpriseSharedSpaces(undefined);
+    setEnterpriseSharedSpacesLoading(true);
+    setEnterpriseSharedSpacesError(undefined);
+
+    void activeEnterpriseService.listSharedSpaces({ limit: 100 })
+      .then(response => {
+        if (canceled || !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) return;
+        setEnterpriseSharedSpaces(response.spaces);
+        setEnterpriseSharedSpacesMeta(response.meta);
+        setSelectedEnterpriseSharedSpaceId(previous => (
+          previous === undefined
+          || response.spaces.some(space => space.spaceId === previous)
+          || response.meta.hasNext
+            ? previous
+            : undefined
+        ));
+      })
+      .catch(error => {
+        if (canceled || !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) return;
+        setEnterpriseSharedSpaces(undefined);
+        setSelectedEnterpriseSharedSpaceId(undefined);
+        setEnterpriseSharedFiles(undefined);
+        if (isEnterpriseUnauthorized(error)) {
+          handleEnterpriseSessionExpired();
+        } else {
+          setEnterpriseSharedSpacesError(
+            formatEnterpriseSharedDriveError(error, '共享空间加载失败')
+          );
+        }
+      })
+      .finally(() => {
+        if (!canceled && isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) {
+          enterpriseSharedSpacesLoadInFlightRef.current = false;
+          setEnterpriseSharedSpacesLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    enterpriseService,
+    enterpriseSession.status,
+    enterpriseSharedSpacesReloadKey,
+    handleEnterpriseSessionExpired,
+    state.activeView
+  ]);
+
+  useEffect(() => {
+    if (
+      state.activeView !== 'drive'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      return;
+    }
+
+    let canceled = false;
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    enterpriseSharedFilesLoadInFlightRef.current = true;
+    setEnterpriseSharedFiles(undefined);
+    setEnterpriseSharedFilesLoading(true);
+    setEnterpriseSharedFilesError(undefined);
+
+    void activeEnterpriseService.listSharedFiles({
+      ...(selectedEnterpriseSharedSpaceId === undefined
+        ? {}
+        : { spaceId: selectedEnterpriseSharedSpaceId }),
+      ...(enterpriseSharedQuery.length === 0 ? {} : { query: enterpriseSharedQuery }),
+      limit: 100
+    })
+      .then(response => {
+        if (canceled || !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) return;
+        setEnterpriseSharedFiles(response.files);
+        setEnterpriseSharedFilesMeta(response.meta);
+      })
+      .catch(error => {
+        if (canceled || !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) return;
+        setEnterpriseSharedFiles(undefined);
+        if (isEnterpriseUnauthorized(error)) {
+          handleEnterpriseSessionExpired();
+        } else if (
+          error instanceof ApiClientError
+          && error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
+        ) {
+          setSelectedEnterpriseSharedSpaceId(undefined);
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+          setEnterpriseSharedFilesError('该共享空间已不可访问，正在刷新授权列表');
+        } else {
+          setEnterpriseSharedFilesError(
+            formatEnterpriseSharedDriveError(error, '共享文件加载失败')
+          );
+        }
+      })
+      .finally(() => {
+        if (!canceled && isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) {
+          enterpriseSharedFilesLoadInFlightRef.current = false;
+          setEnterpriseSharedFilesLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    enterpriseService,
+    enterpriseSession.status,
+    enterpriseSharedFilesReloadKey,
+    enterpriseSharedQuery,
+    handleEnterpriseSessionExpired,
+    selectedEnterpriseSharedSpaceId,
     state.activeView
   ]);
 
@@ -3241,6 +3486,17 @@ export function AppController(props: AppControllerProps) {
       && enterpriseServiceRef.current === activeEnterpriseService;
   }
 
+  function isCurrentEnterpriseSharedDriveRuntime(
+    generation: number,
+    activeEnterpriseService: EnterpriseService
+  ) {
+    return mountedRef.current
+      && enterpriseSharedDriveGenerationRef.current === generation
+      && connectionStatusRef.current === 'connected'
+      && enterpriseSessionRef.current.status === 'signed_in'
+      && enterpriseServiceRef.current === activeEnterpriseService;
+  }
+
   async function refreshEnterpriseSkillListOnce(
     generation: number,
     activeEnterpriseService: EnterpriseService
@@ -3268,6 +3524,312 @@ export function AppController(props: AppControllerProps) {
       return;
     }
     void refreshEnterpriseSession();
+  }
+
+  function refreshEnterpriseSharedDrive() {
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+    if (enterpriseSessionRef.current.status === 'signed_in') {
+      setEnterpriseSharedSpacesReloadKey(current => current + 1);
+      setEnterpriseSharedFilesReloadKey(current => current + 1);
+      return;
+    }
+    void refreshEnterpriseSession();
+  }
+
+  function selectEnterpriseSharedSpace(spaceId?: string) {
+    if (spaceId !== selectedEnterpriseSharedSpaceId) {
+      setSelectedEnterpriseSharedSpaceId(spaceId);
+      setEnterpriseSharedFiles(undefined);
+      setEnterpriseSharedFilesError(undefined);
+    }
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+  }
+
+  function searchEnterpriseSharedFiles(query: string) {
+    setEnterpriseSharedQuery(query.trim());
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+  }
+
+  async function loadMoreEnterpriseSharedSpaces() {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedSpacesLoadInFlightRef.current
+      || !enterpriseSharedSpacesMeta.hasNext
+      || enterpriseSharedSpacesMeta.nextCursor.length === 0
+    ) return;
+
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedSpacesLoadInFlightRef.current = true;
+    setEnterpriseSharedSpacesLoading(true);
+    setEnterpriseSharedSpacesError(undefined);
+    try {
+      const response = await activeEnterpriseService.listSharedSpaces({
+        limit: 100,
+        cursor: enterpriseSharedSpacesMeta.nextCursor
+      });
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      setEnterpriseSharedSpaces(previous => mergeSharedSpaces(
+        previous ?? [],
+        response.spaces
+      ));
+      setEnterpriseSharedSpacesMeta(response.meta);
+    } catch (error) {
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+      } else {
+        setEnterpriseSharedSpacesError(
+          formatEnterpriseSharedDriveError(error, '更多共享空间加载失败')
+        );
+      }
+    } finally {
+      if (isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) {
+        enterpriseSharedSpacesLoadInFlightRef.current = false;
+        setEnterpriseSharedSpacesLoading(false);
+      }
+    }
+  }
+
+  async function loadMoreEnterpriseSharedFiles() {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedFilesLoadInFlightRef.current
+      || !enterpriseSharedFilesMeta.hasNext
+      || enterpriseSharedFilesMeta.nextCursor.length === 0
+    ) return;
+
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedFilesLoadInFlightRef.current = true;
+    setEnterpriseSharedFilesLoading(true);
+    setEnterpriseSharedFilesError(undefined);
+    try {
+      const response = await activeEnterpriseService.listSharedFiles({
+        ...(selectedEnterpriseSharedSpaceId === undefined
+          ? {}
+          : { spaceId: selectedEnterpriseSharedSpaceId }),
+        ...(enterpriseSharedQuery.length === 0 ? {} : { query: enterpriseSharedQuery }),
+        limit: 100,
+        cursor: enterpriseSharedFilesMeta.nextCursor
+      });
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      setEnterpriseSharedFiles(previous => mergeSharedFiles(previous ?? [], response.files));
+      setEnterpriseSharedFilesMeta(response.meta);
+    } catch (error) {
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+      } else {
+        setEnterpriseSharedFilesError(
+          formatEnterpriseSharedDriveError(error, '更多共享文件加载失败')
+        );
+      }
+    } finally {
+      if (isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) {
+        enterpriseSharedFilesLoadInFlightRef.current = false;
+        setEnterpriseSharedFilesLoading(false);
+      }
+    }
+  }
+
+  async function uploadEnterpriseSharedFile(spaceId: string, file: File) {
+    const space = enterpriseSharedSpaces?.find(item => item.spaceId === spaceId);
+    if (space?.permissions.write !== true) return;
+    await mutateEnterpriseSharedFile({
+      kind: 'upload',
+      spaceId,
+      logicalPath: file.name,
+      file
+    });
+  }
+
+  async function replaceEnterpriseSharedFile(
+    target: EnterpriseSharedFileResponse,
+    file: File
+  ) {
+    const space = enterpriseSharedSpaces?.find(item => item.spaceId === target.spaceId);
+    if (space?.permissions.write !== true) return;
+    await mutateEnterpriseSharedFile({
+      kind: 'replace',
+      spaceId: target.spaceId,
+      logicalPath: target.logicalPath,
+      expectedRevision: target.revision,
+      file,
+      fileId: target.fileId
+    });
+  }
+
+  async function mutateEnterpriseSharedFile(request: {
+    kind: 'upload' | 'replace';
+    spaceId: string;
+    logicalPath: string;
+    expectedRevision?: number;
+    file: File;
+    fileId?: string;
+  }) {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedMutationInFlightRef.current
+    ) return;
+
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedMutationInFlightRef.current = true;
+    setEnterpriseSharedNotice(undefined);
+    setEnterpriseSharedOperation({
+      kind: request.kind,
+      ...(request.fileId === undefined ? {} : { fileId: request.fileId }),
+      fileName: request.logicalPath,
+      status: 'working'
+    });
+    try {
+      const response = await activeEnterpriseService.uploadSharedFile({
+        spaceId: request.spaceId,
+        logicalPath: request.logicalPath,
+        ...(request.expectedRevision === undefined
+          ? {}
+          : { expectedRevision: request.expectedRevision }),
+        file: request.file
+      });
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      setEnterpriseSharedOperation(undefined);
+      setEnterpriseSharedNotice(
+        response.reconciled
+          ? `${response.logicalPath} 已在服务端确认创建成功`
+          : request.kind === 'upload'
+            ? `${response.logicalPath} 已上传`
+            : `${response.logicalPath} 已替换为 revision ${response.revision}`
+      );
+      setEnterpriseSharedFilesReloadKey(current => current + 1);
+    } catch (error) {
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+        setEnterpriseSharedOperation(undefined);
+        return;
+      }
+      let message = formatEnterpriseSharedDriveError(
+        error,
+        request.kind === 'upload' ? '共享文件上传失败' : '共享文件替换失败'
+      );
+      if (error instanceof ApiClientError) {
+        if (error.code === 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT') {
+          const currentRevision = error.details?.currentRevision;
+          message = typeof currentRevision === 'number'
+            ? `远端文件已更新到 revision ${currentRevision}，请刷新后重新替换`
+            : '远端文件已被其他成员修改，请刷新后重新替换';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (
+          error.code === 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN'
+          || error.code === 'ENTERPRISE_FORBIDDEN'
+        ) {
+          message = '当前账户已没有该共享空间的写入权限';
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+        } else if (error.code === 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS') {
+          message = '相同网盘路径已存在，请在文件列表中选择替换';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (
+          error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
+          || error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
+        ) {
+          message = '共享空间或文件已不可访问，正在刷新列表';
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (error.code === 'ENTERPRISE_SERVICE_UNAVAILABLE') {
+          message = request.kind === 'upload'
+            ? '上传结果未知，请刷新文件列表后再决定是否重试'
+            : '替换结果未知，请刷新并核对 revision 后再操作';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        }
+      }
+      setEnterpriseSharedOperation({
+        kind: request.kind,
+        ...(request.fileId === undefined ? {} : { fileId: request.fileId }),
+        fileName: request.logicalPath,
+        status: 'failed',
+        error: message
+      });
+    } finally {
+      enterpriseSharedMutationInFlightRef.current = false;
+    }
+  }
+
+  async function downloadEnterpriseSharedFile(
+    target: EnterpriseSharedFileResponse,
+    overwrite: boolean
+  ) {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || currentProject === undefined
+      || enterpriseSharedMutationInFlightRef.current
+    ) return;
+
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedMutationInFlightRef.current = true;
+    setEnterpriseSharedNotice(undefined);
+    setEnterpriseSharedOperation({
+      kind: 'download',
+      fileId: target.fileId,
+      fileName: target.logicalPath,
+      status: 'working'
+    });
+    try {
+      const response = await activeEnterpriseService.downloadSharedFile({
+        fileId: target.fileId,
+        projectId: currentProject.id,
+        ...(overwrite ? { overwrite: true } : {})
+      });
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      setEnterpriseSharedOperation(undefined);
+      setEnterpriseSharedNotice(
+        `${response.relativePath} 已${response.overwritten ? '覆盖保存' : '保存'}到项目“${currentProject.name}”`
+      );
+    } catch (error) {
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+        setEnterpriseSharedOperation(undefined);
+        return;
+      }
+      if (
+        error instanceof ApiClientError
+        && error.code === 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS'
+        && !overwrite
+      ) {
+        setEnterpriseSharedOperation({
+          kind: 'download',
+          fileId: target.fileId,
+          fileName: target.logicalPath,
+          status: 'requires_overwrite',
+          error: `项目中已存在 ${target.logicalPath}，再次点击覆盖按钮确认替换`
+        });
+        return;
+      }
+      if (
+        error instanceof ApiClientError
+        && error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
+      ) {
+        setEnterpriseSharedFilesReloadKey(current => current + 1);
+      }
+      setEnterpriseSharedOperation({
+        kind: 'download',
+        fileId: target.fileId,
+        fileName: target.logicalPath,
+        status: 'failed',
+        error: formatEnterpriseSharedDriveError(error, '文件保存到项目失败')
+      });
+    } finally {
+      enterpriseSharedMutationInFlightRef.current = false;
+    }
   }
 
   function selectEnterpriseKnowledgeBase(knowledgeBaseId: string) {
@@ -4803,6 +5365,17 @@ export function AppController(props: AppControllerProps) {
           slashCommands={slashCommands}
           slashCommandsLoading={capabilitiesLoading}
           slashCommandsError={capabilitiesLoadError}
+          onLoadConnectors={
+            enterpriseService === null || enterpriseSession.status !== 'signed_in'
+              ? undefined
+              : loadComposerConnectors
+          }
+          preloadConnectors={props.requireEnterpriseLogin !== false}
+          onToggleConnector={
+            enterpriseService === null || enterpriseSession.status !== 'signed_in'
+              ? undefined
+              : toggleComposerConnector
+          }
           queuedItems={composerQueuedItems}
           imageInputSupported={imageInputSupported}
           imageInputUnsupportedReason={
@@ -4973,7 +5546,40 @@ export function AppController(props: AppControllerProps) {
       onUpload={file => void uploadEnterpriseKnowledgeDocument(file)}
     />
   ) : state.activeView === 'drive' ? (
-    <SharedDrivePage />
+    <SharedDrivePage
+      connected={connectionState.status === 'connected'}
+      session={enterpriseSession}
+      spaces={enterpriseSharedSpaces}
+      spacesLoading={enterpriseSharedSpacesLoading}
+      spacesError={enterpriseSharedSpacesError}
+      spacesHasNext={enterpriseSharedSpacesMeta.hasNext}
+      selectedSpaceId={selectedEnterpriseSharedSpaceId}
+      files={enterpriseSharedFiles}
+      filesLoading={enterpriseSharedFilesLoading}
+      filesError={enterpriseSharedFilesError}
+      filesHasNext={enterpriseSharedFilesMeta.hasNext}
+      query={enterpriseSharedQuery}
+      maxFileSizeBytes={enterpriseSharedSpacesMeta.maxFileSizeBytes}
+      currentProjectId={currentProject?.id}
+      currentProjectName={currentProjectName}
+      operation={enterpriseSharedOperation}
+      notice={enterpriseSharedNotice}
+      onOpenAccount={() => {
+        enterpriseReturnRouteRef.current = { view: 'drive' };
+        dispatch({ type: 'set_active_view', activeView: 'account' });
+        navigateToRoute({ view: 'account' });
+      }}
+      onRefresh={refreshEnterpriseSharedDrive}
+      onLoadMoreSpaces={() => void loadMoreEnterpriseSharedSpaces()}
+      onSelectSpace={selectEnterpriseSharedSpace}
+      onSearch={searchEnterpriseSharedFiles}
+      onLoadMoreFiles={() => void loadMoreEnterpriseSharedFiles()}
+      onUpload={(spaceId, file) => void uploadEnterpriseSharedFile(spaceId, file)}
+      onReplace={(target, file) => void replaceEnterpriseSharedFile(target, file)}
+      onDownload={(target, overwrite) => {
+        void downloadEnterpriseSharedFile(target, overwrite);
+      }}
+    />
   ) : state.activeView === 'connections' ? (
     <ConnectionsPage
       connected={connectionState.status === 'connected'}
@@ -5756,6 +6362,22 @@ function isEnterpriseUnauthorized(error: unknown): boolean {
     );
 }
 
+function formatEnterpriseConnectorError(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
+  switch (error.code) {
+    case 'ENTERPRISE_AGENT_FORBIDDEN':
+      return '当前设备的企业 Agent 已停用';
+    case 'ENTERPRISE_SERVICE_UNAVAILABLE':
+      return '企业连接服务暂时不可用';
+    case 'ENTERPRISE_PROTOCOL_ERROR':
+      return '企业连接服务返回了无法识别的数据';
+    case 'ENTERPRISE_RATE_LIMITED':
+      return '连接器目录请求过于频繁，请稍后重试';
+    default:
+      return error.message.trim().length > 0 ? error.message : fallback;
+  }
+}
+
 function formatEnterpriseSkillError(error: unknown, fallback: string): string {
   if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
   switch (error.code) {
@@ -5810,6 +6432,71 @@ function formatEnterpriseKnowledgeError(error: unknown, fallback: string): strin
     default:
       return error.message.trim().length > 0 ? error.message : fallback;
   }
+}
+
+function formatEnterpriseSharedDriveError(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
+  switch (error.code) {
+    case 'ENTERPRISE_FORBIDDEN':
+      return '当前账户没有共享网盘访问权限';
+    case 'ENTERPRISE_AGENT_FORBIDDEN':
+      return '当前设备的企业 Agent 无法访问共享网盘';
+    case 'ENTERPRISE_SHARED_SPACE_NOT_FOUND':
+      return '该共享空间不存在或当前账户已无权访问';
+    case 'ENTERPRISE_SHARED_FILE_NOT_FOUND':
+      return '该共享文件不存在或当前账户已无权访问';
+    case 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN':
+      return '当前账户没有该共享空间的写入权限';
+    case 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS':
+      return '相同网盘路径已存在';
+    case 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT':
+      return '远端文件已被其他成员修改';
+    case 'ENTERPRISE_SHARED_FILE_TOO_LARGE':
+      return '共享文件超过服务端允许大小';
+    case 'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH':
+    case 'ENTERPRISE_SHARED_FILE_DIGEST_MISMATCH':
+      return '共享文件完整性校验失败';
+    case 'ENTERPRISE_SHARED_FILE_STORAGE_UNAVAILABLE':
+    case 'ENTERPRISE_SERVICE_UNAVAILABLE':
+      return '企业文件服务暂时不可用';
+    case 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS':
+      return '当前项目中已存在同路径文件';
+    case 'ENTERPRISE_SHARED_FILE_LOCAL_WRITE_FAILED':
+      return '文件无法写入当前项目';
+    case 'PROJECT_NOT_FOUND':
+      return '当前项目不存在';
+    case 'PROJECT_ARCHIVED':
+      return '当前项目已归档，无法写入文件';
+    case 'PROJECT_DIRECTORY_UNAVAILABLE':
+      return '当前项目目录不可用';
+    case 'PATH_ESCAPE':
+    case 'PATH_IGNORED':
+      return '远端文件路径不能写入当前项目';
+    case 'ENTERPRISE_RATE_LIMITED':
+      return '企业文件服务请求过于频繁，请稍后重试';
+    case 'ENTERPRISE_PROTOCOL_ERROR':
+      return '企业文件服务返回了无法识别的数据';
+    default:
+      return error.message.trim().length > 0 ? error.message : fallback;
+  }
+}
+
+function mergeSharedSpaces(
+  current: EnterpriseSharedSpaceResponse[],
+  incoming: EnterpriseSharedSpaceResponse[]
+): EnterpriseSharedSpaceResponse[] {
+  const merged = new Map(current.map(space => [space.spaceId, space]));
+  for (const space of incoming) merged.set(space.spaceId, space);
+  return Array.from(merged.values());
+}
+
+function mergeSharedFiles(
+  current: EnterpriseSharedFileResponse[],
+  incoming: EnterpriseSharedFileResponse[]
+): EnterpriseSharedFileResponse[] {
+  const merged = new Map(current.map(file => [file.fileId, file]));
+  for (const file of incoming) merged.set(file.fileId, file);
+  return Array.from(merged.values());
 }
 
 function buildThreadRequest(
@@ -5933,6 +6620,31 @@ export function buildComposerSlashCommands(
       insertText: `使用 MCP：${server.name} `
     }));
   return [...skillCommands, ...mcpCommands];
+}
+
+export function buildComposerConnectors(
+  catalog: EnterpriseMcpCatalogResponse
+): ComposerConnector[] {
+  return catalog.upstreams.map(upstream => {
+    const authorizedTools = upstream.tools.filter(tool => tool.authorized).length;
+    const scope = upstream.domain.trim() || upstream.namespace.trim() || '企业连接器';
+    const status: ComposerConnector['status'] = upstream.status !== 'active'
+      ? 'unavailable'
+      : upstream.enabled
+        ? 'enabled'
+        : upstream.installed
+          ? 'installed'
+          : 'available';
+    return {
+      id: `enterprise:${upstream.upstreamId}`,
+      label: upstream.name,
+      description: `${scope} · ${authorizedTools}/${upstream.tools.length} 项工具已授权`,
+      status,
+      ...(status === 'enabled'
+        ? { insertText: `使用连接器：${upstream.name} ` }
+        : {})
+    };
+  });
 }
 
 function toRuntimeSandbox(permission: ClaweeProject['sandbox'] | undefined): SandboxMode {

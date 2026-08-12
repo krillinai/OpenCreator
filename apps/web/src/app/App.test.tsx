@@ -31,6 +31,7 @@ import {
   type AppProps
 } from './App.js';
 import {
+  buildComposerConnectors,
   buildComposerSlashCommands,
   formatRelativeTime,
   pollEnterpriseSessionUntilSettled
@@ -78,6 +79,44 @@ describe('App', () => {
       expect.objectContaining({ category: 'skill', insertText: '$brainstorming ' }),
       expect.objectContaining({ category: 'mcp', insertText: '使用 MCP：github ' })
     ]));
+  });
+
+  it('maps the enterprise MCP catalog into the Composer connector directory', () => {
+    expect(buildComposerConnectors({
+      agentId: 'clawee_agent',
+      tokenStatus: 'ready',
+      refreshedAt: new Date(0).toISOString(),
+      upstreams: [{
+        upstreamId: 'crm-main',
+        name: '客户关系管理',
+        domain: 'sales',
+        endpoint: 'https://enterprise.example/mcp/servers/crm-main',
+        upstreamTransport: 'streamable_http',
+        namespace: 'crm',
+        status: 'active',
+        installed: true,
+        enabled: true,
+        tools: [{
+          toolId: 'customer-search',
+          upstreamName: 'customer.search',
+          name: 'customer.search',
+          exposedName: 'crm.customer.search',
+          title: '查询客户',
+          description: '按条件查询客户资料',
+          riskLevel: 'low',
+          confirmRequired: false,
+          status: 'active',
+          authorized: true,
+          authorizationExpiresAt: null
+        }]
+      }]
+    })).toEqual([{
+      id: 'enterprise:crm-main',
+      label: '客户关系管理',
+      description: 'sales · 1/1 项工具已授权',
+      status: 'enabled',
+      insertText: '使用连接器：客户关系管理 '
+    }]);
   });
 
   it('treats timezone-less Runtime timestamps as UTC before formatting relative time', () => {
@@ -4622,8 +4661,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'legacy-project' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /选择项目 / }));
-    await user.click(screen.getByRole('button', { name: '新建项目' }));
-    await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+    await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(fetchCalls.map(call => [call.url, call.init?.method])).toContainEqual([
@@ -4777,8 +4815,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     const openExistingFolderPicker = async () => {
       await user.click(screen.getByRole('button', { name: /选择项目 / }));
-      await user.click(screen.getByRole('button', { name: '新建项目' }));
-      await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+      await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
     };
     await openExistingFolderPicker();
     await openExistingFolderPicker();
@@ -4830,7 +4867,6 @@ describe('App', () => {
       name: '选择项目 content-design'
     }));
     await user.click(screen.getByRole('button', { name: '新建项目' }));
-    await user.click(screen.getByRole('menuitem', { name: '新建空白项目' }));
     await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'blank-project');
     await user.click(screen.getByRole('button', { name: '创建' }));
 
@@ -4852,8 +4888,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', {
       name: '选择项目 blank-project'
     }));
-    await user.click(screen.getByRole('button', { name: '新建项目' }));
-    await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+    await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
 
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole('button', {

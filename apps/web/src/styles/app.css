@@ -3425,12 +3425,11 @@ html.is-pane-resizing * {
   border-top: 1px solid #343438;
 }
 
-.composer-project-create-trigger,
-.composer-project-create-menu button {
+.composer-project-create-trigger {
   width: 100%;
   min-height: var(--control-compact-lg);
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 20px;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   padding: 6px 9px;
@@ -3442,49 +3441,17 @@ html.is-pane-resizing * {
 }
 
 .composer-project-create-trigger:hover,
-.composer-project-create-trigger[aria-expanded="true"],
-.composer-project-create-menu button:hover {
+.composer-project-create-trigger[aria-expanded="true"] {
   background: var(--surface-3);
 }
 
-.composer-project-create-trigger span,
-.composer-project-create-menu span {
+.composer-project-create-trigger span {
   min-width: 0;
   overflow: hidden;
   font-size: 12px;
   font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.composer-project-create-trigger svg:last-child {
-  justify-self: end;
-  color: var(--muted);
-}
-
-.composer-project-create-menu {
-  position: absolute;
-  z-index: 32;
-  bottom: -8px;
-  left: calc(100% + 8px);
-  width: 190px;
-  padding: 6px;
-  border: 1px solid #343438;
-  border-radius: 8px;
-  background: var(--popover);
-  box-shadow: none;
-}
-
-.composer-project-create-menu button {
-  grid-template-columns: 20px minmax(0, 1fr);
-}
-
-@media (max-width: 720px) {
-  .composer-project-create-menu {
-    right: 0;
-    bottom: calc(100% + 6px);
-    left: auto;
-  }
 }
 
 .composer-input-wrap {
@@ -3738,6 +3705,185 @@ html.is-pane-resizing * {
   flex: 1 1 auto;
 }
 
+.composer-enabled-connectors {
+  min-width: 0;
+  max-width: min(180px, 32vw);
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.composer-enabled-connectors-wrap {
+  position: relative;
+  min-width: 0;
+  display: inline-flex;
+}
+
+.composer-enabled-connectors::-webkit-scrollbar {
+  display: none;
+}
+
+.composer-enabled-connectors > span {
+  display: inline-flex;
+}
+
+.composer-enabled-connectors > span + span {
+  margin-left: -5px;
+}
+
+.composer-enabled-connector {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  line-height: 1;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+.composer-enabled-connector:hover,
+.composer-enabled-connector[aria-expanded="true"] {
+  background: transparent;
+  color: var(--accent-strong);
+  transform: translateY(-1px);
+}
+
+.composer-connector-card {
+  width: min(260px, calc(100vw - 24px));
+  max-height: min(360px, 70dvh);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  padding: 6px 0;
+  overflow: hidden;
+}
+
+.composer-connector-quick-list {
+  min-height: 44px;
+  padding: 2px 6px 6px;
+  overflow-y: auto;
+}
+
+.composer-connector-quick-item {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 7px;
+  border-radius: 5px;
+}
+
+.composer-connector-quick-item:hover {
+  background: var(--state-hover-bg);
+}
+
+.composer-connector-quick-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.composer-connector-quick-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-connector-switch {
+  position: relative;
+  width: 30px;
+  min-width: 30px;
+  height: 18px;
+  min-height: 18px;
+  align-self: center;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+
+.composer-connector-switch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  content: "";
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.composer-connector-switch[aria-checked="true"] {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.composer-connector-switch[aria-checked="true"]::after {
+  transform: translateX(12px);
+  background: var(--accent-strong);
+}
+
+.composer-connector-switch:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.composer-connector-more {
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 13px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.composer-connector-more:hover {
+  background: var(--state-hover-bg);
+}
+
+@media (max-width: 620px) {
+  .composer-connector-card {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: none;
+  }
+}
+
 .composer-left-actions > .composer-control-wrap:first-child {
   margin-left: calc(var(--composer-left-baseline) - 29px);
 }
@@ -3950,8 +4096,7 @@ html.is-pane-resizing * {
   backdrop-filter: none;
 }
 
-:root[data-theme="light"] .composer-popover,
-:root[data-theme="light"] .composer-project-create-menu {
+:root[data-theme="light"] .composer-popover {
   background: var(--surface-popover);
   border-color: #dedee1;
   opacity: 1;
@@ -4034,6 +4179,43 @@ html.is-pane-resizing * {
 .composer-add-command-list {
   min-height: 72px;
   overflow-y: auto;
+}
+
+.composer-connector-item {
+  align-items: start;
+}
+
+.composer-connector-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.composer-connector-title strong {
+  flex: 1 1 auto;
+}
+
+.composer-connector-title em {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.2;
+}
+
+.composer-connector-title em[data-status="enabled"],
+.composer-connector-title em[data-status="configured"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.composer-connector-title em[data-status="unavailable"] {
+  color: var(--danger);
 }
 
 .composer-add-footer {
@@ -7638,7 +7820,6 @@ html.is-pane-resizing * {
 }
 
 .composer-popover,
-.composer-project-create-menu,
 .sidebar-project-menu,
 .sidebar-conversation-menu,
 .sidebar-task-menu,
@@ -7691,7 +7872,6 @@ html.is-pane-resizing * {
   .composer-menu-item,
   .composer-project-option,
   .composer-project-create-trigger,
-  .composer-project-create-menu button,
   .sidebar-project-menu button,
   .schedule-create-menu__popover button
 ):not(:disabled):hover {
@@ -7705,7 +7885,6 @@ html.is-pane-resizing * {
   .composer-menu-item,
   .composer-project-option,
   .composer-project-create-trigger,
-  .composer-project-create-menu button,
   .sidebar-project-menu button,
   .schedule-create-menu__popover button
 ):not(:disabled):active {

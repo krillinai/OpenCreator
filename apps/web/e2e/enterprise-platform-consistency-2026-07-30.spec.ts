@@ -75,7 +75,8 @@ test('未勾选协议时 Browser/Desktop 登录均先确认再提交', async ({
       await dialog.getByRole('button', { name: '同意并继续' }).click();
 
       await expect(page.getByRole('button', {
-        name: 'Enterprise Member member@example.com'
+        name: 'Enterprise Member',
+        exact: true
       })).toBeVisible();
       const submitted = fakeDaemon.requestLog().filter(request => (
         request.method === 'POST' && request.path === '/enterprise/login'
@@ -158,6 +159,191 @@ test('企业账户、连接器、知识库、共享网盘与 Skill Hub 在 Brows
       screenshotDifference.maxChannelDelta,
       `${checkpointName} 截图最大通道差值`
     ).toBeLessThanOrEqual(50);
+  }
+});
+
+test('会话 MCP 图标直达的连接器快捷开关在 Browser/Desktop Bridge 下保持一致', async ({
+  browser,
+  page: comparisonPage,
+  runtime
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    '一致性规格内部固定创建 1280x800 Chromium 上下文'
+  );
+
+  const fakeDaemon = new FakeEnterpriseDaemon();
+  const results: Array<{
+    platform: Platform;
+    text: string;
+    boxes: Record<string, { x: number; y: number; width: number; height: number }>;
+    screenshot: Buffer;
+    mcpRequests: FakeEnterpriseRequest[];
+  }> = [];
+
+  for (const platform of ['browser', 'desktop'] satisfies Platform[]) {
+    fakeDaemon.reset();
+    fakeDaemon.setMcpPreference({ installed: true, enabled: true });
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      deviceScaleFactor: 1,
+      colorScheme: 'dark',
+      reducedMotion: 'reduce'
+    });
+    const page = await context.newPage();
+    await fakeDaemon.attach(page);
+    await installPlatformEnvironment(page, platform);
+
+    try {
+      await page.goto(runtime.origin);
+      await loginWithEmail(page);
+      await expect(page.getByRole('button', {
+        name: 'Enterprise Member',
+        exact: true
+      })).toBeVisible();
+      const connectorIcon = page.getByRole('button', {
+        name: '打开连接器列表，客户关系管理 MCP'
+      });
+      await expect(connectorIcon).toBeVisible();
+      await connectorIcon.click();
+      await expect(page.getByRole('switch', {
+        name: '客户关系管理 MCP'
+      })).toHaveAttribute('aria-checked', 'true');
+      await expect(page.getByRole('button', {
+        name: '选择更多连接器'
+      })).toBeVisible();
+
+      const selectors = [
+        '.composer-enabled-connectors',
+        '.composer-connector-card',
+        '.composer-connector-quick-list'
+      ];
+      const boxes: Record<string, {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }> = {};
+      for (const selector of selectors) {
+        const box = await page.locator(selector).boundingBox();
+        expect(box, `缺少连接器目录尺寸目标 ${selector}`).not.toBeNull();
+        boxes[selector] = {
+          x: Math.round(box!.x),
+          y: Math.round(box!.y),
+          width: Math.round(box!.width),
+          height: Math.round(box!.height)
+        };
+      }
+      const submenu = page.locator('.composer-connector-card');
+      const screenshot = await submenu.screenshot({ animations: 'disabled' });
+      await testInfo.attach(`${platform}-composer-connector-catalog.png`, {
+        body: screenshot,
+        contentType: 'image/png'
+      });
+      results.push({
+        platform,
+        text: normalizeText(await submenu.innerText()),
+        boxes,
+        screenshot,
+        mcpRequests: fakeDaemon.requestLog().filter(request => (
+          request.method === 'GET' && request.path === '/enterprise/mcp'
+        ))
+      });
+    } finally {
+      await context.close();
+    }
+  }
+
+  const browserResult = results.find(result => result.platform === 'browser')!;
+  const desktopResult = results.find(result => result.platform === 'desktop')!;
+  expect(browserResult.mcpRequests).toHaveLength(1);
+  expect(desktopResult.mcpRequests).toEqual(browserResult.mcpRequests);
+  expect(desktopResult.text).toBe(browserResult.text);
+  expect(desktopResult.boxes).toEqual(browserResult.boxes);
+  const screenshotDifference = await compareScreenshotPixels(
+    comparisonPage,
+    browserResult.screenshot,
+    desktopResult.screenshot
+  );
+  expect(screenshotDifference.differentPixels).toBeLessThanOrEqual(50);
+  expect(screenshotDifference.maxChannelDelta).toBeLessThanOrEqual(50);
+});
+
+test('会话 MCP 图标直达的连接器快捷开关在 390px 视口下不溢出', async ({
+  browser,
+  runtime
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    '移动端连接器目录规格固定使用 390x844 Chromium 视口'
+  );
+  const fakeDaemon = new FakeEnterpriseDaemon();
+  fakeDaemon.reset();
+  fakeDaemon.setMcpPreference({ installed: true, enabled: true });
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 1,
+    colorScheme: 'dark',
+    reducedMotion: 'reduce'
+  });
+  const page = await context.newPage();
+  await fakeDaemon.attach(page);
+  await installPlatformEnvironment(page, 'browser');
+
+  try {
+    await page.goto(runtime.origin);
+    await loginWithEmail(page);
+    await expect(page.getByRole('textbox', { name: '输入任务' })).toBeVisible();
+    await page.getByRole('button', {
+      name: '打开连接器列表，客户关系管理 MCP'
+    }).click();
+    await expect(page.getByRole('switch', {
+      name: '客户关系管理 MCP'
+    })).toHaveAttribute('aria-checked', 'true');
+
+    const layout = await page.evaluate(() => {
+      const submenu = document.querySelector<HTMLElement>('.composer-connector-card')!;
+      const list = document.querySelector<HTMLElement>('.composer-connector-quick-list')!;
+      const connector = document.querySelector<HTMLElement>('.composer-connector-quick-item')!;
+      const title = document.querySelector<HTMLElement>('.composer-connector-quick-name')!;
+      const status = document.querySelector<HTMLElement>('.composer-connector-switch')!;
+      const rect = (element: HTMLElement) => {
+        const value = element.getBoundingClientRect();
+        return {
+          left: value.left,
+          right: value.right,
+          top: value.top,
+          bottom: value.bottom
+        };
+      };
+      return {
+        viewportWidth: window.innerWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        submenuClientWidth: submenu.clientWidth,
+        submenuScrollWidth: submenu.scrollWidth,
+        listClientWidth: list.clientWidth,
+        listScrollWidth: list.scrollWidth,
+        connectorClientWidth: connector.clientWidth,
+        connectorScrollWidth: connector.scrollWidth,
+        title: rect(title),
+        status: rect(status)
+      };
+    });
+    expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.submenuScrollWidth).toBeLessThanOrEqual(layout.submenuClientWidth);
+    expect(layout.listScrollWidth).toBeLessThanOrEqual(layout.listClientWidth);
+    expect(layout.connectorScrollWidth).toBeLessThanOrEqual(layout.connectorClientWidth);
+    expect(rectanglesOverlap(layout.title, layout.status)).toBe(false);
+
+    await testInfo.attach('mobile-composer-connector-catalog.png', {
+      body: await page.locator('.composer-connector-card').screenshot({
+        animations: 'disabled'
+      }),
+      contentType: 'image/png'
+    });
+    expect(fakeDaemon.unknownRequestPaths()).toEqual([]);
+  } finally {
+    await context.close();
   }
 });
 
@@ -369,11 +555,13 @@ async function runPlatform(input: {
 
     await loginWithEmail(page);
     await expect(page.getByRole('button', {
-      name: 'Enterprise Member member@example.com'
+      name: 'Enterprise Member',
+      exact: true
     })).toBeVisible();
     await verifyNativeProjectCapability(page, input.platform);
     await page.getByRole('button', {
-      name: 'Enterprise Member member@example.com'
+      name: 'Enterprise Member',
+      exact: true
     }).click();
     await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
     await page.reload();
@@ -385,7 +573,9 @@ async function runPlatform(input: {
       '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
     );
     await expect(mcpCard.getByRole('heading', { name: '客户关系管理' })).toBeVisible();
-    await expect(mcpCard.getByText('企业授权：1/2 项工具')).toBeVisible();
+    await expect(mcpCard.getByText('sales', { exact: true })).toBeVisible();
+    await expect(mcpCard.getByText('按条件查询客户资料', { exact: true })).toBeVisible();
+    await expect(mcpCard.getByText('服务正常')).toHaveCount(0);
     await mcpCard.getByRole('button', { name: '安装' }).click();
     const mcpSwitch = mcpCard.getByRole('switch', { name: '客户关系管理 MCP' });
     await expect(mcpSwitch).toHaveAttribute('aria-checked', 'false');
@@ -572,8 +762,7 @@ async function verifyNativeProjectCapability(
   platform: Platform
 ): Promise<void> {
   await page.getByRole('button', { name: '选择项目 企业项目' }).click();
-  await page.getByRole('button', { name: '新建项目' }).click();
-  const existingFolder = page.getByRole('menuitem', { name: '使用现有文件夹' });
+  const existingFolder = page.getByRole('button', { name: '使用现有文件夹' });
   if (platform === 'desktop') {
     await expect(existingFolder).toBeVisible();
     await existingFolder.click();

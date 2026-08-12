@@ -62,6 +62,11 @@ export class FakeEnterpriseDaemon {
     this.unknownPaths = [];
   }
 
+  setMcpPreference(input: { installed: boolean; enabled: boolean }): void {
+    this.state.mcpInstalled = input.installed;
+    this.state.mcpEnabled = input.installed && input.enabled;
+  }
+
   async attach(page: Page): Promise<void> {
     await page.route('**/.clawee/runtime-config', route => route.fulfill({
       json: { baseUrl: runtimePrefix }
