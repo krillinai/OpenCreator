@@ -72,10 +72,12 @@ describe('enterprise development config', () => {
 
     const firstStore = createEnterpriseAgentIdentityStore({
       configPath: fixture.userPath,
+      collectorConfigPath: join(fixture.root, 'missing-collector.toml'),
       generateId: () => agentId
     });
     const secondStore = createEnterpriseAgentIdentityStore({
       configPath: secondUserPath,
+      collectorConfigPath: join(fixture.root, 'missing-collector.toml'),
       generateId: () => secondAgentId
     });
 

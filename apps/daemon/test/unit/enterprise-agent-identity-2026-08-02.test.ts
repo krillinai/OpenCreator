@@ -33,6 +33,7 @@ describe('enterprise agent identity store', () => {
     const store = createEnterpriseAgentIdentityStore({
       configPath,
       legacyDataDir: dataDir,
+      collectorConfigPath: join(dataDir, 'missing-collector.toml'),
       generateId
     });
 
@@ -50,6 +51,7 @@ describe('enterprise agent identity store', () => {
     const restored = createEnterpriseAgentIdentityStore({
       configPath,
       legacyDataDir: dataDir,
+      collectorConfigPath: join(dataDir, 'missing-collector.toml'),
       generateId: vi.fn(() => 'clawee_123e4567-e89b-42d3-a456-426614174000')
     });
     await expect(restored.getOrCreate()).resolves.toBe(firstAgentId);
@@ -66,6 +68,7 @@ describe('enterprise agent identity store', () => {
     const store = createEnterpriseAgentIdentityStore({
       configPath,
       legacyDataDir: dataDir,
+      collectorConfigPath: join(dataDir, 'missing-collector.toml'),
       generateId
     });
 
@@ -88,6 +91,7 @@ describe('enterprise agent identity store', () => {
     const store = createEnterpriseAgentIdentityStore({
       configPath,
       legacyDataDir: dataDir,
+      collectorConfigPath: join(dataDir, 'missing-collector.toml'),
       generateId
     });
 
@@ -139,6 +143,99 @@ describe('enterprise agent identity store', () => {
 
     await expect(store.getOrCreate()).resolves.toBe(firstAgentId);
     expect(readFileSync(collectorConfigPath, 'utf8')).toContain(firstAgentId);
+  });
+
+  it('keeps identities independent when collector uses another origin', async () => {
+    const dataDir = createTempDirectory();
+    const configPath = join(dataDir, 'config.toml');
+    writeFileSync(
+      configPath,
+      `gateway = "https://public.enterprise.example"\nagent_id = "${firstAgentId}"\n`
+    );
+    const collectorConfigPath = join(dataDir, 'collector.toml');
+    const collectorContents =
+      'office_url = "https://private.enterprise.example"\n'
+      + 'agent_id = "clawee_123e4567-e89b-42d3-a456-426614174000"\n';
+    writeFileSync(collectorConfigPath, collectorContents);
+    const onDiagnostic = vi.fn();
+    const store = createEnterpriseAgentIdentityStore({
+      configPath,
+      collectorConfigPath,
+      onDiagnostic
+    });
+
+    await expect(store.getOrCreate()).resolves.toBe(firstAgentId);
+    expect(readFileSync(collectorConfigPath, 'utf8')).toBe(collectorContents);
+    expect(onDiagnostic).toHaveBeenCalledWith({
+      type: 'enterprise_collector_identity_sync_skipped',
+      reason: 'different_origin',
+      claweeOrigin: 'https://public.enterprise.example',
+      collectorOrigin: 'https://private.enterprise.example'
+    });
+  });
+
+  it('generates an independent identity instead of inheriting from another origin', async () => {
+    const dataDir = createTempDirectory();
+    const configPath = join(dataDir, 'config.toml');
+    writeFileSync(configPath, 'gateway = "https://public.enterprise.example"\n');
+    const collectorConfigPath = join(dataDir, 'collector.toml');
+    const collectorContents =
+      'office_url = "https://private.enterprise.example"\n'
+      + `agent_id = "${firstAgentId}"\n`;
+    writeFileSync(collectorConfigPath, collectorContents);
+    const generatedAgentId = 'clawee_123e4567-e89b-42d3-a456-426614174000';
+    const generateId = vi.fn(() => generatedAgentId);
+    const store = createEnterpriseAgentIdentityStore({
+      configPath,
+      collectorConfigPath,
+      generateId,
+      onDiagnostic: vi.fn()
+    });
+
+    await expect(store.getOrCreate()).resolves.toBe(generatedAgentId);
+    expect(generateId).toHaveBeenCalledOnce();
+    expect(readEnterpriseClientConfig(configPath).agentId).toBe(generatedAgentId);
+    expect(readFileSync(collectorConfigPath, 'utf8')).toBe(collectorContents);
+  });
+
+  it('ignores a malformed collector identity from another origin', async () => {
+    const dataDir = createTempDirectory();
+    const configPath = writeConfig(dataDir);
+    const collectorConfigPath = join(dataDir, 'collector.toml');
+    const collectorContents =
+      'office_url = "https://private.enterprise.example"\n'
+      + 'agent_id = "invalid-agent-id"\n';
+    writeFileSync(collectorConfigPath, collectorContents);
+    const store = createEnterpriseAgentIdentityStore({
+      configPath,
+      collectorConfigPath,
+      generateId: () => firstAgentId,
+      onDiagnostic: vi.fn()
+    });
+
+    await expect(store.getOrCreate()).resolves.toBe(firstAgentId);
+    expect(readFileSync(collectorConfigPath, 'utf8')).toBe(collectorContents);
+  });
+
+  it('ignores an invalid collector config on the same origin', async () => {
+    const dataDir = createTempDirectory();
+    const configPath = writeConfig(dataDir);
+    const collectorConfigPath = join(dataDir, 'collector.toml');
+    writeFileSync(collectorConfigPath, 'not valid toml = [');
+    const onDiagnostic = vi.fn();
+    const store = createEnterpriseAgentIdentityStore({
+      configPath,
+      collectorConfigPath,
+      generateId: () => firstAgentId,
+      onDiagnostic
+    });
+
+    await expect(store.getOrCreate()).resolves.toBe(firstAgentId);
+    expect(onDiagnostic).toHaveBeenCalledWith({
+      type: 'enterprise_collector_identity_sync_skipped',
+      reason: 'invalid_config',
+      claweeOrigin: 'https://enterprise.example'
+    });
   });
 });
 

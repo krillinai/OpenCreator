@@ -19,6 +19,19 @@ export type EnterpriseAgentIdentityStore = {
   getOrCreate(): Promise<string>;
 };
 
+export type EnterpriseAgentIdentityDiagnostic =
+  | {
+      type: 'enterprise_collector_identity_sync_skipped';
+      reason: 'different_origin';
+      claweeOrigin: string;
+      collectorOrigin: string;
+    }
+  | {
+      type: 'enterprise_collector_identity_sync_skipped';
+      reason: 'invalid_config';
+      claweeOrigin: string;
+    };
+
 export class EnterpriseAgentIdentityStoreError extends Error {
   readonly code = 'ENTERPRISE_PROTOCOL_ERROR';
 
@@ -33,6 +46,7 @@ export function createEnterpriseAgentIdentityStore(input: {
   legacyDataDir?: string;
   collectorConfigPath?: string;
   generateId?: () => string;
+  onDiagnostic?: (diagnostic: EnterpriseAgentIdentityDiagnostic) => void;
 }): EnterpriseAgentIdentityStore {
   const path = resolve(input.configPath);
   const collectorConfigPath = resolve(
@@ -43,6 +57,9 @@ export function createEnterpriseAgentIdentityStore(input: {
     ? undefined
     : join(input.legacyDataDir, FILE_NAME);
   const generateId = input.generateId ?? (() => `clawee_${randomUUID()}`);
+  const onDiagnostic = input.onDiagnostic ?? (diagnostic => {
+    console.warn(JSON.stringify(diagnostic));
+  });
   let pending: Promise<string> | undefined;
 
   return {
@@ -65,12 +82,13 @@ export function createEnterpriseAgentIdentityStore(input: {
         collectorConfigPath,
         config.gateway
       );
+      reportSkippedCollectorIdentity(collector, config.gateway, onDiagnostic);
       const legacyAgentId = config.agentId === undefined && legacyPath !== undefined
         ? await readLegacyIdentity(legacyPath)
         : undefined;
       const agentId = config.agentId
         ?? legacyAgentId
-        ?? collector?.agentId
+        ?? (collector.status === 'compatible' ? collector.agentId : undefined)
         ?? generateId();
       if (!ENTERPRISE_AGENT_ID_PATTERN.test(agentId)) {
         throw new EnterpriseAgentIdentityStoreError('validate');
@@ -81,7 +99,10 @@ export function createEnterpriseAgentIdentityStore(input: {
           agentId
         });
       }
-      if (collector !== undefined && collector.agentId !== agentId) {
+      if (
+        collector.status === 'compatible'
+        && collector.agentId !== agentId
+      ) {
         await writeAtomicContents(
           collectorConfigPath,
           stringify({ ...collector.raw, agent_id: agentId })
@@ -94,46 +115,80 @@ export function createEnterpriseAgentIdentityStore(input: {
   }
 }
 
-type CollectorIdentity = {
-  agentId?: string;
-  raw: Record<string, unknown>;
-};
+type CollectorIdentityResult =
+  | { status: 'absent' }
+  | {
+      status: 'compatible';
+      agentId?: string;
+      raw: Record<string, unknown>;
+    }
+  | { status: 'different_origin'; officeOrigin: string }
+  | { status: 'invalid' };
 
 async function readCollectorIdentity(
   path: string,
   gateway: string
-): Promise<CollectorIdentity | undefined> {
+): Promise<CollectorIdentityResult> {
   let raw: string;
   try {
     raw = await readFile(path, 'utf8');
   } catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') return undefined;
-    throw new EnterpriseAgentIdentityStoreError('read');
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return { status: 'absent' };
+    }
+    return { status: 'invalid' };
   }
   try {
     const parsed = parse(raw) as unknown;
     if (!isPlainObject(parsed)) throw new Error('invalid collector config');
     const officeUrl = parsed.office_url;
     const agentId = parsed.agent_id;
+    if (typeof officeUrl !== 'string') {
+      return { status: 'invalid' };
+    }
+    const officeOrigin = new URL(officeUrl).origin;
+    if (officeOrigin !== new URL(gateway).origin) {
+      return { status: 'different_origin', officeOrigin };
+    }
     if (
-      typeof officeUrl !== 'string'
-      || new URL(officeUrl).origin !== new URL(gateway).origin
-      || (
-        agentId !== undefined
-        && (
-          typeof agentId !== 'string'
-          || !ENTERPRISE_AGENT_ID_PATTERN.test(agentId)
-        )
+      agentId !== undefined
+      && (
+        typeof agentId !== 'string'
+        || !ENTERPRISE_AGENT_ID_PATTERN.test(agentId)
       )
     ) {
-      throw new Error('invalid collector identity');
+      return { status: 'invalid' };
     }
     return {
+      status: 'compatible',
       ...(typeof agentId === 'string' ? { agentId } : {}),
       raw: parsed
     };
   } catch {
-    throw new EnterpriseAgentIdentityStoreError('validate');
+    return { status: 'invalid' };
+  }
+}
+
+function reportSkippedCollectorIdentity(
+  collector: CollectorIdentityResult,
+  gateway: string,
+  onDiagnostic: (diagnostic: EnterpriseAgentIdentityDiagnostic) => void
+): void {
+  if (collector.status === 'different_origin') {
+    onDiagnostic({
+      type: 'enterprise_collector_identity_sync_skipped',
+      reason: 'different_origin',
+      claweeOrigin: new URL(gateway).origin,
+      collectorOrigin: collector.officeOrigin
+    });
+    return;
+  }
+  if (collector.status === 'invalid') {
+    onDiagnostic({
+      type: 'enterprise_collector_identity_sync_skipped',
+      reason: 'invalid_config',
+      claweeOrigin: new URL(gateway).origin
+    });
   }
 }
 
