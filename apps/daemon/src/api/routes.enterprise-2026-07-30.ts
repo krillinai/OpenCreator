@@ -21,7 +21,8 @@ const registerSchema = loginSchema.extend({
 
 const mcpPreferenceSchema = z.object({
   installed: z.boolean().optional(),
-  enabled: z.boolean().optional()
+  enabled: z.boolean().optional(),
+  confirmWriteToCodexHome: z.literal(true).optional()
 }).strict().refine(
   value => value.installed !== undefined || value.enabled !== undefined,
   'at least one MCP preference field is required'

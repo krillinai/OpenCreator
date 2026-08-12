@@ -2,6 +2,7 @@ import type {
   AddCodexMcpRequest,
   CodexMcpAddResponse,
   CodexMcpAuthResponse,
+  CodexMcpEnableResponse,
   CodexMcpListResponse,
   CodexMcpRemoveResponse,
   CodexMcpServerDetailResponse
@@ -18,6 +19,18 @@ export function createMcpService(client: RuntimeClient) {
     },
     addServer(input: AddCodexMcpRequest): Promise<CodexMcpAddResponse> {
       return client.post('/codex/mcp/add', input);
+    },
+    setServerEnabled(
+      name: string,
+      enabled: boolean,
+      confirmWriteToCodexHome = false
+    ): Promise<CodexMcpEnableResponse> {
+      return client.patch(`/codex/mcp/${encodeURIComponent(name)}`, {
+        enabled,
+        ...(confirmWriteToCodexHome
+          ? { confirmWriteToCodexHome: true }
+          : {})
+      });
     },
     removeServer(name: string, confirmWriteToCodexHome = false): Promise<CodexMcpRemoveResponse> {
       const confirmation = confirmWriteToCodexHome ? '?confirmWriteToCodexHome=true' : '';

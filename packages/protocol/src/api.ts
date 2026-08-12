@@ -20,7 +20,15 @@ export type CodexSkillOperationType = 'install' | 'overwrite' | 'delete';
 export type CodexSkillOperationStatus = 'succeeded' | 'failed';
 export type CodexMcpTransport = 'stdio' | 'http' | 'sse' | 'unknown';
 export type CodexMcpStatus = 'configured' | 'missing' | 'invalid' | 'unknown';
-export type CodexMcpOperationType = 'add' | 'remove' | 'login' | 'logout' | 'get' | 'list';
+export type CodexMcpOperationType =
+  | 'add'
+  | 'remove'
+  | 'enable'
+  | 'disable'
+  | 'login'
+  | 'logout'
+  | 'get'
+  | 'list';
 export type CodexMcpOperationStatus = 'succeeded' | 'failed';
 
 export type CodexAvailabilityProbe = {
@@ -811,6 +819,8 @@ export type EnterpriseMcpToolResponse = {
 
 export type EnterpriseMcpUpstreamResponse = {
   upstreamId: string;
+  codexServerName?: string;
+  installedServerName?: string;
   name: string;
   domain: string;
   endpoint: string;
@@ -832,6 +842,7 @@ export type EnterpriseMcpCatalogResponse = {
 export type EnterpriseMcpPreferenceUpdateRequest = {
   installed?: boolean;
   enabled?: boolean;
+  confirmWriteToCodexHome?: true;
 };
 
 export type EnterpriseListMeta = {
@@ -1033,11 +1044,13 @@ export type CodexSkillMarketMutationResponse = {
 
 export type CodexMcpServerResponse = {
   name: string;
+  enabled: boolean;
   transport: CodexMcpTransport;
   status: CodexMcpStatus;
   command?: string;
   args?: string[];
   url?: string;
+  bearerTokenEnvVar?: string;
   envKeys: string[];
   hasSecrets: boolean;
   codexHome: string;
@@ -1103,6 +1116,11 @@ export type CodexMcpAddResponse = {
 
 export type CodexMcpRemoveResponse = {
   removed: true;
+};
+
+export type CodexMcpEnableResponse = {
+  server: CodexMcpServerResponse;
+  operation: CodexMcpOperationResponse;
 };
 
 export type CodexMcpAuthResponse = {

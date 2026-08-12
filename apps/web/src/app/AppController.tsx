@@ -5674,6 +5674,10 @@ export function AppController(props: AppControllerProps) {
       connected={connectionState.status === 'connected'}
       session={enterpriseSession}
       service={enterpriseService}
+      mcpService={mcpService}
+      mcpData={codexMcp}
+      mcpCapabilities={readMcpCapabilities(connectionState)}
+      onMcpDataChange={setCodexMcp}
       onOpenAccount={() => {
         enterpriseReturnRouteRef.current = { view: 'connections' };
         dispatch({ type: 'set_active_view', activeView: 'account' });
@@ -5704,10 +5708,6 @@ export function AppController(props: AppControllerProps) {
           .then(preferences => setDesktopCloseBehavior(preferences.closeBehavior))
           .catch(() => setDesktopCloseBehavior(previous));
       }}
-      mcpService={mcpService}
-      mcpData={codexMcp}
-      mcpCapabilities={readMcpCapabilities(connectionState)}
-      onMcpDataChange={setCodexMcp}
       profileService={profileService}
       profileData={codexProfiles}
       onProfileDataChange={setCodexProfiles}

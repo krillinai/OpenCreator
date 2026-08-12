@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Check, Moon, Sun } from 'lucide-react';
 import type {
-  CodexMcpListResponse,
   CodexProfileListResponse,
   CodexStatusResponse
 } from '@clawee/protocol';
@@ -12,7 +11,6 @@ import {
   type AccentColor
 } from '../../styles/accent-color.js';
 import type { ProjectPermission } from '../projects/project-model.js';
-import { McpSettingsView, type McpCapabilities, type McpSettingsService } from './McpSettingsView.js';
 import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
 import { CleanupSettingsView, type CleanupSettingsService } from './CleanupSettingsView.js';
 import { DiagnosticsSettingsView } from './DiagnosticsSettingsView.js';
@@ -47,10 +45,6 @@ export type ClaweeSettingsViewProps = {
   onCustomAccentColorChange?(color: string): void;
   desktopCloseBehavior?: 'hide' | 'quit';
   onDesktopCloseBehaviorChange?(behavior: 'hide' | 'quit'): void;
-  mcpService?: McpSettingsService | null;
-  mcpData?: CodexMcpListResponse;
-  mcpCapabilities?: McpCapabilities;
-  onMcpDataChange?(data: CodexMcpListResponse): void;
   profileService?: ProfileSettingsService | null;
   profileData?: CodexProfileListResponse;
   onProfileDataChange?(data: CodexProfileListResponse): void;
@@ -62,13 +56,12 @@ export type ClaweeSettingsViewProps = {
   onBack(): void;
 };
 
-type SettingsTab = 'general' | 'plugins' | 'memory' | 'mcp' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
+type SettingsTab = 'general' | 'plugins' | 'memory' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
 
 const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: 'general', label: '常规' },
   { id: 'plugins', label: '插件' },
   { id: 'memory', label: '记忆' },
-  { id: 'mcp', label: 'MCP 服务' },
   { id: 'profiles', label: 'Profiles' },
   { id: 'cleanup', label: '清理' },
   { id: 'diagnostics', label: '诊断' },
@@ -134,15 +127,6 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
             service={props.memoryService ?? null}
             projects={props.memoryProjects ?? []}
             threads={props.memoryThreads ?? []}
-          />
-        ) : null}
-        {activeTab === 'mcp' ? (
-          <McpSettingsView
-            connected={props.runtimeStatus.connected}
-            service={props.mcpService ?? null}
-            data={props.mcpData}
-            capabilities={props.mcpCapabilities}
-            onDataChange={props.onMcpDataChange}
           />
         ) : null}
         {activeTab === 'profiles' ? (

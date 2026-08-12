@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { z } from 'zod';
 import type { McpManager } from '../codex/mcp/manager.js';
 import { isValidMcpName, validateMcpAddRequest } from '../codex/mcp/validator.js';
 import { apiError } from './errors.js';
@@ -40,6 +41,35 @@ export async function registerMcpRoutes(
       return sendMcpError(error, reply);
     }
   });
+
+  server.patch<{ Params: { name: string }; Body: unknown }>(
+    '/codex/mcp/:name',
+    async (request, reply) => {
+      if (!isValidMcpName(request.params.name)) {
+        return reply.code(400).send(
+          apiError('VALIDATION_FAILED', 'name must be a valid MCP server name')
+        );
+      }
+      const parsed = z.object({
+        enabled: z.boolean(),
+        confirmWriteToCodexHome: z.literal(true).optional()
+      }).strict().safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send(
+          apiError('VALIDATION_FAILED', 'enabled must be a boolean')
+        );
+      }
+      try {
+        return await input.mcpManager.setServerEnabled(
+          request.params.name,
+          parsed.data.enabled,
+          parsed.data.confirmWriteToCodexHome === true
+        );
+      } catch (error) {
+        return sendMcpError(error, reply);
+      }
+    }
+  );
 
   server.delete<{ Params: { name: string }; Querystring: { confirmWriteToCodexHome?: string } }>(
     '/codex/mcp/:name',

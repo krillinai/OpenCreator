@@ -10,8 +10,13 @@ import {
 
 describe('mcp argv', () => {
   it('builds list get remove login and logout args', () => {
-    expect(buildMcpListArgs()).toEqual(['mcp', 'list']);
-    expect(buildMcpGetArgs('github')).toEqual(['mcp', 'get', 'github']);
+    expect(buildMcpListArgs()).toEqual(['mcp', 'list', '--json']);
+    expect(buildMcpGetArgs('github')).toEqual([
+      'mcp',
+      'get',
+      'github',
+      '--json'
+    ]);
     expect(buildMcpRemoveArgs('github')).toEqual(['mcp', 'remove', 'github']);
     expect(buildMcpLoginArgs('github')).toEqual(['mcp', 'login', 'github']);
     expect(buildMcpLogoutArgs('github')).toEqual(['mcp', 'logout', 'github']);

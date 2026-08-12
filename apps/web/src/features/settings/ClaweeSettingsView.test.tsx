@@ -20,7 +20,8 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByText('搜索暂不可用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '常规' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'MCP 服务' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'MCP 服务' }))
+      .not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Profiles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '清理' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '诊断' })).toBeInTheDocument();
@@ -224,12 +225,11 @@ describe('ClaweeSettingsView', () => {
     expect(within(advanced).getByText(runtimeStatus.lastCheckedAt)).toBeInTheDocument();
   });
 
-  it('opens MCP and Profiles management pages from settings navigation', () => {
+  it('keeps MCP management out of settings and opens Profiles', () => {
     render(<ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'MCP 服务' }));
-    expect(screen.getByRole('heading', { name: 'MCP 服务' })).toBeInTheDocument();
-    expect(screen.getByText('本地服务连接后可以管理 MCP。')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'MCP 服务' }))
+      .not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Profiles' }));
     expect(screen.getByRole('heading', { name: 'Profiles' })).toBeInTheDocument();

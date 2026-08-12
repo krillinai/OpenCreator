@@ -57,8 +57,9 @@ export function parseMcpGetOutput(input: ParseMcpGetOutputInput): CodexMcpServer
   return missing
     ? missingServerResponse(input, output)
     : {
-        name: input.name,
-        transport: 'unknown',
+      name: input.name,
+      enabled: true,
+      transport: 'unknown',
         status: input.exitCode === 0 ? 'configured' : 'unknown',
         envKeys: [],
         hasSecrets: redactedRaw !== output,
@@ -122,19 +123,36 @@ function mapServer(
     diagnosticText?: string;
   }
 ): CodexMcpServerResponse {
-  const envKeys = getEnvKeys(server.env);
-  const sensitiveValues = getEnvValues(server.env);
-  const command = typeof server.command === 'string' ? redactMcpCommand(server.command, sensitiveValues) : undefined;
+  const transportConfig = isPlainObject(server.transport)
+    ? server.transport
+    : server;
+  const envKeys = getEnvKeys(transportConfig.env);
+  const sensitiveValues = getEnvValues(transportConfig.env);
+  const command = typeof transportConfig.command === 'string'
+    ? redactMcpCommand(transportConfig.command, sensitiveValues)
+    : undefined;
   const originalArgs =
-    Array.isArray(server.args) && server.args.every((arg) => typeof arg === 'string') ? server.args : undefined;
+    Array.isArray(transportConfig.args)
+    && transportConfig.args.every((arg) => typeof arg === 'string')
+      ? transportConfig.args
+      : undefined;
   const args = originalArgs === undefined ? undefined : redactMcpArgs(originalArgs, sensitiveValues);
-  const url = typeof server.url === 'string' ? redactMcpText(server.url, sensitiveValues) : undefined;
+  const url = typeof transportConfig.url === 'string'
+    ? redactMcpText(transportConfig.url, sensitiveValues)
+    : undefined;
+  const bearerTokenEnvVar =
+    typeof transportConfig.bearer_token_env_var === 'string'
+      ? transportConfig.bearer_token_env_var
+      : typeof transportConfig.bearerTokenEnvVar === 'string'
+        ? transportConfig.bearerTokenEnvVar
+        : undefined;
   const redactionChanged =
-    (command !== undefined && command !== server.command) ||
+    (command !== undefined && command !== transportConfig.command) ||
     (args !== undefined && originalArgs !== undefined && args.some((arg, index) => arg !== originalArgs[index])) ||
-    (url !== undefined && url !== server.url);
+    (url !== undefined && url !== transportConfig.url);
   const result: CodexMcpServerResponse = {
     name: typeof server.name === 'string' ? server.name : context.fallbackName,
+    enabled: server.enabled !== false,
     transport: normalizeTransport(server.transport),
     status: 'configured',
     envKeys,
@@ -159,6 +177,10 @@ function mapServer(
     result.url = url;
   }
 
+  if (bearerTokenEnvVar !== undefined) {
+    result.bearerTokenEnvVar = bearerTokenEnvVar;
+  }
+
   return result;
 }
 
@@ -172,6 +194,7 @@ function missingServerResponse(
 ): CodexMcpServerResponse {
   const result: CodexMcpServerResponse = {
     name: input.name,
+    enabled: false,
     transport: 'unknown',
     status: 'missing',
     envKeys: [],
@@ -201,6 +224,7 @@ function errorServerResponse(
   const diagnostics = getErrorDiagnostics(errorObject);
   return {
     name: input.name,
+    enabled: false,
     transport: 'unknown',
     status: 'unknown',
     envKeys: [],
@@ -243,7 +267,20 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeTransport(transport: unknown): CodexMcpTransport {
-  return transport === 'stdio' || transport === 'http' || transport === 'sse' ? transport : 'unknown';
+  if (transport === 'stdio' || transport === 'http' || transport === 'sse') {
+    return transport;
+  }
+  if (!isPlainObject(transport)) return 'unknown';
+  const type = transport.type;
+  if (type === 'stdio') return 'stdio';
+  if (
+    type === 'http'
+    || type === 'streamable_http'
+    || type === 'streamable-http'
+  ) {
+    return 'http';
+  }
+  return type === 'sse' ? 'sse' : 'unknown';
 }
 
 function getEnvKeys(env: unknown): string[] {

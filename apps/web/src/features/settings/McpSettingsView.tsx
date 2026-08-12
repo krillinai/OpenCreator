@@ -2,6 +2,7 @@ import type {
   AddCodexMcpRequest,
   CodexMcpAddResponse,
   CodexMcpAuthResponse,
+  CodexMcpEnableResponse,
   CodexMcpListResponse,
   CodexMcpRemoveResponse,
   CodexMcpServerDetailResponse,
@@ -24,6 +25,11 @@ export type McpSettingsService = {
   listServers(): Promise<CodexMcpListResponse>;
   getServer(name: string): Promise<CodexMcpServerDetailResponse>;
   addServer(input: AddCodexMcpRequest): Promise<CodexMcpAddResponse>;
+  setServerEnabled(
+    name: string,
+    enabled: boolean,
+    confirmWriteToCodexHome?: boolean
+  ): Promise<CodexMcpEnableResponse>;
   removeServer(name: string, confirmWriteToCodexHome?: boolean): Promise<CodexMcpRemoveResponse>;
   loginServer(name: string, confirmWriteToCodexHome?: boolean): Promise<CodexMcpAuthResponse>;
   logoutServer(name: string, confirmWriteToCodexHome?: boolean): Promise<CodexMcpAuthResponse>;
@@ -251,7 +257,7 @@ export function McpSettingsView(props: {
   );
 }
 
-function McpEditor(props: {
+export function McpEditor(props: {
   capabilities?: McpCapabilities;
   requiresWriteConfirmation: boolean;
   onCancel(): void;

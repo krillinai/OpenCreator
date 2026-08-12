@@ -27,6 +27,11 @@ export type EnterpriseMcpPreferenceRepository = {
     installed: boolean;
     enabled: boolean;
   }): EnterpriseMcpPreference;
+  delete(
+    enterpriseOrigin: string,
+    agentId: string,
+    upstreamId: string
+  ): boolean;
 };
 
 type EnterpriseMcpPreferenceRow = {
@@ -75,6 +80,12 @@ export function createEnterpriseMcpPreferenceRepository(
       updated_at = CURRENT_TIMESTAMP
     RETURNING *
   `);
+  const remove = db.prepare(`
+    DELETE FROM enterprise_mcp_preferences
+    WHERE enterprise_origin = ?
+      AND agent_id = ?
+      AND upstream_id = ?
+  `);
 
   return {
     get(enterpriseOrigin, agentId, upstreamId) {
@@ -97,6 +108,9 @@ export function createEnterpriseMcpPreferenceRepository(
         enabled: input.enabled ? 1 : 0
       }) as EnterpriseMcpPreferenceRow;
       return mapRow(row);
+    },
+    delete(enterpriseOrigin, agentId, upstreamId) {
+      return remove.run(enterpriseOrigin, agentId, upstreamId).changes > 0;
     }
   };
 }

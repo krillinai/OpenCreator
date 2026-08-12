@@ -42,6 +42,9 @@ import {
   type CodexModelCatalog
 } from '../codex/model-catalog-2026-08-05.js';
 import { createMcpManager } from '../codex/mcp/manager.js';
+import {
+  createCodexMcpRuntimeInjector
+} from '../codex/mcp/runtime-injector-2026-08-12.js';
 import { createMemoryService } from '../memory/service.js';
 import { createNotificationService } from '../notifications/service.js';
 import { createProjectManager } from '../projects/manager.js';
@@ -109,9 +112,6 @@ import {
   createEnterpriseMcpManager,
   type EnterpriseMcpManager
 } from '../enterprise/mcp-manager-2026-08-07.js';
-import {
-  listEnterpriseMcpIsolationServerNames
-} from '../enterprise/mcp-isolation-2026-08-07.js';
 import {
   createEnterpriseMcpPreferenceRepository
 } from '../enterprise/mcp-preferences-2026-08-07.js';
@@ -323,11 +323,25 @@ export async function buildServer(input: BuildServerInput) {
       projectManager,
       maxFileBytes: input.enterpriseSharedFileMaxBytes
     });
-  const enterpriseMcpPreferences =
-    createEnterpriseMcpPreferenceRepository(db);
   let persistentAppServerExecutor:
     | ReturnType<typeof createPersistentAppServerExecutor>
     | undefined;
+  const invalidatePersistentRuntime = (reason: string) => {
+    void persistentAppServerExecutor?.invalidate(reason).catch(error => {
+      console.warn(
+        `Persistent app-server invalidation failed: ${formatError(error)}`
+      );
+    });
+  };
+  const mcpManager = createMcpManager({
+    codexBin,
+    codexHome: resolvedCodexHome,
+    db,
+    capabilities,
+    onConfigurationChanged: invalidatePersistentRuntime
+  });
+  const legacyEnterpriseMcpPreferences =
+    createEnterpriseMcpPreferenceRepository(db);
   const enterpriseMcpManager =
     input.enterpriseMcpManager ??
     createEnterpriseMcpManager({
@@ -337,20 +351,9 @@ export async function buildServer(input: BuildServerInput) {
       httpClient: enterpriseHttpClient,
       tokenStore:
         input.enterpriseMcpTokenStore ?? createUnavailableMcpTokenStore(),
-      preferences: enterpriseMcpPreferences,
-      listRuntimeIsolationServerNames() {
-        return listEnterpriseMcpIsolationServerNames({
-          codexHome,
-          enterpriseOrigin: enterpriseOrigin.origin
-        });
-      },
-      onRuntimeConfigurationChanged(reason) {
-        void persistentAppServerExecutor?.invalidate(reason).catch(error => {
-          console.warn(
-            `Persistent app-server invalidation failed: ${formatError(error)}`
-          );
-        });
-      }
+      mcpManager,
+      legacyPreferences: legacyEnterpriseMcpPreferences,
+      onRuntimeConfigurationChanged: invalidatePersistentRuntime
     });
   handleEnterpriseSessionSignedOut = () => {
     void enterpriseMcpManager.handleSessionSignedOut().catch(error => {
@@ -358,7 +361,6 @@ export async function buildServer(input: BuildServerInput) {
     });
   };
   enterpriseSessionManager.startRestore();
-  const mcpManager = createMcpManager({ codexBin, codexHome: resolvedCodexHome, db, capabilities });
   const notificationService = createNotificationService({ db });
   const approvalManager = input.approvalManager ?? createApprovalManager({ db });
   const unsubscribeApprovalNotifications = approvalManager.subscribe(approval => {
@@ -390,8 +392,12 @@ export async function buildServer(input: BuildServerInput) {
       return enterpriseMcpManager.prepareRuntime(run);
     }
   };
+  const codexMcpRuntimeInjector = createCodexMcpRuntimeInjector({
+    codexHome
+  });
   const agentToolInjector = combineRunInjectors(
     scheduleRunInjector,
+    codexMcpRuntimeInjector,
     enterpriseMcpRunInjector
   );
   persistentAppServerExecutor =
@@ -402,7 +408,10 @@ export async function buildServer(input: BuildServerInput) {
           codexBin,
           codexHome,
           processInjector: agentToolProcessInjector,
-          runtimeInjector: enterpriseMcpRunInjector
+          runtimeInjector: combineRunInjectors(
+            codexMcpRuntimeInjector,
+            enterpriseMcpRunInjector
+          )
         })
       : undefined;
   const runManager =

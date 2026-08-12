@@ -61,9 +61,9 @@ describe('codex mcp manager', () => {
     expect(commands).toContain('mcp add github --env GITHUB_TOKEN=real-secret -- node server.js');
     expect(commands).toEqual([
       'mcp add github --env GITHUB_TOKEN=real-secret -- node server.js',
-      'mcp get github',
-      'mcp list',
-      'mcp get github',
+      'mcp get github --json',
+      'mcp list --json',
+      'mcp get github --json',
       'mcp remove github'
     ]);
 
@@ -113,7 +113,7 @@ describe('codex mcp manager', () => {
     expect(added.server).toMatchObject({ name: 'github', transport: 'stdio' });
     expect(readCommands(tempDir)).toEqual([
       'mcp add github --env GITHUB_TOKEN=real-secret -- node server.js',
-      'mcp get github'
+      'mcp get github --json'
     ]);
     expect(listOperations().map((operation) => operation.operation)).toEqual(['get', 'add']);
   });
@@ -188,7 +188,7 @@ const commands = existsSync(commandsPath) ? JSON.parse(readFileSync(commandsPath
 commands.push(command);
 writeFileSync(commandsPath, JSON.stringify(commands));
 
-if (command === 'mcp list') {
+if (command === 'mcp list --json') {
   if (process.env.CODEX_HOME && process.env.CODEX_HOME.includes('fail-list')) {
     process.stderr.write('list failed');
     process.exit(1);
@@ -196,7 +196,7 @@ if (command === 'mcp list') {
   process.stdout.write(JSON.stringify([{ name: 'github', transport: 'stdio', command: 'node', args: ['server.js'], env: { GITHUB_TOKEN: 'real-secret' } }]));
   process.exit(0);
 }
-if (command === 'mcp get github') {
+if (command === 'mcp get github --json') {
   process.stdout.write(JSON.stringify({ name: 'github', transport: 'stdio', command: 'node', args: ['server.js'], env: { GITHUB_TOKEN: 'real-secret' } }));
   process.exit(0);
 }

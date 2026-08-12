@@ -1,4 +1,5 @@
 import type {
+  CodexMcpListResponse,
   EnterpriseMcpCatalogResponse,
   EnterpriseSessionResponse
 } from '@clawee/protocol';
@@ -9,137 +10,213 @@ import {
   ConnectionsPage,
   type EnterpriseMcpConnectionService
 } from './ConnectionsPage.js';
+import type { McpSettingsService } from '../settings/McpSettingsView.js';
 
 describe('ConnectionsPage', () => {
-  it('separates installation from enablement and never exposes a grant action', async () => {
+  it('shows and toggles native Codex MCP while signed out', async () => {
     const user = userEvent.setup();
-    let catalog = createCatalog();
-    const service: EnterpriseMcpConnectionService = {
-      listMcpConnections: vi.fn(async () => catalog),
-      refreshMcpConnections: vi.fn(async () => catalog),
-      updateMcpPreference: vi.fn(async (upstreamId, update) => {
-        catalog = {
-          ...catalog,
-          upstreams: catalog.upstreams.map(upstream => (
-            upstream.upstreamId === upstreamId
-              ? {
-                  ...upstream,
-                  installed: update.installed ?? upstream.installed,
-                  enabled: update.installed === false
-                    ? false
-                    : update.enabled ?? upstream.enabled
-                }
-              : upstream
-          ))
+    let native = nativeData();
+    const mcpService = createMcpService({
+      listServers: vi.fn(async () => native),
+      setServerEnabled: vi.fn(async (name, enabled) => {
+        native = {
+          ...native,
+          servers: native.servers.map(server =>
+            server.name === name ? { ...server, enabled } : server
+          )
         };
-        return catalog;
+        return {
+          server: native.servers[0]!,
+          operation: operation(enabled ? 'enable' : 'disable')
+        };
       })
-    };
+    });
+    const enterpriseService = createEnterpriseService();
+
+    render(
+      <ConnectionsPage
+        connected
+        session={signedOutSession()}
+        service={enterpriseService}
+        mcpService={mcpService}
+        mcpCapabilities={allCapabilities()}
+        onOpenAccount={vi.fn()}
+        onRefreshSession={vi.fn(async () => signedOutSession())}
+        onSessionExpired={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByRole('heading', { name: 'github' }))
+      .toBeInTheDocument();
+    expect(enterpriseService.listMcpConnections).not.toHaveBeenCalled();
+    const toggle = screen.getByRole('switch', { name: 'github MCP' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute('aria-checked', 'false');
+    });
+    expect(mcpService.setServerEnabled).toHaveBeenCalledWith(
+      'github',
+      false,
+      false
+    );
+  });
+
+  it('merges an enterprise catalog entry with a native server by endpoint', async () => {
+    const enterpriseService = createEnterpriseService();
 
     render(
       <ConnectionsPage
         connected
         session={signedInSession()}
-        service={service}
+        service={enterpriseService}
+        mcpService={createMcpService()}
+        mcpCapabilities={allCapabilities()}
         onOpenAccount={vi.fn()}
         onRefreshSession={vi.fn(async () => signedInSession())}
         onSessionExpired={vi.fn()}
       />
     );
 
-    expect(await screen.findByRole('heading', { name: 'CRM' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'CRM' }))
+      .toBeInTheDocument();
+    expect(screen.getAllByTestId('mcp-card')).toHaveLength(1);
+    expect(screen.getByText(/github/)).toBeInTheDocument();
     expect(screen.getByText('企业授权：1/2 项工具')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '申请权限' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('switch', { name: 'CRM MCP' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '安装' }))
+      .not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: '安装' }));
-    const toggle = await screen.findByRole('switch', { name: 'CRM MCP' });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
-    expect(service.updateMcpPreference).toHaveBeenNthCalledWith(
-      1,
+  it('installs an enterprise-only catalog entry through the enterprise adapter', async () => {
+    const user = userEvent.setup();
+    let catalog = enterpriseCatalog({
+      endpoint: 'https://enterprise.example/mcp/servers/other'
+    });
+    const enterpriseService = createEnterpriseService({
+      listMcpConnections: vi.fn(async () => catalog),
+      updateMcpPreference: vi.fn(async (_upstreamId, update) => {
+        catalog = {
+          ...catalog,
+          upstreams: catalog.upstreams.map(upstream => ({
+            ...upstream,
+            installed: update.installed ?? upstream.installed,
+            enabled: update.enabled ?? upstream.enabled
+          }))
+        };
+        return catalog;
+      })
+    });
+
+    render(
+      <ConnectionsPage
+        connected
+        session={signedInSession()}
+        service={enterpriseService}
+        mcpService={createMcpService()}
+        mcpCapabilities={allCapabilities()}
+        onOpenAccount={vi.fn()}
+        onRefreshSession={vi.fn(async () => signedInSession())}
+        onSessionExpired={vi.fn()}
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: '安装' }));
+
+    expect(enterpriseService.updateMcpPreference).toHaveBeenCalledWith(
       'crm-main',
       { installed: true, enabled: false }
     );
-
-    await user.click(toggle);
-    await waitFor(() => {
-      expect(toggle).toHaveAttribute('aria-checked', 'true');
-    });
-    expect(screen.getByRole('button', { name: '已安装 1' })).toBeInTheDocument();
-    expect(service.updateMcpPreference).toHaveBeenNthCalledWith(
-      2,
-      'crm-main',
-      { enabled: true }
-    );
   });
 
-  it('shows the login action without loading the catalog when signed out', async () => {
-    const user = userEvent.setup();
-    const onOpenAccount = vi.fn();
-    const service: EnterpriseMcpConnectionService = {
-      listMcpConnections: vi.fn(),
-      refreshMcpConnections: vi.fn(),
-      updateMcpPreference: vi.fn()
-    };
+  it('disables unsupported native MCP operations by capability', async () => {
     render(
       <ConnectionsPage
         connected
-        session={{
-          status: 'signed_out',
-          transportSecurity: 'secure_https'
+        session={signedOutSession()}
+        service={createEnterpriseService()}
+        mcpService={createMcpService()}
+        mcpCapabilities={{
+          ...allCapabilities(),
+          mcpLogin: false,
+          mcpLogout: false,
+          mcpRemove: false
         }}
-        service={service}
-        onOpenAccount={onOpenAccount}
-        onRefreshSession={vi.fn(async () => signedInSession())}
-        onSessionExpired={vi.fn()}
-      />
-    );
-
-    await user.click(screen.getByRole('button', { name: '登录企业账户' }));
-    expect(onOpenAccount).toHaveBeenCalledOnce();
-    expect(service.listMcpConnections).not.toHaveBeenCalled();
-  });
-
-  it('refreshes the enterprise session before retrying a service outage', async () => {
-    const user = userEvent.setup();
-    const onRefreshSession = vi.fn(async () => signedInSession());
-    render(
-      <ConnectionsPage
-        connected
-        session={{
-          status: 'service_unavailable',
-          reason: 'service_unavailable',
-          transportSecurity: 'secure_https'
-        }}
-        service={null}
         onOpenAccount={vi.fn()}
-        onRefreshSession={onRefreshSession}
+        onRefreshSession={vi.fn(async () => signedOutSession())}
         onSessionExpired={vi.fn()}
       />
     );
 
-    await user.click(screen.getByRole('button', { name: '重新加载' }));
-
-    expect(onRefreshSession).toHaveBeenCalledOnce();
+    expect(await screen.findByRole('button', { name: '登录 github' }))
+      .toBeDisabled();
+    expect(screen.getByRole('button', { name: '退出 github' }))
+      .toBeDisabled();
+    expect(screen.getByRole('button', { name: '删除 github' }))
+      .toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'github MCP' }))
+      .toBeEnabled();
   });
 });
 
-function signedInSession(): EnterpriseSessionResponse {
+function createMcpService(
+  overrides: Partial<McpSettingsService> = {}
+): McpSettingsService {
   return {
-    status: 'signed_in',
-    account: {
-      email: 'member@example.com',
-      name: 'Enterprise Member'
-    },
-    transportSecurity: 'secure_https'
+    listServers: vi.fn(async () => nativeData()),
+    getServer: vi.fn(async () => ({ server: nativeData().servers[0]! })),
+    addServer: vi.fn(async () => ({ operation: operation('add') })),
+    setServerEnabled: vi.fn(async (_name, enabled) => ({
+      server: { ...nativeData().servers[0]!, enabled },
+      operation: operation(enabled ? 'enable' : 'disable')
+    })),
+    removeServer: vi.fn(async () => ({ removed: true as const })),
+    loginServer: vi.fn(async () => ({ operation: operation('login') })),
+    logoutServer: vi.fn(async () => ({ operation: operation('logout') })),
+    ...overrides
   };
 }
 
-function createCatalog(): EnterpriseMcpCatalogResponse {
+function createEnterpriseService(
+  overrides: Partial<EnterpriseMcpConnectionService> = {}
+): EnterpriseMcpConnectionService {
+  return {
+    listMcpConnections: vi.fn(async () => enterpriseCatalog()),
+    refreshMcpConnections: vi.fn(async () => enterpriseCatalog()),
+    updateMcpPreference: vi.fn(async () => enterpriseCatalog()),
+    ...overrides
+  };
+}
+
+function nativeData(): CodexMcpListResponse {
+  return {
+    codexHome: '/tmp/codex',
+    codexHomeMode: 'isolated',
+    requiresWriteConfirmation: false,
+    servers: [{
+      name: 'github',
+      enabled: true,
+      transport: 'http',
+      status: 'configured',
+      url: 'https://enterprise.example/mcp/servers/crm-main',
+      envKeys: ['GITHUB_TOKEN'],
+      hasSecrets: true,
+      codexHome: '/tmp/codex',
+      codexHomeMode: 'isolated',
+      diagnostics: []
+    }],
+    diagnostics: []
+  };
+}
+
+function enterpriseCatalog(
+  overrides: Partial<EnterpriseMcpCatalogResponse['upstreams'][number]> = {}
+): EnterpriseMcpCatalogResponse {
   return {
     agentId: 'clawee_550e8400-e29b-41d4-a716-446655440000',
     tokenStatus: 'ready',
-    refreshedAt: '2026-08-07T10:00:00.000Z',
+    refreshedAt: '2026-08-12T10:00:00.000Z',
     upstreams: [{
       upstreamId: 'crm-main',
       name: 'CRM',
@@ -174,7 +251,53 @@ function createCatalog(): EnterpriseMcpCatalogResponse {
         status: 'active',
         authorized: false,
         authorizationExpiresAt: null
-      }]
+      }],
+      ...overrides
     }]
+  };
+}
+
+function signedInSession(): EnterpriseSessionResponse {
+  return {
+    status: 'signed_in',
+    account: {
+      email: 'member@example.com',
+      name: 'Enterprise Member'
+    },
+    transportSecurity: 'secure_https'
+  };
+}
+
+function signedOutSession(): EnterpriseSessionResponse {
+  return {
+    status: 'signed_out',
+    transportSecurity: 'secure_https'
+  };
+}
+
+function allCapabilities() {
+  return {
+    mcpAdd: true,
+    mcpRemove: true,
+    mcpLogin: true,
+    mcpLogout: true,
+    mcpAddEnv: true,
+    mcpAddUrl: true,
+    mcpAddBearerTokenEnvVar: true,
+    mcpAddOAuth: true
+  };
+}
+
+function operation(
+  type: 'add' | 'enable' | 'disable' | 'login' | 'logout'
+) {
+  return {
+    id: `operation-${type}`,
+    operation: type,
+    codexHome: '/tmp/codex',
+    command: ['mcp', type],
+    status: 'succeeded' as const,
+    timedOut: false,
+    createdAt: '2026-08-12T00:00:00.000Z'
   };
 }

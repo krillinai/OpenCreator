@@ -15,6 +15,7 @@ import {
   buildMcpLogoutArgs,
   buildMcpRemoveArgs
 } from './argv.js';
+import { setCodexMcpServerEnabled } from './config-store-2026-08-12.js';
 import { createMcpOperationRepository } from './operations.js';
 import { isMcpNotFoundOutput, parseMcpGetOutput, parseMcpListOutput } from './parser.js';
 import { runMcpCommand, type McpCommandResult } from './runner.js';
@@ -32,6 +33,14 @@ export type McpManager = {
     name: string,
     confirmed: boolean
   ): Promise<{ removed: true; operation: CodexMcpOperationResponse }>;
+  setServerEnabled(
+    name: string,
+    enabled: boolean,
+    confirmed: boolean
+  ): Promise<{
+    server: CodexMcpServerResponse;
+    operation: CodexMcpOperationResponse;
+  }>;
   loginServer(name: string, confirmed: boolean): Promise<{ operation: CodexMcpOperationResponse }>;
   logoutServer(name: string, confirmed: boolean): Promise<{ operation: CodexMcpOperationResponse }>;
   listOperations(limit?: number): CodexMcpOperationResponse[];
@@ -43,8 +52,10 @@ export function createMcpManager(input: {
   db: Database.Database;
   capabilities: Pick<RuntimeCapabilityMatrix, keyof McpAddCapabilityFlags>;
   timeoutMs?: number;
+  onConfigurationChanged?(reason: string): void;
 }): McpManager {
   const operations = createMcpOperationRepository(input.db);
+  let configWriteQueue = Promise.resolve();
 
   const run = (
     operation: CodexMcpOperationType,
@@ -123,6 +134,7 @@ export function createMcpManager(input: {
       Object.values(request.env ?? {})
     );
     assertCommandSucceeded(result);
+    input.onConfigurationChanged?.('codex_mcp_added');
 
     let server: CodexMcpServerResponse | undefined;
     try {
@@ -137,13 +149,70 @@ export function createMcpManager(input: {
     requireWriteConfirmation(input.codexHome, confirmed);
     const { result, operation } = run('remove', name, buildMcpRemoveArgs(name));
     assertCommandSucceeded(result);
+    input.onConfigurationChanged?.('codex_mcp_removed');
     return { removed: true, operation };
+  };
+
+  const setServerEnabled: McpManager['setServerEnabled'] = async (
+    name,
+    enabled,
+    confirmed
+  ) => {
+    requireWriteConfirmation(input.codexHome, confirmed);
+    const operationType = enabled ? 'enable' : 'disable';
+    const command = [
+      'config',
+      'set',
+      `mcp_servers.${name}.enabled=${String(enabled)}`
+    ];
+    let operation: CodexMcpOperationResponse;
+    try {
+      const write = configWriteQueue.then(() =>
+        setCodexMcpServerEnabled({
+          codexHome: input.codexHome.path,
+          name,
+          enabled
+        })
+      );
+      configWriteQueue = write.catch(() => undefined);
+      await write;
+      operation = operations.insertOperation({
+        operation: operationType,
+        serverName: name,
+        codexHome: input.codexHome.path,
+        command,
+        status: 'succeeded',
+        exitCode: 0,
+        timedOut: false
+      });
+      input.onConfigurationChanged?.(
+        enabled ? 'codex_mcp_enabled' : 'codex_mcp_disabled'
+      );
+    } catch (error) {
+      operations.insertOperation({
+        operation: operationType,
+        serverName: name,
+        codexHome: input.codexHome.path,
+        command,
+        status: 'failed',
+        exitCode: 1,
+        timedOut: false,
+        errorCode: getConfigWriteErrorCode(error),
+        errorMessage: getConfigWriteErrorMessage(error)
+      });
+      throw error;
+    }
+    return {
+      server: await getServer(name),
+      operation
+    };
   };
 
   const loginServer: McpManager['loginServer'] = async (name, confirmed) => {
     requireWriteConfirmation(input.codexHome, confirmed);
     const { result, operation } = run('login', name, buildMcpLoginArgs(name));
     assertCommandSucceeded(result);
+    input.onConfigurationChanged?.('codex_mcp_login_changed');
     return { operation };
   };
 
@@ -151,6 +220,7 @@ export function createMcpManager(input: {
     requireWriteConfirmation(input.codexHome, confirmed);
     const { result, operation } = run('logout', name, buildMcpLogoutArgs(name));
     assertCommandSucceeded(result);
+    input.onConfigurationChanged?.('codex_mcp_login_changed');
     return { operation };
   };
 
@@ -159,12 +229,26 @@ export function createMcpManager(input: {
     getServer,
     addServer,
     removeServer,
+    setServerEnabled,
     loginServer,
     logoutServer,
     listOperations(limit) {
       return operations.listOperations(limit);
     }
   };
+}
+
+function getConfigWriteErrorCode(error: unknown): string {
+  if (!(error instanceof Error)) return 'MCP_COMMAND_FAILED';
+  return error.message.split(':', 1)[0] || 'MCP_COMMAND_FAILED';
+}
+
+function getConfigWriteErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'Codex MCP config write failed';
+  const separator = error.message.indexOf(':');
+  return separator < 0
+    ? error.message
+    : error.message.slice(separator + 1).trim();
 }
 
 function requireWriteConfirmation(codexHome: ResolvedCodexHome, confirmed: boolean): void {

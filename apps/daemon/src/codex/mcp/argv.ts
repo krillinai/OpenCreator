@@ -1,11 +1,11 @@
 import type { AddMcpServerInput, NormalizedAddMcpServerInput } from './types.js';
 
 export function buildMcpListArgs(): string[] {
-  return ['mcp', 'list'];
+  return ['mcp', 'list', '--json'];
 }
 
 export function buildMcpGetArgs(name: string): string[] {
-  return ['mcp', 'get', name];
+  return ['mcp', 'get', name, '--json'];
 }
 
 export function buildMcpRemoveArgs(name: string): string[] {

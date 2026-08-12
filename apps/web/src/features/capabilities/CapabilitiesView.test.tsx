@@ -49,6 +49,7 @@ describe('CapabilitiesView', () => {
       servers: [
         {
           name: 'filesystem',
+          enabled: true,
           transport: 'stdio',
           status: 'configured',
           command: 'node',

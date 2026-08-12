@@ -156,14 +156,17 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
       name: '系统连接'
     })).toBeVisible();
     const mcpCard = app.page.locator(
-      '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+      '[data-testid="mcp-card"][data-connection-key="enterprise:crm-main"]'
     );
     await expect(mcpCard.getByRole('heading', {
       name: '客户关系管理'
     })).toBeVisible();
     await expect(mcpCard.getByText('企业授权：1/2 项工具')).toBeVisible();
     await mcpCard.getByRole('button', { name: '安装' }).click();
-    const mcpSwitch = mcpCard.getByRole('switch', {
+    const installedMcpCard = app.page.locator(
+      '[data-testid="mcp-card"][data-connection-key^="native:enterprise_crm-main_"]'
+    );
+    const mcpSwitch = installedMcpCard.getByRole('switch', {
       name: '客户关系管理 MCP'
     });
     await expect(mcpSwitch).toHaveAttribute('aria-checked', 'false');
@@ -182,6 +185,30 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
       }]
     });
     expect(JSON.stringify(localMcpState)).not.toMatch(/packaged-e2e-mcp-/);
+    const persistedMcp = readPersistedMcpByEndpoint(
+      codexHome,
+      `${origin}/mcp/servers/crm-main`
+    );
+    expect(persistedMcp).toMatchObject({
+      enabled: true,
+      bearer_token_env_var: 'CLAWEE_ENTERPRISE_MCP_TOKEN'
+    });
+    expect(JSON.stringify(persistedMcp)).not.toMatch(/packaged-e2e-mcp-/);
+
+    const mcpEnabled = app;
+    await closePackagedApp(mcpEnabled);
+    app = await relaunchPackagedApp(mcpEnabled, 45_000);
+    await waitForWorkspace(app.page);
+    await app.page.getByRole('button', {
+      name: '系统连接',
+      exact: true
+    }).click();
+    const persistedMcpCard = app.page.locator(
+      '[data-testid="mcp-card"][data-connection-key^="native:enterprise_crm-main_"]'
+    );
+    await expect(persistedMcpCard.getByRole('switch', {
+      name: '客户关系管理 MCP'
+    })).toHaveAttribute('aria-checked', 'true');
 
     await app.page.getByRole('button', {
       name: '企业知识库',
@@ -925,6 +952,23 @@ function readPersistedAgentId(homeDir: string): string {
     throw new Error(`Invalid persisted enterprise agent identity: ${path}`);
   }
   return value.agent_id;
+}
+
+function readPersistedMcpByEndpoint(
+  codexHome: string,
+  endpoint: string
+): Record<string, unknown> {
+  const path = join(codexHome, 'config.toml');
+  const value: unknown = parse(readFileSync(path, 'utf8'));
+  if (!isRecord(value) || !isRecord(value.mcp_servers)) {
+    throw new Error('Codex config does not contain MCP servers');
+  }
+  const server = Object.values(value.mcp_servers)
+    .find(candidate => isRecord(candidate) && candidate.url === endpoint);
+  if (!isRecord(server)) {
+    throw new Error(`Codex config does not contain MCP endpoint: ${endpoint}`);
+  }
+  return server;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

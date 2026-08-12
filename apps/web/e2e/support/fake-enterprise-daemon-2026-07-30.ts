@@ -157,6 +157,29 @@ export class FakeEnterpriseDaemon {
       if (!this.state.mcpInstalled) this.state.mcpEnabled = false;
       return fulfill(route, enterpriseMcpCatalog(this.state));
     }
+    if (
+      path === '/codex/mcp/enterprise_crm-main_9f9de575'
+      && request.method() === 'PATCH'
+    ) {
+      const update = readObjectBody(request.postData());
+      if (typeof update.enabled === 'boolean' && this.state.mcpInstalled) {
+        this.state.mcpEnabled = update.enabled;
+      }
+      return fulfill(route, {
+        server: enterpriseNativeMcp(this.state),
+        operation: {
+          id: 'operation-enable',
+          operation: this.state.mcpEnabled ? 'enable' : 'disable',
+          serverName: 'enterprise_crm-main_9f9de575',
+          codexHome: '/tmp/codex',
+          command: ['config', 'set'],
+          status: 'succeeded',
+          exitCode: 0,
+          timedOut: false,
+          createdAt: '2026-08-12T08:00:00.000Z'
+        }
+      });
+    }
     if (path === '/enterprise/knowledge-bases' && request.method() === 'GET') {
       return fulfill(route, {
         knowledgeBases: [enterpriseKnowledgeBase(
@@ -284,7 +307,9 @@ export class FakeEnterpriseDaemon {
         codexHome: '/tmp/codex',
         codexHomeMode: 'global',
         requiresWriteConfirmation: false,
-        servers: [],
+        servers: this.state.mcpInstalled
+          ? [enterpriseNativeMcp(this.state)]
+          : [],
         diagnostics: []
       });
     }
@@ -390,6 +415,10 @@ function enterpriseMcpCatalog(state: FakeEnterpriseState) {
       upstreamTransport: 'streamable_http',
       namespace: 'crm',
       status: 'active',
+      codexServerName: 'enterprise_crm-main_9f9de575',
+      ...(state.mcpInstalled
+        ? { installedServerName: 'enterprise_crm-main_9f9de575' }
+        : {}),
       installed: state.mcpInstalled,
       enabled: state.mcpEnabled,
       tools: [{
@@ -419,6 +448,22 @@ function enterpriseMcpCatalog(state: FakeEnterpriseState) {
       }]
     }],
     refreshedAt: '2026-08-07T08:00:00.000Z'
+  };
+}
+
+function enterpriseNativeMcp(state: FakeEnterpriseState) {
+  return {
+    name: 'enterprise_crm-main_9f9de575',
+    enabled: state.mcpEnabled,
+    transport: 'http',
+    status: 'configured',
+    url: 'https://enterprise.example/mcp/servers/crm-main',
+    bearerTokenEnvVar: 'CLAWEE_ENTERPRISE_MCP_TOKEN',
+    envKeys: [],
+    hasSecrets: false,
+    codexHome: '/tmp/codex',
+    codexHomeMode: 'global',
+    diagnostics: []
   };
 }
 
@@ -544,7 +589,18 @@ function codexStatus() {
     codexHomeMode: 'global',
     codexHomeSource: 'default',
     codexHomeWritable: true,
-    capabilities: {},
+    capabilities: {
+      mcpList: true,
+      mcpGet: true,
+      mcpAdd: true,
+      mcpRemove: true,
+      mcpLogin: true,
+      mcpLogout: true,
+      mcpAddEnv: true,
+      mcpAddUrl: true,
+      mcpAddBearerTokenEnvVar: true,
+      mcpAddOAuth: true
+    },
     diagnostics: []
   };
 }

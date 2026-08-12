@@ -209,10 +209,15 @@ test('系统连接在 390px 视口下可安装和开启且不产生溢出或重�
   });
   await expect(page.getByRole('heading', { name: '系统连接' })).toBeVisible();
   const card = page.locator(
-    '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+    '[data-testid="mcp-card"][data-connection-key="enterprise:crm-main"]'
   );
   await card.getByRole('button', { name: '安装' }).click();
-  const toggle = card.getByRole('switch', { name: '客户关系管理 MCP' });
+  const installedCard = page.locator(
+    '[data-testid="mcp-card"][data-connection-key="native:enterprise_crm-main_9f9de575"]'
+  );
+  const toggle = installedCard.getByRole('switch', {
+    name: '客户关系管理 MCP'
+  });
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
 
@@ -222,7 +227,7 @@ test('系统连接在 390px 视口下可安装和开启且不产生溢出或重�
     const header = document.querySelector<HTMLElement>('.connections-header')!;
     const actions = document.querySelector<HTMLElement>('.connections-header__actions')!;
     const cardElement = document.querySelector<HTMLElement>(
-      '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+      '[data-testid="mcp-card"][data-connection-key="native:enterprise_crm-main_9f9de575"]'
     )!;
     const footer = cardElement.querySelector<HTMLElement>('footer')!;
     const label = footer.querySelector<HTMLElement>('.connection-toggle-label')!;
@@ -322,12 +327,17 @@ async function runPlatform(input: {
     await page.getByRole('button', { name: '系统连接', exact: true }).click();
     await expect(page.getByRole('heading', { name: '系统连接' })).toBeVisible();
     const mcpCard = page.locator(
-      '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+      '[data-testid="mcp-card"][data-connection-key="enterprise:crm-main"]'
     );
     await expect(mcpCard.getByRole('heading', { name: '客户关系管理' })).toBeVisible();
     await expect(mcpCard.getByText('企业授权：1/2 项工具')).toBeVisible();
     await mcpCard.getByRole('button', { name: '安装' }).click();
-    const mcpSwitch = mcpCard.getByRole('switch', { name: '客户关系管理 MCP' });
+    const installedMcpCard = page.locator(
+      '[data-testid="mcp-card"][data-connection-key="native:enterprise_crm-main_9f9de575"]'
+    );
+    const mcpSwitch = installedMcpCard.getByRole('switch', {
+      name: '客户关系管理 MCP'
+    });
     await expect(mcpSwitch).toHaveAttribute('aria-checked', 'false');
     await mcpSwitch.click();
     await expect(mcpSwitch).toHaveAttribute('aria-checked', 'true');
@@ -336,7 +346,7 @@ async function runPlatform(input: {
       '.clawee-main-pane',
       '.connections-page',
       '.connections-summary',
-      '[data-testid="enterprise-mcp-card"][data-upstream-id="crm-main"]'
+      '[data-testid="mcp-card"][data-connection-key="native:enterprise_crm-main_9f9de575"]'
     ]);
 
     await page.getByRole('button', { name: '企业知识库', exact: true }).click();

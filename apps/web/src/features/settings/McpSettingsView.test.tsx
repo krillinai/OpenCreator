@@ -17,6 +17,7 @@ describe('McpSettingsView', () => {
     const addServer = vi.fn(async (_input: AddCodexMcpRequest): Promise<CodexMcpAddResponse> => ({
       server: {
         name: 'linear',
+        enabled: true,
         transport: 'stdio',
         status: 'configured',
         command: 'node',
@@ -115,6 +116,10 @@ function createService(overrides: Partial<McpSettingsService> = {}): McpSettings
     listServers: async () => mcpData(),
     getServer: async (): Promise<CodexMcpServerDetailResponse> => ({ server: mcpData().servers[0]! }),
     addServer: async () => ({ operation: operation('add') }),
+    setServerEnabled: async (_name, enabled) => ({
+      server: { ...mcpData().servers[0]!, enabled },
+      operation: operation(enabled ? 'enable' : 'disable')
+    }),
     removeServer: async (): Promise<CodexMcpRemoveResponse> => ({ removed: true }),
     loginServer: async (): Promise<CodexMcpAuthResponse> => ({ operation: operation('login') }),
     logoutServer: async (): Promise<CodexMcpAuthResponse> => ({ operation: operation('logout') }),
@@ -130,6 +135,7 @@ function mcpData(overrides: Partial<CodexMcpListResponse> = {}): CodexMcpListRes
     servers: [
       {
         name: 'github',
+        enabled: true,
         transport: 'http',
         status: 'configured',
         url: 'https://example.com/mcp',
@@ -158,7 +164,9 @@ function allCapabilities() {
   };
 }
 
-function operation(operationType: 'add' | 'login' | 'logout') {
+function operation(
+  operationType: 'add' | 'enable' | 'disable' | 'login' | 'logout'
+) {
   return {
     id: `operation-${operationType}`,
     operation: operationType,

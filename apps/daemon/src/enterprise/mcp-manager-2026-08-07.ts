@@ -1,4 +1,5 @@
 import type {
+  CodexMcpServerResponse,
   EnterpriseMcpCatalogResponse,
   EnterpriseMcpPreferenceUpdateRequest,
   EnterpriseMcpTokenStatus,
@@ -6,7 +7,7 @@ import type {
 } from '@clawee/protocol';
 import { createHash } from 'node:crypto';
 import type { AgentToolRunInjection } from '../agent-tools/run-injection.js';
-import type { CodexMcpServerConfig } from '../codex/argv.js';
+import type { McpManager } from '../codex/mcp/manager.js';
 import type { RuntimeThread } from '../threads/types.js';
 import type {
   EnterpriseAgentIdentityStore
@@ -68,19 +69,27 @@ type TokenRefreshResult = {
 };
 
 export function createEnterpriseMcpManager(input: {
-  enterpriseOrigin: string;
+  enterpriseOrigin?: string;
   agentIdentityStore: EnterpriseAgentIdentityStore;
   sessionManager: EnterpriseSessionManager;
   httpClient: EnterpriseHttpClient;
   tokenStore: EnterpriseMcpTokenStore;
-  preferences: EnterpriseMcpPreferenceRepository;
-  listRuntimeIsolationServerNames?(): string[];
+  mcpManager: Pick<
+    McpManager,
+    | 'listServers'
+    | 'getServer'
+    | 'addServer'
+    | 'removeServer'
+    | 'setServerEnabled'
+  >;
+  legacyPreferences?: EnterpriseMcpPreferenceRepository;
   onRuntimeConfigurationChanged?(reason: string): void;
   now?: () => Date;
 }): EnterpriseMcpManager {
   const now = input.now ?? (() => new Date());
   let cache: CatalogCache | undefined;
   let refreshWork: Promise<CatalogCache> | undefined;
+  let legacyMigrationWork: Promise<CodexMcpServerResponse[]> | undefined;
   let sessionSignOutWork: Promise<void> | undefined;
 
   async function refreshRemote(): Promise<CatalogCache> {
@@ -168,24 +177,126 @@ export function createEnterpriseMcpManager(input: {
 
   async function responseFrom(current: CatalogCache) {
     const agentId = current.catalog.agentId;
-    const preferences = new Map(
-      input.preferences
-        .list(input.enterpriseOrigin, agentId)
-        .map(preference => [preference.upstreamId, preference])
-    );
+    const nativeServers = await listNativeServersWithLegacyMigration(current);
     return {
       agentId,
       tokenStatus: current.tokenStatus,
       upstreams: current.catalog.upstreams.map(upstream => {
-        const preference = preferences.get(upstream.upstreamId);
+        const codexServerName = mcpServerName(upstream.upstreamId);
+        const installed = findInstalledServer(
+          nativeServers,
+          codexServerName,
+          upstream.endpoint
+        );
         return {
           ...upstream,
-          installed: preference?.installed ?? false,
-          enabled: preference?.enabled ?? false
+          codexServerName,
+          ...(installed === undefined
+            ? {}
+            : { installedServerName: installed.name }),
+          installed: installed !== undefined,
+          enabled: installed?.enabled ?? false
         };
       }),
       refreshedAt: current.refreshedAt
     } satisfies EnterpriseMcpCatalogResponse;
+  }
+
+  async function listNativeServersWithLegacyMigration(
+    current: CatalogCache
+  ): Promise<CodexMcpServerResponse[]> {
+    let nativeServers = await requireNativeServers();
+    if (
+      input.legacyPreferences === undefined
+      || input.enterpriseOrigin === undefined
+    ) {
+      return nativeServers;
+    }
+
+    legacyMigrationWork ??= (async () => {
+      const preferences = input.legacyPreferences!.list(
+        input.enterpriseOrigin!,
+        current.catalog.agentId
+      );
+      let changed = false;
+      for (const preference of preferences) {
+        const upstream = current.catalog.upstreams.find(
+          candidate => candidate.upstreamId === preference.upstreamId
+        );
+        if (!preference.installed || upstream === undefined) {
+          input.legacyPreferences!.delete(
+            input.enterpriseOrigin!,
+            current.catalog.agentId,
+            preference.upstreamId
+          );
+          continue;
+        }
+        const existing = findInstalledServer(
+          nativeServers,
+          mcpServerName(upstream.upstreamId),
+          upstream.endpoint
+        );
+        if (existing !== undefined) {
+          input.legacyPreferences!.delete(
+            input.enterpriseOrigin!,
+            current.catalog.agentId,
+            preference.upstreamId
+          );
+          continue;
+        }
+        try {
+          const installed = await input.mcpManager.addServer({
+            name: mcpServerName(upstream.upstreamId),
+            transport: 'http',
+            url: upstream.endpoint,
+            bearerTokenEnvVar: ENTERPRISE_MCP_TOKEN_ENV,
+            confirmWriteToCodexHome: true
+          });
+          const server = installed.server
+            ?? await input.mcpManager.getServer(
+              mcpServerName(upstream.upstreamId)
+            );
+          if (server.enabled !== preference.enabled) {
+            await input.mcpManager.setServerEnabled(
+              server.name,
+              preference.enabled,
+              true
+            );
+          }
+          input.legacyPreferences!.delete(
+            input.enterpriseOrigin!,
+            current.catalog.agentId,
+            preference.upstreamId
+          );
+          changed = true;
+        } catch (error) {
+          throw mapCodexManagerError(error);
+        }
+      }
+      return changed
+        ? await requireNativeServers()
+        : nativeServers;
+    })().finally(() => {
+      legacyMigrationWork = undefined;
+    });
+    nativeServers = await legacyMigrationWork;
+    return nativeServers;
+  }
+
+  async function requireNativeServers(): Promise<CodexMcpServerResponse[]> {
+    let result;
+    try {
+      result = await input.mcpManager.listServers();
+    } catch (error) {
+      throw mapCodexManagerError(error);
+    }
+    if (result.servers.length === 0 && result.diagnostics.length > 0) {
+      throw new EnterpriseMcpManagerError(
+        'ENTERPRISE_MCP_RUNTIME_UNAVAILABLE',
+        503
+      );
+    }
+    return result.servers;
   }
 
   async function deleteToken(): Promise<void> {
@@ -265,84 +376,113 @@ export function createEnterpriseMcpManager(input: {
     },
     async updatePreference(upstreamId, update) {
       const current = await currentCache();
-      if (
-        !current.catalog.upstreams.some(
-          upstream => upstream.upstreamId === upstreamId
-        )
-      ) {
+      const upstream = current.catalog.upstreams.find(
+        candidate => candidate.upstreamId === upstreamId
+      );
+      if (upstream === undefined) {
         throw new EnterpriseMcpManagerError(
           'ENTERPRISE_MCP_UPSTREAM_NOT_FOUND',
           404
         );
       }
-      const previous = input.preferences.get(
-        input.enterpriseOrigin,
-        current.catalog.agentId,
-        upstreamId
+      const confirmation = update.confirmWriteToCodexHome === true;
+      const codexServerName = mcpServerName(upstream.upstreamId);
+      let installed = findInstalledServer(
+        await requireNativeServers(),
+        codexServerName,
+        upstream.endpoint
       );
-      const previousInstalled = previous?.installed ?? false;
-      const previousEnabled = previous?.enabled ?? false;
-      if (update.enabled === true && !previousInstalled) {
+
+      if (
+        update.enabled === true
+        && installed === undefined
+        && update.installed !== true
+      ) {
         throw new EnterpriseMcpManagerError(
           'ENTERPRISE_INVALID_REQUEST',
           400
         );
       }
-      const installed = update.installed ?? previousInstalled;
-      const enabled = update.enabled ?? previousEnabled;
-      const normalizedEnabled = installed ? enabled : false;
-      if (
-        previousInstalled !== installed
-        || previousEnabled !== normalizedEnabled
+
+      if (update.installed === true && installed === undefined) {
+        try {
+          const result = await input.mcpManager.addServer({
+            name: codexServerName,
+            transport: 'http',
+            url: upstream.endpoint,
+            bearerTokenEnvVar: ENTERPRISE_MCP_TOKEN_ENV,
+            ...(confirmation
+              ? { confirmWriteToCodexHome: true }
+              : {})
+          });
+          installed = result.server
+            ?? await input.mcpManager.getServer(codexServerName)
+            ?? findInstalledServer(
+              await requireNativeServers(),
+              codexServerName,
+              upstream.endpoint
+            );
+          if (installed === undefined) {
+            throw new Error('MCP_SERVER_NOT_FOUND: installed MCP was not found');
+          }
+          if (update.enabled !== true && installed.enabled) {
+            const result = await input.mcpManager.setServerEnabled(
+              installed.name,
+              false,
+              confirmation
+            );
+            installed = result.server;
+          }
+        } catch (error) {
+          throw mapCodexManagerError(error);
+        }
+      }
+
+      if (update.installed === false && installed !== undefined) {
+        try {
+          await input.mcpManager.removeServer(installed.name, confirmation);
+          installed = undefined;
+        } catch (error) {
+          throw mapCodexManagerError(error);
+        }
+      } else if (
+        update.enabled !== undefined
+        && installed !== undefined
+        && installed.enabled !== update.enabled
       ) {
-        input.preferences.upsert({
-          enterpriseOrigin: input.enterpriseOrigin,
-          agentId: current.catalog.agentId,
-          upstreamId,
-          installed,
-          enabled: normalizedEnabled
-        });
-        input.onRuntimeConfigurationChanged?.('enterprise_mcp_preference_changed');
+        try {
+          const result = await input.mcpManager.setServerEnabled(
+            installed.name,
+            update.enabled,
+            confirmation
+          );
+          installed = result.server;
+        } catch (error) {
+          throw mapCodexManagerError(error);
+        }
+      }
+
+      if (update.enabled === true && installed === undefined) {
+        throw new EnterpriseMcpManagerError(
+          'ENTERPRISE_INVALID_REQUEST',
+          400
+        );
       }
       return responseFrom(current);
     },
     async prepareRuntime(run) {
-      const isolationServerNames = normalizedIsolationServerNames(
-        input.listRuntimeIsolationServerNames?.() ?? []
-      );
-      const isolationServers = isolationServerNames.map(
-        (name): CodexMcpServerConfig => ({
-          name,
-          enabled: false
-        })
-      );
-      if (
-        run.createdBy !== 'api'
-        || run.thread.purpose === 'schedule_task'
-        || input.sessionManager.getSnapshot().status !== 'signed_in'
-      ) {
-        return isolationOnlyInjection(isolationServers, isolationServerNames);
+      void run;
+      if (input.sessionManager.getSnapshot().status !== 'signed_in') {
+        return undefined;
       }
+      const enterpriseServers = (await requireNativeServers())
+        .filter(server =>
+          server.enabled
+          && server.bearerTokenEnvVar === ENTERPRISE_MCP_TOKEN_ENV
+        );
+      if (enterpriseServers.length === 0) return undefined;
+
       const agentId = await input.agentIdentityStore.getOrCreate();
-      const enabledIds = new Set(
-        input.preferences
-          .list(input.enterpriseOrigin, agentId)
-          .filter(preference => preference.installed && preference.enabled)
-          .map(preference => preference.upstreamId)
-      );
-      if (enabledIds.size === 0) {
-        return isolationOnlyInjection(isolationServers, isolationServerNames);
-      }
-
-      const current = await currentCache();
-      assertAgentId(current.catalog.agentId, agentId);
-      const enabledUpstreams = current.catalog.upstreams.filter(upstream =>
-        enabledIds.has(upstream.upstreamId)
-      );
-      if (enabledUpstreams.length === 0) {
-        return isolationOnlyInjection(isolationServers, isolationServerNames);
-      }
-
       const accessToken = await input.sessionManager.requireAccessToken();
       let token: EnterpriseMcpTokenCredential;
       try {
@@ -351,41 +491,20 @@ export function createEnterpriseMcpManager(input: {
         await handleRemoteFailure(error);
         throw mapManagerError(error);
       }
-      const configurationFingerprint = createHash('sha256')
-        .update(JSON.stringify({
-          agentId,
-          isolationServerNames,
-          tokenFingerprint: token.fingerprint,
-          upstreams: enabledUpstreams
-            .map(upstream => ({
-              endpoint: upstream.endpoint,
-              upstreamId: upstream.upstreamId
-            }))
-            .sort((left, right) =>
-              left.upstreamId.localeCompare(right.upstreamId)
-            )
-        }))
-        .digest('hex');
-
       return {
-        mcpServers: [
-          ...isolationServers,
-          ...enabledUpstreams.map(
-            (upstream): CodexMcpServerConfig => ({
-              name: mcpServerName(upstream.upstreamId),
-              url: upstream.endpoint,
-              bearerTokenEnvVar: ENTERPRISE_MCP_TOKEN_ENV,
-              enabled: true,
-              required: false,
-              startupTimeoutSec: 15,
-              toolTimeoutSec: 120
-            })
-          )
-        ],
+        mcpServers: [],
         env: {
           [ENTERPRISE_MCP_TOKEN_ENV]: token.token
         },
-        configurationFingerprint
+        configurationFingerprint: createHash('sha256')
+          .update(JSON.stringify({
+            agentId,
+            servers: enterpriseServers
+              .map(server => server.name)
+              .sort((left, right) => left.localeCompare(right)),
+            tokenFingerprint: token.fingerprint
+          }))
+          .digest('hex')
       };
     },
     handleSessionAuthenticated() {
@@ -428,26 +547,6 @@ export function createEnterpriseMcpManager(input: {
   };
 }
 
-function isolationOnlyInjection(
-  servers: CodexMcpServerConfig[],
-  serverNames: string[]
-): AgentToolRunInjection | undefined {
-  if (servers.length === 0) return undefined;
-  return {
-    mcpServers: servers,
-    env: {},
-    configurationFingerprint: createHash('sha256')
-      .update(JSON.stringify({ isolationServerNames: serverNames }))
-      .digest('hex')
-  };
-}
-
-function normalizedIsolationServerNames(names: string[]): string[] {
-  return [...new Set(names)]
-    .filter(name => /^[A-Za-z0-9_-]+$/.test(name))
-    .sort((left, right) => left.localeCompare(right));
-}
-
 function assertAgentId(actual: string, expected: string): void {
   if (actual !== expected) {
     throw new EnterpriseMcpManagerError(
@@ -468,6 +567,41 @@ function mcpServerName(upstreamId: string): string {
     .slice(0, 36) || 'upstream';
   const suffix = createHash('sha256').update(upstreamId).digest('hex').slice(0, 8);
   return `enterprise_${readable}_${suffix}`;
+}
+
+function findInstalledServer(
+  servers: CodexMcpServerResponse[],
+  expectedName: string,
+  endpoint: string
+): CodexMcpServerResponse | undefined {
+  return servers.find(server => server.url === endpoint)
+    ?? servers.find(server => server.name === expectedName);
+}
+
+function mapCodexManagerError(error: unknown): EnterpriseMcpManagerError {
+  if (!(error instanceof Error)) {
+    return new EnterpriseMcpManagerError(
+      'ENTERPRISE_MCP_RUNTIME_UNAVAILABLE',
+      503
+    );
+  }
+  const code = error.message.split(':', 1)[0];
+  if (code === 'MCP_WRITE_CONFIRMATION_REQUIRED') {
+    return new EnterpriseMcpManagerError('MCP_WRITE_CONFIRMATION_REQUIRED', 409);
+  }
+  if (code === 'MCP_SERVER_NOT_FOUND') {
+    return new EnterpriseMcpManagerError(
+      'ENTERPRISE_MCP_UPSTREAM_NOT_FOUND',
+      404
+    );
+  }
+  if (code === 'CODEX_INCOMPATIBLE') {
+    return new EnterpriseMcpManagerError('CODEX_INCOMPATIBLE', 501);
+  }
+  return new EnterpriseMcpManagerError(
+    'ENTERPRISE_MCP_RUNTIME_UNAVAILABLE',
+    503
+  );
 }
 
 function runtimeCatalogChanged(

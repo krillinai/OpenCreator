@@ -75,8 +75,7 @@
   color: var(--text);
 }
 
-.connections-icon-button,
-.connection-remove {
+.connections-icon-button {
   width: 34px;
   height: 34px;
   display: grid;
@@ -88,14 +87,13 @@
   color: var(--muted);
 }
 
-.connections-icon-button:hover,
-.connection-remove:hover {
+.connections-icon-button:hover {
   background: var(--surface-2);
   color: var(--text);
 }
 
 .connections-icon-button:disabled,
-.connection-remove:disabled,
+.connection-icon-action:disabled,
 .connection-install:disabled,
 .connection-switch:disabled {
   cursor: default;
@@ -124,6 +122,21 @@
   border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
   background: color-mix(in srgb, var(--danger) 7%, var(--surface));
   color: var(--danger);
+}
+
+.connections-banner > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.connections-banner > button {
+  min-height: 28px;
+  flex: 0 0 auto;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: inherit;
 }
 
 .connections-summary {
@@ -311,6 +324,14 @@
   gap: 6px;
 }
 
+.connection-card__endpoint {
+  min-height: 34px;
+  overflow: hidden;
+  color: var(--muted);
+  font: 10px/1.55 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 .connection-card__capabilities span {
   max-width: 100%;
   padding: 4px 7px;
@@ -340,14 +361,28 @@
   border-top: 1px solid var(--border-hairline);
 }
 
-.connection-remove {
+.connection-icon-action {
   width: 30px;
   height: 30px;
-  margin-right: auto;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
   color: var(--subtle);
 }
 
-.connection-remove:hover {
+.connection-icon-action--danger {
+  margin-right: auto;
+}
+
+.connection-icon-action:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.connection-icon-action--danger:hover {
   color: var(--danger);
 }
 
