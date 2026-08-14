@@ -1,8 +1,8 @@
-# Clawee Agent 登录、MCP 能力目录、Skill Hub、知识库与共享文件接口接入文档
+# Clawee Agent 登录、MCP 能力目录、Skill Hub、知识库、共享文件与 Agent 动态接口接入文档
 
 ## 1. 文档目的
 
-本文定义 Clawee Agent 接入企业 MCP Gateway 登录、MCP 能力目录、Skill Hub、账户授权知识库和共享文件空间所需的 HTTP API、调用流程、错误处理和 Clawee 侧实现约束。
+本文定义 Clawee Agent 接入企业 MCP Gateway 登录、MCP 能力目录、Skill Hub、账户授权知识库、共享文件空间和 Agent 动态所需的 HTTP API、调用流程、错误处理和 Clawee 侧实现约束。
 
 本文面向 Clawee Web、Desktop 和 Daemon 的开发与测试人员。接口提供方为 `claw-mcp`，下文统一称为“企业服务”。
 
@@ -29,6 +29,9 @@
 17. 向具有上传权限的知识库上传文档。
 18. 分页查询当前账户授权的共享文件空间和文件。
 19. 查询、流式下载、新建和按 revision 替换共享文件。
+20. 发现当前账户是否具有 Agent 动态数据视图读取权限。
+21. 查询当前授权账户可见的组织 Agent 动态统计。
+22. 查询统计列表中指定 Agent 的活动详情。
 
 本次接入不包括：
 
@@ -40,6 +43,8 @@
 6. 用企业 Skill Hub 替换 Clawee 现有公共 Skill Market。
 7. 在 Clawee 内管理知识库或账户数据授权。
 8. 在本阶段迁移 MCP 知识检索的 Agent Grant 判定。
+9. 在 Clawee 内创建、替换或撤销 Agent 动态数据视图授权。
+10. 由 Clawee 直接调用 Sub2API 或企业后台 Agent 动态接口。
 
 ## 3. 职责边界
 
@@ -56,7 +61,8 @@
 7. 按当前账户的 Skill 空间授权返回空间、已发布 Skill、详情和版本信息。
 8. 分发经过服务端校验的 Skill ZIP 包，并接收具备空间写权限的 Clawee Agent 上传的新版本。
 9. 按当前账户数据权限返回知识库和文档，并代理经过校验的文档上传。
-10. 返回稳定的 HTTP 状态码和业务错误码。
+10. 按当前账户的 `data_view/agent_activity/read` 授权返回 Agent 动态能力、组织统计和 Agent 详情。
+11. 返回稳定的 HTTP 状态码和业务错误码。
 
 ### 3.2 Clawee Daemon
 
@@ -74,12 +80,14 @@ Clawee Daemon 是企业服务的唯一调用方，负责：
 10. 复用 Clawee 现有 Skill 安装事务、覆盖策略和回滚能力。
 11. 保存包含 Skill 空间标识的企业 Skill 安装记录，并计算更新状态。
 12. 获取知识库和文档列表，并以流式 Multipart 请求代理用户选择的文档上传。
+13. 使用企业 Bearer JWT 查询数据视图、Agent 动态统计和 Agent 详情，并向 Web/Desktop 提供统一的本地代理接口。
+14. 在本地会话状态变化、能力查询失败或服务端返回权限错误时及时清理 Agent 动态能力和数据缓存。
 
 ### 3.3 Clawee Web 与 Desktop
 
 Clawee Web 与 Desktop 只调用本地 Daemon，不直接请求企业服务。
 
-通用登录、Skill Hub 和知识库业务必须由 Web/Desktop 共用的 Daemon API 和 Service 实现。Desktop Bridge 不得单独实现企业登录、Skill 空间与列表、Skill 上传、知识库访问、文档上传或安装逻辑。
+通用登录、Skill Hub、知识库和 Agent 动态业务必须由 Web/Desktop 共用的 Daemon API 和 Service 实现。Desktop Bridge 不得单独实现企业登录、Skill 空间与列表、Skill 上传、知识库访问、文档上传、Agent 动态权限判断、Agent 动态查询或安装逻辑。
 
 ## 4. 总体调用链路
 
@@ -194,6 +202,9 @@ Clawee 的业务判断应优先使用 HTTP 状态码和 `error.code`，不得依
 | 查询共享文件详情 | `GET` | `/api/v1/app/shared-files/detail?file_id=...` | Bearer JWT |
 | 下载共享文件 | `GET` | `/api/v1/app/shared-files/content?file_id=...` | Bearer JWT |
 | 新建或替换共享文件 | `POST` | `/api/v1/app/shared-files/content?space_id=...&logical_path=...` | Bearer JWT |
+| 获取当前账户数据视图 | `GET` | `/api/v1/app/data-views` | Bearer JWT |
+| 获取 Agent 动态统计 | `GET` | `/api/v1/app/activity/statistics?range=...` | Bearer JWT + `agent_activity/read` |
+| 获取 Agent 活动详情 | `GET` | `/api/v1/app/activity/detail?collector_id=...&agent_id=...` | Bearer JWT + `agent_activity/read` |
 | 服务连通性检查 | `GET` | `/healthz` | 无 |
 
 Clawee 不得调用历史兼容路径 `/auth/*`、`/api/v1/skills/*` 或任何 `/api/v1/admin/*` 接口。
@@ -936,6 +947,7 @@ Clawee 应同时读取：
 5. 操作系统安全凭据存储内容。
 6. 知识库文档内容和 Multipart 原始请求体。
 7. Collector 注册码、带注册码的安装 URL 和一键安装命令。
+8. Agent 动态详情中的用户提示词、模型回答、Tool 输入、Tool 响应和活动摘要原文。
 
 诊断导出前必须再次执行敏感字段脱敏。
 
@@ -1002,6 +1014,20 @@ Clawee 应同时读取：
 15. Web 与 Desktop 通过同一 Daemon API 读取和修改 Codex 原生 MCP 配置，渲染相同页面并产生相同 Runtime 行为。
 16. `clawee_schedule` 是 Clawee 内部动态工具例外，由 Daemon 按运行上下文注入，不属于“系统连接”中的用户 MCP。
 
+### 21.5 Agent 动态
+
+1. 只有 `/api/v1/app/data-views` 返回 `view_id=agent_activity` 且 `actions` 包含 `read` 时，Clawee 才展示 Agent 动态入口并允许进入对应路由。
+2. 权限查询完成前不展示 Agent 动态入口，避免未授权入口短暂闪现。
+3. 无权限账户直接访问 Agent 动态列表或详情路由时不会加载或保留页面数据，并返回其他已授权页面。
+4. 列表页只调用 `/api/v1/app/activity/statistics`，并且 `range` 仅传 `today`、`7d` 或 `30d`。
+5. 详情页使用统计响应中的 `collector_id` 和 `agent_id` 调用 `/api/v1/app/activity/detail`，两个参数都经过 URL 编码。
+6. 统计或详情请求返回 `403 data_view_forbidden` 时，Clawee 立即清除 Agent 动态缓存、重新查询数据视图并隐藏入口。
+7. `503 data_authorization_unavailable` 按失败关闭处理，不沿用旧授权状态，不将其解释为有权限。
+8. Sub2API 或活动数据源失败时展示不可用和重试状态，不把失败数据伪装成零值。
+9. 页面不展示接口未返回的员工 Token、Agent Token、推理输出 Token、费用或 Skill 使用分布。
+10. Clawee Daemon 是三个 Agent 动态接口的唯一调用方，Web/Desktop 不直接持有企业 JWT，也不调用 `/api/v1/admin/*` 或 Sub2API。
+11. Web 与 Desktop 在相同账户、权限和响应数据下显示相同入口、页面状态和统计结果，并调用相同的 Daemon API。
+
 ## 22. 接口契约摘要
 
 Clawee 正式依赖以下稳定契约：
@@ -1030,9 +1056,13 @@ GET  /api/v1/app/shared-files
 GET  /api/v1/app/shared-files/detail?file_id=<file_id>
 GET  /api/v1/app/shared-files/content?file_id=<file_id>
 POST /api/v1/app/shared-files/content?space_id=<space_id>&logical_path=<logical_path>
+
+GET  /api/v1/app/data-views
+GET  /api/v1/app/activity/statistics?range=<today|7d|30d>
+GET  /api/v1/app/activity/detail?collector_id=<collector_id>&agent_id=<agent_id>
 ```
 
-Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal` 获取绑定 Agent 的 MCP Token，再通过 MCP 能力目录获取全部 upstream 的受治理 endpoint 和 Tool 授权状态；这两个接口都优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。Skill Hub 使用账户级 Skill 空间授权：`read` 控制空间、列表、详情和下载，上传必须同时具有 `read` 和 `write`，未授权资源统一按接口约定隐藏。知识库 HTTP 接口使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token 或 Agent MCP Token；企业服务负责身份、Collector 接入信息、MCP Token、MCP 能力目录、Skill 空间授权、Skill 分发与上传校验和知识库授权代理。Codex 原生配置负责全部用户 MCP 的安装和开启状态，Codex Runtime 负责工具发现与调用；Clawee 负责本地安全存储、统一页面、原生配置操作、企业 Token 安全注入、Skill 上传代理、安装完整性、回滚以及知识库交互。
+Clawee Daemon 在首次注册或登录前生成并持久化稳定的 `agent_id`。账号通过 `/api/v1/auth/register` 自助注册时固定提交 `client_id=clawee-agent` 和该 `agent_id`；注册成功后通过登录接口提交相同字段，签发绑定该 Agent 的 `claw-frontend` Bearer JWT。缺少 `agent_id` 时注册和登录都必须失败，企业服务不得兜底生成或选择 Agent。`/api/v1/auth/me` 为 Clawee 查询或隐式创建账户级 Collector 注册码并返回双平台安装命令，Daemon 按系统执行命令完成 Collector 安装或更新。Daemon 使用应用端 Bearer JWT 调用 `/api/v1/app/agents/token/reveal` 获取绑定 Agent 的 MCP Token，再通过 MCP 能力目录获取全部 upstream 的受治理 endpoint 和 Tool 授权状态；这两个接口都优先使用认证会话绑定的 Agent，无需重复传递 `agent_id`。Skill Hub 使用账户级 Skill 空间授权：`read` 控制空间、列表、详情和下载，上传必须同时具有 `read` 和 `write`，未授权资源统一按接口约定隐藏。知识库 HTTP 接口使用 JWT 当前账户的数据授权，Agent 绑定只作为 Clawee 会话有效性校验。Agent 动态先通过 `/api/v1/app/data-views` 发现当前账户是否具有 `agent_activity/read`，统计和详情接口仍在每次请求时二次校验同一授权；能力发现只控制入口可见性，不能代替业务接口鉴权。Web `/app` 通过 `client_id=web` 或省略 `client_id` 进入原有账户级认证分支，继续显式切换 Agent。Clawee Daemon 是企业服务唯一调用方，Web/Desktop 不直接持有企业 Token 或 Agent MCP Token；企业服务负责身份、Collector 接入信息、MCP Token、MCP 能力目录、Skill 空间授权、Skill 分发与上传校验、知识库授权代理和 Agent 动态数据授权。Codex 原生配置负责全部用户 MCP 的安装和开启状态，Codex Runtime 负责工具发现与调用；Clawee 负责本地安全存储、统一页面、原生配置操作、企业 Token 安全注入、Skill 上传代理、安装完整性、回滚、知识库交互和 Agent 动态展示。
 
 ## 23. MCP Token 与能力目录接口
 
@@ -1806,3 +1836,434 @@ X-Content-SHA256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a
   }
 }
 ```
+
+## 26. Agent 动态接口
+
+Agent 动态第一版只依赖以下三个企业服务接口：
+
+| 用途 | 方法 | 路径 |
+| --- | --- | --- |
+| 发现当前账户是否有页面权限 | `GET` | `/api/v1/app/data-views` |
+| 获取指定范围的组织统计和 Agent 列表 | `GET` | `/api/v1/app/activity/statistics?range=...` |
+| 获取指定 Agent 的会话和活动详情 | `GET` | `/api/v1/app/activity/detail?collector_id=...&agent_id=...` |
+
+Clawee 不得为了实现 Agent 动态调用以下接口：
+
+1. 任何 `/api/v1/admin/*` 管理接口。
+2. Sub2API 的 `/api/v1/admin/dashboard/snapshot-v2` 或其他 Sub2API 接口。
+3. 当前页面不需要的 `/api/v1/app/activity/overview`、`/api/v1/app/activity/agents`、`/api/v1/app/activity/sub-agents`、`/api/v1/app/activity/recent` 和 `/api/v1/app/activity/events`。
+4. 任何由客户端传入 `user_id`、角色或管理员标记以改变数据范围的接口形式。
+
+企业服务内部可以使用 Sub2API 和本地活动数据完成聚合，但这属于企业服务实现，Sub2API 地址、管理员 API Key、组织 `user_id` 和统计查询参数都不得下发给 Clawee。
+
+### 26.1 认证与授权模型
+
+三个接口都由 Clawee Daemon 使用第 7.2 节登录取得的 Bearer JWT 调用：
+
+```http
+Authorization: Bearer <enterprise_access_token>
+Accept: application/json
+```
+
+权限主体始终是 JWT 中的当前账户 `user_id`。Clawee 登录绑定的 `agent_id` 只用于验证 Clawee 会话有效，不能代替账户授权主体，也不能通过 Query、Header 或请求体切换账户。
+
+Agent 动态使用以下数据视图授权：
+
+```text
+resource_type = data_view
+resource_id   = agent_activity
+action        = read
+```
+
+管理员身份、`console:activity:read`、Agent 归属以及能够登录 Clawee 都不等于具有 Agent 动态权限。管理员账户也必须被显式授予上述数据视图权限。
+
+能力发现和业务接口承担不同职责：
+
+1. `/api/v1/app/data-views` 只用于决定是否展示 Agent 动态入口和是否允许进入前端路由。
+2. `/api/v1/app/activity/statistics` 和 `/api/v1/app/activity/detail` 每次请求都会在服务端重新校验 `data_view/agent_activity/read`。
+3. 隐藏菜单不是安全边界。即使客户端缓存显示有权限，服务端仍可在授权撤销后立即返回 `403 data_view_forbidden`。
+4. 权限查询失败时必须失败关闭，不得沿用旧的“已授权”状态。
+
+### 26.2 `GET /api/v1/app/data-views`
+
+返回当前账户已经获得授权的数据视图。接口不接受任何 Query 参数，尤其不得传递 `user_id`。
+
+请求：
+
+```http
+GET /api/v1/app/data-views HTTP/1.1
+Host: 1.13.175.31:1904
+Accept: application/json
+Authorization: Bearer <enterprise_access_token>
+```
+
+具有 Agent 动态权限时返回：`200 OK`
+
+```json
+{
+  "data": [
+    {
+      "view_id": "agent_activity",
+      "actions": ["read"]
+    }
+  ]
+}
+```
+
+没有任何数据视图权限时仍返回：`200 OK`
+
+```json
+{
+  "data": []
+}
+```
+
+该列表当前不带 `meta`。Clawee 必须使用精确条件判断 Agent 动态权限：
+
+```text
+存在某一项：
+  view_id == "agent_activity"
+  且 actions 包含 "read"
+```
+
+不能因为 `data` 非空、存在其他视图、`actions` 非空、账户是管理员或会话已经登录就显示 Agent 动态入口。
+
+Clawee 调用时机：
+
+1. 企业会话成功登录或恢复后查询一次。
+2. 进入 Agent 动态路由前确保本次会话已经完成能力查询。
+3. Agent 动态统计或详情返回 `403 data_view_forbidden` 后立即重新查询。
+4. 企业账户切换、注销或会话失效时立即清空能力状态。
+5. 页面重新聚焦或执行明确的权限刷新动作时可以重新查询，以收敛管理员刚完成的授权变更。
+
+页面可见性处理：
+
+| 状态 | 菜单和路由行为 |
+| --- | --- |
+| 会话未登录 | 不显示入口，由现有企业登录门禁处理 |
+| 能力查询中 | 不显示入口，不渲染 Agent 动态内容 |
+| 已授权 | 显示入口，允许进入列表和详情路由 |
+| 明确未授权 | 隐藏入口；直接访问路由时返回其他已授权页面 |
+| 能力查询失败 | 失败关闭，不显示入口；允许用户稍后刷新能力 |
+
+常见失败：
+
+| HTTP | `error.code` | Clawee 行为 |
+| --- | --- | --- |
+| `400` | `invalid_request` | 请求包含不支持的 Query 参数；修正客户端请求 |
+| `401` | `unauthorized` | 清除本地企业 Token，进入未登录状态 |
+| `403` | Agent 绑定相关错误码 | 停止企业请求，保留本地 `agent_id`，要求重新登录或联系管理员 |
+| `503` | `data_authorization_unavailable` | 失败关闭，不展示入口，不沿用旧授权状态 |
+
+### 26.3 `GET /api/v1/app/activity/statistics`
+
+返回当前组织在指定时间范围内的 Agent 动态聚合结果。只有当前账户具有 `data_view/agent_activity/read` 时才能访问。
+
+请求 Query：
+
+| 参数 | 必填 | 允许值 | 说明 |
+| --- | --- | --- | --- |
+| `range` | 否 | `today`、`7d`、`30d` | 默认 `7d`；客户端不能传其他值 |
+
+请求示例：
+
+```http
+GET /api/v1/app/activity/statistics?range=7d HTTP/1.1
+Host: 1.13.175.31:1904
+Accept: application/json
+Authorization: Bearer <enterprise_access_token>
+```
+
+成功响应：`200 OK`
+
+```json
+{
+  "data": {
+    "range": "7d",
+    "timezone": "Asia/Shanghai",
+    "start_date": "2026-08-08",
+    "end_date": "2026-08-14",
+    "generated_at": "2026-08-14T03:12:37Z",
+    "organization": {
+      "usage": {
+        "input_tokens": 18279996,
+        "cached_input_tokens": 16894080,
+        "output_tokens": 116251,
+        "total_tokens": 18396247
+      },
+      "active_employees": 3,
+      "active_agents": 5,
+      "completed_turns": 42,
+      "mcp_distribution": [
+        {
+          "id": "filesystem",
+          "label": "filesystem",
+          "invocation_count": 18,
+          "share": 0.6
+        }
+      ]
+    },
+    "trend": {
+      "granularity": "day",
+      "points": [
+        {
+          "bucket_start": "2026-08-08T00:00:00+08:00",
+          "input_tokens": 1000,
+          "cached_input_tokens": 600,
+          "output_tokens": 200,
+          "total_tokens": 1200
+        }
+      ]
+    },
+    "model_distribution": [
+      {
+        "model": "gpt-5.6-sol",
+        "requests": 20,
+        "input_tokens": 1000,
+        "cached_input_tokens": 600,
+        "output_tokens": 200,
+        "total_tokens": 1200,
+        "share": 0.8
+      }
+    ],
+    "agents": [
+      {
+        "collector_id": "collector_123",
+        "agent_id": "agent_123",
+        "name": "Clawee Agent",
+        "status": "online",
+        "session_count": 4,
+        "turn_count": 12,
+        "last_activity_at": "2026-08-14T03:00:00Z"
+      }
+    ],
+    "data_status": {
+      "sub2api": "available",
+      "activity": "available"
+    }
+  }
+}
+```
+
+字段说明：
+
+| 字段 | 说明 |
+| --- | --- |
+| `range` | 服务端实际采用的范围 |
+| `timezone` | 服务端统计时区；客户端只能展示，不能覆盖 |
+| `start_date`、`end_date` | 统计覆盖的自然日期边界 |
+| `generated_at` | 上游统计快照的生成时间 |
+| `organization.usage` | 组织范围 Token 汇总 |
+| `active_employees` | 当前范围内至少开始过一个 Turn 的去重员工数 |
+| `active_agents` | 当前范围内活跃 Agent 数 |
+| `completed_turns` | 当前范围内完成的 Turn 数 |
+| `mcp_distribution` | 可识别 MCP 调用次数和占比；无可靠数据时为空数组 |
+| `trend.granularity` | `today` 返回 `hour`，`7d` 和 `30d` 返回 `day` |
+| `trend.points` | 已补齐缺失小时或自然日的趋势点 |
+| `model_distribution` | 按模型汇总的请求数、Token 和占比 |
+| `agents` | Agent 基本信息，用于列表和构造详情请求 |
+| `data_status` | 各数据源状态；成功响应当前为 `available` |
+
+Token 口径：
+
+```text
+input_tokens        = 普通输入 + 缓存读取 + 缓存写入
+cached_input_tokens = 缓存读取 + 缓存写入
+output_tokens       = 输出 Token
+total_tokens        = input_tokens + output_tokens
+```
+
+`cached_input_tokens` 已包含在 `input_tokens` 中，不能再次计入总量。接口不返回 `reasoning_output_tokens`。
+
+第 5.3 节的 UTC 时间约定在趋势时间桶上有一个明确例外：`bucket_start` 使用带统计时区偏移的 RFC 3339 时间，例如 `2026-08-08T00:00:00+08:00`。其他时间字段继续按接口实际返回的 RFC 3339 时间解析，客户端不得移除或重解释原始时区偏移。
+
+客户端展示约束：
+
+1. 只展示响应中真实存在的字段。
+2. 第一版不展示员工列表、员工 Token、Agent Token、Agent Token 分布、费用、推理输出 Token 或 Skill 使用分布。
+3. `model_distribution.share` 和 `mcp_distribution.share` 已由服务端计算，客户端不应用请求数或其他分母重新推导。
+4. `last_activity_at` 可能缺失；缺失表示没有可展示的最近活动时间。
+5. 空数组和零值表示数据源查询成功但当前范围确实无数据。
+6. 请求失败不能复用旧数据冒充当前范围结果，也不能用零值代替失败。
+
+常见失败：
+
+| HTTP | `error.code` | Clawee 行为 |
+| --- | --- | --- |
+| `400` | `invalid_activity_range` | 修正为白名单范围，不自动尝试其他未知值 |
+| `401` | `unauthorized` | 清除本地企业 Token 并进入未登录状态 |
+| `403` | `data_view_forbidden` | 清除 Agent 动态数据和能力缓存，重新查询数据视图并退出页面 |
+| `503` | `data_authorization_unavailable` | 失败关闭并退出页面，不沿用旧授权状态 |
+| `503` | `activity_unavailable` | 保留登录状态，显示活动数据暂不可用和重试入口 |
+| `502` | `sub2api_unavailable`、`sub2api_auth_failed`、`sub2api_forbidden`、`sub2api_error`、`sub2api_invalid_response` | 保留登录状态，显示 Token 数据暂不可用和重试入口 |
+| `503` | `sub2api_rate_limited` | 保留登录状态；遵守合法的 `Retry-After`，不高频重试 |
+| `500` | `activity_statistics_failed` | 保留登录状态，记录脱敏诊断并允许手动重试 |
+
+### 26.4 `GET /api/v1/app/activity/detail`
+
+使用统计响应 `agents` 中的 `collector_id` 和 `agent_id` 查询 Agent 详情。只有当前账户具有 `data_view/agent_activity/read` 时才能访问。
+
+请求 Query：
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `collector_id` | 是 | 统计响应返回的不透明 Collector 标识，必须 URL 编码 |
+| `agent_id` | 是 | 统计响应返回的不透明 Agent 标识，必须 URL 编码 |
+
+请求示例：
+
+```http
+GET /api/v1/app/activity/detail?collector_id=collector_123&agent_id=agent_123 HTTP/1.1
+Host: 1.13.175.31:1904
+Accept: application/json
+Authorization: Bearer <enterprise_access_token>
+```
+
+该接口当前沿用 `office.v1` 契约，成功响应是顶层详情对象，不使用第 5.4 节的 `{ "data": ... }` 包装。Daemon 必须按这一实际结构解析，同时忽略未来新增字段。
+
+成功响应结构示例：`200 OK`
+
+```json
+{
+  "schema_version": "office.v1",
+  "server_time": "2026-08-14T12:00:00Z",
+  "agent": {
+    "collector_id": "collector_123",
+    "agent_id": "agent_123",
+    "display_name": "Clawee Agent",
+    "agent_type": "clawee",
+    "workspace_name": "研发项目",
+    "status": "online",
+    "sessions": [],
+    "sub_agents": {
+      "active_count": 0,
+      "total_count": 0,
+      "preview": []
+    },
+    "recent_tool_calls": 0,
+    "last_seen_at": "2026-08-14T11:59:00Z",
+    "updated_at": "2026-08-14T11:59:00Z"
+  },
+  "sessions": [],
+  "turns": [],
+  "sub_agents": [],
+  "tool_calls": [],
+  "status_timeline": [],
+  "recent_activities": [],
+  "stats": {
+    "session_duration_ms": 0,
+    "active_sub_agents": 0,
+    "total_sub_agents": 0,
+    "recent_activity_count": 0,
+    "business_risk_level": "unknown",
+    "active_sessions": 0,
+    "active_work_ms": 0,
+    "tool_type_variety": 0,
+    "tool_call_count": 0
+  }
+}
+```
+
+主要字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `schema_version` | 当前固定为 `office.v1` |
+| `server_time` | 服务端生成详情的时间 |
+| `agent` | Agent 标识、展示名称、类型、工作区、状态和最近在线信息 |
+| `current_session`、`current_turn` | 当前会话和 Turn；没有时为 `null` 或省略 |
+| `sessions` | 会话列表，包含状态、摘要、起止时间、工作区和时长 |
+| `turns` | Turn 列表，包含标题、状态、提示、回答摘要和时间 |
+| `sub_agents` | 子 Agent 列表 |
+| `tool_calls` | Tool 调用列表；可能包含输入和响应，属于敏感数据 |
+| `status_timeline` | Agent 状态时间线 |
+| `recent_activities` | 最近活动记录 |
+| `active_business_call` | 当前企业系统调用；没有时为 `null` 或省略 |
+| `stats` | 会话、工作时长、子 Agent、活动和 Tool 调用汇总 |
+
+安全与展示约束：
+
+1. `collector_id` 和 `agent_id` 只能来自统计响应或当前受信路由状态，不能接受聊天内容或其他不可信文本直接拼接。
+2. 即使参数来自统计响应，也必须分别使用 URL 编码，不能直接拼接原始 Query。
+3. `user_prompt`、`last_assistant_message`、Tool `input`、Tool `response` 和 `response_text` 可能包含敏感业务数据，不得写入日志、诊断包、分析埋点或错误报告。
+4. 页面只展示产品明确需要的详情字段。不要因为接口返回 Tool 原始输入或响应就默认展开显示。
+5. 详情接口不返回 Agent Token，也不能用于推导或请求 Agent Token。
+
+常见失败：
+
+| HTTP | `error.code` | Clawee 行为 |
+| --- | --- | --- |
+| `401` | `unauthorized` | 清除本地企业 Token，进入未登录状态 |
+| `403` | `data_view_forbidden` | 清除 Agent 动态数据和能力缓存，重新查询数据视图并退出页面 |
+| `503` | `data_authorization_unavailable` | 失败关闭并退出页面，不沿用旧授权状态 |
+| `404` | `not_found` | 返回 Agent 动态列表并刷新统计，不能探测其他标识 |
+| `500` | `internal_error` | 保留登录状态，显示详情暂不可用并允许手动重试 |
+
+### 26.5 Clawee 页面权限实现要求
+
+Agent 动态页面必须同时实施菜单可见性控制和路由访问控制：
+
+```text
+企业会话已登录
+  -> GET /api/v1/app/data-views
+     -> 包含 agent_activity/read
+        -> 显示入口
+        -> 允许列表和详情路由
+        -> 请求 statistics/detail，服务端再次鉴权
+     -> 不包含或权限查询失败
+        -> 隐藏入口
+        -> 禁止渲染列表和详情
+        -> 直接路由访问返回其他已授权页面
+```
+
+具体要求：
+
+1. 权限状态至少区分 `checking`、`allowed`、`denied` 和 `unavailable`，不能用一个默认 `true` 的布尔值表示。
+2. `checking` 期间不得先渲染 Agent 动态入口或页面内容。
+3. 侧边栏、快捷入口、命令面板和其他可能进入 Agent 动态的导航必须复用同一能力状态。
+4. 列表和详情路由必须独立执行权限门禁，不能假设用户只能通过侧边栏进入。
+5. 权限未确认或已拒绝时，不得发起统计或详情请求。
+6. 收到 `403 data_view_forbidden` 后必须先清除已加载的数据，再改变页面和菜单状态，避免撤权后继续显示旧数据。
+7. 登录、恢复会话、注销、账户切换和 `401` 处理必须同步重置权限状态，不能跨账户复用。
+8. 能力状态只保存在当前企业会话内，不写入长期偏好、普通配置或可跨账户复用的缓存。
+9. Clawee 不提供授权管理入口。授权由企业管理员在 `claw-mcp` 管理端完成。
+
+### 26.6 第一版页面字段映射
+
+Clawee 当前静态原型与企业服务第一版响应并不完全一致。正式接入时按以下范围实现：
+
+| 页面区域 | 数据来源 | 第一版处理 |
+| --- | --- | --- |
+| 总 Token | `organization.usage.total_tokens` | 展示 |
+| 输入、缓存输入、输出 | `organization.usage` | 展示；缓存输入不重复计入总量 |
+| 活跃员工、活跃 Agent、完成轮次 | `organization` | 展示 |
+| Token 趋势 | `trend` | 展示 |
+| 模型分布 | `model_distribution` | 展示 |
+| MCP 使用分布 | `organization.mcp_distribution` | 展示 |
+| Agent 列表 | `agents` | 展示，并作为详情入口 |
+| Agent 会话和 Turn | 详情接口 `sessions`、`turns` | 展示必要字段 |
+| 员工列表和员工 Token | 无 | 删除或隐藏，不得以静态数据补充 |
+| Skill 使用分布 | 无 | 删除或隐藏 |
+| 推理输出 Token | 无 | 删除或隐藏 |
+| Agent Token 和 Agent Token 分布 | 无 | 删除或隐藏 |
+| 费用 | 无 | 删除或隐藏 |
+| 对话分析 | 无对应接口 | 第一版隐藏；不得基于静态样例生成回答 |
+
+Clawee 不得将静态原型数据与接口结果混合展示。加载失败时应显示明确错误状态；只有接口成功且字段为零或空数组时，才能展示真实零值或空态。
+
+### 26.7 Agent 动态日志与诊断
+
+允许记录：
+
+1. 请求方法和路径模板。
+2. `range`、HTTP 状态码、业务错误码、耗时和脱敏请求 ID。
+3. 是否命中 `agent_activity/read`，但不得记录完整授权列表。
+4. `collector_id` 和 `agent_id` 的脱敏值或摘要；如产品诊断不需要，优先不记录。
+
+禁止记录：
+
+1. Bearer JWT、Authorization Header 或企业服务原始请求头。
+2. Sub2API 地址、管理员 API Key 或普通员工 API Key。
+3. 用户提示词、模型回答、Tool 输入、Tool 响应、活动摘要和企业业务调用详情原文。
+4. Agent 动态完整成功响应。
+5. 上游返回的原始错误正文。

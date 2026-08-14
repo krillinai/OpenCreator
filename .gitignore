@@ -13,3 +13,4 @@ codex-main/
 open-design-main/
 .gstack/
 .worktrees/
+**/.DS_Store
