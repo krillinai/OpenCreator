@@ -12,6 +12,7 @@ export type RuntimeThread = {
   scheduleId?: string;
   title: string | null;
   projectId: string | null;
+  enterpriseSubjectId: string | null;
   origin: ThreadOrigin;
   codexThreadId?: string | null;
   cwd: string;
@@ -26,6 +27,7 @@ export type RuntimeThread = {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;
+  pinnedAt?: string | null;
 };
 
 export type CreateConversationThreadInput = Extract<
@@ -58,8 +60,23 @@ export type CreateRuntimeThreadInput = {
   purpose?: ThreadPurpose;
 };
 
+export type CreateKnowledgeThreadInput = {
+  enterpriseSubjectId: string;
+  projectId: string;
+  title?: string;
+};
+
+export function isEnterpriseKnowledgeThread(
+  thread: RuntimeThread | undefined
+): boolean {
+  return thread?.enterpriseSubjectId !== null
+    && thread?.enterpriseSubjectId !== undefined;
+}
+
 export type UpdateRuntimeThreadInput = {
-  sandbox: SandboxMode;
+  title?: string;
+  sandbox?: SandboxMode;
+  pinned?: boolean;
 };
 
 export type UpdateScheduleThreadInput = {
@@ -91,6 +108,7 @@ export class ThreadManagerError extends Error {
 export type ThreadManager = {
   createConversationThread(request: CreateConversationThreadInput): RuntimeThread;
   createScheduleThread(request: CreateScheduleThreadInput): RuntimeThread;
+  createKnowledgeThread(request: CreateKnowledgeThreadInput): RuntimeThread;
   createThread(request: CreateRuntimeThreadInput): RuntimeThread;
   assertRunnableThread(id: string): RuntimeThread;
   getThread(id: string): RuntimeThread | undefined;
@@ -102,6 +120,10 @@ export type ThreadManager = {
     excludePurpose?: ThreadPurpose;
     limit?: number;
   }): RuntimeThread[];
+  listKnowledgeThreads(
+    enterpriseSubjectId: string,
+    filter?: { status?: 'active' | 'archived' | 'all'; limit?: number }
+  ): RuntimeThread[];
   listPublicThreads(filter?: {
     status?: 'active' | 'archived' | 'all';
     purpose?: ThreadPurpose;
@@ -114,6 +136,7 @@ export type ThreadManager = {
   updateScheduleThread(id: string, input: UpdateScheduleThreadInput): RuntimeThread;
   setPurpose(id: string, purpose: ThreadPurpose): RuntimeThread;
   archiveThread(id: string): RuntimeThread;
+  deleteThread(id: string): void;
   archiveScheduleThread(id: string): RuntimeThread;
   archiveCodexThread(codexThreadId: string): RuntimeThread | undefined;
   repairCodexThreadBindings(): {

@@ -41,6 +41,7 @@ function createTestRunManager(input: {
   logWriterFactory?(runDir: string): OrderedLogWriter;
   runtimeTransport?: 'exec' | 'app-server';
   persistentAppServerExecutor?: PersistentAppServerExecutor;
+  beforeRunSpawn?: Parameters<typeof createRunManager>[0]['beforeRunSpawn'];
 } = {}) {
   tempDir = input.tempDir ?? mkdtempSync(join(tmpdir(), 'clawee-manager-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -61,7 +62,8 @@ function createTestRunManager(input: {
     resumeCapabilityVerified: input.resumeCapabilityVerified ?? true,
     logWriterFactory: input.logWriterFactory,
     runtimeTransport: input.runtimeTransport,
-    persistentAppServerExecutor: input.persistentAppServerExecutor
+    persistentAppServerExecutor: input.persistentAppServerExecutor,
+    beforeRunSpawn: input.beforeRunSpawn
   });
   return { manager, threadManager };
 }
@@ -82,6 +84,22 @@ function createPersistedThread(
   });
   if (overrides.codexThreadId) threadManager.setCodexThreadId(thread.id, overrides.codexThreadId);
   return threadManager.getThread(thread.id)!;
+}
+
+function createPersistedKnowledgeThread(
+  threadManager: ReturnType<typeof createThreadManager>
+) {
+  const projects = createProjectManager({ db: db!, homeDir: tempDir });
+  const project = projects.listProjects()[0] ?? projects.createProject({
+    cwd: tempDir,
+    profile: 'default',
+    sandbox: 'read-only'
+  });
+  return threadManager.createKnowledgeThread({
+    projectId: project.id,
+    enterpriseSubjectId: 'enterprise-user-1',
+    title: '知识库对话'
+  });
 }
 
 function threadRun(
@@ -1102,6 +1120,46 @@ describe('run manager', () => {
       scope: 'schedule:get'
     })).toThrow('revoked');
     capabilities.close();
+  });
+
+  it('revalidates knowledge access after dequeue and fails without spawning codex', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-knowledge-policy-'));
+    const fake = createFakeCodex(tempDir, {
+      stdoutLines: [
+        { type: 'thread.started', thread_id: 'codex-thread-knowledge' },
+        { type: 'turn.started' },
+        { type: 'turn.completed' }
+      ],
+      lineDelayMs: 50
+    });
+    let validationCount = 0;
+    const { manager, threadManager } = createTestRunManager({
+      tempDir,
+      codexBin: fake.bin,
+      beforeRunSpawn: async () => {
+        validationCount += 1;
+        if (validationCount === 2) {
+          throw Object.assign(new Error('KNOWLEDGE_SEARCH_NOT_GRANTED'), {
+            code: 'KNOWLEDGE_SEARCH_NOT_GRANTED'
+          });
+        }
+      }
+    });
+    const thread = createPersistedKnowledgeThread(threadManager);
+
+    const first = manager.startRun(threadRun(thread, 'first'));
+    const second = manager.startRun(threadRun(thread, 'second'));
+
+    expect(second.status).toBe('queued');
+    await waitForRunStatus(manager, first.id, 'succeeded');
+    await waitForRunStatus(manager, second.id, 'failed');
+
+    expect(validationCount).toBe(2);
+    expect(fake.readPrompts()).toEqual(['first']);
+    expect(manager.getRun(second.id)).toMatchObject({
+      status: 'failed',
+      errorCode: 'KNOWLEDGE_SEARCH_NOT_GRANTED'
+    });
   });
 
   it('uses the thread sandbox override for workspace-write resumed runs', async () => {

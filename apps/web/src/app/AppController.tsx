@@ -12,6 +12,10 @@ import type {
   EnterpriseKnowledgeBaseResponse,
   EnterpriseKnowledgeDocumentResponse,
   EnterpriseLoginRequest,
+  EnterpriseMcpCatalogResponse,
+  EnterpriseQrLoginStartRequest,
+  EnterpriseQrLoginStartResponse,
+  EnterpriseQrLoginStatusResponse,
   EnterpriseRegisterRequest,
   EnterpriseSessionResponse,
   EnterpriseSharedFileResponse,
@@ -77,6 +81,7 @@ import type {
 import {
   findProjectById,
   groupThreadsByPurpose,
+  sortProjectConversations,
   parseLegacyLocalStorageProjects,
   PROJECTS_STORAGE_KEY,
   type ClaweeConversation,
@@ -88,6 +93,7 @@ import { ProjectManagementDialog } from '../features/projects/ProjectManagementD
 import {
   Composer,
   type ComposerAttachment,
+  type ComposerConnector,
   type ComposerDraftRequest,
   type ComposerQueuedItem,
   type ComposerRunConfig,
@@ -116,14 +122,12 @@ import type {
   RuntimeStatus
 } from '../features/settings/ClaweeSettingsView.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
-import {
-  ClaweeSidebar,
-  type SidebarRecentItem
-} from '../features/shell/ClaweeSidebar.js';
+import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
 import {
   createScheduleDraftSidebarSummaries,
   createSidebarTaskSummaries
 } from '../features/shell/sidebar-task-model.js';
+import type { SidebarTaskSummary } from '../features/shell/sidebar-task-model.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
 import { ApiClientError, RuntimeClient } from '../runtime/client.js';
@@ -391,10 +395,8 @@ export function AppController(props: AppControllerProps) {
     useState(0);
   const [enterpriseSharedSpaces, setEnterpriseSharedSpaces] =
     useState<EnterpriseSharedSpaceResponse[]>();
-  const [enterpriseSharedSpacesLoading, setEnterpriseSharedSpacesLoading] =
-    useState(false);
-  const [enterpriseSharedSpacesError, setEnterpriseSharedSpacesError] =
-    useState<string>();
+  const [enterpriseSharedSpacesLoading, setEnterpriseSharedSpacesLoading] = useState(false);
+  const [enterpriseSharedSpacesError, setEnterpriseSharedSpacesError] = useState<string>();
   const [enterpriseSharedSpacesMeta, setEnterpriseSharedSpacesMeta] = useState({
     nextCursor: '',
     hasNext: false,
@@ -404,10 +406,8 @@ export function AppController(props: AppControllerProps) {
     useState<string>();
   const [enterpriseSharedFiles, setEnterpriseSharedFiles] =
     useState<EnterpriseSharedFileResponse[]>();
-  const [enterpriseSharedFilesLoading, setEnterpriseSharedFilesLoading] =
-    useState(false);
-  const [enterpriseSharedFilesError, setEnterpriseSharedFilesError] =
-    useState<string>();
+  const [enterpriseSharedFilesLoading, setEnterpriseSharedFilesLoading] = useState(false);
+  const [enterpriseSharedFilesError, setEnterpriseSharedFilesError] = useState<string>();
   const [enterpriseSharedFilesMeta, setEnterpriseSharedFilesMeta] = useState({
     nextCursor: '',
     hasNext: false
@@ -415,12 +415,9 @@ export function AppController(props: AppControllerProps) {
   const [enterpriseSharedQuery, setEnterpriseSharedQuery] = useState('');
   const [enterpriseSharedOperation, setEnterpriseSharedOperation] =
     useState<SharedDriveOperationState>();
-  const [enterpriseSharedNotice, setEnterpriseSharedNotice] =
-    useState<string>();
-  const [enterpriseSharedSpacesReloadKey, setEnterpriseSharedSpacesReloadKey] =
-    useState(0);
-  const [enterpriseSharedFilesReloadKey, setEnterpriseSharedFilesReloadKey] =
-    useState(0);
+  const [enterpriseSharedNotice, setEnterpriseSharedNotice] = useState<string>();
+  const [enterpriseSharedSpacesReloadKey, setEnterpriseSharedSpacesReloadKey] = useState(0);
+  const [enterpriseSharedFilesReloadKey, setEnterpriseSharedFilesReloadKey] = useState(0);
   const [runDiagnosticsById, setRunDiagnosticsById] = useState<Record<string, RunDiagnosticsResponse | undefined>>({});
   const [runAttachmentsById, setRunAttachmentsById] = useState<Record<string, AttachmentResponse[] | undefined>>({});
   const [runContextById, setRunContextById] = useState<Record<string, RunContextResponse | undefined>>({});
@@ -550,6 +547,7 @@ export function AppController(props: AppControllerProps) {
   const enterpriseSharedSpacesLoadInFlightRef = useRef(false);
   const enterpriseSharedFilesLoadInFlightRef = useRef(false);
   const enterpriseSharedMutationInFlightRef = useRef(false);
+  const knowledgeConversationCreateInFlightRef = useRef(false);
   const mobileSidebarHistoryEntryRef = useRef(false);
   const defaultPermissionAppliedByThreadRef = useRef(new Map<string, SandboxMode>());
   const defaultPermissionSyncFailuresRef = useRef(new Set<string>());
@@ -655,6 +653,46 @@ export function AppController(props: AppControllerProps) {
       transportSecurity: enterpriseSessionRef.current.transportSecurity
     });
   }, []);
+  const loadComposerConnectors = useCallback(async (): Promise<ComposerConnector[]> => {
+    if (enterpriseService === null || enterpriseSession.status !== 'signed_in') {
+      throw new Error('登录企业账户后可查看连接器目录');
+    }
+    try {
+      return buildComposerConnectors(await enterpriseService.listMcpConnections());
+    } catch (error) {
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+        throw new Error('企业会话已失效，请重新登录');
+      }
+      throw new Error(formatEnterpriseConnectorError(
+        error,
+        '连接器目录加载失败'
+      ));
+    }
+  }, [enterpriseService, enterpriseSession.status, handleEnterpriseSessionExpired]);
+  const toggleComposerConnector = useCallback(async (
+    connectorId: string,
+    enabled: boolean
+  ): Promise<ComposerConnector[]> => {
+    if (enterpriseService === null || enterpriseSession.status !== 'signed_in') {
+      throw new Error('登录企业账户后可管理连接器');
+    }
+    const upstreamId = connectorId.startsWith('enterprise:')
+      ? connectorId.slice('enterprise:'.length)
+      : connectorId;
+    try {
+      return buildComposerConnectors(await enterpriseService.updateMcpPreference(
+        upstreamId,
+        { enabled }
+      ));
+    } catch (error) {
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+        throw new Error('企业会话已失效，请重新登录');
+      }
+      throw new Error(formatEnterpriseConnectorError(error, '连接器状态更新失败'));
+    }
+  }, [enterpriseService, enterpriseSession.status, handleEnterpriseSessionExpired]);
   const workspaceFileService = useMemo(
     () => runtimeClient === null ? null : createWorkspaceFileService(runtimeClient),
     [runtimeClient]
@@ -688,9 +726,11 @@ export function AppController(props: AppControllerProps) {
     [visibleRuntimeThreads]
   );
   const conversations = useMemo(
-    () => visibleThreadGroups.conversationThreads.map(
-      thread => mapThreadToConversation(thread)
-    ).filter((conversation): conversation is ClaweeConversation => conversation !== undefined),
+    () => sortProjectConversations(
+      visibleThreadGroups.conversationThreads.map(
+        thread => mapThreadToConversation(thread)
+      ).filter((conversation): conversation is ClaweeConversation => conversation !== undefined)
+    ),
     [projects, visibleThreadGroups.conversationThreads]
   );
   const scheduleTaskSummaries = useMemo(
@@ -731,47 +771,6 @@ export function AppController(props: AppControllerProps) {
     () => [...scheduleDraftSidebarTasks, ...scheduleSidebarTasks],
     [scheduleDraftSidebarTasks, scheduleSidebarTasks]
   );
-  const recentSidebarItems = useMemo<SidebarRecentItem[]>(() => {
-    const threadById = new Map(runtimeThreads.map(thread => [thread.id, thread]));
-    const scheduleById = new Map(runtimeSchedules.map(schedule => [schedule.id, schedule]));
-    const conversationItems: SidebarRecentItem[] = conversations.map(conversation => ({
-      id: `conversation:${conversation.id}`,
-      kind: 'conversation',
-      threadId: conversation.id,
-      title: conversation.title,
-      updatedAt: conversation.updatedAt,
-      updatedLabel: conversation.updatedLabel,
-      running: runningThreadIds.has(conversation.id)
-    }));
-    const taskItems: SidebarRecentItem[] = sidebarTasks.map(task => {
-      const threadUpdatedAt = task.threadId === undefined
-        ? undefined
-        : threadById.get(task.threadId)?.updatedAt;
-      const scheduleUpdatedAt = scheduleById.get(task.id)?.updatedAt;
-      const updatedAt = latestRuntimeTimestamp(
-        threadUpdatedAt,
-        scheduleUpdatedAt
-      ) ?? new Date(0).toISOString();
-      return {
-        id: `task:${task.id}`,
-        kind: 'task',
-        ...(task.threadId === undefined ? {} : { threadId: task.threadId }),
-        title: task.name,
-        updatedAt,
-        updatedLabel: formatRelativeTime(updatedAt),
-        status: task.status,
-        unread: task.unread
-      };
-    });
-
-    return [...conversationItems, ...taskItems].sort(compareRecentSidebarItems);
-  }, [
-    conversations,
-    runtimeSchedules,
-    runtimeThreads,
-    runningThreadIds,
-    sidebarTasks
-  ]);
   const runningConversationIds = runningThreadIds;
   const selectedThreadExists = state.selectedThreadId !== undefined
     && runtimeThreads.some(thread => thread.id === state.selectedThreadId);
@@ -1448,16 +1447,6 @@ export function AppController(props: AppControllerProps) {
       setEnterpriseSharedFiles(undefined);
       setEnterpriseSharedFilesLoading(false);
       setEnterpriseSharedFilesError(undefined);
-      setEnterpriseSharedQuery('');
-      setEnterpriseSharedSpacesMeta({
-        nextCursor: '',
-        hasNext: false,
-        maxFileSizeBytes: 1024 * 1024 * 1024
-      });
-      setEnterpriseSharedFilesMeta({
-        nextCursor: '',
-        hasNext: false
-      });
     }
   }, [
     connectionState.status,
@@ -1606,6 +1595,156 @@ export function AppController(props: AppControllerProps) {
 
   useEffect(() => {
     if (
+      state.activeView !== 'drive'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      return;
+    }
+
+    let canceled = false;
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    enterpriseSharedSpacesLoadInFlightRef.current = true;
+    setEnterpriseSharedSpaces(undefined);
+    setEnterpriseSharedSpacesLoading(true);
+    setEnterpriseSharedSpacesError(undefined);
+
+    void activeEnterpriseService.listSharedSpaces({ limit: 100 })
+      .then(response => {
+        if (canceled || !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) return;
+        setEnterpriseSharedSpaces(response.spaces);
+        setEnterpriseSharedSpacesMeta(response.meta);
+        setSelectedEnterpriseSharedSpaceId(previous => (
+          previous === undefined
+          || response.spaces.some(space => space.spaceId === previous)
+          || response.meta.hasNext
+            ? previous
+            : undefined
+        ));
+      })
+      .catch(error => {
+        if (canceled || !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) return;
+        setEnterpriseSharedSpaces(undefined);
+        setSelectedEnterpriseSharedSpaceId(undefined);
+        setEnterpriseSharedFiles(undefined);
+        if (isEnterpriseUnauthorized(error)) {
+          handleEnterpriseSessionExpired();
+        } else {
+          setEnterpriseSharedSpacesError(
+            formatEnterpriseSharedDriveError(error, '共享空间加载失败')
+          );
+        }
+      })
+      .finally(() => {
+        if (!canceled && isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) {
+          enterpriseSharedSpacesLoadInFlightRef.current = false;
+          setEnterpriseSharedSpacesLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    enterpriseService,
+    enterpriseSession.status,
+    enterpriseSharedSpacesReloadKey,
+    handleEnterpriseSessionExpired,
+    state.activeView
+  ]);
+
+  useEffect(() => {
+    if (
+      state.activeView !== 'drive'
+      || connectionState.status !== 'connected'
+      || enterpriseService === null
+      || enterpriseSession.status !== 'signed_in'
+    ) {
+      return;
+    }
+
+    let canceled = false;
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    const activeEnterpriseService = enterpriseService;
+    enterpriseSharedFilesLoadInFlightRef.current = true;
+    setEnterpriseSharedFiles(undefined);
+    setEnterpriseSharedFilesLoading(true);
+    setEnterpriseSharedFilesError(undefined);
+
+    void activeEnterpriseService.listSharedFiles({
+      ...(selectedEnterpriseSharedSpaceId === undefined
+        ? {}
+        : { spaceId: selectedEnterpriseSharedSpaceId }),
+      ...(enterpriseSharedQuery.length === 0 ? {} : { query: enterpriseSharedQuery }),
+      limit: 100
+    })
+      .then(response => {
+        if (canceled || !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) return;
+        setEnterpriseSharedFiles(response.files);
+        setEnterpriseSharedFilesMeta(response.meta);
+      })
+      .catch(error => {
+        if (canceled || !isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) return;
+        setEnterpriseSharedFiles(undefined);
+        if (isEnterpriseUnauthorized(error)) {
+          handleEnterpriseSessionExpired();
+        } else if (
+          error instanceof ApiClientError
+          && error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
+        ) {
+          setSelectedEnterpriseSharedSpaceId(undefined);
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+          setEnterpriseSharedFilesError('该共享空间已不可访问，正在刷新授权列表');
+        } else {
+          setEnterpriseSharedFilesError(
+            formatEnterpriseSharedDriveError(error, '共享文件加载失败')
+          );
+        }
+      })
+      .finally(() => {
+        if (!canceled && isCurrentEnterpriseSharedDriveRuntime(
+          generation,
+          activeEnterpriseService
+        )) {
+          enterpriseSharedFilesLoadInFlightRef.current = false;
+          setEnterpriseSharedFilesLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    connectionState.status,
+    enterpriseService,
+    enterpriseSession.status,
+    enterpriseSharedFilesReloadKey,
+    enterpriseSharedQuery,
+    handleEnterpriseSessionExpired,
+    selectedEnterpriseSharedSpaceId,
+    state.activeView
+  ]);
+
+  useEffect(() => {
+    if (
       state.activeView !== 'knowledge'
       || connectionState.status !== 'connected'
       || enterpriseService === null
@@ -1697,201 +1836,6 @@ export function AppController(props: AppControllerProps) {
     enterpriseService,
     enterpriseSession.status,
     selectedEnterpriseKnowledgeBaseId,
-    state.activeView
-  ]);
-
-  useEffect(() => {
-    if (
-      state.activeView !== 'drive'
-      || connectionState.status !== 'connected'
-      || enterpriseService === null
-      || enterpriseSession.status !== 'signed_in'
-    ) {
-      return;
-    }
-
-    let canceled = false;
-    const generation = enterpriseSharedDriveGenerationRef.current;
-    const activeEnterpriseService = enterpriseService;
-    enterpriseSharedSpacesLoadInFlightRef.current = true;
-    setEnterpriseSharedSpaces(undefined);
-    setEnterpriseSharedSpacesLoading(true);
-    setEnterpriseSharedSpacesError(undefined);
-
-    void activeEnterpriseService.listSharedSpaces({ limit: 100 })
-      .then(response => {
-        if (
-          canceled
-          || !isCurrentEnterpriseSharedDriveRuntime(
-            generation,
-            activeEnterpriseService
-          )
-        ) {
-          return;
-        }
-        setEnterpriseSharedSpaces(response.spaces);
-        setEnterpriseSharedSpacesMeta(response.meta);
-        setSelectedEnterpriseSharedSpaceId(previous => {
-          if (
-            previous === undefined
-            || response.spaces.some(space => space.spaceId === previous)
-            || response.meta.hasNext
-          ) {
-            return previous;
-          }
-          return undefined;
-        });
-      })
-      .catch(error => {
-        if (
-          canceled
-          || !isCurrentEnterpriseSharedDriveRuntime(
-            generation,
-            activeEnterpriseService
-          )
-        ) {
-          return;
-        }
-        setEnterpriseSharedSpaces(undefined);
-        setSelectedEnterpriseSharedSpaceId(undefined);
-        setEnterpriseSharedFiles(undefined);
-        if (isEnterpriseUnauthorized(error)) {
-          setEnterpriseSession({
-            status: 'signed_out',
-            reason: 'session_expired',
-            transportSecurity: enterpriseSessionRef.current.transportSecurity
-          });
-        } else {
-          setEnterpriseSharedSpacesError(
-            formatEnterpriseSharedDriveError(
-              error,
-              '共享空间加载失败'
-            )
-          );
-        }
-      })
-      .finally(() => {
-        if (
-          !canceled
-          && isCurrentEnterpriseSharedDriveRuntime(
-            generation,
-            activeEnterpriseService
-          )
-        ) {
-          enterpriseSharedSpacesLoadInFlightRef.current = false;
-          setEnterpriseSharedSpacesLoading(false);
-        }
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, [
-    connectionState.status,
-    enterpriseService,
-    enterpriseSession.status,
-    enterpriseSharedSpacesReloadKey,
-    state.activeView
-  ]);
-
-  useEffect(() => {
-    if (
-      state.activeView !== 'drive'
-      || connectionState.status !== 'connected'
-      || enterpriseService === null
-      || enterpriseSession.status !== 'signed_in'
-    ) {
-      return;
-    }
-
-    let canceled = false;
-    const generation = enterpriseSharedDriveGenerationRef.current;
-    const activeEnterpriseService = enterpriseService;
-    enterpriseSharedFilesLoadInFlightRef.current = true;
-    setEnterpriseSharedFiles(undefined);
-    setEnterpriseSharedFilesLoading(true);
-    setEnterpriseSharedFilesError(undefined);
-
-    void activeEnterpriseService.listSharedFiles({
-      ...(selectedEnterpriseSharedSpaceId === undefined
-        ? {}
-        : { spaceId: selectedEnterpriseSharedSpaceId }),
-      ...(enterpriseSharedQuery.length === 0
-        ? {}
-        : { query: enterpriseSharedQuery }),
-      limit: 100
-    })
-      .then(response => {
-        if (
-          canceled
-          || !isCurrentEnterpriseSharedDriveRuntime(
-            generation,
-            activeEnterpriseService
-          )
-        ) {
-          return;
-        }
-        setEnterpriseSharedFiles(response.files);
-        setEnterpriseSharedFilesMeta(response.meta);
-      })
-      .catch(error => {
-        if (
-          canceled
-          || !isCurrentEnterpriseSharedDriveRuntime(
-            generation,
-            activeEnterpriseService
-          )
-        ) {
-          return;
-        }
-        setEnterpriseSharedFiles(undefined);
-        if (isEnterpriseUnauthorized(error)) {
-          setEnterpriseSession({
-            status: 'signed_out',
-            reason: 'session_expired',
-            transportSecurity: enterpriseSessionRef.current.transportSecurity
-          });
-        } else if (
-          error instanceof ApiClientError
-          && error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
-        ) {
-          setSelectedEnterpriseSharedSpaceId(undefined);
-          setEnterpriseSharedSpacesReloadKey(current => current + 1);
-          setEnterpriseSharedFilesError(
-            '该共享空间已不可访问，正在刷新授权列表'
-          );
-        } else {
-          setEnterpriseSharedFilesError(
-            formatEnterpriseSharedDriveError(
-              error,
-              '共享文件加载失败'
-            )
-          );
-        }
-      })
-      .finally(() => {
-        if (
-          !canceled
-          && isCurrentEnterpriseSharedDriveRuntime(
-            generation,
-            activeEnterpriseService
-          )
-        ) {
-          enterpriseSharedFilesLoadInFlightRef.current = false;
-          setEnterpriseSharedFilesLoading(false);
-        }
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, [
-    connectionState.status,
-    enterpriseService,
-    enterpriseSession.status,
-    enterpriseSharedFilesReloadKey,
-    enterpriseSharedQuery,
-    selectedEnterpriseSharedSpaceId,
     state.activeView
   ]);
 
@@ -2439,8 +2383,8 @@ export function AppController(props: AppControllerProps) {
     : getRunCancelState(runRegistry, selectedActiveRun.id) === 'requested';
   const runtimeStatus = mapRuntimeStatus(connectionState);
   const slashCommands = useMemo(
-    () => buildComposerSlashCommands(codexSkills),
-    [codexSkills]
+    () => buildComposerSlashCommands(codexSkills, codexMcp),
+    [codexMcp, codexSkills]
   );
   const composerQueuedItems = useMemo<ComposerQueuedItem[]>(
     () => timelineItems.flatMap(item => (
@@ -2667,10 +2611,7 @@ export function AppController(props: AppControllerProps) {
       ) {
         setEnterpriseSession(response);
         setEnterpriseCheckingTimedOut(false);
-        if (
-          response.status === 'checking'
-          || response.collector?.status === 'installing'
-        ) {
+        if (response.status === 'checking') {
           setEnterpriseSessionProbeKey(current => current + 1);
         }
       }
@@ -2705,6 +2646,43 @@ export function AppController(props: AppControllerProps) {
   ): Promise<EnterpriseSessionResponse> {
     const response = await runEnterpriseSessionMutation(service => service.register(input));
     returnToEnterpriseViewAfterSignIn(response);
+    return response;
+  }
+
+  function startEnterpriseQrLogin(
+    input: EnterpriseQrLoginStartRequest
+  ): Promise<EnterpriseQrLoginStartResponse> {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || connectionStatusRef.current !== 'connected'
+    ) {
+      throw new Error('本地 Runtime 未连接');
+    }
+    return activeEnterpriseService.startQrLogin(input);
+  }
+
+  async function pollEnterpriseQrLogin(
+    requestId: string
+  ): Promise<EnterpriseQrLoginStatusResponse> {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || connectionStatusRef.current !== 'connected'
+    ) {
+      throw new Error('本地 Runtime 未连接');
+    }
+    const generation = enterpriseRuntimeGenerationRef.current;
+    const response = await activeEnterpriseService.getQrLoginStatus(requestId);
+    if (
+      response.session?.status === 'signed_in'
+      && enterpriseRuntimeGenerationRef.current === generation
+      && enterpriseServiceRef.current === activeEnterpriseService
+    ) {
+      setEnterpriseSession(response.session);
+      setEnterpriseCheckingTimedOut(false);
+      returnToEnterpriseViewAfterSignIn(response.session);
+    }
     return response;
   }
 
@@ -2846,7 +2824,6 @@ export function AppController(props: AppControllerProps) {
     closeMobileSidebar();
     allowInitialRuntimeProjectFocusRef.current = false;
     navigationPersistenceReadyRef.current = true;
-    setComposerRunConfig(null);
     showTimelineForThread(undefined, [], false);
     setHistoryLoadingThreadId(undefined);
     setHistoryLoadedThreadId(undefined);
@@ -2863,6 +2840,51 @@ export function AppController(props: AppControllerProps) {
     }
     dispatch({ type: 'new_conversation' });
     if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
+  }
+
+  async function startKnowledgeConversation() {
+    if (knowledgeConversationCreateInFlightRef.current) return;
+    const activeProjectService = projectService;
+    const activeThreadService = threadService;
+    if (activeProjectService === null || activeThreadService === null) {
+      setEnterpriseKnowledgeBasesError('本地服务暂不可用，无法创建对话');
+      return;
+    }
+
+    knowledgeConversationCreateInFlightRef.current = true;
+    setEnterpriseKnowledgeBasesError(undefined);
+    const generation = skillMarketRuntimeGenerationRef.current;
+    try {
+      const { project } = await activeProjectService.ensureDefaultProject();
+      const created = await activeThreadService.createKnowledgeThread(project.id);
+      if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
+
+      setProjects(current => upsertProject(current, project));
+      setRuntimeThreads(previous => upsertThread(previous, created.thread));
+      showTimelineForThread(created.thread.id, [], true);
+      setThreadHistoryLoadError(undefined);
+      setHistoryLoadingThreadId(undefined);
+      setHistoryLoadedThreadId(created.thread.id);
+      setRunsLoadedThreadId(undefined);
+      setThreadConfigUpdateError(undefined);
+      skipNextHistoryLoadForThreadRef.current = created.thread.id;
+      allowInitialRuntimeProjectFocusRef.current = false;
+      if (project.id !== state.currentProjectId) {
+        dispatch({ type: 'select_project', projectId: project.id });
+      }
+      dispatch({ type: 'select_thread', threadId: created.thread.id });
+      navigateToRoute({ view: 'thread', threadId: created.thread.id });
+    } catch (error) {
+      if (isCurrentThreadRuntime(generation, activeThreadService)) {
+        setEnterpriseKnowledgeBasesError(
+          getRuntimeErrorMessage(error, '创建知识库对话失败，请重试')
+        );
+      }
+    } finally {
+      if (isCurrentThreadRuntime(generation, activeThreadService)) {
+        knowledgeConversationCreateInFlightRef.current = false;
+      }
+    }
   }
 
   function selectProject(projectId: string, options: { updateRoute?: boolean } = {}) {
@@ -3121,6 +3143,41 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
+  async function renameSidebarTask(task: SidebarTaskSummary, title: string) {
+    if (task.id.startsWith('draft:')) {
+      if (task.threadId === undefined) return;
+      await renameConversation(task.threadId, title);
+      return;
+    }
+    if (scheduleService === null) return;
+    const updated = await scheduleService.updateSchedule(task.id, { name: title });
+    handleScheduleChanged(updated);
+  }
+
+  async function archiveSidebarTask(task: SidebarTaskSummary) {
+    if (task.id.startsWith('draft:')) {
+      if (task.threadId === undefined) return;
+      await archiveConversation(task.threadId);
+      return;
+    }
+    if (scheduleService === null) return;
+    await scheduleService.deleteSchedule(task.id);
+    setRuntimeSchedules(current => current.filter(schedule => schedule.id !== task.id));
+    if (task.threadId !== undefined) {
+      setRuntimeThreads(current => current.filter(thread => thread.id !== task.threadId));
+      if (state.selectedThreadId === task.threadId) startNewConversation();
+    }
+  }
+
+  async function deleteSidebarTask(task: SidebarTaskSummary) {
+    if (task.id.startsWith('draft:')) {
+      if (task.threadId === undefined) return;
+      await deleteConversation(task.threadId);
+      return;
+    }
+    await archiveSidebarTask(task);
+  }
+
   async function archiveConversation(threadId: string) {
     if (threadService === null) return;
     try {
@@ -3137,6 +3194,50 @@ export function AppController(props: AppControllerProps) {
           ? '任务运行期间不能归档会话，请等待当前任务结束'
           : getRuntimeErrorMessage(error, '归档会话失败，请重试')
       );
+    }
+  }
+
+  async function renameConversation(threadId: string, title: string) {
+    if (threadService === null) return;
+    try {
+      const response = await threadService.updateThread(threadId, { title });
+      setRuntimeThreads(current => upsertThread(current, response.thread));
+      setThreadLoadError(undefined);
+    } catch (error) {
+      setThreadLoadError(getRuntimeErrorMessage(error, '重命名会话失败，请重试'));
+      throw error;
+    }
+  }
+
+  async function pinConversation(threadId: string, pinned: boolean) {
+    if (threadService === null) return;
+    try {
+      const response = await threadService.updateThread(threadId, { pinned });
+      setRuntimeThreads(current => upsertThread(current, response.thread));
+      setThreadLoadError(undefined);
+    } catch (error) {
+      setThreadLoadError(getRuntimeErrorMessage(error, pinned ? '置顶会话失败，请重试' : '取消置顶失败，请重试'));
+      throw error;
+    }
+  }
+
+  async function deleteConversation(threadId: string) {
+    if (threadService === null) return;
+    try {
+      await threadService.deleteThread(threadId);
+      setRuntimeThreads(current => current.filter(thread => thread.id !== threadId));
+      delete timelineItemsByThreadIdRef.current[threadId];
+      if (state.selectedThreadId === threadId) {
+        startNewConversation();
+      }
+      setThreadLoadError(undefined);
+    } catch (error) {
+      setThreadLoadError(
+        error instanceof ApiClientError && error.code === 'THREAD_HAS_ACTIVE_RUN'
+          ? '任务运行期间不能删除会话，请等待当前任务结束'
+          : getRuntimeErrorMessage(error, '删除会话失败，请重试')
+      );
+      throw error;
     }
   }
 
@@ -3479,6 +3580,312 @@ export function AppController(props: AppControllerProps) {
     void refreshEnterpriseSession();
   }
 
+  function refreshEnterpriseSharedDrive() {
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+    if (enterpriseSessionRef.current.status === 'signed_in') {
+      setEnterpriseSharedSpacesReloadKey(current => current + 1);
+      setEnterpriseSharedFilesReloadKey(current => current + 1);
+      return;
+    }
+    void refreshEnterpriseSession();
+  }
+
+  function selectEnterpriseSharedSpace(spaceId?: string) {
+    if (spaceId !== selectedEnterpriseSharedSpaceId) {
+      setSelectedEnterpriseSharedSpaceId(spaceId);
+      setEnterpriseSharedFiles(undefined);
+      setEnterpriseSharedFilesError(undefined);
+    }
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+  }
+
+  function searchEnterpriseSharedFiles(query: string) {
+    setEnterpriseSharedQuery(query.trim());
+    setEnterpriseSharedOperation(undefined);
+    setEnterpriseSharedNotice(undefined);
+  }
+
+  async function loadMoreEnterpriseSharedSpaces() {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedSpacesLoadInFlightRef.current
+      || !enterpriseSharedSpacesMeta.hasNext
+      || enterpriseSharedSpacesMeta.nextCursor.length === 0
+    ) return;
+
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedSpacesLoadInFlightRef.current = true;
+    setEnterpriseSharedSpacesLoading(true);
+    setEnterpriseSharedSpacesError(undefined);
+    try {
+      const response = await activeEnterpriseService.listSharedSpaces({
+        limit: 100,
+        cursor: enterpriseSharedSpacesMeta.nextCursor
+      });
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      setEnterpriseSharedSpaces(previous => mergeSharedSpaces(
+        previous ?? [],
+        response.spaces
+      ));
+      setEnterpriseSharedSpacesMeta(response.meta);
+    } catch (error) {
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+      } else {
+        setEnterpriseSharedSpacesError(
+          formatEnterpriseSharedDriveError(error, '更多共享空间加载失败')
+        );
+      }
+    } finally {
+      if (isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) {
+        enterpriseSharedSpacesLoadInFlightRef.current = false;
+        setEnterpriseSharedSpacesLoading(false);
+      }
+    }
+  }
+
+  async function loadMoreEnterpriseSharedFiles() {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedFilesLoadInFlightRef.current
+      || !enterpriseSharedFilesMeta.hasNext
+      || enterpriseSharedFilesMeta.nextCursor.length === 0
+    ) return;
+
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedFilesLoadInFlightRef.current = true;
+    setEnterpriseSharedFilesLoading(true);
+    setEnterpriseSharedFilesError(undefined);
+    try {
+      const response = await activeEnterpriseService.listSharedFiles({
+        ...(selectedEnterpriseSharedSpaceId === undefined
+          ? {}
+          : { spaceId: selectedEnterpriseSharedSpaceId }),
+        ...(enterpriseSharedQuery.length === 0 ? {} : { query: enterpriseSharedQuery }),
+        limit: 100,
+        cursor: enterpriseSharedFilesMeta.nextCursor
+      });
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      setEnterpriseSharedFiles(previous => mergeSharedFiles(previous ?? [], response.files));
+      setEnterpriseSharedFilesMeta(response.meta);
+    } catch (error) {
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+      } else {
+        setEnterpriseSharedFilesError(
+          formatEnterpriseSharedDriveError(error, '更多共享文件加载失败')
+        );
+      }
+    } finally {
+      if (isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) {
+        enterpriseSharedFilesLoadInFlightRef.current = false;
+        setEnterpriseSharedFilesLoading(false);
+      }
+    }
+  }
+
+  async function uploadEnterpriseSharedFile(spaceId: string, file: File) {
+    const space = enterpriseSharedSpaces?.find(item => item.spaceId === spaceId);
+    if (space?.permissions.write !== true) return;
+    await mutateEnterpriseSharedFile({
+      kind: 'upload',
+      spaceId,
+      logicalPath: file.name,
+      file
+    });
+  }
+
+  async function replaceEnterpriseSharedFile(
+    target: EnterpriseSharedFileResponse,
+    file: File
+  ) {
+    const space = enterpriseSharedSpaces?.find(item => item.spaceId === target.spaceId);
+    if (space?.permissions.write !== true) return;
+    await mutateEnterpriseSharedFile({
+      kind: 'replace',
+      spaceId: target.spaceId,
+      logicalPath: target.logicalPath,
+      expectedRevision: target.revision,
+      file,
+      fileId: target.fileId
+    });
+  }
+
+  async function mutateEnterpriseSharedFile(request: {
+    kind: 'upload' | 'replace';
+    spaceId: string;
+    logicalPath: string;
+    expectedRevision?: number;
+    file: File;
+    fileId?: string;
+  }) {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || enterpriseSharedMutationInFlightRef.current
+    ) return;
+
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedMutationInFlightRef.current = true;
+    setEnterpriseSharedNotice(undefined);
+    setEnterpriseSharedOperation({
+      kind: request.kind,
+      ...(request.fileId === undefined ? {} : { fileId: request.fileId }),
+      fileName: request.logicalPath,
+      status: 'working'
+    });
+    try {
+      const response = await activeEnterpriseService.uploadSharedFile({
+        spaceId: request.spaceId,
+        logicalPath: request.logicalPath,
+        ...(request.expectedRevision === undefined
+          ? {}
+          : { expectedRevision: request.expectedRevision }),
+        file: request.file
+      });
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      setEnterpriseSharedOperation(undefined);
+      setEnterpriseSharedNotice(
+        response.reconciled
+          ? `${response.logicalPath} 已在服务端确认创建成功`
+          : request.kind === 'upload'
+            ? `${response.logicalPath} 已上传`
+            : `${response.logicalPath} 已替换为 revision ${response.revision}`
+      );
+      setEnterpriseSharedFilesReloadKey(current => current + 1);
+    } catch (error) {
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+        setEnterpriseSharedOperation(undefined);
+        return;
+      }
+      let message = formatEnterpriseSharedDriveError(
+        error,
+        request.kind === 'upload' ? '共享文件上传失败' : '共享文件替换失败'
+      );
+      if (error instanceof ApiClientError) {
+        if (error.code === 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT') {
+          const currentRevision = error.details?.currentRevision;
+          message = typeof currentRevision === 'number'
+            ? `远端文件已更新到 revision ${currentRevision}，请刷新后重新替换`
+            : '远端文件已被其他成员修改，请刷新后重新替换';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (
+          error.code === 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN'
+          || error.code === 'ENTERPRISE_FORBIDDEN'
+        ) {
+          message = '当前账户已没有该共享空间的写入权限';
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+        } else if (error.code === 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS') {
+          message = '相同网盘路径已存在，请在文件列表中选择替换';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (
+          error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
+          || error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
+        ) {
+          message = '共享空间或文件已不可访问，正在刷新列表';
+          setEnterpriseSharedSpacesReloadKey(current => current + 1);
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        } else if (error.code === 'ENTERPRISE_SERVICE_UNAVAILABLE') {
+          message = request.kind === 'upload'
+            ? '上传结果未知，请刷新文件列表后再决定是否重试'
+            : '替换结果未知，请刷新并核对 revision 后再操作';
+          setEnterpriseSharedFilesReloadKey(current => current + 1);
+        }
+      }
+      setEnterpriseSharedOperation({
+        kind: request.kind,
+        ...(request.fileId === undefined ? {} : { fileId: request.fileId }),
+        fileName: request.logicalPath,
+        status: 'failed',
+        error: message
+      });
+    } finally {
+      enterpriseSharedMutationInFlightRef.current = false;
+    }
+  }
+
+  async function downloadEnterpriseSharedFile(
+    target: EnterpriseSharedFileResponse,
+    overwrite: boolean
+  ) {
+    const activeEnterpriseService = enterpriseServiceRef.current;
+    if (
+      activeEnterpriseService === null
+      || enterpriseSessionRef.current.status !== 'signed_in'
+      || currentProject === undefined
+      || enterpriseSharedMutationInFlightRef.current
+    ) return;
+
+    const generation = enterpriseSharedDriveGenerationRef.current;
+    enterpriseSharedMutationInFlightRef.current = true;
+    setEnterpriseSharedNotice(undefined);
+    setEnterpriseSharedOperation({
+      kind: 'download',
+      fileId: target.fileId,
+      fileName: target.logicalPath,
+      status: 'working'
+    });
+    try {
+      const response = await activeEnterpriseService.downloadSharedFile({
+        fileId: target.fileId,
+        projectId: currentProject.id,
+        ...(overwrite ? { overwrite: true } : {})
+      });
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      setEnterpriseSharedOperation(undefined);
+      setEnterpriseSharedNotice(
+        `${response.relativePath} 已${response.overwritten ? '覆盖保存' : '保存'}到项目“${currentProject.name}”`
+      );
+    } catch (error) {
+      if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
+      if (isEnterpriseUnauthorized(error)) {
+        handleEnterpriseSessionExpired();
+        setEnterpriseSharedOperation(undefined);
+        return;
+      }
+      if (
+        error instanceof ApiClientError
+        && error.code === 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS'
+        && !overwrite
+      ) {
+        setEnterpriseSharedOperation({
+          kind: 'download',
+          fileId: target.fileId,
+          fileName: target.logicalPath,
+          status: 'requires_overwrite',
+          error: `项目中已存在 ${target.logicalPath}，再次点击覆盖按钮确认替换`
+        });
+        return;
+      }
+      if (
+        error instanceof ApiClientError
+        && error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
+      ) {
+        setEnterpriseSharedFilesReloadKey(current => current + 1);
+      }
+      setEnterpriseSharedOperation({
+        kind: 'download',
+        fileId: target.fileId,
+        fileName: target.logicalPath,
+        status: 'failed',
+        error: formatEnterpriseSharedDriveError(error, '文件保存到项目失败')
+      });
+    } finally {
+      enterpriseSharedMutationInFlightRef.current = false;
+    }
+  }
+
   function selectEnterpriseKnowledgeBase(knowledgeBaseId: string) {
     if (knowledgeBaseId !== selectedEnterpriseKnowledgeBaseId) {
       setSelectedEnterpriseKnowledgeBaseId(knowledgeBaseId);
@@ -3582,405 +3989,6 @@ export function AppController(props: AppControllerProps) {
       });
     } finally {
       enterpriseKnowledgeUploadInFlightRef.current = false;
-    }
-  }
-
-  function refreshEnterpriseSharedDrive() {
-    setEnterpriseSharedOperation(undefined);
-    setEnterpriseSharedNotice(undefined);
-    if (enterpriseSessionRef.current.status === 'signed_in') {
-      setEnterpriseSharedSpacesReloadKey(current => current + 1);
-      setEnterpriseSharedFilesReloadKey(current => current + 1);
-      return;
-    }
-    void refreshEnterpriseSession();
-  }
-
-  function selectEnterpriseSharedSpace(spaceId?: string) {
-    if (spaceId !== selectedEnterpriseSharedSpaceId) {
-      setSelectedEnterpriseSharedSpaceId(spaceId);
-      setEnterpriseSharedFiles(undefined);
-      setEnterpriseSharedFilesError(undefined);
-    }
-    setEnterpriseSharedOperation(undefined);
-    setEnterpriseSharedNotice(undefined);
-  }
-
-  function searchEnterpriseSharedFiles(query: string) {
-    setEnterpriseSharedQuery(query.trim());
-    setEnterpriseSharedOperation(undefined);
-    setEnterpriseSharedNotice(undefined);
-  }
-
-  async function loadMoreEnterpriseSharedSpaces() {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || enterpriseSessionRef.current.status !== 'signed_in'
-      || enterpriseSharedSpacesLoadInFlightRef.current
-      || !enterpriseSharedSpacesMeta.hasNext
-      || enterpriseSharedSpacesMeta.nextCursor.length === 0
-    ) {
-      return;
-    }
-    const generation = enterpriseSharedDriveGenerationRef.current;
-    enterpriseSharedSpacesLoadInFlightRef.current = true;
-    setEnterpriseSharedSpacesLoading(true);
-    setEnterpriseSharedSpacesError(undefined);
-    try {
-      const response = await activeEnterpriseService.listSharedSpaces({
-        limit: 100,
-        cursor: enterpriseSharedSpacesMeta.nextCursor
-      });
-      if (
-        !isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        return;
-      }
-      setEnterpriseSharedSpaces(previous => mergeSharedSpaces(
-        previous ?? [],
-        response.spaces
-      ));
-      setEnterpriseSharedSpacesMeta(response.meta);
-    } catch (error) {
-      if (
-        !isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        return;
-      }
-      if (isEnterpriseUnauthorized(error)) {
-        setEnterpriseSession({
-          status: 'signed_out',
-          reason: 'session_expired',
-          transportSecurity: enterpriseSessionRef.current.transportSecurity
-        });
-      } else {
-        setEnterpriseSharedSpacesError(
-          formatEnterpriseSharedDriveError(error, '更多共享空间加载失败')
-        );
-      }
-    } finally {
-      if (
-        isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        enterpriseSharedSpacesLoadInFlightRef.current = false;
-        setEnterpriseSharedSpacesLoading(false);
-      }
-    }
-  }
-
-  async function loadMoreEnterpriseSharedFiles() {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || enterpriseSessionRef.current.status !== 'signed_in'
-      || enterpriseSharedFilesLoadInFlightRef.current
-      || !enterpriseSharedFilesMeta.hasNext
-      || enterpriseSharedFilesMeta.nextCursor.length === 0
-    ) {
-      return;
-    }
-    const generation = enterpriseSharedDriveGenerationRef.current;
-    enterpriseSharedFilesLoadInFlightRef.current = true;
-    setEnterpriseSharedFilesLoading(true);
-    setEnterpriseSharedFilesError(undefined);
-    try {
-      const response = await activeEnterpriseService.listSharedFiles({
-        ...(selectedEnterpriseSharedSpaceId === undefined
-          ? {}
-          : { spaceId: selectedEnterpriseSharedSpaceId }),
-        ...(enterpriseSharedQuery.length === 0
-          ? {}
-          : { query: enterpriseSharedQuery }),
-        limit: 100,
-        cursor: enterpriseSharedFilesMeta.nextCursor
-      });
-      if (
-        !isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        return;
-      }
-      setEnterpriseSharedFiles(previous => mergeSharedFiles(
-        previous ?? [],
-        response.files
-      ));
-      setEnterpriseSharedFilesMeta(response.meta);
-    } catch (error) {
-      if (
-        !isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        return;
-      }
-      if (isEnterpriseUnauthorized(error)) {
-        setEnterpriseSession({
-          status: 'signed_out',
-          reason: 'session_expired',
-          transportSecurity: enterpriseSessionRef.current.transportSecurity
-        });
-      } else {
-        setEnterpriseSharedFilesError(
-          formatEnterpriseSharedDriveError(error, '更多共享文件加载失败')
-        );
-      }
-    } finally {
-      if (
-        isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        enterpriseSharedFilesLoadInFlightRef.current = false;
-        setEnterpriseSharedFilesLoading(false);
-      }
-    }
-  }
-
-  async function uploadEnterpriseSharedFile(spaceId: string, file: File) {
-    const space = enterpriseSharedSpaces?.find(item => item.spaceId === spaceId);
-    if (space?.permissions.write !== true) return;
-    await mutateEnterpriseSharedFile({
-      kind: 'upload',
-      spaceId,
-      logicalPath: file.name,
-      file
-    });
-  }
-
-  async function replaceEnterpriseSharedFile(
-    target: EnterpriseSharedFileResponse,
-    file: File
-  ) {
-    const space = enterpriseSharedSpaces?.find(
-      item => item.spaceId === target.spaceId
-    );
-    if (space?.permissions.write !== true) return;
-    await mutateEnterpriseSharedFile({
-      kind: 'replace',
-      spaceId: target.spaceId,
-      logicalPath: target.logicalPath,
-      expectedRevision: target.revision,
-      file,
-      fileId: target.fileId
-    });
-  }
-
-  async function mutateEnterpriseSharedFile(request: {
-    kind: 'upload' | 'replace';
-    spaceId: string;
-    logicalPath: string;
-    expectedRevision?: number;
-    file: File;
-    fileId?: string;
-  }) {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || enterpriseSessionRef.current.status !== 'signed_in'
-      || enterpriseSharedMutationInFlightRef.current
-    ) {
-      return;
-    }
-    const generation = enterpriseSharedDriveGenerationRef.current;
-    enterpriseSharedMutationInFlightRef.current = true;
-    setEnterpriseSharedNotice(undefined);
-    setEnterpriseSharedOperation({
-      kind: request.kind,
-      ...(request.fileId === undefined ? {} : { fileId: request.fileId }),
-      fileName: request.logicalPath,
-      status: 'working'
-    });
-    try {
-      const response = await activeEnterpriseService.uploadSharedFile({
-        spaceId: request.spaceId,
-        logicalPath: request.logicalPath,
-        ...(request.expectedRevision === undefined
-          ? {}
-          : { expectedRevision: request.expectedRevision }),
-        file: request.file
-      });
-      if (
-        !isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        return;
-      }
-      setEnterpriseSharedOperation(undefined);
-      setEnterpriseSharedNotice(
-        response.reconciled
-          ? `${response.logicalPath} 已在服务端确认创建成功`
-          : request.kind === 'upload'
-            ? `${response.logicalPath} 已上传`
-            : `${response.logicalPath} 已替换为 revision ${response.revision}`
-      );
-      setEnterpriseSharedFilesReloadKey(current => current + 1);
-    } catch (error) {
-      if (
-        !isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        return;
-      }
-      if (isEnterpriseUnauthorized(error)) {
-        setEnterpriseSession({
-          status: 'signed_out',
-          reason: 'session_expired',
-          transportSecurity: enterpriseSessionRef.current.transportSecurity
-        });
-        setEnterpriseSharedOperation(undefined);
-        return;
-      }
-      let message = formatEnterpriseSharedDriveError(
-        error,
-        request.kind === 'upload' ? '共享文件上传失败' : '共享文件替换失败'
-      );
-      if (error instanceof ApiClientError) {
-        if (error.code === 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT') {
-          const currentRevision = error.details?.currentRevision;
-          message = typeof currentRevision === 'number'
-            ? `远端文件已更新到 revision ${currentRevision}，请刷新后重新替换`
-            : '远端文件已被其他成员修改，请刷新后重新替换';
-          setEnterpriseSharedFilesReloadKey(current => current + 1);
-        } else if (
-          error.code === 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN'
-          || error.code === 'ENTERPRISE_FORBIDDEN'
-        ) {
-          message = '当前账户已没有该共享空间的写入权限';
-          setEnterpriseSharedSpacesReloadKey(current => current + 1);
-        } else if (error.code === 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS') {
-          message = '相同网盘路径已存在，请在文件列表中选择替换';
-          setEnterpriseSharedFilesReloadKey(current => current + 1);
-        } else if (
-          error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
-          || error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
-        ) {
-          message = '共享空间或文件已不可访问，正在刷新列表';
-          setEnterpriseSharedSpacesReloadKey(current => current + 1);
-          setEnterpriseSharedFilesReloadKey(current => current + 1);
-        } else if (error.code === 'ENTERPRISE_SERVICE_UNAVAILABLE') {
-          message = request.kind === 'upload'
-            ? '上传结果未知，请刷新文件列表后再决定是否重试'
-            : '替换结果未知，请刷新并核对 revision 后再操作';
-          setEnterpriseSharedFilesReloadKey(current => current + 1);
-        }
-      }
-      setEnterpriseSharedOperation({
-        kind: request.kind,
-        ...(request.fileId === undefined ? {} : { fileId: request.fileId }),
-        fileName: request.logicalPath,
-        status: 'failed',
-        error: message
-      });
-    } finally {
-      enterpriseSharedMutationInFlightRef.current = false;
-    }
-  }
-
-  async function downloadEnterpriseSharedFile(
-    target: EnterpriseSharedFileResponse,
-    overwrite: boolean
-  ) {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || enterpriseSessionRef.current.status !== 'signed_in'
-      || currentProject === undefined
-      || enterpriseSharedMutationInFlightRef.current
-    ) {
-      return;
-    }
-    const generation = enterpriseSharedDriveGenerationRef.current;
-    enterpriseSharedMutationInFlightRef.current = true;
-    setEnterpriseSharedNotice(undefined);
-    setEnterpriseSharedOperation({
-      kind: 'download',
-      fileId: target.fileId,
-      fileName: target.logicalPath,
-      status: 'working'
-    });
-    try {
-      const response = await activeEnterpriseService.downloadSharedFile({
-        fileId: target.fileId,
-        projectId: currentProject.id,
-        ...(overwrite ? { overwrite: true } : {})
-      });
-      if (
-        !isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        return;
-      }
-      setEnterpriseSharedOperation(undefined);
-      setEnterpriseSharedNotice(
-        `${response.relativePath} 已${response.overwritten ? '覆盖保存' : '保存'}到项目“${currentProject.name}”`
-      );
-    } catch (error) {
-      if (
-        !isCurrentEnterpriseSharedDriveRuntime(
-          generation,
-          activeEnterpriseService
-        )
-      ) {
-        return;
-      }
-      if (isEnterpriseUnauthorized(error)) {
-        setEnterpriseSession({
-          status: 'signed_out',
-          reason: 'session_expired',
-          transportSecurity: enterpriseSessionRef.current.transportSecurity
-        });
-        setEnterpriseSharedOperation(undefined);
-        return;
-      }
-      if (
-        error instanceof ApiClientError
-        && error.code === 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS'
-        && !overwrite
-      ) {
-        setEnterpriseSharedOperation({
-          kind: 'download',
-          fileId: target.fileId,
-          fileName: target.logicalPath,
-          status: 'requires_overwrite',
-          error: `项目中已存在 ${target.logicalPath}，再次点击覆盖按钮确认替换`
-        });
-        return;
-      }
-      if (
-        error instanceof ApiClientError
-        && error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
-      ) {
-        setEnterpriseSharedFilesReloadKey(current => current + 1);
-      }
-      setEnterpriseSharedOperation({
-        kind: 'download',
-        fileId: target.fileId,
-        fileName: target.logicalPath,
-        status: 'failed',
-        error: formatEnterpriseSharedDriveError(error, '文件保存到项目失败')
-      });
-    } finally {
-      enterpriseSharedMutationInFlightRef.current = false;
     }
   }
 
@@ -4914,21 +4922,6 @@ export function AppController(props: AppControllerProps) {
 
   function handleScheduleChanged(schedule: ScheduleResponse) {
     setRuntimeSchedules(previous => upsertSchedule(previous, schedule));
-    if (runtimeThreadsRef.current.some(thread => thread.id === schedule.threadId)) return;
-
-    const activeThreadService = threadServiceRef.current;
-    if (activeThreadService === null) return;
-    void activeThreadService.getThread(schedule.threadId).then(response => {
-      if (
-        !mountedRef.current
-        || threadServiceRef.current !== activeThreadService
-      ) {
-        return;
-      }
-      setRuntimeThreads(previous => upsertThread(previous, response.thread));
-    }).catch(() => {
-      // The schedule list remains usable; opening the task retries the thread lookup.
-    });
   }
 
   function handleScheduleDeleted(schedule: ScheduleResponse) {
@@ -5339,6 +5332,9 @@ export function AppController(props: AppControllerProps) {
       className={[
         'conversation-page',
         showConversationEmptyState ? 'is-empty' : undefined,
+        !useIntegratedConversationTitleBar && showConversationHeader
+          ? 'has-header'
+          : undefined,
         useIntegratedConversationTitleBar ? 'has-integrated-header' : undefined,
         useIntegratedConversationTitleBar && conversationTaskToolbar !== undefined
           ? 'has-task-strip'
@@ -5463,6 +5459,17 @@ export function AppController(props: AppControllerProps) {
           slashCommands={slashCommands}
           slashCommandsLoading={capabilitiesLoading}
           slashCommandsError={capabilitiesLoadError}
+          onLoadConnectors={
+            enterpriseService === null || enterpriseSession.status !== 'signed_in'
+              ? undefined
+              : loadComposerConnectors
+          }
+          preloadConnectors={props.requireEnterpriseLogin !== false}
+          onToggleConnector={
+            enterpriseService === null || enterpriseSession.status !== 'signed_in'
+              ? undefined
+              : toggleComposerConnector
+          }
           queuedItems={composerQueuedItems}
           imageInputSupported={imageInputSupported}
           imageInputUnsupportedReason={
@@ -5491,6 +5498,8 @@ export function AppController(props: AppControllerProps) {
           onModelConfigChange={handleComposerModelConfigChange}
           onDraftApplied={handleComposerDraftApplied}
           onFocusRequestApplied={handleComposerFocusRequestApplied}
+          onManageSkills={() => navigateToRoute({ view: 'plugins' })}
+          onManageConnectors={() => navigateToRoute({ view: 'connections' })}
           onCancel={() => void cancelActiveRun()}
           onCancelQueuedRun={(runId) => void cancelQueuedRun(runId)}
           onSteerQueuedRun={(runId) => void steerQueuedRun(runId)}
@@ -5627,6 +5636,7 @@ export function AppController(props: AppControllerProps) {
         navigateToRoute({ view: 'account' });
       }}
       onRefresh={refreshEnterpriseKnowledge}
+      onStartConversation={() => void startKnowledgeConversation()}
       onSelectKnowledgeBase={selectEnterpriseKnowledgeBase}
       onUpload={file => void uploadEnterpriseKnowledgeDocument(file)}
     />
@@ -5659,12 +5669,8 @@ export function AppController(props: AppControllerProps) {
       onSelectSpace={selectEnterpriseSharedSpace}
       onSearch={searchEnterpriseSharedFiles}
       onLoadMoreFiles={() => void loadMoreEnterpriseSharedFiles()}
-      onUpload={(spaceId, file) => {
-        void uploadEnterpriseSharedFile(spaceId, file);
-      }}
-      onReplace={(target, file) => {
-        void replaceEnterpriseSharedFile(target, file);
-      }}
+      onUpload={(spaceId, file) => void uploadEnterpriseSharedFile(spaceId, file)}
+      onReplace={(target, file) => void replaceEnterpriseSharedFile(target, file)}
       onDownload={(target, overwrite) => {
         void downloadEnterpriseSharedFile(target, overwrite);
       }}
@@ -5728,6 +5734,8 @@ export function AppController(props: AppControllerProps) {
       checkingTimedOut={enterpriseCheckingTimedOut}
       onLogin={loginEnterprise}
       onRegister={registerEnterprise}
+      onStartQrLogin={startEnterpriseQrLogin}
+      onPollQrLogin={pollEnterpriseQrLogin}
       onLogout={logoutEnterprise}
       onRefresh={refreshEnterpriseSession}
     />
@@ -5790,8 +5798,6 @@ export function AppController(props: AppControllerProps) {
 
   if (
     props.requireEnterpriseLogin !== false
-    &&
-    connectionState.status === 'connected'
     && enterpriseSession.status !== 'signed_in'
   ) {
     return (
@@ -5813,11 +5819,13 @@ export function AppController(props: AppControllerProps) {
         <Suspense fallback={<PageLoading />}>
           <EnterpriseAccountPage
             required
-            connected
+            connected={connectionState.status === 'connected'}
             session={enterpriseSession}
             checkingTimedOut={enterpriseCheckingTimedOut}
             onLogin={loginEnterprise}
             onRegister={registerEnterprise}
+            onStartQrLogin={startEnterpriseQrLogin}
+            onPollQrLogin={pollEnterpriseQrLogin}
             onLogout={logoutEnterprise}
             onRefresh={refreshEnterpriseSession}
           />
@@ -5857,7 +5865,7 @@ export function AppController(props: AppControllerProps) {
         <ClaweeSidebar
           projects={projects}
           conversations={conversations}
-          recentItems={recentSidebarItems}
+          tasks={sidebarTasks}
           runningConversationIds={runningConversationIds}
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
@@ -5894,7 +5902,13 @@ export function AppController(props: AppControllerProps) {
           }
           onArchiveProject={projectId => void archiveProject(projectId)}
           onArchiveConversation={threadId => archiveConversation(threadId)}
+          onRenameConversation={(threadId, title) => renameConversation(threadId, title)}
+          onPinConversation={(threadId, pinned) => pinConversation(threadId, pinned)}
+          onDeleteConversation={threadId => deleteConversation(threadId)}
           onDeleteTaskDraft={threadId => deleteScheduleDraft(threadId)}
+          onArchiveTask={task => archiveSidebarTask(task)}
+          onRenameTask={(task, title) => renameSidebarTask(task, title)}
+          onDeleteTask={task => deleteSidebarTask(task)}
           onOpenSettings={() => {
             closeMobileSidebar();
             dispatch({ type: 'open_settings' });
@@ -6363,8 +6377,9 @@ function mapThreadToConversation(
     id: thread.id,
     projectId: thread.projectId,
     title: thread.title ?? thread.codexThreadId ?? thread.id,
+    updatedLabel: formatRelativeTime(thread.updatedAt),
     updatedAt: thread.updatedAt,
-    updatedLabel: formatRelativeTime(thread.updatedAt)
+    pinnedAt: thread.pinnedAt
   };
 }
 
@@ -6429,51 +6444,15 @@ function normalizePathForCompare(path: string): string {
   return path.replace(/^~(?=\/)/, '').replace(/\/+$/, '');
 }
 
-function compareRecentSidebarItems(
-  left: SidebarRecentItem,
-  right: SidebarRecentItem
-): number {
-  const leftTimestamp = parseRuntimeTimestamp(left.updatedAt);
-  const rightTimestamp = parseRuntimeTimestamp(right.updatedAt);
-  if (Number.isFinite(leftTimestamp) && Number.isFinite(rightTimestamp)) {
-    const timestampDifference = rightTimestamp - leftTimestamp;
-    if (timestampDifference !== 0) return timestampDifference;
-  } else if (Number.isFinite(leftTimestamp)) {
-    return -1;
-  } else if (Number.isFinite(rightTimestamp)) {
-    return 1;
-  }
-  return right.id.localeCompare(left.id);
-}
-
-function latestRuntimeTimestamp(
-  ...values: Array<string | undefined>
-): string | undefined {
-  let latest: string | undefined;
-  let latestTimestamp = Number.NEGATIVE_INFINITY;
-  for (const value of values) {
-    if (value === undefined) continue;
-    const timestamp = parseRuntimeTimestamp(value);
-    if (!Number.isFinite(timestamp) || timestamp < latestTimestamp) continue;
-    latest = value;
-    latestTimestamp = timestamp;
-  }
-  return latest;
-}
-
-function parseRuntimeTimestamp(iso: string): number {
+export function formatRelativeTime(iso: string): string {
   const sqliteUtc = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(\.\d{1,3})?$/.exec(
     iso
   );
-  return Date.parse(
+  const timestamp = Date.parse(
     sqliteUtc === null
       ? iso
       : `${sqliteUtc[1]}T${sqliteUtc[2]}${sqliteUtc[3] ?? ''}Z`
   );
-}
-
-export function formatRelativeTime(iso: string): string {
-  const timestamp = parseRuntimeTimestamp(iso);
   if (!Number.isFinite(timestamp)) return '';
 
   const diffMs = Math.max(0, Date.now() - timestamp);
@@ -6500,6 +6479,22 @@ function isEnterpriseUnauthorized(error: unknown): boolean {
       || error.code === 'ENTERPRISE_UNAUTHORIZED'
       || error.code === 'ENTERPRISE_SESSION_EXPIRED'
     );
+}
+
+function formatEnterpriseConnectorError(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
+  switch (error.code) {
+    case 'ENTERPRISE_AGENT_FORBIDDEN':
+      return '当前设备的企业 Agent 已停用';
+    case 'ENTERPRISE_SERVICE_UNAVAILABLE':
+      return '企业连接服务暂时不可用';
+    case 'ENTERPRISE_PROTOCOL_ERROR':
+      return '企业连接服务返回了无法识别的数据';
+    case 'ENTERPRISE_RATE_LIMITED':
+      return '连接器目录请求过于频繁，请稍后重试';
+    default:
+      return error.message.trim().length > 0 ? error.message : fallback;
+  }
 }
 
 function formatEnterpriseSkillError(error: unknown, fallback: string): string {
@@ -6558,13 +6553,8 @@ function formatEnterpriseKnowledgeError(error: unknown, fallback: string): strin
   }
 }
 
-function formatEnterpriseSharedDriveError(
-  error: unknown,
-  fallback: string
-): string {
-  if (!(error instanceof ApiClientError)) {
-    return getRuntimeErrorMessage(error, fallback);
-  }
+function formatEnterpriseSharedDriveError(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
   switch (error.code) {
     case 'ENTERPRISE_FORBIDDEN':
       return '当前账户没有共享网盘访问权限';
@@ -6632,8 +6622,8 @@ function buildThreadRequest(
   prompt: string,
   project: ClaweeProject,
   config: ComposerRunConfig
-): CreateThreadRequest {
-  const request: CreateThreadRequest = {
+): Extract<CreateThreadRequest, { projectId: string }> {
+  const request: Extract<CreateThreadRequest, { projectId: string }> = {
     projectId: project.id,
     title: prompt.trim() || '新对话',
     profile: config.profile,
@@ -6735,10 +6725,11 @@ function readMcpCapabilities(connectionState: ConnectionState): McpCapabilities 
   };
 }
 
-function buildComposerSlashCommands(
-  skills: CodexSkillListResponse | undefined
+export function buildComposerSlashCommands(
+  skills: CodexSkillListResponse | undefined,
+  mcp: CodexMcpListResponse | undefined
 ): ComposerSlashCommand[] {
-  return (skills?.skills ?? [])
+  const skillCommands = (skills?.skills ?? [])
     .filter(skill => skill.status === 'valid')
     .map(skill => ({
       id: `skill:${skill.id}`,
@@ -6747,6 +6738,41 @@ function buildComposerSlashCommands(
       description: skill.description ?? skill.id,
       insertText: `$${skill.id} `
     }));
+  const mcpCommands = (mcp?.servers ?? [])
+    .filter(server => server.status === 'configured')
+    .map(server => ({
+      id: `mcp:${server.name}`,
+      category: 'mcp' as const,
+      label: server.name,
+      description: `${server.transport} · 已配置`,
+      insertText: `使用 MCP：${server.name} `
+    }));
+  return [...skillCommands, ...mcpCommands];
+}
+
+export function buildComposerConnectors(
+  catalog: EnterpriseMcpCatalogResponse
+): ComposerConnector[] {
+  return catalog.upstreams.map(upstream => {
+    const authorizedTools = upstream.tools.filter(tool => tool.authorized).length;
+    const scope = upstream.domain.trim() || upstream.namespace.trim() || '企业连接器';
+    const status: ComposerConnector['status'] = upstream.status !== 'active'
+      ? 'unavailable'
+      : upstream.enabled
+        ? 'enabled'
+        : upstream.installed
+          ? 'installed'
+          : 'available';
+    return {
+      id: `enterprise:${upstream.upstreamId}`,
+      label: upstream.name,
+      description: `${scope} · ${authorizedTools}/${upstream.tools.length} 项工具已授权`,
+      status,
+      ...(status === 'enabled'
+        ? { insertText: `使用连接器：${upstream.name} ` }
+        : {})
+    };
+  });
 }
 
 function toRuntimeSandbox(permission: ClaweeProject['sandbox'] | undefined): SandboxMode {

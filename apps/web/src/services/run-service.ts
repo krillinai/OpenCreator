@@ -41,6 +41,12 @@ export function createRunService(client: ClientLike) {
       if (input.submissionMode !== undefined) body.submissionMode = input.submissionMode;
       return client.post('/runs', body);
     },
+    startKnowledgeRun(input: { threadId: string; prompt: string }): Promise<RunResponse> {
+      return client.post(
+        `/enterprise/knowledge-conversations/${encodeURIComponent(input.threadId)}/runs`,
+        { prompt: input.prompt }
+      );
+    },
     startStandaloneRun(input: { prompt: string; cwd?: string; profile?: string }): Promise<RunResponse> {
       return client.post('/runs', input);
     },

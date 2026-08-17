@@ -50,6 +50,7 @@ describe('enterprise session manager', () => {
       expect(manager.getSnapshot()).toEqual({
         status: 'signed_in',
         account: {
+          subjectId: 'acct_01JZ8W6A2M4S',
           email: 'user@example.com',
           name: 'User'
         },
@@ -252,7 +253,11 @@ describe('enterprise session manager', () => {
 
   it('sends one stable agent id through login and validation', async () => {
     const login = vi.fn(async () => ({
-      account: { email: 'user@example.com', name: 'User' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
       agentId,
       accessToken: credential.accessToken,
       tokenType: 'Bearer' as const,
@@ -277,129 +282,25 @@ describe('enterprise session manager', () => {
     expect(getMe).toHaveBeenCalledWith(credential.accessToken);
   });
 
-  it('installs the collector after authentication without blocking sign-in', async () => {
-    const installation = deferred<void>();
-    const install = vi.fn(async () => installation.promise);
+  it('fails a stale identity check after a concurrent logout', async () => {
+    const me = deferred<EnterpriseMeResult>();
     const manager = createEnterpriseSessionManager({
       agentIdentityStore: createAgentIdentityStore(),
-      collectorInstaller: {
-        install,
-        close: vi.fn(async () => undefined)
-      },
-      credentialStore: createStore(),
-      httpClient: createClient({
-        getMe: vi.fn(async () => ({
-          ...activeMe(),
-          collectorRegistration: collectorRegistration()
-        }))
-      }),
+      credentialStore: createStore(credential),
+      httpClient: createClient({ getMe: vi.fn(async () => me.promise) }),
       transportSecurity: 'secure_https'
     });
 
-    await expect(manager.login({
-      email: 'user@example.com',
-      password: 'password-123'
-    })).resolves.toMatchObject({
-      status: 'signed_in',
-      collector: { status: 'installing' }
-    });
-    expect(install).toHaveBeenCalledWith(collectorRegistration());
+    const identity = manager.requireIdentity();
+    await vi.waitFor(() => expect(manager.getSnapshot().status).toBe('checking'));
+    await manager.logout();
+    me.resolve(activeMe());
 
-    installation.resolve(undefined);
-    await vi.waitFor(() => {
-      expect(manager.getSnapshot()).toMatchObject({
-        status: 'signed_in',
-        collector: { status: 'installed' }
-      });
+    await expect(identity).rejects.toMatchObject({
+      code: 'ENTERPRISE_UNAUTHORIZED',
+      statusCode: 401
     });
-  });
-
-  it.each([
-    { operation: 'restore' as const },
-    { operation: 'refresh' as const },
-    { operation: 'register' as const }
-  ])('installs the collector after $operation authentication', async ({ operation }) => {
-    const install = vi.fn(async () => undefined);
-    const manager = createEnterpriseSessionManager({
-      agentIdentityStore: createAgentIdentityStore(),
-      collectorInstaller: {
-        install,
-        close: vi.fn(async () => undefined)
-      },
-      credentialStore: createStore(
-        operation === 'register' ? undefined : credential
-      ),
-      httpClient: createClient({
-        getMe: vi.fn(async () => ({
-          ...activeMe(),
-          collectorRegistration: collectorRegistration()
-        }))
-      }),
-      transportSecurity: 'secure_https'
-    });
-
-    if (operation === 'restore') {
-      manager.startRestore();
-    } else if (operation === 'refresh') {
-      await manager.refresh();
-    } else {
-      await manager.register({
-        email: 'user@example.com',
-        name: 'User',
-        password: 'password-123'
-      });
-    }
-
-    await vi.waitFor(() => {
-      expect(manager.getSnapshot()).toMatchObject({
-        status: 'signed_in',
-        collector: { status: 'installed' }
-      });
-    });
-    expect(install).toHaveBeenCalledOnce();
-    expect(install).toHaveBeenCalledWith(collectorRegistration());
-  });
-
-  it('keeps the authenticated session when collector installation fails', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const manager = createEnterpriseSessionManager({
-      agentIdentityStore: createAgentIdentityStore(),
-      collectorInstaller: {
-        install: vi.fn(async () => {
-          throw new EnterpriseCollectorInstallError(
-            'COLLECTOR_INSTALL_FAILED'
-          );
-        }),
-        close: vi.fn(async () => undefined)
-      },
-      credentialStore: createStore(),
-      httpClient: createClient({
-        getMe: vi.fn(async () => ({
-          ...activeMe(),
-          collectorRegistration: collectorRegistration()
-        }))
-      }),
-      transportSecurity: 'secure_https'
-    });
-
-    await expect(manager.login({
-      email: 'user@example.com',
-      password: 'password-123'
-    })).resolves.toMatchObject({ status: 'signed_in' });
-    await vi.waitFor(() => {
-      expect(manager.getSnapshot()).toMatchObject({
-        status: 'signed_in',
-        collector: {
-          status: 'failed',
-          errorCode: 'COLLECTOR_INSTALL_FAILED'
-        }
-      });
-    });
-    expect(JSON.stringify(manager.getSnapshot())).not.toContain('secret');
-    expect(warn).toHaveBeenCalledWith(
-      'Enterprise collector installation failed [COLLECTOR_INSTALL_FAILED]'
-    );
-    warn.mockRestore();
+    expect(manager.getSnapshot().status).toBe('signed_out');
   });
 
   it('rejects mismatched agent identities without persisting a session', async () => {
@@ -410,7 +311,11 @@ describe('enterprise session manager', () => {
       credentialStore: store,
       httpClient: createClient({
         login: vi.fn(async () => ({
-          account: { email: 'user@example.com', name: 'User' },
+          account: {
+            subjectId: 'acct_01JZ8W6A2M4S',
+            email: 'user@example.com',
+            name: 'User'
+          },
           agentId: 'clawee_123e4567-e89b-42d3-a456-426614174000',
           accessToken: credential.accessToken,
           tokenType: 'Bearer' as const,
@@ -493,7 +398,11 @@ function createClient(
   return {
     register: vi.fn(async () => undefined),
     login: vi.fn(async () => ({
-      account: { email: 'user@example.com', name: 'User' },
+      account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User'
+      },
       agentId,
       accessToken: credential.accessToken,
       tokenType: 'Bearer' as const,
@@ -514,27 +423,13 @@ function createClient(
     uploadKnowledgeDocument: vi.fn(async () => {
       throw new Error('not implemented');
     }),
-    listSharedSpaces: vi.fn(async () => ({
-      spaces: [],
-      meta: {
-        nextCursor: '',
-        hasNext: false,
-        maxFileSizeBytes: 1024 * 1024 * 1024
-      }
-    })),
-    listSharedFiles: vi.fn(async () => ({
-      files: [],
-      meta: { nextCursor: '', hasNext: false }
-    })),
-    getSharedFileDetail: vi.fn(async () => {
-      throw new Error('not implemented');
-    }),
-    downloadSharedFileContent: vi.fn(async () => {
-      throw new Error('not implemented');
-    }),
-    uploadSharedFileContent: vi.fn(async () => {
-      throw new Error('not implemented');
-    }),
+    listSharedSpaces: vi.fn(),
+    listSharedFiles: vi.fn(),
+    getSharedFileDetail: vi.fn(),
+    downloadSharedFileContent: vi.fn(),
+    uploadSharedFileContent: vi.fn(),
+    hasKnowledgeSearchGrant: vi.fn(async () => false),
+    searchKnowledge: vi.fn(async () => []),
     listSkills: vi.fn(async () => []),
     getSkillDetail: vi.fn(async () => {
       throw new Error('not implemented');
@@ -549,6 +444,7 @@ function createClient(
 function activeMe(): EnterpriseMeResult {
   return {
     account: {
+      subjectId: 'acct_01JZ8W6A2M4S',
       email: 'user@example.com',
       name: 'User'
     },

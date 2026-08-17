@@ -28,6 +28,12 @@ const mcpPreferenceSchema = z.object({
   'at least one MCP preference field is required'
 );
 
+const qrLoginStartSchema = z.object({
+  provider: z.enum(['feishu', 'dingtalk', 'wecom'])
+}).strict();
+
+const qrLoginRequestIdSchema = z.string().trim().min(1).max(256);
+
 export async function registerEnterpriseRoutes(
   server: FastifyInstance,
   input: {
@@ -83,6 +89,47 @@ export async function registerEnterpriseRoutes(
       return sendEnterpriseError(reply, error);
     }
   });
+
+  server.post<{ Body: unknown }>('/enterprise/qr-login', async (request, reply) => {
+    const parsed = qrLoginStartSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send(
+        apiError('VALIDATION_FAILED', 'QR login provider is invalid')
+      );
+    }
+    if (input.sessionManager.startQrLogin === undefined) {
+      return reply.code(503).send(
+        apiError('ENTERPRISE_SERVICE_UNAVAILABLE', 'QR login is unavailable')
+      );
+    }
+    try {
+      return await input.sessionManager.startQrLogin(parsed.data);
+    } catch (error) {
+      return sendEnterpriseError(reply, error);
+    }
+  });
+
+  server.get<{ Params: { requestId: string } }>(
+    '/enterprise/qr-login/:requestId',
+    async (request, reply) => {
+      const parsed = qrLoginRequestIdSchema.safeParse(request.params.requestId);
+      if (!parsed.success) {
+        return reply.code(400).send(
+          apiError('VALIDATION_FAILED', 'QR login request is invalid')
+        );
+      }
+      if (input.sessionManager.pollQrLogin === undefined) {
+        return reply.code(503).send(
+          apiError('ENTERPRISE_SERVICE_UNAVAILABLE', 'QR login is unavailable')
+        );
+      }
+      try {
+        return await input.sessionManager.pollQrLogin(parsed.data);
+      } catch (error) {
+        return sendEnterpriseError(reply, error);
+      }
+    }
+  );
 
   server.post('/enterprise/logout', async (_request, reply) => {
     try {

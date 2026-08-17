@@ -78,8 +78,7 @@ test('browser first launch uses the Runtime default project without desktop-only
 
   await page.getByRole('button', { name: '选择项目 默认项目' }).click();
   await page.getByRole('button', { name: '新建项目' }).click();
-  await expect(page.getByRole('menuitem', { name: '使用现有文件夹' })).toHaveCount(0);
-  await page.getByRole('menuitem', { name: '新建空白项目' }).click();
+  await expect(page.getByRole('dialog', { name: '创建项目' })).toBeVisible();
   await page.getByRole('textbox', { name: '文件夹名称' }).fill('browser-project');
   await page.getByRole('button', { name: '创建', exact: true }).click();
 

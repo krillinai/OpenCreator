@@ -2,9 +2,9 @@ import { BarChart3, Megaphone, Sparkles, TrendingUp } from 'lucide-react';
 
 const starterTags = [
   { label: '数据分析', icon: BarChart3 },
-  { label: '获客转化', icon: TrendingUp },
-  { label: '内容创意生成', icon: Sparkles },
-  { label: '广告投放', icon: Megaphone }
+  { label: '脚本选题生成', icon: TrendingUp },
+  { label: '广告素材审核', icon: Sparkles },
+  { label: '视频发布', icon: Megaphone }
 ] as const;
 
 export function ConversationEmptyState(props: { nickname?: string; now?: Date }) {

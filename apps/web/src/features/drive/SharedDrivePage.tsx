@@ -358,7 +358,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                           <th>更新者</th>
                           <th>更新时间</th>
                           <th>大小</th>
-                          <th aria-label="操作" />
+                          <th className="shared-drive-actions-cell" aria-label="操作" />
                         </tr>
                       </thead>
                       <tbody>
@@ -374,7 +374,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                           );
                           return (
                             <tr key={file.fileId}>
-                              <td>
+                              <td className="shared-drive-actions-cell">
                                 <span className="shared-drive-file-name">
                                   <FileTypeIcon contentType={file.contentType} />
                                   <span>

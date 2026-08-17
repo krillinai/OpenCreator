@@ -13,7 +13,7 @@ import {
 
 const signedInSession: EnterpriseSessionResponse = {
   status: 'signed_in',
-  account: { email: 'member@example.com', name: '企业成员' },
+  account: { subjectId: 'acct-member', email: 'member@example.com', name: '企业成员' },
   transportSecurity: 'secure_https'
 };
 
@@ -83,13 +83,14 @@ describe('KnowledgePage', () => {
   it('renders only authorized knowledge bases and loads the selected document list', async () => {
     const user = userEvent.setup();
     const onSelectKnowledgeBase = vi.fn();
-    renderKnowledge({
+    const view = renderKnowledge({
       knowledgeBases: [writableKnowledgeBase, readOnlyKnowledgeBase],
       selectedKnowledgeBaseId: writableKnowledgeBase.knowledgeBaseId,
       documents: [
         createDocument({
           documentId: 'doc-ready',
-          name: '产品手册.pdf',
+          name: '产品手册.docx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
           status: 'ready',
           sizeBytes: 1536
         }),
@@ -104,13 +105,27 @@ describe('KnowledgePage', () => {
     });
 
     expect(screen.getByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
+    expect(screen.queryByText('企业成员')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新企业知识库' }))
+      .toBeInTheDocument();
+    const documentHeader = view.container.querySelector('.knowledge-documents-header');
+    expect(documentHeader).not.toBeNull();
+    expect(within(documentHeader as HTMLElement).queryByText('企业授权内容'))
+      .not.toBeInTheDocument();
+    expect(within(documentHeader as HTMLElement).queryByText('可用'))
+      .not.toBeInTheDocument();
+    expect(within(documentHeader as HTMLElement).queryByText('2 个文档'))
+      .not.toBeInTheDocument();
     const libraryPane = screen.getByRole('navigation', { name: '授权知识库' });
     expect(within(libraryPane).getByText('产品资料')).toBeInTheDocument();
     expect(within(libraryPane).getByText('公司制度')).toBeInTheDocument();
     expect(within(libraryPane).getByText('可上传')).toBeInTheDocument();
 
     const table = screen.getByRole('table');
-    expect(within(table).getByText('产品手册.pdf')).toBeInTheDocument();
+    expect(within(table).getByText('产品手册.docx')).toBeInTheDocument();
+    expect(within(table).queryByText(
+      'VND.OPENXMLFORMATS-OFFICEDOCUMENT.WORDPROCESSINGML.DOCUMENT'
+    )).not.toBeInTheDocument();
     expect(within(table).getByText('1.5 KiB')).toBeInTheDocument();
     expect(within(table).getByText('处理失败')).toBeInTheDocument();
     expect(within(table).getByText('内容解析失败')).toBeInTheDocument();
@@ -226,6 +241,23 @@ describe('KnowledgePage', () => {
     await user.click(screen.getByRole('button', { name: '返回知识库列表' }));
     expect(workbench).toHaveAttribute('data-mobile-documents-open', 'false');
   });
+
+  it('starts a standard conversation from the knowledge list', async () => {
+    const user = userEvent.setup();
+    const onStartConversation = vi.fn();
+    renderKnowledge({
+      knowledgeBases: [writableKnowledgeBase],
+      onStartConversation
+    });
+
+    expect(screen.getByRole('button', { name: '刷新企业知识库' }))
+      .toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '对话知识库' }));
+    expect(onStartConversation).toHaveBeenCalledOnce();
+    expect(screen.getByRole('navigation', { name: '授权知识库' })).toBeVisible();
+    expect(screen.queryByRole('complementary', { name: '对话知识库范围' }))
+      .not.toBeInTheDocument();
+  });
 });
 
 function renderKnowledge(overrides: Partial<KnowledgePageProps> = {}) {
@@ -242,6 +274,7 @@ function createKnowledge(overrides: Partial<KnowledgePageProps> = {}) {
       documentsLoading={false}
       onOpenAccount={vi.fn()}
       onRefresh={vi.fn()}
+      onStartConversation={vi.fn()}
       onSelectKnowledgeBase={vi.fn()}
       onUpload={vi.fn()}
       {...overrides}

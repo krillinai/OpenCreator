@@ -4,6 +4,7 @@ import type {
   ThreadHistoryItem
 } from '@clawee/protocol';
 import type { CodexAppServerRequestClient } from '../app-server-client.js';
+import { CodexAppServerResponseError } from '../app-server-client.js';
 import { extractPublicConversationInput } from '../../threads/conversation-title.js';
 
 export type { CodexAppServerRequestClient } from '../app-server-client.js';
@@ -116,13 +117,7 @@ export function createCodexSessionProvider(
         if (cached !== undefined) historyCache.delete(key);
       }
 
-      const page = input.client.request<CodexTurnsListResponse>('thread/turns/list', {
-        threadId: options.codexThreadId,
-        cursor: options.cursor ?? null,
-        limit: options.limit,
-        sortDirection: 'desc',
-        itemsView: 'summary'
-      }).then(mapTurnsPage);
+      const page = requestTurns(input.client, options).then(mapTurnsPage);
       if (options.cursor === undefined) return page;
 
       historyCache.set(key, {
@@ -197,6 +192,34 @@ export function createCodexSessionProvider(
       await input.client.close();
     }
   };
+}
+
+async function requestTurns(
+  client: CodexAppServerRequestClient,
+  options: { codexThreadId: string; limit: number; cursor?: string }
+): Promise<CodexTurnsListResponse> {
+  const params = {
+    threadId: options.codexThreadId,
+    cursor: options.cursor ?? null,
+    limit: options.limit,
+    sortDirection: 'desc',
+    itemsView: 'summary'
+  };
+  try {
+    return await client.request<CodexTurnsListResponse>('thread/turns/list', params);
+  } catch (error) {
+    if (!isThreadNotLoadedError(error)) throw error;
+    await client.request('thread/resume', {
+      threadId: options.codexThreadId
+    });
+    return client.request<CodexTurnsListResponse>('thread/turns/list', params);
+  }
+}
+
+function isThreadNotLoadedError(error: unknown): boolean {
+  return error instanceof CodexAppServerResponseError
+    && error.code === -32600
+    && error.message.startsWith('thread not loaded:');
 }
 
 function mapTurnsPage(response: CodexTurnsListResponse): CodexThreadHistoryPage {

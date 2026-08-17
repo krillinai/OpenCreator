@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { StrictMode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -166,9 +166,6 @@ describe('Composer', () => {
 
     expect(screen.getByText('没有匹配的项目')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '新建项目' }));
-    expect(screen.getByRole('menu', { name: '新建项目' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('menuitem', { name: '新建空白项目' }));
     const createProjectDialog = screen.getByRole('dialog', { name: '创建项目' });
     expect(createProjectDialog).toBeInTheDocument();
     expect(createProjectDialog.parentElement?.parentElement).toBe(document.body);
@@ -178,9 +175,23 @@ describe('Composer', () => {
     expect(screen.queryByRole('dialog', { name: '创建项目' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '选择项目 未选择项目' }));
-    await user.click(screen.getByRole('button', { name: '新建项目' }));
-    await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+    await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
     expect(onAddProjectDirectory).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the desktop-only existing-folder action when its capability is unavailable', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        onCreateBlankProject={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '选择项目 content-design' }));
+
+    expect(screen.getByRole('button', { name: '新建项目' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '使用现有文件夹' })).not.toBeInTheDocument();
   });
 
   it('closes the project menu without resetting the current project', async () => {
@@ -443,12 +454,232 @@ describe('Composer', () => {
 
   it('opens the add context menu', async () => {
     const user = userEvent.setup();
-    render(<Composer {...defaultProps} />);
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[
+          {
+            id: 'skill:brainstorming',
+            category: 'skill',
+            label: 'brainstorming',
+            description: '需求梳理和方案发散',
+            insertText: '$brainstorming '
+          },
+          {
+            id: 'mcp:github',
+            category: 'mcp',
+            label: 'github',
+            description: 'stdio · configured',
+            insertText: '使用 MCP：github '
+          }
+        ]}
+      />
+    );
 
+    expect(screen.getByRole('button', { name: '打开连接器列表，github MCP' }))
+      .toHaveAttribute('title', 'github · 查看连接器');
+    expect(screen.queryByRole('list', { name: '已开启的 MCP' }))
+      .toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '添加上下文' }));
 
     expect(screen.getByRole('menu', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: '添加图片' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '添加文件' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '技能' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '连接器' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: '技能' }));
+    expect(screen.getByRole('menu', { name: '技能' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /brainstorming/ })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /github/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: /brainstorming/ }));
+    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveAttribute('placeholder', '');
+  });
+
+  it('loads the connector catalog, shows status, and selects enabled connectors', async () => {
+    const user = userEvent.setup();
+    const onManageSkills = vi.fn();
+    const onManageConnectors = vi.fn();
+    const onToggleConnector = vi.fn(async (_connectorId: string, enabled: boolean) => [{
+      id: 'enterprise:crm',
+      label: '客户关系管理',
+      description: 'sales · 1/2 项工具已授权',
+      status: 'available' as const
+    }, {
+      id: 'enterprise:docs',
+      label: '企业文档',
+      description: 'knowledge · 3/3 项工具已授权',
+      status: enabled ? 'enabled' as const : 'installed' as const,
+      ...(enabled ? { insertText: '使用连接器：企业文档 ' } : {})
+    }, {
+      id: 'enterprise:analytics',
+      label: '数据分析',
+      description: 'analytics · 2/3 项工具已授权',
+      status: 'installed' as const
+    }, {
+      id: 'enterprise:legacy',
+      label: '旧版系统',
+      description: 'legacy · 0/1 项工具已授权',
+      status: 'unavailable' as const
+    }]);
+    const onLoadConnectors = vi.fn(async () => [{
+      id: 'enterprise:crm',
+      label: '客户关系管理',
+      description: 'sales · 1/2 项工具已授权',
+      status: 'available' as const
+    }, {
+      id: 'enterprise:docs',
+      label: '企业文档',
+      description: 'knowledge · 3/3 项工具已授权',
+      status: 'enabled' as const,
+      insertText: '使用连接器：企业文档 '
+    }, {
+      id: 'enterprise:analytics',
+      label: '数据分析',
+      description: 'analytics · 2/3 项工具已授权',
+      status: 'installed' as const
+    }, {
+      id: 'enterprise:legacy',
+      label: '旧版系统',
+      description: 'legacy · 0/1 项工具已授权',
+      status: 'unavailable' as const
+    }]);
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[
+          {
+            id: 'mcp:github',
+            category: 'mcp',
+            label: 'github',
+            description: 'stdio · configured',
+            insertText: '使用 MCP：github '
+          }
+        ]}
+        onLoadConnectors={onLoadConnectors}
+        onToggleConnector={onToggleConnector}
+        preloadConnectors
+        onManageSkills={onManageSkills}
+        onManageConnectors={onManageConnectors}
+      />
+    );
+
+    const enabledMcpList = await screen.findByRole('list', { name: '已开启的 MCP' });
+    const enterpriseDocsIcon = within(enabledMcpList).getByRole('button', {
+      name: '打开连接器列表，企业文档 MCP'
+    });
+    expect(enterpriseDocsIcon).toHaveAttribute('title', '企业文档 · 查看连接器');
+    expect(within(enabledMcpList).getByRole('button', {
+      name: '打开连接器列表，github MCP'
+    })).toHaveAttribute('title', 'github · 查看连接器');
+    expect(within(enabledMcpList).queryByRole('button', {
+      name: '打开连接器列表，客户关系管理 MCP'
+    }))
+      .not.toBeInTheDocument();
+    expect(onLoadConnectors).toHaveBeenCalledTimes(1);
+
+    await user.click(enterpriseDocsIcon);
+    expect(screen.getByRole('dialog', { name: '连接器' })).toBeInTheDocument();
+    const enterpriseToggle = screen.getByRole('switch', { name: '企业文档 MCP' });
+    expect(enterpriseToggle).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('switch', { name: '数据分析 MCP' }))
+      .toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByText('客户关系管理')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择更多连接器' })).toBeInTheDocument();
+    await user.click(enterpriseToggle);
+    expect(onToggleConnector).toHaveBeenCalledWith('enterprise:docs', false);
+    expect(screen.getByRole('switch', { name: '企业文档 MCP' }))
+      .toHaveAttribute('aria-checked', 'false');
+    await user.click(screen.getByRole('switch', { name: '企业文档 MCP' }));
+    expect(onToggleConnector).toHaveBeenLastCalledWith('enterprise:docs', true);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: '连接器' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '连接器' }));
+
+    expect(screen.getByRole('menu', { name: '连接器' })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: /客户关系管理.*可安装/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /企业文档.*已开启/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /数据分析.*已安装/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /旧版系统.*服务停用/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /github.*已配置/ })).toBeInTheDocument();
+    expect(onLoadConnectors).toHaveBeenCalledTimes(1);
+
+    await user.type(screen.getByRole('searchbox', { name: '搜索连接器' }), '文档');
+    expect(screen.queryByRole('menuitem', { name: /客户关系管理/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: /企业文档.*已开启/ }));
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveValue('使用连接器：企业文档 ');
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveAttribute('placeholder', '');
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '技能' }));
+    await user.click(screen.getByRole('menuitem', { name: '管理技能' }));
+    expect(onManageSkills).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '连接器' }));
+    await user.click(screen.getByRole('menuitem', { name: '管理连接器' }));
+    expect(onManageConnectors).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps local connectors available when the connector catalog fails', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[{
+          id: 'mcp:github',
+          category: 'mcp',
+          label: 'github',
+          description: 'stdio · 已配置',
+          insertText: '使用 MCP：github '
+        }]}
+        onLoadConnectors={vi.fn(async () => {
+          throw new Error('企业连接服务暂时不可用');
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '连接器' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('企业连接服务暂时不可用');
+    await user.click(screen.getByRole('menuitem', { name: /github.*已配置/ }));
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveValue('使用 MCP：github ');
+  });
+
+  it('inserts a connector after the selected Skill prefix', async () => {
+    const user = userEvent.setup();
+    render(
+      <Composer
+        {...defaultProps}
+        slashCommands={[{
+          id: 'skill:brainstorming',
+          category: 'skill',
+          label: 'brainstorming',
+          description: '需求梳理',
+          insertText: '$brainstorming '
+        }, {
+          id: 'mcp:github',
+          category: 'mcp',
+          label: 'github',
+          description: 'stdio · 已配置',
+          insertText: '使用 MCP：github '
+        }]}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '技能' }));
+    await user.click(screen.getByRole('menuitem', { name: /brainstorming/ }));
+    await user.click(screen.getByRole('button', { name: '添加上下文' }));
+    await user.click(screen.getByRole('menuitem', { name: '连接器' }));
+    await user.click(screen.getByRole('menuitem', { name: /github.*已配置/ }));
+
+    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveValue('使用 MCP：github ');
   });
 
   it('is disabled when current thread has an active run', () => {
@@ -655,6 +886,16 @@ describe('Composer', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it('hides the default placeholder after entering any text', async () => {
+    const user = userEvent.setup();
+    render(<Composer {...defaultProps} />);
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    await user.type(textbox, 'a');
+
+    expect(textbox).toHaveAttribute('placeholder', '');
+  });
+
   it('uploads a selected image, blocks submit while uploading, and submits attachment metadata', async () => {
     const user = userEvent.setup();
     let resolveUpload!: (value: ReturnType<typeof attachment>) => void;
@@ -675,6 +916,7 @@ describe('Composer', () => {
 
     await user.click(screen.getByRole('button', { name: '添加上下文' }));
     await user.upload(screen.getByLabelText('选择图片'), file);
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveAttribute('placeholder', '');
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), '描述图片');
 
     expect(screen.getByRole('status', { name: '正在上传 screen.png' })).toBeInTheDocument();
@@ -798,7 +1040,7 @@ describe('Composer', () => {
 
     await user.click(screen.getByRole('button', { name: '添加上下文' }));
 
-    expect(screen.getByRole('menuitem', { name: /添加图片/ })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: /添加文件/ })).toBeDisabled();
     expect(screen.getByText('当前 Codex 版本不支持图片输入，请更新 Codex')).toBeInTheDocument();
     expect(screen.getByLabelText('选择图片')).toBeDisabled();
   });

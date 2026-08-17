@@ -11,6 +11,7 @@ import {
   applyCapabilityMatrix,
   collectCodexCapabilityMatrixAsync,
   collectStartupCapabilityMatrixAsync,
+  isReusableCapabilityMatrix,
   probeCodexVersionAsync,
   withRuntimeSkillCapabilities,
   type RuntimeCapabilityMatrix
@@ -88,7 +89,11 @@ async function main(): Promise<void> {
       };
 
   emitBootstrap('starting_runtime');
-  const capabilityResolution = await resolveCapabilities(codexBin, dataDir);
+  const capabilityResolution = await resolveCapabilities(
+    codexBin,
+    dataDir,
+    versionProbe.version
+  );
   const capabilities = capabilityResolution.state;
   const { buildServer } = await import('./api/server.js');
   server = await buildServer(createProductionServerInput({
@@ -165,14 +170,15 @@ function installParentPortShutdown(): void {
 
 async function resolveCapabilities(
   codexBin: string,
-  dataDir: string
+  dataDir: string,
+  codexVersion: string
 ): Promise<{
   state: RuntimeCapabilityMatrix;
   startBackgroundRefresh(): void;
 }> {
   const cachePath = join(dataDir, 'codex-capabilities.json');
   const fingerprint = codexFingerprint(codexBin);
-  const cached = readCapabilityCache(cachePath, fingerprint);
+  const cached = readCapabilityCache(cachePath, fingerprint, codexVersion);
   if (cached !== undefined) {
     return {
       state: cached,
@@ -240,11 +246,18 @@ function codexFingerprint(codexBin: string): string {
 
 function readCapabilityCache(
   path: string,
-  fingerprint: string
+  fingerprint: string,
+  codexVersion: string
 ): RuntimeCapabilityMatrix | undefined {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
-    if (!isRecord(parsed) || parsed.fingerprint !== fingerprint || !isRecord(parsed.matrix)) {
+    if (
+      !isRecord(parsed)
+      || parsed.fingerprint !== fingerprint
+      || !isRecord(parsed.matrix)
+      || parsed.matrix.codexVersion !== codexVersion
+      || !isReusableCapabilityMatrix(parsed.matrix as RuntimeCapabilityMatrix)
+    ) {
       return undefined;
     }
     return parsed.matrix as RuntimeCapabilityMatrix;

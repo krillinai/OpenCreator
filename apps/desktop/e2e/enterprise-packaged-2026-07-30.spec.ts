@@ -43,6 +43,7 @@ const rootDir = resolve(desktopDir, '../..');
 const fakeCodexScript = join(e2eDir, 'fixtures', 'fake-codex.mjs');
 const enterpriseEmail = 'packaged-e2e@example.com';
 const enterprisePassword = 'packaged-e2e-password';
+const enterpriseAccountId = 'acct_packaged_e2e';
 const enterpriseSkillName = 'enterprise-review';
 const enterpriseKnowledgeBaseId = 'kb_packaged_e2e';
 const enterpriseKeyringService = 'com.clawee.enterprise.e2e';
@@ -52,7 +53,7 @@ const agentIdPattern =
 
 test.describe.configure({ mode: 'serial' });
 
-test('实际打包 App 可登录、管理系统连接、使用企业知识库并安装 Skill', async () => {
+test('实际打包 App 可登录、管理连接器、使用企业知识库并安装 Skill', async () => {
   const runId = randomUUID();
   const root = mkdtempSync(join(tmpdir(), 'clawee-enterprise-packaged-'));
   const codexHome = join(root, 'codex-home');
@@ -100,14 +101,16 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
     expect(app.page.url()).toContain('clawee-app://app/');
 
     await expect(app.page.getByRole('heading', {
-      name: '登录企业账户'
+      name: '欢迎使用 Clawee'
     })).toBeVisible();
     await app.page.getByLabel('邮箱').fill(enterpriseEmail);
     await app.page.getByLabel('密码').fill(enterprisePassword);
-    await app.page.locator('.enterprise-account-primary-action').click();
+    await app.page.getByRole('checkbox').check();
+    await app.page.locator('.enterprise-email-submit').click();
 
     await expect(app.page.getByRole('button', {
-      name: `Packaged E2E ${enterpriseEmail}`
+      name: 'Packaged E2E',
+      exact: true
     })).toBeVisible();
     await expect.poll(
       () => readEnterpriseSession(app!.page)
@@ -117,6 +120,7 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
         status: 'installed'
       },
       account: {
+        subjectId: enterpriseAccountId,
         email: enterpriseEmail,
         name: 'Packaged E2E'
       }
@@ -138,6 +142,7 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
         status: 'installed'
       },
       account: {
+        subjectId: enterpriseAccountId,
         email: enterpriseEmail,
         name: 'Packaged E2E'
       }
@@ -145,15 +150,27 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
     expect(readPersistedAgentId(homeDir)).toBe(persistedAgentId);
     expect(server.agentIdentity()).toBe(persistedAgentId);
     await expect(app.page.getByRole('button', {
-      name: `Packaged E2E ${enterpriseEmail}`
+      name: 'Packaged E2E',
+      exact: true
     })).toBeVisible();
 
+    await app.page.getByRole('button', { name: '添加上下文' }).click();
+    await app.page.getByRole('menuitem', { name: '连接器' }).click();
+    await expect(app.page.getByRole('menuitem', {
+      name: /客户关系管理.*可安装/
+    })).toBeVisible();
+    await expect(app.page.getByRole('searchbox', {
+      name: '搜索连接器'
+    })).toBeVisible();
+    await app.page.keyboard.press('Escape');
+    await app.page.keyboard.press('Escape');
+
     await app.page.getByRole('button', {
-      name: '系统连接',
+      name: '连接器',
       exact: true
     }).click();
     await expect(app.page.getByRole('heading', {
-      name: '系统连接'
+      name: '连接器'
     })).toBeVisible();
     const mcpCard = app.page.locator(
       '[data-testid="mcp-card"][data-connection-key="enterprise:crm-main"]'
@@ -161,7 +178,9 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
     await expect(mcpCard.getByRole('heading', {
       name: '客户关系管理'
     })).toBeVisible();
-    await expect(mcpCard.getByText('企业授权：1/2 项工具')).toBeVisible();
+    await expect(mcpCard.getByText('sales', { exact: true })).toBeVisible();
+    await expect(mcpCard.getByText('按条件查询客户资料', { exact: true })).toBeVisible();
+    await expect(mcpCard.getByText('服务正常')).toHaveCount(0);
     await mcpCard.getByRole('button', { name: '安装' }).click();
     const installedMcpCard = app.page.locator(
       '[data-testid="mcp-card"][data-connection-key^="native:enterprise_crm-main_"]'
@@ -200,7 +219,7 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
     app = await relaunchPackagedApp(mcpEnabled, 45_000);
     await waitForWorkspace(app.page);
     await app.page.getByRole('button', {
-      name: '系统连接',
+      name: '连接器',
       exact: true
     }).click();
     const persistedMcpCard = app.page.locator(
@@ -209,6 +228,20 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
     await expect(persistedMcpCard.getByRole('switch', {
       name: '客户关系管理 MCP'
     })).toHaveAttribute('aria-checked', 'true');
+
+    await app.page.getByRole('button', { name: '新建任务' }).click();
+    const enabledMcpIcon = app.page.getByRole('button', {
+      name: '打开连接器列表，客户关系管理 MCP'
+    });
+    await expect(enabledMcpIcon).toBeVisible();
+    await enabledMcpIcon.click();
+    await expect(app.page.getByRole('switch', {
+      name: '客户关系管理 MCP'
+    })).toHaveAttribute('aria-checked', 'true');
+    await expect(app.page.getByRole('button', {
+      name: '选择更多连接器'
+    })).toBeVisible();
+    await app.page.keyboard.press('Escape');
 
     await app.page.getByRole('button', {
       name: '企业知识库',
@@ -270,7 +303,8 @@ test('实际打包 App 可登录、管理系统连接、使用企业知识库并
       .toMatch(/^#\/thread\//);
 
     await app.page.getByRole('button', {
-      name: `Packaged E2E ${enterpriseEmail}`
+      name: 'Packaged E2E',
+      exact: true
     }).click();
     await app.page.getByRole('button', { name: '退出登录' }).click();
     await expect.poll(
@@ -929,6 +963,7 @@ function sendJson(
 
 function enterpriseAccount() {
   return {
+    account_id: enterpriseAccountId,
     email: enterpriseEmail,
     name: 'Packaged E2E',
     status: 'active'

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 export const AGENT_CAPABILITY_SCOPES = [
+  'knowledge:search',
   'schedule:get',
   'schedule:create',
   'schedule:update',

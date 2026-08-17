@@ -114,6 +114,42 @@ describe('thread manager', () => {
     expect(thread.cwd).toContain(join('workspaces', thread.id));
   });
 
+  it('creates account-owned knowledge conversations inside a project', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-thread-'));
+    const database = openTestDatabase(tempDir);
+    const projects = createProjectManager({ db: database, homeDir: tempDir });
+    const project = projects.createProject({
+      name: 'Default project',
+      cwd: tempDir,
+      profile: 'project-profile',
+      sandbox: 'workspace-write'
+    });
+    const manager = createThreadManager({
+      db: database,
+      dataDir: tempDir,
+      projectManager: projects
+    });
+
+    const thread = manager.createKnowledgeThread({
+      enterpriseSubjectId: 'acct_a',
+      projectId: project.id,
+      title: 'Knowledge conversation'
+    });
+
+    expect(thread).toMatchObject({
+      projectId: project.id,
+      enterpriseSubjectId: 'acct_a',
+      purpose: 'conversation',
+      workspaceMode: 'external',
+      cwd: project.cwd,
+      canonicalCwd: project.canonicalCwd,
+      profile: 'project-profile',
+      sandbox: 'read-only'
+    });
+    expect(manager.listKnowledgeThreads('acct_b')).toEqual([]);
+    expect(manager.listKnowledgeThreads('acct_a')).toEqual([thread]);
+  });
+
   it('stores an absolute managed workspace when dataDir is relative', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-relative-'));
     const database = openTestDatabase(tempDir);

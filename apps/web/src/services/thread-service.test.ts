@@ -6,7 +6,7 @@ import { createThreadService } from './thread-service.js';
 describe('ThreadService', () => {
   it('loads bounded interactive and schedule task thread summaries separately', async () => {
     const get = vi.fn(async (path: string) => {
-      if (path.includes('excludePurpose=schedule_task')) {
+      if (path.includes('purpose=conversation')) {
         return {
           threads: [createThreadResponse({
             id: 'thread-conversation',
@@ -25,7 +25,7 @@ describe('ThreadService', () => {
     const response = await service.listActiveThreads();
 
     expect(get).toHaveBeenCalledWith(
-      '/threads?status=active&excludePurpose=schedule_task&limit=50'
+      '/threads?status=active&purpose=conversation&limit=50'
     );
     expect(get).toHaveBeenCalledWith(
       '/threads?status=active&purpose=schedule_task&limit=100'
@@ -114,6 +114,40 @@ describe('ThreadService', () => {
     await service.archiveThread('thread/draft');
 
     expect(post).toHaveBeenCalledWith('/threads/thread%2Fdraft/archive', {});
+  });
+
+  it('permanently deletes a thread through the encoded delete endpoint', async () => {
+    const del = vi.fn(async () => undefined);
+    const client = createClient(vi.fn()) as RuntimeClient & {
+      delete(path: string): Promise<void>;
+    };
+    client.delete = del as RuntimeClient['delete'];
+    const service = createThreadService(client);
+
+    await service.deleteThread('thread/中文');
+
+    expect(del).toHaveBeenCalledWith('/threads/thread%2F%E4%B8%AD%E6%96%87');
+  });
+
+  it('uses dedicated account-scoped knowledge conversation endpoints', async () => {
+    const get = vi.fn(async (path: string) => (
+      path.endsWith('/latest') ? { thread: null } : { thread: createThreadResponse() }
+    ));
+    const post = vi.fn(async () => ({ thread: createThreadResponse() }));
+    const service = createThreadService(createClient(get, post));
+
+    await expect(service.getLatestKnowledgeThread()).resolves.toEqual({ thread: null });
+    await service.createKnowledgeThread('project-default');
+    await service.getKnowledgeThread('thread/knowledge');
+    await service.listKnowledgeThreadRuns('thread/knowledge');
+    await service.getKnowledgeThreadHistory('thread/knowledge', { limit: 50 });
+
+    expect(post).toHaveBeenCalledWith('/enterprise/knowledge-conversations', {
+      projectId: 'project-default'
+    });
+    expect(get).toHaveBeenCalledWith(
+      '/enterprise/knowledge-conversations/thread%2Fknowledge/history?limit=50'
+    );
   });
 });
 

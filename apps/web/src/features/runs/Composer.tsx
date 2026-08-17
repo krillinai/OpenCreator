@@ -10,16 +10,25 @@ import {
 } from 'react';
 import {
   ArrowUp,
+  ArrowUpRight,
   Check,
   ChevronDown,
   ChevronRight,
+  Chrome,
+  Cloud,
+  Database,
+  Figma,
   Folder,
   FolderPlus,
+  Github,
+  Hammer,
+  Link2,
   ListPlus,
   Paperclip,
   Plus,
   Search,
   ShieldCheck,
+  Slack,
   Sparkles,
   Square,
   Trash2,
@@ -58,6 +67,14 @@ export type ComposerSlashCommand = {
   label: string;
   description: string;
   insertText: string;
+};
+
+export type ComposerConnector = {
+  id: string;
+  label: string;
+  description: string;
+  status: 'available' | 'installed' | 'enabled' | 'configured' | 'unavailable';
+  insertText?: string;
 };
 
 export type ComposerAttachment = {
@@ -133,6 +150,9 @@ export function Composer(props: {
   slashCommands?: ComposerSlashCommand[];
   slashCommandsLoading?: boolean;
   slashCommandsError?: string;
+  onLoadConnectors?(): Promise<ComposerConnector[]>;
+  onToggleConnector?(connectorId: string, enabled: boolean): Promise<ComposerConnector[]>;
+  preloadConnectors?: boolean;
   queuedItems?: ComposerQueuedItem[];
   draftRequest?: ComposerDraftRequest;
   focusRequestId?: number;
@@ -152,6 +172,8 @@ export function Composer(props: {
   onSteerQueuedRun?(runId: string): void;
   onUploadAttachment?(file: File): Promise<AttachmentResponse>;
   onDeleteAttachment?(attachment: AttachmentResponse): Promise<void>;
+  onManageSkills?(): void;
+  onManageConnectors?(): void;
   onSubmit(
     prompt: string,
     config: ComposerRunConfig,
@@ -161,7 +183,6 @@ export function Composer(props: {
 }) {
   const [prompt, setPrompt] = useState('');
   const [projectQuery, setProjectQuery] = useState('');
-  const [projectCreateMenuOpen, setProjectCreateMenuOpen] = useState(false);
   const [projectNameDialogOpen, setProjectNameDialogOpen] = useState(false);
   const [selectedPermission, setSelectedPermission] = useState<ProjectPermission>(
     normalizePermission(props.permission)
@@ -171,8 +192,14 @@ export function Composer(props: {
     props.reasoning
   );
   const [openMenu, setOpenMenu] = useState<
-    'project' | 'add' | 'permission' | 'model' | null
+    'project' | 'add' | 'permission' | 'connectors' | 'model' | null
   >(null);
+  const [addSubmenu, setAddSubmenu] = useState<'skill' | 'mcp' | null>(null);
+  const [addCommandQuery, setAddCommandQuery] = useState('');
+  const [connectorCatalog, setConnectorCatalog] = useState<ComposerConnector[]>();
+  const [connectorCatalogLoading, setConnectorCatalogLoading] = useState(false);
+  const [connectorCatalogError, setConnectorCatalogError] = useState<string>();
+  const [connectorUpdatingId, setConnectorUpdatingId] = useState<string>();
   const [slashTrigger, setSlashTrigger] = useState<SlashTrigger | null>(null);
   const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -190,9 +217,14 @@ export function Composer(props: {
   const scheduledDraftIdRef = useRef<number>();
   const appliedDraftIdRef = useRef<number>();
   const promptRevisionRef = useRef(0);
+  const connectorCatalogRequestRef = useRef<Promise<void>>();
+  const connectorCatalogGenerationRef = useRef(0);
+  const connectorLoaderRef = useRef(props.onLoadConnectors);
+  const composerMountedRef = useRef(true);
   const trimmedPrompt = prompt.trim();
   const activeFloatingMenu = openMenu ?? (slashTrigger === null ? null : 'slash');
   const availableModels = props.models ?? [];
+  const slashCommands = props.slashCommands ?? [];
   const resolvedSelectedModel = resolveSelectedModel(availableModels, selectedModel);
   const selectedModelLabel = modelSelectionLabel(
     resolvedSelectedModel,
@@ -210,8 +242,56 @@ export function Composer(props: {
     attachmentDrafts.length === 0 || selectedModelSupportsImages !== false;
   const selectedReasoningOptions =
     resolvedSelectedModel?.supportedReasoningEfforts ?? [];
+  const addCommands = slashCommands.filter(command => (
+    command.category === 'skill'
+    && (
+      addCommandQuery.trim().length === 0
+      || `${command.label} ${command.description}`
+        .toLocaleLowerCase()
+        .includes(addCommandQuery.trim().toLocaleLowerCase())
+    )
+  ));
+  const localConnectors = slashCommands
+    .filter(command => command.category === 'mcp')
+    .map(command => ({
+      id: command.id,
+      label: command.label,
+      description: command.description,
+      status: 'configured' as const,
+      insertText: command.insertText
+    }));
+  const visibleConnectors = mergeComposerConnectors(
+    connectorCatalog ?? [],
+    localConnectors
+  ).filter(connector => (
+    addCommandQuery.trim().length === 0
+    || `${connector.label} ${connector.description}`
+      .toLocaleLowerCase()
+      .includes(addCommandQuery.trim().toLocaleLowerCase())
+  ));
+  const enabledConnectors = mergeComposerConnectors(
+    connectorCatalog ?? [],
+    localConnectors
+  ).filter(connector => (
+    connector.status === 'enabled' || connector.status === 'configured'
+  ));
+  const quickConnectors = mergeComposerConnectors(
+    connectorCatalog ?? [],
+    localConnectors
+  ).filter(connector => (
+    connector.status === 'enabled'
+    || connector.status === 'configured'
+    || connector.status === 'installed'
+  ));
 
   attachmentDraftsRef.current = attachmentDrafts;
+
+  useEffect(() => {
+    composerMountedRef.current = true;
+    return () => {
+      composerMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => () => {
     for (const item of attachmentDraftsRef.current) {
@@ -220,6 +300,90 @@ export function Composer(props: {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (connectorLoaderRef.current === props.onLoadConnectors) return;
+    connectorLoaderRef.current = props.onLoadConnectors;
+    connectorCatalogGenerationRef.current += 1;
+    connectorCatalogRequestRef.current = undefined;
+    setConnectorCatalog(undefined);
+    setConnectorCatalogLoading(false);
+    setConnectorCatalogError(undefined);
+  }, [props.onLoadConnectors]);
+
+  const loadConnectorCatalog = () => {
+    if (
+      props.onLoadConnectors === undefined
+      || connectorCatalog !== undefined
+      || connectorCatalogRequestRef.current !== undefined
+    ) {
+      return;
+    }
+    const generation = connectorCatalogGenerationRef.current;
+    setConnectorCatalogLoading(true);
+    setConnectorCatalogError(undefined);
+    const request = props.onLoadConnectors()
+      .then(connectors => {
+        if (
+          composerMountedRef.current
+          && connectorCatalogGenerationRef.current === generation
+        ) {
+          setConnectorCatalog(connectors);
+        }
+      })
+      .catch(error => {
+        if (
+          composerMountedRef.current
+          && connectorCatalogGenerationRef.current === generation
+        ) {
+          setConnectorCatalogError(
+            error instanceof Error && error.message.trim().length > 0
+              ? error.message
+              : '连接器目录加载失败'
+          );
+        }
+      })
+      .finally(() => {
+        if (
+          composerMountedRef.current
+          && connectorCatalogGenerationRef.current === generation
+        ) {
+          connectorCatalogRequestRef.current = undefined;
+          setConnectorCatalogLoading(false);
+        }
+      });
+    connectorCatalogRequestRef.current = request;
+  };
+
+  const openAddSubmenu = (submenu: 'skill' | 'mcp') => {
+    setAddSubmenu(submenu);
+    setAddCommandQuery('');
+    if (submenu === 'mcp') loadConnectorCatalog();
+  };
+
+  const toggleConnector = async (connector: ComposerConnector) => {
+    if (props.onToggleConnector === undefined || connectorUpdatingId !== undefined) return;
+    setConnectorUpdatingId(connector.id);
+    setConnectorCatalogError(undefined);
+    try {
+      setConnectorCatalog(await props.onToggleConnector(
+        connector.id,
+        connector.status !== 'enabled'
+      ));
+    } catch (error) {
+      setConnectorCatalogError(
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : '连接器状态更新失败'
+      );
+    } finally {
+      setConnectorUpdatingId(undefined);
+    }
+  };
+
+  useEffect(() => {
+    if (props.preloadConnectors === true) loadConnectorCatalog();
+  }, [props.onLoadConnectors, props.preloadConnectors]);
 
   useEffect(() => {
     setSelectedPermission(normalizePermission(props.permission));
@@ -235,9 +399,10 @@ export function Composer(props: {
 
     const closeFloatingMenu = () => {
       setOpenMenu(null);
+      setAddSubmenu(null);
+      setAddCommandQuery('');
       setSlashTrigger(null);
       setProjectQuery('');
-      setProjectCreateMenuOpen(false);
     };
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
@@ -250,6 +415,11 @@ export function Composer(props: {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      if (activeFloatingMenu === 'add' && addSubmenu !== null) {
+        setAddSubmenu(null);
+        setAddCommandQuery('');
+        return;
+      }
       closeFloatingMenu();
     };
 
@@ -259,7 +429,7 @@ export function Composer(props: {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeFloatingMenu]);
+  }, [activeFloatingMenu, addSubmenu]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -325,12 +495,14 @@ export function Composer(props: {
     || project.name.toLocaleLowerCase().includes(normalizedProjectQuery)
     || project.cwd.toLocaleLowerCase().includes(normalizedProjectQuery)
   );
-  const slashCommands = props.slashCommands ?? [];
   const selectedSkillCommand = findLeadingSkillCommand(prompt, slashCommands);
   const selectedSkillPrefix = selectedSkillCommand?.insertText ?? '';
   const visiblePrompt = selectedSkillCommand === undefined
     ? prompt
     : prompt.slice(selectedSkillPrefix.length);
+  const hasComposerContent = visiblePrompt.length > 0
+    || selectedSkillCommand !== undefined
+    || attachmentDrafts.length > 0;
   const filteredSlashCommands = useMemo(
     () => filterSlashCommands(slashCommands, slashTrigger?.query ?? ''),
     [slashCommands, slashTrigger?.query]
@@ -479,7 +651,6 @@ export function Composer(props: {
   const closeProjectMenu = () => {
     setOpenMenu(null);
     setProjectQuery('');
-    setProjectCreateMenuOpen(false);
   };
 
   const selectProject = (projectId: string) => {
@@ -494,7 +665,6 @@ export function Composer(props: {
       return;
     }
     setProjectQuery('');
-    setProjectCreateMenuOpen(false);
     setOpenMenu('project');
     window.requestAnimationFrame(() => projectSearchRef.current?.focus());
   };
@@ -530,6 +700,34 @@ export function Composer(props: {
         0,
         nextCaret - (leadingCommand?.insertText.length ?? 0)
       );
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(visibleCaret, visibleCaret);
+    });
+  };
+
+  const applyAddCommand = (command: ComposerSlashCommand) => {
+    applyAddText(command.insertText);
+  };
+
+  const applyAddText = (insertText: string) => {
+    const selectionStart = textareaRef.current?.selectionStart ?? prompt.length;
+    const selectionEnd = textareaRef.current?.selectionEnd ?? selectionStart;
+    const selectedSkillPrefix = findLeadingSkillCommand(prompt, slashCommands)?.insertText ?? '';
+    const promptSelectionStart = selectedSkillPrefix.length + selectionStart;
+    const promptSelectionEnd = selectedSkillPrefix.length + selectionEnd;
+    const nextPrompt = `${prompt.slice(0, promptSelectionStart)}${insertText}${prompt.slice(promptSelectionEnd)}`;
+    const nextCaret = promptSelectionStart + insertText.length;
+    promptRevisionRef.current += 1;
+    const caretRevision = promptRevisionRef.current;
+    setPrompt(nextPrompt);
+    setOpenMenu(null);
+    setAddSubmenu(null);
+    setAddCommandQuery('');
+
+    window.requestAnimationFrame(() => {
+      if (promptRevisionRef.current !== caretRevision) return;
+      const leadingCommand = findLeadingSkillCommand(nextPrompt, slashCommands);
+      const visibleCaret = Math.max(0, nextCaret - (leadingCommand?.insertText.length ?? 0));
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(visibleCaret, visibleCaret);
     });
@@ -675,6 +873,145 @@ export function Composer(props: {
     }
   }
 
+  function renderConnectorDirectory() {
+    return (
+      <>
+        <label className="composer-add-search">
+          <Search aria-hidden="true" size={15} />
+          <input
+            aria-label="搜索连接器"
+            type="search"
+            placeholder="搜索连接器"
+            value={addCommandQuery}
+            onChange={event => setAddCommandQuery(event.currentTarget.value)}
+          />
+        </label>
+        <div className="composer-add-command-list" aria-label="连接器目录">
+          {connectorCatalogLoading && connectorCatalog === undefined ? (
+            <p className="composer-model-status" role="status">正在加载连接器目录</p>
+          ) : null}
+          {connectorCatalogError === undefined ? null : (
+            <p className="composer-model-status composer-model-status-error" role="alert">
+              {connectorCatalogError}
+            </p>
+          )}
+          {!connectorCatalogLoading && visibleConnectors.length === 0 ? (
+            <p className="composer-model-status">
+              {addCommandQuery.trim().length > 0 ? '没有匹配的连接器' : '连接器目录为空'}
+            </p>
+          ) : visibleConnectors.map(connector => {
+            const canUse = (
+              connector.status === 'enabled'
+              || connector.status === 'configured'
+            ) && connector.insertText !== undefined;
+            const canManage = props.onManageConnectors !== undefined;
+            return (
+              <button
+                key={connector.id}
+                className="composer-menu-item composer-connector-item"
+                type="button"
+                role="menuitem"
+                disabled={!canUse && !canManage}
+                onClick={() => {
+                  if (canUse) {
+                    applyAddText(connector.insertText!);
+                    return;
+                  }
+                  setOpenMenu(null);
+                  setAddSubmenu(null);
+                  props.onManageConnectors?.();
+                }}
+              >
+                <span className="composer-menu-icon" aria-hidden="true">
+                  <Link2 size={15} />
+                </span>
+                <span>
+                  <span className="composer-connector-title">
+                    <strong>{connector.label}</strong>
+                    <em data-status={connector.status}>
+                      {connectorStatusLabel(connector.status)}
+                    </em>
+                  </span>
+                  <small>{connector.description}</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {props.onManageConnectors === undefined ? null : (
+          <button
+            className="composer-menu-item composer-add-footer"
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpenMenu(null);
+              setAddSubmenu(null);
+              props.onManageConnectors?.();
+            }}
+          >
+            <Link2 aria-hidden="true" size={15} />
+            <span>管理连接器</span>
+          </button>
+        )}
+      </>
+    );
+  }
+
+  function renderConnectorQuickMenu() {
+    return (
+      <>
+        <div className="composer-connector-quick-list" role="group" aria-label="连接器快捷开关">
+          {connectorCatalogLoading && connectorCatalog === undefined ? (
+            <p className="composer-model-status" role="status">正在加载连接器</p>
+          ) : null}
+          {connectorCatalogError === undefined ? null : (
+            <p className="composer-model-status composer-model-status-error" role="alert">
+              {connectorCatalogError}
+            </p>
+          )}
+          {!connectorCatalogLoading && quickConnectors.length === 0 ? (
+            <p className="composer-model-status">暂无已安装连接器</p>
+          ) : quickConnectors.map(connector => {
+            const checked = connector.status === 'enabled' || connector.status === 'configured';
+            const canToggle = connector.id.startsWith('enterprise:')
+              && props.onToggleConnector !== undefined;
+            return (
+              <div className="composer-connector-quick-item" key={connector.id}>
+                <span className="composer-connector-quick-icon" aria-hidden="true">
+                  {connectorIcon(connector)}
+                </span>
+                <span className="composer-connector-quick-name">{connector.label}</span>
+                <button
+                  className="composer-connector-switch"
+                  type="button"
+                  role="switch"
+                  aria-label={`${connector.label} MCP`}
+                  aria-checked={checked}
+                  aria-description={canToggle ? undefined : '请在 MCP 配置中管理'}
+                  disabled={!canToggle || connectorUpdatingId !== undefined}
+                  onClick={() => void toggleConnector(connector)}
+                />
+              </div>
+            );
+          })}
+        </div>
+        {props.onManageConnectors === undefined ? null : (
+          <button
+            className="composer-connector-more"
+            type="button"
+            onClick={() => {
+              setOpenMenu(null);
+              props.onManageConnectors?.();
+            }}
+          >
+            <ArrowUpRight aria-hidden="true" size={15} />
+            <span>选择更多连接器</span>
+          </button>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="composer-stack">
       {(props.queuedItems?.length ?? 0) > 0 ? (
@@ -790,44 +1127,25 @@ export function Composer(props: {
                 {props.onCreateBlankProject !== undefined
                 || props.onAddProjectDirectory !== undefined ? (
                   <div className="composer-project-create">
-                    <button
-                      className="composer-project-create-trigger"
-                      type="button"
-                      aria-haspopup="menu"
-                      aria-expanded={projectCreateMenuOpen}
-                      onClick={() => setProjectCreateMenuOpen(open => !open)}
-                    >
-                      <Plus aria-hidden="true" size={17} />
-                      <span>新建项目</span>
-                      <ChevronRight aria-hidden="true" size={15} />
-                    </button>
-                    {projectCreateMenuOpen ? (
-                      <div
-                        className="composer-project-create-menu"
-                        role="menu"
-                        aria-label="新建项目"
+                    {props.onCreateBlankProject !== undefined ? (
+                      <button
+                        className="composer-project-create-trigger"
+                        type="button"
+                        onClick={openProjectNameDialog}
                       >
-                        {props.onCreateBlankProject !== undefined ? (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={openProjectNameDialog}
-                          >
-                            <Plus aria-hidden="true" size={17} />
-                            <span>新建空白项目</span>
-                          </button>
-                        ) : null}
-                        {props.onAddProjectDirectory !== undefined ? (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => runProjectAction(props.onAddProjectDirectory)}
-                          >
-                            <FolderPlus aria-hidden="true" size={17} />
-                            <span>使用现有文件夹</span>
-                          </button>
-                        ) : null}
-                      </div>
+                        <Plus aria-hidden="true" size={17} />
+                        <span>新建项目</span>
+                      </button>
+                    ) : null}
+                    {props.onAddProjectDirectory !== undefined ? (
+                      <button
+                        className="composer-project-create-trigger"
+                        type="button"
+                        onClick={() => runProjectAction(props.onAddProjectDirectory)}
+                      >
+                        <FolderPlus aria-hidden="true" size={17} />
+                        <span>使用现有文件夹</span>
+                      </button>
                     ) : null}
                   </div>
                 ) : null}
@@ -879,7 +1197,7 @@ export function Composer(props: {
           placeholder={
             props.disabled
               ? props.disabledReason ?? '当前对话不可用'
-              : '输入 / 调用插件'
+              : hasComposerContent ? '' : '输入 / 调用插件'
           }
         />
         {slashMenuOpen ? (
@@ -936,13 +1254,16 @@ export function Composer(props: {
               title="添加文件等"
               onClick={() => {
                 setSlashTrigger(null);
-                setOpenMenu(openMenu === 'add' ? null : 'add');
+                const nextOpen = openMenu === 'add' ? null : 'add';
+                setOpenMenu(nextOpen);
+                setAddSubmenu(null);
+                setAddCommandQuery('');
               }}
             >
               <Plus aria-hidden="true" size={17} />
             </button>
             {openMenu === 'add' ? (
-              <div className="composer-popover composer-popover-compact" role="menu" aria-label="添加上下文">
+              <div className="composer-popover composer-popover-compact composer-add-menu" role="menu" aria-label="添加上下文">
                 <button
                   className="composer-menu-item"
                   type="button"
@@ -954,11 +1275,97 @@ export function Composer(props: {
                   }}
                 >
                   <Paperclip aria-hidden="true" size={15} />
-                  <span>添加图片</span>
+                  <span>添加文件</span>
                 </button>
                 {!canAttachImages && imageInputNotice !== undefined ? (
                   <p className="composer-menu-notice">{imageInputNotice}</p>
                 ) : null}
+                <button
+                  className={`composer-menu-item composer-add-menu-trigger${addSubmenu === 'skill' ? ' is-active' : ''}`}
+                  type="button"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={addSubmenu === 'skill'}
+                  onMouseEnter={() => openAddSubmenu('skill')}
+                  onClick={() => openAddSubmenu('skill')}
+                >
+                  <Hammer aria-hidden="true" size={15} />
+                  <span>技能</span>
+                  <ChevronRight aria-hidden="true" size={14} />
+                </button>
+                <button
+                  className={`composer-menu-item composer-add-menu-trigger${addSubmenu === 'mcp' ? ' is-active' : ''}`}
+                  type="button"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={addSubmenu === 'mcp'}
+                  onMouseEnter={() => openAddSubmenu('mcp')}
+                  onClick={() => openAddSubmenu('mcp')}
+                >
+                  <Link2 aria-hidden="true" size={15} />
+                  <span>连接器</span>
+                  <ChevronRight aria-hidden="true" size={14} />
+                </button>
+                {addSubmenu === null ? null : (
+                  <div
+                    className="composer-popover composer-add-submenu"
+                    role="menu"
+                    aria-label={addSubmenu === 'skill' ? '技能' : '连接器'}
+                  >
+                    {addSubmenu === 'skill' ? (
+                      <>
+                        <label className="composer-add-search">
+                          <Search aria-hidden="true" size={15} />
+                          <input
+                            aria-label="搜索技能"
+                            type="search"
+                            placeholder="搜索技能"
+                            value={addCommandQuery}
+                            onChange={event => setAddCommandQuery(event.currentTarget.value)}
+                          />
+                        </label>
+                        <div className="composer-add-command-list">
+                          {addCommands.length === 0 ? (
+                            <p className="composer-model-status">暂无可用技能</p>
+                          ) : addCommands.map(command => (
+                            <button
+                              key={command.id}
+                              className="composer-menu-item"
+                              type="button"
+                              role="menuitem"
+                              onClick={() => applyAddCommand(command)}
+                            >
+                              <span className="composer-menu-icon" aria-hidden="true">
+                                <Zap size={15} />
+                              </span>
+                              <span>
+                                <strong>{command.label}</strong>
+                                <small>{command.description}</small>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      renderConnectorDirectory()
+                    )}
+                    {addSubmenu !== 'skill' || props.onManageSkills === undefined ? null : (
+                      <button
+                        className="composer-menu-item composer-add-footer"
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setOpenMenu(null);
+                          setAddSubmenu(null);
+                          props.onManageSkills?.();
+                        }}
+                      >
+                        <Hammer aria-hidden="true" size={15} />
+                        <span>管理技能</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : null}
             <input
@@ -1035,6 +1442,49 @@ export function Composer(props: {
               </div>
             ) : null}
           </div>
+
+          {enabledConnectors.length === 0 && openMenu !== 'connectors' ? null : (
+            <div
+              className="composer-enabled-connectors-wrap"
+              data-composer-menu-root="connectors"
+            >
+              <div
+                className="composer-enabled-connectors"
+                role="list"
+                aria-label="已开启的 MCP"
+              >
+                {enabledConnectors.map(connector => (
+                  <span key={connector.id} role="listitem">
+                    <button
+                      className="composer-enabled-connector"
+                      type="button"
+                      aria-label={`打开连接器列表，${connector.label} MCP`}
+                      aria-expanded={openMenu === 'connectors'}
+                      title={`${connector.label} · 查看连接器`}
+                      onClick={() => {
+                        setSlashTrigger(null);
+                        setAddSubmenu(null);
+                        setAddCommandQuery('');
+                        loadConnectorCatalog();
+                        setOpenMenu(openMenu === 'connectors' ? null : 'connectors');
+                      }}
+                    >
+                      {connectorIcon(connector)}
+                    </button>
+                  </span>
+                ))}
+              </div>
+              {openMenu === 'connectors' ? (
+                <div
+                  className="composer-popover composer-connector-card"
+                  role="dialog"
+                  aria-label="连接器"
+                >
+                  {renderConnectorQuickMenu()}
+                </div>
+              ) : null}
+            </div>
+          )}
 
         </div>
 
@@ -1238,6 +1688,51 @@ export function Composer(props: {
 
 function normalizePermission(permission: ProjectPermission): ProjectPermission {
   return permission === 'danger-full-access' ? permission : 'workspace-write';
+}
+
+function mergeComposerConnectors(
+  catalog: ComposerConnector[],
+  local: ComposerConnector[]
+): ComposerConnector[] {
+  const merged = new Map<string, ComposerConnector>();
+  for (const connector of [...catalog, ...local]) merged.set(connector.id, connector);
+  return [...merged.values()].sort((left, right) => {
+    const statusOrder = connectorStatusOrder(left.status) - connectorStatusOrder(right.status);
+    return statusOrder === 0
+      ? left.label.localeCompare(right.label)
+      : statusOrder;
+  });
+}
+
+function connectorStatusOrder(status: ComposerConnector['status']): number {
+  if (status === 'enabled' || status === 'configured') return 0;
+  if (status === 'installed') return 1;
+  if (status === 'available') return 2;
+  return 3;
+}
+
+function connectorStatusLabel(status: ComposerConnector['status']): string {
+  if (status === 'enabled') return '已开启';
+  if (status === 'configured') return '已配置';
+  if (status === 'installed') return '已安装';
+  if (status === 'available') return '可安装';
+  return '服务停用';
+}
+
+function connectorIcon(connector: ComposerConnector) {
+  const identity = `${connector.id} ${connector.label}`.toLocaleLowerCase();
+  const iconProps = { 'aria-hidden': true, size: 14 } as const;
+  if (identity.includes('github')) return <Github {...iconProps} />;
+  if (identity.includes('slack')) return <Slack {...iconProps} />;
+  if (identity.includes('figma')) return <Figma {...iconProps} />;
+  if (identity.includes('chrome') || identity.includes('browser')) {
+    return <Chrome {...iconProps} />;
+  }
+  if (identity.includes('knowledge') || identity.includes('知识')) {
+    return <Database {...iconProps} />;
+  }
+  if (identity.includes('cloud')) return <Cloud {...iconProps} />;
+  return <Link2 {...iconProps} />;
 }
 
 function resolveSelectedModel(

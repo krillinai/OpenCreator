@@ -1,11 +1,8 @@
 import type { ComponentProps } from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  ClaweeSidebar,
-  type SidebarRecentItem
-} from './ClaweeSidebar.js';
+import { ClaweeSidebar } from './ClaweeSidebar.js';
 
 const projects = [
   {
@@ -33,34 +30,22 @@ const conversations = [
     id: 'weekly-progress-brief',
     projectId: 'content-design',
     title: '整理本周项目进展',
-    updatedAt: '2026-07-31T00:00:00.000Z',
     updatedLabel: '4天'
   },
   {
     id: 'bili-cover',
     projectId: 'bili',
     title: '生成 B 站封面',
-    updatedAt: '2026-08-04T00:00:00.000Z',
     updatedLabel: '1天'
   }
 ];
-
-const recentItems: SidebarRecentItem[] = conversations.map(conversation => ({
-  id: `conversation:${conversation.id}`,
-  kind: 'conversation',
-  threadId: conversation.id,
-  title: conversation.title,
-  updatedAt: conversation.updatedAt,
-  updatedLabel: conversation.updatedLabel,
-  running: false
-}));
 
 function renderSidebar(overrides: Partial<ComponentProps<typeof ClaweeSidebar>> = {}) {
   return render(
     <ClaweeSidebar
       projects={projects}
       conversations={conversations}
-      recentItems={recentItems}
+      tasks={[]}
       currentProjectId="content-design"
       activeView="conversation"
       onNewConversation={vi.fn()}
@@ -77,7 +62,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ClaweeSidebar>> 
 }
 
 describe('ClaweeSidebar', () => {
-  it('renders global actions, projects, recent conversations, and the settings footer action', () => {
+  it('renders global actions, projects with nested conversations, and the settings footer action', () => {
     renderSidebar();
 
     expect(screen.getByRole('img', { name: 'KrillinAI' })).toHaveAttribute(
@@ -86,6 +71,7 @@ describe('ClaweeSidebar', () => {
     );
     expect(screen.getByText('Clawee')).toHaveClass('sidebar-logo-word');
     expect(screen.getByText('v0.1.0')).toHaveClass('sidebar-brand-version');
+    expect(screen.getByText('整理本周项目进...')).toHaveClass('conversation-title-hover');
     expect(screen.queryByText('Coca-Cola')).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
@@ -101,11 +87,11 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '企业Skill中心' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '系统连接' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '连接器' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '企业知识库' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '共享网盘' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '企业Skill中心' }).nextElementSibling).toBe(screen.getByRole('button', { name: '系统连接' }));
-    expect(screen.getByRole('button', { name: '系统连接' }).nextElementSibling).toBe(screen.getByRole('button', { name: '企业知识库' }));
+    expect(screen.getByRole('button', { name: '企业Skill中心' }).nextElementSibling).toBe(screen.getByRole('button', { name: '连接器' }));
+    expect(screen.getByRole('button', { name: '连接器' }).nextElementSibling).toBe(screen.getByRole('button', { name: '企业知识库' }));
     expect(screen.getByRole('button', { name: '企业知识库' }).nextElementSibling).toBe(screen.getByRole('button', { name: '共享网盘' }));
     expect(screen.getByRole('button', { name: '共享网盘' }).nextElementSibling).toBe(screen.getByRole('button', { name: '定时任务' }));
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
@@ -113,21 +99,9 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
     expect(screen.getByRole('button', { name: 'bili' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '对话' })).not.toBeInTheDocument();
-    const projectConversations = screen.getByLabelText('content-design 对话');
-    expect(within(projectConversations).getByRole('button', {
-      name: '整理本周项目进展 4天'
-    })).toBeInTheDocument();
-    expect(within(projectConversations).queryByRole('button', {
-      name: '生成 B 站封面 1天'
-    })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '最近' })).toBeInTheDocument();
-    const recentList = screen.getByLabelText('最近会话');
-    expect(within(recentList).getByRole('link', {
-      name: '生成 B 站封面 1天'
-    })).toBeInTheDocument();
-    expect(within(recentList).getByRole('link', {
-      name: '整理本周项目进展 4天'
-    })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
+    expect(screen.getByText('4天')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '企业账户' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
@@ -139,7 +113,7 @@ describe('ClaweeSidebar', () => {
     const { rerender } = renderSidebar({ onOpenView });
     await user.click(screen.getByRole('button', { name: '数据看板' }));
     expect(onOpenView).toHaveBeenCalledWith('dashboard');
-    rerender(<ClaweeSidebar projects={projects} conversations={conversations} recentItems={[]} activeView="dashboard" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
+    rerender(<ClaweeSidebar projects={projects} conversations={conversations} tasks={[]} activeView="dashboard" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
     expect(screen.getByRole('button', { name: '数据看板' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: '数据看板' })).toHaveAttribute('title', '数据看板');
   });
@@ -150,7 +124,7 @@ describe('ClaweeSidebar', () => {
     const { rerender } = renderSidebar({ onOpenView });
     await user.click(screen.getByRole('button', { name: '企业知识库' }));
     expect(onOpenView).toHaveBeenCalledWith('knowledge');
-    rerender(<ClaweeSidebar projects={projects} conversations={conversations} recentItems={[]} activeView="knowledge" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
+    rerender(<ClaweeSidebar projects={projects} conversations={conversations} tasks={[]} activeView="knowledge" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
     expect(screen.getByRole('button', { name: '企业知识库' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: '企业知识库' })).toHaveAttribute('title', '企业知识库');
   });
@@ -167,7 +141,7 @@ describe('ClaweeSidebar', () => {
       <ClaweeSidebar
         projects={projects}
         conversations={conversations}
-        recentItems={[]}
+        tasks={[]}
         activeView="activity"
         collapsed
         onNewConversation={vi.fn()}
@@ -193,9 +167,7 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: 'bili' }));
 
     expect(onSelectProject).not.toHaveBeenCalled();
-    expect(within(screen.getByLabelText('bili 对话')).getByRole('button', {
-      name: '生成 B 站封面 1天'
-    })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
   });
 
   it('uses the black KrillinAI wordmark in light mode', () => {
@@ -238,47 +210,41 @@ describe('ClaweeSidebar', () => {
 
     expect(screen.getByRole('button', { name: 'bili' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'bili' })).toHaveAttribute('data-current-project', 'true');
-    const projectConversations = screen.getByLabelText('bili 对话');
-    expect(within(projectConversations).getByRole('button', {
-      name: '生成 B 站封面 1天'
-    })).toBeInTheDocument();
-    expect(within(projectConversations).queryByRole('button', {
-      name: '整理本周项目进展 4天'
-    })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '整理本周项目进展 4天' })).not.toBeInTheDocument();
   });
 
   it('highlights only the selected conversation instead of both project and conversation', () => {
     renderSidebar({ selectedConversationId: 'weekly-progress-brief' });
 
     expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
-    expect(within(screen.getByLabelText('content-design 对话')).getByRole('button', {
-      name: '整理本周项目进展 4天'
-    })).toHaveAttribute('aria-current', 'page');
-    expect(within(screen.getByLabelText('最近会话')).getByRole('link', {
-      name: '整理本周项目进展 4天'
-    })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('clears the conversation highlight outside the conversation view', () => {
+    renderSidebar({
+      activeView: 'knowledge',
+      selectedConversationId: 'weekly-progress-brief'
+    });
+
+    expect(screen.getByRole('button', { name: '企业知识库' }))
+      .toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '整理本周项目进展 4天' }))
+      .not.toHaveAttribute('aria-current');
   });
 
   it('shows a spinning status for conversations with an active run', () => {
     renderSidebar({
-      runningConversationIds: new Set(['weekly-progress-brief']),
-      recentItems: recentItems.map(item => (
-        item.kind === 'conversation' && item.threadId === 'weekly-progress-brief'
-          ? { ...item, running: true }
-          : item
-      ))
+      runningConversationIds: new Set(['weekly-progress-brief'])
     });
 
-    expect(within(screen.getByLabelText('content-design 对话')).getByLabelText('正在运行'))
-      .toHaveClass('conversation-run-spinner');
-    expect(within(screen.getByLabelText('最近会话')).getByRole('link', {
-      name: '整理本周项目进展 正在运行 4天'
-    })).toContainElement(document.querySelector('.sidebar-recent-spinner'));
+    expect(screen.getByLabelText('正在运行')).toHaveClass('conversation-run-spinner');
+    expect(screen.getByRole('button', { name: /整理本周项目进展.*正在运行.*4天/ })).toBeInTheDocument();
   });
 
   it('shows task rows with running, queued, approval, failed, paused, repair, and unread states', () => {
     renderSidebar({
-      recentItems: [
+      tasks: [
         createTask({ id: 'draft', name: '任务草稿', status: 'draft' }),
         createTask({ id: 'running', name: '运行任务', status: 'running' }),
         createTask({ id: 'queued', name: '排队任务', status: 'queued' }),
@@ -295,7 +261,7 @@ describe('ClaweeSidebar', () => {
       ]
     });
 
-    expect(screen.getByRole('heading', { name: '最近' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '任务' })).toBeInTheDocument();
     expect(screen.getByText('草稿')).toBeInTheDocument();
     expect(screen.getByText('运行中')).toBeInTheDocument();
     expect(screen.getByText('排队中')).toBeInTheDocument();
@@ -304,14 +270,14 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByText('已暂停')).toBeInTheDocument();
     expect(screen.getByText('需修复')).toBeInTheDocument();
     expect(screen.getByLabelText('未读更新')).toBeInTheDocument();
-    expect(document.querySelector('.sidebar-recent-spinner')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /异常任务.*需修复/ })).toBeDisabled();
+    expect(document.querySelector('.sidebar-task-spinner')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /异常任务.*需修复/ })).toBeDisabled();
   });
 
   it('highlights a selected draft task without marking its execution project as current', () => {
     renderSidebar({
       selectedConversationId: 'thread-draft',
-      recentItems: [
+      tasks: [
         createTask({
           id: 'draft',
           threadId: 'thread-draft',
@@ -321,7 +287,7 @@ describe('ClaweeSidebar', () => {
       ]
     });
 
-    expect(screen.getByRole('link', { name: /任务草稿.*草稿/ }))
+    expect(screen.getByRole('button', { name: /任务草稿.*草稿/ }))
       .toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: 'content-design' }))
       .not.toHaveAttribute('data-current-project');
@@ -331,52 +297,66 @@ describe('ClaweeSidebar', () => {
     const user = userEvent.setup();
     const onSelectTask = vi.fn();
     renderSidebar({
-      recentItems: [createTask({ id: 'paused', name: '暂停任务', status: 'paused' })],
+      tasks: [createTask({ id: 'paused', name: '暂停任务', status: 'paused' })],
       onSelectTask
     });
 
-    await user.click(screen.getByRole('link', { name: /暂停任务.*已暂停/ }));
+    await user.click(screen.getByRole('button', { name: /暂停任务.*已暂停/ }));
 
     expect(onSelectTask).toHaveBeenCalledWith('thread-paused');
   });
 
-  it('deletes only task drafts after confirmation', async () => {
+  it('renames, archives, and deletes tasks through hover actions', async () => {
     const user = userEvent.setup();
-    const onDeleteTaskDraft = vi.fn(async () => undefined);
+    const onRenameTask = vi.fn(async () => undefined);
+    const onArchiveTask = vi.fn(async () => undefined);
+    const onDeleteTask = vi.fn(async () => undefined);
 
     renderSidebar({
-      recentItems: [
+      tasks: [
         createTask({ id: 'draft', name: '任务草稿', status: 'draft' }),
         createTask({ id: 'scheduled', name: '正式任务', status: 'idle' })
       ],
-      onDeleteTaskDraft
+      onRenameTask,
+      onArchiveTask,
+      onDeleteTask
     });
 
-    await user.click(screen.getByRole('button', { name: '删除草稿 任务草稿' }));
+    await user.click(screen.getByRole('button', { name: '更多 任务草稿' }));
+    await user.click(screen.getByRole('menuitem', { name: '重命名' }));
+    const input = screen.getByRole('textbox', { name: '重命名任务 任务草稿' });
+    await user.clear(input);
+    await user.type(input, '新的任务名{Enter}');
+    expect(onRenameTask).toHaveBeenCalledWith(expect.objectContaining({ id: 'draft' }), '新的任务名');
 
-    expect(screen.getByRole('alertdialog', { name: '删除任务草稿' })).toBeInTheDocument();
-    expect(screen.getByText('此操作不会删除项目文件。')).toBeInTheDocument();
-    expect(onDeleteTaskDraft).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: '删除草稿' }));
-    expect(onDeleteTaskDraft).toHaveBeenCalledWith('thread-draft');
-    expect(screen.queryByRole('alertdialog', { name: '删除任务草稿' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '删除草稿 正式任务' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '归档 正式任务' }));
+    expect(onArchiveTask).toHaveBeenCalledWith(expect.objectContaining({ id: 'scheduled' }));
+
+    await user.click(screen.getByRole('button', { name: '更多 正式任务' }));
+    await user.click(screen.getByRole('menuitem', { name: '删除任务' }));
+
+    expect(screen.getByRole('alertdialog', { name: '删除任务' })).toBeInTheDocument();
+    expect(onDeleteTask).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: '删除任务' }));
+    expect(onDeleteTask).toHaveBeenCalledWith(expect.objectContaining({ id: 'scheduled' }));
+    expect(screen.queryByRole('alertdialog', { name: '删除任务' })).not.toBeInTheDocument();
   });
 
   it('keeps a task draft when its deletion is cancelled', async () => {
     const user = userEvent.setup();
-    const onDeleteTaskDraft = vi.fn();
+    const onDeleteTask = vi.fn();
 
     renderSidebar({
-      recentItems: [createTask({ id: 'draft', name: '任务草稿', status: 'draft' })],
-      onDeleteTaskDraft
+      tasks: [createTask({ id: 'draft', name: '任务草稿', status: 'draft' })],
+      onDeleteTask
     });
 
-    await user.click(screen.getByRole('button', { name: '删除草稿 任务草稿' }));
+    await user.click(screen.getByRole('button', { name: '更多 任务草稿' }));
+    await user.click(screen.getByRole('menuitem', { name: '删除任务' }));
     await user.click(screen.getByRole('button', { name: '取消' }));
 
-    expect(onDeleteTaskDraft).not.toHaveBeenCalled();
-    expect(screen.queryByRole('alertdialog', { name: '删除任务草稿' })).not.toBeInTheDocument();
+    expect(onDeleteTask).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog', { name: '删除任务' })).not.toBeInTheDocument();
   });
 
   it('collapses the selected project when clicking it again', async () => {
@@ -384,13 +364,10 @@ describe('ClaweeSidebar', () => {
 
     renderSidebar({ currentProjectId: 'bili' });
 
-    expect(screen.getByLabelText('bili 对话')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'bili' }));
 
-    expect(screen.queryByLabelText('bili 对话')).not.toBeInTheDocument();
-    expect(within(screen.getByLabelText('最近会话')).getByRole('link', {
-      name: '生成 B 站封面 1天'
-    })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'bili' })).toHaveAttribute('aria-expanded', 'false');
   });
 
@@ -400,28 +377,13 @@ describe('ClaweeSidebar', () => {
 
     renderSidebar({ onSelectConversation });
 
-    await user.click(within(screen.getByLabelText('content-design 对话')).getByRole('button', {
-      name: '整理本周项目进展 4天'
-    }));
+    await user.click(screen.getByRole('button', { name: '整理本周项目进展 4天' }));
 
     expect(onSelectConversation).toHaveBeenCalledWith('weekly-progress-brief');
   });
 
-  it('opens a conversation directly from the cross-project recent list', async () => {
-    const user = userEvent.setup();
-    const onSelectConversation = vi.fn();
-    renderSidebar({ onSelectConversation });
-
-    await user.click(within(screen.getByLabelText('最近会话')).getByRole('link', {
-      name: '生成 B 站封面 1天'
-    }));
-
-    expect(onSelectConversation).toHaveBeenCalledWith('bili-cover');
-  });
-
   it('archives a conversation after confirming that history and project files are preserved', async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const onArchiveConversation = vi.fn(async () => undefined);
 
     renderSidebar({ onArchiveConversation });
@@ -429,10 +391,69 @@ describe('ClaweeSidebar', () => {
     const conversation = screen.getByRole('group', { name: '整理本周项目进展' });
     await user.click(within(conversation).getByRole('button', { name: '归档' }));
 
-    expect(confirm).toHaveBeenCalledWith(
-      '归档“整理本周项目进展”？归档后会从项目列表隐藏，但不会删除项目文件或 Codex 历史。'
+    const dialog = screen.getByRole('alertdialog', { name: '归档对话' });
+    expect(dialog).toHaveTextContent(
+      '确认归档“整理本周项目进展”？归档后会从项目列表隐藏，但不会删除项目文件或 Codex 历史。'
     );
+    expect(onArchiveConversation).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: '归档' }));
+
     expect(onArchiveConversation).toHaveBeenCalledWith('weekly-progress-brief');
+  });
+
+  it('renames, pins, and permanently deletes a conversation from row actions', async () => {
+    const user = userEvent.setup();
+    const onRenameConversation = vi.fn(async () => undefined);
+    const onPinConversation = vi.fn(async () => undefined);
+    const onDeleteConversation = vi.fn(async () => undefined);
+    renderSidebar({
+      onArchiveConversation: vi.fn(),
+      onRenameConversation,
+      onPinConversation,
+      onDeleteConversation
+    });
+    const conversation = screen.getByRole('group', { name: '整理本周项目进展' });
+
+    expect(within(conversation).getByRole('button', { name: '更多' }))
+      .toBeInTheDocument();
+    await user.click(within(conversation).getByRole('button', { name: '置顶' }));
+    expect(onPinConversation).toHaveBeenCalledWith('weekly-progress-brief', true);
+
+    await user.click(within(conversation).getByRole('button', { name: '更多' }));
+    const menu = screen.getByRole('menu', { name: '整理本周项目进展 操作' });
+    expect(menu).toHaveClass('sidebar-conversation-menu--portal');
+    expect(menu.parentElement).toBe(document.body);
+    expect(menu).toHaveStyle({ top: '8px', left: '8px' });
+    await user.click(screen.getByRole('menuitem', { name: '重命名' }));
+    const input = within(conversation).getByRole('textbox', { name: '重命名 整理本周项目进展' });
+    await user.clear(input);
+    await user.type(input, '新的会话标题{Enter}');
+    expect(onRenameConversation).toHaveBeenCalledWith(
+      'weekly-progress-brief',
+      '新的会话标题'
+    );
+
+    await user.click(within(conversation).getByRole('button', { name: '更多' }));
+    await user.click(screen.getByRole('menuitem', { name: '删除任务' }));
+    const dialog = screen.getByRole('alertdialog', { name: '删除任务' });
+    expect(dialog).toHaveTextContent('永久删除');
+    expect(dialog).toHaveTextContent('不会删除项目文件');
+    await user.click(within(dialog).getByRole('button', { name: '永久删除' }));
+    expect(onDeleteConversation).toHaveBeenCalledWith('weekly-progress-brief');
+  });
+
+  it('closes a portalled conversation menu when the viewport changes', async () => {
+    const user = userEvent.setup();
+    renderSidebar({ onArchiveConversation: vi.fn() });
+    const conversation = screen.getByRole('group', { name: '整理本周项目进展' });
+
+    await user.click(within(conversation).getByRole('button', { name: '更多' }));
+    expect(screen.getByRole('menu', { name: '整理本周项目进展 操作' })).toBeInTheDocument();
+
+    fireEvent(window, new Event('resize'));
+
+    expect(screen.queryByRole('menu', { name: '整理本周项目进展 操作' })).not.toBeInTheDocument();
   });
 
   it('does not allow archiving a conversation while it is running', () => {
@@ -465,16 +486,17 @@ describe('ClaweeSidebar', () => {
       onOpenSettings,
       enterpriseSession: {
         status: 'signed_in',
-        account: { email: 'member@example.com', name: 'Member' },
+        account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
         transportSecurity: 'secure_https'
       },
       activeView: 'account'
     });
 
-    expect(screen.getByRole('button', { name: 'Member member@example.com' }))
+    expect(screen.getByRole('button', { name: 'Member' }))
       .toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText('member@example.com')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).not.toHaveAttribute('aria-current');
-    await user.click(screen.getByRole('button', { name: 'Member member@example.com' }));
+    await user.click(screen.getByRole('button', { name: 'Member' }));
     await user.click(screen.getByRole('button', { name: '设置' }));
     expect(onOpenAccount).toHaveBeenCalledTimes(1);
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
@@ -483,12 +505,12 @@ describe('ClaweeSidebar', () => {
       <ClaweeSidebar
         projects={projects}
         conversations={conversations}
-        recentItems={[]}
+        tasks={[]}
         activeView="account"
         collapsed
         enterpriseSession={{
           status: 'signed_in',
-          account: { email: 'member@example.com', name: 'Member' },
+          account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
           transportSecurity: 'secure_https'
         }}
         onNewConversation={vi.fn()}
@@ -502,7 +524,7 @@ describe('ClaweeSidebar', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: 'Member member@example.com' }))
+    expect(screen.getByRole('button', { name: 'Member' }))
       .toHaveAttribute('title', 'Member');
     expect(screen.getByRole('button', { name: '设置' })).toHaveAttribute('title', '设置');
   });
@@ -639,7 +661,7 @@ describe('ClaweeSidebar', () => {
     renderSidebar({
       collapsed: true,
       onToggleCollapsed,
-      recentItems: [createTask({ name: '折叠时隐藏的任务' })]
+      tasks: [createTask({ name: '折叠时隐藏的任务' })]
     });
 
     expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument();
@@ -681,20 +703,18 @@ function createTask(overrides: {
   threadId?: string;
   name?: string;
   status?: 'draft' | 'idle' | 'running' | 'queued' | 'waiting_approval' | 'failed' | 'paused' | 'repair_required';
+  nextRunLabel?: string;
   unread?: boolean;
-} = {}): SidebarRecentItem {
+} = {}) {
   const id = overrides.id ?? 'task';
-  const threadId = overrides.threadId === undefined && overrides.status !== 'repair_required'
-    ? `thread-${id}`
-    : overrides.threadId;
   return {
-    id: `task:${id}`,
-    kind: 'task',
-    ...(threadId === undefined ? {} : { threadId }),
-    title: overrides.name ?? '每日总结',
-    updatedAt: '2026-08-04T00:00:00.000Z',
-    updatedLabel: '1天',
+    id,
+    threadId: overrides.threadId === undefined && overrides.status !== 'repair_required'
+      ? `thread-${id}`
+      : overrides.threadId,
+    name: overrides.name ?? '每日总结',
     status: overrides.status ?? 'idle',
+    nextRunLabel: overrides.nextRunLabel ?? '下次 18:00',
     unread: overrides.unread ?? false
   };
 }

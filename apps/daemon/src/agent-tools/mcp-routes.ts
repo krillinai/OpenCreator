@@ -14,7 +14,13 @@ import {
   createAgentScheduleHttpClient
 } from './schedule-tools.js';
 import { createAgentScheduleMcpServer } from './stdio-server.js';
-import { toolNamesForScopes } from './run-injection.js';
+import { AGENT_KNOWLEDGE_MCP_ROUTE, toolNamesForScopes } from './run-injection.js';
+import {
+  createKnowledgeMcpServer
+} from './knowledge-tools-2026-08-05.js';
+import type {
+  KnowledgeConversationManager
+} from '../enterprise/knowledge-conversation-2026-08-05.js';
 
 export async function registerAgentScheduleMcpRoute(
   fastify: FastifyInstance,
@@ -74,6 +80,59 @@ export async function registerAgentScheduleMcpRoute(
   fastify.get(AGENT_SCHEDULE_MCP_ROUTE, async (_request, reply) =>
     reply.code(405).send(jsonRpcError('Method not allowed')));
   fastify.delete(AGENT_SCHEDULE_MCP_ROUTE, async (_request, reply) =>
+    reply.code(405).send(jsonRpcError('Method not allowed')));
+}
+
+export async function registerKnowledgeMcpRoute(
+  fastify: FastifyInstance,
+  input: {
+    capabilities: AgentCapabilityTokenStore;
+    manager: KnowledgeConversationManager;
+  }
+): Promise<void> {
+  fastify.post<{ Body: unknown }>(AGENT_KNOWLEDGE_MCP_ROUTE, async (request, reply) => {
+    const authorization = authorizeMcpRequest(request, reply, input.capabilities);
+    if (authorization === undefined) return;
+    try {
+      input.capabilities.authorize(authorization.token, {
+        scope: 'knowledge:search',
+        runId: authorization.grant.runId,
+        threadId: authorization.grant.threadId
+      });
+    } catch (error) {
+      if (!(error instanceof AgentCapabilityTokenError)) throw error;
+      return reply.code(error.statusCode).send(jsonRpcError('Capability does not allow knowledge search'));
+    }
+    const mcpServer = createKnowledgeMcpServer({
+      threadId: authorization.grant.threadId,
+      manager: input.manager
+    });
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    let cleanupWork: Promise<void> | undefined;
+    const cleanup = () => {
+      cleanupWork ??= Promise.allSettled([transport.close(), mcpServer.close()])
+        .then(() => undefined);
+      return cleanupWork;
+    };
+    reply.raw.once('finish', () => void cleanup());
+    reply.raw.once('close', () => void cleanup());
+    reply.hijack();
+    try {
+      await mcpServer.connect(transport);
+      await transport.handleRequest(request.raw, reply.raw, request.body);
+    } catch {
+      if (!reply.raw.headersSent) {
+        reply.raw.writeHead(500, { 'content-type': 'application/json' });
+        reply.raw.end(JSON.stringify(jsonRpcError('Internal MCP server error')));
+      } else if (!reply.raw.writableEnded) {
+        reply.raw.end();
+      }
+      await cleanup();
+    }
+  });
+  fastify.get(AGENT_KNOWLEDGE_MCP_ROUTE, async (_request, reply) =>
+    reply.code(405).send(jsonRpcError('Method not allowed')));
+  fastify.delete(AGENT_KNOWLEDGE_MCP_ROUTE, async (_request, reply) =>
     reply.code(405).send(jsonRpcError('Method not allowed')));
 }
 

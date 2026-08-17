@@ -1,5 +1,6 @@
 import type { EnterpriseSessionResponse } from '@clawee/protocol';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Archive,
   Activity,
@@ -17,9 +18,12 @@ import {
   LayoutDashboard,
   LoaderCircle,
   MoreHorizontal,
+  Pencil,
   PanelLeftClose,
   PanelLeftOpen,
   PauseCircle,
+  Pin,
+  PinOff,
   Search,
   Settings,
   Settings2,
@@ -37,32 +41,20 @@ import type {
   ClaweeConversation,
   ClaweeProject
 } from '../projects/project-model.js';
-import type { SidebarTaskStatus } from './sidebar-task-model.js';
+import type {
+  SidebarTaskStatus,
+  SidebarTaskSummary
+} from './sidebar-task-model.js';
 
-type SidebarRecentItemBase = {
-  id: string;
-  title: string;
-  updatedAt: string;
-  updatedLabel: string;
-};
-
-export type SidebarRecentItem =
-  | (SidebarRecentItemBase & {
-      kind: 'conversation';
-      threadId: string;
-      running: boolean;
-    })
-  | (SidebarRecentItemBase & {
-      kind: 'task';
-      threadId?: string;
-      status: SidebarTaskStatus;
-      unread: boolean;
-    });
+const SIDEBAR_ACTION_MENU_WIDTH = 154;
+const SIDEBAR_ACTION_MENU_MAX_HEIGHT = 104;
+const SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN = 8;
+const SIDEBAR_ACTION_MENU_GAP = 4;
 
 export function ClaweeSidebar(props: {
   projects: ClaweeProject[];
   conversations: ClaweeConversation[];
-  recentItems: SidebarRecentItem[];
+  tasks: SidebarTaskSummary[];
   runningConversationIds?: ReadonlySet<string>;
   currentProjectId?: string;
   selectedConversationId?: string;
@@ -85,26 +77,55 @@ export function ClaweeSidebar(props: {
   onReplaceProjectDirectory?(projectId: string): void;
   onArchiveProject?(projectId: string): void;
   onArchiveConversation?(conversationId: string): void | Promise<void>;
+  onRenameConversation?(conversationId: string, title: string): void | Promise<void>;
+  onPinConversation?(conversationId: string, pinned: boolean): void | Promise<void>;
+  onDeleteConversation?(conversationId: string): void | Promise<void>;
   onDeleteTaskDraft?(threadId: string): void | Promise<void>;
+  onArchiveTask?(task: SidebarTaskSummary): void | Promise<void>;
+  onRenameTask?(task: SidebarTaskSummary, title: string): void | Promise<void>;
+  onDeleteTask?(task: SidebarTaskSummary): void | Promise<void>;
 }) {
   const [expandedProjectId, setExpandedProjectId] = useState<string | undefined>(props.currentProjectId);
   const [projectMenuId, setProjectMenuId] = useState<string>();
   const [archivingConversationId, setArchivingConversationId] = useState<string>();
+  const [conversationPendingArchive, setConversationPendingArchive] = useState<{
+    id: string;
+    title: string;
+  }>();
+  const [conversationMenuId, setConversationMenuId] = useState<string>();
+  const [conversationMenuPosition, setConversationMenuPosition] = useState<{ top: number; left: number }>();
+  const [conversationRename, setConversationRename] = useState<{
+    id: string;
+    originalTitle: string;
+    title: string;
+  }>();
+  const [conversationPendingDeletion, setConversationPendingDeletion] = useState<{
+    id: string;
+    title: string;
+  }>();
+  const [conversationActionBusyId, setConversationActionBusyId] = useState<string>();
   const [deletingDraftThreadId, setDeletingDraftThreadId] = useState<string>();
   const [draftPendingDeletion, setDraftPendingDeletion] = useState<{ threadId: string }>();
+  const [taskMenuId, setTaskMenuId] = useState<string>();
+  const [taskMenuPosition, setTaskMenuPosition] = useState<{ top: number; left: number }>();
+  const [taskRename, setTaskRename] = useState<{ id: string; originalTitle: string; title: string }>();
+  const [taskPendingDeletion, setTaskPendingDeletion] = useState<SidebarTaskSummary>();
+  const [taskActionBusyId, setTaskActionBusyId] = useState<string>();
   const [projectPendingRemoval, setProjectPendingRemoval] = useState<{
     id: string;
     name: string;
   }>();
   const projectMenuRef = useRef<HTMLDivElement>(null);
+  const conversationMenuRef = useRef<HTMLDivElement>(null);
+  const conversationMenuPortalRef = useRef<HTMLDivElement>(null);
+  const taskMenuRef = useRef<HTMLDivElement>(null);
+  const taskMenuPortalRef = useRef<HTMLDivElement>(null);
+  const renameCanceledRef = useRef(false);
   const collapsed = props.collapsed === true;
   const autoCollapsed = props.autoCollapsed === true;
   const logoColor = props.colorMode === 'light' ? 'black' : 'white';
   const account = props.enterpriseSession?.account;
   const accountTitle = account?.name ?? '企业账户';
-  const accountLabel = account === undefined
-    ? '企业账户'
-    : `${account.name} ${account.email}`;
   const fullLogoSrc = props.colorMode === 'light' ? '/logo-v2-black.svg' : '/logo-v2-white.svg';
   const globalActions: Array<{
     label: string;
@@ -116,14 +137,14 @@ export function ClaweeSidebar(props: {
     { label: '数据看板', icon: LayoutDashboard, view: 'dashboard', onClick: () => props.onOpenView('dashboard') },
     { label: 'Agent动态', icon: Activity, view: 'activity', onClick: () => props.onOpenView('activity') },
     { label: '企业Skill中心', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') },
-    { label: '系统连接', icon: Link2, view: 'connections', onClick: () => props.onOpenView('connections') },
+    { label: '连接器', icon: Link2, view: 'connections', onClick: () => props.onOpenView('connections') },
     { label: '企业知识库', icon: LibraryBig, view: 'knowledge', onClick: () => props.onOpenView('knowledge') },
     { label: '共享网盘', icon: HardDrive, view: 'drive', onClick: () => props.onOpenView('drive') },
     { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') }
   ];
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
-  const selectedTaskThread = props.recentItems.some(
-    item => item.kind === 'task' && item.threadId === props.selectedConversationId
+  const selectedTaskThread = props.tasks.some(
+    task => task.threadId === props.selectedConversationId
   );
 
   for (const conversation of props.conversations) {
@@ -153,6 +174,58 @@ export function ClaweeSidebar(props: {
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, [projectMenuId]);
+
+  useEffect(() => {
+    if (conversationMenuId === undefined) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !conversationMenuRef.current?.contains(target)
+        && !conversationMenuPortalRef.current?.contains(target)
+      ) {
+        setConversationMenuId(undefined);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setConversationMenuId(undefined);
+    };
+    const closeOnViewportChange = () => setConversationMenuId(undefined);
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnViewportChange);
+    window.addEventListener('scroll', closeOnViewportChange, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnViewportChange);
+      window.removeEventListener('scroll', closeOnViewportChange, true);
+    };
+  }, [conversationMenuId]);
+
+  useEffect(() => {
+    if (taskMenuId === undefined) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !taskMenuRef.current?.contains(target)
+        && !taskMenuPortalRef.current?.contains(target)
+      ) setTaskMenuId(undefined);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTaskMenuId(undefined);
+    };
+    const closeOnViewportChange = () => setTaskMenuId(undefined);
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnViewportChange);
+    window.addEventListener('scroll', closeOnViewportChange, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnViewportChange);
+      window.removeEventListener('scroll', closeOnViewportChange, true);
+    };
+  }, [taskMenuId]);
 
   return (
     <nav className="clawee-sidebar" aria-label="Clawee" data-collapsed={collapsed ? 'true' : 'false'}>
@@ -235,10 +308,7 @@ export function ClaweeSidebar(props: {
       </div>
 
       {collapsed ? null : (
-        <section
-          className="sidebar-section sidebar-project-section"
-          aria-labelledby="clawee-projects-heading"
-        >
+        <section className="sidebar-section" aria-labelledby="clawee-projects-heading">
           <div className="sidebar-section-heading">
             <h2 id="clawee-projects-heading">项目</h2>
             {props.onAddProject || props.onManageProjects ? (
@@ -383,17 +453,65 @@ export function ClaweeSidebar(props: {
                           <div
                             key={conversation.id}
                             className="sidebar-conversation-row-shell"
-                            data-has-action={props.onArchiveConversation === undefined ? 'false' : 'true'}
+                            data-has-action="true"
                             role="group"
                             aria-label={conversation.title}
                           >
-                            <button
+                            {conversationRename?.id === conversation.id ? (
+                              <input
+                                className="sidebar-conversation-rename-input"
+                                aria-label={`重命名 ${conversationRename.originalTitle}`}
+                                autoFocus
+                                value={conversationRename.title}
+                                onChange={event => setConversationRename(current => (
+                                  current === undefined ? current : { ...current, title: event.target.value }
+                                ))}
+                                onKeyDown={event => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    event.currentTarget.blur();
+                                  } else if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    renameCanceledRef.current = true;
+                                    setConversationRename(undefined);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  if (renameCanceledRef.current) {
+                                    renameCanceledRef.current = false;
+                                    return;
+                                  }
+                                  const nextTitle = conversationRename.title.trim();
+                                  if (nextTitle.length === 0 || nextTitle === conversationRename.originalTitle) {
+                                    setConversationRename(undefined);
+                                    return;
+                                  }
+                                  setConversationActionBusyId(conversation.id);
+                                  void Promise.resolve(
+                                    props.onRenameConversation?.(conversation.id, nextTitle)
+                                  ).finally(() => {
+                                    setConversationActionBusyId(undefined);
+                                    setConversationRename(undefined);
+                                  });
+                                }}
+                              />
+                            ) : <button
                               type="button"
                               className="conversation-row nested-conversation-row"
-                              aria-current={conversation.id === props.selectedConversationId ? 'page' : undefined}
+                              aria-current={
+                                props.activeView === 'conversation'
+                                && conversation.id === props.selectedConversationId
+                                  ? 'page'
+                                  : undefined
+                              }
                               onClick={() => props.onSelectConversation(conversation.id)}
                             >
-                              <strong>{conversation.title}</strong>
+                              <strong>
+                                <span className="conversation-title-default">{conversation.title}</span>
+                                <span className="conversation-title-hover" aria-hidden="true">
+                                  {abbreviateConversationTitle(conversation.title)}
+                                </span>
+                              </strong>
                               <span className="conversation-row-meta">
                                 {isRunning ? (
                                   <LoaderCircle
@@ -405,42 +523,123 @@ export function ClaweeSidebar(props: {
                                 ) : null}
                                 <span className="conversation-updated-label">{conversation.updatedLabel}</span>
                               </span>
-                            </button>
-                            {props.onArchiveConversation ? (
+                            </button>}
+                            <div
+                              className="sidebar-conversation-actions"
+                              ref={conversationMenuId === conversation.id ? conversationMenuRef : undefined}
+                            >
+                              <div className="sidebar-conversation-menu-shell">
+                                <button
+                                  type="button"
+                                  className="sidebar-conversation-action"
+                                  aria-label="更多"
+                                  title="更多"
+                                  aria-haspopup="menu"
+                                  aria-expanded={conversationMenuId === conversation.id}
+                                  onClick={event => {
+                                    const rect = event.currentTarget.getBoundingClientRect();
+                                    setConversationMenuPosition(positionSidebarActionMenu(rect));
+                                    setConversationMenuId(current => (
+                                      current === conversation.id ? undefined : conversation.id
+                                    ));
+                                  }}
+                                >
+                                  <MoreHorizontal size={16} strokeWidth={1.9} aria-hidden="true" />
+                                </button>
+                                {conversationMenuId === conversation.id && conversationMenuPosition !== undefined
+                                  ? createPortal((
+                                    <div
+                                      className="sidebar-conversation-menu sidebar-conversation-menu--portal"
+                                      role="menu"
+                                      aria-label={`${conversation.title} 操作`}
+                                      ref={conversationMenuPortalRef}
+                                      style={conversationMenuPosition}
+                                    >
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => {
+                                          setConversationMenuId(undefined);
+                                          setConversationRename({
+                                            id: conversation.id,
+                                            originalTitle: conversation.title,
+                                            title: conversation.title
+                                          });
+                                        }}
+                                      >
+                                        <Pencil size={15} strokeWidth={1.9} aria-hidden="true" />
+                                        <span>重命名</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="is-destructive"
+                                        disabled={isRunning}
+                                        onClick={() => {
+                                          setConversationMenuId(undefined);
+                                          setConversationPendingDeletion({
+                                            id: conversation.id,
+                                            title: conversation.title
+                                          });
+                                        }}
+                                      >
+                                        <Trash2 size={15} strokeWidth={1.9} aria-hidden="true" />
+                                        <span>删除任务</span>
+                                      </button>
+                                    </div>
+                                  ), document.body)
+                                  : null}
+                              </div>
+                              {props.onArchiveConversation ? (
                               <button
                                 type="button"
-                                className="sidebar-conversation-archive"
+                                className="sidebar-conversation-action sidebar-conversation-archive"
                                 aria-label="归档"
                                 title={isRunning ? '任务运行结束后可归档' : '归档会话'}
                                 disabled={
                                   isRunning
                                   || archivingConversationId === conversation.id
+                                  || conversationActionBusyId === conversation.id
                                 }
-                                onClick={async () => {
-                                  if (!window.confirm(
-                                    `归档“${conversation.title}”？归档后会从项目列表隐藏，但不会删除项目文件或 Codex 历史。`
-                                  )) {
-                                    return;
-                                  }
-                                  setArchivingConversationId(conversation.id);
-                                  try {
-                                    await props.onArchiveConversation?.(conversation.id);
-                                  } finally {
-                                    setArchivingConversationId(undefined);
-                                  }
+                                onClick={() => {
+                                  setConversationPendingArchive({
+                                    id: conversation.id,
+                                    title: conversation.title
+                                  });
                                 }}
                               >
                                 {archivingConversationId === conversation.id ? (
                                   <LoaderCircle
                                     className="conversation-run-spinner"
-                                    size={14}
+                                    size={16}
                                     aria-hidden="true"
                                   />
                                 ) : (
-                                  <Archive size={14} strokeWidth={1.9} aria-hidden="true" />
+                                  <Archive size={16} strokeWidth={1.9} aria-hidden="true" />
                                 )}
                               </button>
-                            ) : null}
+                              ) : null}
+                              {props.onPinConversation ? (
+                                <button
+                                  type="button"
+                                  className="sidebar-conversation-action"
+                                  aria-label={conversation.pinnedAt == null ? '置顶' : '取消置顶'}
+                                  title={conversation.pinnedAt == null ? '置顶会话' : '取消置顶'}
+                                  disabled={conversationActionBusyId === conversation.id}
+                                  onClick={() => {
+                                    setConversationActionBusyId(conversation.id);
+                                    void Promise.resolve(props.onPinConversation?.(
+                                      conversation.id,
+                                      conversation.pinnedAt == null
+                                    )).finally(() => setConversationActionBusyId(undefined));
+                                  }}
+                                >
+                                  {conversation.pinnedAt == null
+                                    ? <Pin size={16} strokeWidth={1.9} aria-hidden="true" />
+                                    : <PinOff size={16} strokeWidth={1.9} aria-hidden="true" />}
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
                         );
                       })}
@@ -455,105 +654,151 @@ export function ClaweeSidebar(props: {
 
       {collapsed ? null : (
         <section
-          className="sidebar-section sidebar-recent-section"
-          aria-labelledby="clawee-recent-heading"
+          className="sidebar-section sidebar-task-section"
+          aria-labelledby="clawee-tasks-heading"
         >
-          <h2 id="clawee-recent-heading">最近</h2>
-          {props.recentItems.length === 0 ? (
-            <p className="sidebar-empty">暂无最近会话</p>
+          <h2 id="clawee-tasks-heading">任务</h2>
+          {props.tasks.length === 0 ? (
+            <p className="sidebar-empty">暂无任务</p>
           ) : (
-            <div className="sidebar-recent-list" aria-label="最近会话">
-              {props.recentItems.map(item => {
-                const taskVisual = item.kind === 'task'
-                  ? taskStatusVisual(item.status)
-                  : undefined;
-                const StatusIcon = taskVisual?.icon;
-                const disabled = item.kind === 'task'
-                  && (item.status === 'repair_required' || item.threadId === undefined);
-                const detail = item.kind === 'task' && item.status !== 'idle'
-                  ? taskVisual?.label ?? item.updatedLabel
-                  : item.updatedLabel;
-                const canDeleteDraft =
-                  item.kind === 'task'
-                  && item.status === 'draft'
-                  && item.threadId !== undefined
-                  && props.onDeleteTaskDraft !== undefined;
+            <div className="sidebar-task-list" aria-label="任务会话">
+              {props.tasks.map(task => {
+                const visual = taskStatusVisual(task.status);
+                const StatusIcon = visual.icon;
+                const disabled = task.status === 'repair_required' || task.threadId === undefined;
+                const detail = task.status === 'idle'
+                  ? task.nextRunLabel ?? visual.label
+                  : visual.label;
+                const isRunning = task.status === 'running' || task.status === 'queued';
+                const isRenaming = taskRename?.id === task.id;
                 return (
                   <div
-                    className="sidebar-recent-row-shell"
-                    data-kind={item.kind}
-                    data-status={item.kind === 'task' ? item.status : undefined}
-                    data-has-action={canDeleteDraft ? 'true' : 'false'}
-                    key={item.id}
+                    className="sidebar-task-row-shell"
+                    data-status={task.status}
+                    key={task.id}
                   >
-                    <button
+                    {isRenaming ? (
+                      <input
+                        className="sidebar-task-rename-input"
+                        aria-label={`重命名任务 ${task.name}`}
+                        autoFocus
+                        value={taskRename.title}
+                        onChange={event => setTaskRename(current => current === undefined
+                          ? current
+                          : { ...current, title: event.target.value })}
+                        onKeyDown={event => {
+                          if (event.key === 'Escape') {
+                            renameCanceledRef.current = true;
+                            setTaskRename(undefined);
+                          } else if (event.key === 'Enter') {
+                            event.currentTarget.blur();
+                          }
+                        }}
+                        onBlur={() => {
+                          if (renameCanceledRef.current) {
+                            renameCanceledRef.current = false;
+                            return;
+                          }
+                          const title = taskRename.title.trim();
+                          if (title.length === 0 || title === taskRename.originalTitle) {
+                            setTaskRename(undefined);
+                            return;
+                          }
+                          setTaskActionBusyId(task.id);
+                          void Promise.resolve(props.onRenameTask?.(task, title)).finally(() => {
+                            setTaskActionBusyId(undefined);
+                            setTaskRename(undefined);
+                          });
+                        }}
+                      />
+                    ) : <button
                       type="button"
-                      role="link"
-                      className="sidebar-recent-row"
-                      data-kind={item.kind}
-                      data-status={item.kind === 'task' ? item.status : undefined}
-                      aria-label={
-                        item.kind === 'conversation' && item.running
-                          ? `${item.title} 正在运行 ${detail}`
+                      className="sidebar-task-row"
+                      data-status={task.status}
+                      aria-current={
+                        props.activeView === 'conversation'
+                        && task.threadId === props.selectedConversationId
+                          ? 'page'
                           : undefined
                       }
-                      aria-current={item.threadId === props.selectedConversationId ? 'page' : undefined}
                       disabled={disabled}
                       onClick={() => {
-                        if (item.threadId === undefined) return;
-                        if (item.kind === 'task') props.onSelectTask(item.threadId);
-                        else props.onSelectConversation(item.threadId);
+                        if (task.threadId !== undefined) props.onSelectTask(task.threadId);
                       }}
                     >
-                      <span className="sidebar-recent-title">
-                        {StatusIcon ? (
-                          <StatusIcon
-                            className={
-                              item.kind === 'task' && item.status === 'running'
-                                ? 'sidebar-recent-spinner'
-                                : 'sidebar-recent-status-icon'
-                            }
-                            size={15}
-                            strokeWidth={2}
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                        <strong>{item.title}</strong>
-                      </span>
-                      <span className="sidebar-recent-meta">
-                        {item.kind === 'conversation' && item.running ? (
-                          <LoaderCircle
-                            className="sidebar-recent-spinner"
-                            size={13}
-                            strokeWidth={2}
-                            aria-hidden="true"
-                          />
-                        ) : null}
+                      <StatusIcon
+                        className={task.status === 'running' ? 'sidebar-task-spinner' : 'sidebar-task-icon'}
+                        size={16}
+                        strokeWidth={2}
+                        aria-hidden="true"
+                      />
+                      <span className="sidebar-task-copy">
+                        <strong>{task.name}</strong>
                         <span>{detail}</span>
-                        {item.kind === 'task' && item.unread ? (
-                          <span className="sidebar-recent-unread" aria-label="未读更新" />
-                        ) : null}
                       </span>
-                    </button>
-                    {canDeleteDraft ? (
+                      {task.unread ? (
+                        <span className="sidebar-task-unread" aria-label="未读更新" />
+                      ) : null}
+                    </button>}
+                    {isRenaming ? null : (
+                      <div className="sidebar-task-actions" ref={taskMenuId === task.id ? taskMenuRef : undefined}>
+                        <div className="sidebar-task-menu-shell">
+                          <button
+                            type="button"
+                            className="sidebar-task-action"
+                            aria-label={`更多 ${task.name}`}
+                            aria-haspopup="menu"
+                            aria-expanded={taskMenuId === task.id}
+                            onClick={event => {
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              setTaskMenuPosition(positionSidebarActionMenu(rect));
+                              setTaskMenuId(current => current === task.id ? undefined : task.id);
+                            }}
+                          >
+                            <MoreHorizontal size={14} aria-hidden="true" />
+                          </button>
+                          {taskMenuId === task.id && taskMenuPosition !== undefined ? createPortal((
+                            <div
+                              className="sidebar-task-menu sidebar-task-menu--portal"
+                              role="menu"
+                              aria-label={`${task.name} 操作`}
+                              ref={taskMenuPortalRef}
+                              style={taskMenuPosition}
+                            >
+                              <button type="button" role="menuitem" onClick={() => {
+                                setTaskMenuId(undefined);
+                                setTaskRename({ id: task.id, originalTitle: task.name, title: task.name });
+                              }}>
+                                <Pencil size={15} aria-hidden="true" /><span>重命名</span>
+                              </button>
+                              <button type="button" role="menuitem" className="is-destructive" disabled={isRunning} onClick={() => {
+                                setTaskMenuId(undefined);
+                                setTaskPendingDeletion(task);
+                              }}>
+                                <Trash2 size={15} aria-hidden="true" /><span>删除任务</span>
+                              </button>
+                            </div>
+                          ), document.body) : null}
+                        </div>
                       <button
                         type="button"
-                        className="sidebar-recent-delete"
-                        aria-label={`删除草稿 ${item.title}`}
-                        title="删除草稿"
-                        disabled={deletingDraftThreadId === item.threadId}
+                        className="sidebar-task-action sidebar-task-archive"
+                        aria-label={`归档 ${task.name}`}
+                        title={isRunning ? '任务运行结束后可归档' : '归档任务'}
+                        disabled={isRunning || taskActionBusyId === task.id}
                         onClick={() => {
-                          if (item.threadId === undefined) return;
-                          setDraftPendingDeletion({ threadId: item.threadId });
+                          setTaskActionBusyId(task.id);
+                          void Promise.resolve(props.onArchiveTask?.(task)).finally(() => setTaskActionBusyId(undefined));
                         }}
                       >
-                        {deletingDraftThreadId === item.threadId ? (
-                          <LoaderCircle className="sidebar-recent-spinner" size={15} aria-hidden="true" />
+                        {taskActionBusyId === task.id ? (
+                          <LoaderCircle className="sidebar-task-spinner" size={15} aria-hidden="true" />
                         ) : (
-                          <Trash2 size={15} aria-hidden="true" />
+                          <Archive size={14} aria-hidden="true" />
                         )}
                       </button>
-                    ) : null}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -566,7 +811,7 @@ export function ClaweeSidebar(props: {
         <button
           className="sidebar-account-button"
           type="button"
-          aria-label={accountLabel}
+          aria-label={accountTitle}
           aria-current={props.activeView === 'account' ? 'page' : undefined}
           title={collapsed ? accountTitle : undefined}
           onClick={props.onOpenAccount}
@@ -576,7 +821,6 @@ export function ClaweeSidebar(props: {
           </span>
           <span className="sidebar-account-copy">
             <strong>{accountTitle}</strong>
-            {account === undefined ? null : <small>{account.email}</small>}
           </span>
         </button>
         <button
@@ -591,6 +835,45 @@ export function ClaweeSidebar(props: {
         </button>
       </div>
       <ConfirmDialog
+        open={conversationPendingDeletion !== undefined}
+        title="删除任务"
+        description={conversationPendingDeletion === undefined
+          ? '永久删除后无法恢复，但不会删除项目文件。'
+          : `确认永久删除“${conversationPendingDeletion.title}”？会话及历史记录将无法恢复，但不会删除项目文件。`}
+        confirmLabel="永久删除"
+        destructive
+        busy={conversationActionBusyId !== undefined}
+        onCancel={() => setConversationPendingDeletion(undefined)}
+        onConfirm={() => {
+          if (conversationPendingDeletion === undefined || conversationActionBusyId !== undefined) return;
+          const { id } = conversationPendingDeletion;
+          setConversationActionBusyId(id);
+          void Promise.resolve(props.onDeleteConversation?.(id)).finally(() => {
+            setConversationActionBusyId(undefined);
+            setConversationPendingDeletion(undefined);
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={conversationPendingArchive !== undefined}
+        title="归档对话"
+        description={conversationPendingArchive === undefined
+          ? '归档后会从项目列表隐藏，但不会删除项目文件或 Codex 历史。'
+          : `确认归档“${conversationPendingArchive.title}”？归档后会从项目列表隐藏，但不会删除项目文件或 Codex 历史。`}
+        confirmLabel="归档"
+        busy={archivingConversationId !== undefined}
+        onCancel={() => setConversationPendingArchive(undefined)}
+        onConfirm={() => {
+          if (conversationPendingArchive === undefined || archivingConversationId !== undefined) return;
+          const { id } = conversationPendingArchive;
+          setArchivingConversationId(id);
+          void Promise.resolve(props.onArchiveConversation?.(id)).finally(() => {
+            setArchivingConversationId(undefined);
+            setConversationPendingArchive(undefined);
+          });
+        }}
+      />
+      <ConfirmDialog
         open={projectPendingRemoval !== undefined}
         title="移除项目"
         description={projectPendingRemoval === undefined
@@ -603,6 +886,26 @@ export function ClaweeSidebar(props: {
           if (projectPendingRemoval === undefined) return;
           props.onArchiveProject?.(projectPendingRemoval.id);
           setProjectPendingRemoval(undefined);
+        }}
+      />
+      <ConfirmDialog
+        open={taskPendingDeletion !== undefined}
+        title="删除任务"
+        description={taskPendingDeletion === undefined
+          ? '删除后无法恢复。'
+          : `确认删除“${taskPendingDeletion.name}”？删除后无法恢复。`}
+        confirmLabel="删除任务"
+        destructive
+        busy={taskActionBusyId !== undefined}
+        onCancel={() => setTaskPendingDeletion(undefined)}
+        onConfirm={() => {
+          if (taskPendingDeletion === undefined || taskActionBusyId !== undefined) return;
+          const task = taskPendingDeletion;
+          setTaskActionBusyId(task.id);
+          void Promise.resolve(props.onDeleteTask?.(task)).finally(() => {
+            setTaskActionBusyId(undefined);
+            setTaskPendingDeletion(undefined);
+          });
         }}
       />
       <ConfirmDialog
@@ -627,6 +930,25 @@ export function ClaweeSidebar(props: {
   );
 }
 
+function positionSidebarActionMenu(trigger: DOMRect): { top: number; left: number } {
+  return {
+    top: Math.max(
+      SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN,
+      Math.min(
+        window.innerHeight - SIDEBAR_ACTION_MENU_MAX_HEIGHT - SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN,
+        trigger.bottom + SIDEBAR_ACTION_MENU_GAP
+      )
+    ),
+    left: Math.max(
+      SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN,
+      Math.min(
+        window.innerWidth - SIDEBAR_ACTION_MENU_WIDTH - SIDEBAR_ACTION_MENU_VIEWPORT_MARGIN,
+        trigger.right - SIDEBAR_ACTION_MENU_WIDTH
+      )
+    )
+  };
+}
+
 function taskStatusVisual(status: SidebarTaskStatus): {
   icon: LucideIcon;
   label: string;
@@ -649,4 +971,9 @@ function taskStatusVisual(status: SidebarTaskStatus): {
     case 'idle':
       return { icon: Clock3, label: '等待首次运行' };
   }
+}
+
+function abbreviateConversationTitle(title: string): string {
+  const characters = Array.from(title);
+  return characters.length > 7 ? `${characters.slice(0, 7).join('')}...` : title;
 }

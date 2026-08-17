@@ -148,6 +148,42 @@ describe('codex argv', () => {
     expect(JSON.stringify([exec, resume])).not.toContain('/usr/bin/node');
   });
 
+  it('formats a fail-closed built-in policy before MCP allowlisting', () => {
+    const builtInTools = {
+      shell: false,
+      fileRead: false,
+      fileWrite: false,
+      applyPatch: false,
+      webSearch: false
+    } as const;
+    const args = buildCodexExecArgs({
+      cwd: '/knowledge',
+      sandbox: 'read-only',
+      builtInTools,
+      mcpServers: [{
+        name: 'clawee_knowledge',
+        url: 'http://127.0.0.1:43123/internal/agent-tools/mcp/knowledge',
+        enabledTools: ['knowledge.search'],
+        required: true
+      }]
+    });
+
+    expect(args).toEqual(expect.arrayContaining([
+      '--ignore-user-config',
+      '-c', 'mcp_servers={}',
+      '-c', 'plugins={}',
+      '-c', 'web_search="disabled"',
+      '--disable', 'shell_tool',
+      '--disable', 'unified_exec',
+      '-c', 'mcp_servers.clawee_knowledge.enabled_tools=["knowledge.search"]'
+    ]));
+    expect(() => buildCodexExecArgs({
+      cwd: '/knowledge',
+      sandbox: 'read-only',
+      builtInTools: { ...builtInTools, shell: true }
+    })).toThrow('must disable every tool');
+  });
+
   it('can disable an MCP server inherited from CODEX_HOME without redefining it', () => {
     expect(buildCodexMcpConfigArgs([{
       name: 'claw-mcp',

@@ -171,6 +171,7 @@ export type InsertThreadInput = {
   title?: string | null;
   codexThreadId?: string | null;
   projectId?: string | null;
+  enterpriseSubjectId?: string | null;
   origin?: ThreadOrigin;
   cwd: string;
   canonicalCwd: string;
@@ -191,6 +192,7 @@ export type ThreadRow = {
   title: string | null;
   codex_thread_id: string | null;
   project_id: string | null;
+  enterprise_subject_id: string | null;
   origin: ThreadOrigin;
   cwd: string;
   canonical_cwd: string;
@@ -204,6 +206,7 @@ export type ThreadRow = {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  pinned_at?: string | null;
   last_error_code: string | null;
   last_error_message: string | null;
 };
@@ -218,6 +221,11 @@ export type ThreadRepository = {
     excludePurpose?: ThreadPurpose;
     limit?: number;
   }): ThreadRow[];
+  listKnowledgeThreads(input: {
+    enterpriseSubjectId: string;
+    status?: 'active' | 'archived' | 'all';
+    limit?: number;
+  }): ThreadRow[];
   listPublicThreads(input?: {
     status?: 'active' | 'archived' | 'all';
     purpose?: ThreadPurpose;
@@ -229,6 +237,12 @@ export type ThreadRepository = {
   listProfileReferences(profile: string): Array<{ id: string; title: string | null }>;
   archiveLegacyScheduleThreads(): void;
   archiveThread(id: string): void;
+  deleteThread(id: string): void;
+  updateThread(input: {
+    id: string;
+    title?: string;
+    pinnedAt?: string | null;
+  }): void;
   assignProject(input: { id: string; projectId: string }): boolean;
   updateThreadSandbox(input: UpdateThreadSandboxInput): void;
   updateScheduleThread(input: UpdateScheduleThreadRowInput): void;
@@ -560,10 +574,12 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   `;
   const insert = db.prepare(`
     INSERT INTO threads (
-      id, title, codex_thread_id, project_id, origin, cwd, canonical_cwd, workspace_mode,
+      id, title, codex_thread_id, project_id, enterprise_subject_id, origin,
+      cwd, canonical_cwd, workspace_mode,
       profile, sandbox, model, reasoning, status, purpose, created_at, updated_at
     ) VALUES (
-      @id, @title, @codexThreadId, @projectId, @origin, @cwd, @canonicalCwd, @workspaceMode,
+      @id, @title, @codexThreadId, @projectId, @enterpriseSubjectId, @origin,
+      @cwd, @canonicalCwd, @workspaceMode,
       @profile, @sandbox, @model, @reasoning, @status, @purpose,
       COALESCE(@createdAt, CURRENT_TIMESTAMP), COALESCE(@updatedAt, CURRENT_TIMESTAMP)
     )
@@ -591,6 +607,17 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     ORDER BY threads.updated_at DESC, threads.id DESC
     LIMIT @limit
   `);
+  const listKnowledge = db.prepare<{
+    enterpriseSubjectId: string;
+    status: 'active' | 'archived' | 'all';
+    limit: number;
+  }>(`
+    ${threadSelect}
+    WHERE threads.enterprise_subject_id = @enterpriseSubjectId
+      AND (@status = 'all' OR threads.status = @status)
+    ORDER BY threads.updated_at DESC, threads.id DESC
+    LIMIT @limit
+  `);
   const listPublic = db.prepare<{
     status: 'active' | 'archived' | 'all';
     purpose: ThreadPurpose | null;
@@ -600,6 +627,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
   }>(`
     ${threadSelect}
     WHERE (@status = 'all' OR threads.status = @status)
+      AND threads.purpose <> 'knowledge_conversation'
       AND (@purpose IS NULL OR threads.purpose = @purpose)
       AND (@excludePurpose IS NULL OR threads.purpose <> @excludePurpose)
       AND (
@@ -667,9 +695,32 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
           AND codex_thread_id IS NOT NULL
       )
   `);
+  const deleteThreadTransaction = db.transaction((id: string) => {
+    db.prepare(`
+      DELETE FROM notification_outbox
+      WHERE thread_id = ? OR run_id IN (SELECT id FROM runs WHERE thread_id = ?)
+    `).run(id, id);
+    db.prepare(`
+      DELETE FROM attachments
+      WHERE thread_id = ? OR run_id IN (SELECT id FROM runs WHERE thread_id = ?)
+    `).run(id, id);
+    db.prepare('DELETE FROM conversation_summaries WHERE thread_id = ?').run(id);
+    db.prepare(`
+      DELETE FROM memories WHERE scope = 'thread' AND scope_key = ?
+    `).run(id);
+    db.prepare('DELETE FROM runs WHERE thread_id = ?').run(id);
+    db.prepare('DELETE FROM threads WHERE id = ?').run(id);
+  });
   const updateSandbox = db.prepare(`
     UPDATE threads
     SET sandbox = @sandbox,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @id
+  `);
+  const updateThread = db.prepare(`
+    UPDATE threads
+    SET title = CASE WHEN @titleSet = 1 THEN @title ELSE title END,
+        pinned_at = CASE WHEN @pinnedAtSet = 1 THEN @pinnedAt ELSE pinned_at END,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = @id
   `);
@@ -753,6 +804,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         title: null,
         codexThreadId: null,
         projectId: null,
+        enterpriseSubjectId: null,
         origin: 'clawee_created',
         model: null,
         reasoning: null,
@@ -776,6 +828,13 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         limit: input.limit ?? 50
       }) as ThreadRow[];
     },
+    listKnowledgeThreads(input): ThreadRow[] {
+      return listKnowledge.all({
+        enterpriseSubjectId: input.enterpriseSubjectId,
+        status: input.status ?? 'active',
+        limit: input.limit ?? 50
+      }) as ThreadRow[];
+    },
     listPublicThreads(input = {}): ThreadRow[] {
       return listPublic.all({
         status: input.status ?? 'active',
@@ -796,6 +855,18 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
     },
     archiveThread(id: string): void {
       archive.run(id);
+    },
+    deleteThread(id: string): void {
+      deleteThreadTransaction(id);
+    },
+    updateThread(input): void {
+      updateThread.run({
+        id: input.id,
+        titleSet: input.title === undefined ? 0 : 1,
+        title: input.title ?? null,
+        pinnedAtSet: input.pinnedAt === undefined ? 0 : 1,
+        pinnedAt: input.pinnedAt ?? null
+      });
     },
     assignProject(input): boolean {
       return assignProject.run(input).changes === 1;

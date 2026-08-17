@@ -1,12 +1,13 @@
-import { useEffect, useId, useRef } from 'react';
+import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 export function ConfirmDialog(props: {
   open: boolean;
   title: string;
-  description: string;
+  description: ReactNode;
   confirmLabel: string;
   cancelLabel?: string;
+  className?: string;
   busy?: boolean;
   destructive?: boolean;
   onConfirm(): void;
@@ -36,7 +37,10 @@ export function ConfirmDialog(props: {
       }}
     >
       <section
-        className="confirm-dialog"
+        className={[
+          'confirm-dialog',
+          props.className
+        ].filter(Boolean).join(' ')}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}

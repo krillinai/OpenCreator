@@ -599,11 +599,10 @@ test('packaged app persists Clawee projects when Codex app-server is unavailable
     await expect(fixture.page.getByRole('option', {
       name: '默认项目'
     })).toHaveAttribute('aria-selected', 'true');
-    await fixture.page.getByRole('button', { name: '新建项目' }).click();
-    await expect(fixture.page.getByRole('menuitem', {
-      name: '新建空白项目'
+    await expect(fixture.page.getByRole('button', {
+      name: '新建项目'
     })).toBeVisible();
-    await expect(fixture.page.getByRole('menuitem', {
+    await expect(fixture.page.getByRole('button', {
       name: '使用现有文件夹'
     })).toBeVisible();
     await fixture.page.screenshot({
@@ -1016,11 +1015,12 @@ async function waitForWorkspace(page: Page): Promise<void> {
   );
   if (session.body.status === 'signed_out') {
     await expect(page.getByRole('heading', {
-      name: '登录企业账户'
+      name: '欢迎使用 Clawee'
     })).toBeVisible();
     await page.getByLabel('邮箱').fill(desktopE2EEnterpriseEmail);
     await page.getByLabel('密码').fill(desktopE2EEnterprisePassword);
-    await page.locator('.enterprise-account-primary-action').click();
+    await page.getByRole('checkbox').check();
+    await page.locator('.enterprise-email-submit').click();
   }
   await expect(workspace).toBeVisible();
 }

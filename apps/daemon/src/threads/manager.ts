@@ -15,6 +15,7 @@ import { createThreadRepository, type ThreadRow } from '../storage/repositories.
 import { createConversationTitle } from './conversation-title.js';
 import type {
   CreateConversationThreadInput,
+  CreateKnowledgeThreadInput,
   CreateRuntimeThreadInput,
   CreateScheduleThreadInput,
   RuntimeThread,
@@ -80,6 +81,36 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       });
     },
 
+    createKnowledgeThread(request: CreateKnowledgeThreadInput): RuntimeThread {
+      const project = projects.getProject(request.projectId);
+      if (project === undefined) {
+        throw new ThreadManagerError('PROJECT_NOT_FOUND', 'Project not found');
+      }
+      if (project.status === 'archived') {
+        throw new ThreadManagerError('PROJECT_ARCHIVED', 'Project is archived');
+      }
+      if (project.directoryState !== 'available' || project.canonicalCwd === null) {
+        throw new ThreadManagerError(
+          'PROJECT_DIRECTORY_UNAVAILABLE',
+          'Project directory does not exist or is not accessible'
+        );
+      }
+      return createRuntimeThread({
+        title: request.title,
+        cwd: project.cwd,
+        canonicalCwd: project.canonicalCwd,
+        workspaceMode: 'external',
+        profile: project.profile,
+        model: project.model,
+        reasoning: project.reasoning,
+        sandbox: 'read-only',
+        purpose: 'conversation',
+        projectId: project.id,
+        enterpriseSubjectId: request.enterpriseSubjectId,
+        origin: 'clawee_created'
+      });
+    },
+
     createThread(request: CreateRuntimeThreadInput): RuntimeThread {
       return createRuntimeThread({
         ...request,
@@ -139,6 +170,14 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       return threads.listThreads(filter).map(mapThreadRow);
     },
 
+    listKnowledgeThreads(enterpriseSubjectId, filter = {}): RuntimeThread[] {
+      return threads.listKnowledgeThreads({
+        enterpriseSubjectId,
+        status: filter.status,
+        limit: filter.limit
+      }).map(mapThreadRow);
+    },
+
     listPublicThreads(filter = {}): RuntimeThread[] {
       return threads.listPublicThreads(filter).map(mapThreadRow);
     },
@@ -177,7 +216,20 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     updateThread(id: string, request: UpdateRuntimeThreadInput): RuntimeThread {
       const existing = getRequiredThread(id);
       if (existing.purpose === 'schedule_task') throw new Error('THREAD_MANAGED_BY_SCHEDULE');
-      threads.updateThreadSandbox({ id, sandbox: request.sandbox });
+      if (request.sandbox !== undefined) {
+        threads.updateThreadSandbox({ id, sandbox: request.sandbox });
+      }
+      if (request.title !== undefined || request.pinned !== undefined) {
+        threads.updateThread({
+          id,
+          ...(request.title === undefined
+            ? {}
+            : { title: createConversationTitle(request.title) }),
+          ...(request.pinned === undefined
+            ? {}
+            : { pinnedAt: request.pinned ? new Date().toISOString() : null })
+        });
+      }
       return mapThreadRow(threads.getThread(id)!);
     },
 
@@ -210,6 +262,12 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       if (existing.purpose === 'schedule_task') throw new Error('THREAD_MANAGED_BY_SCHEDULE');
       threads.archiveThread(id);
       return mapThreadRow(threads.getThread(id)!);
+    },
+
+    deleteThread(id: string): void {
+      const existing = getRequiredThread(id);
+      if (existing.purpose === 'schedule_task') throw new Error('THREAD_MANAGED_BY_SCHEDULE');
+      threads.deleteThread(id);
     },
 
     archiveScheduleThread(id: string): RuntimeThread {
@@ -291,12 +349,14 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     purpose?: RuntimeThread['purpose'];
     projectId: string | null;
     origin: RuntimeThread['origin'];
+    enterpriseSubjectId?: string | null;
+    managedWorkspaceRoot?: string;
   }): RuntimeThread {
     const id = `thread_${nanoid(10)}`;
     const workspaceMode = request.workspaceMode ?? 'managed';
     const cwd =
       workspaceMode === 'managed'
-        ? resolve(input.dataDir, 'workspaces', id)
+        ? resolve(request.managedWorkspaceRoot ?? resolve(input.dataDir, 'workspaces'), id)
         : normalizeExternalCwd(request.cwd ?? process.cwd(), input.homeDir ?? homedir());
     mkdirSync(cwd, { recursive: true });
     const canonicalCwd = request.canonicalCwd ?? realpathSync(cwd);
@@ -305,6 +365,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       id,
       title: request.title === undefined ? null : createConversationTitle(request.title),
       projectId: request.projectId,
+      enterpriseSubjectId: request.enterpriseSubjectId ?? null,
       origin: request.origin,
       cwd,
       canonicalCwd,
@@ -331,6 +392,7 @@ function mapThreadRow(row: ThreadRow): RuntimeThread {
     ...(row.schedule_id === null ? {} : { scheduleId: row.schedule_id }),
     title: row.title === null ? null : createConversationTitle(row.title),
     projectId: row.project_id,
+    enterpriseSubjectId: row.enterprise_subject_id,
     origin: row.origin,
     codexThreadId: row.codex_thread_id,
     cwd: row.cwd,
@@ -344,7 +406,8 @@ function mapThreadRow(row: ThreadRow): RuntimeThread {
     purpose: row.purpose,
     createdAt: normalizeDatabaseTimestamp(row.created_at),
     updatedAt: normalizeDatabaseTimestamp(row.updated_at),
-    archivedAt: normalizeNullableDatabaseTimestamp(row.archived_at)
+    archivedAt: normalizeNullableDatabaseTimestamp(row.archived_at),
+    pinnedAt: normalizeNullableDatabaseTimestamp(row.pinned_at ?? null)
   };
 }
 

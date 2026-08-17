@@ -13,7 +13,11 @@ import {
 
 const signedInSession: EnterpriseSessionResponse = {
   status: 'signed_in',
-  account: { email: 'member@example.com', name: '企业成员' },
+  account: {
+    subjectId: 'acct_01JZ8W6A2M4S',
+    email: 'member@example.com',
+    name: '企业成员'
+  },
   transportSecurity: 'secure_https'
 };
 

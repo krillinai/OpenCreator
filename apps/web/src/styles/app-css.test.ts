@@ -94,7 +94,7 @@ describe('app CSS visual contracts', () => {
     expect(tokensCss).toContain('--conversation-bg: var(--surface-page);');
     expect(tokensCss).toContain('--popover: var(--surface-popover);');
     expect(cssBlock('.clawee-sidebar-pane')).toContain('background: var(--sidebar);');
-    expect(cssBlock('.clawee-composer::after')).toContain('background: var(--surface-input);');
+    expect(cssBlock('.clawee-composer::after')).toContain('background: var(--composer-input-background);');
     expect(cssBlock('.composer-popover')).toContain('background: var(--popover);');
   });
 
@@ -123,7 +123,7 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.sidebar-primary .sidebar-row')).toContain('height: var(--control-compact-sm);');
     expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
     expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?button,[\s\S]*?min-height:\s*var\(--control-touch\) !important;/);
-    expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-recent-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
+    expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-task-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
   });
 
   it('uses shared hover, pressed, focus-visible, and disabled states', () => {
@@ -165,14 +165,24 @@ describe('app CSS visual contracts', () => {
     expect(projectTree).toContain('padding: 0 12px 4px 0;');
     expect(sidebarRow).toContain('height: var(--control-compact-md);');
     expect(sidebarRow).toContain('font-size: 12px;');
+    expect(sidebarRow).toContain('font-weight: 500;');
     expect(sidebarRow).toContain('gap: 4px;');
     expect(sidebarRow).toContain('padding: 0 6px;');
-    expect(projectRow).toContain('font-weight: 400;');
+    expect(projectRow).toContain('font-weight: 500;');
+    expect(cssBlock('.conversation-row strong')).toContain('font-weight: 500;');
+    expect(cssBlock('.sidebar-task-copy strong')).toContain('font-weight: 500;');
+    expect(cssBlock('.sidebar-section h2')).toContain('font-weight: 500;');
     expect(appCss).toMatch(/\.conversation-row\s*\{[^}]*padding:\s*0 10px 0 29px;/);
     expect(cssBlock('.sidebar-row svg')).toContain('width: 16px;');
     expect(currentProjectIcon).toContain('color: var(--accent);');
     expect(selectedConversationRow).toContain('background: var(--accent-soft);');
     expect(selectedConversationRow).not.toContain('border-color');
+    expect(appCss).toContain(
+      '.sidebar-conversation-row-shell:hover .nested-conversation-row[aria-current="page"]'
+    );
+    expect(appCss).toContain(
+      '.sidebar-conversation-row-shell:focus-within .nested-conversation-row[aria-current="page"]'
+    );
     expect(accountButton).toContain('height: 42px;');
     expect(accountButton).toContain('gap: 7px;');
     expect(accountButton).toContain('padding: 0 6px;');
@@ -180,19 +190,46 @@ describe('app CSS visual contracts', () => {
     expect(settingsButton).toContain('height: 36px;');
     expect(settingsButton).toContain('padding: 0;');
     expect(appCss).toContain(
-      '.sidebar-conversation-row-shell:hover .sidebar-conversation-archive'
+      '.sidebar-conversation-row-shell:hover .sidebar-conversation-actions'
     );
+    expect(appCss).toContain(
+      '.sidebar-conversation-row-shell:hover .conversation-updated-label'
+    );
+    expect(appCss).toMatch(
+      /\.sidebar-conversation-row-shell:hover \.conversation-updated-label,[^{]+\{\s*opacity: 0;/
+    );
+    expect(cssBlock('.conversation-updated-label')).toContain('transform: scale(0.92);');
+    expect(appCss).toMatch(
+      /\.conversation-row strong,[^{]+\.conversation-row \.conversation-updated-label\s*\{\s*color: var\(--text\);/
+    );
+    expect(appCss).toMatch(
+      /\.sidebar-conversation-row-shell:hover \.conversation-row-meta,[^{]+\{\s*display: none;/
+    );
+    expect(appCss).toMatch(
+      /\.sidebar-conversation-row-shell:hover \.conversation-row,[^{]+\{[^}]*padding-right: 88px;[^}]*background:/
+    );
+    expect(cssBlock('.conversation-title-hover')).toContain('display: none;');
+    expect(appCss).toContain('.sidebar-conversation-row-shell:hover .conversation-title-hover');
+    expect(cssBlock('.sidebar-conversation-actions')).toContain('width: 84px;');
+    expect(cssBlock('.sidebar-conversation-actions')).toContain('grid-template-columns: repeat(3, 28px);');
+    expect(cssBlock('.sidebar-conversation-actions')).toContain('position: absolute;');
+    expect(cssBlock('.sidebar-conversation-action')).toContain('width: 28px;');
+    expect(cssBlock('.sidebar-conversation-action')).toContain('height: 28px;');
+    expect(appCss).toMatch(
+      /\.sidebar-conversation-action:hover:not\(:disabled\),[^{]+\{[^}]*background: transparent;/
+    );
+    expect(cssBlock('.sidebar-conversation-menu')).toContain('border-radius: 8px;');
+    expect(cssBlock('.sidebar-conversation-rename-input')).toContain('width: calc(100% - 8px);');
     expect(appCss).not.toContain(
       '.nested-conversation-row[aria-current="page"] + .sidebar-conversation-archive'
     );
   });
 
   it('keeps the conversation run indicator compact and motion-aware', () => {
-    const meta = cssBlock('.conversation-row-meta');
     const spinner = cssBlock('.conversation-run-spinner');
 
-    expect(meta).toContain('display: inline-flex;');
-    expect(meta).toContain('gap: 6px;');
+    expect(appCss).toMatch(/\.conversation-row-meta\s*\{[^}]*display: inline-flex;/);
+    expect(appCss).toMatch(/\.conversation-row-meta\s*\{[^}]*gap: 6px;/);
     expect(spinner).toContain('flex: 0 0 auto;');
     expect(spinner).toContain('color: var(--accent);');
     expect(spinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
@@ -205,30 +242,35 @@ describe('app CSS visual contracts', () => {
     );
   });
 
-  it('lets projects use content height while recent rows fill and scroll through the remainder', () => {
-    const projectSection = cssBlock('.sidebar-project-section');
-    const recentSection = cssBlock('.sidebar-recent-section');
-    const recentList = cssBlock('.sidebar-recent-list');
-    const recentRow = cssBlock('.sidebar-recent-row');
-    const recentSpinner = cssBlock('.sidebar-recent-spinner');
+  it('keeps task rows stable, scrollable, and motion-aware', () => {
+    const taskSection = cssBlock('.sidebar-task-section');
+    const taskList = cssBlock('.sidebar-task-list');
+    const taskRow = cssBlock('.sidebar-task-row');
+    const taskSpinner = cssBlock('.sidebar-task-spinner');
 
+    expect(taskSection).toContain('min-height: 0;');
+    expect(taskSection).toContain('max-height: 220px;');
+    expect(taskList).toContain('overflow-y: auto;');
+    expect(taskList).toContain('grid-auto-rows: 34px;');
+    expect(taskRow).toContain('height: 34px;');
+    expect(taskRow).toContain('min-height: 34px;');
+    expect(appCss).toMatch(/\.sidebar-task-copy span\s*\{[^}]*transform: scale\(0\.92\);/);
+    expect(appCss).toContain('.sidebar-task-row-shell:hover .sidebar-task-row');
     expect(appCss).toMatch(
-      /\n\.clawee-sidebar\s*\{[^}]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\) auto;/
-    );
-    expect(cssBlock('.clawee-sidebar[data-collapsed="true"]'))
-      .toContain('grid-template-rows: auto auto minmax(0, 1fr);');
-    expect(projectSection).toContain('max-height: min(38vh, 360px);');
-    expect(recentSection).toContain('min-height: 0;');
-    expect(recentList).toContain('overflow-y: auto;');
-    expect(recentList).toContain('grid-auto-rows: 30px;');
-    expect(recentRow).toContain('height: 30px;');
-    expect(recentRow).toContain('min-height: 30px;');
-    expect(recentSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
-    expect(appCss).toMatch(
-      /@media \(max-width: 480px\)\s*\{[\s\S]*?\.sidebar-project-tree\s*\{[^}]*overflow-y:\s*auto;/
+      /\.sidebar-task-row-shell:hover \.sidebar-task-row,[^{]+\{\s*padding-right: 56px;/
     );
     expect(appCss).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.sidebar-recent-spinner\s*\{[^}]*animation:\s*none;/
+      /\.sidebar-task-action:hover:not\(:disabled\),[^{]+\{[^}]*background: transparent;/
+    );
+    expect(appCss).toContain(
+      '.sidebar-task-row-shell:hover .sidebar-task-row[aria-current="page"]'
+    );
+    expect(appCss).toContain(
+      '.sidebar-task-row-shell:focus-within .sidebar-task-row[aria-current="page"]'
+    );
+    expect(taskSpinner).toContain('animation: conversation-run-spin 900ms linear infinite;');
+    expect(appCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.sidebar-task-spinner\s*\{[^}]*animation:\s*none;/
     );
   });
 
@@ -246,40 +288,6 @@ describe('app CSS visual contracts', () => {
     expect(taskActions).toContain('flex: 0 0 auto;');
     expect(appCss).toMatch(
       /@media \(max-width: 720px\)\s*\{[\s\S]*?\.schedule-thread-header\s*\{[^}]*align-items:\s*flex-start;/
-    );
-  });
-
-  it('uses the main pane titlebar as the desktop conversation chrome', () => {
-    const mainPaneWithHeader = cssBlock(
-      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-pane[data-has-main-header="true"]'
-    );
-    const mainTitlebar = cssBlock(
-      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar'
-    );
-    const titlebarHeader = cssBlock(
-      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar .conversation-header'
-    );
-    const titlebarButton = cssBlock(
-      '.app-drop-shell[data-integrated-title-bar="true"] .clawee-main-titlebar button'
-    );
-    const integratedPage = cssBlock('.conversation-page.has-integrated-header');
-    const integratedTaskPage = cssBlock(
-      '.conversation-page.has-integrated-header.has-task-strip'
-    );
-
-    expect(mainPaneWithHeader).toContain(
-      'grid-template-rows: var(--clawee-titlebar-height, 38px) minmax(0, 1fr);'
-    );
-    expect(mainPaneWithHeader).toContain('padding-top: 0;');
-    expect(mainTitlebar).toContain('-webkit-app-region: drag;');
-    expect(mainTitlebar).toContain('z-index: 81;');
-    expect(titlebarHeader).toContain('height: 100%;');
-    expect(titlebarHeader).toContain('min-height: 0;');
-    expect(titlebarHeader).toContain('padding: 0 12px 0 18px;');
-    expect(titlebarButton).toContain('-webkit-app-region: no-drag;');
-    expect(integratedPage).toContain('grid-template-rows: minmax(0, 1fr) auto;');
-    expect(integratedTaskPage).toContain(
-      'grid-template-rows: auto minmax(0, 1fr) auto;'
     );
   });
 
@@ -375,6 +383,10 @@ describe('app CSS visual contracts', () => {
     expect(frame).toContain('min-height: 0;');
   });
 
+  it('top-aligns the signed-in enterprise account icon', () => {
+    expect(cssBlock('.enterprise-account-profile-icon')).toContain('align-self: start;');
+  });
+
   it('keeps code block actions compact', () => {
     const action = cssBlock('.markdown-prose .md-code-action');
 
@@ -407,18 +419,30 @@ describe('app CSS visual contracts', () => {
     expect(skillMarketCss).not.toContain('.skill-market-chip-row');
   });
 
-  it('highlights only card use action text while keeping the button transparent', () => {
+  it('gives enterprise use actions a background without a visible border', () => {
     const useActionHover = skillMarketCssBlock('.skill-market-card > .skill-market-action-button--use:hover:not(:disabled)');
+    const enterpriseUseActionHover = skillMarketCssBlock('.enterprise-skill-row.skill-market-card > .enterprise-skill-action--use:hover:not(:disabled)');
+    const enterpriseUseActionDisabled = skillMarketCssBlock('.enterprise-skill-row.skill-market-card > .enterprise-skill-action--use:disabled');
 
     expect(skillMarketCss).toMatch(
       /\.skill-market-card > \.skill-market-action-button--use\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;[^}]*color:\s*var\(--accent-strong\);[^}]*box-shadow:\s*0 1px 4px color-mix\(in srgb, var\(--text\) 16%, transparent\);/
     );
-    expect(skillMarketCss).toMatch(
-      /\.enterprise-skill-row\.skill-market-card > \.enterprise-skill-action--use\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;[^}]*color:\s*var\(--accent-strong\);/
-    );
     expect(useActionHover).toContain('background: transparent;');
     expect(useActionHover).toContain('color: var(--accent-strong);');
     expect(useActionHover).toContain('box-shadow: 0 2px 6px color-mix(in srgb, var(--text) 20%, transparent);');
+    expect(skillMarketCss).toMatch(
+      /\.enterprise-skill-row\.skill-market-card > \.enterprise-skill-action--use\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*var\(--accent-soft\);/
+    );
+    expect(enterpriseUseActionHover).toContain('border-color: transparent;');
+    expect(enterpriseUseActionHover).toContain('background: color-mix(in srgb, var(--accent) 16%, var(--surface));');
+    expect(enterpriseUseActionDisabled).toContain('border-color: transparent;');
+    expect(enterpriseUseActionDisabled).toContain('background: var(--surface-3);');
+  });
+
+  it('renders enterprise skill usage without a border', () => {
+    expect(
+      skillMarketCssBlock('.enterprise-skill-row .skill-market-card__tags > span')
+    ).toContain('border: 0;');
   });
 
   it('uses a compact wordmark image in the expanded sidebar and centers the collapsed logo button', () => {
@@ -593,6 +617,14 @@ describe('app CSS visual contracts', () => {
     expect(composer).toContain('gap: 8px;');
     expect(composer).toContain('padding: 10px 18px;');
     expect(composer).toContain('width: 100%;');
+    expect(composer).toContain('--composer-input-background: #1a1b1e;');
+    expect(composer).toContain('--composer-project-background: #232427;');
+    expect(composer).toContain('--composer-border: rgba(245, 245, 246, 0.12);');
+    expect(composer).toContain('--composer-separator: rgba(245, 245, 246, 0.06);');
+    expect(composer).toContain('border: 1px solid var(--composer-border);');
+    expect(cssBlock('.clawee-composer::after')).toContain(
+      'background: var(--composer-input-background);'
+    );
     expect(composerQueue).toContain('margin: 0 14px -1px;');
     expect(composerQueue).toContain('border-bottom: 0;');
     expect(composerQueue).toContain('max-height: 148px;');
@@ -607,7 +639,7 @@ describe('app CSS visual contracts', () => {
     expect(composerTextarea).not.toContain('resize: vertical;');
     expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*order:\s*10;/);
     expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*margin:\s*2px -18px -10px;/);
-    expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*border-top:\s*0;/);
+    expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*border-top:\s*1px solid var\(--composer-separator\);/);
     expect(appCss).toMatch(/\n\.composer-project-context\s*\{[^}]*border-radius:\s*0 0 8px 8px;/);
     expect(appCss).toMatch(/\.composer-select,\n\.composer-model-button\s*\{[^}]*padding:\s*0 2px;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/);
     expect(appCss).toMatch(/\.composer-select,\n\.composer-model-button\s*\{[^}]*font-size:\s*12px;[^}]*font-weight:\s*400;/);
@@ -615,7 +647,9 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.composer-popover')).toContain('border: 1px solid #343438;');
     expect(cssBlock('.composer-popover')).toContain('background: var(--popover);');
     expect(cssBlock('.composer-popover')).toContain('opacity: 1;');
-    expect(appCss).toMatch(/:root\[data-theme="light"\] \.composer-popover,[\s\S]*?\.composer-project-create-menu\s*\{[^}]*background:\s*var\(--surface-popover\);[^}]*border-color:\s*#dedee1;[^}]*opacity:\s*1;/);
+    expect(cssBlock(':root[data-theme="light"] .composer-popover')).toContain('background: var(--surface-popover);');
+    expect(cssBlock(':root[data-theme="light"] .composer-popover')).toContain('border-color: #dedee1;');
+    expect(cssBlock(':root[data-theme="light"] .composer-popover')).toContain('opacity: 1;');
     expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
     expect(cssBlock('.composer-menu-item strong')).toContain('font-size: 12px;');
     expect(cssBlock('.composer-menu-item strong')).toContain('font-weight: 400;');
@@ -644,12 +678,20 @@ describe('app CSS visual contracts', () => {
     const title = cssBlock('.conversation-empty-greeting h2');
     const subtitle = cssBlock('.conversation-empty-greeting p');
     const emptyComposer = cssBlock('.conversation-page.is-empty .composer-wrap');
+    const titledEmptyPage = cssBlock('.conversation-page.is-empty.has-header');
     const lightComposer = cssBlock(':root[data-theme="light"] .clawee-composer');
 
     expect(appCss).not.toContain('.conversation-empty-logo-bg');
     expect(appCss).not.toContain('日常办公');
     expect(appCss).not.toContain('代码开发');
     expect(emptyPage).toContain('grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);');
+    expect(titledEmptyPage).toContain(
+      'grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);'
+    );
+    expect(appCss).not.toContain(
+      '.conversation-page.is-empty.has-header .conversation-empty-state,\n' +
+      '.conversation-page.is-empty.has-header .composer-wrap'
+    );
     expect(cssBlock('.conversation-empty-greeting')).toContain('width: min(760px, 100%);');
     expect(cssBlock('.conversation-empty-greeting')).toContain('justify-items: start;');
     expect(cssBlock('.conversation-empty-greeting')).toContain('text-align: left;');
@@ -665,9 +707,9 @@ describe('app CSS visual contracts', () => {
     );
     expect(tokensCss).toContain('--border-hairline: rgba(245, 245, 246, 0.08);');
     expect(tokensCss).toContain('--border-hairline: rgba(24, 24, 27, 0.07);');
-    expect(cssBlock('.clawee-composer')).toContain('border: 1px solid var(--border-hairline);');
+    expect(cssBlock('.clawee-composer')).toContain('border: 1px solid var(--composer-border);');
     expect(cssBlock('.clawee-composer.without-project-selector')).toContain(
-      'background: var(--surface-input);'
+      'background: var(--composer-input-background);'
     );
     expect(cssBlock('.clawee-composer.without-project-selector::after')).toContain('inset: 0;');
     expect(cssBlock('.clawee-composer::before')).toContain('border: 0;');
@@ -855,6 +897,117 @@ describe('app CSS visual contracts', () => {
     expect(disabledSend).toContain('background: var(--surface-3);');
     expect(disabledSend).toContain('color: var(--control-disabled-text);');
     expect(disabledSendIcon).toContain('color: #fff;');
+  });
+
+  it('aligns Composer input, add icon, and project folder to one left baseline', () => {
+    const composer = cssBlock('.clawee-composer');
+    const textarea = cssBlock('.clawee-composer textarea');
+    const firstLeftControl = cssBlock(
+      '.composer-left-actions > .composer-control-wrap:first-child'
+    );
+    const projectContext = Array.from(
+      appCss.matchAll(/\.composer-project-context\s*\{(?<body>[^}]*)\}/g),
+      match => match.groups?.body ?? ''
+    ).find(block => block.includes('min-height: 40px;')) ?? '';
+    const iconButton = cssBlock('.composer-icon-button');
+
+    expect(composer).toContain('--composer-left-baseline: 20px;');
+    expect(textarea).toContain(
+      'padding-left: calc(var(--composer-left-baseline) - 18px);'
+    );
+    expect(firstLeftControl).toContain(
+      'margin-left: calc(var(--composer-left-baseline) - 29px);'
+    );
+    expect(projectContext).toContain(
+      'padding-left: calc(var(--composer-left-baseline) - 6px);'
+    );
+    expect(iconButton).toContain('width: 38px;');
+  });
+
+  it('keeps enabled MCP icons compact after the permission control', () => {
+    const connectorList = cssBlock('.composer-enabled-connectors');
+    const connectorIcon = cssBlock('.composer-enabled-connector');
+
+    expect(connectorList).toContain('max-width: min(180px, 32vw);');
+    expect(connectorList).toContain('overflow-x: auto;');
+    expect(connectorIcon).toContain('width: 22px;');
+    expect(connectorIcon).toContain('height: 22px;');
+    expect(connectorIcon).toContain('flex: 0 0 22px;');
+    expect(connectorIcon).toContain('border: 0;');
+    expect(connectorIcon).toContain('border-radius: 0;');
+    expect(connectorIcon).toContain('background: transparent;');
+    expect(connectorIcon).toContain('box-shadow: none;');
+    expect(connectorIcon).toContain('letter-spacing: 0;');
+    expect(cssBlock('.composer-enabled-connectors > span + span'))
+      .toContain('margin-left: -5px;');
+  });
+
+  it('uses a compact switch list for the Composer connector shortcut', () => {
+    const card = cssBlock('.composer-connector-card');
+    const item = cssBlock('.composer-connector-quick-item');
+    const connectorSwitch = cssBlock('.composer-connector-switch');
+    const more = cssBlock('.composer-connector-more');
+
+    expect(card).toContain('width: min(260px, calc(100vw - 24px));');
+    expect(item).toContain('grid-template-columns: 22px minmax(0, 1fr) 32px;');
+    expect(connectorSwitch).toContain('width: 30px;');
+    expect(connectorSwitch).toContain('height: 18px;');
+    expect(more).toContain('border-top: 1px solid var(--border);');
+  });
+
+  it('separates the dark Composer input, project bar, and outer border', () => {
+    const composer = cssBlock('.clawee-composer');
+    const composerAfter = cssBlock('.clawee-composer::after');
+    const projectContext = Array.from(
+      appCss.matchAll(/\.composer-project-context\s*\{(?<body>[^}]*)\}/g),
+      match => match.groups?.body ?? ''
+    ).find(block => block.includes('min-height: 40px;')) ?? '';
+
+    expect(composer).toContain('--composer-input-background: #1a1b1e;');
+    expect(composer).toContain('--composer-project-background: #232427;');
+    expect(composer).toContain('--composer-border: rgba(245, 245, 246, 0.12);');
+    expect(composer).toContain('--composer-separator: rgba(245, 245, 246, 0.06);');
+    expect(composer).toContain('border: 1px solid var(--composer-border);');
+    expect(composerAfter).toContain('background: var(--composer-input-background);');
+    expect(projectContext).toContain('background: var(--composer-project-background);');
+    expect(projectContext).toContain('border-top: 1px solid var(--composer-separator);');
+  });
+
+  it('positions the Composer capability submenu beside the add menu', () => {
+    const composerWrap = cssBlock('.composer-wrap');
+    const submenu = cssBlock('.composer-add-submenu');
+    const openToolbar = cssBlock('.composer-toolbar:has([aria-expanded="true"])');
+    const commandList = cssBlock('.composer-add-command-list');
+    const search = cssBlock('.composer-add-search');
+
+    expect(composerWrap).toContain('z-index: 4;');
+    expect(submenu).toContain('left: calc(100% + 8px);');
+    expect(submenu).toContain('width: min(320px, calc(100vw - 24px));');
+    expect(submenu).toContain('max-height: min(440px, 70dvh);');
+    expect(submenu).toContain('z-index: 40;');
+    expect(openToolbar).toContain('z-index: 41;');
+    expect(commandList).toContain('overflow-y: auto;');
+    expect(search).toContain('display: grid;');
+  });
+
+  it('keeps add-menu submenu arrows in the third grid column', () => {
+    const trigger = cssBlock('.composer-menu-item.composer-add-menu-trigger');
+
+    expect(trigger).toContain('grid-template-columns: 20px minmax(0, 1fr) 14px;');
+  });
+
+  it('keeps the Composer capability submenu inside the mobile viewport', () => {
+    const mobileRule = appCss.match(
+      /@media \(max-width: 620px\) \{\s*\.composer-add-submenu\s*\{(?<body>[^}]*)\}/
+    );
+    const submenu = mobileRule?.groups?.body ?? '';
+
+    expect(submenu).toContain('position: fixed;');
+    expect(submenu).toContain('top: 12px;');
+    expect(submenu).toContain('right: 12px;');
+    expect(submenu).toContain('bottom: 12px;');
+    expect(submenu).toContain('left: 12px;');
+    expect(submenu).toContain('max-height: none;');
   });
 
   it('keeps composer image attachments as compact square previews', () => {

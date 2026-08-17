@@ -179,6 +179,7 @@ function thread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
     id: 'thread-1',
     title: '测试会话',
     projectId: 'project-1',
+    enterpriseSubjectId: null,
     origin: 'clawee_created',
     cwd: '/workspace/current',
     canonicalCwd: '/workspace/current',

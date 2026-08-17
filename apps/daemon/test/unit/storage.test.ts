@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -148,7 +148,8 @@ describe('runtime storage', () => {
     ]));
     expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining([
       'project_id',
-      'origin'
+      'origin',
+      'enterprise_subject_id'
     ]));
 
     const projectIndexes = db.prepare(`
@@ -208,6 +209,68 @@ describe('runtime storage', () => {
         purpose: 'conversation'
       });
     }).toThrow();
+  });
+
+  it('indexes and filters knowledge threads by exact enterprise subject', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-knowledge-'));
+    db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
+    const threads = createThreadRepository(db);
+    const base = {
+      cwd: tempDir,
+      canonicalCwd: tempDir,
+      workspaceMode: 'managed',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active' as const,
+      purpose: 'knowledge_conversation' as const
+    };
+    threads.insertThread({ id: 'thread_a', enterpriseSubjectId: 'acct_a', ...base });
+    threads.insertThread({ id: 'thread_b', enterpriseSubjectId: 'acct_b', ...base });
+    threads.insertThread({
+      id: 'thread_c',
+      enterpriseSubjectId: 'acct_a',
+      ...base,
+      purpose: 'conversation'
+    });
+
+    expect(threads.listKnowledgeThreads({
+      enterpriseSubjectId: 'acct_a',
+      status: 'active',
+      limit: 10
+    }).map(thread => thread.id)).toEqual(['thread_c', 'thread_a']);
+    expect(db.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index' AND name = 'idx_threads_knowledge_subject_updated'
+    `).get()).toEqual({ name: 'idx_threads_knowledge_subject_updated' });
+  });
+
+  it('persists nullable conversation pin timestamps across database restarts', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-thread-pin-'));
+    const databasePath = join(tempDir, 'app.sqlite');
+    db = openRuntimeDatabase(databasePath);
+    let threads = createThreadRepository(db);
+    threads.insertThread({
+      id: 'thread_pinned',
+      cwd: tempDir,
+      canonicalCwd: tempDir,
+      workspaceMode: 'external',
+      profile: 'default',
+      sandbox: 'read-only',
+      status: 'active',
+      purpose: 'conversation'
+    });
+
+    expect(threads.getThread('thread_pinned')?.pinned_at).toBeNull();
+    threads.updateThread({
+      id: 'thread_pinned',
+      pinnedAt: '2026-08-06T00:00:00.000Z'
+    });
+    db.close();
+
+    db = openRuntimeDatabase(databasePath);
+    threads = createThreadRepository(db);
+    expect(threads.getThread('thread_pinned')?.pinned_at)
+      .toBe('2026-08-06T00:00:00.000Z');
   });
 
   it('assigns only unowned Clawee conversation threads to projects', () => {
@@ -748,6 +811,48 @@ it('persists threads and codex thread binding', () => {
   expect(threads.getThread('thread_1')?.codex_thread_id).toBe('019f-thread');
 });
 
+it('permanently deletes thread-owned records without deleting project files', () => {
+  const database = createTestDatabase();
+  const threads = createThreadRepository(database);
+  const runs = createRunRepository(database);
+  const projectFile = join(tempDir, 'keep.txt');
+  writeFileSync(projectFile, 'keep');
+  threads.insertThread({
+    id: 'thread_delete',
+    title: 'Delete me',
+    cwd: tempDir,
+    canonicalCwd: tempDir,
+    workspaceMode: 'external',
+    profile: 'default',
+    sandbox: 'read-only',
+    status: 'active'
+  });
+  runs.insertRun(makeRunInput({ id: 'run_delete', threadId: 'thread_delete' }));
+  database.prepare(`
+    INSERT INTO run_events (id, run_id, seq, type, payload_json)
+    VALUES ('event_delete', 'run_delete', 1, 'status', '{}')
+  `).run();
+  database.prepare(`
+    INSERT INTO conversation_summaries (
+      id, thread_id, content, covered_from_cursor, covered_to_cursor,
+      item_count, version, created_at, updated_at
+    ) VALUES (
+      'summary_delete', 'thread_delete', 'summary', 'a', 'b',
+      1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    )
+  `).run();
+
+  threads.deleteThread('thread_delete');
+
+  expect(threads.getThread('thread_delete')).toBeUndefined();
+  expect(runs.listRunsByThread('thread_delete')).toEqual([]);
+  expect(database.prepare('SELECT id FROM run_events WHERE id = ?').get('event_delete'))
+    .toBeUndefined();
+  expect(database.prepare('SELECT id FROM conversation_summaries WHERE id = ?').get('summary_delete'))
+    .toBeUndefined();
+  expect(readFileSync(projectFile, 'utf8')).toBe('keep');
+});
+
 it('lists thread run history and preserves archived thread data', () => {
   const database = createTestDatabase();
   const threads = createThreadRepository(database);
@@ -879,7 +984,12 @@ it('migrates legacy storage and preserves existing thread operations', () => {
   const threads = createThreadRepository(db);
 
   expect(columnNames(db, 'runs')).toEqual(expect.arrayContaining(['resume_mode', 'queue_state', 'timeout_ms']));
-  expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining(['title', 'archived_at', 'purpose']));
+  expect(columnNames(db, 'threads')).toEqual(expect.arrayContaining([
+    'title',
+    'archived_at',
+    'purpose',
+    'enterprise_subject_id'
+  ]));
   expect(columnNames(db, 'schedules')).toContain('thread_id');
   expect(runs.getRun('legacy_run_1')?.queue_state).toBe('none');
   expect(threads.getThread('legacy_thread_1')?.purpose).toBe('conversation');

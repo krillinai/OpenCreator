@@ -83,6 +83,7 @@ export function SkillMarketCard({
             <SkillAuthorAvatar name={item.entry.creator.name} src={item.entry.creator.avatarUrl} />
             <span className="skill-market-card__identity-copy">
               <span className="skill-market-card__title">{item.title}</span>
+              <span className="skill-market-card__author">{item.entry.creator.name}</span>
             </span>
           </span>
 

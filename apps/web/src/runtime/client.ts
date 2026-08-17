@@ -126,8 +126,15 @@ function isApiErrorPayload(payload: unknown): boolean {
 }
 
 function parseApiError(payload: unknown): ApiErrorPayload {
-  if (!isRecord(payload) || !isRecord(payload.error)) {
+  if (!isRecord(payload)) {
     return { error: { code: 'HTTP_ERROR', message: 'Runtime request failed' } };
+  }
+  if (!isRecord(payload.error)) {
+    const code = typeof payload.code === 'string' ? payload.code : 'HTTP_ERROR';
+    const message = typeof payload.message === 'string'
+      ? payload.message
+      : 'Runtime request failed';
+    return { error: { code, message } };
   }
   const code = typeof payload.error.code === 'string' ? payload.error.code : 'HTTP_ERROR';
   const message = typeof payload.error.message === 'string' ? payload.error.message : 'Runtime request failed';

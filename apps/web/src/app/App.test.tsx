@@ -31,6 +31,8 @@ import {
   type AppProps
 } from './App.js';
 import {
+  buildComposerConnectors,
+  buildComposerSlashCommands,
   formatRelativeTime,
   pollEnterpriseSessionUntilSettled
 } from './AppController.js';
@@ -55,6 +57,69 @@ function App(props: AppProps = {}) {
 }
 
 describe('App', () => {
+  it('maps valid skills and configured MCP servers into Composer commands', () => {
+    expect(buildComposerSlashCommands(createSkillListResponse([
+      createSkillResponse({ id: 'brainstorming', name: 'Brainstorming' })
+    ]), {
+      codexHome: '/tmp/codex',
+      codexHomeMode: 'global',
+      requiresWriteConfirmation: false,
+      servers: [{
+        name: 'github',
+        enabled: true,
+        transport: 'stdio',
+        status: 'configured',
+        envKeys: [],
+        hasSecrets: false,
+        codexHome: '/tmp/codex',
+        codexHomeMode: 'global',
+        diagnostics: []
+      }],
+      diagnostics: []
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ category: 'skill', insertText: '$brainstorming ' }),
+      expect.objectContaining({ category: 'mcp', insertText: '使用 MCP：github ' })
+    ]));
+  });
+
+  it('maps the enterprise MCP catalog into the Composer connector directory', () => {
+    expect(buildComposerConnectors({
+      agentId: 'clawee_agent',
+      tokenStatus: 'ready',
+      refreshedAt: new Date(0).toISOString(),
+      upstreams: [{
+        upstreamId: 'crm-main',
+        name: '客户关系管理',
+        domain: 'sales',
+        endpoint: 'https://enterprise.example/mcp/servers/crm-main',
+        upstreamTransport: 'streamable_http',
+        namespace: 'crm',
+        status: 'active',
+        installed: true,
+        enabled: true,
+        tools: [{
+          toolId: 'customer-search',
+          upstreamName: 'customer.search',
+          name: 'customer.search',
+          exposedName: 'crm.customer.search',
+          title: '查询客户',
+          description: '按条件查询客户资料',
+          riskLevel: 'low',
+          confirmRequired: false,
+          status: 'active',
+          authorized: true,
+          authorizationExpiresAt: null
+        }]
+      }]
+    })).toEqual([{
+      id: 'enterprise:crm-main',
+      label: '客户关系管理',
+      description: 'sales · 1/1 项工具已授权',
+      status: 'enabled',
+      insertText: '使用连接器：客户关系管理 '
+    }]);
+  });
+
   it('treats timezone-less Runtime timestamps as UTC before formatting relative time', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(
       Date.parse('2026-07-21T07:00:30.000Z')
@@ -206,6 +271,54 @@ describe('App', () => {
     window.history.replaceState(null, '', '#/knowledge');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
     expect(await screen.findByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
+  });
+
+  it('creates a standard conversation in the Runtime default project from knowledge', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/knowledge';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const runtimeFetch = createKnowledgeRuntimeFetch((url, init) => {
+      fetchCalls.push({ url, init });
+      if (url.endsWith('/enterprise/knowledge-bases')) {
+        return jsonResponse(createKnowledgeBaseListResponse());
+      }
+      if (url.endsWith('/enterprise/knowledge-conversations') && init?.method === 'POST') {
+        const body = readRequestBody(init);
+        return jsonResponse({
+          thread: createThreadResponse({
+            id: 'thread_knowledge_default',
+            title: '企业知识库对话',
+            projectId: String(body.projectId)
+          })
+        }, { status: 201 });
+      }
+      return undefined;
+    });
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: '对话知识库' }));
+
+    await waitFor(() => expect(window.location.hash).toBe('#/thread/thread_knowledge_default'));
+    const createThreadBody = readRequestBody(
+      fetchCalls.find(call => call.url.endsWith('/enterprise/knowledge-conversations'))!.init!
+    );
+    expect(createThreadBody).toEqual({ projectId: readTestRuntimeProjects()[0]!.id });
+    expect(document.querySelector('.conversation-page'))
+      .toHaveClass('is-empty', 'has-header');
+    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
   });
 
   it('loads authorized knowledge documents and refreshes both lists after upload', async () => {
@@ -564,7 +677,7 @@ describe('App', () => {
 
     await user.click(await screen.findByRole('button', { name: '企业账户' }));
 
-    expect(await screen.findByRole('heading', { name: '登录企业账户' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '欢迎使用 Clawee' })).toBeInTheDocument();
     expect(window.location.hash).toBe('#/account');
     expect(screen.getByRole('button', { name: '企业账户' }))
       .toHaveAttribute('aria-current', 'page');
@@ -1086,6 +1199,7 @@ describe('App', () => {
       if (url.endsWith('/enterprise/session')) {
         return jsonResponse(createEnterpriseSessionResponse({
           account: {
+            subjectId: 'acct-lin',
             email: 'lin@example.com',
             name: '林晓'
           }
@@ -1268,7 +1382,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     expect(screen.queryByLabelText('任务管理')).not.toBeInTheDocument();
 
-    await user.click(await screen.findByRole('link', { name: /每日总结/ }));
+    await user.click(await screen.findByRole('button', { name: /^每日总结/ }));
 
     expect(await screen.findByLabelText('任务管理')).toBeInTheDocument();
     expect(document.querySelector('.clawee-main-titlebar')).toHaveTextContent('每日总结');
@@ -2592,69 +2706,93 @@ describe('App', () => {
     });
   });
 
-  it('requires enterprise login before showing the workspace', async () => {
-    window.location.hash = '#/plugins?source=enterprise';
-    const hostBridge = createHostBridge();
-    hostBridge.readConnectionConfig = async () => ({
-      baseUrl: 'http://127.0.0.1:60764',
-      token: 'runtime-token'
-    });
-    let session = createEnterpriseSessionResponse({ status: 'signed_out', account: undefined });
-    let skillRequests = 0;
-    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-      if (projectApiResponse !== undefined) return projectApiResponse;
-      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
-      if (url.endsWith('/enterprise/session')) return jsonResponse(session);
-      if (url.endsWith('/enterprise/skills')) {
-        skillRequests += 1;
-        return jsonResponse(createEnterpriseSkillListResponse([
-          createEnterpriseSkillResponse()
-        ]));
-      }
-      throw new Error(`Unexpected request ${url}`);
-    };
+  it.each(['browser', 'desktop'] as const)(
+    '%s host requires enterprise login before showing the workspace',
+    async (hostKind) => {
+      window.location.hash = '#/plugins?source=enterprise';
+      const hostBridge: HostBridge = { ...createHostBridge(), kind: hostKind };
+      hostBridge.readConnectionConfig = async () => ({
+        baseUrl: 'http://127.0.0.1:60764',
+        token: 'runtime-token'
+      });
+      let session = createEnterpriseSessionResponse({ status: 'signed_out', account: undefined });
+      let skillRequests = 0;
+      const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+        if (projectApiResponse !== undefined) return projectApiResponse;
+        if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+        if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+        if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
+        if (url.endsWith('/enterprise/session')) return jsonResponse(session);
+        if (url.endsWith('/enterprise/skills')) {
+          skillRequests += 1;
+          return jsonResponse(createEnterpriseSkillListResponse([
+            createEnterpriseSkillResponse()
+          ]));
+        }
+        throw new Error(`Unexpected request ${url}`);
+      };
 
-    const signedOutRender = render(
-      <App
-        requireEnterpriseLogin
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
+      const signedOutRender = render(
+        <ProductionApp
+          fileService={createFileService()}
+          hostBridge={hostBridge}
+          runtimeFetch={runtimeFetch}
+          subscribeRunEvents={async () => undefined}
+        />
+      );
 
-    expect(await screen.findByRole('heading', {
-      name: '登录企业账户'
-    })).toBeInTheDocument();
-    expect(screen.getByText('登录后 Clawee 将自动安装并连接企业采集器。'))
-      .toBeInTheDocument();
-    expect(screen.queryByRole('tab', { name: '企业Skills' })).not.toBeInTheDocument();
-    expect(window.location.hash).toBe('#/plugins?source=enterprise');
-    expect(skillRequests).toBe(0);
+      expect(await screen.findByRole('heading', {
+        name: '欢迎使用 Clawee'
+      })).toBeInTheDocument();
+      expect(screen.getByText('登录后即可进入企业智能工作台'))
+        .toBeInTheDocument();
+      expect(screen.queryByRole('tab', { name: '企业Skills' })).not.toBeInTheDocument();
+      expect(window.location.hash).toBe('#/plugins?source=enterprise');
+      expect(skillRequests).toBe(0);
 
-    signedOutRender.unmount();
-    session = createEnterpriseSessionResponse();
+      signedOutRender.unmount();
+      session = createEnterpriseSessionResponse();
 
-    render(
-      <App
-        fileService={createFileService()}
-        hostBridge={hostBridge}
-        runtimeFetch={runtimeFetch}
-        subscribeRunEvents={async () => undefined}
-      />
-    );
+      render(
+        <ProductionApp
+          fileService={createFileService()}
+          hostBridge={hostBridge}
+          runtimeFetch={runtimeFetch}
+          subscribeRunEvents={async () => undefined}
+        />
+      );
 
-    await waitFor(() => {
-      expect(screen.getByTestId('enterprise-skill-enterprise-skill')).toBeInTheDocument();
-    });
-    expect(screen.getByRole('region', { name: '企业Skills' })).toBeInTheDocument();
-    expect(skillRequests).toBe(1);
-  });
+      await waitFor(() => {
+        expect(screen.getByTestId('enterprise-skill-enterprise-skill')).toBeInTheDocument();
+      });
+      expect(screen.getByRole('region', { name: '企业Skills' })).toBeInTheDocument();
+      expect(skillRequests).toBe(1);
+    }
+  );
+
+  it.each(['browser', 'desktop'] as const)(
+    '%s host keeps the workspace hidden while the runtime is unavailable',
+    async (hostKind) => {
+      const hostBridge: HostBridge = { ...createHostBridge(), kind: hostKind };
+
+      render(
+        <ProductionApp
+          fileService={createFileService()}
+          hostBridge={hostBridge}
+          subscribeRunEvents={async () => undefined}
+        />
+      );
+
+      expect(await screen.findByRole('heading', {
+        name: '欢迎使用 Clawee'
+      })).toBeInTheDocument();
+      expect(screen.getByText('连接恢复后即可继续登录。'))
+        .toBeInTheDocument();
+      expect(document.querySelector('.clawee-shell')).toBeNull();
+    }
+  );
 
   it.each([
     {
@@ -2715,6 +2853,12 @@ describe('App', () => {
                 })]
           ));
         }
+        if (url.endsWith('/enterprise/skills/enterprise-skill')) {
+          return jsonResponse({
+            ...initialSkill,
+            changelog: '测试更新说明'
+          });
+        }
         if (url.endsWith('/codex/skills')) {
           localSkillRequests += 1;
           return jsonResponse(createSkillListResponse([
@@ -2756,7 +2900,17 @@ describe('App', () => {
       );
 
       const skill = await screen.findByTestId('enterprise-skill-enterprise-skill');
-      await user.click(within(skill).getByRole('button', { name: actionLabel }));
+      if (kind === 'update') {
+        await user.click(within(skill).getByRole('button', {
+          name: '查看 enterprise-name 详情'
+        }));
+        const detail = await screen.findByRole('dialog', {
+          name: 'enterprise-name 详情'
+        });
+        await user.click(within(detail).getByRole('button', { name: actionLabel }));
+      } else {
+        await user.click(within(skill).getByRole('button', { name: actionLabel }));
+      }
 
       await waitFor(() => expect(skillRequests).toBe(2));
       await waitFor(() => expect(localSkillRequests).toBe(1));
@@ -3130,6 +3284,7 @@ describe('App', () => {
     await user.keyboard('{Escape}');
 
     await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
     expect(screen.getByRole('alert')).toHaveTextContent('安装记录加载失败');
@@ -3173,6 +3328,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
     expect(screen.getByRole('alert')).toHaveTextContent('Skill 状态加载失败');
@@ -4473,6 +4629,8 @@ describe('App', () => {
         name: `${hostKind} 归档会话`
       });
       await user.click(within(conversation).getByRole('button', { name: '归档' }));
+      const archiveDialog = screen.getByRole('alertdialog', { name: '归档对话' });
+      await user.click(within(archiveDialog).getByRole('button', { name: '归档' }));
 
       await waitFor(() => {
         expect(screen.queryByRole('button', {
@@ -4522,8 +4680,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'legacy-project' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /选择项目 / }));
-    await user.click(screen.getByRole('button', { name: '新建项目' }));
-    await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+    await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(fetchCalls.map(call => [call.url, call.init?.method])).toContainEqual([
@@ -4677,8 +4834,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     const openExistingFolderPicker = async () => {
       await user.click(screen.getByRole('button', { name: /选择项目 / }));
-      await user.click(screen.getByRole('button', { name: '新建项目' }));
-      await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+      await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
     };
     await openExistingFolderPicker();
     await openExistingFolderPicker();
@@ -4730,7 +4886,6 @@ describe('App', () => {
       name: '选择项目 content-design'
     }));
     await user.click(screen.getByRole('button', { name: '新建项目' }));
-    await user.click(screen.getByRole('menuitem', { name: '新建空白项目' }));
     await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'blank-project');
     await user.click(screen.getByRole('button', { name: '创建' }));
 
@@ -4752,8 +4907,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', {
       name: '选择项目 blank-project'
     }));
-    await user.click(screen.getByRole('button', { name: '新建项目' }));
-    await user.click(screen.getByRole('menuitem', { name: '使用现有文件夹' }));
+    await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
 
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole('button', {
@@ -5301,23 +5455,24 @@ describe('App', () => {
       />
     );
 
-    const recentList = await screen.findByLabelText('最近会话');
-    expect(within(recentList).getByRole('link', { name: /普通会话/ }))
+    const conversationList = await screen.findByLabelText('content-design 对话');
+    const taskList = await screen.findByLabelText('任务会话');
+    expect(within(conversationList).getByRole('button', { name: /普通会话/ }))
       .toBeInTheDocument();
-    expect(within(recentList).getByRole('link', { name: /任务草稿.*草稿/ }))
-      .toHaveClass('sidebar-recent-row');
-    expect(within(screen.getByLabelText('content-design 对话')).queryByText('任务草稿'))
+    expect(within(taskList).getByRole('button', { name: /任务草稿.*草稿/ }))
+      .toHaveClass('sidebar-task-row');
+    expect(within(conversationList).queryByText('任务草稿'))
       .not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /任务线程旧标题/ })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(requestedUrls.some(url => url.endsWith('/schedules'))).toBe(true);
     });
-    expect(within(recentList).getByRole('link', { name: /每日总结/ }))
+    expect(within(taskList).getByRole('button', { name: /^每日总结/ }))
       .toBeInTheDocument();
     expect(
-      Array.from(recentList.querySelectorAll('.sidebar-recent-row strong'))
+      Array.from(taskList.querySelectorAll('.sidebar-task-copy strong'))
         .map(element => element.textContent)
-    ).toEqual(['任务草稿', '每日总结', '普通会话']);
+    ).toEqual(['任务草稿', '每日总结']);
     expect(requestedUrls.some(url => url.includes('/history'))).toBe(false);
   });
 
@@ -5401,11 +5556,12 @@ describe('App', () => {
       />
     );
 
-    const recentList = await screen.findByLabelText('最近会话');
-    await user.click(within(recentList).getByRole('link', { name: /普通会话/ }));
+    const conversationList = await screen.findByLabelText('content-design 对话');
+    const taskList = await screen.findByLabelText('任务会话');
+    await user.click(within(conversationList).getByRole('button', { name: /普通会话/ }));
     expect(await screen.findByText('旧会话内容')).toBeInTheDocument();
 
-    await user.click(await within(recentList).findByRole('link', { name: /每日总结/ }));
+    await user.click(await within(taskList).findByRole('button', { name: /^每日总结/ }));
 
     expect(screen.queryByText('旧会话内容')).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: '正在加载会话历史' })).toBeInTheDocument();
@@ -6753,6 +6909,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问/ }));
+    await user.click(screen.getByRole('button', { name: '开启' }));
 
     await waitFor(() => {
       expect(findPatchCall(fetchCalls, '/threads/thread_files')).toBeDefined();
@@ -7590,8 +7747,8 @@ describe('App', () => {
       fetchCalls.push({ url, init });
       if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
       if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-      if (url.endsWith('/threads?status=active&excludePurpose=schedule_task&limit=50')) {
-        return jsonResponse({ threads: [ordinaryThread, scheduleDraftThread] });
+      if (url.endsWith('/threads?status=active&purpose=conversation&limit=50')) {
+        return jsonResponse({ threads: [ordinaryThread] });
       }
       if (url.endsWith('/threads?status=active&purpose=schedule_task&limit=100')) {
         return jsonResponse({ threads: [scheduleTaskThread] });
@@ -7623,7 +7780,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: '常规' })).toBeInTheDocument();
     await waitFor(() => {
-      expect(fetchCalls.some(call => call.url.includes('excludePurpose=schedule_task'))).toBe(true);
+      expect(fetchCalls.some(call => call.url.includes('purpose=conversation'))).toBe(true);
     });
 
     await user.selectOptions(
@@ -7763,6 +7920,7 @@ describe('App', () => {
       name: '选择访问权限 请求批准'
     }));
     await user.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
+    await user.click(screen.getByRole('button', { name: '开启' }));
 
     expect(await screen.findByText('任务运行期间不能修改访问权限，请等待当前任务结束'))
       .toBeInTheDocument();
@@ -8245,6 +8403,7 @@ function createEnterpriseSessionResponse(
   return {
     status: 'signed_in',
     account: {
+      subjectId: 'acct-member',
       email: 'member@example.com',
       name: 'Member'
     },

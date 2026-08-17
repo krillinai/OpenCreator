@@ -2189,7 +2189,7 @@ describe('runtime api', () => {
       expect.objectContaining({
         operation: 'get',
         serverName: 'secret-server',
-        command: ['mcp', 'get', 'secret-server']
+        command: ['mcp', 'get', 'secret-server', '--json']
       }),
       expect.objectContaining({
         operation: 'add',
@@ -2200,7 +2200,7 @@ describe('runtime api', () => {
     expect(JSON.stringify(operationsBody)).not.toContain('super-secret-value');
     expect(fake.readCommands()).toEqual([
       'mcp add secret-server --env MCP_API_TOKEN=super-secret-value -- node',
-      'mcp get secret-server'
+      'mcp get secret-server --json'
     ]);
   });
 
@@ -2658,6 +2658,29 @@ describe('runtime api', () => {
 
     const detail = await authGet(`/threads/${thread.id}`);
     expect(detail.json().thread.sandbox).toBe('danger-full-access');
+  });
+
+  it('pins, renames, and permanently deletes an ordinary conversation', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-thread-actions-'));
+    server = await buildServer({ token: 'secret', dataDir: tempDir });
+    const thread = (await createConversationResponseViaApi({
+      title: 'Original',
+      sandbox: 'read-only'
+    })).json().thread;
+
+    const updated = await authPatch(`/threads/${thread.id}`, {
+      title: 'Renamed',
+      pinned: true
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().thread).toMatchObject({
+      title: 'Renamed',
+      pinnedAt: expect.any(String)
+    });
+
+    const deleted = await authDelete(`/threads/${thread.id}`);
+    expect(deleted.statusCode).toBe(204);
+    expect((await authGet(`/threads/${thread.id}`)).statusCode).toBe(404);
   });
 
   it('creates schedule drafts but rejects direct public schedule task creation', async () => {

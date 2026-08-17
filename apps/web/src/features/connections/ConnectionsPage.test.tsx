@@ -84,7 +84,9 @@ describe('ConnectionsPage', () => {
       .toBeInTheDocument();
     expect(screen.getAllByTestId('mcp-card')).toHaveLength(1);
     expect(screen.getByText(/github/)).toBeInTheDocument();
-    expect(screen.getByText('企业授权：1/2 项工具')).toBeInTheDocument();
+    expect(screen.getByText('按条件查询客户资料')).toBeInTheDocument();
+    expect(screen.queryByText('企业授权：1/2 项工具'))
+      .not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '安装' }))
       .not.toBeInTheDocument();
   });
@@ -261,6 +263,7 @@ function signedInSession(): EnterpriseSessionResponse {
   return {
     status: 'signed_in',
     account: {
+      subjectId: 'acct_01JZ8W6A2M4S',
       email: 'member@example.com',
       name: 'Enterprise Member'
     },

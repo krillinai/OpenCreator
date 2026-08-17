@@ -263,7 +263,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
       <ConnectionsGate
         icon={<WifiOff size={22} aria-hidden="true" />}
         title="正在等待本地 Runtime"
-        detail="系统连接暂不可用，本地项目和会话仍可继续使用。"
+        detail="连接器暂不可用，本地项目和会话仍可继续使用。"
       />
     );
   }
@@ -273,14 +273,14 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
       <div className="connections-page__inner">
         <header className="connections-header">
           <div>
-            <h1>系统连接</h1>
-            <p>统一管理当前 CODEX_HOME 中的 MCP，企业目录仅提供可安装来源</p>
+            <h1>连接器</h1>
+            <p>统一管理当前 CODEX_HOME 中的 MCP，企业目录提供可安装连接器</p>
           </div>
           <div className="connections-header__actions">
             <label className="connections-search">
               <Search size={16} aria-hidden="true" />
               <input
-                aria-label="搜索系统连接"
+                aria-label="搜索连接器"
                 onChange={event => setQuery(event.target.value)}
                 placeholder="搜索 MCP 或工具"
                 type="search"
@@ -300,7 +300,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
             <button
               className="connections-icon-button"
               type="button"
-              aria-label="刷新系统连接"
+              aria-label="刷新连接器"
               title="刷新"
               disabled={loading}
               onClick={() => void loadConnections(true)}
@@ -420,7 +420,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
             {connections.length === 0 ? '当前没有 MCP' : '没有找到匹配的 MCP'}
           </div>
         ) : (
-          <section className="connections-grid" aria-label="系统连接目录">
+          <section className="connections-grid" aria-label="连接器目录">
             {filtered.map(item => (
               <ConnectionCard
                 key={item.key}
@@ -447,11 +447,13 @@ function ConnectionCard(props: {
   onInstall(): void;
   onAction(action: 'enable' | 'disable' | 'login' | 'logout' | 'remove'): void;
 }) {
-  const visibleTools = props.item.upstream?.tools.slice(0, 4) ?? [];
-  const remainingTools =
-    (props.item.upstream?.tools.length ?? 0) - visibleTools.length;
-  const authorizedTools =
-    props.item.upstream?.tools.filter(tool => tool.authorized).length ?? 0;
+  const description = props.item.upstream?.tools.find(tool => (
+    tool.authorized && tool.description.trim().length > 0
+  ))?.description
+    ?? props.item.upstream?.tools.find(tool => (
+      tool.description.trim().length > 0
+    ))?.description
+    ?? props.item.endpoint;
   const status = props.item.enabled
     ? 'enabled'
     : props.item.installed
@@ -477,37 +479,14 @@ function ConnectionCard(props: {
         <em data-status={status}>{connectionStatusLabel(status)}</em>
       </div>
 
+      <p className="connection-card__description">{description}</p>
+
       <div className="connection-card__meta">
         <span>{props.item.server?.transport ?? props.item.upstream?.namespace}</span>
         <span>
           {props.item.upstream === undefined ? 'Codex 原生配置' : '企业目录'}
         </span>
       </div>
-
-      <div className="connection-card__endpoint" title={props.item.endpoint}>
-        {props.item.endpoint}
-      </div>
-
-      {props.item.upstream !== undefined ? (
-        <>
-          <div className="connection-card__capabilities">
-            {visibleTools.map(tool => (
-              <span key={tool.toolId} title={tool.description || tool.name}>
-                {tool.title || tool.name}
-              </span>
-            ))}
-            {remainingTools > 0 ? <span>+{remainingTools}</span> : null}
-            {props.item.upstream.tools.length === 0 ? <span>暂无工具</span> : null}
-          </div>
-          <p className="connection-card__authorization">
-            企业授权：{authorizedTools}/{props.item.upstream.tools.length} 项工具
-          </p>
-        </>
-      ) : props.item.server?.envKeys.length ? (
-        <div className="connection-card__capabilities">
-          {props.item.server.envKeys.map(key => <span key={key}>{key}</span>)}
-        </div>
-      ) : null}
 
       <footer>
         {props.item.installed && props.item.server !== undefined ? (

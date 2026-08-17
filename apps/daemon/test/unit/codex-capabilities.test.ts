@@ -5,6 +5,7 @@ import {
   collectCodexCapabilityMatrix,
   createUnknownCapabilityMatrix,
   isResumeExecutionSupported,
+  isReusableCapabilityMatrix,
   parseCodexCapabilityMatrix,
   parseCodexExecHelp,
   probeCodexVersionAsync
@@ -63,6 +64,23 @@ Commands:
 `;
 
 describe('codex capability parsing', () => {
+  it('rejects capability caches created before knowledge isolation was recorded', () => {
+    const legacy = {
+      ...createUnknownCapabilityMatrix(),
+      knowledgeToolIsolation: undefined,
+      knowledgeBuiltInTools: undefined
+    };
+
+    expect(isReusableCapabilityMatrix(legacy)).toBe(false);
+    expect(isReusableCapabilityMatrix(parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.146.0',
+      execHelp: '',
+      resumeHelp: '',
+      mcpHelp: '',
+      mcpAddHelp: ''
+    }))).toBe(true);
+  });
+
   it('accepts a null sync spawn error from successful process creation', () => {
     expect(() => collectCodexCapabilityMatrix({
       codexBin: execPath,
@@ -170,6 +188,48 @@ describe('codex capability parsing', () => {
     expect(unsupported).toMatchObject({
       appServer: true,
       appServerApprovals: false
+    });
+  });
+
+  it('reports fail-closed knowledge tool switches only when every switch is supported', () => {
+    const featureNames = [
+      'shell_tool', 'unified_exec', 'shell_snapshot', 'browser_use',
+      'computer_use', 'in_app_browser', 'image_generation', 'multi_agent',
+      'plugins', 'apps'
+    ];
+    const supported = parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.200.0',
+      execHelp: `${EXEC_HELP_01425}\n  --ignore-user-config`,
+      resumeHelp: RESUME_HELP_01425,
+      mcpHelp: MCP_HELP_01425,
+      mcpAddHelp: MCP_ADD_HELP_01425,
+      appServerHelp: `${APP_SERVER_HELP_0144}\n  --disable <FEATURE>`,
+      featuresOutput: featureNames.map(name => `${name} stable`).join('\n')
+    });
+    const missingShellSwitch = parseCodexCapabilityMatrix({
+      versionOutput: 'codex-cli 0.200.0',
+      execHelp: `${EXEC_HELP_01425}\n  --ignore-user-config`,
+      resumeHelp: RESUME_HELP_01425,
+      mcpHelp: MCP_HELP_01425,
+      mcpAddHelp: MCP_ADD_HELP_01425,
+      appServerHelp: `${APP_SERVER_HELP_0144}\n  --disable <FEATURE>`,
+      featuresOutput: featureNames.filter(name => name !== 'shell_tool')
+        .map(name => `${name} stable`).join('\n')
+    });
+
+    expect(supported).toMatchObject({
+      knowledgeToolIsolation: true,
+      knowledgeBuiltInTools: {
+        shell: true,
+        fileRead: true,
+        fileWrite: true,
+        applyPatch: true,
+        webSearch: true
+      }
+    });
+    expect(missingShellSwitch).toMatchObject({
+      knowledgeToolIsolation: false,
+      knowledgeBuiltInTools: expect.objectContaining({ shell: false })
     });
   });
 

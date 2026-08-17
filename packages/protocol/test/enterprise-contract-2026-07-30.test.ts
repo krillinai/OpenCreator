@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   EnterpriseLoginRequest,
+  EnterpriseQrLoginStartResponse,
   EnterpriseRegisterRequest,
   EnterpriseSessionResponse,
   EnterpriseSkillDetailResponse,
@@ -23,11 +24,19 @@ describe('enterprise runtime contract', () => {
     const session: EnterpriseSessionResponse = {
       status: 'signed_in',
       account: {
+        subjectId: 'acct-user',
         email: login.email,
         name: register.name ?? ''
       },
       expiresAt: '2026-07-30T12:00:00.000Z',
       transportSecurity: 'secure_https'
+    };
+    const qrLogin: EnterpriseQrLoginStartResponse = {
+      requestId: 'qr-1',
+      provider: 'wecom',
+      qrCodeUrl: 'https://enterprise.example/qr-1.png',
+      expiresAt: '2026-07-30T12:01:00.000Z',
+      pollAfterMs: 1000
     };
     const detail: EnterpriseSkillDetailResponse = {
       skillId: 'skill-1',
@@ -81,7 +90,13 @@ describe('enterprise runtime contract', () => {
       'ENTERPRISE_SKILL_INSTALL_FAILED'
     ];
 
-    const serialized = JSON.stringify({ session, list, mutation, codes });
+    const serialized = JSON.stringify({
+      session,
+      qrLogin,
+      list,
+      mutation,
+      codes
+    });
     for (const forbidden of [
       'accessToken',
       'token',

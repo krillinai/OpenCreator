@@ -25,6 +25,63 @@ afterEach(() => {
 });
 
 describe('enterprise HTTP client', () => {
+  it('decodes the exact knowledge search grant and forwards only query and limit', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: { tools: [{ name: 'knowledge.search', enabled: true }] }
+      }))
+      .mockImplementationOnce(async (_url: string | URL | Request, init?: RequestInit) => {
+        expect(JSON.parse(String(init?.body))).toEqual({ query: 'leave policy', limit: 5 });
+        return jsonResponse({
+          data: {
+            results: [{
+              title: 'Leave policy',
+              knowledge_base_name: 'HR',
+              document_name: 'Handbook',
+              excerpt: 'Annual leave is 12 days.',
+              internal_document_id: 'must-be-stripped'
+            }]
+          }
+        });
+      });
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.hasKnowledgeSearchGrant('enterprise-access-token')).resolves.toBe(true);
+    await expect(client.searchKnowledge({
+      accessToken: 'enterprise-access-token',
+      query: 'leave policy',
+      limit: 5
+    })).resolves.toEqual([{
+      title: 'Leave policy',
+      knowledgeBaseName: 'HR',
+      documentName: 'Handbook',
+      excerpt: 'Annual leave is 12 days.'
+    }]);
+    expect(fetch.mock.calls.map(call => String(call[0]))).toEqual([
+      `${ORIGIN}/api/v1/app/mcp-grants`,
+      `${ORIGIN}/api/v1/app/knowledge/search`
+    ]);
+    expect(fetch.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer enterprise-access-token'
+      })
+    });
+  });
+
+  it('rejects unknown enterprise MCP grant tool names', async () => {
+    const client = createEnterpriseHttpClient({
+      origin: ORIGIN,
+      fetch: vi.fn(async () => jsonResponse({
+        data: { tools: [{ name: 'filesystem.read', enabled: true }] }
+      }))
+    });
+
+    await expect(
+      client.hasKnowledgeSearchGrant('enterprise-access-token')
+    ).rejects.toMatchObject({ code: 'ENTERPRISE_PROTOCOL_ERROR' });
+  });
+
   it('register sends the fixed client and stable agent identity', async () => {
     const fetch = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect(JSON.parse(String(init?.body))).toEqual({
@@ -81,7 +138,7 @@ describe('enterprise HTTP client', () => {
       return jsonResponse({
         data: {
           account: {
-            user_id: 'usr_secret',
+            account_id: 'acct_01JZ8W6A2M4S',
             email: 'user@example.com',
             name: 'User',
             status: 'active'
@@ -103,6 +160,7 @@ describe('enterprise HTTP client', () => {
       password: 'password-123'
     }, AGENT_ID)).resolves.toEqual({
       account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
         email: 'user@example.com',
         name: 'User'
       },
@@ -113,13 +171,75 @@ describe('enterprise HTTP client', () => {
     });
   });
 
+  it('supports three-provider QR login without exposing tokens', async () => {
+    const authenticated = {
+      account: {
+        account_id: 'acct_01JZ8W6A2M4S',
+        email: 'user@example.com',
+        name: 'User',
+        status: 'active'
+      },
+      agent: { agent_id: AGENT_ID, name: 'User' },
+      access_token: 'enterprise-access-token',
+      token_type: 'Bearer',
+      expires_at: '2026-08-08T10:00:00Z'
+    };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          request_id: 'qr_1',
+          provider: 'feishu',
+          qr_code_url: 'https://enterprise.example/qr_1.png',
+          expires_at: '2026-08-07T12:01:00Z',
+          poll_after_ms: 1000
+        }
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          request_id: 'qr_1',
+          provider: 'feishu',
+          status: 'signed_in',
+          ...authenticated
+        }
+      }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.startQrLogin!({ provider: 'feishu' }, AGENT_ID))
+      .resolves.toEqual({
+        requestId: 'qr_1',
+        provider: 'feishu',
+        qrCodeUrl: 'https://enterprise.example/qr_1.png',
+        expiresAt: '2026-08-07T12:01:00Z',
+        pollAfterMs: 1000
+      });
+    await expect(client.pollQrLogin!('qr_1', AGENT_ID)).resolves.toMatchObject({
+      requestId: 'qr_1',
+      provider: 'feishu',
+      status: 'signed_in',
+      login: {
+        agentId: AGENT_ID,
+        accessToken: 'enterprise-access-token'
+      }
+    });
+
+    expect(fetch.mock.calls.map(call => String(call[0]))).toEqual([
+      `${ORIGIN}/api/v1/auth/qr-login`,
+      `${ORIGIN}/api/v1/auth/qr-login/qr_1?agent_id=${encodeURIComponent(AGENT_ID)}`
+    ]);
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+      provider: 'feishu',
+      client_id: 'clawee-agent',
+      agent_id: AGENT_ID
+    });
+  });
+
   it('requires the authenticated agent identity from the current account response', async () => {
     const fetch = vi.fn(
       async (_url: string | URL | Request, _init?: RequestInit) => (
         jsonResponse({
           data: {
             account: {
-              user_id: 'usr_secret',
+              account_id: 'acct_01JZ8W6A2M4S',
               email: 'user@example.com',
               name: 'User',
               status: 'active'
@@ -146,6 +266,7 @@ describe('enterprise HTTP client', () => {
 
     await expect(client.getMe('enterprise-access-token')).resolves.toEqual({
       account: {
+        subjectId: 'acct_01JZ8W6A2M4S',
         email: 'user@example.com',
         name: 'User'
       },
@@ -166,6 +287,58 @@ describe('enterprise HTTP client', () => {
         Authorization: 'Bearer enterprise-access-token'
       },
       method: 'GET'
+    });
+  });
+
+  it('accepts the documented user_id as the stable account subject', async () => {
+    const fetch = vi.fn(async () => jsonResponse({
+      data: {
+        account: {
+          user_id: 'usr_123',
+          email: 'user@example.com',
+          name: 'User',
+          status: 'active'
+        },
+        agent: { agent_id: AGENT_ID, name: 'User' },
+        access_token: 'enterprise-access-token',
+        token_type: 'Bearer',
+        expires_at: '2026-07-31T10:00:00Z'
+      }
+    }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.login({
+      email: 'user@example.com',
+      password: 'password-123'
+    }, AGENT_ID)).resolves.toMatchObject({
+      account: { subjectId: 'usr_123' }
+    });
+  });
+
+  it('rejects an authenticated account response without a stable account id', async () => {
+    const fetch = vi.fn(async () => jsonResponse({
+      data: {
+        account: {
+          email: 'user@example.com',
+          name: 'User',
+          status: 'active'
+        },
+        agent: {
+          agent_id: AGENT_ID,
+          name: 'User'
+        },
+        access_token: 'enterprise-access-token',
+        token_type: 'Bearer',
+        expires_at: '2026-07-31T10:00:00Z'
+      }
+    }));
+    const client = createEnterpriseHttpClient({ fetch, origin: ORIGIN });
+
+    await expect(client.login({
+      email: 'user@example.com',
+      password: 'password-123'
+    }, AGENT_ID)).rejects.toMatchObject({
+      code: 'ENTERPRISE_PROTOCOL_ERROR'
     });
   });
 

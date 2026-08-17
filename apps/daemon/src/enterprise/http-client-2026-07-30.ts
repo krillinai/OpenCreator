@@ -2,6 +2,9 @@ import type {
   EnterpriseAccountSummary,
   EnterpriseListMeta,
   EnterpriseLoginRequest,
+  EnterpriseQrLoginStartRequest,
+  EnterpriseQrLoginStartResponse,
+  EnterpriseQrProvider,
   EnterpriseRegisterRequest,
   RuntimeErrorCode
 } from '@clawee/protocol';
@@ -20,9 +23,28 @@ import {
 } from './config-2026-07-30.js';
 
 const accountSchema = z.object({
+  account_id: z.string().min(1).optional(),
+  user_id: z.string().min(1).optional(),
   email: z.string().min(1),
   name: z.string(),
   status: z.string()
+}).superRefine((account, context) => {
+  if (account.account_id === undefined && account.user_id === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'A stable account identifier is required'
+    });
+  }
+  if (
+    account.account_id !== undefined
+    && account.user_id !== undefined
+    && account.account_id !== account.user_id
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Account identifiers do not match'
+    });
+  }
 });
 const agentSchema = z.object({
   agent_id: z.string().min(1),
@@ -36,6 +58,35 @@ const loginResponseSchema = z.object({
     token_type: z.literal('Bearer'),
     expires_at: z.string().datetime({ offset: true })
   })
+});
+const qrProviderSchema = z.enum(['feishu', 'dingtalk', 'wecom']);
+const qrLoginStartResponseSchema = z.object({
+  data: z.object({
+    request_id: z.string().min(1),
+    provider: qrProviderSchema,
+    qr_code_url: z.string().min(1),
+    expires_at: z.string().datetime({ offset: true }),
+    poll_after_ms: z.number().int().min(250).max(10_000)
+  })
+});
+const qrLoginPendingDataSchema = z.object({
+  request_id: z.string().min(1),
+  provider: qrProviderSchema,
+  status: z.enum(['pending', 'scanned', 'expired', 'denied']),
+  poll_after_ms: z.number().int().min(250).max(10_000).optional()
+});
+const qrLoginSignedInDataSchema = z.object({
+  request_id: z.string().min(1),
+  provider: qrProviderSchema,
+  status: z.literal('signed_in'),
+  account: accountSchema,
+  agent: agentSchema,
+  access_token: z.string().min(1),
+  token_type: z.literal('Bearer'),
+  expires_at: z.string().datetime({ offset: true })
+});
+const qrLoginStatusResponseSchema = z.object({
+  data: z.union([qrLoginPendingDataSchema, qrLoginSignedInDataSchema])
 });
 const collectorRegistrationSchema = z.object({
   exists: z.boolean(),
@@ -208,6 +259,24 @@ const sharedFileMutationResponseSchema = z.object({
     updated_at: z.string().datetime({ offset: true })
   })
 });
+const mcpGrantResponseSchema = z.object({
+  data: z.object({
+    tools: z.array(z.object({
+      name: z.literal('knowledge.search'),
+      enabled: z.boolean()
+    }))
+  })
+});
+const knowledgeSearchResponseSchema = z.object({
+  data: z.object({
+    results: z.array(z.object({
+      title: z.string(),
+      knowledge_base_name: z.string(),
+      document_name: z.string(),
+      excerpt: z.string()
+    }))
+  })
+});
 
 export type EnterpriseRemoteSkill = {
   skillId: string;
@@ -332,12 +401,31 @@ export type EnterpriseRemoteSharedFileMutation = {
   updatedAt: string;
 };
 
+export type EnterpriseKnowledgeSearchSource = {
+  title: string;
+  knowledgeBaseName: string;
+  documentName: string;
+  excerpt: string;
+};
+
 export type EnterpriseLoginResult = {
   account: EnterpriseAccountSummary;
   agentId: string;
   accessToken: string;
   tokenType: 'Bearer';
   expiresAt: string;
+};
+
+export type EnterpriseQrLoginPollResult = {
+  requestId: string;
+  provider: EnterpriseQrProvider;
+  status: 'pending' | 'scanned' | 'expired' | 'denied';
+  pollAfterMs?: number;
+} | {
+  requestId: string;
+  provider: EnterpriseQrProvider;
+  status: 'signed_in';
+  login: EnterpriseLoginResult;
 };
 
 export type EnterpriseMeResult = {
@@ -390,6 +478,14 @@ export type EnterpriseSharedFileUploadInput = {
 export type EnterpriseHttpClient = {
   register(input: EnterpriseRegisterRequest, agentId: string): Promise<void>;
   login(input: EnterpriseLoginRequest, agentId: string): Promise<EnterpriseLoginResult>;
+  startQrLogin?(
+    input: EnterpriseQrLoginStartRequest,
+    agentId: string
+  ): Promise<EnterpriseQrLoginStartResponse>;
+  pollQrLogin?(
+    requestId: string,
+    agentId: string
+  ): Promise<EnterpriseQrLoginPollResult>;
   getMe(accessToken: string): Promise<EnterpriseMeResult>;
   logout(accessToken: string): Promise<void>;
   revealAgentMcpToken(accessToken: string): Promise<EnterpriseAgentMcpToken>;
@@ -438,6 +534,12 @@ export type EnterpriseHttpClient = {
   uploadSharedFileContent(
     input: EnterpriseSharedFileUploadInput
   ): Promise<EnterpriseRemoteSharedFileMutation>;
+  hasKnowledgeSearchGrant(accessToken: string): Promise<boolean>;
+  searchKnowledge(input: {
+    accessToken: string;
+    query: string;
+    limit: number;
+  }): Promise<EnterpriseKnowledgeSearchSource[]>;
   listSkills(accessToken: string): Promise<EnterpriseRemoteSkill[]>;
   getSkillDetail(
     accessToken: string,
@@ -597,6 +699,60 @@ export function createEnterpriseHttpClient(input: {
         accessToken: response.data.access_token,
         tokenType: response.data.token_type,
         expiresAt: response.data.expires_at
+      };
+    },
+
+    async startQrLogin(request, agentId) {
+      const response = await requestJson({
+        body: {
+          provider: request.provider,
+          client_id: 'clawee-agent',
+          agent_id: agentId
+        },
+        method: 'POST',
+        path: '/api/v1/auth/qr-login',
+        domain: 'auth',
+        schema: qrLoginStartResponseSchema
+      });
+      return {
+        requestId: response.data.request_id,
+        provider: response.data.provider,
+        qrCodeUrl: response.data.qr_code_url,
+        expiresAt: response.data.expires_at,
+        pollAfterMs: response.data.poll_after_ms
+      };
+    },
+
+    async pollQrLogin(requestId, agentId) {
+      const query = new URLSearchParams({ agent_id: agentId });
+      const response = await requestJson({
+        method: 'GET',
+        path: `/api/v1/auth/qr-login/${encodeURIComponent(requestId)}?${query.toString()}`,
+        domain: 'auth',
+        schema: qrLoginStatusResponseSchema
+      });
+      const result = response.data;
+      if (result.status !== 'signed_in') {
+        return {
+          requestId: result.request_id,
+          provider: result.provider,
+          status: result.status,
+          ...(result.poll_after_ms === undefined
+            ? {}
+            : { pollAfterMs: result.poll_after_ms })
+        };
+      }
+      return {
+        requestId: result.request_id,
+        provider: result.provider,
+        status: 'signed_in',
+        login: {
+          account: accountSummary(result.account),
+          agentId: result.agent.agent_id,
+          accessToken: result.access_token,
+          tokenType: result.token_type,
+          expiresAt: result.expires_at
+        }
       };
     },
 
@@ -1013,6 +1169,35 @@ export function createEnterpriseHttpClient(input: {
       return mapRemoteSharedFileMutation(parsed.data.data);
     },
 
+    async hasKnowledgeSearchGrant(accessToken) {
+      const response = await requestJson({
+        accessToken,
+        method: 'GET',
+        path: '/api/v1/app/mcp-grants',
+        schema: mcpGrantResponseSchema
+      });
+      return response.data.tools.some(tool => (
+        tool.name === 'knowledge.search' && tool.enabled
+      ));
+    },
+
+    async searchKnowledge(request) {
+      const response = await requestJson({
+        accessToken: request.accessToken,
+        body: { query: request.query, limit: request.limit },
+        domain: 'knowledge',
+        method: 'POST',
+        path: '/api/v1/app/knowledge/search',
+        schema: knowledgeSearchResponseSchema
+      });
+      return response.data.results.map(result => ({
+        title: result.title,
+        knowledgeBaseName: result.knowledge_base_name,
+        documentName: result.document_name,
+        excerpt: result.excerpt
+      }));
+    },
+
     async downloadSkillPackage(request) {
       const query = new URLSearchParams({
         skill_id: request.skillId,
@@ -1120,6 +1305,7 @@ function jsonHeaders(
 
 function accountSummary(account: z.infer<typeof accountSchema>): EnterpriseAccountSummary {
   return {
+    subjectId: account.account_id ?? account.user_id!,
     email: account.email,
     name: account.name
   };
@@ -1291,6 +1477,7 @@ function mapCollectorRegistration(
 
 type EnterpriseHttpDomain =
   | 'general'
+  | 'auth'
   | 'skill'
   | 'knowledge'
   | 'shared-file'
@@ -1374,6 +1561,9 @@ function mapResponseCode(
   }
   if (statusCode === 404 && domain === 'shared-file') {
     return 'ENTERPRISE_SHARED_FILE_NOT_FOUND';
+  }
+  if (statusCode === 404 && domain === 'auth') {
+    return 'ENTERPRISE_SERVICE_UNAVAILABLE';
   }
   if (statusCode === 404) return 'ENTERPRISE_SKILL_NOT_FOUND';
   if (statusCode === 409 && upstreamCode === 'agent_id_conflict') {

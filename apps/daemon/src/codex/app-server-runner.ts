@@ -1,5 +1,6 @@
 import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
-import type { CodexMcpServerConfig } from './argv.js';
+import type { BuiltInToolPolicy, CodexMcpServerConfig } from './argv.js';
+import { createCodexIsolatedHome, createCodexProbeHome } from './probe-home.js';
 import {
   buildCodexAppServerArgs,
   createCodexAppServerHost,
@@ -33,7 +34,10 @@ export type StartCodexAppServerInput = {
   inactivityTimeoutMs?: number;
   forceKillGraceMs?: number;
   mcpServers?: CodexMcpServerConfig[];
+  builtInTools?: BuiltInToolPolicy;
+  isolatedHomePath?: string;
   env?: Record<string, string>;
+  beforeSpawn?: () => Promise<void>;
   onNotification?: (notification: Record<string, unknown>) => Promise<void> | void;
   onThreadStarted?: (threadId: string) => Promise<void> | void;
   onTurnStartWritten?: () => void;
@@ -46,12 +50,33 @@ export type StartCodexAppServerInput = {
 export function startCodexAppServer(
   input: StartCodexAppServerInput
 ): CodexAppServerProcess {
+  if (input.beforeSpawn !== undefined) {
+    let process: CodexAppServerProcess | undefined;
+    let cancelRequested = false;
+    return {
+      cancel() {
+        cancelRequested = true;
+        process?.cancel();
+      },
+      result: input.beforeSpawn().then(() => {
+        if (cancelRequested) throw new Error('Codex app server canceled before spawn');
+        process = startCodexAppServer({ ...input, beforeSpawn: undefined });
+        return process.result;
+      })
+    };
+  }
+  const isolatedHome = input.builtInTools !== undefined
+    ? input.isolatedHomePath === undefined
+      ? createCodexProbeHome(input.codexHome)
+      : createCodexIsolatedHome(input.codexHome, input.isolatedHomePath)
+    : undefined;
   const host = createCodexAppServerHost({
     codexBin: input.codexBin,
-    codexHome: input.codexHome,
+    codexHome: isolatedHome?.path ?? input.codexHome,
     cwd: input.cwd,
     profile: input.profile,
     mcpServers: input.mcpServers,
+    builtInTools: input.builtInTools,
     env: input.env,
     spawnTimeoutMs: input.spawnTimeoutMs,
     forceKillGraceMs: input.forceKillGraceMs
@@ -77,10 +102,12 @@ export function startCodexAppServer(
     result: process.result.then(
       async result => {
         await host.close('one_shot_completed');
+        isolatedHome?.cleanup();
         return result;
       },
       async error => {
         await host.close('one_shot_failed').catch(() => undefined);
+        isolatedHome?.cleanup();
         throw error;
       }
     )

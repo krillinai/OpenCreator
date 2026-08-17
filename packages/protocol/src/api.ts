@@ -494,7 +494,11 @@ export type RunContextResponse = {
   items: RunContextItem[];
 };
 
-export type ThreadPurpose = 'conversation' | 'schedule_draft' | 'schedule_task';
+export type ThreadPurpose =
+  | 'conversation'
+  | 'knowledge_conversation'
+  | 'schedule_draft'
+  | 'schedule_task';
 
 export type ProjectResponse = {
   id: string;
@@ -577,6 +581,13 @@ export type CreateThreadRequest =
       sandbox?: SandboxMode;
     }
   | {
+      purpose: 'knowledge_conversation';
+      title?: string;
+      profile?: string;
+      model?: string;
+      reasoning?: ReasoningEffort;
+    }
+  | {
       purpose: 'schedule_draft';
       title?: string;
       cwd?: string;
@@ -588,7 +599,9 @@ export type CreateThreadRequest =
     };
 
 export type UpdateThreadRequest = {
+  title?: string;
   sandbox?: SandboxMode;
+  pinned?: boolean;
 };
 
 export type ThreadResponse = {
@@ -610,6 +623,7 @@ export type ThreadResponse = {
   createdAt: string;
   updatedAt: string;
   archivedAt?: string | null;
+  pinnedAt?: string | null;
 };
 
 export type ThreadListResponse = {
@@ -767,6 +781,7 @@ export type EnterpriseTransportSecurity =
   | 'secure_https';
 
 export type EnterpriseAccountSummary = {
+  subjectId: string;
   email: string;
   name: string;
 };
@@ -843,6 +858,35 @@ export type EnterpriseMcpPreferenceUpdateRequest = {
   installed?: boolean;
   enabled?: boolean;
   confirmWriteToCodexHome?: true;
+};
+
+export type EnterpriseQrProvider = 'feishu' | 'dingtalk' | 'wecom';
+
+export type EnterpriseQrLoginStartRequest = {
+  provider: EnterpriseQrProvider;
+};
+
+export type EnterpriseQrLoginStartResponse = {
+  requestId: string;
+  provider: EnterpriseQrProvider;
+  qrCodeUrl: string;
+  expiresAt: string;
+  pollAfterMs: number;
+};
+
+export type EnterpriseQrLoginStatus =
+  | 'pending'
+  | 'scanned'
+  | 'expired'
+  | 'denied'
+  | 'signed_in';
+
+export type EnterpriseQrLoginStatusResponse = {
+  requestId: string;
+  provider: EnterpriseQrProvider;
+  status: EnterpriseQrLoginStatus;
+  pollAfterMs?: number;
+  session?: EnterpriseSessionResponse;
 };
 
 export type EnterpriseListMeta = {

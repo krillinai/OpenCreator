@@ -221,7 +221,7 @@
 
 .connection-card {
   min-width: 0;
-  min-height: 248px;
+  min-height: 126px;
   display: flex;
   flex-direction: column;
   padding: 16px;
@@ -291,12 +291,24 @@
   color: var(--accent-strong);
 }
 
+.connection-card__description {
+  display: -webkit-box;
+  min-height: 36px;
+  margin: 14px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .connection-card__meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 14px 0 10px;
+  margin: 12px 0 0;
   color: var(--subtle);
   font-size: 10px;
 }
@@ -306,48 +318,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.connection-card__meta [data-upstream-status='active'] {
-  color: var(--success);
-}
-
-.connection-card__meta [data-upstream-status]:not([data-upstream-status='active']) {
-  color: var(--danger);
-}
-
-.connection-card__capabilities {
-  display: flex;
-  min-height: 52px;
-  align-content: flex-start;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.connection-card__endpoint {
-  min-height: 34px;
-  overflow: hidden;
-  color: var(--muted);
-  font: 10px/1.55 var(--font-mono);
-  overflow-wrap: anywhere;
-}
-
-.connection-card__capabilities span {
-  max-width: 100%;
-  padding: 4px 7px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.connection-card__authorization {
-  margin: 11px 0 0;
-  color: var(--subtle);
-  font-size: 10px;
 }
 
 .connection-card footer {
@@ -392,6 +362,7 @@
 }
 
 .connection-switch {
+  align-self: start;
   position: relative;
   width: 38px;
   height: 22px;
@@ -424,6 +395,7 @@
 }
 
 .connection-install {
+  align-self: start;
   min-height: 30px;
   display: inline-flex;
   align-items: center;
