@@ -128,6 +128,7 @@ import { createCapabilityService } from '../services/capability-service.js';
 import { createAttachmentService } from '../services/attachment-service.js';
 import { createApprovalService } from '../services/approval-service.js';
 import { createConnectionService, type ConnectionState } from '../services/connection-service.js';
+import { createCreatorServicesService } from '../services/creator-services-service.js';
 import { createCleanupService } from '../services/cleanup-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
 import { createEnterpriseService } from '../services/enterprise-service-2026-07-30.js';
@@ -584,6 +585,10 @@ export function AppController(props: AppControllerProps) {
   );
   const cleanupService = useMemo(
     () => runtimeClient === null ? null : createCleanupService(runtimeClient),
+    [runtimeClient]
+  );
+  const creatorServicesService = useMemo(
+    () => runtimeClient === null ? null : createCreatorServicesService(runtimeClient),
     [runtimeClient]
   );
   const memoryService = useMemo(
@@ -4959,10 +4964,6 @@ export function AppController(props: AppControllerProps) {
       projects={projects}
       currentProjectId={state.currentProjectId}
       onOpenProject={selectProject}
-      onCreateProject={projectService === null ? undefined : () => {
-        setProjectLoadError(undefined);
-        setCreateProjectOpen(true);
-      }}
       onManageProject={projectId => void openProjectManagement(projectId)}
     />
   ) : state.activeView === 'workbench' ? (
@@ -5103,6 +5104,7 @@ export function AppController(props: AppControllerProps) {
       profileData={codexProfiles}
       onProfileDataChange={setCodexProfiles}
       cleanupService={cleanupService}
+      creatorServicesService={creatorServicesService}
       memoryService={memoryService}
       memoryProjects={memoryProjectOptions}
       memoryThreads={memoryThreadOptions}

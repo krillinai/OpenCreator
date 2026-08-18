@@ -1,0 +1,404 @@
+.creator-services-settings {
+  width: min(940px, 100%);
+}
+
+.settings-section .creator-services-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.creator-services-header > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.creator-services-header h1 {
+  flex: 0 0 auto;
+  font-size: 24px;
+}
+
+.creator-services-header p {
+  min-width: 0;
+}
+
+.creator-services-security {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border));
+  border-radius: 6px;
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.creator-services-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 0;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+}
+
+.creator-services-tabs button {
+  min-width: 0;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.creator-services-tabs button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.creator-services-tabs button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.creator-services-state {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.creator-services-spinner {
+  animation: creator-services-spin 0.9s linear infinite;
+}
+
+.creator-services-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.creator-services-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.creator-services-fieldset legend {
+  padding: 0 7px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.creator-services-fieldset > p {
+  max-width: 70ch;
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.creator-services-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px 16px;
+}
+
+.creator-services-field {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.creator-services-field.is-wide,
+.creator-services-subheading,
+.creator-services-toggle,
+.creator-services-inline-note {
+  grid-column: 1 / -1;
+}
+
+.creator-services-field input,
+.creator-services-field select,
+.creator-services-field output {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.creator-services-field output {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.creator-services-field input::placeholder {
+  color: var(--subtle);
+  opacity: 1;
+}
+
+.creator-services-field input:focus,
+.creator-services-field select:focus,
+.creator-services-select-trigger:focus-visible,
+.creator-services-select-menu button:focus-visible,
+.creator-services-secret-input button:focus-visible,
+.creator-services-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.creator-services-select {
+  position: relative;
+}
+
+.creator-services-select-trigger {
+  width: 100%;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.creator-services-select-trigger:hover,
+.creator-services-select-trigger[aria-expanded="true"] {
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--surface-2) 88%, var(--text));
+}
+
+.creator-services-select-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.creator-services-select-trigger > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 140ms ease;
+}
+
+.creator-services-select-trigger[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
+.creator-services-select-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 5px);
+  left: 0;
+  width: 100%;
+  max-height: 240px;
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: var(--shadow-dialog);
+}
+
+.creator-services-select-menu button {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.creator-services-select-menu button:hover,
+.creator-services-select-menu button:focus-visible {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.creator-services-select-menu button[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.creator-services-select-menu button > svg {
+  flex: 0 0 auto;
+}
+
+.creator-services-secret-input {
+  position: relative;
+  display: block;
+}
+
+.creator-services-secret-input input {
+  padding-right: 42px;
+}
+
+.creator-services-secret-input button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.creator-services-secret-input button:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+}
+
+.creator-services-subheading {
+  margin: 2px 0 -2px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.creator-services-toggle {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.creator-services-toggle > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.creator-services-toggle strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.creator-services-toggle small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.creator-services-toggle input {
+  width: 34px;
+  height: 19px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+.creator-services-inline-note {
+  margin: 0 !important;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.creator-services-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.creator-services-actions > div {
+  min-width: 0;
+}
+
+.creator-services-actions .settings-notice,
+.creator-services-actions .settings-error {
+  width: fit-content;
+  margin: 0;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+@keyframes creator-services-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .creator-services-spinner { animation: none; }
+}
+
+@media (max-width: 760px) {
+  .settings-section .creator-services-header { grid-template-columns: minmax(0, 1fr); }
+  .creator-services-header > div { display: grid; gap: 4px; }
+  .creator-services-security { justify-self: start; }
+  .creator-services-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .creator-services-grid { grid-template-columns: minmax(0, 1fr); }
+  .creator-services-field.is-wide,
+  .creator-services-subheading,
+  .creator-services-toggle,
+  .creator-services-inline-note { grid-column: auto; }
+  .creator-services-actions { grid-template-columns: 1fr 1fr; }
+  .creator-services-actions > div { grid-column: 1 / -1; }
+}

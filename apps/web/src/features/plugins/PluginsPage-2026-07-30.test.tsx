@@ -25,6 +25,8 @@ describe('PluginsPage', () => {
     expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Skills' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '连接器' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('status')).toHaveTextContent('目录暂时为空');
+    expect(screen.queryByTestId('skill-market-card')).not.toBeInTheDocument();
     expect(screen.queryByText(/企业/)).not.toBeInTheDocument();
   });
 

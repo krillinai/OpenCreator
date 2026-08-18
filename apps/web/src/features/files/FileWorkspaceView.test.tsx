@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { userEvent } from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ConfirmDialogProvider } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { ApiClientError } from '../../runtime/errors.js';
 import { workspaceKey } from './file-view-state.js';
 import { FileWorkspaceView, type WorkspaceFileService } from './FileWorkspaceView.js';
@@ -713,7 +714,6 @@ describe('FileWorkspaceView', () => {
 
   it('编辑后切换文件时，取消 confirm 不切换，确认后才切换', async () => {
     const user = userEvent.setup();
-    const confirmMock = vi.spyOn(window, 'confirm');
     const thread = createThread();
     const service = createService({
       directories: {
@@ -732,22 +732,26 @@ describe('FileWorkspaceView', () => {
       }
     });
 
-    render(<FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />);
+    render(
+      <ConfirmDialogProvider>
+        <FileWorkspaceView selectedThread={thread} workspaceFileService={service} onClose={vi.fn()} />
+      </ConfirmDialogProvider>
+    );
 
     const editor = await openFileEditor(user, 'notes.txt');
     await user.click(editor);
     await user.keyboard('A');
     await expandFileTree(user);
 
-    confirmMock.mockReturnValueOnce(false);
     await user.click(screen.getByRole('treeitem', { name: 'guide.md' }));
-
-    expect(confirmMock).toHaveBeenCalledWith('当前文件有未保存修改，确定放弃并切换吗？');
+    expect(screen.getByRole('alertdialog', { name: '放弃未保存的修改？' }))
+      .toHaveTextContent('切换文件后，当前文件中尚未保存的修改将丢失。');
+    await user.click(screen.getByRole('button', { name: '取消' }));
     expect(service.getMeta).not.toHaveBeenCalledWith(thread.id, 'guide.md');
     expect(screen.getByRole('textbox', { name: 'notes.txt 编辑器' })).toBeInTheDocument();
 
-    confirmMock.mockReturnValueOnce(true);
     await user.click(screen.getByRole('treeitem', { name: 'guide.md' }));
+    await user.click(screen.getByRole('button', { name: '放弃并切换' }));
 
     await waitFor(() => expect(service.getMeta).toHaveBeenCalledWith(thread.id, 'guide.md'));
     expect(await screen.findByRole('heading', { name: 'guide' })).toBeInTheDocument();

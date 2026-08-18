@@ -28,6 +28,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { ApiClientError } from '../../runtime/errors.js';
 import type { ClaweeProject } from '../projects/project-model.js';
 import {
@@ -90,6 +91,7 @@ export type SchedulesViewProps = {
 };
 
 export function SchedulesView(props: SchedulesViewProps) {
+  const confirm = useConfirmDialog();
   const [schedules, setSchedules] = useState<ScheduleResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string>();
@@ -300,7 +302,12 @@ export function SchedulesView(props: SchedulesViewProps) {
   async function deleteSchedule(schedule: ScheduleResponse) {
     if (props.service === null || busyIds.has(schedule.id)) return;
     const confirmed = props.confirmDelete?.(schedule)
-      ?? window.confirm(`确认删除任务“${schedule.name}”？`);
+      ?? await confirm({
+        title: '删除任务',
+        description: `确认删除“${schedule.name}”？删除后无法恢复。`,
+        confirmLabel: '删除任务',
+        destructive: true
+      });
     if (!confirmed) return;
     setBusy(schedule.id, true);
     clearActionError(schedule.id);

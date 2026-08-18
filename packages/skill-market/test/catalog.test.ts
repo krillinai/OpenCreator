@@ -1,22 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
   getSkillMarketEntry,
+  skillMarketCandidateCatalog,
   skillMarketCatalog,
   skillMarketCategories,
   skillMarketSourceCommit,
 } from '../src/index.js';
 
 describe('skill market catalog', () => {
-  it('contains the reviewed 53-entry snapshot with unique ids', () => {
-    expect(skillMarketCatalog).toHaveLength(53);
-    expect(new Set(skillMarketCatalog.map((entry) => entry.id)).size).toBe(53);
-    expect(skillMarketCatalog.every((entry) => /^[\w.-]+\/[\w.-]+$/.test(entry.githubRepository))).toBe(true);
-    expect(getSkillMarketEntry('invokeai')?.githubRepository).toBe('invoke-ai/InvokeAI');
+  it('publishes an empty catalog while retaining reviewed candidates outside the client', () => {
+    expect(skillMarketCatalog).toEqual([]);
+    expect(getSkillMarketEntry('invokeai')).toBeUndefined();
+    expect(skillMarketCandidateCatalog).toHaveLength(53);
+    expect(new Set(skillMarketCandidateCatalog.map((entry) => entry.id)).size).toBe(53);
   });
 
   it('provides a Codex Skill Installer source for every catalog entry', () => {
     expect(
-      skillMarketCatalog.filter((entry) => {
+      skillMarketCandidateCatalog.filter((entry) => {
         const install = entry.install as unknown as Record<string, unknown>;
         return (
           install.repository !== entry.githubRepository ||
@@ -31,8 +32,8 @@ describe('skill market catalog', () => {
   });
 
   it('provides current GitHub-hosted examples for the detail gallery', () => {
-    const examples = skillMarketCatalog.flatMap((entry) => entry.examples);
-    const frontendSlides = getSkillMarketEntry('frontend-slides');
+    const examples = skillMarketCandidateCatalog.flatMap((entry) => entry.examples);
+    const frontendSlides = skillMarketCandidateCatalog.find(entry => entry.id === 'frontend-slides');
 
     expect(examples.length).toBeGreaterThan(6);
     expect(examples.every((example) => (
@@ -50,21 +51,21 @@ describe('skill market catalog', () => {
       '91302f79937b8f4e194e56554afdbb2ca939a1d5'
     );
 
-    expect(getSkillMarketEntry('biliup')?.install).toEqual({
+    expect(skillMarketCandidateCatalog.find(entry => entry.id === 'biliup')?.install).toEqual({
       repository: 'biliup/biliup',
       skillPath: '.',
       ref: 'master',
       marketRevision: 1,
     });
 
-    expect(getSkillMarketEntry('frontend-slides')?.install).toEqual({
+    expect(skillMarketCandidateCatalog.find(entry => entry.id === 'frontend-slides')?.install).toEqual({
       repository: 'zarazhangrui/frontend-slides',
       skillPath: '.',
       ref: 'main',
       marketRevision: 1,
     });
 
-    expect(getSkillMarketEntry('garrytan-gstack')?.install).toEqual({
+    expect(skillMarketCandidateCatalog.find(entry => entry.id === 'garrytan-gstack')?.install).toEqual({
       repository: 'garrytan/gstack',
       skillPath: '.',
       ref: 'main',
@@ -73,9 +74,10 @@ describe('skill market catalog', () => {
   });
 
   it('deep-freezes catalog and category data without mutating the JSON-derived snapshot', () => {
-    const entry = skillMarketCatalog.find((candidate) => candidate.examples.length > 0);
+    const entry = skillMarketCandidateCatalog.find((candidate) => candidate.examples.length > 0);
     expect(entry).toBeDefined();
     expect(Object.isFrozen(skillMarketCatalog)).toBe(true);
+    expect(Object.isFrozen(skillMarketCandidateCatalog)).toBe(true);
     expect(Object.isFrozen(entry)).toBe(true);
     expect(Object.isFrozen(entry?.platforms)).toBe(true);
     expect(Object.isFrozen(entry?.tasks)).toBe(true);

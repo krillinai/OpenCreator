@@ -1,9 +1,5 @@
-import { useState } from 'react';
 import {
   Captions,
-  Check,
-  ChevronDown,
-  CircleCheck,
   Download,
   FileAudio,
   FileVideo,
@@ -13,6 +9,7 @@ import {
 } from 'lucide-react';
 import VideoSourcePreview from './VideoSourcePreview.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
+import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 
 export type VideoTranslationResultTab = 'video' | 'subtitles' | 'voice' | 'settings';
 
@@ -67,7 +64,6 @@ export default function VideoTranslationResultWorkspace(props: {
   onConfirmRegenerate(): void;
 }) {
   const l = useLocalizedCopy();
-  const [historyOpen, setHistoryOpen] = useState(false);
   const outputName = `视频翻译-${props.targetLanguage}-V${props.version}.mp4`;
 
   return (
@@ -94,41 +90,11 @@ export default function VideoTranslationResultWorkspace(props: {
           })}
         </div>
 
-        <div className="video-result-version">
-          <button
-            type="button"
-            aria-expanded={historyOpen}
-            aria-haspopup="menu"
-            aria-controls="video-result-version-menu"
-            onClick={() => setHistoryOpen(open => !open)}
-          >
-            <CircleCheck size={15} strokeWidth={2} aria-hidden="true" />
-            <span>{l(`已完成，V${props.version}`, `Completed, V${props.version}`)}</span>
-            <ChevronDown className="video-result-version-chevron" size={15} strokeWidth={1.8} aria-hidden="true" />
-          </button>
-          {historyOpen ? (
-            <div id="video-result-version-menu" role="menu">
-              {props.versions.map(item => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-current={item.value === props.version ? 'true' : undefined}
-                  key={item.value}
-                  onClick={() => {
-                    props.onVersionChange(item.value);
-                    setHistoryOpen(false);
-                  }}
-                >
-                  <span>
-                    <strong>{l(`已完成，V${item.value}`, `Completed, V${item.value}`)}</strong>
-                    <small>{item.description}{item.value === props.version ? l('，当前查看', ', currently viewing') : ''}</small>
-                  </span>
-                  {item.value === props.version ? <Check size={14} strokeWidth={2} aria-hidden="true" /> : null}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <CreatorResultVersionMenu
+          version={props.version}
+          versions={props.versions}
+          onVersionChange={props.onVersionChange}
+        />
       </div>
 
       {props.notice ? <p className="video-result-notice" role="status">{props.notice}</p> : null}

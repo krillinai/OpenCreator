@@ -75,13 +75,13 @@ describe('ClaweeSidebar', () => {
     expect(screen.queryByText('Coca-Cola')).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '首页' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '我的项目' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '工作台' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '数据看板' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Agent动态' })).not.toBeInTheDocument();
-    const primaryActions = screen.getByRole('button', { name: 'Home' }).parentElement;
-    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: 'Dashboard' }));
+    const primaryActions = screen.getByRole('button', { name: '首页' }).parentElement;
+    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: '工作台' }));
     expect(primaryActions?.children[2]).toBe(screen.getByRole('button', { name: '插件中心' }));
     expect(primaryActions?.children[3]).toBe(screen.getByRole('separator'));
     const searchButton = screen.getByRole('button', { name: '搜索' });
@@ -121,7 +121,7 @@ describe('ClaweeSidebar', () => {
   it('uses creator-focused icons for the primary navigation', () => {
     const view = renderSidebar();
 
-    expect(screen.getByRole('button', { name: 'Dashboard' })
+    expect(screen.getByRole('button', { name: '工作台' })
       .querySelector('.lucide-panels-top-left')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '插件中心' })
       .querySelector('.lucide-puzzle')).toBeInTheDocument();
@@ -623,7 +623,7 @@ describe('ClaweeSidebar', () => {
 
     renderSidebar({ onNewConversation });
 
-    await user.click(screen.getByRole('button', { name: 'Home' }));
+    await user.click(screen.getByRole('button', { name: '首页' }));
 
     expect(onNewConversation).toHaveBeenCalledTimes(1);
   });
@@ -634,7 +634,7 @@ describe('ClaweeSidebar', () => {
 
     renderSidebar({ onOpenView });
 
-    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
+    await user.click(screen.getByRole('button', { name: '工作台' }));
 
     expect(onOpenView).toHaveBeenCalledWith('workbench');
   });

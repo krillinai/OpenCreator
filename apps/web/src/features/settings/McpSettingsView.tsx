@@ -19,6 +19,7 @@ import {
   X
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { ApiClientError } from '../../runtime/errors.js';
 
 export type McpSettingsService = {
@@ -57,6 +58,7 @@ export function McpSettingsView(props: {
   confirmWrite?(): boolean;
   confirmRemove?(server: CodexMcpServerResponse): boolean;
 }) {
+  const confirm = useConfirmDialog();
   const [data, setData] = useState(props.data);
   const [loading, setLoading] = useState(
     props.data === undefined && props.connected && props.service !== null
@@ -98,9 +100,20 @@ export function McpSettingsView(props: {
     action: 'login' | 'logout' | 'remove'
   ) {
     if (props.service === null) return;
-    if (action === 'remove' && !(props.confirmRemove?.(server) ?? window.confirm(`删除 MCP ${server.name}？`))) return;
+    const removeConfirmed = action !== 'remove'
+      || (props.confirmRemove?.(server) ?? await confirm({
+        title: '删除 MCP',
+        description: `确认删除“${server.name}”？相关连接将立即停用。`,
+        confirmLabel: '删除',
+        destructive: true
+      }));
+    if (!removeConfirmed) return;
     const confirmed = !data?.requiresWriteConfirmation
-      || (props.confirmWrite?.() ?? window.confirm('此操作会修改全局 CODEX_HOME，是否继续？'));
+      || (props.confirmWrite?.() ?? (action === 'remove' ? true : await confirm({
+        title: '确认修改全局配置',
+        description: '此操作会修改全局 CODEX_HOME，并影响使用同一配置目录的其他会话。',
+        confirmLabel: '继续'
+      })));
     if (!confirmed) return;
 
     setBusyName(server.name);
@@ -161,7 +174,11 @@ export function McpSettingsView(props: {
             if (props.service === null) return;
             setError(undefined);
             const confirmed = !data?.requiresWriteConfirmation
-              || (props.confirmWrite?.() ?? window.confirm('此操作会修改全局 CODEX_HOME，是否继续？'));
+              || (props.confirmWrite?.() ?? await confirm({
+                title: '确认修改全局配置',
+                description: '此操作会修改全局 CODEX_HOME，并影响使用同一配置目录的其他会话。',
+                confirmLabel: '继续'
+              }));
             if (!confirmed) return;
             try {
               const result = await props.service.addServer({

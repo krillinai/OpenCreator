@@ -23,6 +23,7 @@ import {
   WifiOff
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import {
   McpEditor,
@@ -65,6 +66,7 @@ type UnifiedConnection = {
 
 export function ConnectionsPage(props: ConnectionsPageProps) {
   const l = useLocalizedCopy();
+  const confirm = useConfirmDialog();
   const [nativeData, setNativeData] = useState(props.mcpData);
   const [catalog, setCatalog] = useState<EnterpriseMcpCatalogResponse>();
   const [loading, setLoading] = useState(false);
@@ -170,9 +172,16 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     ));
   }, [connections, filter, query]);
 
-  function confirmGlobalWrite(): boolean {
+  async function confirmGlobalWrite(): Promise<boolean> {
     return nativeData?.requiresWriteConfirmation !== true
-      || window.confirm(l('此操作会修改全局 CODEX_HOME，是否继续？', 'This will modify the global CODEX_HOME. Continue?'));
+      || confirm({
+        title: l('确认修改全局配置', 'Confirm global configuration change'),
+        description: l(
+          '此操作会修改全局 CODEX_HOME，并影响使用同一配置目录的其他会话。',
+          'This changes the global CODEX_HOME and may affect other sessions using it.'
+        ),
+        confirmLabel: l('继续', 'Continue')
+      });
   }
 
   async function runNativeAction(
@@ -189,11 +198,19 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     }
     if (
       action === 'remove'
-      && !window.confirm(`${l('删除 MCP', 'Remove MCP')} ${item.server.name}?`)
+      && !await confirm({
+        title: l('删除 MCP', 'Remove MCP'),
+        description: l(
+          `确认删除“${item.server.name}”？相关连接将立即停用。`,
+          `Remove "${item.server.name}"? Its connection will be disabled immediately.`
+        ),
+        confirmLabel: l('删除', 'Remove'),
+        destructive: true
+      })
     ) {
       return;
     }
-    if (!confirmGlobalWrite()) return;
+    if (action !== 'remove' && !await confirmGlobalWrite()) return;
 
     setBusyKey(item.key);
     setLoadError(undefined);
@@ -226,7 +243,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
       || item.upstream === undefined
       || busyKey !== undefined
       || props.mcpCapabilities?.mcpAdd !== true
-      || !confirmGlobalWrite()
+      || !await confirmGlobalWrite()
     ) {
       return;
     }
@@ -328,7 +345,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
               if (
                 props.mcpService === null
                 || props.mcpCapabilities?.mcpAdd !== true
-                || !confirmGlobalWrite()
+                || !await confirmGlobalWrite()
               ) {
                 return;
               }

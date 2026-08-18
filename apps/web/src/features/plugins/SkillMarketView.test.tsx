@@ -3,7 +3,10 @@ import type {
   CodexSkillMarketInstallRecordResponse,
   CodexSkillResponse,
 } from '@clawee/protocol';
-import { skillMarketCatalog, type SkillMarketEntry } from '@clawee/skill-market';
+import {
+  skillMarketCandidateCatalog as skillMarketCatalog,
+  type SkillMarketEntry
+} from '@clawee/skill-market';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -282,7 +285,7 @@ describe('SkillMarketView', () => {
     const image = screen.getByRole('img', { name: '编辑风格演示页' });
     fireEvent.error(image);
 
-    expect(screen.getByRole('img', { name: '编辑风格演示页案例图暂不可用' })).toHaveAttribute(
+    expect(screen.getByRole('img', { name: '编辑风格演示页 案例图暂不可用' })).toHaveAttribute(
       'src',
       '/skill-market/skills-empty.png'
     );
@@ -376,7 +379,7 @@ describe('SkillMarketView', () => {
     await user.keyboard('{Enter}');
     expect(onUse).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog', { name: '选择使用项目' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design' }));
     expect(onUse).toHaveBeenCalledWith('frontend-slides', 'content-design');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
@@ -504,7 +507,7 @@ describe('SkillMarketView', () => {
       'true'
     );
     await user.click(within(dialog).getByRole('radio', { name: /bili/ }));
-    await user.click(within(dialog).getByRole('button', { name: '在 bili 中使用' }));
+    await user.click(within(dialog).getByRole('button', { name: '在 bili' }));
 
     expect(onUse).toHaveBeenCalledWith('frontend-slides', 'bili');
   });
@@ -613,7 +616,7 @@ describe('SkillMarketView', () => {
     expect(within(frontendDialog).getByText('使用失败：启动失败，请重试')).toBeInTheDocument();
     await user.click(within(frontendDialog).getByRole('button', { name: '使用' }));
     const projectDialog = screen.getByRole('dialog', { name: '选择使用项目' });
-    await user.click(within(projectDialog).getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(within(projectDialog).getByRole('button', { name: '在 content-design' }));
     expect(onUse).toHaveBeenCalledWith('frontend-slides', 'content-design');
 
     await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
@@ -673,7 +676,7 @@ describe('SkillMarketView', () => {
     expect(useButton).not.toHaveAttribute('title', '请等待当前操作完成');
 
     await user.click(useButton);
-    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design' }));
     expect(onUse).toHaveBeenCalledWith('op7418-humanizer-zh', 'content-design');
   });
 
@@ -862,7 +865,7 @@ function createProps({
   onInstall = vi.fn(),
   onUpdate = vi.fn(),
   onUse = vi.fn(),
-  catalogOverride,
+  catalogOverride = skillMarketCatalog,
 }: {
   connected?: boolean;
   skills?: CodexSkillListResponse;

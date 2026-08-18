@@ -100,7 +100,7 @@ type LanguageOption = {
 };
 
 const steps = ['添加视频', '翻译设置', '配音与输出'] as const;
-const WORKSPACE_MIN_WIDTH = 560;
+const WORKSPACE_MIN_WIDTH = 780;
 const AGENT_MIN_WIDTH = 320;
 const WORKSPACE_RESIZE_HANDLE_WIDTH = 7;
 const WORKSPACE_RESIZE_KEY_STEP = 32;
@@ -291,6 +291,7 @@ export default function VideoTranslationWorkspace(props: {
   const collabLayoutRef = useRef<HTMLDivElement>(null);
   const agentFocusTimeoutRef = useRef<number>();
   const [currentStep, setCurrentStep] = useState<WizardStep>(0);
+  const [furthestStep, setFurthestStep] = useState<WizardStep>(0);
   const [workspacePhase, setWorkspacePhase] = useState<WorkspacePhase>('configure');
   const [dragActive, setDragActive] = useState(false);
   const [sourceType, setSourceType] = useState<SourceType>('url');
@@ -364,6 +365,10 @@ export default function VideoTranslationWorkspace(props: {
       : currentStep === 1
         ? `${languageLabel(sourceLanguages, sourceLanguage)} → ${targetLanguageLabel}`
         : `${dubbing ? l('配音开启', 'Dubbing on') : l('无配音', 'No dubbing')}, ${outputLabel}`;
+  function openWizardStep(step: WizardStep) {
+    setCurrentStep(step);
+    setFurthestStep(previous => Math.max(previous, step) as WizardStep);
+  }
 
   function currentDraftSettings(): TranslationSettingsSnapshot {
     return {
@@ -429,7 +434,7 @@ export default function VideoTranslationWorkspace(props: {
       setResultProposal(undefined);
       setResultNotice('');
     }
-    setCurrentStep(step);
+    openWizardStep(step);
     focusAgentControl(focus);
   }
 
@@ -488,7 +493,7 @@ export default function VideoTranslationWorkspace(props: {
   function continueToSettings() {
     setAttemptedContinue(true);
     if (!hasSource) return;
-    setCurrentStep(1);
+    openWizardStep(1);
   }
 
   function generateResult(
@@ -518,7 +523,14 @@ export default function VideoTranslationWorkspace(props: {
     setDraftBaseVersion(version);
     setAgentUndo(undefined);
     setResultProposal(undefined);
-    setResultNotice(l(`V${version} 已生成完成，之前的版本仍可查看`, `V${version} is ready. Previous versions remain available.`));
+    setResultNotice(
+      version === 1
+        ? l('V1 已生成完成', 'V1 is ready.')
+        : l(
+            `V${version} 已生成完成，之前的版本仍可查看`,
+            `V${version} is ready. Previous versions remain available.`
+          )
+    );
     setResultTab('video');
     setWorkspacePhase('result');
   }
@@ -645,12 +657,12 @@ export default function VideoTranslationWorkspace(props: {
 
         if (workspacePhase === 'result') setWorkspacePhase('configure');
         if (action.request.output || action.request.dubbing !== undefined) {
-          setCurrentStep(2);
+          openWizardStep(2);
           focusAgentControl(action.request.dubbing !== undefined ? 'dubbing' : 'output');
           return l(`${description}。左侧已同步到配音与输出设置。`, `${description}. The dubbing and output settings are synchronized on the left.`);
         }
         if (action.request.targetLanguage || action.request.bilingual !== undefined) {
-          setCurrentStep(1);
+          openWizardStep(1);
           focusAgentControl(action.request.targetLanguage ? 'language' : 'subtitles');
           return l(`${description}。左侧已同步到翻译设置。`, `${description}. The translation settings are synchronized on the left.`);
         }
@@ -663,11 +675,11 @@ export default function VideoTranslationWorkspace(props: {
         }
         if (currentStep === 0) {
           if (!hasSource) return l('请先发送公开视频链接，或从左侧上传本地文件。', 'Send a public video link or upload a local file on the left first.');
-          setCurrentStep(1);
+          openWizardStep(1);
           return l('视频已就绪。请确认目标语言和字幕设置，也可以直接告诉我要翻译成哪种语言。', 'The video is ready. Confirm the target language and subtitle settings, or tell me the language you want.');
         }
         if (currentStep === 1) {
-          setCurrentStep(2);
+          openWizardStep(2);
           return l('翻译设置已确认。接下来可以选择配音和输出画幅，或直接开始翻译。', 'Translation settings are confirmed. Choose dubbing and output format, or start translating now.');
         }
         return applyAgentAction({ type: 'run_translation' });
@@ -827,6 +839,7 @@ export default function VideoTranslationWorkspace(props: {
     setDraftBaseVersion(selectedResult.value);
     setWorkspacePhase('configure');
     setCurrentStep(1);
+    setFurthestStep(2);
     setResultProposal(undefined);
     setResultNotice('');
   }
@@ -1016,9 +1029,9 @@ export default function VideoTranslationWorkspace(props: {
                     <li key={step} data-active={active} data-completed={completed}>
                       <button
                         type="button"
-                        disabled={index > currentStep}
+                        disabled={index > furthestStep}
                         aria-current={active ? 'step' : undefined}
-                        onClick={() => index < currentStep && setCurrentStep(index as WizardStep)}
+                        onClick={() => index !== currentStep && openWizardStep(index as WizardStep)}
                       >
                         <span>{completed ? <Check size={13} strokeWidth={2.2} aria-hidden="true" /> : index + 1}</span>
                         <strong>{localizeStep(step, l)}</strong>
@@ -1356,7 +1369,7 @@ export default function VideoTranslationWorkspace(props: {
               </button>
             </div>
           ) : currentStep === 1 ? (
-            <button className="video-translation-primary-action" type="button" onClick={() => setCurrentStep(2)}>
+            <button className="video-translation-primary-action" type="button" onClick={() => openWizardStep(2)}>
               {l('继续', 'Continue')}
               <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" />
             </button>
@@ -1375,6 +1388,7 @@ export default function VideoTranslationWorkspace(props: {
             role="separator"
             aria-label={l('调整操作区和对话区宽度', 'Resize workspace and conversation panels')}
             aria-orientation="vertical"
+            aria-valuemin={WORKSPACE_MIN_WIDTH}
             aria-valuenow={workspacePaneWidth}
             aria-valuetext={workspacePaneWidth === undefined
               ? l('默认宽度', 'Default width')

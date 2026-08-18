@@ -6,6 +6,7 @@ import type {
 import { FolderCog, FolderMinus, FolderPlus, RefreshCw, Save, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
+import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import type { ClaweeProject } from './project-model.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
@@ -280,6 +281,7 @@ function ProjectEditForm(props: {
   onSave(input: UpdateProjectRequest): Promise<void>;
 }) {
   const l = useLocalizedCopy();
+  const confirm = useConfirmDialog();
   const [name, setName] = useState(props.project.name);
   const [profile, setProfile] = useState(props.project.profile);
   const [model, setModel] = useState(props.project.model ?? '');
@@ -324,14 +326,19 @@ function ProjectEditForm(props: {
         <span>{l('权限', 'Permission')}</span>
         <select
           value={normalizeProjectSandbox(sandbox)}
-          onChange={event => {
+          onChange={async event => {
             const value = event.currentTarget.value as ClaweeProject['sandbox'];
             if (
               value === 'danger-full-access'
               && sandbox !== 'danger-full-access'
-              && !window.confirm(
-                l('完全访问权限允许 OpenCreator 访问本机文件并执行本地操作。确定要为此项目开启吗？', 'Full access allows OpenCreator to access local files and perform local operations. Enable it for this project?')
-              )
+              && !await confirm({
+                title: l('开启完全访问权限', 'Enable full access'),
+                description: l(
+                  '完全访问权限允许 OpenCreator 访问本机文件并执行本地操作。仅为可信项目开启。',
+                  'Full access allows OpenCreator to access local files and perform local operations. Enable it only for trusted projects.'
+                ),
+                confirmLabel: l('开启', 'Enable')
+              })
             ) {
               return;
             }

@@ -1,6 +1,7 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowLeft, ArrowUp, Bot, MessageSquareText, Sparkles } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ArrowLeft, Bot, MessageSquareText, Sparkles } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import ToolAgentComposer from './ToolAgentComposer.js';
 
 type ToolMessage = {
   id: number;
@@ -36,8 +37,7 @@ export default function CreatorToolShell(props: {
     ]);
   }
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
+  function submit() {
     const prompt = input.trim();
     if (!prompt) return;
     setInput('');
@@ -82,23 +82,13 @@ export default function CreatorToolShell(props: {
               <button type="button" key={suggestion} onClick={() => runCommand(suggestion)}>{suggestion}</button>
             ))}
           </div>
-          <form className="creator-tool-agent-composer" onSubmit={submit}>
-            <textarea
-              rows={2}
-              value={input}
-              onChange={event => setInput(event.target.value)}
-              onKeyDown={event => {
-                if (event.key !== 'Enter' || event.shiftKey) return;
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }}
-              aria-label={`${l('告诉 Agent', 'Tell the Agent your')} ${props.title} ${l('要求', 'requirements')}`}
-              placeholder={props.placeholder}
-            />
-            <button type="submit" disabled={!input.trim()} aria-label={l('发送给 Agent', 'Send to Agent')}>
-              <ArrowUp size={16} strokeWidth={1.9} aria-hidden="true" />
-            </button>
-          </form>
+          <ToolAgentComposer
+            value={input}
+            onChange={setInput}
+            onSubmit={submit}
+            ariaLabel={`${l('告诉 Agent', 'Tell the Agent your')} ${props.title} ${l('要求', 'requirements')}`}
+            placeholder={props.placeholder}
+          />
         </aside>
       </div>
     </main>

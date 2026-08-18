@@ -8,6 +8,7 @@ import type {
 } from '@clawee/protocol';
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { beginPaneResize } from '../../components/layout/pane-resize-2026-07-29.js';
 import { ApiClientError } from '../../runtime/errors.js';
 import { defaultModeForMeta, FileEditorPane, isPreviewable, type FileEditorMode } from './FileEditorPane.js';
@@ -43,6 +44,7 @@ const RESIZE_KEY_STEP = 32;
 const FILE_REFRESH_INTERVAL_MS = 2000;
 
 export function FileWorkspaceView(props: FileWorkspaceViewProps) {
+  const confirm = useConfirmDialog();
   const [nodes, setNodes] = useState<WorkspaceDirectoryResponse['nodes']>([]);
   const [expandedPaths, setExpandedPaths] = useState<string[]>([]);
   const [truncatedPaths, setTruncatedPaths] = useState<string[]>([]);
@@ -258,7 +260,12 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
       return;
     }
 
-    if (!options?.skipDirtyConfirm && dirty && !window.confirm('当前文件有未保存修改，确定放弃并切换吗？')) {
+    if (!options?.skipDirtyConfirm && dirty && !await confirm({
+      title: '放弃未保存的修改？',
+      description: '切换文件后，当前文件中尚未保存的修改将丢失。',
+      confirmLabel: '放弃并切换',
+      destructive: true
+    })) {
       return;
     }
 
@@ -414,8 +421,13 @@ export function FileWorkspaceView(props: FileWorkspaceViewProps) {
     }
   }
 
-  function handleBack() {
-    if (dirty && !window.confirm('当前文件有未保存修改，确定关闭文件工作区吗？')) {
+  async function handleBack() {
+    if (dirty && !await confirm({
+      title: '关闭文件工作区？',
+      description: '当前文件还有未保存的修改，关闭后这些修改将丢失。',
+      confirmLabel: '放弃并关闭',
+      destructive: true
+    })) {
       return;
     }
 

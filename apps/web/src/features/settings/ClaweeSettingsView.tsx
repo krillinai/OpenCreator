@@ -4,6 +4,7 @@ import type {
   CodexProfileListResponse,
   CodexStatusResponse
 } from '@clawee/protocol';
+import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import type { ColorMode } from '../../styles/color-mode.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import type { AppLanguagePreference } from '../../i18n/language.js';
@@ -16,6 +17,8 @@ import type { ProjectPermission } from '../projects/project-model.js';
 import { ProfileSettingsView, type ProfileSettingsService } from './ProfileSettingsView.js';
 import { CleanupSettingsView, type CleanupSettingsService } from './CleanupSettingsView.js';
 import { DiagnosticsSettingsView } from './DiagnosticsSettingsView.js';
+import { CreatorServicesSettingsView } from './CreatorServicesSettingsView.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import {
   MemorySettingsView,
   type MemoryScopeOption,
@@ -51,6 +54,7 @@ export type ClaweeSettingsViewProps = {
   profileData?: CodexProfileListResponse;
   onProfileDataChange?(data: CodexProfileListResponse): void;
   cleanupService?: CleanupSettingsService | null;
+  creatorServicesService?: CreatorServicesSettingsService | null;
   memoryService?: MemorySettingsService | null;
   memoryProjects?: MemoryScopeOption[];
   memoryThreads?: MemoryScopeOption[];
@@ -58,13 +62,14 @@ export type ClaweeSettingsViewProps = {
   onBack(): void;
 };
 
-type SettingsTab = 'general' | 'plugins' | 'memory' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
+type SettingsTab = 'general' | 'ai-services' | 'plugins' | 'memory' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
 
 export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const { t } = useAppLanguage();
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: 'general', label: t('settings.tab.general') },
+    { id: 'ai-services', label: t('settings.tab.aiServices') },
     { id: 'plugins', label: t('settings.tab.plugins') },
     { id: 'memory', label: t('settings.tab.memory') },
     { id: 'profiles', label: t('settings.tab.profiles') },
@@ -118,6 +123,12 @@ export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
             onDesktopCloseBehaviorChange={props.onDesktopCloseBehaviorChange}
           />
         ) : null}
+        {activeTab === 'ai-services' ? (
+          <CreatorServicesSettingsView
+            connected={props.runtimeStatus.connected}
+            service={props.creatorServicesService ?? null}
+          />
+        ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}
         {activeTab === 'memory' ? (
           <MemorySettingsView
@@ -168,6 +179,7 @@ function GeneralSettings(props: {
   onDesktopCloseBehaviorChange?(behavior: 'hide' | 'quit'): void;
 }) {
   const { language, preference, setPreference, t } = useAppLanguage();
+  const confirm = useConfirmDialog();
   const defaultPermissionOptions: Array<{
     value: DefaultPermissionPreference;
     label: string;
@@ -210,11 +222,15 @@ function GeneralSettings(props: {
           label={t('settings.permission')}
           value={props.defaultPermission}
           options={defaultPermissionOptions}
-          onChange={(permission) => {
+          onChange={async permission => {
             if (
               permission === 'danger-full-access'
               && props.defaultPermission !== 'danger-full-access'
-              && !window.confirm(t('settings.permission.confirm'))
+              && !await confirm({
+                title: t('composer.fullAccess.title'),
+                description: t('composer.fullAccess.description'),
+                confirmLabel: t('composer.fullAccess.confirm')
+              })
             ) {
               return;
             }

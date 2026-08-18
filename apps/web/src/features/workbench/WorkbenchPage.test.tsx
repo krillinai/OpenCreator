@@ -38,6 +38,39 @@ describe('WorkbenchPage', () => {
     expect(screen.getByRole('button', { name: 'Which platforms are supported?' })).toBeInTheDocument();
     expect(screen.queryByText('拖放视频到这里')).not.toBeInTheDocument();
   });
+
+  it('uses the Home-style Agent composer across creator workspaces', () => {
+    render(<WorkbenchPage onSelectPrompt={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    const translationInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
+    expect(translationInput.closest('form')).toHaveClass('tool-agent-composer');
+    expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-5.6 Sol' }));
+    expect(screen.getByRole('button', { name: '选择模型 GPT-5.6 Sol' })).toBeInTheDocument();
+
+    const contextFile = new File(['notes'], 'translation-notes.txt', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('添加文件'), { target: { files: [contextFile] } });
+    expect(screen.getByText('translation-notes.txt')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '移除 translation-notes.txt' }));
+    expect(screen.queryByText('translation-notes.txt')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '返回工作台' }));
+    fireEvent.click(screen.getByRole('button', { name: /^视频下载/ }));
+    const downloadInput = screen.getByRole('textbox', { name: '告诉 Agent 视频下载 要求' });
+    expect(downloadInput.closest('form')).toHaveClass('tool-agent-composer');
+    expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
+  });
+
   it('renders featured apps and the searchable creator app directory', () => {
     const { container } = render(<WorkbenchPage onSelectPrompt={vi.fn()} />);
 
@@ -94,8 +127,34 @@ describe('WorkbenchPage', () => {
     expect(screen.getByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '成片' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('已完成，V1')).toBeInTheDocument();
+    expect(screen.getByText('V1 已生成完成')).toBeInTheDocument();
+    expect(screen.queryByText(/之前的版本仍可查看/)).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: '生成新版本' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '生成新版本' })).not.toBeInTheDocument();
+  });
+
+  it('shows the translation steps and reopens completed steps', () => {
+    render(<WorkbenchPage onSelectPrompt={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
+
+    const steps = screen.getByRole('navigation', { name: '翻译流程' });
+    expect(within(steps).getByRole('button', { name: '1 添加视频' })).toHaveAttribute('aria-current', 'step');
+    expect(within(steps).getByRole('button', { name: '2 翻译设置' })).toBeDisabled();
+    expect(within(steps).getByRole('button', { name: '3 配音与输出' })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=steps-test' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    expect(within(steps).getByRole('button', { name: /翻译设置$/ })).toHaveAttribute('aria-current', 'step');
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    expect(within(steps).getByRole('button', { name: /配音与输出$/ })).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByLabelText('任务摘要')).toBeInTheDocument();
+
+    fireEvent.click(within(steps).getByRole('button', { name: /翻译设置$/ }));
+    expect(screen.getByRole('heading', { name: '设置翻译语言' })).toBeInTheDocument();
+    fireEvent.click(within(steps).getByRole('button', { name: /配音与输出$/ }));
+    expect(screen.getByRole('heading', { name: '选择输出内容' })).toBeInTheDocument();
   });
 
   it('parses a public video link and exposes video and audio download variants', () => {
@@ -108,12 +167,16 @@ describe('WorkbenchPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
 
-    expect(screen.getByRole('region', { name: '视频下载结果' })).toHaveTextContent('YouTube');
+    expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('button', { name: /已完成，V/ })).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /1080p/ })).toBeChecked();
     fireEvent.click(screen.getByRole('tab', { name: /MP3 音频/ }));
     expect(screen.getByRole('radio', { name: /320kbps/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('tab', { name: '视频信息' }));
+    expect(screen.getByRole('region', { name: '视频下载结果' })).toHaveTextContent('YouTube');
 
     fireEvent.click(screen.getByRole('button', { name: '下载 1080p 视频' }));
+    expect(screen.getByRole('tab', { name: '下载记录' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('status')).toHaveTextContent('YouTube MP4 1080p 已加入下载队列');
     expect(screen.getByText('已创建 MP4 1080p 下载任务。')).toBeInTheDocument();
   });
@@ -123,30 +186,125 @@ describe('WorkbenchPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '打开火柴人动画生成' }));
 
     expect(screen.getByRole('heading', { name: '火柴人视频生成' })).toBeInTheDocument();
+    const stickmanSteps = screen.getByRole('navigation', { name: '火柴人生成流程' });
+    expect(within(stickmanSteps).getByRole('button', { name: '1 选择角色' })).toHaveAttribute('aria-current', 'step');
+    expect(within(stickmanSteps).getByRole('button', { name: '2 故事与分镜' })).toBeDisabled();
+    expect(within(stickmanSteps).getByRole('button', { name: '3 生成视频' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: '默认角色' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '生成角色' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '上传角色' })).toBeInTheDocument();
+    const characterPresets = screen.getByRole('radiogroup', { name: '默认角色' });
+    expect(within(characterPresets).getAllByRole('radio')).toHaveLength(8);
+    expect(within(characterPresets).getByRole('radio', { name: /基础角色/ })).toBeChecked();
+    fireEvent.click(within(characterPresets).getByRole('radio', { name: /商务角色/ }));
+    expect(within(characterPresets).getByRole('radio', { name: /商务角色/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('tab', { name: '生成角色' }));
     fireEvent.click(screen.getByRole('button', { name: '生成角色形象' }));
     expect(screen.getByRole('img', { name: '生成的火柴人角色形象' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '默认角色' }));
+    fireEvent.click(screen.getByRole('radio', { name: /商务角色/ }));
+    expect(screen.queryByRole('heading', { name: '生成分镜' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '下一步：故事与分镜' }));
+    expect(screen.queryByRole('heading', { name: '准备主角' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '生成分镜' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '生成分镜图' }));
     expect(screen.getByText('建立场景')).toBeInTheDocument();
     expect(screen.getAllByText(/s$/)).toHaveLength(4);
+    expect(screen.queryByRole('button', { name: /根据分镜生成视频/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '下一步：生成视频' }));
     fireEvent.click(screen.getByRole('button', { name: /根据分镜生成视频/ }));
-    expect(screen.getByText('火柴人动画.mp4')).toBeInTheDocument();
+    expect(screen.getByText('火柴人动画-V1.mp4')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '成片' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '分镜' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '角色' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '任务设置' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: '分镜' }));
+    expect(screen.getByRole('heading', { name: '故事分镜' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '调整分镜' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '角色' }));
+    expect(screen.getByRole('img', { name: '商务角色' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '更换角色' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    expect(screen.getByRole('heading', { name: '当前版本设置' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '调整角色' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '调整故事与画面' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '让 Agent 重新生成视频' }));
+    expect(screen.getByText('设置没有变化，继续查看 V1，未创建新版本。')).toBeInTheDocument();
+    expect(screen.queryByText('火柴人动画-V2.mp4')).not.toBeInTheDocument();
+
+    fireEvent.click(within(stickmanSteps).getByRole('button', { name: /故事与分镜$/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '故事创意' }), {
+      target: { value: '一个商务角色在会议中用图表解释新产品。' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '生成分镜图' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一步：生成视频' }));
+    expect(screen.getByText('正在基于 V1 调整')).toBeInTheDocument();
+    expect(screen.getByText('原版本的角色、分镜和成片仍可查看')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
+
+    expect(screen.getByText('火柴人动画-V2.mp4')).toBeInTheDocument();
+    expect(screen.getByText('V2 已生成完成，之前的版本仍可查看')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
+    const stickmanVersionMenu = screen.getByRole('menu');
+    expect(within(stickmanVersionMenu).getByText('已完成，V1')).toBeInTheDocument();
+    expect(within(stickmanVersionMenu).getByText('已完成，V2')).toBeInTheDocument();
+    fireEvent.click(within(stickmanVersionMenu).getByText('已完成，V1').closest('button') as HTMLButtonElement);
+    expect(screen.getByText('火柴人动画-V1.mp4')).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole('navigation', { name: '火柴人生成流程' })).getByRole('button', { name: /故事与分镜$/ }));
+    fireEvent.change(screen.getByRole('combobox', { name: '视频比例' }), {
+      target: { value: '9:16' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '生成分镜图' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一步：生成视频' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成 V3' }));
+    expect(screen.getByText('火柴人动画-V3.mp4')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '已完成，V3' }));
+    expect(screen.getByRole('menu')).toHaveTextContent('基于 V1 调整，当前查看');
   });
 
   it('extracts ten scored clips with subtitles from a long video', () => {
     render(<WorkbenchPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^自动剪辑/ }));
 
+    const clipSteps = screen.getByRole('navigation', { name: '自动剪辑流程' });
+    expect(within(clipSteps).getByRole('button', { name: '1 添加视频' })).toHaveAttribute('aria-current', 'step');
+    expect(within(clipSteps).getByRole('button', { name: '2 分析设置' })).toBeDisabled();
+    expect(within(clipSteps).getByRole('button', { name: '3 选择与导出' })).toBeDisabled();
     fireEvent.change(screen.getByRole('textbox', { name: '公开视频链接' }), {
       target: { value: 'https://www.youtube.com/watch?v=long-video' }
     });
+    fireEvent.click(screen.getByRole('button', { name: '下一步：分析设置' }));
+    expect(screen.getByRole('heading', { name: '设置分析目标' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '识别语义并提取片段' }));
 
     expect(screen.getByText('已找到 10 个候选片段')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '候选片段' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '字幕与评分' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '导出内容' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '任务设置' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /^查看片段/ })).toHaveLength(10);
+    fireEvent.click(screen.getByRole('button', { name: /^查看片段 1 / }));
     const detail = screen.getByRole('complementary', { name: '片段 1 详情' });
     expect(detail).toHaveTextContent('开头吸引力94');
     expect(detail).toHaveTextContent('语义完整度92');
     expect(detail).toHaveTextContent('很多人一开始就急着使用工具');
+
+    fireEvent.click(within(clipSteps).getByRole('button', { name: /分析设置$/ }));
+    fireEvent.click(screen.getByRole('button', { name: '识别语义并提取片段' }));
+    expect(screen.getByRole('status')).toHaveTextContent('设置没有变化，继续查看 V1，未创建新版本');
+    expect(screen.queryByRole('button', { name: '已完成，V2' })).not.toBeInTheDocument();
+
+    fireEvent.click(within(clipSteps).getByRole('button', { name: /分析设置$/ }));
+    fireEvent.change(screen.getByRole('combobox', { name: '内容偏好' }), { target: { value: 'viral' } });
+    fireEvent.click(screen.getByRole('button', { name: '重新分析并生成 V2' }));
+    expect(screen.getByRole('button', { name: '已完成，V2' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
+    expect(screen.getByRole('menu')).toHaveTextContent('已完成，V1');
   });
 
   it('generates four cover variants from prompt and supports ratio changes', () => {
@@ -154,12 +312,33 @@ describe('WorkbenchPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^封面生成/ }));
 
     expect(screen.getByRole('heading', { name: '封面生成' })).toBeInTheDocument();
+    const coverSteps = screen.getByRole('navigation', { name: '封面生成流程' });
+    expect(within(coverSteps).getByRole('button', { name: '1 设置封面' })).toHaveAttribute('aria-current', 'step');
+    expect(within(coverSteps).getByRole('button', { name: '2 查看方案' })).toBeDisabled();
     fireEvent.click(screen.getByRole('radio', { name: /1:1/ }));
     fireEvent.click(screen.getByRole('button', { name: '生成 4 个封面' }));
 
-    expect(screen.getByRole('region', { name: '生成的封面方案' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '封面生成项目产出' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '封面方案' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '参考素材' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '任务设置' })).toBeInTheDocument();
     expect(screen.getAllByRole('img', { name: /^封面方案/ })).toHaveLength(4);
-    expect(screen.getByRole('radio', { name: /1:1/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    expect(screen.getByRole('region', { name: '封面生成项目产出' })).toHaveTextContent('封面比例1:1');
+
+    fireEvent.click(within(coverSteps).getByRole('button', { name: /设置封面$/ }));
+    fireEvent.click(screen.getByRole('button', { name: '生成 4 个封面' }));
+    expect(screen.getByRole('status')).toHaveTextContent('设置没有变化，继续查看 V1，未创建新版本');
+
+    fireEvent.click(within(coverSteps).getByRole('button', { name: /设置封面$/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '封面提示词' }), { target: { value: '蓝色科技感，人物主体更大，标题更醒目' } });
+    fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
+    expect(screen.getByRole('button', { name: '已完成，V2' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
+    const versionMenu = screen.getByRole('menu');
+    expect(versionMenu).toHaveTextContent('已完成，V1');
+    expect(versionMenu).toHaveTextContent('已完成，V2');
   });
 
   it('edits and saves generated subtitles without leaving the result workspace', () => {
@@ -326,7 +505,11 @@ describe('WorkbenchPage', () => {
     expect(within(versionMenu).getByText('已完成，V1')).toBeInTheDocument();
     expect(within(versionMenu).getByText('已完成，V2')).toBeInTheDocument();
     expect(versionMenu).toHaveTextContent('基于 V1 调整，当前查看');
-    fireEvent.click(within(versionMenu).getByText('已完成，V1').closest('button') as HTMLButtonElement);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
+    const reopenedVersionMenu = screen.getByRole('menu');
+    fireEvent.click(within(reopenedVersionMenu).getByText('已完成，V1').closest('button') as HTMLButtonElement);
 
     expect(screen.getByText('已完成，V1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
@@ -342,6 +525,7 @@ describe('WorkbenchPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
 
     const separator = screen.getByRole('separator', { name: '调整操作区和对话区宽度' });
+    expect(separator).toHaveAttribute('aria-valuemin', '780');
     const layout = separator.parentElement as HTMLDivElement;
     vi.spyOn(layout, 'getBoundingClientRect').mockReturnValue({
       bottom: 800,
@@ -358,10 +542,14 @@ describe('WorkbenchPage', () => {
     fireEvent.mouseDown(separator, { button: 0, clientX: 800 });
     fireEvent.mouseMove(window, { clientX: 720 });
     fireEvent.mouseUp(window);
-    expect(layout).toHaveStyle({ '--video-translation-pane-width': '720px' });
+    expect(layout).toHaveStyle({ '--video-translation-pane-width': '780px' });
 
     fireEvent.keyDown(separator, { key: 'ArrowLeft' });
-    expect(layout).toHaveStyle({ '--video-translation-pane-width': '688px' });
+    expect(layout).toHaveStyle({ '--video-translation-pane-width': '780px' });
+    fireEvent.keyDown(separator, { key: 'ArrowRight' });
+    expect(layout).toHaveStyle({ '--video-translation-pane-width': '812px' });
+    fireEvent.keyDown(separator, { key: 'ArrowLeft' });
+    expect(layout).toHaveStyle({ '--video-translation-pane-width': '780px' });
     fireEvent.doubleClick(separator);
     expect(layout.style.getPropertyValue('--video-translation-pane-width')).toBe('');
   });

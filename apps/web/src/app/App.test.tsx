@@ -48,6 +48,13 @@ import {
 } from '../services/model-service-2026-08-05.js';
 
 vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
+vi.mock('@clawee/skill-market', async importOriginal => {
+  const actual = await importOriginal<typeof import('@clawee/skill-market')>();
+  return {
+    ...actual,
+    skillMarketCatalog: actual.skillMarketCandidateCatalog
+  };
+});
 
 let testRuntimeProjects: ProjectResponse[] | undefined;
 
@@ -893,7 +900,7 @@ describe('App', () => {
   it('renders the OpenCreator desktop app shell without Codex product branding', async () => {
     render(<App fileService={createFileService()} />);
 
-    expect(await screen.findByRole('button', { name: 'Home' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '首页' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '工作台' })).toBeInTheDocument();
     expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
     expect(screen.getByRole('heading', {
@@ -2652,7 +2659,7 @@ describe('App', () => {
     expect(fetchUrls.some(url => url.endsWith('/codex/mcp'))).toBe(false);
     expect(fetchUrls.some(url => url.endsWith('/codex/profiles'))).toBe(false);
 
-    await user.click(screen.getByRole('button', { name: 'Home' }));
+    await user.click(screen.getByRole('button', { name: '首页' }));
     await waitFor(() => {
       expect(fetchUrls.some(url => url.endsWith('/codex/mcp'))).toBe(true);
       expect(fetchUrls.some(url => url.endsWith('/codex/profiles'))).toBe(true);
@@ -2953,7 +2960,7 @@ describe('App', () => {
     await user.click(within(skill).getByRole('button', { name: '使用' }));
     const projectDialog = screen.getByRole('dialog', { name: '选择使用项目' });
     await user.click(within(projectDialog).getByRole('button', {
-      name: '在 content-design 中使用'
+      name: '在 content-design'
     }));
 
     const createThreadCall = await waitFor(() => {
@@ -3073,7 +3080,7 @@ describe('App', () => {
       'aria-checked',
       'true'
     );
-    await user.click(within(projectDialog).getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(within(projectDialog).getByRole('button', { name: '在 content-design' }));
 
     await waitFor(() => expect(threadCreateCalls()).toHaveLength(1));
     const createThreadBody = JSON.parse(String(threadCreateCalls()[0]?.init?.body)) as Record<string, unknown>;
@@ -3099,7 +3106,7 @@ describe('App', () => {
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(getSkillMarketCard('frontend-slides')).toBeInTheDocument());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
-    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design' }));
 
     await waitFor(() => expect(threadCreateCalls()).toHaveLength(2));
     expect(JSON.parse(String(threadCreateCalls()[1]?.init?.body))).toMatchObject({
@@ -3269,7 +3276,7 @@ describe('App', () => {
     }));
     const dialog = screen.getByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: '使用' }));
-    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design' }));
 
     expect(await screen.findAllByText('使用失败：创建对话失败')).toHaveLength(1);
     await user.click(
@@ -3280,7 +3287,7 @@ describe('App', () => {
     const retryDialog = screen.getByRole('dialog');
     expect(within(retryDialog).getByText('使用失败：创建对话失败')).toBeInTheDocument();
     await user.click(within(retryDialog).getByRole('button', { name: '使用' }));
-    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design' }));
     await waitFor(() => {
       expect(
         fetchCalls.filter(call => call.url.endsWith('/threads') && call.init?.method === 'POST')
@@ -3338,9 +3345,9 @@ describe('App', () => {
 
     const firstUseButton = within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' });
     await user.click(firstUseButton);
-    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design' }));
     await user.click(firstUseButton);
-    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design' }));
 
     expect(threadCreateCalls()).toHaveLength(1);
 
@@ -3362,7 +3369,7 @@ describe('App', () => {
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
-    await user.click(screen.getByRole('button', { name: '在 content-design 中使用' }));
+    await user.click(screen.getByRole('button', { name: '在 content-design' }));
 
     expect(threadCreateCalls()).toHaveLength(2);
     await act(async () => {
@@ -4280,7 +4287,7 @@ describe('App', () => {
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
     expect(await screen.findByText('周报已整理。')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Home' }));
+    await user.click(screen.getByRole('button', { name: '首页' }));
 
     expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();

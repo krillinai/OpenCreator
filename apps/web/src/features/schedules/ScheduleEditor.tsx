@@ -9,6 +9,7 @@ import type {
 } from '@clawee/protocol';
 import { Check, ChevronDown, Clock3, LoaderCircle, Save, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import type { ClaweeProject } from '../projects/project-model.js';
 import {
   cronToScheduleFrequency,
@@ -53,6 +54,7 @@ export function ScheduleEditor(props: {
   onCancel(): void;
   onSubmit(values: ScheduleEditorValues): void;
 }) {
+  const confirm = useConfirmDialog();
   const [values, setValues] = useState(props.initialValues);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -290,13 +292,15 @@ export function ScheduleEditor(props: {
                     value={values.sandbox === 'danger-full-access'
                       ? 'danger-full-access'
                       : 'workspace-write'}
-                    onChange={value => {
+                    onChange={async value => {
                       if (
                         value === 'danger-full-access'
                         && values.sandbox !== 'danger-full-access'
-                        && !window.confirm(
-                          '完全访问权限允许计划任务访问本机文件并执行本地操作。确定要开启吗？'
-                        )
+                        && !await confirm({
+                          title: '开启完全访问权限',
+                          description: '完全访问权限允许任务访问本机文件并执行本地操作。仅为可信任务开启。',
+                          confirmLabel: '开启'
+                        })
                       ) {
                         return;
                       }

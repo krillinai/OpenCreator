@@ -18,8 +18,8 @@ import {
 
 const messages = {
   'zh-CN': {
-    'nav.home': 'Home',
-    'nav.workbench': 'Dashboard',
+    'nav.home': '首页',
+    'nav.workbench': '工作台',
     'nav.plugins': '插件中心',
     'nav.assets': '我的资产',
     'nav.projects': '我的项目',
@@ -38,6 +38,7 @@ const messages = {
     'settings.searchUnavailable': '搜索暂不可用',
     'settings.categories': '设置分类',
     'settings.tab.general': '常规',
+    'settings.tab.aiServices': 'AI 服务',
     'settings.tab.plugins': '插件',
     'settings.tab.memory': '记忆',
     'settings.tab.profiles': 'Profiles',
@@ -255,6 +256,7 @@ const messages = {
     'settings.searchUnavailable': 'Search is not available yet',
     'settings.categories': 'Settings categories',
     'settings.tab.general': 'General',
+    'settings.tab.aiServices': 'AI Services',
     'settings.tab.plugins': 'Plugins',
     'settings.tab.memory': 'Memory',
     'settings.tab.profiles': 'Profiles',

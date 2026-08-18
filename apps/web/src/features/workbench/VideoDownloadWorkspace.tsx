@@ -1,9 +1,18 @@
 import { useMemo, useState } from 'react';
-import { CheckCircle2, Download, Link2, Music2, Video } from 'lucide-react';
+import { Check, CheckCircle2, Download, Link2, Music2, Video } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 type DownloadFormat = 'mp4' | 'mp3';
+type DownloadStep = 0 | 1;
+type DownloadResultTab = 'info' | 'formats' | 'history';
+
+type DownloadRecord = {
+  id: number;
+  platform: string;
+  format: DownloadFormat;
+  quality: string;
+};
 
 function isValidUrl(value: string) {
   try {
@@ -28,6 +37,10 @@ export default function VideoDownloadWorkspace(props: { onBack(): void }) {
   const [quality, setQuality] = useState('1080p');
   const [analyzed, setAnalyzed] = useState(false);
   const [notice, setNotice] = useState('');
+  const [currentStep, setCurrentStep] = useState<DownloadStep>(0);
+  const [furthestStep, setFurthestStep] = useState<DownloadStep>(0);
+  const [resultTab, setResultTab] = useState<DownloadResultTab>('formats');
+  const [downloadRecords, setDownloadRecords] = useState<DownloadRecord[]>([]);
   const validUrl = isValidUrl(url);
   const platform = platformFor(url, l);
   const context = analyzed ? `${platform}, ${format.toUpperCase()} ${quality}` : l('等待解析视频链接', 'Waiting for a video link');
@@ -55,11 +68,16 @@ export default function VideoDownloadWorkspace(props: { onBack(): void }) {
       return false;
     }
     setAnalyzed(true);
+    setCurrentStep(1);
+    setFurthestStep(1);
+    setResultTab('formats');
     setNotice(l('链接解析完成，请选择下载规格', 'Link analyzed. Choose a download format.'));
     return true;
   }
 
   function queueDownload(label: string) {
+    setDownloadRecords(current => [...current, { id: current.length + 1, platform, format, quality: label }]);
+    setResultTab('history');
     setNotice(l(`${platform} ${format.toUpperCase()} ${label} 已加入下载队列`, `${platform} ${format.toUpperCase()} ${label} was added to the download queue`));
   }
 
@@ -71,13 +89,18 @@ export default function VideoDownloadWorkspace(props: { onBack(): void }) {
       const nextQuality = requestedQuality ?? (nextFormat === 'mp4' ? '1080p' : '320kbps');
       setUrl(foundUrl);
       setAnalyzed(true);
+      setCurrentStep(1);
+      setFurthestStep(1);
       setFormat(nextFormat);
       setQuality(nextQuality);
       if (/下载|download/i.test(command)) {
         const foundPlatform = platformFor(foundUrl, l);
+        setDownloadRecords(current => [...current, { id: current.length + 1, platform: foundPlatform, format: nextFormat, quality: nextQuality }]);
+        setResultTab('history');
         setNotice(l(`${foundPlatform} ${nextFormat.toUpperCase()} ${nextQuality} 已加入下载队列`, `${foundPlatform} ${nextFormat.toUpperCase()} ${nextQuality} was added to the download queue`));
         return l(`已解析 ${foundPlatform} 链接，并创建 ${nextFormat.toUpperCase()} ${nextQuality} 下载任务。`, `I analyzed the ${foundPlatform} link and created a ${nextFormat.toUpperCase()} ${nextQuality} download.`);
       }
+      setResultTab('formats');
       setNotice(l('链接解析完成，请选择下载规格', 'Link analyzed. Choose a download format.'));
       return l(`已识别 ${platformFor(foundUrl, l)} 链接并完成解析。你可以在左侧选择视频清晰度或 MP3 音频。`, `I recognized and analyzed the ${platformFor(foundUrl, l)} link. Choose a video quality or MP3 audio on the left.`);
     }
@@ -88,6 +111,8 @@ export default function VideoDownloadWorkspace(props: { onBack(): void }) {
       const nextQuality = requestedQuality ?? (nextFormat === format ? quality : nextFormat === 'mp4' ? '1080p' : '320kbps');
       setFormat(nextFormat);
       setQuality(nextQuality);
+      setDownloadRecords(current => [...current, { id: current.length + 1, platform, format: nextFormat, quality: nextQuality }]);
+      setResultTab('history');
       setNotice(l(`${platform} ${nextFormat.toUpperCase()} ${nextQuality} 已加入下载队列`, `${platform} ${nextFormat.toUpperCase()} ${nextQuality} was added to the download queue`));
       return l(`已创建 ${nextFormat.toUpperCase()} ${nextQuality} 下载任务。`, `Created a ${nextFormat.toUpperCase()} ${nextQuality} download.`);
     }
@@ -114,7 +139,25 @@ export default function VideoDownloadWorkspace(props: { onBack(): void }) {
       onCommand={handleCommand}
     >
       <div className="creator-tool-stack">
-        <section className="creator-tool-panel" aria-labelledby="video-download-source-title">
+        <nav className="video-translation-steps creator-tool-steps creator-tool-steps-two" aria-label={l('视频下载流程', 'Video download steps')}>
+          <ol>
+            {[l('添加链接', 'Add link'), l('选择并下载', 'Choose and download')].map((step, index) => {
+              const active = index === currentStep;
+              const completed = index < currentStep;
+              return (
+                <li key={step} data-active={active} data-completed={completed}>
+                  <button type="button" disabled={index > furthestStep} aria-current={active ? 'step' : undefined} onClick={() => setCurrentStep(index as DownloadStep)}>
+                    <span>{completed ? <Check size={13} strokeWidth={2.2} aria-hidden="true" /> : index + 1}</span>
+                    <strong>{step}</strong>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+
+        {currentStep === 0 ? (
+          <section className="creator-tool-panel" aria-labelledby="video-download-source-title">
           <div className="creator-tool-panel-heading">
             <div><h2 id="video-download-source-title">{l('视频链接', 'Video link')}</h2><p>{l('支持 YouTube、Bilibili、Vimeo 等公开视频页面', 'Supports public YouTube, Bilibili, Vimeo, and similar video pages')}</p></div>
           </div>
@@ -123,49 +166,65 @@ export default function VideoDownloadWorkspace(props: { onBack(): void }) {
             <input
               type="url"
               value={url}
-              onChange={event => { setUrl(event.target.value); setAnalyzed(false); setNotice(''); }}
+              onChange={event => { setUrl(event.target.value); setAnalyzed(false); setCurrentStep(0); setFurthestStep(0); setNotice(''); }}
               placeholder={l('粘贴视频链接', 'Paste a video link')}
               aria-label={l('待下载视频链接', 'Video link to download')}
             />
             <button type="button" onClick={analyze}>{l('解析链接', 'Analyze')}</button>
           </label>
-        </section>
+          </section>
+        ) : null}
 
-        {analyzed ? (
-          <section className="creator-tool-panel" aria-label={l('视频下载结果', 'Video download options')}>
-            <div className="video-download-preview">
-              <img src="/workbench/templates/video-localization.jpg" alt={l('视频封面预览', 'Video thumbnail preview')} />
-              <div>
-                <span>{platform}</span>
-                <h2>{l('OpenCreator 视频示例', 'OpenCreator video example')}</h2>
-                <p>12:48 · 1920 × 1080</p>
+        {currentStep === 1 && analyzed ? (
+          <section className="video-result-workspace download-result-workspace" aria-label={l('视频下载结果', 'Video download results')}>
+            <div className="video-result-toolbar">
+              <div className="video-result-tabs" role="tablist" aria-label={l('下载结果类型', 'Download result types')}>
+                <button type="button" role="tab" aria-selected={resultTab === 'info'} onClick={() => setResultTab('info')}><Video size={15} strokeWidth={1.8} aria-hidden="true" />{l('视频信息', 'Video info')}</button>
+                <button type="button" role="tab" aria-selected={resultTab === 'formats'} onClick={() => setResultTab('formats')}><Download size={15} strokeWidth={1.8} aria-hidden="true" />{l('下载规格', 'Formats')}</button>
+                <button type="button" role="tab" aria-selected={resultTab === 'history'} onClick={() => setResultTab('history')}><CheckCircle2 size={15} strokeWidth={1.8} aria-hidden="true" />{l('下载记录', 'Downloads')}</button>
               </div>
             </div>
-            <div className="creator-tool-segmented" role="tablist" aria-label={l('下载格式', 'Download format')}>
-              <button type="button" role="tab" aria-selected={format === 'mp4'} onClick={() => selectFormat('mp4')}>
-                <Video size={15} strokeWidth={1.8} aria-hidden="true" /> MP4 {l('视频', 'video')}
-              </button>
-              <button type="button" role="tab" aria-selected={format === 'mp3'} onClick={() => selectFormat('mp3')}>
-                <Music2 size={15} strokeWidth={1.8} aria-hidden="true" /> MP3 {l('音频', 'audio')}
-              </button>
-            </div>
-            <div className="video-download-options">
-              {variants.map((variant, index) => (
-                <label key={variant.label}>
-                  <input
-                    type="radio"
-                    name="download-quality"
-                    checked={quality === variant.label}
-                    onChange={() => setQuality(variant.label)}
-                  />
-                  <span><strong>{variant.label}</strong><small>{variant.detail}</small></span>
-                  {index === 0 ? <small>{l('推荐', 'Recommended')}</small> : null}
-                  <button type="button" onClick={() => queueDownload(variant.label)} aria-label={`${l('下载', 'Download')} ${variant.label}`}>
-                    <Download size={16} strokeWidth={1.8} aria-hidden="true" /> {l('下载', 'Download')}
-                  </button>
-                </label>
-              ))}
-            </div>
+
+            {resultTab === 'info' ? (
+              <div className="video-result-pane">
+                <header className="video-result-pane-heading"><div><h2>{l('视频信息', 'Video information')}</h2><p>{l('已完成链接解析', 'Link analysis complete')}</p></div><button type="button" onClick={() => setCurrentStep(0)}><Link2 size={15} strokeWidth={1.8} aria-hidden="true" />{l('更换链接', 'Change link')}</button></header>
+                <div className="video-download-preview">
+                  <img src="/workbench/templates/video-localization.jpg" alt={l('视频封面预览', 'Video thumbnail preview')} />
+                  <div><span>{platform}</span><h2>{l('OpenCreator 视频示例', 'OpenCreator video example')}</h2><p>12:48 · 1920 × 1080</p></div>
+                </div>
+              </div>
+            ) : null}
+
+            {resultTab === 'formats' ? (
+              <div className="video-result-pane">
+                <header className="video-result-pane-heading"><div><h2>{l('下载规格', 'Download formats')}</h2><p>{l('选择视频清晰度或仅下载音频', 'Choose video quality or download audio only')}</p></div></header>
+                <div className="creator-tool-segmented" role="tablist" aria-label={l('下载格式', 'Download format')}>
+                  <button type="button" role="tab" aria-selected={format === 'mp4'} onClick={() => selectFormat('mp4')}><Video size={15} strokeWidth={1.8} aria-hidden="true" /> MP4 {l('视频', 'video')}</button>
+                  <button type="button" role="tab" aria-selected={format === 'mp3'} onClick={() => selectFormat('mp3')}><Music2 size={15} strokeWidth={1.8} aria-hidden="true" /> MP3 {l('音频', 'audio')}</button>
+                </div>
+                <div className="video-download-options">
+                  {variants.map((variant, index) => (
+                    <label key={variant.label}>
+                      <input type="radio" name="download-quality" checked={quality === variant.label} onChange={() => setQuality(variant.label)} />
+                      <span><strong>{variant.label}</strong><small>{variant.detail}</small></span>
+                      {index === 0 ? <small>{l('推荐', 'Recommended')}</small> : null}
+                      <button type="button" onClick={() => queueDownload(variant.label)} aria-label={`${l('下载', 'Download')} ${variant.label}`}><Download size={16} strokeWidth={1.8} aria-hidden="true" /> {l('下载', 'Download')}</button>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {resultTab === 'history' ? (
+              <div className="video-result-pane">
+                <header className="video-result-pane-heading"><div><h2>{l('下载记录', 'Downloads')}</h2><p>{l('当前会话创建的下载任务', 'Download tasks created in this session')}</p></div></header>
+                {downloadRecords.length ? (
+                  <div className="download-record-list">
+                    {downloadRecords.map(record => <div className="video-result-file-row" key={record.id}><span aria-hidden="true"><Download size={18} strokeWidth={1.7} /></span><div><strong>{record.platform} {record.format.toUpperCase()} {record.quality}</strong><small>{l('已加入下载队列', 'Added to download queue')}</small></div><CheckCircle2 size={17} strokeWidth={1.8} aria-hidden="true" /></div>)}
+                  </div>
+                ) : <div className="video-result-empty"><Download size={26} strokeWidth={1.5} aria-hidden="true" /><strong>{l('还没有下载任务', 'No downloads yet')}</strong><button type="button" onClick={() => setResultTab('formats')}>{l('选择下载规格', 'Choose a format')}</button></div>}
+              </div>
+            ) : null}
           </section>
         ) : null}
         {notice ? <p className="creator-tool-notice" role="status"><CheckCircle2 size={15} strokeWidth={1.9} />{notice}</p> : null}

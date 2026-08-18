@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowUp,
   Bot,
   Check,
   MessageSquareText,
@@ -9,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
+import ToolAgentComposer from './ToolAgentComposer.js';
 
 export type VideoTranslationAgentAction =
   | { type: 'explain_source' }
@@ -212,8 +212,7 @@ export default function VideoTranslationAgentPanel(props: {
     setMessages(current => [...current, ...nextMessages]);
   }
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
+  function submit() {
     const prompt = input.trim();
     if (!prompt) return;
     setInput('');
@@ -279,23 +278,13 @@ export default function VideoTranslationAgentPanel(props: {
         ))}
       </div>
 
-      <form className="video-translation-agent-composer" onSubmit={submit}>
-        <textarea
-          rows={2}
-          value={input}
-          onChange={event => setInput(event.target.value)}
-          onKeyDown={event => {
-            if (event.key !== 'Enter' || event.shiftKey) return;
-            event.preventDefault();
-            event.currentTarget.form?.requestSubmit();
-          }}
-          aria-label={l('告诉 Agent 你的要求', 'Tell the Agent your requirements')}
-          placeholder={placeholder}
-        />
-        <button type="submit" disabled={!input.trim()} aria-label={l('发送给 Agent', 'Send to Agent')}>
-          <ArrowUp size={16} strokeWidth={1.9} aria-hidden="true" />
-        </button>
-      </form>
+      <ToolAgentComposer
+        value={input}
+        onChange={setInput}
+        onSubmit={submit}
+        ariaLabel={l('告诉 Agent 你的要求', 'Tell the Agent your requirements')}
+        placeholder={placeholder}
+      />
     </aside>
   );
 }

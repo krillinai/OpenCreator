@@ -18,6 +18,7 @@ import {
   X
 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { ApiClientError } from '../../runtime/errors.js';
 
 export type ProfileSettingsService = {
@@ -41,6 +42,7 @@ export function ProfileSettingsView(props: {
   onDataChange?(data: CodexProfileListResponse): void;
   confirmDelete?(profile: CodexProfileResponse): boolean;
 }) {
+  const confirm = useConfirmDialog();
   const [data, setData] = useState(props.data);
   const [loading, setLoading] = useState(
     props.data === undefined && props.connected && props.service !== null
@@ -107,7 +109,13 @@ export function ProfileSettingsView(props: {
 
   async function deleteProfile(profile: CodexProfileResponse) {
     if (props.service === null) return;
-    if (!(props.confirmDelete?.(profile) ?? window.confirm(`删除 Profile ${profile.name}？`))) return;
+    const confirmed = props.confirmDelete?.(profile) ?? await confirm({
+      title: '删除 Profile',
+      description: `确认删除“${profile.name}”？删除后无法恢复。`,
+      confirmLabel: '删除',
+      destructive: true
+    });
+    if (!confirmed) return;
     setBusyName(profile.name);
     setError(undefined);
     try {

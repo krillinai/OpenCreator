@@ -29,7 +29,7 @@ function isVisibleSkill(
   return isVisibleListingStatus(skill.listingStatus);
 }
 
-export const skillMarketCatalog: readonly SkillMarketEntry[] = deepFreeze(
+export const skillMarketCandidateCatalog: readonly SkillMarketEntry[] = deepFreeze(
   [...customSkills, ...(sourceSkills as CreatorSkillSource[])]
     .filter(isVisibleSkill)
     .map(
@@ -73,6 +73,8 @@ export const skillMarketCatalog: readonly SkillMarketEntry[] = deepFreeze(
       })
     )
 );
+
+export const skillMarketCatalog: readonly SkillMarketEntry[] = deepFreeze([]);
 
 export const skillMarketCategories: readonly SkillMarketCategory[] = deepFreeze(
   structuredClone(sourceCategories) as SkillMarketCategory[]

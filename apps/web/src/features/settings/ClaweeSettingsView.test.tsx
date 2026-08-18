@@ -1,5 +1,7 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { ConfirmDialogProvider } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { languagePreferenceStorageKey } from '../../i18n/language.js';
 import { ClaweeSettingsView } from './ClaweeSettingsView.js';
@@ -21,6 +23,7 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByPlaceholderText('搜索暂不可用')).toBeDisabled();
     expect(screen.getByText('搜索暂不可用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '常规' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'AI 服务' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '插件' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'MCP 服务' }))
       .not.toBeInTheDocument();
@@ -60,35 +63,43 @@ describe('ClaweeSettingsView', () => {
     window.localStorage.removeItem(languagePreferenceStorageKey);
   });
 
-  it('notifies when the global default permission changes', () => {
+  it('notifies when the global default permission changes', async () => {
+    const user = userEvent.setup();
     const onDefaultPermissionChange = vi.fn();
     render(
-      <ClaweeSettingsView
-        runtimeStatus={runtimeStatus}
-        defaultPermission="workspace-write"
-        onDefaultPermissionChange={onDefaultPermissionChange}
-        onBack={vi.fn()}
-      />
+      <ConfirmDialogProvider>
+        <ClaweeSettingsView
+          runtimeStatus={runtimeStatus}
+          defaultPermission="workspace-write"
+          onDefaultPermissionChange={onDefaultPermissionChange}
+          onBack={vi.fn()}
+        />
+      </ConfirmDialogProvider>
     );
 
     const permission = screen.getByRole('combobox', { name: '默认权限' });
     expect(permission).toHaveValue('workspace-write');
 
     fireEvent.change(permission, { target: { value: 'danger-full-access' } });
+    await user.click(await screen.findByRole('button', { name: '开启' }));
 
-    expect(onDefaultPermissionChange).toHaveBeenCalledWith('danger-full-access');
+    await waitFor(() => {
+      expect(onDefaultPermissionChange).toHaveBeenCalledWith('danger-full-access');
+    });
   });
 
-  it('keeps the existing permission when full access confirmation is canceled', () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('keeps the existing permission when full access confirmation is canceled', async () => {
+    const user = userEvent.setup();
     const onDefaultPermissionChange = vi.fn();
     render(
-      <ClaweeSettingsView
-        runtimeStatus={runtimeStatus}
-        defaultPermission="workspace-write"
-        onDefaultPermissionChange={onDefaultPermissionChange}
-        onBack={vi.fn()}
-      />
+      <ConfirmDialogProvider>
+        <ClaweeSettingsView
+          runtimeStatus={runtimeStatus}
+          defaultPermission="workspace-write"
+          onDefaultPermissionChange={onDefaultPermissionChange}
+          onBack={vi.fn()}
+        />
+      </ConfirmDialogProvider>
     );
 
     const permission = screen.getByRole('combobox', { name: '默认权限' });
@@ -96,8 +107,8 @@ describe('ClaweeSettingsView', () => {
       .toEqual(['跟随项目设置', '请求批准', '完全访问权限']);
 
     fireEvent.change(permission, { target: { value: 'danger-full-access' } });
+    await user.click(await screen.findByRole('button', { name: '取消' }));
 
-    expect(confirm).toHaveBeenCalledTimes(1);
     expect(onDefaultPermissionChange).not.toHaveBeenCalled();
   });
 

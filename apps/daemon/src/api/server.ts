@@ -66,6 +66,10 @@ import {
 } from '../codex/skills/source-installer.js';
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
+import {
+  createSystemCreatorServicesConfigStore,
+  type CreatorServicesConfigStore
+} from '../creator-services/config-store.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { createPersistentAppServerExecutor } from '../runs/persistent-app-server-executor-2026-07-28.js';
 import {
@@ -132,6 +136,7 @@ import { registerAttachmentRoutes } from './routes.attachments.js';
 import { registerApprovalRoutes } from './routes.approvals.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerCleanupRoutes } from './routes.cleanup.js';
+import { registerCreatorServicesRoutes } from './routes.creator-services.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
 import { registerMemoryRoutes } from './routes.memory.js';
@@ -184,6 +189,7 @@ export type BuildServerInput = {
   codexModelCatalog?: CodexModelCatalog;
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
   memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
+  creatorServicesConfigStore?: CreatorServicesConfigStore;
   allowedWebOrigins?: string[];
   enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
   enterpriseConfigPath?: string;
@@ -385,6 +391,8 @@ export async function buildServer(input: BuildServerInput) {
     }
   });
   const memoryService = createMemoryService({ db });
+  const creatorServicesConfigStore =
+    input.creatorServicesConfigStore ?? createSystemCreatorServicesConfigStore();
   const agentCapabilityTokens =
     input.agentCapabilityTokens ?? createAgentCapabilityTokenStore();
   const runtimeTransport =
@@ -641,6 +649,7 @@ export async function buildServer(input: BuildServerInput) {
     manager: knowledgeConversationManager
   });
   await registerCleanupRoutes(server, cleanupService);
+  await registerCreatorServicesRoutes(server, creatorServicesConfigStore);
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });
