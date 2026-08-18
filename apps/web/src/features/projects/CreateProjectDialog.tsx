@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 
 export function CreateProjectDialog(props: {
   open: boolean;
@@ -7,6 +8,7 @@ export function CreateProjectDialog(props: {
   onClose(): void;
   onCreate(name: string): boolean | void | Promise<boolean | void>;
 }) {
+  const { t } = useAppLanguage();
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -42,19 +44,19 @@ export function CreateProjectDialog(props: {
         className="composer-project-name-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="创建项目"
+        aria-label={t('projectDialog.title')}
       >
         <header>
-          <strong>创建项目</strong>
-          <span>将在目录中新建文件夹</span>
+          <strong>{t('projectDialog.title')}</strong>
+          <span>{t('projectDialog.description')}</span>
         </header>
         {props.error ? <p className="inline-error" role="alert">{props.error}</p> : null}
         <label>
-          <span>文件夹名称</span>
+          <span>{t('projectDialog.folderName')}</span>
           <input
             ref={inputRef}
             type="text"
-            aria-label="文件夹名称"
+            aria-label={t('projectDialog.folderName')}
             maxLength={80}
             value={name}
             disabled={submitting}
@@ -80,7 +82,7 @@ export function CreateProjectDialog(props: {
             disabled={submitting}
             onClick={props.onClose}
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -88,7 +90,7 @@ export function CreateProjectDialog(props: {
             disabled={submitting || name.trim().length === 0}
             onClick={() => void createProject()}
           >
-            {submitting ? '正在创建' : '创建'}
+            {submitting ? t('projectDialog.creating') : t('projectDialog.create')}
           </button>
         </footer>
       </section>

@@ -15,6 +15,11 @@ import {
   readCustomAccentColorPreference
 } from './styles/accent-color.js';
 import { applyColorMode, readColorModePreference } from './styles/color-mode.js';
+import {
+  applyAppLanguage,
+  readLanguagePreference,
+  resolveAppLanguage
+} from './i18n/language.js';
 import { installAutoHidingScrollbars } from './styles/scrollbar-visibility.js';
 import { installWindowResizeStability } from './styles/window-resize-stability.js';
 import './styles/app.css';
@@ -22,6 +27,7 @@ import './styles/app.css';
 const desktopHostBridge = readDesktopHostBridge();
 
 applyColorMode(readColorModePreference());
+applyAppLanguage(resolveAppLanguage(readLanguagePreference()));
 applyAccentColor(
   readAccentColorPreference(),
   readCustomAccentColorPreference()

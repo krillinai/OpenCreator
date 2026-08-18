@@ -1,6 +1,15 @@
 import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
 
+Object.defineProperty(window.navigator, 'language', {
+  configurable: true,
+  value: 'zh-CN'
+});
+Object.defineProperty(window.navigator, 'languages', {
+  configurable: true,
+  value: ['zh-CN']
+});
+
 Object.defineProperty(window, 'confirm', {
   configurable: true,
   writable: true,

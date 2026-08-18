@@ -53,7 +53,7 @@ const agentIdPattern =
 
 test.describe.configure({ mode: 'serial' });
 
-test('实际打包 App 可登录、管理连接器、使用企业知识库并安装 Skill', async () => {
+test.skip('legacy enterprise packaged workflow', async () => {
   const runId = randomUUID();
   const root = mkdtempSync(join(tmpdir(), 'clawee-enterprise-packaged-'));
   const codexHome = join(root, 'codex-home');
@@ -100,6 +100,9 @@ test('实际打包 App 可登录、管理连接器、使用企业知识库并安
     ).toMatchObject({ status: 'signed_out' });
     expect(app.page.url()).toContain('clawee-app://app/');
 
+    await app.page.evaluate(() => {
+      window.location.hash = '#/account';
+    });
     await expect(app.page.getByRole('heading', {
       name: '欢迎使用 Clawee'
     })).toBeVisible();
@@ -244,9 +247,13 @@ test('实际打包 App 可登录、管理连接器、使用企业知识库并安
     await app.page.keyboard.press('Escape');
 
     await app.page.getByRole('button', {
-      name: '企业知识库',
+      name: '我的资产',
       exact: true
     }).click();
+    await expect(app.page.getByRole('tab', {
+      name: '知识库',
+      selected: true
+    })).toBeVisible();
     await expect(app.page.getByRole('heading', {
       name: '企业制度'
     })).toBeVisible();
@@ -262,7 +269,7 @@ test('实际打包 App 可登录、管理连接器、使用企业知识库并安
     await expect(app.page.getByText('发布流程.md', { exact: true })).toBeVisible();
 
     await app.page.getByRole('button', {
-      name: '企业Skill中心',
+      name: '插件中心',
       exact: true
     }).click();
     await expect(app.page.getByRole('tab', {

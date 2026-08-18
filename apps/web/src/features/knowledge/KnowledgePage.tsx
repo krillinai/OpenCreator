@@ -1,15 +1,15 @@
 import type {
   EnterpriseKnowledgeBaseResponse,
-  EnterpriseKnowledgeDocumentResponse,
-  EnterpriseSessionResponse
+  EnterpriseKnowledgeDocumentResponse
 } from '@clawee/protocol';
 import {
   ArrowLeft,
+  BookOpenText,
+  File,
+  FileSpreadsheet,
   FileText,
-  FolderOpen,
+  Folder,
   LoaderCircle,
-  LogIn,
-  MessageSquareText,
   RefreshCw,
   Upload,
   WifiOff
@@ -21,6 +21,8 @@ import {
   type ChangeEvent,
   type ReactNode
 } from 'react';
+import { useAppLanguage } from '../../i18n/LanguageProvider.js';
+import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import './knowledge.css';
 
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
@@ -41,7 +43,6 @@ export type KnowledgeUploadState = {
 
 export type KnowledgePageProps = {
   connected: boolean;
-  session: EnterpriseSessionResponse;
   knowledgeBases?: EnterpriseKnowledgeBaseResponse[];
   knowledgeBasesLoading: boolean;
   knowledgeBasesError?: string;
@@ -51,14 +52,14 @@ export type KnowledgePageProps = {
   documentsError?: string;
   upload?: KnowledgeUploadState;
   uploadNotice?: string;
-  onOpenAccount(): void;
   onRefresh(): void;
-  onStartConversation(): void;
   onSelectKnowledgeBase(knowledgeBaseId: string): void;
   onUpload(file: File): void;
 };
 
 export function KnowledgePage(props: KnowledgePageProps) {
+  const { language } = useAppLanguage();
+  const l = useLocalizedCopy();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [mobileDocumentsOpen, setMobileDocumentsOpen] = useState(false);
   const [fileSelectionError, setFileSelectionError] = useState<string>();
@@ -66,6 +67,11 @@ export function KnowledgePage(props: KnowledgePageProps) {
     item => item.knowledgeBaseId === props.selectedKnowledgeBaseId
   );
   const uploadInProgress = props.upload?.status === 'uploading';
+  const knowledgeBaseCount = props.knowledgeBases?.length ?? 0;
+  const documentCount = props.knowledgeBases?.reduce(
+    (total, item) => total + item.documentCount,
+    0
+  ) ?? 0;
 
   useEffect(() => {
     if (props.selectedKnowledgeBaseId === undefined) {
@@ -89,7 +95,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (file === undefined) return;
-    const error = validateFile(file);
+    const error = validateFile(file, l);
     if (error !== undefined) {
       setFileSelectionError(error);
       return;
@@ -101,43 +107,10 @@ export function KnowledgePage(props: KnowledgePageProps) {
   if (!props.connected) {
     return (
       <KnowledgeGate
+        heading={l('知识库', 'Knowledge')}
         icon={<WifiOff size={22} aria-hidden="true" />}
-        title="正在等待本地 Runtime"
-        detail="企业知识库暂不可用，本地工作区仍可继续使用。"
-      />
-    );
-  }
-
-  if (props.session.status === 'checking') {
-    return (
-      <KnowledgeGate
-        icon={<LoaderCircle className="knowledge-spinner" size={22} aria-hidden="true" />}
-        title="正在验证企业会话"
-        detail="验证完成后会自动加载当前账户可访问的知识库。"
-      />
-    );
-  }
-
-  if (props.session.status === 'service_unavailable') {
-    return (
-      <KnowledgeGate
-        icon={<WifiOff size={22} aria-hidden="true" />}
-        title="企业知识服务暂时不可用"
-        detail="服务恢复后可重新加载，不影响本地项目和任务。"
-        actionLabel="重新加载"
-        onAction={props.onRefresh}
-      />
-    );
-  }
-
-  if (props.session.status !== 'signed_in') {
-    return (
-      <KnowledgeGate
-        icon={<LogIn size={22} aria-hidden="true" />}
-        title="登录后访问企业知识库"
-        detail="知识库和文档范围由当前企业账户权限决定。"
-        actionLabel="登录企业账户"
-        onAction={props.onOpenAccount}
+        title={l('正在等待本地 Runtime', 'Waiting for the local runtime')}
+        detail={l('知识库暂不可用，本地工作区仍可继续使用。', 'Knowledge is temporarily unavailable. You can keep working in local projects.')}
       />
     );
   }
@@ -146,24 +119,20 @@ export function KnowledgePage(props: KnowledgePageProps) {
     <main className="knowledge-page">
       <div className="knowledge-page__inner">
         <header className="knowledge-header">
-          <div>
-            <h1>企业知识库</h1>
-            <p>查看当前账户有权访问的知识库和文档</p>
+          <div className="knowledge-header__copy">
+            <h1>{l('知识库', 'Knowledge')}</h1>
+            <p>{l('整理脚本、参考资料和创作知识', 'Organize scripts, references, and creative knowledge')}</p>
           </div>
           <div className="knowledge-header__actions">
-            <button
-              className="knowledge-view-toggle"
-              type="button"
-              onClick={props.onStartConversation}
-            >
-              <MessageSquareText size={16} aria-hidden="true" />
-              <span>对话知识库</span>
-            </button>
+            <div className="knowledge-summary" aria-label={l('知识库概览', 'Knowledge overview')}>
+              <span><strong>{knowledgeBaseCount}</strong> {l('个资料集合', 'collections')}</span>
+              <span><strong>{documentCount}</strong> {l('份文档', 'documents')}</span>
+            </div>
             <button
               className="knowledge-icon-button"
               type="button"
-              aria-label="刷新企业知识库"
-              title="刷新"
+              aria-label={l('刷新知识库', 'Refresh knowledge')}
+              title={l('刷新', 'Refresh')}
               onClick={props.onRefresh}
             >
               <RefreshCw size={16} aria-hidden="true" />
@@ -181,21 +150,21 @@ export function KnowledgePage(props: KnowledgePageProps) {
           className="knowledge-workbench"
           data-mobile-documents-open={mobileDocumentsOpen}
         >
-          <nav className="knowledge-library-pane" aria-label="授权知识库">
+          <nav className="knowledge-library-pane" aria-label={l('资料集合', 'Collections')}>
             <div className="knowledge-pane-heading">
               <div>
-                <h2>知识库</h2>
-                <span>{props.knowledgeBases?.length ?? 0} 个可访问项</span>
+                <h2>{l('资料集合', 'Collections')}</h2>
+                <span>{knowledgeBaseCount} {l('个集合', 'collections')}</span>
               </div>
             </div>
 
             {props.knowledgeBasesLoading && props.knowledgeBases === undefined ? (
-              <KnowledgeLoading label="正在加载知识库" />
+              <KnowledgeLoading label={l('正在加载知识库', 'Loading knowledge')} />
             ) : (props.knowledgeBases?.length ?? 0) === 0 ? (
               <KnowledgeEmpty
-                icon={<FolderOpen size={22} aria-hidden="true" />}
-                title="暂无可访问知识库"
-                detail="当前账户没有知识库读取权限，或企业目录暂时为空。"
+                icon={<Folder size={22} aria-hidden="true" />}
+                title={l('还没有资料集合', 'No collections yet')}
+                detail={l('添加资料后，集合会显示在这里。', 'Collections will appear here after you add source material.')}
               />
             ) : (
               <ul className="knowledge-library-list">
@@ -213,16 +182,17 @@ export function KnowledgePage(props: KnowledgePageProps) {
                         knowledgeBase.knowledgeBaseId
                       )}
                     >
-                      <span className="knowledge-library-list__title">
-                        <strong>{knowledgeBase.name}</strong>
-                        <small>{knowledgeBase.documentCount} 个文档</small>
+                      <span className="knowledge-library-list__icon" aria-hidden="true">
+                        <BookOpenText size={17} />
                       </span>
-                      <span className="knowledge-library-list__description">
-                        {knowledgeBase.description || '暂无说明'}
-                      </span>
-                      <span className="knowledge-library-list__meta">
-                        <KnowledgeStatus value={knowledgeBase.status} kind="library" />
-                        {knowledgeBase.permissions.upload ? <em>可上传</em> : null}
+                      <span className="knowledge-library-list__body">
+                        <span className="knowledge-library-list__title">
+                          <strong>{knowledgeBase.name}</strong>
+                          <small>{knowledgeBase.documentCount} {l('份', 'items')}</small>
+                        </span>
+                        <span className="knowledge-library-list__description">
+                          {knowledgeBase.description || l('暂未添加说明', 'No description')}
+                        </span>
                       </span>
                     </button>
                   </li>
@@ -231,12 +201,12 @@ export function KnowledgePage(props: KnowledgePageProps) {
             )}
           </nav>
 
-          <section className="knowledge-documents-pane" aria-label="知识库文档">
+          <section className="knowledge-documents-pane" aria-label={l('知识库文档', 'Knowledge documents')}>
             {selectedKnowledgeBase === undefined ? (
               <KnowledgeEmpty
                 icon={<FileText size={22} aria-hidden="true" />}
-                title="选择知识库"
-                detail="选择左侧知识库后查看其中的文档和处理状态。"
+                title={l('选择资料集合', 'Select a collection')}
+                detail={l('选择左侧集合后查看其中的文档和处理状态。', 'Select a collection to view its documents and processing status.')}
               />
             ) : (
               <>
@@ -244,13 +214,14 @@ export function KnowledgePage(props: KnowledgePageProps) {
                   <button
                     className="knowledge-mobile-back"
                     type="button"
-                    aria-label="返回知识库列表"
+                    aria-label={l('返回知识库列表', 'Back to collections')}
                     onClick={() => setMobileDocumentsOpen(false)}
                   >
                     <ArrowLeft size={17} aria-hidden="true" />
                   </button>
                   <div className="knowledge-documents-heading">
                     <h2>{selectedKnowledgeBase.name}</h2>
+                    <p>{selectedKnowledgeBase.documentCount} {l('份资料', 'documents')}</p>
                   </div>
                   {selectedKnowledgeBase.permissions.upload ? (
                     <>
@@ -258,7 +229,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
                         ref={fileInputRef}
                         className="knowledge-file-input"
                         type="file"
-                        aria-label="选择知识库文档"
+                        aria-label={l('选择知识库文档', 'Choose a knowledge document')}
                         accept=".pdf,.docx,.md,.txt,.xlsx,.csv"
                         disabled={uploadInProgress}
                         onChange={handleFileSelection}
@@ -279,7 +250,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
                           <Upload size={16} aria-hidden="true" />
                         )}
                         <span>
-                          {uploadInProgress ? '上传中' : '上传文档'}
+                          {uploadInProgress ? l('上传中', 'Uploading') : l('上传文档', 'Upload document')}
                         </span>
                       </button>
                     </>
@@ -309,50 +280,54 @@ export function KnowledgePage(props: KnowledgePageProps) {
 
                 <div className="knowledge-document-content">
                   {props.documentsLoading && props.documents === undefined ? (
-                    <KnowledgeLoading label="正在加载文档" />
+                    <KnowledgeLoading label={l('正在加载文档', 'Loading documents')} />
                   ) : (props.documents?.length ?? 0) === 0 ? (
                     <KnowledgeEmpty
                       icon={<FileText size={22} aria-hidden="true" />}
-                      title="暂无文档"
+                      title={l('暂无文档', 'No documents')}
                       detail={
                         selectedKnowledgeBase.permissions.upload
-                          ? '可以上传首个文档，处理完成后会在此显示状态。'
-                          : '该知识库当前没有可显示的文档。'
+                          ? l('可以上传首个文档，处理完成后会在此显示状态。', 'Upload the first document. Its status will appear here after processing.')
+                          : l('该知识库当前没有可显示的文档。', 'There are no documents to display in this collection.')
                       }
                     />
                   ) : (
-                    <div className="knowledge-document-table-wrap">
-                      <table className="knowledge-document-table">
-                        <thead>
-                          <tr>
-                            <th>文档</th>
-                            <th>状态</th>
-                            <th>大小</th>
-                            <th>更新时间</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {props.documents!.map(document => (
-                            <tr key={document.documentId}>
-                              <td>
-                                <strong>{document.name}</strong>
-                                {document.errorMessage ? (
-                                  <small>{document.errorMessage}</small>
-                                ) : null}
-                              </td>
-                              <td>
-                                <KnowledgeStatus
-                                  value={document.status}
-                                  kind="document"
-                                />
-                              </td>
-                              <td>{formatBytes(document.sizeBytes)}</td>
-                              <td>{formatDate(document.updatedAt)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <ul className="knowledge-document-list" aria-label={l('文档列表', 'Document list')}>
+                      {props.documents!.map(document => (
+                        <li key={document.documentId}>
+                          <span className="knowledge-document-list__icon" aria-hidden="true">
+                            <KnowledgeFileIcon
+                              name={document.name}
+                              mimeType={document.mimeType}
+                            />
+                          </span>
+                          <span className="knowledge-document-list__main">
+                            <strong>{document.name}</strong>
+                            {document.errorMessage ? (
+                              <small data-error="true">{document.errorMessage}</small>
+                            ) : (
+                              <small>{fileTypeLabel(document.name, l)}</small>
+                            )}
+                          </span>
+                          <span className="knowledge-document-list__status">
+                            <KnowledgeStatus
+                              value={document.status}
+                              kind="document"
+                              localize={l}
+                            />
+                          </span>
+                          <span className="knowledge-document-list__size">
+                            {formatBytes(document.sizeBytes)}
+                          </span>
+                          <time
+                            className="knowledge-document-list__date"
+                            dateTime={document.updatedAt}
+                          >
+                            {formatDate(document.updatedAt, language)}
+                          </time>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               </>
@@ -365,6 +340,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
 }
 
 function KnowledgeGate(props: {
+  heading: string;
   icon: ReactNode;
   title: string;
   detail: string;
@@ -374,7 +350,7 @@ function KnowledgeGate(props: {
   return (
     <main className="knowledge-page">
       <div className="knowledge-gate">
-        <h1>企业知识库</h1>
+        <h1>{props.heading}</h1>
         <span aria-hidden="true">{props.icon}</span>
         <h2>{props.title}</h2>
         <p>{props.detail}</p>
@@ -414,9 +390,10 @@ function KnowledgeEmpty(props: {
 function KnowledgeStatus(props: {
   value: string;
   kind: 'library' | 'document';
+  localize: LocalizeCopy;
 }) {
   const normalized = props.value.trim().toLowerCase();
-  const presentation = statusPresentation(normalized, props.kind);
+  const presentation = statusPresentation(normalized, props.kind, props.localize);
   return (
     <span
       className="knowledge-status"
@@ -428,37 +405,62 @@ function KnowledgeStatus(props: {
   );
 }
 
-function statusPresentation(
-  value: string,
-  kind: 'library' | 'document'
-): { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' } {
-  if (kind === 'library') {
-    if (value === 'active') return { label: '可用', tone: 'success' };
-    if (value === 'inactive' || value === 'disabled') {
-      return { label: '不可用', tone: 'neutral' };
-    }
-    return { label: '状态未知', tone: 'neutral' };
+function KnowledgeFileIcon(props: { name: string; mimeType: string }) {
+  const extension = fileExtension(props.name);
+  const mimeType = props.mimeType.toLowerCase();
+  if (extension === 'csv' || extension === 'xlsx' || mimeType.includes('spreadsheet')) {
+    return <FileSpreadsheet size={19} />;
   }
-  if (value === 'ready') return { label: '可用', tone: 'success' };
-  if (value === 'processing' || value === 'pending') {
-    return { label: '处理中', tone: 'warning' };
+  if (['docx', 'md', 'pdf', 'txt'].includes(extension)) {
+    return <FileText size={19} />;
   }
-  if (value === 'failed' || value === 'error') {
-    return { label: '处理失败', tone: 'danger' };
-  }
-  return { label: '状态未知', tone: 'neutral' };
+  return <File size={19} />;
 }
 
-function validateFile(file: File): string | undefined {
+function fileExtension(name: string): string {
+  const dotIndex = name.lastIndexOf('.');
+  return dotIndex < 0 ? '' : name.slice(dotIndex + 1).toLowerCase();
+}
+
+function fileTypeLabel(name: string, l: LocalizeCopy): string {
+  const extension = fileExtension(name);
+  return extension.length > 0
+    ? `${extension.toUpperCase()} ${l('文档', 'document')}`
+    : l('文档', 'Document');
+}
+
+function statusPresentation(
+  value: string,
+  kind: 'library' | 'document',
+  l: LocalizeCopy
+): { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' } {
+  if (kind === 'library') {
+    if (value === 'active') return { label: l('可用', 'Available'), tone: 'success' };
+    if (value === 'inactive' || value === 'disabled') {
+      return { label: l('不可用', 'Unavailable'), tone: 'neutral' };
+    }
+    return { label: l('状态未知', 'Unknown status'), tone: 'neutral' };
+  }
+  if (value === 'ready') return { label: l('可用', 'Available'), tone: 'success' };
+  if (value === 'processing' || value === 'pending') {
+    return { label: l('处理中', 'Processing'), tone: 'warning' };
+  }
+  if (value === 'failed' || value === 'error') {
+    return { label: l('处理失败', 'Processing failed'), tone: 'danger' };
+  }
+  return { label: l('状态未知', 'Unknown status'), tone: 'neutral' };
+}
+
+function validateFile(file: File, l: LocalizeCopy): string | undefined {
   const dotIndex = file.name.lastIndexOf('.');
   const extension =
     dotIndex < 0 ? '' : file.name.slice(dotIndex).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(extension)) {
-    return '仅支持 PDF、DOCX、Markdown、TXT、XLSX 和 CSV 文件。';
+    return l('仅支持 PDF、DOCX、Markdown、TXT、XLSX 和 CSV 文件。', 'Only PDF, DOCX, Markdown, TXT, XLSX, and CSV files are supported.');
   }
-  if (file.size <= 0) return '不能上传空文件。';
+  if (file.size <= 0) return l('不能上传空文件。', 'Empty files cannot be uploaded.');
   if (file.size > MAX_DOCUMENT_BYTES) {
-    return '单个文档不能超过 50 MiB。';
+    return l('单个文档不能超过 50 MiB。', 'A document cannot exceed 50 MiB.');
   }
   return undefined;
 }
@@ -469,10 +471,10 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, language: 'zh-CN' | 'en-US'): string {
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return '时间未知';
-  return new Intl.DateTimeFormat('zh-CN', {
+  if (!Number.isFinite(timestamp)) return language === 'en-US' ? 'Unknown time' : '时间未知';
+  return new Intl.DateTimeFormat(language, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

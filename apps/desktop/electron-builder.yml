@@ -1,5 +1,5 @@
 appId: com.clawee.desktop
-productName: Clawee
+productName: OpenCreator
 asar: true
 npmRebuild: false
 electronFuses:
@@ -47,7 +47,7 @@ extraResources:
   - from: resources
     to: desktop-resources
 protocols:
-  - name: Clawee
+  - name: OpenCreator
     schemes:
       - clawee
 publish:

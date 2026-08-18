@@ -7,6 +7,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import type { SkillMarketViewEntry } from './skill-market-model.js';
 import {
   getSkillMarketAction,
@@ -40,6 +41,7 @@ export function SkillDetailModal({
   onUpdate(skillId: string): void;
   onUse(skillId: string): void;
 }) {
+  const l = useLocalizedCopy();
   const dialogRef = useRef<HTMLElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const previewOpenRef = useRef(false);
@@ -50,9 +52,9 @@ export function SkillDetailModal({
   const action = getSkillMarketAction(item.status, connected, {
     mutationLocked,
     skillsKnown,
-  });
+  }, l);
   const actionReasonId = action.reason ? `skill-market-modal-action-reason-${sanitizeId(item.id)}` : undefined;
-  const riskNotes = getRiskNotes(item);
+  const riskNotes = getRiskNotes(item, l);
   const detailTags = getDetailTags(item);
 
   useEffect(() => {
@@ -139,10 +141,10 @@ export function SkillDetailModal({
             </div>
           </div>
           <button
-            aria-label="关闭详情"
+            aria-label={l('关闭详情', 'Close details')}
             className="skill-market-detail-head__close"
             onClick={onClose}
-            title="关闭详情"
+            title={l('关闭详情', 'Close details')}
             type="button"
           >
             <X size={17} aria-hidden="true" />
@@ -157,7 +159,7 @@ export function SkillDetailModal({
             <section className="skill-market-detail-block skill-market-detail-description">
               <p>{item.entry.summary || item.entry.tagline}</p>
               {detailTags.length > 0 ? (
-                <div className="skill-market-detail-chip-list" aria-label="适合场景">
+                <div className="skill-market-detail-chip-list" aria-label={l('适合场景', 'Use cases')}>
                   {detailTags.map((task) => (
                     <span key={task}>{task}</span>
                   ))}
@@ -166,15 +168,15 @@ export function SkillDetailModal({
             </section>
 
             <section className="skill-market-detail-block skill-market-detail-workflow-section">
-              <h3 className="skill-market-visually-hidden">输入与产出</h3>
+              <h3 className="skill-market-visually-hidden">{l('输入与产出', 'Inputs and outputs')}</h3>
               <div className="skill-market-detail-workflow">
-                <DetailList title="输入" items={item.entry.inputs} />
-                <DetailList title="产出" items={item.entry.outputs} />
+                <DetailList title={l('输入', 'Inputs')} items={item.entry.inputs} />
+                <DetailList title={l('产出', 'Outputs')} items={item.entry.outputs} />
               </div>
             </section>
 
             <section className="skill-market-detail-block skill-market-detail-examples">
-              <h3>精选案例</h3>
+              <h3>{l('精选案例', 'Examples')}</h3>
               {item.entry.examples.length > 0 ? (
                 <div
                   className={`skill-market-case-list ${item.entry.examples.length > 3 ? 'skill-market-case-list--scrollable' : ''}`}
@@ -182,7 +184,7 @@ export function SkillDetailModal({
                   {item.entry.examples.map((example) => (
                     <article key={`${example.title}-${example.url}`} className="skill-market-case">
                       <button
-                        aria-label={`预览 ${example.title}`}
+                        aria-label={`${l('预览', 'Preview')} ${example.title}`}
                         className="skill-market-case__preview"
                         onClick={(event) => {
                           previewTriggerRef.current = event.currentTarget;
@@ -199,14 +201,14 @@ export function SkillDetailModal({
                   ))}
                 </div>
               ) : (
-                <p className="skill-market-muted">GitHub 仓库暂未提供可用案例图。</p>
+                <p className="skill-market-muted">{l('GitHub 仓库暂未提供可用案例图。', 'No example images are available from this GitHub repository.')}</p>
               )}
             </section>
 
             <section className="skill-market-detail-risk">
               <h3>
                 <ShieldAlert size={16} aria-hidden="true" />
-                使用前注意
+                {l('使用前注意', 'Before you use this Skill')}
               </h3>
               <DetailItems items={riskNotes} />
             </section>
@@ -219,7 +221,7 @@ export function SkillDetailModal({
           ) : null}
           {useError ? (
             <p className="skill-market-inline-error" role="alert">
-              使用失败：{useError}
+              {l('使用失败：', 'Could not use Skill: ')}{useError}
             </p>
           ) : null}
         </div>
@@ -229,7 +231,7 @@ export function SkillDetailModal({
           className="skill-market-modal__footer"
         >
           <span className="skill-market-action-hint" id={actionReasonId}>
-            {action.reason || (!connected ? '需要连接 Runtime 后才能安装、更新或使用。' : '')}
+            {action.reason || (!connected ? l('需要连接 Runtime 后才能安装、更新或使用。', 'Connect the runtime to install, update, or use this Skill.') : '')}
           </span>
           <div className="skill-market-modal__actions">
             <button
@@ -261,6 +263,7 @@ function SkillExampleMedia({
   example: SkillMarketViewEntry['entry']['examples'][number];
   preview?: boolean;
 }) {
+  const l = useLocalizedCopy();
   const source = normalizeSkillMarketAssetUrl(example.url);
   const [failed, setFailed] = useState(source === undefined);
 
@@ -281,7 +284,7 @@ function SkillExampleMedia({
 
   return (
     <img
-      alt={failed ? `${example.title}案例图暂不可用` : example.title}
+      alt={failed ? `${example.title} ${l('案例图暂不可用', 'example image unavailable')}` : example.title}
       className={`skill-market-case__media ${preview ? 'skill-market-case__media--preview' : ''}`}
       decoding="async"
       loading={preview ? 'eager' : 'lazy'}
@@ -298,6 +301,7 @@ function SkillExamplePreview({
   example: SkillMarketViewEntry['entry']['examples'][number];
   onClose(): void;
 }) {
+  const l = useLocalizedCopy();
   const closeRef = useRef<HTMLButtonElement>(null);
   const source = normalizeSkillMarketAssetUrl(example.url);
 
@@ -313,7 +317,7 @@ function SkillExamplePreview({
       }}
     >
       <section
-        aria-label={`预览 ${example.title}`}
+        aria-label={`${l('预览', 'Preview')} ${example.title}`}
         aria-modal="true"
         className="skill-market-example-preview"
         role="dialog"
@@ -324,14 +328,14 @@ function SkillExamplePreview({
             {source ? (
               <a href={source} rel="noreferrer" target="_blank">
                 <ExternalLink size={14} aria-hidden="true" />
-                <span>查看 GitHub 原图</span>
+                <span>{l('查看 GitHub 原图', 'View original on GitHub')}</span>
               </a>
             ) : null}
             <button
-              aria-label="关闭图片预览"
+              aria-label={l('关闭图片预览', 'Close image preview')}
               onClick={onClose}
               ref={closeRef}
-              title="关闭图片预览"
+              title={l('关闭图片预览', 'Close image preview')}
               type="button"
             >
               <X size={18} aria-hidden="true" />
@@ -353,6 +357,7 @@ function DetailList({
   title: string;
   items: readonly string[];
 }) {
+  const l = useLocalizedCopy();
   return (
     <div className="skill-market-detail-list">
       <h4>{title}</h4>
@@ -361,14 +366,15 @@ function DetailList({
           {items.slice(0, 6).map((item) => <span key={item}>{item}</span>)}
         </div>
       ) : (
-        <p className="skill-market-muted">暂无明确说明。</p>
+        <p className="skill-market-muted">{l('暂无明确说明。', 'No details provided.')}</p>
       )}
     </div>
   );
 }
 
 function DetailItems({ items }: { items: readonly string[] }) {
-  if (items.length === 0) return <p className="skill-market-muted">暂无明确说明。</p>;
+  const l = useLocalizedCopy();
+  if (items.length === 0) return <p className="skill-market-muted">{l('暂无明确说明。', 'No details provided.')}</p>;
   return (
     <ul>
       {items.slice(0, 6).map((item) => (
@@ -378,14 +384,14 @@ function DetailItems({ items }: { items: readonly string[] }) {
   );
 }
 
-function getRiskNotes(item: SkillMarketViewEntry): string[] {
+function getRiskNotes(item: SkillMarketViewEntry, l: LocalizeCopy): string[] {
   const notes = [...item.entry.risks.notes];
-  if (item.entry.risks.requiresLogin) notes.unshift('需要登录第三方平台。');
-  if (item.entry.risks.requiresApiKey) notes.unshift('需要配置 API Key。');
-  if (item.entry.risks.externalWrite) notes.unshift('可能写入外部平台。');
-  if (item.entry.risks.readsLocalFiles) notes.unshift('会读取本地文件，请确认资料范围。');
-  if (item.entry.risks.privateDataRisk) notes.unshift('涉及私密资料时需先脱敏。');
-  return notes.length > 0 ? notes : ['使用前确认输入资料、版权和发布平台要求。'];
+  if (item.entry.risks.requiresLogin) notes.unshift(l('需要登录第三方平台。', 'Requires signing in to a third-party platform.'));
+  if (item.entry.risks.requiresApiKey) notes.unshift(l('需要配置 API Key。', 'Requires an API key.'));
+  if (item.entry.risks.externalWrite) notes.unshift(l('可能写入外部平台。', 'May write data to an external platform.'));
+  if (item.entry.risks.readsLocalFiles) notes.unshift(l('会读取本地文件，请确认资料范围。', 'Reads local files. Confirm the scope before use.'));
+  if (item.entry.risks.privateDataRisk) notes.unshift(l('涉及私密资料时需先脱敏。', 'Remove sensitive information before use.'));
+  return notes.length > 0 ? notes : [l('使用前确认输入资料、版权和发布平台要求。', 'Confirm input data, copyright, and publishing requirements before use.')];
 }
 
 function getDetailTags(item: SkillMarketViewEntry): string[] {

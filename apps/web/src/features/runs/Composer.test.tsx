@@ -3,6 +3,7 @@ import { userEvent } from '@testing-library/user-event';
 import { StrictMode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CodexModelResponse } from '@clawee/protocol';
+import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { Composer } from './Composer.js';
 
 const projects = [
@@ -106,6 +107,25 @@ describe('Composer', () => {
     expect(screen.queryByText('本地模式')).not.toBeInTheDocument();
     expect(screen.queryByText('open-clawee')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('输入 / 调用插件')).toBeInTheDocument();
+  });
+
+  it('renders the empty composer controls in English without mixed-language labels', () => {
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <Composer {...defaultProps} permission="workspace-write" projectName="No project selected" />
+      </LanguageProvider>
+    );
+
+    expect(screen.getByRole('button', { name: 'Select project No project selected' }))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select access level: Ask for approval' }))
+      .toHaveAttribute('title', 'Change project access');
+    expect(screen.getByRole('button', { name: 'Select model: Default model' }))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add context' }))
+      .toHaveAttribute('title', 'Add files and more');
+    expect(screen.getByPlaceholderText('Type a message or use a plugin')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   });
 
   it('hides the project selector for a project-independent task draft', () => {

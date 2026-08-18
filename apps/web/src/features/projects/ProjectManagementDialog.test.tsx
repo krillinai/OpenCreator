@@ -176,7 +176,7 @@ describe('ProjectManagementDialog', () => {
 
     await user.click(screen.getByRole('button', { name: '移除' }));
     expect(screen.getByRole('alertdialog', { name: '移除项目' })).toBeInTheDocument();
-    expect(screen.getByText('确认从 Clawee 中移除“内容项目”？项目目录和文件不会被删除。'))
+    expect(screen.getByText('确认从 OpenCreator 中移除“内容项目”？项目目录和文件不会被删除。'))
       .toBeInTheDocument();
     expect(onArchive).not.toHaveBeenCalled();
 

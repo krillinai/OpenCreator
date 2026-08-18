@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 
 export function ConfirmDialog(props: {
   open: boolean;
@@ -13,6 +14,7 @@ export function ConfirmDialog(props: {
   onConfirm(): void;
   onCancel(): void;
 }) {
+  const { t } = useAppLanguage();
   const titleId = useId();
   const descriptionId = useId();
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -58,7 +60,7 @@ export function ConfirmDialog(props: {
             disabled={props.busy}
             onClick={props.onCancel}
           >
-            {props.cancelLabel ?? '取消'}
+            {props.cancelLabel ?? t('common.cancel')}
           </button>
           <button
             type="button"
@@ -66,7 +68,7 @@ export function ConfirmDialog(props: {
             disabled={props.busy}
             onClick={props.onConfirm}
           >
-            {props.busy ? '处理中' : props.confirmLabel}
+            {props.busy ? t('common.processing') : props.confirmLabel}
           </button>
         </footer>
       </section>

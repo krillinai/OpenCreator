@@ -7,6 +7,7 @@ import { FolderCog, FolderMinus, FolderPlus, RefreshCw, Save, X } from 'lucide-r
 import { useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
 import type { ClaweeProject } from './project-model.js';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 const reasoningOptions: Array<{ value: '' | ReasoningEffort; label: string }> = [
   { value: '', label: '默认' },
@@ -33,6 +34,7 @@ export function ProjectManagementDialog(props: {
   onAddProject?(): void | Promise<void>;
   onAddProjectDirectory?(): void | Promise<void>;
 }) {
+  const l = useLocalizedCopy();
   const [editingProjectId, setEditingProjectId] = useState<string>();
   const [projectPendingRemoval, setProjectPendingRemoval] = useState<ClaweeProject>();
   const [removingProjectId, setRemovingProjectId] = useState<string>();
@@ -70,14 +72,14 @@ export function ProjectManagementDialog(props: {
         className="project-management-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="项目管理"
+        aria-label={l('项目管理', 'Project management')}
       >
         <header>
           <div>
-            <h2>项目管理</h2>
-            <p>管理项目目录、默认配置和会话归属。</p>
+            <h2>{l('项目管理', 'Project management')}</h2>
+            <p>{l('管理项目目录、默认配置和会话归属。', 'Manage project folders, defaults, and conversation assignment.')}</p>
           </div>
-          <button type="button" className="icon-button" aria-label="关闭项目管理" onClick={props.onClose}>
+          <button type="button" className="icon-button" aria-label={l('关闭项目管理', 'Close project management')} onClick={props.onClose}>
             <X size={18} aria-hidden="true" />
           </button>
         </header>
@@ -86,24 +88,26 @@ export function ProjectManagementDialog(props: {
 
         <div className="project-management-body">
           <section aria-labelledby="active-projects-title">
-            <h3 id="active-projects-title">活跃项目</h3>
+            <div className="project-management-section-heading">
+              <h3 id="active-projects-title">{l('活跃项目', 'Active projects')}</h3>
+              <div className="project-management-actions">
+                {props.onAddProject ? (
+                  <button type="button" onClick={() => void props.onAddProject?.()}>
+                    <FolderPlus size={15} aria-hidden="true" />
+                    <span>{l('创建项目', 'Create project')}</span>
+                  </button>
+                ) : null}
+                {props.onAddProjectDirectory ? (
+                  <button type="button" onClick={() => void props.onAddProjectDirectory?.()}>
+                    <FolderPlus size={15} aria-hidden="true" />
+                    <span>{l('使用现有文件夹', 'Use existing folder')}</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
             {props.projects.length === 0 ? (
               <div className="project-management-empty project-management-empty-action">
-                <p>还没有项目。创建项目后即可开始对话或认领已有会话。</p>
-                <div className="project-management-actions">
-                  {props.onAddProject ? (
-                    <button type="button" onClick={() => void props.onAddProject?.()}>
-                      <FolderPlus size={15} aria-hidden="true" />
-                      <span>创建项目</span>
-                    </button>
-                  ) : null}
-                  {props.onAddProjectDirectory ? (
-                    <button type="button" onClick={() => void props.onAddProjectDirectory?.()}>
-                      <FolderPlus size={15} aria-hidden="true" />
-                      <span>使用现有文件夹</span>
-                    </button>
-                  ) : null}
-                </div>
+                <p>{l('还没有项目。创建项目后即可开始对话或认领已有会话。', 'No projects yet. Create one to start working or assign existing conversations.')}</p>
               </div>
             ) : (
               <div className="project-management-list">
@@ -113,12 +117,12 @@ export function ProjectManagementDialog(props: {
                       <strong>{project.name}</strong>
                       <span>{project.cwd}</span>
                       {project.directoryState === 'missing' ? (
-                        <span className="project-directory-warning">目录不可用</span>
+                        <span className="project-directory-warning">{l('目录不可用', 'Folder unavailable')}</span>
                       ) : null}
                     </div>
                     <div className="project-management-actions">
                       <button type="button" onClick={() => setEditingProjectId(project.id)}>
-                        编辑
+                        {l('编辑', 'Edit')}
                       </button>
                       {props.onReplaceDirectory ? (
                         <button
@@ -126,7 +130,7 @@ export function ProjectManagementDialog(props: {
                           onClick={() => void props.onReplaceDirectory?.(project.id)}
                         >
                           <FolderCog size={15} aria-hidden="true" />
-                          <span>{project.directoryState === 'missing' ? '修复目录' : '更换目录'}</span>
+                          <span>{project.directoryState === 'missing' ? l('修复目录', 'Repair folder') : l('更换目录', 'Change folder')}</span>
                         </button>
                       ) : null}
                       <button
@@ -135,7 +139,7 @@ export function ProjectManagementDialog(props: {
                         onClick={() => setProjectPendingRemoval(project)}
                       >
                         <FolderMinus size={15} aria-hidden="true" />
-                        <span>移除</span>
+                        <span>{l('移除', 'Remove')}</span>
                       </button>
                     </div>
                   </article>
@@ -158,16 +162,16 @@ export function ProjectManagementDialog(props: {
           ) : null}
 
           <section aria-labelledby="unassigned-threads-title">
-            <h3 id="unassigned-threads-title">待归属会话</h3>
+            <h3 id="unassigned-threads-title">{l('待归属会话', 'Unassigned conversations')}</h3>
             {props.unassignedThreads.length === 0 ? (
-              <p className="project-management-empty">没有待归属会话</p>
+              <p className="project-management-empty">{l('没有待归属会话', 'No unassigned conversations')}</p>
             ) : props.projects.length === 0 ? (
               <div className="project-management-empty project-management-empty-action">
-                <p>有 {props.unassignedThreads.length} 个待归属会话。添加项目后即可认领。</p>
+                <p>{l(`有 ${props.unassignedThreads.length} 个待归属会话。添加项目后即可认领。`, `${props.unassignedThreads.length} conversations are unassigned. Add a project to assign them.`)}</p>
                 {props.onAddProject ? (
                   <button type="button" onClick={() => void props.onAddProject?.()}>
                     <FolderPlus size={15} aria-hidden="true" />
-                    <span>创建项目</span>
+                    <span>{l('创建项目', 'Create project')}</span>
                   </button>
                 ) : null}
               </div>
@@ -187,13 +191,13 @@ export function ProjectManagementDialog(props: {
                         <span>{thread.cwd}</span>
                         {directoryMismatch ? (
                           <span className="project-directory-warning">
-                            会话目录与目标项目不同，认领不会修改会话目录
+                            {l('会话目录与目标项目不同，认领不会修改会话目录', 'The conversation folder differs from the project. Assignment will not move it.')}
                           </span>
                         ) : null}
                       </div>
                       <div className="project-assignment-controls">
                         <select
-                          aria-label={`目标项目 ${thread.title?.trim() || thread.id}`}
+                          aria-label={`${l('目标项目', 'Target project')} ${thread.title?.trim() || thread.id}`}
                           value={targetProjectId}
                           onChange={event => {
                             const projectId = event.currentTarget.value;
@@ -212,7 +216,7 @@ export function ProjectManagementDialog(props: {
                           disabled={targetProjectId.length === 0 || props.busy}
                           onClick={() => void props.onAssignThread(thread.id, targetProjectId)}
                         >
-                          认领
+                          {l('认领', 'Assign')}
                         </button>
                       </div>
                     </article>
@@ -223,9 +227,9 @@ export function ProjectManagementDialog(props: {
           </section>
 
           <section aria-labelledby="archived-projects-title">
-            <h3 id="archived-projects-title">已移除项目</h3>
+            <h3 id="archived-projects-title">{l('已移除项目', 'Removed projects')}</h3>
             {props.archivedProjects.length === 0 ? (
-              <p className="project-management-empty">暂无已移除项目</p>
+              <p className="project-management-empty">{l('暂无已移除项目', 'No removed projects')}</p>
             ) : (
               <div className="project-management-list">
                 {props.archivedProjects.map(project => (
@@ -236,7 +240,7 @@ export function ProjectManagementDialog(props: {
                     </div>
                     <button type="button" onClick={() => void props.onRestore(project.id)}>
                       <RefreshCw size={15} aria-hidden="true" />
-                      <span>恢复</span>
+                      <span>{l('恢复', 'Restore')}</span>
                     </button>
                   </article>
                 ))}
@@ -247,11 +251,11 @@ export function ProjectManagementDialog(props: {
       </section>
       <ConfirmDialog
         open={projectPendingRemoval !== undefined}
-        title="移除项目"
+        title={l('移除项目', 'Remove project')}
         description={projectPendingRemoval === undefined
-          ? '项目目录和文件不会被删除。'
-          : `确认从 Clawee 中移除“${projectPendingRemoval.name}”？项目目录和文件不会被删除。`}
-        confirmLabel="移除项目"
+          ? l('项目目录和文件不会被删除。', 'The project folder and files will not be deleted.')
+          : l(`确认从 OpenCreator 中移除“${projectPendingRemoval.name}”？项目目录和文件不会被删除。`, `Remove "${projectPendingRemoval.name}" from OpenCreator? Its folder and files will not be deleted.`)}
+        confirmLabel={l('移除项目', 'Remove project')}
         destructive
         busy={removingProjectId !== undefined}
         onCancel={() => setProjectPendingRemoval(undefined)}
@@ -275,6 +279,7 @@ function ProjectEditForm(props: {
   onCancel(): void;
   onSave(input: UpdateProjectRequest): Promise<void>;
 }) {
+  const l = useLocalizedCopy();
   const [name, setName] = useState(props.project.name);
   const [profile, setProfile] = useState(props.project.profile);
   const [model, setModel] = useState(props.project.model ?? '');
@@ -294,9 +299,9 @@ function ProjectEditForm(props: {
         sandbox
       });
     }}>
-      <h3>编辑 {props.project.name}</h3>
+      <h3>{l('编辑', 'Edit')} {props.project.name}</h3>
       <label>
-        <span>名称</span>
+        <span>{l('名称', 'Name')}</span>
         <input value={name} onChange={event => setName(event.currentTarget.value)} />
       </label>
       <label>
@@ -304,19 +309,19 @@ function ProjectEditForm(props: {
         <input value={profile} onChange={event => setProfile(event.currentTarget.value)} />
       </label>
       <label>
-        <span>模型</span>
-        <input value={model} onChange={event => setModel(event.currentTarget.value)} placeholder="默认模型" />
+        <span>{l('模型', 'Model')}</span>
+        <input value={model} onChange={event => setModel(event.currentTarget.value)} placeholder={l('默认模型', 'Default model')} />
       </label>
       <label>
-        <span>推理强度</span>
+        <span>{l('推理强度', 'Reasoning effort')}</span>
         <select value={reasoning} onChange={event => setReasoning(event.currentTarget.value as '' | ReasoningEffort)}>
           {reasoningOptions.map(option => (
-            <option key={option.value} value={option.value}>{option.label}</option>
+            <option key={option.value} value={option.value}>{localizeReasoning(option.label, l)}</option>
           ))}
         </select>
       </label>
       <label>
-        <span>权限</span>
+        <span>{l('权限', 'Permission')}</span>
         <select
           value={normalizeProjectSandbox(sandbox)}
           onChange={event => {
@@ -325,7 +330,7 @@ function ProjectEditForm(props: {
               value === 'danger-full-access'
               && sandbox !== 'danger-full-access'
               && !window.confirm(
-                '完全访问权限允许 Clawee 访问本机文件并执行本地操作。确定要为此项目开启吗？'
+                l('完全访问权限允许 OpenCreator 访问本机文件并执行本地操作。确定要为此项目开启吗？', 'Full access allows OpenCreator to access local files and perform local operations. Enable it for this project?')
               )
             ) {
               return;
@@ -333,20 +338,25 @@ function ProjectEditForm(props: {
             setSandbox(value);
           }}
         >
-          <option value="follow-global">跟随全局</option>
-          <option value="workspace-write">请求批准</option>
-          <option value="danger-full-access">完全访问权限</option>
+          <option value="follow-global">{l('跟随全局', 'Follow global setting')}</option>
+          <option value="workspace-write">{l('请求批准', 'Ask for approval')}</option>
+          <option value="danger-full-access">{l('完全访问权限', 'Full access')}</option>
         </select>
       </label>
       <div className="project-edit-actions">
-        <button type="button" onClick={props.onCancel}>取消</button>
+        <button type="button" onClick={props.onCancel}>{l('取消', 'Cancel')}</button>
         <button type="submit" disabled={props.disabled || name.trim().length === 0 || profile.trim().length === 0}>
           <Save size={15} aria-hidden="true" />
-          <span>保存</span>
+          <span>{l('保存', 'Save')}</span>
         </button>
       </div>
     </form>
   );
+}
+
+function localizeReasoning(label: string, l: ReturnType<typeof useLocalizedCopy>): string {
+  const labels: Record<string, string> = { 默认: 'Default', 低: 'Low', 中: 'Medium', 高: 'High', 超高: 'Extra high' };
+  return l(label, labels[label] ?? label);
 }
 
 function normalizePath(value: string): string {

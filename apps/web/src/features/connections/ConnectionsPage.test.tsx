@@ -1,7 +1,6 @@
 import type {
   CodexMcpListResponse,
-  EnterpriseMcpCatalogResponse,
-  EnterpriseSessionResponse
+  EnterpriseMcpCatalogResponse
 } from '@clawee/protocol';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
@@ -13,7 +12,7 @@ import {
 import type { McpSettingsService } from '../settings/McpSettingsView.js';
 
 describe('ConnectionsPage', () => {
-  it('shows and toggles native Codex MCP while signed out', async () => {
+  it('loads and toggles native MCP without an account gate', async () => {
     const user = userEvent.setup();
     let native = nativeData();
     const mcpService = createMcpService({
@@ -31,24 +30,17 @@ describe('ConnectionsPage', () => {
         };
       })
     });
-    const enterpriseService = createEnterpriseService();
-
     render(
       <ConnectionsPage
         connected
-        session={signedOutSession()}
-        service={enterpriseService}
+        service={null}
         mcpService={mcpService}
         mcpCapabilities={allCapabilities()}
-        onOpenAccount={vi.fn()}
-        onRefreshSession={vi.fn(async () => signedOutSession())}
-        onSessionExpired={vi.fn()}
       />
     );
 
     expect(await screen.findByRole('heading', { name: 'github' }))
       .toBeInTheDocument();
-    expect(enterpriseService.listMcpConnections).not.toHaveBeenCalled();
     const toggle = screen.getByRole('switch', { name: 'github MCP' });
     expect(toggle).toHaveAttribute('aria-checked', 'true');
 
@@ -70,13 +62,9 @@ describe('ConnectionsPage', () => {
     render(
       <ConnectionsPage
         connected
-        session={signedInSession()}
         service={enterpriseService}
         mcpService={createMcpService()}
         mcpCapabilities={allCapabilities()}
-        onOpenAccount={vi.fn()}
-        onRefreshSession={vi.fn(async () => signedInSession())}
-        onSessionExpired={vi.fn()}
       />
     );
 
@@ -114,13 +102,9 @@ describe('ConnectionsPage', () => {
     render(
       <ConnectionsPage
         connected
-        session={signedInSession()}
         service={enterpriseService}
         mcpService={createMcpService()}
         mcpCapabilities={allCapabilities()}
-        onOpenAccount={vi.fn()}
-        onRefreshSession={vi.fn(async () => signedInSession())}
-        onSessionExpired={vi.fn()}
       />
     );
 
@@ -136,8 +120,7 @@ describe('ConnectionsPage', () => {
     render(
       <ConnectionsPage
         connected
-        session={signedOutSession()}
-        service={createEnterpriseService()}
+        service={null}
         mcpService={createMcpService()}
         mcpCapabilities={{
           ...allCapabilities(),
@@ -145,9 +128,6 @@ describe('ConnectionsPage', () => {
           mcpLogout: false,
           mcpRemove: false
         }}
-        onOpenAccount={vi.fn()}
-        onRefreshSession={vi.fn(async () => signedOutSession())}
-        onSessionExpired={vi.fn()}
       />
     );
 
@@ -256,25 +236,6 @@ function enterpriseCatalog(
       }],
       ...overrides
     }]
-  };
-}
-
-function signedInSession(): EnterpriseSessionResponse {
-  return {
-    status: 'signed_in',
-    account: {
-      subjectId: 'acct_01JZ8W6A2M4S',
-      email: 'member@example.com',
-      name: 'Enterprise Member'
-    },
-    transportSecurity: 'secure_https'
-  };
-}
-
-function signedOutSession(): EnterpriseSessionResponse {
-  return {
-    status: 'signed_out',
-    transportSecurity: 'secure_https'
   };
 }
 

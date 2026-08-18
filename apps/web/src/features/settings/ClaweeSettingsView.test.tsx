@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { LanguageProvider } from '../../i18n/LanguageProvider.js';
+import { languagePreferenceStorageKey } from '../../i18n/language.js';
 import { ClaweeSettingsView } from './ClaweeSettingsView.js';
 
 const runtimeStatus = {
@@ -25,17 +27,37 @@ describe('ClaweeSettingsView', () => {
     expect(screen.getByRole('button', { name: 'Profiles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '清理' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '诊断' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '关于 Clawee' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '关于 OpenCreator' })).toBeInTheDocument();
 
     expect(screen.getByText('默认权限')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: '默认权限' })).toHaveValue('follow-project');
     expect(screen.getByText('默认文件打开方式')).toBeInTheDocument();
-    expect(screen.getByText('语言')).toBeInTheDocument();
-    expect(screen.getByText('中文')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '显示语言' })).toHaveValue('system');
+    expect(screen.getByRole('option', { name: '跟随系统（简体中文）' })).toBeInTheDocument();
     expect(screen.getByText('菜单栏显示')).toBeInTheDocument();
     expect(screen.queryByRole('switch', { name: '动态背景' })).not.toBeInTheDocument();
     expect(screen.queryByText('工作模式')).not.toBeInTheDocument();
     expect(screen.queryByText('适用于编程')).not.toBeInTheDocument();
+  });
+
+  it('switches the display language immediately and persists the choice', () => {
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />
+      </LanguageProvider>
+    );
+
+    fireEvent.change(screen.getByRole('combobox', { name: '显示语言' }), {
+      target: { value: 'en-US' }
+    });
+
+    expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Display language' })).toHaveValue('en-US');
+    expect(screen.getByRole('button', { name: 'Back to app' })).toBeInTheDocument();
+    expect(window.localStorage.getItem(languagePreferenceStorageKey)).toBe('en-US');
+    expect(document.documentElement).toHaveAttribute('lang', 'en-US');
+
+    window.localStorage.removeItem(languagePreferenceStorageKey);
   });
 
   it('notifies when the global default permission changes', () => {
@@ -203,9 +225,9 @@ describe('ClaweeSettingsView', () => {
   it('shows Codex CLI details only in the about advanced information section', () => {
     render(<ClaweeSettingsView runtimeStatus={runtimeStatus} onBack={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '关于 Clawee' }));
+    fireEvent.click(screen.getByRole('button', { name: '关于 OpenCreator' }));
 
-    expect(screen.getByText('Clawee 版本')).toBeInTheDocument();
+    expect(screen.getByText('OpenCreator 版本')).toBeInTheDocument();
     expect(screen.getByText('Runtime 版本')).toBeInTheDocument();
     expect(screen.getByText('数据目录')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '检查更新' })).not.toBeInTheDocument();
@@ -265,7 +287,7 @@ describe('ClaweeSettingsView', () => {
   it('shows disconnected local runtime status in about advanced information', () => {
     render(<ClaweeSettingsView runtimeStatus={{ ...runtimeStatus, connected: false }} onBack={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole('button', { name: '关于 Clawee' }));
+    fireEvent.click(screen.getByRole('button', { name: '关于 OpenCreator' }));
 
     const advanced = screen.getByRole('region', { name: '高级信息' });
     expect(within(advanced).getByText('本地运行内核状态')).toBeInTheDocument();

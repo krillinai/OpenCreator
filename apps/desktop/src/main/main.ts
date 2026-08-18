@@ -50,7 +50,7 @@ import type {
 } from '../shared/types.js';
 
 registerPrivilegedSchemes();
-app.setName('Clawee');
+app.setName('OpenCreator');
 app.commandLine.appendSwitch('lang', 'zh-CN');
 const APP_ENTRY_AT = Date.now();
 
@@ -60,7 +60,7 @@ if (!hasSingleInstanceLock) {
 } else {
   void launchDesktop().catch(error => {
     console.error(
-      `Clawee Desktop failed to start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`
+      `OpenCreator Desktop failed to start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`
     );
     app.exit(1);
   });
@@ -142,7 +142,7 @@ async function launchDesktop(): Promise<void> {
     ? join(appRoot, 'resources')
     : join(process.resourcesPath, 'desktop-resources');
 
-  logger.info('Clawee Desktop starting', {
+  logger.info('OpenCreator Desktop starting', {
     development,
     appRoot,
     dataDir,
@@ -203,7 +203,7 @@ async function launchDesktop(): Promise<void> {
         }
         notifications.start();
       } catch (error) {
-        logger.error('Failed to load the Clawee workspace', {
+        logger.error('Failed to load the OpenCreator workspace', {
           message: error instanceof Error ? error.message : String(error)
         });
         bootstrap?.markWorkspaceFailed(error);

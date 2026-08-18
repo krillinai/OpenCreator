@@ -1,6 +1,7 @@
 import { ImageIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { SkillMarketViewEntry } from './skill-market-model.js';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 const defaultCover = '/skill-market/skills-empty.png';
 
@@ -14,6 +15,7 @@ export function SkillMarketCover({
   item: SkillMarketViewEntry;
   compact?: boolean;
   }) {
+  const l = useLocalizedCopy();
   const approvedExample = item.entry.examples.find((example) => example.approved);
   const usesDefaultCover = approvedExample?.url === defaultCover;
   const sources = (usesDefaultCover
@@ -31,7 +33,7 @@ export function SkillMarketCover({
   if (source !== undefined) {
     return (
       <img
-        alt={approvedExample?.title ?? `${item.title} 封面`}
+        alt={approvedExample?.title ?? `${item.title} ${l('封面', 'cover')}`}
         className="skill-market-cover__image"
         decoding="async"
         draggable={false}
@@ -47,7 +49,7 @@ export function SkillMarketCover({
   }
 
   return (
-    <span className="skill-market-cover__css" aria-label={`${item.title} 封面`}>
+    <span className="skill-market-cover__css" aria-label={`${item.title} ${l('封面', 'cover')}`}>
       <span className="skill-market-cover__fallback-body">
         <ImageIcon size={compact ? 20 : 24} aria-hidden="true" />
         <strong>{item.title}</strong>

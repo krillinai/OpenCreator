@@ -93,7 +93,7 @@ function getTimelineTitle(item: TimelineItem): string {
     case 'schedule_trigger':
       return '定时执行';
     case 'assistant_message':
-      return 'Clawee';
+      return 'OpenCreator';
     case 'change_card':
       return '文件变更';
     case 'approval':
@@ -1387,7 +1387,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       {props.items.length === 0 ? (
         <div className="timeline-empty">
           <strong>暂无任务记录</strong>
-          <span>发送任务后，Clawee 会在这里展示处理过程和结果。</span>
+          <span>发送任务后，OpenCreator 会在这里展示处理过程和结果。</span>
         </div>
       ) : (
         <div

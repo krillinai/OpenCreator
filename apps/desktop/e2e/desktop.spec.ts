@@ -34,8 +34,6 @@ import {
 import {
   FakeEnterpriseAuthServer,
   deleteEnterpriseE2ECredential,
-  desktopE2EEnterpriseEmail,
-  desktopE2EEnterprisePassword,
   writeEnterpriseE2EConfig
 } from './fake-enterprise-auth-2026-08-06.js';
 
@@ -999,30 +997,7 @@ function minimalSystemPath(): string {
 
 async function waitForWorkspace(page: Page): Promise<void> {
   await waitForRuntimeReady(page);
-  const workspace = page.locator('.clawee-shell');
-  await expect.poll(async () => {
-    const response = await runtimeRequest<{ status?: string }>(
-      page,
-      'GET',
-      '/enterprise/session'
-    );
-    return response.body.status;
-  }).toMatch(/^(signed_in|signed_out)$/);
-  const session = await runtimeRequest<{ status?: string }>(
-    page,
-    'GET',
-    '/enterprise/session'
-  );
-  if (session.body.status === 'signed_out') {
-    await expect(page.getByRole('heading', {
-      name: '欢迎使用 Clawee'
-    })).toBeVisible();
-    await page.getByLabel('邮箱').fill(desktopE2EEnterpriseEmail);
-    await page.getByLabel('密码').fill(desktopE2EEnterprisePassword);
-    await page.getByRole('checkbox').check();
-    await page.locator('.enterprise-email-submit').click();
-  }
-  await expect(workspace).toBeVisible();
+  await expect(page.locator('.clawee-shell')).toBeVisible();
 }
 
 async function waitForRuntimeReady(page: Page): Promise<void> {

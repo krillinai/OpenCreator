@@ -11,17 +11,9 @@ import type {
   CreateThreadRequest,
   EnterpriseKnowledgeBaseResponse,
   EnterpriseKnowledgeDocumentResponse,
-  EnterpriseLoginRequest,
   EnterpriseMcpCatalogResponse,
-  EnterpriseQrLoginStartRequest,
-  EnterpriseQrLoginStartResponse,
-  EnterpriseQrLoginStatusResponse,
-  EnterpriseRegisterRequest,
-  EnterpriseSessionResponse,
   EnterpriseSharedFileResponse,
   EnterpriseSharedSpaceResponse,
-  EnterpriseSkillDetailResponse,
-  EnterpriseSkillResponse,
   RunDiagnosticsResponse,
   RunContextResponse,
   RunResponse,
@@ -48,13 +40,14 @@ import { Timeline, type TimelineHandle } from '../components/timeline/Timeline.j
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
 import type { CapabilitiesViewProps } from '../features/capabilities/CapabilitiesView.js';
 import {
-  ConversationEmptyState,
-  ConversationStarterTags
-} from '../features/conversation/ConversationEmptyState.js';
+  MOCK_CONSUMER_USER,
+  type ConsumerUser
+} from '../features/account/consumer-user.js';
+import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
+import { CreatorWorkbench } from '../features/conversation/CreatorWorkbench.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
 import { MemorySuggestion } from '../features/conversation/MemorySuggestion.js';
 import { ApprovalPanel } from '../features/approvals/ApprovalPanel.js';
-import { shouldShowComposerProjectSelector } from '../features/conversation/composer-visibility.js';
 import { useThreadHistory } from '../features/conversation/use-thread-history.js';
 import { DetailPanel } from '../features/details/DetailPanel.js';
 import { getSkillMarketDisplayTitle } from '../features/plugins/skill-market-model.js';
@@ -68,10 +61,6 @@ import type {
   SkillMarketOperation,
   SkillMarketUseError
 } from '../features/plugins/SkillMarketView.js';
-import type {
-  EnterpriseSkillOperation,
-  EnterpriseSkillUseError
-} from '../features/plugins/EnterpriseSkillHubView-2026-07-30.js';
 import type {
   KnowledgeUploadState
 } from '../features/knowledge/KnowledgePage.js';
@@ -130,6 +119,7 @@ import {
 import type { SidebarTaskSummary } from '../features/shell/sidebar-task-model.js';
 import { browserBridge } from '../host/browser-bridge.js';
 import type { HostBridge } from '../host/bridge.js';
+import { useAppLanguage } from '../i18n/LanguageProvider.js';
 import { ApiClientError, RuntimeClient } from '../runtime/client.js';
 import { createFrameBatcher, type FrameBatcher } from '../runtime/frame-batcher.js';
 import { subscribeRunEvents as defaultSubscribeRunEvents, type SubscribeRunEventsInput } from '../runtime/sse.js';
@@ -250,27 +240,13 @@ function canScrollVertically(
 }
 const DEFAULT_PERMISSION_STORAGE_KEY = 'clawee.preferences.defaultPermission';
 const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v3';
-const SCHEDULE_DRAFT_TITLE = '任务草稿';
-const SCHEDULE_CREATION_DRAFT =
-  '我们一起来设置一个定时任务吧。首先，说明定时任务在 Clawee 中的工作方式。然后询问我需要安排什么，以及应该在什么时间运行。';
 const CapabilitiesPage = lazy(() => import('../features/capabilities/CapabilitiesPage.js'));
-const EnterpriseAccountPage = lazy(
-  () => import('../features/account/EnterpriseAccountPage-2026-07-30.js')
-);
+const ConsumerAccountPage = lazy(() => import('../features/account/ConsumerAccountPage.js'));
 const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
+const ProjectsPage = lazy(() => import('../features/projects/ProjectsPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
-const ConnectionsPage = lazy(async () => {
-  const module = await import('../features/connections/ConnectionsPage.js');
-  return { default: module.ConnectionsPage };
-});
-const KnowledgePage = lazy(async () => {
-  const module = await import('../features/knowledge/KnowledgePage.js');
-  return { default: module.KnowledgePage };
-});
-const SharedDrivePage = lazy(async () => {
-  const module = await import('../features/drive/SharedDrivePage.js');
-  return { default: module.SharedDrivePage };
-});
+const AssetsPage = lazy(() => import('../features/assets/AssetsPage.js'));
+const WorkbenchPage = lazy(() => import('../features/workbench/WorkbenchPage.js'));
 const DashboardPage = lazy(async () => {
   const module = await import('../features/dashboard/DashboardPage.js');
   return { default: module.DashboardPage };
@@ -296,8 +272,8 @@ type PersistedNavigation = {
 export type AppControllerProps = {
   fileService?: AppFileService;
   capabilitiesView?: CapabilitiesViewProps;
+  projectNavigationMode?: 'library' | 'tree';
   hostBridge?: HostBridge;
-  requireEnterpriseLogin?: boolean;
   runtimeFetch?: typeof fetch;
   subscribeRunEvents?: (input: SubscribeRunEventsInput) => Promise<void>;
   route: AppRoute;
@@ -305,12 +281,17 @@ export type AppControllerProps = {
 };
 
 export function AppController(props: AppControllerProps) {
+  const { t } = useAppLanguage();
   const persistedNavigation = useMemo(readPersistedNavigation, []);
   const initialState = useMemo(
     () => createInitialState(props.route, persistedNavigation),
     []
   );
   const [state, dispatch] = useReducer(reduceAppState, initialState);
+  const [consumerUser, setConsumerUser] = useState<ConsumerUser>();
+  const activeAssetsTab = props.route.view === 'assets'
+    ? props.route.tab ?? 'knowledge'
+    : 'knowledge';
   const [runRegistry, dispatchRunRegistry] = useReducer(
     runRegistryReducer,
     initialRunRegistryState
@@ -357,20 +338,6 @@ export function AppController(props: AppControllerProps) {
     status: 'disconnected',
     message: '正在等待本地服务'
   });
-  const [enterpriseSession, setEnterpriseSession] = useState<EnterpriseSessionResponse>({
-    status: 'signed_out',
-    transportSecurity: 'secure_https'
-  });
-  const [enterpriseCheckingTimedOut, setEnterpriseCheckingTimedOut] = useState(false);
-  const [enterpriseSessionProbeKey, setEnterpriseSessionProbeKey] = useState(0);
-  const [enterpriseSkills, setEnterpriseSkills] = useState<EnterpriseSkillResponse[]>();
-  const [enterpriseSkillsLoading, setEnterpriseSkillsLoading] = useState(false);
-  const [enterpriseSkillsLoadError, setEnterpriseSkillsLoadError] = useState<string>();
-  const [enterpriseSkillOperation, setEnterpriseSkillOperation] =
-    useState<EnterpriseSkillOperation>();
-  const [enterpriseSkillUseError, setEnterpriseSkillUseError] =
-    useState<EnterpriseSkillUseError>();
-  const [enterpriseSkillsReloadKey, setEnterpriseSkillsReloadKey] = useState(0);
   const [enterpriseKnowledgeBases, setEnterpriseKnowledgeBases] =
     useState<EnterpriseKnowledgeBaseResponse[]>();
   const [enterpriseKnowledgeBasesLoading, setEnterpriseKnowledgeBasesLoading] =
@@ -440,14 +407,9 @@ export function AppController(props: AppControllerProps) {
   const [skillMarketOperation, setSkillMarketOperation] = useState<SkillMarketOperation>();
   const [skillMarketUseError, setSkillMarketUseError] = useState<SkillMarketUseError>();
   const [pendingComposerDraft, setPendingComposerDraft] = useState<
-    { threadId: string; request: ComposerDraftRequest } | undefined
+    { threadId?: string; request: ComposerDraftRequest } | undefined
   >();
   const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
-  const activePluginSource =
-    props.route.view === 'plugins' && props.route.source === 'public'
-      ? 'public'
-      : 'enterprise';
-
   useEffect(() => {
     if (threadConfigUpdateError === undefined) return;
     const timeoutId = window.setTimeout(() => {
@@ -469,6 +431,7 @@ export function AppController(props: AppControllerProps) {
   const [conversationPaneWidth, setConversationPaneWidth] = useState<number>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [immersiveWorkspace, setImmersiveWorkspace] = useState(false);
   const [defaultPermission, setDefaultPermission] = useState(readDefaultPermissionPreference);
   const [defaultPermissionSyncError, setDefaultPermissionSyncError] = useState<string>();
   const [colorMode, setColorMode] = useState(readColorModePreference);
@@ -535,19 +498,15 @@ export function AppController(props: AppControllerProps) {
   const skillMarketMutationInFlightRef = useRef(false);
   const skillMarketUseInFlightRef = useRef(false);
   const skillMarketRuntimeGenerationRef = useRef(0);
-  const enterpriseRuntimeGenerationRef = useRef(0);
-  const enterpriseHubGenerationRef = useRef(0);
   const enterpriseKnowledgeGenerationRef = useRef(0);
   const enterpriseSharedDriveGenerationRef = useRef(0);
   const capabilityLoadGenerationRef = useRef<number>();
   const profileLoadGenerationRef = useRef<number>();
   const skillMarketLoadGenerationRef = useRef<number>();
-  const enterpriseSkillMutationInFlightRef = useRef(false);
   const enterpriseKnowledgeUploadInFlightRef = useRef(false);
   const enterpriseSharedSpacesLoadInFlightRef = useRef(false);
   const enterpriseSharedFilesLoadInFlightRef = useRef(false);
   const enterpriseSharedMutationInFlightRef = useRef(false);
-  const knowledgeConversationCreateInFlightRef = useRef(false);
   const mobileSidebarHistoryEntryRef = useRef(false);
   const defaultPermissionAppliedByThreadRef = useRef(new Map<string, SandboxMode>());
   const defaultPermissionSyncFailuresRef = useRef(new Set<string>());
@@ -555,8 +514,6 @@ export function AppController(props: AppControllerProps) {
   const capabilityServiceRef = useRef<CapabilityService | null>(null);
   const skillMarketServiceRef = useRef<SkillMarketService | null>(null);
   const enterpriseServiceRef = useRef<EnterpriseService | null>(null);
-  const enterpriseSessionRef = useRef(enterpriseSession);
-  const enterpriseReturnRouteRef = useRef<AppRoute>();
   const threadServiceRef = useRef<ThreadService | null>(null);
   const scheduleServiceRef = useRef<ScheduleService | null>(null);
   const runtimeThreadsRef = useRef(runtimeThreads);
@@ -574,7 +531,6 @@ export function AppController(props: AppControllerProps) {
   runRegistryRef.current = runRegistry;
   runtimeThreadsRef.current = runtimeThreads;
   currentProjectIdRef.current = state.currentProjectId;
-  enterpriseSessionRef.current = enterpriseSession;
   codexModelsRef.current = codexModels;
 
   const runtimeClient = useMemo(
@@ -646,36 +602,25 @@ export function AppController(props: AppControllerProps) {
     () => runtimeClient === null ? null : createEnterpriseService(runtimeClient),
     [runtimeClient]
   );
-  const handleEnterpriseSessionExpired = useCallback(() => {
-    setEnterpriseSession({
-      status: 'signed_out',
-      reason: 'session_expired',
-      transportSecurity: enterpriseSessionRef.current.transportSecurity
-    });
-  }, []);
   const loadComposerConnectors = useCallback(async (): Promise<ComposerConnector[]> => {
-    if (enterpriseService === null || enterpriseSession.status !== 'signed_in') {
-      throw new Error('登录企业账户后可查看连接器目录');
+    if (enterpriseService === null) {
+      throw new Error('连接器目录暂不可用');
     }
     try {
       return buildComposerConnectors(await enterpriseService.listMcpConnections());
     } catch (error) {
-      if (isEnterpriseUnauthorized(error)) {
-        handleEnterpriseSessionExpired();
-        throw new Error('企业会话已失效，请重新登录');
-      }
       throw new Error(formatEnterpriseConnectorError(
         error,
         '连接器目录加载失败'
       ));
     }
-  }, [enterpriseService, enterpriseSession.status, handleEnterpriseSessionExpired]);
+  }, [enterpriseService]);
   const toggleComposerConnector = useCallback(async (
     connectorId: string,
     enabled: boolean
   ): Promise<ComposerConnector[]> => {
-    if (enterpriseService === null || enterpriseSession.status !== 'signed_in') {
-      throw new Error('登录企业账户后可管理连接器');
+    if (enterpriseService === null) {
+      throw new Error('连接器暂不可管理');
     }
     const upstreamId = connectorId.startsWith('enterprise:')
       ? connectorId.slice('enterprise:'.length)
@@ -686,13 +631,9 @@ export function AppController(props: AppControllerProps) {
         { enabled }
       ));
     } catch (error) {
-      if (isEnterpriseUnauthorized(error)) {
-        handleEnterpriseSessionExpired();
-        throw new Error('企业会话已失效，请重新登录');
-      }
       throw new Error(formatEnterpriseConnectorError(error, '连接器状态更新失败'));
     }
-  }, [enterpriseService, enterpriseSession.status, handleEnterpriseSessionExpired]);
+  }, [enterpriseService]);
   const workspaceFileService = useMemo(
     () => runtimeClient === null ? null : createWorkspaceFileService(runtimeClient),
     [runtimeClient]
@@ -795,6 +736,21 @@ export function AppController(props: AppControllerProps) {
       currentRequestId === requestId ? undefined : currentRequestId
     );
   }, []);
+  const queueComposerPrompt = useCallback((text: string, threadId: string | undefined) => {
+    nextComposerDraftIdRef.current += 1;
+    nextComposerFocusRequestIdRef.current += 1;
+    setPendingComposerDraft({
+      threadId,
+      request: {
+        id: nextComposerDraftIdRef.current,
+        text
+      }
+    });
+    setPendingComposerFocusRequestId(nextComposerFocusRequestIdRef.current);
+  }, []);
+  const applyWorkbenchPrompt = useCallback((text: string) => {
+    queueComposerPrompt(text, selectedThreadIdRef.current);
+  }, [queueComposerPrompt]);
   const editUserMessage = useCallback((
     item: Extract<TimelineItem, { kind: 'user_message' }>
   ) => {
@@ -1324,7 +1280,6 @@ export function AppController(props: AppControllerProps) {
     threadServiceRef.current = threadService;
     scheduleServiceRef.current = scheduleService;
     skillMarketRuntimeGenerationRef.current += 1;
-    enterpriseRuntimeGenerationRef.current += 1;
     enterpriseKnowledgeGenerationRef.current += 1;
     enterpriseSharedDriveGenerationRef.current += 1;
     skillMarketMutationInFlightRef.current = false;
@@ -1349,77 +1304,12 @@ export function AppController(props: AppControllerProps) {
   ]);
 
   useEffect(() => {
-    const generation = enterpriseRuntimeGenerationRef.current;
-    setEnterpriseCheckingTimedOut(false);
-
-    if (
-      connectionState.status !== 'connected'
-      || enterpriseService === null
-    ) {
-      return;
-    }
-
-    const controller = new AbortController();
-    const activeEnterpriseService = enterpriseService;
-
-    void pollEnterpriseSessionUntilSettled({
-      signal: controller.signal,
-      readSession: () => activeEnterpriseService.getSession(),
-      onSession(response) {
-        if (
-          enterpriseRuntimeGenerationRef.current !== generation
-          || enterpriseServiceRef.current !== activeEnterpriseService
-        ) {
-          return;
-        }
-        setEnterpriseSession(response);
-        setEnterpriseCheckingTimedOut(false);
-      },
-      onTimeout() {
-        if (
-          enterpriseRuntimeGenerationRef.current !== generation
-          || enterpriseServiceRef.current !== activeEnterpriseService
-        ) {
-          return;
-        }
-        setEnterpriseCheckingTimedOut(true);
-      },
-      onError() {
-        if (
-          enterpriseRuntimeGenerationRef.current !== generation
-          || enterpriseServiceRef.current !== activeEnterpriseService
-        ) {
-          return;
-        }
-        setEnterpriseCheckingTimedOut(false);
-        setEnterpriseSession(previous => ({
-          status: 'service_unavailable',
-          ...(previous.account === undefined ? {} : { account: previous.account }),
-          reason: 'service_unavailable',
-          transportSecurity: previous.transportSecurity
-        }));
-      }
-    });
-    return () => {
-      controller.abort();
-    };
-  }, [
-    connectionState.status,
-    enterpriseService,
-    enterpriseSessionProbeKey
-  ]);
-
-  useEffect(() => {
-    enterpriseHubGenerationRef.current += 1;
     enterpriseKnowledgeGenerationRef.current += 1;
     enterpriseSharedDriveGenerationRef.current += 1;
-    enterpriseSkillMutationInFlightRef.current = false;
     enterpriseKnowledgeUploadInFlightRef.current = false;
     enterpriseSharedSpacesLoadInFlightRef.current = false;
     enterpriseSharedFilesLoadInFlightRef.current = false;
     enterpriseSharedMutationInFlightRef.current = false;
-    setEnterpriseSkillOperation(undefined);
-    setEnterpriseSkillUseError(undefined);
     setEnterpriseKnowledgeUpload(undefined);
     setEnterpriseKnowledgeUploadNotice(undefined);
     setEnterpriseSharedOperation(undefined);
@@ -1428,11 +1318,7 @@ export function AppController(props: AppControllerProps) {
     if (
       connectionState.status !== 'connected'
       || enterpriseService === null
-      || enterpriseSession.status !== 'signed_in'
     ) {
-      setEnterpriseSkills(undefined);
-      setEnterpriseSkillsLoading(false);
-      setEnterpriseSkillsLoadError(undefined);
       setEnterpriseKnowledgeBases(undefined);
       setEnterpriseKnowledgeBasesLoading(false);
       setEnterpriseKnowledgeBasesError(undefined);
@@ -1450,67 +1336,15 @@ export function AppController(props: AppControllerProps) {
     }
   }, [
     connectionState.status,
-    enterpriseService,
-    enterpriseSession.status
+    enterpriseService
   ]);
 
   useEffect(() => {
     if (
-      state.activeView !== 'plugins'
-      || activePluginSource !== 'enterprise'
+      state.activeView !== 'assets'
+      || activeAssetsTab !== 'knowledge'
       || connectionState.status !== 'connected'
       || enterpriseService === null
-      || enterpriseSession.status !== 'signed_in'
-    ) {
-      return;
-    }
-
-    const generation = enterpriseHubGenerationRef.current;
-    const activeEnterpriseService = enterpriseService;
-    setEnterpriseSkillsLoading(true);
-    setEnterpriseSkillsLoadError(undefined);
-
-    void activeEnterpriseService.listSkills()
-      .then(response => {
-        if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) return;
-        setEnterpriseSkills(response.skills);
-      })
-      .catch(error => {
-        if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) return;
-        if (isEnterpriseUnauthorized(error)) {
-          setEnterpriseSession({
-            status: 'signed_out',
-            reason: 'session_expired',
-            transportSecurity: enterpriseSessionRef.current.transportSecurity
-          });
-          setEnterpriseSkills(undefined);
-        } else {
-          setEnterpriseSkillsLoadError(formatEnterpriseSkillError(
-            error,
-            '企业 Skill 目录加载失败'
-          ));
-        }
-      })
-      .finally(() => {
-        if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
-          setEnterpriseSkillsLoading(false);
-        }
-      });
-  }, [
-    activePluginSource,
-    connectionState.status,
-    enterpriseService,
-    enterpriseSession.status,
-    enterpriseSkillsReloadKey,
-    state.activeView
-  ]);
-
-  useEffect(() => {
-    if (
-      state.activeView !== 'knowledge'
-      || connectionState.status !== 'connected'
-      || enterpriseService === null
-      || enterpriseSession.status !== 'signed_in'
     ) {
       return;
     }
@@ -1555,20 +1389,12 @@ export function AppController(props: AppControllerProps) {
         setEnterpriseKnowledgeBases(undefined);
         setSelectedEnterpriseKnowledgeBaseId(undefined);
         setEnterpriseKnowledgeDocuments(undefined);
-        if (isEnterpriseUnauthorized(error)) {
-          setEnterpriseSession({
-            status: 'signed_out',
-            reason: 'session_expired',
-            transportSecurity: enterpriseSessionRef.current.transportSecurity
-          });
-        } else {
-          setEnterpriseKnowledgeBasesError(
-            formatEnterpriseKnowledgeError(
-              error,
-              '企业知识库加载失败'
-            )
-          );
-        }
+        setEnterpriseKnowledgeBasesError(
+          formatEnterpriseKnowledgeError(
+            error,
+            '知识库加载失败'
+          )
+        );
       })
       .finally(() => {
         if (
@@ -1589,16 +1415,16 @@ export function AppController(props: AppControllerProps) {
     connectionState.status,
     enterpriseKnowledgeBasesReloadKey,
     enterpriseService,
-    enterpriseSession.status,
+    activeAssetsTab,
     state.activeView
   ]);
 
   useEffect(() => {
     if (
-      state.activeView !== 'drive'
+      state.activeView !== 'assets'
+      || activeAssetsTab !== 'materials'
       || connectionState.status !== 'connected'
       || enterpriseService === null
-      || enterpriseSession.status !== 'signed_in'
     ) {
       return;
     }
@@ -1635,13 +1461,9 @@ export function AppController(props: AppControllerProps) {
         setEnterpriseSharedSpaces(undefined);
         setSelectedEnterpriseSharedSpaceId(undefined);
         setEnterpriseSharedFiles(undefined);
-        if (isEnterpriseUnauthorized(error)) {
-          handleEnterpriseSessionExpired();
-        } else {
-          setEnterpriseSharedSpacesError(
-            formatEnterpriseSharedDriveError(error, '共享空间加载失败')
-          );
-        }
+        setEnterpriseSharedSpacesError(
+          formatEnterpriseSharedDriveError(error, '素材空间加载失败')
+        );
       })
       .finally(() => {
         if (!canceled && isCurrentEnterpriseSharedDriveRuntime(
@@ -1658,19 +1480,18 @@ export function AppController(props: AppControllerProps) {
     };
   }, [
     connectionState.status,
+    activeAssetsTab,
     enterpriseService,
-    enterpriseSession.status,
     enterpriseSharedSpacesReloadKey,
-    handleEnterpriseSessionExpired,
     state.activeView
   ]);
 
   useEffect(() => {
     if (
-      state.activeView !== 'drive'
+      state.activeView !== 'assets'
+      || activeAssetsTab !== 'materials'
       || connectionState.status !== 'connected'
       || enterpriseService === null
-      || enterpriseSession.status !== 'signed_in'
     ) {
       return;
     }
@@ -1704,18 +1525,16 @@ export function AppController(props: AppControllerProps) {
           activeEnterpriseService
         )) return;
         setEnterpriseSharedFiles(undefined);
-        if (isEnterpriseUnauthorized(error)) {
-          handleEnterpriseSessionExpired();
-        } else if (
+        if (
           error instanceof ApiClientError
           && error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
         ) {
           setSelectedEnterpriseSharedSpaceId(undefined);
           setEnterpriseSharedSpacesReloadKey(current => current + 1);
-          setEnterpriseSharedFilesError('该共享空间已不可访问，正在刷新授权列表');
+          setEnterpriseSharedFilesError('该素材空间已不可访问，正在刷新授权列表');
         } else {
           setEnterpriseSharedFilesError(
-            formatEnterpriseSharedDriveError(error, '共享文件加载失败')
+            formatEnterpriseSharedDriveError(error, '素材文件加载失败')
           );
         }
       })
@@ -1734,21 +1553,20 @@ export function AppController(props: AppControllerProps) {
     };
   }, [
     connectionState.status,
+    activeAssetsTab,
     enterpriseService,
-    enterpriseSession.status,
     enterpriseSharedFilesReloadKey,
     enterpriseSharedQuery,
-    handleEnterpriseSessionExpired,
     selectedEnterpriseSharedSpaceId,
     state.activeView
   ]);
 
   useEffect(() => {
     if (
-      state.activeView !== 'knowledge'
+      state.activeView !== 'assets'
+      || activeAssetsTab !== 'knowledge'
       || connectionState.status !== 'connected'
       || enterpriseService === null
-      || enterpriseSession.status !== 'signed_in'
       || selectedEnterpriseKnowledgeBaseId === undefined
     ) {
       if (selectedEnterpriseKnowledgeBaseId === undefined) {
@@ -1791,13 +1609,7 @@ export function AppController(props: AppControllerProps) {
           return;
         }
         setEnterpriseKnowledgeDocuments(undefined);
-        if (isEnterpriseUnauthorized(error)) {
-          setEnterpriseSession({
-            status: 'signed_out',
-            reason: 'session_expired',
-            transportSecurity: enterpriseSessionRef.current.transportSecurity
-          });
-        } else if (
+        if (
           error instanceof ApiClientError
           && error.code === 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND'
         ) {
@@ -1832,9 +1644,9 @@ export function AppController(props: AppControllerProps) {
     };
   }, [
     connectionState.status,
+    activeAssetsTab,
     enterpriseKnowledgeDocumentsReloadKey,
     enterpriseService,
-    enterpriseSession.status,
     selectedEnterpriseKnowledgeBaseId,
     state.activeView
   ]);
@@ -2040,7 +1852,6 @@ export function AppController(props: AppControllerProps) {
       || capabilityService === null
       || skillMarketService === null
       || state.activeView !== 'plugins'
-      || activePluginSource !== 'public'
     ) {
       return;
     }
@@ -2084,7 +1895,6 @@ export function AppController(props: AppControllerProps) {
       });
   }, [
     capabilityService,
-    activePluginSource,
     codexSkills,
     connectionState.status,
     skillMarketInstallRecords,
@@ -2360,7 +2170,7 @@ export function AppController(props: AppControllerProps) {
   const selectedRunContext =
     state.selectedRunId === undefined ? undefined : runContextById[state.selectedRunId];
   const currentProject = findProjectById(projects, state.currentProjectId);
-  const currentProjectName = currentProject?.name ?? '未选择项目';
+  const currentProjectName = currentProject?.name ?? t('conversation.noProject');
   const selectedConversation = conversations.find(conversation => conversation.id === state.selectedThreadId);
   const selectedScheduleTask = scheduleTaskSummaries.find(
     task => task.threadId === state.selectedThreadId
@@ -2591,129 +2401,6 @@ export function AppController(props: AppControllerProps) {
     readHostRuntimeConfig(loadVersion, () => false);
   }
 
-  async function runEnterpriseSessionMutation(
-    action: (service: EnterpriseService) => Promise<EnterpriseSessionResponse>
-  ): Promise<EnterpriseSessionResponse> {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || connectionStatusRef.current !== 'connected'
-    ) {
-      throw new Error('本地 Runtime 未连接');
-    }
-    const generation = enterpriseRuntimeGenerationRef.current;
-
-    try {
-      const response = await action(activeEnterpriseService);
-      if (
-        enterpriseRuntimeGenerationRef.current === generation
-        && enterpriseServiceRef.current === activeEnterpriseService
-      ) {
-        setEnterpriseSession(response);
-        setEnterpriseCheckingTimedOut(false);
-        if (response.status === 'checking') {
-          setEnterpriseSessionProbeKey(current => current + 1);
-        }
-      }
-      return response;
-    } catch (error) {
-      try {
-        const snapshot = await activeEnterpriseService.getSession();
-        if (
-          enterpriseRuntimeGenerationRef.current === generation
-          && enterpriseServiceRef.current === activeEnterpriseService
-        ) {
-          setEnterpriseSession(snapshot);
-          setEnterpriseCheckingTimedOut(false);
-        }
-      } catch {
-        // The original operation error remains the user-facing failure.
-      }
-      throw error;
-    }
-  }
-
-  async function loginEnterprise(
-    input: EnterpriseLoginRequest
-  ): Promise<EnterpriseSessionResponse> {
-    const response = await runEnterpriseSessionMutation(service => service.login(input));
-    returnToEnterpriseViewAfterSignIn(response);
-    return response;
-  }
-
-  async function registerEnterprise(
-    input: EnterpriseRegisterRequest
-  ): Promise<EnterpriseSessionResponse> {
-    const response = await runEnterpriseSessionMutation(service => service.register(input));
-    returnToEnterpriseViewAfterSignIn(response);
-    return response;
-  }
-
-  function startEnterpriseQrLogin(
-    input: EnterpriseQrLoginStartRequest
-  ): Promise<EnterpriseQrLoginStartResponse> {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || connectionStatusRef.current !== 'connected'
-    ) {
-      throw new Error('本地 Runtime 未连接');
-    }
-    return activeEnterpriseService.startQrLogin(input);
-  }
-
-  async function pollEnterpriseQrLogin(
-    requestId: string
-  ): Promise<EnterpriseQrLoginStatusResponse> {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || connectionStatusRef.current !== 'connected'
-    ) {
-      throw new Error('本地 Runtime 未连接');
-    }
-    const generation = enterpriseRuntimeGenerationRef.current;
-    const response = await activeEnterpriseService.getQrLoginStatus(requestId);
-    if (
-      response.session?.status === 'signed_in'
-      && enterpriseRuntimeGenerationRef.current === generation
-      && enterpriseServiceRef.current === activeEnterpriseService
-    ) {
-      setEnterpriseSession(response.session);
-      setEnterpriseCheckingTimedOut(false);
-      returnToEnterpriseViewAfterSignIn(response.session);
-    }
-    return response;
-  }
-
-  function logoutEnterprise(): Promise<EnterpriseSessionResponse> {
-    return runEnterpriseSessionMutation(service => service.logout());
-  }
-
-  function refreshEnterpriseSession(): Promise<EnterpriseSessionResponse> {
-    return runEnterpriseSessionMutation(service => service.refreshSession());
-  }
-
-  function returnToEnterpriseViewAfterSignIn(response: EnterpriseSessionResponse) {
-    if (response.status !== 'signed_in') return;
-    const returnRoute = enterpriseReturnRouteRef.current;
-    if (returnRoute === undefined) return;
-    const activeView =
-      returnRoute.view === 'plugins' && returnRoute.source === 'enterprise'
-        ? 'plugins'
-        : returnRoute.view === 'knowledge'
-          ? 'knowledge'
-          : returnRoute.view === 'drive'
-            ? 'drive'
-            : returnRoute.view === 'connections'
-              ? 'connections'
-              : undefined;
-    if (activeView === undefined) return;
-    enterpriseReturnRouteRef.current = undefined;
-    dispatch({ type: 'set_active_view', activeView });
-    navigateToRoute(returnRoute);
-  }
-
   function handleColorModeChange(mode: ColorMode) {
     setColorMode(mode);
     applyColorMode(mode);
@@ -2842,49 +2529,9 @@ export function AppController(props: AppControllerProps) {
     if (options.updateRoute !== false) navigateToRoute({ view: 'home' });
   }
 
-  async function startKnowledgeConversation() {
-    if (knowledgeConversationCreateInFlightRef.current) return;
-    const activeProjectService = projectService;
-    const activeThreadService = threadService;
-    if (activeProjectService === null || activeThreadService === null) {
-      setEnterpriseKnowledgeBasesError('本地服务暂不可用，无法创建对话');
-      return;
-    }
-
-    knowledgeConversationCreateInFlightRef.current = true;
-    setEnterpriseKnowledgeBasesError(undefined);
-    const generation = skillMarketRuntimeGenerationRef.current;
-    try {
-      const { project } = await activeProjectService.ensureDefaultProject();
-      const created = await activeThreadService.createKnowledgeThread(project.id);
-      if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
-
-      setProjects(current => upsertProject(current, project));
-      setRuntimeThreads(previous => upsertThread(previous, created.thread));
-      showTimelineForThread(created.thread.id, [], true);
-      setThreadHistoryLoadError(undefined);
-      setHistoryLoadingThreadId(undefined);
-      setHistoryLoadedThreadId(created.thread.id);
-      setRunsLoadedThreadId(undefined);
-      setThreadConfigUpdateError(undefined);
-      skipNextHistoryLoadForThreadRef.current = created.thread.id;
-      allowInitialRuntimeProjectFocusRef.current = false;
-      if (project.id !== state.currentProjectId) {
-        dispatch({ type: 'select_project', projectId: project.id });
-      }
-      dispatch({ type: 'select_thread', threadId: created.thread.id });
-      navigateToRoute({ view: 'thread', threadId: created.thread.id });
-    } catch (error) {
-      if (isCurrentThreadRuntime(generation, activeThreadService)) {
-        setEnterpriseKnowledgeBasesError(
-          getRuntimeErrorMessage(error, '创建知识库对话失败，请重试')
-        );
-      }
-    } finally {
-      if (isCurrentThreadRuntime(generation, activeThreadService)) {
-        knowledgeConversationCreateInFlightRef.current = false;
-      }
-    }
+  function startCreatorTool(text: string) {
+    startNewConversation();
+    queueComposerPrompt(text, undefined);
   }
 
   function selectProject(projectId: string, options: { updateRoute?: boolean } = {}) {
@@ -3324,15 +2971,15 @@ export function AppController(props: AppControllerProps) {
         });
         return;
       case 'search':
+      case 'projects':
+      case 'workbench':
       case 'schedules':
       case 'tasks':
       case 'dashboard':
       case 'activity':
       case 'activity-agent':
       case 'plugins':
-      case 'connections':
-      case 'knowledge':
-      case 'drive':
+      case 'assets':
       case 'account':
       case 'settings':
         closeMobileSidebar();
@@ -3518,17 +3165,6 @@ export function AppController(props: AppControllerProps) {
       && threadServiceRef.current === activeThreadService;
   }
 
-  function isCurrentEnterpriseHubRuntime(
-    generation: number,
-    activeEnterpriseService: EnterpriseService
-  ) {
-    return mountedRef.current
-      && enterpriseHubGenerationRef.current === generation
-      && connectionStatusRef.current === 'connected'
-      && enterpriseSessionRef.current.status === 'signed_in'
-      && enterpriseServiceRef.current === activeEnterpriseService;
-  }
-
   function isCurrentEnterpriseKnowledgeRuntime(
     generation: number,
     activeEnterpriseService: EnterpriseService
@@ -3536,7 +3172,6 @@ export function AppController(props: AppControllerProps) {
     return mountedRef.current
       && enterpriseKnowledgeGenerationRef.current === generation
       && connectionStatusRef.current === 'connected'
-      && enterpriseSessionRef.current.status === 'signed_in'
       && enterpriseServiceRef.current === activeEnterpriseService;
   }
 
@@ -3547,48 +3182,21 @@ export function AppController(props: AppControllerProps) {
     return mountedRef.current
       && enterpriseSharedDriveGenerationRef.current === generation
       && connectionStatusRef.current === 'connected'
-      && enterpriseSessionRef.current.status === 'signed_in'
       && enterpriseServiceRef.current === activeEnterpriseService;
-  }
-
-  async function refreshEnterpriseSkillListOnce(
-    generation: number,
-    activeEnterpriseService: EnterpriseService
-  ): Promise<void> {
-    const response = await activeEnterpriseService.listSkills();
-    if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) return;
-    setEnterpriseSkills(response.skills);
-    setEnterpriseSkillsLoadError(undefined);
-  }
-
-  function refreshEnterpriseHub() {
-    if (enterpriseSessionRef.current.status === 'signed_in') {
-      setEnterpriseSkillsReloadKey(current => current + 1);
-      return;
-    }
-    void refreshEnterpriseSession();
   }
 
   function refreshEnterpriseKnowledge() {
     setEnterpriseKnowledgeUploadNotice(undefined);
     setEnterpriseKnowledgeUpload(undefined);
-    if (enterpriseSessionRef.current.status === 'signed_in') {
-      setEnterpriseKnowledgeBasesReloadKey(current => current + 1);
-      setEnterpriseKnowledgeDocumentsReloadKey(current => current + 1);
-      return;
-    }
-    void refreshEnterpriseSession();
+    setEnterpriseKnowledgeBasesReloadKey(current => current + 1);
+    setEnterpriseKnowledgeDocumentsReloadKey(current => current + 1);
   }
 
   function refreshEnterpriseSharedDrive() {
     setEnterpriseSharedOperation(undefined);
     setEnterpriseSharedNotice(undefined);
-    if (enterpriseSessionRef.current.status === 'signed_in') {
-      setEnterpriseSharedSpacesReloadKey(current => current + 1);
-      setEnterpriseSharedFilesReloadKey(current => current + 1);
-      return;
-    }
-    void refreshEnterpriseSession();
+    setEnterpriseSharedSpacesReloadKey(current => current + 1);
+    setEnterpriseSharedFilesReloadKey(current => current + 1);
   }
 
   function selectEnterpriseSharedSpace(spaceId?: string) {
@@ -3611,7 +3219,6 @@ export function AppController(props: AppControllerProps) {
     const activeEnterpriseService = enterpriseServiceRef.current;
     if (
       activeEnterpriseService === null
-      || enterpriseSessionRef.current.status !== 'signed_in'
       || enterpriseSharedSpacesLoadInFlightRef.current
       || !enterpriseSharedSpacesMeta.hasNext
       || enterpriseSharedSpacesMeta.nextCursor.length === 0
@@ -3634,13 +3241,9 @@ export function AppController(props: AppControllerProps) {
       setEnterpriseSharedSpacesMeta(response.meta);
     } catch (error) {
       if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
-      if (isEnterpriseUnauthorized(error)) {
-        handleEnterpriseSessionExpired();
-      } else {
-        setEnterpriseSharedSpacesError(
-          formatEnterpriseSharedDriveError(error, '更多共享空间加载失败')
-        );
-      }
+      setEnterpriseSharedSpacesError(
+        formatEnterpriseSharedDriveError(error, '更多素材空间加载失败')
+      );
     } finally {
       if (isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) {
         enterpriseSharedSpacesLoadInFlightRef.current = false;
@@ -3653,7 +3256,6 @@ export function AppController(props: AppControllerProps) {
     const activeEnterpriseService = enterpriseServiceRef.current;
     if (
       activeEnterpriseService === null
-      || enterpriseSessionRef.current.status !== 'signed_in'
       || enterpriseSharedFilesLoadInFlightRef.current
       || !enterpriseSharedFilesMeta.hasNext
       || enterpriseSharedFilesMeta.nextCursor.length === 0
@@ -3677,13 +3279,9 @@ export function AppController(props: AppControllerProps) {
       setEnterpriseSharedFilesMeta(response.meta);
     } catch (error) {
       if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
-      if (isEnterpriseUnauthorized(error)) {
-        handleEnterpriseSessionExpired();
-      } else {
-        setEnterpriseSharedFilesError(
-          formatEnterpriseSharedDriveError(error, '更多共享文件加载失败')
-        );
-      }
+      setEnterpriseSharedFilesError(
+        formatEnterpriseSharedDriveError(error, '更多素材文件加载失败')
+      );
     } finally {
       if (isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) {
         enterpriseSharedFilesLoadInFlightRef.current = false;
@@ -3730,7 +3328,6 @@ export function AppController(props: AppControllerProps) {
     const activeEnterpriseService = enterpriseServiceRef.current;
     if (
       activeEnterpriseService === null
-      || enterpriseSessionRef.current.status !== 'signed_in'
       || enterpriseSharedMutationInFlightRef.current
     ) return;
 
@@ -3764,14 +3361,9 @@ export function AppController(props: AppControllerProps) {
       setEnterpriseSharedFilesReloadKey(current => current + 1);
     } catch (error) {
       if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
-      if (isEnterpriseUnauthorized(error)) {
-        handleEnterpriseSessionExpired();
-        setEnterpriseSharedOperation(undefined);
-        return;
-      }
       let message = formatEnterpriseSharedDriveError(
         error,
-        request.kind === 'upload' ? '共享文件上传失败' : '共享文件替换失败'
+        request.kind === 'upload' ? '素材文件上传失败' : '素材文件替换失败'
       );
       if (error instanceof ApiClientError) {
         if (error.code === 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT') {
@@ -3784,16 +3376,16 @@ export function AppController(props: AppControllerProps) {
           error.code === 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN'
           || error.code === 'ENTERPRISE_FORBIDDEN'
         ) {
-          message = '当前账户已没有该共享空间的写入权限';
+          message = '当前账户已没有该素材空间的写入权限';
           setEnterpriseSharedSpacesReloadKey(current => current + 1);
         } else if (error.code === 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS') {
-          message = '相同网盘路径已存在，请在文件列表中选择替换';
+          message = '相同素材路径已存在，请在文件列表中选择替换';
           setEnterpriseSharedFilesReloadKey(current => current + 1);
         } else if (
           error.code === 'ENTERPRISE_SHARED_SPACE_NOT_FOUND'
           || error.code === 'ENTERPRISE_SHARED_FILE_NOT_FOUND'
         ) {
-          message = '共享空间或文件已不可访问，正在刷新列表';
+          message = '素材空间或文件已不可访问，正在刷新列表';
           setEnterpriseSharedSpacesReloadKey(current => current + 1);
           setEnterpriseSharedFilesReloadKey(current => current + 1);
         } else if (error.code === 'ENTERPRISE_SERVICE_UNAVAILABLE') {
@@ -3822,7 +3414,6 @@ export function AppController(props: AppControllerProps) {
     const activeEnterpriseService = enterpriseServiceRef.current;
     if (
       activeEnterpriseService === null
-      || enterpriseSessionRef.current.status !== 'signed_in'
       || currentProject === undefined
       || enterpriseSharedMutationInFlightRef.current
     ) return;
@@ -3849,11 +3440,6 @@ export function AppController(props: AppControllerProps) {
       );
     } catch (error) {
       if (!isCurrentEnterpriseSharedDriveRuntime(generation, activeEnterpriseService)) return;
-      if (isEnterpriseUnauthorized(error)) {
-        handleEnterpriseSessionExpired();
-        setEnterpriseSharedOperation(undefined);
-        return;
-      }
       if (
         error instanceof ApiClientError
         && error.code === 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS'
@@ -3904,7 +3490,6 @@ export function AppController(props: AppControllerProps) {
     if (
       activeEnterpriseService === null
       || connectionStatusRef.current !== 'connected'
-      || enterpriseSessionRef.current.status !== 'signed_in'
       || knowledgeBase === undefined
       || knowledgeBase.permissions.read !== true
       || knowledgeBase.permissions.upload !== true
@@ -3948,16 +3533,6 @@ export function AppController(props: AppControllerProps) {
       ) {
         return;
       }
-      if (isEnterpriseUnauthorized(error)) {
-        setEnterpriseSession({
-          status: 'signed_out',
-          reason: 'session_expired',
-          transportSecurity: enterpriseSessionRef.current.transportSecurity
-        });
-        setEnterpriseKnowledgeUpload(undefined);
-        return;
-      }
-
       let message = formatEnterpriseKnowledgeError(
         error,
         '文档上传失败'
@@ -3990,132 +3565,6 @@ export function AppController(props: AppControllerProps) {
     } finally {
       enterpriseKnowledgeUploadInFlightRef.current = false;
     }
-  }
-
-  async function loadEnterpriseSkillDetail(
-    skillId: string
-  ): Promise<EnterpriseSkillDetailResponse> {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || connectionStatusRef.current !== 'connected'
-      || enterpriseSessionRef.current.status !== 'signed_in'
-    ) {
-      throw new Error('企业Skills暂不可用');
-    }
-    const generation = enterpriseHubGenerationRef.current;
-    try {
-      const detail = await activeEnterpriseService.getSkillDetail(skillId);
-      if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
-        throw new Error('企业 Skill 详情请求已过期');
-      }
-      return detail;
-    } catch (error) {
-      if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
-        if (isEnterpriseUnauthorized(error)) {
-          setEnterpriseSession({
-            status: 'signed_out',
-            reason: 'session_expired',
-            transportSecurity: enterpriseSessionRef.current.transportSecurity
-          });
-        } else if (
-          error instanceof ApiClientError
-          && error.status === 404
-        ) {
-          setEnterpriseSkillsReloadKey(current => current + 1);
-        }
-      }
-      throw new Error(formatEnterpriseSkillError(error, '企业 Skill 详情加载失败'));
-    }
-  }
-
-  async function mutateEnterpriseSkill(
-    skillId: string,
-    kind: 'install' | 'update'
-  ) {
-    const activeEnterpriseService = enterpriseServiceRef.current;
-    if (
-      activeEnterpriseService === null
-      || connectionStatusRef.current !== 'connected'
-      || enterpriseSessionRef.current.status !== 'signed_in'
-      || enterpriseSkillMutationInFlightRef.current
-    ) {
-      return;
-    }
-
-    const generation = enterpriseHubGenerationRef.current;
-    const capabilityGeneration = skillMarketRuntimeGenerationRef.current;
-    const activeCapabilityService = capabilityServiceRef.current;
-    enterpriseSkillMutationInFlightRef.current = true;
-    setEnterpriseSkillOperation({ skillId, kind });
-    try {
-      if (kind === 'install') {
-        await activeEnterpriseService.installSkill(skillId);
-      } else {
-        await activeEnterpriseService.updateSkill(skillId);
-      }
-      await refreshEnterpriseSkillListOnce(generation, activeEnterpriseService);
-      if (activeCapabilityService !== null) {
-        try {
-          const response = await activeCapabilityService.listSkills();
-          if (isCurrentCapabilityRuntime(
-            capabilityGeneration,
-            activeCapabilityService
-          )) {
-            setCodexSkills(response);
-            setCapabilitiesLoadError(undefined);
-          }
-        } catch {
-          // The enterprise mutation succeeded; capability refresh can retry later.
-        }
-      }
-      if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
-        setEnterpriseSkillOperation(undefined);
-      }
-    } catch (error) {
-      if (!isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) return;
-      if (isEnterpriseUnauthorized(error)) {
-        setEnterpriseSession({
-          status: 'signed_out',
-          reason: 'session_expired',
-          transportSecurity: enterpriseSessionRef.current.transportSecurity
-        });
-        setEnterpriseSkillOperation(undefined);
-        return;
-      }
-      if (
-        error instanceof ApiClientError
-        && (error.status === 404 || error.status === 409)
-      ) {
-        try {
-          await refreshEnterpriseSkillListOnce(generation, activeEnterpriseService);
-        } catch {
-          // Preserve the mutation error; the user can refresh the directory manually.
-        }
-      }
-      if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
-        setEnterpriseSkillOperation({
-          skillId,
-          kind,
-          error: formatEnterpriseSkillError(
-            error,
-            kind === 'install' ? '企业 Skill 安装失败' : '企业 Skill 更新失败'
-          )
-        });
-      }
-    } finally {
-      if (isCurrentEnterpriseHubRuntime(generation, activeEnterpriseService)) {
-        enterpriseSkillMutationInFlightRef.current = false;
-      }
-    }
-  }
-
-  function installEnterpriseSkill(skillId: string) {
-    return mutateEnterpriseSkill(skillId, 'install');
-  }
-
-  function updateEnterpriseSkill(skillId: string) {
-    return mutateEnterpriseSkill(skillId, 'update');
   }
 
   async function refreshSkillMarketState(
@@ -4216,23 +3665,6 @@ export function AppController(props: AppControllerProps) {
       projectId,
       onError: error => setSkillMarketUseError(
         error === undefined ? undefined : { skillId, error }
-      )
-    });
-  }
-
-  async function useEnterpriseSkill(
-    skill: EnterpriseSkillResponse,
-    projectId: string
-  ) {
-    setEnterpriseSkillUseError(undefined);
-    await useSkillByName({
-      skillName: skill.name,
-      title: skill.name,
-      projectId,
-      onError: error => setEnterpriseSkillUseError(
-        error === undefined
-          ? undefined
-          : { skillId: skill.skillId, error }
       )
     });
   }
@@ -4599,7 +4031,7 @@ export function AppController(props: AppControllerProps) {
     if (threadService === null) throw new Error('Thread service is not available');
 
     if (currentProject === undefined) {
-      throw new Error('请先添加项目');
+      throw new Error(t('conversation.addProjectFirst'));
     }
     const created = await threadService.createThread(
       buildThreadRequest(prompt, currentProject, config)
@@ -4991,46 +4423,6 @@ export function AppController(props: AppControllerProps) {
     }
   }
 
-  async function openScheduleCreationConversation() {
-    const activeThreadService = threadService;
-    if (activeThreadService === null) {
-      throw new Error('本地服务暂不可用，无法创建对话');
-    }
-
-    const generation = skillMarketRuntimeGenerationRef.current;
-      const created = await activeThreadService.createThread(
-      {
-        title: SCHEDULE_DRAFT_TITLE,
-        workspaceMode: 'managed',
-        profile: 'default',
-        sandbox: 'workspace-write',
-        purpose: 'schedule_draft'
-      }
-    );
-    if (!isCurrentThreadRuntime(generation, activeThreadService)) return;
-
-    closeMobileSidebar();
-    setRuntimeThreads(previous => upsertThread(previous, created.thread));
-    showTimelineForThread(created.thread.id, [], true);
-    setThreadHistoryLoadError(undefined);
-    setHistoryLoadingThreadId(undefined);
-    setHistoryLoadedThreadId(created.thread.id);
-    setRunsLoadedThreadId(undefined);
-    setThreadConfigUpdateError(undefined);
-    skipNextHistoryLoadForThreadRef.current = created.thread.id;
-    allowInitialRuntimeProjectFocusRef.current = false;
-    dispatch({ type: 'select_thread', threadId: created.thread.id });
-    navigateToRoute({ view: 'thread', threadId: created.thread.id });
-    nextComposerDraftIdRef.current += 1;
-    setPendingComposerDraft({
-      threadId: created.thread.id,
-      request: {
-        id: nextComposerDraftIdRef.current,
-        text: SCHEDULE_CREATION_DRAFT
-      }
-    });
-  }
-
   async function openTask(task: TaskItem) {
     markTaskRead(task.id);
     const threadId = task.threadId;
@@ -5234,16 +4626,16 @@ export function AppController(props: AppControllerProps) {
     || selectedRunsLoading
     || connectionState.status !== 'connected';
   const composerDisabledReason = connectionState.status !== 'connected'
-    ? '正在连接本地运行内核'
+    ? t('conversation.connectingRuntime')
     : projectLoadError !== undefined
       ? projectLoadError
       : conversationNeedsProject && currentProject === undefined
-        ? '请先添加项目'
+        ? t('conversation.addProjectFirst')
         : currentRunCanceling
-          ? '正在停止任务'
+          ? t('conversation.stoppingTask')
           : selectedPendingRunStart !== undefined
-            ? '正在提交任务'
-            : '正在检查会话任务';
+            ? t('conversation.submittingTask')
+            : t('conversation.checkingTask');
   const fileWorkspaceOpen = state.activeView === 'conversation' && state.rightPanelMode === 'file';
   const workspaceNeedsCompactSidebar = useMediaQuery(WORKSPACE_AUTO_COLLAPSE_MEDIA_QUERY);
   const sidebarAutoCollapsed = fileWorkspaceOpen
@@ -5285,7 +4677,7 @@ export function AppController(props: AppControllerProps) {
   const conversationTitle = selectedConversation?.title
     ?? selectedScheduleTask?.name
     ?? selectedThread?.title
-    ?? '新对话';
+    ?? t('conversation.new');
   const conversationTaskToolbar =
     selectedScheduleTask?.bindingStatus === 'ready'
     && selectedSchedule !== undefined
@@ -5357,15 +4749,7 @@ export function AppController(props: AppControllerProps) {
             {threadConfigUpdateError}
           </div>
         ) : null}
-        {showConversationEmptyState ? (
-          <ConversationEmptyState
-            nickname={
-              enterpriseSession.status === 'signed_in'
-                ? enterpriseSession.account?.name
-                : undefined
-            }
-          />
-        ) : (
+        {showConversationEmptyState ? null : (
           <Timeline
             ref={timelineRef}
             key={state.selectedThreadId ?? 'draft'}
@@ -5400,12 +4784,19 @@ export function AppController(props: AppControllerProps) {
           />
         )}
         {showHistoryLoadingOverlay ? (
-          <div className="conversation-history-loading" role="status" aria-label="正在加载会话历史">
-            <span>正在加载会话历史...</span>
+          <div
+            className="conversation-history-loading"
+            role="status"
+            aria-label={t('conversation.loadingHistory')}
+          >
+            <span>{t('conversation.loadingHistoryProgress')}</span>
           </div>
         ) : null}
       </div>
       <div className="composer-wrap" onWheel={handleComposerWheel}>
+        {showConversationEmptyState ? (
+          <ConversationEmptyState />
+        ) : null}
         {pendingComposerApproval?.kind === 'approval' ? (
           <div
             className="composer-approval-overlay"
@@ -5439,10 +4830,7 @@ export function AppController(props: AppControllerProps) {
           projectId={currentProject?.id ?? ''}
           projectName={currentProjectName}
           projects={projects}
-          showProjectSelector={shouldShowComposerProjectSelector({
-            conversationEmpty: conversationConfirmedEmpty,
-            threadPurpose: selectedThread?.purpose
-          })}
+          showProjectSelector={false}
           permission={effectiveComposerConfig.permission}
           profile={effectiveComposerConfig.profile}
           model={effectiveComposerConfig.model}
@@ -5460,13 +4848,13 @@ export function AppController(props: AppControllerProps) {
           slashCommandsLoading={capabilitiesLoading}
           slashCommandsError={capabilitiesLoadError}
           onLoadConnectors={
-            enterpriseService === null || enterpriseSession.status !== 'signed_in'
+            enterpriseService === null
               ? undefined
               : loadComposerConnectors
           }
-          preloadConnectors={props.requireEnterpriseLogin !== false}
+          preloadConnectors
           onToggleConnector={
-            enterpriseService === null || enterpriseSession.status !== 'signed_in'
+            enterpriseService === null
               ? undefined
               : toggleComposerConnector
           }
@@ -5499,7 +4887,10 @@ export function AppController(props: AppControllerProps) {
           onDraftApplied={handleComposerDraftApplied}
           onFocusRequestApplied={handleComposerFocusRequestApplied}
           onManageSkills={() => navigateToRoute({ view: 'plugins' })}
-          onManageConnectors={() => navigateToRoute({ view: 'connections' })}
+          onManageConnectors={() => navigateToRoute({
+            view: 'plugins',
+            tab: 'connections'
+          })}
           onCancel={() => void cancelActiveRun()}
           onCancelQueuedRun={(runId) => void cancelQueuedRun(runId)}
           onSteerQueuedRun={(runId) => void steerQueuedRun(runId)}
@@ -5520,7 +4911,9 @@ export function AppController(props: AppControllerProps) {
           }}
           onSubmit={submitPrompt}
         />
-        {conversationConfirmedEmpty ? <ConversationStarterTags /> : null}
+        {showConversationEmptyState ? (
+          <CreatorWorkbench onSelectPrompt={applyWorkbenchPrompt} />
+        ) : null}
       </div>
     </section>
   );
@@ -5561,6 +4954,22 @@ export function AppController(props: AppControllerProps) {
   ) : conversationPage;
   const main = props.capabilitiesView !== undefined ? (
     <CapabilitiesPage {...props.capabilitiesView} />
+  ) : state.activeView === 'projects' ? (
+    <ProjectsPage
+      projects={projects}
+      currentProjectId={state.currentProjectId}
+      onOpenProject={selectProject}
+      onCreateProject={projectService === null ? undefined : () => {
+        setProjectLoadError(undefined);
+        setCreateProjectOpen(true);
+      }}
+      onManageProject={projectId => void openProjectManagement(projectId)}
+    />
+  ) : state.activeView === 'workbench' ? (
+    <WorkbenchPage
+      onSelectPrompt={startCreatorTool}
+      onWorkspaceModeChange={setImmersiveWorkspace}
+    />
   ) : state.activeView === 'search' ? (
     <SearchPage
       connected={connectionState.status === 'connected'}
@@ -5582,7 +4991,6 @@ export function AppController(props: AppControllerProps) {
       }
       profiles={codexProfiles?.profiles}
       defaultTimezone={resolveDefaultTimezone()}
-      onCreateWithClawee={openScheduleCreationConversation}
       onOpenTask={(threadId, runId) => void openScheduleTask(threadId, runId)}
       onRunNow={runScheduleNow}
       onScheduleChanged={handleScheduleChanged}
@@ -5617,80 +5025,57 @@ export function AppController(props: AppControllerProps) {
         : { view: 'activity', range: '7d' }}
       onNavigate={navigateToRoute}
     />
-  ) : state.activeView === 'knowledge' ? (
-    <KnowledgePage
-      connected={connectionState.status === 'connected'}
-      session={enterpriseSession}
-      knowledgeBases={enterpriseKnowledgeBases}
-      knowledgeBasesLoading={enterpriseKnowledgeBasesLoading}
-      knowledgeBasesError={enterpriseKnowledgeBasesError}
-      selectedKnowledgeBaseId={selectedEnterpriseKnowledgeBaseId}
-      documents={enterpriseKnowledgeDocuments}
-      documentsLoading={enterpriseKnowledgeDocumentsLoading}
-      documentsError={enterpriseKnowledgeDocumentsError}
-      upload={enterpriseKnowledgeUpload}
-      uploadNotice={enterpriseKnowledgeUploadNotice}
-      onOpenAccount={() => {
-        enterpriseReturnRouteRef.current = { view: 'knowledge' };
-        dispatch({ type: 'set_active_view', activeView: 'account' });
-        navigateToRoute({ view: 'account' });
+  ) : state.activeView === 'assets' ? (
+    <AssetsPage
+      activeTab={activeAssetsTab}
+      onTabChange={tab => navigateToRoute(
+        tab === 'knowledge'
+          ? { view: 'assets' }
+          : { view: 'assets', tab }
+      )}
+      knowledge={{
+        connected: connectionState.status === 'connected',
+        knowledgeBases: enterpriseKnowledgeBases,
+        knowledgeBasesLoading: enterpriseKnowledgeBasesLoading,
+        knowledgeBasesError: enterpriseKnowledgeBasesError,
+        selectedKnowledgeBaseId: selectedEnterpriseKnowledgeBaseId,
+        documents: enterpriseKnowledgeDocuments,
+        documentsLoading: enterpriseKnowledgeDocumentsLoading,
+        documentsError: enterpriseKnowledgeDocumentsError,
+        upload: enterpriseKnowledgeUpload,
+        uploadNotice: enterpriseKnowledgeUploadNotice,
+        onRefresh: refreshEnterpriseKnowledge,
+        onSelectKnowledgeBase: selectEnterpriseKnowledgeBase,
+        onUpload: file => void uploadEnterpriseKnowledgeDocument(file)
       }}
-      onRefresh={refreshEnterpriseKnowledge}
-      onStartConversation={() => void startKnowledgeConversation()}
-      onSelectKnowledgeBase={selectEnterpriseKnowledgeBase}
-      onUpload={file => void uploadEnterpriseKnowledgeDocument(file)}
-    />
-  ) : state.activeView === 'drive' ? (
-    <SharedDrivePage
-      connected={connectionState.status === 'connected'}
-      session={enterpriseSession}
-      spaces={enterpriseSharedSpaces}
-      spacesLoading={enterpriseSharedSpacesLoading}
-      spacesError={enterpriseSharedSpacesError}
-      spacesHasNext={enterpriseSharedSpacesMeta.hasNext}
-      selectedSpaceId={selectedEnterpriseSharedSpaceId}
-      files={enterpriseSharedFiles}
-      filesLoading={enterpriseSharedFilesLoading}
-      filesError={enterpriseSharedFilesError}
-      filesHasNext={enterpriseSharedFilesMeta.hasNext}
-      query={enterpriseSharedQuery}
-      maxFileSizeBytes={enterpriseSharedSpacesMeta.maxFileSizeBytes}
-      currentProjectId={currentProject?.id}
-      currentProjectName={currentProjectName}
-      operation={enterpriseSharedOperation}
-      notice={enterpriseSharedNotice}
-      onOpenAccount={() => {
-        enterpriseReturnRouteRef.current = { view: 'drive' };
-        dispatch({ type: 'set_active_view', activeView: 'account' });
-        navigateToRoute({ view: 'account' });
+      materials={{
+        connected: connectionState.status === 'connected',
+        spaces: enterpriseSharedSpaces,
+        spacesLoading: enterpriseSharedSpacesLoading,
+        spacesError: enterpriseSharedSpacesError,
+        spacesHasNext: enterpriseSharedSpacesMeta.hasNext,
+        selectedSpaceId: selectedEnterpriseSharedSpaceId,
+        files: enterpriseSharedFiles,
+        filesLoading: enterpriseSharedFilesLoading,
+        filesError: enterpriseSharedFilesError,
+        filesHasNext: enterpriseSharedFilesMeta.hasNext,
+        query: enterpriseSharedQuery,
+        maxFileSizeBytes: enterpriseSharedSpacesMeta.maxFileSizeBytes,
+        currentProjectId: currentProject?.id,
+        currentProjectName,
+        operation: enterpriseSharedOperation,
+        notice: enterpriseSharedNotice,
+        onRefresh: refreshEnterpriseSharedDrive,
+        onLoadMoreSpaces: () => void loadMoreEnterpriseSharedSpaces(),
+        onSelectSpace: selectEnterpriseSharedSpace,
+        onSearch: searchEnterpriseSharedFiles,
+        onLoadMoreFiles: () => void loadMoreEnterpriseSharedFiles(),
+        onUpload: (spaceId, file) => void uploadEnterpriseSharedFile(spaceId, file),
+        onReplace: (target, file) => void replaceEnterpriseSharedFile(target, file),
+        onDownload: (target, overwrite) => {
+          void downloadEnterpriseSharedFile(target, overwrite);
+        }
       }}
-      onRefresh={refreshEnterpriseSharedDrive}
-      onLoadMoreSpaces={() => void loadMoreEnterpriseSharedSpaces()}
-      onSelectSpace={selectEnterpriseSharedSpace}
-      onSearch={searchEnterpriseSharedFiles}
-      onLoadMoreFiles={() => void loadMoreEnterpriseSharedFiles()}
-      onUpload={(spaceId, file) => void uploadEnterpriseSharedFile(spaceId, file)}
-      onReplace={(target, file) => void replaceEnterpriseSharedFile(target, file)}
-      onDownload={(target, overwrite) => {
-        void downloadEnterpriseSharedFile(target, overwrite);
-      }}
-    />
-  ) : state.activeView === 'connections' ? (
-    <ConnectionsPage
-      connected={connectionState.status === 'connected'}
-      session={enterpriseSession}
-      service={enterpriseService}
-      mcpService={mcpService}
-      mcpData={codexMcp}
-      mcpCapabilities={readMcpCapabilities(connectionState)}
-      onMcpDataChange={setCodexMcp}
-      onOpenAccount={() => {
-        enterpriseReturnRouteRef.current = { view: 'connections' };
-        dispatch({ type: 'set_active_view', activeView: 'account' });
-        navigateToRoute({ view: 'account' });
-      }}
-      onRefreshSession={refreshEnterpriseSession}
-      onSessionExpired={handleEnterpriseSessionExpired}
     />
   ) : state.activeView === 'settings' ? (
     <SettingsPage
@@ -5728,21 +5113,31 @@ export function AppController(props: AppControllerProps) {
       }}
     />
   ) : state.activeView === 'account' ? (
-    <EnterpriseAccountPage
-      connected={connectionState.status === 'connected'}
-      session={enterpriseSession}
-      checkingTimedOut={enterpriseCheckingTimedOut}
-      onLogin={loginEnterprise}
-      onRegister={registerEnterprise}
-      onStartQrLogin={startEnterpriseQrLogin}
-      onPollQrLogin={pollEnterpriseQrLogin}
-      onLogout={logoutEnterprise}
-      onRefresh={refreshEnterpriseSession}
+    <ConsumerAccountPage
+      user={consumerUser}
+      onLogin={() => setConsumerUser(MOCK_CONSUMER_USER)}
     />
   ) : state.activeView === 'plugins' ? (
     <PluginsPage
+      activeTab={
+        props.route.view === 'plugins'
+          ? props.route.tab ?? 'skills'
+          : 'skills'
+      }
+      onTabChange={tab => navigateToRoute(
+        tab === 'skills'
+          ? { view: 'plugins' }
+          : { view: 'plugins', tab }
+      )}
+      connections={{
+        connected: connectionState.status === 'connected',
+        service: enterpriseService,
+        mcpService,
+        mcpData: codexMcp,
+        mcpCapabilities: readMcpCapabilities(connectionState),
+        onMcpDataChange: setCodexMcp
+      }}
       connected={connectionState.status === 'connected'}
-      source={activePluginSource}
       skills={codexSkills}
       installRecords={skillMarketInstallRecords}
       loading={skillMarketLoading}
@@ -5754,85 +5149,12 @@ export function AppController(props: AppControllerProps) {
       onInstall={skillId => void installMarketSkill(skillId)}
       onUpdate={skillId => void updateMarketSkill(skillId)}
       onUse={(skillId, projectId) => void useMarketSkill(skillId, projectId)}
-      onSourceChange={source => {
-        navigateToRoute(
-          source === 'public'
-            ? { view: 'plugins', source: 'public' }
-            : { view: 'plugins' }
-        );
-      }}
-      enterprise={{
-        connected: connectionState.status === 'connected',
-        session: enterpriseSession,
-        skills: enterpriseSkills,
-        loading: enterpriseSkillsLoading,
-        loadError: enterpriseSkillsLoadError,
-        operation: enterpriseSkillOperation,
-        useError: enterpriseSkillUseError,
-        projects,
-        currentProjectId: currentProject?.id ?? '',
-        onOpenAccount: () => {
-          enterpriseReturnRouteRef.current = {
-            view: 'plugins',
-            source: 'enterprise'
-          };
-          dispatch({ type: 'set_active_view', activeView: 'account' });
-          navigateToRoute({ view: 'account' });
-        },
-        onRefresh: refreshEnterpriseHub,
-        onLoadDetail: loadEnterpriseSkillDetail,
-        onInstall: skillId => void installEnterpriseSkill(skillId),
-        onUpdate: skillId => void updateEnterpriseSkill(skillId),
-        onUse: (skill, projectId) => void useEnterpriseSkill(skill, projectId),
-        onCreateSkill: () => void useMarketSkill('skill-creator', currentProject?.id ?? ''),
-        onUploadSkill: hostBridge.selectProjectDirectory === undefined
-          ? undefined
-          : () => void uploadLocalSkill()
-      }}
     />
   ) : state.activeView === 'conversation' ? (
     conversationWorkspace
   ) : (
     <PlaceholderView label={getPlaceholderLabel(state.activeView)} />
   );
-
-  if (
-    props.requireEnterpriseLogin !== false
-    && enterpriseSession.status !== 'signed_in'
-  ) {
-    return (
-      <div
-        className="app-drop-shell enterprise-access-gate"
-        data-integrated-title-bar={
-          integratedTitleBar?.integratedTitleBar === true ? 'true' : undefined
-        }
-        style={appShellStyle}
-      >
-        {integratedTitleBar?.integratedTitleBar === true ? (
-          <div className="desktop-titlebar-drag-region" aria-hidden="true" />
-        ) : null}
-        <span
-          className="app-visually-hidden"
-          role="status"
-          aria-label={getConnectionStatusLabel(connectionState)}
-        />
-        <Suspense fallback={<PageLoading />}>
-          <EnterpriseAccountPage
-            required
-            connected={connectionState.status === 'connected'}
-            session={enterpriseSession}
-            checkingTimedOut={enterpriseCheckingTimedOut}
-            onLogin={loginEnterprise}
-            onRegister={registerEnterprise}
-            onStartQrLogin={startEnterpriseQrLogin}
-            onPollQrLogin={pollEnterpriseQrLogin}
-            onLogout={logoutEnterprise}
-            onRefresh={refreshEnterpriseSession}
-          />
-        </Suspense>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -5870,17 +5192,17 @@ export function AppController(props: AppControllerProps) {
           currentProjectId={state.currentProjectId}
           selectedConversationId={state.selectedThreadId}
           activeView={state.activeView}
+          projectNavigationMode={props.projectNavigationMode}
           collapsed={effectiveSidebarCollapsed}
           autoCollapsed={sidebarAutoCollapsed}
           colorMode={colorMode}
-          enterpriseSession={enterpriseSession}
+          user={consumerUser}
           onNewConversation={projectId => startNewConversation({ projectId })}
           onSelectProject={selectProject}
           onSelectConversation={selectConversation}
           onSelectTask={selectSidebarTask}
           onOpenView={openPrimaryView}
           onOpenAccount={() => {
-            enterpriseReturnRouteRef.current = undefined;
             closeMobileSidebar();
             dispatch({ type: 'set_active_view', activeView: 'account' });
             navigateToRoute({ view: 'account' });
@@ -5927,6 +5249,7 @@ export function AppController(props: AppControllerProps) {
       )}
       detail={detailPanel}
       detailOpen={detailPanel !== null && state.activeView === 'conversation'}
+      immersive={immersiveWorkspace}
       sidebarCollapsed={effectiveSidebarCollapsed}
       mobileSidebarOpen={mobileSidebarOpen}
       onOpenMobileSidebar={openMobileSidebar}
@@ -6084,15 +5407,15 @@ function createInitialState(
         selectedThreadId: route.threadId
       };
     case 'search':
+    case 'projects':
+    case 'workbench':
     case 'schedules':
     case 'tasks':
     case 'dashboard':
     case 'activity':
     case 'activity-agent':
     case 'plugins':
-    case 'connections':
-    case 'knowledge':
-    case 'drive':
+    case 'assets':
     case 'account':
     case 'settings':
       return {
@@ -6118,6 +5441,10 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
   switch (activeView) {
     case 'conversation':
       return routeForConversation(selectedThreadId);
+    case 'projects':
+      return { view: 'projects' };
+    case 'workbench':
+      return { view: 'workbench' };
     case 'search':
       return { view: 'search' };
     case 'schedules':
@@ -6130,12 +5457,8 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
       return { view: 'activity', range: '7d' };
     case 'plugins':
       return { view: 'plugins' };
-    case 'connections':
-      return { view: 'connections' };
-    case 'knowledge':
-      return { view: 'knowledge' };
-    case 'drive':
-      return { view: 'drive' };
+    case 'assets':
+      return { view: 'assets' };
     case 'account':
       return { view: 'account' };
     case 'settings':
@@ -6160,70 +5483,6 @@ function PageLoading() {
       <span>正在加载页面...</span>
     </section>
   );
-}
-
-export async function pollEnterpriseSessionUntilSettled(input: {
-  readSession(): Promise<EnterpriseSessionResponse>;
-  onSession(response: EnterpriseSessionResponse): void;
-  onTimeout(): void;
-  onError(error: unknown): void;
-  signal?: AbortSignal;
-  now?: () => number;
-  wait?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
-  timeoutMs?: number;
-  intervalMs?: number;
-}): Promise<void> {
-  const now = input.now ?? Date.now;
-  const wait = input.wait ?? waitForEnterprisePoll;
-  const timeoutMs = input.timeoutMs ?? 15_000;
-  const intervalMs = input.intervalMs ?? 250;
-  const startedAt = now();
-  const isAborted = () => input.signal?.aborted === true;
-
-  while (!isAborted()) {
-    let response: EnterpriseSessionResponse;
-    try {
-      response = await input.readSession();
-    } catch (error) {
-      if (!isAborted()) input.onError(error);
-      return;
-    }
-    if (isAborted()) return;
-
-    input.onSession(response);
-    if (
-      response.status !== 'checking'
-      && response.collector?.status !== 'installing'
-    ) {
-      return;
-    }
-
-    const elapsed = now() - startedAt;
-    if (elapsed >= timeoutMs) {
-      input.onTimeout();
-      return;
-    }
-    await wait(Math.min(intervalMs, timeoutMs - elapsed), input.signal);
-  }
-}
-
-function waitForEnterprisePoll(
-  delayMs: number,
-  signal?: AbortSignal
-): Promise<void> {
-  return new Promise(resolve => {
-    if (signal?.aborted === true) {
-      resolve();
-      return;
-    }
-    const finish = () => {
-      window.clearTimeout(timerId);
-      signal?.removeEventListener('abort', finish);
-      resolve();
-    };
-    const timerId = window.setTimeout(finish, delayMs);
-    signal?.addEventListener('abort', finish, { once: true });
-  });
 }
 
 function getConnectionStatusLabel(connectionState: ConnectionState) {
@@ -6311,7 +5570,7 @@ function readDroppedDirectory(dataTransfer: DataTransfer): File | undefined {
 function PlaceholderView(props: { label: string }) {
   return (
     <section className="placeholder-page" aria-labelledby="placeholder-title">
-      <h1 id="placeholder-title">Clawee：{props.label}</h1>
+      <h1 id="placeholder-title">OpenCreator：{props.label}</h1>
     </section>
   );
 }
@@ -6472,53 +5731,20 @@ function getRuntimeErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function isEnterpriseUnauthorized(error: unknown): boolean {
-  return error instanceof ApiClientError
-    && (
-      error.status === 401
-      || error.code === 'ENTERPRISE_UNAUTHORIZED'
-      || error.code === 'ENTERPRISE_SESSION_EXPIRED'
-    );
-}
-
 function formatEnterpriseConnectorError(error: unknown, fallback: string): string {
   if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
   switch (error.code) {
     case 'ENTERPRISE_AGENT_FORBIDDEN':
-      return '当前设备的企业 Agent 已停用';
+      return '当前设备连接已停用';
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':
-      return '企业连接服务暂时不可用';
+      return '连接服务暂时不可用';
+    case 'ENTERPRISE_UNAUTHORIZED':
+    case 'ENTERPRISE_SESSION_EXPIRED':
+      return '连接服务暂时不可用';
     case 'ENTERPRISE_PROTOCOL_ERROR':
-      return '企业连接服务返回了无法识别的数据';
+      return '连接服务返回了无法识别的数据';
     case 'ENTERPRISE_RATE_LIMITED':
       return '连接器目录请求过于频繁，请稍后重试';
-    default:
-      return error.message.trim().length > 0 ? error.message : fallback;
-  }
-}
-
-function formatEnterpriseSkillError(error: unknown, fallback: string): string {
-  if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
-  switch (error.code) {
-    case 'ENTERPRISE_FORBIDDEN':
-      return '当前账户没有企业Skills访问权限';
-    case 'ENTERPRISE_SKILL_NOT_FOUND':
-      return '该企业 Skill 已下架或不存在';
-    case 'ENTERPRISE_SKILL_VERSION_CHANGED':
-      return '企业 Skill 版本已变化，请刷新后重试';
-    case 'ENTERPRISE_SKILL_SOURCE_CONFLICT':
-      return '本地同名 Skill 已由其他来源占用';
-    case 'ENTERPRISE_SKILL_LOCAL_CHANGED':
-      return '本地 Skill 已被修改，无法自动覆盖';
-    case 'ENTERPRISE_SKILL_PACKAGE_INVALID':
-    case 'ENTERPRISE_SKILL_PACKAGE_HASH_MISMATCH':
-      return '企业 Skill 包校验失败';
-    case 'ENTERPRISE_SKILL_PACKAGE_TOO_LARGE':
-      return '企业 Skill 包超过允许大小';
-    case 'ENTERPRISE_RATE_LIMITED':
-      return '企业服务请求过于频繁，请稍后重试';
-    case 'ENTERPRISE_SERVICE_UNAVAILABLE':
-      return '企业Skills暂时不可用';
     default:
       return error.message.trim().length > 0 ? error.message : fallback;
   }
@@ -6528,9 +5754,9 @@ function formatEnterpriseKnowledgeError(error: unknown, fallback: string): strin
   if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
   switch (error.code) {
     case 'ENTERPRISE_FORBIDDEN':
-      return '当前账户没有企业知识库访问权限';
+      return '当前账户没有知识库访问权限';
     case 'ENTERPRISE_AGENT_FORBIDDEN':
-      return '当前设备的企业 Agent 无法访问知识库';
+      return '当前设备无法访问知识库';
     case 'ENTERPRISE_KNOWLEDGE_BASE_NOT_FOUND':
       return '该知识库不存在或当前账户已无权访问';
     case 'ENTERPRISE_DOCUMENT_UPLOAD_FORBIDDEN':
@@ -6542,12 +5768,14 @@ function formatEnterpriseKnowledgeError(error: unknown, fallback: string): strin
     case 'ENTERPRISE_KNOWLEDGE_CONFLICT':
       return '知识库状态已变化，请刷新后重试';
     case 'ENTERPRISE_RATE_LIMITED':
-      return '企业知识服务请求过于频繁，请稍后重试';
+      return '知识服务请求过于频繁，请稍后重试';
     case 'ENTERPRISE_KNOWLEDGE_PROVIDER_ERROR':
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':
-      return '企业知识服务暂时不可用';
+    case 'ENTERPRISE_UNAUTHORIZED':
+    case 'ENTERPRISE_SESSION_EXPIRED':
+      return '知识服务暂时不可用';
     case 'ENTERPRISE_PROTOCOL_ERROR':
-      return '企业知识服务返回了无法识别的数据';
+      return '知识服务返回了无法识别的数据';
     default:
       return error.message.trim().length > 0 ? error.message : fallback;
   }
@@ -6557,27 +5785,29 @@ function formatEnterpriseSharedDriveError(error: unknown, fallback: string): str
   if (!(error instanceof ApiClientError)) return getRuntimeErrorMessage(error, fallback);
   switch (error.code) {
     case 'ENTERPRISE_FORBIDDEN':
-      return '当前账户没有共享网盘访问权限';
+      return '当前账户没有素材中心访问权限';
     case 'ENTERPRISE_AGENT_FORBIDDEN':
-      return '当前设备的企业 Agent 无法访问共享网盘';
+      return '当前设备无法访问素材中心';
     case 'ENTERPRISE_SHARED_SPACE_NOT_FOUND':
-      return '该共享空间不存在或当前账户已无权访问';
+      return '该素材空间不存在或当前账户已无权访问';
     case 'ENTERPRISE_SHARED_FILE_NOT_FOUND':
-      return '该共享文件不存在或当前账户已无权访问';
+      return '该素材文件不存在或当前账户已无权访问';
     case 'ENTERPRISE_SHARED_FILE_WRITE_FORBIDDEN':
-      return '当前账户没有该共享空间的写入权限';
+      return '当前账户没有该素材空间的写入权限';
     case 'ENTERPRISE_SHARED_FILE_ALREADY_EXISTS':
-      return '相同网盘路径已存在';
+      return '相同素材路径已存在';
     case 'ENTERPRISE_SHARED_FILE_REVISION_CONFLICT':
       return '远端文件已被其他成员修改';
     case 'ENTERPRISE_SHARED_FILE_TOO_LARGE':
-      return '共享文件超过服务端允许大小';
+      return '素材文件超过服务端允许大小';
     case 'ENTERPRISE_SHARED_FILE_LENGTH_MISMATCH':
     case 'ENTERPRISE_SHARED_FILE_DIGEST_MISMATCH':
-      return '共享文件完整性校验失败';
+      return '素材文件完整性校验失败';
     case 'ENTERPRISE_SHARED_FILE_STORAGE_UNAVAILABLE':
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':
-      return '企业文件服务暂时不可用';
+    case 'ENTERPRISE_UNAUTHORIZED':
+    case 'ENTERPRISE_SESSION_EXPIRED':
+      return '素材服务暂时不可用';
     case 'ENTERPRISE_SHARED_FILE_LOCAL_EXISTS':
       return '当前项目中已存在同路径文件';
     case 'ENTERPRISE_SHARED_FILE_LOCAL_WRITE_FAILED':
@@ -6592,9 +5822,9 @@ function formatEnterpriseSharedDriveError(error: unknown, fallback: string): str
     case 'PATH_IGNORED':
       return '远端文件路径不能写入当前项目';
     case 'ENTERPRISE_RATE_LIMITED':
-      return '企业文件服务请求过于频繁，请稍后重试';
+      return '素材服务请求过于频繁，请稍后重试';
     case 'ENTERPRISE_PROTOCOL_ERROR':
-      return '企业文件服务返回了无法识别的数据';
+      return '素材服务返回了无法识别的数据';
     default:
       return error.message.trim().length > 0 ? error.message : fallback;
   }
@@ -6755,7 +5985,7 @@ export function buildComposerConnectors(
 ): ComposerConnector[] {
   return catalog.upstreams.map(upstream => {
     const authorizedTools = upstream.tools.filter(tool => tool.authorized).length;
-    const scope = upstream.domain.trim() || upstream.namespace.trim() || '企业连接器';
+    const scope = upstream.domain.trim() || upstream.namespace.trim() || '云端连接器';
     const status: ComposerConnector['status'] = upstream.status !== 'active'
       ? 'unavailable'
       : upstream.enabled

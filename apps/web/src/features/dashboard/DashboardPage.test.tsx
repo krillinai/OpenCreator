@@ -12,7 +12,7 @@ describe('DashboardPage', () => {
       expect(screen.getByRole('heading', { name })).toBeInTheDocument();
     }
     expect(screen.queryByRole('button', { name: /^编辑/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('note')).toHaveTextContent('暂未连接企业服务');
+    expect(screen.getByRole('note')).toHaveTextContent('暂未连接个人数据');
     expect(screen.queryByText('总 Token')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agent 运行' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '知识资产' })).not.toBeInTheDocument();
@@ -38,10 +38,10 @@ describe('DashboardPage', () => {
     expect(screen.getByText('¥386,400')).toBeInTheDocument();
   });
 
-  it('creates a personal dashboard in the employee view', async () => {
+  it('creates a personal dashboard in the personal view', async () => {
     const user = userEvent.setup();
     render(<DashboardPage />);
-    await user.click(screen.getByRole('button', { name: '员工' }));
+    await user.click(screen.getByRole('button', { name: '个人' }));
     await user.click(screen.getByRole('button', { name: '创建看板' }));
     await user.type(screen.getByPlaceholderText('例如：销售日报'), '我的销售日报');
     await user.type(screen.getByPlaceholderText('这个看板用于查看什么'), '跟踪个人销售目标');

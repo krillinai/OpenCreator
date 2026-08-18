@@ -3,15 +3,15 @@ import type { PublicRunStatus } from '@clawee/protocol';
 export type RightPanelMode = 'closed' | 'file' | 'change' | 'run_detail';
 export type ActiveView =
   | 'conversation'
+  | 'projects'
+  | 'workbench'
   | 'search'
   | 'schedules'
   | 'tasks'
   | 'dashboard'
   | 'activity'
   | 'plugins'
-  | 'connections'
-  | 'knowledge'
-  | 'drive'
+  | 'assets'
   | 'account'
   | 'settings'
   | 'files';

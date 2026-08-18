@@ -1,5 +1,4 @@
 import type {
-  EnterpriseSessionResponse,
   EnterpriseSharedFileResponse,
   EnterpriseSharedSpaceResponse
 } from '@clawee/protocol';
@@ -8,14 +7,16 @@ import {
   File,
   FileSpreadsheet,
   FileText,
+  Folder,
   FolderOpen,
   Image,
   LoaderCircle,
-  LogIn,
+  Music2,
   RefreshCw,
   Replace,
   Search,
   Upload,
+  Video,
   WifiOff
 } from 'lucide-react';
 import {
@@ -26,6 +27,8 @@ import {
   type FormEvent,
   type ReactNode
 } from 'react';
+import { useAppLanguage } from '../../i18n/LanguageProvider.js';
+import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import './shared-drive.css';
 
 export type SharedDriveOperationState = {
@@ -38,7 +41,6 @@ export type SharedDriveOperationState = {
 
 export type SharedDrivePageProps = {
   connected: boolean;
-  session: EnterpriseSessionResponse;
   spaces?: EnterpriseSharedSpaceResponse[];
   spacesLoading: boolean;
   spacesError?: string;
@@ -54,7 +56,6 @@ export type SharedDrivePageProps = {
   currentProjectName: string;
   operation?: SharedDriveOperationState;
   notice?: string;
-  onOpenAccount(): void;
   onRefresh(): void;
   onLoadMoreSpaces(): void;
   onSelectSpace(spaceId?: string): void;
@@ -66,6 +67,8 @@ export type SharedDrivePageProps = {
 };
 
 export function SharedDrivePage(props: SharedDrivePageProps) {
+  const { language } = useAppLanguage();
+  const l = useLocalizedCopy();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
   const replacementTargetRef = useRef<EnterpriseSharedFileResponse>();
@@ -75,6 +78,8 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
     space => space.spaceId === props.selectedSpaceId
   );
   const operationWorking = props.operation?.status === 'working';
+  const fileCount = props.files?.length ?? 0;
+  const spaceCount = props.spaces?.length ?? 0;
 
   useEffect(() => {
     setSearchValue(props.query);
@@ -105,7 +110,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (file === undefined || selectedSpace === undefined) return;
-    const error = validateFile(file, props.maxFileSizeBytes);
+    const error = validateFile(file, props.maxFileSizeBytes, l);
     if (error !== undefined) {
       setSelectionError(error);
       return;
@@ -119,7 +124,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
     const target = replacementTargetRef.current;
     replacementTargetRef.current = undefined;
     if (file === undefined || target === undefined) return;
-    const error = validateFile(file, props.maxFileSizeBytes);
+    const error = validateFile(file, props.maxFileSizeBytes, l);
     if (error !== undefined) {
       setSelectionError(error);
       return;
@@ -130,43 +135,10 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
   if (!props.connected) {
     return (
       <DriveGate
+        heading={l('素材中心', 'Media Library')}
         icon={<WifiOff size={22} aria-hidden="true" />}
-        title="正在等待本地 Runtime"
-        detail="共享网盘暂不可用，本地项目仍可继续使用。"
-      />
-    );
-  }
-
-  if (props.session.status === 'checking') {
-    return (
-      <DriveGate
-        icon={<LoaderCircle className="shared-drive-spinner" size={22} aria-hidden="true" />}
-        title="正在验证企业会话"
-        detail="验证完成后会自动加载当前账户可访问的共享空间。"
-      />
-    );
-  }
-
-  if (props.session.status === 'service_unavailable') {
-    return (
-      <DriveGate
-        icon={<WifiOff size={22} aria-hidden="true" />}
-        title="企业文件服务暂时不可用"
-        detail="服务恢复后可重新加载，不影响本地项目和任务。"
-        actionLabel="重新加载"
-        onAction={props.onRefresh}
-      />
-    );
-  }
-
-  if (props.session.status !== 'signed_in') {
-    return (
-      <DriveGate
-        icon={<LogIn size={22} aria-hidden="true" />}
-        title="登录后访问共享网盘"
-        detail="共享空间和文件范围由当前企业账户权限决定。"
-        actionLabel="登录企业账户"
-        onAction={props.onOpenAccount}
+        title={l('正在等待本地 Runtime', 'Waiting for the local runtime')}
+        detail={l('素材中心暂不可用，本地项目仍可继续使用。', 'The media library is temporarily unavailable. You can keep working in local projects.')}
       />
     );
   }
@@ -175,19 +147,23 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
     <main className="shared-drive-page">
       <div className="shared-drive-page__inner">
         <header className="shared-drive-header">
-          <div>
-            <h1>共享网盘</h1>
-            <p>查看授权空间，并将远端文件保存到当前项目</p>
+          <div className="shared-drive-header__copy">
+            <h1>{l('素材中心', 'Media Library')}</h1>
+            <p>{l('集中管理视频、图片、音频和创作文件', 'Manage videos, images, audio, and creative files in one place')}</p>
           </div>
           <div className="shared-drive-header__actions">
-            <span className="shared-drive-project">
-              当前项目：{props.currentProjectName}
+            <div className="shared-drive-summary" aria-label={l('素材概览', 'Media overview')}>
+              <span><strong>{fileCount}</strong> {l('个素材', 'assets')}</span>
+              <span><strong>{spaceCount}</strong> {l('个分类', 'categories')}</span>
+            </div>
+            <span className="shared-drive-project" title={props.currentProjectName}>
+              {l('保存到', 'Save to')} {props.currentProjectName}
             </span>
             <button
               className="shared-drive-icon-button"
               type="button"
-              aria-label="刷新共享网盘"
-              title="刷新"
+              aria-label={l('刷新素材中心', 'Refresh media library')}
+              title={l('刷新', 'Refresh')}
               onClick={props.onRefresh}
             >
               <RefreshCw size={16} aria-hidden="true" />
@@ -202,16 +178,16 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
         ) : null}
 
         <div className="shared-drive-workbench">
-          <nav className="shared-drive-spaces" aria-label="授权共享空间">
+          <nav className="shared-drive-spaces" aria-label={l('素材分类', 'Media categories')}>
             <div className="shared-drive-pane-heading">
               <div>
-                <h2>共享空间</h2>
-                <span>{props.spaces?.length ?? 0} 个已加载</span>
+                <h2>{l('素材分类', 'Media categories')}</h2>
+                <span>{spaceCount} {l('个分类', 'categories')}</span>
               </div>
             </div>
 
             {props.spacesLoading && props.spaces === undefined ? (
-              <DriveLoading label="正在加载共享空间" />
+              <DriveLoading label={l('正在加载素材分类', 'Loading media categories')} />
             ) : (
               <>
                 <ul className="shared-drive-space-list">
@@ -223,8 +199,13 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                       }
                       onClick={() => props.onSelectSpace(undefined)}
                     >
-                      <strong>全部文件</strong>
-                      <span>跨全部授权空间查询</span>
+                      <span className="shared-drive-space-list__icon" aria-hidden="true">
+                        <FolderOpen size={17} />
+                      </span>
+                      <span className="shared-drive-space-list__body">
+                        <strong>{l('全部素材', 'All assets')}</strong>
+                        <span>{l('查看所有分类中的文件', 'View files across all categories')}</span>
+                      </span>
                     </button>
                   </li>
                   {props.spaces?.map(space => (
@@ -238,9 +219,13 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                         }
                         onClick={() => props.onSelectSpace(space.spaceId)}
                       >
-                        <strong>{space.name}</strong>
-                        <span>{space.description || '暂无说明'}</span>
-                        {space.permissions.write ? <em>可写</em> : null}
+                        <span className="shared-drive-space-list__icon" aria-hidden="true">
+                          <Folder size={17} />
+                        </span>
+                        <span className="shared-drive-space-list__body">
+                          <strong>{space.name}</strong>
+                          <span>{space.description || l('暂未添加说明', 'No description')}</span>
+                        </span>
                       </button>
                     </li>
                   ))}
@@ -252,19 +237,19 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                     disabled={props.spacesLoading}
                     onClick={props.onLoadMoreSpaces}
                   >
-                    {props.spacesLoading ? '加载中' : '加载更多空间'}
+                    {props.spacesLoading ? l('加载中', 'Loading') : l('加载更多分类', 'Load more categories')}
                   </button>
                 ) : null}
               </>
             )}
           </nav>
 
-          <section className="shared-drive-files" aria-label="共享文件">
+          <section className="shared-drive-files" aria-label={l('素材文件', 'Media files')}>
             <header className="shared-drive-files-header">
               <div>
-                <h2>{selectedSpace?.name ?? '全部文件'}</h2>
+                <h2>{selectedSpace?.name ?? l('全部素材', 'All assets')}</h2>
                 <p>
-                  {selectedSpace?.description || '跨当前账户的全部授权空间查询'}
+                  {selectedSpace?.description || l('浏览所有分类中的创作文件', 'Browse creative files across all categories')}
                 </p>
               </div>
               <div className="shared-drive-files-actions">
@@ -272,8 +257,8 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                   <Search size={15} aria-hidden="true" />
                   <input
                     type="search"
-                    aria-label="搜索共享文件"
-                    placeholder="搜索文件名或文件 ID"
+                    aria-label={l('搜索素材文件', 'Search media files')}
+                    placeholder={l('搜索文件名或路径', 'Search by file name or path')}
                     maxLength={200}
                     value={searchValue}
                     onChange={event => setSearchValue(event.target.value)}
@@ -285,7 +270,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                       ref={uploadInputRef}
                       className="shared-drive-file-input"
                       type="file"
-                      aria-label="选择上传到共享网盘的文件"
+                      aria-label={l('选择上传到素材中心的文件', 'Choose a file to upload to the media library')}
                       disabled={operationWorking}
                       onChange={handleUploadSelection}
                     />
@@ -296,7 +281,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                       onClick={chooseUpload}
                     >
                       <Upload size={15} aria-hidden="true" />
-                      <span>{operationWorking ? '处理中' : '上传文件'}</span>
+                      <span>{operationWorking ? l('处理中', 'Processing') : l('上传文件', 'Upload file')}</span>
                     </button>
                   </>
                 ) : null}
@@ -304,7 +289,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                   ref={replaceInputRef}
                   className="shared-drive-file-input"
                   type="file"
-                  aria-label="选择替换共享文件的本地文件"
+                  aria-label={l('选择替换素材文件的本地文件', 'Choose a local replacement file')}
                   disabled={operationWorking}
                   onChange={handleReplacementSelection}
                 />
@@ -334,115 +319,119 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
 
             <div className="shared-drive-file-content">
               {props.filesLoading && props.files === undefined ? (
-                <DriveLoading label="正在加载共享文件" />
+                <DriveLoading label={l('正在加载素材文件', 'Loading media files')} />
               ) : (props.files?.length ?? 0) === 0 ? (
                 <DriveEmpty
                   icon={<FolderOpen size={22} aria-hidden="true" />}
-                  title="暂无共享文件"
+                  title={l('暂无素材文件', 'No media files')}
                   detail={
                     props.query.length > 0
-                      ? '当前查询没有匹配文件。'
+                      ? l('当前查询没有匹配文件。', 'No files match this search.')
                       : selectedSpace?.permissions.write
-                        ? '可以上传首个文件到当前空间。'
-                        : '当前范围没有可显示的文件。'
+                        ? l('可以上传首个文件到当前分类。', 'Upload the first file to this category.')
+                        : l('当前范围没有可显示的文件。', 'There are no files to display here.')
                   }
                 />
               ) : (
                 <>
-                  <div className="shared-drive-table-wrap">
-                    <table className="shared-drive-table">
-                      <thead>
-                        <tr>
-                          <th>文件</th>
-                          <th>空间</th>
-                          <th>更新者</th>
-                          <th>更新时间</th>
-                          <th>大小</th>
-                          <th className="shared-drive-actions-cell" aria-label="操作" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {props.files!.map(file => {
-                          const busy =
-                            operationWorking
-                            && props.operation?.fileId === file.fileId;
-                          const requiresOverwrite =
-                            props.operation?.status === 'requires_overwrite'
-                            && props.operation.fileId === file.fileId;
-                          const space = props.spaces?.find(
-                            item => item.spaceId === file.spaceId
-                          );
-                          return (
-                            <tr key={file.fileId}>
-                              <td className="shared-drive-actions-cell">
-                                <span className="shared-drive-file-name">
-                                  <FileTypeIcon contentType={file.contentType} />
-                                  <span>
-                                    <strong>{file.fileName}</strong>
-                                    <small>{file.logicalPath} · revision {file.revision}</small>
-                                  </span>
-                                </span>
-                              </td>
-                              <td>{file.spaceName || file.spaceId}</td>
-                              <td>
-                                {file.updatedByUserId || file.updatedByAgentId || '未知'}
-                              </td>
-                              <td>{formatDate(file.updatedAt)}</td>
-                              <td>{formatBytes(file.sizeBytes)}</td>
-                              <td>
-                                <span className="shared-drive-row-actions">
-                                  {space?.permissions.write ? (
-                                    <button
-                                      type="button"
-                                      aria-label={`替换 ${file.fileName}`}
-                                      title="替换内容"
-                                      disabled={operationWorking}
-                                      onClick={() => chooseReplacement(file)}
-                                    >
-                                      <Replace size={14} aria-hidden="true" />
-                                    </button>
-                                  ) : null}
+                  <ul className="shared-drive-file-grid" aria-label={l('素材列表', 'Media list')}>
+                    {props.files!.map(file => {
+                      const busy =
+                        operationWorking
+                        && props.operation?.fileId === file.fileId;
+                      const requiresOverwrite =
+                        props.operation?.status === 'requires_overwrite'
+                        && props.operation.fileId === file.fileId;
+                      const space = props.spaces?.find(
+                        item => item.spaceId === file.spaceId
+                      );
+                      return (
+                        <li className="shared-drive-file-card" key={file.fileId}>
+                          <div
+                            className="shared-drive-file-preview"
+                            data-kind={fileKind(file.contentType)}
+                          >
+                            <FileTypeIcon contentType={file.contentType} />
+                            <span>{fileTypeLabel(file.contentType, file.fileName, l)}</span>
+                          </div>
+                          <div className="shared-drive-file-card__body">
+                            <span className="shared-drive-file-name">
+                              <FileTypeIcon contentType={file.contentType} />
+                              <span>
+                                <strong>{file.fileName}</strong>
+                                <small>{file.logicalPath}</small>
+                              </span>
+                            </span>
+                            <dl className="shared-drive-file-meta">
+                              <div>
+                                <dt>{l('分类', 'Category')}</dt>
+                                <dd>{file.spaceName || file.spaceId}</dd>
+                              </div>
+                              <div>
+                                <dt>{l('版本', 'Version')}</dt>
+                                <dd>{file.revision}</dd>
+                              </div>
+                              <div>
+                                <dt>{l('大小', 'Size')}</dt>
+                                <dd>{formatBytes(file.sizeBytes)}</dd>
+                              </div>
+                            </dl>
+                            <footer className="shared-drive-file-card__footer">
+                              <time dateTime={file.updatedAt}>
+                                {formatDate(file.updatedAt, language)}
+                              </time>
+                              <span className="shared-drive-row-actions">
+                                {space?.permissions.write ? (
                                   <button
                                     type="button"
-                                    aria-label={
-                                      requiresOverwrite
-                                        ? `覆盖保存 ${file.fileName}`
-                                        : `保存 ${file.fileName} 到当前项目`
-                                    }
-                                    title={
-                                      requiresOverwrite
-                                        ? '确认覆盖项目内文件'
-                                        : '保存到当前项目'
-                                    }
-                                    disabled={
-                                      props.currentProjectId === undefined
-                                      || (operationWorking && !busy)
-                                    }
-                                    onClick={() => props.onDownload(
-                                      file,
-                                      requiresOverwrite
-                                    )}
+                                    aria-label={`${l('替换', 'Replace')} ${file.fileName}`}
+                                    title={l('替换内容', 'Replace file')}
+                                    disabled={operationWorking}
+                                    onClick={() => chooseReplacement(file)}
                                   >
-                                    {busy ? (
-                                      <LoaderCircle
-                                        className="shared-drive-spinner"
-                                        size={14}
-                                        aria-hidden="true"
-                                      />
-                                    ) : requiresOverwrite ? (
-                                      <Replace size={14} aria-hidden="true" />
-                                    ) : (
-                                      <Download size={14} aria-hidden="true" />
-                                    )}
+                                    <Replace size={14} aria-hidden="true" />
                                   </button>
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  aria-label={
+                                    requiresOverwrite
+                                      ? `${l('覆盖保存', 'Overwrite')} ${file.fileName}`
+                                      : `${l('保存', 'Save')} ${file.fileName} ${l('到当前项目', 'to the current project')}`
+                                  }
+                                  title={
+                                    requiresOverwrite
+                                      ? l('确认覆盖项目内文件', 'Confirm overwrite in project')
+                                      : l('保存到当前项目', 'Save to current project')
+                                  }
+                                  disabled={
+                                    props.currentProjectId === undefined
+                                    || (operationWorking && !busy)
+                                  }
+                                  onClick={() => props.onDownload(
+                                    file,
+                                    requiresOverwrite
+                                  )}
+                                >
+                                  {busy ? (
+                                    <LoaderCircle
+                                      className="shared-drive-spinner"
+                                      size={14}
+                                      aria-hidden="true"
+                                    />
+                                  ) : requiresOverwrite ? (
+                                    <Replace size={14} aria-hidden="true" />
+                                  ) : (
+                                    <Download size={14} aria-hidden="true" />
+                                  )}
+                                </button>
+                              </span>
+                            </footer>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                   {props.filesHasNext ? (
                     <button
                       className="shared-drive-load-more shared-drive-load-more--files"
@@ -450,7 +439,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
                       disabled={props.filesLoading}
                       onClick={props.onLoadMoreFiles}
                     >
-                      {props.filesLoading ? '加载中' : '加载更多文件'}
+                      {props.filesLoading ? l('加载中', 'Loading') : l('加载更多文件', 'Load more files')}
                     </button>
                   ) : null}
                 </>
@@ -464,6 +453,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
 }
 
 function DriveGate(props: {
+  heading: string;
   icon: ReactNode;
   title: string;
   detail: string;
@@ -473,7 +463,7 @@ function DriveGate(props: {
   return (
     <main className="shared-drive-page">
       <div className="shared-drive-gate">
-        <h1>共享网盘</h1>
+        <h1>{props.heading}</h1>
         <span aria-hidden="true">{props.icon}</span>
         <h2>{props.title}</h2>
         <p>{props.detail}</p>
@@ -518,15 +508,44 @@ function FileTypeIcon(props: { contentType: string }) {
   if (normalized.startsWith('image/')) {
     return <Image size={17} aria-hidden="true" />;
   }
+  if (normalized.startsWith('video/')) {
+    return <Video size={17} aria-hidden="true" />;
+  }
+  if (normalized.startsWith('audio/')) {
+    return <Music2 size={17} aria-hidden="true" />;
+  }
   if (normalized.startsWith('text/') || normalized.includes('pdf')) {
     return <FileText size={17} aria-hidden="true" />;
   }
   return <File size={17} aria-hidden="true" />;
 }
 
-function validateFile(file: File, maximum: number): string | undefined {
+function fileKind(
+  contentType: string
+): 'image' | 'video' | 'audio' | 'document' | 'sheet' | 'file' {
+  const normalized = contentType.toLowerCase();
+  if (normalized.startsWith('image/')) return 'image';
+  if (normalized.startsWith('video/')) return 'video';
+  if (normalized.startsWith('audio/')) return 'audio';
+  if (normalized.includes('spreadsheet') || normalized.includes('excel')) return 'sheet';
+  if (normalized.startsWith('text/') || normalized.includes('pdf')) return 'document';
+  return 'file';
+}
+
+function fileTypeLabel(contentType: string, fileName: string, l: LocalizeCopy): string {
+  const normalized = contentType.toLowerCase();
+  if (normalized.startsWith('image/')) return l('图片', 'Image');
+  if (normalized.startsWith('video/')) return l('视频', 'Video');
+  if (normalized.startsWith('audio/')) return l('音频', 'Audio');
+  if (normalized.includes('spreadsheet') || normalized.includes('excel')) return l('表格', 'Spreadsheet');
+  if (normalized.includes('pdf')) return 'PDF';
+  const dotIndex = fileName.lastIndexOf('.');
+  return dotIndex < 0 ? l('文件', 'File') : fileName.slice(dotIndex + 1).toUpperCase();
+}
+
+function validateFile(file: File, maximum: number, l: LocalizeCopy): string | undefined {
   if (file.size > maximum) {
-    return `单个文件不能超过 ${formatBytes(maximum)}。`;
+    return l(`单个文件不能超过 ${formatBytes(maximum)}。`, `A file cannot exceed ${formatBytes(maximum)}.`);
   }
   return undefined;
 }
@@ -540,10 +559,10 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, language: 'zh-CN' | 'en-US'): string {
   const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return '时间未知';
-  return new Intl.DateTimeFormat('zh-CN', {
+  if (!Number.isFinite(timestamp)) return language === 'en-US' ? 'Unknown time' : '时间未知';
+  return new Intl.DateTimeFormat(language, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

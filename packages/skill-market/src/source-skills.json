@@ -4098,7 +4098,7 @@
       "license": null,
       "lastPushedAt": "2026-03-30",
       "defaultBranch": "main",
-      "readmeText": "codebase-to-course 用于把代码库转成课程内容。它适合将项目结构、关键模块、技术决策和实践路径整理成课程大纲、讲稿和学习材料。\n\n适合场景：\n\n- 技术课程制作。\n- 产品技术讲解。\n- 企业内部培训。\n- 开源项目内容化。",
+      "readmeText": "codebase-to-course 用于把代码库转成课程内容。它适合将项目结构、关键模块、技术决策和实践路径整理成课程大纲、讲稿和学习材料。\n\n适合场景：\n\n- 技术课程制作。\n- 产品技术讲解。\n- 组织内部培训。\n- 开源项目内容化。",
       "readmeLanguage": "zh"
     },
     "examples": [],

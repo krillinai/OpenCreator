@@ -82,7 +82,6 @@ export type SchedulesViewProps = {
   profiles?: CodexProfileResponse[];
   defaultTimezone: string;
   pollIntervalMs?: number;
-  onCreateWithClawee(): Promise<void> | void;
   onOpenTask(threadId: string, runId?: string): void;
   onRunNow(schedule: ScheduleResponse): Promise<void> | void;
   onScheduleChanged(schedule: ScheduleResponse): void;

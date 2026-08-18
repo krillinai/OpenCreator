@@ -55,12 +55,12 @@ button {
   text-align: center;
 }
 
-.brand-mark {
-  width: 72px;
-  height: 72px;
+.brand-name {
   margin-bottom: 42px;
-  filter: brightness(0) saturate(100%);
-  object-fit: contain;
+  color: #171717;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .status-mark {
@@ -228,7 +228,7 @@ pre {
     padding: 72px 22px 24px;
   }
 
-  .brand-mark {
+  .brand-name {
     margin-bottom: 34px;
   }
 }

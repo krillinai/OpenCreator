@@ -1,7 +1,6 @@
 import type {
   EnterpriseKnowledgeBaseResponse,
-  EnterpriseKnowledgeDocumentResponse,
-  EnterpriseSessionResponse
+  EnterpriseKnowledgeDocumentResponse
 } from '@clawee/protocol';
 import { render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
@@ -10,12 +9,6 @@ import {
   KnowledgePage,
   type KnowledgePageProps
 } from './KnowledgePage.js';
-
-const signedInSession: EnterpriseSessionResponse = {
-  status: 'signed_in',
-  account: { subjectId: 'acct-member', email: 'member@example.com', name: '企业成员' },
-  transportSecurity: 'secure_https'
-};
 
 const writableKnowledgeBase = createKnowledgeBase({
   knowledgeBaseId: 'kb-product',
@@ -26,58 +19,18 @@ const writableKnowledgeBase = createKnowledgeBase({
 
 const readOnlyKnowledgeBase = createKnowledgeBase({
   knowledgeBaseId: 'kb-policy',
-  name: '公司制度',
+  name: '创作灵感',
   documentCount: 0,
   permissions: { read: true, upload: false, search: true }
 });
 
 describe('KnowledgePage', () => {
-  it('renders Runtime, session, service, and login gates with explicit actions', async () => {
-    const user = userEvent.setup();
-    const onRefresh = vi.fn();
-    const onOpenAccount = vi.fn();
-    const view = renderKnowledge({
-      connected: false,
-      onRefresh,
-      onOpenAccount
-    });
+  it('only gates the page while the local Runtime is unavailable', () => {
+    renderKnowledge({ connected: false });
 
     expect(screen.getByRole('heading', { name: '正在等待本地 Runtime' }))
       .toBeInTheDocument();
-
-    view.rerender(createKnowledge({
-      session: {
-        status: 'checking',
-        transportSecurity: 'secure_https'
-      },
-      onRefresh,
-      onOpenAccount
-    }));
-    expect(screen.getByRole('heading', { name: '正在验证企业会话' }))
-      .toBeInTheDocument();
-
-    view.rerender(createKnowledge({
-      session: {
-        status: 'service_unavailable',
-        reason: 'service_unavailable',
-        transportSecurity: 'secure_https'
-      },
-      onRefresh,
-      onOpenAccount
-    }));
-    await user.click(screen.getByRole('button', { name: '重新加载' }));
-    expect(onRefresh).toHaveBeenCalledOnce();
-
-    view.rerender(createKnowledge({
-      session: {
-        status: 'signed_out',
-        transportSecurity: 'secure_https'
-      },
-      onRefresh,
-      onOpenAccount
-    }));
-    await user.click(screen.getByRole('button', { name: '登录企业账户' }));
-    expect(onOpenAccount).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/登录/)).not.toBeInTheDocument();
   });
 
   it('renders only authorized knowledge bases and loads the selected document list', async () => {
@@ -104,9 +57,8 @@ describe('KnowledgePage', () => {
       onSelectKnowledgeBase
     });
 
-    expect(screen.getByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
-    expect(screen.queryByText('企业成员')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '刷新企业知识库' }))
+    expect(screen.getByRole('heading', { level: 1, name: '知识库' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '刷新知识库' }))
       .toBeInTheDocument();
     const documentHeader = view.container.querySelector('.knowledge-documents-header');
     expect(documentHeader).not.toBeNull();
@@ -116,21 +68,20 @@ describe('KnowledgePage', () => {
       .not.toBeInTheDocument();
     expect(within(documentHeader as HTMLElement).queryByText('2 个文档'))
       .not.toBeInTheDocument();
-    const libraryPane = screen.getByRole('navigation', { name: '授权知识库' });
+    const libraryPane = screen.getByRole('navigation', { name: '资料集合' });
     expect(within(libraryPane).getByText('产品资料')).toBeInTheDocument();
-    expect(within(libraryPane).getByText('公司制度')).toBeInTheDocument();
-    expect(within(libraryPane).getByText('可上传')).toBeInTheDocument();
+    expect(within(libraryPane).getByText('创作灵感')).toBeInTheDocument();
 
-    const table = screen.getByRole('table');
-    expect(within(table).getByText('产品手册.docx')).toBeInTheDocument();
-    expect(within(table).queryByText(
+    const documentList = screen.getByRole('list', { name: '文档列表' });
+    expect(within(documentList).getByText('产品手册.docx')).toBeInTheDocument();
+    expect(within(documentList).queryByText(
       'VND.OPENXMLFORMATS-OFFICEDOCUMENT.WORDPROCESSINGML.DOCUMENT'
     )).not.toBeInTheDocument();
-    expect(within(table).getByText('1.5 KiB')).toBeInTheDocument();
-    expect(within(table).getByText('处理失败')).toBeInTheDocument();
-    expect(within(table).getByText('内容解析失败')).toBeInTheDocument();
+    expect(within(documentList).getByText('1.5 KiB')).toBeInTheDocument();
+    expect(within(documentList).getByText('处理失败')).toBeInTheDocument();
+    expect(within(documentList).getByText('内容解析失败')).toBeInTheDocument();
 
-    await user.click(within(libraryPane).getByRole('button', { name: /公司制度/ }));
+    await user.click(within(libraryPane).getByRole('button', { name: /创作灵感/ }));
     expect(onSelectKnowledgeBase).toHaveBeenCalledWith('kb-policy');
   });
 
@@ -242,21 +193,14 @@ describe('KnowledgePage', () => {
     expect(workbench).toHaveAttribute('data-mobile-documents-open', 'false');
   });
 
-  it('starts a standard conversation from the knowledge list', async () => {
-    const user = userEvent.setup();
-    const onStartConversation = vi.fn();
-    renderKnowledge({
-      knowledgeBases: [writableKnowledgeBase],
-      onStartConversation
-    });
+  it('keeps knowledge management free of conversation entry points', () => {
+    renderKnowledge({ knowledgeBases: [writableKnowledgeBase] });
 
-    expect(screen.getByRole('button', { name: '刷新企业知识库' }))
+    expect(screen.getByRole('button', { name: '刷新知识库' }))
       .toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '对话知识库' }));
-    expect(onStartConversation).toHaveBeenCalledOnce();
-    expect(screen.getByRole('navigation', { name: '授权知识库' })).toBeVisible();
-    expect(screen.queryByRole('complementary', { name: '对话知识库范围' }))
+    expect(screen.queryByRole('button', { name: '对话知识库' }))
       .not.toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: '资料集合' })).toBeVisible();
   });
 });
 
@@ -268,13 +212,10 @@ function createKnowledge(overrides: Partial<KnowledgePageProps> = {}) {
   return (
     <KnowledgePage
       connected
-      session={signedInSession}
       knowledgeBases={[]}
       knowledgeBasesLoading={false}
       documentsLoading={false}
-      onOpenAccount={vi.fn()}
       onRefresh={vi.fn()}
-      onStartConversation={vi.fn()}
       onSelectKnowledgeBase={vi.fn()}
       onUpload={vi.fn()}
       {...overrides}
@@ -288,7 +229,7 @@ function createKnowledgeBase(
   return {
     knowledgeBaseId: 'kb-default',
     name: '知识库',
-    description: '企业授权内容',
+    description: '个人创作资料',
     status: 'active',
     documentCount: 0,
     permissions: {

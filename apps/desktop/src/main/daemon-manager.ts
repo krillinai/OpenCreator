@@ -96,7 +96,7 @@ export class DaemonManager extends EventEmitter<DaemonManagerEvents> {
       const child = utilityProcess.fork(input.entryPath, buildDaemonArguments(input), {
         cwd: input.cwd,
         env: buildDaemonEnvironment(input),
-        serviceName: 'Clawee Runtime',
+        serviceName: 'OpenCreator Runtime',
         stdio: 'pipe'
       });
       this.child = child;

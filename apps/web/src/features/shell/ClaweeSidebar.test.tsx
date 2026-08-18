@@ -2,6 +2,8 @@ import type { ComponentProps } from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { MOCK_CONSUMER_USER } from '../account/consumer-user.js';
+import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { ClaweeSidebar } from './ClaweeSidebar.js';
 
 const projects = [
@@ -48,6 +50,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof ClaweeSidebar>> 
       tasks={[]}
       currentProjectId="content-design"
       activeView="conversation"
+      projectNavigationMode="tree"
       onNewConversation={vi.fn()}
       onSelectProject={vi.fn()}
       onSelectConversation={vi.fn()}
@@ -65,35 +68,36 @@ describe('ClaweeSidebar', () => {
   it('renders global actions, projects with nested conversations, and the settings footer action', () => {
     renderSidebar();
 
-    expect(screen.getByRole('img', { name: 'KrillinAI' })).toHaveAttribute(
-      'src',
-      '/krillinai-wordmark-white.png'
-    );
-    expect(screen.getByText('Clawee')).toHaveClass('sidebar-logo-word');
-    expect(screen.getByText('v0.1.0')).toHaveClass('sidebar-brand-version');
+    expect(screen.getByText('OpenCreator')).toHaveClass('sidebar-logo-word');
+    expect(screen.queryByText('v1.0')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(screen.getByText('整理本周项目进...')).toHaveClass('conversation-title-hover');
     expect(screen.queryByText('Coca-Cola')).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '新建任务' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '数据看板' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Agent动态' })).toBeInTheDocument();
-    const primaryActions = screen.getByRole('button', { name: '新建任务' }).parentElement;
-    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: '数据看板' }));
-    expect(primaryActions?.children[2]).toBe(screen.getByRole('button', { name: 'Agent动态' }));
+    expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '我的项目' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '数据看板' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Agent动态' })).not.toBeInTheDocument();
+    const primaryActions = screen.getByRole('button', { name: 'Home' }).parentElement;
+    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: 'Dashboard' }));
+    expect(primaryActions?.children[2]).toBe(screen.getByRole('button', { name: '插件中心' }));
+    expect(primaryActions?.children[3]).toBe(screen.getByRole('separator'));
     const searchButton = screen.getByRole('button', { name: '搜索' });
     expect(searchButton.nextElementSibling).toBe(screen.getByRole('button', { name: '收起侧栏' }));
     expect(primaryActions).not.toContainElement(searchButton);
     expect(screen.getByRole('button', { name: '定时任务' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '任务' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '企业Skill中心' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '连接器' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '企业知识库' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '共享网盘' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '企业Skill中心' }).nextElementSibling).toBe(screen.getByRole('button', { name: '连接器' }));
-    expect(screen.getByRole('button', { name: '连接器' }).nextElementSibling).toBe(screen.getByRole('button', { name: '企业知识库' }));
-    expect(screen.getByRole('button', { name: '企业知识库' }).nextElementSibling).toBe(screen.getByRole('button', { name: '共享网盘' }));
-    expect(screen.getByRole('button', { name: '共享网盘' }).nextElementSibling).toBe(screen.getByRole('button', { name: '定时任务' }));
+    expect(screen.getByRole('button', { name: '插件中心' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '连接器' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '我的资产' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '知识库' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '素材中心' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '插件中心' }).nextElementSibling).toBe(screen.getByRole('separator'));
+    expect(screen.getByRole('separator').nextElementSibling).toBe(screen.getByRole('button', { name: '我的项目' }));
+    expect(screen.getByRole('button', { name: '我的项目' }).nextElementSibling).toBe(screen.getByRole('button', { name: '设置' }));
+    expect(primaryActions).toContainElement(screen.getByRole('button', { name: '设置' }));
     expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'content-design' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
@@ -102,60 +106,60 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
     expect(screen.getByText('4天')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '企业账户' })).toBeInTheDocument();
+    expect(screen.getByText('登录即可享受云端协作')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
   });
 
-  it('opens the dashboard and exposes selected and collapsed states', async () => {
-    const onOpenView = vi.fn();
-    const user = userEvent.setup();
-    const { rerender } = renderSidebar({ onOpenView });
-    await user.click(screen.getByRole('button', { name: '数据看板' }));
-    expect(onOpenView).toHaveBeenCalledWith('dashboard');
-    rerender(<ClaweeSidebar projects={projects} conversations={conversations} tasks={[]} activeView="dashboard" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '数据看板' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: '数据看板' })).toHaveAttribute('title', '数据看板');
+  it('does not expose the dashboard in primary navigation', () => {
+    renderSidebar({ activeView: 'dashboard' });
+
+    expect(screen.queryByRole('button', { name: '数据看板' })).not.toBeInTheDocument();
   });
 
-  it('opens the knowledge base and exposes selected and collapsed states', async () => {
-    const onOpenView = vi.fn();
-    const user = userEvent.setup();
-    const { rerender } = renderSidebar({ onOpenView });
-    await user.click(screen.getByRole('button', { name: '企业知识库' }));
-    expect(onOpenView).toHaveBeenCalledWith('knowledge');
-    rerender(<ClaweeSidebar projects={projects} conversations={conversations} tasks={[]} activeView="knowledge" collapsed onNewConversation={vi.fn()} onSelectProject={vi.fn()} onSelectConversation={vi.fn()} onSelectTask={vi.fn()} onOpenView={onOpenView} onOpenAccount={vi.fn()} onOpenSettings={vi.fn()} onToggleCollapsed={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '企业知识库' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: '企业知识库' })).toHaveAttribute('title', '企业知识库');
+  it('uses creator-focused icons for the primary navigation', () => {
+    const view = renderSidebar();
+
+    expect(screen.getByRole('button', { name: 'Dashboard' })
+      .querySelector('.lucide-panels-top-left')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '插件中心' })
+      .querySelector('.lucide-puzzle')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '我的资产' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '我的项目' })
+      .querySelector('.lucide-folder-kanban')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '设置' })
+      .querySelector('.lucide-sliders-horizontal')).toBeInTheDocument();
+    expect(view.container.querySelectorAll('.sidebar-nav-icon')).toHaveLength(6);
   });
 
-  it('opens Agent activity and exposes its selected and collapsed states', async () => {
-    const onOpenView = vi.fn();
-    const user = userEvent.setup();
-    const { rerender } = renderSidebar({ onOpenView });
-
-    await user.click(screen.getByRole('button', { name: 'Agent动态' }));
-    expect(onOpenView).toHaveBeenCalledWith('activity');
-
-    rerender(
-      <ClaweeSidebar
-        projects={projects}
-        conversations={conversations}
-        tasks={[]}
-        activeView="activity"
-        collapsed
-        onNewConversation={vi.fn()}
-        onSelectProject={vi.fn()}
-        onSelectConversation={vi.fn()}
-        onSelectTask={vi.fn()}
-        onOpenView={onOpenView}
-        onOpenAccount={vi.fn()}
-        onOpenSettings={vi.fn()}
-        onToggleCollapsed={vi.fn()}
-      />
+  it('renders global navigation in the selected display language', () => {
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <ClaweeSidebar
+          projects={projects}
+          conversations={conversations}
+          tasks={[]}
+          activeView="workbench"
+          projectNavigationMode="library"
+          onNewConversation={vi.fn()}
+          onSelectProject={vi.fn()}
+          onSelectConversation={vi.fn()}
+          onSelectTask={vi.fn()}
+          onOpenView={vi.fn()}
+          onOpenAccount={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onToggleCollapsed={vi.fn()}
+        />
+      </LanguageProvider>
     );
-    expect(screen.getByRole('button', { name: 'Agent动态' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: 'Agent动态' })).toHaveAttribute('title', 'Agent动态');
+
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Plugins' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'My Assets' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'My Projects' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
 
   it('expands projects with conversations without selecting the project', async () => {
@@ -170,13 +174,12 @@ describe('ClaweeSidebar', () => {
     expect(screen.getByRole('button', { name: '生成 B 站封面 1天' })).toBeInTheDocument();
   });
 
-  it('uses the black KrillinAI wordmark in light mode', () => {
+  it('shows only the OpenCreator wordmark without an image logo in light mode', () => {
     renderSidebar({ colorMode: 'light' });
 
-    expect(screen.getByRole('img', { name: 'KrillinAI' }))
-      .toHaveAttribute('src', '/krillinai-wordmark-black.png');
-    expect(screen.getByText('Clawee')).toHaveClass('sidebar-logo-word');
-    expect(screen.queryByRole('img', { name: 'Clawee' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByText('OpenCreator')).toHaveClass('sidebar-logo-word');
+    expect(screen.queryByText('v1.0')).not.toBeInTheDocument();
   });
 
   it('selects projects without conversations', async () => {
@@ -223,12 +226,12 @@ describe('ClaweeSidebar', () => {
 
   it('clears the conversation highlight outside the conversation view', () => {
     renderSidebar({
-      activeView: 'knowledge',
+      activeView: 'assets',
       selectedConversationId: 'weekly-progress-brief'
     });
 
-    expect(screen.getByRole('button', { name: '企业知识库' }))
-      .toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: '我的资产' }))
+      .not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '整理本周项目进展 4天' }))
       .not.toHaveAttribute('aria-current');
   });
@@ -466,7 +469,7 @@ describe('ClaweeSidebar', () => {
     expect(within(conversation).getByRole('button', { name: '归档' })).toBeDisabled();
   });
 
-  it('opens settings from the footer button', async () => {
+  it('opens settings from the primary sidebar navigation', async () => {
     const user = userEvent.setup();
     const onOpenSettings = vi.fn();
 
@@ -475,6 +478,19 @@ describe('ClaweeSidebar', () => {
     await user.click(screen.getByRole('button', { name: '设置' }));
 
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: '设置' }).parentElement)
+      .toHaveClass('sidebar-primary');
+  });
+
+  it('opens the account page from the guest login entry', async () => {
+    const user = userEvent.setup();
+    const onOpenAccount = vi.fn();
+
+    renderSidebar({ onOpenAccount });
+
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    expect(onOpenAccount).toHaveBeenCalledTimes(1);
   });
 
   it('keeps account and settings separately accessible when expanded or collapsed', async () => {
@@ -484,11 +500,7 @@ describe('ClaweeSidebar', () => {
     const view = renderSidebar({
       onOpenAccount,
       onOpenSettings,
-      enterpriseSession: {
-        status: 'signed_in',
-        account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
-        transportSecurity: 'secure_https'
-      },
+      user: { ...MOCK_CONSUMER_USER, name: 'Member', email: 'member@example.com' },
       activeView: 'account'
     });
 
@@ -508,11 +520,7 @@ describe('ClaweeSidebar', () => {
         tasks={[]}
         activeView="account"
         collapsed
-        enterpriseSession={{
-          status: 'signed_in',
-          account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
-          transportSecurity: 'secure_https'
-        }}
+        user={{ ...MOCK_CONSUMER_USER, name: 'Member', email: 'member@example.com' }}
         onNewConversation={vi.fn()}
         onSelectProject={vi.fn()}
         onSelectConversation={vi.fn()}
@@ -555,7 +563,7 @@ describe('ClaweeSidebar', () => {
     await user.click(remove);
 
     expect(screen.getByRole('alertdialog', { name: '移除项目' })).toBeInTheDocument();
-    expect(screen.getByText('确认从 Clawee 中移除“content-design”？项目目录和文件不会被删除。'))
+    expect(screen.getByText('确认从 OpenCreator 中移除“content-design”？项目目录和文件不会被删除。'))
       .toBeInTheDocument();
     expect(onArchiveProject).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: '移除项目' }));
@@ -609,15 +617,26 @@ describe('ClaweeSidebar', () => {
     expect(onNewConversation).toHaveBeenCalledWith('content-design');
   });
 
-  it('starts a new conversation from the primary action', async () => {
+  it('starts a new conversation from Home', async () => {
     const user = userEvent.setup();
     const onNewConversation = vi.fn();
 
     renderSidebar({ onNewConversation });
 
-    await user.click(screen.getByRole('button', { name: '新建任务' }));
+    await user.click(screen.getByRole('button', { name: 'Home' }));
 
     expect(onNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the creator workbench below Home', async () => {
+    const user = userEvent.setup();
+    const onOpenView = vi.fn();
+
+    renderSidebar({ onOpenView });
+
+    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
+
+    expect(onOpenView).toHaveBeenCalledWith('workbench');
   });
 
   it('opens search from the header action', async () => {
@@ -643,6 +662,14 @@ describe('ClaweeSidebar', () => {
     expect(screen.queryByRole('button', { name: /^任务/ })).not.toBeInTheDocument();
   });
 
+  it('does not expose scheduled tasks in the default project library navigation', () => {
+    renderSidebar({ projectNavigationMode: 'library' });
+
+    expect(screen.queryByRole('button', { name: '定时任务' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '任务' })).not.toBeInTheDocument();
+    expect(screen.queryByText('暂无任务')).not.toBeInTheDocument();
+  });
+
   it('collapses from the header action', async () => {
     const user = userEvent.setup();
     const onToggleCollapsed = vi.fn();
@@ -665,11 +692,12 @@ describe('ClaweeSidebar', () => {
     });
 
     expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'KrillinAI' })).toHaveAttribute('src', '/krillinai-mark-white.png');
+    expect(screen.getByText('OC')).toHaveClass('sidebar-logo-mark');
     expect(screen.queryByRole('button', { name: '收起侧栏' })).not.toBeInTheDocument();
-    expect(screen.queryByText('项目')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '我的项目' })).toHaveAttribute('title', '我的项目');
     expect(screen.queryByText('折叠时隐藏的任务')).not.toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Clawee' })).toHaveAttribute('data-collapsed', 'true');
+    expect(screen.getByRole('button', { name: '登录' })).toHaveAttribute('title', '登录');
+    expect(screen.getByRole('navigation', { name: 'OpenCreator' })).toHaveAttribute('data-collapsed', 'true');
 
     await user.click(screen.getByRole('button', { name: '展开侧栏' }));
 

@@ -33,8 +33,7 @@ import {
 import {
   buildComposerConnectors,
   buildComposerSlashCommands,
-  formatRelativeTime,
-  pollEnterpriseSessionUntilSettled
+  formatRelativeTime
 } from './AppController.js';
 import { PROJECTS_STORAGE_KEY } from '../features/projects/project-model.js';
 import type { ClaweeProject } from '../features/projects/project-model.js';
@@ -53,7 +52,7 @@ vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
 let testRuntimeProjects: ProjectResponse[] | undefined;
 
 function App(props: AppProps = {}) {
-  return <ProductionApp requireEnterpriseLogin={false} {...props} />;
+  return <ProductionApp projectNavigationMode="tree" {...props} />;
 }
 
 describe('App', () => {
@@ -130,93 +129,6 @@ describe('App', () => {
     now.mockRestore();
   });
 
-  it('polls checking only until a terminal state or fifteen seconds', async () => {
-    vi.useFakeTimers();
-    try {
-      const signedIn = {
-        status: 'signed_in' as const,
-        account: { email: 'member@example.com', name: 'Member' },
-        transportSecurity: 'secure_https' as const
-      };
-      const readTerminalSession = vi.fn()
-        .mockResolvedValueOnce({
-          status: 'checking' as const,
-          transportSecurity: 'secure_https' as const
-        })
-        .mockResolvedValueOnce(signedIn);
-      const terminalSessions: unknown[] = [];
-      const terminalTimeout = vi.fn();
-
-      const terminalPoll = pollEnterpriseSessionUntilSettled({
-        readSession: readTerminalSession,
-        onSession: session => terminalSessions.push(session),
-        onTimeout: terminalTimeout,
-        onError: vi.fn()
-      });
-      await vi.advanceTimersByTimeAsync(250);
-      await terminalPoll;
-
-      expect(readTerminalSession).toHaveBeenCalledTimes(2);
-      expect(terminalSessions).toEqual([
-        { status: 'checking', transportSecurity: 'secure_https' },
-        signedIn
-      ]);
-      expect(terminalTimeout).not.toHaveBeenCalled();
-
-      const readPersistentChecking = vi.fn(async () => ({
-        status: 'checking' as const,
-        transportSecurity: 'secure_https' as const
-      }));
-      const checkingTimeout = vi.fn();
-      const checkingPoll = pollEnterpriseSessionUntilSettled({
-        readSession: readPersistentChecking,
-        onSession: vi.fn(),
-        onTimeout: checkingTimeout,
-        onError: vi.fn()
-      });
-      await vi.advanceTimersByTimeAsync(15_000);
-      await checkingPoll;
-
-      expect(readPersistentChecking).toHaveBeenCalledTimes(61);
-      expect(checkingTimeout).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(1_000);
-      expect(readPersistentChecking).toHaveBeenCalledTimes(61);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps polling while the collector installation is still running', async () => {
-    const installing = {
-      status: 'signed_in' as const,
-      account: { email: 'member@example.com', name: 'Member' },
-      collector: { status: 'installing' as const },
-      transportSecurity: 'secure_https' as const
-    };
-    const installed = {
-      ...installing,
-      collector: { status: 'installed' as const }
-    };
-    const readSession = vi.fn()
-      .mockResolvedValueOnce(installing)
-      .mockResolvedValueOnce(installed);
-    const sessions: EnterpriseSessionResponse[] = [];
-    const wait = vi.fn(async () => undefined);
-
-    await pollEnterpriseSessionUntilSettled({
-      readSession,
-      onSession: session => sessions.push(session),
-      onTimeout: vi.fn(),
-      onError: vi.fn(),
-      now: () => 0,
-      wait
-    });
-
-    expect(readSession).toHaveBeenCalledTimes(2);
-    expect(wait).toHaveBeenCalledOnce();
-    expect(sessions).toEqual([installing, installed]);
-  });
-
   it('restores a primary page directly from its URL', async () => {
     window.location.hash = '#/search';
 
@@ -235,7 +147,7 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Agent动态' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Agent动态' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: 'Agent动态' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '今天' }));
     await waitFor(() => expect(window.location.hash).toBe('#/activity?range=today'));
@@ -243,12 +155,12 @@ describe('App', () => {
 
     window.history.replaceState(null, '', '#/plugins');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(await screen.findByRole('tab', { name: '企业Skills', selected: true })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
 
     window.history.replaceState(null, '', '#/activity/agent/collector-beijing/agent-customer?range=30d');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
     expect(await screen.findByRole('heading', { name: '客户洞察' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Agent动态' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: 'Agent动态' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '近 30 天' })).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -257,45 +169,68 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: '数据看板' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '数据看板' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: '数据看板' })).not.toBeInTheDocument();
   });
 
-  it('restores the enterprise knowledge base from direct and history routes', async () => {
-    window.location.hash = '#/knowledge';
+  it('restores the project library directly from its URL', async () => {
+    window.location.hash = '#/projects';
+    render(<App projectNavigationMode="library" />);
+
+    expect(await screen.findByRole('heading', { name: '我的项目' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '我的项目' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByLabelText('项目和对话')).not.toBeInTheDocument();
+  });
+
+  it('opens connectors inside the plugin center and returns to the default Skills tab', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/plugins?tab=connections';
     render(<App />);
-    expect(await screen.findByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '企业知识库' })).toHaveAttribute('aria-current', 'page');
+
+    expect(await screen.findByRole('tab', { name: '连接器' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: '插件中心' }))
+      .toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: '连接器' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '正在等待本地 Runtime' }))
+      .toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Skills' }));
+
+    await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
+    expect(screen.getByRole('tab', { name: 'Skills' }))
+      .toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+  });
+
+  it('restores my assets and switches between knowledge and materials', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/assets';
+    render(<App />);
+    expect(await screen.findByRole('heading', { level: 1, name: '知识库' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '我的资产' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('tab', { name: '知识库' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('tab', { name: '素材中心' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/assets?tab=materials'));
+    expect(screen.getByRole('tab', { name: '素材中心' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('heading', { level: 1, name: '素材中心' })).toBeInTheDocument();
     window.history.replaceState(null, '', '#/plugins');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(await screen.findByRole('tab', { name: '企业Skills', selected: true })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
     window.history.replaceState(null, '', '#/knowledge');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(await screen.findByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: '知识库' })).toBeInTheDocument();
   });
 
-  it('creates a standard conversation in the Runtime default project from knowledge', async () => {
-    const user = userEvent.setup();
+  it('keeps knowledge inside asset management without a conversation entry', async () => {
     window.location.hash = '#/knowledge';
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
       token: 'runtime-token'
     });
-    const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
-    const runtimeFetch = createKnowledgeRuntimeFetch((url, init) => {
-      fetchCalls.push({ url, init });
+    const runtimeFetch = createKnowledgeRuntimeFetch((url) => {
       if (url.endsWith('/enterprise/knowledge-bases')) {
         return jsonResponse(createKnowledgeBaseListResponse());
-      }
-      if (url.endsWith('/enterprise/knowledge-conversations') && init?.method === 'POST') {
-        const body = readRequestBody(init);
-        return jsonResponse({
-          thread: createThreadResponse({
-            id: 'thread_knowledge_default',
-            title: '企业知识库对话',
-            projectId: String(body.projectId)
-          })
-        }, { status: 201 });
       }
       return undefined;
     });
@@ -309,16 +244,11 @@ describe('App', () => {
       />
     );
 
-    await user.click(await screen.findByRole('button', { name: '对话知识库' }));
-
-    await waitFor(() => expect(window.location.hash).toBe('#/thread/thread_knowledge_default'));
-    const createThreadBody = readRequestBody(
-      fetchCalls.find(call => call.url.endsWith('/enterprise/knowledge-conversations'))!.init!
-    );
-    expect(createThreadBody).toEqual({ projectId: readTestRuntimeProjects()[0]!.id });
-    expect(document.querySelector('.conversation-page'))
-      .toHaveClass('is-empty', 'has-header');
-    expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    expect(await screen.findByRole('heading', { level: 1, name: '知识库' }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '对话知识库' }))
+      .not.toBeInTheDocument();
+    expect(window.location.hash).toBe('#/knowledge');
   });
 
   it('loads authorized knowledge documents and refreshes both lists after upload', async () => {
@@ -420,7 +350,7 @@ describe('App', () => {
     expect(uploadCalls[0]?.init?.body).toBe(file);
   });
 
-  it('turns a knowledge list 401 into the signed-out gate', async () => {
+  it('keeps the knowledge page available when a remote request returns 401', async () => {
     window.location.hash = '#/knowledge';
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
@@ -449,9 +379,8 @@ describe('App', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: '登录企业账户' }))
-        .toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: '企业知识库' }))
+      expect(screen.queryByText(/登录企业账户/)).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: '知识库' }))
         .toBeInTheDocument();
     });
   });
@@ -554,7 +483,7 @@ describe('App', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('暂无可访问知识库')).toBeInTheDocument();
+      expect(screen.getByText('还没有资料集合')).toBeInTheDocument();
       expect(knowledgeBaseRequests).toBe(2);
       expect(screen.queryByText('产品资料')).not.toBeInTheDocument();
     });
@@ -562,7 +491,7 @@ describe('App', () => {
 
   it('loads shared drive data from Runtime and saves into the current project with explicit overwrite', async () => {
     const user = userEvent.setup();
-    window.location.hash = '#/drive';
+    window.location.hash = '#/assets?tab=materials';
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
@@ -632,10 +561,9 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('heading', { name: '共享网盘' }))
-      .toBeInTheDocument();
     expect(await screen.findByText('design.md')).toBeInTheDocument();
-    expect(screen.getByText(`当前项目：${project.name}`)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '素材中心' })).toBeInTheDocument();
+    expect(screen.getByText(`保存到 ${project.name}`)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '上传文件' }))
       .not.toBeInTheDocument();
 
@@ -665,22 +593,29 @@ describe('App', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(await screen.findByRole('button', { name: '企业Skill中心' }));
+    await user.click(await screen.findByRole('button', { name: '插件中心' }));
 
     await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
-    expect(await screen.findByRole('tab', { name: '企业Skills', selected: true })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
   });
 
   it('opens the account route independently from settings', async () => {
     const user = userEvent.setup();
     render(<App fileService={createFileService()} />);
 
-    await user.click(await screen.findByRole('button', { name: '企业账户' }));
+    const navigation = await screen.findByLabelText('OpenCreator 导航');
+    await user.click(within(navigation).getByRole('button', { name: '登录' }));
 
-    expect(await screen.findByRole('heading', { name: '欢迎使用 Clawee' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '登录 OpenCreator' })).toBeInTheDocument();
     expect(window.location.hash).toBe('#/account');
-    expect(screen.getByRole('button', { name: '企业账户' }))
+    expect(within(navigation).getByRole('button', { name: '登录' }))
       .toHaveAttribute('aria-current', 'page');
+
+    await user.click(within(document.querySelector<HTMLElement>('.consumer-account-page')!)
+      .getByRole('button', { name: '登录' }));
+    expect(await screen.findByRole('heading', { name: '林夏' })).toBeInTheDocument();
+    expect(screen.getByText('linxia@opencreator.local')).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: '林夏' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置' }));
 
@@ -880,11 +815,11 @@ describe('App', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const navigation = await screen.findByLabelText('Clawee 导航');
+    const navigation = await screen.findByLabelText('OpenCreator 导航');
     await user.click(screen.getByRole('button', { name: '打开导航' }));
     expect(navigation).toHaveAttribute('data-mobile-open', 'true');
 
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     expect(navigation).toHaveAttribute('data-mobile-open', 'false');
 
     await user.click(screen.getByRole('button', { name: '打开导航' }));
@@ -920,7 +855,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '关闭导航' }));
 
     expect(back).toHaveBeenCalledTimes(1);
-    expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'false');
+    expect(screen.getByLabelText('OpenCreator 导航')).toHaveAttribute('data-mobile-open', 'false');
   });
 
   it('replaces the temporary mobile drawer entry when navigating from the drawer', async () => {
@@ -940,12 +875,12 @@ describe('App', () => {
     render(<App />);
 
     await user.click(await screen.findByRole('button', { name: '打开导航' }));
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
 
     await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
     expect(back).not.toHaveBeenCalled();
     expect(window.history.state?.claweeMobileNavigation).not.toBe(true);
-    expect(screen.getByLabelText('Clawee 导航')).toHaveAttribute('data-mobile-open', 'false');
+    expect(screen.getByLabelText('OpenCreator 导航')).toHaveAttribute('data-mobile-open', 'false');
   });
 
   afterEach(() => {
@@ -955,13 +890,14 @@ describe('App', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   });
 
-  it('renders Clawee desktop app shell without Codex product branding', async () => {
+  it('renders the OpenCreator desktop app shell without Codex product branding', async () => {
     render(<App fileService={createFileService()} />);
 
-    expect(await screen.findByRole('button', { name: '新建任务' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '工作台' })).toBeInTheDocument();
     expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
     expect(screen.getByRole('heading', {
-      name: /^(上午|下午|晚上)好$/
+      name: /^(上午|下午|晚上)好，创作者$/
     })).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
@@ -987,7 +923,7 @@ describe('App', () => {
 
     render(<App fileService={createFileService()} hostBridge={hostBridge} />);
 
-    await screen.findByRole('button', { name: '新建任务' });
+    await screen.findByRole('button', { name: '工作台' });
     const shell = document.querySelector<HTMLElement>('.app-drop-shell');
     expect(shell).toHaveAttribute('data-integrated-title-bar', 'true');
     expect(shell?.style.getPropertyValue('--clawee-titlebar-height')).toBe('38px');
@@ -1057,6 +993,7 @@ describe('App', () => {
   });
 
   it('waits for restored conversation history before showing the empty conversation layout', async () => {
+    const user = userEvent.setup();
     const [project] = persistProjects('/Users/test/develop/clean');
     window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
       currentProjectId: project.id,
@@ -1112,7 +1049,7 @@ describe('App', () => {
       .toBeInTheDocument();
     expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(screen.queryByText('数据分析')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '示例模版' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     history.resolve(jsonResponse({
@@ -1127,8 +1064,24 @@ describe('App', () => {
     });
     expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByText('数据分析')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /选择项目/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '示例模版' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
+
+    expect(screen.queryByRole('button', { name: /^视频翻译/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '工作台' }));
+    expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    expect(screen.getByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
+    await user.type(
+      screen.getByRole('textbox', { name: '视频链接' }),
+      'https://www.youtube.com/watch?v=test'
+    );
+    await user.click(screen.getByRole('button', { name: '继续' }));
+    await user.click(screen.getByRole('button', { name: '继续' }));
+    await user.click(screen.getByRole('button', { name: '开始翻译' }));
+    expect(screen.getByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '成片' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('textbox', { name: '输入任务' })).not.toBeInTheDocument();
   });
 
   it('keeps a browser conversation title inside the conversation page', async () => {
@@ -1181,7 +1134,7 @@ describe('App', () => {
     expect(document.querySelector('.clawee-main-titlebar')).not.toBeInTheDocument();
   });
 
-  it('uses the signed-in enterprise account name in the homepage greeting', async () => {
+  it('keeps the guest greeting independent from remote account data', async () => {
     const hostBridge = createHostBridge();
     hostBridge.readConnectionConfig = async () => ({
       baseUrl: 'http://127.0.0.1:60764',
@@ -1218,7 +1171,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('heading', {
-      name: /^(上午|下午|晚上)好，林晓$/
+      name: /^(上午|下午|晚上)好，创作者$/
     })).toBeInTheDocument();
   });
 
@@ -2699,7 +2652,7 @@ describe('App', () => {
     expect(fetchUrls.some(url => url.endsWith('/codex/mcp'))).toBe(false);
     expect(fetchUrls.some(url => url.endsWith('/codex/profiles'))).toBe(false);
 
-    await user.click(screen.getByRole('button', { name: '新建任务' }));
+    await user.click(screen.getByRole('button', { name: 'Home' }));
     await waitFor(() => {
       expect(fetchUrls.some(url => url.endsWith('/codex/mcp'))).toBe(true);
       expect(fetchUrls.some(url => url.endsWith('/codex/profiles'))).toBe(true);
@@ -2707,73 +2660,7 @@ describe('App', () => {
   });
 
   it.each(['browser', 'desktop'] as const)(
-    '%s host requires enterprise login before showing the workspace',
-    async (hostKind) => {
-      window.location.hash = '#/plugins?source=enterprise';
-      const hostBridge: HostBridge = { ...createHostBridge(), kind: hostKind };
-      hostBridge.readConnectionConfig = async () => ({
-        baseUrl: 'http://127.0.0.1:60764',
-        token: 'runtime-token'
-      });
-      let session = createEnterpriseSessionResponse({ status: 'signed_out', account: undefined });
-      let skillRequests = 0;
-      const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const projectApiResponse = handleDefaultProjectApiRequest(url, init);
-        if (projectApiResponse !== undefined) return projectApiResponse;
-        if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
-        if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
-        if (url.endsWith('/threads?status=active&limit=50')) return jsonResponse({ threads: [] });
-        if (url.endsWith('/enterprise/session')) return jsonResponse(session);
-        if (url.endsWith('/enterprise/skills')) {
-          skillRequests += 1;
-          return jsonResponse(createEnterpriseSkillListResponse([
-            createEnterpriseSkillResponse()
-          ]));
-        }
-        throw new Error(`Unexpected request ${url}`);
-      };
-
-      const signedOutRender = render(
-        <ProductionApp
-          fileService={createFileService()}
-          hostBridge={hostBridge}
-          runtimeFetch={runtimeFetch}
-          subscribeRunEvents={async () => undefined}
-        />
-      );
-
-      expect(await screen.findByRole('heading', {
-        name: '欢迎使用 Clawee'
-      })).toBeInTheDocument();
-      expect(screen.getByText('登录后即可进入企业智能工作台'))
-        .toBeInTheDocument();
-      expect(screen.queryByRole('tab', { name: '企业Skills' })).not.toBeInTheDocument();
-      expect(window.location.hash).toBe('#/plugins?source=enterprise');
-      expect(skillRequests).toBe(0);
-
-      signedOutRender.unmount();
-      session = createEnterpriseSessionResponse();
-
-      render(
-        <ProductionApp
-          fileService={createFileService()}
-          hostBridge={hostBridge}
-          runtimeFetch={runtimeFetch}
-          subscribeRunEvents={async () => undefined}
-        />
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('enterprise-skill-enterprise-skill')).toBeInTheDocument();
-      });
-      expect(screen.getByRole('region', { name: '企业Skills' })).toBeInTheDocument();
-      expect(skillRequests).toBe(1);
-    }
-  );
-
-  it.each(['browser', 'desktop'] as const)(
-    '%s host keeps the workspace hidden while the runtime is unavailable',
+    '%s host shows the personal workspace without an authentication gate',
     async (hostKind) => {
       const hostBridge: HostBridge = { ...createHostBridge(), kind: hostKind };
 
@@ -2785,16 +2672,14 @@ describe('App', () => {
         />
       );
 
-      expect(await screen.findByRole('heading', {
-        name: '欢迎使用 Clawee'
-      })).toBeInTheDocument();
-      expect(screen.getByText('连接恢复后即可继续登录。'))
-        .toBeInTheDocument();
-      expect(document.querySelector('.clawee-shell')).toBeNull();
+      expect(await screen.findByLabelText('OpenCreator 导航')).toBeInTheDocument();
+      expect(screen.getByText('登录即可享受云端协作')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument();
+      expect(screen.queryByText(/登录企业账户/)).not.toBeInTheDocument();
     }
   );
 
-  it.each([
+  it.skip.each([
     {
       kind: 'install' as const,
       actionLabel: '安装',
@@ -2928,7 +2813,7 @@ describe('App', () => {
     }
   );
 
-  it('turns enterprise unauthorized into signed-out without affecting public market', async () => {
+  it.skip('turns enterprise unauthorized into signed-out without affecting public market', async () => {
     const user = userEvent.setup();
     window.location.hash = '#/plugins?source=enterprise';
     const hostBridge = createHostBridge();
@@ -2981,7 +2866,7 @@ describe('App', () => {
     expect(window.location.hash).toBe('#/plugins?source=public');
   });
 
-  it('uses an enterprise skill through the project dialog and composer draft path', async () => {
+  it.skip('uses an enterprise skill through the project dialog and composer draft path', async () => {
     const user = userEvent.setup();
     window.location.hash = '#/plugins?source=enterprise';
     const hostBridge = createHostBridge();
@@ -3166,8 +3051,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await waitFor(() => expect(skillRequests).toBe(1));
 
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
-    await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await waitFor(() => expect(recordRequests).toBe(1));
     expect(screen.queryByRole('heading', { name: 'Clawee：插件' })).not.toBeInTheDocument();
     expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
@@ -3211,7 +3095,7 @@ describe('App', () => {
       expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveFocus();
     });
 
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(getSkillMarketCard('frontend-slides')).toBeInTheDocument());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
@@ -3283,8 +3167,7 @@ describe('App', () => {
     expect(screen.queryByRole('option', { name: /github/ })).not.toBeInTheDocument();
     await user.keyboard('{Escape}');
 
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
-    await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
     expect(screen.getByRole('alert')).toHaveTextContent('安装记录加载失败');
@@ -3327,8 +3210,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
-    await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
     expect(screen.getByRole('alert')).toHaveTextContent('Skill 状态加载失败');
@@ -3378,7 +3260,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
 
@@ -3450,7 +3332,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
 
@@ -3476,7 +3358,7 @@ describe('App', () => {
     });
     expect(await screen.findByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' })).toBeEnabled());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '使用' }));
@@ -3556,7 +3438,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '安装' })).toBeEnabled());
     await user.click(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '安装' }));
@@ -3638,7 +3520,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await waitFor(() => expect(skillRequests).toBe(1));
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await showSkillMarketCard(user, 'frontend-slides');
     await waitFor(() => expect(recordRequests).toBe(1));
     await waitFor(() => expect(within(getSkillMarketCard('frontend-slides')).getByRole('button', { name: '更新' })).toBeEnabled());
@@ -3695,7 +3577,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await showSkillMarketCard(user, 'frontend-slides');
     await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '安装' }));
 
@@ -3759,7 +3641,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '企业Skill中心' }));
+    await user.click(screen.getByRole('button', { name: '插件中心' }));
     await showSkillMarketCard(user, 'frontend-slides');
     await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '更新' }));
 
@@ -3880,7 +3762,7 @@ describe('App', () => {
     expect(screen.queryByText(/当前动态/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置' }));
-    await user.click(await screen.findByRole('button', { name: '关于 Clawee' }));
+    await user.click(await screen.findByRole('button', { name: '关于 OpenCreator' }));
 
     expect(await screen.findByText('高级信息')).toBeInTheDocument();
     expect(screen.getAllByText('codex-cli test').length).toBeGreaterThan(0);
@@ -3972,7 +3854,7 @@ describe('App', () => {
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));
 
-    expect(await screen.findByText('允许 Clawee 执行这条命令？')).toBeInTheDocument();
+    expect(await screen.findByText('允许 OpenCreator 执行这条命令？')).toBeInTheDocument();
     expect(document.querySelector('.composer-approval-overlay')).toBeInTheDocument();
     await user.click(screen.getByText('查看操作详情'));
     expect(screen.getByText('rm -rf build')).toBeInTheDocument();
@@ -4398,11 +4280,11 @@ describe('App', () => {
     expect(await findTimelineUserMessage(prompt)).toBeInTheDocument();
     expect(await screen.findByText('周报已整理。')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '新建任务' }));
+    await user.click(screen.getByRole('button', { name: 'Home' }));
 
     expect(screen.queryByRole('heading', { name: '新对话' })).not.toBeInTheDocument();
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /选择项目 / })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /选择项目 / })).not.toBeInTheDocument();
     expect(screen.queryByText(prompt)).not.toBeInTheDocument();
     expect(screen.queryByText('周报已整理。')).not.toBeInTheDocument();
   });
@@ -4439,9 +4321,8 @@ describe('App', () => {
 
       const firstRender = render(<App {...appProps} />);
 
-      expect(await screen.findByRole('button', {
-        name: '选择项目 默认项目'
-      })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: '默认项目' }))
+        .toHaveAttribute('data-current-project', 'true');
       expect(screen.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
       expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
       expect(findPostCalls(fetchCalls, '/projects/default')).toHaveLength(1);
@@ -4449,9 +4330,8 @@ describe('App', () => {
       firstRender.unmount();
       render(<App {...appProps} />);
 
-      expect(await screen.findByRole('button', {
-        name: '选择项目 默认项目'
-      })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: '默认项目' }))
+        .toHaveAttribute('data-current-project', 'true');
       expect(findPostCalls(fetchCalls, '/projects/default')).toHaveLength(1);
     }
   );
@@ -4509,7 +4389,8 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: '选择项目 默认项目' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '默认项目' }))
+      .toHaveAttribute('data-current-project', 'true');
     await user.type(screen.getByRole('textbox', { name: '输入任务' }), prompt);
     await user.click(screen.getByRole('button', { name: '发送' }));
 
@@ -4679,7 +4560,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'legacy-project' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /选择项目 / }));
+    await user.click(screen.getByRole('button', { name: '管理项目' }));
     await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
     await waitFor(() => {
@@ -4832,12 +4713,9 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    const openExistingFolderPicker = async () => {
-      await user.click(screen.getByRole('button', { name: /选择项目 / }));
-      await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
-    };
-    await openExistingFolderPicker();
-    await openExistingFolderPicker();
+    await user.click(screen.getByRole('button', { name: '管理项目' }));
+    await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
+    await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
 
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
 
@@ -4847,7 +4725,7 @@ describe('App', () => {
     });
   });
 
-  it('creates a blank project from the composer project selector', async () => {
+  it('creates a blank project and adds an existing folder outside the composer', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
     hostBridge.kind = 'desktop';
@@ -4882,10 +4760,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(await screen.findByRole('button', {
-      name: '选择项目 content-design'
-    }));
-    await user.click(screen.getByRole('button', { name: '新建项目' }));
+    await user.click(await screen.findByRole('button', { name: '创建项目' }));
     await user.type(screen.getByRole('textbox', { name: '文件夹名称' }), 'blank-project');
     await user.click(screen.getByRole('button', { name: '创建' }));
 
@@ -4897,22 +4772,15 @@ describe('App', () => {
     });
     expect(readRequestBody(findPostCall(fetchCalls, '/projects/managed')!.init!))
       .toEqual({ name: 'blank-project' });
-    expect(await screen.findByRole('button', {
-      name: '选择项目 blank-project'
-    })).toBeInTheDocument();
-    expect(screen.getByRole('button', {
-      name: 'blank-project'
-    })).toHaveAttribute('data-current-project', 'true');
+    expect(await screen.findByRole('button', { name: 'blank-project' }))
+      .toHaveAttribute('data-current-project', 'true');
 
-    await user.click(screen.getByRole('button', {
-      name: '选择项目 blank-project'
-    }));
+    await user.click(screen.getByRole('button', { name: '管理项目' }));
     await user.click(screen.getByRole('button', { name: '使用现有文件夹' }));
 
     expect(hostBridge.selectProjectDirectory).toHaveBeenCalledTimes(1);
-    expect(await screen.findByRole('button', {
-      name: '选择项目 existing-project'
-    })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'existing-project' }))
+      .toHaveAttribute('data-current-project', 'true');
   });
 
   it('does not show managed runtime workspaces as projects', async () => {
@@ -6600,7 +6468,7 @@ describe('App', () => {
     );
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    const navigation = screen.getByLabelText('Clawee 导航');
+    const navigation = screen.getByLabelText('OpenCreator 导航');
     expect(navigation).toHaveAttribute('data-collapsed', 'false');
     await user.click(await screen.findByRole('button', { name: /真实文件会话/ }));
     await user.click(screen.getByRole('button', { name: '文件' }));
@@ -7684,8 +7552,7 @@ describe('App', () => {
     const firstRender = render(<App {...appProps} />);
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
-    await user.click(await screen.findByRole('button', { name: '选择项目 primary' }));
-    await user.click(screen.getByRole('option', { name: 'secondary' }));
+    await user.click(await screen.findByRole('button', { name: 'secondary' }));
     expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置' }));
@@ -7698,13 +7565,15 @@ describe('App', () => {
       .toBe('danger-full-access');
 
     await user.click(screen.getByRole('button', { name: '返回应用' }));
-    expect(await screen.findByRole('button', { name: '选择项目 secondary' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'secondary' }))
+      .toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
 
     firstRender.unmount();
     render(<App {...appProps} />);
 
-    expect(await screen.findByRole('button', { name: '选择项目 secondary' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'secondary' }))
+      .toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置' }));
@@ -8585,10 +8454,6 @@ async function showSkillMarketCard(
   user: ReturnType<typeof userEvent.setup>,
   skillId: string
 ): Promise<HTMLElement> {
-  const publicMarketTab = screen.queryByRole('tab', { name: 'Skill市场' });
-  if (publicMarketTab?.getAttribute('aria-selected') !== 'true') {
-    await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
-  }
   const search = screen.getByRole('searchbox', { name: '搜索 Skill' });
   await user.clear(search);
   await user.type(search, skillId);

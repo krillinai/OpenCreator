@@ -22,13 +22,16 @@ describe('app routes', () => {
 
   it('parses every primary page route', () => {
     expect(parseRoute('#/search')).toEqual({ view: 'search' });
+    expect(parseRoute('#/projects')).toEqual({ view: 'projects' });
+    expect(parseRoute('#/workbench')).toEqual({ view: 'workbench' });
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });
     expect(parseRoute('#/tasks')).toEqual({ view: 'tasks' });
     expect(parseRoute('#/dashboard')).toEqual({ view: 'dashboard' });
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
-    expect(parseRoute('#/connections')).toEqual({ view: 'connections' });
-    expect(parseRoute('#/knowledge')).toEqual({ view: 'knowledge' });
-    expect(parseRoute('#/drive')).toEqual({ view: 'drive' });
+    expect(parseRoute('#/connections')).toEqual({ view: 'plugins', tab: 'connections' });
+    expect(parseRoute('#/assets')).toEqual({ view: 'assets' });
+    expect(parseRoute('#/knowledge')).toEqual({ view: 'assets' });
+    expect(parseRoute('#/drive')).toEqual({ view: 'assets', tab: 'materials' });
     expect(parseRoute('#/account')).toEqual({ view: 'account' });
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
@@ -68,6 +71,18 @@ describe('app routes', () => {
     expect(parseRoute(formatRoute(route))).toEqual(route);
   });
 
+  it('round-trips the connector tab inside the plugin center', () => {
+    const route = { view: 'plugins' as const, tab: 'connections' as const };
+    expect(formatRoute(route)).toBe('#/plugins?tab=connections');
+    expect(parseRoute(formatRoute(route))).toEqual(route);
+  });
+
+  it('round-trips the material center tab inside my assets', () => {
+    const route = { view: 'assets' as const, tab: 'materials' as const };
+    expect(formatRoute(route)).toBe('#/assets?tab=materials');
+    expect(parseRoute(formatRoute(route))).toEqual(route);
+  });
+
   it('falls back to the public market for unsupported plugin sources', () => {
     expect(parseRoute('#/plugins?source=private')).toEqual({ view: 'plugins' });
     expect(parseRoute('#/plugins?source=%E0%A4%A')).toEqual({ view: 'plugins' });
@@ -85,15 +100,17 @@ describe('app routes', () => {
 
   it('formats stable copyable hashes for every route', () => {
     expect(formatRoute({ view: 'home' })).toBe('#/');
+    expect(formatRoute({ view: 'workbench' })).toBe('#/workbench');
+    expect(formatRoute({ view: 'projects' })).toBe('#/projects');
     expect(formatRoute({ view: 'thread', threadId: 'thread 1' })).toBe('#/thread/thread%201');
     expect(formatRoute({ view: 'search' })).toBe('#/search');
     expect(formatRoute({ view: 'schedules' })).toBe('#/schedules');
     expect(formatRoute({ view: 'tasks' })).toBe('#/tasks');
     expect(formatRoute({ view: 'dashboard' })).toBe('#/dashboard');
     expect(formatRoute({ view: 'plugins' })).toBe('#/plugins');
-    expect(formatRoute({ view: 'connections' })).toBe('#/connections');
-    expect(formatRoute({ view: 'knowledge' })).toBe('#/knowledge');
-    expect(formatRoute({ view: 'drive' })).toBe('#/drive');
+    expect(formatRoute({ view: 'plugins', tab: 'connections' })).toBe('#/plugins?tab=connections');
+    expect(formatRoute({ view: 'assets' })).toBe('#/assets');
+    expect(formatRoute({ view: 'assets', tab: 'materials' })).toBe('#/assets?tab=materials');
     expect(formatRoute({ view: 'account' })).toBe('#/account');
     expect(formatRoute({ view: 'settings' })).toBe('#/settings');
     expect(formatRoute({ view: 'capabilities' })).toBe('#/capabilities');

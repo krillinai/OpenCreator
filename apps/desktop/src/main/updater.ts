@@ -104,8 +104,8 @@ export function startUpdater(input: {
       try {
         const choice = await showMessageBox({
           type: 'info',
-          title: 'Clawee 更新',
-          message: `发现 Clawee ${info.version}`,
+          title: 'OpenCreator 更新',
+          message: `发现 OpenCreator ${info.version}`,
           detail: '可以在后台下载更新，当前任务不会被中断。',
           buttons: ['下载更新', '稍后'],
           defaultId: 0,
@@ -129,7 +129,7 @@ export function startUpdater(input: {
         const choice = await showMessageBox({
           type: 'info',
           title: '更新已下载',
-          message: `Clawee ${info.version} 已准备好`,
+          message: `OpenCreator ${info.version} 已准备好`,
           detail: '退出并安装会关闭当前本地运行服务，请确认没有需要继续运行的任务。',
           buttons: ['退出并安装', '稍后'],
           defaultId: 1,

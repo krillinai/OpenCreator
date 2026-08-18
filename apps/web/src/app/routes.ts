@@ -1,5 +1,7 @@
 export type AppRoute =
   | { view: 'home' }
+  | { view: 'projects' }
+  | { view: 'workbench' }
   | { view: 'thread'; threadId: string; runId?: string; approvalId?: string }
   | { view: 'search' }
   | { view: 'schedules'; scheduleId?: string }
@@ -7,10 +9,12 @@ export type AppRoute =
   | { view: 'dashboard' }
   | { view: 'activity'; range: ActivityRange }
   | { view: 'activity-agent'; collectorId: string; agentId: string; range: ActivityRange }
-  | { view: 'plugins'; source?: 'enterprise' | 'public' }
-  | { view: 'connections' }
-  | { view: 'knowledge' }
-  | { view: 'drive' }
+  | {
+      view: 'plugins';
+      source?: 'enterprise' | 'public';
+      tab?: 'connections';
+    }
+  | { view: 'assets'; tab?: 'materials' }
   | { view: 'account' }
   | { view: 'capabilities' }
   | { view: 'settings' }
@@ -40,6 +44,8 @@ export function parseRoute(hash: string): AppRoute {
         };
   }
   if (path === '#/search') return { view: 'search' };
+  if (path === '#/projects') return { view: 'projects' };
+  if (path === '#/workbench') return { view: 'workbench' };
   if (path === '#/schedules') {
     const fields = parseQuery(query);
     return {
@@ -52,13 +58,22 @@ export function parseRoute(hash: string): AppRoute {
   if (path === '#/activity') return { view: 'activity', range: parseActivityRange(query) };
   if (path === '#/plugins') {
     const fields = parseQuery(query);
-    return fields.source === 'enterprise' || fields.source === 'public'
-      ? { view: 'plugins', source: fields.source }
-      : { view: 'plugins' };
+    return {
+      view: 'plugins',
+      ...(fields.source === undefined ? {} : { source: fields.source }),
+      ...(fields.pluginTab === undefined ? {} : { tab: fields.pluginTab })
+    };
   }
-  if (path === '#/connections') return { view: 'connections' };
-  if (path === '#/knowledge') return { view: 'knowledge' };
-  if (path === '#/drive') return { view: 'drive' };
+  if (path === '#/connections') return { view: 'plugins', tab: 'connections' };
+  if (path === '#/assets') {
+    const fields = parseQuery(query);
+    return {
+      view: 'assets',
+      ...(fields.assetsTab === undefined ? {} : { tab: fields.assetsTab })
+    };
+  }
+  if (path === '#/knowledge') return { view: 'assets' };
+  if (path === '#/drive') return { view: 'assets', tab: 'materials' };
   if (path === '#/account') return { view: 'account' };
   if (path === '#/capabilities') return { view: 'capabilities' };
   if (path === '#/settings') return { view: 'settings' };
@@ -77,6 +92,10 @@ export function formatRoute(route: AppRoute): string {
   switch (route.view) {
     case 'home':
       return '#/';
+    case 'projects':
+      return '#/projects';
+    case 'workbench':
+      return '#/workbench';
     case 'thread': {
       const query = new URLSearchParams();
       if (route.runId !== undefined) query.set('runId', route.runId);
@@ -101,16 +120,15 @@ export function formatRoute(route: AppRoute): string {
       return `#/activity?range=${route.range}`;
     case 'activity-agent':
       return `#/activity/agent/${encodeURIComponent(route.collectorId)}/${encodeURIComponent(route.agentId)}?range=${route.range}`;
-    case 'plugins':
-      return route.source === undefined
-        ? '#/plugins'
-        : `#/plugins?source=${route.source}`;
-    case 'connections':
-      return '#/connections';
-    case 'knowledge':
-      return '#/knowledge';
-    case 'drive':
-      return '#/drive';
+    case 'plugins': {
+      const query = new URLSearchParams();
+      if (route.source !== undefined) query.set('source', route.source);
+      if (route.tab === 'connections') query.set('tab', route.tab);
+      const suffix = query.toString();
+      return suffix.length === 0 ? '#/plugins' : `#/plugins?${suffix}`;
+    }
+    case 'assets':
+      return route.tab === 'materials' ? '#/assets?tab=materials' : '#/assets';
     case 'account':
       return '#/account';
     case 'capabilities':
@@ -141,6 +159,8 @@ function parseQuery(query: string): {
   approvalId?: string;
   scheduleId?: string;
   source?: 'enterprise' | 'public';
+  pluginTab?: 'connections';
+  assetsTab?: 'materials';
 } {
   const fields: {
     threadId?: string;
@@ -149,6 +169,8 @@ function parseQuery(query: string): {
     approvalId?: string;
     scheduleId?: string;
     source?: 'enterprise' | 'public';
+    pluginTab?: 'connections';
+    assetsTab?: 'materials';
   } = {};
   for (const pair of query.split('&')) {
     if (pair.length === 0) continue;
@@ -162,6 +184,8 @@ function parseQuery(query: string): {
     if (key === 'approvalId') fields.approvalId = value;
     if (key === 'scheduleId') fields.scheduleId = value;
     if (key === 'source' && (value === 'enterprise' || value === 'public')) fields.source = value;
+    if (key === 'tab' && value === 'connections') fields.pluginTab = value;
+    if (key === 'tab' && value === 'materials') fields.assetsTab = value;
   }
   return fields;
 }

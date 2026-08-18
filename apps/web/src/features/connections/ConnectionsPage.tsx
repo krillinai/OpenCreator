@@ -4,8 +4,7 @@ import type {
   CodexMcpServerResponse,
   EnterpriseMcpCatalogResponse,
   EnterpriseMcpPreferenceUpdateRequest,
-  EnterpriseMcpUpstreamResponse,
-  EnterpriseSessionResponse
+  EnterpriseMcpUpstreamResponse
 } from '@clawee/protocol';
 import {
   Cable,
@@ -24,6 +23,7 @@ import {
   WifiOff
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import {
   McpEditor,
   type McpCapabilities,
@@ -45,15 +45,11 @@ export type EnterpriseMcpConnectionService = {
 
 export type ConnectionsPageProps = {
   connected: boolean;
-  session: EnterpriseSessionResponse;
   service: EnterpriseMcpConnectionService | null;
   mcpService: McpSettingsService | null;
   mcpData?: CodexMcpListResponse;
   mcpCapabilities?: McpCapabilities;
   onMcpDataChange?(data: CodexMcpListResponse): void;
-  onOpenAccount(): void;
-  onRefreshSession(): Promise<EnterpriseSessionResponse>;
-  onSessionExpired(): void;
 };
 
 type UnifiedConnection = {
@@ -68,6 +64,7 @@ type UnifiedConnection = {
 };
 
 export function ConnectionsPage(props: ConnectionsPageProps) {
+  const l = useLocalizedCopy();
   const [nativeData, setNativeData] = useState(props.mcpData);
   const [catalog, setCatalog] = useState<EnterpriseMcpCatalogResponse>();
   const [loading, setLoading] = useState(false);
@@ -98,9 +95,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
   }, [
     props.connected,
     props.mcpService,
-    props.onSessionExpired,
-    props.service,
-    props.session.status
+    props.service
   ]);
 
   function updateNativeData(next: CodexMcpListResponse) {
@@ -115,12 +110,11 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     if (props.mcpService === null) return;
     setLoading(true);
     setLoadError(undefined);
-    const enterpriseWork =
-      props.session.status === 'signed_in' && props.service !== null
-        ? refreshEnterprise
-          ? props.service.refreshMcpConnections()
-          : props.service.listMcpConnections()
-        : Promise.resolve(undefined);
+    const enterpriseWork = props.service === null
+      ? Promise.resolve(undefined)
+      : refreshEnterprise
+        ? props.service.refreshMcpConnections()
+        : props.service.listMcpConnections();
     const [nativeResult, enterpriseResult] = await Promise.allSettled([
       props.mcpService.listServers(),
       enterpriseWork
@@ -131,15 +125,15 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     if (nativeResult.status === 'fulfilled') {
       updateNativeData(nativeResult.value);
     } else {
-      errors.push(formatConnectionError(nativeResult.reason, '无法加载 Codex MCP'));
+      errors.push(formatConnectionError(nativeResult.reason, l('无法加载 Codex MCP', 'Could not load Codex MCP servers'), l));
     }
     if (enterpriseResult.status === 'fulfilled') {
       setCatalog(enterpriseResult.value);
     } else {
-      if (isUnauthorized(enterpriseResult.reason)) props.onSessionExpired();
       errors.push(formatConnectionError(
         enterpriseResult.reason,
-        '无法加载企业 MCP 目录'
+        l('无法加载连接器目录', 'Could not load the connector catalog'),
+        l
       ));
     }
     setLoadError(errors.length === 0 ? undefined : errors.join('；'));
@@ -178,7 +172,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
 
   function confirmGlobalWrite(): boolean {
     return nativeData?.requiresWriteConfirmation !== true
-      || window.confirm('此操作会修改全局 CODEX_HOME，是否继续？');
+      || window.confirm(l('此操作会修改全局 CODEX_HOME，是否继续？', 'This will modify the global CODEX_HOME. Continue?'));
   }
 
   async function runNativeAction(
@@ -195,7 +189,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     }
     if (
       action === 'remove'
-      && !window.confirm(`删除 MCP ${item.server.name}？`)
+      && !window.confirm(`${l('删除 MCP', 'Remove MCP')} ${item.server.name}?`)
     ) {
       return;
     }
@@ -220,7 +214,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
       }
       await loadConnections(false);
     } catch (error) {
-      setLoadError(formatConnectionError(error, `无法更新 ${item.name}`));
+      setLoadError(formatConnectionError(error, `${l('无法更新', 'Could not update')} ${item.name}`, l));
     } finally {
       setBusyKey(undefined);
     }
@@ -251,8 +245,7 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
       ));
       await loadConnections(false);
     } catch (error) {
-      if (isUnauthorized(error)) props.onSessionExpired();
-      setLoadError(formatConnectionError(error, `无法安装 ${item.name}`));
+      setLoadError(formatConnectionError(error, `${l('无法安装', 'Could not install')} ${item.name}`, l));
     } finally {
       setBusyKey(undefined);
     }
@@ -262,8 +255,8 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
     return (
       <ConnectionsGate
         icon={<WifiOff size={22} aria-hidden="true" />}
-        title="正在等待本地 Runtime"
-        detail="连接器暂不可用，本地项目和会话仍可继续使用。"
+        title={l('正在等待本地 Runtime', 'Waiting for the local runtime')}
+        detail={l('连接器暂不可用，本地项目和会话仍可继续使用。', 'Connectors are temporarily unavailable. Local projects remain available.')}
       />
     );
   }
@@ -273,16 +266,16 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
       <div className="connections-page__inner">
         <header className="connections-header">
           <div>
-            <h1>连接器</h1>
-            <p>统一管理当前 CODEX_HOME 中的 MCP，企业目录提供可安装连接器</p>
+            <h1>{l('连接器', 'Connectors')}</h1>
+            <p>{l('统一管理当前 CODEX_HOME 中的 MCP 和可安装连接器', 'Manage installed MCP servers and available connectors for this CODEX_HOME')}</p>
           </div>
           <div className="connections-header__actions">
             <label className="connections-search">
               <Search size={16} aria-hidden="true" />
               <input
-                aria-label="搜索连接器"
+                aria-label={l('搜索连接器', 'Search connectors')}
                 onChange={event => setQuery(event.target.value)}
-                placeholder="搜索 MCP 或工具"
+                placeholder={l('搜索 MCP 或工具', 'Search MCP servers or tools')}
                 type="search"
                 value={query}
               />
@@ -290,8 +283,8 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
             <button
               className="connections-icon-button"
               type="button"
-              aria-label="新增 MCP"
-              title="新增 MCP"
+              aria-label={l('新增 MCP', 'Add MCP server')}
+              title={l('新增 MCP', 'Add MCP server')}
               disabled={props.mcpCapabilities?.mcpAdd !== true}
               onClick={() => setEditorOpen(true)}
             >
@@ -300,8 +293,8 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
             <button
               className="connections-icon-button"
               type="button"
-              aria-label="刷新连接器"
-              title="刷新"
+              aria-label={l('刷新连接器', 'Refresh connectors')}
+              title={l('刷新', 'Refresh')}
               disabled={loading}
               onClick={() => void loadConnections(true)}
             >
@@ -314,32 +307,10 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
           </div>
         </header>
 
-        {props.session.status === 'signed_out' ? (
-          <div className="connections-banner" role="status">
-            <LogIn size={16} aria-hidden="true" />
-            <span>登录企业账户后可查看企业 MCP 目录，本地 MCP 不受影响。</span>
-            <button type="button" onClick={props.onOpenAccount}>登录</button>
-          </div>
-        ) : null}
-        {props.session.status === 'checking' ? (
-          <div className="connections-banner" role="status">
-            <LoaderCircle className="connections-spinner" size={16} aria-hidden="true" />
-            正在验证企业会话，本地 MCP 已可管理。
-          </div>
-        ) : null}
-        {props.session.status === 'service_unavailable' ? (
-          <div className="connections-banner connections-banner--warning" role="status">
-            <WifiOff size={16} aria-hidden="true" />
-            <span>企业目录暂时不可用，本地 MCP 仍可管理。</span>
-            <button type="button" onClick={() => void props.onRefreshSession()}>
-              重试
-            </button>
-          </div>
-        ) : null}
         {catalog?.tokenStatus === 'missing' ? (
           <div className="connections-banner connections-banner--warning" role="status">
             <KeyRound size={16} aria-hidden="true" />
-            当前 Agent 尚未签发可用的企业 MCP Token。
+            {l('当前设备尚未获取可用的 MCP Token。', 'No valid MCP token is available on this device.')}
           </div>
         ) : null}
         {loadError !== undefined ? (
@@ -371,33 +342,33 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
                 await loadConnections(false);
                 setEditorOpen(false);
               } catch (error) {
-                setLoadError(formatConnectionError(error, '无法新增 MCP'));
+                setLoadError(formatConnectionError(error, l('无法新增 MCP', 'Could not add the MCP server'), l));
               }
             }}
           />
         ) : null}
 
-        <section className="connections-summary" aria-label="连接概览">
+        <section className="connections-summary" aria-label={l('连接概览', 'Connector overview')}>
           <div>
             <Network size={18} aria-hidden="true" />
-            <span><strong>{counts.all}</strong><small>全部 MCP</small></span>
+            <span><strong>{counts.all}</strong><small>{l('全部 MCP', 'All MCP')}</small></span>
           </div>
           <div>
             <Server size={18} aria-hidden="true" />
-            <span><strong>{counts.installed}</strong><small>已安装</small></span>
+            <span><strong>{counts.installed}</strong><small>{l('已安装', 'Installed')}</small></span>
           </div>
           <div>
             <ShieldCheck size={18} aria-hidden="true" />
-            <span><strong>{counts.enabled}</strong><small>已开启</small></span>
+            <span><strong>{counts.enabled}</strong><small>{l('已开启', 'Enabled')}</small></span>
           </div>
         </section>
 
-        <div className="connections-toolbar" role="group" aria-label="连接状态">
+        <div className="connections-toolbar" role="group" aria-label={l('连接状态', 'Connection status')}>
           {([
-            ['all', '全部', counts.all],
-            ['enabled', '已开启', counts.enabled],
-            ['installed', '已安装', counts.installed],
-            ['available', '可安装', counts.available]
+            ['all', l('全部', 'All'), counts.all],
+            ['enabled', l('已开启', 'Enabled'), counts.enabled],
+            ['installed', l('已安装', 'Installed'), counts.installed],
+            ['available', l('可安装', 'Available'), counts.available]
           ] as const).map(([id, label, count]) => (
             <button
               aria-pressed={filter === id}
@@ -413,14 +384,14 @@ export function ConnectionsPage(props: ConnectionsPageProps) {
         {loading && nativeData === undefined ? (
           <div className="connections-empty">
             <LoaderCircle className="connections-spinner" size={22} aria-hidden="true" />
-            <span>正在加载 MCP</span>
+            <span>{l('正在加载 MCP', 'Loading MCP servers')}</span>
           </div>
         ) : filtered.length === 0 ? (
           <div className="connections-empty">
-            {connections.length === 0 ? '当前没有 MCP' : '没有找到匹配的 MCP'}
+            {connections.length === 0 ? l('当前没有 MCP', 'No MCP servers yet') : l('没有找到匹配的 MCP', 'No matching MCP servers')}
           </div>
         ) : (
-          <section className="connections-grid" aria-label="连接器目录">
+          <section className="connections-grid" aria-label={l('连接器目录', 'Connector catalog')}>
             {filtered.map(item => (
               <ConnectionCard
                 key={item.key}
@@ -447,6 +418,7 @@ function ConnectionCard(props: {
   onInstall(): void;
   onAction(action: 'enable' | 'disable' | 'login' | 'logout' | 'remove'): void;
 }) {
+  const l = useLocalizedCopy();
   const description = props.item.upstream?.tools.find(tool => (
     tool.authorized && tool.description.trim().length > 0
   ))?.description
@@ -476,7 +448,7 @@ function ConnectionCard(props: {
           <h2>{props.item.name}</h2>
           <span>{props.item.subtitle}</span>
         </div>
-        <em data-status={status}>{connectionStatusLabel(status)}</em>
+        <em data-status={status}>{connectionStatusLabel(status, l)}</em>
       </div>
 
       <p className="connection-card__description">{description}</p>
@@ -484,7 +456,7 @@ function ConnectionCard(props: {
       <div className="connection-card__meta">
         <span>{props.item.server?.transport ?? props.item.upstream?.namespace}</span>
         <span>
-          {props.item.upstream === undefined ? 'Codex 原生配置' : '企业目录'}
+          {props.item.upstream === undefined ? l('Codex 原生配置', 'Native Codex configuration') : l('云端目录', 'Connector catalog')}
         </span>
       </div>
 
@@ -494,8 +466,8 @@ function ConnectionCard(props: {
             <button
               className="connection-icon-action"
               type="button"
-              aria-label={`登录 ${props.item.server.name}`}
-              title="登录"
+              aria-label={`${l('登录', 'Sign in to')} ${props.item.server.name}`}
+              title={l('登录', 'Sign in')}
               disabled={
                 props.blocked
                 || props.capabilities?.mcpLogin !== true
@@ -507,8 +479,8 @@ function ConnectionCard(props: {
             <button
               className="connection-icon-action"
               type="button"
-              aria-label={`退出 ${props.item.server.name}`}
-              title="退出"
+              aria-label={`${l('退出', 'Sign out of')} ${props.item.server.name}`}
+              title={l('退出', 'Sign out')}
               disabled={
                 props.blocked
                 || props.capabilities?.mcpLogout !== true
@@ -520,8 +492,8 @@ function ConnectionCard(props: {
             <button
               className="connection-icon-action connection-icon-action--danger"
               type="button"
-              aria-label={`删除 ${props.item.server.name}`}
-              title="删除"
+              aria-label={`${l('删除', 'Remove')} ${props.item.server.name}`}
+              title={l('删除', 'Remove')}
               disabled={
                 props.blocked
                 || props.capabilities?.mcpRemove !== true
@@ -533,7 +505,7 @@ function ConnectionCard(props: {
                 : <Trash2 size={15} aria-hidden="true" />}
             </button>
             <span className="connection-toggle-label">
-              {props.item.enabled ? '已开启' : '已关闭'}
+              {props.item.enabled ? l('已开启', 'Enabled') : l('已关闭', 'Disabled')}
             </span>
             <button
               className="connection-switch"
@@ -560,7 +532,7 @@ function ConnectionCard(props: {
             {props.busy
               ? <LoaderCircle className="connections-spinner" size={15} aria-hidden="true" />
               : <Download size={15} aria-hidden="true" />}
-            安装
+            {l('安装', 'Install')}
           </button>
         )}
       </footer>
@@ -653,44 +625,44 @@ function matchesFilter(
 }
 
 function connectionStatusLabel(
-  status: Exclude<ConnectionFilter, 'all'>
+  status: Exclude<ConnectionFilter, 'all'>,
+  l: LocalizeCopy
 ): string {
-  if (status === 'enabled') return '已开启';
-  if (status === 'installed') return '已安装';
-  return '可安装';
-}
-
-function isUnauthorized(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const candidate = error as { status?: unknown; code?: unknown };
-  return candidate.status === 401
-    || candidate.code === 'ENTERPRISE_UNAUTHORIZED'
-    || candidate.code === 'ENTERPRISE_SESSION_EXPIRED';
+  if (status === 'enabled') return l('已开启', 'Enabled');
+  if (status === 'installed') return l('已安装', 'Installed');
+  return l('可安装', 'Available');
 }
 
 function formatConnectionError(
   error: unknown,
-  fallback = '系统连接操作失败'
+  fallback: string,
+  l: LocalizeCopy
 ): string {
   if (typeof error === 'object' && error !== null && 'code' in error) {
     const code = (error as { code?: unknown }).code;
     if (code === 'MCP_WRITE_CONFIRMATION_REQUIRED') {
-      return '需要确认修改全局 CODEX_HOME';
+      return l('需要确认修改全局 CODEX_HOME', 'Confirm changes to the global CODEX_HOME');
     }
     if (code === 'ENTERPRISE_MCP_TOKEN_NOT_FOUND') {
-      return '当前 Agent 尚未签发可用的 MCP Token';
+      return l('当前 Agent 尚未签发可用的 MCP Token', 'The current agent has not issued a valid MCP token');
     }
     if (code === 'ENTERPRISE_AGENT_FORBIDDEN') {
-      return '当前设备的企业 Agent 已停用，请联系管理员';
+      return l('当前设备连接已停用', 'Connections are disabled on this device');
     }
     if (code === 'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE') {
-      return '系统安全凭据存储不可用，无法保存 MCP Token';
+      return l('系统安全凭据存储不可用，无法保存 MCP Token', 'Secure credential storage is unavailable, so the MCP token cannot be saved');
     }
     if (code === 'ENTERPRISE_SERVICE_UNAVAILABLE') {
-      return '企业连接服务暂时不可用';
+      return l('连接服务暂时不可用', 'The connector service is temporarily unavailable');
+    }
+    if (
+      code === 'ENTERPRISE_UNAUTHORIZED'
+      || code === 'ENTERPRISE_SESSION_EXPIRED'
+    ) {
+      return l('连接服务暂时不可用', 'The connector service is temporarily unavailable');
     }
     if (code === 'ENTERPRISE_PROTOCOL_ERROR') {
-      return '企业连接服务返回了无法识别的数据';
+      return l('连接服务返回了无法识别的数据', 'The connector service returned unrecognized data');
     }
   }
   return error instanceof Error && error.message.trim().length > 0

@@ -1,5 +1,4 @@
 import type {
-  EnterpriseSessionResponse,
   EnterpriseSharedFileResponse,
   EnterpriseSharedSpaceResponse
 } from '@clawee/protocol';
@@ -11,16 +10,6 @@ import {
   type SharedDrivePageProps
 } from './SharedDrivePage.js';
 
-const signedInSession: EnterpriseSessionResponse = {
-  status: 'signed_in',
-  account: {
-    subjectId: 'acct_01JZ8W6A2M4S',
-    email: 'member@example.com',
-    name: '企业成员'
-  },
-  transportSecurity: 'secure_https'
-};
-
 const writableSpace = createSpace({
   spaceId: 'space-design',
   name: '设计资料',
@@ -29,7 +18,7 @@ const writableSpace = createSpace({
 
 const readOnlySpace = createSpace({
   spaceId: 'space-policy',
-  name: '公司制度',
+  name: '灵感收藏',
   permissions: { read: true, write: false }
 });
 
@@ -43,51 +32,11 @@ const designFile = createFile({
 });
 
 describe('SharedDrivePage', () => {
-  it('renders Runtime, session, service, and login gates', async () => {
-    const user = userEvent.setup();
-    const onRefresh = vi.fn();
-    const onOpenAccount = vi.fn();
-    const view = renderDrive({
-      connected: false,
-      onRefresh,
-      onOpenAccount
-    });
+  it('only gates the page while the local Runtime is unavailable', () => {
+    renderDrive({ connected: false });
     expect(screen.getByRole('heading', { name: '正在等待本地 Runtime' }))
       .toBeInTheDocument();
-
-    view.rerender(createDrive({
-      session: {
-        status: 'checking',
-        transportSecurity: 'secure_https'
-      },
-      onRefresh,
-      onOpenAccount
-    }));
-    expect(screen.getByRole('heading', { name: '正在验证企业会话' }))
-      .toBeInTheDocument();
-
-    view.rerender(createDrive({
-      session: {
-        status: 'service_unavailable',
-        reason: 'service_unavailable',
-        transportSecurity: 'secure_https'
-      },
-      onRefresh,
-      onOpenAccount
-    }));
-    await user.click(screen.getByRole('button', { name: '重新加载' }));
-    expect(onRefresh).toHaveBeenCalledOnce();
-
-    view.rerender(createDrive({
-      session: {
-        status: 'signed_out',
-        transportSecurity: 'secure_https'
-      },
-      onRefresh,
-      onOpenAccount
-    }));
-    await user.click(screen.getByRole('button', { name: '登录企业账户' }));
-    expect(onOpenAccount).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/登录/)).not.toBeInTheDocument();
   });
 
   it('renders authorized spaces and remote files, then submits server search', async () => {
@@ -103,19 +52,20 @@ describe('SharedDrivePage', () => {
     });
 
     const navigation = screen.getByRole('navigation', {
-      name: '授权共享空间'
+      name: '素材分类'
     });
     expect(within(navigation).getByText('设计资料')).toBeInTheDocument();
-    expect(within(navigation).getByText('公司制度')).toBeInTheDocument();
-    expect(within(navigation).getByText('可写')).toBeInTheDocument();
-    expect(screen.getByText('docs/design.md · revision 3')).toBeInTheDocument();
+    expect(within(navigation).getByText('灵感收藏')).toBeInTheDocument();
+    const materialList = screen.getByRole('list', { name: '素材列表' });
+    expect(within(materialList).getByText('docs/design.md')).toBeInTheDocument();
+    expect(within(materialList).getByText('3')).toBeInTheDocument();
     expect(screen.getByText('12.1 KiB')).toBeInTheDocument();
 
-    await user.click(within(navigation).getByRole('button', { name: /公司制度/ }));
+    await user.click(within(navigation).getByRole('button', { name: /灵感收藏/ }));
     expect(onSelectSpace).toHaveBeenCalledWith(readOnlySpace.spaceId);
 
     await user.type(
-      screen.getByRole('searchbox', { name: '搜索共享文件' }),
+      screen.getByRole('searchbox', { name: '搜索素材文件' }),
       'design'
     );
     await user.keyboard('{Enter}');
@@ -165,7 +115,7 @@ describe('SharedDrivePage', () => {
 
     const upload = new File(['new'], 'new.md', { type: 'text/markdown' });
     await user.upload(
-      screen.getByLabelText('选择上传到共享网盘的文件'),
+      screen.getByLabelText('选择上传到素材中心的文件'),
       upload
     );
     expect(onUpload).toHaveBeenCalledWith(writableSpace.spaceId, upload);
@@ -175,7 +125,7 @@ describe('SharedDrivePage', () => {
       type: 'text/markdown'
     });
     await user.upload(
-      screen.getByLabelText('选择替换共享文件的本地文件'),
+      screen.getByLabelText('选择替换素材文件的本地文件'),
       replacement
     );
     expect(onReplace).toHaveBeenCalledWith(designFile, replacement);
@@ -217,7 +167,7 @@ describe('SharedDrivePage', () => {
     });
     const oversized = new File(['12345'], 'large.bin');
     await user.upload(
-      screen.getByLabelText('选择上传到共享网盘的文件'),
+      screen.getByLabelText('选择上传到素材中心的文件'),
       oversized
     );
     expect(screen.getByRole('alert')).toHaveTextContent(
@@ -235,7 +185,6 @@ function createDrive(overrides: Partial<SharedDrivePageProps> = {}) {
   return (
     <SharedDrivePage
       connected
-      session={signedInSession}
       spaces={[]}
       spacesLoading={false}
       spacesHasNext={false}
@@ -246,7 +195,6 @@ function createDrive(overrides: Partial<SharedDrivePageProps> = {}) {
       maxFileSizeBytes={1024 * 1024 * 1024}
       currentProjectId="project_1"
       currentProjectName="默认项目"
-      onOpenAccount={vi.fn()}
       onRefresh={vi.fn()}
       onLoadMoreSpaces={vi.fn()}
       onSelectSpace={vi.fn()}
@@ -265,8 +213,8 @@ function createSpace(
 ): EnterpriseSharedSpaceResponse {
   return {
     spaceId: 'space-default',
-    name: '共享空间',
-    description: '企业共享文件',
+    name: '素材空间',
+    description: '个人素材文件',
     updatedAt: '2026-08-05T08:00:00Z',
     permissions: { read: true, write: false },
     ...overrides
@@ -279,7 +227,7 @@ function createFile(
   return {
     fileId: 'file-default',
     spaceId: 'space-default',
-    spaceName: '共享空间',
+    spaceName: '素材空间',
     logicalPath: 'docs/file.md',
     fileName: 'file.md',
     sizeBytes: 12345,

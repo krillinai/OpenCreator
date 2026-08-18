@@ -1,42 +1,41 @@
-import type { EnterpriseSessionResponse } from '@clawee/protocol';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Archive,
-  Activity,
-  Blocks,
   CircleAlert,
   Clock3,
   Folder,
   FolderCog,
+  FolderKanban,
   FolderMinus,
   FolderPlus,
   FolderOpen,
-  HardDrive,
-  LibraryBig,
-  Link2,
-  LayoutDashboard,
+  House,
+  LogIn,
   LoaderCircle,
   MoreHorizontal,
   Pencil,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelsTopLeft,
   PauseCircle,
   Pin,
   PinOff,
+  Puzzle,
   Search,
-  Settings,
   Settings2,
   ShieldAlert,
+  SlidersHorizontal,
   SquarePen,
   Trash2,
   TriangleAlert,
-  UserRound,
   type LucideIcon
 } from 'lucide-react';
 import type { ActiveView } from '../../app/app-state.js';
 import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
 import type { ColorMode } from '../../styles/color-mode.js';
+import { useAppLanguage } from '../../i18n/LanguageProvider.js';
+import type { ConsumerUser } from '../account/consumer-user.js';
 import type {
   ClaweeConversation,
   ClaweeProject
@@ -59,10 +58,11 @@ export function ClaweeSidebar(props: {
   currentProjectId?: string;
   selectedConversationId?: string;
   activeView: ActiveView;
+  projectNavigationMode?: 'library' | 'tree';
   collapsed?: boolean;
   autoCollapsed?: boolean;
   colorMode?: ColorMode;
-  enterpriseSession?: EnterpriseSessionResponse;
+  user?: ConsumerUser;
   onNewConversation(projectId?: string): void;
   onSelectProject(projectId: string): void;
   onSelectConversation(conversationId: string): void;
@@ -85,6 +85,7 @@ export function ClaweeSidebar(props: {
   onRenameTask?(task: SidebarTaskSummary, title: string): void | Promise<void>;
   onDeleteTask?(task: SidebarTaskSummary): void | Promise<void>;
 }) {
+  const { t } = useAppLanguage();
   const [expandedProjectId, setExpandedProjectId] = useState<string | undefined>(props.currentProjectId);
   const [projectMenuId, setProjectMenuId] = useState<string>();
   const [archivingConversationId, setArchivingConversationId] = useState<string>();
@@ -123,25 +124,27 @@ export function ClaweeSidebar(props: {
   const renameCanceledRef = useRef(false);
   const collapsed = props.collapsed === true;
   const autoCollapsed = props.autoCollapsed === true;
-  const logoColor = props.colorMode === 'light' ? 'black' : 'white';
-  const account = props.enterpriseSession?.account;
-  const accountTitle = account?.name ?? '企业账户';
-  const fullLogoSrc = props.colorMode === 'light' ? '/logo-v2-black.svg' : '/logo-v2-white.svg';
+  const accountTitle = props.user?.name ?? t('account.signIn');
   const globalActions: Array<{
     label: string;
     icon: LucideIcon;
     view?: ActiveView;
     onClick(): void;
   }> = [
-    { label: '新建任务', icon: SquarePen, onClick: () => props.onNewConversation() },
-    { label: '数据看板', icon: LayoutDashboard, view: 'dashboard', onClick: () => props.onOpenView('dashboard') },
-    { label: 'Agent动态', icon: Activity, view: 'activity', onClick: () => props.onOpenView('activity') },
-    { label: '企业Skill中心', icon: Blocks, view: 'plugins', onClick: () => props.onOpenView('plugins') },
-    { label: '连接器', icon: Link2, view: 'connections', onClick: () => props.onOpenView('connections') },
-    { label: '企业知识库', icon: LibraryBig, view: 'knowledge', onClick: () => props.onOpenView('knowledge') },
-    { label: '共享网盘', icon: HardDrive, view: 'drive', onClick: () => props.onOpenView('drive') },
-    { label: '定时任务', icon: Clock3, view: 'schedules', onClick: () => props.onOpenView('schedules') }
+    { label: t('nav.home'), icon: House, view: 'conversation', onClick: () => props.onNewConversation() },
+    { label: t('nav.workbench'), icon: PanelsTopLeft, view: 'workbench', onClick: () => props.onOpenView('workbench') },
+    { label: t('nav.plugins'), icon: Puzzle, view: 'plugins', onClick: () => props.onOpenView('plugins') },
+    { label: t('nav.projects'), icon: FolderKanban, view: 'projects', onClick: () => props.onOpenView('projects') },
+    { label: t('nav.settings'), icon: SlidersHorizontal, view: 'settings', onClick: props.onOpenSettings }
   ];
+  if (props.projectNavigationMode === 'tree') {
+    globalActions.push({
+      label: t('nav.schedules'),
+      icon: Clock3,
+      view: 'schedules',
+      onClick: () => props.onOpenView('schedules')
+    });
+  }
   const conversationsByProject = new Map<string, ClaweeConversation[]>();
   const selectedTaskThread = props.tasks.some(
     task => task.threadId === props.selectedConversationId
@@ -228,47 +231,31 @@ export function ClaweeSidebar(props: {
   }, [taskMenuId]);
 
   return (
-    <nav className="clawee-sidebar" aria-label="Clawee" data-collapsed={collapsed ? 'true' : 'false'}>
+    <nav className="clawee-sidebar" aria-label="OpenCreator" data-collapsed={collapsed ? 'true' : 'false'}>
       <div className="sidebar-brand">
         {collapsed ? (
           <button
             className="sidebar-brand-button sidebar-expand-button"
             type="button"
             aria-disabled={autoCollapsed || undefined}
-            aria-label={autoCollapsed ? '侧栏已自动收起' : '展开侧栏'}
-            title={autoCollapsed ? '窗口较窄，关闭文件工作区后可展开侧栏' : '展开侧栏'}
+            aria-label={autoCollapsed ? t('nav.autoCollapsed') : t('nav.expand')}
+            title={autoCollapsed ? t('nav.autoCollapsedHint') : t('nav.expand')}
             onClick={autoCollapsed ? undefined : props.onToggleCollapsed}
           >
-            <span className="sidebar-logo-mark">
-              <img
-                className="sidebar-logo-image"
-                src={`/krillinai-mark-${logoColor}.png`}
-                alt="KrillinAI"
-              />
-            </span>
+            <span className="sidebar-logo-mark" aria-hidden="true">OC</span>
             <PanelLeftOpen className="sidebar-expand-icon" size={19} strokeWidth={1.85} aria-hidden="true" />
           </button>
         ) : (
           <>
             <div className="sidebar-logo-lockup">
-              <span className="sidebar-brand-lockup-logo">
-                <img
-                  className="sidebar-logo-image"
-                  src={`/krillinai-wordmark-${logoColor}.png`}
-                  alt="KrillinAI"
-                />
-              </span>
-              <span className="sidebar-brand-product">
-                <span className="sidebar-logo-word">Clawee</span>
-                <span className="sidebar-brand-version">v0.1.0</span>
-              </span>
+              <span className="sidebar-logo-word">OpenCreator</span>
             </div>
             <div className="sidebar-brand-actions">
               <button
                 className="sidebar-collapse-button sidebar-search-button"
                 type="button"
-                aria-label="搜索"
-                title="搜索"
+                aria-label={t('nav.search')}
+                title={t('nav.search')}
                 aria-current={props.activeView === 'search' ? 'page' : undefined}
                 onClick={() => props.onOpenView('search')}
               >
@@ -277,8 +264,8 @@ export function ClaweeSidebar(props: {
               <button
                 className="sidebar-collapse-button"
                 type="button"
-                aria-label="收起侧栏"
-                title="收起侧栏"
+                aria-label={t('nav.collapse')}
+                title={t('nav.collapse')}
                 onClick={props.onToggleCollapsed}
               >
                 <PanelLeftClose size={18} strokeWidth={1.85} aria-hidden="true" />
@@ -292,22 +279,32 @@ export function ClaweeSidebar(props: {
         {globalActions.map((action) => {
           const Icon = action.icon;
           return (
-            <button
-              key={action.label}
-              type="button"
-              className="sidebar-row"
-              title={collapsed ? action.label : undefined}
-              aria-current={action.view && props.activeView === action.view ? 'page' : undefined}
-              onClick={action.onClick}
-            >
-              <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
-              <span>{action.label}</span>
-            </button>
+            <Fragment key={action.label}>
+              {action.view === 'projects' ? (
+                <span
+                  className="sidebar-primary-divider"
+                  role="separator"
+                  aria-orientation="horizontal"
+                />
+              ) : null}
+              <button
+                type="button"
+                className="sidebar-row"
+                title={collapsed ? action.label : undefined}
+                aria-current={action.view && props.activeView === action.view ? 'page' : undefined}
+                onClick={action.onClick}
+              >
+                <span className="sidebar-nav-icon" aria-hidden="true">
+                  <Icon size={18} strokeWidth={1.8} />
+                </span>
+                <span className="sidebar-row-label">{action.label}</span>
+              </button>
+            </Fragment>
           );
         })}
       </div>
 
-      {collapsed ? null : (
+      {collapsed || props.projectNavigationMode !== 'tree' ? null : (
         <section className="sidebar-section" aria-labelledby="clawee-projects-heading">
           <div className="sidebar-section-heading">
             <h2 id="clawee-projects-heading">项目</h2>
@@ -652,7 +649,7 @@ export function ClaweeSidebar(props: {
         </section>
       )}
 
-      {collapsed ? null : (
+      {collapsed || props.projectNavigationMode !== 'tree' ? null : (
         <section
           className="sidebar-section sidebar-task-section"
           aria-labelledby="clawee-tasks-heading"
@@ -807,32 +804,43 @@ export function ClaweeSidebar(props: {
         </section>
       )}
 
-      <div className="sidebar-bottom">
-        <button
-          className="sidebar-account-button"
-          type="button"
-          aria-label={accountTitle}
-          aria-current={props.activeView === 'account' ? 'page' : undefined}
-          title={collapsed ? accountTitle : undefined}
-          onClick={props.onOpenAccount}
-        >
-          <span className="sidebar-account-avatar" aria-hidden="true">
-            <UserRound size={16} strokeWidth={2} />
-          </span>
-          <span className="sidebar-account-copy">
-            <strong>{accountTitle}</strong>
-          </span>
-        </button>
-        <button
-          className="sidebar-settings-button"
-          type="button"
-          aria-label="设置"
-          aria-current={props.activeView === 'settings' ? 'page' : undefined}
-          title="设置"
-          onClick={props.onOpenSettings}
-        >
-          <Settings size={17} strokeWidth={2} aria-hidden="true" />
-        </button>
+      <div className="sidebar-bottom" data-authenticated={props.user === undefined ? 'false' : 'true'}>
+        {props.user === undefined && !collapsed ? (
+          <div className="sidebar-login-card">
+            <p>{t('account.signInHint')}</p>
+            <button
+              className="sidebar-login-button"
+              type="button"
+              aria-current={props.activeView === 'account' ? 'page' : undefined}
+              onClick={props.onOpenAccount}
+            >
+              <LogIn size={15} strokeWidth={2} aria-hidden="true" />
+              <span>{t('account.signIn')}</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            className="sidebar-account-button"
+            type="button"
+            aria-label={accountTitle}
+            aria-current={props.activeView === 'account' ? 'page' : undefined}
+            title={collapsed ? accountTitle : undefined}
+            onClick={props.onOpenAccount}
+          >
+            {props.user === undefined ? (
+              <LogIn size={17} strokeWidth={2} aria-hidden="true" />
+            ) : (
+              <>
+                <span className="sidebar-account-avatar" aria-hidden="true">
+                  {props.user.initials}
+                </span>
+                <span className="sidebar-account-copy">
+                  <strong>{accountTitle}</strong>
+                </span>
+              </>
+            )}
+          </button>
+        )}
       </div>
       <ConfirmDialog
         open={conversationPendingDeletion !== undefined}
@@ -878,7 +886,7 @@ export function ClaweeSidebar(props: {
         title="移除项目"
         description={projectPendingRemoval === undefined
           ? '项目目录和文件不会被删除。'
-          : `确认从 Clawee 中移除“${projectPendingRemoval.name}”？项目目录和文件不会被删除。`}
+          : `确认从 OpenCreator 中移除“${projectPendingRemoval.name}”？项目目录和文件不会被删除。`}
         confirmLabel="移除项目"
         destructive
         onCancel={() => setProjectPendingRemoval(undefined)}

@@ -85,11 +85,11 @@ function getApprovalCopy(kind: RuntimeApproval['kind']): {
 } {
   switch (kind) {
     case 'command_execution':
-      return { source: '终端', question: '允许 Clawee 执行这条命令？', icon: SquareTerminal };
+      return { source: '终端', question: '允许 OpenCreator 执行这条命令？', icon: SquareTerminal };
     case 'file_change':
-      return { source: '文件', question: '允许 Clawee 修改项目文件？', icon: FilePenLine };
+      return { source: '文件', question: '允许 OpenCreator 修改项目文件？', icon: FilePenLine };
     case 'permissions':
-      return { source: '权限', question: '允许 Clawee 获取这项权限？', icon: ShieldCheck };
+      return { source: '权限', question: '允许 OpenCreator 获取这项权限？', icon: ShieldCheck };
   }
 }
 

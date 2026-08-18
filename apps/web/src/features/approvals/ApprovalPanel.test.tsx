@@ -35,7 +35,7 @@ describe('ApprovalPanel', () => {
     );
 
     expect(screen.getByText('终端')).toBeInTheDocument();
-    expect(screen.getByText('允许 Clawee 执行这条命令？')).toBeInTheDocument();
+    expect(screen.getByText('允许 OpenCreator 执行这条命令？')).toBeInTheDocument();
     expect(screen.getByText('仅本次')).toBeInTheDocument();
     expect(screen.getByText('查看操作详情')).toBeInTheDocument();
     expect(screen.getByText('rm -rf build')).toBeInTheDocument();

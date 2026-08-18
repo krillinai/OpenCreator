@@ -26,7 +26,7 @@ export function KnowledgeConversation(props: KnowledgeConversationProps) {
       <div className="conversation-body knowledge-conversation__timeline" aria-live="polite">
         {props.items.length === 0 ? (
           <div className="knowledge-conversation__empty">
-            <strong>询问企业知识库</strong>
+            <strong>询问知识库</strong>
             <span>回答仅基于当前账户有权访问的知识内容</span>
           </div>
         ) : <Timeline items={props.items} />}

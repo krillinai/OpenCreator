@@ -38,7 +38,7 @@ declare global {
 }
 
 const api = window.claweeDesktop;
-if (api === undefined) throw new Error('Clawee Desktop bridge is unavailable');
+if (api === undefined) throw new Error('OpenCreator Desktop bridge is unavailable');
 if (
   api.windowChrome?.integratedTitleBar === true
   && typeof api.windowChrome.titleBarHeight === 'number'
@@ -69,15 +69,15 @@ const errorMessage = element('error-message');
 let currentState: BootstrapState | undefined;
 
 const labels: Record<BootstrapState['phase'], [string, string]> = {
-  idle: ['正在准备 Clawee', '正在初始化桌面环境'],
-  migrating_data: ['正在迁移本地数据', '正在校验并复制现有 Clawee Runtime 数据'],
+  idle: ['正在准备 OpenCreator', '正在初始化桌面环境'],
+  migrating_data: ['正在迁移本地数据', '正在校验并复制现有 OpenCreator Runtime 数据'],
   resolving_codex: ['正在查找本机 Codex', '正在读取终端环境和已保存路径'],
-  starting_daemon: ['正在启动本地运行服务', '正在创建独立的 Clawee Runtime'],
+  starting_daemon: ['正在启动本地运行服务', '正在创建独立的 OpenCreator Runtime'],
   probing_codex: ['正在验证 Codex 是否可用', '正在检查本机 Codex 进程'],
-  starting_runtime: ['正在打开 Clawee', '正在加载本地数据和 Codex 能力信息'],
-  ready: ['正在打开 Clawee', '本地运行环境已就绪'],
+  starting_runtime: ['正在打开 OpenCreator', '正在加载本地数据和 Codex 能力信息'],
+  ready: ['正在打开 OpenCreator', '本地运行环境已就绪'],
   workspace_failed: ['工作台加载失败', '本地 Runtime 仍在运行，可以直接重载工作台或重启 Runtime'],
-  failed: ['Codex CLI 暂时无法完成调用', 'Clawee 没有收到有效响应，请检查诊断后重试']
+  failed: ['Codex CLI 暂时无法完成调用', 'OpenCreator 没有收到有效响应，请检查诊断后重试']
 };
 
 void api.readBootstrapState().then(render);

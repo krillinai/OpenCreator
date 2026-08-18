@@ -15,14 +15,14 @@ describe('shared drive typography', () => {
   });
 
   it('uses readable sizes for primary file content', () => {
-    expect(css).toMatch(/\.shared-drive-table th,\s*\.shared-drive-table td\s*\{[^}]*font-size:\s*13px;/s);
     expect(css).toMatch(/\.shared-drive-file-name strong\s*\{[^}]*font-size:\s*14px;/s);
     expect(css).toMatch(/\.shared-drive-file-name small\s*\{[^}]*font-size:\s*12px;/s);
+    expect(css).toMatch(/\.shared-drive-file-meta dt\s*\{[^}]*font-size:\s*12px;/s);
   });
 
-  it('keeps the right-side control slot evenly padded', () => {
-    expect(css).toMatch(/\.shared-drive-table th:nth-child\(6\)\s*\{\s*width:\s*86px;\s*\}/);
-    expect(css).toMatch(/\.shared-drive-table \.shared-drive-actions-cell\s*\{[^}]*padding-right:\s*12px;[^}]*padding-left:\s*12px;/s);
-    expect(css).toMatch(/\.shared-drive-row-actions\s*\{[^}]*width:\s*100%;[^}]*justify-content:\s*center;/s);
+  it('uses a responsive asset grid and stable previews', () => {
+    expect(css).toMatch(/\.shared-drive-file-grid\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill, minmax\(210px, 1fr\)\);/s);
+    expect(css).toMatch(/\.shared-drive-file-preview\s*\{[^}]*aspect-ratio:\s*16 \/ 9;/s);
+    expect(css).toMatch(/\.shared-drive-file-card\s*\{[^}]*border-radius:\s*8px;/s);
   });
 });

@@ -7,6 +7,7 @@ export function WorkbenchLayout(props: {
   main: ReactNode;
   detail?: ReactNode;
   detailOpen?: boolean;
+  immersive?: boolean;
   sidebarCollapsed?: boolean;
   mobileSidebarOpen?: boolean;
   onOpenMobileSidebar?(): void;
@@ -19,7 +20,8 @@ export function WorkbenchLayout(props: {
   const shellClassName = [
     'clawee-shell',
     props.detailOpen ? 'has-detail' : undefined,
-    props.sidebarCollapsed ? 'sidebar-collapsed' : undefined
+    props.sidebarCollapsed ? 'sidebar-collapsed' : undefined,
+    props.immersive ? 'is-immersive' : undefined
   ].filter(Boolean).join(' ');
 
   useEffect(() => {
@@ -69,9 +71,9 @@ export function WorkbenchLayout(props: {
           type="button"
         />
       ) : null}
-      <aside
+      {props.immersive ? null : <aside
         className="clawee-sidebar-pane"
-        aria-label="Clawee 导航"
+        aria-label="OpenCreator 导航"
         data-collapsed={props.sidebarCollapsed ? 'true' : 'false'}
         data-mobile-open={mobileSidebarOpen ? 'true' : 'false'}
         ref={sidebarRef}
@@ -86,16 +88,16 @@ export function WorkbenchLayout(props: {
           <X aria-hidden="true" size={18} />
         </button>
         {props.sidebar}
-      </aside>
+      </aside>}
       <section
         className="clawee-main-pane"
-        aria-label="Clawee 工作区"
+        aria-label="OpenCreator 工作区"
         data-has-main-header={props.mainHeader === undefined ? undefined : 'true'}
       >
         {props.mainHeader === undefined ? null : (
           <div className="clawee-main-titlebar">{props.mainHeader}</div>
         )}
-        <div className="mobile-navigation-toolbar">
+        {props.immersive ? null : <div className="mobile-navigation-toolbar">
           <button
             aria-expanded={mobileSidebarOpen}
             aria-label="打开导航"
@@ -107,7 +109,7 @@ export function WorkbenchLayout(props: {
           >
             <Menu aria-hidden="true" size={20} />
           </button>
-        </div>
+        </div>}
         <div className="clawee-main-content">{props.main}</div>
       </section>
       {props.detailOpen ? (

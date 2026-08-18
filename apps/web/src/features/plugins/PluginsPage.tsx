@@ -1,72 +1,75 @@
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  ConnectionsPage,
+  type ConnectionsPageProps
+} from '../connections/ConnectionsPage.js';
 import type { SkillMarketViewProps } from './SkillMarketView.js';
 import { SkillMarketView } from './SkillMarketView.js';
-import {
-  EnterpriseSkillHubView,
-  type EnterpriseSkillHubViewProps
-} from './EnterpriseSkillHubView-2026-07-30.js';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import './skill-market.css';
 
-export type PluginSource = 'public' | 'enterprise';
+export type PluginCenterTab = 'skills' | 'connections';
 
 export type PluginsPageProps = SkillMarketViewProps & {
-  source?: PluginSource;
-  onSourceChange(source: PluginSource): void;
-  enterprise: EnterpriseSkillHubViewProps;
+  activeTab?: PluginCenterTab;
+  connections: ConnectionsPageProps;
+  onTabChange?(tab: PluginCenterTab): void;
 };
 
 export default function PluginsPage(props: PluginsPageProps) {
-  const source = props.source ?? 'enterprise';
+  const l = useLocalizedCopy();
+  const activeTab = props.activeTab ?? 'skills';
+
+  function handleTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const nextTab: PluginCenterTab = activeTab === 'skills' ? 'connections' : 'skills';
+    props.onTabChange?.(nextTab);
+    const tabList = event.currentTarget.closest('[role="tablist"]');
+    const nextButton = tabList?.querySelector<HTMLButtonElement>(`#plugin-center-tab-${nextTab}`);
+    window.requestAnimationFrame(() => nextButton?.focus());
+  }
+
   return (
-    <section className="plugins-page" aria-label="插件">
-      <header className="plugins-source-header">
-        <div className="plugins-source-tabs" role="tablist" aria-label="Skill 来源">
+    <section className="plugins-page" aria-label={l('插件中心', 'Plugins')}>
+      <header className="plugin-center-header">
+        <div className="plugin-center-tabs" role="tablist" aria-label={l('插件中心分类', 'Plugin categories')}>
           <button
-            aria-controls="plugins-source-enterprise"
-            aria-selected={source === 'enterprise'}
-            id="plugins-source-enterprise-tab"
-            onClick={() => props.onSourceChange('enterprise')}
-            role="tab"
-            tabIndex={source === 'enterprise' ? 0 : -1}
+            id="plugin-center-tab-skills"
             type="button"
+            role="tab"
+            aria-controls="plugin-center-panel-skills"
+            aria-selected={activeTab === 'skills'}
+            tabIndex={activeTab === 'skills' ? 0 : -1}
+            onClick={() => props.onTabChange?.('skills')}
+            onKeyDown={handleTabKeyDown}
           >
-            企业Skills
+            Skills
           </button>
           <button
-            aria-controls="plugins-source-public"
-            aria-selected={source === 'public'}
-            id="plugins-source-public-tab"
-            onClick={() => props.onSourceChange('public')}
-            role="tab"
-            tabIndex={source === 'public' ? 0 : -1}
+            id="plugin-center-tab-connections"
             type="button"
+            role="tab"
+            aria-controls="plugin-center-panel-connections"
+            aria-selected={activeTab === 'connections'}
+            tabIndex={activeTab === 'connections' ? 0 : -1}
+            onClick={() => props.onTabChange?.('connections')}
+            onKeyDown={handleTabKeyDown}
           >
-            Skill市场
+            {l('连接器', 'Connectors')}
           </button>
         </div>
       </header>
       <div
-        aria-labelledby={`plugins-source-${source}-tab`}
-        className="plugins-source-content"
-        id={`plugins-source-${source}`}
+        className="plugin-center-panel"
+        id={`plugin-center-panel-${activeTab}`}
         role="tabpanel"
+        aria-labelledby={`plugin-center-tab-${activeTab}`}
       >
-        {source === 'public' ? (
-          <SkillMarketView
-            connected={props.connected}
-            currentProjectId={props.currentProjectId}
-            installRecords={props.installRecords}
-            loadError={props.loadError}
-            loading={props.loading}
-            operation={props.operation}
-            projects={props.projects}
-            skills={props.skills}
-            useError={props.useError}
-            onInstall={props.onInstall}
-            onUpdate={props.onUpdate}
-            onUse={props.onUse}
-          />
+        {activeTab === 'skills' ? (
+          <SkillMarketView {...props} />
         ) : (
-          <EnterpriseSkillHubView {...props.enterprise} />
+          <ConnectionsPage {...props.connections} />
         )}
       </div>
     </section>

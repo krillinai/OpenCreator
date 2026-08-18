@@ -6,6 +6,7 @@ import {
 import type { MouseEvent } from 'react';
 import type { SkillMarketStatus, SkillMarketViewEntry } from './skill-market-model.js';
 import { SkillAuthorAvatar } from './SkillMarketCover.js';
+import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 
 export type SkillMarketAction =
   | {
@@ -31,6 +32,7 @@ export function SkillMarketCard({
   onUpdate(skillId: string): void;
   onUse(skillId: string): void;
 }) {
+  const l = useLocalizedCopy();
   const actionReasonId =
     action.reason && action.showReason !== false
       ? `skill-market-action-reason-${sanitizeId(item.id)}`
@@ -73,7 +75,7 @@ export function SkillMarketCard({
       id={`skill-card-${item.id}`}
     >
       <button
-        aria-label={`打开 ${item.title} 详情`}
+        aria-label={`${l('打开', 'Open')} ${item.title} ${l('详情', 'details')}`}
         className="skill-market-card__open"
         onClick={(event) => onOpen(event.currentTarget, event.detail === 0)}
         type="button"
@@ -121,59 +123,60 @@ export function SkillMarketCard({
 export function getSkillMarketAction(
   status: SkillMarketStatus,
   connected: boolean,
-  options: { mutationLocked?: boolean; skillsKnown?: boolean } = {}
+  options: { mutationLocked?: boolean; skillsKnown?: boolean } = {},
+  l: LocalizeCopy = (chinese) => chinese
 ): SkillMarketAction {
   if (!connected) {
     if (status === 'update_available') {
-      return { label: '连接后更新', kind: 'update', disabled: true, reason: '需要连接 Runtime' };
+      return { label: l('连接后更新', 'Connect to update'), kind: 'update', disabled: true, reason: l('需要连接 Runtime', 'Runtime connection required') };
     }
     if (status === 'installed' || status === 'installed_unknown_version') {
-      return { label: '连接后使用', kind: 'use', disabled: true, reason: '需要连接 Runtime' };
+      return { label: l('连接后使用', 'Connect to use'), kind: 'use', disabled: true, reason: l('需要连接 Runtime', 'Runtime connection required') };
     }
-    return { label: '连接后安装', kind: 'install', disabled: true, reason: '需要连接 Runtime' };
+    return { label: l('连接后安装', 'Connect to install'), kind: 'install', disabled: true, reason: l('需要连接 Runtime', 'Runtime connection required') };
   }
   if (options.skillsKnown === false) {
     return {
-      label: '状态未知',
+      label: l('状态未知', 'Unknown status'),
       kind: 'disabled',
       disabled: true,
-      reason: 'Skill 安装状态未知',
+      reason: l('Skill 安装状态未知', 'Skill installation status is unknown'),
     };
   }
   if (status === 'invalid') {
-    return { label: '不可使用', kind: 'disabled', disabled: true, reason: '本地 Skill 状态异常' };
+    return { label: l('不可使用', 'Unavailable'), kind: 'disabled', disabled: true, reason: l('本地 Skill 状态异常', 'The local Skill is in an invalid state') };
   }
   if (status === 'installing') {
-    return { label: '安装中', kind: 'install', disabled: true };
+    return { label: l('安装中', 'Installing'), kind: 'install', disabled: true };
   }
   if (status === 'updating') {
-    return { label: '更新中', kind: 'update', disabled: true };
+    return { label: l('更新中', 'Updating'), kind: 'update', disabled: true };
   }
   if (status === 'update_available') {
     if (options.mutationLocked) {
       return {
-        label: '更新',
+        label: l('更新', 'Update'),
         kind: 'update',
         disabled: true,
-        reason: '请等待当前操作完成',
+        reason: l('请等待当前操作完成', 'Wait for the current operation to finish'),
         showReason: false,
       };
     }
-    return { label: '更新', kind: 'update', disabled: false };
+    return { label: l('更新', 'Update'), kind: 'update', disabled: false };
   }
   if (status === 'installed' || status === 'installed_unknown_version') {
-    return { label: '使用', kind: 'use', disabled: false };
+    return { label: l('使用', 'Use'), kind: 'use', disabled: false };
   }
   if (options.mutationLocked) {
     return {
-      label: '安装',
+      label: l('安装', 'Install'),
       kind: 'install',
       disabled: true,
-      reason: '请等待当前操作完成',
+      reason: l('请等待当前操作完成', 'Wait for the current operation to finish'),
       showReason: false,
     };
   }
-  return { label: '安装', kind: 'install', disabled: false };
+  return { label: l('安装', 'Install'), kind: 'install', disabled: false };
 }
 
 function getActionIcon(kind: SkillMarketAction['kind']) {

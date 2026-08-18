@@ -80,6 +80,26 @@ describe('app state', () => {
     expect(state.rightPanelMode).toBe('closed');
   });
 
+  it('opens the creator workbench as a primary view', () => {
+    const state = reduceAppState(initialAppState, {
+      type: 'set_active_view',
+      activeView: 'workbench'
+    });
+
+    expect(state.activeView).toBe('workbench');
+    expect(state.rightPanelMode).toBe('closed');
+  });
+
+  it('opens the project library as a primary view', () => {
+    const state = reduceAppState(initialAppState, {
+      type: 'set_active_view',
+      activeView: 'projects'
+    });
+
+    expect(state.activeView).toBe('projects');
+    expect(state.rightPanelMode).toBe('closed');
+  });
+
   it('opens the enterprise account as a primary view', () => {
     const state = reduceAppState(initialAppState, {
       type: 'set_active_view',

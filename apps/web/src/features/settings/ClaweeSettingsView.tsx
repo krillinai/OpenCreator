@@ -5,6 +5,8 @@ import type {
   CodexStatusResponse
 } from '@clawee/protocol';
 import type { ColorMode } from '../../styles/color-mode.js';
+import { useAppLanguage } from '../../i18n/LanguageProvider.js';
+import type { AppLanguagePreference } from '../../i18n/language.js';
 import {
   defaultCustomAccentColor,
   normalizeHexColor,
@@ -58,40 +60,36 @@ export type ClaweeSettingsViewProps = {
 
 type SettingsTab = 'general' | 'plugins' | 'memory' | 'profiles' | 'cleanup' | 'diagnostics' | 'about';
 
-const tabs: Array<{ id: SettingsTab; label: string }> = [
-  { id: 'general', label: '常规' },
-  { id: 'plugins', label: '插件' },
-  { id: 'memory', label: '记忆' },
-  { id: 'profiles', label: 'Profiles' },
-  { id: 'cleanup', label: '清理' },
-  { id: 'diagnostics', label: '诊断' },
-  { id: 'about', label: '关于 Clawee' }
-];
-
-const defaultPermissionOptions: Array<{
-  value: DefaultPermissionPreference;
-  label: string;
-}> = [
-  { value: 'follow-project', label: '跟随项目设置' },
-  { value: 'workspace-write', label: '请求批准' },
-  { value: 'danger-full-access', label: '完全访问权限' }
-];
-
 export function ClaweeSettingsView(props: ClaweeSettingsViewProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const { t } = useAppLanguage();
+  const tabs: Array<{ id: SettingsTab; label: string }> = [
+    { id: 'general', label: t('settings.tab.general') },
+    { id: 'plugins', label: t('settings.tab.plugins') },
+    { id: 'memory', label: t('settings.tab.memory') },
+    { id: 'profiles', label: t('settings.tab.profiles') },
+    { id: 'cleanup', label: t('settings.tab.cleanup') },
+    { id: 'diagnostics', label: t('settings.tab.diagnostics') },
+    { id: 'about', label: t('settings.tab.about') }
+  ];
 
   return (
     <div className="settings-page">
-      <aside className="settings-sidebar" aria-label="设置导航">
+      <aside className="settings-sidebar" aria-label={t('settings.navigation')}>
         <button className="settings-back" type="button" onClick={props.onBack}>
-          返回应用
+          {t('settings.back')}
         </button>
         <label className="settings-search">
-          <span>搜索设置</span>
-          <input type="search" placeholder="搜索暂不可用" aria-describedby="settings-search-disabled" disabled />
-          <span id="settings-search-disabled">搜索暂不可用</span>
+          <span>{t('settings.search')}</span>
+          <input
+            type="search"
+            placeholder={t('settings.searchUnavailable')}
+            aria-describedby="settings-search-disabled"
+            disabled
+          />
+          <span id="settings-search-disabled">{t('settings.searchUnavailable')}</span>
         </label>
-        <nav className="settings-nav" aria-label="设置分类">
+        <nav className="settings-nav" aria-label={t('settings.categories')}>
           {tabs.map(tab => (
             <button
               key={tab.id}
@@ -169,11 +167,32 @@ function GeneralSettings(props: {
   desktopCloseBehavior?: 'hide' | 'quit';
   onDesktopCloseBehaviorChange?(behavior: 'hide' | 'quit'): void;
 }) {
+  const { language, preference, setPreference, t } = useAppLanguage();
+  const defaultPermissionOptions: Array<{
+    value: DefaultPermissionPreference;
+    label: string;
+  }> = [
+    { value: 'follow-project', label: t('settings.permission.followProject') },
+    { value: 'workspace-write', label: t('settings.permission.approval') },
+    { value: 'danger-full-access', label: t('settings.permission.fullAccess') }
+  ];
+  const languageName = language === 'zh-CN'
+    ? t('settings.language.zh')
+    : t('settings.language.en');
+  const languageOptions: Array<{ value: AppLanguagePreference; label: string }> = [
+    {
+      value: 'system',
+      label: t('settings.language.system', { language: languageName })
+    },
+    { value: 'zh-CN', label: t('settings.language.zh') },
+    { value: 'en-US', label: t('settings.language.en') }
+  ];
+
   return (
     <section className="settings-section" aria-labelledby="settings-general-title">
       <header>
-        <h1 id="settings-general-title">常规</h1>
-        <p>调整 Clawee 的默认偏好和桌面显示方式。</p>
+        <h1 id="settings-general-title">{t('settings.tab.general')}</h1>
+        <p>{t('settings.general.description')}</p>
       </header>
       <div className="settings-card">
         <SettingsColorModeRow
@@ -187,29 +206,34 @@ function GeneralSettings(props: {
           onCustomColorChange={(color) => props.onCustomAccentColorChange?.(color)}
         />
         <SettingsSelectRow
-          label="默认权限"
+          id="settings-default-permission"
+          label={t('settings.permission')}
           value={props.defaultPermission}
           options={defaultPermissionOptions}
           onChange={(permission) => {
             if (
               permission === 'danger-full-access'
               && props.defaultPermission !== 'danger-full-access'
-              && !window.confirm(
-                '完全访问权限允许 Clawee 访问本机文件并执行本地操作。确定要设为默认权限吗？'
-              )
+              && !window.confirm(t('settings.permission.confirm'))
             ) {
               return;
             }
             props.onDefaultPermissionChange?.(permission);
           }}
         />
-        <SettingsRow label="默认文件打开方式" value="系统默认应用" />
-        <SettingsRow label="语言" value="中文" />
+        <SettingsRow label={t('settings.defaultFileApp')} value={t('settings.systemDefaultApp')} />
+        <SettingsSelectRow
+          id="settings-display-language"
+          label={t('settings.language')}
+          value={preference}
+          options={languageOptions}
+          onChange={setPreference}
+        />
         {props.desktopCloseBehavior === undefined ? (
-          <SettingsRow label="菜单栏显示" value="浏览器模式" />
+          <SettingsRow label={t('settings.menuBar')} value={t('settings.browserMode')} />
         ) : (
           <label className="settings-row settings-control-row" htmlFor="settings-desktop-close-behavior">
-            <span>关闭窗口时</span>
+            <span>{t('settings.closeWindow')}</span>
             <select
               id="settings-desktop-close-behavior"
               className="settings-select"
@@ -218,8 +242,8 @@ function GeneralSettings(props: {
                 event.target.value as 'hide' | 'quit'
               )}
             >
-              <option value="hide">隐藏到菜单栏</option>
-              <option value="quit">退出 Clawee</option>
+              <option value="hide">{t('settings.hideToMenuBar')}</option>
+              <option value="quit">{t('settings.quit')}</option>
             </select>
           </label>
         )}
@@ -233,10 +257,11 @@ function GeneralSettings(props: {
 
 function SettingsColorModeRow(props: { value: ColorMode; onChange(mode: ColorMode): void }) {
   const labelId = 'settings-color-mode-label';
+  const { t } = useAppLanguage();
 
   return (
     <div className="settings-row settings-control-row">
-      <span id={labelId}>颜色模式</span>
+      <span id={labelId}>{t('settings.colorMode')}</span>
       <div className="settings-color-mode" role="group" aria-labelledby={labelId}>
         <button
           type="button"
@@ -244,7 +269,7 @@ function SettingsColorModeRow(props: { value: ColorMode; onChange(mode: ColorMod
           onClick={() => props.onChange('light')}
         >
           <Sun size={14} aria-hidden="true" />
-          浅色
+          {t('settings.light')}
         </button>
         <button
           type="button"
@@ -252,25 +277,12 @@ function SettingsColorModeRow(props: { value: ColorMode; onChange(mode: ColorMod
           onClick={() => props.onChange('dark')}
         >
           <Moon size={14} aria-hidden="true" />
-          深色
+          {t('settings.dark')}
         </button>
       </div>
     </div>
   );
 }
-
-const accentColorOptions: Array<{
-  value: AccentColor;
-  label: string;
-  swatch: string;
-}> = [
-  { value: 'neutral', label: '默认灰', swatch: '#85858b' },
-  { value: 'blue', label: '蓝色', swatch: '#3b82f6' },
-  { value: 'cyan', label: '青色', swatch: '#06b6d4' },
-  { value: 'purple', label: '紫色', swatch: '#8b5cf6' },
-  { value: 'orange', label: '橙色', swatch: '#f97316' },
-  { value: 'red', label: '红色', swatch: '#ef4444' }
-];
 
 function SettingsAccentColorRow(props: {
   value: AccentColor;
@@ -278,12 +290,25 @@ function SettingsAccentColorRow(props: {
   onChange(color: AccentColor): void;
   onCustomColorChange(color: string): void;
 }) {
+  const { t } = useAppLanguage();
   const labelId = 'settings-accent-color-label';
   const inputId = 'settings-custom-accent-color';
   const normalizedCustomColor = normalizeHexColor(props.customColor) ?? defaultCustomAccentColor;
   const [draft, setDraft] = useState(normalizedCustomColor);
   const [error, setError] = useState<string>();
   const inputFocusedRef = useRef(false);
+  const accentColorOptions: Array<{
+    value: AccentColor;
+    label: string;
+    swatch: string;
+  }> = [
+    { value: 'neutral', label: t('settings.accent.neutral'), swatch: '#85858b' },
+    { value: 'blue', label: t('settings.accent.blue'), swatch: '#3b82f6' },
+    { value: 'cyan', label: t('settings.accent.cyan'), swatch: '#06b6d4' },
+    { value: 'purple', label: t('settings.accent.purple'), swatch: '#8b5cf6' },
+    { value: 'orange', label: t('settings.accent.orange'), swatch: '#f97316' },
+    { value: 'red', label: t('settings.accent.red'), swatch: '#ef4444' }
+  ];
 
   useEffect(() => {
     if (!inputFocusedRef.current) setDraft(normalizedCustomColor);
@@ -292,7 +317,7 @@ function SettingsAccentColorRow(props: {
   function commitDraft() {
     const normalized = normalizeHexColor(draft);
     if (normalized === undefined) {
-      setError('请输入 3 位或 6 位十六进制色值');
+      setError(t('settings.accent.invalid'));
       return;
     }
     setDraft(normalized);
@@ -302,7 +327,7 @@ function SettingsAccentColorRow(props: {
 
   return (
     <div className="settings-row settings-control-row settings-accent-row">
-      <span id={labelId}>重点色</span>
+      <span id={labelId}>{t('settings.accent')}</span>
       <div className="settings-accent-controls">
         <div className="settings-accent-color">
           <div className="settings-accent-options" role="radiogroup" aria-labelledby={labelId}>
@@ -332,21 +357,21 @@ function SettingsAccentColorRow(props: {
                 type="button"
                 role="radio"
                 aria-checked={props.value === 'custom'}
-                aria-label="自定义"
-                title="自定义"
+                aria-label={t('settings.accent.custom')}
+                title={t('settings.accent.custom')}
                 style={{ '--settings-accent-swatch': normalizedCustomColor } as CSSProperties}
                 onClick={() => props.onChange('custom')}
               >
                 <span className="settings-accent-swatch" aria-hidden="true">
                   {props.value === 'custom' ? <Check size={11} strokeWidth={2.5} /> : null}
                 </span>
-                <span className="settings-custom-accent-text">自定义</span>
+                <span className="settings-custom-accent-text">{t('settings.accent.custom')}</span>
               </button>
             </div>
           </div>
           <div className="settings-custom-accent">
             <label className="settings-custom-accent-input-label" htmlFor={inputId}>
-              自定义重点色色值
+              {t('settings.accent.customValue')}
             </label>
             <input
               id={inputId}
@@ -397,46 +422,72 @@ function SettingsAccentColorRow(props: {
 }
 
 function PluginSettings(props: { runtimeStatus: RuntimeStatus }) {
-  const checkedAt = props.runtimeStatus.lastCheckedAt ?? '尚未检测';
-  const status = props.runtimeStatus.connected ? '本地能力已就绪' : '等待本地能力连接';
+  const { t } = useAppLanguage();
+  const checkedAt = props.runtimeStatus.lastCheckedAt ?? t('settings.notChecked');
+  const status = props.runtimeStatus.connected
+    ? t('settings.plugins.ready')
+    : t('settings.plugins.waiting');
 
   return (
     <section className="settings-section" aria-labelledby="settings-plugins-title">
       <header>
-        <h1 id="settings-plugins-title">插件</h1>
-        <p>管理 Clawee 可使用的本机扩展能力。</p>
+        <h1 id="settings-plugins-title">{t('settings.tab.plugins')}</h1>
+        <p>{t('settings.plugins.description')}</p>
       </header>
       <div className="settings-card">
-        <SettingsRow label="Skills 状态" value={status} />
-        <SettingsRow label="MCP 服务状态" value={props.runtimeStatus.connected ? '本地服务可用' : '本地服务未连接'} />
-        <SettingsRow label="最近检测时间" value={checkedAt} />
+        <SettingsRow label={t('settings.plugins.skillsStatus')} value={status} />
+        <SettingsRow
+          label={t('settings.plugins.mcpStatus')}
+          value={props.runtimeStatus.connected
+            ? t('settings.plugins.available')
+            : t('settings.plugins.unavailable')}
+        />
+        <SettingsRow label={t('settings.lastChecked')} value={checkedAt} />
       </div>
     </section>
   );
 }
 
 function AboutSettings(props: { runtimeStatus: RuntimeStatus }) {
-  const runtimeStatusText = props.runtimeStatus.connected ? '正常' : '未连接';
+  const { t } = useAppLanguage();
+  const runtimeStatusText = props.runtimeStatus.connected
+    ? t('settings.status.normal')
+    : t('settings.status.disconnected');
 
   return (
     <section className="settings-section" aria-labelledby="settings-about-title">
       <header>
-        <h1 id="settings-about-title">关于 Clawee</h1>
-        <p>查看版本、数据目录和本地运行信息。</p>
+        <h1 id="settings-about-title">{t('settings.tab.about')}</h1>
+        <p>{t('settings.about.description')}</p>
       </header>
       <div className="settings-card">
-        <SettingsRow label="Clawee 版本" value="0.1.0" />
-        <SettingsRow label="Runtime 版本" value={props.runtimeStatus.runtimeVersion ?? '未知'} />
-        <SettingsRow label="数据目录" value={props.runtimeStatus.codexHome ?? '未设置'} />
-        <SettingsRow label="检查更新" value="手动检查稍后支持" />
+        <SettingsRow label={t('settings.about.version')} value="0.1.0" />
+        <SettingsRow
+          label={t('settings.about.runtimeVersion')}
+          value={props.runtimeStatus.runtimeVersion ?? t('settings.unknown')}
+        />
+        <SettingsRow
+          label={t('settings.about.dataDirectory')}
+          value={props.runtimeStatus.codexHome ?? t('settings.notSet')}
+        />
+        <SettingsRow label={t('settings.about.checkUpdates')} value={t('settings.about.updateLater')} />
       </div>
-      <section className="settings-card settings-advanced" aria-label="高级信息">
-        <h2>高级信息</h2>
-        <SettingsRow label="Codex CLI 版本" value={props.runtimeStatus.codexVersion ?? '未知'} />
-        <SettingsRow label="Codex CLI 路径" value={props.runtimeStatus.codexPath ?? '未设置'} />
-        <SettingsRow label="CODEX_HOME" value={props.runtimeStatus.codexHome ?? '未设置'} />
-        <SettingsRow label="本地运行内核状态" value={runtimeStatusText} />
-        <SettingsRow label="最近一次检测时间" value={props.runtimeStatus.lastCheckedAt ?? '尚未检测'} />
+      <section className="settings-card settings-advanced" aria-label={t('settings.about.advanced')}>
+        <h2>{t('settings.about.advanced')}</h2>
+        <SettingsRow
+          label={t('settings.about.codexVersion')}
+          value={props.runtimeStatus.codexVersion ?? t('settings.unknown')}
+        />
+        <SettingsRow
+          label={t('settings.about.codexPath')}
+          value={props.runtimeStatus.codexPath ?? t('settings.notSet')}
+        />
+        <SettingsRow label="CODEX_HOME" value={props.runtimeStatus.codexHome ?? t('settings.notSet')} />
+        <SettingsRow label={t('settings.about.runtimeStatus')} value={runtimeStatusText} />
+        <SettingsRow
+          label={t('settings.lastCheckDetail')}
+          value={props.runtimeStatus.lastCheckedAt ?? t('settings.notChecked')}
+        />
       </section>
     </section>
   );
@@ -451,22 +502,21 @@ function SettingsRow(props: { label: string; value: string }) {
   );
 }
 
-function SettingsSelectRow(props: {
+function SettingsSelectRow<Value extends string>(props: {
+  id: string;
   label: string;
-  value: DefaultPermissionPreference;
-  options: Array<{ value: DefaultPermissionPreference; label: string }>;
-  onChange(value: DefaultPermissionPreference): void;
+  value: Value;
+  options: Array<{ value: Value; label: string }>;
+  onChange(value: Value): void;
 }) {
-  const labelId = `settings-select-${props.label}`;
-
   return (
-    <label className="settings-row settings-control-row" htmlFor={labelId}>
+    <label className="settings-row settings-control-row" htmlFor={props.id}>
       <span>{props.label}</span>
       <select
-        id={labelId}
+        id={props.id}
         className="settings-select"
         value={props.value}
-        onChange={event => props.onChange(event.target.value as DefaultPermissionPreference)}
+        onChange={event => props.onChange(event.target.value as Value)}
       >
         {props.options.map(option => (
           <option key={option.value} value={option.value}>{option.label}</option>

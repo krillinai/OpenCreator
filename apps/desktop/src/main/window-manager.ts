@@ -93,7 +93,7 @@ export class WindowManager {
       minHeight: 680,
       show: false,
       backgroundColor: '#f3f4f6',
-      title: 'Clawee',
+      title: 'OpenCreator',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

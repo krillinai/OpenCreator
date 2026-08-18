@@ -342,7 +342,6 @@ function createView(overrides: {
   connected?: boolean;
   service?: ScheduleViewService | null;
   editScheduleId?: string;
-  onCreateWithClawee?(): Promise<void> | void;
   onOpenTask?(threadId: string, runId?: string): void;
   onRunNow?(schedule: ScheduleResponse): Promise<void> | void;
   onScheduleChanged?(schedule: ScheduleResponse): void;
@@ -378,7 +377,6 @@ function createView(overrides: {
       ]}
       defaultTimezone="Asia/Shanghai"
       pollIntervalMs={0}
-      onCreateWithClawee={overrides.onCreateWithClawee ?? vi.fn()}
       onOpenTask={overrides.onOpenTask ?? vi.fn()}
       onRunNow={overrides.onRunNow ?? vi.fn()}
       onScheduleChanged={overrides.onScheduleChanged ?? vi.fn()}

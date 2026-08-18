@@ -43,6 +43,7 @@ import type {
 } from '@clawee/protocol';
 import type { ClaweeProject, ProjectPermission } from '../projects/project-model.js';
 import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
+import { useAppLanguage, type Translate } from '../../i18n/LanguageProvider.js';
 import { CreateProjectDialog } from '../projects/CreateProjectDialog.js';
 import {
   AttachmentTray,
@@ -99,23 +100,6 @@ type SlashTrigger = {
   query: string;
   activeIndex: number;
 };
-
-const permissionOptions: Array<{
-  value: ProjectPermission;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: 'workspace-write',
-    label: '请求批准',
-    description: '需要操作文件或执行高风险命令时询问你'
-  },
-  {
-    value: 'danger-full-access',
-    label: '完全访问权限',
-    description: '允许访问本机文件并执行本地操作'
-  }
-];
 
 const TEXTAREA_MIN_VISIBLE_LINES = 2;
 const TEXTAREA_MAX_VISIBLE_LINES = 12;
@@ -181,6 +165,23 @@ export function Composer(props: {
     submissionMode?: RunSubmissionMode
   ): boolean | void | Promise<boolean | void>;
 }) {
+  const { t } = useAppLanguage();
+  const permissionOptions: Array<{
+    value: ProjectPermission;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: 'workspace-write',
+      label: t('composer.permission.approval'),
+      description: t('composer.permission.approvalDescription')
+    },
+    {
+      value: 'danger-full-access',
+      label: t('composer.permission.fullAccess'),
+      description: t('composer.permission.fullAccessDescription')
+    }
+  ];
   const [prompt, setPrompt] = useState('');
   const [projectQuery, setProjectQuery] = useState('');
   const [projectNameDialogOpen, setProjectNameDialogOpen] = useState(false);
@@ -229,14 +230,15 @@ export function Composer(props: {
   const selectedModelLabel = modelSelectionLabel(
     resolvedSelectedModel,
     selectedModel,
-    props.modelsLoading === true
+    props.modelsLoading === true,
+    t
   );
   const selectedModelSupportsImages =
     resolvedSelectedModel?.inputModalities.includes('image');
   const canAttachImages =
     props.imageInputSupported === true && selectedModelSupportsImages !== false;
   const imageInputNotice = selectedModelSupportsImages === false
-    ? `${selectedModelLabel} 不支持图片输入`
+    ? t('composer.imageUnsupported', { model: selectedModelLabel })
     : props.imageInputUnsupportedReason;
   const attachmentsSupportedByModel =
     attachmentDrafts.length === 0 || selectedModelSupportsImages !== false;
@@ -339,7 +341,7 @@ export function Composer(props: {
           setConnectorCatalogError(
             error instanceof Error && error.message.trim().length > 0
               ? error.message
-              : '连接器目录加载失败'
+              : t('composer.connectors.loadFailed')
           );
         }
       })
@@ -374,7 +376,7 @@ export function Composer(props: {
       setConnectorCatalogError(
         error instanceof Error && error.message.trim().length > 0
           ? error.message
-          : '连接器状态更新失败'
+          : t('composer.connectors.updateFailed')
       );
     } finally {
       setConnectorUpdatingId(undefined);
@@ -804,7 +806,7 @@ export function Composer(props: {
           ? {
               ...candidate,
               status: 'error',
-              error: error instanceof Error ? error.message : '上传失败'
+              error: error instanceof Error ? error.message : t('composer.uploadFailed')
             }
           : candidate
       ));
@@ -879,16 +881,18 @@ export function Composer(props: {
         <label className="composer-add-search">
           <Search aria-hidden="true" size={15} />
           <input
-            aria-label="搜索连接器"
+            aria-label={t('composer.connectors.search')}
             type="search"
-            placeholder="搜索连接器"
+            placeholder={t('composer.connectors.search')}
             value={addCommandQuery}
             onChange={event => setAddCommandQuery(event.currentTarget.value)}
           />
         </label>
-        <div className="composer-add-command-list" aria-label="连接器目录">
+        <div className="composer-add-command-list" aria-label={t('composer.connectors.catalog')}>
           {connectorCatalogLoading && connectorCatalog === undefined ? (
-            <p className="composer-model-status" role="status">正在加载连接器目录</p>
+            <p className="composer-model-status" role="status">
+              {t('composer.connectors.loadingCatalog')}
+            </p>
           ) : null}
           {connectorCatalogError === undefined ? null : (
             <p className="composer-model-status composer-model-status-error" role="alert">
@@ -897,7 +901,9 @@ export function Composer(props: {
           )}
           {!connectorCatalogLoading && visibleConnectors.length === 0 ? (
             <p className="composer-model-status">
-              {addCommandQuery.trim().length > 0 ? '没有匹配的连接器' : '连接器目录为空'}
+              {addCommandQuery.trim().length > 0
+                ? t('composer.connectors.noMatch')
+                : t('composer.connectors.emptyCatalog')}
             </p>
           ) : visibleConnectors.map(connector => {
             const canUse = (
@@ -929,7 +935,7 @@ export function Composer(props: {
                   <span className="composer-connector-title">
                     <strong>{connector.label}</strong>
                     <em data-status={connector.status}>
-                      {connectorStatusLabel(connector.status)}
+                      {connectorStatusLabel(connector.status, t)}
                     </em>
                   </span>
                   <small>{connector.description}</small>
@@ -950,7 +956,7 @@ export function Composer(props: {
             }}
           >
             <Link2 aria-hidden="true" size={15} />
-            <span>管理连接器</span>
+            <span>{t('composer.connectors.manage')}</span>
           </button>
         )}
       </>
@@ -960,9 +966,15 @@ export function Composer(props: {
   function renderConnectorQuickMenu() {
     return (
       <>
-        <div className="composer-connector-quick-list" role="group" aria-label="连接器快捷开关">
+        <div
+          className="composer-connector-quick-list"
+          role="group"
+          aria-label={t('composer.connectors.quickToggles')}
+        >
           {connectorCatalogLoading && connectorCatalog === undefined ? (
-            <p className="composer-model-status" role="status">正在加载连接器</p>
+            <p className="composer-model-status" role="status">
+              {t('composer.connectors.loading')}
+            </p>
           ) : null}
           {connectorCatalogError === undefined ? null : (
             <p className="composer-model-status composer-model-status-error" role="alert">
@@ -970,7 +982,7 @@ export function Composer(props: {
             </p>
           )}
           {!connectorCatalogLoading && quickConnectors.length === 0 ? (
-            <p className="composer-model-status">暂无已安装连接器</p>
+            <p className="composer-model-status">{t('composer.connectors.noneInstalled')}</p>
           ) : quickConnectors.map(connector => {
             const checked = connector.status === 'enabled' || connector.status === 'configured';
             const canToggle = connector.id.startsWith('enterprise:')
@@ -987,7 +999,7 @@ export function Composer(props: {
                   role="switch"
                   aria-label={`${connector.label} MCP`}
                   aria-checked={checked}
-                  aria-description={canToggle ? undefined : '请在 MCP 配置中管理'}
+                  aria-description={canToggle ? undefined : t('composer.connectors.manageInMcp')}
                   disabled={!canToggle || connectorUpdatingId !== undefined}
                   onClick={() => void toggleConnector(connector)}
                 />
@@ -1005,7 +1017,7 @@ export function Composer(props: {
             }}
           >
             <ArrowUpRight aria-hidden="true" size={15} />
-            <span>选择更多连接器</span>
+            <span>{t('composer.connectors.more')}</span>
           </button>
         )}
       </>
@@ -1015,7 +1027,7 @@ export function Composer(props: {
   return (
     <div className="composer-stack">
       {(props.queuedItems?.length ?? 0) > 0 ? (
-        <div className="composer-queue" aria-label="排队消息">
+        <div className="composer-queue" aria-label={t('composer.queue.label')}>
           {props.queuedItems?.map(item => (
             <div className="composer-queue-item" key={item.runId}>
               <span className="composer-queue-leading" aria-hidden="true">
@@ -1025,26 +1037,28 @@ export function Composer(props: {
                 {item.text}
               </span>
               {item.queuePosition === undefined ? null : (
-                <span className="composer-queue-position">第 {item.queuePosition} 位</span>
+                <span className="composer-queue-position">
+                  {t('composer.queue.position', { position: item.queuePosition })}
+                </span>
               )}
               {props.onSteerQueuedRun ? (
                 <button
                   type="button"
                   className="composer-queue-steer"
-                  aria-label={`优先执行等待任务 ${item.text}`}
-                  title="停止当前任务并优先执行这条等待任务"
+                  aria-label={t('composer.queue.steerLabel', { text: item.text })}
+                  title={t('composer.queue.steerTitle')}
                   onClick={() => props.onSteerQueuedRun?.(item.runId)}
                 >
                   <Zap aria-hidden="true" size={13} />
-                  优先执行
+                  {t('composer.queue.steer')}
                 </button>
               ) : null}
               {props.onCancelQueuedRun ? (
                 <button
                   type="button"
                   className="composer-queue-remove"
-                  aria-label={`移除等待任务 ${item.text}`}
-                  title="移除等待任务"
+                  aria-label={t('composer.queue.removeLabel', { text: item.text })}
+                  title={t('composer.queue.remove')}
                   onClick={() => props.onCancelQueuedRun?.(item.runId)}
                 >
                   <Trash2 aria-hidden="true" size={13} />
@@ -1075,7 +1089,7 @@ export function Composer(props: {
             <button
               className="composer-project-button"
               type="button"
-              aria-label={`选择项目 ${props.projectName}`}
+              aria-label={t('composer.project.selectNamed', { name: props.projectName })}
               aria-expanded={openMenu === 'project'}
               onClick={toggleProjectMenu}
             >
@@ -1087,22 +1101,26 @@ export function Composer(props: {
               <div
                 className="composer-popover composer-project-popover"
                 role="dialog"
-                aria-label="选择项目"
+                aria-label={t('composer.project.select')}
               >
                 <label className="composer-project-search">
                   <Search aria-hidden="true" size={15} />
                   <input
                     ref={projectSearchRef}
                     type="search"
-                    aria-label="搜索项目"
-                    placeholder="搜索项目"
+                    aria-label={t('composer.project.search')}
+                    placeholder={t('composer.project.search')}
                     value={projectQuery}
                     onChange={event => setProjectQuery(event.currentTarget.value)}
                   />
                 </label>
-                <div className="composer-project-list" role="listbox" aria-label="项目列表">
+                <div
+                  className="composer-project-list"
+                  role="listbox"
+                  aria-label={t('composer.project.list')}
+                >
                   {filteredProjects.length === 0 ? (
-                    <p className="composer-project-empty">没有匹配的项目</p>
+                    <p className="composer-project-empty">{t('composer.project.noMatch')}</p>
                   ) : (
                     filteredProjects.map(project => (
                       <button
@@ -1134,7 +1152,7 @@ export function Composer(props: {
                         onClick={openProjectNameDialog}
                       >
                         <Plus aria-hidden="true" size={17} />
-                        <span>新建项目</span>
+                        <span>{t('composer.project.create')}</span>
                       </button>
                     ) : null}
                     {props.onAddProjectDirectory !== undefined ? (
@@ -1144,7 +1162,7 @@ export function Composer(props: {
                         onClick={() => runProjectAction(props.onAddProjectDirectory)}
                       >
                         <FolderPlus aria-hidden="true" size={17} />
-                        <span>使用现有文件夹</span>
+                        <span>{t('composer.project.useFolder')}</span>
                       </button>
                     ) : null}
                   </div>
@@ -1170,14 +1188,17 @@ export function Composer(props: {
         data-composer-menu-root="slash"
       >
         {selectedSkillCommand ? (
-          <span className="composer-skill-chip" aria-label={`已选择 Skill ${selectedSkillCommand.label}`}>
+          <span
+            className="composer-skill-chip"
+            aria-label={t('composer.skill.selected', { name: selectedSkillCommand.label })}
+          >
             <Sparkles aria-hidden="true" size={15} />
             <strong>{selectedSkillCommand.label}</strong>
           </span>
         ) : null}
         <textarea
           ref={textareaRef}
-          aria-label="输入任务"
+          aria-label={t('composer.input.label')}
           aria-autocomplete="list"
           aria-controls={slashMenuOpen ? 'composer-slash-menu' : undefined}
           aria-activedescendant={slashMenuOpen && filteredSlashCommands.length > 0
@@ -1196,8 +1217,8 @@ export function Composer(props: {
           onPaste={handlePaste}
           placeholder={
             props.disabled
-              ? props.disabledReason ?? '当前对话不可用'
-              : hasComposerContent ? '' : '输入 / 调用插件'
+              ? props.disabledReason ?? t('composer.input.unavailable')
+              : hasComposerContent ? '' : t('composer.input.placeholder')
           }
         />
         {slashMenuOpen ? (
@@ -1206,12 +1227,16 @@ export function Composer(props: {
             id="composer-slash-menu"
             className="composer-popover composer-slash-menu"
             role="listbox"
-            aria-label="能力菜单"
+            aria-label={t('composer.capabilities.menu')}
           >
-            {props.slashCommandsLoading ? <div className="composer-slash-status" role="status">正在加载本机能力</div> : null}
+            {props.slashCommandsLoading ? (
+              <div className="composer-slash-status" role="status">
+                {t('composer.capabilities.loading')}
+              </div>
+            ) : null}
             {props.slashCommandsError ? <div className="composer-slash-status composer-slash-status-error">{props.slashCommandsError}</div> : null}
             {!props.slashCommandsLoading && filteredSlashCommands.length === 0 ? (
-              <div className="composer-slash-status">没有匹配的能力</div>
+              <div className="composer-slash-status">{t('composer.capabilities.noMatch')}</div>
             ) : null}
             {groupedSlashCommands.map(group => (
               <div key={group.category} className="composer-slash-group" role="presentation">
@@ -1249,9 +1274,9 @@ export function Composer(props: {
             <button
               className="composer-icon-button"
               type="button"
-              aria-label="添加上下文"
+              aria-label={t('composer.add.context')}
               aria-expanded={openMenu === 'add'}
-              title="添加文件等"
+              title={t('composer.add.title')}
               onClick={() => {
                 setSlashTrigger(null);
                 const nextOpen = openMenu === 'add' ? null : 'add';
@@ -1263,7 +1288,11 @@ export function Composer(props: {
               <Plus aria-hidden="true" size={17} />
             </button>
             {openMenu === 'add' ? (
-              <div className="composer-popover composer-popover-compact composer-add-menu" role="menu" aria-label="添加上下文">
+              <div
+                className="composer-popover composer-popover-compact composer-add-menu"
+                role="menu"
+                aria-label={t('composer.add.context')}
+              >
                 <button
                   className="composer-menu-item"
                   type="button"
@@ -1275,7 +1304,7 @@ export function Composer(props: {
                   }}
                 >
                   <Paperclip aria-hidden="true" size={15} />
-                  <span>添加文件</span>
+                  <span>{t('composer.add.file')}</span>
                 </button>
                 {!canAttachImages && imageInputNotice !== undefined ? (
                   <p className="composer-menu-notice">{imageInputNotice}</p>
@@ -1290,7 +1319,7 @@ export function Composer(props: {
                   onClick={() => openAddSubmenu('skill')}
                 >
                   <Hammer aria-hidden="true" size={15} />
-                  <span>技能</span>
+                  <span>{t('composer.add.skills')}</span>
                   <ChevronRight aria-hidden="true" size={14} />
                 </button>
                 <button
@@ -1303,30 +1332,32 @@ export function Composer(props: {
                   onClick={() => openAddSubmenu('mcp')}
                 >
                   <Link2 aria-hidden="true" size={15} />
-                  <span>连接器</span>
+                  <span>{t('composer.add.connectors')}</span>
                   <ChevronRight aria-hidden="true" size={14} />
                 </button>
                 {addSubmenu === null ? null : (
                   <div
                     className="composer-popover composer-add-submenu"
                     role="menu"
-                    aria-label={addSubmenu === 'skill' ? '技能' : '连接器'}
+                    aria-label={addSubmenu === 'skill'
+                      ? t('composer.add.skills')
+                      : t('composer.add.connectors')}
                   >
                     {addSubmenu === 'skill' ? (
                       <>
                         <label className="composer-add-search">
                           <Search aria-hidden="true" size={15} />
                           <input
-                            aria-label="搜索技能"
+                            aria-label={t('composer.add.searchSkills')}
                             type="search"
-                            placeholder="搜索技能"
+                            placeholder={t('composer.add.searchSkills')}
                             value={addCommandQuery}
                             onChange={event => setAddCommandQuery(event.currentTarget.value)}
                           />
                         </label>
                         <div className="composer-add-command-list">
                           {addCommands.length === 0 ? (
-                            <p className="composer-model-status">暂无可用技能</p>
+                            <p className="composer-model-status">{t('composer.add.noSkills')}</p>
                           ) : addCommands.map(command => (
                             <button
                               key={command.id}
@@ -1361,7 +1392,7 @@ export function Composer(props: {
                         }}
                       >
                         <Hammer aria-hidden="true" size={15} />
-                        <span>管理技能</span>
+                        <span>{t('composer.add.manageSkills')}</span>
                       </button>
                     )}
                   </div>
@@ -1372,7 +1403,7 @@ export function Composer(props: {
               ref={fileInputRef}
               className="composer-file-input"
               type="file"
-              aria-label="选择图片"
+              aria-label={t('composer.add.selectImage')}
               accept="image/png,image/jpeg,image/gif,image/webp"
               multiple
               disabled={!canAttachImages}
@@ -1387,13 +1418,15 @@ export function Composer(props: {
             <button
               className={`composer-select composer-select-${selectedPermission}`}
               type="button"
-              aria-label={`选择访问权限 ${selectedPermissionOption.label}`}
+              aria-label={t('composer.permission.select', {
+                permission: selectedPermissionOption.label
+              })}
               aria-expanded={openMenu === 'permission'}
               disabled={props.permissionChangeDisabled === true || permissionUpdating}
               title={
                 props.permissionChangeDisabled === true
-                  ? '当前任务结束后可修改访问权限'
-                  : '更改项目权限'
+                  ? t('composer.permission.changeAfterRun')
+                  : t('composer.permission.change')
               }
               onClick={() => {
                 setSlashTrigger(null);
@@ -1405,7 +1438,11 @@ export function Composer(props: {
               <ChevronDown aria-hidden="true" size={13} />
             </button>
             {openMenu === 'permission' ? (
-              <div className="composer-popover composer-permission-menu" role="menu" aria-label="访问权限">
+              <div
+                className="composer-popover composer-permission-menu"
+                role="menu"
+                aria-label={t('composer.permission.label')}
+              >
                 {permissionOptions.map(option => (
                   <button
                     key={option.value}
@@ -1451,16 +1488,16 @@ export function Composer(props: {
               <div
                 className="composer-enabled-connectors"
                 role="list"
-                aria-label="已开启的 MCP"
+                aria-label={t('composer.connectors.enabled')}
               >
                 {enabledConnectors.map(connector => (
                   <span key={connector.id} role="listitem">
                     <button
                       className="composer-enabled-connector"
                       type="button"
-                      aria-label={`打开连接器列表，${connector.label} MCP`}
+                      aria-label={t('composer.connectors.openList', { name: connector.label })}
                       aria-expanded={openMenu === 'connectors'}
-                      title={`${connector.label} · 查看连接器`}
+                      title={t('composer.connectors.view', { name: connector.label })}
                       onClick={() => {
                         setSlashTrigger(null);
                         setAddSubmenu(null);
@@ -1478,7 +1515,7 @@ export function Composer(props: {
                 <div
                   className="composer-popover composer-connector-card"
                   role="dialog"
-                  aria-label="连接器"
+                  aria-label={t('composer.connectors.label')}
                 >
                   {renderConnectorQuickMenu()}
                 </div>
@@ -1493,7 +1530,7 @@ export function Composer(props: {
             <button
               className="composer-model-button"
               type="button"
-              aria-label={`选择模型 ${selectedModelLabel}`}
+              aria-label={t('composer.model.select', { model: selectedModelLabel })}
               aria-expanded={openMenu === 'model'}
               onClick={() => {
                 setSlashTrigger(null);
@@ -1504,11 +1541,17 @@ export function Composer(props: {
               <ChevronDown aria-hidden="true" size={13} />
             </button>
             {openMenu === 'model' ? (
-              <div className="composer-popover composer-model-menu" role="menu" aria-label="模型">
+              <div
+                className="composer-popover composer-model-menu"
+                role="menu"
+                aria-label={t('composer.model.label')}
+              >
                 <div className="composer-model-section" role="presentation">
-                  <div className="composer-model-section-label">模型</div>
+                  <div className="composer-model-section-label">{t('composer.model.label')}</div>
                   {props.modelsLoading === true && availableModels.length === 0 ? (
-                    <div className="composer-model-status" role="status">正在加载模型</div>
+                    <div className="composer-model-status" role="status">
+                      {t('composer.model.loading')}
+                    </div>
                   ) : null}
                   {props.modelsError !== undefined && availableModels.length === 0 ? (
                     <div className="composer-model-status composer-model-status-error">
@@ -1523,7 +1566,7 @@ export function Composer(props: {
                   {availableModels.length === 0
                     && props.modelsLoading !== true
                     && props.modelsError === undefined ? (
-                    <div className="composer-model-status">暂无可用模型</div>
+                    <div className="composer-model-status">{t('composer.model.none')}</div>
                   ) : null}
                   {selectedModel !== null && resolvedSelectedModel === undefined ? (
                     <button
@@ -1537,8 +1580,8 @@ export function Composer(props: {
                         <Check size={15} />
                       </span>
                       <span>
-                        <strong>{selectedModel} · 不可用</strong>
-                        <small>该模型不在当前可用目录中</small>
+                        <strong>{t('composer.model.unavailable', { model: selectedModel })}</strong>
+                        <small>{t('composer.model.notInCatalog')}</small>
                       </span>
                     </button>
                   ) : null}
@@ -1574,14 +1617,16 @@ export function Composer(props: {
                         </span>
                         <span>
                           <strong>{option.displayName}</strong>
-                          <small>{modelOptionDescription(option, imageBlocked)}</small>
+                          <small>{modelOptionDescription(option, imageBlocked, t)}</small>
                         </span>
                       </button>
                     );
                   })}
                 </div>
                 <div className="composer-model-section" role="presentation">
-                  <div className="composer-model-section-label">推理强度</div>
+                  <div className="composer-model-section-label">
+                    {t('composer.reasoning.label')}
+                  </div>
                   <button
                     className="composer-menu-item"
                     type="button"
@@ -1602,8 +1647,8 @@ export function Composer(props: {
                         : null}
                     </span>
                     <span>
-                      <strong>默认</strong>
-                      <small>跟随 Codex 配置</small>
+                      <strong>{t('composer.reasoning.default')}</strong>
+                      <small>{t('composer.reasoning.followCodex')}</small>
                     </span>
                   </button>
                   {selectedReasoningOptions.map(option => (
@@ -1628,8 +1673,8 @@ export function Composer(props: {
                           : null}
                       </span>
                       <span>
-                        <strong>{reasoningEffortLabel(option.reasoningEffort)}</strong>
-                        <small>{reasoningEffortDescription(option.reasoningEffort)}</small>
+                        <strong>{reasoningEffortLabel(option.reasoningEffort, t)}</strong>
+                        <small>{reasoningEffortDescription(option.reasoningEffort, t)}</small>
                       </span>
                     </button>
                   ))}
@@ -1644,13 +1689,13 @@ export function Composer(props: {
               type={showStopAction ? 'button' : 'submit'}
               aria-label={
                 showStopAction
-                  ? props.canceling ? '正在停止任务' : '停止任务'
-                  : props.running ? '排队发送' : '发送'
+                  ? props.canceling ? t('composer.action.stopping') : t('composer.action.stop')
+                  : props.running ? t('composer.action.queueSend') : t('composer.action.send')
               }
               title={
                 showStopAction
-                  ? props.canceling ? '正在停止任务' : '停止任务'
-                  : props.running ? '加入等待队列' : '发送'
+                  ? props.canceling ? t('composer.action.stopping') : t('composer.action.stop')
+                  : props.running ? t('composer.action.addToQueue') : t('composer.action.send')
               }
               disabled={
                 showStopAction
@@ -1671,9 +1716,9 @@ export function Composer(props: {
       </form>
       <ConfirmDialog
         open={pendingPermission === 'danger-full-access'}
-        title="开启完全访问权限"
-        description="完全访问权限允许 Clawee 访问本机文件并执行本地操作。仅在你信任当前项目时开启。"
-        confirmLabel="开启"
+        title={t('composer.fullAccess.title')}
+        description={t('composer.fullAccess.description')}
+        confirmLabel={t('composer.fullAccess.confirm')}
         busy={permissionUpdating}
         onCancel={() => setPendingPermission(undefined)}
         onConfirm={() => {
@@ -1711,12 +1756,15 @@ function connectorStatusOrder(status: ComposerConnector['status']): number {
   return 3;
 }
 
-function connectorStatusLabel(status: ComposerConnector['status']): string {
-  if (status === 'enabled') return '已开启';
-  if (status === 'configured') return '已配置';
-  if (status === 'installed') return '已安装';
-  if (status === 'available') return '可安装';
-  return '服务停用';
+function connectorStatusLabel(
+  status: ComposerConnector['status'],
+  t: Translate
+): string {
+  if (status === 'enabled') return t('composer.connectors.status.enabled');
+  if (status === 'configured') return t('composer.connectors.status.configured');
+  if (status === 'installed') return t('composer.connectors.status.installed');
+  if (status === 'available') return t('composer.connectors.status.available');
+  return t('composer.connectors.status.unavailable');
 }
 
 function connectorIcon(connector: ComposerConnector) {
@@ -1748,21 +1796,25 @@ function resolveSelectedModel(
 function modelSelectionLabel(
   resolvedModel: CodexModelResponse | undefined,
   selectedModel: string | null,
-  loading: boolean
+  loading: boolean,
+  t: Translate
 ): string {
   if (resolvedModel !== undefined) return resolvedModel.displayName;
-  if (selectedModel !== null) return `${selectedModel} · 不可用`;
-  return loading ? '正在加载模型' : '默认模型';
+  if (selectedModel !== null) return t('composer.model.unavailable', { model: selectedModel });
+  return loading ? t('composer.model.loading') : t('composer.model.default');
 }
 
 function modelOptionDescription(
   option: CodexModelResponse,
-  imageBlocked: boolean
+  imageBlocked: boolean,
+  t: Translate
 ): string {
-  if (imageBlocked) return '当前任务包含图片，无法选择';
+  if (imageBlocked) return t('composer.model.imageBlocked');
   const details = [
-    option.isDefault ? 'Codex 当前默认模型' : undefined,
-    option.inputModalities.includes('image') ? '支持图片输入' : '仅支持文本输入'
+    option.isDefault ? t('composer.model.currentDefault') : undefined,
+    option.inputModalities.includes('image')
+      ? t('composer.model.supportsImages')
+      : t('composer.model.textOnly')
   ].filter((detail): detail is string => detail !== undefined);
   return details.join(' · ');
 }
@@ -1778,20 +1830,20 @@ function isReasoningAvailable(
     );
 }
 
-function reasoningEffortLabel(reasoning: ReasoningEffort): string {
-  if (reasoning === 'low') return '低';
-  if (reasoning === 'medium') return '中';
-  if (reasoning === 'high') return '高';
-  if (reasoning === 'xhigh') return '超高';
-  return '默认';
+function reasoningEffortLabel(reasoning: ReasoningEffort, t: Translate): string {
+  if (reasoning === 'low') return t('composer.reasoning.low');
+  if (reasoning === 'medium') return t('composer.reasoning.medium');
+  if (reasoning === 'high') return t('composer.reasoning.high');
+  if (reasoning === 'xhigh') return t('composer.reasoning.xhigh');
+  return t('composer.reasoning.default');
 }
 
-function reasoningEffortDescription(reasoning: ReasoningEffort): string {
-  if (reasoning === 'low') return '更快响应，适合简单任务';
-  if (reasoning === 'medium') return '平衡速度与推理深度';
-  if (reasoning === 'high') return '增强复杂任务的推理深度';
-  if (reasoning === 'xhigh') return '使用最充分的推理深度';
-  return '跟随 Codex 配置';
+function reasoningEffortDescription(reasoning: ReasoningEffort, t: Translate): string {
+  if (reasoning === 'low') return t('composer.reasoning.lowDescription');
+  if (reasoning === 'medium') return t('composer.reasoning.mediumDescription');
+  if (reasoning === 'high') return t('composer.reasoning.highDescription');
+  if (reasoning === 'xhigh') return t('composer.reasoning.xhighDescription');
+  return t('composer.reasoning.followCodex');
 }
 
 function findSlashTrigger(value: string, caret: number): SlashTrigger | null {

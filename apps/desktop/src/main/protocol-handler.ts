@@ -55,7 +55,7 @@ async function proxyRuntimeRequest(
   logger: DesktopLogger
 ): Promise<Response> {
   if (connection === undefined) {
-    return jsonError(503, 'RUNTIME_UNAVAILABLE', 'Clawee Runtime is not ready');
+    return jsonError(503, 'RUNTIME_UNAVAILABLE', 'OpenCreator Runtime is not ready');
   }
   try {
     const target = createRuntimeProxyTarget(url, connection.address);
@@ -180,7 +180,8 @@ export async function staticResponse(
         "font-src 'self' data:",
         "connect-src 'self' blob:",
         "worker-src 'self' blob:",
-        "media-src 'self' blob:",
+        "media-src 'self' blob: https: http:",
+        "frame-src https://www.youtube-nocookie.com https://player.bilibili.com",
         "object-src 'none'",
         "base-uri 'none'",
         "frame-ancestors 'none'",

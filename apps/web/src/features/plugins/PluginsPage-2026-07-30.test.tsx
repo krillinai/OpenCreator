@@ -2,40 +2,46 @@ import { render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import PluginsPage, { type PluginsPageProps } from './PluginsPage.js';
+import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 
 describe('PluginsPage', () => {
-  it('defaults to enterprise skills and keeps the skill market second', async () => {
-    const user = userEvent.setup();
-    const onSourceChange = vi.fn();
-    const view = render(<PluginsPage {...createProps({ onSourceChange })} />);
-
-    expect(screen.getByRole('tab', { name: '企业Skills', selected: true }))
-      .toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '企业Skills' }).nextElementSibling)
-      .toBe(screen.getByRole('tab', { name: 'Skill市场' }));
-
-    await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
-    expect(onSourceChange).toHaveBeenCalledWith('public');
-
-    view.rerender(
-      <PluginsPage
-        {...createProps({
-          source: 'enterprise',
-          enterprise: {
-            ...createProps().enterprise,
-            session: {
-              status: 'signed_out',
-              transportSecurity: 'secure_https'
-            }
-          }
-        })}
-      />
+  it('localizes the plugin center and connector tab in English', () => {
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <PluginsPage {...createProps()} />
+      </LanguageProvider>
     );
 
-    expect(screen.getByRole('tab', { name: '企业Skills', selected: true }))
-      .toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '登录企业账户' })).not.toBeInTheDocument();
-    expect(screen.getByText('品牌合规审查')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Plugins' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Connectors' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search Skills' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Installed/ })).toBeInTheDocument();
+  });
+
+  it('defaults to Skills and exposes the connector tab', () => {
+    render(<PluginsPage {...createProps()} />);
+
+    expect(screen.getByRole('region', { name: '插件中心' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Skills' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '连接器' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.queryByText(/企业/)).not.toBeInTheDocument();
+  });
+
+  it('requests the connector tab and renders its existing page content', async () => {
+    const user = userEvent.setup();
+    const onTabChange = vi.fn();
+    const props = createProps({ onTabChange });
+    const { rerender } = render(<PluginsPage {...props} />);
+
+    await user.click(screen.getByRole('tab', { name: '连接器' }));
+    expect(onTabChange).toHaveBeenCalledWith('connections');
+
+    rerender(<PluginsPage {...props} activeTab="connections" />);
+    expect(screen.getByRole('tab', { name: '连接器' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel')).toHaveAccessibleName('连接器');
+    expect(screen.getByRole('heading', { name: '正在等待本地 Runtime' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Skill 功能目录' })).not.toBeInTheDocument();
   });
 });
 
@@ -55,28 +61,14 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
     loading: false,
     projects: [{ id: 'project-1', name: 'Project One', cwd: '/workspace/project-1' }],
     currentProjectId: 'project-1',
+    connections: {
+      connected: false,
+      service: null,
+      mcpService: null
+    },
     onInstall: vi.fn(),
     onUpdate: vi.fn(),
     onUse: vi.fn(),
-    onSourceChange: vi.fn(),
-    enterprise: {
-      connected: true,
-      session: {
-        status: 'signed_in',
-        account: { subjectId: 'acct-member', email: 'member@example.com', name: 'Member' },
-        transportSecurity: 'secure_https'
-      },
-      skills: [],
-      loading: false,
-      projects: [{ id: 'project-1', name: 'Project One', cwd: '/workspace/project-1' }],
-      currentProjectId: 'project-1',
-      onOpenAccount: vi.fn(),
-      onRefresh: vi.fn(),
-      onLoadDetail: vi.fn(),
-      onInstall: vi.fn(),
-      onUpdate: vi.fn(),
-      onUse: vi.fn()
-    },
     ...overrides
   };
 }

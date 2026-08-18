@@ -1,5 +1,6 @@
 import { Check, Folder, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 export type SkillMarketProjectOption = {
   id: string;
@@ -20,6 +21,7 @@ export function SkillUseProjectDialog({
   onClose(): void;
   onConfirm(projectId: string): void;
 }) {
+  const l = useLocalizedCopy();
   const initialProjectId =
     projects.find((project) => project.id === currentProjectId)?.id
     ?? projects[0]?.id
@@ -85,21 +87,21 @@ export function SkillUseProjectDialog({
         <header className="skill-market-use-dialog__header">
           <div>
             <span>{skillTitle}</span>
-            <h2 id="skill-market-use-project-title">选择使用项目</h2>
+            <h2 id="skill-market-use-project-title">{l('选择使用项目', 'Choose a project')}</h2>
           </div>
           <button
-            aria-label="关闭项目选择"
+            aria-label={l('关闭项目选择', 'Close project picker')}
             className="skill-market-icon-button"
             onClick={onClose}
             ref={closeRef}
-            title="关闭"
+            title={l('关闭', 'Close')}
             type="button"
           >
             <X size={17} aria-hidden="true" />
           </button>
         </header>
 
-        <div className="skill-market-use-project-list" role="radiogroup" aria-label="使用项目">
+        <div className="skill-market-use-project-list" role="radiogroup" aria-label={l('使用项目', 'Project to use')}>
           {projects.map((project) => {
             const selected = project.id === selectedProjectId;
             return (
@@ -128,7 +130,7 @@ export function SkillUseProjectDialog({
             onClick={onClose}
             type="button"
           >
-            取消
+            {l('取消', 'Cancel')}
           </button>
           <button
             className="skill-market-action-button skill-market-action-button--use"
@@ -139,11 +141,11 @@ export function SkillUseProjectDialog({
             title={
               selectedProject === undefined
                 ? undefined
-                : `在 ${selectedProject.name} 中使用`
+                : `${l('在', 'Use in')} ${selectedProject.name}`
             }
             type="button"
           >
-            <span>在 {selectedProject?.name ?? '所选项目'} 中使用</span>
+            <span>{l('在', 'Use in')} {selectedProject?.name ?? l('所选项目', 'selected project')}</span>
           </button>
         </footer>
       </section>

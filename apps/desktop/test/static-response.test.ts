@@ -59,4 +59,17 @@ describe('Desktop static response', () => {
     expect(response.headers.get('content-security-policy'))
       .toContain("connect-src 'self' blob:");
   });
+
+  it('allows the supported video preview sources', async () => {
+    root = mkdtempSync(join(tmpdir(), 'clawee-static-'));
+    writeFileSync(join(root, 'index.html'), '<main>workspace</main>');
+
+    const response = await staticResponse(root, '/', true);
+    const policy = response.headers.get('content-security-policy');
+
+    expect(policy).toContain("media-src 'self' blob: https: http:");
+    expect(policy).toContain(
+      'frame-src https://www.youtube-nocookie.com https://player.bilibili.com'
+    );
+  });
 });

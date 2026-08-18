@@ -10,6 +10,7 @@ import {
   Search,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import {
   filterAndSortSkillMarketEntries,
   paginateSkillMarketEntries,
@@ -72,6 +73,7 @@ export function SkillMarketView({
   onUse,
   catalogOverride,
 }: SkillMarketViewInternalProps) {
+  const l = useLocalizedCopy();
   const catalog = catalogOverride ?? skillMarketCatalog;
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<SkillMarketFilterStatus>('all');
@@ -166,18 +168,18 @@ export function SkillMarketView({
   }
 
   return (
-    <section className="skill-market" aria-label="Skill 功能目录">
+    <section className="skill-market" aria-label={l('Skill 功能目录', 'Skill catalog')}>
       <header className="skill-market-heading">
         <div className="skill-market__toolbar">
           <label className="skill-market-search">
             <Search size={17} aria-hidden="true" />
             <input
-              aria-label="搜索 Skill"
+              aria-label={l('搜索 Skill', 'Search Skills')}
               onChange={(event) => {
                 setQuery(event.target.value);
                 resetVisibleCount();
               }}
-              placeholder="搜索技能"
+              placeholder={l('搜索技能', 'Search Skills')}
               type="search"
               value={query}
             />
@@ -190,7 +192,7 @@ export function SkillMarketView({
         <div className="skill-market-category-line">
           <div
             className="skill-market-filter-row skill-market-filter-row--categories"
-            aria-label="分类"
+            aria-label={l('分类', 'Categories')}
             role="group"
           >
             <button
@@ -204,7 +206,7 @@ export function SkillMarketView({
               type="button"
             >
               <CheckCircle2 size={14} aria-hidden="true" />
-              <span>已安装</span>
+              <span>{l('已安装', 'Installed')}</span>
               <b>{installedCount}</b>
             </button>
             <button
@@ -217,7 +219,7 @@ export function SkillMarketView({
               }}
               type="button"
             >
-              <span>全部</span>
+              <span>{l('全部', 'All')}</span>
               <b>{baseResult.entries.length}</b>
             </button>
             {baseResult.categories.map((item) => (
@@ -244,13 +246,13 @@ export function SkillMarketView({
 
       {!connected ? (
         <p className="skill-market-banner" role="status">
-          Runtime 未连接，目录可浏览，安装、更新和使用需连接后操作。
+          {l('Runtime 未连接，目录可浏览，安装、更新和使用需连接后操作。', 'The runtime is disconnected. You can browse the catalog, but installation, updates, and use require a connection.')}
         </p>
       ) : null}
       {loading ? (
         <p className="skill-market-banner" role="status">
           <Loader2 size={18} aria-hidden="true" />
-          正在加载 Skills 目录
+          {l('正在加载 Skills 目录', 'Loading the Skills catalog')}
         </p>
       ) : null}
       {loadError ? (
@@ -261,13 +263,13 @@ export function SkillMarketView({
       ) : null}
       {useError ? (
         <p className="skill-market-inline-error skill-market-page-error" role="status">
-          使用失败：{useError.error}
+          {l('使用失败：', 'Could not use Skill: ')}{useError.error}
         </p>
       ) : null}
       {catalog.length === 0 ? (
-        <StateMessage text="目录暂时为空" />
+        <StateMessage text={l('目录暂时为空', 'The catalog is empty')} />
       ) : filteredResult.entries.length === 0 ? (
-        <StateMessage text={query.trim().length > 0 ? '没有找到匹配的 Skill' : '当前筛选没有可显示的 Skill'} />
+        <StateMessage text={query.trim().length > 0 ? l('没有找到匹配的 Skill', 'No matching Skills') : l('当前筛选没有可显示的 Skill', 'No Skills match the current filters')} />
       ) : (
         <div className="skill-market-grid">
           {page.entries.map((item) => (
@@ -275,7 +277,7 @@ export function SkillMarketView({
               action={getSkillMarketAction(item.status, connected, {
                 mutationLocked,
                 skillsKnown,
-              })}
+              }, l)}
               item={item}
               key={item.id}
               onInstall={onInstall}
@@ -289,7 +291,7 @@ export function SkillMarketView({
 
       {filteredResult.entries.length > 0 ? (
         <div className="skill-market-pagination" aria-live="polite">
-          <span>已显示 {page.visibleCount} / {page.totalCount}</span>
+          <span>{l('已显示', 'Showing')} {page.visibleCount} / {page.totalCount}</span>
           {page.hasMore ? (
             <div
               aria-hidden="true"

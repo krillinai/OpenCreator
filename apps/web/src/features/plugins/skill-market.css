@@ -3,57 +3,76 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
-  display: block;
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
 }
 
-.plugins-source-header {
-  position: absolute;
-  z-index: 4;
-  top: 0;
-  left: 0;
-  right: 0;
-  width: min(1320px, 100%);
-  margin: 0 auto;
-  min-height: 0;
+.plugin-center-header {
+  min-width: 0;
+  min-height: 52px;
   display: flex;
   align-items: center;
-  padding: 32px 0 0 clamp(20px, 2.4vw, 32px);
+  padding: 0 clamp(20px, 2.4vw, 32px);
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg);
+}
+
+.plugin-center-tabs {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+}
+
+.plugin-center-tabs button {
+  position: relative;
+  min-width: 64px;
+  height: 100%;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
   background: transparent;
-}
-
-.plugins-source-tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
-}
-
-.plugins-source-tabs button {
-  min-width: 116px;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
-.plugins-source-tabs button[aria-selected="true"] {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+.plugin-center-tabs button::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: transparent;
 }
 
-.plugins-source-content {
+.plugin-center-tabs button:hover {
+  color: var(--text);
+}
+
+.plugin-center-tabs button[aria-selected="true"] {
+  color: var(--text);
+}
+
+.plugin-center-tabs button[aria-selected="true"]::after {
+  background: var(--accent);
+}
+
+.plugin-center-panel {
   min-width: 0;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
+}
+
+.plugin-center-panel > .skill-market,
+.plugin-center-panel > .connections-page {
+  height: 100%;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -583,14 +602,6 @@
 }
 
 @media (max-width: 520px) {
-  .plugins-source-tabs {
-    width: 100%;
-  }
-
-  .plugins-source-tabs button {
-    min-width: 0;
-  }
-
   .enterprise-skill-row-open {
     grid-template-columns: 36px minmax(0, 1fr);
   }
@@ -1938,17 +1949,16 @@
 
 @media (max-width: 760px) {
   .plugins-page {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: 48px minmax(0, 1fr);
   }
 
-  .plugins-source-header {
-    position: static;
-    padding: 14px 12px 0;
+  .plugin-center-header {
+    min-height: 48px;
+    padding: 0 14px;
   }
 
-  .plugins-source-content {
-    height: auto;
+  .plugin-center-tabs {
+    gap: 20px;
   }
 
   .skill-market {

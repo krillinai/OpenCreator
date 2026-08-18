@@ -1653,7 +1653,7 @@ describe('Timeline', () => {
     render(<Timeline items={[]} />);
 
     expect(screen.getByText('暂无任务记录')).toBeInTheDocument();
-    expect(screen.getByText('发送任务后，Clawee 会在这里展示处理过程和结果。')).toBeInTheDocument();
+    expect(screen.getByText('发送任务后，OpenCreator 会在这里展示处理过程和结果。')).toBeInTheDocument();
   });
 
   it('keeps long histories virtualized and exposes older-page loading', async () => {

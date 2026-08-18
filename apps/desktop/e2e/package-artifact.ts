@@ -4,11 +4,11 @@ import { join, resolve } from 'node:path';
 export function packagedExecutable(desktopDir: string): string {
   const packageRoot = resolvePackageRoot(desktopDir);
   if (process.platform === 'darwin') {
-    return join(packageRoot, 'Contents', 'MacOS', 'Clawee');
+    return join(packageRoot, 'Contents', 'MacOS', 'OpenCreator');
   }
   return join(
     packageRoot,
-    process.platform === 'win32' ? 'Clawee.exe' : 'clawee'
+    process.platform === 'win32' ? 'OpenCreator.exe' : 'opencreator'
   );
 }
 

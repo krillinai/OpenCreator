@@ -17,15 +17,16 @@ const legacyAssetHashes = new Set([
 ]);
 
 describe('品牌资源', () => {
-  it('启动页和菜单栏使用新版图标', () => {
-    const markHash = hash(resolve(repoRoot, 'resources/logo-v2-white-logo.png'));
+  it('启动页使用 OpenCreator 文字品牌，菜单栏使用新版图标', () => {
     const trayHash = hash(resolve(repoRoot, 'resources/head.png'));
 
-    expect(hash(resolve(desktopRoot, 'src/bootstrap/logo.png'))).toBe(markHash);
     expect(hash(resolve(desktopRoot, 'resources/tray.png'))).toBe(trayHash);
 
+    const bootstrapHtml = readFileSync(resolve(desktopRoot, 'src/bootstrap/index.html'), 'utf8');
     const bootstrapCss = readFileSync(resolve(desktopRoot, 'src/bootstrap/style.css'), 'utf8');
-    expect(bootstrapCss).toContain('filter: brightness(0) saturate(100%);');
+    expect(bootstrapHtml).toContain('<span class="brand-name">OpenCreator</span>');
+    expect(bootstrapHtml).not.toContain('<img');
+    expect(bootstrapCss).not.toContain('filter: brightness(0) saturate(100%);');
 
     const trayManager = readFileSync(resolve(desktopRoot, 'src/main/tray-manager.ts'), 'utf8');
     expect(trayManager).toContain("if (process.platform === 'darwin') icon.setTemplateImage(true);");

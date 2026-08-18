@@ -120,10 +120,17 @@ describe('app CSS visual contracts', () => {
     expect(tokensCss).toContain('--control-compact-lg: 34px;');
     expect(tokensCss).toContain('--control-touch: 44px;');
     expect(cssBlock('.sidebar-row')).toContain('height: var(--control-compact-md);');
-    expect(cssBlock('.sidebar-primary .sidebar-row')).toContain('height: var(--control-compact-sm);');
+    expect(cssBlock('.sidebar-primary .sidebar-row')).toContain('height: var(--control-compact-lg);');
     expect(cssBlock('.composer-menu-item')).toContain('min-height: var(--control-compact-lg);');
     expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?button,[\s\S]*?min-height:\s*var\(--control-touch\) !important;/);
     expect(appCss).toMatch(/@media \(max-width: 760px\)\s*\{[\s\S]*?\.sidebar-task-list\s*\{[^}]*grid-auto-rows:\s*var\(--control-touch\);/);
+  });
+
+  it('keeps the sidebar account entry pinned to the bottom row', () => {
+    const sidebarBottom = cssBlock('.sidebar-bottom');
+
+    expect(sidebarBottom).toContain('grid-row: 5;');
+    expect(sidebarBottom).toContain('align-self: end;');
   });
 
   it('uses shared hover, pressed, focus-visible, and disabled states', () => {
@@ -150,6 +157,26 @@ describe('app CSS visual contracts', () => {
     expect(tokensCss).toContain('--on-accent: var(--custom-on-accent);');
   });
 
+  it('keeps the guest login action synchronized with the selected accent color', () => {
+    const loginCard = cssBlock('.sidebar-login-card');
+    const loginCopy = cssBlock('.sidebar-login-card p');
+    const loginButton = cssBlock('.sidebar-login-button');
+    const loginIcon = cssBlock('.sidebar-login-button svg');
+    const loginHover = cssBlock('.sidebar-login-button:hover');
+
+    expect(loginCard).toContain('width: 100%;');
+    expect(loginCard).toContain('max-width: 100%;');
+    expect(loginCopy).toContain('overflow-wrap: anywhere;');
+    expect(loginCopy).toContain('white-space: normal;');
+    expect(loginButton).toContain('width: 100%;');
+    expect(loginButton).toContain('max-width: 100%;');
+    expect(loginButton).toContain('background: var(--accent);');
+    expect(loginButton).toContain('color: var(--on-accent);');
+    expect(loginButton).toContain('var(--accent-strong)');
+    expect(loginIcon).toContain('color: currentColor;');
+    expect(loginHover).toContain('background: var(--accent-strong);');
+  });
+
   it('keeps sidebar project rows fixed while loading and places the scrollbar at the edge', () => {
     const projectTree = cssBlock('.sidebar-project-tree');
     const sidebarRow = cssBlock('.sidebar-row');
@@ -157,14 +184,13 @@ describe('app CSS visual contracts', () => {
     const currentProjectIcon = cssBlock('.project-row[data-current-project="true"] .project-icon');
     const selectedConversationRow = cssBlock('.nested-conversation-row[aria-current="page"]');
     const accountButton = cssBlock('.sidebar-account-button');
-    const settingsButton = cssBlock('.sidebar-settings-button');
 
     expect(projectTree).toContain('align-content: start;');
     expect(projectTree).toContain('grid-auto-rows: max-content;');
     expect(projectTree).toContain('margin-right: -12px;');
     expect(projectTree).toContain('padding: 0 12px 4px 0;');
     expect(sidebarRow).toContain('height: var(--control-compact-md);');
-    expect(sidebarRow).toContain('font-size: 12px;');
+    expect(sidebarRow).toContain('font-size: 13px;');
     expect(sidebarRow).toContain('font-weight: 500;');
     expect(sidebarRow).toContain('gap: 4px;');
     expect(sidebarRow).toContain('padding: 0 6px;');
@@ -186,9 +212,6 @@ describe('app CSS visual contracts', () => {
     expect(accountButton).toContain('height: 42px;');
     expect(accountButton).toContain('gap: 7px;');
     expect(accountButton).toContain('padding: 0 6px;');
-    expect(settingsButton).toContain('width: 36px;');
-    expect(settingsButton).toContain('height: 36px;');
-    expect(settingsButton).toContain('padding: 0;');
     expect(appCss).toContain(
       '.sidebar-conversation-row-shell:hover .sidebar-conversation-actions'
     );
@@ -445,21 +468,19 @@ describe('app CSS visual contracts', () => {
     ).toContain('border: 0;');
   });
 
-  it('uses a compact wordmark image in the expanded sidebar and centers the collapsed logo button', () => {
+  it('uses a text wordmark in the expanded sidebar and centers the collapsed brand button', () => {
     const brandButton = cssBlock('.sidebar-brand-button');
     const logoLockup = cssBlock('.sidebar-logo-lockup');
-    const wordmark = cssBlock('.sidebar-brand-lockup-logo');
     const logoMark = cssBlock('.sidebar-logo-mark');
     const productName = cssBlock('.sidebar-logo-word');
-    const productVersion = cssBlock('.sidebar-brand-version');
 
     expect(brandButton).toContain('padding: 0;');
     expect(logoLockup).toContain('justify-content: flex-start;');
-    expect(logoLockup).toContain('padding-top: 10px;');
-    expect(wordmark).toContain('width: 72px;');
-    expect(wordmark).toContain('height: 17px;');
-    expect(productName).toContain('font-size: 12px;');
-    expect(productVersion).toContain('font-size: 12px;');
+    expect(logoLockup).toContain('flex-direction: column;');
+    expect(logoLockup).toContain('padding-top: 3px;');
+    expect(productName).toContain('font-size: 17px;');
+    expect(appCss).not.toContain('.sidebar-brand-version');
+    expect(appCss).not.toContain('.sidebar-brand-lockup-logo');
     expect(appCss).not.toContain('.sidebar-logo-full');
     expect(appCss).toMatch(
       /\n\.sidebar-collapse-button\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/
@@ -673,7 +694,7 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.project-drop-overlay')).toContain('pointer-events: none;');
   });
 
-  it('centers the empty composer beneath a compact greeting without decorative controls', () => {
+  it('lays out the empty conversation as a scrollable creator workbench', () => {
     const emptyPage = cssBlock('.conversation-page.is-empty');
     const title = cssBlock('.conversation-empty-greeting h2');
     const subtitle = cssBlock('.conversation-empty-greeting p');
@@ -684,27 +705,36 @@ describe('app CSS visual contracts', () => {
     expect(appCss).not.toContain('.conversation-empty-logo-bg');
     expect(appCss).not.toContain('日常办公');
     expect(appCss).not.toContain('代码开发');
-    expect(emptyPage).toContain('grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);');
+    expect(emptyPage).toContain('grid-template-rows: auto minmax(0, 1fr);');
     expect(titledEmptyPage).toContain(
-      'grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);'
+      'grid-template-rows: auto auto minmax(0, 1fr);'
     );
     expect(appCss).not.toContain(
       '.conversation-page.is-empty.has-header .conversation-empty-state,\n' +
       '.conversation-page.is-empty.has-header .composer-wrap'
     );
-    expect(cssBlock('.conversation-empty-greeting')).toContain('width: min(760px, 100%);');
+    expect(cssBlock('.conversation-empty-state')).toContain('width: min(760px, 100%);');
+    expect(cssBlock('.conversation-empty-greeting')).toContain('display: grid;');
     expect(cssBlock('.conversation-empty-greeting')).toContain('justify-items: start;');
-    expect(cssBlock('.conversation-empty-greeting')).toContain('text-align: left;');
+    expect(cssBlock('.conversation-empty-greeting')).toContain('gap: 5px;');
     expect(title).toContain('font-family: var(--font);');
-    expect(title).toContain('font-size: 30px;');
-    expect(subtitle).toContain('font-size: 30px;');
-    expect(emptyComposer).toContain('align-self: start;');
-    expect(appCss).toMatch(/\.conversation-page\.is-empty \.conversation-empty-greeting,\n\.conversation-page\.is-empty \.conversation-starter-tags\s*\{[^}]*width:\s*min\(740px, 100%\);/);
-    expect(cssBlock('.conversation-page.is-empty .composer-stack')).toContain('width: min(740px, 100%);');
-    expect(appCss).toMatch(/\.conversation-page\.is-empty \.clawee-composer textarea\s*\{[^}]*min-height:\s*72px;/);
+    expect(title).toContain('font-size: 28px;');
+    expect(subtitle).toContain('font-size: 28px;');
+    expect(emptyComposer).toContain('align-self: stretch;');
+    expect(emptyComposer).toContain('overflow-y: auto;');
+    expect(emptyComposer).toContain('padding: clamp(72px, 13vh, 128px) var(--conversation-gutter) 56px;');
+    expect(cssBlock('.conversation-page.is-empty .composer-stack')).toContain('width: min(760px, 100%);');
+    expect(cssBlock('.creator-template-tabs')).toContain('width: min(760px, 100%);');
+    expect(cssBlock('.creator-template-tabs')).toContain('grid-template-columns: repeat(6, minmax(max-content, 1fr));');
+    expect(cssBlock('.creator-tool-grid')).toContain('grid-template-columns: repeat(3, minmax(0, 1fr));');
+    expect(cssBlock('.creator-template-grid')).toContain('grid-template-columns: repeat(5, minmax(0, 1fr));');
+    expect(cssBlock('.creator-template-grid')).toContain('gap: 12px;');
+    expect(cssBlock('.creator-template-copy')).toContain('padding: 9px 10px 11px;');
     expect(appCss).toMatch(
-      /\.conversation-page\.is-empty \.conversation-empty-state,\n\.conversation-page\.is-empty \.composer-wrap\s*\{[^}]*transform:\s*translateY\(clamp\(-150px, -14vh, -108px\)\);/
+      /@media \(max-width: 1100px\) and \(min-width: 921px\)\s*\{[\s\S]*?\.creator-template-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/
     );
+    expect(appCss).toMatch(/\.conversation-page\.is-empty \.clawee-composer textarea\s*\{[^}]*min-height:\s*72px;/);
+    expect(appCss).not.toContain('translateY(clamp(-150px, -14vh, -108px))');
     expect(tokensCss).toContain('--border-hairline: rgba(245, 245, 246, 0.08);');
     expect(tokensCss).toContain('--border-hairline: rgba(24, 24, 27, 0.07);');
     expect(cssBlock('.clawee-composer')).toContain('border: 1px solid var(--composer-border);');

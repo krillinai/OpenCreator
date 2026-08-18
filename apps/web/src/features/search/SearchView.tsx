@@ -7,6 +7,7 @@ import type {
 import { LoaderCircle, Search } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ClaweeProject } from '../projects/project-model.js';
+import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import './search-view.css';
 
 export type SearchViewService = {
@@ -33,6 +34,7 @@ export function SearchView(props: {
   recentThreads: ThreadResponse[];
   onOpenResult(result: ConversationSearchResult): void;
 }) {
+  const l = useLocalizedCopy();
   const [query, setQuery] = useState('');
   const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const [state, setState] = useState<SearchState>(emptySearchState);
@@ -80,13 +82,13 @@ export function SearchView(props: {
             loading: false,
             loadingMore: false,
             hasMore: false,
-            error: '无法搜索会话',
+            error: l('无法搜索会话', 'Could not search conversations'),
           });
         });
     }, SEARCH_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timeout);
-  }, [normalizedQuery, props.connected, props.service]);
+  }, [l, normalizedQuery, props.connected, props.service]);
 
   async function loadMore() {
     if (
@@ -118,7 +120,7 @@ export function SearchView(props: {
       setState(current => ({
         ...current,
         loadingMore: false,
-        error: '无法加载更多搜索结果',
+        error: l('无法加载更多搜索结果', 'Could not load more search results'),
       }));
     }
   }
@@ -147,14 +149,14 @@ export function SearchView(props: {
     : state.results[activeResultIndex];
 
   return (
-    <section className="search-view" aria-label="搜索会话">
+    <section className="search-view" aria-label={l('搜索会话', 'Search conversations')}>
       <div className="search-view__shell">
         <label className="search-view__input">
           <Search size={18} aria-hidden="true" />
           <input
             type="search"
-            aria-label="搜索会话"
-            placeholder="搜索会话内容"
+            aria-label={l('搜索会话', 'Search conversations')}
+            placeholder={l('搜索会话内容', 'Search conversation content')}
             value={query}
             aria-activedescendant={
               activeResult === undefined ? undefined : searchResultDomId(activeResult)
@@ -163,24 +165,24 @@ export function SearchView(props: {
             onKeyDown={handleSearchKeyDown}
           />
           {state.loading ? (
-            <LoaderCircle className="spin" size={17} aria-label="正在搜索" />
+            <LoaderCircle className="spin" size={17} aria-label={l('正在搜索', 'Searching')} />
           ) : null}
         </label>
 
         <div className="search-view__body">
           {!props.connected ? (
-            <SearchStatus title="连接本地服务后可以搜索会话" />
+            <SearchStatus title={l('连接本地服务后可以搜索会话', 'Connect the local service to search conversations')} />
           ) : normalizedQuery.length === 0 ? (
             recentThreads.length === 0 ? (
-              <SearchStatus title="还没有最近会话" />
+              <SearchStatus title={l('还没有最近会话', 'No recent conversations')} />
             ) : (
-              <ConversationSection title="最近会话" label="最近会话列表">
+              <ConversationSection title={l('最近会话', 'Recent conversations')} label={l('最近会话列表', 'Recent conversation list')}>
                 {recentThreads.map(thread => {
                   const result = threadToSearchResult(thread);
                   return (
                     <ConversationRow
                       key={thread.id}
-                      projectName={projectNameForId(thread.projectId, props.projects)}
+                      projectName={projectNameForId(thread.projectId, props.projects, l)}
                       result={result}
                       onOpen={props.onOpenResult}
                     />
@@ -191,16 +193,16 @@ export function SearchView(props: {
           ) : state.error !== undefined ? (
             <SearchStatus title={state.error} alert />
           ) : state.loading ? (
-            <SearchStatus title="正在搜索" loading />
+            <SearchStatus title={l('正在搜索', 'Searching')} loading />
           ) : state.results.length === 0 ? (
-            <SearchStatus title="没有找到匹配的会话" />
+            <SearchStatus title={l('没有找到匹配的会话', 'No matching conversations')} />
           ) : (
-            <ConversationSection title="搜索结果" label="会话搜索结果">
+            <ConversationSection title={l('搜索结果', 'Search results')} label={l('会话搜索结果', 'Conversation search results')}>
               {state.results.map((result, index) => (
                 <ConversationRow
                   active={index === activeResultIndex}
                   key={result.threadId}
-                  projectName={projectNameForId(result.projectId, props.projects)}
+                  projectName={projectNameForId(result.projectId, props.projects, l)}
                   result={result}
                   testId={`search-result-${result.itemId ?? 'title'}`}
                   onOpen={props.onOpenResult}
@@ -211,13 +213,13 @@ export function SearchView(props: {
                   type="button"
                   className="search-view__load-more"
                   disabled={state.loadingMore}
-                  aria-label="加载更多结果"
+                  aria-label={l('加载更多结果', 'Load more results')}
                   onClick={() => void loadMore()}
                 >
                   {state.loadingMore ? (
                     <LoaderCircle className="spin" size={15} aria-hidden="true" />
                   ) : null}
-                  <span>{state.loadingMore ? '正在加载' : '加载更多'}</span>
+                  <span>{state.loadingMore ? l('正在加载', 'Loading') : l('加载更多', 'Load more')}</span>
                 </button>
               ) : null}
             </ConversationSection>
@@ -331,10 +333,11 @@ function threadToSearchResult(thread: ThreadResponse): ConversationSearchResult 
 
 function projectNameForId(
   projectId: string | null,
-  projects: ClaweeProject[]
+  projects: ClaweeProject[],
+  l: LocalizeCopy
 ): string {
-  if (projectId === null) return '未知项目';
-  return projects.find(project => project.id === projectId)?.name ?? '未知项目';
+  if (projectId === null) return l('未知项目', 'Unknown project');
+  return projects.find(project => project.id === projectId)?.name ?? l('未知项目', 'Unknown project');
 }
 
 function searchResultDomId(result: ConversationSearchResult): string {
