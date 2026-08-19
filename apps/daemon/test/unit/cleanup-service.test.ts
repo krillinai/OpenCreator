@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe('cleanup service', () => {
   it('previews old non-active run log directories', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     writeRuntimeFile(join(tempDir, 'runs', 'run_old', 'events.ndjson'), 'done');
     setTreeMtime(join(tempDir, 'runs', 'run_old'), new Date('2026-05-01T00:00:00.000Z'));
 
@@ -57,7 +57,7 @@ describe('cleanup service', () => {
   });
 
   it('does not return recent run directories', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     writeRuntimeFile(join(tempDir, 'runs', 'run_recent', 'events.ndjson'), 'done');
     setTreeMtime(join(tempDir, 'runs', 'run_recent'), new Date('2026-06-20T00:00:00.000Z'));
 
@@ -72,7 +72,7 @@ describe('cleanup service', () => {
   });
 
   it('does not return active run directories', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     writeRuntimeFile(join(tempDir, 'runs', 'run_active_public', 'events.ndjson'), 'queued');
     writeRuntimeFile(join(tempDir, 'runs', 'run_active_internal', 'events.ndjson'), 'running');
     setTreeMtime(join(tempDir, 'runs'), new Date('2026-05-01T00:00:00.000Z'));
@@ -91,7 +91,7 @@ describe('cleanup service', () => {
   });
 
   it('does not return non run_* directories', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     writeRuntimeFile(join(tempDir, 'runs', 'other_1', 'events.ndjson'), 'done');
     setTreeMtime(join(tempDir, 'runs', 'other_1'), new Date('2026-05-01T00:00:00.000Z'));
 
@@ -106,7 +106,7 @@ describe('cleanup service', () => {
   });
 
   it('previews only archived managed thread workspaces', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     writeRuntimeFile(join(tempDir, 'workspaces', 'thread_archived', 'workspace.txt'), 'workspace');
     setTreeMtime(join(tempDir, 'workspaces', 'thread_archived'), new Date('2026-05-01T00:00:00.000Z'));
 
@@ -132,7 +132,7 @@ describe('cleanup service', () => {
   });
 
   it('does not return active managed thread workspaces', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     writeRuntimeFile(join(tempDir, 'workspaces', 'thread_active', 'workspace.txt'), 'workspace');
     setTreeMtime(join(tempDir, 'workspaces', 'thread_active'), new Date('2026-05-01T00:00:00.000Z'));
 
@@ -149,7 +149,7 @@ describe('cleanup service', () => {
   });
 
   it('does not return archived external workspaces', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     writeRuntimeFile(join(tempDir, 'workspaces', 'thread_external', 'workspace.txt'), 'workspace');
     setTreeMtime(join(tempDir, 'workspaces', 'thread_external'), new Date('2026-05-01T00:00:00.000Z'));
 
@@ -166,7 +166,7 @@ describe('cleanup service', () => {
   });
 
   it('rejects invalid olderThanDays', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     const service = createCleanupService({
       dataDir: tempDir,
       runs: makeRunRepository([]),
@@ -182,7 +182,7 @@ describe('cleanup service', () => {
   });
 
   it('skips symlinked candidates with a warning', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     const realRunDir = join(tempDir, 'real-run');
     mkdirSync(join(tempDir, 'runs'), { recursive: true });
     mkdirSync(realRunDir, { recursive: true });
@@ -204,7 +204,7 @@ describe('cleanup service', () => {
   });
 
   it('skips symlinked roots with a warning', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     const realRunsDir = join(tempDir, 'real-runs');
     mkdirSync(realRunsDir, { recursive: true });
     symlinkSync(realRunsDir, join(tempDir, 'runs'));
@@ -223,7 +223,7 @@ describe('cleanup service', () => {
   });
 
   it('deletes candidates after rescanning and leaves non-candidates in place', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     const oldRunDir = join(tempDir, 'runs', 'run_old');
     const recentRunDir = join(tempDir, 'runs', 'run_recent');
     const oldThreadDir = join(tempDir, 'workspaces', 'thread_old');
@@ -269,7 +269,7 @@ describe('cleanup service', () => {
   });
 
   it('does not delete DB rows', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-service-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     writeRuntimeFile(join(tempDir, 'runs', 'run_old', 'events.ndjson'), 'done');
     setTreeMtime(join(tempDir, 'runs', 'run_old'), new Date('2026-05-01T00:00:00.000Z'));
     const rows = new Map([['run_old', makeRunRow({ id: 'run_old' })]]);
@@ -381,7 +381,7 @@ function makeThreadRow(overrides: Partial<ThreadRow> & { id: string }): ThreadRo
     codex_thread_id: null,
     project_id: null,
     enterprise_subject_id: null,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     cwd: tempDir,
     canonical_cwd: tempDir,
     workspace_mode: 'managed',

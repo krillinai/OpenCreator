@@ -136,7 +136,7 @@
 
 ```json
 {
-  "name": "clawee-agent",
+  "name": "opencreator-agent",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.0",
@@ -144,8 +144,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "daemon:dev": "pnpm --filter @clawee/daemon dev",
-    "harness": "pnpm --filter @clawee/harness start"
+    "daemon:dev": "pnpm --filter @opencreator/daemon dev",
+    "harness": "pnpm --filter @opencreator/harness start"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
@@ -200,7 +200,7 @@ coverage/
 
 ```json
 {
-  "name": "@clawee/protocol",
+  "name": "@opencreator/protocol",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -231,7 +231,7 @@ coverage/
 
 ```json
 {
-  "name": "@clawee/daemon",
+  "name": "@opencreator/daemon",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -241,7 +241,7 @@ coverage/
     "test": "vitest run"
   },
   "dependencies": {
-    "@clawee/protocol": "workspace:*",
+    "@opencreator/protocol": "workspace:*",
     "better-sqlite3": "^11.8.1",
     "fastify": "^5.2.1",
     "nanoid": "^5.0.9",
@@ -284,7 +284,7 @@ export default defineConfig({
 
 ```json
 {
-  "name": "@clawee/harness",
+  "name": "@opencreator/harness",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -294,7 +294,7 @@ export default defineConfig({
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@clawee/protocol": "workspace:*"
+    "@opencreator/protocol": "workspace:*"
   }
 }
 ```
@@ -323,13 +323,13 @@ export const protocolVersion = '0.1.0';
 `apps/daemon/src/main.ts`:
 
 ```ts
-console.log('clawee runtime daemon bootstrap');
+console.log('opencreator runtime daemon bootstrap');
 ```
 
 `apps/harness/src/cli.ts`:
 
 ```ts
-console.log('clawee runtime harness bootstrap');
+console.log('opencreator runtime harness bootstrap');
 ```
 
 - [ ] **Step 4: Install and verify scaffold**
@@ -371,7 +371,7 @@ git commit -m "chore: scaffold runtime workspace"
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import type { AgentEventEnvelope, RunRequest, RuntimeErrorCode } from '@clawee/protocol';
+import type { AgentEventEnvelope, RunRequest, RuntimeErrorCode } from '@opencreator/protocol';
 
 describe('protocol shape', () => {
   it('allows a minimal run request', () => {
@@ -411,7 +411,7 @@ describe('protocol shape', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts
 ```
 
 Expected:
@@ -571,7 +571,7 @@ export * from './events.js';
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts
 pnpm typecheck
 ```
 
@@ -617,7 +617,7 @@ afterEach(() => {
 
 describe('runtime storage', () => {
   it('creates schema and persists a run', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-storage-'));
     const db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const runs = createRunRepository(db);
 
@@ -648,7 +648,7 @@ describe('runtime storage', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts
 ```
 
 Expected:
@@ -821,7 +821,7 @@ export function createRunRepository(db: Database.Database) {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts
 pnpm typecheck
 ```
 
@@ -885,7 +885,7 @@ describe('codex home resolution', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-home.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-home.test.ts
 ```
 
 Expected:
@@ -962,7 +962,7 @@ export function resolveCodexHome(input: ResolveCodexHomeInput = {}): ResolvedCod
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-home.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-home.test.ts
 ```
 
 Expected:
@@ -1053,7 +1053,7 @@ Usage: codex exec [OPTIONS] [PROMPT]
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-argv.test.ts test/unit/codex-capabilities.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-argv.test.ts test/unit/codex-capabilities.test.ts
 ```
 
 Expected:
@@ -1067,7 +1067,7 @@ FAIL because codex/argv.ts and codex/capabilities.ts do not exist
 `apps/daemon/src/codex/argv.ts`:
 
 ```ts
-import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
+import type { ReasoningEffort, SandboxMode } from '@opencreator/protocol';
 
 export type BuildCodexExecArgsInput = {
   profile?: string;
@@ -1121,7 +1121,7 @@ export function parseCodexExecHelp(help: string): ExecHelpCapabilities {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-argv.test.ts test/unit/codex-capabilities.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-argv.test.ts test/unit/codex-capabilities.test.ts
 ```
 
 Expected:
@@ -1203,7 +1203,7 @@ describe('event parser and normalizer', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/events.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/events.test.ts
 ```
 
 Expected:
@@ -1238,7 +1238,7 @@ export function parseJsonLine(line: string): JsonLineParseResult {
 
 ```ts
 import { nanoid } from 'nanoid';
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope } from '@opencreator/protocol';
 
 export type NormalizeInput = {
   runId: string;
@@ -1343,7 +1343,7 @@ export function normalizeCodexEvent(input: NormalizeInput): AgentEventEnvelope {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/events.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/events.test.ts
 ```
 
 Expected:
@@ -1386,7 +1386,7 @@ afterEach(() => {
 
 describe('codex runner', () => {
   it('writes prompt to stdin and captures stdout/stderr separately', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -1420,7 +1420,7 @@ describe('codex runner', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/codex-runner.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/codex-runner.test.ts
 ```
 
 Expected:
@@ -1574,7 +1574,7 @@ export function runCodexExec(input: RunCodexExecInput): Promise<RunCodexExecResu
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/codex-runner.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/codex-runner.test.ts
 ```
 
 Expected:
@@ -1619,7 +1619,7 @@ afterEach(() => {
 
 describe('run manager', () => {
   it('creates a run and writes redacted raw/events/stderr/meta files', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -1657,7 +1657,7 @@ describe('run manager', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/run-manager.test.ts
 ```
 
 Expected:
@@ -1683,7 +1683,7 @@ export function redactText(input: string): string {
 `apps/daemon/src/runs/types.ts`:
 
 ```ts
-import type { SandboxMode } from '@clawee/protocol';
+import type { SandboxMode } from '@opencreator/protocol';
 
 export type CreateRunInput = {
   prompt: string;
@@ -1808,7 +1808,7 @@ export function createRunManager(input: CreateRunManagerInput) {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/run-manager.test.ts
 ```
 
 Expected:
@@ -1877,7 +1877,7 @@ describe('runtime api', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 ```
 
 Expected:
@@ -1996,7 +1996,7 @@ console.log(JSON.stringify({ address, token }));
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 ```
 
 Expected:
@@ -2040,7 +2040,7 @@ afterEach(() => {
 
 describe('thread manager', () => {
   it('creates a managed thread with fixed workspace', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-thread-'));
     const manager = createThreadManager({ dataDir: tempDir });
     const thread = manager.createThread({
       workspaceMode: 'managed',
@@ -2058,7 +2058,7 @@ describe('thread manager', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/thread-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/thread-manager.test.ts
 ```
 
 Expected:
@@ -2072,7 +2072,7 @@ FAIL because threads/manager.ts does not exist
 `apps/daemon/src/threads/types.ts`:
 
 ```ts
-import type { CreateThreadRequest, SandboxMode, WorkspaceMode } from '@clawee/protocol';
+import type { CreateThreadRequest, SandboxMode, WorkspaceMode } from '@opencreator/protocol';
 
 export type RuntimeThread = {
   id: string;
@@ -2130,7 +2130,7 @@ export function createThreadManager(input: CreateThreadManagerInput) {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/thread-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/thread-manager.test.ts
 ```
 
 Expected:
@@ -2212,7 +2212,7 @@ describe('mcp argv', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/mcp-argv.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/mcp-argv.test.ts
 ```
 
 Expected:
@@ -2252,7 +2252,7 @@ export function buildMcpAddArgs(input: BuildMcpAddArgsInput): string[] {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/mcp-argv.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/mcp-argv.test.ts
 ```
 
 Expected:
@@ -2313,7 +2313,7 @@ describe('scheduler semantics', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler.test.ts
 ```
 
 Expected:
@@ -2364,7 +2364,7 @@ export function shouldRunMissedSchedule(input: ShouldRunMissedScheduleInput): bo
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler.test.ts
 ```
 
 Expected:
@@ -2425,7 +2425,7 @@ export function runSmokeCommand(command: string[]): SmokeCommandResult {
 import { describe, expect, it } from 'vitest';
 import { runSmokeCommand } from '../../src/codex/smoke.js';
 
-const runRealCodex = process.env.CLAWEE_RUN_REAL_CODEX_SMOKE === '1';
+const runRealCodex = process.env.OPENCREATOR_RUN_REAL_CODEX_SMOKE === '1';
 
 describe.runIf(runRealCodex)('real codex smoke', () => {
   it('captures codex version', () => {
@@ -2447,13 +2447,13 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected:
 
 ```text
-Tests are skipped unless CLAWEE_RUN_REAL_CODEX_SMOKE=1
+Tests are skipped unless OPENCREATOR_RUN_REAL_CODEX_SMOKE=1
 ```
 
 - [ ] **Step 4: Run real smoke manually on a machine with Codex installed**
@@ -2461,7 +2461,7 @@ Tests are skipped unless CLAWEE_RUN_REAL_CODEX_SMOKE=1
 Run:
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected:
@@ -2504,7 +2504,7 @@ afterEach(() => {
 
 describe('diagnostics', () => {
   it('collects redacted run diagnostics files', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-'));
     const runDir = join(tempDir, 'runs', 'run_1');
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, 'meta.json'), '{"id":"run_1"}');
@@ -2528,7 +2528,7 @@ describe('diagnostics', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/diagnostics.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/diagnostics.test.ts
 ```
 
 Expected:
@@ -2633,7 +2633,7 @@ Placeholder scan:
 
 Type consistency:
 
-1. `SandboxMode`、`ReasoningEffort` 来自 `@clawee/protocol`。
+1. `SandboxMode`、`ReasoningEffort` 来自 `@opencreator/protocol`。
 2. `AgentEventEnvelope` 的 `payload.type` 与 `type` 对齐。
 3. Run id 使用 `run_` 前缀，Thread id 使用 `thread_` 前缀。
 4. `CODEX_HOME` 解析返回 `global | isolated`，与契约文档一致。

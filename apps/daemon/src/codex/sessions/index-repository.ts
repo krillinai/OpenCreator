@@ -1,4 +1,4 @@
-import type { ThreadHistoryItem } from '@clawee/protocol';
+import type { ThreadHistoryItem } from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import type { CodexSessionSummary } from './scanner.js';
 import {

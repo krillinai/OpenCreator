@@ -1,4 +1,4 @@
-import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
+import type { ReasoningEffort, SandboxMode } from '@opencreator/protocol';
 import type { ChildProcess } from 'node:child_process';
 import {
   buildCodexMcpConfigArgs,
@@ -272,8 +272,8 @@ export function createCodexAppServerHost(
 
   const initializePromise = request('initialize', {
     clientInfo: {
-      name: 'clawee-agent',
-      title: 'Clawee Agent',
+      name: 'opencreator-agent',
+      title: 'OpenCreator Agent',
       version: '0.1.0'
     },
     capabilities: {
@@ -355,7 +355,7 @@ export function createCodexAppServerHost(
               sandbox: job.input.sandbox,
               approvalPolicy: approvalPolicy(job.input.sandbox),
               approvalsReviewer: 'user',
-              serviceName: 'clawee-agent'
+              serviceName: 'opencreator-agent'
             }
           : {
               threadId: job.input.codexThreadId,
@@ -633,7 +633,7 @@ export function createCodexAppServerHost(
     generation: number,
     onWritten?: () => void
   ): Promise<unknown> {
-    const id = `clawee_${++requestSequence}`;
+    const id = `opencreator_${++requestSequence}`;
     const response = new Promise<unknown>((resolve, reject) => {
       pending.set(id, { generation, resolve, reject });
     });

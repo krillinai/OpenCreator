@@ -359,10 +359,10 @@ describe('persistent app-server executor', () => {
           mcpServers: [{
             name: 'enterprise_crm',
             url: 'https://enterprise.example/mcp/servers/crm',
-            bearerTokenEnvVar: 'CLAWEE_ENTERPRISE_MCP_TOKEN'
+            bearerTokenEnvVar: 'OPENCREATOR_ENTERPRISE_MCP_TOKEN'
           }],
           env: {
-            CLAWEE_ENTERPRISE_MCP_TOKEN: 'secret'
+            OPENCREATOR_ENTERPRISE_MCP_TOKEN: 'secret'
           },
           configurationFingerprint: fingerprint
         }))
@@ -494,7 +494,7 @@ function createFixture(): {
   readMessages(): Array<Record<string, unknown>>;
   readSpawns(): Array<{ pid: number; args: string[] }>;
 } {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-persistent-app-server-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-persistent-app-server-'));
   const fakeCodex = createFakeAppServer(tempDir);
   const injection: AgentToolProcessInjection = {
     mcpServers: [],
@@ -548,7 +548,7 @@ function thread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
     title: '测试会话',
     projectId: 'project-1',
     enterpriseSubjectId: null,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     cwd: tempDir,
     canonicalCwd: tempDir,
     workspaceMode: 'external',

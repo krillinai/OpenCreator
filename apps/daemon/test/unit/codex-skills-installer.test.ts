@@ -15,7 +15,7 @@ afterEach(() => {
 
 describe('codex skills installer', () => {
   it('installs a local skill directory into CODEX_HOME skills', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-install-'));
     const source = createSourceSkill('writer', 'first');
     const codexHome = join(tempDir, 'codex-home');
     const installer = createSkillInstaller({ codexHome });
@@ -27,7 +27,7 @@ describe('codex skills installer', () => {
   });
 
   it('rejects duplicates unless overwrite is true', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-install-'));
     const first = createSourceSkill('writer-first', 'first');
     const second = createSourceSkill('writer-second', 'second');
     const codexHome = join(tempDir, 'codex-home');
@@ -43,7 +43,7 @@ describe('codex skills installer', () => {
   });
 
   it('deletes a skill after backing it up', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-install-'));
     const source = createSourceSkill('writer', 'first');
     const codexHome = join(tempDir, 'codex-home');
     const installer = createSkillInstaller({ codexHome });
@@ -57,7 +57,7 @@ describe('codex skills installer', () => {
   });
 
   it('rolls back a fresh install or restores an overwritten backup', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-rollback-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-rollback-'));
     const first = createSourceSkill('writer-first', 'first');
     const second = createSourceSkill('writer-second', 'second');
     const freshSource = createSourceSkill('fresh-source', 'fresh');
@@ -85,7 +85,7 @@ describe('codex skills installer', () => {
   });
 
   it('keeps the current skill when rollback backup is missing', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-rollback-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-rollback-'));
     const current = createSourceSkill('writer-current', 'current');
     const codexHome = join(tempDir, 'codex-home');
     const installer = createSkillInstaller({ codexHome });
@@ -100,7 +100,7 @@ describe('codex skills installer', () => {
   });
 
   it('keeps the current skill when rollback backup contains a symlink', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-rollback-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-rollback-'));
     const current = createSourceSkill('writer-current', 'current');
     const backup = createSourceSkill('writer-backup', 'backup');
     const codexHome = join(tempDir, 'codex-home');
@@ -117,7 +117,7 @@ describe('codex skills installer', () => {
   });
 
   it('restores the current skill when applying a prepared rollback backup fails', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-rollback-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-rollback-'));
     const current = createSourceSkill('writer-current', 'current');
     const backup = createSourceSkill('writer-backup', 'backup');
     const codexHome = join(tempDir, 'codex-home');
@@ -158,7 +158,7 @@ describe('codex skills installer', () => {
   });
 
   it('rejects a sourcePath directory that is a symlink', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-install-'));
     const source = createSourceSkill('writer', 'first');
     const linkedSource = join(tempDir, 'linked-writer');
     const codexHome = join(tempDir, 'codex-home');

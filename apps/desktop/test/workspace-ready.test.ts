@@ -3,8 +3,8 @@ import { isWorkspaceUrl } from '../src/main/window-manager.js';
 
 describe('Workspace Ready sender validation', () => {
   it('accepts only the packaged workspace origin in production', () => {
-    expect(isWorkspaceUrl('clawee-app://app/index.html', false)).toBe(true);
-    expect(isWorkspaceUrl('clawee-app://bootstrap/index.html', false)).toBe(false);
+    expect(isWorkspaceUrl('opencreator-app://app/index.html', false)).toBe(true);
+    expect(isWorkspaceUrl('opencreator-app://bootstrap/index.html', false)).toBe(false);
     expect(isWorkspaceUrl('https://example.com', false)).toBe(false);
   });
 

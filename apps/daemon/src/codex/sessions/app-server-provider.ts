@@ -2,7 +2,7 @@ import type {
   ConversationSearchQuery,
   ConversationSearchSnippetSegment,
   ThreadHistoryItem
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { CodexAppServerRequestClient } from '../app-server-client.js';
 import { CodexAppServerResponseError } from '../app-server-client.js';
 import { extractPublicConversationInput } from '../../threads/conversation-title.js';
@@ -371,7 +371,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const SCHEDULE_EXECUTION_PREFIX = '这是 Clawee 已经触发的一次计划任务执行。';
+const SCHEDULE_EXECUTION_PREFIX = '这是 OpenCreator 已经触发的一次计划任务执行。';
 const SCHEDULE_TRIGGER_MARKER = '\n本次触发时间：';
 const SCHEDULE_CONTENT_MARKER = '\n任务内容：\n';
 

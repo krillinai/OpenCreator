@@ -13,7 +13,7 @@ afterEach(() => {
 
 describe('Codex app-server client', () => {
   it('initializes lazily and reuses one process for concurrent requests', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-client-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-client-'));
     const codexBin = createFakeAppServer(tempDir);
     const client = createCodexAppServerClient({
       codexBin,
@@ -37,7 +37,7 @@ describe('Codex app-server client', () => {
   });
 
   it('restarts the process after an initialization timeout', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-client-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-client-'));
     const codexBin = createTimeoutThenRecoverAppServer(tempDir);
     const client = createCodexAppServerClient({
       codexBin,
@@ -112,12 +112,12 @@ fi
 while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*)
-      printf '%s\\n' '{"id":"clawee_sessions_1","result":{"userAgent":"fake"}}'
+      printf '%s\\n' '{"id":"opencreator_sessions_1","result":{"userAgent":"fake"}}'
       ;;
     *'"method":"initialized"'*)
       ;;
     *'"method":"thread/list"'*)
-      printf '%s\\n' '{"id":"clawee_sessions_2","result":{"data":[{"id":"thread-recovered"}]}}'
+      printf '%s\\n' '{"id":"opencreator_sessions_2","result":{"data":[{"id":"thread-recovered"}]}}'
       ;;
   esac
 done

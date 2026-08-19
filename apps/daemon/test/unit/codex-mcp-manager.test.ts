@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe('codex mcp manager', () => {
   it('runs add/list/get/remove through codex and stores redacted operations', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-mcp-manager-'));
     const codexHome = makeCodexHome(join(tempDir, 'codex-home'), 'isolated');
     const codexBin = makeFakeCodex(tempDir);
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -77,7 +77,7 @@ describe('codex mcp manager', () => {
   });
 
   it('rejects unconfirmed global CODEX_HOME writes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-mcp-manager-'));
     const codexHome = makeCodexHome(join(tempDir, 'codex-home'), 'global');
     const codexBin = makeFakeCodex(tempDir);
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -96,7 +96,7 @@ describe('codex mcp manager', () => {
   });
 
   it('supports destructured addServer calls and still logs the verification get', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-mcp-manager-'));
     const codexHome = makeCodexHome(join(tempDir, 'codex-home'), 'isolated');
     const codexBin = makeFakeCodex(tempDir);
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -119,7 +119,7 @@ describe('codex mcp manager', () => {
   });
 
   it('redacts add request env values from failed operation diagnostics', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-mcp-manager-'));
     const codexHome = makeCodexHome(join(tempDir, 'codex-home'), 'isolated');
     const codexBin = makeFakeCodex(tempDir);
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -145,7 +145,7 @@ describe('codex mcp manager', () => {
   });
 
   it('returns diagnostics and logs a failed operation when list fails', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-mcp-manager-'));
     const codexHome = makeCodexHome(join(tempDir, 'fail-list-codex-home'), 'isolated');
     const codexBin = makeFakeCodex(tempDir);
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

@@ -62,7 +62,7 @@ test('Finder 最小 PATH 下可发现 nvm 安装的 Codex', async () => {
   try {
     await waitForRuntimeReady(fixture.page);
     const state = await fixture.page.evaluate(
-      () => window.claweeDesktop?.readBootstrapState()
+      () => window.opencreatorDesktop?.readBootstrapState()
     );
     expect(state).toMatchObject({
       phase: 'ready',
@@ -91,7 +91,7 @@ test('Finder 最小 PATH 下可发现 ChatGPT 应用内置的 Codex', async () =
   try {
     await waitForRuntimeReady(fixture.page);
     const state = await fixture.page.evaluate(
-      () => window.claweeDesktop?.readBootstrapState()
+      () => window.opencreatorDesktop?.readBootstrapState()
     );
     expect(state).toMatchObject({
       phase: 'ready',
@@ -110,13 +110,13 @@ test('Finder 最小 PATH 下可发现 ChatGPT 应用内置的 Codex', async () =
   }
 });
 
-test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON、二进制和 SSE', async ({}, testInfo) => {
+test('成功 Probe 后进入 Dashboard，刷新不重复 Probe，并代理 JSON、二进制和 SSE', async ({}, testInfo) => {
   const fixture = await launchPackagedDesktop('success');
   try {
     await waitForWorkspace(fixture.page);
     await expect.poll(() => readCounter(fixture.stateDir, 'probe-count.txt')).toBe(1);
     const startupMetrics = await fixture.page.evaluate(async () => (
-      await window.claweeDesktop?.readBootstrapState()
+      await window.opencreatorDesktop?.readBootstrapState()
     )?.startupMetrics);
     expect(startupMetrics).toMatchObject({
       appEntryAt: expect.any(Number),
@@ -133,10 +133,10 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
     const security = await fixture.page.evaluate(async () => ({
       requireType: typeof (window as Window & { require?: unknown }).require,
       processType: typeof (window as Window & { process?: unknown }).process,
-      bridgeKind: window.claweeDesktop?.kind,
-      windowChrome: window.claweeDesktop?.windowChrome,
-      resolveDroppedFilePathType: typeof window.claweeDesktop?.resolveDroppedFilePath,
-      connection: await window.claweeDesktop?.readConnectionConfig()
+      bridgeKind: window.opencreatorDesktop?.kind,
+      windowChrome: window.opencreatorDesktop?.windowChrome,
+      resolveDroppedFilePathType: typeof window.opencreatorDesktop?.resolveDroppedFilePath,
+      connection: await window.opencreatorDesktop?.readConnectionConfig()
     }));
     expect(security).toMatchObject({
       requireType: 'undefined',
@@ -154,15 +154,15 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
       resolveDroppedFilePathType: 'function'
     });
     expect(security.connection).toEqual({
-      baseUrl: '/.clawee/runtime'
+      baseUrl: '/.opencreator/runtime'
     });
     if (process.platform === 'darwin') {
       const titleBarLayout = await fixture.page.evaluate(() => {
         const dragRegion = document.querySelector<HTMLElement>(
           '.desktop-titlebar-drag-region'
         )!;
-        const sidebar = document.querySelector<HTMLElement>('.clawee-sidebar')!;
-        const mainPane = document.querySelector<HTMLElement>('.clawee-main-pane')!;
+        const sidebar = document.querySelector<HTMLElement>('.opencreator-sidebar')!;
+        const mainPane = document.querySelector<HTMLElement>('.opencreator-main-pane')!;
         const dragRect = dragRegion.getBoundingClientRect();
         return {
           shellCapability: document.querySelector('.app-drop-shell')
@@ -212,7 +212,7 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
 
     await expect.poll(async () => await fixture.page.evaluate(async () => {
       try {
-        const response = await fetch('/.clawee/runtime/healthz', {
+        const response = await fetch('/.opencreator/runtime/healthz', {
           signal: AbortSignal.timeout(2_000)
         });
         const text = await response.text();
@@ -241,8 +241,8 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
         fileName: 'proxy.txt',
         mime: 'text/plain'
       });
-      const bytes = new TextEncoder().encode('clawee desktop binary proxy');
-      const upload = await fetch(`/.clawee/runtime/attachments?${query}`, {
+      const bytes = new TextEncoder().encode('opencreator desktop binary proxy');
+      const upload = await fetch(`/.opencreator/runtime/attachments?${query}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: bytes
@@ -251,10 +251,10 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
         attachment: { id: string };
       };
       const content = await fetch(
-        `/.clawee/runtime/attachments/${encodeURIComponent(uploaded.attachment.id)}/content?draftId=${encodeURIComponent(draftId)}`
+        `/.opencreator/runtime/attachments/${encodeURIComponent(uploaded.attachment.id)}/content?draftId=${encodeURIComponent(draftId)}`
       );
 
-      const runResponse = await fetch('/.clawee/runtime/runs', {
+      const runResponse = await fetch('/.opencreator/runtime/runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -265,14 +265,14 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
       const run = await runResponse.json() as { id: string };
       let status = '';
       for (let attempt = 0; attempt < 100; attempt += 1) {
-        const current = await fetch(`/.clawee/runtime/runs/${encodeURIComponent(run.id)}`);
+        const current = await fetch(`/.opencreator/runtime/runs/${encodeURIComponent(run.id)}`);
         const payload = await current.json() as { status: string };
         status = payload.status;
         if (['succeeded', 'failed', 'canceled'].includes(status)) break;
         await new Promise(resolveWait => setTimeout(resolveWait, 50));
       }
       const events = await fetch(
-        `/.clawee/runtime/runs/${encodeURIComponent(run.id)}/events?fromSeq=0`
+        `/.opencreator/runtime/runs/${encodeURIComponent(run.id)}/events?fromSeq=0`
       );
       return {
         uploadStatus: upload.status,
@@ -287,13 +287,13 @@ test('成功 Probe 后进入工作台，刷新不重复 Probe，并代理 JSON�
     expect(proxyResult).toMatchObject({
       uploadStatus: 201,
       contentStatus: 200,
-      contentText: 'clawee desktop binary proxy',
+      contentText: 'opencreator desktop binary proxy',
       runStatus: 'succeeded'
     });
     expect(proxyResult.eventContentType).toContain('text/event-stream');
     expect(proxyResult.eventText).toContain('event: done');
 
-    await launchSecondInstance(fixture, ['clawee://tasks']);
+    await launchSecondInstance(fixture, ['opencreator://tasks']);
     await expect.poll(() => fixture.page.evaluate(() => window.location.hash))
       .toBe('#/tasks');
 
@@ -344,7 +344,7 @@ test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可
       const historyGate = new Promise<void>(resolve => {
         releaseHistory = resolve;
       });
-      Object.defineProperty(window, '__claweeReleaseHistoryLoad', {
+      Object.defineProperty(window, '__opencreatorReleaseHistoryLoad', {
         configurable: true,
         value: () => releaseHistory?.()
       });
@@ -371,8 +371,8 @@ test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可
     await expect(fixture.page.getByText('数据分析')).toHaveCount(0);
     await fixture.page.evaluate(() => {
       (
-        window as Window & { __claweeReleaseHistoryLoad?: () => void }
-      ).__claweeReleaseHistoryLoad?.();
+        window as Window & { __opencreatorReleaseHistoryLoad?: () => void }
+      ).__opencreatorReleaseHistoryLoad?.();
     });
     await expect(fixture.page.getByRole('status', {
       name: '正在加载会话历史'
@@ -381,15 +381,15 @@ test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可
 
     const title = fixture.page.getByRole('heading', { name: 'hello' });
     const fileButton = fixture.page
-      .locator('.clawee-main-titlebar')
+      .locator('.opencreator-main-titlebar')
       .getByRole('button', { name: '文件', exact: true });
     await expect(title).toBeVisible();
     await expect(fileButton).toBeVisible();
 
     if (process.platform === 'darwin') {
       const titlebarLayout = await fixture.page.evaluate(() => {
-        const mainPane = document.querySelector<HTMLElement>('.clawee-main-pane')!;
-        const titlebar = document.querySelector<HTMLElement>('.clawee-main-titlebar')!;
+        const mainPane = document.querySelector<HTMLElement>('.opencreator-main-pane')!;
+        const titlebar = document.querySelector<HTMLElement>('.opencreator-main-titlebar')!;
         const title = titlebar.querySelector<HTMLElement>('h1')!;
         const fileButton = titlebar.querySelector<HTMLElement>('.conversation-file-button')!;
         const conversationPage = document.querySelector<HTMLElement>('.conversation-page')!;
@@ -524,7 +524,7 @@ test('打包 App 可稳定预览隐藏正文和本地图片，并阻止用户脚
     await expect(heading).toBeVisible({ timeout: 8_000 });
     await expect(frame.getByText('隐藏正文已经恢复，本地背景图已经内联。')).toBeVisible();
     await expect.poll(
-      () => frame.locator('html').getAttribute('data-clawee-preview-state')
+      () => frame.locator('html').getAttribute('data-opencreator-preview-state')
     ).toBe('recovered');
 
     const frameRect = await preview.boundingBox();
@@ -573,7 +573,7 @@ test('打包 App 可稳定预览隐藏正文和本地图片，并阻止用户脚
   }
 });
 
-test('packaged app persists Clawee projects when Codex app-server is unavailable', async ({
+test('packaged app persists OpenCreator projects when Codex app-server is unavailable', async ({
 }, testInfo) => {
   let fixture = await launchPackagedDesktop('success');
   const projectDir = join(fixture.root, 'persistent-project');
@@ -582,31 +582,29 @@ test('packaged app persists Clawee projects when Codex app-server is unavailable
   try {
     await waitForWorkspace(fixture.page);
     await expect(fixture.page.getByText('本机目录')).toHaveCount(0);
-    await expect(fixture.page.getByRole('button', {
-      name: '默认项目',
-      exact: true
-    })).toHaveAttribute('data-current-project', 'true');
+    await expect.poll(async () => {
+      const response = await runtimeRequest<{
+        projects: Array<{ cwd: string; name: string; status: string }>;
+      }>(fixture.page, 'GET', '/projects?status=all');
+      return response.status === 200 ? response.body.projects : [];
+    }).toEqual([
+      expect.objectContaining({
+        cwd: join(fixture.root, 'Documents', 'OpenCreator', 'Default Project'),
+        name: '默认项目',
+        status: 'active'
+      })
+    ]);
     await expect(fixture.page.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
     expect(existsSync(
-      join(fixture.root, 'Documents', 'Clawee', 'Default Project')
+      join(fixture.root, 'Documents', 'OpenCreator', 'Default Project')
     )).toBe(true);
-    await fixture.page.getByRole('button', {
-      name: '选择项目 默认项目'
-    }).click();
-    await expect(fixture.page.getByRole('dialog', { name: '选择项目' })).toBeVisible();
-    await expect(fixture.page.getByRole('option', {
-      name: '默认项目'
-    })).toHaveAttribute('aria-selected', 'true');
+    await fixture.page.getByRole('button', { name: '我的项目' }).click();
     await expect(fixture.page.getByRole('button', {
-      name: '新建项目'
-    })).toBeVisible();
-    await expect(fixture.page.getByRole('button', {
-      name: '使用现有文件夹'
+      name: '打开项目 默认项目'
     })).toBeVisible();
     await fixture.page.screenshot({
-      path: testInfo.outputPath('project-selector-2026-07-21.png')
+      path: testInfo.outputPath('project-library-2026-08-19.png')
     });
-    await fixture.page.keyboard.press('Escape');
 
     const initialCodexStatus = await runtimeRequest<{
       capabilities: { appServer?: boolean };
@@ -636,14 +634,11 @@ test('packaged app persists Clawee projects when Codex app-server is unavailable
     await fixture.page.reload({ waitUntil: 'domcontentloaded' });
     await waitForWorkspace(fixture.page);
     const persistentProjectButton = fixture.page.getByRole('button', {
-      name: '持久化项目',
-      exact: true
+      name: '打开项目 持久化项目'
     });
     await expect(persistentProjectButton).toBeVisible();
     await persistentProjectButton.click();
-    await expect(fixture.page.getByRole('button', {
-      name: /持久化会话.*刚刚/
-    })).toBeVisible();
+    await expect(fixture.page.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
     await expect(fixture.page.getByText('本机目录')).toHaveCount(0);
 
     const previous = fixture;
@@ -656,15 +651,13 @@ test('packaged app persists Clawee projects when Codex app-server is unavailable
     };
 
     await waitForWorkspace(fixture.page);
+    await fixture.page.getByRole('button', { name: '我的项目' }).click();
     const relaunchedPersistentProjectButton = fixture.page.getByRole('button', {
-      name: '持久化项目',
-      exact: true
+      name: '打开项目 持久化项目'
     });
     await expect(relaunchedPersistentProjectButton).toBeVisible();
     await relaunchedPersistentProjectButton.click();
-    await expect(fixture.page.getByRole('button', {
-      name: /持久化会话.*刚刚/
-    })).toBeVisible();
+    await expect(fixture.page.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
     await expect(fixture.page.getByText('本机目录')).toHaveCount(0);
 
     const persistedProjects = await runtimeRequest<{
@@ -755,13 +748,13 @@ test('打包 App 首页 Skills 菜单保持在内容区内', async ({}, testInfo
   }
 });
 
-test('后台 Probe 失败时仍进入工作台并暴露诊断状态', async () => {
+test('后台 Probe 失败时仍进入 Dashboard 并暴露诊断状态', async () => {
   const fixture = await launchPackagedDesktop('probe-failure');
   try {
     await waitForWorkspace(fixture.page);
     await expect.poll(() => readCounter(fixture.stateDir, 'probe-count.txt')).toBe(1);
     await expect.poll(async () => await fixture.page.evaluate(async () => {
-      const response = await fetch('/.clawee/runtime/codex/status');
+      const response = await fetch('/.opencreator/runtime/codex/status');
       const payload = await response.json() as {
         availabilityProbe?: { status?: string; errorCode?: string };
         diagnostics?: string[];
@@ -778,16 +771,16 @@ test('后台 Probe 失败时仍进入工作台并暴露诊断状态', async () =
       errorCode: 'CODEX_PROBE_EXIT_NON_ZERO',
       hasDiagnostic: true
     });
-    expect(fixture.page.url()).toContain('clawee-app://app/');
+    expect(fixture.page.url()).toContain('opencreator-app://app/');
   } finally {
     await closeFixture(fixture);
   }
 });
 
-test('工作台握手超时后显示本地错误页并可无 Probe 重载', async () => {
+test('Dashboard 握手超时后显示本地错误页并可无 Probe 重载', async () => {
   const fixture = await launchPackagedDesktop('workspace-failure');
   try {
-    await expect(fixture.page.locator('#status-title')).toHaveText('工作台加载失败');
+    await expect(fixture.page.locator('#status-title')).toHaveText('Dashboard 加载失败');
     await expect(fixture.page.locator('#reload-workspace')).toBeVisible();
     await expect(fixture.page.locator('#restart-runtime')).toBeVisible();
     await expect(fixture.page.locator('#failure-actions')).toBeHidden();
@@ -815,8 +808,8 @@ test('Daemon 异常退出后自动恢复且不重复 Probe', async () => {
     const replacementPid = await waitForDaemonUtilityPid(mainPid, firstDaemonPid);
     expect(replacementPid).not.toBe(firstDaemonPid);
     await expect.poll(async () => await fixture.page.evaluate(async () => {
-      const state = await window.claweeDesktop?.readBootstrapState();
-      const response = await fetch('/.clawee/runtime/healthz').catch(() => undefined);
+      const state = await window.opencreatorDesktop?.readBootstrapState();
+      const response = await fetch('/.opencreator/runtime/healthz').catch(() => undefined);
       return {
         phase: state?.phase,
         health: response?.status
@@ -829,7 +822,7 @@ test('Daemon 异常退出后自动恢复且不重复 Probe', async () => {
 
     process.kill(replacementPid, 'SIGKILL');
     await expect.poll(async () => await fixture.page.evaluate(async () => {
-      const state = await window.claweeDesktop?.readBootstrapState();
+      const state = await window.opencreatorDesktop?.readBootstrapState();
       return {
         phase: state?.phase,
         code: state?.error?.code
@@ -847,15 +840,15 @@ test('Daemon 异常退出后自动恢复且不重复 Probe', async () => {
   }
 });
 
-test('IPC 拒绝非 Clawee 页面来源', async () => {
+test('IPC 拒绝非 OpenCreator 页面来源', async () => {
   const fixture = await launchPackagedDesktop('success');
   try {
     await waitForWorkspace(fixture.page);
     await fixture.page.goto('data:text/html,<title>untrusted</title>');
     const result = await fixture.page.evaluate(async () => {
-      if (!window.claweeDesktop) return 'bridge-missing';
+      if (!window.opencreatorDesktop) return 'bridge-missing';
       try {
-        await window.claweeDesktop.readConnectionConfig();
+        await window.opencreatorDesktop.readConnectionConfig();
         return 'unexpected-success';
       } catch (error) {
         return String(error instanceof Error ? error.message : error);
@@ -867,32 +860,19 @@ test('IPC 拒绝非 Clawee 页面来源', async () => {
   }
 });
 
-test('启动页使用新版品牌图标', async ({}, testInfo) => {
+test('启动页只显示 OpenCreator 文字品牌', async ({}, testInfo) => {
   const fixture = await launchPackagedDesktop('probe-hang');
   try {
     await fixture.page.waitForURL(url => (
-      url.protocol === 'clawee-app:'
+      url.protocol === 'opencreator-app:'
       && url.hostname === 'bootstrap'
     ));
-    const brandMark = fixture.page.locator('.brand-mark');
-    await expect(brandMark).toBeVisible();
-    await expect(brandMark).toHaveCSS('width', '72px');
-    await expect(brandMark).toHaveCSS('height', '72px');
-
-    const renderedAssetHash = await brandMark.evaluate(async image => {
-      const response = await fetch((image as HTMLImageElement).currentSrc);
-      const contents = await response.arrayBuffer();
-      const digest = await crypto.subtle.digest('SHA-256', contents);
-      return Array.from(new Uint8Array(digest))
-        .map(value => value.toString(16).padStart(2, '0'))
-        .join('');
-    });
-    expect(renderedAssetHash).toBe(
-      '5025bac0dc2456a3da5b8850562446fed513ee7b0f71dec119efc33161574e8e'
-    );
+    await expect(fixture.page.locator('.brand-name')).toHaveText('OpenCreator');
+    await expect(fixture.page.locator('.brand-mark')).toHaveCount(0);
+    await expect(fixture.page.locator('img')).toHaveCount(0);
 
     await fixture.page.screenshot({
-      path: testInfo.outputPath('clawee-startup-2026-07-27.png')
+      path: testInfo.outputPath('opencreator-startup-2026-08-19.png')
     });
   } finally {
     await closeFixture(fixture);
@@ -908,7 +888,7 @@ test('退出期间会回收仍在 Probe 中的 Codex 子进程', async () => {
     expect(isProcessAlive(codexPid)).toBe(true);
 
     await fixture.page.evaluate(() => {
-      void window.claweeDesktop?.quit();
+      void window.opencreatorDesktop?.quit();
     });
     expect(await waitForProcessExit(fixture.process, 15_000)).toBe(true);
     await expect.poll(() => isProcessAlive(codexPid), { timeout: 15_000 }).toBe(false);
@@ -931,7 +911,7 @@ async function launchPackagedDesktop(
     misleadingCodexWrapper?: boolean;
   } = {}
 ): Promise<DesktopFixture> {
-  const root = mkdtempSync(join(tmpdir(), 'clawee-desktop-e2e-'));
+  const root = mkdtempSync(join(tmpdir(), 'opencreator-desktop-e2e-'));
   const binDir = options.codexLocation === 'nvm'
     ? join(root, '.nvm', 'versions', 'node', 'v22.14.0', 'bin')
     : options.codexLocation === 'chatgpt-app'
@@ -941,7 +921,7 @@ async function launchPackagedDesktop(
   const codexHome = join(root, 'codex-home');
   const userData = join(root, 'user-data');
   const enterpriseRunId = randomUUID();
-  const enterpriseConfigPath = join(root, '.clawee', 'config.toml');
+  const enterpriseConfigPath = join(root, '.opencreator', 'config.toml');
   writeCodexShim(binDir);
   writeEnterpriseE2EConfig(enterpriseConfigPath, enterpriseOrigin);
   if (options.misleadingCodexWrapper === true) {
@@ -953,8 +933,8 @@ async function launchPackagedDesktop(
     args: [
       `--user-data-dir=${userData}`,
       '--disable-gpu',
-      `--clawee-enterprise-e2e=${enterpriseRunId}`,
-      `--clawee-enterprise-e2e-config=${enterpriseConfigPath}`
+      `--opencreator-enterprise-e2e=${enterpriseRunId}`,
+      `--opencreator-enterprise-e2e-config=${enterpriseConfigPath}`
     ],
     env: {
       ...withoutElectronRunAsNode(process.env),
@@ -968,16 +948,16 @@ async function launchPackagedDesktop(
             USERPROFILE: root
           }
         : {}),
-      CLAWEE_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
+      OPENCREATOR_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
       CODEX_HOME: codexHome,
-      CLAWEE_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
-      CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
-      CLAWEE_E2E_FAKE_CODEX_MODE: mode,
-      CLAWEE_ENTERPRISE_E2E_RUN_ID: enterpriseRunId,
+      OPENCREATOR_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
+      OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
+      OPENCREATOR_E2E_FAKE_CODEX_MODE: mode,
+      OPENCREATOR_ENTERPRISE_E2E_RUN_ID: enterpriseRunId,
       ...(mode === 'workspace-failure'
         ? {
-            CLAWEE_E2E_IGNORE_FIRST_WORKSPACE_READY: '1',
-            CLAWEE_E2E_WORKSPACE_READY_TIMEOUT_MS: '300'
+            OPENCREATOR_E2E_IGNORE_FIRST_WORKSPACE_READY: '1',
+            OPENCREATOR_E2E_WORKSPACE_READY_TIMEOUT_MS: '300'
           }
         : {})
     },
@@ -997,16 +977,16 @@ function minimalSystemPath(): string {
 
 async function waitForWorkspace(page: Page): Promise<void> {
   await waitForRuntimeReady(page);
-  await expect(page.locator('.clawee-shell')).toBeVisible();
+  await expect(page.locator('.opencreator-shell')).toBeVisible();
 }
 
 async function waitForRuntimeReady(page: Page): Promise<void> {
   await page.waitForURL(url => (
-    url.protocol === 'clawee-app:'
+    url.protocol === 'opencreator-app:'
     && url.hostname === 'app'
   ), { timeout: 45_000 });
   await expect.poll(async () => await page.evaluate(async () => {
-    return (await window.claweeDesktop?.readBootstrapState())?.phase;
+    return (await window.opencreatorDesktop?.readBootstrapState())?.phase;
   })).toBe('ready');
 }
 
@@ -1017,7 +997,7 @@ async function runtimeRequest<T>(
   body?: unknown
 ): Promise<{ status: number; body: T }> {
   return await page.evaluate(async ({ method, path, body }) => {
-    const response = await fetch(`/.clawee/runtime${path}`, {
+    const response = await fetch(`/.opencreator/runtime${path}`, {
       method,
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
@@ -1031,7 +1011,7 @@ async function runtimeRequest<T>(
 
 async function closeFixture(fixture: DesktopFixture): Promise<void> {
   const logoutCompleted = await fixture.page.evaluate(async () => {
-    const response = await fetch('/.clawee/runtime/enterprise/logout', {
+    const response = await fetch('/.opencreator/runtime/enterprise/logout', {
       method: 'POST',
       signal: AbortSignal.timeout(2_000)
     }).catch(() => undefined);
@@ -1048,7 +1028,7 @@ async function closeFixture(fixture: DesktopFixture): Promise<void> {
       );
     });
   }
-  if (process.env.CLAWEE_E2E_KEEP_TEMP !== '1') {
+  if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
     rmSync(fixture.root, { recursive: true, force: true });
   }
 }
@@ -1251,11 +1231,11 @@ function requiredPid(pid: number | undefined): number {
 function withoutElectronRunAsNode(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env };
   delete next.ELECTRON_RUN_AS_NODE;
-  delete next.CLAWEE_UPDATE_URL;
-  delete next.CLAWEE_ENTERPRISE_ORIGIN;
-  delete next.CLAWEE_ENTERPRISE_E2E_AUTHORIZED;
-  delete next.CLAWEE_ENTERPRISE_E2E_RUN_ID;
-  delete next.CLAWEE_ENTERPRISE_KEYRING_SERVICE;
-  delete next.CLAWEE_ENTERPRISE_KEYRING_ACCOUNT;
+  delete next.OPENCREATOR_UPDATE_URL;
+  delete next.OPENCREATOR_ENTERPRISE_ORIGIN;
+  delete next.OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED;
+  delete next.OPENCREATOR_ENTERPRISE_E2E_RUN_ID;
+  delete next.OPENCREATOR_ENTERPRISE_KEYRING_SERVICE;
+  delete next.OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT;
   return next;
 }

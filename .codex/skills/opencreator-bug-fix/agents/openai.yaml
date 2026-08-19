@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCreator Bug Fix"
+  short_description: "修复 OpenCreator 飞书 Bug 文档中的问题并回写根因与方案"
+  default_prompt: "使用 $opencreator-bug-fix 处理最新日期下尚未解决的问题，逐项修复、验证、回写文档并提交 Git。"

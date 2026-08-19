@@ -80,13 +80,13 @@ describe('app state', () => {
     expect(state.rightPanelMode).toBe('closed');
   });
 
-  it('opens the creator workbench as a primary view', () => {
+  it('opens the creator dashboard as a primary view', () => {
     const state = reduceAppState(initialAppState, {
       type: 'set_active_view',
-      activeView: 'workbench'
+      activeView: 'dashboard'
     });
 
-    expect(state.activeView).toBe('workbench');
+    expect(state.activeView).toBe('dashboard');
     expect(state.rightPanelMode).toBe('closed');
   });
 

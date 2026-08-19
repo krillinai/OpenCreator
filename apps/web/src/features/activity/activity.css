@@ -64,7 +64,7 @@
   box-shadow: 0 0 0 1px var(--border-hairline);
 }
 
-.activity-conversation-workbench {
+.activity-conversation-dashboard {
   min-height: 620px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 250px;
@@ -359,7 +359,7 @@
 }
 
 @media (max-width: 820px) {
-  .activity-conversation-workbench {
+  .activity-conversation-dashboard {
     grid-template-columns: 1fr;
     min-height: 0;
   }

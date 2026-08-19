@@ -4,7 +4,7 @@ import type {
   ScheduleListResponse,
   ScheduleOperationListResponse,
   ScheduleResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RunManager } from '../runs/manager.js';
 import { computeNextRunAt } from './cron.js';
 import type { ScheduleRepository } from './repository.js';
@@ -460,7 +460,7 @@ function createScheduleExecutionPrompt(
   ranAt: string
 ): string {
   return [
-    '这是 Clawee 已经触发的一次计划任务执行。',
+    '这是 OpenCreator 已经触发的一次计划任务执行。',
     '',
     '执行规则：',
     '1. 立即完成本次任务，不要重新创建或修改计划任务。',

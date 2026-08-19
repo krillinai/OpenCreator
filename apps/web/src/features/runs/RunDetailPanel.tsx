@@ -3,7 +3,7 @@ import type {
   RunContextItem,
   RunContextResponse,
   RunDiagnosticsResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { AlertTriangle, Download, Image, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { downloadRunDiagnosticsBundle } from './run-diagnostics-export.js';

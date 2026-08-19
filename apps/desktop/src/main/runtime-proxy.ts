@@ -1,4 +1,4 @@
-const RUNTIME_PREFIX = '/.clawee/runtime';
+const RUNTIME_PREFIX = '/.opencreator/runtime';
 
 export const MAX_RUNTIME_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
 

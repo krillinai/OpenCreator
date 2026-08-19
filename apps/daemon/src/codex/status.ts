@@ -1,7 +1,7 @@
 import type {
   CodexAvailabilityProbe,
   CodexStatusResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeCapabilityMatrix } from './capabilities.js';
 import type { ResolvedCodexHome } from './home.js';
 

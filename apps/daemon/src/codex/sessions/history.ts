@@ -1,4 +1,4 @@
-import type { ThreadHistoryItem } from '@clawee/protocol';
+import type { ThreadHistoryItem } from '@opencreator/protocol';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {

@@ -78,7 +78,7 @@ import { createRunRepository, createThreadRepository } from '../../src/storage/r
 
 ```ts
 function createTestDatabase(): Database.Database {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-storage-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   return db;
 }
@@ -162,7 +162,7 @@ it('lists thread run history and preserves archived thread data', () => {
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts
 ```
 
 Expected: 失败，缺少 `createThreadRepository`、`insertThread`、`setCodexThreadId`、`archiveThread`、`listRunsByThread`、`resumeMode` 持久化。
@@ -372,7 +372,7 @@ setRunQueueState(runId: string, queueState: 'none' | 'queued' | 'started'): void
 - [ ] **Step 6: 运行测试**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts
 pnpm typecheck
 ```
 
@@ -430,7 +430,7 @@ db = undefined;
 
 ```ts
 it('persists managed and external threads', () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-thread-'));
   const database = openTestDatabase(tempDir);
   const manager = createThreadManager({ db: database, dataDir: tempDir });
 
@@ -455,7 +455,7 @@ it('persists managed and external threads', () => {
 });
 
 it('archives active threads and rejects missing threads', () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-thread-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-thread-'));
   const database = openTestDatabase(tempDir);
   const manager = createThreadManager({ db: database, dataDir: tempDir });
   const thread = manager.createThread({ workspaceMode: 'managed' });
@@ -469,7 +469,7 @@ it('archives active threads and rejects missing threads', () => {
 
 ```ts
 it('creates, lists, gets, and archives threads through the api', async () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
   server = await buildServer({ token: 'secret', dataDir: tempDir });
 
   const created = await server.inject({
@@ -508,7 +508,7 @@ it('creates, lists, gets, and archives threads through the api', async () => {
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/thread-manager.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/thread-manager.test.ts test/integration/api.test.ts
 ```
 
 Expected: 失败，因为 thread manager 没接 DB，thread routes 只有 `POST /threads`。
@@ -614,7 +614,7 @@ listRunsByThread(threadId: string, limit?: number): RuntimeRun[];
 - [ ] **Step 6: 运行测试**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/thread-manager.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/thread-manager.test.ts test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -717,7 +717,7 @@ it('detects resume support and unsupported resume cwd profile sandbox overrides'
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-argv.test.ts test/unit/codex-capabilities.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-argv.test.ts test/unit/codex-capabilities.test.ts
 ```
 
 Expected: 失败，因为 `buildCodexResumeArgs` 和 `parseCodexCapabilityMatrix` 不存在。
@@ -805,7 +805,7 @@ export function parseCodexCapabilityMatrix(input: {
 - [ ] **Step 5: 运行测试**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-argv.test.ts test/unit/codex-capabilities.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-argv.test.ts test/unit/codex-capabilities.test.ts
 pnpm typecheck
 ```
 
@@ -847,7 +847,7 @@ function authGet(url: string) {
 
 ```ts
 it('creates a thread run using immutable thread config and binds codex thread id', async () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
   const fake = createFakeCodex(tempDir, {
     stdoutLines: [
       { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -883,7 +883,7 @@ it('creates a thread run using immutable thread config and binds codex thread id
 });
 
 it('rejects run requests that override thread config', async () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
   server = await buildServer({ token: 'secret', dataDir: tempDir });
   const thread = (await authPost('/threads', {
     workspaceMode: 'external',
@@ -906,7 +906,7 @@ it('rejects run requests that override thread config', async () => {
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts test/integration/run-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts test/integration/run-manager.test.ts
 ```
 
 Expected: 失败，因为 run 创建还不读取 thread config，也不会更新 thread 的 `codexThreadId`。
@@ -996,7 +996,7 @@ thread run 如果成功退出但没捕获 `codexThreadId`，标记失败：
 - [ ] **Step 6: 运行测试**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts test/integration/run-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts test/integration/run-manager.test.ts
 pnpm typecheck
 ```
 
@@ -1053,7 +1053,7 @@ function createTestRunManager(input: {
   codexBin?: string;
   resumeCapabilityVerified?: boolean;
 } = {}) {
-  tempDir = input.tempDir ?? mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+  tempDir = input.tempDir ?? mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const threadManager = createThreadManager({ db, dataDir: tempDir });
   const manager = createRunManager({
@@ -1103,7 +1103,7 @@ function threadRun(thread: { id: string; cwd: string; profile: string; sandbox: 
 
 ```ts
 it('uses codex exec resume for a thread with codexThreadId', async () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
   const fake = createFakeCodex(tempDir, {
     stdoutLines: [
       { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1144,7 +1144,7 @@ it('fails resume_thread when resume capability is unverified', async () => {
 - [ ] **Step 3: 运行测试确认失败**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/run-manager.test.ts
 ```
 
 Expected: 失败，因为 resume argv 路径和 capability unverified 处理尚未实现。
@@ -1216,7 +1216,7 @@ Codex resume 非零退出时：
 - [ ] **Step 6: 运行测试**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/run-manager.test.ts test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -1246,7 +1246,7 @@ git commit -m "feat: execute codex thread resume"
 
 ```ts
 it('queues same-thread runs and starts the second after the first completes', async () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
   const fake = createFakeCodex(tempDir, {
     stdoutLines: [
       { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1297,7 +1297,7 @@ async function createThreadViaApi() {
 }
 
 it('rejects archiving a thread with queued or running runs', async () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
   const fake = createFakeCodex(tempDir, { stdoutLines: [{ type: 'turn.started' }], hang: true });
   server = await buildServer({
     token: 'secret',
@@ -1317,7 +1317,7 @@ it('rejects archiving a thread with queued or running runs', async () => {
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/run-manager.test.ts test/integration/api.test.ts
 ```
 
 Expected: 失败，因为同 thread 队列尚未实现。
@@ -1394,7 +1394,7 @@ terminationReason: 'daemon_restart'
 - [ ] **Step 6: 运行测试**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/run-manager.test.ts test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -1456,7 +1456,7 @@ function authPost(url: string, payload: unknown) {
 
 ```ts
 it('includes thread and resume diagnostics for failed resume runs', async () => {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-'));
   const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const fake = createFakeCodex(tempDir, {
     stdoutLines: [],
@@ -1498,7 +1498,7 @@ it('includes thread and resume diagnostics for failed resume runs', async () => 
 - [ ] **Step 2: 运行测试确认失败**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts test/integration/diagnostics.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts test/integration/diagnostics.test.ts
 ```
 
 Expected: 失败，因为 thread run history 和 diagnostics metadata 不完整。
@@ -1549,7 +1549,7 @@ runManager.listRunsByThread(threadId, limit)
 - [ ] **Step 5: 运行测试**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts test/integration/diagnostics.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts test/integration/diagnostics.test.ts
 pnpm typecheck
 ```
 
@@ -1598,7 +1598,7 @@ it('verifies codex exec resume context continuity', async () => {
 不带 env：
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: 通过，真实 smoke 整个 describe 被跳过。
@@ -1606,7 +1606,7 @@ Expected: 通过，真实 smoke 整个 describe 被跳过。
 带 env：
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: 失败，因为 `runRealCodexResumeSmoke` 尚未实现。
@@ -1716,7 +1716,7 @@ export async function runRealCodexResumeSmoke(input: { marker: string }): Promis
 ```bash
 pnpm typecheck
 pnpm test
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: 全部通过。如果 real Codex 因登录态或网络失败，最终说明必须写明失败原因，不能声称真实 smoke 通过。
@@ -1745,7 +1745,7 @@ git commit -m "test: verify real codex thread resume"
 ```bash
 pnpm typecheck
 pnpm test
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 手动 API smoke：

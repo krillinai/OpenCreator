@@ -1,7 +1,7 @@
 import type {
   EnterpriseKnowledgeBaseResponse,
   EnterpriseKnowledgeDocumentResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   ArrowLeft,
   BookOpenText,
@@ -147,7 +147,7 @@ export function KnowledgePage(props: KnowledgePageProps) {
         ) : null}
 
         <div
-          className="knowledge-workbench"
+          className="knowledge-dashboard"
           data-mobile-documents-open={mobileDocumentsOpen}
         >
           <nav className="knowledge-library-pane" aria-label={l('资料集合', 'Collections')}>

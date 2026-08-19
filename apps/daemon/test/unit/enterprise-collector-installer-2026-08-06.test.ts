@@ -19,7 +19,7 @@ describe('enterprise collector installer', () => {
     const spawn = vi.fn(() => child);
     const installer = createEnterpriseCollectorInstaller({
       platform: 'darwin',
-      claweeAgentConfigPath: '.runtime/config.toml',
+      opencreatorAgentConfigPath: '.runtime/config.toml',
       spawn
     });
 
@@ -35,7 +35,7 @@ describe('enterprise collector installer', () => {
         windowsHide: true,
         env: {
           ...process.env,
-          CLAWEE_AGENT_CONFIG: resolve('.runtime/config.toml')
+          OPENCREATOR_AGENT_CONFIG: resolve('.runtime/config.toml')
         }
       }
     );
@@ -50,7 +50,7 @@ describe('enterprise collector installer', () => {
     const spawn = vi.fn(() => child);
     const installer = createEnterpriseCollectorInstaller({
       platform: 'win32',
-      claweeAgentConfigPath: '.runtime/config.toml',
+      opencreatorAgentConfigPath: '.runtime/config.toml',
       spawn
     });
 
@@ -71,7 +71,7 @@ describe('enterprise collector installer', () => {
         windowsHide: true,
         env: {
           ...process.env,
-          CLAWEE_AGENT_CONFIG: resolve('.runtime/config.toml')
+          OPENCREATOR_AGENT_CONFIG: resolve('.runtime/config.toml')
         }
       }
     );

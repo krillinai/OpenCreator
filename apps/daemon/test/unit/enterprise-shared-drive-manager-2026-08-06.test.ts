@@ -1,4 +1,4 @@
-import type { ProjectResponse } from '@clawee/protocol';
+import type { ProjectResponse } from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
@@ -464,5 +464,5 @@ async function* chunks(
 }
 
 function createTempDirectory(): string {
-  return mkdtempSync(join(tmpdir(), 'clawee-shared-drive-manager-'));
+  return mkdtempSync(join(tmpdir(), 'opencreator-shared-drive-manager-'));
 }

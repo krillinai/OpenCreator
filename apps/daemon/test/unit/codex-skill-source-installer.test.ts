@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('codex skill source installer', () => {
   it('calls the Codex Skill Installer with the catalog repository, path, ref, and skill id', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-source-installer-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-source-installer-'));
     const codexHome = join(tempDir, 'codex-home');
     const workDir = join(tempDir, 'work');
     const scriptPath = join(tempDir, 'install-skill-from-github.py');
@@ -74,7 +74,7 @@ describe('codex skill source installer', () => {
   });
 
   it('preserves the real Codex Skill Installer error message', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-source-installer-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-source-installer-'));
     const scriptPath = join(tempDir, 'install-skill-from-github.py');
     writeFileSync(scriptPath, '# test installer');
     const runProcess: SkillInstallerProcessRunner = vi.fn(async () => {
@@ -102,7 +102,7 @@ describe('codex skill source installer', () => {
   });
 
   it('reports a missing Codex Skill Installer script before spawning a process', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-source-installer-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-source-installer-'));
     const runProcess: SkillInstallerProcessRunner = vi.fn();
     const installer = createCodexSkillSourceInstaller({
       codexHome: join(tempDir, 'codex-home'),

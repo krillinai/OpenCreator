@@ -45,7 +45,7 @@
 
 ```bash
 pnpm perf:measure
-pnpm --filter @clawee/web build
+pnpm --filter @opencreator/web build
 pnpm perf:check
 ```
 

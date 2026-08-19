@@ -130,7 +130,7 @@
   background: var(--surface-2);
 }
 
-.shared-drive-workbench {
+.shared-drive-dashboard {
   min-height: 600px;
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
@@ -675,7 +675,7 @@
     display: none;
   }
 
-  .shared-drive-workbench {
+  .shared-drive-dashboard {
     grid-template-columns: 218px minmax(0, 1fr);
   }
 
@@ -707,7 +707,7 @@
     font-size: 21px;
   }
 
-  .shared-drive-workbench {
+  .shared-drive-dashboard {
     min-height: 560px;
     grid-template-columns: 1fr;
   }

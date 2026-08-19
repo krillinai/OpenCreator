@@ -14,7 +14,7 @@ import {
 export function registerPrivilegedSchemes(): void {
   protocol.registerSchemesAsPrivileged([
     {
-      scheme: 'clawee-app',
+      scheme: 'opencreator-app',
       privileges: {
         standard: true,
         secure: true,
@@ -33,7 +33,7 @@ export async function installProtocolHandler(input: {
   getConnection(): DaemonConnection | undefined;
   logger: DesktopLogger;
 }): Promise<void> {
-  await protocol.handle('clawee-app', async request => {
+  await protocol.handle('opencreator-app', async request => {
     const url = new URL(request.url);
     if (isRuntimeRequestUrl(url)) {
       return await proxyRuntimeRequest(request, url, input.getConnection(), input.logger);

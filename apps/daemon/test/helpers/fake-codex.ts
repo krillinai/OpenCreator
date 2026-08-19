@@ -50,8 +50,8 @@ const argvs = fs.existsSync(${JSON.stringify(argvsPath)})
 argvs.push(process.argv.slice(2));
 fs.writeFileSync(${JSON.stringify(argvsPath)}, JSON.stringify(argvs));
 fs.writeFileSync(${JSON.stringify(agentToolEnvPath)}, JSON.stringify({
-  CLAWEE_AGENT_TOOL_URL: process.env.CLAWEE_AGENT_TOOL_URL,
-  CLAWEE_AGENT_CAPABILITY_TOKEN: process.env.CLAWEE_AGENT_CAPABILITY_TOKEN,
+  OPENCREATOR_AGENT_TOOL_URL: process.env.OPENCREATOR_AGENT_TOOL_URL,
+  OPENCREATOR_AGENT_CAPABILITY_TOKEN: process.env.OPENCREATOR_AGENT_CAPABILITY_TOKEN,
   NO_PROXY: process.env.NO_PROXY,
   no_proxy: process.env.no_proxy
 }));
@@ -114,14 +114,14 @@ main().catch(error => {
       return Number(readFileSync(invocationCountPath, 'utf8'));
     },
     readAgentToolEnv(): {
-      CLAWEE_AGENT_TOOL_URL?: string;
-      CLAWEE_AGENT_CAPABILITY_TOKEN?: string;
+      OPENCREATOR_AGENT_TOOL_URL?: string;
+      OPENCREATOR_AGENT_CAPABILITY_TOKEN?: string;
       NO_PROXY?: string;
       no_proxy?: string;
     } {
       return JSON.parse(readFileSync(agentToolEnvPath, 'utf8')) as {
-        CLAWEE_AGENT_TOOL_URL?: string;
-        CLAWEE_AGENT_CAPABILITY_TOKEN?: string;
+        OPENCREATOR_AGENT_TOOL_URL?: string;
+        OPENCREATOR_AGENT_CAPABILITY_TOKEN?: string;
         NO_PROXY?: string;
         no_proxy?: string;
       };

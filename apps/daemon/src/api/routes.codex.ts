@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { CodexAvailabilityProbe } from '@clawee/protocol';
+import type { CodexAvailabilityProbe } from '@opencreator/protocol';
 import type { RuntimeCapabilityMatrix } from '../codex/capabilities.js';
 import type { ResolvedCodexHome } from '../codex/home.js';
 import type { CodexModelCatalog } from '../codex/model-catalog-2026-08-05.js';

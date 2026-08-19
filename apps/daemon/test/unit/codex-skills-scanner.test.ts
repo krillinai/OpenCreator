@@ -13,7 +13,7 @@ afterEach(() => {
 
 describe('codex skills scanner', () => {
   it('returns an empty list when skills directory does not exist', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-scan-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-scan-'));
     const codexHome = join(tempDir, 'codex-home');
 
     expect(scanCodexSkills({
@@ -30,7 +30,7 @@ describe('codex skills scanner', () => {
   });
 
   it('scans valid and invalid skills without crashing', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-scan-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-scan-'));
     const codexHome = join(tempDir, 'codex-home');
     const validDir = join(codexHome, 'skills', 'valid-skill');
     const invalidDir = join(codexHome, 'skills', 'invalid-skill');

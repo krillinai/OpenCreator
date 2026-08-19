@@ -8,7 +8,7 @@ import type {
   ReasoningEffort,
   ReplaceProjectDirectoryRequest,
   UpdateProjectRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
   ProjectManagerError,

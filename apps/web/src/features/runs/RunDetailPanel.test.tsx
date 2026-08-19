@@ -1,4 +1,4 @@
-import type { RunContextResponse, RunDiagnosticsResponse } from '@clawee/protocol';
+import type { RunContextResponse, RunDiagnosticsResponse } from '@opencreator/protocol';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RunDetailPanel } from './RunDetailPanel.js';

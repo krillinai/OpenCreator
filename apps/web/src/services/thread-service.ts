@@ -6,7 +6,7 @@ import type {
   ThreadResponse,
   ThreadRunsResponse,
   UpdateThreadRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createThreadService(client: RuntimeClient) {

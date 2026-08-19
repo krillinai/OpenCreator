@@ -1,4 +1,4 @@
-import type { CleanupDeleteResponse, CleanupPreviewResponse } from '@clawee/protocol';
+import type { CleanupDeleteResponse, CleanupPreviewResponse } from '@opencreator/protocol';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {

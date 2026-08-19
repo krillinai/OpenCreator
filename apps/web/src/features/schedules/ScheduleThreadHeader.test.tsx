@@ -2,11 +2,11 @@ import type {
   ScheduleDetailResponse,
   ScheduleResponse,
   UpdateScheduleRequest,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { ClaweeProject } from '../projects/project-model.js';
+import type { OpenCreatorProject } from '../projects/project-model.js';
 import type { ScheduleSidebarTaskStatus } from '../shell/sidebar-task-model.js';
 import { ScheduleThreadHeader } from './ScheduleThreadHeader.js';
 
@@ -184,7 +184,7 @@ function scheduleDetail(
   };
 }
 
-const projects: ClaweeProject[] = [
+const projects: OpenCreatorProject[] = [
   {
     id: 'current',
     name: '当前项目',

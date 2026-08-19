@@ -124,7 +124,7 @@ Daemon 从已验证企业会话中获取稳定且不透明的账户主体标识�
 
 - 使用同一个 Fake Daemon 分别在 Browser/Desktop Bridge 下验证页面、请求和持久化结果。
 - 验证 390px 移动视口无页面级溢出。
-- 运行实际打包 App E2E，覆盖 Preload Bridge、`clawee-app://`、Runtime 代理、知识 Thread 恢复和真实 MCP 权限门禁。
+- 运行实际打包 App E2E，覆盖 Preload Bridge、`opencreator-app://`、Runtime 代理、知识 Thread 恢复和真实 MCP 权限门禁。
 - 重新构建 Web，并校验 `apps/web/dist` 与 App 内嵌资源哈希完全一致。
 
 未通过类型检查、相关单元/集成测试、一致性 E2E 和实际打包 App E2E 时，不得声明 Web/Desktop 已一致或可发布。

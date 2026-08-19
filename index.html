@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>企业 Agent 工作台</title>
+  <title>企业 Agent Dashboard</title>
   <style>
     :root {
       --bg: oklch(97.6% 0.004 250);
@@ -1069,7 +1069,7 @@
   </style>
 </head>
 <body>
-  <main class="app" aria-label="企业 Agent 工作台">
+  <main class="app" aria-label="企业 Agent Dashboard">
     <aside class="sidebar" aria-label="左侧导航">
       <div class="window-bar" aria-hidden="true">
         <div class="traffic"><i></i><i></i><i></i></div>
@@ -1080,7 +1080,7 @@
       </div>
 
       <div class="top-actions" role="navigation" aria-label="常用入口">
-        <button class="nav-btn" type="button" data-prompt="帮我设计一个个人使用的企业 Agent 工作台，保持左侧菜单、中间聊天、右侧文件编辑器、最右文件树。" aria-current="page">
+        <button class="nav-btn" type="button" data-prompt="帮我设计一个个人使用的企业 Agent Dashboard，保持左侧菜单、中间聊天、右侧文件编辑器、最右文件树。" aria-current="page">
           <span class="nav-icon">+</span><span>新对话</span><span class="shortcut">N</span>
         </button>
         <button class="nav-btn" type="button" data-prompt="搜索最近的企业 Agent UI、Codex 接入、MCP 能力相关会话。">
@@ -1100,8 +1100,8 @@
           <button class="project-btn" type="button" data-prompt="切换到 Agent Runtime 项目，读取项目上下文。">
             <span class="row-icon">▸</span><span>Agent Runtime</span><span class="count">12</span>
           </button>
-          <button class="project-btn" type="button" data-prompt="打开企业工作台项目，继续 UI 设计。">
-            <span class="row-icon">▾</span><span>企业工作台</span><span class="count">8</span>
+          <button class="project-btn" type="button" data-prompt="打开企业Dashboard项目，继续 UI 设计。">
+            <span class="row-icon">▾</span><span>企业Dashboard</span><span class="count">8</span>
           </button>
           <button class="project-btn" type="button" data-prompt="打开 content-design 项目，查看文稿生成模板。">
             <span class="row-icon">▸</span><span>content-design</span><span class="count">5</span>
@@ -1137,7 +1137,7 @@
     <section class="chat-pane" aria-label="Agent 对话">
       <header class="chat-top">
         <div class="chat-title">
-          <strong id="conversation-title">企业 Agent 工作台设计</strong>
+          <strong id="conversation-title">企业 Agent Dashboard设计</strong>
           <span id="conversation-subtitle">个人使用 · 企业能力 · Codex 式任务流</span>
         </div>
         <span class="top-pill"><i class="status-dot active"></i>本地工作区已连接</span>
@@ -1154,7 +1154,7 @@
             <div class="composer-tools">
               <button class="tool-chip" type="button" data-toast="已打开附件选择器">＋</button>
               <button class="tool-chip" type="button" data-toast="模式已保持：Agent">Agent</button>
-              <button class="tool-chip" type="button" data-toast="已选择当前项目上下文">企业工作台</button>
+              <button class="tool-chip" type="button" data-toast="已选择当前项目上下文">企业Dashboard</button>
             </div>
             <button class="send-btn" type="submit" aria-label="发送">↑</button>
           </div>
@@ -1164,7 +1164,7 @@
 
     <section class="file-pane" aria-label="打开的文件">
       <header class="file-head">
-        <div class="breadcrumb" id="breadcrumb">agent-ui › docs › design › <strong>enterprise-agent-workbench.md</strong></div>
+        <div class="breadcrumb" id="breadcrumb">agent-ui › docs › design › <strong>enterprise-agent-dashboard.md</strong></div>
         <div class="file-actions">
           <span class="save-state" id="save-state"><i class="status-dot active"></i>已保存</span>
           <button class="file-action-primary" type="button" id="save-file">保存</button>
@@ -1197,13 +1197,13 @@
         id: "design",
         title: "企业 Agent UI 设计",
         time: "14:28",
-        meta: "四区工作台、文件编辑、文件树",
+        meta: "四区Dashboard、文件编辑、文件树",
         status: "active",
         subtitle: "个人使用 · 企业能力 · Codex 式任务流",
         user: "文件打开后要支持编辑，要支持常见的 md、srt、html、txt 等的编辑。",
         summary: "我会保持四区结构不变，把右侧区域收敛成轻量文件编辑器：文件卡和树节点点击后直接进入编辑器，只保留编辑、保存和搜索。",
         bullets: ["左侧仍然负责菜单、项目和会话，不增加设计控制面板。", "中间聊天继续记录任务过程、结果卡、文件卡和变更卡。", "右侧打开后就是编辑器，最右侧文件树支持 md、srt、html、txt 快速切换。"],
-        file: "docs/design/enterprise-agent-workbench.md",
+        file: "docs/design/enterprise-agent-dashboard.md",
         delta: "+903 -0"
       },
       {
@@ -1261,12 +1261,12 @@
     ];
 
     const workspaceFiles = {
-      "docs/design/enterprise-agent-workbench.md": {
-        path: "docs/design/enterprise-agent-workbench.md",
+      "docs/design/enterprise-agent-dashboard.md": {
+        path: "docs/design/enterprise-agent-dashboard.md",
         type: "md",
         language: "Markdown",
         saved: true,
-        content: `# 企业 Agent 工作台 UI 方案
+        content: `# 企业 Agent Dashboard UI 方案
 
 这是一个给个人使用的企业 Agent 页面。它保留企业级上下文、权限、插件、skills 与 MCP 能力，但主体验像 Codex：左侧组织任务，中间对话推进工作，右侧编辑产物文件，最右侧浏览项目文件树。
 
@@ -1342,7 +1342,7 @@ MCP 服务显示在线、延迟、可用工具和最近调用。连接异常时�
         content: `1
 00:00:00,000 --> 00:00:03,200
 We need an enterprise agent UI that still feels personal.
-我们需要一个企业级 Agent UI，但它仍然要像个人工作台。
+我们需要一个企业级 Agent UI，但它仍然要像个人Dashboard。
 
 2
 00:00:03,200 --> 00:00:07,400
@@ -1355,8 +1355,8 @@ The right pane opens editable files, and the far right shows the file tree.
 右侧打开可编辑文件，最右侧显示文件树。
 `
       },
-      "screens/workbench.html": {
-        path: "screens/workbench.html",
+      "screens/dashboard.html": {
+        path: "screens/dashboard.html",
         type: "html",
         language: "HTML",
         saved: true,
@@ -1364,10 +1364,10 @@ The right pane opens editable files, and the far right shows the file tree.
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>Agent Workbench Screen</title>
+  <title>Agent Dashboard Screen</title>
 </head>
 <body>
-  <main class="workbench">
+  <main class="dashboard">
     <aside class="sidebar">菜单和会话</aside>
     <section class="chat">Agent 对话</section>
     <section class="editor">打开文件编辑器</section>
@@ -1382,7 +1382,7 @@ The right pane opens editable files, and the far right shows the file tree.
         type: "txt",
         language: "Plain Text",
         saved: true,
-        content: `Agent Workbench v0.2
+        content: `Agent Dashboard v0.2
 
 - 四区布局已经确认：左菜单 / 中聊天 / 右侧编辑器 / 最右文件树。
 - 文件打开后直接进入编辑状态。
@@ -1399,7 +1399,7 @@ The right pane opens editable files, and the far right shows the file tree.
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>企业 Agent 工作台</title>
+  <title>企业 Agent Dashboard</title>
 </head>
 <body>
   <main class="app">
@@ -1417,7 +1417,7 @@ The right pane opens editable files, and the far right shows the file tree.
     const fileTree = [
       { type: "folder", icon: "▾", name: "docs", depth: 0, meta: "" },
       { type: "folder", icon: "▾", name: "design", depth: 1, meta: "" },
-      { type: "file", icon: "MD", name: "enterprise-agent-workbench.md", depth: 2, meta: "md", file: "docs/design/enterprise-agent-workbench.md" },
+      { type: "file", icon: "MD", name: "enterprise-agent-dashboard.md", depth: 2, meta: "md", file: "docs/design/enterprise-agent-dashboard.md" },
       { type: "folder", icon: "▾", name: "runtime", depth: 1, meta: "" },
       { type: "file", icon: "MD", name: "codex-runtime-contract.md", depth: 2, meta: "md", file: "docs/runtime/codex-runtime-contract.md" },
       { type: "folder", icon: "▾", name: "capability", depth: 1, meta: "" },
@@ -1425,7 +1425,7 @@ The right pane opens editable files, and the far right shows the file tree.
       { type: "folder", icon: "▾", name: "transcripts", depth: 0, meta: "" },
       { type: "file", icon: "SR", name: "demo-agent-task.srt", depth: 1, meta: "srt", file: "transcripts/demo-agent-task.srt" },
       { type: "folder", icon: "▾", name: "screens", depth: 0, meta: "" },
-      { type: "file", icon: "HT", name: "workbench.html", depth: 1, meta: "html", file: "screens/workbench.html" },
+      { type: "file", icon: "HT", name: "dashboard.html", depth: 1, meta: "html", file: "screens/dashboard.html" },
       { type: "folder", icon: "▾", name: "notes", depth: 0, meta: "" },
       { type: "file", icon: "TX", name: "release-notes.txt", depth: 1, meta: "txt", file: "notes/release-notes.txt" },
       { type: "file", icon: "HT", name: "index.html", depth: 0, meta: "html", file: "index.html" },
@@ -1436,7 +1436,7 @@ The right pane opens editable files, and the far right shows the file tree.
 
     const state = {
       session: "design",
-      file: "docs/design/enterprise-agent-workbench.md",
+      file: "docs/design/enterprise-agent-dashboard.md",
       query: "",
       editorSearch: "",
       editorReplace: ""
@@ -1505,7 +1505,7 @@ The right pane opens editable files, and the far right shows the file tree.
             </div>
             <p>${escapeHtml(item.summary)}</p>
             <div class="result-card">
-              <h2>当前页面按四区可编辑工作台生成</h2>
+              <h2>当前页面按四区可编辑Dashboard生成</h2>
               <ul class="check-list">
                 ${item.bullets.map((text) => `<li><span class="check">✓</span><span>${escapeHtml(text)}</span></li>`).join("")}
               </ul>
@@ -1528,7 +1528,7 @@ The right pane opens editable files, and the far right shows the file tree.
     }
 
     function currentFile() {
-      return workspaceFiles[state.file] || workspaceFiles["docs/design/enterprise-agent-workbench.md"];
+      return workspaceFiles[state.file] || workspaceFiles["docs/design/enterprise-agent-dashboard.md"];
     }
 
     function pathBreadcrumb(file) {
@@ -1684,7 +1684,7 @@ The right pane opens editable files, and the far right shows the file tree.
     }
 
     function openFile(file, notify = true) {
-      state.file = workspaceFiles[file] ? file : "docs/design/enterprise-agent-workbench.md";
+      state.file = workspaceFiles[file] ? file : "docs/design/enterprise-agent-dashboard.md";
       renderOpenedFile();
       if (notify) showToast(`${state.file} 已打开`);
     }

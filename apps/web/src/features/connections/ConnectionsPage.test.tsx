@@ -1,7 +1,7 @@
 import type {
   CodexMcpListResponse,
   EnterpriseMcpCatalogResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -196,7 +196,7 @@ function enterpriseCatalog(
   overrides: Partial<EnterpriseMcpCatalogResponse['upstreams'][number]> = {}
 ): EnterpriseMcpCatalogResponse {
   return {
-    agentId: 'clawee_550e8400-e29b-41d4-a716-446655440000',
+    agentId: 'opencreator_550e8400-e29b-41d4-a716-446655440000',
     tokenStatus: 'ready',
     refreshedAt: '2026-08-12T10:00:00.000Z',
     upstreams: [{

@@ -1,7 +1,7 @@
 import type {
   DiagnosticFileResponse,
   ScheduleRunTrace
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import {

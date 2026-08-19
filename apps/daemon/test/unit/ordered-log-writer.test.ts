@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('ordered log writer', () => {
   it('serializes concurrent appends in call order', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-ordered-log-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-ordered-log-'));
     const writes: string[] = [];
     let activeWrites = 0;
     let peakActiveWrites = 0;
@@ -55,7 +55,7 @@ describe('ordered log writer', () => {
   });
 
   it('reports high-water pressure and rejects work above the hard queue limit', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-ordered-log-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-ordered-log-'));
     let releaseWrite!: () => void;
     const blocked = new Promise<void>(resolve => {
       releaseWrite = resolve;
@@ -85,7 +85,7 @@ describe('ordered log writer', () => {
   });
 
   it('records write failures without poisoning later queued writes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-ordered-log-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-ordered-log-'));
     const writes: string[] = [];
     const writer = createOrderedLogWriter({
       directory: tempDir,
@@ -114,7 +114,7 @@ describe('ordered log writer', () => {
   });
 
   it('waits for queued writes during drain and rejects appends after close', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-ordered-log-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-ordered-log-'));
     let releaseWrite!: () => void;
     const blocked = new Promise<void>(resolve => {
       releaseWrite = resolve;

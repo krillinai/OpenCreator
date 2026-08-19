@@ -9,7 +9,7 @@ import type {
   MemoryResponse,
   MemoryScope,
   UpdateMemoryRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   AlertTriangle,
   Brain,

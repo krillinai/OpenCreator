@@ -9,7 +9,7 @@ import {
 import { join } from 'node:path';
 
 export function acquireRuntimeLock(dataDir: string): () => void {
-  const path = join(dataDir, 'clawee-runtime.lock');
+  const path = join(dataDir, 'opencreator-runtime.lock');
   removeStaleLock(path);
   let fd: number;
   try {
@@ -18,8 +18,8 @@ export function acquireRuntimeLock(dataDir: string): () => void {
     const owner = readLockPid(path);
     throw new Error(
       owner === undefined
-        ? `Clawee Runtime data directory is already locked: ${dataDir}`
-        : `Clawee Runtime data directory is already used by process ${owner}: ${dataDir}`
+        ? `OpenCreator Runtime data directory is already locked: ${dataDir}`
+        : `OpenCreator Runtime data directory is already used by process ${owner}: ${dataDir}`
     );
   }
   writeFileSync(fd, `${process.pid}\n`);

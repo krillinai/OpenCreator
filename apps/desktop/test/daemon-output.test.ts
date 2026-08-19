@@ -10,7 +10,7 @@ import {
 describe('Daemon stdout parser', () => {
   it('parses bootstrap events and the final connection without logging assumptions', () => {
     expect(parseDaemonOutputLine(JSON.stringify({
-      type: 'clawee_daemon_bootstrap',
+      type: 'opencreator_daemon_bootstrap',
       phase: 'probe_succeeded',
       at: '2026-07-16T00:00:00.000Z',
       durationMs: 2_100,

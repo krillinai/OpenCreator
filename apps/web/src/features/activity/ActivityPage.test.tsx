@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ActivityPage } from './ActivityPage.js';
 
 describe('ActivityPage static prototype', () => {
-  it('renders the administrator workbench without an employee view switch', () => {
+  it('renders the administrator dashboard without an employee view switch', () => {
     render(<ActivityPage route={{ view: 'activity', range: '7d' }} onNavigate={vi.fn()} />);
 
     expect(screen.getByRole('heading', { name: 'Agent动态' })).toBeInTheDocument();

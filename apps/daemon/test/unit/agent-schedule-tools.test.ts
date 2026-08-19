@@ -13,7 +13,7 @@ describe('agent schedule tools', () => {
       defaultTimezone: 'UTC'
     });
 
-    const result = await tools.clawee_schedule_create.execute({
+    const result = await tools.opencreator_schedule_create.execute({
       name: '每日总结',
       task: '总结今天的工作',
       timing: {
@@ -55,7 +55,7 @@ describe('agent schedule tools', () => {
       defaultTimezone: 'UTC'
     });
 
-    await tools.clawee_schedule_update.execute({
+    await tools.opencreator_schedule_update.execute({
       task: '控制在 200 字以内',
       timing: { type: 'daily', time: '20:00' },
       timezone: 'Asia/Shanghai'
@@ -71,11 +71,11 @@ describe('agent schedule tools', () => {
       }
     });
 
-    await expect(tools.clawee_schedule_update.execute({
+    await expect(tools.opencreator_schedule_update.execute({
       scheduleId: 'schedule-1',
       threadId: 'thread-forged'
     })).rejects.toThrow('Unrecognized key');
-    await expect(tools.clawee_schedule_create.execute({
+    await expect(tools.opencreator_schedule_create.execute({
       name: '伪造任务',
       task: '内容',
       timing: { type: 'daily', time: '09:00' },
@@ -90,12 +90,12 @@ describe('agent schedule tools', () => {
     });
 
     expect(Object.keys(tools)).toEqual([
-      'clawee_schedule_create',
-      'clawee_schedule_update',
-      'clawee_schedule_pause',
-      'clawee_schedule_resume',
-      'clawee_schedule_run_now',
-      'clawee_schedule_get'
+      'opencreator_schedule_create',
+      'opencreator_schedule_update',
+      'opencreator_schedule_pause',
+      'opencreator_schedule_resume',
+      'opencreator_schedule_run_now',
+      'opencreator_schedule_get'
     ]);
 
     for (const tool of Object.values(tools)) {
@@ -119,10 +119,10 @@ describe('agent schedule tools', () => {
       defaultTimezone: 'UTC'
     });
 
-    await tools.clawee_schedule_pause.execute({ scheduleId: 'schedule-1' });
-    await tools.clawee_schedule_resume.execute({ scheduleId: 'schedule-1' });
-    const runNow = await tools.clawee_schedule_run_now.execute({ scheduleId: 'schedule-1' });
-    await tools.clawee_schedule_get.execute({});
+    await tools.opencreator_schedule_pause.execute({ scheduleId: 'schedule-1' });
+    await tools.opencreator_schedule_resume.execute({ scheduleId: 'schedule-1' });
+    const runNow = await tools.opencreator_schedule_run_now.execute({ scheduleId: 'schedule-1' });
+    await tools.opencreator_schedule_get.execute({});
 
     expect(request.mock.calls.map(([input]) => input)).toEqual([
       {
@@ -181,7 +181,7 @@ describe('agent schedule tools', () => {
       defaultTimezone: 'UTC'
     });
 
-    await expect(tools.clawee_schedule_update.execute({
+    await expect(tools.opencreator_schedule_update.execute({
       name: '需要先选择'
     })).resolves.toEqual({
       selectionRequired: true,
@@ -189,7 +189,7 @@ describe('agent schedule tools', () => {
       message: 'Multiple schedules are available',
       candidates: selection.candidates
     });
-    await expect(tools.clawee_schedule_run_now.execute({})).resolves.toEqual({
+    await expect(tools.opencreator_schedule_run_now.execute({})).resolves.toEqual({
       selectionRequired: true,
       code: 'SCHEDULE_SELECTION_REQUIRED',
       message: 'Multiple schedules are available',
@@ -239,7 +239,7 @@ describe('agent schedule tools', () => {
     await expect(unavailable.request({
       method: 'GET',
       path: '/internal/agent-tools/schedules/current'
-    })).rejects.toThrow('Clawee daemon is unreachable');
+    })).rejects.toThrow('OpenCreator daemon is unreachable');
 
     const timedOut = createAgentScheduleHttpClient({
       baseUrl: 'http://127.0.0.1:3000',

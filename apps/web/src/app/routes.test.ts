@@ -23,10 +23,9 @@ describe('app routes', () => {
   it('parses every primary page route', () => {
     expect(parseRoute('#/search')).toEqual({ view: 'search' });
     expect(parseRoute('#/projects')).toEqual({ view: 'projects' });
-    expect(parseRoute('#/workbench')).toEqual({ view: 'workbench' });
+    expect(parseRoute('#/dashboard')).toEqual({ view: 'dashboard' });
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });
     expect(parseRoute('#/tasks')).toEqual({ view: 'tasks' });
-    expect(parseRoute('#/dashboard')).toEqual({ view: 'dashboard' });
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
     expect(parseRoute('#/connections')).toEqual({ view: 'plugins', tab: 'connections' });
     expect(parseRoute('#/assets')).toEqual({ view: 'assets' });
@@ -100,13 +99,12 @@ describe('app routes', () => {
 
   it('formats stable copyable hashes for every route', () => {
     expect(formatRoute({ view: 'home' })).toBe('#/');
-    expect(formatRoute({ view: 'workbench' })).toBe('#/workbench');
+    expect(formatRoute({ view: 'dashboard' })).toBe('#/dashboard');
     expect(formatRoute({ view: 'projects' })).toBe('#/projects');
     expect(formatRoute({ view: 'thread', threadId: 'thread 1' })).toBe('#/thread/thread%201');
     expect(formatRoute({ view: 'search' })).toBe('#/search');
     expect(formatRoute({ view: 'schedules' })).toBe('#/schedules');
     expect(formatRoute({ view: 'tasks' })).toBe('#/tasks');
-    expect(formatRoute({ view: 'dashboard' })).toBe('#/dashboard');
     expect(formatRoute({ view: 'plugins' })).toBe('#/plugins');
     expect(formatRoute({ view: 'plugins', tab: 'connections' })).toBe('#/plugins?tab=connections');
     expect(formatRoute({ view: 'assets' })).toBe('#/assets');

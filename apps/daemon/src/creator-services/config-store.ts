@@ -1,5 +1,5 @@
-import type { CreatorServicesConfig } from '@clawee/protocol';
-import { createDefaultCreatorServicesConfig } from '@clawee/protocol';
+import type { CreatorServicesConfig } from '@opencreator/protocol';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { AsyncEntry } from '@napi-rs/keyring';
 import { z } from 'zod';
 

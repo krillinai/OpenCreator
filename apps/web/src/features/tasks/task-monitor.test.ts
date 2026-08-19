@@ -1,4 +1,4 @@
-import type { TaskItem } from '@clawee/protocol';
+import type { TaskItem } from '@opencreator/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   collectTaskTransitions,

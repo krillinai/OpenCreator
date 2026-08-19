@@ -13,7 +13,7 @@ Give the dark-mode Composer a clearer visual hierarchy between the page, the mai
 - Add a subtle internal separator between the input area and project footer at approximately 6% white opacity.
 - Preserve the current 8px radius, dimensions, spacing, controls, and menu behavior.
 
-The contrast is intentionally lower than the supplied reference's footer so the Composer remains integrated with Clawee's restrained dark theme.
+The contrast is intentionally lower than the supplied reference's footer so the Composer remains integrated with OpenCreator's restrained dark theme.
 
 ## Scope
 

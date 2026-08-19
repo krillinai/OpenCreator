@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope } from '@opencreator/protocol';
 
 export const normalizerVersion = 1;
 

@@ -1,4 +1,4 @@
-import type { CodexStatusResponse } from '@clawee/protocol';
+import type { CodexStatusResponse } from '@opencreator/protocol';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { DiagnosticsSettingsView } from './DiagnosticsSettingsView.js';

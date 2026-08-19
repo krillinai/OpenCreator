@@ -5,7 +5,7 @@ import type {
   EnterpriseSharedFileMutationResponse,
   EnterpriseSharedSpaceListResponse,
   RuntimeErrorCode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   link,
@@ -342,7 +342,7 @@ export function createEnterpriseSharedDriveManager(input: {
 
     const temporaryPath = join(
       target.parentReal,
-      `.${basename(target.path)}.clawee-${randomUUID()}.download`
+      `.${basename(target.path)}.opencreator-${randomUUID()}.download`
     );
     try {
       const downloaded = await runRemote(
@@ -537,7 +537,7 @@ async function commitDownloadedFile(input: {
     }
   }
 
-  const backupPath = `${input.targetPath}.clawee-${randomUUID()}.backup`;
+  const backupPath = `${input.targetPath}.opencreator-${randomUUID()}.backup`;
   let backupCreated = false;
   try {
     await rename(input.targetPath, backupPath);

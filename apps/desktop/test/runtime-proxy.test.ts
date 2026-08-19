@@ -8,15 +8,15 @@ import {
 
 describe('Desktop Runtime proxy', () => {
   it('matches only the exact runtime route prefix', () => {
-    expect(isRuntimeRequestUrl(new URL('clawee-app://app/.clawee/runtime'))).toBe(true);
-    expect(isRuntimeRequestUrl(new URL('clawee-app://app/.clawee/runtime/healthz'))).toBe(true);
-    expect(isRuntimeRequestUrl(new URL('clawee-app://app/.clawee/runtimeevil'))).toBe(false);
-    expect(isRuntimeRequestUrl(new URL('clawee-app://bootstrap/.clawee/runtime'))).toBe(false);
+    expect(isRuntimeRequestUrl(new URL('opencreator-app://app/.opencreator/runtime'))).toBe(true);
+    expect(isRuntimeRequestUrl(new URL('opencreator-app://app/.opencreator/runtime/healthz'))).toBe(true);
+    expect(isRuntimeRequestUrl(new URL('opencreator-app://app/.opencreator/runtimeevil'))).toBe(false);
+    expect(isRuntimeRequestUrl(new URL('opencreator-app://bootstrap/.opencreator/runtime'))).toBe(false);
   });
 
   it('accepts only an explicit loopback daemon origin', () => {
     expect(createRuntimeProxyTarget(
-      new URL('clawee-app://app/.clawee/runtime/healthz?full=1'),
+      new URL('opencreator-app://app/.opencreator/runtime/healthz?full=1'),
       'http://127.0.0.1:60764'
     ).toString()).toBe('http://127.0.0.1:60764/healthz?full=1');
 
@@ -31,7 +31,7 @@ describe('Desktop Runtime proxy', () => {
       'http://127.0.0.1:70000'
     ]) {
       expect(() => createRuntimeProxyTarget(
-        new URL('clawee-app://app/.clawee/runtime/healthz'),
+        new URL('opencreator-app://app/.opencreator/runtime/healthz'),
         address
       ), address).toThrow();
     }
@@ -39,12 +39,12 @@ describe('Desktop Runtime proxy', () => {
 
   it('rejects encoded and unencoded network paths before URL construction', () => {
     for (const requestUrl of [
-      'clawee-app://app/.clawee/runtime//attacker.example/path',
-      'clawee-app://app/.clawee/runtime/%2f%2fattacker.example/path',
-      'clawee-app://app/.clawee/runtime/%2F%5cattacker.example/path',
-      'clawee-app://app/.clawee/runtime/%5c%5cattacker.example/path',
-      'clawee-app://app/.clawee/runtime/%00healthz',
-      'clawee-app://app/.clawee/runtime/%'
+      'opencreator-app://app/.opencreator/runtime//attacker.example/path',
+      'opencreator-app://app/.opencreator/runtime/%2f%2fattacker.example/path',
+      'opencreator-app://app/.opencreator/runtime/%2F%5cattacker.example/path',
+      'opencreator-app://app/.opencreator/runtime/%5c%5cattacker.example/path',
+      'opencreator-app://app/.opencreator/runtime/%00healthz',
+      'opencreator-app://app/.opencreator/runtime/%'
     ]) {
       expect(() => createRuntimeProxyTarget(
         new URL(requestUrl),

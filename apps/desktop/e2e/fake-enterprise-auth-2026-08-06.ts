@@ -13,9 +13,9 @@ import { fileURLToPath } from 'node:url';
 export const desktopE2EEnterpriseEmail = 'desktop-e2e@example.com';
 export const desktopE2EEnterprisePassword = 'desktop-e2e-password';
 
-const keyringService = 'com.clawee.enterprise.e2e';
+const keyringService = 'com.opencreator.enterprise.e2e';
 const agentIdPattern =
-  /^clawee_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^opencreator_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const rootDir = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../..'
@@ -77,7 +77,7 @@ export class FakeEnterpriseAuthServer {
         !isRecord(body)
         || body.email !== desktopE2EEnterpriseEmail
         || body.password !== desktopE2EEnterprisePassword
-        || body.client_id !== 'clawee-agent'
+        || body.client_id !== 'opencreator-agent'
         || typeof body.agent_id !== 'string'
         || !agentIdPattern.test(body.agent_id)
       ) {
@@ -150,7 +150,7 @@ export async function deleteEnterpriseE2ECredential(
     const { AsyncEntry } = requireFromDaemon('@napi-rs/keyring');
     const entry = new AsyncEntry(
       ${JSON.stringify(keyringService)},
-      'clawee-agent:' + process.argv[2]
+      'opencreator-agent:' + process.argv[2]
     );
     entry.deletePassword().then(
       () => process.exit(0),

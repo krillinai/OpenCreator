@@ -7,7 +7,7 @@ import type {
   CodexMcpRemoveResponse,
   CodexMcpServerDetailResponse,
   CodexMcpServerResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   KeyRound,
   LoaderCircle,

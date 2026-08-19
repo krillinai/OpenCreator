@@ -8,7 +8,7 @@ import type {
   ProjectStatus,
   ReplaceProjectDirectoryRequest,
   UpdateProjectRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, realpathSync, rmdirSync, statSync } from 'node:fs';
@@ -43,7 +43,7 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
   const threads = createThreadRepository(input.db);
   const homeDir = input.homeDir ?? homedir();
   const managedProjectRoot = input.managedProjectRoot === undefined
-    ? join(homeDir, 'Documents', 'Clawee')
+    ? join(homeDir, 'Documents', 'OpenCreator')
     : resolve(expandHome(input.managedProjectRoot, homeDir));
   const createId = input.idFactory ?? (() => `project_${nanoid(10)}`);
 
@@ -54,7 +54,7 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
       } catch {
         throw new ProjectManagerError(
           'PROJECT_DIRECTORY_UNAVAILABLE',
-          'Clawee 默认项目目录不可用'
+          'OpenCreator 默认项目目录不可用'
         );
       }
 
@@ -101,7 +101,7 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
       } catch {
         throw new ProjectManagerError(
           'PROJECT_DIRECTORY_UNAVAILABLE',
-          'Clawee 默认项目目录不可用'
+          'OpenCreator 默认项目目录不可用'
         );
       }
 
@@ -165,7 +165,7 @@ export function createProjectManager(input: CreateProjectManagerInput): ProjectM
 
         const assignedThreadIds: string[] = [];
         const unassignedThreadIds: string[] = [];
-        for (const thread of threads.listUnassignedClaweeConversationThreads()) {
+        for (const thread of threads.listUnassignedOpenCreatorConversationThreads()) {
           const projectId = projectIdsByCanonicalCwd.get(thread.canonical_cwd);
           if (projectId === undefined) {
             unassignedThreadIds.push(thread.id);

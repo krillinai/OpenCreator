@@ -1,4 +1,4 @@
-import type { TaskListQuery, TaskStatusFilter } from '@clawee/protocol';
+import type { TaskListQuery, TaskStatusFilter } from '@opencreator/protocol';
 import type { FastifyInstance } from 'fastify';
 import {
   TaskCursorError,

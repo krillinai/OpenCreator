@@ -2,7 +2,7 @@
 
 ## 1. 适用范围
 
-本文用于发布“一个 Schedule 对应一个长期 Clawee Thread”的定时任务模型，覆盖：
+本文用于发布“一个 Schedule 对应一个长期 OpenCreator Thread”的定时任务模型，覆盖：
 
 - 旧 SQLite Schema 向前迁移。
 - 旧活动 Schedule 补齐专属任务 Thread。
@@ -16,7 +16,7 @@
 ## 2. 安全约束
 
 1. 必须先停止 Web、daemon 和 Scheduler，再复制 Runtime 数据。
-2. 必须备份整个 `.runtime/` 或 `CLAWEE_DATA_DIR`，不能只复制 `app.sqlite`。
+2. 必须备份整个 `.runtime/` 或 `OPENCREATOR_DATA_DIR`，不能只复制 `app.sqlite`。
 3. 不得直接在用户唯一数据库上试跑迁移；先使用脱敏副本或仓库内置临时演练。
 4. 不得通过删列、删 Thread、合并 Codex session 或修改历史 Run 实现降级。
 5. Scheduler 只能在 Schema 迁移、`ensureBindings()` 和旧会话分类完成后启动。
@@ -51,7 +51,7 @@ Scheduled task upgrade and rollback rehearsal passed.
 需要保留临时数据库排查时可以运行：
 
 ```bash
-pnpm --filter @clawee/daemon verify:schedule-upgrade -- --keep
+pnpm --filter @opencreator/daemon verify:schedule-upgrade -- --keep
 ```
 
 ## 4. 生产升级
@@ -61,11 +61,11 @@ pnpm --filter @clawee/daemon verify:schedule-upgrade -- --keep
 停止当前 Web、daemon 和任何独立 Scheduler 进程。确认没有进程继续写入 SQLite 后执行：
 
 ```bash
-export CLAWEE_DATA_DIR="${CLAWEE_DATA_DIR:-$PWD/.runtime}"
+export OPENCREATOR_DATA_DIR="${OPENCREATOR_DATA_DIR:-$PWD/.runtime}"
 export RELEASE_BACKUP="$PWD/backups/runtime-before-schedule-thread-$(date +%Y%m%d-%H%M%S)"
 
 mkdir -p "$(dirname "$RELEASE_BACKUP")"
-cp -R "$CLAWEE_DATA_DIR" "$RELEASE_BACKUP"
+cp -R "$OPENCREATOR_DATA_DIR" "$RELEASE_BACKUP"
 ```
 
 记录备份路径、应用提交、Codex CLI 版本和数据库摘要：
@@ -73,7 +73,7 @@ cp -R "$CLAWEE_DATA_DIR" "$RELEASE_BACKUP"
 ```bash
 git rev-parse HEAD
 codex --version
-sqlite3 "$CLAWEE_DATA_DIR/app.sqlite" <<'SQL'
+sqlite3 "$OPENCREATOR_DATA_DIR/app.sqlite" <<'SQL'
 SELECT sqlite_version() AS sqlite_version;
 PRAGMA user_version;
 SELECT COUNT(*) AS schedule_count FROM schedules;
@@ -90,7 +90,7 @@ SQL
 `PRAGMA user_version` 当前可能为 `0`，因此发布记录还必须包含应用提交和 Schema 列清单：
 
 ```bash
-sqlite3 "$CLAWEE_DATA_DIR/app.sqlite" \
+sqlite3 "$OPENCREATOR_DATA_DIR/app.sqlite" \
   "PRAGMA table_info(schedules); PRAGMA table_info(threads);"
 ```
 
@@ -175,7 +175,7 @@ ORDER BY created_at DESC;
 3. 自动执行和用户在任务会话内发送消息都进入同一 Thread。
 4. 暂停、恢复、编辑和删除同步更新“已安排”、侧栏“任务”和任务会话头部。
 5. 成功、失败和待审批通知都携带正确的 `threadId/runId/approvalId`。
-6. 模拟 Codex resume 失败后 Clawee Thread 不变，底层 Codex thread 可以轮换。
+6. 模拟 Codex resume 失败后 OpenCreator Thread 不变，底层 Codex thread 可以轮换。
 7. 桌面和移动视口无旧会话残留、横向溢出或控制台新增错误。
 8. 受支持的原生 Desktop Host 在页面关闭后仍能消费 outbox 并打开正确深链接。
 
@@ -211,9 +211,9 @@ pnpm release:verify-scheduled-task-upgrade
 pnpm typecheck
 pnpm build
 pnpm e2e
-CLAWEE_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 \
-pnpm --filter @clawee/daemon test -- \
+OPENCREATOR_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 \
+pnpm --filter @opencreator/daemon test -- \
   --pool=forks --maxWorkers=1 \
   test/smoke/real-codex-smoke.test.ts
 git diff --check

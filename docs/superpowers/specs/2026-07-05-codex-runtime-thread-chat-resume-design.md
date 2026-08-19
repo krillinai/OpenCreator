@@ -655,7 +655,7 @@ R2 规范以下事件细节：
 
 ### 14.6 真实 Codex Gated Smoke
 
-使用环境变量显式启用，例如 `CLAWEE_RUN_REAL_CODEX_SMOKE=1`。
+使用环境变量显式启用，例如 `OPENCREATOR_RUN_REAL_CODEX_SMOKE=1`。
 
 覆盖：
 

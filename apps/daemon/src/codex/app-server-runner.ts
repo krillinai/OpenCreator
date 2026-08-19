@@ -1,4 +1,4 @@
-import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
+import type { ReasoningEffort, SandboxMode } from '@opencreator/protocol';
 import type { BuiltInToolPolicy, CodexMcpServerConfig } from './argv.js';
 import { createCodexIsolatedHome, createCodexProbeHome } from './probe-home.js';
 import {

@@ -27,7 +27,7 @@ import type {
   WorkspaceFileRevealResponse,
   WorkspaceFileSaveRequest,
   WorkspaceFileSaveResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeThread } from '../threads/types.js';
 import { WorkspaceFileError } from './errors.js';
 import { isEditable, isPreviewable, isSensitivePath, isTextualKind, kindFor, mimeFor, reasonForUnavailable } from './mime.js';
@@ -337,7 +337,7 @@ function assertSameWritableTarget(
 }
 
 function createTempPath(parentPath: string, fileName: string): string {
-  return join(parentPath, `.${fileName}.clawee-${process.pid}-${randomBytes(6).toString('hex')}.tmp`);
+  return join(parentPath, `.${fileName}.opencreator-${process.pid}-${randomBytes(6).toString('hex')}.tmp`);
 }
 
 function fsyncParentDirectory(parentReal: string, fileOps: WorkspaceFileOps): void {

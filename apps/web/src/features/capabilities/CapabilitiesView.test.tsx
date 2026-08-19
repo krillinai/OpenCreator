@@ -1,4 +1,4 @@
-import type { CodexMcpListResponse, CodexSkillListResponse } from '@clawee/protocol';
+import type { CodexMcpListResponse, CodexSkillListResponse } from '@opencreator/protocol';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { CodexProfileListResponse } from '../../services/capability-service.js';

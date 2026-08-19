@@ -92,7 +92,7 @@ describe('codex skill validator', () => {
   });
 
   it('rejects symlinks anywhere in a skill directory', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-validator-'));
     const skillDir = join(tempDir, 'skill');
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: test\ndescription: test\n---\n');

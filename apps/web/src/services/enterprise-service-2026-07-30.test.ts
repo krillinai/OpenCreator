@@ -108,7 +108,7 @@ describe('enterprise service', () => {
     expect(postBinary).toHaveBeenCalledWith(
       `/enterprise/knowledge-bases/${encoded}/documents?fileName=%E5%88%B6%E5%BA%A6+2026.pdf&mimeType=application%2Fpdf&sizeBytes=6`,
       file,
-      'application/vnd.clawee.knowledge-document'
+      'application/vnd.opencreator.knowledge-document'
     );
   });
 
@@ -160,7 +160,7 @@ describe('enterprise service', () => {
     expect(postBinary).toHaveBeenCalledWith(
       '/enterprise/shared-spaces/space%2F%E5%AD%A3%E5%BA%A6/files?logicalPath=docs%2F%E6%96%B9%E6%A1%88.md&contentType=text%2Fmarkdown&sizeBytes=5&expectedRevision=3',
       file,
-      'application/vnd.clawee.shared-file'
+      'application/vnd.opencreator.shared-file'
     );
     expect(post).toHaveBeenCalledWith(
       '/enterprise/shared-files/file%2F%E6%96%B9%E6%A1%88/download',

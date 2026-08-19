@@ -15,9 +15,9 @@
 **Files:**
 - Modify: `apps/web/src/styles/app-css.test.ts`
 
-- [ ] Add assertions requiring `.clawee-composer` to define `--composer-input-background: #1a1b1e`, `--composer-project-background: #232427`, `--composer-border: rgba(245, 245, 246, 0.12)`, and `--composer-separator: rgba(245, 245, 246, 0.06)`.
+- [ ] Add assertions requiring `.opencreator-composer` to define `--composer-input-background: #1a1b1e`, `--composer-project-background: #232427`, `--composer-border: rgba(245, 245, 246, 0.12)`, and `--composer-separator: rgba(245, 245, 246, 0.06)`.
 - [ ] Assert that the container border uses `--composer-border`, the input pseudo-element uses `--composer-input-background`, and the project footer uses `--composer-separator` as its top border.
-- [ ] Run `pnpm --filter @clawee/web test -- src/styles/app-css.test.ts` and confirm it fails because the new variables are absent.
+- [ ] Run `pnpm --filter @opencreator/web test -- src/styles/app-css.test.ts` and confirm it fails because the new variables are absent.
 
 ### Task 2: Implement the dark surfaces
 
@@ -25,11 +25,11 @@
 - Modify: `apps/web/src/styles/app.css`
 - Test: `apps/web/src/styles/app-css.test.ts`
 
-- [ ] Add the four Composer-local variables to `.clawee-composer`.
+- [ ] Add the four Composer-local variables to `.opencreator-composer`.
 - [ ] Change the outer border to `var(--composer-border)` and the input pseudo-element to `var(--composer-input-background)`.
 - [ ] Give `.composer-project-context` a `1px solid var(--composer-separator)` top border and retain its existing background source.
 - [ ] Keep the light-theme Composer variables mapped to the existing light surfaces and border values.
-- [ ] Run `pnpm --filter @clawee/web test -- src/styles/app-css.test.ts` and confirm all CSS contracts pass.
+- [ ] Run `pnpm --filter @opencreator/web test -- src/styles/app-css.test.ts` and confirm all CSS contracts pass.
 
 ### Task 3: Verify shared rendering
 

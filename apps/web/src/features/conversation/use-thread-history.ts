@@ -2,7 +2,7 @@ import type {
   ThreadHistoryItem,
   ThreadHistoryQuery,
   ThreadHistoryResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const HISTORY_PAGE_SIZE = 50;

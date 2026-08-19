@@ -7,7 +7,7 @@ import type {
   CodexProfileResponse,
   CreateCodexProfileRequest,
   UpdateCodexProfileRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   FileSliders,
   LoaderCircle,

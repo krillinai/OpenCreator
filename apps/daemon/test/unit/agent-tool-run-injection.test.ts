@@ -29,18 +29,18 @@ describe('agent tool run injection', () => {
       expect.objectContaining({
         name: AGENT_SCHEDULE_MCP_SERVER_NAME,
         url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
-        bearerTokenEnvVar: 'CLAWEE_AGENT_CAPABILITY_TOKEN',
+        bearerTokenEnvVar: 'OPENCREATOR_AGENT_CAPABILITY_TOKEN',
         enabledTools: [
-          'clawee_schedule_create',
-          'clawee_schedule_update',
-          'clawee_schedule_pause',
-          'clawee_schedule_resume',
-          'clawee_schedule_run_now',
-          'clawee_schedule_get'
+          'opencreator_schedule_create',
+          'opencreator_schedule_update',
+          'opencreator_schedule_pause',
+          'opencreator_schedule_resume',
+          'opencreator_schedule_run_now',
+          'opencreator_schedule_get'
         ]
       })
     ]);
-    const token = injection?.env.CLAWEE_AGENT_CAPABILITY_TOKEN;
+    const token = injection?.env.OPENCREATOR_AGENT_CAPABILITY_TOKEN;
     expect(token).toMatch(/^clwcap_/);
     expect(injection?.env).toMatchObject({
       NO_PROXY: 'existing.example,internal.example,127.0.0.1,localhost',
@@ -72,17 +72,17 @@ describe('agent tool run injection', () => {
     });
 
     expect(taskRun?.mcpServers[0]?.enabledTools).toEqual([
-      'clawee_schedule_update',
-      'clawee_schedule_pause',
-      'clawee_schedule_resume',
-      'clawee_schedule_run_now',
-      'clawee_schedule_get'
+      'opencreator_schedule_update',
+      'opencreator_schedule_pause',
+      'opencreator_schedule_resume',
+      'opencreator_schedule_run_now',
+      'opencreator_schedule_get'
     ]);
     expect(automaticRun?.mcpServers[0]?.enabledTools).toEqual([
-      'clawee_schedule_get'
+      'opencreator_schedule_get'
     ]);
     expect(() => tokens.authorize(
-      automaticRun?.env.CLAWEE_AGENT_CAPABILITY_TOKEN,
+      automaticRun?.env.OPENCREATOR_AGENT_CAPABILITY_TOKEN,
       { scope: 'schedule:update' }
     )).toThrow('scope is not allowed');
     tokens.close();
@@ -115,11 +115,11 @@ describe('agent tool run injection', () => {
       expect.objectContaining({
         name: AGENT_SCHEDULE_MCP_SERVER_NAME,
         url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
-        bearerTokenEnvVar: 'CLAWEE_AGENT_CAPABILITY_TOKEN'
+        bearerTokenEnvVar: 'OPENCREATOR_AGENT_CAPABILITY_TOKEN'
       })
     ]);
     expect(injection?.mcpServers[0]).not.toHaveProperty('enabledTools');
-    const token = injection?.env.CLAWEE_AGENT_CAPABILITY_TOKEN;
+    const token = injection?.env.OPENCREATOR_AGENT_CAPABILITY_TOKEN;
     expectCapabilityCode(
       () => tokens.inspect(token),
       'CAPABILITY_CONTEXT_INACTIVE'
@@ -130,7 +130,7 @@ describe('agent tool run injection', () => {
       thread: thread({ purpose: 'conversation' }),
       createdBy: 'api'
     });
-    expect(conversation?.manifestKey).toContain('clawee_schedule_create');
+    expect(conversation?.manifestKey).toContain('opencreator_schedule_create');
     expect(tokens.authorize(token, { scope: 'schedule:create' })).toMatchObject({
       runId: 'run-conversation',
       threadId: 'thread-1'
@@ -143,7 +143,7 @@ describe('agent tool run injection', () => {
       createdBy: 'api'
     });
     expect(task?.manifestKey).not.toBe(conversation?.manifestKey);
-    expect(task?.manifestKey).not.toContain('clawee_schedule_create');
+    expect(task?.manifestKey).not.toContain('opencreator_schedule_create');
     expect(tokens.authorize(token, { scope: 'schedule:update' })).toMatchObject({
       runId: 'run-task',
       threadId: 'thread-2'
@@ -180,7 +180,7 @@ function thread(overrides: Partial<RuntimeThread> = {}): RuntimeThread {
     title: '测试会话',
     projectId: 'project-1',
     enterpriseSubjectId: null,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     cwd: '/workspace/current',
     canonicalCwd: '/workspace/current',
     workspaceMode: 'external',

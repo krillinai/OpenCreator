@@ -6,7 +6,7 @@ import type {
   ScheduleOperationListResponse,
   ScheduleResponse,
   UpdateScheduleRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createScheduleService(client: RuntimeClient) {

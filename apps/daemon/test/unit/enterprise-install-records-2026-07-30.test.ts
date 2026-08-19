@@ -110,7 +110,7 @@ describe('enterprise skill install records', () => {
 });
 
 function openDatabase(): void {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-records-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-records-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
 }
 

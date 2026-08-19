@@ -40,7 +40,7 @@ export function extractPublicConversationInput(input: string): string | undefine
   const trimmed = input.trim();
   if (trimmed.length === 0) return undefined;
 
-  const managedContextPrefix = '[Clawee 用户显式管理的上下文]';
+  const managedContextPrefix = '[OpenCreator 用户显式管理的上下文]';
   if (trimmed.startsWith(managedContextPrefix)) {
     return extractAfterMarker(
       trimmed,
@@ -49,7 +49,7 @@ export function extractPublicConversationInput(input: string): string | undefine
     );
   }
 
-  const rotationContextPrefix = '[Clawee 执行上下文恢复摘要]';
+  const rotationContextPrefix = '[OpenCreator 执行上下文恢复摘要]';
   if (trimmed.startsWith(rotationContextPrefix)) {
     return extractAfterMarker(
       trimmed,
@@ -92,7 +92,7 @@ function extractRequest(input: string): string | undefined {
   if (markerEnd >= 0) source = source.slice(markerEnd).trim();
   if (
     markerEnd < 0
-    && source.startsWith('你是 Clawee 的计划任务配置助手')
+    && source.startsWith('你是 OpenCreator 的计划任务配置助手')
   ) {
     return '创建计划任务';
   }

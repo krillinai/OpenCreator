@@ -115,7 +115,7 @@ describe('Desktop enterprise package contract', () => {
   });
 
   it('reads gateway configuration without packaging the local agent id', () => {
-    const root = mkdtempSync(join(tmpdir(), 'clawee-gateway-contract-'));
+    const root = mkdtempSync(join(tmpdir(), 'opencreator-gateway-contract-'));
     tempRoots.push(root);
     const path = join(root, 'gateway.json');
     writeFileSync(path, 'gateway = "https://enterprise.example/"\n');
@@ -128,7 +128,7 @@ describe('Desktop enterprise package contract', () => {
     writeFileSync(
       path,
       'gateway = "https://enterprise.example"\n'
-      + 'agent_id = "clawee_550e8400-e29b-41d4-a716-446655440000"\n'
+      + 'agent_id = "opencreator_550e8400-e29b-41d4-a716-446655440000"\n'
     );
     expect(readEnterpriseGatewayPackageConfig(path, 'release')).toEqual({
       gateway: 'https://enterprise.example',
@@ -154,7 +154,7 @@ describe('Desktop enterprise package contract', () => {
 });
 
 function deploymentFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'clawee-keyring-contract-'));
+  const root = mkdtempSync(join(tmpdir(), 'opencreator-keyring-contract-'));
   tempRoots.push(root);
   const loaderRoot = join(root, 'node_modules', '@napi-rs', 'keyring');
   mkdirSync(loaderRoot, { recursive: true });

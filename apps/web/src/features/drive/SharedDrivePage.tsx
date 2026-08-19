@@ -1,7 +1,7 @@
 import type {
   EnterpriseSharedFileResponse,
   EnterpriseSharedSpaceResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   Download,
   File,
@@ -177,7 +177,7 @@ export function SharedDrivePage(props: SharedDrivePageProps) {
           </p>
         ) : null}
 
-        <div className="shared-drive-workbench">
+        <div className="shared-drive-dashboard">
           <nav className="shared-drive-spaces" aria-label={l('素材分类', 'Media categories')}>
             <div className="shared-drive-pane-heading">
               <div>

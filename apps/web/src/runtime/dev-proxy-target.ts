@@ -1,4 +1,4 @@
-export const DEV_RUNTIME_PROXY_BASE = '/.clawee/runtime';
+export const DEV_RUNTIME_PROXY_BASE = '/.opencreator/runtime';
 
 export type DevDaemonConfig = {
   baseUrl: string;

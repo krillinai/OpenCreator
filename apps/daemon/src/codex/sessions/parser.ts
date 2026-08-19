@@ -1,4 +1,4 @@
-import type { ThreadHistoryItem } from '@clawee/protocol';
+import type { ThreadHistoryItem } from '@opencreator/protocol';
 import {
   createConversationTitle,
   extractPublicConversationInput
@@ -277,7 +277,7 @@ function extractUserMessage(
   return undefined;
 }
 
-const SCHEDULE_EXECUTION_PREFIX = '这是 Clawee 已经触发的一次计划任务执行。';
+const SCHEDULE_EXECUTION_PREFIX = '这是 OpenCreator 已经触发的一次计划任务执行。';
 const SCHEDULE_TRIGGER_MARKER = '\n本次触发时间：';
 const SCHEDULE_CONTENT_MARKER = '\n任务内容：\n';
 

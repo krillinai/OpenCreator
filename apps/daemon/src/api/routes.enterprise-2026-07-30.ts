@@ -1,4 +1,4 @@
-import type { RuntimeErrorCode } from '@clawee/protocol';
+import type { RuntimeErrorCode } from '@opencreator/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { EnterpriseSessionManager } from '../enterprise/session-manager-2026-07-30.js';

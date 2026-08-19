@@ -210,7 +210,7 @@ describe('Codex app-server session provider', () => {
             content: [{
               type: 'text',
               text: [
-                '这是 Clawee 已经触发的一次计划任务执行。',
+                '这是 OpenCreator 已经触发的一次计划任务执行。',
                 '',
                 '执行规则：',
                 '1. 立即完成本次任务，不要重新创建或修改计划任务。',
@@ -259,7 +259,7 @@ describe('Codex app-server session provider', () => {
     ]);
   });
 
-  it('maps a Clawee-managed request wrapper to one public user message', async () => {
+  it('maps a OpenCreator-managed request wrapper to one public user message', async () => {
     const request = vi.fn(async () => ({
       data: [{
         id: 'turn-managed-context',
@@ -275,7 +275,7 @@ describe('Codex app-server session provider', () => {
             content: [{
               type: 'text',
               text: [
-                '[Clawee 用户显式管理的上下文]',
+                '[OpenCreator 用户显式管理的上下文]',
                 '- 会话摘要：不应显示在用户消息中',
                 '[上下文结束]',
                 '',

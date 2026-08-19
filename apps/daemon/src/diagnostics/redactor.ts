@@ -1,4 +1,4 @@
-import type { DiagnosticFileResponse } from '@clawee/protocol';
+import type { DiagnosticFileResponse } from '@opencreator/protocol';
 import { redactText, redactValue } from '../security/redaction.js';
 
 export const DIAGNOSTICS_REDACTION_WARNING =

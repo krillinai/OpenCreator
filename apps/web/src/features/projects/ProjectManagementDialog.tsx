@@ -2,12 +2,12 @@ import type {
   ReasoningEffort,
   ThreadResponse,
   UpdateProjectRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { FolderCog, FolderMinus, FolderPlus, RefreshCw, Save, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '../../components/dialogs/ConfirmDialog.js';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
-import type { ClaweeProject } from './project-model.js';
+import type { OpenCreatorProject } from './project-model.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 const reasoningOptions: Array<{ value: '' | ReasoningEffort; label: string }> = [
@@ -20,8 +20,8 @@ const reasoningOptions: Array<{ value: '' | ReasoningEffort; label: string }> = 
 
 export function ProjectManagementDialog(props: {
   open: boolean;
-  projects: ClaweeProject[];
-  archivedProjects: ClaweeProject[];
+  projects: OpenCreatorProject[];
+  archivedProjects: OpenCreatorProject[];
   unassignedThreads: ThreadResponse[];
   initialProjectId?: string;
   busy?: boolean;
@@ -37,7 +37,7 @@ export function ProjectManagementDialog(props: {
 }) {
   const l = useLocalizedCopy();
   const [editingProjectId, setEditingProjectId] = useState<string>();
-  const [projectPendingRemoval, setProjectPendingRemoval] = useState<ClaweeProject>();
+  const [projectPendingRemoval, setProjectPendingRemoval] = useState<OpenCreatorProject>();
   const [removingProjectId, setRemovingProjectId] = useState<string>();
   const [assignmentByThreadId, setAssignmentByThreadId] = useState<Record<string, string>>({});
 
@@ -275,7 +275,7 @@ export function ProjectManagementDialog(props: {
 }
 
 function ProjectEditForm(props: {
-  project: ClaweeProject;
+  project: OpenCreatorProject;
   disabled?: boolean;
   onCancel(): void;
   onSave(input: UpdateProjectRequest): Promise<void>;
@@ -327,7 +327,7 @@ function ProjectEditForm(props: {
         <select
           value={normalizeProjectSandbox(sandbox)}
           onChange={async event => {
-            const value = event.currentTarget.value as ClaweeProject['sandbox'];
+            const value = event.currentTarget.value as OpenCreatorProject['sandbox'];
             if (
               value === 'danger-full-access'
               && sandbox !== 'danger-full-access'
@@ -371,7 +371,7 @@ function normalizePath(value: string): string {
 }
 
 function normalizeProjectSandbox(
-  value: ClaweeProject['sandbox']
+  value: OpenCreatorProject['sandbox']
 ): 'follow-global' | 'workspace-write' | 'danger-full-access' {
   if (value === 'danger-full-access' || value === 'follow-global') return value;
   return 'workspace-write';

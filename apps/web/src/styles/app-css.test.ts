@@ -93,8 +93,8 @@ describe('app CSS visual contracts', () => {
     expect(tokensCss).toContain('--bg: var(--surface-page);');
     expect(tokensCss).toContain('--conversation-bg: var(--surface-page);');
     expect(tokensCss).toContain('--popover: var(--surface-popover);');
-    expect(cssBlock('.clawee-sidebar-pane')).toContain('background: var(--sidebar);');
-    expect(cssBlock('.clawee-composer::after')).toContain('background: var(--composer-input-background);');
+    expect(cssBlock('.opencreator-sidebar-pane')).toContain('background: var(--sidebar);');
+    expect(cssBlock('.opencreator-composer::after')).toContain('background: var(--composer-input-background);');
     expect(cssBlock('.composer-popover')).toContain('background: var(--popover);');
   });
 
@@ -358,7 +358,7 @@ describe('app CSS visual contracts', () => {
   });
 
   it('keeps the app shell dark during layout changes', () => {
-    const mainPane = cssBlock('.clawee-main-pane');
+    const mainPane = cssBlock('.opencreator-main-pane');
 
     expect(appCss).toMatch(/html,\nbody,\n#root\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;[^}]*background:\s*var\(--bg\);/);
     expect(tokensCss).toContain('--surface-page: #0c0d0f;');
@@ -371,7 +371,7 @@ describe('app CSS visual contracts', () => {
   it('uses local fonts and opaque primary surfaces during viewport changes', () => {
     const body = cssBlock('body');
     const conversationHeader = cssBlock('.conversation-header');
-    const composer = cssBlock('.clawee-composer');
+    const composer = cssBlock('.opencreator-composer');
 
     expect(appCss).not.toContain('@import url(');
     expect(tokensCss).toContain('--font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;');
@@ -383,11 +383,11 @@ describe('app CSS visual contracts', () => {
     expect(appCss).not.toContain('.conversation-project');
     expect(composer).toContain('background: var(--composer-project-background);');
     expect(composer).not.toMatch(/background:\s*(?:linear-gradient|color-mix)/);
-    expect(appCss).toMatch(/\.clawee-sidebar-pane\s*\{[^}]*background:\s*var\(--sidebar\);[^}]*border-right:\s*1px solid var\(--border-hairline\);/);
+    expect(appCss).toMatch(/\.opencreator-sidebar-pane\s*\{[^}]*background:\s*var\(--sidebar\);[^}]*border-right:\s*1px solid var\(--border-hairline\);/);
   });
 
   it('keeps the desktop shell inside short viewports', () => {
-    const shell = cssBlock('.clawee-shell');
+    const shell = cssBlock('.opencreator-shell');
 
     expect(shell).toContain('width: 100%;');
     expect(shell).toContain('height: 100%;');
@@ -620,8 +620,8 @@ describe('app CSS visual contracts', () => {
   it('keeps the composer compact over one continuous conversation background', () => {
     const composerWrap = cssBlock('.composer-wrap');
     const composerStack = cssBlock('.composer-stack');
-    const composer = cssBlock('.clawee-composer');
-    const composerTextarea = cssBlock('.clawee-composer textarea');
+    const composer = cssBlock('.opencreator-composer');
+    const composerTextarea = cssBlock('.opencreator-composer textarea');
     const composerQueue = cssBlock('.composer-queue');
     const composerQueueItem = cssBlock('.composer-queue-item');
 
@@ -643,7 +643,7 @@ describe('app CSS visual contracts', () => {
     expect(composer).toContain('--composer-border: rgba(245, 245, 246, 0.12);');
     expect(composer).toContain('--composer-separator: rgba(245, 245, 246, 0.06);');
     expect(composer).toContain('border: 1px solid var(--composer-border);');
-    expect(cssBlock('.clawee-composer::after')).toContain(
+    expect(cssBlock('.opencreator-composer::after')).toContain(
       'background: var(--composer-input-background);'
     );
     expect(composerQueue).toContain('margin: 0 14px -1px;');
@@ -694,13 +694,13 @@ describe('app CSS visual contracts', () => {
     expect(cssBlock('.project-drop-overlay')).toContain('pointer-events: none;');
   });
 
-  it('lays out the empty conversation as a scrollable creator workbench', () => {
+  it('lays out the empty conversation as a scrollable creator dashboard', () => {
     const emptyPage = cssBlock('.conversation-page.is-empty');
     const title = cssBlock('.conversation-empty-greeting h2');
     const subtitle = cssBlock('.conversation-empty-greeting p');
     const emptyComposer = cssBlock('.conversation-page.is-empty .composer-wrap');
     const titledEmptyPage = cssBlock('.conversation-page.is-empty.has-header');
-    const lightComposer = cssBlock(':root[data-theme="light"] .clawee-composer');
+    const lightComposer = cssBlock(':root[data-theme="light"] .opencreator-composer');
 
     expect(appCss).not.toContain('.conversation-empty-logo-bg');
     expect(appCss).not.toContain('日常办公');
@@ -733,24 +733,24 @@ describe('app CSS visual contracts', () => {
     expect(appCss).toMatch(
       /@media \(max-width: 1100px\) and \(min-width: 921px\)\s*\{[\s\S]*?\.creator-template-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/
     );
-    expect(appCss).toMatch(/\.conversation-page\.is-empty \.clawee-composer textarea\s*\{[^}]*min-height:\s*72px;/);
+    expect(appCss).toMatch(/\.conversation-page\.is-empty \.opencreator-composer textarea\s*\{[^}]*min-height:\s*72px;/);
     expect(appCss).not.toContain('translateY(clamp(-150px, -14vh, -108px))');
     expect(tokensCss).toContain('--border-hairline: rgba(245, 245, 246, 0.08);');
     expect(tokensCss).toContain('--border-hairline: rgba(24, 24, 27, 0.07);');
-    expect(cssBlock('.clawee-composer')).toContain('border: 1px solid var(--composer-border);');
-    expect(cssBlock('.clawee-composer.without-project-selector')).toContain(
+    expect(cssBlock('.opencreator-composer')).toContain('border: 1px solid var(--composer-border);');
+    expect(cssBlock('.opencreator-composer.without-project-selector')).toContain(
       'background: var(--composer-input-background);'
     );
-    expect(cssBlock('.clawee-composer.without-project-selector::after')).toContain('inset: 0;');
-    expect(cssBlock('.clawee-composer::before')).toContain('border: 0;');
-    expect(cssBlock('.clawee-composer::before')).toContain('z-index: 0;');
+    expect(cssBlock('.opencreator-composer.without-project-selector::after')).toContain('inset: 0;');
+    expect(cssBlock('.opencreator-composer::before')).toContain('border: 0;');
+    expect(cssBlock('.opencreator-composer::before')).toContain('z-index: 0;');
     expect(lightComposer).toContain('--composer-project-background: #eeeeef;');
     expect(lightComposer).toContain('background: var(--composer-project-background);');
-    expect(cssBlock(':root[data-theme="light"] .clawee-composer::after')).toContain('background: var(--surface-input);');
+    expect(cssBlock(':root[data-theme="light"] .opencreator-composer::after')).toContain('background: var(--surface-input);');
     expect(lightComposer).toContain('backdrop-filter: none;');
     expect(lightComposer).not.toContain('linear-gradient');
     expect(lightComposer).not.toContain('inset');
-    expect(appCss).toMatch(/:root\[data-theme="light"\] \.clawee-composer \.composer-icon-button,[\s\S]*?\.composer-submit-menu-button\s*\{[^}]*box-shadow:\s*none;/);
+    expect(appCss).toMatch(/:root\[data-theme="light"\] \.opencreator-composer \.composer-icon-button,[\s\S]*?\.composer-submit-menu-button\s*\{[^}]*box-shadow:\s*none;/);
     expect(appCss).toMatch(/\.conversation-empty-greeting h2\s*\{[^}]*font-size:\s*26px;/);
     expect(appCss).toMatch(/\.conversation-empty-greeting h2\s*\{[^}]*font-size:\s*23px;/);
     expect(appCss).toMatch(/\.conversation-empty-greeting p\s*\{[^}]*font-size:\s*26px;/);
@@ -824,13 +824,13 @@ describe('app CSS visual contracts', () => {
 
   it('uses an overlay drawer and stable scroll container for mobile navigation', () => {
     expect(appCss).toMatch(
-      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.clawee-sidebar-pane\s*\{[^}]*position:\s*fixed;[^}]*transform:\s*translateX\(-100%\);/
+      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.opencreator-sidebar-pane\s*\{[^}]*position:\s*fixed;[^}]*transform:\s*translateX\(-100%\);/
     );
     expect(appCss).toMatch(
-      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.clawee-sidebar-pane\[data-mobile-open="true"\]\s*\{[^}]*transform:\s*translateX\(0\);/
+      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.opencreator-sidebar-pane\[data-mobile-open="true"\]\s*\{[^}]*transform:\s*translateX\(0\);/
     );
     expect(appCss).toMatch(
-      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.clawee-main-content\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/
+      /@media \(max-width: 920px\)\s*\{[\s\S]*?\.opencreator-main-content\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/
     );
     expect(appCss).toMatch(
       /@media \(max-width: 920px\)\s*\{[\s\S]*?\.mobile-navigation-trigger\s*\{[^}]*display:\s*inline-grid;/
@@ -930,8 +930,8 @@ describe('app CSS visual contracts', () => {
   });
 
   it('aligns Composer input, add icon, and project folder to one left baseline', () => {
-    const composer = cssBlock('.clawee-composer');
-    const textarea = cssBlock('.clawee-composer textarea');
+    const composer = cssBlock('.opencreator-composer');
+    const textarea = cssBlock('.opencreator-composer textarea');
     const firstLeftControl = cssBlock(
       '.composer-left-actions > .composer-control-wrap:first-child'
     );
@@ -986,8 +986,8 @@ describe('app CSS visual contracts', () => {
   });
 
   it('separates the dark Composer input, project bar, and outer border', () => {
-    const composer = cssBlock('.clawee-composer');
-    const composerAfter = cssBlock('.clawee-composer::after');
+    const composer = cssBlock('.opencreator-composer');
+    const composerAfter = cssBlock('.opencreator-composer::after');
     const projectContext = Array.from(
       appCss.matchAll(/\.composer-project-context\s*\{(?<body>[^}]*)\}/g),
       match => match.groups?.body ?? ''
@@ -1044,7 +1044,7 @@ describe('app CSS visual contracts', () => {
     const tray = cssBlock('.composer-attachment-tray');
     const attachment = cssBlock('.composer-attachment');
     const trigger = cssBlock(
-      '.clawee-composer button.composer-attachment-preview-trigger:not(:disabled)'
+      '.opencreator-composer button.composer-attachment-preview-trigger:not(:disabled)'
     );
     const thumbnail = cssBlock('.composer-attachment-preview-trigger img');
     const preview = cssBlock('.attachment-image-preview');
@@ -1154,32 +1154,8 @@ describe('app CSS visual contracts', () => {
     expect(appCss).not.toContain('color-mix(in srgb, #f59e0b 8%, var(--surface-2))');
   });
 
-  it('shows the assistant avatar as the logo without a container background', () => {
-    const assistantAvatar = cssBlock('.timeline-assistant_message .timeline-avatar');
-    const assistantHeader = cssBlock('.timeline-assistant_message .timeline-item-header');
-    const assistantKind = cssBlock('.timeline-assistant_message .timeline-kind');
-    const assistantLogo = cssBlock('.timeline-avatar-logo');
-    const lightAssistantLogo = cssBlock(':root[data-theme="light"] .timeline-avatar-logo');
-
-    expect(assistantAvatar).toContain('border-color: transparent;');
-    expect(assistantAvatar).toContain('background: transparent;');
-    expect(assistantAvatar).toContain('box-shadow: none;');
-    expect(assistantAvatar).toContain('width: 18px;');
-    expect(assistantAvatar).toContain('height: 18px;');
-    expect(assistantAvatar).not.toMatch(/linear-gradient|var\(--accent/i);
-    expect(assistantHeader).toContain('gap: 4px;');
-    expect(assistantKind).toContain('font-size: 13px;');
-    expect(assistantKind).toContain('font-weight: 600;');
-    expect(assistantLogo).toContain("url('/logo-v2-white-logo.svg')");
-    expect(cssBlock('.timeline-assistant_message .timeline-avatar-logo')).toContain('width: 16px;');
-    expect(cssBlock('.timeline-assistant_message .timeline-avatar-logo')).toContain('height: 16px;');
-    expect(cssBlock('.timeline-assistant_message .timeline-avatar-logo')).toContain('background-size: 30px 30px;');
-    expect(assistantLogo).toContain('width: 24px;');
-    expect(assistantLogo).toContain('height: 24px;');
-    expect(assistantLogo).toContain('background-position: calc(50% - 1px) center;');
-    expect(assistantLogo).toContain('background-size: 46px 46px;');
-    expect(lightAssistantLogo).toContain("url('/logo-v2-black-logo.svg')");
-    expect(appCss).not.toContain('/logo-cor.png');
+  it('does not retain legacy assistant avatar branding', () => {
+    expect(appCss).not.toMatch(/timeline-avatar-logo|logo-v2|logo-cor\.png/);
   });
 
   it('reserves shadows for menus and floating overlays', () => {
@@ -1191,8 +1167,8 @@ describe('app CSS visual contracts', () => {
     );
     expect(tokensCss).toContain('--shadow-popover:');
     expect(tokensCss).toContain('--shadow-dialog:');
-    expect(appCss).toMatch(/\.clawee-composer\s*\{[^}]*box-shadow:\s*none !important;/);
-    expect(appCss).not.toMatch(/\.clawee-composer::before\s*\{[^}]*box-shadow:[^}]*!important;/);
+    expect(appCss).toMatch(/\.opencreator-composer\s*\{[^}]*box-shadow:\s*none !important;/);
+    expect(appCss).not.toMatch(/\.opencreator-composer::before\s*\{[^}]*box-shadow:[^}]*!important;/);
     expect(appCss).toMatch(/\.composer-popover,[\s\S]*?\.timeline-approval \.timeline-bubble\s*\{[^}]*box-shadow:\s*var\(--shadow-popover\) !important;/);
     expect(appCss).toMatch(/\.project-drop-overlay,[\s\S]*?\.file-workspace-toast\s*\{[^}]*box-shadow:\s*var\(--shadow-dialog\) !important;/);
     expect(appCss).not.toMatch(/\.composer-project-context\s*\{[^}]*box-shadow:[^}]*!important;/);

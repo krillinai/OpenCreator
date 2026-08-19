@@ -1,4 +1,4 @@
-import type { ReasoningEffort, SandboxMode } from '@clawee/protocol';
+import type { ReasoningEffort, SandboxMode } from '@opencreator/protocol';
 
 export type BuildCodexExecArgsInput = {
   profile?: string;

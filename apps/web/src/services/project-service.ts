@@ -11,7 +11,7 @@ import type {
   ThreadListResponse,
   ThreadResponse,
   UpdateProjectRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createProjectService(client: RuntimeClient) {

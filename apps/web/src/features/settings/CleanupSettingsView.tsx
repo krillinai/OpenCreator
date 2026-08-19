@@ -3,7 +3,7 @@ import type {
   CleanupDeleteResponse,
   CleanupPreviewItem,
   CleanupPreviewResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { AlertTriangle, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 

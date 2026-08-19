@@ -18,11 +18,11 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Add a visual-contract test that requires `.clawee-composer` to declare `--composer-left-baseline`, and requires the textarea, first left action, and project context to derive their horizontal positions from it without reducing `.composer-icon-button` dimensions.
+Add a visual-contract test that requires `.opencreator-composer` to declare `--composer-left-baseline`, and requires the textarea, first left action, and project context to derive their horizontal positions from it without reducing `.composer-icon-button` dimensions.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm --filter @clawee/web test -- src/styles/app-css.test.ts`
+Run: `pnpm --filter @opencreator/web test -- src/styles/app-css.test.ts`
 
 Expected: FAIL because `--composer-left-baseline` and its three consumers do not exist yet.
 
@@ -34,7 +34,7 @@ Expected: FAIL because `--composer-left-baseline` and its three consumers do not
 
 - [ ] **Step 1: Add the Composer-local baseline variable**
 
-Declare a single variable on `.clawee-composer` representing the content offset from the Composer border:
+Declare a single variable on `.opencreator-composer` representing the content offset from the Composer border:
 
 ```css
 --composer-left-baseline: 20px;
@@ -46,7 +46,7 @@ Keep the textarea text at the baseline, offset the first toolbar control so the 
 
 - [ ] **Step 3: Run the focused CSS test**
 
-Run: `pnpm --filter @clawee/web test -- src/styles/app-css.test.ts`
+Run: `pnpm --filter @opencreator/web test -- src/styles/app-css.test.ts`
 
 Expected: PASS with all CSS visual-contract tests green.
 
@@ -61,8 +61,8 @@ Expected: PASS with all CSS visual-contract tests green.
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/features/runs/Composer.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx src/styles/app-css.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/features/runs/Composer.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx src/styles/app-css.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: all focused tests pass and TypeScript exits with code 0.

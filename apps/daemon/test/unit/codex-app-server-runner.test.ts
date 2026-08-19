@@ -24,7 +24,7 @@ describe('codex app-server runner', () => {
         webSearch: false
       },
       mcpServers: [{
-        name: 'clawee_knowledge',
+        name: 'opencreator_knowledge',
         url: 'http://127.0.0.1:43123/internal/agent-tools/mcp/knowledge',
         enabledTools: ['knowledge.search'],
         required: true
@@ -33,11 +33,11 @@ describe('codex app-server runner', () => {
 
     expect(args).not.toContain('--ignore-user-config');
     expect(args.slice(-2)).toEqual(['app-server', '--stdio']);
-    expect(args).toContain('mcp_servers.clawee_knowledge.enabled_tools=["knowledge.search"]');
+    expect(args).toContain('mcp_servers.opencreator_knowledge.enabled_tools=["knowledge.search"]');
   });
 
   it('responds to a real command approval request and completes the turn', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeAppServer(tempDir, 'accept');
     const seen: unknown[] = [];
     const process = startCodexAppServer({
@@ -71,7 +71,7 @@ describe('codex app-server runner', () => {
   });
 
   it('maps rejection to the official decline response', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeAppServer(tempDir, 'decline');
     const process = startCodexAppServer({
       codexBin: fake,
@@ -92,7 +92,7 @@ describe('codex app-server runner', () => {
   });
 
   it('uses never approval policy and auto-approves fallback requests for full access', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeAppServer(tempDir, 'accept');
     let approvalRequested = false;
     const process = startCodexAppServer({
@@ -131,7 +131,7 @@ describe('codex app-server runner', () => {
   });
 
   it('uses never approval policy when resuming a full-access thread', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeAppServer(tempDir, 'accept');
     const process = startCodexAppServer({
       codexBin: fake,
@@ -159,7 +159,7 @@ describe('codex app-server runner', () => {
   });
 
   it('responds to an MCP elicitation approval with the official accept payload', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeMcpElicitationAppServer(tempDir, 'accept');
     const process = startCodexAppServer({
       codexBin: fake,
@@ -173,7 +173,7 @@ describe('codex app-server runner', () => {
         expect(request).toMatchObject({
           method: 'mcpServer/elicitation/request',
           params: {
-            serverName: 'clawee_schedule',
+            serverName: 'opencreator_schedule',
             mode: 'form'
           }
         });
@@ -188,7 +188,7 @@ describe('codex app-server runner', () => {
   });
 
   it('auto-accepts MCP tool elicitation without creating an approval in full-access mode', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeMcpElicitationAppServer(tempDir, 'accept');
     let approvalRequested = false;
     const process = startCodexAppServer({
@@ -213,7 +213,7 @@ describe('codex app-server runner', () => {
   });
 
   it('maps MCP elicitation rejection to the official decline payload', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeMcpElicitationAppServer(tempDir, 'decline');
     const process = startCodexAppServer({
       codexBin: fake,
@@ -235,7 +235,7 @@ describe('codex app-server runner', () => {
   });
 
   it('cancels unsupported MCP form elicitation without treating it as an approval', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeMcpElicitationAppServer(tempDir, 'cancel', false);
     let approvalRequested = false;
     const process = startCodexAppServer({
@@ -260,7 +260,7 @@ describe('codex app-server runner', () => {
   });
 
   it('passes MCP config in argv and capability secrets only in the child environment', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeAppServer(tempDir, 'decline');
     const token = 'clwcap_AppServerSecret';
     const process = startCodexAppServer({
@@ -271,14 +271,14 @@ describe('codex app-server runner', () => {
       sandbox: 'read-only',
       prompt: 'inspect environment',
       mcpServers: [{
-        name: 'clawee_schedule',
+        name: 'opencreator_schedule',
         url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
-        bearerTokenEnvVar: 'CLAWEE_AGENT_CAPABILITY_TOKEN',
-        enabledTools: ['clawee_schedule_get'],
+        bearerTokenEnvVar: 'OPENCREATOR_AGENT_CAPABILITY_TOKEN',
+        enabledTools: ['opencreator_schedule_get'],
         required: true
       }],
       env: {
-        CLAWEE_AGENT_CAPABILITY_TOKEN: token
+        OPENCREATOR_AGENT_CAPABILITY_TOKEN: token
       },
       async onApprovalRequest() {
         return 'rejected';
@@ -297,17 +297,17 @@ describe('codex app-server runner', () => {
 
     expect(argv).toEqual(expect.arrayContaining([
       '-c',
-      'mcp_servers.clawee_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
+      'mcp_servers.opencreator_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
       '-c',
-      'mcp_servers.clawee_schedule.bearer_token_env_var="CLAWEE_AGENT_CAPABILITY_TOKEN"',
+      'mcp_servers.opencreator_schedule.bearer_token_env_var="OPENCREATOR_AGENT_CAPABILITY_TOKEN"',
       '-c',
-      'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_get"]',
+      'mcp_servers.opencreator_schedule.enabled_tools=["opencreator_schedule_get"]',
       'app-server',
       '--stdio'
     ]));
     expect(JSON.stringify(argv)).not.toContain(token);
     expect(env).toEqual({
-      CLAWEE_AGENT_CAPABILITY_TOKEN: token
+      OPENCREATOR_AGENT_CAPABILITY_TOKEN: token
     });
   });
 });
@@ -319,7 +319,7 @@ const readline = require('node:readline');
 const fs = require('node:fs');
 fs.writeFileSync(${JSON.stringify(join(dir, 'app-server-argv.json'))}, JSON.stringify(process.argv.slice(2)));
 fs.writeFileSync(${JSON.stringify(join(dir, 'app-server-env.json'))}, JSON.stringify({
-  CLAWEE_AGENT_CAPABILITY_TOKEN: process.env.CLAWEE_AGENT_CAPABILITY_TOKEN
+  OPENCREATOR_AGENT_CAPABILITY_TOKEN: process.env.OPENCREATOR_AGENT_CAPABILITY_TOKEN
 }));
 const rl = readline.createInterface({ input: process.stdin });
 let approvalRequestId = 'approval-rpc-1';
@@ -406,12 +406,12 @@ rl.on('line', line => {
       params: {
         threadId: 'codex-thread-mcp',
         turnId: 'turn-mcp',
-        serverName: 'clawee_schedule',
+        serverName: 'opencreator_schedule',
         mode: 'form',
         _meta: {
           ${approvalRequest ? "codex_approval_kind: 'mcp_tool_call'," : ''}
-          message: 'Allow the clawee_schedule MCP server to run tool "clawee_schedule_create"?',
-          tool_description: '创建一个 Clawee 定时任务。',
+          message: 'Allow the opencreator_schedule MCP server to run tool "opencreator_schedule_create"?',
+          tool_description: '创建一个 OpenCreator 定时任务。',
           tool_params: {
             name: '武汉天气每5分钟简报'
           }

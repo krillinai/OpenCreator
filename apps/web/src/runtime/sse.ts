@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope } from '@opencreator/protocol';
 import { assertKnownEventType, isRecord } from './validators.js';
 
 export type SseFrame = {

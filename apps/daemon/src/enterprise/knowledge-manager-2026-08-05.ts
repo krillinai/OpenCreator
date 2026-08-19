@@ -3,7 +3,7 @@ import type {
   EnterpriseKnowledgeDocumentListResponse,
   EnterpriseKnowledgeDocumentUploadResponse,
   RuntimeErrorCode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { mkdir, open, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';

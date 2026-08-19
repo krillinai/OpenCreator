@@ -8,7 +8,7 @@ import type {
   RunContextResponse,
   ThreadHistoryItem,
   UpdateMemoryRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import { redactText } from '../security/redaction.js';
@@ -254,7 +254,7 @@ function isSensitive(content: string): boolean {
 function buildExecutionPrompt(prompt: string, items: RunContextItem[]): string {
   if (items.length === 0) return prompt;
   const lines = [
-    '[Clawee 用户显式管理的上下文]',
+    '[OpenCreator 用户显式管理的上下文]',
     ...items.map(item => (
       item.kind === 'memory'
         ? `- 记忆（${item.scope ?? 'global'}）：${item.content}`
@@ -270,7 +270,7 @@ function buildExecutionPrompt(prompt: string, items: RunContextItem[]): string {
 
 function buildThreadRotationPrompt(prompt: string, summary?: RunContextItem): string {
   return [
-    '[Clawee 执行上下文恢复摘要]',
+    '[OpenCreator 执行上下文恢复摘要]',
     summary === undefined
       ? '- 暂无可用会话摘要，请仅依据本次公开任务输入继续。'
       : `- 会话摘要 v${summary.summaryVersion ?? 1}：${summary.content}`,

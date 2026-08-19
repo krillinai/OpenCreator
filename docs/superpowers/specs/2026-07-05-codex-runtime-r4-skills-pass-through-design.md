@@ -437,7 +437,7 @@ type RuntimeCapabilityMatrix = {
 命令建议：
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-skills-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-skills-smoke.test.ts
 ```
 
 验收分层：

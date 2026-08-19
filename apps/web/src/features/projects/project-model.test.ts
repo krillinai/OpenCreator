@@ -1,4 +1,4 @@
-import type { ThreadResponse } from '@clawee/protocol';
+import type { ThreadResponse } from '@opencreator/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   findProjectById,
@@ -80,7 +80,7 @@ function createThread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
     id: 'thread-1',
     title: '会话',
     projectId: 'project-one',
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     codexThreadId: null,
     cwd: '/workspace/project',
     canonicalCwd: '/workspace/project',

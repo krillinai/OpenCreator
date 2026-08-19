@@ -1,4 +1,4 @@
-import type { CodexMcpListResponse, CodexSkillListResponse } from '@clawee/protocol';
+import type { CodexMcpListResponse, CodexSkillListResponse } from '@opencreator/protocol';
 import type { CodexProfileListResponse } from '../../services/capability-service.js';
 
 export type CapabilitiesViewProps = {

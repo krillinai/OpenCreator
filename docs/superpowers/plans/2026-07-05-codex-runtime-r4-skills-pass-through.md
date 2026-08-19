@@ -119,7 +119,7 @@ it('defaults skill capability flags to false when capability help is unknown', (
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-capabilities.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-capabilities.test.ts test/integration/api.test.ts
 ```
 
 Expected: 失败，因为 `RuntimeCapabilityMatrix` 还没有 skills 字段。
@@ -229,7 +229,7 @@ export type CodexSkillOperationListResponse = {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-capabilities.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-capabilities.test.ts test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -327,7 +327,7 @@ describe('codex skill validator', () => {
   });
 
   it('rejects symlinks anywhere in a skill directory', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-validator-'));
     const skillDir = join(tempDir, 'skill');
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: test\ndescription: test\n---\n');
@@ -343,7 +343,7 @@ describe('codex skill validator', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-skills-validator.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-skills-validator.test.ts
 ```
 
 Expected: 失败，因为 `codex/skills/validator.ts` 不存在。
@@ -360,7 +360,7 @@ import type {
   CodexSkillOperationType,
   CodexSkillResponse,
   CodexSkillStatus
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type {
   CodexSkillOperationResponse,
@@ -494,7 +494,7 @@ function unquoteYamlString(value: string): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-skills-validator.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-skills-validator.test.ts
 pnpm typecheck
 ```
 
@@ -535,7 +535,7 @@ afterEach(() => {
 
 describe('codex skills scanner', () => {
   it('returns an empty list when skills directory does not exist', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-scan-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-scan-'));
     const codexHome = join(tempDir, 'codex-home');
 
     expect(scanCodexSkills({
@@ -552,7 +552,7 @@ describe('codex skills scanner', () => {
   });
 
   it('scans valid and invalid skills without crashing', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-scan-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-scan-'));
     const codexHome = join(tempDir, 'codex-home');
     const validDir = join(codexHome, 'skills', 'valid-skill');
     const invalidDir = join(codexHome, 'skills', 'invalid-skill');
@@ -596,7 +596,7 @@ describe('codex skills scanner', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-skills-scanner.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-skills-scanner.test.ts
 ```
 
 Expected: 失败，因为 scanner 不存在。
@@ -737,7 +737,7 @@ function formatError(error: unknown): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-skills-scanner.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-skills-scanner.test.ts
 pnpm typecheck
 ```
 
@@ -765,7 +765,7 @@ git commit -m "feat: scan codex skills directory"
 
 ```ts
   it('creates codex skill operation log table', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
 
     const tableRows = db
@@ -789,7 +789,7 @@ git commit -m "feat: scan codex skills directory"
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts
 ```
 
 Expected: 失败，因为表不存在。
@@ -933,7 +933,7 @@ import { createSkillOperationRepository } from '../../src/codex/skills/operation
 
 ```ts
   it('persists codex skill operations', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const operations = createSkillOperationRepository(db);
 
@@ -963,7 +963,7 @@ import { createSkillOperationRepository } from '../../src/codex/skills/operation
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts
 pnpm typecheck
 ```
 
@@ -1004,7 +1004,7 @@ afterEach(() => {
 
 describe('codex skills installer', () => {
   it('installs a local skill directory into CODEX_HOME skills', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-install-'));
     const source = createSourceSkill('writer', 'first');
     const codexHome = join(tempDir, 'codex-home');
     const installer = createSkillInstaller({ codexHome });
@@ -1016,7 +1016,7 @@ describe('codex skills installer', () => {
   });
 
   it('rejects duplicates unless overwrite is true', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-install-'));
     const first = createSourceSkill('writer-first', 'first');
     const second = createSourceSkill('writer-second', 'second');
     const codexHome = join(tempDir, 'codex-home');
@@ -1032,7 +1032,7 @@ describe('codex skills installer', () => {
   });
 
   it('deletes a skill after backing it up', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-install-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-install-'));
     const source = createSourceSkill('writer', 'first');
     const codexHome = join(tempDir, 'codex-home');
     const installer = createSkillInstaller({ codexHome });
@@ -1066,7 +1066,7 @@ function createSourceSkill(id: string, marker: string): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-skills-installer.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-skills-installer.test.ts
 ```
 
 Expected: 失败，因为 installer 不存在。
@@ -1216,7 +1216,7 @@ function nextFileCounter(): number {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-skills-installer.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-skills-installer.test.ts
 pnpm typecheck
 ```
 
@@ -1246,7 +1246,7 @@ git commit -m "feat: install and delete codex skills"
 
 ```ts
   it('lists, installs, overwrites, deletes, and logs codex skills', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const source = join(tempDir, 'source-skill');
     mkdirSync(source, { recursive: true });
@@ -1329,7 +1329,7 @@ git commit -m "feat: install and delete codex skills"
 
 ```ts
   it('requires explicit confirmation for global codex skill writes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const source = join(tempDir, 'source-skill');
     mkdirSync(source, { recursive: true });
     writeFileSync(join(source, 'SKILL.md'), '---\nname: writer\ndescription: writer\n---\n');
@@ -1350,7 +1350,7 @@ git commit -m "feat: install and delete codex skills"
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 ```
 
 Expected: 失败，因为 routes 和 manager 不存在。
@@ -1707,7 +1707,7 @@ import {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -1735,7 +1735,7 @@ git commit -m "feat: expose codex skills API"
 
 ```ts
   it('scans global codex skills without requiring write access', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     server = await buildServer({ token: 'secret', dataDir: tempDir });
 
     const response = await authGet('/codex/skills');
@@ -1757,7 +1757,7 @@ git commit -m "feat: expose codex skills API"
 
 ```ts
   it('returns invalid skill diagnostics instead of crashing', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const invalidDir = join(codexHome, 'skills', 'broken');
     mkdirSync(invalidDir, { recursive: true });
@@ -1828,7 +1828,7 @@ server.delete('/codex/skills/:id', async (request, reply) => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -1931,7 +1931,7 @@ import { buildServer } from '../../src/api/server.js';
 Run:
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: skills discovery smoke 通过，并生成 `test/fixtures/real-codex/generated/skills-discovery-jsonl.json`。如果 Codex 因账号、网络、模型不可用失败，记录为 `BLOCKED_ENV`，不要把 R4 behavior smoke 标记为通过。
@@ -1955,7 +1955,7 @@ git commit -m "test: add codex skills discovery smoke"
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-skills-validator.test.ts test/unit/codex-skills-scanner.test.ts test/unit/codex-skills-installer.test.ts test/unit/storage.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-skills-validator.test.ts test/unit/codex-skills-scanner.test.ts test/unit/codex-skills-installer.test.ts test/unit/storage.test.ts test/integration/api.test.ts
 ```
 
 Expected: 全部通过。
@@ -1977,7 +1977,7 @@ Expected: 全部通过，`git diff --check` 无 whitespace error。
 Run:
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: 当前机器具备 Codex auth/network 时通过。若失败原因是账号、网络、模型或 Codex 版本事件不可观测，记录为环境阻塞。

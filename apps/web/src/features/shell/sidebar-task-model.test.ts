@@ -1,5 +1,5 @@
-import type { TaskItem } from '@clawee/protocol';
-import type { ThreadResponse } from '@clawee/protocol';
+import type { TaskItem } from '@opencreator/protocol';
+import type { ThreadResponse } from '@opencreator/protocol';
 import { describe, expect, it } from 'vitest';
 import type { ScheduleTaskSummary } from '../schedules/schedule-task-model.js';
 import {
@@ -177,7 +177,7 @@ function createDraft(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
     id: 'draft-1',
     title: '任务草稿',
     projectId: null,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     codexThreadId: null,
     cwd: '/workspace',
     canonicalCwd: '/workspace',

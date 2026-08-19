@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the enterprise knowledge document browser with a static, permission-aware knowledge conversation workbench.
+**Goal:** Replace the enterprise knowledge document browser with a static, permission-aware knowledge conversation dashboard.
 
 **Architecture:** Keep the feature entirely in the shared `apps/web` frontend. A pure knowledge model owns demo identities, accessible scopes, keyword answer matching, and permission filtering; `KnowledgePage` owns only role selection, local conversation state, and rendering. No route, Runtime, Host Bridge, or Desktop-specific behavior changes.
 
@@ -64,7 +64,7 @@ describe('enterprise knowledge conversation fixtures', () => {
 
 - [ ] **Step 2: Run the model test and verify it fails**
 
-Run: `pnpm --filter @clawee/web test -- src/features/knowledge/knowledge-model.test.ts`
+Run: `pnpm --filter @opencreator/web test -- src/features/knowledge/knowledge-model.test.ts`
 
 Expected: FAIL because `createKnowledgeAnswer`, `getAccessibleKnowledgeScopes`, `knowledgeProfiles`, and `knowledgeScopes` do not exist.
 
@@ -139,7 +139,7 @@ export const knowledgeScopes: KnowledgeScope[] = [
     summary: '产品能力、部署与安全边界',
     accessLevel: 'organization',
     itemCount: 12,
-    suggestions: ['Clawee 企业版包含哪些能力？']
+    suggestions: ['OpenCreator 企业版包含哪些能力？']
   },
   {
     id: 'scope-customer-success',
@@ -178,11 +178,11 @@ export function createKnowledgeAnswer(role: KnowledgeRole, question: string): Kn
 }
 ```
 
-Implement ordered rules for refund/customer onboarding, travel/reimbursement, product/Clawee, and Runtime/Desktop/release. Each rule includes `scopeId`, keywords, answer text, and evidence count. Filter the matching rules by `accessibleScopeIds` before matching keywords.
+Implement ordered rules for refund/customer onboarding, travel/reimbursement, product/OpenCreator, and Runtime/Desktop/release. Each rule includes `scopeId`, keywords, answer text, and evidence count. Filter the matching rules by `accessibleScopeIds` before matching keywords.
 
 - [ ] **Step 4: Run the model test and verify it passes**
 
-Run: `pnpm --filter @clawee/web test -- src/features/knowledge/knowledge-model.test.ts`
+Run: `pnpm --filter @opencreator/web test -- src/features/knowledge/knowledge-model.test.ts`
 
 Expected: PASS with four tests.
 
@@ -205,7 +205,7 @@ git commit -m "feat(web): model permission-aware knowledge answers"
 Replace document-list expectations with tests that assert:
 
 ```ts
-it('renders a conversation workbench without document browsing controls', () => {
+it('renders a conversation dashboard without document browsing controls', () => {
   render(<KnowledgePage />);
   expect(screen.getByRole('heading', { name: '企业知识库' })).toBeInTheDocument();
   expect(screen.getByRole('textbox', { name: '询问企业知识' })).toBeInTheDocument();
@@ -245,7 +245,7 @@ Also test that the send button is disabled for whitespace-only input and that pr
 
 - [ ] **Step 2: Run the page test and verify it fails**
 
-Run: `pnpm --filter @clawee/web test -- src/features/knowledge/KnowledgePage.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/features/knowledge/KnowledgePage.test.tsx`
 
 Expected: FAIL because the current page renders document search, list, and details instead of a conversation composer.
 
@@ -280,7 +280,7 @@ When the role changes, replace the message list with the new role's welcome mess
 
 - [ ] **Step 4: Run the page and model tests**
 
-Run: `pnpm --filter @clawee/web test -- src/features/knowledge/KnowledgePage.test.tsx src/features/knowledge/knowledge-model.test.ts`
+Run: `pnpm --filter @opencreator/web test -- src/features/knowledge/KnowledgePage.test.tsx src/features/knowledge/knowledge-model.test.ts`
 
 Expected: PASS.
 
@@ -292,7 +292,7 @@ git diff --cached --check
 git commit -m "feat(web): make enterprise knowledge conversational"
 ```
 
-### Task 3: Conversation workbench styling
+### Task 3: Conversation dashboard styling
 
 **Files:**
 - Modify: `apps/web/src/features/knowledge/knowledge.css`
@@ -309,7 +309,7 @@ Implement these layout responsibilities:
   padding: 28px clamp(18px, 2.4vw, 32px) 36px;
 }
 
-.knowledge-workbench {
+.knowledge-dashboard {
   min-height: 620px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 270px;
@@ -344,7 +344,7 @@ Implement these layout responsibilities:
 }
 
 @media (max-width: 820px) {
-  .knowledge-workbench { grid-template-columns: 1fr; }
+  .knowledge-dashboard { grid-template-columns: 1fr; }
   .knowledge-permissions {
     grid-row: 1;
     border-left: 0;
@@ -358,9 +358,9 @@ Add focused styles for header controls, welcome state, suggestion chips, user/as
 
 - [ ] **Step 2: Run knowledge tests and typecheck**
 
-Run: `pnpm --filter @clawee/web test -- src/features/knowledge/KnowledgePage.test.tsx src/features/knowledge/knowledge-model.test.ts`
+Run: `pnpm --filter @opencreator/web test -- src/features/knowledge/KnowledgePage.test.tsx src/features/knowledge/knowledge-model.test.ts`
 
-Run: `pnpm --filter @clawee/web typecheck`
+Run: `pnpm --filter @opencreator/web typecheck`
 
 Expected: all tests and TypeScript checks PASS.
 
@@ -376,7 +376,7 @@ git commit -m "style(web): focus knowledge page on conversation"
 
 **Files:**
 - Verify: `apps/web/src/app/App.test.tsx`
-- Verify: `apps/web/src/features/shell/ClaweeSidebar.test.tsx`
+- Verify: `apps/web/src/features/shell/OpenCreatorSidebar.test.tsx`
 - Verify: `apps/web/src/app/routes.test.ts`
 
 - [ ] **Step 1: Run focused routing and navigation tests**
@@ -384,9 +384,9 @@ git commit -m "style(web): focus knowledge page on conversation"
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/web test -- \
   src/app/routes.test.ts \
-  src/features/shell/ClaweeSidebar.test.tsx \
+  src/features/shell/OpenCreatorSidebar.test.tsx \
   src/app/App.test.tsx \
   -t "knowledge|企业知识库"
 ```
@@ -398,17 +398,17 @@ Expected: knowledge route parsing, sidebar selection, and direct/history navigat
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/web test -- \
   src/features/knowledge/knowledge-model.test.ts \
   src/features/knowledge/KnowledgePage.test.tsx \
-  src/features/shell/ClaweeSidebar.test.tsx
+  src/features/shell/OpenCreatorSidebar.test.tsx
 ```
 
 Expected: PASS.
 
 - [ ] **Step 3: Run static checks**
 
-Run: `pnpm --filter @clawee/web typecheck`
+Run: `pnpm --filter @opencreator/web typecheck`
 
 Run: `git diff --check`
 

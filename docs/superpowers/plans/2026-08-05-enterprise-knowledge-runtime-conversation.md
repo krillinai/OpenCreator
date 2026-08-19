@@ -57,7 +57,7 @@ Add HTTP fixtures whose `account` contains `account_id`, and assert both login a
 
 - [ ] **Step 2: Run tests and verify the new contract fails**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts test/unit/enterprise-http-client-2026-07-30.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts test/unit/enterprise-http-client-2026-07-30.test.ts`
 
 Expected: FAIL because the purpose union and `subjectId`/`account_id` decoder do not exist.
 
@@ -109,7 +109,7 @@ In the upstream decoder require `account_id: z.string().min(1)` and map it only 
 
 - [ ] **Step 4: Run tests and typecheck**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts test/unit/enterprise-http-client-2026-07-30.test.ts && pnpm --filter @clawee/protocol typecheck`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts test/unit/enterprise-http-client-2026-07-30.test.ts && pnpm --filter @opencreator/protocol typecheck`
 
 Expected: PASS.
 
@@ -153,7 +153,7 @@ Also open a pre-change SQLite fixture, run `migrate`, and assert `PRAGMA table_i
 
 - [ ] **Step 2: Run tests and verify missing storage support**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts test/unit/thread-manager.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts test/unit/thread-manager.test.ts`
 
 Expected: FAIL because knowledge ownership APIs and the column are absent.
 
@@ -165,11 +165,11 @@ CREATE INDEX IF NOT EXISTS idx_threads_knowledge_subject_updated
 ON threads(enterprise_subject_id, purpose, status, updated_at DESC, id DESC);
 ```
 
-Extend `ThreadRow`, `CreateThreadRow`, `RuntimeThread`, inserts, and selects with `enterpriseSubjectId: string | null`. Add `listKnowledgeThreads({ enterpriseSubjectId, status, limit })` whose SQL requires both `purpose = 'knowledge_conversation'` and exact subject equality. `createKnowledgeThread` must force `projectId: null`, `origin: 'clawee_created'`, `workspaceMode: 'managed'`, `sandbox: 'read-only'`, and never accept a subject from an HTTP body.
+Extend `ThreadRow`, `CreateThreadRow`, `RuntimeThread`, inserts, and selects with `enterpriseSubjectId: string | null`. Add `listKnowledgeThreads({ enterpriseSubjectId, status, limit })` whose SQL requires both `purpose = 'knowledge_conversation'` and exact subject equality. `createKnowledgeThread` must force `projectId: null`, `origin: 'opencreator_created'`, `workspaceMode: 'managed'`, `sandbox: 'read-only'`, and never accept a subject from an HTTP body.
 
 - [ ] **Step 4: Run focused tests and Daemon typecheck**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts test/unit/thread-manager.test.ts && pnpm --filter @clawee/daemon typecheck`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts test/unit/thread-manager.test.ts && pnpm --filter @opencreator/daemon typecheck`
 
 Expected: PASS.
 
@@ -207,7 +207,7 @@ Assert `GET /threads?status=active` excludes the created knowledge Thread, and `
 
 - [ ] **Step 2: Run the integration test and verify 404/missing route failures**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/integration/knowledge-conversation-api-2026-08-05.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/integration/knowledge-conversation-api-2026-08-05.test.ts`
 
 Expected: FAIL because the dedicated routes are not registered.
 
@@ -235,7 +235,7 @@ Register `POST /enterprise/knowledge-conversations`, `GET /enterprise/knowledge-
 
 - [ ] **Step 5: Run API tests and typecheck**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/integration/knowledge-conversation-api-2026-08-05.test.ts test/integration/api.test.ts && pnpm --filter @clawee/daemon typecheck`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/integration/knowledge-conversation-api-2026-08-05.test.ts test/integration/api.test.ts && pnpm --filter @opencreator/daemon typecheck`
 
 Expected: PASS, including cross-subject non-disclosure.
 
@@ -284,7 +284,7 @@ Add MCP tests proving a capability token for one Run/Thread cannot search for an
 
 - [ ] **Step 2: Run the policy tests and verify they fail**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/knowledge-run-policy-2026-08-05.test.ts test/integration/knowledge-mcp-api-2026-08-05.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/knowledge-run-policy-2026-08-05.test.ts test/integration/knowledge-mcp-api-2026-08-05.test.ts`
 
 Expected: FAIL because the grant, MCP tool, and built-in policy do not exist.
 
@@ -318,7 +318,7 @@ Add a typed `BuiltInToolPolicy` to exec/app-server launch inputs and map every f
 
 - [ ] **Step 6: Run policy, argv, app-server, and MCP tests**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/knowledge-run-policy-2026-08-05.test.ts test/integration/knowledge-mcp-api-2026-08-05.test.ts test/unit/codex-argv.test.ts test/unit/codex-app-server-runner.test.ts test/unit/agent-tool-run-injection.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/knowledge-run-policy-2026-08-05.test.ts test/integration/knowledge-mcp-api-2026-08-05.test.ts test/unit/codex-argv.test.ts test/unit/codex-app-server-runner.test.ts test/unit/agent-tool-run-injection.test.ts`
 
 Expected: PASS; snapshots show only `knowledge.search` and all built-ins disabled for knowledge Runs.
 
@@ -343,7 +343,7 @@ Create a queued knowledge Run, revoke the grant before it starts, and assert ter
 
 - [ ] **Step 2: Run the lifecycle suite and verify failures**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/integration/knowledge-conversation-runs-2026-08-05.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/integration/knowledge-conversation-runs-2026-08-05.test.ts`
 
 Expected: FAIL because generic Run creation does not apply subject/grant checks at dequeue time.
 
@@ -363,7 +363,7 @@ Invoke `prepare` immediately before each queued Run spawns/resumes Codex, not on
 
 - [ ] **Step 4: Run lifecycle and existing Run regression tests**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/integration/knowledge-conversation-runs-2026-08-05.test.ts test/integration/run-manager.test.ts test/integration/approval-runtime.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/integration/knowledge-conversation-runs-2026-08-05.test.ts test/integration/run-manager.test.ts test/integration/approval-runtime.test.ts`
 
 Expected: PASS with unchanged ordinary/schedule behavior.
 
@@ -387,7 +387,7 @@ Render `ConversationWorkspace` with timeline items, a pending approval, queued i
 
 - [ ] **Step 2: Run the test and verify the component is missing**
 
-Run: `pnpm --filter @clawee/web test -- src/features/conversation/ConversationWorkspace.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/features/conversation/ConversationWorkspace.test.tsx`
 
 Expected: FAIL because `ConversationWorkspace.tsx` does not exist.
 
@@ -397,7 +397,7 @@ Move the JSX currently composing `ConversationHeader`, `Timeline`, approval over
 
 - [ ] **Step 4: Run workspace and full App regression tests**
 
-Run: `pnpm --filter @clawee/web test -- src/features/conversation/ConversationWorkspace.test.tsx src/app/App.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/features/conversation/ConversationWorkspace.test.tsx src/app/App.test.tsx`
 
 Expected: Workspace tests PASS. Existing App assertions produce no new failures; record the five pre-existing async business failures separately if still present.
 
@@ -434,7 +434,7 @@ UI tests must assert: refresh remains visible; toggle text changes `对话知识
 
 - [ ] **Step 2: Run tests and verify missing behavior**
 
-Run: `pnpm --filter @clawee/web test -- src/services/thread-service.test.ts src/features/knowledge/KnowledgePage.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx src/app/App.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/services/thread-service.test.ts src/features/knowledge/KnowledgePage.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx src/app/App.test.tsx`
 
 Expected: FAIL on missing dedicated service methods, toggle, and knowledge workspace.
 
@@ -461,7 +461,7 @@ Add a full-height unframed `.knowledge-conversation` layout inside the current k
 
 - [ ] **Step 6: Run Web tests and typecheck**
 
-Run: `pnpm --filter @clawee/web test -- src/services/thread-service.test.ts src/features/knowledge/KnowledgePage.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx src/app/App.test.tsx && pnpm --filter @clawee/web typecheck`
+Run: `pnpm --filter @opencreator/web test -- src/services/thread-service.test.ts src/features/knowledge/KnowledgePage.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx src/app/App.test.tsx && pnpm --filter @opencreator/web typecheck`
 
 Expected: New suites PASS; no new App failures beyond any documented pre-existing failures.
 
@@ -509,7 +509,7 @@ git commit -m "test: cover knowledge conversation platform parity"
 
 - [ ] **Step 1: Add packaged App assertions**
 
-In the real packaged Electron app verify `clawee-app://`, Preload Bridge, Runtime proxy, session subject, latest knowledge Thread restoration, toggle, first send, SSE-rendered answer/source, and a revoked-grant deterministic failure. Assert no project thread/sidebar entry is created.
+In the real packaged Electron app verify `opencreator-app://`, Preload Bridge, Runtime proxy, session subject, latest knowledge Thread restoration, toggle, first send, SSE-rendered answer/source, and a revoked-grant deterministic failure. Assert no project thread/sidebar entry is created.
 
 - [ ] **Step 2: Run repository typechecks and focused tests**
 
@@ -517,19 +517,19 @@ Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm typecheck
 
 Expected: PASS.
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test && pnpm --filter @clawee/web test && pnpm --filter @clawee/desktop test`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test && pnpm --filter @opencreator/web test && pnpm --filter @opencreator/desktop test`
 
 Expected: PASS, or stop and report every pre-existing failure separately; do not claim completion while a new failure remains.
 
 - [ ] **Step 3: Rebuild Web and package Desktop from the same workspace**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/web build && pnpm --filter @clawee/desktop package`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/web build && pnpm --filter @opencreator/desktop package`
 
 Expected: PASS; the manifest records commit, dirty state, Web build hash, platform, architecture, and build time.
 
 - [ ] **Step 4: Verify embedded hashes and run packaged E2E**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/desktop verify:package && pnpm --filter @clawee/desktop e2e:package -- enterprise-packaged-2026-07-30.spec.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/desktop verify:package && pnpm --filter @opencreator/desktop e2e:package -- enterprise-packaged-2026-07-30.spec.ts`
 
 Expected: PASS; `apps/web/dist` and embedded App Web resources have identical file lists and hashes, and the packaged knowledge flow succeeds.
 

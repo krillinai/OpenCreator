@@ -25,7 +25,7 @@ import type {
   ScheduleResponse,
   TaskItem,
   ThreadResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   App as ProductionApp,
   type AppProps
@@ -36,7 +36,7 @@ import {
   formatRelativeTime
 } from './AppController.js';
 import { PROJECTS_STORAGE_KEY } from '../features/projects/project-model.js';
-import type { ClaweeProject } from '../features/projects/project-model.js';
+import type { OpenCreatorProject } from '../features/projects/project-model.js';
 import type { HostBridge } from '../host/bridge.js';
 import type { SubscribeRunEventsInput } from '../runtime/sse.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
@@ -48,8 +48,8 @@ import {
 } from '../services/model-service-2026-08-05.js';
 
 vi.mock('react-virtuoso', async () => import('../test/react-virtuoso-mock.js'));
-vi.mock('@clawee/skill-market', async importOriginal => {
-  const actual = await importOriginal<typeof import('@clawee/skill-market')>();
+vi.mock('@opencreator/skill-market', async importOriginal => {
+  const actual = await importOriginal<typeof import('@opencreator/skill-market')>();
   return {
     ...actual,
     skillMarketCatalog: actual.skillMarketCandidateCatalog
@@ -90,7 +90,7 @@ describe('App', () => {
 
   it('maps the enterprise MCP catalog into the Composer connector directory', () => {
     expect(buildComposerConnectors({
-      agentId: 'clawee_agent',
+      agentId: 'opencreator_agent',
       tokenStatus: 'ready',
       refreshedAt: new Date(0).toISOString(),
       upstreams: [{
@@ -175,8 +175,9 @@ describe('App', () => {
     window.location.hash = '#/dashboard';
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: '数据看板' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '数据看板' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText('数据看板')).not.toBeInTheDocument();
   });
 
   it('restores the project library directly from its URL', async () => {
@@ -353,7 +354,7 @@ describe('App', () => {
     ));
     expect(uploadCalls).toHaveLength(1);
     expect(new Headers(uploadCalls[0]?.init?.headers).get('Content-Type'))
-      .toBe('application/vnd.clawee.knowledge-document');
+      .toBe('application/vnd.opencreator.knowledge-document');
     expect(uploadCalls[0]?.init?.body).toBe(file);
   });
 
@@ -855,7 +856,7 @@ describe('App', () => {
 
     await user.click(await screen.findByRole('button', { name: '打开导航' }));
     expect(pushState).toHaveBeenCalledWith(
-      expect.objectContaining({ claweeMobileNavigation: true }),
+      expect.objectContaining({ opencreatorMobileNavigation: true }),
       ''
     );
 
@@ -886,7 +887,7 @@ describe('App', () => {
 
     await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
     expect(back).not.toHaveBeenCalled();
-    expect(window.history.state?.claweeMobileNavigation).not.toBe(true);
+    expect(window.history.state?.opencreatorMobileNavigation).not.toBe(true);
     expect(screen.getByLabelText('OpenCreator 导航')).toHaveAttribute('data-mobile-open', 'false');
   });
 
@@ -901,7 +902,7 @@ describe('App', () => {
     render(<App fileService={createFileService()} />);
 
     expect(await screen.findByRole('button', { name: '首页' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '工作台' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
     expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
     expect(screen.getByRole('heading', {
       name: /^(上午|下午|晚上)好，创作者$/
@@ -914,8 +915,8 @@ describe('App', () => {
     expect(screen.queryByText('跟随全局配置')).not.toBeInTheDocument();
     expect(screen.queryByText('5.5 超高')).not.toBeInTheDocument();
     expect(screen.queryByText('本地模式')).not.toBeInTheDocument();
-    expect(screen.queryByText('open-clawee')).not.toBeInTheDocument();
-    expect(screen.queryByText('Codex Runtime Workbench')).not.toBeInTheDocument();
+    expect(screen.queryByText('open-opencreator')).not.toBeInTheDocument();
+    expect(screen.queryByText('Codex Runtime Dashboard')).not.toBeInTheDocument();
     expect(screen.queryByText('Runtime 地址')).not.toBeInTheDocument();
     expect(screen.queryByText(/Token|API Key|连接 Runtime/)).not.toBeInTheDocument();
   });
@@ -932,7 +933,7 @@ describe('App', () => {
     const agentInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
     expect(agentInput).toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
     expect(agentInput).toHaveValue('');
-    await waitFor(() => expect(window.location.hash).toBe('#/workbench'));
+    await waitFor(() => expect(window.location.hash).toBe('#/dashboard'));
   });
 
   it('keeps a non-workspace Home Skill inactive until the user writes a prompt', async () => {
@@ -957,13 +958,13 @@ describe('App', () => {
 
     render(<App fileService={createFileService()} hostBridge={hostBridge} />);
 
-    await screen.findByRole('button', { name: '工作台' });
+    await screen.findByRole('button', { name: 'Dashboard' });
     const shell = document.querySelector<HTMLElement>('.app-drop-shell');
     expect(shell).toHaveAttribute('data-integrated-title-bar', 'true');
-    expect(shell?.style.getPropertyValue('--clawee-titlebar-height')).toBe('38px');
-    expect(shell?.style.getPropertyValue('--clawee-traffic-light-inset')).toBe('76px');
+    expect(shell?.style.getPropertyValue('--opencreator-titlebar-height')).toBe('38px');
+    expect(shell?.style.getPropertyValue('--opencreator-traffic-light-inset')).toBe('76px');
     expect(document.querySelector('.desktop-titlebar-drag-region')).toBeInTheDocument();
-    expect(document.querySelector('.clawee-main-titlebar')).not.toBeInTheDocument();
+    expect(document.querySelector('.opencreator-main-titlebar')).not.toBeInTheDocument();
   });
 
   it('moves a desktop conversation title into the integrated titlebar without duplicating it', async () => {
@@ -1013,7 +1014,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: /hello/ }));
 
-    const mainTitlebar = document.querySelector<HTMLElement>('.clawee-main-titlebar');
+    const mainTitlebar = document.querySelector<HTMLElement>('.opencreator-main-titlebar');
     expect(mainTitlebar).toBeInTheDocument();
     expect(within(mainTitlebar!).getByRole('heading', { name: 'hello' })).toBeInTheDocument();
     expect(document.querySelector('.conversation-page > .conversation-header')).not.toBeInTheDocument();
@@ -1029,7 +1030,7 @@ describe('App', () => {
   it('waits for restored conversation history before showing the empty conversation layout', async () => {
     const user = userEvent.setup();
     const [project] = persistProjects('/Users/test/develop/clean');
-    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: project.id,
       selectedThreadId: 'thread-restored-loading'
     }));
@@ -1102,8 +1103,8 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: /^视频翻译/ })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '工作台' }));
-    expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^视频翻译/ }));
     expect(screen.getByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
     await user.type(
@@ -1165,7 +1166,7 @@ describe('App', () => {
       name: '浏览器会话标题'
     })).toBeInTheDocument();
     expect(conversationPage?.querySelector(':scope > .conversation-header')).toBeInTheDocument();
-    expect(document.querySelector('.clawee-main-titlebar')).not.toBeInTheDocument();
+    expect(document.querySelector('.opencreator-main-titlebar')).not.toBeInTheDocument();
   });
 
   it('keeps the guest greeting independent from remote account data', async () => {
@@ -1211,7 +1212,7 @@ describe('App', () => {
 
   it('does not allow chat submission before the local runtime is connected', async () => {
     const user = userEvent.setup();
-    const prompt = '整理企业 Agent 工作台设计';
+    const prompt = '整理企业 Agent Dashboard 设计';
 
     render(<App fileService={createFileService()} />);
 
@@ -1291,7 +1292,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '定时任务' }));
 
     expect(await screen.findByRole('heading', { name: '每日总结' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Clawee：已安排' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'OpenCreator：已安排' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '查看上次运行' }));
 
@@ -1372,7 +1373,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /^每日总结/ }));
 
     expect(await screen.findByLabelText('任务管理')).toBeInTheDocument();
-    expect(document.querySelector('.clawee-main-titlebar')).toHaveTextContent('每日总结');
+    expect(document.querySelector('.opencreator-main-titlebar')).toHaveTextContent('每日总结');
     expect(document.querySelector('.conversation-task-strip--standalone'))
       .toContainElement(screen.getByLabelText('任务管理'));
     expect(document.querySelector('.conversation-page > .conversation-header')).not.toBeInTheDocument();
@@ -1560,7 +1561,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /^创建$/ }));
     expect(screen.getByRole('dialog', { name: '创建定时任务' })).toBeInTheDocument();
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-    expect(screen.queryByText('使用 Clawee 创建')).not.toBeInTheDocument();
+    expect(screen.queryByText('使用 OpenCreator 创建')).not.toBeInTheDocument();
     expect(findPostCall(fetchCalls, '/threads')).toBeUndefined();
     expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
   });
@@ -1679,7 +1680,7 @@ describe('App', () => {
   it('keeps the current project selected while editing a new schedule', async () => {
     const user = userEvent.setup();
     const [customerProject] = persistProjects('/Users/test/project/customer-agent');
-    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: customerProject.id
     }));
     const hostBridge = createHostBridge();
@@ -3012,7 +3013,7 @@ describe('App', () => {
   it('connects the plugin market to real install state and creates draft conversations', async () => {
     const user = userEvent.setup();
     window.localStorage.setItem(
-      'clawee.preferences.defaultPermission',
+      'opencreator.preferences.defaultPermission',
       'danger-full-access'
     );
     const hostBridge = createHostBridge();
@@ -3087,7 +3088,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: '插件中心' }));
     await waitFor(() => expect(recordRequests).toBe(1));
-    expect(screen.queryByRole('heading', { name: 'Clawee：插件' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'OpenCreator：插件' })).not.toBeInTheDocument();
     expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
@@ -4153,7 +4154,7 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: '停止任务' })).not.toBeInTheDocument();
   });
 
-  it('renders Codex process agent messages as folded process text and only the final agent message as Clawee reply', async () => {
+  it('renders Codex process agent messages as folded process text and only the final agent message as OpenCreator reply', async () => {
     const user = userEvent.setup();
     const prompt = '检查当前目录并总结';
     const hostBridge = createHostBridge();
@@ -4375,7 +4376,7 @@ describe('App', () => {
     const prompt = 'hi';
     testRuntimeProjects = [];
     window.localStorage.setItem(
-      'clawee.preferences.defaultPermission',
+      'opencreator.preferences.defaultPermission',
       'danger-full-access'
     );
     const hostBridge = createHostBridge();
@@ -4453,8 +4454,8 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_playground',
               title: 'Playground 历史会话',
-              cwd: '/Users/test/develop/clawee/playground',
-              canonicalCwd: '/Users/test/develop/clawee/playground',
+              cwd: '/Users/test/develop/opencreator/playground',
+              canonicalCwd: '/Users/test/develop/opencreator/playground',
               updatedAt: new Date('2026-07-09T02:00:00.000Z').toISOString()
             })
           ]
@@ -4846,8 +4847,8 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_playground',
               title: 'Playground 历史会话',
-              cwd: '/Users/test/develop/clawee/playground',
-              canonicalCwd: '/Users/test/develop/clawee/playground',
+              cwd: '/Users/test/develop/opencreator/playground',
+              canonicalCwd: '/Users/test/develop/opencreator/playground',
               workspaceMode: 'external'
             })
           ]
@@ -4885,7 +4886,7 @@ describe('App', () => {
     );
     const primaryProject = projects[0];
     const secondaryProject = projects[1]!;
-    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: primaryProject.id
     }));
     const hostBridge = createHostBridge();
@@ -4976,7 +4977,7 @@ describe('App', () => {
     );
     const primaryProject = projects[0];
     const secondaryProject = projects[1]!;
-    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: primaryProject.id
     }));
     const animationFrames: FrameRequestCallback[] = [];
@@ -5104,7 +5105,7 @@ describe('App', () => {
     const user = userEvent.setup();
     const projects = persistProjects(
       '/Users/test/develop/content-design',
-      '/Users/test/develop/clawee/bili'
+      '/Users/test/develop/opencreator/bili'
     );
     const contentProject = projects[0];
     const biliProject = projects[1]!;
@@ -5132,8 +5133,8 @@ describe('App', () => {
               title: 'bili 历史',
               projectId: biliProject.id,
               codexThreadId: 'codex-bili-history',
-              cwd: '/Users/test/develop/clawee/bili',
-              canonicalCwd: '/Users/test/develop/clawee/bili'
+              cwd: '/Users/test/develop/opencreator/bili',
+              canonicalCwd: '/Users/test/develop/opencreator/bili'
             })
           ]
         });
@@ -5176,8 +5177,8 @@ describe('App', () => {
   });
 
   it('restores a selected historical conversation that is outside the initial thread page', async () => {
-    const [biliProject] = persistProjects('/Users/test/develop/clawee/bili');
-    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+    const [biliProject] = persistProjects('/Users/test/develop/opencreator/bili');
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: biliProject.id,
       selectedThreadId: 'thread_older_history'
     }));
@@ -5212,8 +5213,8 @@ describe('App', () => {
             id: 'thread_older_history',
             title: '分页外的历史会话',
             codexThreadId: 'codex-older-history',
-            cwd: '/Users/test/develop/clawee/bili',
-            canonicalCwd: '/Users/test/develop/clawee/bili'
+            cwd: '/Users/test/develop/opencreator/bili',
+            canonicalCwd: '/Users/test/develop/opencreator/bili'
           })
         });
       }
@@ -5292,7 +5293,7 @@ describe('App', () => {
 
   it('loads task summaries without preloading task history or listing task threads as conversations', async () => {
     const [contentProject] = persistProjects('/Users/test/develop/content-design');
-    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: contentProject.id
     }));
     const requestedUrls: string[] = [];
@@ -5580,8 +5581,8 @@ describe('App', () => {
               id: 'thread_paged_history',
               title: '分页历史会话',
               codexThreadId: 'codex-paged-history',
-              cwd: '/Users/test/develop/clawee/clawee-agent',
-              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+              cwd: '/Users/test/develop/opencreator/opencreator-agent',
+              canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent'
             })
           ]
         });
@@ -5681,8 +5682,8 @@ describe('App', () => {
               id: 'thread_synthetic_history',
               title: '无 Turn ID 的分页会话',
               codexThreadId: 'codex-synthetic-history',
-              cwd: '/Users/test/develop/clawee/clawee-agent',
-              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+              cwd: '/Users/test/develop/opencreator/opencreator-agent',
+              canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent'
             })
           ]
         });
@@ -6029,11 +6030,11 @@ describe('App', () => {
     const user = userEvent.setup();
     const projects = persistProjects(
       '/Users/test/develop/content-design',
-      '/Users/test/develop/clawee/bili'
+      '/Users/test/develop/opencreator/bili'
     );
     const contentProject = projects[0];
     const biliProject = projects[1]!;
-    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: contentProject.id
     }));
     const hostBridge = createHostBridge();
@@ -6061,8 +6062,8 @@ describe('App', () => {
               title: 'bili 历史',
               projectId: biliProject.id,
               codexThreadId: 'codex-bili-history',
-              cwd: '/Users/test/develop/clawee/bili',
-              canonicalCwd: '/Users/test/develop/clawee/bili'
+              cwd: '/Users/test/develop/opencreator/bili',
+              canonicalCwd: '/Users/test/develop/opencreator/bili'
             })
           ]
         });
@@ -6142,8 +6143,8 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_files',
               title: '真实文件会话',
-              cwd: '/Users/test/develop/clawee/clawee-agent',
-              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+              cwd: '/Users/test/develop/opencreator/opencreator-agent',
+              canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent'
             })
           ]
         });
@@ -6154,8 +6155,8 @@ describe('App', () => {
       if (url.includes('/workspace/files/directory?')) {
         return jsonResponse({
           threadId: 'thread_files',
-          rootName: 'clawee-agent',
-          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          rootName: 'opencreator-agent',
+          rootPathLabel: '/Users/test/develop/opencreator/opencreator-agent',
           path: '',
           suggestedOpenPath: 'README.md',
           truncated: false,
@@ -6245,7 +6246,7 @@ describe('App', () => {
   it('点击聊天回复中的成果卡片会直接打开对应文件', async () => {
     const user = userEvent.setup();
     const hostBridge = createHostBridge();
-    const absoluteChangedPath = '/private/runtime/workspaces/clawee-agent/xiaodoujia-apple-aso-audit.html';
+    const absoluteChangedPath = '/private/runtime/workspaces/opencreator-agent/xiaodoujia-apple-aso-audit.html';
     hostBridge.readConnectionConfig = async () => ({ baseUrl: 'http://127.0.0.1:60764', token: 'runtime-token' });
     const fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
     const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -6262,8 +6263,8 @@ describe('App', () => {
               id: 'thread_files',
               title: '真实文件会话',
               codexThreadId: 'codex-thread-files',
-              cwd: '/Users/test/develop/clawee/clawee-agent',
-              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+              cwd: '/Users/test/develop/opencreator/opencreator-agent',
+              canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent'
             })
           ]
         });
@@ -6287,8 +6288,8 @@ describe('App', () => {
       if (url.includes('/workspace/files/directory?')) {
         return jsonResponse({
           threadId: 'thread_files',
-          rootName: 'clawee-agent',
-          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          rootName: 'opencreator-agent',
+          rootPathLabel: '/Users/test/develop/opencreator/opencreator-agent',
           path: '',
           suggestedOpenPath: 'README.md',
           truncated: false,
@@ -6418,8 +6419,8 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_files',
               title: '真实文件会话',
-              cwd: '/Users/test/develop/clawee/clawee-agent',
-              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+              cwd: '/Users/test/develop/opencreator/opencreator-agent',
+              canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent'
             })
           ]
         });
@@ -6430,8 +6431,8 @@ describe('App', () => {
       if (url.includes('/workspace/files/directory?')) {
         return jsonResponse({
           threadId: 'thread_files',
-          rootName: 'clawee-agent',
-          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          rootName: 'opencreator-agent',
+          rootPathLabel: '/Users/test/develop/opencreator/opencreator-agent',
           path: '',
           suggestedOpenPath: 'README.md',
           truncated: false,
@@ -6704,8 +6705,8 @@ describe('App', () => {
               id: 'thread_files',
               title: '只读文件会话',
               sandbox: threadSandbox,
-              cwd: '/Users/test/develop/clawee/clawee-agent',
-              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+              cwd: '/Users/test/develop/opencreator/opencreator-agent',
+              canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent'
             })
           ]
         });
@@ -6721,16 +6722,16 @@ describe('App', () => {
             id: 'thread_files',
             title: '只读文件会话',
             sandbox: threadSandbox,
-            cwd: '/Users/test/develop/clawee/clawee-agent',
-            canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+            cwd: '/Users/test/develop/opencreator/opencreator-agent',
+            canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent'
           })
         });
       }
       if (url.includes('/workspace/files/directory?')) {
         return jsonResponse({
           threadId: 'thread_files',
-          rootName: 'clawee-agent',
-          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          rootName: 'opencreator-agent',
+          rootPathLabel: '/Users/test/develop/opencreator/opencreator-agent',
           path: '',
           suggestedOpenPath: 'README.md',
           truncated: false,
@@ -6838,8 +6839,8 @@ describe('App', () => {
             createThreadResponse({
               id: 'thread_files',
               title: '真实文件会话',
-              cwd: '/Users/test/develop/clawee/clawee-agent',
-              canonicalCwd: '/Users/test/develop/clawee/clawee-agent'
+              cwd: '/Users/test/develop/opencreator/opencreator-agent',
+              canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent'
             })
           ]
         });
@@ -6850,8 +6851,8 @@ describe('App', () => {
       if (url.includes('/workspace/files/directory?')) {
         return jsonResponse({
           threadId: 'thread_files',
-          rootName: 'clawee-agent',
-          rootPathLabel: '/Users/test/develop/clawee/clawee-agent',
+          rootName: 'opencreator-agent',
+          rootPathLabel: '/Users/test/develop/opencreator/opencreator-agent',
           path: '',
           suggestedOpenPath: 'README.md',
           truncated: false,
@@ -6961,12 +6962,12 @@ describe('App', () => {
         return jsonResponse({
           threads: [
             createThreadResponse({
-              id: 'thread_codex_clawee_agent',
+              id: 'thread_codex_opencreator_agent',
               title: '真实 Codex 当前项目历史',
               projectId: contentProject.id,
-              codexThreadId: 'codex-history-clawee-agent',
-              cwd: '/Users/test/develop/clawee/clawee-agent',
-              canonicalCwd: '/Users/test/develop/clawee/clawee-agent',
+              codexThreadId: 'codex-history-opencreator-agent',
+              cwd: '/Users/test/develop/opencreator/opencreator-agent',
+              canonicalCwd: '/Users/test/develop/opencreator/opencreator-agent',
               updatedAt: new Date().toISOString()
             }),
             createThreadResponse({
@@ -6996,7 +6997,7 @@ describe('App', () => {
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'content-design' })).toHaveAttribute('data-current-project', 'true');
     expect(screen.queryByRole('button', { name: '本机目录' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'clawee-agent' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'opencreator-agent' })).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /真实 Codex 当前项目历史/ })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /content-design 旧历史/ })).toBeInTheDocument();
     expect(window.localStorage.getItem(PROJECTS_STORAGE_KEY)).toBe(legacyProjects);
@@ -7501,7 +7502,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '浅色' }));
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'light');
-    expect(window.localStorage.getItem('clawee.preferences.colorMode')).toBe('light');
+    expect(window.localStorage.getItem('opencreator.preferences.colorMode')).toBe('light');
   });
 
   it('applies and persists the selected accent color', async () => {
@@ -7514,7 +7515,7 @@ describe('App', () => {
     await user.click(screen.getByRole('radio', { name: '紫色' }));
 
     expect(document.documentElement).toHaveAttribute('data-accent', 'purple');
-    expect(window.localStorage.getItem('clawee.preferences.accentColor')).toBe('purple');
+    expect(window.localStorage.getItem('opencreator.preferences.accentColor')).toBe('purple');
   });
 
   it('applies and persists a custom accent color', async () => {
@@ -7536,8 +7537,8 @@ describe('App', () => {
     expect(screen.getByRole('radio', { name: '自定义' })).toHaveStyle({
       '--settings-accent-swatch': '#12abef'
     });
-    expect(window.localStorage.getItem('clawee.preferences.accentColor')).toBe('custom');
-    expect(window.localStorage.getItem('clawee.preferences.customAccentColor')).toBe('#12abef');
+    expect(window.localStorage.getItem('opencreator.preferences.accentColor')).toBe('custom');
+    expect(window.localStorage.getItem('opencreator.preferences.customAccentColor')).toBe('#12abef');
   });
 
   it('persists the global default permission across refreshes and projects', async () => {
@@ -7548,7 +7549,7 @@ describe('App', () => {
     );
     const primaryProject = projects[0];
     const secondaryProject = projects[1]!;
-    window.localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+    window.localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
       currentProjectId: primaryProject.id
     }));
     const hostBridge = createHostBridge();
@@ -7595,7 +7596,7 @@ describe('App', () => {
       'danger-full-access'
     );
 
-    expect(window.localStorage.getItem('clawee.preferences.defaultPermission'))
+    expect(window.localStorage.getItem('opencreator.preferences.defaultPermission'))
       .toBe('danger-full-access');
 
     await user.click(screen.getByRole('button', { name: '返回应用' }));
@@ -7698,7 +7699,7 @@ describe('App', () => {
       .toEqual({ sandbox: 'danger-full-access' });
     expect(findPatchCall(fetchCalls, '/threads/thread-schedule-draft')).toBeUndefined();
     expect(findPatchCall(fetchCalls, '/threads/thread-schedule-task')).toBeUndefined();
-    expect(window.localStorage.getItem('clawee.preferences.defaultPermission'))
+    expect(window.localStorage.getItem('opencreator.preferences.defaultPermission'))
       .toBe('danger-full-access');
   });
 
@@ -8100,11 +8101,11 @@ function handleDefaultProjectApiRequest(
   }
   if (url.endsWith('/projects/default') && init?.method === 'POST') {
     const existing = readTestRuntimeProjects().find(
-      project => project.cwd === '/Users/test/Documents/Clawee/Default Project'
+      project => project.cwd === '/Users/test/Documents/OpenCreator/Default Project'
     );
     if (existing !== undefined) return jsonResponse({ project: existing });
     const project = createTestProject(
-      '/Users/test/Documents/Clawee/Default Project',
+      '/Users/test/Documents/OpenCreator/Default Project',
       { name: '默认项目' }
     );
     testRuntimeProjects = [project, ...readTestRuntimeProjects()];
@@ -8113,7 +8114,7 @@ function handleDefaultProjectApiRequest(
   if (url.endsWith('/projects/managed') && init?.method === 'POST') {
     const body = readRequestBody(init);
     const name = typeof body.name === 'string' ? body.name.trim() : 'project';
-    const project = createTestProject(`/Users/test/Documents/Clawee/${name}`, { name });
+    const project = createTestProject(`/Users/test/Documents/OpenCreator/${name}`, { name });
     testRuntimeProjects = [
       project,
       ...readTestRuntimeProjects().filter(item => item.id !== project.id)
@@ -8187,7 +8188,7 @@ function readTestRuntimeProjects(): ProjectResponse[] {
       const value = JSON.parse(raw) as unknown;
       if (Array.isArray(value)) {
         testRuntimeProjects = value
-          .filter((item): item is ClaweeProject => (
+          .filter((item): item is OpenCreatorProject => (
             typeof item === 'object'
             && item !== null
             && !Array.isArray(item)
@@ -8598,7 +8599,7 @@ function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadRe
     id: 'thread_from_api',
     title: 'Thread from API',
     projectId: defaultProjectId,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     codexThreadId: null,
     cwd: '/Users/test/develop/content-design',
     canonicalCwd: '/Users/test/develop/content-design',
@@ -8622,8 +8623,8 @@ function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadRe
   return thread;
 }
 
-function persistProjects(cwd: string, ...additionalCwds: string[]): [ClaweeProject, ...ClaweeProject[]] {
-  const projects: [ClaweeProject, ...ClaweeProject[]] = [
+function persistProjects(cwd: string, ...additionalCwds: string[]): [OpenCreatorProject, ...OpenCreatorProject[]] {
+  const projects: [OpenCreatorProject, ...OpenCreatorProject[]] = [
     createLegacyPersistedProject(cwd),
     ...additionalCwds.map(createLegacyPersistedProject)
   ];
@@ -8631,7 +8632,7 @@ function persistProjects(cwd: string, ...additionalCwds: string[]): [ClaweeProje
   return projects;
 }
 
-function createLegacyPersistedProject(cwd: string): ClaweeProject {
+function createLegacyPersistedProject(cwd: string): OpenCreatorProject {
   const normalizedCwd = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
   const name = normalizedCwd.split('/').filter(Boolean).at(-1) ?? 'project';
   let hash = 0x811c9dc5;

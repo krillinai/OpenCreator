@@ -1,4 +1,4 @@
-import type { CodexStatusResponse } from '@clawee/protocol';
+import type { CodexStatusResponse } from '@opencreator/protocol';
 
 export function ConnectionPanel(props: {
   status: 'connected' | 'disconnected' | 'invalid_token';

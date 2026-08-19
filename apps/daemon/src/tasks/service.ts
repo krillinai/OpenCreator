@@ -5,7 +5,7 @@ import type {
   TaskListQuery,
   TaskListResponse,
   TaskStatusFilter
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { existsSync } from 'node:fs';
 import type Database from 'better-sqlite3';
 import type { ApprovalManager } from '../approvals/manager.js';
@@ -59,7 +59,7 @@ const TASK_STATUSES: ReadonlySet<string> = new Set([
 ]);
 const RESULT_SUMMARY_LIMIT = 120;
 const INTERNAL_SCHEDULE_PROMPT_MARKERS = [
-  '这是 Clawee 已经触发的一次计划任务执行。',
+  '这是 OpenCreator 已经触发的一次计划任务执行。',
   '执行规则：'
 ] as const;
 

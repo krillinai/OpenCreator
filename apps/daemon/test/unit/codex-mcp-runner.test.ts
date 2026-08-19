@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 function makeFakeCodex(source: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'clawee-codex-mcp-runner-'));
+  const dir = mkdtempSync(join(tmpdir(), 'opencreator-codex-mcp-runner-'));
   tmpDirs.push(dir);
   const codexBin = join(dir, 'fake-codex.js');
   writeFileSync(codexBin, `#!/usr/bin/env node\n${source}`);
@@ -26,7 +26,7 @@ describe('codex mcp runner', () => {
     const codexBin = makeFakeCodex(`
 process.stdout.write('CODEX_HOME=' + process.env.CODEX_HOME + '\\n');
 `);
-    const codexHome = mkdtempSync(join(tmpdir(), 'clawee-codex-home-'));
+    const codexHome = mkdtempSync(join(tmpdir(), 'opencreator-codex-home-'));
     tmpDirs.push(codexHome);
 
     const result = runMcpCommand({
@@ -45,7 +45,7 @@ process.stdout.write('CODEX_HOME=' + process.env.CODEX_HOME + '\\n');
 process.stdout.write('GITHUB_TOKEN=secret\\n');
 process.stderr.write('Authorization: Bearer abc123\\n');
 `);
-    const codexHome = mkdtempSync(join(tmpdir(), 'clawee-codex-home-'));
+    const codexHome = mkdtempSync(join(tmpdir(), 'opencreator-codex-home-'));
     tmpDirs.push(codexHome);
 
     const result = runMcpCommand({
@@ -64,7 +64,7 @@ process.stderr.write('Authorization: Bearer abc123\\n');
     const codexBin = makeFakeCodex(`
 setTimeout(() => {}, 1000);
 `);
-    const codexHome = mkdtempSync(join(tmpdir(), 'clawee-codex-home-'));
+    const codexHome = mkdtempSync(join(tmpdir(), 'opencreator-codex-home-'));
     tmpDirs.push(codexHome);
 
     const result = runMcpCommand({
@@ -84,7 +84,7 @@ setTimeout(() => {}, 1000);
 require('node:fs').writeSync(2, 'GITHUB_TOKEN=secret\\n');
 setTimeout(() => {}, 30_000);
 `);
-    const codexHome = mkdtempSync(join(tmpdir(), 'clawee-codex-home-'));
+    const codexHome = mkdtempSync(join(tmpdir(), 'opencreator-codex-home-'));
     tmpDirs.push(codexHome);
 
     const result = runMcpCommand({
@@ -105,7 +105,7 @@ setTimeout(() => {}, 30_000);
     const codexBin = makeFakeCodex(`
 process.kill(process.pid, 'SIGTERM');
 `);
-    const codexHome = mkdtempSync(join(tmpdir(), 'clawee-codex-home-'));
+    const codexHome = mkdtempSync(join(tmpdir(), 'opencreator-codex-home-'));
     tmpDirs.push(codexHome);
 
     const result = runMcpCommand({

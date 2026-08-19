@@ -6,11 +6,11 @@ import type {
   ScheduleDetailResponse,
   ScheduleResponse,
   UpdateScheduleRequest,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { Check, ChevronDown, Clock3, LoaderCircle, Save, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
-import type { ClaweeProject } from '../projects/project-model.js';
+import type { OpenCreatorProject } from '../projects/project-model.js';
 import {
   cronToScheduleFrequency,
   scheduleFrequencyToCron,
@@ -47,7 +47,7 @@ export type ScheduleEditorErrors = Partial<
 export function ScheduleEditor(props: {
   mode: 'create' | 'edit';
   initialValues: ScheduleEditorValues;
-  projects: ClaweeProject[];
+  projects: OpenCreatorProject[];
   loading?: boolean;
   saving?: boolean;
   errors?: ScheduleEditorErrors;

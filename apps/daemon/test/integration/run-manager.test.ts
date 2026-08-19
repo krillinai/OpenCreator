@@ -1,4 +1,4 @@
-import type { SandboxMode } from '@clawee/protocol';
+import type { SandboxMode } from '@opencreator/protocol';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -43,7 +43,7 @@ function createTestRunManager(input: {
   persistentAppServerExecutor?: PersistentAppServerExecutor;
   beforeRunSpawn?: Parameters<typeof createRunManager>[0]['beforeRunSpawn'];
 } = {}) {
-  tempDir = input.tempDir ?? mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+  tempDir = input.tempDir ?? mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const threadManager = createThreadManager({ db, dataDir: tempDir });
   const manager = createRunManager({
@@ -223,7 +223,7 @@ describe('run manager', () => {
   });
 
   it('expands a home-relative cwd before starting a standalone run', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-home-cwd-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-home-cwd-'));
     const workspace = join(tempDir, 'workspace');
     mkdirSync(workspace);
     const { manager } = createTestRunManager({ tempDir, homeDir: tempDir });
@@ -245,7 +245,7 @@ describe('run manager', () => {
   });
 
   it('uses the context-enriched execution prompt and records only context references in metadata', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-context-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-context-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -290,7 +290,7 @@ describe('run manager', () => {
   });
 
   it('uses long-running friendly defaults for interactive codex runs', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -323,7 +323,7 @@ describe('run manager', () => {
   });
 
   it('uses conservative defaults for scheduled codex runs', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -357,7 +357,7 @@ describe('run manager', () => {
   });
 
   it('persists schedule source metadata and per-run timeout', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -401,7 +401,7 @@ describe('run manager', () => {
   });
 
   it('uses per-run timeout when executing codex', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -430,7 +430,7 @@ describe('run manager', () => {
   });
 
   it('maps inactivity timeout to a distinct codex error code', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -460,7 +460,7 @@ describe('run manager', () => {
   });
 
   it('maps spawn timeout to a distinct codex error code', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       initialDelayMs: 5000
@@ -491,7 +491,7 @@ describe('run manager', () => {
   });
 
   it('creates a run and writes redacted raw/events/stderr/meta files', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -546,7 +546,7 @@ describe('run manager', () => {
   });
 
   it('keeps high-frequency event logs ordered and records writer metrics', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -609,7 +609,7 @@ describe('run manager', () => {
   });
 
   it('isolates subscriber failures from run execution and event log persistence', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       initialDelayMs: 100,
       stdoutLines: [
@@ -648,7 +648,7 @@ describe('run manager', () => {
   });
 
   it('records a run diagnostic when asynchronous log writes fail', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -710,7 +710,7 @@ describe('run manager', () => {
   });
 
   it('waits for active runs and queued log writes during close', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -759,7 +759,7 @@ describe('run manager', () => {
   }, 10_000);
 
   it('shares in-flight close work after an earlier close call times out', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -808,7 +808,7 @@ describe('run manager', () => {
   }, 10_000);
 
   it('marks a run failed and writes diagnostics when codex exits non-zero', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'turn.started' }],
       stderrLines: ['failed TOKEN=secret-value'],
@@ -840,7 +840,7 @@ describe('run manager', () => {
   });
 
   it('records a diagnostic event for invalid codex json lines', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       rawStdoutLines: ['{broken'],
       stdoutLines: [{ type: 'turn.completed' }]
@@ -865,7 +865,7 @@ describe('run manager', () => {
   });
 
   it('marks a zero-exit run failed when codex never emits a terminal turn event', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'turn.started' }]
     });
@@ -890,7 +890,7 @@ describe('run manager', () => {
   });
 
   it('marks a successful thread run failed when codex never emits a thread id', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -921,7 +921,7 @@ describe('run manager', () => {
   });
 
   it('does not prefill an existing codex thread id for a new thread run', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -954,7 +954,7 @@ describe('run manager', () => {
   });
 
   it('keeps the run Codex id when thread binding conflicts', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-binding-conflict-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-binding-conflict-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-shared' },
@@ -996,7 +996,7 @@ describe('run manager', () => {
   });
 
   it('repairs only an unambiguous missing Codex thread binding on startup', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-binding-repair-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-binding-repair-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const threadManager = createThreadManager({ db, dataDir: tempDir });
     const unique = createPersistedThread(threadManager);
@@ -1026,7 +1026,7 @@ describe('run manager', () => {
   });
 
   it('uses codex exec resume for a thread with codexThreadId', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1057,7 +1057,7 @@ describe('run manager', () => {
   });
 
   it('injects per-run schedule tools without persisting the capability secret', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-agent-tools-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-agent-tools-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-agent-tools' },
@@ -1095,14 +1095,14 @@ describe('run manager', () => {
     expect(run.status).toBe('succeeded');
     const argv = fake.readArgv();
     const env = fake.readAgentToolEnv();
-    const token = env.CLAWEE_AGENT_CAPABILITY_TOKEN!;
+    const token = env.OPENCREATOR_AGENT_CAPABILITY_TOKEN!;
     expect(argv).toEqual(expect.arrayContaining([
       '-c',
-      'mcp_servers.clawee_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
+      'mcp_servers.opencreator_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
       '-c',
-      'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_create","clawee_schedule_update","clawee_schedule_pause","clawee_schedule_resume","clawee_schedule_run_now","clawee_schedule_get"]'
+      'mcp_servers.opencreator_schedule.enabled_tools=["opencreator_schedule_create","opencreator_schedule_update","opencreator_schedule_pause","opencreator_schedule_resume","opencreator_schedule_run_now","opencreator_schedule_get"]'
     ]));
-    expect(env.CLAWEE_AGENT_TOOL_URL).toBeUndefined();
+    expect(env.OPENCREATOR_AGENT_TOOL_URL).toBeUndefined();
     expect(env.NO_PROXY).toContain('127.0.0.1');
     expect(env.no_proxy).toContain('127.0.0.1');
     expect(token).toMatch(/^clwcap_/);
@@ -1123,7 +1123,7 @@ describe('run manager', () => {
   });
 
   it('revalidates knowledge access after dequeue and fails without spawning codex', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-knowledge-policy-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-knowledge-policy-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-knowledge' },
@@ -1163,7 +1163,7 @@ describe('run manager', () => {
   });
 
   it('uses the thread sandbox override for workspace-write resumed runs', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1191,7 +1191,7 @@ describe('run manager', () => {
   });
 
   it('returns threadId for immediate and completed thread runs', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1216,7 +1216,7 @@ describe('run manager', () => {
   });
 
   it('resolves execution configuration from the thread when the caller only provides threadId', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1266,7 +1266,7 @@ describe('run manager', () => {
   });
 
   it('uses canonicalCwd when running a legacy managed thread with a relative cwd', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-managed-cwd-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-managed-cwd-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-managed' },
@@ -1304,7 +1304,7 @@ describe('run manager', () => {
   });
 
   it('does not persist schedule-only public metadata for ordinary runs', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-ordinary' },
@@ -1334,7 +1334,7 @@ describe('run manager', () => {
   });
 
   it('queues same-thread runs and starts the second after the first completes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1361,7 +1361,7 @@ describe('run manager', () => {
   });
 
   it('updates queued run resume mode when dequeued as a resumed thread run', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1397,7 +1397,7 @@ describe('run manager', () => {
   });
 
   it('cancels queued same-thread runs without spawning codex', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -1423,7 +1423,7 @@ describe('run manager', () => {
   });
 
   it('steers a selected queued run to the front and interrupts the active run', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-steer-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-steer-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -1460,7 +1460,7 @@ describe('run manager', () => {
   });
 
   it('interrupts the active run and prioritizes the follow-up ahead of regular queued runs', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-interrupt-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-interrupt-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -1515,7 +1515,7 @@ describe('run manager', () => {
   });
 
   it('keeps multiple interrupting follow-ups in FIFO order', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-interrupt-fifo-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-interrupt-fifo-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -1555,7 +1555,7 @@ describe('run manager', () => {
   });
 
   it('maps missing resume targets to a not found error code', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       stderrLines: ['No session found for codex-thread-1'],
@@ -1581,7 +1581,7 @@ describe('run manager', () => {
   });
 
   it('maps other resume non-zero exits to a generic resume error code', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       stderrLines: ['resume failed unexpectedly'],
@@ -1601,7 +1601,7 @@ describe('run manager', () => {
   });
 
   it('rotates an automatic schedule run once after resume fails and reseeds from the latest summary', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-rotation-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-rotation-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       invocations: [
@@ -1691,7 +1691,7 @@ describe('run manager', () => {
   });
 
   it('fails after one rotation attempt without replacing the previous Codex thread id', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-rotation-failed-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-rotation-failed-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       invocations: [
@@ -1724,7 +1724,7 @@ describe('run manager', () => {
   });
 
   it('does not rotate an explicit schedule resume failure', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-explicit-resume-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-explicit-resume-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       invocations: [
@@ -1758,7 +1758,7 @@ describe('run manager', () => {
   });
 
   it('rotates before resume when the configured Codex thread run threshold is reached', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-rotation-threshold-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-rotation-threshold-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       invocations: [
@@ -1829,7 +1829,7 @@ describe('run manager', () => {
   });
 
   it('keeps automatic schedule resumes unchanged when threshold rotation is disabled', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-rotation-disabled-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-rotation-disabled-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       invocations: [
@@ -1885,7 +1885,7 @@ describe('run manager', () => {
   });
 
   it('runs explicit resume_thread without a thread id as an independent exec', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -1916,7 +1916,7 @@ describe('run manager', () => {
   });
 
   it('fails resume_thread when resume capability is unverified', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-run-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-run-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -1950,7 +1950,7 @@ describe('run manager', () => {
   });
 
   it('marks a thread run failed when codex emits an empty thread id', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: '   ' },
@@ -1980,7 +1980,7 @@ describe('run manager', () => {
   });
 
   it('marks a run failed on timeout', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -2007,7 +2007,7 @@ describe('run manager', () => {
   });
 
   it('keeps a completed turn successful when the codex process times out during shutdown', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex-thread-1' },
@@ -2053,7 +2053,7 @@ describe('run manager', () => {
   });
 
   it('does not hide a missing thread id when a completed thread run times out during shutdown', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -2090,7 +2090,7 @@ describe('run manager', () => {
   });
 
   it('marks a run failed on inactivity timeout', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -2117,7 +2117,7 @@ describe('run manager', () => {
   });
 
   it('marks a run failed on spawn timeout', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'turn.started' }],
       initialDelayMs: 500,
@@ -2146,7 +2146,7 @@ describe('run manager', () => {
   });
 
   it('marks runs left running before daemon restart as orphaned', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const runId = 'run_orphaned_1';
     mkdirSync(join(tempDir, 'runs', runId), { recursive: true });
@@ -2186,7 +2186,7 @@ describe('run manager', () => {
   });
 
   it('marks queued thread runs left before daemon restart as thread orphaned', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const runId = 'run_thread_orphaned_1';
     mkdirSync(join(tempDir, 'runs', runId), { recursive: true });
@@ -2221,7 +2221,7 @@ describe('run manager', () => {
   });
 
   it('can cancel a running run', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true

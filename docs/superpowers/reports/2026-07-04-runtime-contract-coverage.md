@@ -20,7 +20,7 @@ Task 8 本轮验证已于 2026-07-05 执行并通过：
 ```bash
 pnpm typecheck
 pnpm test
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 git diff --check
 ```
 

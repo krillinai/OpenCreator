@@ -46,16 +46,16 @@ const enterprisePassword = 'packaged-e2e-password';
 const enterpriseAccountId = 'acct_packaged_e2e';
 const enterpriseSkillName = 'enterprise-review';
 const enterpriseKnowledgeBaseId = 'kb_packaged_e2e';
-const enterpriseKeyringService = 'com.clawee.enterprise.e2e';
-const enterpriseMcpKeyringService = 'com.clawee.enterprise.mcp.e2e';
+const enterpriseKeyringService = 'com.opencreator.enterprise.e2e';
+const enterpriseMcpKeyringService = 'com.opencreator.enterprise.mcp.e2e';
 const agentIdPattern =
-  /^clawee_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^opencreator_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 test.describe.configure({ mode: 'serial' });
 
 test.skip('legacy enterprise packaged workflow', async () => {
   const runId = randomUUID();
-  const root = mkdtempSync(join(tmpdir(), 'clawee-enterprise-packaged-'));
+  const root = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-packaged-'));
   const codexHome = join(root, 'codex-home');
   const stateDir = join(root, 'fake-codex-state');
   const userData = join(root, 'user-data');
@@ -76,20 +76,20 @@ test.skip('legacy enterprise packaged workflow', async () => {
       args: [
         `--user-data-dir=${userData}`,
         '--disable-gpu',
-        `--clawee-enterprise-e2e=${runId}`,
-        `--clawee-enterprise-e2e-config=${
-          join(homeDir, '.clawee', 'config.toml')
+        `--opencreator-enterprise-e2e=${runId}`,
+        `--opencreator-enterprise-e2e-config=${
+          join(homeDir, '.opencreator', 'config.toml')
         }`
       ],
       env: {
         ...withoutElectronRunAsNode(process.env),
         PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
         SHELL: process.platform === 'win32' ? process.env.ComSpec : '/bin/false',
-        CLAWEE_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
+        OPENCREATOR_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
         CODEX_HOME: codexHome,
-        CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
-        CLAWEE_E2E_FAKE_CODEX_MODE: 'success',
-        CLAWEE_ENTERPRISE_E2E_RUN_ID: runId
+        OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
+        OPENCREATOR_E2E_FAKE_CODEX_MODE: 'success',
+        OPENCREATOR_ENTERPRISE_E2E_RUN_ID: runId
       },
       timeoutMs: 45_000
     });
@@ -98,13 +98,13 @@ test.skip('legacy enterprise packaged workflow', async () => {
     await expect.poll(
       () => readEnterpriseSession(app!.page)
     ).toMatchObject({ status: 'signed_out' });
-    expect(app.page.url()).toContain('clawee-app://app/');
+    expect(app.page.url()).toContain('opencreator-app://app/');
 
     await app.page.evaluate(() => {
       window.location.hash = '#/account';
     });
     await expect(app.page.getByRole('heading', {
-      name: '欢迎使用 Clawee'
+      name: '欢迎使用 OpenCreator'
     })).toBeVisible();
     await app.page.getByLabel('邮箱').fill(enterpriseEmail);
     await app.page.getByLabel('密码').fill(enterprisePassword);
@@ -195,7 +195,7 @@ test.skip('legacy enterprise packaged workflow', async () => {
     await mcpSwitch.click();
     await expect(mcpSwitch).toHaveAttribute('aria-checked', 'true');
     const localMcpState = await app.page.evaluate(async () => {
-      const response = await fetch('/.clawee/runtime/enterprise/mcp');
+      const response = await fetch('/.opencreator/runtime/enterprise/mcp');
       return await response.json() as Record<string, unknown>;
     });
     expect(localMcpState).toMatchObject({
@@ -213,7 +213,7 @@ test.skip('legacy enterprise packaged workflow', async () => {
     );
     expect(persistedMcp).toMatchObject({
       enabled: true,
-      bearer_token_env_var: 'CLAWEE_ENTERPRISE_MCP_TOKEN'
+      bearer_token_env_var: 'OPENCREATOR_ENTERPRISE_MCP_TOKEN'
     });
     expect(JSON.stringify(persistedMcp)).not.toMatch(/packaged-e2e-mcp-/);
 
@@ -334,7 +334,7 @@ test.skip('legacy enterprise packaged workflow', async () => {
     expect(login).toMatchObject({
       bodyKeys: ['agent_id', 'client_id', 'email', 'password'],
       agentId: persistedAgentId,
-      clientId: 'clawee-agent',
+      clientId: 'opencreator-agent',
       cookiePresent: false
     });
     expect(requests).toEqual(expect.arrayContaining([
@@ -393,7 +393,7 @@ test.skip('legacy enterprise packaged workflow', async () => {
   } finally {
     if (app !== undefined) {
       await app.page.evaluate(async () => {
-        await fetch('/.clawee/runtime/enterprise/logout', {
+        await fetch('/.opencreator/runtime/enterprise/logout', {
           method: 'POST'
         }).catch(() => undefined);
       }).catch(() => undefined);
@@ -404,25 +404,25 @@ test.skip('legacy enterprise packaged workflow', async () => {
     await deleteE2ECredential(runId, enterpriseKeyringService).catch(() => {
       console.error(
         `企业 E2E Keyring 最佳努力清理失败：runId=${runId} `
-        + `service=${enterpriseKeyringService} account=clawee-agent:${runId}`
+        + `service=${enterpriseKeyringService} account=opencreator-agent:${runId}`
       );
     });
     await deleteE2ECredential(runId, enterpriseMcpKeyringService).catch(() => {
       console.error(
         `企业 MCP E2E Keyring 最佳努力清理失败：runId=${runId} `
-        + `service=${enterpriseMcpKeyringService} account=clawee-agent-mcp:${runId}`
+        + `service=${enterpriseMcpKeyringService} account=opencreator-agent-mcp:${runId}`
       );
     });
     await server.close().catch(error => {
       cleanupError ??= error;
     });
-    if (process.env.CLAWEE_E2E_KEEP_TEMP !== '1') {
+    if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
       rmSync(root, { force: true, recursive: true });
     }
     if (cleanupError !== undefined) {
       console.error(
         `企业 E2E 清理失败：runId=${runId} `
-        + `service=${enterpriseKeyringService} account=clawee-agent:${runId}`
+        + `service=${enterpriseKeyringService} account=opencreator-agent:${runId}`
       );
       throw cleanupError;
     }
@@ -550,7 +550,7 @@ class FakeEnterpriseServer {
         !isRecord(body)
         || body.email !== enterpriseEmail
         || body.password !== enterprisePassword
-        || body.client_id !== 'clawee-agent'
+        || body.client_id !== 'opencreator-agent'
         || typeof body.agent_id !== 'string'
         || !agentIdPattern.test(body.agent_id)
       ) {
@@ -813,16 +813,16 @@ class FakeEnterpriseServer {
 
 async function waitForWorkspace(page: Page): Promise<void> {
   await page.waitForURL(url => (
-    url.protocol === 'clawee-app:' && url.hostname === 'app'
+    url.protocol === 'opencreator-app:' && url.hostname === 'app'
   ), { timeout: 45_000 });
   await expect.poll(async () => await page.evaluate(async () => (
-    await window.claweeDesktop?.readBootstrapState()
+    await window.opencreatorDesktop?.readBootstrapState()
   )?.phase), { timeout: 30_000 }).toBe('ready');
 }
 
 async function readEnterpriseSession(page: Page): Promise<Record<string, unknown>> {
   return await page.evaluate(async () => {
-    const response = await fetch('/.clawee/runtime/enterprise/session');
+    const response = await fetch('/.opencreator/runtime/enterprise/session');
     return await response.json() as Record<string, unknown>;
   });
 }
@@ -860,10 +860,10 @@ function withoutElectronRunAsNode(
 ): NodeJS.ProcessEnv {
   const next = { ...env };
   delete next.ELECTRON_RUN_AS_NODE;
-  delete next.CLAWEE_UPDATE_URL;
-  delete next.CLAWEE_ENTERPRISE_E2E_AUTHORIZED;
-  delete next.CLAWEE_ENTERPRISE_KEYRING_SERVICE;
-  delete next.CLAWEE_ENTERPRISE_KEYRING_ACCOUNT;
+  delete next.OPENCREATOR_UPDATE_URL;
+  delete next.OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED;
+  delete next.OPENCREATOR_ENTERPRISE_KEYRING_SERVICE;
+  delete next.OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT;
   return next;
 }
 
@@ -871,10 +871,10 @@ function writeEnterpriseClientConfig(
   homeDir: string,
   gateway: string
 ): void {
-  const claweeHome = join(homeDir, '.clawee');
-  mkdirSync(claweeHome, { recursive: true });
+  const opencreatorHome = join(homeDir, '.opencreator');
+  mkdirSync(opencreatorHome, { recursive: true });
   writeFileSync(
-    join(claweeHome, 'config.toml'),
+    join(opencreatorHome, 'config.toml'),
     `gateway = ${JSON.stringify(gateway)}\n`
   );
 }
@@ -912,8 +912,8 @@ function createKeyringEntry(runId: string, service: string): {
   return new keyring.AsyncEntry(
     service,
     service === enterpriseMcpKeyringService
-      ? `clawee-agent-mcp:${runId}`
-      : `clawee-agent:${runId}`
+      ? `opencreator-agent-mcp:${runId}`
+      : `opencreator-agent:${runId}`
   );
 }
 
@@ -985,7 +985,7 @@ function enterpriseAgent(agentId: string) {
 }
 
 function readPersistedAgentId(homeDir: string): string {
-  const path = join(homeDir, '.clawee', 'config.toml');
+  const path = join(homeDir, '.opencreator', 'config.toml');
   const value: unknown = parse(readFileSync(path, 'utf8'));
   if (
     !isRecord(value)

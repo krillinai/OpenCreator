@@ -3,7 +3,7 @@ import type {
   TaskItem,
   TaskListResponse,
   TaskStatusFilter
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   Bell,
   BellOff,

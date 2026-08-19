@@ -3,7 +3,7 @@ import type {
   CodexMcpListResponse,
   CodexMcpServerResponse,
   CodexMcpTransport
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { redactMcpText } from './redaction.js';
 
 const REDACTED = '[REDACTED]';

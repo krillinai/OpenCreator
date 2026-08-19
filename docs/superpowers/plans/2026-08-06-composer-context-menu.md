@@ -30,7 +30,7 @@ expect(screen.getByRole('menuitem', { name: /brainstorming/ })).toBeInTheDocumen
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `pnpm --filter @clawee/web test -- src/features/runs/Composer.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/features/runs/Composer.test.tsx`
 
 Expected: FAIL because the current menu still renders only `添加图片` and has no category submenus.
 
@@ -59,7 +59,7 @@ The skills submenu includes an accessible search field. Both categories show a s
 
 - [ ] **Step 5: Run the focused Composer tests**
 
-Run: `pnpm --filter @clawee/web test -- src/features/runs/Composer.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/features/runs/Composer.test.tsx`
 
 Expected: PASS.
 
@@ -77,7 +77,7 @@ Return a configured MCP server from `/codex/mcp`, open the Composer add menu, op
 
 - [ ] **Step 2: Run focused app tests and verify RED**
 
-Run: `pnpm --filter @clawee/web test -- src/app/App.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/app/App.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx`
 
 Expected: FAIL because MCP servers are not currently mapped to Composer commands and management callbacks are absent.
 
@@ -105,7 +105,7 @@ Pass normal Composer callbacks that call `navigateToRoute({ view: 'plugins' })` 
 
 - [ ] **Step 5: Run focused app and knowledge tests**
 
-Run: `pnpm --filter @clawee/web test -- src/app/App.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/app/App.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx`
 
 Expected: PASS.
 
@@ -121,7 +121,7 @@ Assert that the submenu has a constrained width and height, scrollable command l
 
 - [ ] **Step 2: Run the CSS test and verify RED**
 
-Run: `pnpm --filter @clawee/web test -- src/styles/app-css.test.ts`
+Run: `pnpm --filter @opencreator/web test -- src/styles/app-css.test.ts`
 
 Expected: FAIL because `.composer-add-submenu` does not exist.
 
@@ -134,8 +134,8 @@ Add `.composer-add-menu`, `.composer-add-submenu`, `.composer-add-search`, `.com
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/features/runs/Composer.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx src/styles/app-css.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/features/runs/Composer.test.tsx src/features/knowledge/KnowledgeConversation.test.tsx src/styles/app-css.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS with no TypeScript errors.

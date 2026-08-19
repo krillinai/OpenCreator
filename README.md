@@ -1,6 +1,6 @@
-# Clawee Agent
+# OpenCreator Agent
 
-Clawee Agent 是一个本地优先的 Codex Agent 工作台。Web 前端负责会话、任务、文件、插件和设置体验；本地 Fastify daemon 负责 Codex CLI 调用、持久化、审批、附件、计划任务、搜索、通知状态和显式长期记忆。
+OpenCreator Agent 是一个本地优先的 Codex Agent 工作台。Web 前端负责会话、任务、文件、插件和设置体验；本地 Fastify daemon 负责 Codex CLI 调用、持久化、审批、附件、计划任务、搜索、通知状态和显式长期记忆。
 
 ## 环境要求
 
@@ -29,11 +29,11 @@ daemon 会监听随机本机端口，并在 stdout 输出一次连接地址和�
 
 长期计划任务默认在同一个底层 Codex thread 完成 50 次终态 Run 后，使用最新
 ConversationSummary 建立新 Codex thread；resume 目标失效时也会自动尝试一次相同恢复。
-Clawee Thread、Schedule 绑定和页面路由保持不变。可通过环境变量调整阈值，设为 `0`
+OpenCreator Thread、Schedule 绑定和页面路由保持不变。可通过环境变量调整阈值，设为 `0`
 可关闭按次数主动轮换：
 
 ```bash
-CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD=100 pnpm daemon:dev
+OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD=100 pnpm daemon:dev
 ```
 
 该自动恢复只用于 `resumeMode: "auto"` 的计划任务；普通会话或显式
@@ -41,7 +41,7 @@ CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD=100 pnpm daemon:dev
 
 每条计划任务都有唯一的长期任务会话。“已安排”用于创建、编辑、暂停、恢复、立即运行
 和删除；侧栏“任务”用于查看每次触发、审批、结果和后续对话。同一任务的自动触发、
-立即运行和用户消息都复用同一个 Clawee Thread，并按 `queue` 或 `skip` 串行处理。
+立即运行和用户消息都复用同一个 OpenCreator Thread，并按 `queue` 或 `skip` 串行处理。
 
 计划任务完成、失败、取消或等待审批时，daemon 会把脱敏通知写入持久 outbox。支持
 `configureBackgroundNotifications` 的 Desktop Host 可在页面关闭后继续读取并确认通知；
@@ -89,24 +89,24 @@ pnpm audit --audit-level high
 真实 Codex 发布 smoke：
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 \
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 \
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 ## 安全边界
 
 - daemon 仅监听 `127.0.0.1`，除健康检查外所有 API 都要求 Bearer token。
 - HTML 预览默认禁用脚本、导航和弹窗，只允许受控的同工作区相对资源。
-- 敏感记忆必须二次确认；Clawee 不会自动永久保存未确认内容，也不会写入外部知识库。
+- 敏感记忆必须二次确认；OpenCreator 不会自动永久保存未确认内容，也不会写入外部知识库。
 - Diagnostics 和 Run 日志在返回或导出前进行脱敏。
 
 ## 文档
 
-- [用户指南与故障排查](docs/clawee-user-guide-and-troubleshooting.md)
+- [用户指南与故障排查](docs/opencreator-user-guide-and-troubleshooting.md)
 - [Runtime API v1](docs/runtime-api-for-ui-v1.md)
 - [定时任务专属会话规格](docs/specs/2026-07-14-scheduled-task-dedicated-thread-design.md)
 - [定时任务专属会话执行计划](docs/plans/2026-07-14-scheduled-task-dedicated-thread-design-plan.md)
 - [定时任务发布、迁移与回滚运行手册](docs/operations/2026-07-15-scheduled-task-dedicated-thread-release-runbook.md)
 - [定时任务专属会话最终验收报告](docs/test-reports/2026-07-15-scheduled-task-dedicated-thread-final-acceptance.md)
-- [完整优化实施计划](docs/superpowers/plans/2026-07-12-clawee-agent-complete-optimization.md)
-- [最终验收报告](docs/superpowers/test-reports/2026-07-12-clawee-agent-final-acceptance.md)
+- [完整优化实施计划](docs/superpowers/plans/2026-07-12-opencreator-agent-complete-optimization.md)
+- [最终验收报告](docs/superpowers/test-reports/2026-07-12-opencreator-agent-final-acceptance.md)

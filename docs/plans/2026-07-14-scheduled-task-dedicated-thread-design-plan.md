@@ -1,4 +1,4 @@
-# Clawee 定时任务专属会话重构执行计划
+# OpenCreator 定时任务专属会话重构执行计划
 
 > **文档用途：** 本文档将
 > `docs/specs/2026-07-14-scheduled-task-dedicated-thread-design.md`
@@ -28,20 +28,20 @@
 ## 1. 目标
 
 将定时任务从“每次触发创建独立 Run 和独立 Codex session”的模型，重构为
-“一个 Schedule 对应一个长期 Clawee Thread，所有触发、审批、结果和后续对话都进入
+“一个 Schedule 对应一个长期 OpenCreator Thread，所有触发、审批、结果和后续对话都进入
 同一 Thread”的完整产品闭环。
 
 完成后必须同时满足：
 
 1. 每条未删除 Schedule 有且只有一个 `threadId`。
-2. 同一 Schedule 的所有新 Run 都使用同一 Clawee Thread。
+2. 同一 Schedule 的所有新 Run 都使用同一 OpenCreator Thread。
 3. 同一任务会话内的用户 Run、立即执行和定时触发严格串行。
 4. Schedule 配置与任务 Thread 执行配置保持一致。
 5. 手动创建和 Agent 自然语言创建都能产生任务专属会话。
 6. 左侧“任务”、已安排页面、任务会话和通知使用同一份状态。
 7. 通知进入正确的任务会话，并定位对应 Run 或审批。
 8. 旧 Schedule 自动补齐绑定，旧孤立 Schedule session 继续隐藏。
-9. Codex thread 可以恢复或轮换，但 Clawee `threadId` 始终稳定。
+9. Codex thread 可以恢复或轮换，但 OpenCreator `threadId` 始终稳定。
 10. P0、P1、P2 自动化门禁、手动验收、升级检查和回滚演练全部通过。
 
 ## 2. 范围与非目标
@@ -61,7 +61,7 @@
 ### 2.2 本计划不包含
 
 - 云端调度、跨设备同步、多人共享任务。
-- 使用 Codex 官方调度替换 Clawee Scheduler。
+- 使用 Codex 官方调度替换 OpenCreator Scheduler。
 - 自动批准高风险操作。
 - 为提醒、总结、文稿建立不同执行器。
 - 重新向普通用户暴露旧技术 TaskCenter。
@@ -73,7 +73,7 @@
 
 - `RunManager` 已按 `threadId` 维护串行队列，并支持
   `hasActiveRunForThread()`、`interrupt_and_enqueue`、SSE、审批、取消和重启孤儿收敛。
-- `RunManager` 已支持 Clawee Thread 到 Codex thread 的创建与恢复。
+- `RunManager` 已支持 OpenCreator Thread 到 Codex thread 的创建与恢复。
 - Web 已有 RunRegistry、会话切换立即清空、历史懒加载和活动 Run 恢复。
 - `HostNotification` 已有可选 `threadId`、`runId` 字段。
 - Run events 已持久化，可从最后一条 `assistant_message` 派生通知摘要。
@@ -116,10 +116,10 @@
 
 | 命令或门禁 | 当前结果 |
 |---|---|
-| `pnpm --filter @clawee/protocol typecheck` | 通过 |
+| `pnpm --filter @opencreator/protocol typecheck` | 通过 |
 | daemon 四个相关专项测试，共 50 项 | 通过 |
-| `pnpm --filter @clawee/daemon typecheck` | 通过 |
-| `pnpm --filter @clawee/web typecheck` | 失败 |
+| `pnpm --filter @opencreator/daemon typecheck` | 通过 |
+| `pnpm --filter @opencreator/web typecheck` | 失败 |
 
 当前唯一已知 Web 类型错误：
 
@@ -166,9 +166,9 @@ Coordinator 尚未上线时出现“Protocol 声称必填、运行时仍可能�
   `createdBy`、`sourceId` 和 `timeoutMs`。
 - Run 的项目、Profile、模型、推理强度和 Sandbox 从 Thread 解析。
 
-### 4.4 Clawee Thread 稳定，Codex thread 可替换
+### 4.4 OpenCreator Thread 稳定，Codex thread 可替换
 
-- Clawee `threadId` 是产品身份和路由身份。
+- OpenCreator `threadId` 是产品身份和路由身份。
 - `codexThreadId` 是底层执行身份，可以因恢复失败或上下文过长而轮换。
 - 不得因为 Codex thread 变化而创建第二个任务会话。
 
@@ -234,13 +234,13 @@ Coordinator 尚未上线时出现“Protocol 声称必填、运行时仍可能�
 ### 6.1 基础门禁
 
 ```bash
-pnpm --filter @clawee/protocol typecheck
-pnpm --filter @clawee/daemon test
-pnpm --filter @clawee/daemon typecheck
-pnpm --filter @clawee/daemon build
-pnpm --filter @clawee/web test
-pnpm --filter @clawee/web typecheck
-pnpm --filter @clawee/web build
+pnpm --filter @opencreator/protocol typecheck
+pnpm --filter @opencreator/daemon test
+pnpm --filter @opencreator/daemon typecheck
+pnpm --filter @opencreator/daemon build
+pnpm --filter @opencreator/web test
+pnpm --filter @opencreator/web typecheck
+pnpm --filter @opencreator/web build
 pnpm build
 git diff --check
 ```
@@ -248,8 +248,8 @@ git diff --check
 ### 6.2 真实 Codex smoke
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 \
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 \
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 必须记录实际 Codex 版本、执行模式、是否创建或恢复同一 Codex thread。环境阻塞时标记
@@ -401,14 +401,14 @@ P2-B1 审批和连续失败体验
 **专项验证：**
 
 ```bash
-pnpm --filter @clawee/protocol typecheck
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/protocol typecheck
+pnpm --filter @opencreator/daemon test -- \
   test/unit/protocol-shape.test.ts \
   test/unit/storage.test.ts \
   test/unit/scheduler-repository.test.ts \
   test/unit/thread-manager.test.ts
-pnpm --filter @clawee/daemon typecheck
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/daemon typecheck
+pnpm --filter @opencreator/web typecheck
 git diff --check
 ```
 
@@ -428,9 +428,9 @@ git diff --check
 - 旧 `parallel` Schedule 迁移为 `queue`。
 - Schedule Repository 已覆盖空绑定、保存绑定和更新绑定。
 - 所有受影响 Thread fixture 已补齐 `purpose='conversation'`。
-- `pnpm --filter @clawee/protocol typecheck`：通过。
-- `pnpm --filter @clawee/daemon typecheck`：通过。
-- `pnpm --filter @clawee/web typecheck`：通过。
+- `pnpm --filter @opencreator/protocol typecheck`：通过。
+- `pnpm --filter @opencreator/daemon typecheck`：通过。
+- `pnpm --filter @opencreator/web typecheck`：通过。
 - daemon 受影响测试：6 个文件、128 项通过。
 - Web 受影响测试：3 个文件、86 项通过。
 - daemon 全量测试：557 项通过，13 项真实 Codex smoke 按环境开关跳过。
@@ -488,10 +488,10 @@ feat(runtime): 建立 Schedule 与 Thread 绑定基础模型
 **专项验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/thread-manager.test.ts \
   test/integration/api.test.ts
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 **验收标准：**
@@ -572,13 +572,13 @@ feat(threads): 支持任务会话类型和绑定保护
 **专项验证：**
 
 ```bash
-pnpm --filter @clawee/protocol typecheck
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/protocol typecheck
+pnpm --filter @opencreator/daemon test -- \
   test/unit/protocol-shape.test.ts \
   test/unit/scheduler-coordinator.test.ts \
   test/integration/api.test.ts
-pnpm --filter @clawee/daemon typecheck
-pnpm --filter @clawee/daemon build
+pnpm --filter @opencreator/daemon typecheck
+pnpm --filter @opencreator/daemon build
 ```
 
 **验收标准：**
@@ -657,11 +657,11 @@ Thread，并对活动 Run 给出稳定冲突错误。
 **专项验证：**
 
 ```bash
-pnpm --filter @clawee/protocol typecheck
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/protocol typecheck
+pnpm --filter @opencreator/daemon test -- \
   test/unit/scheduler-coordinator.test.ts \
   test/integration/api.test.ts
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 **验收标准：**
@@ -736,16 +736,16 @@ Thread 的全部活动/排队 Run 执行 queue 或 skip。
 **专项验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/scheduler-service.test.ts \
   test/unit/scheduler-validator.test.ts \
   test/integration/run-manager.test.ts
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 **验收标准：**
 
-- 同一 Schedule 连续触发的 Clawee `threadId` 完全一致。
+- 同一 Schedule 连续触发的 OpenCreator `threadId` 完全一致。
 - 同一任务会话不存在两个并行写入 Run。
 - queue 合并、skip 记录和用户打断行为符合规格。
 - RunManager 仍是唯一执行和排队系统。
@@ -816,11 +816,11 @@ feat(scheduler): 使用固定任务会话串行触发
 **专项验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/scheduler-binding-repair.test.ts \
   test/unit/startup.test.ts \
   test/integration/api.test.ts
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 **验收标准：**
@@ -861,7 +861,7 @@ feat(scheduler): 启动时修复旧任务会话绑定
 
 **依赖：** `P0-B6`
 
-**目标：** 只隐藏旧版没有 Clawee Thread 的孤立 Schedule Codex session，不再归档或跳过
+**目标：** 只隐藏旧版没有 OpenCreator Thread 的孤立 Schedule Codex session，不再归档或跳过
 新任务会话。
 
 **主要文件：**
@@ -879,7 +879,7 @@ feat(scheduler): 启动时修复旧任务会话绑定
 1. `created_by='schedule' AND runs.thread_id IS NULL` 的 session 标记为 legacy schedule。
 2. 有 `runs.thread_id` 的 Schedule session 不标记为 legacy。
 3. 新 `schedule_task` Thread 不被 `archiveThreadsCreatedBy('schedule')` 归档。
-4. session 同步不会为已有任务 Thread 导入重复 Clawee Thread。
+4. session 同步不会为已有任务 Thread 导入重复 OpenCreator Thread。
 5. 新任务历史可索引、可搜索，旧孤立 session 不进入普通会话列表。
 
 **实现步骤：**
@@ -892,11 +892,11 @@ feat(scheduler): 启动时修复旧任务会话绑定
 **专项验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/codex-session-indexer.test.ts \
   test/unit/codex-sessions-scanner.test.ts \
   test/integration/search-api.test.ts
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 **验收标准：**
@@ -958,19 +958,19 @@ fix(sessions): 仅隐藏旧版孤立 Schedule 会话
 **验证：**
 
 ```bash
-pnpm --filter @clawee/protocol typecheck
-pnpm --filter @clawee/daemon test
-pnpm --filter @clawee/daemon typecheck
-pnpm --filter @clawee/daemon build
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 \
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+pnpm --filter @opencreator/protocol typecheck
+pnpm --filter @opencreator/daemon test
+pnpm --filter @opencreator/daemon typecheck
+pnpm --filter @opencreator/daemon build
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 \
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 git diff --check
 ```
 
 **验收标准：**
 
 - P0 所有 daemon 单元和集成测试通过。
-- 两次执行进入同一 Clawee Thread。
+- 两次执行进入同一 OpenCreator Thread。
 - 重启不改变绑定，不产生重复 Thread。
 - SQL 不变量查询通过。
 - fake Codex 集成必须通过；真实 smoke 未执行时记录实际阻塞和 P2-B7 重跑命令，
@@ -978,14 +978,14 @@ git diff --check
 
 **执行结果：**
 
-- API 集成覆盖 Schedule 创建、更新、连续两次 `run-now`、固定 Clawee/Codex thread、
+- API 集成覆盖 Schedule 创建、更新、连续两次 `run-now`、固定 OpenCreator/Codex thread、
   第二次 `codex exec resume`、删除后 Thread 归档，以及两个 Run 和历史路由继续可读。
 - Scheduler 重启测试覆盖两个并发触发合并为一个持久化 pending trigger；新实例保持原
   Thread 绑定并只消费一次。
 - 旧数据库修复后执行 SQL 不变量断言：活动 Schedule 不存在空 `thread_id`，也不存在
   重复 `thread_id`。
 - 真实 Codex smoke 按生产启动路径收集能力矩阵；同一 Schedule 连续两次执行进入同一
-  Clawee/Codex thread，第二次读取前次上下文并返回第二阶段 marker。
+  OpenCreator/Codex thread，第二次读取前次上下文并返回第二阶段 marker。
 - P0-B8 专项测试 184 项通过，13 项真实 smoke 在未启用开关时按预期跳过。
 - 真实 Codex smoke 13 项全部通过；daemon 全量测试 590 项通过，常规套件中的 13 项真实
   smoke 按环境开关跳过。
@@ -1039,11 +1039,11 @@ test(scheduler): 覆盖任务专属会话后端闭环
 **验证：**
 
 ```bash
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/web test -- \
   src/services/schedule-service.test.ts \
   src/services/thread-service.test.ts \
   src/features/projects/project-model.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web typecheck
 ```
 
 **验收标准：** Web 类型模型与 daemon 一致，任务列表数据不依赖 cron 文本或标题推断。
@@ -1081,8 +1081,8 @@ feat(web): 接入任务会话绑定模型
 
 **主要文件：**
 
-- `apps/web/src/features/shell/ClaweeSidebar.tsx`
-- `apps/web/src/features/shell/ClaweeSidebar.test.tsx`
+- `apps/web/src/features/shell/OpenCreatorSidebar.tsx`
+- `apps/web/src/features/shell/OpenCreatorSidebar.test.tsx`
 - `apps/web/src/styles/app.css`
 - `apps/web/src/styles/app-css.test.ts`
 - `apps/web/src/app/AppController.tsx`
@@ -1107,12 +1107,12 @@ feat(web): 接入任务会话绑定模型
 **验证：**
 
 ```bash
-pnpm --filter @clawee/web test -- \
-  src/features/shell/ClaweeSidebar.test.tsx \
+pnpm --filter @opencreator/web test -- \
+  src/features/shell/OpenCreatorSidebar.test.tsx \
   src/app/App.test.tsx \
   src/styles/app-css.test.ts
-pnpm --filter @clawee/web typecheck
-pnpm --filter @clawee/web build
+pnpm --filter @opencreator/web typecheck
+pnpm --filter @opencreator/web build
 ```
 
 **验收标准：** 用户能从侧栏识别任务和状态，项目会话与任务会话不混排。
@@ -1177,11 +1177,11 @@ feat(web): 在侧栏增加任务会话区域
 **验证：**
 
 ```bash
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/web test -- \
   src/features/schedules/SchedulesView.test.tsx \
   src/app/routes.test.ts \
   src/app/App.test.tsx
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web typecheck
 ```
 
 **验收标准：** “已安排”负责管理，任务会话负责查看结果，两者能稳定互跳。
@@ -1244,12 +1244,12 @@ feat(web): 从已安排进入任务专属会话
 **验证：**
 
 ```bash
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/web test -- \
   src/features/conversation/ConversationHeader.test.tsx \
   src/features/schedules/ScheduleThreadHeader.test.tsx \
   src/styles/app-css.test.ts
-pnpm --filter @clawee/web typecheck
-pnpm --filter @clawee/web build
+pnpm --filter @opencreator/web typecheck
+pnpm --filter @opencreator/web build
 ```
 
 **验收标准：** 用户不离开任务会话即可管理任务，桌面和移动布局稳定。
@@ -1319,11 +1319,11 @@ feat(web): 增加任务会话状态与管理工具栏
 **验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/agent-capability-token.test.ts \
   test/integration/agent-tool-api.test.ts \
   test/unit/diagnostics-redactor.test.ts
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 **验收标准：** 内部 Schedule Tool 具备可测试的最小权限边界，令牌没有持久化或泄露。
@@ -1399,13 +1399,13 @@ feat(agent-tools): 增加按 Run 绑定的短期能力令牌
 **验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/agent-schedule-timing.test.ts \
   test/unit/agent-schedule-tools.test.ts \
   test/unit/codex-argv.test.ts \
   test/unit/codex-app-server-runner.test.ts
-pnpm --filter @clawee/daemon typecheck
-pnpm --filter @clawee/daemon build
+pnpm --filter @opencreator/daemon typecheck
+pnpm --filter @opencreator/daemon build
 ```
 
 **验收标准：** Codex Run 可以调用结构化 Schedule 工具，且用户全局配置无任何改动。
@@ -1459,11 +1459,11 @@ feat(agent-tools): 注入内置 Schedule MCP 工具
 **验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/scheduler-coordinator.test.ts \
   test/integration/agent-tool-api.test.ts \
   test/integration/run-manager.test.ts
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 **验收标准：** Agent 可以创建通用任务并管理已有任务，绑定关系不会被 Tool 输入伪造。
@@ -1482,7 +1482,7 @@ feat(scheduler): 支持 Agent 创建和管理任务
 
 **依赖：** `P1-B7`
 
-**目标：** “使用 Clawee 创建”改为真正的 `schedule_draft` + 普通 Agent Run，删除标题匹配和
+**目标：** “使用 OpenCreator 创建”改为真正的 `schedule_draft` + 普通 Agent Run，删除标题匹配和
 本地提醒正则拦截。
 
 **主要文件：**
@@ -1497,7 +1497,7 @@ feat(scheduler): 支持 Agent 创建和管理任务
 
 **测试先行：**
 
-1. “使用 Clawee 创建”创建 purpose 为 `schedule_draft` 的 Thread。
+1. “使用 OpenCreator 创建”创建 purpose 为 `schedule_draft` 的 Thread。
 2. “每天生成 100 字文稿”走普通 Run，不要求“提醒我”关键词。
 3. 缺少时间时由 Agent 追问，不由前端正则报错。
 4. Tool 创建成功后刷新 Thread/Schedule，当前 draft 变为任务会话。
@@ -1516,11 +1516,11 @@ feat(scheduler): 支持 Agent 创建和管理任务
 **验证：**
 
 ```bash
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/web test -- \
   src/features/schedules/SchedulesView.test.tsx \
   src/app/App.test.tsx
-pnpm --filter @clawee/web typecheck
-pnpm --filter @clawee/web build
+pnpm --filter @opencreator/web typecheck
+pnpm --filter @opencreator/web build
 rg -n "创建已安排任务|createNaturalLanguageScheduleRequest|schedule-natural-language" apps/web/src
 ```
 
@@ -1578,13 +1578,13 @@ refactor(web): 使用 Agent Tool 替换任务创建正则
 **验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/task-service.test.ts
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/daemon test -- test/unit/task-service.test.ts
+pnpm --filter @opencreator/web test -- \
   src/features/tasks/task-monitor.test.ts \
   src/host/browser-bridge.test.ts \
   src/app/routes.test.ts \
   src/app/App.test.tsx
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web typecheck
 ```
 
 **验收标准：** 所有 Schedule 通知进入任务会话，成功通知展示真实结果摘要。
@@ -1642,11 +1642,11 @@ P1 全链路自动化门禁。
 **验证：**
 
 ```bash
-pnpm --filter @clawee/protocol typecheck
-pnpm --filter @clawee/daemon test
-pnpm --filter @clawee/daemon typecheck
-pnpm --filter @clawee/web test
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/protocol typecheck
+pnpm --filter @opencreator/daemon test
+pnpm --filter @opencreator/daemon typecheck
+pnpm --filter @opencreator/web test
+pnpm --filter @opencreator/web typecheck
 pnpm build
 git diff --check
 ```
@@ -1694,7 +1694,7 @@ feat(history): 展示任务执行公开输入
 - `apps/daemon/src/tasks/service.ts`
 - `apps/daemon/src/scheduler/repository.ts`
 - `apps/web/src/features/schedules/schedule-task-model.ts`
-- `apps/web/src/features/shell/ClaweeSidebar.tsx`
+- `apps/web/src/features/shell/OpenCreatorSidebar.tsx`
 - `apps/web/src/features/approvals/ApprovalPanel.tsx`
 - `apps/web/src/app/AppController.tsx`
 - 对应测试
@@ -1718,12 +1718,12 @@ feat(history): 展示任务执行公开输入
 **验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/integration/approval-runtime.test.ts \
   test/unit/task-service.test.ts
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/web test -- \
   src/features/approvals/ApprovalPanel.test.tsx \
-  src/features/shell/ClaweeSidebar.test.tsx \
+  src/features/shell/OpenCreatorSidebar.test.tsx \
   src/app/App.test.tsx
 ```
 
@@ -1743,8 +1743,8 @@ feat(tasks): 完善任务审批和连续失败体验
 
 **依赖：** `P2-B1`
 
-**目标：** Codex resume 失败或上下文超过阈值时，使用 Clawee 会话摘要建立新的 Codex
-thread，同时保持 Clawee Thread、Schedule 和页面路由不变。
+**目标：** Codex resume 失败或上下文超过阈值时，使用 OpenCreator 会话摘要建立新的 Codex
+thread，同时保持 OpenCreator Thread、Schedule 和页面路由不变。
 
 **主要文件：**
 
@@ -1763,7 +1763,7 @@ thread，同时保持 Clawee Thread、Schedule 和页面路由不变。
 1. fake Codex resume 失败时只重试一次新 thread。
 2. 新 thread 首次输入包含脱敏摘要和本次公开任务输入。
 3. `threads.codex_thread_id` 只在新 thread 成功建立后更新。
-4. Clawee threadId、Schedule threadId 和历史入口不变化。
+4. OpenCreator threadId、Schedule threadId 和历史入口不变化。
 5. 轮换失败时本次 Run 失败，但 Schedule 仍可后续重试。
 6. 会话中只出现一次非阻断“执行上下文已重新连接”诊断。
 7. 阈值触发可配置、可关闭，默认值有文档。
@@ -1778,11 +1778,11 @@ thread，同时保持 Clawee Thread、Schedule 和页面路由不变。
 **验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/integration/run-manager.test.ts \
   test/integration/memory-api.test.ts
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 \
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 \
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 **验收标准：** 单个 Codex thread 失效不会永久中断长期任务，用户入口和历史身份稳定。
@@ -1838,12 +1838,12 @@ feat(runtime): 使用会话摘要轮换 Codex thread
 **验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/notification-api.test.ts
-pnpm --filter @clawee/web test -- \
+pnpm --filter @opencreator/daemon test -- test/integration/notification-api.test.ts
+pnpm --filter @opencreator/web test -- \
   src/services/notification-service.test.ts \
   src/host/browser-bridge.test.ts
-pnpm --filter @clawee/harness test
-pnpm --filter @clawee/harness typecheck
+pnpm --filter @opencreator/harness test
+pnpm --filter @opencreator/harness typecheck
 ```
 
 **验收标准：** 页面关闭不丢通知，受支持 Host 点击后进入正确任务 Thread/Run。
@@ -1895,12 +1895,12 @@ feat(notifications): 增加任务后台通知 outbox
 **验证：**
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/storage.test.ts \
   test/unit/scheduler-repository.test.ts \
   test/integration/diagnostics.test.ts \
   test/unit/diagnostics-redactor.test.ts
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 **验收标准：** 任一任务触发都可从 Schedule 追踪到 Thread、Run 和 actor，导出保持脱敏。
@@ -2011,7 +2011,7 @@ test(e2e): 覆盖任务专属会话完整工作流
 ```bash
 pnpm e2e -- scheduled-task-performance.spec.ts
 pnpm perf:check
-pnpm --filter @clawee/web build
+pnpm --filter @opencreator/web build
 ```
 
 **验收标准：**
@@ -2067,8 +2067,8 @@ pnpm typecheck
 pnpm build
 pnpm e2e
 pnpm perf:check
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 \
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 \
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 git diff --check
 ```
 
@@ -2090,7 +2090,7 @@ git diff --check
 | 旧数据升级 | 现有数据库启动 | 每个旧 Schedule 补一个 Thread，不重复 |
 | 通知 | 点击完成/失败/审批通知 | 进入正确 Thread 并定位 Run |
 | 文件结果 | 生成 HTML | 会话链接可点击并打开预览 |
-| 上下文轮换 | 模拟 resume 失败 | Clawee Thread 不变，新 Codex thread 继续 |
+| 上下文轮换 | 模拟 resume 失败 | OpenCreator Thread 不变，新 Codex thread 继续 |
 | 后台通知 | 关闭页面触发任务 | 支持的 Host 仍通知并可深链 |
 
 **回滚演练：**
@@ -2254,7 +2254,7 @@ docs(release): 完成任务专属会话发布与回滚说明
   P0-B7。
 - 风险或偏差：启动前 session 同步暂不执行旧的 Schedule 标记/归档，避免误伤
   `schedule_task`；真实 Codex smoke 13 项继续登记到最终统一验收。
-- 下一步：执行 P0-B7，只隐藏无 Clawee Thread 的旧孤立 Schedule session。
+- 下一步：执行 P0-B7，只隐藏无 OpenCreator Thread 的旧孤立 Schedule session。
 
 ### 2026-07-14 16:07 CST - P0-B7
 
@@ -2327,7 +2327,7 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 验证：P1-B3 专项测试 111 项、Web 全量 498 项、Web typecheck、生产 build 和
   `git diff --check` 通过；受控 Chrome 桌面和 390px 移动视口无溢出或控制台错误。
 - 未完成：任务会话头部的状态、下次运行时间和管理操作留到 P1-B4。
-- 风险或偏差：持久历史尚未公开 Clawee `runId`，因此当前 Run 定位覆盖活动/缓存 Run；
+- 风险或偏差：持久历史尚未公开 OpenCreator `runId`，因此当前 Run 定位覆盖活动/缓存 Run；
   Schedule Run 公开时间线批次将在 P1-B10 补齐历史定位。build 继续报告既有大 chunk。
 - 下一步：执行 P1-B4，在任务会话头部接入状态、下次运行和管理操作。
 
@@ -2391,7 +2391,7 @@ docs(release): 完成任务专属会话发布与回滚说明
   Schedule Run 的路由级 mutation 防御。
 - 验证：P1-B7 专项 75 项、daemon 全量 630 项、daemon typecheck、生产 build 和
   `git diff --check` 通过；常规全量中的 13 项真实 Codex smoke 按既有开关跳过。
-- 未完成：Web 的“使用 Clawee 创建”仍走旧正则特殊分支，留到 P1-B8 删除并改为
+- 未完成：Web 的“使用 OpenCreator 创建”仍走旧正则特殊分支，留到 P1-B8 删除并改为
   `schedule_draft` 普通 Agent Run。
 - 风险或偏差：普通会话的隐式候选限定为同一 `canonicalCwd` 的未删除 Schedule；
   多候选返回 `SCHEDULE_SELECTION_REQUIRED`，显式 ID 也必须处于相同作用域。
@@ -2402,7 +2402,7 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 状态：`PASS`
 - 提交：`refactor(web): 使用 Agent Tool 替换任务创建正则`
   （SHA 以包含本日志的提交为准）
-- 已完成：“使用 Clawee 创建”改为 `schedule_draft` Thread、Composer 统一普通 Run
+- 已完成：“使用 OpenCreator 创建”改为 `schedule_draft` Thread、Composer 统一普通 Run
   提交、Run 终态刷新 Thread/Schedule 绑定、未创建任务时保留可继续对话的草稿，以及删除
   标题判断、附件拒绝分支和 `schedule-natural-language` 正则解析器。
 - 验证：P1-B8 专项 78 项、Web 全量 508 项、Web typecheck、生产 build、
@@ -2479,13 +2479,13 @@ docs(release): 完成任务专属会话发布与回滚说明
   和普通会话保持原失败语义；新 Codex thread 建立前不覆盖 Thread 绑定，建立后只写入
   一次“执行上下文已重新连接”诊断；轮换 Prompt 只使用最新摘要和本次公开任务输入并
   强制脱敏；同一 Codex thread 默认完成 50 个终态 Run 后主动轮换，环境变量
-  `CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD` 可调整，`0` 可关闭主动阈值轮换；
-  轮换失败只结束本 Run，不修改 Schedule enabled 和 Clawee/Schedule threadId。
+  `OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD` 可调整，`0` 可关闭主动阈值轮换；
+  轮换失败只结束本 Run，不修改 Schedule enabled 和 OpenCreator/Schedule threadId。
 - 验证：RunManager、审批 app-server、Memory API/Service 和脱敏专项共 61 项通过；
   daemon 全量 641 项通过、14 项 gated smoke 在普通全量测试中按预期跳过；
   Protocol/Daemon typecheck、Daemon build、根 `pnpm build` 和 `git diff --check`
   通过；显式启用真实 Codex smoke 后 14/14 通过，其中新增真实摘要轮换场景验证同一
-  Clawee Thread、不同 Codex thread 和摘要恢复。
+  OpenCreator Thread、不同 Codex thread 和摘要恢复。
 - 未完成：后台 Host 通知 outbox 和页面关闭后的系统通知留到 P2-B3。
 - 风险或偏差：第一次真实轮换 smoke 通过公开摘要接口读取真实 `$CODEX_HOME` 历史时，
   本机会话索引扫描持续占满单核；测试已改为从本次 Run 的持久事件构造摘要源并重新
@@ -2582,7 +2582,7 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 验证：性能场景桌面/移动 2/2 通过；全量 Playwright 14/14 通过；Web 全量 74 个
   测试文件、521/521 通过；daemon 串行全量 64 个测试文件、651/651 通过，14 项 gated
   real Codex smoke 按预期跳过；`pnpm typecheck`、`pnpm build`、
-  `CLAWEE_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check` 和 `git diff --check`
+  `OPENCREATOR_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check` 和 `git diff --check`
   通过。
 - 性能基线：首屏 runtime 请求桌面 11、移动 10；刷新均为 10；每次加载 Thread 摘要
   2 次；已安排页面请求 2 次；搜索请求 1 次；选中任务前任务历史请求 0，选中后 1；
@@ -2608,7 +2608,7 @@ docs(release): 完成任务专属会话发布与回滚说明
   stderr 写入和测试超时余量，未改生产 runner 或默认超时。
 - 验证：`pnpm test` 通过，daemon 651 项、Web 521 项、Skill Market 6 项、harness
   3 项；`pnpm release:verify-scheduled-task-upgrade`、`pnpm typecheck`、`pnpm build`、
-  `pnpm e2e` 14/14、`CLAWEE_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check`、
+  `pnpm e2e` 14/14、`OPENCREATOR_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check`、
   真实 Codex smoke 14/14 和 `git diff --check` 通过。
 - 性能：当前桌面/移动首屏 runtime 请求均为 10，Thread 列表请求均为 2，选中任务前
   历史请求为 0、选中后为 1，DOM 峰值 3868，Long Task 为 0，任务打开延迟分别为
@@ -2624,8 +2624,8 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 状态：`PASS`
 - 提交：未提交
 - 已完成：将最近会话列表、历史分页和会话搜索统一切换到 Codex app-server；
-  启动及在线请求不再扫描 `~/.codex/sessions`，Clawee 数据库只继续管理 Thread 业务映射、
-  Schedule、Run、审批、附件和 Memory；Schedule 专属 Thread 仍由 Clawee 本地数据管理。
+  启动及在线请求不再扫描 `~/.codex/sessions`，OpenCreator 数据库只继续管理 Thread 业务映射、
+  Schedule、Run、审批、附件和 Memory；Schedule 专属 Thread 仍由 OpenCreator 本地数据管理。
 - 已完成：最近会话使用 `thread/list`、`useStateDbOnly=true`、`recency_at` 排序以及
   `cli/vscode/exec/appServer` 来源；历史使用 `thread/turns/list` 和 `itemsView=summary`；
   搜索使用 `thread/search`，结果不再暴露 `itemId`，打开搜索结果时加载会话最新历史。
@@ -2655,7 +2655,7 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 状态：`PASS`
 - 提交：未提交
 - 已完成：确认现场 Run 停在 `mcpServer/elicitation/request`，runner 原先没有识别
-  该 app-server 服务端请求，导致既不创建 Clawee 审批，也不向 Codex 回包。
+  该 app-server 服务端请求，导致既不创建 OpenCreator 审批，也不向 Codex 回包。
 - 已完成：runner 支持 MCP elicitation，批准返回
   `action=accept, content={}, _meta=null`，拒绝或过期返回 `decline`，取消返回 `cancel`；
   Schedule create 请求生成“允许创建定时任务”审批，摘要使用任务名称，详情保留脱敏后的
@@ -2685,15 +2685,15 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 已完成：定位到 `openScheduleCreationConversation()` 仍通过 `buildThreadRequest()`
   注入 `currentProject.cwd`，且 Composer 无条件显示当前项目，导致任务虽已归入“任务”
   区，创建界面仍显示并实际使用 `customer-agent`。
-- 已完成：任务草稿改为 `workspaceMode='managed'` 的 Clawee 独立工作区，不再发送当前
+- 已完成：任务草稿改为 `workspaceMode='managed'` 的 OpenCreator 独立工作区，不再发送当前
   项目 `cwd`；默认 Profile 为 `default`、Sandbox 为 `workspace-write`。
 - 已完成：`schedule_draft` 和 `schedule_task` 的 Composer 隐藏普通项目选择器；独立
   managed 草稿仍进入左侧任务区，但不会被派生为项目或高亮现有项目。
 - 验证：先新增失败回归测试确认旧请求为 `external + currentProject.cwd` 且项目按钮仍
   存在；修复后 Composer/App 定向 106 项通过，Web 全量 525 项通过，
-  `pnpm --filter @clawee/web typecheck` 和 `pnpm --filter @clawee/web build` 通过。
+  `pnpm --filter @opencreator/web typecheck` 和 `pnpm --filter @opencreator/web build` 通过。
 - 当时真实验证（后续证实范围不充分）：在 `http://127.0.0.1:9001/` 完成
-  “已安排 -> 创建 -> 使用 Clawee 创建”，但没有发送消息启动真实 Codex Run；
+  “已安排 -> 创建 -> 使用 OpenCreator 创建”，但没有发送消息启动真实 Codex Run；
   新 Thread 为 `workspaceMode='managed'`，cwd 位于独立 `.runtime/workspaces/<threadId>`，
   Profile 为 `default`、Sandbox 为 `workspace-write`；页面项目选择器数量为 0，任务区
   草稿正常出现，控制台无错误。该验证遗漏了 MCP 初始化链路，验证草稿已归档清理。
@@ -2708,12 +2708,12 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 状态：`PASS`
 - 提交：未提交
 - 现场问题：任务草稿发送消息后，Codex 报
-  `required MCP servers failed to initialize: clawee_schedule: No such file or directory`。
+  `required MCP servers failed to initialize: opencreator_schedule: No such file or directory`。
   上一批只验证 Thread 创建和界面状态，没有真正启动 Run，属于验证遗漏。
 - 根因：开发环境 `dataDir='.runtime'`，managed Thread 将 cwd 持久化为
   `.runtime/workspaces/<threadId>` 相对路径；Codex app-server 已以该目录作为进程 cwd，
   `thread/start` 又收到同一个相对 cwd，二次解析到不存在的嵌套目录，导致 required MCP
-  `clawee_schedule` 无法初始化。
+  `opencreator_schedule` 无法初始化。
 - 已完成：ThreadManager 创建 managed Thread 时使用绝对工作区路径；RunManager 对历史
   相对 managed Thread 使用绝对 `canonicalCwd` 执行，因此现有失败草稿可以直接重试，
   不要求删除重建。
@@ -2721,7 +2721,7 @@ docs(release): 完成任务专属会话发布与回滚说明
   managed Thread Run 必须使用 canonicalCwd”两个回归测试；修复前均失败，修复后定向
   60 项通过。
 - 验证：daemon 全量 658 项通过、23 项按门禁跳过；
-  `pnpm --filter @clawee/daemon typecheck`、`pnpm --filter @clawee/daemon build` 和
+  `pnpm --filter @opencreator/daemon typecheck`、`pnpm --filter @opencreator/daemon build` 和
   `git diff --check` 通过。
 - 真实验证一：重启 `http://127.0.0.1:9001/` 后，从任务页创建新草稿并发送
   “每隔5分钟提醒我喝水”；MCP 正常启动并出现审批，批准后创建“每5分钟喝水提醒”，
@@ -2745,7 +2745,7 @@ docs(release): 完成任务专属会话发布与回滚说明
 - 根因：`openScheduleCreationConversation()` 仍写死
   `sandbox='workspace-write'`；Codex app-server runner 在 `thread/start`、
   `thread/resume` 和 `turn/start` 三处均写死 `approvalPolicy='on-request'`。
-- 已完成：任务页 Clawee 草稿默认改为 `danger-full-access`；runner 按 Sandbox 计算
+- 已完成：任务页 OpenCreator 草稿默认改为 `danger-full-access`；runner 按 Sandbox 计算
   approval policy，完全访问使用 `never`，其他模式保持 `on-request`。
 - 已完成：完全访问模式下，runner 对 app-server 残留的 command、file、permissions
   和 MCP tool elicitation 请求直接返回批准，不调用 RunManager 审批回调，因此不会
@@ -2757,7 +2757,7 @@ docs(release): 完成任务专属会话发布与回滚说明
   警告。
 - 真实验证：在 `http://127.0.0.1:9001/` 创建 managed 草稿
   `thread_LSnGuGhF2G`，服务端确认 Sandbox 为 `danger-full-access`；真实
-  Codex app-server 通过 `clawee_schedule_create` 创建“武汉天气5分钟简报”，创建 Run
+  Codex app-server 通过 `opencreator_schedule_create` 创建“武汉天气5分钟简报”，创建 Run
   `run_Jj_SADRUDY` 成功且 Approval 为 0。
 - 真实验证：立即运行天气任务，Run `run_Vw8zeMIIAQ` 成功且 Approval 为 0；随后将
   Schedule Prompt 改为必须通过 Shell 执行 Open-Meteo `curl`，Run
@@ -2800,12 +2800,12 @@ docs(release): 完成任务专属会话发布与回滚说明
 1. AI 创建和手动创建均可用。
 2. 每个活动 Schedule 有且只有一个专属 Thread。
 3. 同一 Schedule 多次运行始终进入同一 Thread。
-4. 定时任务使用普通 Clawee Agent 的完整执行能力和安全边界。
+4. 定时任务使用普通 OpenCreator Agent 的完整执行能力和安全边界。
 5. 左侧“任务”正确展示长期任务会话及状态。
 6. 已安排与任务会话职责清晰且可互相跳转。
 7. 通知点击进入正确任务会话和 Run。
 8. 运行、排队、审批、失败、暂停状态跨页面一致。
 9. 旧数据升级不丢 Schedule、不生成重复 Thread。
 10. 页面刷新和会话切换不丢活动 Run。
-11. Codex thread 轮换不改变 Clawee Thread。
+11. Codex thread 轮换不改变 OpenCreator Thread。
 12. P0、P1、P2 自动化、E2E、性能、真实 smoke 和手动验收全部通过。

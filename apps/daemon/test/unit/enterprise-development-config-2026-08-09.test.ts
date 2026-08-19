@@ -18,8 +18,8 @@ import {
   prepareEnterpriseDevelopmentConfig
 } from '../../src/enterprise/development-config-2026-08-09.js';
 
-const agentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
-const secondAgentId = 'clawee_123e4567-e89b-42d3-a456-426614174000';
+const agentId = 'opencreator_550e8400-e29b-41d4-a716-446655440000';
+const secondAgentId = 'opencreator_123e4567-e89b-42d3-a456-426614174000';
 const roots: string[] = [];
 
 afterEach(() => {
@@ -89,7 +89,7 @@ describe('enterprise development config', () => {
 });
 
 function createFixture(template: string) {
-  const root = mkdtempSync(join(tmpdir(), 'clawee-enterprise-development-'));
+  const root = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-development-'));
   roots.push(root);
   const templatePath = join(root, 'template.toml');
   const userPath = join(root, 'runtime', 'config.toml');

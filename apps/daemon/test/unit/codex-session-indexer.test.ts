@@ -483,7 +483,7 @@ describe('codex session indexer', () => {
 });
 
 function createSetup() {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-index-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-index-'));
   const codexHome = join(tempDir, 'codex-home');
   const sessionDir = join(codexHome, 'sessions', '2026', '07', '12');
   const cwd = join(tempDir, 'workspace');

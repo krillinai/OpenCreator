@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe('Codex Probe 临时 Home', () => {
   it('为知识会话保留隔离 Home 中的 Codex rollout', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-isolated-home-test-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-isolated-home-test-'));
     const sourceHome = join(tempDir, 'source');
     const isolatedPath = join(tempDir, 'knowledge', 'codex-home');
     mkdirSync(sourceHome, { recursive: true });
@@ -43,7 +43,7 @@ describe('Codex Probe 临时 Home', () => {
   });
 
   it('只保留模型调用所需配置，不复制 Skills、Plugins 或 MCP 凭据', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-probe-home-test-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-probe-home-test-'));
     const sourceHome = join(tempDir, 'source');
     const temporaryRoot = join(tempDir, 'temporary');
     mkdirSync(join(sourceHome, 'model-catalogs'), { recursive: true });
@@ -127,7 +127,7 @@ describe('Codex Probe 临时 Home', () => {
   });
 
   it('没有 config.toml 时仍创建可用的空 Probe Home', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-probe-home-empty-test-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-probe-home-empty-test-'));
     const sourceHome = join(tempDir, 'source');
     const temporaryRoot = join(tempDir, 'temporary');
     mkdirSync(sourceHome, { recursive: true });
@@ -145,7 +145,7 @@ describe('Codex Probe 临时 Home', () => {
   });
 
   it('忽略 Codex 已废弃的顶层 profile 选择器和内联 profile', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-probe-home-profile-test-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-probe-home-profile-test-'));
     const sourceHome = join(tempDir, 'source');
     const temporaryRoot = join(tempDir, 'temporary');
     mkdirSync(sourceHome, { recursive: true });

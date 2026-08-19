@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope } from '@opencreator/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SubscribeRunEventsInput } from '../../runtime/sse.js';
 import { createRunEventController } from './run-event-controller.js';

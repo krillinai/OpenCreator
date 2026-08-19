@@ -125,7 +125,7 @@ function ActivityConversation(props: { range: ActivityRange }) {
   }
 
   return (
-    <div className="activity-conversation-workbench">
+    <div className="activity-conversation-dashboard">
       <section className="activity-conversation" aria-label="Agent动态对话">
         <div className="activity-conversation__body" role="log" aria-live="polite">
           <div className="activity-conversation__intro">

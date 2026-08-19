@@ -1,4 +1,4 @@
-import type { RuntimeErrorCode } from '@clawee/protocol';
+import type { RuntimeErrorCode } from '@opencreator/protocol';
 
 export type McpTransport = 'stdio' | 'http' | 'sse';
 

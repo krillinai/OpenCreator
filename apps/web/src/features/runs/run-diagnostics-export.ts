@@ -1,4 +1,4 @@
-import type { RunDiagnosticsResponse } from '@clawee/protocol';
+import type { RunDiagnosticsResponse } from '@opencreator/protocol';
 
 export function downloadRunDiagnosticsBundle(diagnostics: RunDiagnosticsResponse): void {
   const bundle = serializeRunDiagnosticsBundle(diagnostics);
@@ -18,7 +18,7 @@ export function serializeRunDiagnosticsBundle(
   diagnostics: RunDiagnosticsResponse
 ): string {
   return JSON.stringify({
-    format: 'clawee-run-diagnostics',
+    format: 'opencreator-run-diagnostics',
     version: 1,
     exportedAt: new Date().toISOString(),
     runId: diagnostics.runId,

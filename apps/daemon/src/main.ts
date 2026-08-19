@@ -5,7 +5,7 @@ import {
   writeFile
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { CodexAvailabilityProbe } from '@clawee/protocol';
+import type { CodexAvailabilityProbe } from '@opencreator/protocol';
 import type { FastifyInstance } from 'fastify';
 import {
   applyCapabilityMatrix,
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   }
 
   const shouldRunAvailabilityProbe =
-    requiresProbe() && process.env.CLAWEE_CODEX_PROBE_VERIFIED !== '1';
+    requiresProbe() && process.env.OPENCREATOR_CODEX_PROBE_VERIFIED !== '1';
   let availabilityProbe: CodexAvailabilityProbe = shouldRunAvailabilityProbe
     ? { status: 'pending' }
     : {
@@ -107,7 +107,7 @@ async function main(): Promise<void> {
     }),
     getCodexAvailabilityProbe: () => availabilityProbe,
     persistentAppServerEnabled:
-      process.env.CLAWEE_PERSISTENT_APP_SERVER !== '0',
+      process.env.OPENCREATOR_PERSISTENT_APP_SERVER !== '0',
     ...environment,
     ...enterprise
   }));
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
 }
 
 function requiresProbe(): boolean {
-  return process.env.CLAWEE_REQUIRE_CODEX_PROBE === '1';
+  return process.env.OPENCREATOR_REQUIRE_CODEX_PROBE === '1';
 }
 
 async function closeServer(): Promise<void> {
@@ -271,7 +271,7 @@ function emitBootstrap(
   extra: Record<string, unknown> = {}
 ): void {
   console.log(JSON.stringify({
-    type: 'clawee_daemon_bootstrap',
+    type: 'opencreator_daemon_bootstrap',
     phase,
     at: new Date().toISOString(),
     ...extra
@@ -285,7 +285,7 @@ function emitBootstrapError(input: {
   details?: Record<string, unknown>;
 }): void {
   console.log(JSON.stringify({
-    type: 'clawee_daemon_bootstrap_error',
+    type: 'opencreator_daemon_bootstrap_error',
     at: new Date().toISOString(),
     ...input
   }));

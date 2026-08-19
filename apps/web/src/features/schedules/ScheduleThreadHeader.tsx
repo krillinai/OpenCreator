@@ -3,7 +3,7 @@ import type {
   ScheduleDetailResponse,
   ScheduleResponse,
   UpdateScheduleRequest,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   CircleAlert,
   CircleCheck,
@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { ClaweeProject } from '../projects/project-model.js';
+import type { OpenCreatorProject } from '../projects/project-model.js';
 import type { ScheduleSidebarTaskStatus } from '../shell/sidebar-task-model.js';
 import {
   createScheduleUpdate,
@@ -43,7 +43,7 @@ export function ScheduleThreadHeader(props: {
   status: ScheduleSidebarTaskStatus;
   nextRunLabel?: string;
   service: ScheduleThreadService;
-  projects: ClaweeProject[];
+  projects: OpenCreatorProject[];
   profiles?: CodexProfileResponse[];
   onRunNow(schedule: ScheduleResponse): Promise<void> | void;
   onScheduleChanged(schedule: ScheduleResponse): void;

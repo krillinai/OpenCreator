@@ -3,10 +3,10 @@ import type {
   ConversationSearchResponse,
   ConversationSearchResult,
   ThreadResponse,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { LoaderCircle, Search } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { ClaweeProject } from '../projects/project-model.js';
+import type { OpenCreatorProject } from '../projects/project-model.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import './search-view.css';
 
@@ -30,7 +30,7 @@ const RECENT_CONVERSATION_LIMIT = 20;
 export function SearchView(props: {
   connected: boolean;
   service: SearchViewService | null;
-  projects: ClaweeProject[];
+  projects: OpenCreatorProject[];
   recentThreads: ThreadResponse[];
   onOpenResult(result: ConversationSearchResult): void;
 }) {
@@ -333,7 +333,7 @@ function threadToSearchResult(thread: ThreadResponse): ConversationSearchResult 
 
 function projectNameForId(
   projectId: string | null,
-  projects: ClaweeProject[],
+  projects: OpenCreatorProject[],
   l: LocalizeCopy
 ): string {
   if (projectId === null) return l('未知项目', 'Unknown project');

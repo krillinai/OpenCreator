@@ -100,11 +100,11 @@ async function launchDesktop(): Promise<void> {
 
   await app.whenReady();
   const appReadyAt = Date.now();
-  const development = process.env.CLAWEE_DESKTOP_DEV === '1' || !app.isPackaged;
+  const development = process.env.OPENCREATOR_DESKTOP_DEV === '1' || !app.isPackaged;
   const appRoot = app.getAppPath();
   const userData = app.getPath('userData');
   const dataDir = join(userData, 'daemon');
-  const defaultProjectRoot = process.env.CLAWEE_DEFAULT_PROJECT_ROOT
+  const defaultProjectRoot = process.env.OPENCREATOR_DEFAULT_PROJECT_ROOT
     ?? app.getPath('documents');
   const logDir = join(userData, 'logs');
   const logger = createDesktopLogger(join(logDir, 'desktop-main.log'));
@@ -122,7 +122,7 @@ async function launchDesktop(): Promise<void> {
   const enterpriseUserConfig = prepareEnterpriseUserConfig({
     bundledPath: bundledEnterpriseConfigPath,
     userPath: enterpriseLaunchConfig.enterpriseE2EConfigPath
-      ?? join(app.getPath('home'), '.clawee', ENTERPRISE_CONFIG_FILENAME)
+      ?? join(app.getPath('home'), '.opencreator', ENTERPRISE_CONFIG_FILENAME)
   });
   logger.info('Enterprise gateway config loaded', {
     path: enterpriseUserConfig.path
@@ -170,7 +170,7 @@ async function launchDesktop(): Promise<void> {
     development,
     appEntryAt: APP_ENTRY_AT,
     workspaceReadyTimeoutMs: parsePositiveInteger(
-      process.env.CLAWEE_E2E_WORKSPACE_READY_TIMEOUT_MS
+      process.env.OPENCREATOR_E2E_WORKSPACE_READY_TIMEOUT_MS
     ),
     requestQuit: () => app.quit()
   });
@@ -237,7 +237,7 @@ async function launchDesktop(): Promise<void> {
     development,
     windowManager,
     ignoreFirstReady:
-      process.env.CLAWEE_E2E_IGNORE_FIRST_WORKSPACE_READY === '1'
+      process.env.OPENCREATOR_E2E_IGNORE_FIRST_WORKSPACE_READY === '1'
   });
 
   bootstrap.on('state', state => {
@@ -285,7 +285,7 @@ async function launchDesktop(): Promise<void> {
   });
   const importSource = runtimeImportSource(
     process.argv,
-    process.env.CLAWEE_IMPORT_DATA_DIR
+    process.env.OPENCREATOR_IMPORT_DATA_DIR
   );
   migrationTask = startRuntimeDataImport({
     source: importSource,
@@ -397,7 +397,7 @@ function registerIpcHandlers(input: {
     await input.reloadWorkspace();
     return input.bootstrap.currentState.phase === 'ready'
       ? ok()
-      : failed(input.bootstrap.currentState.error?.message ?? '工作台加载失败');
+      : failed(input.bootstrap.currentState.error?.message ?? 'Dashboard 加载失败');
   });
   handle(desktopIpc.readPreferences, input.development, () => ({
     closeBehavior: input.settings.read().closeBehavior
@@ -491,7 +491,7 @@ function assertTrustedSender(event: IpcMainInvokeEvent, development: boolean): v
     throw new Error('IPC sender URL is invalid');
   }
   if (
-    url.protocol === 'clawee-app:'
+    url.protocol === 'opencreator-app:'
     && (url.hostname === 'app' || url.hostname === 'bootstrap')
   ) {
     return;
@@ -518,7 +518,7 @@ function assertTrustedWorkspaceSender(
   } catch {
     throw new Error('Workspace IPC sender URL is invalid');
   }
-  if (url.protocol === 'clawee-app:' && url.hostname === 'app') return;
+  if (url.protocol === 'opencreator-app:' && url.hostname === 'app') return;
   if (
     development
     && url.protocol === 'http:'
@@ -553,9 +553,9 @@ function registerApplicationProtocol(
   logger: ReturnType<typeof createDesktopLogger>
 ): void {
   const result = development
-    ? app.setAsDefaultProtocolClient('clawee', process.execPath, [appRoot])
-    : app.setAsDefaultProtocolClient('clawee');
-  if (!result) logger.warn('Failed to register clawee:// protocol');
+    ? app.setAsDefaultProtocolClient('opencreator', process.execPath, [appRoot])
+    : app.setAsDefaultProtocolClient('opencreator');
+  if (!result) logger.warn('Failed to register opencreator:// protocol');
 }
 
 function runtimeImportSource(argv: string[], environmentValue?: string): string | undefined {

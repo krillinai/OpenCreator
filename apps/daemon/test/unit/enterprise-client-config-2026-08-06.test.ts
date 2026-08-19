@@ -4,7 +4,7 @@ import {
   serializeEnterpriseClientConfig
 } from '../../src/enterprise/client-config-2026-08-06.js';
 
-const agentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
+const agentId = 'opencreator_550e8400-e29b-41d4-a716-446655440000';
 
 describe('enterprise client config', () => {
   it('accepts a gateway and optional agent id', () => {

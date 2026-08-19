@@ -17,7 +17,7 @@ const expectedPerformanceProjects = [
   'chromium-mobile'
 ];
 const performanceResultsRequired =
-  process.env.CLAWEE_PERFORMANCE_RESULTS_REQUIRED === '1';
+  process.env.OPENCREATOR_PERFORMANCE_RESULTS_REQUIRED === '1';
 let failed = false;
 
 const assetMeasurements = measureAssets();

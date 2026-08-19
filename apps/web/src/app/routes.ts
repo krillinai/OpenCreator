@@ -1,7 +1,6 @@
 export type AppRoute =
   | { view: 'home' }
   | { view: 'projects' }
-  | { view: 'workbench' }
   | { view: 'thread'; threadId: string; runId?: string; approvalId?: string }
   | { view: 'search' }
   | { view: 'schedules'; scheduleId?: string }
@@ -45,7 +44,7 @@ export function parseRoute(hash: string): AppRoute {
   }
   if (path === '#/search') return { view: 'search' };
   if (path === '#/projects') return { view: 'projects' };
-  if (path === '#/workbench') return { view: 'workbench' };
+  if (path === '#/dashboard') return { view: 'dashboard' };
   if (path === '#/schedules') {
     const fields = parseQuery(query);
     return {
@@ -54,7 +53,6 @@ export function parseRoute(hash: string): AppRoute {
     };
   }
   if (path === '#/tasks') return { view: 'tasks' };
-  if (path === '#/dashboard') return { view: 'dashboard' };
   if (path === '#/activity') return { view: 'activity', range: parseActivityRange(query) };
   if (path === '#/plugins') {
     const fields = parseQuery(query);
@@ -94,8 +92,6 @@ export function formatRoute(route: AppRoute): string {
       return '#/';
     case 'projects':
       return '#/projects';
-    case 'workbench':
-      return '#/workbench';
     case 'thread': {
       const query = new URLSearchParams();
       if (route.runId !== undefined) query.set('runId', route.runId);

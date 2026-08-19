@@ -16,7 +16,7 @@ export function createKnowledgeMcpServer(input: {
   manager: Pick<KnowledgeConversationManager, 'search'>;
 }): McpServer {
   const server = new McpServer({
-    name: 'clawee-knowledge-tools',
+    name: 'opencreator-knowledge-tools',
     version: '0.1.0'
   });
   server.registerTool(KNOWLEDGE_SEARCH_TOOL_NAME, {

@@ -166,7 +166,7 @@ describe('workspace file service', () => {
 
   it('rejects symlink escapes outside canonicalCwd', async () => {
     const { service } = createFixture();
-    const outside = mkdtempSync(join(tmpdir(), 'clawee-outside-'));
+    const outside = mkdtempSync(join(tmpdir(), 'opencreator-outside-'));
     writeFileSync(join(outside, 'secret.md'), 'secret');
     symlinkSync(join(outside, 'secret.md'), join(tempDir, 'leak.md'));
 
@@ -278,7 +278,7 @@ describe('workspace file service', () => {
 
   it('skips directory entries whose symlink escapes outside root and reports warning', async () => {
     const { service } = createFixture({ sandbox: 'read-only' });
-    const outside = mkdtempSync(join(tmpdir(), 'clawee-outside-tree-'));
+    const outside = mkdtempSync(join(tmpdir(), 'opencreator-outside-tree-'));
     mkdirSync(join(tempDir, 'docs'), { recursive: true });
     writeFile('docs/inside.md', '# inside\n');
     symlinkSync(outside, join(tempDir, 'docs', 'escape-link'));
@@ -391,7 +391,7 @@ describe('workspace file service', () => {
       sandbox: 'workspace-write',
       fileOps: {
         openSync(path, flags, mode) {
-          if (String(path).includes('.clawee-')) tempOpenPaths.push(String(path));
+          if (String(path).includes('.opencreator-')) tempOpenPaths.push(String(path));
           return openSync(path, flags, mode);
         }
       }
@@ -450,7 +450,7 @@ describe('workspace file service', () => {
     ).rejects.toMatchObject({ code: 'FILE_NOT_FOUND' });
 
     expect(renameCalled).toBe(false);
-    expect(readdirSync(tempDir).some((name) => name.includes('.clawee-'))).toBe(false);
+    expect(readdirSync(tempDir).some((name) => name.includes('.opencreator-'))).toBe(false);
   });
 
   it('does not recreate an originally resolved target when a symlinked parent changes before save', async () => {
@@ -495,7 +495,7 @@ describe('workspace file service', () => {
     expect(renameCalled).toBe(false);
     expect(() => readFileSync(join(tempDir, 'real-docs', 'README.md'), 'utf8')).toThrow();
     expect(readFileSync(join(tempDir, 'new-docs', 'README.md'), 'utf8')).toBe('# unrelated\n');
-    expect(readdirSync(join(tempDir, 'real-docs')).some((name) => name.includes('.clawee-'))).toBe(false);
+    expect(readdirSync(join(tempDir, 'real-docs')).some((name) => name.includes('.opencreator-'))).toBe(false);
   });
 
   it.each([
@@ -624,7 +624,7 @@ type FixtureOptions = {
 };
 
 function createFixture(options: FixtureOptions = {}) {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-workspace-files-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-workspace-files-'));
   const thread = createThread(tempDir, options);
   const threads = new Map([[thread.id, thread]]);
 
@@ -646,7 +646,7 @@ function createThread(root: string, options: FixtureOptions): RuntimeThread {
     title: 'Workspace',
     projectId: 'project_1',
     enterpriseSubjectId: null,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     cwd: root,
     canonicalCwd: realpathSync(root),
     workspaceMode: 'external',

@@ -23,7 +23,7 @@ const credential: EnterpriseCredential = {
   accessToken: 'enterprise-session-token',
   expiresAt: '2026-07-31T10:00:00Z'
 };
-const agentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
+const agentId = 'opencreator_550e8400-e29b-41d4-a716-446655440000';
 
 describe('enterprise session manager', () => {
   it('starts restore asynchronously and publishes a valid session later', async () => {
@@ -316,7 +316,7 @@ describe('enterprise session manager', () => {
             email: 'user@example.com',
             name: 'User'
           },
-          agentId: 'clawee_123e4567-e89b-42d3-a456-426614174000',
+          agentId: 'opencreator_123e4567-e89b-42d3-a456-426614174000',
           accessToken: credential.accessToken,
           tokenType: 'Bearer' as const,
           expiresAt: credential.expiresAt

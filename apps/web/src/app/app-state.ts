@@ -1,10 +1,9 @@
-import type { PublicRunStatus } from '@clawee/protocol';
+import type { PublicRunStatus } from '@opencreator/protocol';
 
 export type RightPanelMode = 'closed' | 'file' | 'change' | 'run_detail';
 export type ActiveView =
   | 'conversation'
   | 'projects'
-  | 'workbench'
   | 'search'
   | 'schedules'
   | 'tasks'

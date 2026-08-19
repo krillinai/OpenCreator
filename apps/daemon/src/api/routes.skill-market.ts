@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import type { RuntimeErrorCode } from '@clawee/protocol';
+import type { RuntimeErrorCode } from '@opencreator/protocol';
 import type { SkillMarketManager } from '../codex/skills/market-manager.js';
 import { apiError } from './errors.js';
 

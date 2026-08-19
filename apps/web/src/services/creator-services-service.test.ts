@@ -1,4 +1,4 @@
-import { createDefaultCreatorServicesConfig } from '@clawee/protocol';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { createCreatorServicesService } from './creator-services-service.js';
 

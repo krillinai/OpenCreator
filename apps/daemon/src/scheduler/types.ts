@@ -8,7 +8,7 @@ import type {
   ScheduleMisfirePolicy,
   ScheduleOperationStatus,
   ScheduleOperationType
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type LegacyMisfirePolicy = ScheduleMisfirePolicy | 'run_once';
 

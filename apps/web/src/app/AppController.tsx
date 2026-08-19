@@ -23,8 +23,8 @@ import type {
   TaskItem,
   ThreadHistoryItem,
   ThreadResponse
-} from '@clawee/protocol';
-import { skillMarketCatalog } from '@clawee/skill-market';
+} from '@opencreator/protocol';
+import { skillMarketCatalog } from '@opencreator/skill-market';
 import type {
   CSSProperties,
   DragEvent as ReactDragEvent,
@@ -34,7 +34,7 @@ import type {
 } from 'react';
 import { FolderInput } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
+import { AppLayout } from '../components/layout/AppLayout.js';
 import { beginPaneResize } from '../components/layout/pane-resize-2026-07-29.js';
 import { Timeline, type TimelineHandle } from '../components/timeline/Timeline.js';
 import { eventToTimelineItem, type TimelineItem } from '../components/timeline/timeline-model.js';
@@ -45,11 +45,11 @@ import {
 } from '../features/account/consumer-user.js';
 import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
 import {
-  CreatorWorkbench,
+  CreatorDashboard,
   getCreatorSkillPromptHint,
   type CreatorSkill
-} from '../features/conversation/CreatorWorkbench.js';
-import type { CreatorSkillLaunch } from '../features/workbench/creator-workspace.js';
+} from '../features/conversation/CreatorDashboard.js';
+import type { CreatorSkillLaunch } from '../features/dashboard/creator-workspace.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
 import { MemorySuggestion } from '../features/conversation/MemorySuggestion.js';
 import { ApprovalPanel } from '../features/approvals/ApprovalPanel.js';
@@ -78,8 +78,8 @@ import {
   sortProjectConversations,
   parseLegacyLocalStorageProjects,
   PROJECTS_STORAGE_KEY,
-  type ClaweeConversation,
-  type ClaweeProject,
+  type OpenCreatorConversation,
+  type OpenCreatorProject,
   type ProjectPermission
 } from '../features/projects/project-model.js';
 import { CreateProjectDialog } from '../features/projects/CreateProjectDialog.js';
@@ -114,9 +114,9 @@ import {
 import type {
   DefaultPermissionPreference,
   RuntimeStatus
-} from '../features/settings/ClaweeSettingsView.js';
+} from '../features/settings/OpenCreatorSettingsView.js';
 import type { McpCapabilities } from '../features/settings/McpSettingsView.js';
-import { ClaweeSidebar } from '../features/shell/ClaweeSidebar.js';
+import { OpenCreatorSidebar } from '../features/shell/OpenCreatorSidebar.js';
 import {
   createScheduleDraftSidebarSummaries,
   createSidebarTaskSummaries
@@ -244,19 +244,15 @@ function canScrollVertically(
 
   return false;
 }
-const DEFAULT_PERMISSION_STORAGE_KEY = 'clawee.preferences.defaultPermission';
-const NAVIGATION_STORAGE_KEY = 'clawee.navigation.v3';
+const DEFAULT_PERMISSION_STORAGE_KEY = 'opencreator.preferences.defaultPermission';
+const NAVIGATION_STORAGE_KEY = 'opencreator.navigation.v3';
 const CapabilitiesPage = lazy(() => import('../features/capabilities/CapabilitiesPage.js'));
 const ConsumerAccountPage = lazy(() => import('../features/account/ConsumerAccountPage.js'));
 const FilesPage = lazy(() => import('../features/files/FilesPage.js'));
 const ProjectsPage = lazy(() => import('../features/projects/ProjectsPage.js'));
 const PluginsPage = lazy(() => import('../features/plugins/PluginsPage.js'));
 const AssetsPage = lazy(() => import('../features/assets/AssetsPage.js'));
-const WorkbenchPage = lazy(() => import('../features/workbench/WorkbenchPage.js'));
-const DashboardPage = lazy(async () => {
-  const module = await import('../features/dashboard/DashboardPage.js');
-  return { default: module.DashboardPage };
-});
+const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage.js'));
 const ScheduleThreadHeader = lazy(async () => {
   const module = await import('../features/schedules/ScheduleThreadHeader.js');
   return { default: module.ScheduleThreadHeader };
@@ -302,8 +298,8 @@ export function AppController(props: AppControllerProps) {
     runRegistryReducer,
     initialRunRegistryState
   );
-  const [projects, setProjects] = useState<ClaweeProject[]>([]);
-  const [archivedProjects, setArchivedProjects] = useState<ClaweeProject[]>([]);
+  const [projects, setProjects] = useState<OpenCreatorProject[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<OpenCreatorProject[]>([]);
   const defaultFileService = useMemo(() => createMockFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
@@ -311,8 +307,8 @@ export function AppController(props: AppControllerProps) {
   const appShellStyle = integratedTitleBar === undefined
     ? undefined
     : {
-        '--clawee-titlebar-height': `${integratedTitleBar.titleBarHeight}px`,
-        '--clawee-traffic-light-inset': `${integratedTitleBar.trafficLightInset}px`
+        '--opencreator-titlebar-height': `${integratedTitleBar.titleBarHeight}px`,
+        '--opencreator-traffic-light-inset': `${integratedTitleBar.trafficLightInset}px`
       } as CSSProperties;
   const runtimeFetch = useMemo(() => props.runtimeFetch ?? globalThis.fetch.bind(globalThis), [props.runtimeFetch]);
   const subscribeRunEvents = props.subscribeRunEvents ?? defaultSubscribeRunEvents;
@@ -682,7 +678,7 @@ export function AppController(props: AppControllerProps) {
     () => sortProjectConversations(
       visibleThreadGroups.conversationThreads.map(
         thread => mapThreadToConversation(thread)
-      ).filter((conversation): conversation is ClaweeConversation => conversation !== undefined)
+      ).filter((conversation): conversation is OpenCreatorConversation => conversation !== undefined)
     ),
     [projects, visibleThreadGroups.conversationThreads]
   );
@@ -760,7 +756,7 @@ export function AppController(props: AppControllerProps) {
     });
     setPendingComposerFocusRequestId(nextComposerFocusRequestIdRef.current);
   }, []);
-  function applyWorkbenchSkill(skill: CreatorSkill) {
+  function applyDashboardSkill(skill: CreatorSkill) {
     const promptHint = getCreatorSkillPromptHint(skill, language);
     if (skill.interaction?.type === 'workspace') {
       setHomeSkillPromptHint(undefined);
@@ -770,8 +766,8 @@ export function AppController(props: AppControllerProps) {
         promptHint
       });
       closeMobileSidebar();
-      dispatch({ type: 'set_active_view', activeView: 'workbench' });
-      navigateToRoute({ view: 'workbench' });
+      dispatch({ type: 'set_active_view', activeView: 'dashboard' });
+      navigateToRoute({ view: 'dashboard' });
       return;
     }
 
@@ -2470,7 +2466,7 @@ export function AppController(props: AppControllerProps) {
       && !mobileSidebarHistoryEntryRef.current
     ) {
       window.history.pushState(
-        { ...window.history.state, claweeMobileNavigation: true },
+        { ...window.history.state, opencreatorMobileNavigation: true },
         ''
       );
       mobileSidebarHistoryEntryRef.current = true;
@@ -2480,7 +2476,7 @@ export function AppController(props: AppControllerProps) {
 
   function closeMobileSidebar() {
     setMobileSidebarOpen(false);
-    if (window.history.state?.claweeMobileNavigation !== true) {
+    if (window.history.state?.opencreatorMobileNavigation !== true) {
       mobileSidebarHistoryEntryRef.current = false;
     }
   }
@@ -2489,7 +2485,7 @@ export function AppController(props: AppControllerProps) {
     setMobileSidebarOpen(false);
     if (
       mobileSidebarHistoryEntryRef.current
-      && window.history.state?.claweeMobileNavigation === true
+      && window.history.state?.opencreatorMobileNavigation === true
     ) {
       mobileSidebarHistoryEntryRef.current = false;
       window.history.back();
@@ -2980,7 +2976,7 @@ export function AppController(props: AppControllerProps) {
     const routeKey = formatRoute(route);
     const replaceMobileSidebarEntry =
       mobileSidebarHistoryEntryRef.current
-      && window.history.state?.claweeMobileNavigation === true;
+      && window.history.state?.opencreatorMobileNavigation === true;
     if (replaceMobileSidebarEntry) {
       mobileSidebarHistoryEntryRef.current = false;
       setMobileSidebarOpen(false);
@@ -3006,7 +3002,6 @@ export function AppController(props: AppControllerProps) {
         return;
       case 'search':
       case 'projects':
-      case 'workbench':
       case 'schedules':
       case 'tasks':
       case 'dashboard':
@@ -4947,7 +4942,7 @@ export function AppController(props: AppControllerProps) {
           onSubmit={submitPrompt}
         />
         {showConversationEmptyState ? (
-          <CreatorWorkbench onSelectSkill={applyWorkbenchSkill} />
+          <CreatorDashboard onSelectSkill={applyDashboardSkill} />
         ) : null}
       </div>
     </section>
@@ -4996,8 +4991,8 @@ export function AppController(props: AppControllerProps) {
       onOpenProject={selectProject}
       onManageProject={projectId => void openProjectManagement(projectId)}
     />
-  ) : state.activeView === 'workbench' ? (
-    <WorkbenchPage
+  ) : state.activeView === 'dashboard' ? (
+    <DashboardPage
       onSelectPrompt={startCreatorTool}
       skillLaunch={creatorSkillLaunch}
       onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
@@ -5048,8 +5043,6 @@ export function AppController(props: AppControllerProps) {
         handleScheduleChanged(updated);
       }}
     />
-  ) : state.activeView === 'dashboard' ? (
-    <DashboardPage />
   ) : state.activeView === 'activity' ? (
     <ActivityPage
       route={props.route.view === 'activity' || props.route.view === 'activity-agent'
@@ -5215,9 +5208,9 @@ export function AppController(props: AppControllerProps) {
         }
         aria-live="polite"
       />
-      <WorkbenchLayout
+      <AppLayout
       sidebar={
-        <ClaweeSidebar
+        <OpenCreatorSidebar
           projects={projects}
           conversations={conversations}
           tasks={sidebarTasks}
@@ -5441,7 +5434,6 @@ function createInitialState(
       };
     case 'search':
     case 'projects':
-    case 'workbench':
     case 'schedules':
     case 'tasks':
     case 'dashboard':
@@ -5476,8 +5468,6 @@ function routeForActiveView(activeView: ActiveView, selectedThreadId?: string): 
       return routeForConversation(selectedThreadId);
     case 'projects':
       return { view: 'projects' };
-    case 'workbench':
-      return { view: 'workbench' };
     case 'search':
       return { view: 'search' };
     case 'schedules':
@@ -5663,7 +5653,7 @@ function isRuntimeWorkspacePath(path: string): boolean {
 
 function mapThreadToConversation(
   thread: ThreadResponse
-): ClaweeConversation | undefined {
+): OpenCreatorConversation | undefined {
   if (thread.projectId === null) return undefined;
   return {
     id: thread.id,
@@ -5677,7 +5667,7 @@ function mapThreadToConversation(
 
 function buildMemoryProjectOptions(
   threads: ThreadResponse[],
-  projects: ClaweeProject[]
+  projects: OpenCreatorProject[]
 ): Array<{ key: string; label: string }> {
   const options = new Map<string, string>();
   for (const thread of threads) {
@@ -5883,7 +5873,7 @@ function mergeSharedFiles(
 
 function buildThreadRequest(
   prompt: string,
-  project: ClaweeProject,
+  project: OpenCreatorProject,
   config: ComposerRunConfig
 ): Extract<CreateThreadRequest, { projectId: string }> {
   const request: Extract<CreateThreadRequest, { projectId: string }> = {
@@ -5900,7 +5890,7 @@ function buildThreadRequest(
 }
 
 function defaultComposerRunConfig(
-  project: ClaweeProject | undefined,
+  project: OpenCreatorProject | undefined,
   defaultPermission: DefaultPermissionPreference,
   recentModelConfig: RecentModelConfig | null
 ): ComposerRunConfig {
@@ -5921,7 +5911,7 @@ function defaultComposerRunConfig(
 }
 
 function resolveDefaultPermission(
-  project: ClaweeProject | undefined,
+  project: OpenCreatorProject | undefined,
   preference: DefaultPermissionPreference
 ): ProjectPermission {
   if (preference !== 'follow-project') return preference;
@@ -6038,7 +6028,7 @@ export function buildComposerConnectors(
   });
 }
 
-function toRuntimeSandbox(permission: ClaweeProject['sandbox'] | undefined): SandboxMode {
+function toRuntimeSandbox(permission: OpenCreatorProject['sandbox'] | undefined): SandboxMode {
   if (permission === 'danger-full-access' || permission === 'workspace-write') return permission;
   return 'workspace-write';
 }
@@ -6054,9 +6044,9 @@ function upsertThread(threads: ThreadResponse[], thread: ThreadResponse): Thread
 }
 
 function upsertProject(
-  projects: ClaweeProject[],
-  project: ClaweeProject
-): ClaweeProject[] {
+  projects: OpenCreatorProject[],
+  project: OpenCreatorProject
+): OpenCreatorProject[] {
   return [project, ...projects.filter(item => item.id !== project.id)];
 }
 

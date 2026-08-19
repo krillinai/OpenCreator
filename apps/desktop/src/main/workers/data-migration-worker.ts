@@ -170,7 +170,7 @@ function validateSqlite(path: string): void {
 }
 
 function assertRuntimeNotLocked(source: string): void {
-  const lockPath = join(source, 'clawee-runtime.lock');
+  const lockPath = join(source, 'opencreator-runtime.lock');
   if (!existsSync(lockPath)) return;
   const pid = Number(readFileSync(lockPath, 'utf8').trim());
   if (!Number.isInteger(pid) || pid <= 0) return;

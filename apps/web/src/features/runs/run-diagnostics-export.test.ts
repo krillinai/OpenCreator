@@ -1,4 +1,4 @@
-import type { RunDiagnosticsResponse } from '@clawee/protocol';
+import type { RunDiagnosticsResponse } from '@opencreator/protocol';
 import { describe, expect, it } from 'vitest';
 import { serializeRunDiagnosticsBundle } from './run-diagnostics-export.js';
 

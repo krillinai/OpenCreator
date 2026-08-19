@@ -35,7 +35,7 @@ describe('project API', () => {
     expect(first.statusCode).toBe(200);
     expect(first.json().project).toMatchObject({
       name: '默认项目',
-      cwd: join(tempDir, 'Clawee', 'Default Project'),
+      cwd: join(tempDir, 'OpenCreator', 'Default Project'),
       directoryState: 'available'
     });
     expect(repeated.statusCode).toBe(200);
@@ -45,7 +45,7 @@ describe('project API', () => {
     ).toEqual({ count: 1 });
   });
 
-  it('creates managed projects under the configured Clawee directory', async () => {
+  it('creates managed projects under the configured OpenCreator directory', async () => {
     await createSetup();
 
     const created = await request('POST', '/projects/managed', { name: ' 浏览器项目 ' });
@@ -53,10 +53,10 @@ describe('project API', () => {
     expect(created.statusCode).toBe(201);
     expect(created.json().project).toMatchObject({
       name: '浏览器项目',
-      cwd: join(tempDir, 'Clawee', '浏览器项目'),
+      cwd: join(tempDir, 'OpenCreator', '浏览器项目'),
       directoryState: 'available'
     });
-    expect(realpathSync(join(tempDir, 'Clawee', '浏览器项目')))
+    expect(realpathSync(join(tempDir, 'OpenCreator', '浏览器项目')))
       .toBe(created.json().project.canonicalCwd);
 
     const invalid = await request('POST', '/projects/managed', { name: '../escape' });
@@ -93,7 +93,7 @@ describe('project API', () => {
       title: 'Owned',
       codexThreadId: 'codex_owned',
       projectId: created.id,
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       cwd: firstDir,
       canonicalCwd: realpathSync(firstDir),
       workspaceMode: 'external',
@@ -178,7 +178,7 @@ describe('project API', () => {
     createThreadRepository(setup.db).insertThread({
       id: 'thread_running',
       projectId,
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       cwd: projectDir,
       canonicalCwd: realpathSync(projectDir),
       workspaceMode: 'external',
@@ -227,7 +227,7 @@ describe('project API', () => {
       id: 'thread_owned',
       title: 'Owned',
       projectId: null,
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       cwd: sharedDir,
       canonicalCwd: realpathSync(sharedDir),
       workspaceMode: 'external',
@@ -240,7 +240,7 @@ describe('project API', () => {
       id: 'thread_unassigned',
       title: 'Unassigned',
       projectId: null,
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       cwd: tempDir,
       canonicalCwd: realpathSync(tempDir),
       workspaceMode: 'external',
@@ -345,7 +345,7 @@ describe('project API', () => {
     ).toEqual(projectCount);
   });
 
-  it('assigns an unowned Clawee thread without changing its execution directory', async () => {
+  it('assigns an unowned OpenCreator thread without changing its execution directory', async () => {
     const setup = await createSetup();
     const projectDir = join(tempDir, 'project');
     const legacyDir = join(tempDir, 'legacy');
@@ -361,7 +361,7 @@ describe('project API', () => {
       id: 'thread_unowned',
       title: 'Unowned',
       projectId: null,
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       cwd: legacyDir,
       canonicalCwd: realpathSync(legacyDir),
       workspaceMode: 'external',
@@ -415,7 +415,7 @@ describe('project API', () => {
 });
 
 async function createSetup(): Promise<{ db: Database.Database }> {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-project-api-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-project-api-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   server = await buildServer({
     token: 'secret',

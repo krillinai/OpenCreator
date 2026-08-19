@@ -5,7 +5,7 @@ import type {
   ThreadOrigin,
   ThreadPurpose,
   WorkspaceMode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type RuntimeThread = {
   id: string;

@@ -1,7 +1,7 @@
 import type {
   NotificationOutboxItem,
   NotificationOutboxKind
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 
 type NotificationOutboxRow = {

@@ -77,7 +77,7 @@ pnpm test
 ### 3.2 受影响功能专项回归
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/codex-capabilities.test.ts \
   test/integration/api.test.ts \
   test/integration/run-manager.test.ts \
@@ -93,7 +93,7 @@ pnpm --filter @clawee/daemon test -- \
 ### 3.3 Real Codex gated smoke
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 通过标准：
@@ -116,26 +116,26 @@ pnpm daemon:dev
 记录 stdout JSON 中的 `address` 和 `token`，设置环境变量：
 
 ```bash
-export CLAWEE_DAEMON_URL="<address>"
-export CLAWEE_DAEMON_TOKEN="<token>"
-export CLAWEE_TEST_CWD="$(mktemp -d)"
+export OPENCREATOR_DAEMON_URL="<address>"
+export OPENCREATOR_DAEMON_TOKEN="<token>"
+export OPENCREATOR_TEST_CWD="$(mktemp -d)"
 ```
 
 执行 smoke：
 
 ```bash
 pnpm harness history --limit 5
-pnpm harness run --cwd "$CLAWEE_TEST_CWD" --sandbox read-only --prompt "Reply with OK only."
+pnpm harness run --cwd "$OPENCREATOR_TEST_CWD" --sandbox read-only --prompt "Reply with OK only."
 pnpm harness events <run_id> --after-seq 0
-pnpm harness diagnostics <run_id> --output "$CLAWEE_TEST_CWD/diagnostics.json"
+pnpm harness diagnostics <run_id> --output "$OPENCREATOR_TEST_CWD/diagnostics.json"
 ```
 
 另用 curl 验证鉴权和 status：
 
 ```bash
-curl -sS "$CLAWEE_DAEMON_URL/healthz"
-curl -sS -H "authorization: Bearer $CLAWEE_DAEMON_TOKEN" "$CLAWEE_DAEMON_URL/codex/status"
-curl -sS -o /tmp/clawee-unauth.json -w "%{http_code}" "$CLAWEE_DAEMON_URL/runs"
+curl -sS "$OPENCREATOR_DAEMON_URL/healthz"
+curl -sS -H "authorization: Bearer $OPENCREATOR_DAEMON_TOKEN" "$OPENCREATOR_DAEMON_URL/codex/status"
+curl -sS -o /tmp/opencreator-unauth.json -w "%{http_code}" "$OPENCREATOR_DAEMON_URL/runs"
 ```
 
 通过标准：

@@ -87,7 +87,7 @@ function main(): void {
   }
 
   const keep = args.has('--keep');
-  const tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-upgrade-'));
+  const tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-upgrade-'));
   const dbPath = join(tempDir, 'app.sqlite');
   let db: Database.Database | undefined;
 

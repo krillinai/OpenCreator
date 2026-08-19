@@ -21,7 +21,7 @@ const profileValidator = {
 
 describe('scheduler validator', () => {
   it('expands a home-relative cwd before validating a schedule', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-home-cwd-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-home-cwd-'));
     const workspace = join(tempDir, 'workspace');
     mkdirSync(workspace);
 
@@ -50,7 +50,7 @@ describe('scheduler validator', () => {
   });
 
   it('normalizes a create request with defaults', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-'));
     const result = parseCreateScheduleRequest(
       {
         name: 'daily status',
@@ -83,7 +83,7 @@ describe('scheduler validator', () => {
   });
 
   it('normalizes disabled create requests with no next run', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-'));
     const result = parseCreateScheduleRequest(
       {
         name: 'paused status',
@@ -109,7 +109,7 @@ describe('scheduler validator', () => {
   });
 
   it('rejects invalid cron, timezone, timeout, misfire, cwd, and profile', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-'));
     const base = { name: 'bad', cron: '0 9 * * *', prompt: 'x', cwd: tempDir };
     const options = {
       now: '2026-07-06T00:00:00.000Z',
@@ -148,7 +148,7 @@ describe('scheduler validator', () => {
   });
 
   it('normalizes an update request and permits clearing nullable overrides', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-'));
     const result = parseUpdateScheduleRequest(
       {
         enabled: false,
@@ -175,7 +175,7 @@ describe('scheduler validator', () => {
   });
 
   it('rejects creating or updating schedules with parallel concurrency', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-'));
     const options = {
       now: '2026-07-06T00:00:00.000Z',
       defaultCwd: tempDir,

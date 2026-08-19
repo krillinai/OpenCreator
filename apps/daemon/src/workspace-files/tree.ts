@@ -1,5 +1,5 @@
 import { readdirSync, statSync, realpathSync } from 'node:fs';
-import type { WorkspaceDirectoryResponse, WorkspaceFileMetaSummary, WorkspaceFileNode } from '@clawee/protocol';
+import type { WorkspaceDirectoryResponse, WorkspaceFileMetaSummary, WorkspaceFileNode } from '@opencreator/protocol';
 import { kindFor, mimeFor, isEditable, isPreviewable, isSensitivePath, reasonForUnavailable } from './mime.js';
 import { assertInsideRoot, isIgnoredDir } from './paths.js';
 import { MAX_DIRECTORY_CHILDREN } from './types.js';

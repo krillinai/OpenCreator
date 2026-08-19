@@ -5,7 +5,7 @@ import type {
   EnterpriseMcpCatalogResponse,
   EnterpriseMcpPreferenceUpdateRequest,
   EnterpriseMcpUpstreamResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   Cable,
   Download,

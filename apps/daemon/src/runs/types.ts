@@ -4,7 +4,7 @@ import type {
   RunContextItem,
   RunSubmissionMode,
   SandboxMode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 type CreateRunBase = {
   prompt: string;

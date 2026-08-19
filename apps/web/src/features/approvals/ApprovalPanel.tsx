@@ -1,4 +1,4 @@
-import type { RuntimeApproval } from '@clawee/protocol';
+import type { RuntimeApproval } from '@opencreator/protocol';
 import { Check, ChevronDown, FilePenLine, ShieldCheck, SquareTerminal, X } from 'lucide-react';
 
 export function ApprovalPanel(props: {

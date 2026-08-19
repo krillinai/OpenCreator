@@ -1,21 +1,21 @@
 {
-  "name": "@clawee/web",
+  "name": "@opencreator/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "pnpm --filter @clawee/skill-market build",
+    "predev": "pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build",
     "dev": "vite --host 127.0.0.1",
-    "prebuild": "pnpm --filter @clawee/skill-market build",
+    "prebuild": "pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build",
     "build": "tsc -p tsconfig.json && vite build",
-    "pretypecheck": "pnpm --filter @clawee/skill-market build",
+    "pretypecheck": "pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "pnpm --filter @clawee/skill-market build",
+    "pretest": "pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@clawee/protocol": "workspace:*",
-    "@clawee/skill-market": "workspace:*",
+    "@opencreator/protocol": "workspace:*",
+    "@opencreator/skill-market": "workspace:*",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",

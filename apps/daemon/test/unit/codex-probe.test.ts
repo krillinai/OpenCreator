@@ -47,7 +47,7 @@ console.log(JSON.stringify({ type: 'turn.completed' }));
       result.timings.homePreparationMs
     );
     expect(result.timings.responseReceivedMs).toBe(result.durationMs);
-    expect(readFileSync(fixture.promptPath, 'utf8')).toContain('CLAWEE_READY_');
+    expect(readFileSync(fixture.promptPath, 'utf8')).toContain('OPENCREATOR_READY_');
   });
 
   it('falls back to the JSONL agent message', async () => {
@@ -192,7 +192,7 @@ function createProbeExecutable(body: string): {
   probeDir: string;
   promptPath: string;
 } {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-probe-test-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-probe-test-'));
   const bin = join(tempDir, 'fake-codex.mjs');
   const promptPath = join(tempDir, 'prompt.txt');
   const codexHome = join(tempDir, 'codex-home');

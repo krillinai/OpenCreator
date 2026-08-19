@@ -1,8 +1,0 @@
-(node:24271) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:24272) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
-(Use `node --trace-warnings ...` to show where the warning was created)
-
-  VITE v6.4.3  ready in 76 ms
-
-  ➜  Local:   http://127.0.0.1:58364/

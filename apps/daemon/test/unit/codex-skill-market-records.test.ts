@@ -19,7 +19,7 @@ afterEach(() => {
 
 describe('codex skill market records', () => {
   it('upserts a record and loads it by skill id', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-market-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-market-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const records = createSkillMarketRecordRepository(db);
 
@@ -45,7 +45,7 @@ describe('codex skill market records', () => {
   });
 
   it('preserves installedAt and refreshes updatedAt on upsert conflict', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-market-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-market-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const records = createSkillMarketRecordRepository(db);
 
@@ -84,7 +84,7 @@ describe('codex skill market records', () => {
   });
 
   it('lists records ordered by updatedAt desc and skillId asc', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-market-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-market-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const records = createSkillMarketRecordRepository(db);
 
@@ -124,7 +124,7 @@ describe('codex skill market records', () => {
   });
 
   it('throws when a stored SQLite timestamp is malformed', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-market-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-market-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const records = createSkillMarketRecordRepository(db);
 
@@ -148,7 +148,7 @@ describe('codex skill market records', () => {
   });
 
   it('rolls back the upsert when mapping the updated row fails', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-skill-market-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-market-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const records = createSkillMarketRecordRepository(db);
 

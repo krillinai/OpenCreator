@@ -3,8 +3,8 @@ import type { ConnectionConfig } from '../runtime/types.js';
 import { readJsonFromStorage } from '../storage/browser-storage.js';
 import type { HostBridge, HostBridgeResult, HostNotification } from './bridge.js';
 
-const CONNECTION_KEY = 'clawee.web.connection.v1';
-const DEV_RUNTIME_CONFIG_PATH = '/.clawee/runtime-config';
+const CONNECTION_KEY = 'opencreator.web.connection.v1';
+const DEV_RUNTIME_CONFIG_PATH = '/.opencreator/runtime-config';
 
 export const browserBridge: HostBridge = {
   kind: 'browser',
@@ -60,7 +60,7 @@ async function readSameOriginRuntimeConfig(): Promise<ConnectionConfig | null> {
 function parseSameOriginConnectionConfig(value: unknown): ConnectionConfig | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  if (record.baseUrl !== '/.clawee/runtime') return null;
+  if (record.baseUrl !== '/.opencreator/runtime') return null;
   return { baseUrl: record.baseUrl };
 }
 

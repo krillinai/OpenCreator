@@ -5,7 +5,7 @@ import type {
   EnterpriseSkillMutationResponse,
   EnterpriseSkillResponse,
   RuntimeErrorCode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';

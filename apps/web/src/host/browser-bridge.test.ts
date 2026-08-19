@@ -9,11 +9,11 @@ describe('browserBridge', () => {
 
   it('loads the same-origin dev runtime config before local storage', async () => {
     window.localStorage.setItem(
-      'clawee.web.connection.v1',
+      'opencreator.web.connection.v1',
       JSON.stringify({ baseUrl: 'http://127.0.0.1:1', token: 'storage-token' })
     );
     const fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ baseUrl: '/.clawee/runtime' }), {
+      new Response(JSON.stringify({ baseUrl: '/.opencreator/runtime' }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       })
@@ -21,14 +21,14 @@ describe('browserBridge', () => {
     vi.stubGlobal('fetch', fetch);
 
     await expect(browserBridge.readConnectionConfig()).resolves.toEqual({
-      baseUrl: '/.clawee/runtime'
+      baseUrl: '/.opencreator/runtime'
     });
-    expect(fetch).toHaveBeenCalledWith('/.clawee/runtime-config', expect.objectContaining({ method: 'GET' }));
+    expect(fetch).toHaveBeenCalledWith('/.opencreator/runtime-config', expect.objectContaining({ method: 'GET' }));
   });
 
   it('falls back to local storage when same-origin runtime config is unavailable', async () => {
     window.localStorage.setItem(
-      'clawee.web.connection.v1',
+      'opencreator.web.connection.v1',
       JSON.stringify({ baseUrl: 'http://127.0.0.1:60765', token: 'storage-token' })
     );
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
@@ -43,7 +43,7 @@ describe('browserBridge', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        new Response(JSON.stringify({ baseUrl: '/.clawee/runtime' }), {
+        new Response(JSON.stringify({ baseUrl: '/.opencreator/runtime' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -51,7 +51,7 @@ describe('browserBridge', () => {
     );
 
     await expect(browserBridge.readConnectionConfig()).resolves.toEqual({
-      baseUrl: '/.clawee/runtime'
+      baseUrl: '/.opencreator/runtime'
     });
   });
 
@@ -63,7 +63,7 @@ describe('browserBridge', () => {
 
   it('requires a token for direct daemon configs stored locally', async () => {
     window.localStorage.setItem(
-      'clawee.web.connection.v1',
+      'opencreator.web.connection.v1',
       JSON.stringify({ baseUrl: 'http://127.0.0.1:60765' })
     );
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));

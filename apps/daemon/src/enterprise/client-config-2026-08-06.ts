@@ -4,7 +4,7 @@ import { parse, stringify } from '@iarna/toml';
 import { resolveEnterpriseOrigin } from './config-2026-07-30.js';
 
 export const ENTERPRISE_AGENT_ID_PATTERN =
-  /^clawee_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^opencreator_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type EnterpriseClientConfig = {
   gateway: string;

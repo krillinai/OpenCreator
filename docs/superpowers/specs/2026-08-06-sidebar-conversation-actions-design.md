@@ -39,9 +39,9 @@ Knowledge-policy conversations are ordinary project-backed conversation Threads 
 
 ## Web State
 
-`ClaweeConversation` carries persisted pin state. `AppController` owns Runtime mutations and updates `runtimeThreads` only from successful responses. Deleting the selected conversation navigates to the normal new-conversation state and clears its cached timeline. Renaming or pinning never changes the selected route.
+`OpenCreatorConversation` carries persisted pin state. `AppController` owns Runtime mutations and updates `runtimeThreads` only from successful responses. Deleting the selected conversation navigates to the normal new-conversation state and clears its cached timeline. Renaming or pinning never changes the selected route.
 
-`ClaweeSidebar` owns transient presentation state only: open menu, rename draft, pending confirmation, and busy action IDs. It receives mutation callbacks from `AppController` and does not store durable pin or title state locally.
+`OpenCreatorSidebar` owns transient presentation state only: open menu, rename draft, pending confirmation, and busy action IDs. It receives mutation callbacks from `AppController` and does not store durable pin or title state locally.
 
 ## Accessibility
 

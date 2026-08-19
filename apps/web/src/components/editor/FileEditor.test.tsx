@@ -10,8 +10,8 @@ describe('FileEditor', () => {
 
     render(
       <FileEditor
-        path="docs/design/enterprise-agent-workbench.md"
-        content="# Workbench"
+        path="docs/design/enterprise-agent-dashboard.md"
+        content="# Dashboard"
         dirty={false}
         onChange={vi.fn()}
         onSave={onSave}
@@ -32,8 +32,8 @@ describe('FileEditor', () => {
 
     render(
       <FileEditor
-        path="docs/design/enterprise-agent-workbench.md"
-        content="# Workbench"
+        path="docs/design/enterprise-agent-dashboard.md"
+        content="# Dashboard"
         dirty={true}
         saving={true}
         onChange={vi.fn()}
@@ -52,8 +52,8 @@ describe('FileEditor', () => {
   it('shows a lightweight file loading error without hiding the draft editor', () => {
     render(
       <FileEditor
-        path="docs/design/enterprise-agent-workbench.md"
-        content={'# Workbench\nunsaved edit'}
+        path="docs/design/enterprise-agent-dashboard.md"
+        content={'# Dashboard\nunsaved edit'}
         dirty={true}
         loadError="无法加载文件"
         onChange={vi.fn()}
@@ -62,16 +62,16 @@ describe('FileEditor', () => {
     );
 
     expect(screen.getByText('无法加载文件')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'docs/design/enterprise-agent-workbench.md 编辑器' })).toHaveValue(
-      '# Workbench\nunsaved edit'
+    expect(screen.getByRole('textbox', { name: 'docs/design/enterprise-agent-dashboard.md 编辑器' })).toHaveValue(
+      '# Dashboard\nunsaved edit'
     );
   });
 
   it('combines load and save errors into one status region', () => {
     render(
       <FileEditor
-        path="docs/design/enterprise-agent-workbench.md"
-        content="# Workbench"
+        path="docs/design/enterprise-agent-dashboard.md"
+        content="# Dashboard"
         dirty={true}
         loadError="无法加载文件"
         saveError="保存到本地草稿失败"
@@ -89,14 +89,14 @@ describe('FileEditor', () => {
     render(
       <FileEditor
         path="README.md"
-        content={'# Clawee\n\n**raw**'}
+        content={'# OpenCreator\n\n**raw**'}
         dirty={false}
         onChange={vi.fn()}
         onSave={vi.fn()}
       />
     );
 
-    expect(screen.getByRole('textbox', { name: 'README.md 编辑器' })).toHaveValue('# Clawee\n\n**raw**');
-    expect(screen.queryByRole('heading', { name: 'Clawee' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'README.md 编辑器' })).toHaveValue('# OpenCreator\n\n**raw**');
+    expect(screen.queryByRole('heading', { name: 'OpenCreator' })).not.toBeInTheDocument();
   });
 });

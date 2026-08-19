@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a role-aware Agent activity dashboard in Clawee backed by `claw-mcp`, with organization-wide administrator metrics, self-only employee metrics, drill-down activity details, and deduplicated Codex token usage.
+**Goal:** Build a role-aware Agent activity dashboard in OpenCreator backed by `claw-mcp`, with organization-wide administrator metrics, self-only employee metrics, drill-down activity details, and deduplicated Codex token usage.
 
-**Architecture:** `clawee-collector` reads cumulative Codex usage from rollout transcripts and sends an idempotent `usage_updated` event to `claw-mcp`. `claw-mcp` stores one latest cumulative usage row per turn, performs role-scoped aggregation, and exposes a sanitized app Activity API. Clawee Daemon proxies that API through the existing enterprise session and shared `apps/web` renders the same routes for Browser and Desktop.
+**Architecture:** `opencreator-collector` reads cumulative Codex usage from rollout transcripts and sends an idempotent `usage_updated` event to `claw-mcp`. `claw-mcp` stores one latest cumulative usage row per turn, performs role-scoped aggregation, and exposes a sanitized app Activity API. OpenCreator Daemon proxies that API through the existing enterprise session and shared `apps/web` renders the same routes for Browser and Desktop.
 
 **Tech Stack:** Go 1.24, PostgreSQL, React 19, TypeScript, Fastify, Zod, Vitest, Testing Library, Playwright, Electron.
 
@@ -13,9 +13,9 @@
 ## Repository Boundaries
 
 - `claw-mcp` repository: `/Users/joshuayin/develop/claw-mcp`
-- Clawee repository: `/Users/joshuayin/develop/clawee-client`
+- OpenCreator repository: `/Users/joshuayin/develop/opencreator-client`
 - Do not mix files from both repositories in one Git commit.
-- Preserve the existing uncommitted `Composer.tsx` and `Composer.test.tsx` changes in Clawee; stage files explicitly.
+- Preserve the existing uncommitted `Composer.tsx` and `Composer.test.tsx` changes in OpenCreator; stage files explicitly.
 
 ## File Structure
 
@@ -34,7 +34,7 @@
 - Modify `internal/office/httpapi/dashboard_handlers.go` and tests: role-aware dashboard endpoints.
 - Modify `internal/server/office_http.go` and route tests: register app Activity dashboard routes.
 
-### Clawee
+### OpenCreator
 
 - Modify `packages/protocol/src/api.ts`: public dashboard DTOs.
 - Modify `apps/daemon/src/enterprise/http-client-2026-07-30.ts` and tests: parse sanitized upstream Activity responses.
@@ -42,10 +42,10 @@
 - Modify `apps/daemon/src/api/routes.enterprise-2026-07-30.ts`, `server.ts`, and integration tests: Runtime endpoints.
 - Modify `apps/web/src/services/enterprise-service-2026-07-30.ts` and test: Activity client methods.
 - Modify `apps/web/src/app/app-state.ts`, `routes.ts`, and tests: Activity routes.
-- Modify `apps/web/src/features/shell/ClaweeSidebar.tsx` and test: navigation entry.
+- Modify `apps/web/src/features/shell/OpenCreatorSidebar.tsx` and test: navigation entry.
 - Create `apps/web/src/features/activity/AgentActivityPage.tsx`: role-aware list dashboard.
 - Create `apps/web/src/features/activity/AgentActivityDetailPage.tsx`: employee/Agent/session/turn details.
-- Create `apps/web/src/features/activity/agent-activity.css`: shared workbench layout.
+- Create `apps/web/src/features/activity/agent-activity.css`: shared dashboard layout.
 - Create focused component tests and modify `apps/web/src/app/AppController.tsx` and `App.test.tsx`.
 - Extend Web/Desktop bridge consistency E2E and packaged App E2E fixtures.
 
@@ -290,18 +290,18 @@ git add internal/office/httpapi/dashboard_handlers.go internal/office/httpapi/da
 git commit -m "feat: expose agent activity usage dashboard"
 ```
 
-### Task 5: Add Clawee Protocol and Daemon Enterprise Proxy
+### Task 5: Add OpenCreator Protocol and Daemon Enterprise Proxy
 
 **Files:**
-- Modify: `/Users/joshuayin/develop/clawee-client/packages/protocol/src/api.ts`
-- Test: `/Users/joshuayin/develop/clawee-client/apps/daemon/test/unit/protocol-shape.test.ts`
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/daemon/src/enterprise/http-client-2026-07-30.ts`
-- Test: `/Users/joshuayin/develop/clawee-client/apps/daemon/test/unit/enterprise-http-client-2026-07-30.test.ts`
-- Create: `/Users/joshuayin/develop/clawee-client/apps/daemon/src/enterprise/activity-manager-2026-08-02.ts`
-- Create: `/Users/joshuayin/develop/clawee-client/apps/daemon/test/unit/enterprise-activity-manager-2026-08-02.test.ts`
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/daemon/src/api/routes.enterprise-2026-07-30.ts`
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/daemon/src/api/server.ts`
-- Test: `/Users/joshuayin/develop/clawee-client/apps/daemon/test/integration/api.test.ts`
+- Modify: `/Users/joshuayin/develop/opencreator-client/packages/protocol/src/api.ts`
+- Test: `/Users/joshuayin/develop/opencreator-client/apps/daemon/test/unit/protocol-shape.test.ts`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/daemon/src/enterprise/http-client-2026-07-30.ts`
+- Test: `/Users/joshuayin/develop/opencreator-client/apps/daemon/test/unit/enterprise-http-client-2026-07-30.test.ts`
+- Create: `/Users/joshuayin/develop/opencreator-client/apps/daemon/src/enterprise/activity-manager-2026-08-02.ts`
+- Create: `/Users/joshuayin/develop/opencreator-client/apps/daemon/test/unit/enterprise-activity-manager-2026-08-02.test.ts`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/daemon/src/api/routes.enterprise-2026-07-30.ts`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/daemon/src/api/server.ts`
+- Test: `/Users/joshuayin/develop/opencreator-client/apps/daemon/test/integration/api.test.ts`
 
 - [ ] **Step 1: Write failing protocol, upstream parser, and Runtime route tests**
 
@@ -318,7 +318,7 @@ with signed-out, administrator, employee, upstream 403, malformed upstream paylo
 
 - [ ] **Step 2: Verify tests fail**
 
-Run: `pnpm --filter @clawee/daemon test -- test/unit/enterprise-http-client-2026-07-30.test.ts test/unit/enterprise-activity-manager-2026-08-02.test.ts test/integration/api.test.ts`
+Run: `pnpm --filter @opencreator/daemon test -- test/unit/enterprise-http-client-2026-07-30.test.ts test/unit/enterprise-activity-manager-2026-08-02.test.ts test/integration/api.test.ts`
 
 Expected: FAIL because Activity types and routes do not exist.
 
@@ -334,11 +334,11 @@ The manager obtains the current access token through `EnterpriseSessionManager`,
 
 Run the focused command from step 2, then:
 
-Run: `pnpm --filter @clawee/daemon typecheck`
+Run: `pnpm --filter @opencreator/daemon typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Clawee task 5 without Composer files**
+- [ ] **Step 6: Commit OpenCreator task 5 without Composer files**
 
 ```bash
 git add packages/protocol/src/api.ts apps/daemon/src/enterprise/http-client-2026-07-30.ts apps/daemon/src/enterprise/activity-manager-2026-08-02.ts apps/daemon/src/api/routes.enterprise-2026-07-30.ts apps/daemon/src/api/server.ts apps/daemon/test/unit/protocol-shape.test.ts apps/daemon/test/unit/enterprise-http-client-2026-07-30.test.ts apps/daemon/test/unit/enterprise-activity-manager-2026-08-02.test.ts apps/daemon/test/integration/api.test.ts
@@ -348,12 +348,12 @@ git commit -m "feat: proxy enterprise agent activity"
 ### Task 6: Add Shared Activity Navigation and Routes
 
 **Files:**
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/web/src/app/app-state.ts`
-- Test: `/Users/joshuayin/develop/clawee-client/apps/web/src/app/app-state.test.ts`
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/web/src/app/routes.ts`
-- Test: `/Users/joshuayin/develop/clawee-client/apps/web/src/app/routes.test.ts`
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/web/src/features/shell/ClaweeSidebar.tsx`
-- Test: `/Users/joshuayin/develop/clawee-client/apps/web/src/features/shell/ClaweeSidebar.test.tsx`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/web/src/app/app-state.ts`
+- Test: `/Users/joshuayin/develop/opencreator-client/apps/web/src/app/app-state.test.ts`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/web/src/app/routes.ts`
+- Test: `/Users/joshuayin/develop/opencreator-client/apps/web/src/app/routes.test.ts`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/web/src/features/shell/OpenCreatorSidebar.tsx`
+- Test: `/Users/joshuayin/develop/opencreator-client/apps/web/src/features/shell/OpenCreatorSidebar.test.tsx`
 
 - [ ] **Step 1: Write failing navigation tests**
 
@@ -366,7 +366,7 @@ Assert “Agent 活动” is immediately after “新对话”, invokes `onOpenV
 
 - [ ] **Step 2: Verify tests fail**
 
-Run: `pnpm --filter @clawee/web test -- src/app/routes.test.ts src/app/app-state.test.ts src/features/shell/ClaweeSidebar.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/app/routes.test.ts src/app/app-state.test.ts src/features/shell/OpenCreatorSidebar.test.tsx`
 
 Expected: FAIL because Activity is not an ActiveView or AppRoute.
 
@@ -381,22 +381,22 @@ Run the focused command from step 2.
 Expected: PASS.
 
 ```bash
-git add apps/web/src/app/app-state.ts apps/web/src/app/app-state.test.ts apps/web/src/app/routes.ts apps/web/src/app/routes.test.ts apps/web/src/features/shell/ClaweeSidebar.tsx apps/web/src/features/shell/ClaweeSidebar.test.tsx
+git add apps/web/src/app/app-state.ts apps/web/src/app/app-state.test.ts apps/web/src/app/routes.ts apps/web/src/app/routes.test.ts apps/web/src/features/shell/OpenCreatorSidebar.tsx apps/web/src/features/shell/OpenCreatorSidebar.test.tsx
 git commit -m "feat: add agent activity navigation"
 ```
 
 ### Task 7: Build Administrator and Employee Activity Views
 
 **Files:**
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/web/src/services/enterprise-service-2026-07-30.ts`
-- Test: `/Users/joshuayin/develop/clawee-client/apps/web/src/services/enterprise-service-2026-07-30.test.ts`
-- Create: `/Users/joshuayin/develop/clawee-client/apps/web/src/features/activity/AgentActivityPage.tsx`
-- Create: `/Users/joshuayin/develop/clawee-client/apps/web/src/features/activity/AgentActivityPage.test.tsx`
-- Create: `/Users/joshuayin/develop/clawee-client/apps/web/src/features/activity/AgentActivityDetailPage.tsx`
-- Create: `/Users/joshuayin/develop/clawee-client/apps/web/src/features/activity/AgentActivityDetailPage.test.tsx`
-- Create: `/Users/joshuayin/develop/clawee-client/apps/web/src/features/activity/agent-activity.css`
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/web/src/app/AppController.tsx`
-- Test: `/Users/joshuayin/develop/clawee-client/apps/web/src/app/App.test.tsx`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/web/src/services/enterprise-service-2026-07-30.ts`
+- Test: `/Users/joshuayin/develop/opencreator-client/apps/web/src/services/enterprise-service-2026-07-30.test.ts`
+- Create: `/Users/joshuayin/develop/opencreator-client/apps/web/src/features/activity/AgentActivityPage.tsx`
+- Create: `/Users/joshuayin/develop/opencreator-client/apps/web/src/features/activity/AgentActivityPage.test.tsx`
+- Create: `/Users/joshuayin/develop/opencreator-client/apps/web/src/features/activity/AgentActivityDetailPage.tsx`
+- Create: `/Users/joshuayin/develop/opencreator-client/apps/web/src/features/activity/AgentActivityDetailPage.test.tsx`
+- Create: `/Users/joshuayin/develop/opencreator-client/apps/web/src/features/activity/agent-activity.css`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/web/src/app/AppController.tsx`
+- Test: `/Users/joshuayin/develop/opencreator-client/apps/web/src/app/App.test.tsx`
 
 - [ ] **Step 1: Write failing service and component tests**
 
@@ -404,7 +404,7 @@ Cover administrator organization cards/table, employee self cards/distributions,
 
 - [ ] **Step 2: Verify tests fail**
 
-Run: `pnpm --filter @clawee/web test -- src/services/enterprise-service-2026-07-30.test.ts src/features/activity/AgentActivityPage.test.tsx src/features/activity/AgentActivityDetailPage.test.tsx`
+Run: `pnpm --filter @opencreator/web test -- src/services/enterprise-service-2026-07-30.test.ts src/features/activity/AgentActivityPage.test.tsx src/features/activity/AgentActivityDetailPage.test.tsx`
 
 Expected: FAIL because Activity service methods and components do not exist.
 
@@ -412,7 +412,7 @@ Expected: FAIL because Activity service methods and components do not exist.
 
 Add `getActivityDashboard(range)` and `getActivityAgentDetail(collectorId, agentId, range)`. Use request-generation guards consistent with enterprise skills so stale results from an old account cannot replace current state.
 
-- [ ] **Step 4: Implement the workbench UI**
+- [ ] **Step 4: Implement the dashboard UI**
 
 Administrator view: four summary metrics, compact trend, Token breakdown, searchable employee table. Employee view: three summary metrics, trend, model distribution, Agent distribution, recent turns. Detail view: Agent status, usage breakdown, sessions/turns, prompt and assistant summaries, activity timeline, sub-Agents, and sanitized tool rows.
 
@@ -422,7 +422,7 @@ Use stable grid dimensions, full-width bands, tables and unframed detail section
 
 Run the focused command from step 2, then:
 
-Run: `pnpm --filter @clawee/web typecheck`
+Run: `pnpm --filter @opencreator/web typecheck`
 
 Expected: PASS.
 
@@ -438,8 +438,8 @@ git commit -m "feat: show role aware agent activity"
 **Files:**
 - Modify: `/Users/joshuayin/develop/claw-mcp/internal/office/store/management_queries.go`
 - Test: `/Users/joshuayin/develop/claw-mcp/internal/office/store/management_queries_test.go`
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/web/e2e/enterprise-platform-consistency-2026-07-30.spec.ts`
-- Modify: `/Users/joshuayin/develop/clawee-client/apps/desktop/e2e/enterprise-packaged-2026-07-30.spec.ts`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/web/e2e/enterprise-platform-consistency-2026-07-30.spec.ts`
+- Modify: `/Users/joshuayin/develop/opencreator-client/apps/desktop/e2e/enterprise-packaged-2026-07-30.spec.ts`
 
 - [ ] **Step 1: Add failing 90-day cleanup tests**
 
@@ -455,14 +455,14 @@ Expected: PASS.
 
 Render the Activity list and Agent detail with the same Fake Daemon payload for Browser Bridge and Desktop Bridge. Compare visible labels, active route, key grid dimensions, Runtime request paths, time-range changes and detail navigation.
 
-- [ ] **Step 4: Run Clawee verification**
+- [ ] **Step 4: Run OpenCreator verification**
 
 Run:
 
 ```bash
 pnpm typecheck
-pnpm --filter @clawee/web test
-pnpm --filter @clawee/daemon test
+pnpm --filter @opencreator/web test
+pnpm --filter @opencreator/daemon test
 pnpm desktop:test
 pnpm e2e
 ```
@@ -471,7 +471,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Build and verify the packaged Desktop App**
 
-Run the repository's actual packaged App E2E and Web asset hash verification. Confirm the package rebuilds `apps/web/dist`, `clawee-app://` loads Activity, Runtime proxy requests succeed, and embedded Web hashes match the fresh dist.
+Run the repository's actual packaged App E2E and Web asset hash verification. Confirm the package rebuilds `apps/web/dist`, `opencreator-app://` loads Activity, Runtime proxy requests succeed, and embedded Web hashes match the fresh dist.
 
 - [ ] **Step 6: Commit retention and consistency work per repository**
 
@@ -482,7 +482,7 @@ git add internal/office/store/management_queries.go internal/office/store/manage
 git commit -m "feat: expire old agent activity usage"
 ```
 
-In Clawee:
+In OpenCreator:
 
 ```bash
 git add apps/web/e2e/enterprise-platform-consistency-2026-07-30.spec.ts apps/desktop/e2e/enterprise-packaged-2026-07-30.spec.ts
@@ -493,7 +493,7 @@ git commit -m "test: verify agent activity host consistency"
 
 - Collector reports final cumulative Codex Token usage without duplicate counting.
 - `claw-mcp` employees cannot access another user's data; enterprise administrators see organization data only within their authorized enterprise boundary.
-- Clawee Browser and Desktop call the same Runtime endpoints and render the same common UI.
+- OpenCreator Browser and Desktop call the same Runtime endpoints and render the same common UI.
 - Tool input, full response and response text are absent from every user-facing Activity response.
 - Today, 7-day and 30-day ranges use explicit server boundaries; detail retention is 90 days.
 - Both repositories pass type checks and relevant tests.

@@ -62,7 +62,7 @@ jobs:
             native: true
     runs-on: ${{ matrix.os }}
     env:
-      CLAWEE_DESKTOP_CACHE_DIR: ${{ github.workspace }}/apps/desktop/.cache
+      OPENCREATOR_DESKTOP_CACHE_DIR: ${{ github.workspace }}/apps/desktop/.cache
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -87,8 +87,8 @@ jobs:
         run: pnpm typecheck
       - run: pnpm desktop:release
         env:
-          CLAWEE_DESKTOP_TARGET_PLATFORM: ${{ matrix.platform }}
-          CLAWEE_DESKTOP_TARGET_ARCH: ${{ matrix.arch }}
+          OPENCREATOR_DESKTOP_TARGET_PLATFORM: ${{ matrix.platform }}
+          OPENCREATOR_DESKTOP_TARGET_ARCH: ${{ matrix.arch }}
           CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -96,18 +96,18 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-      - run: pnpm --filter @clawee/desktop e2e:package
+      - run: pnpm --filter @opencreator/desktop e2e:package
         if: matrix.native
       - uses: actions/upload-artifact@v4
         with:
-          name: clawee-desktop-${{ matrix.name }}
+          name: opencreator-desktop-${{ matrix.name }}
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
-            apps/desktop/release/clawee-desktop-build-manifest.json
+            apps/desktop/release/opencreator-desktop-build-manifest.json
           if-no-files-found: error
 
   publish:

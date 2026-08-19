@@ -3,7 +3,7 @@ import type {
   ConversationSearchResponse,
   ConversationSearchResult,
   ThreadResponse,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SearchView, type SearchViewService } from './SearchView.js';
@@ -29,8 +29,8 @@ describe('SearchView', () => {
         thread({
           id: 'thread-recent-2',
           title: '启动服务',
-          projectId: 'clawee-agent',
-          cwd: '/workspace/clawee-agent',
+          projectId: 'opencreator-agent',
+          cwd: '/workspace/opencreator-agent',
         }),
       ],
       service: { searchConversations },
@@ -260,9 +260,9 @@ function createView(overrides: {
           reasoning: null,
         },
         {
-          id: 'clawee-agent',
-          name: 'clawee-agent',
-          cwd: '/workspace/clawee-agent',
+          id: 'opencreator-agent',
+          name: 'opencreator-agent',
+          cwd: '/workspace/opencreator-agent',
           sandbox: 'follow-global',
           profile: 'default',
           model: null,
@@ -280,7 +280,7 @@ function thread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
     id: 'thread-recent',
     title: '最近会话',
     projectId: 'current',
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     codexThreadId: 'codex-recent',
     cwd: '/workspace/current',
     canonicalCwd: '/workspace/current',

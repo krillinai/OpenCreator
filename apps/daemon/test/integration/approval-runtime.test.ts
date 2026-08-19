@@ -140,9 +140,9 @@ describe('approval runtime integration', () => {
       title: '允许创建定时任务',
       summary: '武汉天气每5分钟简报',
       details: {
-        serverName: 'clawee_schedule',
-        toolName: 'clawee_schedule_create',
-        toolDescription: '创建一个 Clawee 定时任务。',
+        serverName: 'opencreator_schedule',
+        toolName: 'opencreator_schedule_create',
+        toolDescription: '创建一个 OpenCreator 定时任务。',
         toolParams: {
           name: '武汉天气每5分钟简报'
         }
@@ -216,7 +216,7 @@ describe('approval runtime integration', () => {
   });
 
   it('rotates an automatic schedule run when app-server cannot resume the previous thread', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-rotation-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-rotation-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const threadManager = createThreadManager({ db, dataDir: tempDir });
     const thread = threadManager.createScheduleThread({
@@ -292,7 +292,7 @@ function setup(
   expectedDecision: 'accept' | 'decline' | 'close',
   sandbox: 'read-only' | 'danger-full-access' = 'read-only'
 ) {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-approval-runtime-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-approval-runtime-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const projectManager = createProjectManager({ db, homeDir: tempDir });
   const project = projectManager.createProject({
@@ -326,7 +326,7 @@ function setup(
 function setupMcpElicitation(
   sandbox: 'workspace-write' | 'danger-full-access' = 'workspace-write'
 ) {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-approval-runtime-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-approval-runtime-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const threadManager = createThreadManager({ db, dataDir: tempDir });
   const thread = threadManager.createThread({
@@ -409,11 +409,11 @@ rl.on('line', line => {
       params: {
         threadId: 'codex-thread-mcp-approval',
         turnId: 'turn-mcp-approval',
-        serverName: 'clawee_schedule',
+        serverName: 'opencreator_schedule',
         mode: 'form',
         _meta: {
           codex_approval_kind: 'mcp_tool_call',
-          tool_description: '创建一个 Clawee 定时任务。',
+          tool_description: '创建一个 OpenCreator 定时任务。',
           tool_params: {
             name: '武汉天气每5分钟简报'
           }

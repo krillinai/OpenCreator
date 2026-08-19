@@ -77,7 +77,7 @@ Modify:
 
 - [ ] **Step 1: Add failing protocol shape test**
 
-In `apps/daemon/test/unit/protocol-shape.test.ts`, extend the existing `@clawee/protocol` type import to include schedule types:
+In `apps/daemon/test/unit/protocol-shape.test.ts`, extend the existing `@opencreator/protocol` type import to include schedule types:
 
 ```ts
 import type {
@@ -89,7 +89,7 @@ import type {
   ScheduleDetailResponse,
   ScheduleOperationListResponse,
   ScheduleResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 ```
 
 Add tests inside the existing `describe('protocol shape', () => { ... })` block:
@@ -170,7 +170,7 @@ Add tests inside the existing `describe('protocol shape', () => { ... })` block:
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts
 ```
 
 Expected: FAIL with TypeScript errors for missing exported schedule types and `SCHEDULE_NOT_FOUND`.
@@ -180,7 +180,7 @@ Expected: FAIL with TypeScript errors for missing exported schedule types and `S
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon add cron-parser@^5.6.1
+pnpm --filter @opencreator/daemon add cron-parser@^5.6.1
 ```
 
 Expected: `apps/daemon/package.json` includes `cron-parser`, and `pnpm-lock.yaml` changes.
@@ -294,7 +294,7 @@ In `packages/protocol/src/errors.ts`, add `'SCHEDULE_NOT_FOUND'` immediately aft
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts
 ```
 
 Expected: PASS.
@@ -414,7 +414,7 @@ const profileValidator = {
 
 describe('scheduler validator', () => {
   it('normalizes a create request with defaults', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-'));
     const result = parseCreateScheduleRequest(
       {
         name: 'daily status',
@@ -447,7 +447,7 @@ describe('scheduler validator', () => {
   });
 
   it('rejects invalid cron, timezone, timeout, misfire, cwd, and profile', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-'));
     const base = { name: 'bad', cron: '0 9 * * *', prompt: 'x', cwd: tempDir };
     const options = {
       now: '2026-07-06T00:00:00.000Z',
@@ -482,7 +482,7 @@ describe('scheduler validator', () => {
   });
 
   it('normalizes an update request and permits clearing nullable overrides', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-validator-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-validator-'));
     const result = parseUpdateScheduleRequest(
       {
         enabled: false,
@@ -515,7 +515,7 @@ describe('scheduler validator', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts
 ```
 
 Expected: FAIL because `scheduler/cron.js` and `scheduler/validator.js` do not exist, and the legacy missed-trigger helper still allows `run_once`.
@@ -561,7 +561,7 @@ import type {
   ScheduleMisfirePolicy,
   ScheduleOperationStatus,
   ScheduleOperationType
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type LegacyMisfirePolicy = ScheduleMisfirePolicy | 'run_once';
 
@@ -732,7 +732,7 @@ function formatError(error: unknown): string {
 Create `apps/daemon/src/scheduler/validator.ts`:
 
 ```ts
-import type { ReasoningEffort, SandboxMode, ScheduleConcurrencyPolicy } from '@clawee/protocol';
+import type { ReasoningEffort, SandboxMode, ScheduleConcurrencyPolicy } from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { redactText } from '../security/redaction.js';
@@ -1024,7 +1024,7 @@ function formatError(error: unknown): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts
 ```
 
 Expected: PASS.
@@ -1061,7 +1061,7 @@ Add to `apps/daemon/test/unit/storage.test.ts` inside `describe('runtime storage
 
 ```ts
   it('creates scheduler tables and indexes', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
 
     const tableRows = db
@@ -1108,7 +1108,7 @@ afterEach(() => {
 });
 
 function createDb(): Database.Database {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-scheduler-repo-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-scheduler-repo-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   return db;
 }
@@ -1253,7 +1253,7 @@ describe('schedule repository', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts test/unit/scheduler-repository.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts test/unit/scheduler-repository.test.ts
 ```
 
 Expected: FAIL because scheduler tables and repository do not exist.
@@ -1329,7 +1329,7 @@ After existing `ensureColumn` calls, add:
 Create `apps/daemon/src/scheduler/repository.ts`:
 
 ```ts
-import type { ScheduleOperationResponse } from '@clawee/protocol';
+import type { ScheduleOperationResponse } from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type {
@@ -1651,7 +1651,7 @@ function mapOperation(row: ScheduleOperationRow): ScheduleOperationRecord {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts test/unit/scheduler-repository.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts test/unit/scheduler-repository.test.ts
 ```
 
 Expected: PASS.
@@ -1688,7 +1688,7 @@ Add to `apps/daemon/test/integration/run-manager.test.ts`:
 
 ```ts
   it('persists schedule source metadata and per-run timeout', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-manager-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -1737,7 +1737,7 @@ Add to `apps/daemon/test/integration/run-manager.test.ts`:
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts -t "schedule source metadata"
+pnpm --filter @opencreator/daemon test -- test/integration/run-manager.test.ts -t "schedule source metadata"
 ```
 
 Expected: FAIL because `CreateRunInput`, `RunRepository`, and `RuntimeRun` do not support these fields yet.
@@ -1808,7 +1808,7 @@ Use per-run timeout:
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/run-manager.test.ts -t "schedule source metadata"
+pnpm --filter @opencreator/daemon test -- test/integration/run-manager.test.ts -t "schedule source metadata"
 ```
 
 Expected: PASS.
@@ -1818,7 +1818,7 @@ Expected: PASS.
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts test/integration/run-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts test/integration/run-manager.test.ts
 pnpm typecheck
 ```
 
@@ -1864,7 +1864,7 @@ afterEach(() => {
 });
 
 function createFixture() {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-scheduler-service-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-scheduler-service-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const repository = createScheduleRepository(db);
   let runCount = 0;
@@ -1959,7 +1959,7 @@ describe('scheduler service', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler-service.test.ts
 ```
 
 Expected: FAIL because `scheduler/service.js` does not exist.
@@ -1977,7 +1977,7 @@ import type {
   ScheduleOperationListResponse,
   ScheduleResponse,
   UpdateScheduleRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RunManager } from '../runs/manager.js';
 import { parseCreateScheduleRequest, parseUpdateScheduleRequest, type ScheduleValidationErrorCode } from './validator.js';
 import { computeNextRunAt } from './cron.js';
@@ -2164,7 +2164,7 @@ export function toScheduleResponse(schedule: ScheduleRecord): ScheduleResponse {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler-service.test.ts
 ```
 
 Expected: PASS.
@@ -2200,7 +2200,7 @@ Add to `apps/daemon/test/integration/api.test.ts` inside `describe('runtime api'
 
 ```ts
   it('creates, lists, gets, updates, deletes, and runs schedules', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'thread.started', thread_id: 'codex_thread_1' },
@@ -2292,7 +2292,7 @@ Add to `apps/daemon/test/integration/api.test.ts` inside `describe('runtime api'
   });
 
   it('maps invalid and missing schedule requests', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     server = await buildServer({
       token: 'secret',
       dataDir: tempDir,
@@ -2328,7 +2328,7 @@ Add to `apps/daemon/test/integration/api.test.ts` inside `describe('runtime api'
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "schedules"
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts -t "schedules"
 ```
 
 Expected: FAIL because `/schedules` routes are not registered.
@@ -2486,7 +2486,7 @@ import { registerScheduleRoutes } from './routes.schedules.js';
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "schedules"
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts -t "schedules"
 ```
 
 Expected: PASS.
@@ -2496,7 +2496,7 @@ Expected: PASS.
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -2604,7 +2604,7 @@ function createFixtureWithTimers(timers: Array<{ callback: () => void; ms: numbe
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts -t "due timer|missed triggers"
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler-service.test.ts -t "due timer|missed triggers"
 ```
 
 Expected: FAIL because service has no timer loop or test hook.
@@ -2765,7 +2765,7 @@ import { computeNextRunAt } from './cron.js';
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts -t "due timer|missed triggers"
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler-service.test.ts -t "due timer|missed triggers"
 ```
 
 Expected: PASS.
@@ -2775,7 +2775,7 @@ Expected: PASS.
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler-service.test.ts
 pnpm typecheck
 ```
 
@@ -2932,7 +2932,7 @@ Append to `apps/daemon/test/unit/scheduler-service.test.ts`:
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts -t "skip policy|queue policy|parallel policy"
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler-service.test.ts -t "skip policy|queue policy|parallel policy"
 ```
 
 Expected: FAIL because concurrency policies are not implemented.
@@ -3069,7 +3069,7 @@ Expose optional test hook:
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts -t "skip policy|queue policy|parallel policy"
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler-service.test.ts -t "skip policy|queue policy|parallel policy"
 ```
 
 Expected: PASS.
@@ -3079,7 +3079,7 @@ Expected: PASS.
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/scheduler-service.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/scheduler-service.test.ts
 pnpm typecheck
 ```
 
@@ -3196,7 +3196,7 @@ If this test fails because Codex auth returns 401, wrap the failure using the ex
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: PASS with gated real smoke skipped.
@@ -3206,7 +3206,7 @@ Expected: PASS with gated real smoke skipped.
 Run:
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
 ```
 
 Expected: PASS if Codex auth/model is available, or clear `BLOCKED_ENV` if Codex auth/network is unavailable.
@@ -3229,7 +3229,7 @@ git commit -m "test: add scheduler real codex smoke"
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/protocol-shape.test.ts \
   test/unit/scheduler.test.ts \
   test/unit/scheduler-cron.test.ts \
@@ -3264,7 +3264,7 @@ Expected:
 Run:
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
 ```
 
 Expected: PASS or `BLOCKED_ENV`. Do not report unrun smoke as pass.
@@ -3296,11 +3296,11 @@ Scope:
 
 Verification:
 
-- `pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts test/unit/scheduler-repository.test.ts test/unit/scheduler-service.test.ts test/unit/storage.test.ts test/integration/run-manager.test.ts test/integration/api.test.ts`
+- `pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts test/unit/scheduler-repository.test.ts test/unit/scheduler-service.test.ts test/unit/storage.test.ts test/integration/run-manager.test.ts test/integration/api.test.ts`
 - `pnpm typecheck`
 - `pnpm test`
 - `git diff --check`
-- `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"`
+- `OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"`
 
 Notes:
 

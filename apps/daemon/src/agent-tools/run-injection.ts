@@ -12,11 +12,11 @@ import {
 import { AGENT_SCHEDULE_MCP_ROUTE } from './internal-routes.js';
 import { KNOWLEDGE_SEARCH_TOOL_NAME } from './knowledge-tools-2026-08-05.js';
 
-export const AGENT_SCHEDULE_MCP_SERVER_NAME = 'clawee_schedule';
-export const AGENT_KNOWLEDGE_MCP_SERVER_NAME = 'clawee_knowledge';
+export const AGENT_SCHEDULE_MCP_SERVER_NAME = 'opencreator_schedule';
+export const AGENT_KNOWLEDGE_MCP_SERVER_NAME = 'opencreator_knowledge';
 export const AGENT_KNOWLEDGE_MCP_ROUTE = '/internal/agent-tools/mcp/knowledge';
-export const AGENT_TOOL_BASE_URL_ENV = 'CLAWEE_AGENT_TOOL_URL';
-export const AGENT_TOOL_CAPABILITY_TOKEN_ENV = 'CLAWEE_AGENT_CAPABILITY_TOKEN';
+export const AGENT_TOOL_BASE_URL_ENV = 'OPENCREATOR_AGENT_TOOL_URL';
+export const AGENT_TOOL_CAPABILITY_TOKEN_ENV = 'OPENCREATOR_AGENT_CAPABILITY_TOKEN';
 
 export type AgentToolRunInjection = {
   mcpServers: CodexMcpServerConfig[];
@@ -66,12 +66,12 @@ const TOOL_SCOPES: Array<{
   name: AgentScheduleToolName;
   scope: AgentCapabilityScope;
 }> = [
-  { name: 'clawee_schedule_create', scope: 'schedule:create' },
-  { name: 'clawee_schedule_update', scope: 'schedule:update' },
-  { name: 'clawee_schedule_pause', scope: 'schedule:pause' },
-  { name: 'clawee_schedule_resume', scope: 'schedule:resume' },
-  { name: 'clawee_schedule_run_now', scope: 'schedule:run_now' },
-  { name: 'clawee_schedule_get', scope: 'schedule:get' }
+  { name: 'opencreator_schedule_create', scope: 'schedule:create' },
+  { name: 'opencreator_schedule_update', scope: 'schedule:update' },
+  { name: 'opencreator_schedule_pause', scope: 'schedule:pause' },
+  { name: 'opencreator_schedule_resume', scope: 'schedule:resume' },
+  { name: 'opencreator_schedule_run_now', scope: 'schedule:run_now' },
+  { name: 'opencreator_schedule_get', scope: 'schedule:get' }
 ];
 
 export function createAgentScheduleRunInjector(input: {

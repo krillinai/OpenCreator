@@ -31,7 +31,7 @@ export async function exportDesktopDiagnostics(input: {
   const now = dependencies.now();
   const result = await dependencies.showSaveDialog({
     title: '导出 OpenCreator 诊断',
-    defaultPath: `clawee-diagnostics-${now.toISOString().slice(0, 10)}.json`,
+    defaultPath: `opencreator-diagnostics-${now.toISOString().slice(0, 10)}.json`,
     filters: [{ name: 'JSON', extensions: ['json'] }]
   });
   if (result.canceled || result.filePath === undefined) {

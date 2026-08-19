@@ -1,4 +1,4 @@
-appId: com.clawee.desktop
+appId: com.opencreator.desktop
 productName: OpenCreator
 asar: true
 npmRebuild: false
@@ -49,11 +49,11 @@ extraResources:
 protocols:
   - name: OpenCreator
     schemes:
-      - clawee
+      - opencreator
 publish:
   provider: github
   owner: wulien
-  repo: clawee-agent
+  repo: opencreator-agent
 mac:
   category: public.app-category.developer-tools
   extendInfo:

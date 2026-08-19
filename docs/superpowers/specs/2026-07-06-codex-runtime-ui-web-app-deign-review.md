@@ -106,7 +106,7 @@
 
 ### 3.4 mock 文件系统的 localStorage 容量与 QuotaExceeded 没有兜底策略 🟡
 
-方案让 mock 文件内容（`clawee.web.files.v1`）、editor 状态、mock timeline 全部进 localStorage（§10）。localStorage 单域通常只有 **5MB** 左右。原型里的文件是 markdown/srt/html，用户如果编辑较大文件或积累多个文件，很容易触及上限，`setItem` 抛 `QuotaExceededError`。
+方案让 mock 文件内容（`opencreator.web.files.v1`）、editor 状态、mock timeline 全部进 localStorage（§10）。localStorage 单域通常只有 **5MB** 左右。原型里的文件是 markdown/srt/html，用户如果编辑较大文件或积累多个文件，很容易触及上限，`setItem` 抛 `QuotaExceededError`。
 
 §12 只写了"localStorage 保存失败：保持 dirty，不显示保存成功"——这处理了"没存进去"，但没处理"存进去一半导致数据不一致"或"配额满了之后所有 mock 保存都失败"。而且 §10 说反序列化失败会"重置对应 mock domain"，如果因为写坏导致下次读失败→重置，用户的 mock 草稿会静默丢失，这和 §16 验收标准 6"mock 文件保存刷新不丢"直接冲突。
 
@@ -125,9 +125,9 @@
 
 ## 4. P2 改进建议（可选，提升质量）
 
-### 4.1 `@clawee/protocol` 复用仅限编译期类型，注意运行时校验缺失
+### 4.1 `@opencreator/protocol` 复用仅限编译期类型，注意运行时校验缺失
 
-我核对了 `packages/protocol/src`：导出的全是 TypeScript `type` 别名（`api.ts`、`events.ts`、`errors.ts`），**没有运行时 schema（如 zod）**。方案 §5.2"复用 @clawee/protocol 类型"是对的，但要意识到：这些类型在 `fetch` 拿到 JSON 后**不会自动校验**，`response.json() as CodexStatusResponse` 只是编译期断言。
+我核对了 `packages/protocol/src`：导出的全是 TypeScript `type` 别名（`api.ts`、`events.ts`、`errors.ts`），**没有运行时 schema（如 zod）**。方案 §5.2"复用 @opencreator/protocol 类型"是对的，但要意识到：这些类型在 `fetch` 拿到 JSON 后**不会自动校验**，`response.json() as CodexStatusResponse` 只是编译期断言。
 
 如果 daemon 返回了非预期结构（版本漂移、错误），前端不会报错，而是在使用字段时才崩。方案 §15.2 测了 ApiError 解析，但没提正常响应的运行时校验。
 
@@ -143,14 +143,14 @@
 
 ### 4.4 `index.html` 标题与文案问题原型审查已指出，方案应显式继承
 
-原型审查 §6.2 指出标题"企业 Agent 工作台"偏大、字符图标 `▸◷▣↑` 应换 lucide、"本地工作区已连接"不应静态显示。我确认 `index.html:6` 标题确实是"企业 Agent 工作台"。新方案 §5.3 提了用 lucide、§14.3 提了不扩散字符图标，但没提标题收敛和"连接状态需绑定真实 health"。§14.8"disconnected 不能空白"提了，但顶部连接状态要绑 `/healthz` + `/codex/status` 这条建议没写进去。建议 §14 补一条：顶部连接状态必须反映真实 daemon health + codex status，不静态显示。
+原型审查 §6.2 指出标题"企业 Agent Dashboard"偏大、字符图标 `▸◷▣↑` 应换 lucide、"本地工作区已连接"不应静态显示。我确认 `index.html:6` 标题确实是"企业 Agent Dashboard"。新方案 §5.3 提了用 lucide、§14.3 提了不扩散字符图标，但没提标题收敛和"连接状态需绑定真实 health"。§14.8"disconnected 不能空白"提了，但顶部连接状态要绑 `/healthz` + `/codex/status` 这条建议没写进去。建议 §14 补一条：顶部连接状态必须反映真实 daemon health + codex status，不静态显示。
 
 ### 4.5 测试方案建议补两类真正容易错的用例
 
 §15 测试方案比较完整，但缺两类最容易在这个架构里出 bug 的：
 
 1. **SSE 断线重连的 seq 去重/续传测试**：mock 一个断在 seq=5、重连 `fromSeq=5` 的场景，验证不重复、不丢事件。这是 §11.3 的核心风险点。
-2. **disconnected → connected 的状态切换测试**：验证切换时 mock 工作台不被清空（§11.1 第 7 点、§16 验收 4）、真实功能从 disabled 变 enabled。这是真实/mock 双状态并存架构最容易串味的地方。
+2. **disconnected → connected 的状态切换测试**：验证切换时 mock Dashboard 不被清空（§11.1 第 7 点、§16 验收 4）、真实功能从 disabled 变 enabled。这是真实/mock 双状态并存架构最容易串味的地方。
 
 ---
 

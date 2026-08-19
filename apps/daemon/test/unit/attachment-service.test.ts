@@ -126,7 +126,7 @@ describe('attachment service', () => {
   });
 
   it('refuses generated storage paths whose parent was replaced by a symlink', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-attachments-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-attachments-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const outsideDir = join(tempDir, 'outside');
     mkdirSync(outsideDir);
@@ -223,7 +223,7 @@ function setup(overrides: {
   maxSizeBytes?: number;
   now?: () => Date;
 } = {}) {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-attachments-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-attachments-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   return createAttachmentService({
     db,

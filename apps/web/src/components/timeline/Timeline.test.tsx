@@ -67,7 +67,7 @@ describe('Timeline', () => {
     );
 
     expect(container.querySelector('.timeline-approval-overlay')).not.toBeInTheDocument();
-    expect(screen.queryByText('允许 Clawee 执行这条命令？')).not.toBeInTheDocument();
+    expect(screen.queryByText('允许 OpenCreator 执行这条命令？')).not.toBeInTheDocument();
     expect(container.querySelector('.timeline-approval')).not.toBeInTheDocument();
     expect(screen.getByTestId('virtuoso-scroller').scrollTop).toBe(0);
   });
@@ -252,6 +252,8 @@ describe('Timeline', () => {
 
     const replies = container.querySelectorAll('.timeline-assistant_message');
     expect(replies).toHaveLength(2);
+    expect(container.querySelector('.timeline-assistant_message .timeline-avatar')).not.toBeInTheDocument();
+    expect(container.querySelector('.timeline-avatar-logo')).not.toBeInTheDocument();
     expect(replies[0]?.querySelector('.timeline-message-meta')).not.toHaveClass(
       'is-latest-assistant'
     );
@@ -466,7 +468,7 @@ describe('Timeline', () => {
 
     expect(screen.getByText('please inspect the run')).toBeInTheDocument();
     expect(screen.getByText('I am checking the logs')).toBeInTheDocument();
-    expect(screen.queryByText('Clawee')).not.toBeInTheDocument();
+    expect(screen.queryByText('OpenCreator')).not.toBeInTheDocument();
     expect(container.querySelector('.timeline-user_message .timeline-item-header')).not.toBeInTheDocument();
     expect(container.querySelector('.timeline-assistant_message .timeline-item-header')).not.toBeInTheDocument();
     expect(container.querySelector('.timeline-assistant_message .timeline-avatar-logo')).not.toBeInTheDocument();
@@ -542,7 +544,7 @@ describe('Timeline', () => {
 
     expect(container.querySelector('.timeline-process')).toBeInTheDocument();
     expect(screen.getByText('正在思考')).toBeInTheDocument();
-    expect(screen.queryByText(/等待 Clawee 返回过程/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/等待 OpenCreator 返回过程/)).not.toBeInTheDocument();
     expect(screen.queryByText(/当前动态/)).not.toBeInTheDocument();
     expect(screen.queryByText('运行详情')).not.toBeInTheDocument();
     expect(container.querySelector('.process-detail')).not.toBeInTheDocument();
@@ -1028,7 +1030,7 @@ describe('Timeline', () => {
 
   it('renders a plain Chinese activity without exposing raw commands or tool JSON', () => {
     const content =
-      '{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"cmd":"pnpm --filter @clawee/web test -- src/app/App.test.tsx"}}';
+      '{"type":"tool_use","toolCallId":"call_1","name":"exec_command","input":{"cmd":"pnpm --filter @opencreator/web test -- src/app/App.test.tsx"}}';
 
     render(
       <Timeline
@@ -1046,7 +1048,7 @@ describe('Timeline', () => {
     );
 
     expect(screen.getByText('正在运行测试')).toBeInTheDocument();
-    expect(screen.queryByText('pnpm --filter @clawee/web test -- src/app/App.test.tsx')).not.toBeInTheDocument();
+    expect(screen.queryByText('pnpm --filter @opencreator/web test -- src/app/App.test.tsx')).not.toBeInTheDocument();
     expect(screen.queryByText(content)).not.toBeInTheDocument();
   });
 
@@ -1269,7 +1271,7 @@ describe('Timeline', () => {
     expect(container.querySelectorAll('.process-milestone-icon')).toHaveLength(1);
   });
 
-  it('folds intermediate Codex agent messages into the run process and leaves only the final answer as Clawee reply', async () => {
+  it('folds intermediate Codex agent messages into the run process and leaves only the final answer as OpenCreator reply', async () => {
     const user = userEvent.setup();
     const items: TimelineItem[] = [
       {
@@ -1649,7 +1651,7 @@ describe('Timeline', () => {
     expect(screen.queryByRole('button', { name: '有新内容' })).not.toBeInTheDocument();
   });
 
-  it('renders the Clawee empty state', () => {
+  it('renders the OpenCreator empty state', () => {
     render(<Timeline items={[]} />);
 
     expect(screen.getByText('暂无任务记录')).toBeInTheDocument();

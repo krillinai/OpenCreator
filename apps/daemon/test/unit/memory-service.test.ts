@@ -1,4 +1,4 @@
-import type { ThreadHistoryItem } from '@clawee/protocol';
+import type { ThreadHistoryItem } from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openRuntimeDatabase } from '../../src/storage/database.js';

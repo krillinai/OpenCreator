@@ -1,14 +1,18 @@
 {
-  "name": "@clawee/harness",
+  "name": "@opencreator/harness",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "prestart": "pnpm --filter @opencreator/protocol build",
     "start": "tsx src/cli.ts",
+    "prebuild": "pnpm --filter @opencreator/protocol build",
     "build": "tsc -p tsconfig.json",
+    "pretypecheck": "pnpm --filter @opencreator/protocol build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "pnpm --filter @opencreator/protocol build",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@clawee/protocol": "workspace:*"
+    "@opencreator/protocol": "workspace:*"
   }
 }

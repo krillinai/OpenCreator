@@ -141,7 +141,7 @@ export class DaemonManager extends EventEmitter<DaemonManagerEvents> {
           if (parsed.kind === 'ignored') continue;
           if (parsed.kind === 'bootstrap') {
             this.emit('bootstrap', parsed.event);
-            if (parsed.event.type === 'clawee_daemon_bootstrap_error') {
+            if (parsed.event.type === 'opencreator_daemon_bootstrap_error') {
               fail(new DaemonStartError(
                 parsed.event.code,
                 parsed.event.message,
@@ -269,36 +269,36 @@ export function buildDaemonEnvironment(
 ): NodeJS.ProcessEnv {
   const env = { ...input.env };
   const enterpriseKeys = new Set([
-    'CLAWEE_ENTERPRISE_ORIGIN',
-    'CLAWEE_ENTERPRISE_E2E_RUN_ID',
-    'CLAWEE_ENTERPRISE_E2E_AUTHORIZED',
-    'CLAWEE_ENTERPRISE_KEYRING_SERVICE',
-    'CLAWEE_ENTERPRISE_KEYRING_ACCOUNT'
+    'OPENCREATOR_ENTERPRISE_ORIGIN',
+    'OPENCREATOR_ENTERPRISE_E2E_RUN_ID',
+    'OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED',
+    'OPENCREATOR_ENTERPRISE_KEYRING_SERVICE',
+    'OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT'
   ]);
   for (const key of Object.keys(env)) {
     if (enterpriseKeys.has(key.toUpperCase())) delete env[key];
   }
 
   Object.assign(env, {
-    CLAWEE_CODEX_BIN: input.codexBin,
+    OPENCREATOR_CODEX_BIN: input.codexBin,
     CODEX_HOME: input.codexHome,
-    CLAWEE_DATA_DIR: input.dataDir,
-    CLAWEE_DEFAULT_CWD: input.defaultCwd,
-    CLAWEE_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot,
-    CLAWEE_REQUIRE_CODEX_PROBE: input.requireProbe ? '1' : '0',
-    CLAWEE_CODEX_PROBE_VERIFIED: input.probeVerified ? '1' : '0'
+    OPENCREATOR_DATA_DIR: input.dataDir,
+    OPENCREATOR_DEFAULT_CWD: input.defaultCwd,
+    OPENCREATOR_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot,
+    OPENCREATOR_REQUIRE_CODEX_PROBE: input.requireProbe ? '1' : '0',
+    OPENCREATOR_CODEX_PROBE_VERIFIED: input.probeVerified ? '1' : '0'
   });
   return env;
 }
 
 export function buildDaemonArguments(input: DaemonStartInput): string[] {
   return [
-    `--clawee-enterprise-config=${input.enterpriseConfigPath}`,
+    `--opencreator-enterprise-config=${input.enterpriseConfigPath}`,
     ...(input.enterpriseE2ERunId === undefined
       ? []
       : [
-          `--clawee-enterprise-e2e-run-id=${input.enterpriseE2ERunId}`,
-          '--clawee-enterprise-e2e-authorized=packaged-app'
+          `--opencreator-enterprise-e2e-run-id=${input.enterpriseE2ERunId}`,
+          '--opencreator-enterprise-e2e-authorized=packaged-app'
         ])
   ];
 }
@@ -374,14 +374,14 @@ export function parseDaemonOutputLine(line: string): ParsedDaemonLine {
   }
   if (!isRecord(parsed)) return { kind: 'ignored' };
   if (
-    parsed.type === 'clawee_daemon_bootstrap'
+    parsed.type === 'opencreator_daemon_bootstrap'
     && typeof parsed.phase === 'string'
     && typeof parsed.at === 'string'
   ) {
     return { kind: 'bootstrap', event: parsed as DaemonBootstrapEvent };
   }
   if (
-    parsed.type === 'clawee_daemon_bootstrap_error'
+    parsed.type === 'opencreator_daemon_bootstrap_error'
     && typeof parsed.code === 'string'
     && typeof parsed.message === 'string'
   ) {

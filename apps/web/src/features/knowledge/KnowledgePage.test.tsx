@@ -1,7 +1,7 @@
 import type {
   EnterpriseKnowledgeBaseResponse,
   EnterpriseKnowledgeDocumentResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -178,11 +178,11 @@ describe('KnowledgePage', () => {
       knowledgeBases: [writableKnowledgeBase],
       documents: []
     });
-    const workbench = view.container.querySelector('.knowledge-workbench');
-    expect(workbench).toHaveAttribute('data-mobile-documents-open', 'false');
+    const dashboard = view.container.querySelector('.knowledge-dashboard');
+    expect(dashboard).toHaveAttribute('data-mobile-documents-open', 'false');
 
     await user.click(screen.getByRole('button', { name: /产品资料/ }));
-    expect(workbench).toHaveAttribute('data-mobile-documents-open', 'true');
+    expect(dashboard).toHaveAttribute('data-mobile-documents-open', 'true');
 
     view.rerender(createKnowledge({
       knowledgeBases: [writableKnowledgeBase],
@@ -190,7 +190,7 @@ describe('KnowledgePage', () => {
       documents: []
     }));
     await user.click(screen.getByRole('button', { name: '返回知识库列表' }));
-    expect(workbench).toHaveAttribute('data-mobile-documents-open', 'false');
+    expect(dashboard).toHaveAttribute('data-mobile-documents-open', 'false');
   });
 
   it('keeps knowledge management free of conversation entry points', () => {

@@ -7,7 +7,7 @@ export function deepLinkToRoute(value: string): string | undefined {
   } catch {
     return undefined;
   }
-  if (url.protocol !== 'clawee:') return undefined;
+  if (url.protocol !== 'opencreator:') return undefined;
 
   const rawSegments = [url.hostname, ...url.pathname.split('/')]
     .filter(segment => segment.length > 0);
@@ -38,7 +38,7 @@ export function deepLinkToRoute(value: string): string | undefined {
 }
 
 export function findDeepLink(argv: string[]): string | undefined {
-  return argv.find(value => value.startsWith('clawee://'));
+  return argv.find(value => value.startsWith('opencreator://'));
 }
 
 function optionalValidatedId(

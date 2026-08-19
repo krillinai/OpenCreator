@@ -1,7 +1,7 @@
 import type {
   CodexAvailabilityProbe,
   CodexStatusResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { AlertTriangle, CheckCircle2, HardDrive, SquareTerminal } from 'lucide-react';
 
 export type DiagnosticsSettingsViewProps = {

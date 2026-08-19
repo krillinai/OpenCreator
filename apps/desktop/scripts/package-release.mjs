@@ -35,24 +35,24 @@ const enterpriseGatewayConfigStage = resolve(
   enterpriseGatewayConfigFilename
 );
 const manifestPath = resolve(
-  process.env.CLAWEE_DESKTOP_BUILD_MANIFEST
-    ?? join(releaseDir, 'clawee-desktop-build-manifest.json')
+  process.env.OPENCREATOR_DESKTOP_BUILD_MANIFEST
+    ?? join(releaseDir, 'opencreator-desktop-build-manifest.json')
 );
 const mode = parseMode(process.argv.slice(2));
 const platform = normalizePlatform(
-  process.env.CLAWEE_DESKTOP_TARGET_PLATFORM ?? process.platform
+  process.env.OPENCREATOR_DESKTOP_TARGET_PLATFORM ?? process.platform
 );
-const arch = process.env.CLAWEE_DESKTOP_TARGET_ARCH ?? process.arch;
-const hasConfiguredCacheDir = hasValue(process.env.CLAWEE_DESKTOP_CACHE_DIR);
+const arch = process.env.OPENCREATOR_DESKTOP_TARGET_ARCH ?? process.arch;
+const hasConfiguredCacheDir = hasValue(process.env.OPENCREATOR_DESKTOP_CACHE_DIR);
 const cacheDir = resolve(
-  process.env.CLAWEE_DESKTOP_CACHE_DIR
+  process.env.OPENCREATOR_DESKTOP_CACHE_DIR
     ?? resolve(desktopDir, '.cache')
 );
 const env = {
   ...process.env,
-  CLAWEE_DESKTOP_TARGET_PLATFORM: platform,
-  CLAWEE_DESKTOP_TARGET_ARCH: arch,
-  CLAWEE_DESKTOP_CACHE_DIR: cacheDir,
+  OPENCREATOR_DESKTOP_TARGET_PLATFORM: platform,
+  OPENCREATOR_DESKTOP_TARGET_ARCH: arch,
+  OPENCREATOR_DESKTOP_CACHE_DIR: cacheDir,
   ELECTRON_CACHE: process.env.ELECTRON_CACHE
     ?? (hasConfiguredCacheDir
       ? resolve(cacheDir, 'electron')
@@ -84,7 +84,7 @@ console.log(
   + `${enterpriseRelease.transportSecurity} ${enterpriseRelease.gateway}`
 );
 
-await runStage('构建 Desktop', 'pnpm', ['--filter', '@clawee/desktop', 'build'], {
+await runStage('构建 Desktop', 'pnpm', ['--filter', '@opencreator/desktop', 'build'], {
   cwd: rootDir,
   env,
   timeoutMs: 5 * 60_000
@@ -137,8 +137,8 @@ console.log(`[desktop-package] 包根目录：${packageRoot}`);
 if (process.env.GITHUB_ENV) {
   appendFileSync(
     process.env.GITHUB_ENV,
-    `CLAWEE_DESKTOP_BUILD_MANIFEST=${manifestPath}\n`
-    + `CLAWEE_DESKTOP_PACKAGE_ROOT=${packageRoot}\n`
+    `OPENCREATOR_DESKTOP_BUILD_MANIFEST=${manifestPath}\n`
+    + `OPENCREATOR_DESKTOP_PACKAGE_ROOT=${packageRoot}\n`
   );
 }
 
@@ -148,8 +148,8 @@ await runStage('验证桌面包', process.execPath, [
   cwd: rootDir,
   env: {
     ...builderEnv,
-    CLAWEE_DESKTOP_BUILD_MANIFEST: manifestPath,
-    CLAWEE_DESKTOP_PACKAGE_ROOT: packageRoot
+    OPENCREATOR_DESKTOP_BUILD_MANIFEST: manifestPath,
+    OPENCREATOR_DESKTOP_PACKAGE_ROOT: packageRoot
   },
   timeoutMs: 5 * 60_000
 });
@@ -166,7 +166,7 @@ function normalizePlatform(value) {
   if (value === 'win') return 'win32';
   if (value === 'linux') return 'linux';
   if (['darwin', 'win32', 'linux'].includes(value)) return value;
-  throw new Error(`Unsupported Clawee Desktop platform: ${value}`);
+  throw new Error(`Unsupported OpenCreator Desktop platform: ${value}`);
 }
 
 function electronBuilderArguments(packageMode, targetPlatform, targetArch, baseEnv) {
@@ -223,8 +223,8 @@ function platformFlag(targetPlatform) {
 function packageRootCandidates(targetPlatform, targetArch) {
   if (targetPlatform === 'darwin') {
     return [
-      join(releaseDir, `mac-${targetArch}`, 'Clawee.app'),
-      join(releaseDir, 'mac', 'Clawee.app')
+      join(releaseDir, `mac-${targetArch}`, 'OpenCreator.app'),
+      join(releaseDir, 'mac', 'OpenCreator.app')
     ];
   }
   if (targetPlatform === 'win32') {

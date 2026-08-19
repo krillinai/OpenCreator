@@ -1,6 +1,6 @@
 export type ColorMode = 'light' | 'dark';
 
-export const colorModeStorageKey = 'clawee.preferences.colorMode';
+export const colorModeStorageKey = 'opencreator.preferences.colorMode';
 export const defaultColorMode: ColorMode = 'dark';
 
 export function readColorModePreference(): ColorMode {

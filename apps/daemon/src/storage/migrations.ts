@@ -87,7 +87,7 @@ export function migrate(db: Database.Database): void {
       codex_thread_id TEXT,
       project_id TEXT,
       enterprise_subject_id TEXT,
-      origin TEXT NOT NULL DEFAULT 'clawee_created',
+      origin TEXT NOT NULL DEFAULT 'opencreator_created',
       cwd TEXT NOT NULL,
       canonical_cwd TEXT NOT NULL,
       workspace_mode TEXT NOT NULL,
@@ -427,7 +427,7 @@ export function migrate(db: Database.Database): void {
     db,
     'threads',
     'origin',
-    "origin TEXT NOT NULL DEFAULT 'clawee_created'"
+    "origin TEXT NOT NULL DEFAULT 'opencreator_created'"
   );
   ensureColumn(db, 'runs', 'resume_mode', 'resume_mode TEXT');
   ensureColumn(db, 'runs', 'queue_state', "queue_state TEXT NOT NULL DEFAULT 'none'");
@@ -451,7 +451,7 @@ export function migrate(db: Database.Database): void {
     SET origin = CASE
       WHEN purpose = 'conversation' AND id LIKE 'thread_codex_%'
         THEN 'codex_discovered'
-      ELSE 'clawee_created'
+      ELSE 'opencreator_created'
     END
   `).run();
   assertUniqueCodexThreadIds(db);

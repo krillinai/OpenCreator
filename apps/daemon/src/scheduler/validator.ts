@@ -1,4 +1,4 @@
-import type { ReasoningEffort, SandboxMode, ScheduleConcurrencyPolicy } from '@clawee/protocol';
+import type { ReasoningEffort, SandboxMode, ScheduleConcurrencyPolicy } from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';

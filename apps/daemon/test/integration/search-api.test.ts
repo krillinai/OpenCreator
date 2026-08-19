@@ -24,7 +24,7 @@ afterEach(async () => {
 
 describe('conversation search api', () => {
   it.skip('legacy JSONL integration: syncs sessions into the local search index', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-search-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-search-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '12');
     const cwd = join(tempDir, 'workspace');
@@ -117,7 +117,7 @@ describe('conversation search api', () => {
   });
 
   it.skip('legacy JSONL integration: validates local search cursors', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-search-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-search-api-'));
     server = await buildServer({
       token: 'secret',
       dataDir: join(tempDir, 'runtime'),
@@ -138,7 +138,7 @@ describe('conversation search api', () => {
   it.skip('legacy JSONL integration: throttles local session index synchronization', async () => {
     let now = Date.parse('2026-07-12T12:00:00.000Z');
     vi.spyOn(Date, 'now').mockImplementation(() => now);
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-search-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-search-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '12');
     const cwd = join(tempDir, 'workspace');
@@ -177,7 +177,7 @@ describe('conversation search api', () => {
   });
 
   it.skip('legacy JSONL integration: searches the local session index', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-search-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-search-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '14');
     const cwd = join(tempDir, 'workspace');
@@ -314,7 +314,7 @@ function eventMessage(
 
 function scheduleExecutionPrompt(prompt: string, triggeredAt: string): string {
   return [
-    '这是 Clawee 已经触发的一次计划任务执行。',
+    '这是 OpenCreator 已经触发的一次计划任务执行。',
     '',
     '执行规则：',
     '1. 立即完成本次任务，不要重新创建或修改计划任务。',

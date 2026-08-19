@@ -1,4 +1,4 @@
-import type { WorkspaceFileKind } from '@clawee/protocol';
+import type { WorkspaceFileKind } from '@opencreator/protocol';
 import {
   MAX_IMAGE_BYTES,
   MAX_JSON_FORMAT_BYTES,

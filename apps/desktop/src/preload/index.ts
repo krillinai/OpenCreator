@@ -54,7 +54,7 @@ const api: DesktopApi = {
   quit: () => ipcRenderer.invoke(desktopIpc.quit)
 };
 
-contextBridge.exposeInMainWorld('claweeDesktop', api);
+contextBridge.exposeInMainWorld('opencreatorDesktop', api);
 
 function subscribe<T>(
   channel: string,

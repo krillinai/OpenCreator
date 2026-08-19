@@ -10,7 +10,7 @@ import {
 import { apiError } from './errors.js';
 
 export const ENTERPRISE_SHARED_FILE_CONTENT_TYPE =
-  'application/vnd.clawee.shared-file';
+  'application/vnd.opencreator.shared-file';
 
 const paginationQuerySchema = z.object({
   limit: z.string().regex(/^\d+$/).optional(),

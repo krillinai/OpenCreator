@@ -1,4 +1,4 @@
-import type { ThreadHistoryItem } from '@clawee/protocol';
+import type { ThreadHistoryItem } from '@opencreator/protocol';
 import type { SmokeCommandResult } from '../../src/codex/smoke.js';
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -8,7 +8,7 @@ import { buildServer } from '../../src/api/server.js';
 import { collectCodexCapabilityMatrix } from '../../src/codex/capabilities.js';
 import { runRealCodexResumeSmoke, runSmokeCommand } from '../../src/codex/smoke.js';
 
-const runRealCodex = process.env.CLAWEE_RUN_REAL_CODEX_SMOKE === '1';
+const runRealCodex = process.env.OPENCREATOR_RUN_REAL_CODEX_SMOKE === '1';
 const fixtureDir = join(process.cwd(), 'test', 'fixtures', 'real-codex', 'generated');
 const SCHEDULER_FIRST_MARKER = 'P0_SCHEDULE_FIRST_MARKER';
 const SCHEDULER_SECOND_MARKER = 'P0_SCHEDULE_SECOND_MARKER';
@@ -247,7 +247,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
         'codex',
         'mcp',
         'add',
-        'clawee-r5-echo',
+        'opencreator-r5-echo',
         '--env',
         'R5_SMOKE_VALUE=visible-smoke-value',
         '--',
@@ -263,11 +263,11 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
         'codex',
         'mcp',
         'get',
-        'clawee-r5-echo'
+        'opencreator-r5-echo'
       ]);
       writeFixture('mcp-get', getResult);
       expect(getResult.exitCode, getResult.stderr || getResult.stdout).toBe(0);
-      expect(getResult.stdout).toContain('clawee-r5-echo');
+      expect(getResult.stdout).toContain('opencreator-r5-echo');
       expect(getResult.stdout).toContain('R5_SMOKE_VALUE');
 
       const listResult = runSmokeCommand([
@@ -279,7 +279,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
       ]);
       writeFixture('mcp-list', listResult);
       expect(listResult.exitCode, listResult.stderr || listResult.stdout).toBe(0);
-      expect(listResult.stdout).toContain('clawee-r5-echo');
+      expect(listResult.stdout).toContain('opencreator-r5-echo');
 
       const removeResult = runSmokeCommand([
         'env',
@@ -287,7 +287,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
         'codex',
         'mcp',
         'remove',
-        'clawee-r5-echo'
+        'opencreator-r5-echo'
       ]);
       writeFixture('mcp-remove', removeResult);
       expect(removeResult.exitCode, removeResult.stderr || removeResult.stdout).toBe(0);
@@ -298,7 +298,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
         'codex',
         'mcp',
         'get',
-        'clawee-r5-echo'
+        'opencreator-r5-echo'
       ]);
       writeFixture('mcp-get-after-remove', getAfterRemove);
       expect(getAfterRemove.exitCode).not.toBe(0);
@@ -308,7 +308,7 @@ describe.runIf(runRealCodex)('real codex smoke', () => {
     }
   });
 
-  it('runs one schedule twice through the same Clawee and Codex threads', async () => {
+  it('runs one schedule twice through the same OpenCreator and Codex threads', async () => {
     const dataDir = join(fixtureDir, `scheduler-data-${Date.now()}`);
     const workspace = join(fixtureDir, `scheduler-workspace-${Date.now()}`);
     mkdirSync(dataDir, { recursive: true });

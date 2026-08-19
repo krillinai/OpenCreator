@@ -13,7 +13,7 @@ afterEach(() => {
 
 describe('codex runner', () => {
   it('writes prompt to stdin and captures stdout/stderr separately', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const codexHome = join(tempDir, 'codex-home');
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
@@ -43,7 +43,7 @@ describe('codex runner', () => {
   });
 
   it('resolves with the exit code when codex exits non-zero', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'turn.completed' }],
       exitCode: 42
@@ -65,7 +65,7 @@ describe('codex runner', () => {
   });
 
   it('waits for asynchronous stdout handlers before resolving the process result', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [
         { type: 'turn.started' },
@@ -110,7 +110,7 @@ describe('codex runner', () => {
   }, 10_000);
 
   it('rejects with timeout when codex hangs', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -130,7 +130,7 @@ describe('codex runner', () => {
   });
 
   it('can cancel a running codex process', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -151,7 +151,7 @@ describe('codex runner', () => {
   });
 
   it('does not hang when canceling a process that ignores SIGTERM', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true,
@@ -176,7 +176,7 @@ describe('codex runner', () => {
   });
 
   it('rejects with inactivity timeout when codex is silent', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [],
       hang: true
@@ -196,7 +196,7 @@ describe('codex runner', () => {
   });
 
   it('rejects with spawn timeout before codex emits any activity', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'turn.started' }],
       initialDelayMs: 500,
@@ -218,7 +218,7 @@ describe('codex runner', () => {
   });
 
   it('surfaces spawn failures as classified errors', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
 
     await expect(
       runCodexExec({
@@ -234,7 +234,7 @@ describe('codex runner', () => {
   });
 
   it('bounds diagnostic output while preserving final assistant and terminal events', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runner-'));
     const fake = createFakeCodex(tempDir, {
       rawStdoutLines: [
         'x'.repeat(1024 * 1024 + 64),

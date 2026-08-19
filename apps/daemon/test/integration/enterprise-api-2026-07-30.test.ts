@@ -30,7 +30,7 @@ import type {
 
 let server: FastifyInstance | undefined;
 let tempDir = '';
-const agentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
+const agentId = 'opencreator_550e8400-e29b-41d4-a716-446655440000';
 
 afterEach(async () => {
   await server?.close();
@@ -41,7 +41,7 @@ afterEach(async () => {
 
 describe('enterprise runtime API', () => {
   it('restores valid sessions without blocking local server startup', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const me = deferred<EnterpriseMeResult>();
     server = await buildServer({
       token: 'secret',
@@ -83,7 +83,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('cleans up MCP runtime state when startup restore finds no session', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const enterpriseMcpManager = createMcpManager();
     server = await buildServer({
       token: 'secret',
@@ -102,7 +102,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('returns session responses without token fields and validates credentials locally', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const client = createClient();
     const enterpriseMcpManager = createMcpManager();
     server = await buildServer({
@@ -150,7 +150,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('exposes QR login through the runtime session boundary', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const loginResult = {
       account: {
         subjectId: 'acct_01JZ8W6A2M4S',
@@ -208,7 +208,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('exposes enterprise skill list detail install and update routes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const enterpriseSkillManager = createEnterpriseSkillManager();
     server = await buildServer({
       token: 'secret',
@@ -246,7 +246,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('exposes MCP catalog refresh and local preference routes without token fields', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const enterpriseMcpManager = createMcpManager();
     server = await buildServer({
       token: 'secret',
@@ -287,7 +287,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('exposes knowledge list, document list, and binary upload routes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const enterpriseKnowledgeManager = createKnowledgeManager();
     server = await buildServer({
       token: 'secret',
@@ -332,7 +332,7 @@ describe('enterprise runtime API', () => {
       url: `/enterprise/knowledge-bases/kb_123/documents?${query.toString()}`,
       headers: {
         authorization: 'Bearer secret',
-        'content-type': 'application/vnd.clawee.knowledge-document'
+        'content-type': 'application/vnd.opencreator.knowledge-document'
       },
       payload: content
     });
@@ -363,7 +363,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('returns a knowledge-specific error when the binary body is too large', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const enterpriseKnowledgeManager = createKnowledgeManager();
     server = await buildServer({
       token: 'secret',
@@ -388,7 +388,7 @@ describe('enterprise runtime API', () => {
       url: `/enterprise/knowledge-bases/kb_123/documents?${query.toString()}`,
       headers: {
         authorization: 'Bearer secret',
-        'content-type': 'application/vnd.clawee.knowledge-document'
+        'content-type': 'application/vnd.opencreator.knowledge-document'
       },
       payload: content
     });
@@ -401,7 +401,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('exposes shared drive list, detail, raw upload, and project download routes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const enterpriseSharedDriveManager = createSharedDriveManager();
     server = await buildServer({
       token: 'secret',
@@ -470,7 +470,7 @@ describe('enterprise runtime API', () => {
       url: `/enterprise/shared-spaces/space%2Fdesign/files?${uploadQuery.toString()}`,
       headers: {
         authorization: 'Bearer secret',
-        'content-type': 'application/vnd.clawee.shared-file'
+        'content-type': 'application/vnd.opencreator.shared-file'
       },
       payload: content
     });
@@ -511,7 +511,7 @@ describe('enterprise runtime API', () => {
   });
 
   it('returns a shared-file-specific error when the raw body is too large', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-api-'));
     const enterpriseSharedDriveManager = createSharedDriveManager();
     server = await buildServer({
       token: 'secret',
@@ -536,7 +536,7 @@ describe('enterprise runtime API', () => {
       url: `/enterprise/shared-spaces/space_1/files?${query.toString()}`,
       headers: {
         authorization: 'Bearer secret',
-        'content-type': 'application/vnd.clawee.shared-file'
+        'content-type': 'application/vnd.opencreator.shared-file'
       },
       payload: content
     });

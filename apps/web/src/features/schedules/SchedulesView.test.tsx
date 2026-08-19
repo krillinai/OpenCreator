@@ -3,7 +3,7 @@ import type {
   ScheduleDetailResponse,
   ScheduleResponse,
   UpdateScheduleRequest,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -14,13 +14,13 @@ import {
 } from './SchedulesView.js';
 
 describe('SchedulesView', () => {
-  it('opens the manual editor directly without a Clawee creation menu', async () => {
+  it('opens the manual editor directly without a OpenCreator creation menu', async () => {
     const user = userEvent.setup();
     renderView();
 
     await user.click(await screen.findByRole('button', { name: /创建/ }));
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-    expect(screen.queryByText('使用 Clawee 创建')).not.toBeInTheDocument();
+    expect(screen.queryByText('使用 OpenCreator 创建')).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: '创建定时任务' })).toBeInTheDocument();
     expect(screen.getByText('标题')).toBeInTheDocument();
     expect(screen.getByText('描述')).toBeInTheDocument();

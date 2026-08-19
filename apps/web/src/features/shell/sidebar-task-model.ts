@@ -1,4 +1,4 @@
-import type { TaskItem, ThreadResponse } from '@clawee/protocol';
+import type { TaskItem, ThreadResponse } from '@opencreator/protocol';
 import type { ScheduleTaskSummary } from '../schedules/schedule-task-model.js';
 
 export type SidebarTaskStatus =

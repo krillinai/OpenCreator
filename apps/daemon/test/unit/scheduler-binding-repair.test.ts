@@ -133,7 +133,7 @@ describe('schedule binding repair', () => {
 });
 
 function createFixture() {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-schedule-binding-repair-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-schedule-binding-repair-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   let scheduleId = 0;
   let operationId = 0;

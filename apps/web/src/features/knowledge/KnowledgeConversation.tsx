@@ -1,4 +1,4 @@
-import type { CodexModelResponse } from '@clawee/protocol';
+import type { CodexModelResponse } from '@opencreator/protocol';
 import { Timeline } from '../../components/timeline/Timeline.js';
 import type { TimelineItem } from '../../components/timeline/timeline-model.js';
 import { Composer, type ComposerSlashCommand } from '../runs/Composer.js';

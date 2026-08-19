@@ -3,7 +3,7 @@ import type {
   ThreadHistoryResponse,
   ThreadResponse,
   ThreadRunsResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AttachmentService } from '../attachments/service.js';
 import type { CodexThreadHistoryPage } from '../codex/sessions/app-server-provider.js';

@@ -1,11 +1,11 @@
 (() => {
-  const runtimeAttribute = 'data-clawee-preview-runtime';
+  const runtimeAttribute = 'data-opencreator-preview-runtime';
   const ignoredTags = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'TEMPLATE', 'NOSCRIPT']);
   const visualSelector = 'img, svg, canvas, video, picture, [role="img"]';
   let completed = false;
 
   function setState(state) {
-    document.documentElement.setAttribute('data-clawee-preview-state', state);
+    document.documentElement.setAttribute('data-opencreator-preview-state', state);
   }
 
   function isRuntimeNode(node) {
@@ -139,7 +139,7 @@
       const style = getComputedStyle(current);
       const rect = current.getBoundingClientRect();
       const inline = current.style;
-      current.setAttribute('data-clawee-preview-force-visible', 'true');
+      current.setAttribute('data-opencreator-preview-force-visible', 'true');
 
       if (style.display === 'none') inline.setProperty('display', 'revert', 'important');
       inline.setProperty('visibility', 'visible', 'important');

@@ -4,7 +4,7 @@ import type {
   EnterpriseMcpPreferenceUpdateRequest,
   EnterpriseMcpTokenStatus,
   RuntimeErrorCode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 import type { AgentToolRunInjection } from '../agent-tools/run-injection.js';
 import type { McpManager } from '../codex/mcp/manager.js';
@@ -29,7 +29,7 @@ import type {
   EnterpriseSessionManager
 } from './session-manager-2026-07-30.js';
 
-export const ENTERPRISE_MCP_TOKEN_ENV = 'CLAWEE_ENTERPRISE_MCP_TOKEN';
+export const ENTERPRISE_MCP_TOKEN_ENV = 'OPENCREATOR_ENTERPRISE_MCP_TOKEN';
 
 export type EnterpriseMcpManager = {
   listConnections(): Promise<EnterpriseMcpCatalogResponse>;

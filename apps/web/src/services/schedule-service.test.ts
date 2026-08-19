@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ScheduleResponse } from '@clawee/protocol';
+import type { ScheduleResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 import { createScheduleService } from './schedule-service.js';
 

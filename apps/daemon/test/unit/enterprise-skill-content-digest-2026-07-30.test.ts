@@ -74,7 +74,7 @@ describe('enterprise skill content digest', () => {
 });
 
 function createDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), 'clawee-enterprise-digest-'));
+  const directory = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-digest-'));
   directories.push(directory);
   return directory;
 }

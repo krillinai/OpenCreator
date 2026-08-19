@@ -446,16 +446,16 @@ R7 完成时必须运行：
 ```bash
 pnpm typecheck
 pnpm test
-pnpm --filter @clawee/daemon test -- test/integration/diagnostics.test.ts
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/diagnostics.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 git diff --check
 ```
 
 可选真实 Codex gate：
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
 ```
 
 ## 11. 完成口径

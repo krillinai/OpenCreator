@@ -347,7 +347,7 @@ codex mcp add --help
 验证命令：
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-skills-validator.test.ts test/unit/codex-skills-scanner.test.ts test/unit/codex-skills-installer.test.ts test/unit/codex-smoke.test.ts test/unit/storage.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-skills-validator.test.ts test/unit/codex-skills-scanner.test.ts test/unit/codex-skills-installer.test.ts test/unit/codex-smoke.test.ts test/unit/storage.test.ts test/integration/api.test.ts
 ```
 
 结果：`6` 个测试文件、`71` 个测试通过。
@@ -371,7 +371,7 @@ pnpm --filter @clawee/daemon test -- test/unit/codex-skills-validator.test.ts te
 复测命令：
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 ## 10. R5 MCP Pass-through 测试
@@ -391,7 +391,7 @@ Scope:
 
 Verification:
 
-- `pnpm --filter @clawee/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts test/unit/codex-mcp-parser.test.ts test/unit/codex-mcp-operations.test.ts test/unit/codex-mcp-manager.test.ts test/unit/storage.test.ts test/unit/codex-capabilities.test.ts test/integration/api.test.ts`
+- `pnpm --filter @opencreator/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts test/unit/codex-mcp-parser.test.ts test/unit/codex-mcp-operations.test.ts test/unit/codex-mcp-manager.test.ts test/unit/storage.test.ts test/unit/codex-capabilities.test.ts test/integration/api.test.ts`
   - 结果：`10` 个测试文件、`121` 个测试通过。
 - `pnpm typecheck`
   - 结果：通过。
@@ -399,12 +399,12 @@ Verification:
   - 结果：通过；daemon `25` 个测试文件通过、`1` 个真实 smoke 文件默认 gate 跳过，`216` 个测试通过、`11` 个 gated smoke 测试跳过。
 - `git diff --check`
   - 结果：通过。
-- `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "adds, gets, lists, and removes a stdio MCP server"`
+- `OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts -t "adds, gets, lists, and removes a stdio MCP server"`
   - 结果：通过；`1` 个真实 `codex mcp` command smoke 通过，`10` 个非目标 smoke 跳过。
 
 Environment notes:
 
-- `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts` 当前整体结果为 `BLOCKED_ENV`：其中 R5 MCP command smoke 已通过，但 R4 skill/model smoke 在真实 Codex API 请求阶段返回 `401 Unauthorized: Missing bearer or basic authentication`。
+- `OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts` 当前整体结果为 `BLOCKED_ENV`：其中 R5 MCP command smoke 已通过，但 R4 skill/model smoke 在真实 Codex API 请求阶段返回 `401 Unauthorized: Missing bearer or basic authentication`。
 - 因此 R5 command/config pass-through 范围判定为 `PASS`；真实模型是否能在运行中调用 MCP tool 不在 R5 第一版验收内，保留为后续 runtime behavior smoke。
 
 Notes:
@@ -441,13 +441,13 @@ Notes:
 验证命令：
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts test/unit/scheduler-repository.test.ts test/unit/scheduler-service.test.ts test/unit/storage.test.ts test/integration/run-manager.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts test/unit/scheduler.test.ts test/unit/scheduler-cron.test.ts test/unit/scheduler-validator.test.ts test/unit/scheduler-repository.test.ts test/unit/scheduler-service.test.ts test/unit/storage.test.ts test/integration/run-manager.test.ts test/integration/api.test.ts
 ```
 
 结果：`9` 个测试文件、`146` 个测试通过。
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
 ```
 
 结果：通过；`1` 个真实 Codex scheduler smoke 通过，`11` 个非目标 smoke 跳过。生成的 ignored fixture 记录了 `createdBy=schedule`、`sourceId`、`run_now` operation、assistant marker 和 `done/succeeded` 事件。
@@ -481,7 +481,7 @@ CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/re
 ```bash
 pnpm typecheck
 pnpm test
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 git diff --check
 ```
 
@@ -586,7 +586,7 @@ git diff --check
 - [x] 增加 `codex mcp --help` smoke。
 - [x] 增加 `codex mcp add --help` smoke。
 - [x] 增加 command execution run smoke。
-- [x] 默认仍由 `CLAWEE_RUN_REAL_CODEX_SMOKE=1` gate 控制。
+- [x] 默认仍由 `OPENCREATOR_RUN_REAL_CODEX_SMOKE=1` gate 控制。
 
 ### Task 3: R1 SSE contract tests
 

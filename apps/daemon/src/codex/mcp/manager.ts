@@ -3,7 +3,7 @@ import type {
   CodexMcpOperationResponse,
   CodexMcpOperationType,
   CodexMcpServerResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import type { RuntimeCapabilityMatrix } from '../capabilities.js';
 import type { ResolvedCodexHome } from '../home.js';

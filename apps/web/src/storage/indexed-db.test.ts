@@ -3,7 +3,7 @@ import { createIndexedDbStore } from './indexed-db.js';
 
 describe('IndexedDB store', () => {
   it('saves and loads mock file content', async () => {
-    const store = createIndexedDbStore('clawee.web.test');
+    const store = createIndexedDbStore('opencreator.web.test');
     await store.saveFile({ path: 'docs/demo.md', content: '# Demo', updatedAt: '2026-07-06T00:00:00.000Z' });
 
     await expect(store.getFile('docs/demo.md')).resolves.toMatchObject({
@@ -13,7 +13,7 @@ describe('IndexedDB store', () => {
   });
 
   it('rejects files larger than 512KB', async () => {
-    const store = createIndexedDbStore('clawee.web.test.limit');
+    const store = createIndexedDbStore('opencreator.web.test.limit');
     const content = 'x'.repeat(512 * 1024 + 1);
 
     try {

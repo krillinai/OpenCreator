@@ -1,17 +1,17 @@
-# Clawee 视觉与组件规范
+# OpenCreator 视觉与组件规范
 
 本文档整理当前 Web 客户端已经形成的视觉语言和组件规则，后续新增功能或页面时优先延续这些规范。对应实现主要位于：
 
 - `apps/web/src/styles/tokens.css`
 - `apps/web/src/styles/app.css`
-- `apps/web/src/features/shell/ClaweeSidebar.tsx`
+- `apps/web/src/features/shell/OpenCreatorSidebar.tsx`
 - `apps/web/src/features/runs/Composer.tsx`
 - `apps/web/src/features/files/FileTopBar.tsx`
 - `apps/web/src/components/timeline/Timeline.tsx`
 
 ## 1. 视觉基调
 
-Clawee 当前是深色、低噪声、偏工具型的桌面应用界面。整体气质应该克制、轻量、专注，不做营销页式大卡片和强装饰。
+OpenCreator 当前是深色、低噪声、偏工具型的桌面应用界面。整体气质应该克制、轻量、专注，不做营销页式大卡片和强装饰。
 
 核心方向：
 
@@ -155,15 +155,15 @@ Clawee 当前是深色、低噪声、偏工具型的桌面应用界面。整体�
 
 展开态：
 
-- 深色主题使用 `/logo-v2-white.svg`，浅色主题使用 `/logo-v2-black.svg`。
-- logo 宽度约 `124px`，高度约 `24px`。
+- 使用 `OpenCreator` 文字品牌，不加载图片标识。
+- 品牌文字宽度约 `124px`，高度约 `24px`。
 - 右侧展示收起按钮。
 
 收起态：
 
 - 宽度 `72px`。
-- 展示 `/logo-v2-white-logo.svg`。
-- hover 或 focus 时 logo 隐去，切换为展开 icon。
+- 展示通用菜单图标。
+- hover 或 focus 时切换为展开 icon。
 
 ### 顶部主导航
 
@@ -248,8 +248,7 @@ Clawee 当前是深色、低噪声、偏工具型的桌面应用界面。整体�
 
 Agent 消息：
 
-- 深色主题展示 `/logo-v2-white-logo.svg`，浅色主题展示 `/logo-v2-black-logo.svg`。
-- 头像不需要容器背景，直接展示 logo。
+- 不展示头像和昵称，回复正文直接进入消息区。
 - 气泡左上角保持直角：`border-top-left-radius: 0`。
 - 默认背景：`rgba(36, 40, 46, 0.88)`。
 - 可使用轻微玻璃模糊和深色阴影。
@@ -266,7 +265,7 @@ Agent 消息：
 
 容器：
 
-- 类名：`.clawee-composer`。
+- 类名：`.opencreator-composer`。
 - 最大宽度：`980px`。
 - 背景为深色半透明渐变。
 - 边框使用渐变色：白色亮边到暖橙色，再回到低透明白色。
@@ -487,19 +486,16 @@ Loading：
 
 当前品牌资产：
 
-- `/logo-v2-white-logo.svg`：白色图标版，用于深色背景、收起侧栏和深色主题 Agent 头像。
-- `/logo-v2-black-logo.svg`：黑色图标版，用于浅色背景和浅色主题 Agent 头像。
-- `/logo-v2-white.svg`：白色完整品牌标识，用于深色主题展开侧栏。
-- `/logo-v2-black.svg`：黑色完整品牌标识，用于浅色主题展开侧栏。
 - `apps/desktop/resources/icon.png`：桌面应用图标，使用深色圆角底板和白色 v2 图标。
 - `apps/desktop/resources/tray.png`：macOS 菜单栏模板图，只保留透明背景的 v2 图标。
+- Web 不提供旧 OpenCreator logo 或历史兼容路径；Agent 消息不加载品牌图片。
 
 使用规则：
 
-- favicon 使用 `/logo-v2-white-logo.svg`。
-- Agent 头像直接展示与主题匹配的 v2 图标，不要加背景容器。
+- Web 暂不加载品牌 favicon。
+- Agent 消息不展示头像或品牌图片。
 - 品牌图不要拉伸，保持 `object-fit: contain`。
-- 不再引用 `logo.png`、`logo-cor.png`、`logo-all.png` 等旧命名资源；这些文件仅作为历史路径兼容层。
+- 不再保留 `logo.png`、`logo-cor.png`、`logo-all.png` 等旧 OpenCreator 静态资源或兼容路径。
 - 新增 icon 优先从 `lucide-react` 选取。
 
 ## 17. 新增页面检查清单

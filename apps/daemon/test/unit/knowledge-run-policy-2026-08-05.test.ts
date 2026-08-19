@@ -18,7 +18,7 @@ describe('knowledge run policy', () => {
     const request = {
       id: 'approval-1',
       method: 'mcpServer/elicitation/request',
-      params: { serverName: 'clawee_knowledge' }
+      params: { serverName: 'opencreator_knowledge' }
     } as const;
 
     expect(isAuthorizedKnowledgeToolApproval(knowledgeThread(), request)).toBe(true);
@@ -68,13 +68,13 @@ describe('knowledge run policy', () => {
         webSearch: false
       },
       mcpServers: [{
-        name: 'clawee_knowledge',
+        name: 'opencreator_knowledge',
         enabledTools: ['knowledge.search'],
         required: true
       }]
     });
     expect(capabilities.inspect(
-      injection!.env.CLAWEE_AGENT_CAPABILITY_TOKEN
+      injection!.env.OPENCREATOR_AGENT_CAPABILITY_TOKEN
     )).toMatchObject({
       runId: 'run-a',
       threadId: 'thread-a',
@@ -150,7 +150,7 @@ describe('knowledge run policy', () => {
       throw new EnterpriseHttpError('ENTERPRISE_SERVICE_UNAVAILABLE', 'request', 503);
     });
     const manager = createKnowledgeConversationManager({
-      dataDir: '/tmp/clawee-test',
+      dataDir: '/tmp/opencreator-test',
       sessionManager: {
         requireIdentity: vi.fn(async () => ({
           subjectId: 'acct-a',
@@ -183,7 +183,7 @@ function knowledgeThread(): RuntimeThread {
     title: null,
     projectId: null,
     enterpriseSubjectId: 'acct-a',
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     cwd: '/managed/thread-a',
     canonicalCwd: '/managed/thread-a',
     workspaceMode: 'managed',

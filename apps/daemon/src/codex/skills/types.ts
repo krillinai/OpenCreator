@@ -5,7 +5,7 @@ import type {
   CodexSkillOperationType,
   CodexSkillResponse,
   CodexSkillStatus
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type {
   CodexSkillOperationResponse,

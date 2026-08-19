@@ -1,4 +1,4 @@
-import type { WorkspaceDirectoryResponse, WorkspaceFileNode } from '@clawee/protocol';
+import type { WorkspaceDirectoryResponse, WorkspaceFileNode } from '@opencreator/protocol';
 
 export function workspaceKey(canonicalCwd: string): string {
   const encoder = new TextEncoder();

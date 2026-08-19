@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { CodexAvailabilityProbe } from '@clawee/protocol';
+import type { CodexAvailabilityProbe } from '@opencreator/protocol';
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { join } from 'node:path';
@@ -188,7 +188,7 @@ export type BuildServerInput = {
   codexSessionProvider?: CodexSessionProvider;
   codexModelCatalog?: CodexModelCatalog;
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
-  memoryHistoryReader?(threadId: string): { items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined;
+  memoryHistoryReader?(threadId: string): { items: import('@opencreator/protocol').ThreadHistoryItem[] } | undefined;
   creatorServicesConfigStore?: CreatorServicesConfigStore;
   allowedWebOrigins?: string[];
   enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
@@ -248,7 +248,7 @@ export async function buildServer(input: BuildServerInput) {
     collectorInstaller:
       input.enterpriseCollectorInstaller
       ?? createEnterpriseCollectorInstaller({
-        claweeAgentConfigPath: enterpriseConfigPath
+        opencreatorAgentConfigPath: enterpriseConfigPath
       }),
     credentialStore:
       input.enterpriseCredentialStore ?? createUnavailableCredentialStore(),
@@ -281,7 +281,7 @@ export async function buildServer(input: BuildServerInput) {
     db,
     managedProjectRoot: input.defaultProjectRoot === undefined
       ? undefined
-      : join(input.defaultProjectRoot, 'Clawee')
+      : join(input.defaultProjectRoot, 'OpenCreator')
   });
   const threadManager = createThreadManager({ db, dataDir, projectManager });
   const knowledgeConversationManager = createKnowledgeConversationManager({
@@ -453,7 +453,7 @@ export async function buildServer(input: BuildServerInput) {
       persistentAppServerExecutor,
       codexThreadRotationRunThreshold:
         input.codexThreadRotationRunThreshold
-        ?? parseNonNegativeInteger(process.env.CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD),
+        ?? parseNonNegativeInteger(process.env.OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD),
       prepareThreadRotationContext: context =>
         memoryService.prepareThreadRotationContext(context),
       agentToolInjector,
@@ -794,10 +794,10 @@ function combineRunInjectors(
 async function readAllCodexHistory(
   provider: CodexSessionProvider,
   codexThreadId: string
-): Promise<import('@clawee/protocol').ThreadHistoryItem[]> {
+): Promise<import('@opencreator/protocol').ThreadHistoryItem[]> {
   let cursor: string | undefined;
   const seenCursors = new Set<string>();
-  let items: import('@clawee/protocol').ThreadHistoryItem[] = [];
+  let items: import('@opencreator/protocol').ThreadHistoryItem[] = [];
   do {
     const page = await provider.listTurns({
       codexThreadId,

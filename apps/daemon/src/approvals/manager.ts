@@ -5,7 +5,7 @@ import type {
   ApprovalRisk,
   ApprovalStatus,
   RuntimeApproval
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 

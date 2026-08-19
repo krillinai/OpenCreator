@@ -41,37 +41,37 @@ describe('daemon production startup', () => {
 
   it('maps isolated runtime paths from non-empty environment variables', () => {
     expect(resolveProductionServerEnvironment({
-      CLAWEE_DATA_DIR: ' /tmp/clawee-data ',
-      CLAWEE_CODEX_BIN: ' /tmp/fake-codex ',
-      CODEX_HOME: ' /tmp/clawee-codex-home ',
-      CLAWEE_DEFAULT_CWD: ' /tmp/default-workspace ',
-      CLAWEE_DEFAULT_PROJECT_ROOT: ' /tmp/Documents '
+      OPENCREATOR_DATA_DIR: ' /tmp/opencreator-data ',
+      OPENCREATOR_CODEX_BIN: ' /tmp/fake-codex ',
+      CODEX_HOME: ' /tmp/opencreator-codex-home ',
+      OPENCREATOR_DEFAULT_CWD: ' /tmp/default-workspace ',
+      OPENCREATOR_DEFAULT_PROJECT_ROOT: ' /tmp/Documents '
     })).toEqual({
-      dataDir: '/tmp/clawee-data',
+      dataDir: '/tmp/opencreator-data',
       codexBin: '/tmp/fake-codex',
-      codexHome: '/tmp/clawee-codex-home',
+      codexHome: '/tmp/opencreator-codex-home',
       defaultCwd: '/tmp/default-workspace',
       defaultProjectRoot: '/tmp/Documents'
     });
 
     expect(resolveProductionServerEnvironment({
-      CLAWEE_DATA_DIR: ' ',
-      CLAWEE_CODEX_BIN: '',
+      OPENCREATOR_DATA_DIR: ' ',
+      OPENCREATOR_CODEX_BIN: '',
       CODEX_HOME: '\t',
-      CLAWEE_DEFAULT_CWD: '\n',
-      CLAWEE_DEFAULT_PROJECT_ROOT: ' '
+      OPENCREATOR_DEFAULT_CWD: '\n',
+      OPENCREATOR_DEFAULT_PROJECT_ROOT: ' '
     })).toEqual({});
   });
 
   it('prefers standard CODEX_HOME and keeps the legacy variable as a fallback', () => {
     expect(resolveProductionServerEnvironment({
       CODEX_HOME: '/tmp/standard-codex-home',
-      CLAWEE_CODEX_HOME: '/tmp/legacy-codex-home'
+      OPENCREATOR_CODEX_HOME: '/tmp/legacy-codex-home'
     })).toMatchObject({
       codexHome: '/tmp/standard-codex-home'
     });
     expect(resolveProductionServerEnvironment({
-      CLAWEE_CODEX_HOME: '/tmp/legacy-codex-home'
+      OPENCREATOR_CODEX_HOME: '/tmp/legacy-codex-home'
     })).toMatchObject({
       codexHome: '/tmp/legacy-codex-home'
     });
@@ -79,7 +79,7 @@ describe('daemon production startup', () => {
 
   it('reads the enterprise gateway and optional E2E identity from arguments', () => {
     const configArgument =
-      '--clawee-enterprise-config=/tmp/enterprise-gateway.json';
+      '--opencreator-enterprise-config=/tmp/enterprise-gateway.json';
     expect(resolveEnterpriseStartupArguments(
       ['node', 'main.js', configArgument],
       () => 'https://enterprise.example'
@@ -92,8 +92,8 @@ describe('daemon production startup', () => {
         'node',
         'main.js',
         configArgument,
-        '--clawee-enterprise-e2e-run-id=123e4567-e89b-42d3-a456-426614174000',
-        '--clawee-enterprise-e2e-authorized=packaged-app'
+        '--opencreator-enterprise-e2e-run-id=123e4567-e89b-42d3-a456-426614174000',
+        '--opencreator-enterprise-e2e-authorized=packaged-app'
       ],
       () => 'http://127.0.0.1:1904'
     )).toEqual({
@@ -108,14 +108,14 @@ describe('daemon production startup', () => {
         'node',
         'main.js',
         configArgument,
-        '--clawee-enterprise-e2e-run-id=123e4567-e89b-42d3-a456-426614174000'
+        '--opencreator-enterprise-e2e-run-id=123e4567-e89b-42d3-a456-426614174000'
       ],
       [
         'node',
         'main.js',
         configArgument,
-        '--clawee-enterprise-e2e-run-id=not-a-uuid',
-        '--clawee-enterprise-e2e-authorized=packaged-app'
+        '--opencreator-enterprise-e2e-run-id=not-a-uuid',
+        '--opencreator-enterprise-e2e-authorized=packaged-app'
       ]
     ]) {
       expect(() => resolveEnterpriseStartupArguments(
@@ -127,12 +127,12 @@ describe('daemon production startup', () => {
 
   it('rejects enterprise configuration through environment variables', () => {
     for (const env of [
-      { CLAWEE_ENTERPRISE_ORIGIN: 'https://enterprise.example' },
+      { OPENCREATOR_ENTERPRISE_ORIGIN: 'https://enterprise.example' },
       {
-        CLAWEE_ENTERPRISE_E2E_RUN_ID:
+        OPENCREATOR_ENTERPRISE_E2E_RUN_ID:
           '123e4567-e89b-42d3-a456-426614174000'
       },
-      { CLAWEE_ENTERPRISE_KEYRING_SERVICE: 'arbitrary-service' }
+      { OPENCREATOR_ENTERPRISE_KEYRING_SERVICE: 'arbitrary-service' }
     ]) {
       expect(() => resolveProductionServerEnvironment(env)).toThrow(
         'ENTERPRISE_ENV_CONFIG_FORBIDDEN'

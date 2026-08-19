@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope } from '@opencreator/protocol';
 import { describe, expect, it } from 'vitest';
 import { eventToTimelineItem } from './timeline-model.js';
 

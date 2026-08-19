@@ -3,7 +3,7 @@ import type {
   CleanupFailedItem,
   CleanupPreviewItem,
   CleanupPreviewResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { RunRepository, RunRow, ThreadRepository, ThreadRow } from '../storage/repositories.js';

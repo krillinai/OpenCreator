@@ -10,7 +10,7 @@ describe('DetailPanel', () => {
         mode="file"
         title="notes.txt"
         subtitle="apps/web/notes.txt"
-        content={'# Clawee\n\nDetail content'}
+        content={'# OpenCreator\n\nDetail content'}
         onClose={vi.fn()}
       />
     );
@@ -18,7 +18,7 @@ describe('DetailPanel', () => {
     expect(screen.getByRole('heading', { name: 'notes.txt' })).toBeInTheDocument();
     expect(screen.getByText('apps/web/notes.txt')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '详情内容' }).querySelector('pre')?.textContent).toBe(
-      '# Clawee\n\nDetail content'
+      '# OpenCreator\n\nDetail content'
     );
   });
 
@@ -28,14 +28,14 @@ describe('DetailPanel', () => {
         mode="file"
         title="README.md"
         subtitle="apps/web/README.md"
-        content={'# Clawee\n\n当前温度 **29°C**'}
+        content={'# OpenCreator\n\n当前温度 **29°C**'}
         onClose={vi.fn()}
       />
     );
 
-    expect(screen.getByRole('heading', { name: 'Clawee', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'OpenCreator', level: 1 })).toBeInTheDocument();
     expect(screen.getByText('29°C')).toHaveProperty('tagName', 'STRONG');
-    expect(screen.queryByText('# Clawee')).not.toBeInTheDocument();
+    expect(screen.queryByText('# OpenCreator')).not.toBeInTheDocument();
   });
 
   it('renders html file content as source instead of executing markup', () => {

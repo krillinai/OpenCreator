@@ -4,7 +4,7 @@ import type {
   AttachmentUploadRequest,
   AttachmentUploadResponse,
   RuntimeErrorCode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import {

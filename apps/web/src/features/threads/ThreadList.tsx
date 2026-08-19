@@ -1,4 +1,4 @@
-import type { ThreadResponse } from '@clawee/protocol';
+import type { ThreadResponse } from '@opencreator/protocol';
 
 export function ThreadList(props: {
   threads: ThreadResponse[];

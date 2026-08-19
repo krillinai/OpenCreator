@@ -52,7 +52,7 @@ test('引用占位符不显示，空白 HTML 会按实际渲染结果恢复正�
     .toBeVisible({ timeout: 5_000 });
   await expect(frame.getByText('预览已经渲染出可见正文。')).toBeVisible();
   await expect.poll(
-    () => frame.locator('html').getAttribute('data-clawee-preview-state')
+    () => frame.locator('html').getAttribute('data-opencreator-preview-state')
   ).toBe('recovered');
 
   const headingBox = await frame.getByRole('heading', { name: '恢复后的天气报告' })
@@ -107,11 +107,11 @@ test('正常天气页面保持原始布局，不触发空白恢复', async ({ pa
 
   await expect(heading).toBeVisible();
   await expect.poll(
-    () => frame.locator('html').getAttribute('data-clawee-preview-state')
+    () => frame.locator('html').getAttribute('data-opencreator-preview-state')
   ).toBe('ready');
   expect(await frame.locator('main').evaluate(element => getComputedStyle(element).transform))
     .not.toBe('none');
-  await expect(frame.locator('[data-clawee-preview-force-visible]')).toHaveCount(0);
+  await expect(frame.locator('[data-opencreator-preview-force-visible]')).toHaveCount(0);
 });
 
 test('拖动会话和 HTML 预览分隔条进入 iframe 后可以正常松开', async ({

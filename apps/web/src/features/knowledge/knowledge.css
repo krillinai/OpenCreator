@@ -110,7 +110,7 @@
   background: var(--surface-2);
 }
 
-.knowledge-workbench {
+.knowledge-dashboard {
   min-height: 590px;
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
@@ -566,7 +566,7 @@
 }
 
 @media (max-width: 820px) {
-  .knowledge-workbench {
+  .knowledge-dashboard {
     grid-template-columns: 1fr;
     min-height: 560px;
   }
@@ -579,11 +579,11 @@
     display: none;
   }
 
-  .knowledge-workbench[data-mobile-documents-open="true"] .knowledge-library-pane {
+  .knowledge-dashboard[data-mobile-documents-open="true"] .knowledge-library-pane {
     display: none;
   }
 
-  .knowledge-workbench[data-mobile-documents-open="true"] .knowledge-documents-pane {
+  .knowledge-dashboard[data-mobile-documents-open="true"] .knowledge-documents-pane {
     display: flex;
   }
 

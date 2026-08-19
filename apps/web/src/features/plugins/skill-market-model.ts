@@ -2,12 +2,12 @@ import type {
   CodexSkillListResponse,
   CodexSkillMarketInstallRecordResponse,
   CodexSkillResponse,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   skillMarketCategories,
   type SkillMarketCategory,
   type SkillMarketEntry,
-} from '@clawee/skill-market';
+} from '@opencreator/skill-market';
 
 export type SkillMarketStatus =
   | 'not_installed'

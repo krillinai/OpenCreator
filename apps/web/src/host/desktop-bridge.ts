@@ -40,7 +40,7 @@ type DesktopApi = {
 
 declare global {
   interface Window {
-    claweeDesktop?: DesktopApi;
+    opencreatorDesktop?: DesktopApi;
   }
 }
 
@@ -53,7 +53,7 @@ export type DesktopHostBridge = HostBridge & {
 };
 
 export function readDesktopHostBridge(): DesktopHostBridge | undefined {
-  const api = window.claweeDesktop;
+  const api = window.opencreatorDesktop;
   if (api?.kind !== 'desktop') return undefined;
   const windowChrome = api.windowChrome?.integratedTitleBar === true
     && typeof api.windowChrome.titleBarHeight === 'number'
@@ -84,9 +84,9 @@ export function readDesktopHostBridge(): DesktopHostBridge | undefined {
 }
 
 export function subscribeDesktopNavigation(listener: (route: string) => void): () => void {
-  return window.claweeDesktop?.subscribeNavigation(listener) ?? (() => undefined);
+  return window.opencreatorDesktop?.subscribeNavigation(listener) ?? (() => undefined);
 }
 
 export function signalDesktopWorkspaceReady(): void {
-  window.claweeDesktop?.workspaceReady();
+  window.opencreatorDesktop?.workspaceReady();
 }

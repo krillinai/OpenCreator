@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe('codex sessions scanner', () => {
   it('lists Codex JSONL sessions as resumable thread summaries', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-sessions-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '07');
     mkdirSync(sessionDir, { recursive: true });
@@ -70,7 +70,7 @@ describe('codex sessions scanner', () => {
   });
 
   it('summarizes long assistant prompts into concise imported thread titles', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-sessions-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '13');
     mkdirSync(sessionDir, { recursive: true });
@@ -79,7 +79,7 @@ describe('codex sessions scanner', () => {
       cwd: tempDir,
       timestamp: '2026-07-13T01:00:00.000Z',
       userMessage: [
-        '你是 Clawee 的计划任务配置助手。',
+        '你是 OpenCreator 的计划任务配置助手。',
         '不要调用工具，不要修改文件，只根据用户描述生成一个计划任务草稿。',
         '用户所在时区：Asia/Shanghai',
         '只输出一个 JSON 对象，不要输出 Markdown 或解释。',
@@ -95,8 +95,8 @@ describe('codex sessions scanner', () => {
     ]);
   });
 
-  it('keeps Clawee recovery context out of scanned titles and public history', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+  it('keeps OpenCreator recovery context out of scanned titles and public history', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-sessions-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '13');
     mkdirSync(sessionDir, { recursive: true });
@@ -105,7 +105,7 @@ describe('codex sessions scanner', () => {
       cwd: tempDir,
       timestamp: '2026-07-13T02:00:00.000Z',
       userMessage: [
-        '[Clawee 执行上下文恢复摘要]',
+        '[OpenCreator 执行上下文恢复摘要]',
         '- 已完成：内部恢复信息',
         '',
         '本次公开任务输入：',
@@ -131,7 +131,7 @@ describe('codex sessions scanner', () => {
   });
 
   it('filters subagent Codex sessions before applying the list limit', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-sessions-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '09');
     mkdirSync(sessionDir, { recursive: true });
@@ -175,7 +175,7 @@ describe('codex sessions scanner', () => {
   });
 
   it('only reads the session summary prefix when listing large Codex sessions', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-sessions-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-sessions-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '10');
     mkdirSync(sessionDir, { recursive: true });
@@ -224,7 +224,7 @@ describe('codex sessions scanner', () => {
   });
 
   it('reads patch apply file changes from Codex session history', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-history-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-history-'));
     const codexHome = join(tempDir, 'codex-home');
     const sessionDir = join(codexHome, 'sessions', '2026', '07', '08');
     mkdirSync(sessionDir, { recursive: true });

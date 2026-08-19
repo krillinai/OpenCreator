@@ -1,4 +1,4 @@
-import type { ApiError, RuntimeErrorCode } from '@clawee/protocol';
+import type { ApiError, RuntimeErrorCode } from '@opencreator/protocol';
 
 export function apiError(
   code: RuntimeErrorCode,

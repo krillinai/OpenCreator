@@ -4,7 +4,7 @@ import {
   type AliyunSpeechConfig,
   type CreatorServicesConfig,
   type OpenAiCompatibleConfig
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   AudioLines,
   Check,

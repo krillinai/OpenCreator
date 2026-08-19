@@ -29,7 +29,7 @@ Agent Runtime 已经完成第一版后端内核，具备 Codex status、thread�
    - `/codex/mcp`
    - `/schedules`
    - `/runtime/cleanup`
-3. 以 `index.html` 原型为准实现四区工作台：
+3. 以 `index.html` 原型为准实现四区 Dashboard：
    - 左侧导航、项目、会话、计划任务、能力、设置。
    - 中间 Agent 对话 timeline。
    - 右侧文件编辑器。
@@ -72,7 +72,7 @@ Agent Runtime 已经完成第一版后端内核，具备 Codex status、thread�
 第一版建议：
 
 1. Vite + React + TypeScript。
-2. 复用 `@clawee/protocol` 类型。
+2. 复用 `@opencreator/protocol` 类型。
 3. 图标使用 `lucide-react`。
 4. 样式先使用普通 CSS 与设计 token，不引入大型 UI 框架。
 5. 状态管理先使用 hooks + reducer；如果实现中 server state 缓存和并发刷新明显复杂，再引入 TanStack Query。
@@ -212,7 +212,7 @@ type HostBridge = {
 
 ## 8. 页面信息架构
 
-### 8.1 四区工作台
+### 8.1 四区 Dashboard
 
 ```text
 左侧：项目 / 会话 / 计划任务 / 能力 / 设置
@@ -359,7 +359,7 @@ type TimelineItem =
 IndexedDB：
 
 ```text
-database: clawee.web.v1
+database: opencreator.web.v1
 stores:
   files
   mockTimeline
@@ -370,11 +370,11 @@ stores:
 localStorage 使用版本化 key：
 
 ```text
-clawee.web.connection.v1
-clawee.web.projects.v1
-clawee.web.file-index.v1
-clawee.web.editor.v1
-clawee.web.ui.v1
+opencreator.web.connection.v1
+opencreator.web.projects.v1
+opencreator.web.file-index.v1
+opencreator.web.editor.v1
+opencreator.web.ui.v1
 ```
 
 规则：
@@ -394,11 +394,11 @@ clawee.web.ui.v1
 
 1. 从 `HostBridge.readConnectionConfig()` 读取 daemon address/token。
 2. 初始化 mock project/file/editor state。
-3. 无连接配置时，进入 disconnected 工作台。
+3. 无连接配置时，进入 disconnected Dashboard 。
 4. 有连接配置时调用 `/healthz`。
 5. `/healthz` 成功后调用 `/codex/status`。
 6. 拉取 threads、skills、MCP、schedules。
-7. 任一步失败都显示连接错误，但不清空 mock 工作台。
+7. 任一步失败都显示连接错误，但不清空 mock Dashboard 。
 
 ### 11.2 新对话和发送消息
 
@@ -523,7 +523,7 @@ disconnected 时显示连接提示。第一版不 mock 真实 schedule 执行。
 
 ## 12. 错误处理
 
-1. 连接失败：标记 disconnected，真实功能 disabled，mock 工作台继续可用。
+1. 连接失败：标记 disconnected，真实功能 disabled，mock Dashboard 继续可用。
 2. 401：标记 token invalid，打开连接设置，不自动重试。
 3. 400：显示表单校验错误。
 4. 404：刷新对应列表并提示资源不存在。
@@ -577,7 +577,7 @@ UI State
 
 1. Runtime state 来源只能是 Runtime API/SSE。
 2. Mock workspace state 来源只能是 mock services/IndexedDB/localStorage。
-3. UI state 可以写入 `clawee.web.ui.v1`。
+3. UI state 可以写入 `opencreator.web.ui.v1`。
 4. 组件通过 hooks 使用状态，不直接读写 localStorage。
 5. `activeRunByThreadId` 从 `/threads/:id/runs`、`POST /runs` 响应和 SSE done 事件派生。
 6. Composer 禁用状态只依赖当前 thread 的 `activeRunByThreadId`。
@@ -593,15 +593,15 @@ UI State
 7. mock 文件保存文案必须明确为本地草稿。
 8. disconnected 状态不能让页面空白。
 9. 顶部连接状态必须绑定 `/healthz` 和 `/codex/status`，不能静态显示“已连接”。
-10. 产品标题第一版使用 “Clawee Agent” 或 “Agent Runtime”，不继续使用“企业 Agent 工作台”作为正式标题。
+10. 产品标题第一版使用 “OpenCreator Agent” 或 “Agent Runtime”，不继续使用“企业 Agent Dashboard”作为正式标题。
 11. Run 诊断入口必须贴近当前 run，不只放在全局设置页。
 
 ## 15. 测试方案
 
 ### 15.1 类型和构建
 
-1. `pnpm --filter @clawee/web typecheck`
-2. `pnpm --filter @clawee/web build`
+1. `pnpm --filter @opencreator/web typecheck`
+2. `pnpm --filter @opencreator/web build`
 3. `pnpm typecheck`
 
 ### 15.2 RuntimeClient 单元测试
@@ -649,7 +649,7 @@ UI State
 7. Schedules。
 8. Settings/Cleanup。
 9. 右侧文件编辑模式和 Run 详情模式切换不丢 dirty buffer。
-10. disconnected -> connected 后 mock 工作台不被清空，真实功能从 disabled 变 enabled。
+10. disconnected -> connected 后 mock Dashboard 不被清空，真实功能从 disabled 变 enabled。
 11. 同 thread 有 active run 时 composer 禁用。
 12. `RESUME_*` 错误卡可触发 `resumeMode: "new_thread"` 重试。
 
@@ -680,7 +680,7 @@ UI State
 3. Runtime connected 时，Thread/Run/fetch-based SSE/cancel/diagnostics 真实可用。
 4. 右侧同时支持文件编辑模式和 Run 详情/Diagnostics 模式。
 5. Skills/MCP/Schedules/Settings 接真实 API。
-6. Runtime disconnected 时，工作台仍可浏览和编辑 mock 文件。
+6. Runtime disconnected 时，Dashboard 仍可浏览和编辑 mock 文件。
 7. 文件树、文件编辑、搜索、替换、保存状态符合原型目标。
 8. mock 文件保存到 IndexedDB，刷新不丢。
 9. UI 组件没有硬编码 mock 数据，mock 只存在 adapter 层。

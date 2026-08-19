@@ -84,7 +84,7 @@ function createFixture(validDatabase = true): {
   source: string;
   target: string;
 } {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-migration-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-migration-'));
   const source = join(tempDir, 'source');
   const target = join(tempDir, 'target');
   mkdirSync(source);

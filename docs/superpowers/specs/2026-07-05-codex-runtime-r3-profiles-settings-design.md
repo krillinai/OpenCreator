@@ -43,7 +43,7 @@ R3 第一版不做：
 2. 否则使用 Codex 默认路径 `~/.codex`。
 3. 这两种都属于 `global` 模式。
 
-产品目标不是再管理一套 Clawee profile，而是操作 Codex 原生 profile overlay 文件。全局模式是生产路径，profile 写入最终应该允许，但必须满足：
+产品目标不是再管理一套 OpenCreator profile，而是操作 Codex 原生 profile overlay 文件。全局模式是生产路径，profile 写入最终应该允许，但必须满足：
 
 1. 请求显式确认会写入全局 Codex 环境。
 2. 写入前获取 Codex 配置写锁。

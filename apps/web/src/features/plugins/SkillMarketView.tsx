@@ -1,8 +1,8 @@
 import type {
   CodexSkillListResponse,
   CodexSkillMarketInstallRecordResponse,
-} from '@clawee/protocol';
-import { skillMarketCatalog, type SkillMarketEntry } from '@clawee/skill-market';
+} from '@opencreator/protocol';
+import { skillMarketCatalog, type SkillMarketEntry } from '@opencreator/skill-market';
 import {
   AlertCircle,
   CheckCircle2,

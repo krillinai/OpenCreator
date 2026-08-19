@@ -104,7 +104,7 @@ Append this test inside `describe.runIf(runRealCodex)('real codex smoke', () => 
 - [ ] **Step 2: Run the smoke and confirm profile shape**
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: the new profile overlay ABI smoke passes.
@@ -184,7 +184,7 @@ In `apps/daemon/test/integration/api.test.ts`, update `returns codex status with
 - [ ] **Step 2: Run tests and confirm failure**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-home.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-home.test.ts test/integration/api.test.ts
 ```
 
 Expected: fails because `writable`, `codexHomeSource`, and `codexHomeWritable` are missing.
@@ -249,7 +249,7 @@ In `apps/daemon/src/api/routes.codex.ts`, return:
 - [ ] **Step 6: Run tests**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-home.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-home.test.ts test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -341,7 +341,7 @@ describe('codex profile config parser', () => {
 - [ ] **Step 2: Run tests and confirm failure**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-profile-config.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-profile-config.test.ts
 ```
 
 Expected: fails because module does not exist.
@@ -351,7 +351,7 @@ Expected: fails because module does not exist.
 Create `apps/daemon/src/codex/profiles/types.ts`:
 
 ```ts
-import type { CodexHomeMode } from '@clawee/protocol';
+import type { CodexHomeMode } from '@opencreator/protocol';
 
 export type CodexProfileStatus = 'valid' | 'invalid';
 export type TomlPrimitive = string | number | boolean;
@@ -483,7 +483,7 @@ function isTomlPrimitive(value: unknown): value is TomlPrimitive {
 - [ ] **Step 5: Run tests**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-profile-config.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-profile-config.test.ts
 pnpm typecheck
 ```
 
@@ -529,7 +529,7 @@ afterEach(() => {
 
 describe('codex profile writer', () => {
   it('creates updates and deletes profiles with backups', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-profile-writer-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-profile-writer-'));
     const writer = createProfileWriter({ codexHome: tempDir });
 
     await writer.createProfile('review', {
@@ -550,7 +550,7 @@ describe('codex profile writer', () => {
   });
 
   it('does not destroy the original profile when new config is invalid', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-profile-writer-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-profile-writer-'));
     mkdirSync(tempDir, { recursive: true });
     const profilePath = join(tempDir, 'review.config.toml');
     writeFileSync(profilePath, 'model = "gpt-5.3-codex"\n');
@@ -575,7 +575,7 @@ describe('codex profile writer', () => {
   });
 
   it('does not modify base config.toml when writing profiles', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-profile-writer-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-profile-writer-'));
     writeFileSync(join(tempDir, 'config.toml'), 'model = "gpt-5.3-codex"\napproval_policy = "never"\n');
     const writer = createProfileWriter({ codexHome: tempDir });
 
@@ -586,7 +586,7 @@ describe('codex profile writer', () => {
   });
 
   it('rejects writes when the base config.toml is invalid', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-profile-writer-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-profile-writer-'));
     writeFileSync(join(tempDir, 'config.toml'), 'model = "broken');
     const writer = createProfileWriter({ codexHome: tempDir });
 
@@ -599,7 +599,7 @@ describe('codex profile writer', () => {
 - [ ] **Step 2: Run tests and confirm failure**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-profile-writer.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-profile-writer.test.ts
 ```
 
 Expected: fails because writer module does not exist.
@@ -727,7 +727,7 @@ function formatTomlValue(value: TomlProfileValue): string {
 - [ ] **Step 4: Run tests**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-profile-config.test.ts test/unit/codex-profile-writer.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-profile-config.test.ts test/unit/codex-profile-writer.test.ts
 pnpm typecheck
 ```
 
@@ -756,7 +756,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
 
 ```ts
   it('lists profiles from an isolated codex home', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
     writeFileSync(
@@ -787,7 +787,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
   });
 
   it('returns invalid profile diagnostics instead of crashing for invalid profile config', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
     writeFileSync(join(codexHome, 'review.config.toml'), 'model = "broken');
@@ -810,7 +810,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
   });
 
   it('returns diagnostics instead of crashing when base config is invalid', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
     writeFileSync(join(codexHome, 'config.toml'), 'model = "broken');
@@ -836,7 +836,7 @@ Also import `mkdirSync`, `writeFileSync` from `node:fs` at the top.
 - [ ] **Step 2: Run tests and confirm failure**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 ```
 
 Expected: 404 for `/codex/profiles`.
@@ -1004,7 +1004,7 @@ Before run/thread routes:
 - [ ] **Step 6: Run tests**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -1032,7 +1032,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
 
 ```ts
   it('creates updates and deletes profiles in isolated codex home', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     server = await buildServer({ token: 'secret', dataDir: tempDir, codexHome });
 
@@ -1087,7 +1087,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
 - [ ] **Step 2: Run tests and confirm failure**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 ```
 
 Expected: POST/PATCH/DELETE are not implemented.
@@ -1182,7 +1182,7 @@ Import `FastifyReply`.
 - [ ] **Step 4: Run tests**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts test/unit/codex-profile-writer.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts test/unit/codex-profile-writer.test.ts
 pnpm typecheck
 ```
 
@@ -1211,7 +1211,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
 
 ```ts
   it('rejects explicit missing profiles for new runs and threads', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'turn.started' }, { type: 'turn.completed' }]
     });
@@ -1242,7 +1242,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
   });
 
   it('allows runs with profiles created in isolated codex home', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'turn.started' }, { type: 'turn.completed' }]
     });
@@ -1268,7 +1268,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
   });
 
   it('does not require default profile to exist', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const fake = createFakeCodex(tempDir, {
       stdoutLines: [{ type: 'turn.started' }, { type: 'turn.completed' }]
     });
@@ -1291,7 +1291,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
   });
 
   it('rejects explicit profiles when base config.toml is invalid', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
     writeFileSync(join(codexHome, 'config.toml'), 'model = "broken');
@@ -1310,7 +1310,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
   });
 
   it('rejects explicit profiles when the profile overlay is invalid', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     mkdirSync(codexHome, { recursive: true });
     writeFileSync(join(codexHome, 'review.config.toml'), 'model = "broken');
@@ -1331,7 +1331,7 @@ Add to `apps/daemon/test/integration/api.test.ts`:
 - [ ] **Step 2: Run tests and confirm failure**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 ```
 
 Expected: missing profile is not rejected yet.
@@ -1397,7 +1397,7 @@ If `registerThreadRoutes` signature is changed, update tests compile errors acco
 - [ ] **Step 4: Run tests**
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts test/integration/run-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts test/integration/run-manager.test.ts
 pnpm typecheck
 ```
 
@@ -1443,7 +1443,7 @@ Do not claim Skills, MCP, Scheduler, or UI are complete.
 ```bash
 pnpm typecheck
 pnpm test
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 git diff --check
 ```
 
@@ -1463,14 +1463,14 @@ pnpm daemon:dev
 In another shell, using the printed address/token:
 
 ```bash
-export CLAWEE_DAEMON_URL="http://127.0.0.1:<port>"
-export CLAWEE_DAEMON_TOKEN="<token>"
+export OPENCREATOR_DAEMON_URL="http://127.0.0.1:<port>"
+export OPENCREATOR_DAEMON_TOKEN="<token>"
 
-curl -sS -H "authorization: Bearer $CLAWEE_DAEMON_TOKEN" \
-  "$CLAWEE_DAEMON_URL/codex/status"
+curl -sS -H "authorization: Bearer $OPENCREATOR_DAEMON_TOKEN" \
+  "$OPENCREATOR_DAEMON_URL/codex/status"
 
-curl -sS -H "authorization: Bearer $CLAWEE_DAEMON_TOKEN" \
-  "$CLAWEE_DAEMON_URL/codex/profiles"
+curl -sS -H "authorization: Bearer $OPENCREATOR_DAEMON_TOKEN" \
+  "$OPENCREATOR_DAEMON_URL/codex/profiles"
 ```
 
 Expected in default global mode:

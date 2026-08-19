@@ -21,8 +21,8 @@ type NotificationApi = {
   requestPermission(): Promise<NotificationPermission>;
 };
 
-const SETTINGS_KEY = 'clawee.tasks.notifications.v1';
-const UNREAD_KEY = 'clawee.tasks.unread.v1';
+const SETTINGS_KEY = 'opencreator.tasks.notifications.v1';
+const UNREAD_KEY = 'opencreator.tasks.unread.v1';
 
 export function createNotificationService(input: {
   hostBridge: HostBridge;

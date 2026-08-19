@@ -2,7 +2,7 @@ import type {
   CleanupDeleteRequest,
   CleanupDeleteResponse,
   CleanupPreviewResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 type ClientLike = Pick<RuntimeClient, 'get' | 'post'>;

@@ -35,7 +35,7 @@ Playwright、100 任务性能门禁、旧数据库升级和应用代码回滚兼
 | `pnpm typecheck` | `PASS` |
 | `pnpm build` | `PASS` |
 | `pnpm e2e` | `PASS`：桌面与移动共 14/14，1.9 分钟 |
-| `CLAWEE_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check` | `PASS` |
+| `OPENCREATOR_PERFORMANCE_RESULTS_REQUIRED=1 pnpm perf:check` | `PASS` |
 | 真实 Codex smoke | `PASS`：14/14，98.13 秒 |
 | `git diff --check` | `PASS` |
 
@@ -51,8 +51,8 @@ Playwright、100 任务性能门禁、旧数据库升级和应用代码回滚兼
 1. Codex 版本、exec、resume 和 MCP 命令能力。
 2. 最小真实模型 Run。
 3. 全局与隔离 `$CODEX_HOME` 的 Profile、Skill 和 MCP。
-4. 同一 Schedule 连续运行两次，复用同一 Clawee Thread 和 Codex thread。
-5. ConversationSummary 驱动的 Codex thread 轮换，Clawee Thread 保持不变。
+4. 同一 Schedule 连续运行两次，复用同一 OpenCreator Thread 和 Codex thread。
+5. ConversationSummary 驱动的 Codex thread 轮换，OpenCreator Thread 保持不变。
 6. 命令执行 JSONL 和普通 `codex exec resume` 上下文连续性。
 
 ## 5. 升级与回滚演练

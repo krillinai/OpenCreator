@@ -65,8 +65,8 @@ export function isSafeHref(href: string, allowRelative: boolean): boolean {
   if (!trimmed || trimmed.startsWith('//')) return false;
 
   try {
-    const parsed = new URL(trimmed, 'https://clawee.local');
-    if (parsed.origin === 'https://clawee.local' && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmed)) {
+    const parsed = new URL(trimmed, 'https://opencreator.local');
+    if (parsed.origin === 'https://opencreator.local' && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmed)) {
       return allowRelative && !trimmed.startsWith('/');
     }
     return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:';

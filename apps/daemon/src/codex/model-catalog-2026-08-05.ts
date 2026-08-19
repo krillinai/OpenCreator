@@ -4,7 +4,7 @@ import type {
   CodexModelReasoningEffortOption,
   CodexModelResponse,
   ReasoningEffort
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { CodexAppServerRequestClient } from './app-server-client.js';
 
 export type CodexModelCatalog = {

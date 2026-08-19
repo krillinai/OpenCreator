@@ -4,7 +4,7 @@ import type {
   PublicRunStatus,
   RuntimeApproval,
   RunSubmissionMode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type TimelineItem =
   | {

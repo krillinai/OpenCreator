@@ -10,8 +10,8 @@ import { join } from 'node:path';
 import { parse, stringify } from '@iarna/toml';
 
 const args = process.argv.slice(2);
-const stateDir = process.env.CLAWEE_E2E_FAKE_CODEX_STATE_DIR;
-const mode = process.env.CLAWEE_E2E_FAKE_CODEX_MODE ?? 'success';
+const stateDir = process.env.OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR;
+const mode = process.env.OPENCREATOR_E2E_FAKE_CODEX_MODE ?? 'success';
 
 if (stateDir !== undefined) {
   mkdirSync(stateDir, { recursive: true });
@@ -22,7 +22,7 @@ if (stateDir !== undefined) {
 }
 
 if (args.length === 1 && args[0] === '--version') {
-  process.stdout.write('codex-cli 0.0.0-clawee-e2e\n');
+  process.stdout.write('codex-cli 0.0.0-opencreator-e2e\n');
   process.exit(0);
 }
 
@@ -92,7 +92,7 @@ if (isProbe) {
     await new Promise(() => undefined);
   }
 
-  const marker = prompt.match(/CLAWEE_READY_[a-f0-9]+/)?.[0];
+  const marker = prompt.match(/OPENCREATOR_READY_[a-f0-9]+/)?.[0];
   const response = marker === undefined
     ? 'hello from fake Codex'
     : `hello from fake Codex ${marker}`;
@@ -115,7 +115,7 @@ process.stdout.write(`${JSON.stringify({ type: 'turn.completed' })}\n`);
 
 function requireStateDir() {
   if (stateDir === undefined || stateDir.length === 0) {
-    throw new Error('CLAWEE_E2E_FAKE_CODEX_STATE_DIR is required');
+    throw new Error('OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR is required');
   }
   return stateDir;
 }

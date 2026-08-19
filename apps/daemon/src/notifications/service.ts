@@ -2,7 +2,7 @@ import type {
   NotificationAcknowledgeResponse,
   NotificationOutboxItem,
   NotificationOutboxListResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import { redactText } from '../security/redaction.js';
@@ -34,7 +34,7 @@ export type NotificationService = {
 const TITLE_LIMIT = 80;
 const BODY_LIMIT = 120;
 const INTERNAL_SCHEDULE_PROMPT_MARKERS = [
-  '这是 Clawee 已经触发的一次计划任务执行。',
+  '这是 OpenCreator 已经触发的一次计划任务执行。',
   '执行规则：'
 ] as const;
 

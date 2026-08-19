@@ -1,9 +1,9 @@
 {
-  "name": "@clawee/desktop",
+  "name": "@opencreator/desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Clawee 本地 Codex 桌面工作台",
-  "author": "Clawee",
+  "description": "OpenCreator 本地 Codex Dashboard",
+  "author": "OpenCreator",
   "type": "module",
   "main": "dist/main/main.js",
   "scripts": {

@@ -1,4 +1,4 @@
-import type { ProjectResponse, ThreadResponse } from '@clawee/protocol';
+import type { ProjectResponse, ThreadResponse } from '@opencreator/protocol';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -210,7 +210,7 @@ function thread(): ThreadResponse {
     id: 'thread-unassigned',
     title: 'Legacy conversation',
     projectId: null,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     codexThreadId: 'codex-one',
     cwd: '/workspace/legacy',
     canonicalCwd: '/workspace/legacy',

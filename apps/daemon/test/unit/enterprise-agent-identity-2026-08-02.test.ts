@@ -17,7 +17,7 @@ import {
 } from '../../src/enterprise/client-config-2026-08-06.js';
 
 const createdDirectories: string[] = [];
-const firstAgentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
+const firstAgentId = 'opencreator_550e8400-e29b-41d4-a716-446655440000';
 
 afterEach(() => {
   for (const directory of createdDirectories.splice(0)) {
@@ -52,7 +52,7 @@ describe('enterprise agent identity store', () => {
       configPath,
       legacyDataDir: dataDir,
       collectorConfigPath: join(dataDir, 'missing-collector.toml'),
-      generateId: vi.fn(() => 'clawee_123e4567-e89b-42d3-a456-426614174000')
+      generateId: vi.fn(() => 'opencreator_123e4567-e89b-42d3-a456-426614174000')
     });
     await expect(restored.getOrCreate()).resolves.toBe(firstAgentId);
   });
@@ -86,7 +86,7 @@ describe('enterprise agent identity store', () => {
       `${JSON.stringify({ version: 1, agentId: firstAgentId }, null, 2)}\n`
     );
     const generateId = vi.fn(
-      () => 'clawee_123e4567-e89b-42d3-a456-426614174000'
+      () => 'opencreator_123e4567-e89b-42d3-a456-426614174000'
     );
     const store = createEnterpriseAgentIdentityStore({
       configPath,
@@ -100,7 +100,7 @@ describe('enterprise agent identity store', () => {
     expect(readEnterpriseClientConfig(configPath).agentId).toBe(firstAgentId);
   });
 
-  it('inherits the collector agent id when clawee-agent has none', async () => {
+  it('inherits the collector agent id when opencreator-agent has none', async () => {
     const dataDir = createTempDirectory();
     const configPath = writeConfig(dataDir);
     const collectorConfigPath = join(dataDir, 'collector', 'config.toml');
@@ -110,7 +110,7 @@ describe('enterprise agent identity store', () => {
       `office_url = "https://enterprise.example"\nagent_id = "${firstAgentId}"\n`
     );
     const generateId = vi.fn(() =>
-      'clawee_123e4567-e89b-42d3-a456-426614174000'
+      'opencreator_123e4567-e89b-42d3-a456-426614174000'
     );
     const store = createEnterpriseAgentIdentityStore({
       configPath,
@@ -123,7 +123,7 @@ describe('enterprise agent identity store', () => {
     expect(readEnterpriseClientConfig(configPath).agentId).toBe(firstAgentId);
   });
 
-  it('keeps the clawee-agent id authoritative over collector config', async () => {
+  it('keeps the opencreator-agent id authoritative over collector config', async () => {
     const dataDir = createTempDirectory();
     const configPath = join(dataDir, 'config.toml');
     writeFileSync(
@@ -134,7 +134,7 @@ describe('enterprise agent identity store', () => {
     mkdirSync(join(dataDir, 'collector'));
     writeFileSync(
       collectorConfigPath,
-      'office_url = "https://enterprise.example"\nagent_id = "clawee_123e4567-e89b-42d3-a456-426614174000"\n'
+      'office_url = "https://enterprise.example"\nagent_id = "opencreator_123e4567-e89b-42d3-a456-426614174000"\n'
     );
     const store = createEnterpriseAgentIdentityStore({
       configPath,
@@ -155,7 +155,7 @@ describe('enterprise agent identity store', () => {
     const collectorConfigPath = join(dataDir, 'collector.toml');
     const collectorContents =
       'office_url = "https://private.enterprise.example"\n'
-      + 'agent_id = "clawee_123e4567-e89b-42d3-a456-426614174000"\n';
+      + 'agent_id = "opencreator_123e4567-e89b-42d3-a456-426614174000"\n';
     writeFileSync(collectorConfigPath, collectorContents);
     const onDiagnostic = vi.fn();
     const store = createEnterpriseAgentIdentityStore({
@@ -169,7 +169,7 @@ describe('enterprise agent identity store', () => {
     expect(onDiagnostic).toHaveBeenCalledWith({
       type: 'enterprise_collector_identity_sync_skipped',
       reason: 'different_origin',
-      claweeOrigin: 'https://public.enterprise.example',
+      opencreatorOrigin: 'https://public.enterprise.example',
       collectorOrigin: 'https://private.enterprise.example'
     });
   });
@@ -183,7 +183,7 @@ describe('enterprise agent identity store', () => {
       'office_url = "https://private.enterprise.example"\n'
       + `agent_id = "${firstAgentId}"\n`;
     writeFileSync(collectorConfigPath, collectorContents);
-    const generatedAgentId = 'clawee_123e4567-e89b-42d3-a456-426614174000';
+    const generatedAgentId = 'opencreator_123e4567-e89b-42d3-a456-426614174000';
     const generateId = vi.fn(() => generatedAgentId);
     const store = createEnterpriseAgentIdentityStore({
       configPath,
@@ -234,13 +234,13 @@ describe('enterprise agent identity store', () => {
     expect(onDiagnostic).toHaveBeenCalledWith({
       type: 'enterprise_collector_identity_sync_skipped',
       reason: 'invalid_config',
-      claweeOrigin: 'https://enterprise.example'
+      opencreatorOrigin: 'https://enterprise.example'
     });
   });
 });
 
 function createTempDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), 'clawee-enterprise-agent-'));
+  const directory = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-agent-'));
   createdDirectories.push(directory);
   return directory;
 }

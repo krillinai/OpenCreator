@@ -4,7 +4,7 @@ import type {
   ConversationSearchResponse,
   ConversationSearchResult,
   ConversationSearchSnippetSegment
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { createConversationTitle } from '../threads/conversation-title.js';

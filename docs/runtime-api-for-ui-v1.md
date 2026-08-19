@@ -4,7 +4,7 @@
 
 本文描述当前已实现 Agent Runtime 后端可供 UI 接入的 HTTP API 和 SSE 事件协议。当前 Runtime 是本机 Codex CLI 的契约层：默认复用当前全局 Codex 环境，即进程环境中的 `$CODEX_HOME`，否则使用 Codex 默认 `~/.codex`。
 
-当前 protocol 包版本为 `0.1.0`。前端实现应优先复用 `@clawee/protocol` 导出的类型；本文用于说明真实路由行为、产品边界和 UI 接入约束。
+当前 protocol 包版本为 `0.1.0`。前端实现应优先复用 `@opencreator/protocol` 导出的类型；本文用于说明真实路由行为、产品边界和 UI 接入约束。
 
 当前 UI 已接入：
 
@@ -459,7 +459,7 @@ UI 建议：
 4. thread 的 cwd/profile/sandbox 在创建后不可被 run 覆盖，UI 应把这些设置放在创建 thread 前。
 5. `schedule_task` 只能通过 Schedule API 修改或归档；普通 Thread 更新和归档接口返回
    `409 THREAD_MANAGED_BY_SCHEDULE`。
-6. `schedule_draft` 用于“使用 Clawee 创建”流程，Agent 成功创建任务后会原位转换为
+6. `schedule_draft` 用于“使用 OpenCreator 创建”流程，Agent 成功创建任务后会原位转换为
    `schedule_task`。
 
 ## 7. Profiles API
@@ -1054,12 +1054,12 @@ UI 注意：
 
 ### 计划任务 Codex thread 轮换
 
-1. Clawee `threadId`、Schedule `threadId` 和页面路由不会因底层 Codex thread 变化。
+1. OpenCreator `threadId`、Schedule `threadId` 和页面路由不会因底层 Codex thread 变化。
 2. 自动计划任务 resume 失败时，只尝试一次 `summary reseed -> new thread`。
 3. 新 Codex thread 建立前不覆盖 `threads.codex_thread_id`。
 4. 成功建立后产生一次 `THREAD_CODEX_SESSION_ROTATED` 非阻断诊断，显示“执行上下文已重新连接”。
 5. 默认每个 Codex thread 完成 50 个终态 Run 后主动轮换。
-6. `CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD` 可设置非负整数；`0` 关闭按次数主动轮换，
+6. `OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD` 可设置非负整数；`0` 关闭按次数主动轮换，
    但不关闭 resume 目标失效后的单次恢复。
 
 ### 独立一次性任务

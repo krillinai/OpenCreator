@@ -2,7 +2,7 @@ import type {
   NotificationAcknowledgeResponse,
   NotificationOutboxItem,
   NotificationOutboxListResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type NotificationOutboxClient = {
   list(after: string, limit: number): Promise<NotificationOutboxListResponse>;

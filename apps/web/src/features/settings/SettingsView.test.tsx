@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { SettingsView } from './SettingsView.js';
 
 describe('SettingsView', () => {
-  it('re-exports the Clawee settings view for compatibility', () => {
+  it('re-exports the OpenCreator settings view for compatibility', () => {
     render(<SettingsView runtimeStatus={{ connected: false }} onBack={() => undefined} />);
 
     expect(screen.getByRole('button', { name: '返回应用' })).toBeInTheDocument();

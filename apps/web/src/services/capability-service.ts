@@ -2,10 +2,10 @@ import type {
   CodexMcpListResponse,
   CodexProfileListResponse,
   CodexSkillListResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
-export type { CodexProfileListResponse } from '@clawee/protocol';
+export type { CodexProfileListResponse } from '@opencreator/protocol';
 
 export function createCapabilityService(client: RuntimeClient) {
   return {

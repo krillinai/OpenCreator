@@ -1,4 +1,4 @@
-import type { CreateMemoryRequest, MemoryScope } from '@clawee/protocol';
+import type { CreateMemoryRequest, MemoryScope } from '@opencreator/protocol';
 import { AlertTriangle, Brain, Check, X } from 'lucide-react';
 import { useState } from 'react';
 import { ApiClientError } from '../../runtime/errors.js';

@@ -2,14 +2,14 @@
 
 ## 目标
 
-在 Clawee 左侧边栏的“新对话”正下方增加“Agent 活动”入口，展示 `claw-mcp` 采集的组织级 Agent 活动和 Token 用量。
+在 OpenCreator 左侧边栏的“新对话”正下方增加“Agent 活动”入口，展示 `claw-mcp` 采集的组织级 Agent 活动和 Token 用量。
 
 首版支持两种角色视图：
 
 - 企业管理员查看全企业汇总、员工分布，并下钻到任意员工、Agent、会话和回合。
 - 普通员工只查看自己的汇总、Agent、会话和回合。
 
-首版覆盖 Collector 能发现的全部 Codex/Agent 活动，不限于 Clawee 客户端发起的任务。不提供费用估算，不接入 SSE 实时更新。
+首版覆盖 Collector 能发现的全部 Codex/Agent 活动，不限于 OpenCreator 客户端发起的任务。不提供费用估算，不接入 SSE 实时更新。
 
 ## 产品入口与路由
 
@@ -42,17 +42,17 @@
 ```text
 Codex / Agent runtime
         -> 累计 usage 事件
-clawee-collector
+opencreator-collector
         -> 标准化活动与 Token 上报
 claw-mcp
         -> 组织级存储、角色授权、时间范围聚合
-Clawee Daemon
+OpenCreator Daemon
         -> 使用现有企业会话代理只读 Activity API
 apps/web
         -> 共享的管理员或员工 Agent 活动页面
 ```
 
-`claw-mcp` 是组织级活动和用量的唯一事实源。Clawee 本地数据库不复制企业汇总数据。Web 不直接请求 `claw-mcp`，避免 Browser 与 Desktop 的 Cookie、CORS 和协议来源差异。
+`claw-mcp` 是组织级活动和用量的唯一事实源。OpenCreator 本地数据库不复制企业汇总数据。Web 不直接请求 `claw-mcp`，避免 Browser 与 Desktop 的 Cookie、CORS 和协议来源差异。
 
 ## Token 采集与存储
 
@@ -91,7 +91,7 @@ apps/web
 
 所有查询只接受 `today`、`7d`、`30d` 三种时间范围，默认 `7d`。服务端返回明确的范围起止时间和时区，避免浏览器与服务器按不同日期边界聚合。
 
-Clawee Daemon 通过现有企业认证 Service 代理这些只读接口，并在 Protocol 层定义裁剪后的 DTO。响应中不得出现工具输入和响应正文。认证失效沿用现有企业账户错误语义，不建立第二套登录态。
+OpenCreator Daemon 通过现有企业认证 Service 代理这些只读接口，并在 Protocol 层定义裁剪后的 DTO。响应中不得出现工具输入和响应正文。认证失效沿用现有企业账户错误语义，不建立第二套登录态。
 
 ## 页面设计
 
@@ -121,7 +121,7 @@ Clawee Daemon 通过现有企业认证 Service 代理这些只读接口，并在
 
 详情展示 Agent 状态、当前工作区、会话与回合、Token 拆分、活动时间线、子 Agent、工具名称/类型/状态/时间/耗时。管理员可以看到员工的提示词和回复摘要，普通员工只能看到自己的内容。
 
-页面采用安静、紧凑的工作台布局，不使用营销式大标题或装饰性卡片。指标卡仅用于少量核心统计，列表和详情使用表格、分栏与无外框信息区。
+页面采用安静、紧凑的 Dashboard 布局，不使用营销式大标题或装饰性卡片。指标卡仅用于少量核心统计，列表和详情使用表格、分栏与无外框信息区。
 
 ## 页面状态与错误处理
 
@@ -152,7 +152,7 @@ Clawee Daemon 通过现有企业认证 Service 代理这些只读接口，并在
 - 管理员/员工 API 权限测试，证明员工无法请求其他用户数据，管理员可在本企业范围下钻。
 - API 响应隐私测试，证明工具输入、响应和响应正文不会返回。
 
-### Clawee Daemon 与协议
+### OpenCreator Daemon 与协议
 
 - 企业代理 Service 单元测试，覆盖认证、时间范围、上游错误和 DTO 裁剪。
 - Runtime API 集成测试，覆盖管理员与员工响应，并验证不接受任意用户身份覆盖。
@@ -164,7 +164,7 @@ Clawee Daemon 通过现有企业认证 Service 代理这些只读接口，并在
 - 路由测试：列表与详情路由可解析、格式化和刷新恢复。
 - 页面测试：管理员、员工、未登录、无数据、缺失 Token、禁止访问和加载失败状态。
 - Browser Bridge / Desktop Bridge 一致性测试：相同数据下可见文案、关键尺寸、Runtime 请求和下钻结果一致。
-- 实际打包 App E2E：验证 `clawee-app://`、Preload Bridge、Runtime 代理、管理员/员工页面和详情下钻。
+- 实际打包 App E2E：验证 `opencreator-app://`、Preload Bridge、Runtime 代理、管理员/员工页面和详情下钻。
 
 未完成类型检查、相关测试、Web/Desktop 一致性测试和实际打包 App 验证前，不声明该功能可发布。
 

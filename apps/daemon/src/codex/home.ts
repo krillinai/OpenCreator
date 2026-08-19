@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { CodexHomeMode, CodexHomeSource } from '@clawee/protocol';
+import type { CodexHomeMode, CodexHomeSource } from '@opencreator/protocol';
 import { expandHome } from '../platform/paths.js';
 
 export type ResolveCodexHomeInput = {

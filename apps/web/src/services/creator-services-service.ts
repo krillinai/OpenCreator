@@ -1,7 +1,7 @@
 import type {
   CreatorServicesConfig,
   CreatorServicesConfigResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 type ClientLike = Pick<RuntimeClient, 'get' | 'patch' | 'delete'>;

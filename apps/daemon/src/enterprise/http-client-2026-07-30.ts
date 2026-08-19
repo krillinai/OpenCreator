@@ -7,7 +7,7 @@ import type {
   EnterpriseQrProvider,
   EnterpriseRegisterRequest,
   RuntimeErrorCode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
 import { open, rm } from 'node:fs/promises';
@@ -673,7 +673,7 @@ export function createEnterpriseHttpClient(input: {
           email: request.email,
           ...(request.name === undefined ? {} : { name: request.name }),
           password: request.password,
-          client_id: 'clawee-agent',
+          client_id: 'opencreator-agent',
           agent_id: agentId
         },
         method: 'POST',
@@ -686,7 +686,7 @@ export function createEnterpriseHttpClient(input: {
         body: {
           email: request.email,
           password: request.password,
-          client_id: 'clawee-agent',
+          client_id: 'opencreator-agent',
           agent_id: agentId
         },
         method: 'POST',
@@ -706,7 +706,7 @@ export function createEnterpriseHttpClient(input: {
       const response = await requestJson({
         body: {
           provider: request.provider,
-          client_id: 'clawee-agent',
+          client_id: 'opencreator-agent',
           agent_id: agentId
         },
         method: 'POST',

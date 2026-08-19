@@ -34,7 +34,7 @@ import type {
   ScheduleDetailResponse,
   ScheduleOperationListResponse,
   ScheduleResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 describe('protocol shape', () => {
   it('allows a minimal run request', () => {
@@ -91,7 +91,7 @@ describe('protocol shape', () => {
       id: 'thread_1',
       title: 'Daily status',
       projectId: 'project_1',
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       codexThreadId: null,
       cwd: '/tmp/project',
       canonicalCwd: '/tmp/project',

@@ -104,12 +104,12 @@ describe('codex argv', () => {
 
   it('injects the same non-secret MCP config into exec and resume', () => {
     const mcpServers = [{
-      name: 'clawee_schedule',
+      name: 'opencreator_schedule',
       url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
-      bearerTokenEnvVar: 'CLAWEE_AGENT_CAPABILITY_TOKEN',
+      bearerTokenEnvVar: 'OPENCREATOR_AGENT_CAPABILITY_TOKEN',
       enabledTools: [
-        'clawee_schedule_update',
-        'clawee_schedule_get'
+        'opencreator_schedule_update',
+        'opencreator_schedule_get'
       ],
       required: true,
       startupTimeoutSec: 10,
@@ -128,17 +128,17 @@ describe('codex argv', () => {
     });
     const expected = [
       '-c',
-      'mcp_servers.clawee_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
+      'mcp_servers.opencreator_schedule.url="http://127.0.0.1:43123/internal/agent-tools/mcp"',
       '-c',
-      'mcp_servers.clawee_schedule.bearer_token_env_var="CLAWEE_AGENT_CAPABILITY_TOKEN"',
+      'mcp_servers.opencreator_schedule.bearer_token_env_var="OPENCREATOR_AGENT_CAPABILITY_TOKEN"',
       '-c',
-      'mcp_servers.clawee_schedule.enabled_tools=["clawee_schedule_update","clawee_schedule_get"]',
+      'mcp_servers.opencreator_schedule.enabled_tools=["opencreator_schedule_update","opencreator_schedule_get"]',
       '-c',
-      'mcp_servers.clawee_schedule.required=true',
+      'mcp_servers.opencreator_schedule.required=true',
       '-c',
-      'mcp_servers.clawee_schedule.startup_timeout_sec=10',
+      'mcp_servers.opencreator_schedule.startup_timeout_sec=10',
       '-c',
-      'mcp_servers.clawee_schedule.tool_timeout_sec=30'
+      'mcp_servers.opencreator_schedule.tool_timeout_sec=30'
     ];
 
     expect(exec).toEqual(expect.arrayContaining(expected));
@@ -161,7 +161,7 @@ describe('codex argv', () => {
       sandbox: 'read-only',
       builtInTools,
       mcpServers: [{
-        name: 'clawee_knowledge',
+        name: 'opencreator_knowledge',
         url: 'http://127.0.0.1:43123/internal/agent-tools/mcp/knowledge',
         enabledTools: ['knowledge.search'],
         required: true
@@ -175,7 +175,7 @@ describe('codex argv', () => {
       '-c', 'web_search="disabled"',
       '--disable', 'shell_tool',
       '--disable', 'unified_exec',
-      '-c', 'mcp_servers.clawee_knowledge.enabled_tools=["knowledge.search"]'
+      '-c', 'mcp_servers.opencreator_knowledge.enabled_tools=["knowledge.search"]'
     ]));
     expect(() => buildCodexExecArgs({
       cwd: '/knowledge',

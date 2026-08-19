@@ -1,6 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultCreatorServicesConfig } from '@clawee/protocol';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import type { CreatorServicesConfigStore } from '../../src/creator-services/config-store.js';
 import { registerCreatorServicesRoutes } from '../../src/api/routes.creator-services.js';
 

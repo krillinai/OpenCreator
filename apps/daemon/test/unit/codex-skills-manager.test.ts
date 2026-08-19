@@ -105,7 +105,7 @@ describe('codex skill manager', () => {
 });
 
 function createFixture() {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-skills-manager-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skills-manager-'));
   const codexHome = join(tempDir, 'codex-home');
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   const manager = createSkillManager({

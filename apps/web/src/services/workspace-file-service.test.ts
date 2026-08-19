@@ -5,7 +5,7 @@ import type {
   WorkspaceFileMeta,
   WorkspaceFileRevealResponse,
   WorkspaceFileSaveResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 import { createWorkspaceFileService } from './workspace-file-service.js';
 

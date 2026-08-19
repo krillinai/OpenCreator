@@ -4,7 +4,7 @@ import type {
   CodexModelReasoningEffortOption,
   CodexModelResponse,
   ReasoningEffort
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 import {
   readJsonFromStorage,
@@ -24,8 +24,8 @@ export type RecentModelConfig = {
   reasoning: ReasoningEffort | null;
 };
 
-export const MODEL_CATALOG_STORAGE_KEY = 'clawee.models.catalog.v1';
-export const RECENT_MODEL_CONFIG_STORAGE_KEY = 'clawee.models.recent-config.v1';
+export const MODEL_CATALOG_STORAGE_KEY = 'opencreator.models.catalog.v1';
+export const RECENT_MODEL_CONFIG_STORAGE_KEY = 'opencreator.models.recent-config.v1';
 
 const REASONING_EFFORTS = new Set<ReasoningEffort>([
   'default',

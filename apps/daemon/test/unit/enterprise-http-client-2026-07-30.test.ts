@@ -15,7 +15,7 @@ import {
 } from '../../src/enterprise/http-client-2026-07-30.js';
 
 const ORIGIN = 'https://enterprise.example';
-const AGENT_ID = 'clawee_550e8400-e29b-41d4-a716-446655440000';
+const AGENT_ID = 'opencreator_550e8400-e29b-41d4-a716-446655440000';
 const createdDirectories: string[] = [];
 
 afterEach(() => {
@@ -88,7 +88,7 @@ describe('enterprise HTTP client', () => {
         email: 'user@example.com',
         name: 'User',
         password: 'password-123',
-        client_id: 'clawee-agent',
+        client_id: 'opencreator-agent',
         agent_id: AGENT_ID
       });
       return new Response(JSON.stringify({
@@ -132,7 +132,7 @@ describe('enterprise HTTP client', () => {
       expect(JSON.parse(String(init?.body))).toEqual({
         email: 'user@example.com',
         password: 'password-123',
-        client_id: 'clawee-agent',
+        client_id: 'opencreator-agent',
         agent_id: AGENT_ID
       });
       return jsonResponse({
@@ -228,7 +228,7 @@ describe('enterprise HTTP client', () => {
     ]);
     expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
       provider: 'feishu',
-      client_id: 'clawee-agent',
+      client_id: 'opencreator-agent',
       agent_id: AGENT_ID
     });
   });
@@ -975,7 +975,7 @@ describe('enterprise HTTP client', () => {
 });
 
 function createTempDirectory(): string {
-  const directory = mkdtempSync(join(tmpdir(), 'clawee-enterprise-http-'));
+  const directory = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-http-'));
   createdDirectories.push(directory);
   return directory;
 }

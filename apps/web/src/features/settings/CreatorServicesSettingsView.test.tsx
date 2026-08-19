@@ -1,4 +1,4 @@
-import { createDefaultCreatorServicesConfig } from '@clawee/protocol';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';

@@ -76,12 +76,12 @@ describe('enterprise credential store', () => {
 
   it('derives a constrained packaged-e2e keyring identity without arbitrary overrides', () => {
     expect(resolveEnterpriseCredentialIdentity()).toEqual({
-      service: 'com.clawee.enterprise',
-      account: 'clawee-agent'
+      service: 'com.opencreator.enterprise',
+      account: 'opencreator-agent'
     });
     expect(resolveEnterpriseCredentialIdentity('123e4567-e89b-42d3-a456-426614174000')).toEqual({
-      service: 'com.clawee.enterprise.e2e',
-      account: 'clawee-agent:123e4567-e89b-42d3-a456-426614174000'
+      service: 'com.opencreator.enterprise.e2e',
+      account: 'opencreator-agent:123e4567-e89b-42d3-a456-426614174000'
     });
     expect(() => resolveEnterpriseCredentialIdentity('not-a-uuid')).toThrow(
       'ENTERPRISE_E2E_CONFIG_FORBIDDEN'

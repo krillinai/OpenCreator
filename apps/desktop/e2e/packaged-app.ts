@@ -102,7 +102,7 @@ export async function waitForPackagedPage(
 
 export async function closePackagedApp(app: PackagedApp): Promise<void> {
   await app.page.evaluate(() => {
-    void window.claweeDesktop?.quit();
+    void window.opencreatorDesktop?.quit();
   }).catch(() => undefined);
   const exited = await waitForProcessExit(app.process, 8_000);
   if (!exited) await terminateProcessTree(app.process);

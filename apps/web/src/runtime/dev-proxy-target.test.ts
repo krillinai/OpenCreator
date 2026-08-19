@@ -31,18 +31,18 @@ describe('Vite Runtime proxy target', () => {
   it('keeps runtime requests on the validated daemon origin', () => {
     expect(buildDevProxyTarget(
       'http://127.0.0.1:60764',
-      '/.clawee/runtime/healthz?full=1'
+      '/.opencreator/runtime/healthz?full=1'
     ).toString()).toBe('http://127.0.0.1:60764/healthz?full=1');
   });
 
   it('rejects prefix collisions and network-path variants', () => {
     for (const incomingUrl of [
-      '/.clawee/runtimeevil',
-      '/.clawee/runtime//attacker.example/path',
-      '/.clawee/runtime/%2f%2fattacker.example/path',
-      '/.clawee/runtime/%5c%5cattacker.example/path',
-      '/.clawee/runtime/%00healthz',
-      '/.clawee/runtime/%'
+      '/.opencreator/runtimeevil',
+      '/.opencreator/runtime//attacker.example/path',
+      '/.opencreator/runtime/%2f%2fattacker.example/path',
+      '/.opencreator/runtime/%5c%5cattacker.example/path',
+      '/.opencreator/runtime/%00healthz',
+      '/.opencreator/runtime/%'
     ]) {
       expect(() => buildDevProxyTarget(
         'http://127.0.0.1:60764',

@@ -30,19 +30,19 @@ import {
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
 const manifestPath = resolve(
-  process.env.CLAWEE_DESKTOP_BUILD_MANIFEST
-    ?? join(desktopDir, 'release', 'clawee-desktop-build-manifest.json')
+  process.env.OPENCREATOR_DESKTOP_BUILD_MANIFEST
+    ?? join(desktopDir, 'release', 'opencreator-desktop-build-manifest.json')
 );
 const manifest = readBuildManifest(manifestPath);
-const targetArch = process.env.CLAWEE_DESKTOP_TARGET_ARCH
+const targetArch = process.env.OPENCREATOR_DESKTOP_TARGET_ARCH
   ?? manifest.arch
   ?? process.arch;
-const targetPlatform = process.env.CLAWEE_DESKTOP_TARGET_PLATFORM
+const targetPlatform = process.env.OPENCREATOR_DESKTOP_TARGET_PLATFORM
   ?? manifest.platform
   ?? process.platform;
-const targetLibc = process.env.CLAWEE_DESKTOP_TARGET_LIBC;
-const packageRoot = process.env.CLAWEE_DESKTOP_PACKAGE_ROOT
-  ? resolve(process.env.CLAWEE_DESKTOP_PACKAGE_ROOT)
+const targetLibc = process.env.OPENCREATOR_DESKTOP_TARGET_LIBC;
+const packageRoot = process.env.OPENCREATOR_DESKTOP_PACKAGE_ROOT
+  ? resolve(process.env.OPENCREATOR_DESKTOP_PACKAGE_ROOT)
   : resolve(manifest.packageRoot);
 const resourcesDir = platformResourcesDir(packageRoot);
 const appAsar = join(resourcesDir, 'app.asar');
@@ -102,12 +102,12 @@ console.log(JSON.stringify({
 
 function readBuildManifest(path) {
   if (!existsSync(path)) {
-    if (process.env.CLAWEE_DESKTOP_PACKAGE_ROOT) {
+    if (process.env.OPENCREATOR_DESKTOP_PACKAGE_ROOT) {
       return {};
     }
     throw new Error(
       `Desktop build manifest is missing: ${path}. `
-      + 'Run the Desktop package command or set CLAWEE_DESKTOP_PACKAGE_ROOT.'
+      + 'Run the Desktop package command or set OPENCREATOR_DESKTOP_PACKAGE_ROOT.'
     );
   }
   const parsed = JSON.parse(readFileSync(path, 'utf8'));
@@ -129,9 +129,9 @@ function platformResourcesDir(root) {
 
 function packagedExecutable(root) {
   if (process.platform === 'darwin') {
-    return join(root, 'Contents', 'MacOS', 'Clawee');
+    return join(root, 'Contents', 'MacOS', 'OpenCreator');
   }
-  return join(root, process.platform === 'win32' ? 'Clawee.exe' : 'clawee');
+  return join(root, process.platform === 'win32' ? 'OpenCreator.exe' : 'opencreator');
 }
 
 function assertAsarContents() {
@@ -166,21 +166,14 @@ function assertBrandingContents() {
   const packagedTray = join(desktopResourcesDir, 'tray.png');
   const sourceIcon = join(sourceResourcesDir, 'icon.png');
   const sourceTray = join(sourceResourcesDir, 'tray.png');
-  const sourceBootstrapLogo = resolve(desktopDir, 'src', 'bootstrap', 'logo.png');
-
   assertSameFile('Desktop icon', packagedIcon, sourceIcon);
   assertSameFile('Desktop tray icon', packagedTray, sourceTray);
 
   const bootstrapLogoEntry = listPackage(appAsar).find(entry =>
     /^\/dist\/bootstrap\/assets\/logo-[^/]+\.png$/.test(entry)
   );
-  if (bootstrapLogoEntry === undefined) {
-    throw new Error('app.asar is missing the Desktop bootstrap logo');
-  }
-  const packagedBootstrapLogo = extractFile(appAsar, bootstrapLogoEntry.slice(1));
-  const sourceBootstrapLogoHash = hashBuffer(readFileSync(sourceBootstrapLogo));
-  if (hashBuffer(packagedBootstrapLogo) !== sourceBootstrapLogoHash) {
-    throw new Error('Packaged Desktop bootstrap logo differs from its source asset');
+  if (bootstrapLogoEntry !== undefined) {
+    throw new Error(`app.asar contains a removed Desktop bootstrap logo: ${bootstrapLogoEntry}`);
   }
 
   if (process.platform === 'darwin') {
@@ -307,7 +300,7 @@ function assertNoLocalData() {
     homedir(),
     process.env.HOME,
     process.env.USERPROFILE,
-    '~/develop/clawee/',
+    '~/develop/opencreator/',
     '~/develop/content-design',
     'content-design',
     'Playground'

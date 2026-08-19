@@ -7,7 +7,7 @@ export type MockFileRecord = {
 const DB_VERSION = 1;
 const MAX_FILE_BYTES = 512 * 1024;
 
-export function createIndexedDbStore(databaseName = 'clawee.web.v1') {
+export function createIndexedDbStore(databaseName = 'opencreator.web.v1') {
   return {
     async saveFile(file: MockFileRecord): Promise<void> {
       if (new TextEncoder().encode(file.content).byteLength > MAX_FILE_BYTES) {

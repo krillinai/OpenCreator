@@ -3,7 +3,7 @@ import type {
   ScheduleLastStatus,
   ScheduleResponse,
   ThreadResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   getThreadActiveRun,
   type RunRegistryState

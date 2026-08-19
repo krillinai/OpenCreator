@@ -1765,6 +1765,15 @@
   object-fit: contain;
 }
 
+.skill-market-case__fallback {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .skill-market-case__caption {
   min-width: 0;
   min-height: 32px;
@@ -1885,6 +1894,11 @@
   max-height: calc(100dvh - 140px);
   aspect-ratio: auto;
   border: 0;
+}
+
+.skill-market-case__fallback.skill-market-case__media--preview {
+  width: min(720px, 70vw);
+  aspect-ratio: 16 / 9;
 }
 
 @media (min-width: 921px) {

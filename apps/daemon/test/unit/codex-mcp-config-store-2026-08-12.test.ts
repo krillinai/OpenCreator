@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe('Codex MCP config store', () => {
   it('updates only the native enabled flag and preserves other config', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-config-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-config-'));
     const configPath = join(tempDir, 'config.toml');
     writeFileSync(configPath, [
       'model = "gpt-test"',
@@ -62,7 +62,7 @@ describe('Codex MCP config store', () => {
   });
 
   it('rejects missing servers without creating a new config entry', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-config-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-config-'));
     const configPath = join(tempDir, 'config.toml');
     writeFileSync(configPath, 'model = "gpt-test"\n');
 
@@ -78,7 +78,7 @@ describe('Codex MCP config store', () => {
   });
 
   it('fingerprints every native MCP field but ignores unrelated config', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-config-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-config-'));
     const configPath = join(tempDir, 'config.toml');
     writeFileSync(configPath, [
       'model = "gpt-test"',

@@ -3,13 +3,13 @@ import { createMockApprovalService } from './approval-service.js';
 import { createMockFileService } from './file-service.js';
 
 function testDatabaseName(name: string) {
-  return `clawee.web.test.mock-services.${name}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
+  return `opencreator.web.test.mock-services.${name}.${Date.now()}.${Math.random().toString(36).slice(2)}`;
 }
 
 describe('mock services', () => {
   it('opens edits and saves a mock file', async () => {
     const service = createMockFileService({ databaseName: testDatabaseName('seed-save') });
-    const file = await service.openFile('docs/design/enterprise-agent-workbench.md');
+    const file = await service.openFile('docs/design/enterprise-agent-dashboard.md');
     expect(file.dirty).toBe(false);
 
     await service.saveFile(file.path, `${file.content}\nupdated`);

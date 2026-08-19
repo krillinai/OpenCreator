@@ -18,9 +18,9 @@ afterEach(() => {
 });
 
 describe('project manager', () => {
-  it('ensures one default project inside the managed Clawee directory', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-default-project-'));
-    const managedProjectRoot = join(tempDir, 'Documents', 'Clawee');
+  it('ensures one default project inside the managed OpenCreator directory', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-default-project-'));
+    const managedProjectRoot = join(tempDir, 'Documents', 'OpenCreator');
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     let nextId = 0;
     const manager = createProjectManager({
@@ -46,9 +46,9 @@ describe('project manager', () => {
     ).toEqual({ count: 1 });
   });
 
-  it('creates named projects inside the managed Clawee directory', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-managed-project-'));
-    const managedProjectRoot = join(tempDir, 'Documents', 'Clawee');
+  it('creates named projects inside the managed OpenCreator directory', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-managed-project-'));
+    const managedProjectRoot = join(tempDir, 'Documents', 'OpenCreator');
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const manager = createProjectManager({
       db,
@@ -68,8 +68,8 @@ describe('project manager', () => {
   });
 
   it('removes a newly created empty directory when registration fails', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-managed-project-'));
-    const projectDir = join(tempDir, 'Documents', 'Clawee', '未注册项目');
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-managed-project-'));
+    const projectDir = join(tempDir, 'Documents', 'OpenCreator', '未注册项目');
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const manager = createProjectManager({
       db,
@@ -83,8 +83,8 @@ describe('project manager', () => {
   });
 
   it('rejects invalid or duplicate managed project names', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-managed-project-'));
-    const managedProjectRoot = join(tempDir, 'Documents', 'Clawee');
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-managed-project-'));
+    const managedProjectRoot = join(tempDir, 'Documents', 'OpenCreator');
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const manager = createProjectManager({ db, managedProjectRoot });
 
@@ -101,7 +101,7 @@ describe('project manager', () => {
   });
 
   it('persists projects and preserves a missing migrated directory', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-project-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-project-'));
     const projectDir = join(tempDir, 'workspace');
     mkdirSync(projectDir);
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -152,7 +152,7 @@ describe('project manager', () => {
   });
 
   it('rejects duplicate active canonical directories and detects a removed directory', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-project-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-project-'));
     const projectDir = join(tempDir, 'workspace');
     mkdirSync(projectDir);
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -177,7 +177,7 @@ describe('project manager', () => {
   });
 
   it('returns SQLite UTC timestamps as timezone-qualified ISO values', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-project-timestamp-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-project-timestamp-'));
     const projectDir = join(tempDir, 'workspace');
     mkdirSync(projectDir);
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));

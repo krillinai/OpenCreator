@@ -7,7 +7,7 @@ import type {
   ProjectStatus,
   ReplaceProjectDirectoryRequest,
   UpdateProjectRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type ProjectManagerErrorCode =
   | 'PROJECT_NOT_FOUND'

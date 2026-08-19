@@ -28,5 +28,5 @@ jobs:
       - run: pnpm perf:measure
       - run: pnpm perf:check
         env:
-          CLAWEE_PERFORMANCE_RESULTS_REQUIRED: '1'
+          OPENCREATOR_PERFORMANCE_RESULTS_REQUIRED: '1'
       - run: pnpm audit --audit-level high

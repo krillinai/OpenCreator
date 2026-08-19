@@ -1,7 +1,7 @@
 import type {
   ConversationSearchQuery,
   ConversationSearchResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createSearchService(client: RuntimeClient) {

@@ -1,4 +1,4 @@
-import type { RunResponse, ScheduleResponse, ThreadResponse } from '@clawee/protocol';
+import type { RunResponse, ScheduleResponse, ThreadResponse } from '@opencreator/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   initialRunRegistryState,
@@ -131,7 +131,7 @@ function createThread(overrides: Partial<ThreadResponse> = {}): ThreadResponse {
     id: 'thread-task',
     title: '每日总结',
     projectId: null,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     codexThreadId: 'codex-thread-task',
     cwd: '/workspace/project',
     canonicalCwd: '/workspace/project',

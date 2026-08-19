@@ -1,4 +1,4 @@
-import type { ThreadHistoryResponse } from '@clawee/protocol';
+import type { ThreadHistoryResponse } from '@opencreator/protocol';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { useThreadHistory } from './use-thread-history.js';

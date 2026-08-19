@@ -1,4 +1,4 @@
-import type { WorkspaceFileMeta } from '@clawee/protocol';
+import type { WorkspaceFileMeta } from '@opencreator/protocol';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,13 +71,13 @@ describe('FileEditorPane', () => {
     const { rerender } = render(
       <FileEditorPane
         meta={createMeta({ name: 'package.json', path: 'package.json', kind: 'json', mime: 'application/json' })}
-        content={'{"name":"clawee","version":1}'}
+        content={'{"name":"opencreator","version":1}'}
       />
     );
 
     await user.click(screen.getByRole('button', { name: '预览' }));
 
-    expect(document.querySelector('.file-preview pre')?.textContent).toBe('{\n  "name": "clawee",\n  "version": 1\n}');
+    expect(document.querySelector('.file-preview pre')?.textContent).toBe('{\n  "name": "opencreator",\n  "version": 1\n}');
 
     rerender(
       <FileEditorPane

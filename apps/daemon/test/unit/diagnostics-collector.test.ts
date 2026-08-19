@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('diagnostics collector', () => {
   it('collects the default diagnostic files without raw.redacted.ndjson', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     writeRunFiles(tempDir, 'run_1', {
       'meta.json': '{"id":"run_1"}',
       'events.ndjson': '{"type":"done"}\n',
@@ -45,7 +45,7 @@ describe('diagnostics collector', () => {
   });
 
   it('includes raw.redacted.ndjson only when requested', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     writeRunFiles(tempDir, 'run_1', {
       'meta.json': '{"id":"run_1"}',
       'raw.redacted.ndjson': 'AUTH=raw-auth\n'
@@ -65,7 +65,7 @@ describe('diagnostics collector', () => {
   });
 
   it('surfaces recorded log writer failures as diagnostic warnings', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     writeRunFiles(tempDir, 'run_1', {
       'diagnostics.json': JSON.stringify({
         logWriter: {
@@ -94,7 +94,7 @@ describe('diagnostics collector', () => {
   });
 
   it('rejects invalid run ids before filesystem access', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
 
     expect(() =>
       collectRunDiagnostics({
@@ -106,7 +106,7 @@ describe('diagnostics collector', () => {
   });
 
   it('returns RUN_NOT_FOUND for syntactically valid missing runs', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
 
     expect(() =>
       collectRunDiagnostics({
@@ -118,7 +118,7 @@ describe('diagnostics collector', () => {
   });
 
   it('keeps a 200-style collection result when files are missing', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     mkdirSync(join(tempDir, 'runs', 'run_1'), { recursive: true });
 
     const result = collectRunDiagnostics({
@@ -140,7 +140,7 @@ describe('diagnostics collector', () => {
   });
 
   it('returns empty files when the runs root is missing', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
 
     const result = collectRunDiagnostics({
       dataDir: tempDir,
@@ -175,7 +175,7 @@ describe('diagnostics collector', () => {
   });
 
   it('returns empty files when the run diagnostics directory is missing', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     mkdirSync(join(tempDir, 'runs'), { recursive: true });
 
     const result = collectRunDiagnostics({
@@ -189,7 +189,7 @@ describe('diagnostics collector', () => {
   });
 
   it('skips diagnostics when the runs root is a symlink', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     const realRunsDir = join(tempDir, 'real-runs');
     mkdirSync(realRunsDir, { recursive: true });
     symlinkSync(realRunsDir, join(tempDir, 'runs'));
@@ -205,7 +205,7 @@ describe('diagnostics collector', () => {
   });
 
   it('skips diagnostics when the run directory is a symlink', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     const realRunDir = join(tempDir, 'real-run');
     mkdirSync(join(tempDir, 'runs'), { recursive: true });
     mkdirSync(realRunDir, { recursive: true });
@@ -224,7 +224,7 @@ describe('diagnostics collector', () => {
   });
 
   it('skips symlinked diagnostic files', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     const runDir = join(tempDir, 'runs', 'run_1');
     const outsideDir = join(tempDir, 'outside');
     mkdirSync(runDir, { recursive: true });
@@ -244,7 +244,7 @@ describe('diagnostics collector', () => {
   });
 
   it('skips allowed diagnostic file names that are directories', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     const runDir = join(tempDir, 'runs', 'run_1');
     mkdirSync(join(runDir, 'meta.json'), { recursive: true });
     writeFileSync(join(runDir, 'events.ndjson'), '{"type":"done"}\n');

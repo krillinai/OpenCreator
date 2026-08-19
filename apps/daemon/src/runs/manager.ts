@@ -4,7 +4,7 @@ import type {
   RuntimeApproval,
   RunSubmissionMode,
   TerminationReason
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -2076,8 +2076,8 @@ function buildApprovalRequest(input: {
   const scheduleName = optionalString(toolParams?.name);
   const isMcpElicitation = input.request.method === 'mcpServer/elicitation/request';
   const isScheduleCreate =
-    serverName === 'clawee_schedule'
-    && toolName === 'clawee_schedule_create';
+    serverName === 'opencreator_schedule'
+    && toolName === 'opencreator_schedule_create';
   const kind = input.request.method === 'item/commandExecution/requestApproval'
     ? 'command_execution' as const
     : input.request.method === 'item/fileChange/requestApproval'
@@ -2140,16 +2140,16 @@ function inferBuiltInMcpToolName(
   serverName: string | undefined,
   description: string | undefined
 ): string | undefined {
-  if (serverName !== 'clawee_schedule' || description === undefined) {
+  if (serverName !== 'opencreator_schedule' || description === undefined) {
     return undefined;
   }
   const tools = [
-    ['创建一个 Clawee 定时任务', 'clawee_schedule_create'],
-    ['更新当前任务会话绑定的定时任务', 'clawee_schedule_update'],
-    ['暂停当前任务会话绑定的定时任务', 'clawee_schedule_pause'],
-    ['恢复当前任务会话绑定的定时任务', 'clawee_schedule_resume'],
-    ['立即触发当前任务会话绑定的定时任务', 'clawee_schedule_run_now'],
-    ['读取当前任务会话绑定的定时任务', 'clawee_schedule_get']
+    ['创建一个 OpenCreator 定时任务', 'opencreator_schedule_create'],
+    ['更新当前任务会话绑定的定时任务', 'opencreator_schedule_update'],
+    ['暂停当前任务会话绑定的定时任务', 'opencreator_schedule_pause'],
+    ['恢复当前任务会话绑定的定时任务', 'opencreator_schedule_resume'],
+    ['立即触发当前任务会话绑定的定时任务', 'opencreator_schedule_run_now'],
+    ['读取当前任务会话绑定的定时任务', 'opencreator_schedule_get']
   ] as const;
   return tools.find(([prefix]) => description.startsWith(prefix))?.[1];
 }

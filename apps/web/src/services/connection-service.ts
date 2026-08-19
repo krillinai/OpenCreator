@@ -1,4 +1,4 @@
-import type { CodexStatusResponse } from '@clawee/protocol';
+import type { CodexStatusResponse } from '@opencreator/protocol';
 import { ApiClientError, type RuntimeClient } from '../runtime/client.js';
 
 export type ConnectionState =

@@ -1,4 +1,4 @@
-import type { ThreadPurpose } from '@clawee/protocol';
+import type { ThreadPurpose } from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -69,7 +69,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
         ),
         purpose: 'conversation',
         projectId: project.id,
-        origin: 'clawee_created'
+        origin: 'opencreator_created'
       });
     },
 
@@ -77,7 +77,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       return createRuntimeThread({
         ...request,
         projectId: null,
-        origin: 'clawee_created'
+        origin: 'opencreator_created'
       });
     },
 
@@ -107,7 +107,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
         purpose: 'conversation',
         projectId: project.id,
         enterpriseSubjectId: request.enterpriseSubjectId,
-        origin: 'clawee_created'
+        origin: 'opencreator_created'
       });
     },
 
@@ -115,7 +115,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       return createRuntimeThread({
         ...request,
         projectId: null,
-        origin: 'clawee_created'
+        origin: 'opencreator_created'
       });
     },
 
@@ -186,7 +186,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
       const existing = threads.getThread(id);
       if (
         existing === undefined
-        || existing.origin !== 'clawee_created'
+        || existing.origin !== 'opencreator_created'
         || existing.purpose !== 'conversation'
       ) {
         throw new ThreadManagerError('THREAD_NOT_FOUND', 'Thread not found');

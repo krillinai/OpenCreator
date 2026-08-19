@@ -28,7 +28,7 @@ export type EnterpriseCollectorInstaller = {
 export function createEnterpriseCollectorInstaller(input: {
   platform?: NodeJS.Platform;
   timeoutMs?: number;
-  claweeAgentConfigPath?: string;
+  opencreatorAgentConfigPath?: string;
   spawn?: (
     command: string,
     args: readonly string[],
@@ -38,9 +38,9 @@ export function createEnterpriseCollectorInstaller(input: {
   const platform = input.platform ?? process.platform;
   const timeoutMs = input.timeoutMs ?? 5 * 60_000;
   const spawnProcess = input.spawn ?? spawn;
-  const claweeAgentConfigPath = input.claweeAgentConfigPath === undefined
+  const opencreatorAgentConfigPath = input.opencreatorAgentConfigPath === undefined
     ? undefined
-    : resolve(input.claweeAgentConfigPath);
+    : resolve(input.opencreatorAgentConfigPath);
   let active:
     | {
         child: ChildProcess;
@@ -59,12 +59,12 @@ export function createEnterpriseCollectorInstaller(input: {
       child = spawnProcess(invocation.command, invocation.args, {
         stdio: 'ignore',
         windowsHide: true,
-        ...(claweeAgentConfigPath === undefined
+        ...(opencreatorAgentConfigPath === undefined
           ? {}
           : {
               env: {
                 ...process.env,
-                CLAWEE_AGENT_CONFIG: claweeAgentConfigPath
+                OPENCREATOR_AGENT_CONFIG: opencreatorAgentConfigPath
               }
             })
       });

@@ -102,7 +102,7 @@ const fakeCodexScript = join(repoRoot, 'apps/web/e2e/support/fake-codex.mjs');
 
 export const test = base.extend<TestFixtures>({
   runtime: async ({}, use, testInfo) => {
-    const rootDir = mkdtempSync(join(tmpdir(), 'clawee-web-e2e-'));
+    const rootDir = mkdtempSync(join(tmpdir(), 'opencreator-web-e2e-'));
     const dataDir = join(rootDir, 'runtime');
     const codexHome = join(rootDir, 'codex-home');
     const stateDir = join(rootDir, 'fake-codex-state');
@@ -132,7 +132,7 @@ export const test = base.extend<TestFixtures>({
       'pnpm',
       [
         '--filter',
-        '@clawee/web',
+        '@opencreator/web',
         'exec',
         'vite',
         '--host',
@@ -146,12 +146,12 @@ export const test = base.extend<TestFixtures>({
         detached: process.platform !== 'win32',
         env: {
           ...process.env,
-          CLAWEE_DATA_DIR: dataDir,
-          CLAWEE_CODEX_BIN: wrapperPath,
-          CLAWEE_CODEX_HOME: codexHome,
-          CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD: '0',
-          CLAWEE_E2E_FAKE_CODEX_CONFIG: configPath,
-          CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir
+          OPENCREATOR_DATA_DIR: dataDir,
+          OPENCREATOR_CODEX_BIN: wrapperPath,
+          OPENCREATOR_CODEX_HOME: codexHome,
+          OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD: '0',
+          OPENCREATOR_E2E_FAKE_CODEX_CONFIG: configPath,
+          OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir
         },
         stdio: ['ignore', 'pipe', 'pipe']
       }
@@ -237,24 +237,24 @@ export const test = base.extend<TestFixtures>({
             legacyProjects
           }) => {
             if (window.top !== window) return;
-            localStorage.setItem('clawee.preferences.dynamicBackground', 'false');
-            localStorage.setItem('clawee.tasks.notifications.v1', JSON.stringify({
+            localStorage.setItem('opencreator.preferences.dynamicBackground', 'false');
+            localStorage.setItem('opencreator.tasks.notifications.v1', JSON.stringify({
               enabled: true,
               permission: 'granted'
             }));
-            localStorage.setItem('clawee.navigation.v3', JSON.stringify({
+            localStorage.setItem('opencreator.navigation.v3', JSON.stringify({
               currentProjectId: storedProjectId,
               selectedThreadId: storedThreadId
             }));
             if (legacyProjects !== undefined) {
-              localStorage.setItem('clawee.projects.v1', JSON.stringify(legacyProjects));
+              localStorage.setItem('opencreator.projects.v1', JSON.stringify(legacyProjects));
             }
             const notifications: Array<{
               title: string;
               body?: string;
               click(): void;
             }> = [];
-            Object.defineProperty(window, '__claweeE2eNotifications', {
+            Object.defineProperty(window, '__opencreatorE2eNotifications', {
               configurable: true,
               value: notifications
             });
@@ -354,7 +354,7 @@ export const test = base.extend<TestFixtures>({
         });
       }
       await stopProcessTree(child);
-      if (process.env.CLAWEE_E2E_KEEP_TEMP !== '1') {
+      if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
         rmSync(rootDir, { recursive: true, force: true });
       }
     }
@@ -430,7 +430,7 @@ async function waitForRuntime(
       throw new Error(`Vite exited with code ${child.exitCode}.\n${readLog()}`);
     }
     try {
-      const response = await fetch(`${origin}/.clawee/runtime-config`);
+      const response = await fetch(`${origin}/.opencreator/runtime-config`);
       if (response.ok) return await response.json() as RuntimeConfig;
       latestError = `${response.status} ${await response.text()}`;
     } catch (error) {

@@ -183,7 +183,7 @@ describe('persistent app-server server integration', () => {
   });
 
   it('closes the persistent process before session and capability resources', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-persistent-close-order-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-persistent-close-order-'));
     const fakeCodex = createFakeAppServer(tempDir);
     const capabilities = createUnknownCapabilityMatrix();
     capabilities.appServer = true;
@@ -242,7 +242,7 @@ async function createFixture(
   readMessages(): Array<Record<string, unknown>>;
   readDiagnostics(runId: string): Record<string, unknown>;
 }> {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-persistent-server-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-persistent-server-'));
   const fakeCodex = createFakeAppServer(tempDir);
   const capabilities = createUnknownCapabilityMatrix();
   capabilities.appServer = true;

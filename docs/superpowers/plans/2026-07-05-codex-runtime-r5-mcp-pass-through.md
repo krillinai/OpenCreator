@@ -167,7 +167,7 @@ mcpRuntimeBehaviorVerified: false
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-capabilities.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-capabilities.test.ts test/integration/api.test.ts
 ```
 
 Expected: 失败，因为 `parseCodexCapabilityMatrix` 还不接受 `mcpHelp`，`RuntimeCapabilityMatrix` 还没有新增 MCP flags。
@@ -313,7 +313,7 @@ const mcpHelp = runCodexInfo(codexBin, ['mcp', '--help'], input.timeoutMs);
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-capabilities.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-capabilities.test.ts test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -525,7 +525,7 @@ describe('codex mcp validator', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts
 ```
 
 Expected: 失败，因为新模块和函数还不存在。
@@ -535,7 +535,7 @@ Expected: 失败，因为新模块和函数还不存在。
 创建 `apps/daemon/src/codex/mcp/types.ts`：
 
 ```ts
-import type { RuntimeErrorCode } from '@clawee/protocol';
+import type { RuntimeErrorCode } from '@opencreator/protocol';
 
 export type McpTransport = 'stdio' | 'http' | 'sse';
 
@@ -783,7 +783,7 @@ function isHttpUrl(value: string): boolean {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts
 pnpm typecheck
 ```
 
@@ -869,7 +869,7 @@ afterEach(() => {
 
 describe('codex mcp runner', () => {
   it('runs codex mcp commands with CODEX_HOME and redacts output', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-runner-'));
     const codexHome = join(tempDir, 'codex-home');
     const bin = writeFakeBin(`
       require('fs').writeFileSync(${JSON.stringify(join(tempDir, 'home.txt'))}, process.env.CODEX_HOME || '');
@@ -895,7 +895,7 @@ describe('codex mcp runner', () => {
   });
 
   it('reports timeout diagnostics', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-runner-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-runner-'));
     const bin = writeFakeBin('setTimeout(() => {}, 10_000);');
 
     const result = runMcpCommand({
@@ -925,7 +925,7 @@ function writeFakeBin(body: string): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts
 ```
 
 Expected: 失败，因为 redaction 和 runner 模块还不存在。
@@ -1042,7 +1042,7 @@ function formatDiagnostic(message: string): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts
 pnpm typecheck
 ```
 
@@ -1142,7 +1142,7 @@ describe('codex mcp parser', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-mcp-parser.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-mcp-parser.test.ts
 ```
 
 Expected: 失败，因为 parser 模块还不存在。
@@ -1152,7 +1152,7 @@ Expected: 失败，因为 parser 模块还不存在。
 创建 `apps/daemon/src/codex/mcp/parser.ts`：
 
 ```ts
-import type { CodexHomeMode, CodexMcpListResponse, CodexMcpServerResponse } from '@clawee/protocol';
+import type { CodexHomeMode, CodexMcpListResponse, CodexMcpServerResponse } from '@opencreator/protocol';
 import { redactMcpText } from './redaction.js';
 
 export type ParseMcpGetOutputInput = {
@@ -1273,7 +1273,7 @@ function readName(value: Record<string, unknown>): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-mcp-parser.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-mcp-parser.test.ts
 pnpm typecheck
 ```
 
@@ -1302,7 +1302,7 @@ git commit -m "feat: parse codex mcp output"
 
 ```ts
   it('creates codex mcp operation log table', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-storage-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-storage-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
 
     const tableRows = db
@@ -1346,7 +1346,7 @@ afterEach(() => {
 
 describe('codex mcp operations', () => {
   it('persists redacted mcp operations newest first', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-ops-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-ops-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const operations = createMcpOperationRepository(db);
 
@@ -1386,7 +1386,7 @@ describe('codex mcp operations', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts test/unit/codex-mcp-operations.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts test/unit/codex-mcp-operations.test.ts
 ```
 
 Expected: 失败，因为表和 repository 还不存在。
@@ -1423,7 +1423,7 @@ Expected: 失败，因为表和 repository 还不存在。
 创建 `apps/daemon/src/codex/mcp/operations.ts`：
 
 ```ts
-import type { CodexMcpOperationResponse, CodexMcpOperationStatus, CodexMcpOperationType } from '@clawee/protocol';
+import type { CodexMcpOperationResponse, CodexMcpOperationStatus, CodexMcpOperationType } from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 
@@ -1519,7 +1519,7 @@ function mapRow(row: McpOperationRow): CodexMcpOperationResponse {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts test/unit/codex-mcp-operations.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts test/unit/codex-mcp-operations.test.ts
 pnpm typecheck
 ```
 
@@ -1565,7 +1565,7 @@ afterEach(() => {
 
 describe('codex mcp manager', () => {
   it('adds, gets, removes, and logs mcp servers through codex commands', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-manager-'));
     const codexHome = join(tempDir, 'codex-home');
     const bin = writeMcpFakeCodex();
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
@@ -1611,7 +1611,7 @@ describe('codex mcp manager', () => {
   });
 
   it('requires confirmation for global codex mcp writes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-manager-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const manager = createMcpManager({
       codexBin: writeMcpFakeCodex(),
@@ -1663,7 +1663,7 @@ process.exit(1);
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-mcp-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-mcp-manager.test.ts
 ```
 
 Expected: 失败，因为 manager 还不存在。
@@ -1674,7 +1674,7 @@ Expected: 失败，因为 manager 还不存在。
 
 ```ts
 import type Database from 'better-sqlite3';
-import type { CodexMcpListResponse, CodexMcpOperationResponse, CodexMcpServerResponse } from '@clawee/protocol';
+import type { CodexMcpListResponse, CodexMcpOperationResponse, CodexMcpServerResponse } from '@opencreator/protocol';
 import type { RuntimeCapabilityMatrix } from '../capabilities.js';
 import type { ResolvedCodexHome } from '../home.js';
 import { buildMcpAddArgs, buildMcpGetArgs, buildMcpListArgs, buildMcpLoginArgs, buildMcpLogoutArgs, buildMcpRemoveArgs } from './argv.js';
@@ -1836,7 +1836,7 @@ function summarizeResult(result: McpCommandResult): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-mcp-manager.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-mcp-manager.test.ts
 pnpm typecheck
 ```
 
@@ -1864,7 +1864,7 @@ git commit -m "feat: manage codex mcp commands"
 
 ```ts
   it('lists, adds, gets, removes, and logs codex mcp servers', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const fake = createFakeMcpCodex(tempDir);
     server = await buildServer({
@@ -1968,7 +1968,7 @@ process.exit(1);
 
 ```ts
   it('requires explicit confirmation for global codex mcp writes', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const fake = createFakeMcpCodex(tempDir);
     server = await buildServer({ token: 'secret', dataDir: tempDir, codexBin: fake.bin, capabilities: makeResumeCapableMatrix() });
 
@@ -1985,7 +1985,7 @@ process.exit(1);
   });
 
   it('maps invalid and missing mcp API requests', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const codexHome = join(tempDir, 'codex-home');
     const fake = createFakeMcpCodex(tempDir);
     server = await buildServer({
@@ -2015,7 +2015,7 @@ process.exit(1);
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 ```
 
 Expected: 失败，因为 `/codex/mcp` routes 还没注册。
@@ -2180,7 +2180,7 @@ import { registerMcpRoutes } from './routes.mcp.js';
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 pnpm typecheck
 ```
 
@@ -2364,7 +2364,7 @@ it('records login and logout operations', async () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts
 ```
 
 Expected: 至少一个新增测试失败，失败原因应落在能力门禁、错误映射、登录登出操作日志或脱敏断言。
@@ -2477,7 +2477,7 @@ await operations.recordOperation({
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-manager.test.ts test/integration/api.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-manager.test.ts test/integration/api.test.ts
 ```
 
 Expected: 全部通过，失败响应和 operation history 不包含 env value。
@@ -2504,12 +2504,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execa } from 'execa';
 
-const RUN_REAL_CODEX_SMOKE = process.env.CLAWEE_RUN_REAL_CODEX_SMOKE === '1';
+const RUN_REAL_CODEX_SMOKE = process.env.OPENCREATOR_RUN_REAL_CODEX_SMOKE === '1';
 
 describe.skipIf(!RUN_REAL_CODEX_SMOKE)('real codex mcp smoke', () => {
   it('adds, gets, lists, and removes a stdio MCP server through codex mcp', async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), 'clawee-r5-codex-home-'));
-    const fixtureDir = await mkdtemp(join(tmpdir(), 'clawee-r5-mcp-'));
+    const codexHome = await mkdtemp(join(tmpdir(), 'opencreator-r5-codex-home-'));
+    const fixtureDir = await mkdtemp(join(tmpdir(), 'opencreator-r5-mcp-'));
     const serverPath = join(fixtureDir, 'echo-mcp.js');
 
     await writeFile(
@@ -2535,7 +2535,7 @@ describe.skipIf(!RUN_REAL_CODEX_SMOKE)('real codex mcp smoke', () => {
         [
           'mcp',
           'add',
-          'clawee-r5-echo',
+          'opencreator-r5-echo',
           '--env',
           'R5_SMOKE_VALUE=visible-smoke-value',
           '--',
@@ -2546,19 +2546,19 @@ describe.skipIf(!RUN_REAL_CODEX_SMOKE)('real codex mcp smoke', () => {
       );
       expect(addResult.exitCode, addResult.stderr || addResult.stdout).toBe(0);
 
-      const getResult = await execa('codex', ['mcp', 'get', 'clawee-r5-echo'], { env, reject: false });
+      const getResult = await execa('codex', ['mcp', 'get', 'opencreator-r5-echo'], { env, reject: false });
       expect(getResult.exitCode, getResult.stderr || getResult.stdout).toBe(0);
-      expect(getResult.stdout).toContain('clawee-r5-echo');
+      expect(getResult.stdout).toContain('opencreator-r5-echo');
       expect(getResult.stdout).toContain('R5_SMOKE_VALUE');
 
       const listResult = await execa('codex', ['mcp', 'list'], { env, reject: false });
       expect(listResult.exitCode, listResult.stderr || listResult.stdout).toBe(0);
-      expect(listResult.stdout).toContain('clawee-r5-echo');
+      expect(listResult.stdout).toContain('opencreator-r5-echo');
 
-      const removeResult = await execa('codex', ['mcp', 'remove', 'clawee-r5-echo'], { env, reject: false });
+      const removeResult = await execa('codex', ['mcp', 'remove', 'opencreator-r5-echo'], { env, reject: false });
       expect(removeResult.exitCode, removeResult.stderr || removeResult.stdout).toBe(0);
 
-      const getAfterRemove = await execa('codex', ['mcp', 'get', 'clawee-r5-echo'], { env, reject: false });
+      const getAfterRemove = await execa('codex', ['mcp', 'get', 'opencreator-r5-echo'], { env, reject: false });
       expect(getAfterRemove.exitCode).not.toBe(0);
     } finally {
       await rm(codexHome, { recursive: true, force: true });
@@ -2575,7 +2575,7 @@ describe.skipIf(!RUN_REAL_CODEX_SMOKE)('real codex mcp smoke', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: 测试进程通过；新增 `real codex mcp smoke` describe 处于 skipped 状态。
@@ -2585,7 +2585,7 @@ Expected: 测试进程通过；新增 `real codex mcp smoke` describe 处于 ski
 Run:
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected:
@@ -2623,7 +2623,7 @@ git commit -m "test: add codex mcp real smoke"
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/mcp-argv.test.ts \
   test/unit/codex-mcp-validator.test.ts \
   test/unit/codex-mcp-redaction.test.ts \
@@ -2659,7 +2659,7 @@ Expected:
 Run:
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected: 真实 Codex smoke 通过，或明确得到 `BLOCKED_ENV`/`FAIL` 结论。不能把未执行或失败的真实 smoke 写成通过。
@@ -2682,11 +2682,11 @@ Scope:
 - real model MCP behavior：UNVERIFIED_BEHAVIOR
 
 Verification:
-- `pnpm --filter @clawee/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts test/unit/codex-mcp-parser.test.ts test/unit/codex-mcp-operations.test.ts test/unit/codex-mcp-manager.test.ts test/unit/storage.test.ts test/unit/codex-capabilities.test.ts test/integration/api.test.ts`
+- `pnpm --filter @opencreator/daemon test -- test/unit/mcp-argv.test.ts test/unit/codex-mcp-validator.test.ts test/unit/codex-mcp-redaction.test.ts test/unit/codex-mcp-runner.test.ts test/unit/codex-mcp-parser.test.ts test/unit/codex-mcp-operations.test.ts test/unit/codex-mcp-manager.test.ts test/unit/storage.test.ts test/unit/codex-capabilities.test.ts test/integration/api.test.ts`
 - `pnpm typecheck`
 - `pnpm test`
 - `git diff --check`
-- `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts`
+- `OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts`
 
 Notes:
 - R5 不实现自研 MCP runtime。
@@ -2708,7 +2708,7 @@ Scope:
 - real model MCP behavior：UNVERIFIED_BEHAVIOR
 
 Blocked:
-- `CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts`
+- `OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts`
 - 原因：`codex executable unavailable`、`Codex CLI command shape incompatible` 或 `Codex CLI auth unavailable` 中与实际失败一致的一项；同时保留失败命令的 stderr/stdout 摘要。
 ```
 

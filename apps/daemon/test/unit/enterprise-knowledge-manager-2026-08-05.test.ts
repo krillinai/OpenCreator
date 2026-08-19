@@ -23,7 +23,7 @@ afterEach(() => {
 
 describe('enterprise knowledge manager', () => {
   it('returns authorized knowledge bases and documents with refresh metadata', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-knowledge-manager-'));
     const manager = createEnterpriseKnowledgeManager({
       dataDir: tempDir,
       sessionManager: createSessionManager(),
@@ -53,7 +53,7 @@ describe('enterprise knowledge manager', () => {
   });
 
   it('checks upload permission before reading content and stages files privately', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-knowledge-manager-'));
     const uploadKnowledgeDocument = vi.fn(async (input: {
       filePath: string;
     }) => {
@@ -87,7 +87,7 @@ describe('enterprise knowledge manager', () => {
   });
 
   it('rejects missing upload permission before consuming the file stream', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-knowledge-manager-'));
     let consumed = false;
     const manager = createEnterpriseKnowledgeManager({
       dataDir: tempDir,
@@ -121,7 +121,7 @@ describe('enterprise knowledge manager', () => {
   });
 
   it('enforces document extension, declared size and streamed size', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-knowledge-manager-'));
     const manager = createEnterpriseKnowledgeManager({
       dataDir: tempDir,
       sessionManager: createSessionManager(),
@@ -159,7 +159,7 @@ describe('enterprise knowledge manager', () => {
   });
 
   it('invalidates the enterprise session on upstream unauthorized responses', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-knowledge-manager-'));
     const sessionManager = createSessionManager();
     const manager = createEnterpriseKnowledgeManager({
       dataDir: tempDir,
@@ -183,7 +183,7 @@ describe('enterprise knowledge manager', () => {
   });
 
   it('maps successful upstream protocol failures to a gateway error status', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-manager-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-knowledge-manager-'));
     const manager = createEnterpriseKnowledgeManager({
       dataDir: tempDir,
       sessionManager: createSessionManager(),

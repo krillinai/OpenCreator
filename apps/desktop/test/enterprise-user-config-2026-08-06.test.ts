@@ -35,26 +35,26 @@ describe('Desktop enterprise user config', () => {
 
   it('preserves config modified after installation', () => {
     const fixture = createFixture('gateway = "https://bundled.example"\n');
-    mkdirSync(join(fixture.root, '.clawee'), { recursive: true });
+    mkdirSync(join(fixture.root, '.opencreator'), { recursive: true });
     writeFileSync(
       fixture.userPath,
-      'gateway = "https://customer.example"\nagent_id = "clawee_existing"\n'
+      'gateway = "https://customer.example"\nagent_id = "opencreator_existing"\n'
     );
 
     expect(prepareEnterpriseUserConfig(fixture)).toEqual({
       path: fixture.userPath
     });
     expect(readFileSync(fixture.userPath, 'utf8')).toBe(
-      'gateway = "https://customer.example"\nagent_id = "clawee_existing"\n'
+      'gateway = "https://customer.example"\nagent_id = "opencreator_existing"\n'
     );
   });
 });
 
 function createFixture(contents: string) {
-  const root = mkdtempSync(join(tmpdir(), 'clawee-enterprise-gateway-'));
+  const root = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-gateway-'));
   tempRoots.push(root);
   const bundledPath = join(root, 'bundled.toml');
-  const userPath = join(root, '.clawee', 'config.toml');
+  const userPath = join(root, '.opencreator', 'config.toml');
   writeFileSync(bundledPath, contents);
   return { root, bundledPath, userPath };
 }

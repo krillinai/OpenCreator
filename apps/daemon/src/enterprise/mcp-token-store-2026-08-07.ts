@@ -1,8 +1,8 @@
 import { AsyncEntry } from '@napi-rs/keyring';
 
-const DEFAULT_SERVICE = 'com.clawee.enterprise.mcp';
-const DEFAULT_ACCOUNT = 'clawee-agent-mcp';
-const E2E_SERVICE = 'com.clawee.enterprise.mcp.e2e';
+const DEFAULT_SERVICE = 'com.opencreator.enterprise.mcp';
+const DEFAULT_ACCOUNT = 'opencreator-agent-mcp';
+const E2E_SERVICE = 'com.opencreator.enterprise.mcp.e2e';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RFC_3339_PATTERN =

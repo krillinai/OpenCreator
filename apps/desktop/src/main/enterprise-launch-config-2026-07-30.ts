@@ -1,7 +1,7 @@
 import { isAbsolute } from 'node:path';
 
-const ENTERPRISE_E2E_ARGUMENT = '--clawee-enterprise-e2e';
-const ENTERPRISE_E2E_CONFIG_ARGUMENT = '--clawee-enterprise-e2e-config';
+const ENTERPRISE_E2E_ARGUMENT = '--opencreator-enterprise-e2e';
+const ENTERPRISE_E2E_CONFIG_ARGUMENT = '--opencreator-enterprise-e2e-config';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -20,7 +20,7 @@ export function resolveDesktopEnterpriseLaunchConfig(
     ENTERPRISE_E2E_CONFIG_ARGUMENT
   );
   const environmentRunId = normalizedValue(
-    env.CLAWEE_ENTERPRISE_E2E_RUN_ID
+    env.OPENCREATOR_ENTERPRISE_E2E_RUN_ID
   );
   const hasE2ESignal =
     argumentValues.length > 0

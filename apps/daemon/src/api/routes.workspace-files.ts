@@ -5,7 +5,7 @@ import type {
   WorkspaceFileMetaRequest,
   WorkspaceFileRevealRequest,
   WorkspaceFileSaveRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { WorkspaceFileError } from '../workspace-files/errors.js';
 import type { WorkspaceFileService } from '../workspace-files/service.js';

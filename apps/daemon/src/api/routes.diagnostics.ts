@@ -1,4 +1,4 @@
-import type { CodexStatusResponse, RunDiagnosticsResponse } from '@clawee/protocol';
+import type { CodexStatusResponse, RunDiagnosticsResponse } from '@opencreator/protocol';
 import type { FastifyInstance } from 'fastify';
 import {
   collectRunDiagnostics,

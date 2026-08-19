@@ -16,7 +16,7 @@ export type FakeEnterpriseState = {
   savedSharedFile: boolean;
 };
 
-const runtimePrefix = '/.clawee/runtime';
+const runtimePrefix = '/.opencreator/runtime';
 const project = {
   id: 'project-enterprise',
   name: '企业项目',
@@ -68,10 +68,10 @@ export class FakeEnterpriseDaemon {
   }
 
   async attach(page: Page): Promise<void> {
-    await page.route('**/.clawee/runtime-config', route => route.fulfill({
+    await page.route('**/.opencreator/runtime-config', route => route.fulfill({
       json: { baseUrl: runtimePrefix }
     }));
-    await page.route('**/.clawee/runtime/**', route => this.handle(route));
+    await page.route('**/.opencreator/runtime/**', route => this.handle(route));
   }
 
   snapshot(): FakeEnterpriseState {
@@ -442,7 +442,7 @@ function enterpriseSkill(installed: boolean) {
 
 function enterpriseMcpCatalog(state: FakeEnterpriseState) {
   return {
-    agentId: 'clawee_550e8400-e29b-41d4-a716-446655440000',
+    agentId: 'opencreator_550e8400-e29b-41d4-a716-446655440000',
     tokenStatus: 'ready',
     upstreams: [{
       upstreamId: 'crm-main',
@@ -495,7 +495,7 @@ function enterpriseNativeMcp(state: FakeEnterpriseState) {
     transport: 'http',
     status: 'configured',
     url: 'https://enterprise.example/mcp/servers/crm-main',
-    bearerTokenEnvVar: 'CLAWEE_ENTERPRISE_MCP_TOKEN',
+    bearerTokenEnvVar: 'OPENCREATOR_ENTERPRISE_MCP_TOKEN',
     envKeys: [],
     hasSecrets: false,
     codexHome: '/tmp/codex',
@@ -601,7 +601,7 @@ function createdThread() {
     id: 'thread-enterprise-skill',
     title: 'enterprise-name',
     projectId: project.id,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     codexThreadId: null,
     cwd: project.cwd,
     canonicalCwd: project.canonicalCwd,

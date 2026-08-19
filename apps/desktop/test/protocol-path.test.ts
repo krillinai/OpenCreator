@@ -4,10 +4,10 @@ import { deepLinkToRoute } from '../src/main/deep-link-manager.js';
 
 describe('Desktop deep links', () => {
   it('maps supported links to existing hash routes', () => {
-    expect(deepLinkToRoute('clawee://new')).toBe('#/');
-    expect(deepLinkToRoute('clawee://tasks')).toBe('#/tasks');
+    expect(deepLinkToRoute('opencreator://new')).toBe('#/');
+    expect(deepLinkToRoute('opencreator://tasks')).toBe('#/tasks');
     expect(deepLinkToRoute(
-      'clawee://thread/thread%2F%E4%B8%AD%E6%96%87?runId=run%2F1&approvalId=approval%201'
+      'opencreator://thread/thread%2F%E4%B8%AD%E6%96%87?runId=run%2F1&approvalId=approval%201'
     )).toBe(
       '#/thread/thread%2F%E4%B8%AD%E6%96%87?runId=run%2F1&approvalId=approval+1'
     );
@@ -15,7 +15,7 @@ describe('Desktop deep links', () => {
 
   it('rejects unknown routes and protocols', () => {
     expect(deepLinkToRoute('https://example.com')).toBeUndefined();
-    expect(deepLinkToRoute('clawee://unknown')).toBeUndefined();
+    expect(deepLinkToRoute('opencreator://unknown')).toBeUndefined();
   });
 
   it('forces Chinese application localization before Electron becomes ready', () => {

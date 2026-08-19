@@ -4,7 +4,7 @@
 
 **Goal:** Add persistent pinning, inline rename, archive controls, and confirmed permanent deletion to project conversation rows.
 
-**Architecture:** Extend the shared Thread protocol and SQLite repository so pin and permanent delete are Runtime-owned. Keep `AppController` responsible for mutations and durable Web state, while `ClaweeSidebar` owns only transient menu, edit, and dialog state. Browser and Desktop use the same component and Runtime endpoints.
+**Architecture:** Extend the shared Thread protocol and SQLite repository so pin and permanent delete are Runtime-owned. Keep `AppController` responsible for mutations and durable Web state, while `OpenCreatorSidebar` owns only transient menu, edit, and dialog state. Browser and Desktop use the same component and Runtime endpoints.
 
 **Tech Stack:** TypeScript, React 18, Fastify, better-sqlite3, Vitest, Testing Library, Playwright, Electron
 
@@ -21,7 +21,7 @@
 - `apps/web/src/services/thread-service.ts`: shared Runtime client calls.
 - `apps/web/src/features/projects/project-model.ts`: sidebar pin projection.
 - `apps/web/src/app/AppController.tsx`: rename, pin, delete mutations and selected-state cleanup.
-- `apps/web/src/features/shell/ClaweeSidebar.tsx`: hover actions, menu, inline editor, and confirmation dialog.
+- `apps/web/src/features/shell/OpenCreatorSidebar.tsx`: hover actions, menu, inline editor, and confirmation dialog.
 - `apps/web/src/styles/app.css`: compact action cluster, menu, and editor styling.
 - Existing adjacent test files: regression coverage at every boundary.
 
@@ -45,7 +45,7 @@ expect(repository.getThread(created.id)?.pinnedAt).toBe('2026-08-06T00:00:00.000
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts`
 
 Expected: FAIL because `pinned_at` and the typed fields do not exist.
 
@@ -68,7 +68,7 @@ export type ThreadResponse = {
 
 - [ ] **Step 4: Run storage tests and typechecks**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts && pnpm --filter @clawee/protocol typecheck && pnpm --filter @clawee/daemon typecheck`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts && pnpm --filter @opencreator/protocol typecheck && pnpm --filter @opencreator/daemon typecheck`
 
 Expected: PASS.
 
@@ -96,7 +96,7 @@ Also assert schedule-managed Threads reject with `THREAD_MANAGED_BY_SCHEDULE`.
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/unit/storage.test.ts test/unit/thread-manager.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/unit/storage.test.ts test/unit/thread-manager.test.ts`
 
 Expected: FAIL because `deleteThread` does not exist.
 
@@ -126,7 +126,7 @@ expect(activeDelete.json().error.code).toBe('THREAD_HAS_ACTIVE_RUN');
 
 - [ ] **Step 2: Run the API tests and verify RED**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "pins|permanently deletes"`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts -t "pins|permanently deletes"`
 
 Expected: FAIL on missing parsing and route.
 
@@ -136,7 +136,7 @@ Map `pinned: true` to `new Date().toISOString()` and `pinned: false` to `null` i
 
 - [ ] **Step 4: Run API tests and Daemon typecheck**
 
-Run the Task 3 test command, then `pnpm --filter @clawee/daemon typecheck`. Expected: PASS.
+Run the Task 3 test command, then `pnpm --filter @opencreator/daemon typecheck`. Expected: PASS.
 
 ### Task 4: Add Web Service And Projection Support
 
@@ -158,13 +158,13 @@ expect(sortProjectConversations(rows).map(row => row.id)).toEqual(['pinned-new',
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/web test -- src/services/thread-service.test.ts src/features/projects/project-model.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/web test -- src/services/thread-service.test.ts src/features/projects/project-model.test.ts`
 
 Expected: FAIL on missing delete and sort helpers.
 
 - [ ] **Step 3: Implement the service and deterministic sorting**
 
-Add `deleteThread(threadId): Promise<void>` using `client.delete`, carry `pinnedAt` into `ClaweeConversation`, and export a pure project-local sorting helper using `pinnedAt !== null` followed by the existing newest order.
+Add `deleteThread(threadId): Promise<void>` using `client.delete`, carry `pinnedAt` into `OpenCreatorConversation`, and export a pure project-local sorting helper using `pinnedAt !== null` followed by the existing newest order.
 
 - [ ] **Step 4: Run tests and verify GREEN**
 
@@ -173,8 +173,8 @@ Run the Task 4 command again. Expected: PASS.
 ### Task 5: Build The Sidebar Interaction
 
 **Files:**
-- Modify: `apps/web/src/features/shell/ClaweeSidebar.tsx`
-- Modify: `apps/web/src/features/shell/ClaweeSidebar.test.tsx`
+- Modify: `apps/web/src/features/shell/OpenCreatorSidebar.tsx`
+- Modify: `apps/web/src/features/shell/OpenCreatorSidebar.test.tsx`
 - Modify: `apps/web/src/styles/app.css`
 - Modify: `apps/web/src/styles/app-css.test.ts`
 
@@ -190,7 +190,7 @@ onDeleteConversation?(id: string): Promise<void> | void;
 
 - [ ] **Step 2: Run the sidebar tests and verify RED**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/web test -- src/features/shell/ClaweeSidebar.test.tsx`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/web test -- src/features/shell/OpenCreatorSidebar.test.tsx`
 
 Expected: FAIL because More, Pin, Rename, and permanent Delete do not exist.
 
@@ -204,7 +204,7 @@ Use an anchored menu with maximum 8px radius, no nested cards, fixed icon button
 
 - [ ] **Step 5: Run component and CSS tests**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/web test -- src/features/shell/ClaweeSidebar.test.tsx src/styles/app-css.test.ts`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/web test -- src/features/shell/OpenCreatorSidebar.test.tsx src/styles/app-css.test.ts`
 
 Expected: PASS.
 
@@ -226,7 +226,7 @@ expect(deleteCall.init?.method).toBe('DELETE');
 
 - [ ] **Step 2: Run focused App tests and verify RED**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/web test -- src/app/App.test.tsx -t "renames a sidebar conversation|pins a sidebar conversation|permanently deletes a sidebar conversation"`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/web test -- src/app/App.test.tsx -t "renames a sidebar conversation|pins a sidebar conversation|permanently deletes a sidebar conversation"`
 
 Expected: FAIL because callbacks are not wired.
 
@@ -236,7 +236,7 @@ Rename and pin through `threadService.updateThread`, replacing state only with t
 
 - [ ] **Step 4: Run App tests and Web typecheck**
 
-Run the Task 6 tests, then `pnpm --filter @clawee/web typecheck`. Expected: PASS.
+Run the Task 6 tests, then `pnpm --filter @opencreator/web typecheck`. Expected: PASS.
 
 ### Task 7: Shared Web/Desktop Verification
 
@@ -253,7 +253,7 @@ Run the repository's existing Web/Desktop parity suite for the sidebar and conve
 
 - [ ] **Step 3: Build fresh Web and package Desktop**
 
-Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @clawee/web build && pnpm desktop:package`
+Run: `PATH=/Users/joshuayin/.nvm/versions/node/v22.22.0/bin:$PATH pnpm --filter @opencreator/web build && pnpm desktop:package`
 
 Expected: fresh `apps/web/dist`, successful package, and build manifest for the current dirty state.
 
@@ -263,4 +263,4 @@ Run the repository hash verification and packaged Electron E2E commands discover
 
 - [ ] **Step 5: Restart port 9000 and smoke test**
 
-Start `pnpm web:dev`, request `/.clawee/runtime/healthz`, and manually verify the four interactions at desktop and mobile widths. Expected: HTTP 200 with `{ "ok": true }` and no overlapping row content.
+Start `pnpm web:dev`, request `/.opencreator/runtime/healthz`, and manually verify the four interactions at desktop and mobile widths. Expected: HTTP 200 with `{ "ok": true }` and no overlapping row content.

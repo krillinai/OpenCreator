@@ -4,8 +4,8 @@ import { buildCodexProbeArgs } from '../../src/codex/probe-argv.js';
 describe('Codex Probe argv', () => {
   it('uses an ephemeral read-only invocation with external integrations disabled', () => {
     const args = buildCodexProbeArgs({
-      cwd: '/tmp/clawee-probe',
-      outputPath: '/tmp/clawee-probe/result.txt'
+      cwd: '/tmp/opencreator-probe',
+      outputPath: '/tmp/opencreator-probe/result.txt'
     });
 
     expect(args).toEqual([
@@ -57,9 +57,9 @@ describe('Codex Probe argv', () => {
       '--disable',
       'shell_snapshot',
       '-C',
-      '/tmp/clawee-probe',
+      '/tmp/opencreator-probe',
       '--output-last-message',
-      '/tmp/clawee-probe/result.txt'
+      '/tmp/opencreator-probe/result.txt'
     ]);
     expect(args).not.toContain('--ignore-user-config');
   });

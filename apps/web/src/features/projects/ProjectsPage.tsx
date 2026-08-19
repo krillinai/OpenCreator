@@ -13,7 +13,7 @@ import {
 import { useMemo, useState } from 'react';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
-import type { ClaweeProject } from './project-model.js';
+import type { OpenCreatorProject } from './project-model.js';
 import './projects-page.css';
 
 const projectCategories = ['全部', '视频创作', '数字人', '图像设计', '内容营销'] as const;
@@ -36,15 +36,15 @@ type ProjectOutput = {
 };
 
 const projectCovers = [
-  '/workbench/templates/video-translation-example.png',
-  '/workbench/templates/ai-video-insane.jpg',
-  '/workbench/templates/video-localization.jpg',
-  '/workbench/templates/digital-presenter.jpg',
-  '/workbench/templates/animated-story.jpg'
+  '/dashboard/templates/video-translation-example.png',
+  '/dashboard/templates/ai-video-insane.jpg',
+  '/dashboard/templates/video-localization.jpg',
+  '/dashboard/templates/digital-presenter.jpg',
+  '/dashboard/templates/animated-story.jpg'
 ];
 
 export default function ProjectsPage(props: {
-  projects: ClaweeProject[];
+  projects: OpenCreatorProject[];
   currentProjectId?: string;
   onOpenProject(projectId: string): void;
   onManageProject?(projectId?: string): void;
@@ -189,7 +189,7 @@ export default function ProjectsPage(props: {
               </strong>
               <p>
                 {props.projects.length === 0
-                  ? l('从工作台开始创作后，项目会自动显示在这里。', 'Projects appear here automatically after you start creating from Workbench.')
+                  ? l('从 Dashboard 开始创作后，项目会自动显示在这里。', 'Projects appear here automatically after you start creating from Dashboard.')
                   : normalizedQuery.length > 0
                     ? l('换个名称重新搜索。', 'Try searching with another name.')
                     : l('完成对应类型的创作后，项目会显示在这里。', 'Projects of this type will appear here after you create them.')}
@@ -238,7 +238,7 @@ export default function ProjectsPage(props: {
                   : l('这个分类还没有产出', 'No outputs in this category')}</strong>
               <p>{normalizedQuery.length > 0
                 ? l('换个名称重新搜索。', 'Try searching with another name.')
-                : l('完成工作台任务后，生成的文件会集中显示在这里。', 'Generated files will appear here after you complete a Workbench task.')}</p>
+                : l('完成 Dashboard 任务后，生成的文件会集中显示在这里。', 'Generated files will appear here after you complete a Dashboard task.')}</p>
             </div>
           )}
         </section>
@@ -279,7 +279,7 @@ function outputKindIcon(kind: ProjectOutputKind, size: number) {
   return <FileText size={size} strokeWidth={1.8} aria-hidden="true" />;
 }
 
-function createProjectOutputs(projects: ClaweeProject[], l: LocalizeCopy): ProjectOutput[] {
+function createProjectOutputs(projects: OpenCreatorProject[], l: LocalizeCopy): ProjectOutput[] {
   return projects.flatMap(project => {
     const updatedAt = project.updatedAt ?? project.createdAt;
     const base = {

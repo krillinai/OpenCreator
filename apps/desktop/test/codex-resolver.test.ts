@@ -37,10 +37,10 @@ describe('Desktop Codex resolver', () => {
   it('parses only the environment enclosed by fixed markers', () => {
     const output = [
       'shell noise',
-      '\0__CLAWEE_ENV_START__',
+      '\0__OPENCREATOR_ENV_START__',
       '\0PATH=/custom/bin',
       '\0CODEX_HOME=/custom/codex',
-      '\0__CLAWEE_ENV_END__',
+      '\0__OPENCREATOR_ENV_END__',
       '\0more noise'
     ].join('');
     expect(parseEnvironmentOutput(output)).toEqual({
@@ -50,7 +50,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('prefers a valid saved executable and resolves CODEX_HOME', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const bin = join(tempDir, 'codex');
     writeFileSync(bin, '#!/bin/sh\nexit 0\n');
     chmodSync(bin, 0o755);
@@ -74,7 +74,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('rejects a non-executable manual path', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const bin = join(tempDir, 'codex');
     writeFileSync(bin, 'not executable');
     expect(validateManualCodexPath(bin, { homeDir: tempDir, platform: 'darwin' }))
@@ -82,7 +82,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('resolves Codex bundled inside a manually selected ChatGPT app', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const app = join(tempDir, 'ChatGPT.app');
     const bin = join(app, 'Contents', 'Resources', 'codex');
     mkdirSync(join(bin, '..'), { recursive: true });
@@ -94,7 +94,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('resolves Codex bundled inside a manually selected Codex app', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const app = join(tempDir, 'Codex.app');
     const bin = join(app, 'Contents', 'Resources', 'codex');
     mkdirSync(join(bin, '..'), { recursive: true });
@@ -106,7 +106,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('rejects a manually selected app whose bundled Codex is not executable', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const app = join(tempDir, 'ChatGPT.app');
     const bin = join(app, 'Contents', 'Resources', 'codex');
     mkdirSync(join(bin, '..'), { recursive: true });
@@ -129,7 +129,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('resolves a Windows .cmd candidate returned by where.exe', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const bin = join(tempDir, 'codex.cmd');
     writeFileSync(bin, '@echo off\r\n');
 
@@ -152,7 +152,7 @@ describe('Desktop Codex resolver', () => {
 
   it('returns a valid saved candidate without waiting for a slow login shell', async () => {
     if (process.platform === 'win32') return;
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const bin = join(tempDir, 'codex');
     const pidPath = join(tempDir, 'shell.pid');
     const slowShell = join(tempDir, 'slow-shell');
@@ -189,7 +189,7 @@ describe('Desktop Codex resolver', () => {
 
   it('loads interactive shell configuration when resolving Codex', async () => {
     if (process.platform === 'win32') return;
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const binDir = join(tempDir, 'version manager', 'bin');
     const bin = join(binDir, 'codex');
     const shell = join(tempDir, 'interactive-shell');
@@ -207,7 +207,7 @@ describe('Desktop Codex resolver', () => {
       '  shift',
       'done',
       '[ "$interactive" = 1 ] || exit 42',
-      'export PATH="$CLAWEE_TEST_CODEX_DIR:/usr/bin:/bin"',
+      'export PATH="$OPENCREATOR_TEST_CODEX_DIR:/usr/bin:/bin"',
       'exec /bin/sh -c "$command"'
     ].join('\n'));
     chmodSync(bin, 0o755);
@@ -217,7 +217,7 @@ describe('Desktop Codex resolver', () => {
       processEnv: {
         PATH: '/usr/bin:/bin',
         SHELL: shell,
-        CLAWEE_TEST_CODEX_DIR: binDir
+        OPENCREATOR_TEST_CODEX_DIR: binDir
       },
       homeDir: tempDir,
       platform: 'darwin',
@@ -231,7 +231,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('finds Codex installed under an nvm-managed Node version', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const binDir = join(
       tempDir,
       '.nvm',
@@ -266,7 +266,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('honors CODEX_BIN and an explicit npm global prefix outside PATH', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const configuredBin = join(tempDir, 'configured', 'codex');
     const npmPrefixBin = join(tempDir, 'npm-prefix', 'bin', 'codex');
     mkdirSync(join(configuredBin, '..'), { recursive: true });
@@ -309,7 +309,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('launches the native Codex binary behind an npm wrapper', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const prefix = join(tempDir, 'node-prefix');
     const publicBinDir = join(prefix, 'bin');
     const wrapper = join(publicBinDir, 'codex');
@@ -373,7 +373,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('prefers the newest semantic Node version when PATH is minimal', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const oldBinDir = join(tempDir, '.nvm', 'versions', 'node', 'v9.9.0', 'bin');
     const newBinDir = join(tempDir, '.nvm', 'versions', 'node', 'v22.14.0', 'bin');
     mkdirSync(oldBinDir, { recursive: true });
@@ -398,7 +398,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('finds the Codex CLI bundled inside the ChatGPT macOS app', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const bin = join(
       tempDir,
       'Applications',
@@ -428,7 +428,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('prefers the unified ChatGPT app over a runnable CLI in common paths', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const commonBin = join(tempDir, '.local', 'bin', 'codex');
     const chatGptBin = join(
       tempDir,
@@ -462,7 +462,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('prefers ChatGPT.app over the legacy Codex.app bundle', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const chatGptBin = join(
       tempDir,
       'Applications',
@@ -502,7 +502,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('discovers Codex inside a renamed macOS application bundle', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const bin = join(
       tempDir,
       'Applications',
@@ -532,7 +532,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('skips a stale executable wrapper and falls back to the ChatGPT app Codex', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const staleBin = join(tempDir, '.local', 'bin', 'codex');
     const chatGptBin = join(
       tempDir,
@@ -578,7 +578,7 @@ describe('Desktop Codex resolver', () => {
   });
 
   it('keeps searching after a saved Codex path becomes invalid', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const binDir = join(tempDir, 'path with spaces');
     const bin = join(binDir, 'codex');
     mkdirSync(binDir, { recursive: true });
@@ -604,7 +604,7 @@ describe('Desktop Codex resolver', () => {
 
   it('adds intermediate symlink directories so Codex can find its Node runtime', async () => {
     if (process.platform === 'win32') return;
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-resolver-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-resolver-'));
     const publicBinDir = join(tempDir, '.local', 'bin');
     const nodeBinDir = join(tempDir, '.local', 'node-current', 'bin');
     const packageBinDir = join(

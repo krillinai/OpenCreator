@@ -2,11 +2,11 @@ import type {
   CodexSkillListResponse,
   CodexSkillMarketInstallRecordResponse,
   CodexSkillResponse,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   skillMarketCandidateCatalog as skillMarketCatalog,
   type SkillMarketEntry
-} from '@clawee/skill-market';
+} from '@opencreator/skill-market';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -275,7 +275,7 @@ describe('SkillMarketView', () => {
     await waitFor(() => expect(previewTrigger).toHaveFocus());
   });
 
-  it('GitHub 案例图加载失败时使用本地素材兜底', async () => {
+  it('GitHub 案例图加载失败时使用无品牌占位', async () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
@@ -285,10 +285,8 @@ describe('SkillMarketView', () => {
     const image = screen.getByRole('img', { name: '编辑风格演示页' });
     fireEvent.error(image);
 
-    expect(screen.getByRole('img', { name: '编辑风格演示页 案例图暂不可用' })).toHaveAttribute(
-      'src',
-      '/skill-market/skills-empty.png'
-    );
+    expect(screen.getByRole('img', { name: '编辑风格演示页 案例图暂不可用' }))
+      .toHaveClass('skill-market-case__fallback');
   });
 
   it('Escape 关闭弹窗，且仅在键盘打开时恢复卡片焦点', async () => {
@@ -432,8 +430,8 @@ describe('SkillMarketView', () => {
     const card = getSkillCard('test-skill');
     expect(within(card).queryByLabelText('标签')).not.toBeInTheDocument();
     expect(card.querySelector('.skill-market-card__cover')).not.toBeInTheDocument();
-    expect(within(card).getByAltText('Clawee')).toBeInTheDocument();
-    expect(within(card).getByText('Clawee')).toHaveClass('skill-market-card__author');
+    expect(within(card).getByAltText('OpenCreator')).toBeInTheDocument();
+    expect(within(card).getByText('OpenCreator')).toHaveClass('skill-market-card__author');
     expect(within(card).queryByRole('button', { name: /收藏/ })).not.toBeInTheDocument();
     expect(within(card).queryByLabelText('使用人数')).not.toBeInTheDocument();
 
@@ -859,7 +857,7 @@ function createProps({
   useError,
   projects = [
     { id: 'content-design', name: 'content-design', cwd: '~/develop/content-design' },
-    { id: 'bili', name: 'bili', cwd: '~/develop/clawee/bili' },
+    { id: 'bili', name: 'bili', cwd: '~/develop/opencreator/bili' },
   ],
   currentProjectId = 'content-design',
   onInstall = vi.fn(),
@@ -956,7 +954,7 @@ function createMarketEntry(overrides: Partial<SkillMarketEntry> = {}): SkillMark
     platforms: ['Web'],
     tasks: ['测试任务'],
     creator: {
-      name: 'Clawee',
+      name: 'OpenCreator',
       avatarUrl: 'https://example.com/avatar.png',
     },
     examples: [],

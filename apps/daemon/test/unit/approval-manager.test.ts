@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 function setup() {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-approvals-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-approvals-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   createRunRepository(db).insertRun({
     id: 'run_1',

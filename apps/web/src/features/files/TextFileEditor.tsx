@@ -1,4 +1,4 @@
-import type { WorkspaceFileKind } from '@clawee/protocol';
+import type { WorkspaceFileKind } from '@opencreator/protocol';
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { cssLanguage } from '@codemirror/lang-css';
 import { htmlLanguage } from '@codemirror/lang-html';

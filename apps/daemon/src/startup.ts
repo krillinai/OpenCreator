@@ -6,10 +6,10 @@ import type {
 import { resolveEnterpriseCredentialIdentity } from './enterprise/credential-store-2026-07-30.js';
 import { readEnterpriseClientConfig } from './enterprise/client-config-2026-08-06.js';
 
-const ENTERPRISE_CONFIG_ARGUMENT = '--clawee-enterprise-config';
-const ENTERPRISE_E2E_RUN_ID_ARGUMENT = '--clawee-enterprise-e2e-run-id';
+const ENTERPRISE_CONFIG_ARGUMENT = '--opencreator-enterprise-config';
+const ENTERPRISE_E2E_RUN_ID_ARGUMENT = '--opencreator-enterprise-e2e-run-id';
 const ENTERPRISE_E2E_AUTHORIZED_ARGUMENT =
-  '--clawee-enterprise-e2e-authorized';
+  '--opencreator-enterprise-e2e-authorized';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -25,16 +25,16 @@ export function resolveProductionServerEnvironment(
 > {
   assertEnterpriseEnvironmentUnused(env);
   return {
-    ...optionalEnvironmentValue('dataDir', env.CLAWEE_DATA_DIR),
-    ...optionalEnvironmentValue('codexBin', env.CLAWEE_CODEX_BIN),
+    ...optionalEnvironmentValue('dataDir', env.OPENCREATOR_DATA_DIR),
+    ...optionalEnvironmentValue('codexBin', env.OPENCREATOR_CODEX_BIN),
     ...optionalEnvironmentValue(
       'codexHome',
-      env.CODEX_HOME ?? env.CLAWEE_CODEX_HOME
+      env.CODEX_HOME ?? env.OPENCREATOR_CODEX_HOME
     ),
-    ...optionalEnvironmentValue('defaultCwd', env.CLAWEE_DEFAULT_CWD),
+    ...optionalEnvironmentValue('defaultCwd', env.OPENCREATOR_DEFAULT_CWD),
     ...optionalEnvironmentValue(
       'defaultProjectRoot',
-      env.CLAWEE_DEFAULT_PROJECT_ROOT
+      env.OPENCREATOR_DEFAULT_PROJECT_ROOT
     )
   };
 }
@@ -116,11 +116,11 @@ function optionalEnvironmentValue<Key extends keyof BuildServerInput>(
 
 function assertEnterpriseEnvironmentUnused(env: NodeJS.ProcessEnv): void {
   const forbiddenKeys = [
-    'CLAWEE_ENTERPRISE_ORIGIN',
-    'CLAWEE_ENTERPRISE_E2E_AUTHORIZED',
-    'CLAWEE_ENTERPRISE_E2E_RUN_ID',
-    'CLAWEE_ENTERPRISE_KEYRING_SERVICE',
-    'CLAWEE_ENTERPRISE_KEYRING_ACCOUNT'
+    'OPENCREATOR_ENTERPRISE_ORIGIN',
+    'OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED',
+    'OPENCREATOR_ENTERPRISE_E2E_RUN_ID',
+    'OPENCREATOR_ENTERPRISE_KEYRING_SERVICE',
+    'OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT'
   ];
   if (forbiddenKeys.some(key => hasValue(env[key]))) {
     throw new Error('ENTERPRISE_ENV_CONFIG_FORBIDDEN');

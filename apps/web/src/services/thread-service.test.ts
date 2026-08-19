@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ThreadResponse } from '@clawee/protocol';
+import type { ThreadResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 import { createThreadService } from './thread-service.js';
 
@@ -156,7 +156,7 @@ function createThreadResponse(overrides: Partial<ThreadResponse> = {}): ThreadRe
     id: 'thread-task',
     title: '每日总结',
     projectId: null,
-    origin: 'clawee_created',
+    origin: 'opencreator_created',
     codexThreadId: 'codex-thread-task',
     cwd: '/workspace/project',
     canonicalCwd: '/workspace/project',

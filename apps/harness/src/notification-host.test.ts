@@ -2,7 +2,7 @@ import type {
   NotificationAcknowledgeResponse,
   NotificationOutboxItem,
   NotificationOutboxListResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import {
   consumeNotificationBatch,

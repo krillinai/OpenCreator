@@ -27,10 +27,10 @@ export type MockFileServiceOptions = {
 
 const seedFiles: WorkspaceFile[] = [
   {
-    path: 'docs/design/enterprise-agent-workbench.md',
-    name: 'enterprise-agent-workbench.md',
+    path: 'docs/design/enterprise-agent-dashboard.md',
+    name: 'enterprise-agent-dashboard.md',
     language: 'markdown',
-    content: '# OpenCreator 工作台 UI 方案\n\n这是 mock workspace 中的 Markdown 文件。',
+    content: '# OpenCreator Dashboard UI 方案\n\n这是 mock workspace 中的 Markdown 文件。',
     saved: true,
     dirty: false,
     updatedAt: new Date(0).toISOString(),
@@ -47,10 +47,10 @@ const seedFiles: WorkspaceFile[] = [
     source: 'mock'
   },
   {
-    path: 'screens/workbench.html',
-    name: 'workbench.html',
+    path: 'screens/dashboard.html',
+    name: 'dashboard.html',
     language: 'html',
-    content: '<main class="workbench">Agent 对话</main>\n',
+    content: '<main class="dashboard">Agent 对话</main>\n',
     saved: true,
     dirty: false,
     updatedAt: new Date(0).toISOString(),
@@ -60,7 +60,7 @@ const seedFiles: WorkspaceFile[] = [
     path: 'notes/release-notes.txt',
     name: 'release-notes.txt',
     language: 'text',
-    content: 'Agent Workbench v0.2\n',
+    content: 'Agent Dashboard v0.2\n',
     saved: true,
     dirty: false,
     updatedAt: new Date(0).toISOString(),
@@ -87,15 +87,15 @@ export function createMockFileService(options: MockFileServiceOptions = {}) {
         { type: 'folder', name: 'design', path: 'docs/design', depth: 1 },
         {
           type: 'file',
-          name: 'enterprise-agent-workbench.md',
-          path: 'docs/design/enterprise-agent-workbench.md',
+          name: 'enterprise-agent-dashboard.md',
+          path: 'docs/design/enterprise-agent-dashboard.md',
           depth: 2,
           language: 'markdown'
         },
         { type: 'folder', name: 'transcripts', path: 'transcripts', depth: 0 },
         { type: 'file', name: 'demo-agent-task.srt', path: 'transcripts/demo-agent-task.srt', depth: 1, language: 'srt' },
         { type: 'folder', name: 'screens', path: 'screens', depth: 0 },
-        { type: 'file', name: 'workbench.html', path: 'screens/workbench.html', depth: 1, language: 'html' },
+        { type: 'file', name: 'dashboard.html', path: 'screens/dashboard.html', depth: 1, language: 'html' },
         { type: 'folder', name: 'notes', path: 'notes', depth: 0 },
         { type: 'file', name: 'release-notes.txt', path: 'notes/release-notes.txt', depth: 1, language: 'text' }
       ];

@@ -37,7 +37,7 @@ const PREVIEW_CSP_BASE = [
 const MAX_PREVIEW_RESOURCES = 128;
 const MAX_PREVIEW_RESOURCE_BYTES = 10 * 1024 * 1024;
 const MAX_EXTERNAL_LINKS = 20;
-const PREVIEW_RUNTIME_ATTRIBUTE = 'data-clawee-preview-runtime';
+const PREVIEW_RUNTIME_ATTRIBUTE = 'data-opencreator-preview-runtime';
 const PREVIEW_RUNTIME_FILE = 'html-preview-runtime-2026-07-28.js';
 
 type ResourceBudget = {
@@ -376,7 +376,7 @@ function installContentSecurityPolicy(document: Document): void {
   ].join('; '));
   document.head.prepend(meta);
   const previewOverrides = document.createElement('style');
-  previewOverrides.setAttribute('data-clawee-preview', 'true');
+  previewOverrides.setAttribute('data-opencreator-preview', 'true');
   previewOverrides.textContent = `
     html, body {
       min-height: 100%;
@@ -384,13 +384,13 @@ function installContentSecurityPolicy(document: Document): void {
       visibility: visible !important;
     }
     body { overflow: auto !important; }
-    html[data-clawee-preview-state="recovering"] *,
-    html[data-clawee-preview-state="recovered"] * {
+    html[data-opencreator-preview-state="recovering"] *,
+    html[data-opencreator-preview-state="recovered"] * {
       animation: none !important;
       transition: none !important;
     }
-    html[data-clawee-preview-state="recovering"] [data-clawee-preview-force-visible],
-    html[data-clawee-preview-state="recovered"] [data-clawee-preview-force-visible] {
+    html[data-opencreator-preview-state="recovering"] [data-opencreator-preview-force-visible],
+    html[data-opencreator-preview-state="recovered"] [data-opencreator-preview-force-visible] {
       opacity: 1 !important;
       visibility: visible !important;
       content-visibility: visible !important;

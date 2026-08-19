@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkspaceDirectoryResponse, WorkspaceFileNode } from '@clawee/protocol';
+import type { WorkspaceDirectoryResponse, WorkspaceFileNode } from '@opencreator/protocol';
 import {
   chooseSuggestedPath,
   mergeDirectoryNodes,

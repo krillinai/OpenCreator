@@ -10,7 +10,7 @@ import {
 import { apiError } from './errors.js';
 
 export const ENTERPRISE_KNOWLEDGE_DOCUMENT_CONTENT_TYPE =
-  'application/vnd.clawee.knowledge-document';
+  'application/vnd.opencreator.knowledge-document';
 
 const uploadQuerySchema = z.object({
   fileName: z.string().min(1),

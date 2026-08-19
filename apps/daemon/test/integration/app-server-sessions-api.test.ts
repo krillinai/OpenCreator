@@ -1,4 +1,4 @@
-import type { ConversationSearchQuery } from '@clawee/protocol';
+import type { ConversationSearchQuery } from '@opencreator/protocol';
 import type { FastifyInstance } from 'fastify';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -46,7 +46,7 @@ describe('app-server session API', () => {
       title: '已归属会话',
       codexThreadId: 'codex-owned',
       projectId: 'project-owned',
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       cwd: tempDir,
       canonicalCwd: tempDir,
       workspaceMode: 'external',
@@ -62,7 +62,7 @@ describe('app-server session API', () => {
       title: '待归属会话',
       codexThreadId: 'codex-unassigned',
       projectId: null,
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       cwd: tempDir,
       canonicalCwd: tempDir,
       workspaceMode: 'external',
@@ -163,7 +163,7 @@ describe('app-server session API', () => {
       title: '最近会话',
       codexThreadId: 'codex-recent',
       projectId: 'project-recent',
-      origin: 'clawee_created',
+      origin: 'opencreator_created',
       cwd: tempDir,
       canonicalCwd: tempDir,
       workspaceMode: 'external',
@@ -358,7 +358,7 @@ describe('app-server session API', () => {
 });
 
 function createSetup() {
-  tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-sessions-api-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-sessions-api-'));
   db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
   return { db };
 }

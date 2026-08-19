@@ -13,7 +13,7 @@ afterEach(() => {
 
 describe('Runtime data lock', () => {
   it('prevents two Runtime owners and releases cleanly', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runtime-lock-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runtime-lock-'));
     const release = acquireRuntimeLock(tempDir);
     expect(() => acquireRuntimeLock(tempDir)).toThrow(/already used/);
     release();
@@ -22,8 +22,8 @@ describe('Runtime data lock', () => {
   });
 
   it('removes a stale lock', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-runtime-lock-'));
-    writeFileSync(join(tempDir, 'clawee-runtime.lock'), '99999999\n');
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-runtime-lock-'));
+    writeFileSync(join(tempDir, 'opencreator-runtime.lock'), '99999999\n');
     const release = acquireRuntimeLock(tempDir);
     release();
   });

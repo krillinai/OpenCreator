@@ -33,7 +33,7 @@ describe('HtmlPreview', () => {
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
     expect(srcDoc).toContain("default-src 'none'");
     expect(srcDoc).toContain('script-src http://localhost:3000');
-    expect(srcDoc).toContain('data-clawee-preview-runtime="true"');
+    expect(srcDoc).toContain('data-opencreator-preview-runtime="true"');
     expect(srcDoc).toContain('html-preview-runtime-2026-07-28.js');
     expect(srcDoc).not.toContain('window.top.location');
     expect(srcDoc).not.toContain('<iframe');
@@ -61,8 +61,8 @@ describe('HtmlPreview', () => {
     const frame = await screen.findByTitle('report.html HTML 预览');
     const srcDoc = frame.getAttribute('srcdoc') ?? '';
     const sourceStyleIndex = srcDoc.indexOf('body { opacity: 0; }');
-    const previewStyleIndex = srcDoc.indexOf('data-clawee-preview="true"');
-    const runtimeIndex = srcDoc.indexOf('data-clawee-preview-runtime="true"');
+    const previewStyleIndex = srcDoc.indexOf('data-opencreator-preview="true"');
+    const runtimeIndex = srcDoc.indexOf('data-opencreator-preview-runtime="true"');
 
     expect(sourceStyleIndex).toBeGreaterThanOrEqual(0);
     expect(previewStyleIndex).toBeGreaterThan(sourceStyleIndex);

@@ -1,4 +1,4 @@
-# Clawee 定时任务专属会话重构规格
+# OpenCreator 定时任务专属会话重构规格
 
 ## 0. 文档信息
 
@@ -8,7 +8,7 @@
 | 版本 | 1.1 |
 | 创建日期 | 2026-07-14 |
 | 最近更新 | 2026-07-15 |
-| 适用范围 | Clawee Web、Local Runtime Daemon、Protocol、Scheduler、Thread、Run、通知 |
+| 适用范围 | OpenCreator Web、Local Runtime Daemon、Protocol、Scheduler、Thread、Run、通知 |
 | 规格优先级 | 本文档覆盖并替代 `docs/2026-07-03-codex-native-agent-runtime-design.md` 中 Scheduler 的旧会话模型 |
 | 执行计划 | `docs/plans/2026-07-14-scheduled-task-dedicated-thread-design-plan.md` |
 | 发布运行手册 | `docs/operations/2026-07-15-scheduled-task-dedicated-thread-release-runbook.md` |
@@ -28,16 +28,16 @@
 
 ## 1. 一句话定义
 
-**定时任务不是独立的提醒系统，而是一个带定时触发器的 Clawee 长期会话。**
+**定时任务不是独立的提醒系统，而是一个带定时触发器的 OpenCreator 长期会话。**
 
-一个定时任务必须对应一个专属 Clawee 会话。同一个定时任务的每次自动执行、立即执行、审批、失败和结果，都进入同一个会话。定时系统只决定何时向该会话发起下一次 Agent 执行，实际能力继续由 Clawee 的普通 Run 和 Codex CLI 提供。
+一个定时任务必须对应一个专属 OpenCreator 会话。同一个定时任务的每次自动执行、立即执行、审批、失败和结果，都进入同一个会话。定时系统只决定何时向该会话发起下一次 Agent 执行，实际能力继续由 OpenCreator 的普通 Run 和 Codex CLI 提供。
 
 ## 2. 已确认需求
 
 1. 用户可以用自然语言让 AI 创建定时任务，也可以手动创建。
 2. 每个定时任务创建一个专属会话。
-3. 同一个定时任务始终复用同一个 Clawee 会话。
-4. 同一个 Clawee 会话底层优先复用同一个 Codex thread。
+3. 同一个定时任务始终复用同一个 OpenCreator 会话。
+4. 同一个 OpenCreator 会话底层优先复用同一个 Codex thread。
 5. 每次触发的任务输入、执行过程、审批和最终结果都追加到该专属会话。
 6. 左侧最底部增加“任务”区域，展示定时任务对应的专属会话。
 7. “任务”不是旧的技术 Run 中心，不向普通用户展示底层 Run 列表。
@@ -45,8 +45,8 @@
 9. “任务”负责查看执行历史、最新结果以及继续和 AI 对话。
 10. 通知点击后直接进入任务专属会话，并定位到最新一次执行。
 11. 喝水提醒、每日工作总结、定时生成文稿、读取项目、生成文件等都走同一套执行机制。
-12. 原则上 Clawee 普通会话可以完成的任务，定时任务也可以完成。
-13. Clawee 自己存储和调度任务，Codex CLI 只作为 Agent 执行引擎。
+12. 原则上 OpenCreator 普通会话可以完成的任务，定时任务也可以完成。
+13. OpenCreator 自己存储和调度任务，Codex CLI 只作为 Agent 执行引擎。
 
 ## 3. 目标与成功标准
 
@@ -145,9 +145,9 @@ Schedule 到期
 
 ## 6. 核心设计决策
 
-### 6.1 Clawee 持有调度状态
+### 6.1 OpenCreator 持有调度状态
 
-定时任务继续保存在 Clawee SQLite 中，由 Clawee Daemon 计算下次执行时间并触发。
+定时任务继续保存在 OpenCreator SQLite 中，由 OpenCreator Daemon 计算下次执行时间并触发。
 
 Codex CLI 的职责只有：
 
@@ -175,19 +175,19 @@ Run      N ---- 1 Thread
 3. Schedule Run 的 `source_id` 必须等于 Schedule ID。
 4. Schedule Run 的 `thread_id` 必须等于 Schedule 的 `thread_id`。
 
-### 6.3 Clawee Thread 与 Codex Thread 分层
+### 6.3 OpenCreator Thread 与 Codex Thread 分层
 
-Clawee 的任务会话 ID 是稳定的产品身份。
+OpenCreator 的任务会话 ID 是稳定的产品身份。
 
 Codex thread ID 是可更换的执行身份：
 
 ```text
-稳定的 Clawee thread_id
+稳定的 OpenCreator thread_id
   -> 当前 codex_thread_id
   -> 必要时因恢复失败、上下文轮换而切换
 ```
 
-即使未来底层 Codex thread 因上下文过长需要轮换，用户看到的 Clawee 任务会话仍然不变。
+即使未来底层 Codex thread 因上下文过长需要轮换，用户看到的 OpenCreator 任务会话仍然不变。
 
 ### 6.4 “已安排”和“任务”同时保留
 
@@ -307,7 +307,7 @@ Schedule 保存时间和任务内容，同时绑定的 Thread 保存执行上下
 手动表单保留普通用户需要的字段：
 
 1. 任务名称
-2. Clawee 要做什么
+2. OpenCreator 要做什么
 3. 执行频率
 4. 项目
 5. 是否启用
@@ -330,16 +330,16 @@ Schedule 保存时间和任务内容，同时绑定的 Thread 保存执行上下
 4. 前端自动进入任务会话。
 5. 左侧“任务”立即出现新任务。
 
-### 7.5 使用 Clawee 创建
+### 7.5 使用 OpenCreator 创建
 
-用户点击“使用 Clawee 创建”后：
+用户点击“使用 OpenCreator 创建”后：
 
 1. 创建一个 `schedule_draft` 会话。
 2. 自动进入该会话。
 3. 用户用自然语言描述任务。
 4. Agent 判断信息是否完整。
 5. 信息不足时，Agent 只追问缺少的信息。
-6. 信息完整时，Agent 调用 Clawee Schedule Tool 创建任务。
+6. 信息完整时，Agent 调用 OpenCreator Schedule Tool 创建任务。
 7. 创建成功后，当前草稿会话转换为 `schedule_task` 会话。
 8. 当前页面不跳走，直接显示创建结果和任务状态栏。
 9. 任务出现在左侧“任务”和“已安排”页面。
@@ -355,7 +355,7 @@ Schedule 保存时间和任务内容，同时绑定的 Thread 保存执行上下
 ```text
 用户：每天晚上 6 点总结今天项目里的工作，控制在 300 字以内。
 Agent：调用 schedule_create
-Clawee：创建 Schedule + 绑定当前 draft Thread
+OpenCreator：创建 Schedule + 绑定当前 draft Thread
 Agent：已创建“每日工作总结”，下次将在今天 18:00 执行。
 ```
 
@@ -396,7 +396,7 @@ Scheduler 发现到期
   -> RunManager.startRun({ threadId, createdBy: "schedule", sourceId })
   -> 首次执行创建 Codex thread
   -> 后续执行 resume 同一 Codex thread
-  -> 事件进入同一 Clawee Thread
+  -> 事件进入同一 OpenCreator Thread
   -> 结果完成
   -> 更新 Schedule.last_*
   -> 发送通知
@@ -455,7 +455,7 @@ Scheduler 发现到期
 ```text
 用户：以后改成晚上 8 点执行，控制在 200 字以内。
 Agent：调用 schedule_update
-Clawee：原子更新 Schedule 和 Thread 配置
+OpenCreator：原子更新 Schedule 和 Thread 配置
 Agent：已更新，下次将在今天 20:00 执行。
 ```
 
@@ -502,13 +502,13 @@ Agent：已更新，下次将在今天 20:00 执行。
 
 ```text
 ┌────────────────────────────────────────────────────────────┐
-│                         Clawee Web                          │
+│                         OpenCreator Web                          │
 │ 已安排管理 | 左侧任务 | 任务会话 | 通知跳转 | 审批          │
 └───────────────────────────┬────────────────────────────────┘
                             │ HTTP + SSE
                             ▼
 ┌────────────────────────────────────────────────────────────┐
-│                    Clawee Runtime Daemon                   │
+│                    OpenCreator Runtime Daemon                   │
 │                                                            │
 │ ScheduleCoordinator                                        │
 │   ├─ ScheduleRepository                                    │
@@ -575,7 +575,7 @@ type ThreadPurpose =
 | purpose | 含义 |
 |---|---|
 | `conversation` | 普通用户会话 |
-| `schedule_draft` | 使用 Clawee 创建任务的草稿会话 |
+| `schedule_draft` | 使用 OpenCreator 创建任务的草稿会话 |
 | `schedule_task` | 已绑定 Schedule 的任务会话 |
 
 ### 10.3 现有表的复用
@@ -756,7 +756,7 @@ Agent 不直接写 SQLite，不直接调用公开 Bearer Token，也不执行拼
 
 ### 12.2 内置 Schedule MCP Tool
 
-新增 Clawee 内置 MCP 工具服务，只在 Clawee 启动的 Codex Run 中注入，不修改用户全局 Codex 配置。
+新增 OpenCreator 内置 MCP 工具服务，只在 OpenCreator 启动的 Codex Run 中注入，不修改用户全局 Codex 配置。
 
 建议目录：
 
@@ -771,12 +771,12 @@ apps/daemon/src/agent-tools/
 工具：
 
 ```text
-clawee_schedule_create
-clawee_schedule_update
-clawee_schedule_pause
-clawee_schedule_resume
-clawee_schedule_run_now
-clawee_schedule_get
+opencreator_schedule_create
+opencreator_schedule_update
+opencreator_schedule_pause
+opencreator_schedule_resume
+opencreator_schedule_run_now
+opencreator_schedule_get
 ```
 
 删除任务不在第一批 Agent Tool 中开放，先通过 UI 明确确认。
@@ -830,7 +830,7 @@ type AgentCreateScheduleInput = {
 1. Tool 不接受任意 `threadId`。
 2. 如果当前 Thread 是 `schedule_draft`，绑定当前 Thread。
 3. 如果当前 Thread 是普通会话，创建新的 `schedule_task` Thread。
-4. `schedule_draft` 使用 Clawee 管理的独立工作区，默认 Profile 为 `default`、
+4. `schedule_draft` 使用 OpenCreator 管理的独立工作区，默认 Profile 为 `default`、
    Sandbox 为 `danger-full-access`，不继承创建前选中的项目。
 5. Agent 创建工具不接受任意 `cwd`；需要绑定代码仓库或业务目录的任务，应从对应项目
    的普通会话发起，或使用“手动设置”。普通会话发起时，项目、Profile、模型和权限继承
@@ -867,7 +867,7 @@ type AgentUpdateScheduleInput = {
 ### 13.2 建议执行包装
 
 ```text
-这是 Clawee 已经触发的一次计划任务执行。
+这是 OpenCreator 已经触发的一次计划任务执行。
 
 执行规则：
 1. 立即完成本次任务，不要重新创建或修改计划任务。
@@ -943,7 +943,7 @@ runManager.hasActiveRunForThread(schedule.threadId)
 
 ## 15. 审批和无人值守边界
 
-任务页通过“使用 Clawee 创建”生成的任务以无人值守执行为默认目标，使用
+任务页通过“使用 OpenCreator 创建”生成的任务以无人值守执行为默认目标，使用
 `danger-full-access`，不进入审批流程。其他入口创建的任务继续遵循其绑定 Thread 的
 Sandbox 和审批策略。
 
@@ -952,7 +952,7 @@ Sandbox 和审批策略。
 1. `danger-full-access` 映射为 Codex app-server
    `approvalPolicy='never'`，并在 `thread/start`、`thread/resume` 和 `turn/start`
    三处保持一致。
-2. 完全访问模式不创建 Clawee Approval 记录、不展示审批卡，也不进入
+2. 完全访问模式不创建 OpenCreator Approval 记录、不展示审批卡，也不进入
    `waiting_approval`。
 3. 如果 app-server 在 `never` 模式下仍发送 command、file、permissions 或
    MCP tool elicitation 审批请求，runner 直接返回批准结果，避免无人值守 Run
@@ -1038,7 +1038,7 @@ P2 增加 Host 后台通知：
 1. Daemon 产生通知事件。
 2. Desktop Host 或系统适配器订阅。
 3. 页面关闭时仍能显示。
-4. 点击后启动或聚焦 Clawee 并打开任务会话。
+4. 点击后启动或聚焦 OpenCreator 并打开任务会话。
 
 ## 17. 会话列表、搜索和历史
 
@@ -1048,7 +1048,7 @@ P2 增加 Host 后台通知：
 
 - `conversation`：项目普通会话区域。
 - 未完成的 `schedule_draft` 和正式 `schedule_task`：左侧“任务”区域。
-- “使用 Clawee 创建”生成的 `schedule_draft` 使用 `workspaceMode='managed'`，不携带
+- “使用 OpenCreator 创建”生成的 `schedule_draft` 使用 `workspaceMode='managed'`，不携带
   当前项目 `cwd`，默认 Profile 为 `default`、Sandbox 为 `danger-full-access`。
 - 新建 managed Thread 必须持久化绝对工作区路径；兼容历史相对 `cwd` 时，Run 执行必须
   使用 Thread 的绝对 `canonicalCwd`，避免 Codex app-server 二次相对解析导致 MCP
@@ -1061,8 +1061,8 @@ P2 增加 Host 后台通知：
 旧逻辑会把所有 Schedule 创建的 Codex session 标记为 `kind='schedule'` 并隐藏。新逻辑必须改为：
 
 1. 只有 `runs.created_by='schedule' AND runs.thread_id IS NULL` 的旧孤立 session 标记为 legacy schedule。
-2. 有 Clawee `thread_id` 的 Schedule session 保持可索引和可搜索。
-3. 不再归档绑定 Schedule 的 Clawee Thread。
+2. 有 OpenCreator `thread_id` 的 Schedule session 保持可索引和可搜索。
+3. 不再归档绑定 Schedule 的 OpenCreator Thread。
 4. 搜索结果可以返回任务会话，并标注“任务”。
 
 ### 17.3 历史加载
@@ -1252,9 +1252,9 @@ scheduleId?: string;
 ### 20.3 Codex resume 失败
 
 1. RunManager 按现有恢复策略尝试。
-2. 如果 Codex thread 无法恢复，使用 Clawee 对话摘要重新建立 Codex thread。
+2. 如果 Codex thread 无法恢复，使用 OpenCreator 对话摘要重新建立 Codex thread。
 3. 更新 `threads.codex_thread_id`。
-4. Clawee `thread_id` 不变。
+4. OpenCreator `thread_id` 不变。
 5. 在会话中显示一次非阻断诊断：“执行上下文已重新连接”。
 
 ### 20.4 Daemon 重启
@@ -1367,11 +1367,11 @@ Web：
 ### 23.4 必跑命令
 
 ```bash
-pnpm --filter @clawee/protocol typecheck
-pnpm --filter @clawee/daemon test
-pnpm --filter @clawee/daemon typecheck
-pnpm --filter @clawee/web test
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/protocol typecheck
+pnpm --filter @opencreator/daemon test
+pnpm --filter @opencreator/daemon typecheck
+pnpm --filter @opencreator/web test
+pnpm --filter @opencreator/web typecheck
 pnpm build
 ```
 
@@ -1417,8 +1417,8 @@ P0 目标：从手动创建到定时执行，Schedule 必须稳定复用专属 T
 **验证**
 
 ```bash
-pnpm --filter @clawee/protocol typecheck
-pnpm --filter @clawee/daemon test -- scheduler-repository thread-manager
+pnpm --filter @opencreator/protocol typecheck
+pnpm --filter @opencreator/daemon test -- scheduler-repository thread-manager
 ```
 
 ### P0-2：Thread purpose 和任务 Thread 查询
@@ -1542,7 +1542,7 @@ pnpm --filter @clawee/daemon test -- scheduler-repository thread-manager
 
 **修改内容**
 
-- 只隐藏没有 Clawee Thread 的旧孤立 Schedule session
+- 只隐藏没有 OpenCreator Thread 的旧孤立 Schedule session
 - 不再归档新任务 Thread
 - 新任务会话可以搜索
 
@@ -1602,8 +1602,8 @@ P1 目标：用户可以从“已安排”、左侧“任务”和自然语言�
 
 **可能修改文件**
 
-- `apps/web/src/features/shell/ClaweeSidebar.tsx`
-- `apps/web/src/features/shell/clawee-sidebar.css`
+- `apps/web/src/features/shell/OpenCreatorSidebar.tsx`
+- `apps/web/src/features/shell/opencreator-sidebar.css`
 - `apps/web/src/app/AppController.tsx`
 - 对应组件测试
 
@@ -1705,7 +1705,7 @@ P1 目标：用户可以从“已安排”、左侧“任务”和自然语言�
 
 **修改内容**
 
-- “使用 Clawee 创建”创建 `schedule_draft`
+- “使用 OpenCreator 创建”创建 `schedule_draft`
 - 用户消息走普通 Agent Run
 - 删除标题匹配和正则拦截
 - Tool 成功后转换为 `schedule_task`
@@ -1800,7 +1800,7 @@ P2 目标：让任务适合长期运行、后台通知和故障恢复。
 
 - 使用已有会话摘要
 - Codex resume 失败或上下文过长时重建 Codex thread
-- Clawee thread 不变
+- OpenCreator thread 不变
 
 **验收**
 
@@ -1952,7 +1952,7 @@ HAVING COUNT(*) > 1;
 
 1. 改成一对多 Schedule 与 Thread 关系。
 2. 恢复 `parallel`。
-3. 让 Codex 官方调度替代 Clawee Scheduler。
+3. 让 Codex 官方调度替代 OpenCreator Scheduler。
 4. 允许自动审批。
 5. 改变删除和历史保留策略。
 
@@ -1972,7 +1972,7 @@ HAVING COUNT(*) > 1;
 1. AI 创建和手动创建都可用。
 2. 每个 Schedule 有且只有一个专属 Thread。
 3. 同一 Schedule 多次运行始终进入同一 Thread。
-4. 定时任务使用 Clawee 普通 Agent 的完整执行能力。
+4. 定时任务使用 OpenCreator 普通 Agent 的完整执行能力。
 5. 左侧“任务”正确展示长期任务会话。
 6. “已安排”与任务会话职责清晰且可以互相跳转。
 7. 通知点击进入任务会话。

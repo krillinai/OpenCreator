@@ -3,7 +3,7 @@ import type {
   ConversationSearchQuery,
   ConversationSearchResponse,
   ConversationSearchResult
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { FastifyInstance } from 'fastify';
 import { CodexAppServerResponseError } from '../codex/app-server-client.js';
 import type {
@@ -87,7 +87,7 @@ async function searchOwnedConversations(
       if (
         thread === undefined
         || thread.status !== 'active'
-        || thread.origin !== 'clawee_created'
+        || thread.origin !== 'opencreator_created'
         || thread.purpose !== 'conversation'
         || thread.projectId === null
       ) {

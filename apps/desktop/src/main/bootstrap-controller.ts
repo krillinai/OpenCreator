@@ -46,7 +46,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
   }) {
     super();
     input.daemon.on('bootstrap', event => {
-      if (event.type === 'clawee_daemon_bootstrap_error') {
+      if (event.type === 'opencreator_daemon_bootstrap_error') {
         this.updateState({
           phase: 'failed',
           durationMs: event.durationMs,
@@ -84,7 +84,7 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
   rendererConnection(): DesktopConnectionConfig | null {
     const connection = this.input.daemon.currentConnection;
     if (connection === undefined) return null;
-    return { baseUrl: '/.clawee/runtime' };
+    return { baseUrl: '/.opencreator/runtime' };
   }
 
   start(

@@ -7,7 +7,7 @@ import { buildServer } from '../../src/api/server.js';
 import type { EnterpriseCredentialStore } from '../../src/enterprise/credential-store-2026-07-30.js';
 import type { EnterpriseHttpClient } from '../../src/enterprise/http-client-2026-07-30.js';
 
-const agentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
+const agentId = 'opencreator_550e8400-e29b-41d4-a716-446655440000';
 let server: FastifyInstance | undefined;
 let dataDir = '';
 
@@ -20,7 +20,7 @@ afterEach(async () => {
 
 describe('enterprise knowledge conversation API', () => {
   it('creates an owned knowledge conversation in the default project', async () => {
-    dataDir = mkdtempSync(join(tmpdir(), 'clawee-knowledge-conversation-'));
+    dataDir = mkdtempSync(join(tmpdir(), 'opencreator-knowledge-conversation-'));
     let subjectId = 'acct_subject_a';
     server = await buildServer({
       token: 'secret',

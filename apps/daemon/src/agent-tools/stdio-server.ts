@@ -34,7 +34,7 @@ export function createAgentScheduleMcpServer(input: {
     defaultTimezone: input.defaultTimezone
   });
   const server = new McpServer({
-    name: 'clawee-schedule-tools',
+    name: 'opencreator-schedule-tools',
     version: '0.1.0'
   });
 
@@ -68,7 +68,7 @@ export function createAgentScheduleMcpServer(input: {
             type: 'text',
             text: error instanceof Error
               ? error.message
-              : 'Clawee schedule tool failed'
+              : 'OpenCreator schedule tool failed'
           }]
         };
       }
@@ -83,7 +83,7 @@ function requireEnvironment(
 ): string {
   const value = env[name];
   if (value === undefined || value.length === 0) {
-    throw new Error('Clawee schedule tool environment is incomplete');
+    throw new Error('OpenCreator schedule tool environment is incomplete');
   }
   return value;
 }
@@ -93,7 +93,7 @@ if (
   && import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   void startAgentScheduleStdioServer().catch(() => {
-    console.error('Clawee schedule MCP server failed to start');
+    console.error('OpenCreator schedule MCP server failed to start');
     process.exitCode = 1;
   });
 }

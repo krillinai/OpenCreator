@@ -24,7 +24,7 @@ describe('agent schedule MCP server', () => {
       defaultTimezone: 'UTC'
     });
     const client = new Client({
-      name: 'clawee-agent-test',
+      name: 'opencreator-agent-test',
       version: '0.1.0'
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -34,16 +34,16 @@ describe('agent schedule MCP server', () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map(tool => tool.name)).toEqual([
-      'clawee_schedule_create',
-      'clawee_schedule_update',
-      'clawee_schedule_pause',
-      'clawee_schedule_resume',
-      'clawee_schedule_run_now',
-      'clawee_schedule_get'
+      'opencreator_schedule_create',
+      'opencreator_schedule_update',
+      'opencreator_schedule_pause',
+      'opencreator_schedule_resume',
+      'opencreator_schedule_run_now',
+      'opencreator_schedule_get'
     ]);
 
     const result = await client.callTool({
-      name: 'clawee_schedule_create',
+      name: 'opencreator_schedule_create',
       arguments: {
         name: '每日总结',
         task: '总结今天的工作',
@@ -73,7 +73,7 @@ describe('agent schedule MCP server', () => {
       defaultTimezone: 'UTC'
     });
     const client = new Client({
-      name: 'clawee-agent-test',
+      name: 'opencreator-agent-test',
       version: '0.1.0'
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -82,7 +82,7 @@ describe('agent schedule MCP server', () => {
     closeWork.push(() => client.close(), () => server.close());
 
     const result = await client.callTool({
-      name: 'clawee_schedule_create',
+      name: 'opencreator_schedule_create',
       arguments: {
         name: '伪造任务',
         task: '内容',
@@ -99,12 +99,12 @@ describe('agent schedule MCP server', () => {
     const server = createAgentScheduleMcpServer({
       request: vi.fn(),
       enabledTools: [
-        'clawee_schedule_update',
-        'clawee_schedule_get'
+        'opencreator_schedule_update',
+        'opencreator_schedule_get'
       ]
     });
     const client = new Client({
-      name: 'clawee-agent-test',
+      name: 'opencreator-agent-test',
       version: '0.1.0'
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -114,8 +114,8 @@ describe('agent schedule MCP server', () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map(tool => tool.name)).toEqual([
-      'clawee_schedule_update',
-      'clawee_schedule_get'
+      'opencreator_schedule_update',
+      'opencreator_schedule_get'
     ]);
   });
 });

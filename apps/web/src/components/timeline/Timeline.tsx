@@ -114,14 +114,11 @@ function getTimelineAvatar(item: TimelineItem): string {
   if (item.kind === 'user_message') return '你';
   if (item.kind === 'schedule_trigger') return '定';
   if (item.kind === 'change_card') return 'Δ';
-  if (item.kind === 'assistant_message') return 'C';
+  if (item.kind === 'assistant_message') return '·';
   return '·';
 }
 
 function renderTimelineAvatar(item: TimelineItem) {
-  if (item.kind === 'assistant_message') {
-    return <span className="timeline-avatar-logo" aria-hidden="true" />;
-  }
   if (item.kind === 'schedule_trigger') {
     return <Clock3 aria-hidden="true" size={14} />;
   }

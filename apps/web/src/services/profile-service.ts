@@ -5,7 +5,7 @@ import type {
   CodexProfileMutationResponse,
   CreateCodexProfileRequest,
   UpdateCodexProfileRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createProfileService(client: RuntimeClient) {

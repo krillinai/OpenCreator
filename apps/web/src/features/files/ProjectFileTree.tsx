@@ -1,4 +1,4 @@
-import type { WorkspaceFileNode } from '@clawee/protocol';
+import type { WorkspaceFileNode } from '@opencreator/protocol';
 import {
   ChevronRight,
   File,

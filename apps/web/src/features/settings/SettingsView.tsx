@@ -1,2 +1,2 @@
-export { ClaweeSettingsView as SettingsView } from './ClaweeSettingsView.js';
-export type { ClaweeSettingsViewProps as SettingsViewProps, RuntimeStatus } from './ClaweeSettingsView.js';
+export { OpenCreatorSettingsView as SettingsView } from './OpenCreatorSettingsView.js';
+export type { OpenCreatorSettingsViewProps as SettingsViewProps, RuntimeStatus } from './OpenCreatorSettingsView.js';

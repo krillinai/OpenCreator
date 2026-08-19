@@ -1,4 +1,4 @@
-import type { CreateScheduleRequest, UpdateScheduleRequest } from '@clawee/protocol';
+import type { CreateScheduleRequest, UpdateScheduleRequest } from '@opencreator/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { ScheduleCoordinator } from '../scheduler/coordinator.js';
 import { SchedulerError, type SchedulerService } from '../scheduler/service.js';

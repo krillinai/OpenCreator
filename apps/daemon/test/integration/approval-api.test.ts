@@ -24,7 +24,7 @@ afterEach(async () => {
 
 describe('approval API', () => {
   it('lists and resolves approvals idempotently', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-approval-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-approval-api-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     createRunRepository(db).insertRun({
       id: 'run_approval',
@@ -100,7 +100,7 @@ describe('approval API', () => {
   });
 
   it('rejects invalid filters and returns a typed missing error', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-approval-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-approval-api-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const approvalManager = createApprovalManager({ db });
     server = await buildServer({

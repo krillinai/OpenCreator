@@ -27,7 +27,7 @@ afterEach(async () => {
 
 describe('task API', () => {
   it('paginates and filters global tasks without scanning thread histories', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-task-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-task-api-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const approvals = createApprovalManager({ db });
     server = await buildServer({
@@ -105,7 +105,7 @@ describe('task API', () => {
   });
 
   it('rejects invalid status, limits, and cursors', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-task-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-task-api-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     server = await buildServer({
       token: 'secret',

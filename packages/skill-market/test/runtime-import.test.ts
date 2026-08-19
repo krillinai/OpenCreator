@@ -12,7 +12,7 @@ describe('skill market runtime exports', () => {
   it('builds from a clean dist and loads through native Node consumers', () => {
     rmSync(join(packageDir, 'dist'), { recursive: true, force: true });
 
-    execFileSync('pnpm', ['--filter', '@clawee/daemon', 'build'], {
+    execFileSync('pnpm', ['--filter', '@opencreator/daemon', 'build'], {
       cwd: workspaceDir,
       stdio: 'pipe'
     });
@@ -23,14 +23,14 @@ describe('skill market runtime exports', () => {
         '--input-type=module',
         '-e',
         [
-          "const market = await import('@clawee/skill-market');",
+          "const market = await import('@opencreator/skill-market');",
           "if (market.skillMarketCatalog.length !== 0) throw new Error('published catalog should be empty');",
           "if (market.skillMarketCandidateCatalog.length !== 53) throw new Error('candidate catalog import failed');",
           "const { buildServer } = await import('./dist/api/server.js');",
           "const { mkdtempSync, rmSync } = await import('node:fs');",
           "const { tmpdir } = await import('node:os');",
           "const { join } = await import('node:path');",
-          "const smokeRoot = mkdtempSync(join(tmpdir(), 'clawee-daemon-runtime-smoke-'));",
+          "const smokeRoot = mkdtempSync(join(tmpdir(), 'opencreator-daemon-runtime-smoke-'));",
           "const server = await buildServer({",
           "  token: 'runtime-smoke-token',",
           "  dataDir: join(smokeRoot, 'data'),",

@@ -1,16 +1,16 @@
-# Clawee 项目级 Agent 规则
+# OpenCreator 项目级 Agent 规则
 
-## `clawee-bug-fix` 使用铁律
+## `opencreator-bug-fix` 使用铁律
 
-- 铁律：普通开发、代码修复、体验优化和用户直接提出的需求，不得默认启用或附加 `clawee-bug-fix` 流程。
-- 只有用户明确要求读取、处理或回写 Clawee 飞书 Bug 文档时，才允许使用 `clawee-bug-fix`。
+- 铁律：普通开发、代码修复、体验优化和用户直接提出的需求，不得默认启用或附加 `opencreator-bug-fix` 流程。
+- 只有用户明确要求读取、处理或回写 OpenCreator 飞书 Bug 文档时，才允许使用 `opencreator-bug-fix`。
 - 未得到上述明确要求时，禁止因为任务看起来像 Bug 而读取飞书文档、执行文档闭环或按该流程自动创建 Git commit；应直接按当前需求完成代码修改与必要验证。
 
 ## Web / Desktop 一致性铁律门禁
 
 ### 核心定义
 
-- 铁律：Clawee 以 `apps/web` 作为唯一的前端实现和主要开发环境，Desktop 必须直接使用同一套 Web 前端构建产物，不得维护第二套页面、组件、样式或通用交互逻辑。
+- 铁律：OpenCreator 以 `apps/web` 作为唯一的前端实现和主要开发环境，Desktop 必须直接使用同一套 Web 前端构建产物，不得维护第二套页面、组件、样式或通用交互逻辑。
 - 铁律：在相同业务数据、相同用户偏好和相同前端内容区尺寸下，Web 与 Desktop 的通用界面、文案、布局、状态、交互结果和 Runtime 请求必须一致。
 - “一致”指通用产品能力一致，不要求浏览器模拟操作系统窗口、系统目录选择器、菜单栏、托盘和原生通知等系统能力。
 - 不能因为 Web 和 Desktop 共用 React 代码就默认二者已经一致；一致性必须通过自动化测试和实际打包 App 验证。
@@ -61,7 +61,7 @@
 4. 验证 Web 首次启动会自动获得默认项目，输入框立即可用。
 5. 验证 Browser Bridge 下不显示目录选择、目录更换、窗口关闭等不可用的 Desktop 原生入口。
 6. 验证 Desktop Bridge 下原生入口真实调用对应 Bridge 能力，不得只验证按钮存在。
-7. 运行实际打包 App E2E，验证 Preload Bridge、`clawee-app://` 页面、Runtime 代理、默认项目、核心输入流程和原生能力。
+7. 运行实际打包 App E2E，验证 Preload Bridge、`opencreator-app://` 页面、Runtime 代理、默认项目、核心输入流程和原生能力。
 8. 校验 `apps/web/dist` 与 App 内嵌 Web 目录文件列表和内容哈希完全一致。
 
 ### 修改时的强制判断

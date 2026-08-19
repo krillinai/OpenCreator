@@ -19,7 +19,7 @@ import {
 const tempDirs: string[] = [];
 
 function createCodexHome(): string {
-  const codexHome = mkdtempSync(join(tmpdir(), 'clawee-codex-profile-writer-'));
+  const codexHome = mkdtempSync(join(tmpdir(), 'opencreator-codex-profile-writer-'));
   tempDirs.push(codexHome);
   writeFileSync(join(codexHome, 'config.toml'), 'approval_policy = "never"\n');
   return codexHome;

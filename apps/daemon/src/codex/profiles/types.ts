@@ -1,4 +1,4 @@
-import type { CodexHomeMode } from '@clawee/protocol';
+import type { CodexHomeMode } from '@opencreator/protocol';
 
 export type CodexProfileStatus = 'valid' | 'invalid';
 export type TomlPrimitive = string | number | boolean;

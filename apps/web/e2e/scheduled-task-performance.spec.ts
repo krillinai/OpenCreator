@@ -209,7 +209,7 @@ function toRuntimeRequest(request: Request): RuntimeRequest | undefined {
 }
 
 function normalizeRuntimePath(pathname: string): string {
-  const proxyPrefix = '/.clawee/runtime';
+  const proxyPrefix = '/.opencreator/runtime';
   if (!pathname.startsWith(proxyPrefix)) return pathname;
   return pathname.slice(proxyPrefix.length) || '/';
 }
@@ -232,9 +232,9 @@ function isRuntimePath(pathname: string): boolean {
 async function installPerformanceObserver(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const target = window as Window & {
-      __claweePerformanceLongTasks?: number[];
+      __opencreatorPerformanceLongTasks?: number[];
     };
-    target.__claweePerformanceLongTasks = [];
+    target.__opencreatorPerformanceLongTasks = [];
     if (
       typeof PerformanceObserver === 'undefined'
       || !PerformanceObserver.supportedEntryTypes.includes('longtask')
@@ -243,7 +243,7 @@ async function installPerformanceObserver(page: Page): Promise<void> {
     }
     const observer = new PerformanceObserver(entries => {
       for (const entry of entries.getEntries()) {
-        target.__claweePerformanceLongTasks!.push(entry.duration);
+        target.__opencreatorPerformanceLongTasks!.push(entry.duration);
       }
     });
     observer.observe({ type: 'longtask', buffered: true });
@@ -253,8 +253,8 @@ async function installPerformanceObserver(page: Page): Promise<void> {
 async function readPerformanceSample(page: Page): Promise<BrowserPerformanceSample> {
   return await page.evaluate(() => {
     const longTasks = (window as Window & {
-      __claweePerformanceLongTasks?: number[];
-    }).__claweePerformanceLongTasks ?? [];
+      __opencreatorPerformanceLongTasks?: number[];
+    }).__opencreatorPerformanceLongTasks ?? [];
     return {
       domNodes: document.getElementsByTagName('*').length,
       longTaskCount: longTasks.length,

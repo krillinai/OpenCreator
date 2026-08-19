@@ -1,4 +1,4 @@
-import type { CleanupDeleteResponse, CleanupPreviewResponse } from '@clawee/protocol';
+import type { CleanupDeleteResponse, CleanupPreviewResponse } from '@opencreator/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { CleanupError } from '../cleanup/service.js';
 import { apiError } from './errors.js';

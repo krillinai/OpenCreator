@@ -147,7 +147,7 @@ type ZipEntryInput = {
 };
 
 function createPackage(entries: ZipEntryInput[]) {
-  const directory = mkdtempSync(join(tmpdir(), 'clawee-enterprise-package-'));
+  const directory = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-package-'));
   tempDirectories.push(directory);
   const archivePath = join(directory, 'skill.zip');
   const extractionPath = join(directory, 'extracted');

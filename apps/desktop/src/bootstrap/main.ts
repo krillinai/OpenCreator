@@ -33,11 +33,11 @@ type BootstrapApi = {
 
 declare global {
   interface Window {
-    claweeDesktop?: BootstrapApi;
+    opencreatorDesktop?: BootstrapApi;
   }
 }
 
-const api = window.claweeDesktop;
+const api = window.opencreatorDesktop;
 if (api === undefined) throw new Error('OpenCreator Desktop bridge is unavailable');
 if (
   api.windowChrome?.integratedTitleBar === true
@@ -46,11 +46,11 @@ if (
 ) {
   document.documentElement.dataset.integratedTitleBar = 'true';
   document.documentElement.style.setProperty(
-    '--clawee-titlebar-height',
+    '--opencreator-titlebar-height',
     `${api.windowChrome.titleBarHeight}px`
   );
   document.documentElement.style.setProperty(
-    '--clawee-traffic-light-inset',
+    '--opencreator-traffic-light-inset',
     `${api.windowChrome.trafficLightInset}px`
   );
 }
@@ -76,7 +76,7 @@ const labels: Record<BootstrapState['phase'], [string, string]> = {
   probing_codex: ['正在验证 Codex 是否可用', '正在检查本机 Codex 进程'],
   starting_runtime: ['正在打开 OpenCreator', '正在加载本地数据和 Codex 能力信息'],
   ready: ['正在打开 OpenCreator', '本地运行环境已就绪'],
-  workspace_failed: ['工作台加载失败', '本地 Runtime 仍在运行，可以直接重载工作台或重启 Runtime'],
+  workspace_failed: ['Dashboard 加载失败', '本地 Runtime 仍在运行，可以直接重载 Dashboard 或重启 Runtime'],
   failed: ['Codex CLI 暂时无法完成调用', 'OpenCreator 没有收到有效响应，请检查诊断后重试']
 };
 

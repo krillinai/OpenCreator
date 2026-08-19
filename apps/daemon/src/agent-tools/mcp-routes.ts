@@ -36,7 +36,7 @@ export async function registerAgentScheduleMcpRoute(
       if (authorization === undefined) return;
       const baseUrl = input.getBaseUrl();
       if (baseUrl === undefined) {
-        return reply.code(503).send(jsonRpcError('Clawee runtime is not listening'));
+        return reply.code(503).send(jsonRpcError('OpenCreator runtime is not listening'));
       }
 
       const scheduleClient = createAgentScheduleHttpClient({

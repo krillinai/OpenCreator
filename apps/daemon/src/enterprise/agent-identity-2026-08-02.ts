@@ -23,13 +23,13 @@ export type EnterpriseAgentIdentityDiagnostic =
   | {
       type: 'enterprise_collector_identity_sync_skipped';
       reason: 'different_origin';
-      claweeOrigin: string;
+      opencreatorOrigin: string;
       collectorOrigin: string;
     }
   | {
       type: 'enterprise_collector_identity_sync_skipped';
       reason: 'invalid_config';
-      claweeOrigin: string;
+      opencreatorOrigin: string;
     };
 
 export class EnterpriseAgentIdentityStoreError extends Error {
@@ -51,12 +51,12 @@ export function createEnterpriseAgentIdentityStore(input: {
   const path = resolve(input.configPath);
   const collectorConfigPath = resolve(
     input.collectorConfigPath
-      ?? join(homedir(), '.clawee', 'collector', 'config.toml')
+      ?? join(homedir(), '.opencreator', 'collector', 'config.toml')
   );
   const legacyPath = input.legacyDataDir === undefined
     ? undefined
     : join(input.legacyDataDir, FILE_NAME);
-  const generateId = input.generateId ?? (() => `clawee_${randomUUID()}`);
+  const generateId = input.generateId ?? (() => `opencreator_${randomUUID()}`);
   const onDiagnostic = input.onDiagnostic ?? (diagnostic => {
     console.warn(JSON.stringify(diagnostic));
   });
@@ -178,7 +178,7 @@ function reportSkippedCollectorIdentity(
     onDiagnostic({
       type: 'enterprise_collector_identity_sync_skipped',
       reason: 'different_origin',
-      claweeOrigin: new URL(gateway).origin,
+      opencreatorOrigin: new URL(gateway).origin,
       collectorOrigin: collector.officeOrigin
     });
     return;
@@ -187,7 +187,7 @@ function reportSkippedCollectorIdentity(
     onDiagnostic({
       type: 'enterprise_collector_identity_sync_skipped',
       reason: 'invalid_config',
-      claweeOrigin: new URL(gateway).origin
+      opencreatorOrigin: new URL(gateway).origin
     });
   }
 }

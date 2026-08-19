@@ -3,7 +3,7 @@ import type {
   MemoryListQuery,
   MemoryScope,
   UpdateMemoryRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { FastifyInstance } from 'fastify';
 import {
   MemoryServiceError,
@@ -17,8 +17,8 @@ export async function registerMemoryRoutes(
   options: {
     readThreadHistory(
       threadId: string
-    ): Promise<{ items: import('@clawee/protocol').ThreadHistoryItem[] } | undefined>
-      | { items: import('@clawee/protocol').ThreadHistoryItem[] }
+    ): Promise<{ items: import('@opencreator/protocol').ThreadHistoryItem[] } | undefined>
+      | { items: import('@opencreator/protocol').ThreadHistoryItem[] }
       | undefined;
   }
 ): Promise<void> {

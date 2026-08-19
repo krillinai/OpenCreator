@@ -1,4 +1,4 @@
-import type { RunDiagnosticsResponse } from '@clawee/protocol';
+import type { RunDiagnosticsResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createDiagnosticsService(client: RuntimeClient) {

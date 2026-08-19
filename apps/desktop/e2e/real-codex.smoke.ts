@@ -33,14 +33,14 @@ const bundledCodex = [
 
 test('Finder 环境使用 macOS 应用内置 Codex 完成真实 Probe', async () => {
   test.skip(
-    process.env.CLAWEE_RUN_REAL_CODEX_SMOKE !== '1',
+    process.env.OPENCREATOR_RUN_REAL_CODEX_SMOKE !== '1',
     '真实 Codex smoke 只在显式发布验收时运行'
   );
   test.skip(
     process.platform !== 'darwin' || bundledCodex === undefined,
     '当前机器没有可用于验收的 macOS 应用内置 Codex'
   );
-  const root = mkdtempSync(join(tmpdir(), 'clawee-bundled-codex-smoke-'));
+  const root = mkdtempSync(join(tmpdir(), 'opencreator-bundled-codex-smoke-'));
   const app = await launchPackagedApp({
     executablePath: packagedExecutable(desktopDir),
     args: [`--user-data-dir=${join(root, 'user-data')}`, '--disable-gpu'],
@@ -74,10 +74,10 @@ test('Finder 环境使用 macOS 应用内置 Codex 完成真实 Probe', async ()
 
 test('使用本机真实 Codex 完成冷启动 Probe 和真实会话', async () => {
   test.skip(
-    process.env.CLAWEE_RUN_REAL_CODEX_SMOKE !== '1',
+    process.env.OPENCREATOR_RUN_REAL_CODEX_SMOKE !== '1',
     '真实 Codex smoke 只在显式发布验收时运行'
   );
-  const root = mkdtempSync(join(tmpdir(), 'clawee-real-codex-smoke-'));
+  const root = mkdtempSync(join(tmpdir(), 'opencreator-real-codex-smoke-'));
   const userData = join(root, 'user-data');
   const app = await launchPackagedApp({
     executablePath: packagedExecutable(desktopDir),
@@ -97,12 +97,12 @@ test('使用本机真实 Codex 完成冷启动 Probe 和真实会话', async () 
       );
     }
     await page.waitForURL(url => (
-      url.protocol === 'clawee-app:'
+      url.protocol === 'opencreator-app:'
       && url.hostname === 'app'
     ), { timeout: 15_000 });
     const initial = await page.evaluate(async () => {
-      const state = await window.claweeDesktop?.readBootstrapState();
-      const health = await fetch('/.clawee/runtime/healthz');
+      const state = await window.opencreatorDesktop?.readBootstrapState();
+      const health = await fetch('/.opencreator/runtime/healthz');
       return {
         state,
         healthStatus: health.status,
@@ -137,7 +137,7 @@ test('使用本机真实 Codex 完成冷启动 Probe 和真实会话', async () 
       await page.waitForURL(url => url.hostname === 'app');
     }
     const refreshedState = await page.evaluate(
-      () => window.claweeDesktop?.readBootstrapState()
+      () => window.opencreatorDesktop?.readBootstrapState()
     );
     expect(refreshedState).toMatchObject({
       phase: 'ready',
@@ -147,7 +147,7 @@ test('使用本机真实 Codex 完成冷启动 Probe 和真实会话', async () 
     const reportDir = resolve(desktopDir, '../../test-results');
     mkdirSync(reportDir, { recursive: true });
     writeFileSync(
-      join(reportDir, 'clawee-desktop-real-codex-smoke.json'),
+      join(reportDir, 'opencreator-desktop-real-codex-smoke.json'),
       `${JSON.stringify({
         generatedAt: new Date().toISOString(),
         platform: process.platform,
@@ -187,7 +187,7 @@ async function runRealHello(
       path: string,
       body?: Record<string, unknown>
     ) => {
-      const response = await fetch(`/.clawee/runtime${path}`, {
+      const response = await fetch(`/.opencreator/runtime${path}`, {
         method,
         headers: body === undefined
           ? undefined
@@ -249,7 +249,7 @@ async function waitForBootstrapOutcome(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const state = await page.evaluate(
-      () => window.claweeDesktop?.readBootstrapState()
+      () => window.opencreatorDesktop?.readBootstrapState()
     ).catch(() => undefined);
     const resolved = await state;
     if (resolved?.phase === 'ready' || resolved?.phase === 'failed') {
@@ -274,7 +274,7 @@ async function waitForAvailabilityProbe(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const probe = await page.evaluate(async () => {
-      const response = await fetch('/.clawee/runtime/codex/status');
+      const response = await fetch('/.opencreator/runtime/codex/status');
       if (!response.ok) {
         throw new Error(`Codex status failed with ${response.status}`);
       }
@@ -299,9 +299,9 @@ async function waitForAvailabilityProbe(
 function finderLikeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next = { ...env };
   delete next.ELECTRON_RUN_AS_NODE;
-  delete next.CLAWEE_E2E_FAKE_CODEX_STATE_DIR;
-  delete next.CLAWEE_E2E_FAKE_CODEX_MODE;
-  delete next.CLAWEE_UPDATE_URL;
+  delete next.OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR;
+  delete next.OPENCREATOR_E2E_FAKE_CODEX_MODE;
+  delete next.OPENCREATOR_UPDATE_URL;
   if (process.platform !== 'win32') {
     next.PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
     delete next.SHELL;

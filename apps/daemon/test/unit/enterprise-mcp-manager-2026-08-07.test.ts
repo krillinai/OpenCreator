@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CodexMcpServerResponse } from '@clawee/protocol';
+import type { CodexMcpServerResponse } from '@opencreator/protocol';
 import type { McpManager } from '../../src/codex/mcp/manager.js';
 import type { EnterpriseHttpClient } from '../../src/enterprise/http-client-2026-07-30.js';
 import { EnterpriseHttpError } from '../../src/enterprise/http-client-2026-07-30.js';
@@ -19,7 +19,7 @@ import type {
   EnterpriseSessionManager
 } from '../../src/enterprise/session-manager-2026-07-30.js';
 
-const agentId = 'clawee_550e8400-e29b-41d4-a716-446655440000';
+const agentId = 'opencreator_550e8400-e29b-41d4-a716-446655440000';
 const endpoint = 'https://enterprise.example/mcp/servers/crm-main';
 const nativeName = 'enterprise_crm-main_9f9de575';
 

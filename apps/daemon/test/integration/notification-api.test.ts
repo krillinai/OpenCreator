@@ -1,7 +1,7 @@
 import type {
   NotificationAcknowledgeResponse,
   NotificationOutboxListResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,7 +36,7 @@ afterEach(async () => {
 
 describe('notification outbox api', () => {
   it('persists scheduled terminal notifications until a host acknowledges them', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-notification-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-notification-api-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     server = await buildServer({
       token: 'secret',
@@ -137,7 +137,7 @@ describe('notification outbox api', () => {
   });
 
   it('creates a redacted approval notification for a scheduled run', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-notification-approval-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-notification-approval-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     approvalManager = createApprovalManager({ db });
     server = await buildServer({

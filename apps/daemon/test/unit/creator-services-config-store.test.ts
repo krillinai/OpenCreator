@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createDefaultCreatorServicesConfig } from '@clawee/protocol';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import {
   createCreatorServicesConfigStore,
   CreatorServicesConfigStoreError

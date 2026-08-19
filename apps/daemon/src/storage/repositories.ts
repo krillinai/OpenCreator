@@ -5,7 +5,7 @@ import type {
   RunSubmissionMode,
   ThreadOrigin,
   ThreadPurpose
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { normalizeDatabaseTimestamp } from './database.js';
 
@@ -233,7 +233,7 @@ export type ThreadRepository = {
     assignment?: 'assigned' | 'unassigned';
     limit?: number;
   }): ThreadRow[];
-  listUnassignedClaweeConversationThreads(): ThreadRow[];
+  listUnassignedOpenCreatorConversationThreads(): ThreadRow[];
   listProfileReferences(profile: string): Array<{ id: string; title: string | null }>;
   archiveLegacyScheduleThreads(): void;
   archiveThread(id: string): void;
@@ -636,7 +636,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
           AND (
             threads.purpose <> 'conversation'
             OR (
-              threads.origin = 'clawee_created'
+              threads.origin = 'opencreator_created'
               AND threads.project_id IS NOT NULL
             )
           )
@@ -644,17 +644,17 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         OR (
           @assignment = 'unassigned'
           AND threads.purpose = 'conversation'
-          AND threads.origin = 'clawee_created'
+          AND threads.origin = 'opencreator_created'
           AND threads.project_id IS NULL
         )
       )
     ORDER BY threads.updated_at DESC, threads.id DESC
     LIMIT @limit
   `);
-  const listUnassignedClaweeConversationThreads = db.prepare(`
+  const listUnassignedOpenCreatorConversationThreads = db.prepare(`
     ${threadSelect}
     WHERE threads.purpose = 'conversation'
-      AND threads.origin = 'clawee_created'
+      AND threads.origin = 'opencreator_created'
       AND threads.project_id IS NULL
     ORDER BY threads.id ASC
   `);
@@ -677,7 +677,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         updated_at = CURRENT_TIMESTAMP
     WHERE id = @id
       AND purpose = 'conversation'
-      AND origin = 'clawee_created'
+      AND origin = 'opencreator_created'
       AND project_id IS NULL
   `);
   const archiveLegacyScheduleThreadsStatement = db.prepare(`
@@ -790,7 +790,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         updated_at = CURRENT_TIMESTAMP
     WHERE project_id = @projectId
       AND purpose = 'conversation'
-      AND origin = 'clawee_created'
+      AND origin = 'opencreator_created'
   `);
   const touch = db.prepare(`
     UPDATE threads
@@ -805,7 +805,7 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         codexThreadId: null,
         projectId: null,
         enterpriseSubjectId: null,
-        origin: 'clawee_created',
+        origin: 'opencreator_created',
         model: null,
         reasoning: null,
         purpose: 'conversation',
@@ -844,8 +844,8 @@ export function createThreadRepository(db: Database.Database): ThreadRepository 
         limit: input.limit ?? 50
       }) as ThreadRow[];
     },
-    listUnassignedClaweeConversationThreads(): ThreadRow[] {
-      return listUnassignedClaweeConversationThreads.all() as ThreadRow[];
+    listUnassignedOpenCreatorConversationThreads(): ThreadRow[] {
+      return listUnassignedOpenCreatorConversationThreads.all() as ThreadRow[];
     },
     listProfileReferences(profile: string): Array<{ id: string; title: string | null }> {
       return listProfileReferences.all(profile) as Array<{ id: string; title: string | null }>;

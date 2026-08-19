@@ -3,7 +3,7 @@ import type {
   AttachmentDeleteResponse,
   AttachmentMetadataResponse,
   AttachmentUploadResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 type AttachmentClient = Pick<RuntimeClient, 'postBinary' | 'get' | 'rawGet' | 'delete'>;

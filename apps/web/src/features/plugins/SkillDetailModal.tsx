@@ -2,6 +2,7 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  ImageOff,
   RefreshCw,
   ShieldAlert,
   X,
@@ -17,8 +18,6 @@ import {
   normalizeSkillMarketAssetUrl,
   SkillAuthorAvatar,
 } from './SkillMarketCover.js';
-
-const exampleFallback = '/skill-market/skills-empty.png';
 
 export function SkillDetailModal({
   item,
@@ -282,14 +281,27 @@ function SkillExampleMedia({
     );
   }
 
+  if (failed || source === undefined) {
+    return (
+      <span
+        aria-label={`${example.title} ${l('案例图暂不可用', 'example image unavailable')}`}
+        className={`skill-market-case__media skill-market-case__fallback ${preview ? 'skill-market-case__media--preview' : ''}`}
+        role="img"
+      >
+        <ImageOff size={preview ? 32 : 22} aria-hidden="true" />
+        <span>{l('案例图暂不可用', 'Example unavailable')}</span>
+      </span>
+    );
+  }
+
   return (
     <img
-      alt={failed ? `${example.title} ${l('案例图暂不可用', 'example image unavailable')}` : example.title}
+      alt={example.title}
       className={`skill-market-case__media ${preview ? 'skill-market-case__media--preview' : ''}`}
       decoding="async"
       loading={preview ? 'eager' : 'lazy'}
       onError={() => setFailed(true)}
-      src={failed || source === undefined ? exampleFallback : source}
+      src={source}
     />
   );
 }

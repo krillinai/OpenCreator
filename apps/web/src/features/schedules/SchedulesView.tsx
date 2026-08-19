@@ -6,7 +6,7 @@ import type {
   ScheduleOperationListResponse,
   ScheduleResponse,
   UpdateScheduleRequest,
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import {
   Bell,
   CalendarClock,
@@ -30,7 +30,7 @@ import {
 } from 'react';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { ApiClientError } from '../../runtime/errors.js';
-import type { ClaweeProject } from '../projects/project-model.js';
+import type { OpenCreatorProject } from '../projects/project-model.js';
 import {
   createScheduleRequest,
   createScheduleUpdate,
@@ -77,7 +77,7 @@ type ScheduleFilter = 'all' | 'enabled' | 'paused';
 export type SchedulesViewProps = {
   connected: boolean;
   service: ScheduleViewService | null;
-  projects: ClaweeProject[];
+  projects: OpenCreatorProject[];
   currentProjectId: string;
   editScheduleId?: string;
   profiles?: CodexProfileResponse[];
@@ -596,7 +596,7 @@ export function SchedulesView(props: SchedulesViewProps) {
 }
 
 function createDefaultValues(
-  project: ClaweeProject | undefined,
+  project: OpenCreatorProject | undefined,
   timezone: string
 ): ScheduleEditorValues {
   return {

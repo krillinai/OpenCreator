@@ -18,7 +18,7 @@ afterEach(() => {
 
 describe('codex mcp operations', () => {
   it('persists redacted mcp operations newest first', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-ops-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-ops-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const operations = createMcpOperationRepository(db);
 
@@ -69,7 +69,7 @@ describe('codex mcp operations', () => {
   });
 
   it('maps timeout and nullable failure fields', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-ops-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-ops-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const operations = createMcpOperationRepository(db);
 
@@ -96,7 +96,7 @@ describe('codex mcp operations', () => {
   });
 
   it('clamps list operation limits', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-mcp-ops-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-mcp-ops-'));
     db = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     const operations = createMcpOperationRepository(db);
 

@@ -18,7 +18,7 @@ afterEach(() => {
 
 describe('Desktop static response', () => {
   it('uses index.html for an extensionless workspace route', async () => {
-    root = mkdtempSync(join(tmpdir(), 'clawee-static-'));
+    root = mkdtempSync(join(tmpdir(), 'opencreator-static-'));
     writeFileSync(join(root, 'index.html'), '<main>workspace</main>');
 
     const response = await staticResponse(root, '/thread/abc', true);
@@ -27,7 +27,7 @@ describe('Desktop static response', () => {
   });
 
   it('returns 404 for missing scripts, styles, images, and wasm', async () => {
-    root = mkdtempSync(join(tmpdir(), 'clawee-static-'));
+    root = mkdtempSync(join(tmpdir(), 'opencreator-static-'));
     writeFileSync(join(root, 'index.html'), '<main>workspace</main>');
 
     for (const path of [
@@ -41,7 +41,7 @@ describe('Desktop static response', () => {
   });
 
   it('serves an existing asset with its real MIME type', async () => {
-    root = mkdtempSync(join(tmpdir(), 'clawee-static-'));
+    root = mkdtempSync(join(tmpdir(), 'opencreator-static-'));
     mkdirSync(join(root, 'assets'));
     writeFileSync(join(root, 'assets', 'app.js'), 'export {}');
 
@@ -51,7 +51,7 @@ describe('Desktop static response', () => {
   });
 
   it('allows blob reads needed to inline local preview resources', async () => {
-    root = mkdtempSync(join(tmpdir(), 'clawee-static-'));
+    root = mkdtempSync(join(tmpdir(), 'opencreator-static-'));
     writeFileSync(join(root, 'index.html'), '<main>workspace</main>');
 
     const response = await staticResponse(root, '/', true);
@@ -61,7 +61,7 @@ describe('Desktop static response', () => {
   });
 
   it('allows the supported video preview sources', async () => {
-    root = mkdtempSync(join(tmpdir(), 'clawee-static-'));
+    root = mkdtempSync(join(tmpdir(), 'opencreator-static-'));
     writeFileSync(join(root, 'index.html'), '<main>workspace</main>');
 
     const response = await staticResponse(root, '/', true);

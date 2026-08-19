@@ -8,7 +8,7 @@ import type {
   EnterpriseSessionResponse,
   EnterpriseTransportSecurity,
   RuntimeErrorCode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type {
   EnterpriseCredential,
   EnterpriseCredentialStore

@@ -21,7 +21,7 @@ describe('enterprise MCP token store', () => {
     });
     const credential = {
       tokenId: 'token_1',
-      agentId: 'clawee_550e8400-e29b-41d4-a716-446655440000',
+      agentId: 'opencreator_550e8400-e29b-41d4-a716-446655440000',
       token: 'agent-mcp-secret',
       tokenType: 'Bearer' as const,
       fingerprint: 'fingerprint-1',
@@ -61,14 +61,14 @@ describe('enterprise MCP token store', () => {
 
   it('uses a keyring namespace separate from the enterprise app session', () => {
     expect(resolveEnterpriseMcpTokenIdentity()).toEqual({
-      service: 'com.clawee.enterprise.mcp',
-      account: 'clawee-agent-mcp'
+      service: 'com.opencreator.enterprise.mcp',
+      account: 'opencreator-agent-mcp'
     });
     expect(resolveEnterpriseMcpTokenIdentity(
       '123e4567-e89b-42d3-a456-426614174000'
     )).toEqual({
-      service: 'com.clawee.enterprise.mcp.e2e',
-      account: 'clawee-agent-mcp:123e4567-e89b-42d3-a456-426614174000'
+      service: 'com.opencreator.enterprise.mcp.e2e',
+      account: 'opencreator-agent-mcp:123e4567-e89b-42d3-a456-426614174000'
     });
   });
 });

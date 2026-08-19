@@ -2,7 +2,7 @@ import type {
   CreateScheduleRequest,
   ScheduleResponse,
   UpdateScheduleRequest
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import type { RunManager } from '../runs/manager.js';
 import type { RuntimeThread, ThreadManager } from '../threads/types.js';

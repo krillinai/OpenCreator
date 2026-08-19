@@ -12,10 +12,10 @@ const rootDir = resolve(desktopDir, '../..');
 let webProcess;
 
 try {
-  await run('pnpm', ['--filter', '@clawee/daemon', 'build'], rootDir);
-  await run('pnpm', ['--filter', '@clawee/desktop', 'build'], rootDir);
+  await run('pnpm', ['--filter', '@opencreator/daemon', 'build'], rootDir);
+  await run('pnpm', ['--filter', '@opencreator/desktop', 'build'], rootDir);
   if (!(await isPortOpen(9000))) {
-    webProcess = spawn('pnpm', ['--filter', '@clawee/web', 'dev'], {
+    webProcess = spawn('pnpm', ['--filter', '@opencreator/web', 'dev'], {
       cwd: rootDir,
       env: process.env,
       stdio: 'inherit'
@@ -24,7 +24,7 @@ try {
   }
   const code = await run(electron, ['.'], desktopDir, {
     ...process.env,
-    CLAWEE_DESKTOP_DEV: '1'
+    OPENCREATOR_DESKTOP_DEV: '1'
   });
   process.exitCode = code;
 } finally {

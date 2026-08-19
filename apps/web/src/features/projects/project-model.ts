@@ -2,14 +2,14 @@ import type {
   LegacyLocalStorageProjectV1,
   ProjectResponse,
   ThreadResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 
 export type ProjectPermission =
   | 'follow-global'
   | 'workspace-write'
   | 'danger-full-access';
 
-export type ClaweeProject = Pick<
+export type OpenCreatorProject = Pick<
   ProjectResponse,
   'id' | 'name' | 'cwd' | 'sandbox' | 'profile' | 'model' | 'reasoning'
 > & Partial<Pick<
@@ -22,7 +22,7 @@ export type ClaweeProject = Pick<
   | 'archivedAt'
 >>;
 
-export type ClaweeConversation = {
+export type OpenCreatorConversation = {
   id: string;
   projectId: string;
   title: string;
@@ -31,7 +31,7 @@ export type ClaweeConversation = {
   pinnedAt?: string | null;
 };
 
-export function sortProjectConversations<T extends ClaweeConversation>(
+export function sortProjectConversations<T extends OpenCreatorConversation>(
   conversations: readonly T[]
 ): T[] {
   return [...conversations].sort((left, right) => {
@@ -41,12 +41,12 @@ export function sortProjectConversations<T extends ClaweeConversation>(
   });
 }
 
-export const PROJECTS_STORAGE_KEY = 'clawee.projects.v1';
+export const PROJECTS_STORAGE_KEY = 'opencreator.projects.v1';
 
 export function findProjectById(
-  projects: ClaweeProject[],
+  projects: OpenCreatorProject[],
   projectId: string | undefined
-): ClaweeProject | undefined {
+): OpenCreatorProject | undefined {
   if (projectId === undefined) return undefined;
   return projects.find(project => project.id === projectId);
 }

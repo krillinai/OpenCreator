@@ -1,4 +1,4 @@
-import type { AgentEventEnvelope, PublicRunStatus, RunResponse } from '@clawee/protocol';
+import type { AgentEventEnvelope, PublicRunStatus, RunResponse } from '@opencreator/protocol';
 
 export type RunSubscriptionState = 'idle' | 'connecting' | 'connected' | 'disconnected';
 export type RunCancelState = 'idle' | 'requested' | 'failed';

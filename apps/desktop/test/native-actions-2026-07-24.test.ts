@@ -26,7 +26,7 @@ describe('desktop project boundary', () => {
     expect(main).toContain("app.getPath('documents')");
     expect(bootstrap).toContain('defaultProjectRoot: this.input.defaultProjectRoot');
     expect(daemonManager).toContain(
-      'CLAWEE_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot'
+      'OPENCREATOR_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot'
     );
   });
 });

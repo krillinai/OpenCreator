@@ -53,10 +53,10 @@ test.skip('未勾选协议时 Browser/Desktop 登录均先确认再提交', asyn
 
     try {
       await page.goto(runtime.origin);
-      await expect(page.locator('.clawee-shell')).toBeVisible();
+      await expect(page.locator('.opencreator-shell')).toBeVisible();
       await expect(page.locator('.enterprise-access-gate')).toHaveCount(0);
       await openEnterpriseAccount(page);
-      await expect(page.getByRole('heading', { name: '欢迎使用 Clawee' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '欢迎使用 OpenCreator' })).toBeVisible();
 
       const submit = page.locator('.enterprise-email-submit');
       await expect(submit).toBeDisabled();
@@ -363,7 +363,7 @@ test.skip('企业知识库在 390px 视口下逐级浏览且不产生页面级�
   await fakeDaemon.attach(page);
   await installPlatformEnvironment(page, 'browser');
   await page.goto(`${runtime.origin}/#/account`);
-  await expect(page.getByRole('heading', { name: '欢迎使用 Clawee' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '欢迎使用 OpenCreator' })).toBeVisible();
   await loginWithEmail(page);
   await expect(page.getByRole('heading', { name: 'Enterprise Member' })).toBeVisible();
 
@@ -425,7 +425,7 @@ test.skip('企业知识库在 390px 视口下逐级浏览且不产生页面级�
   expect(rectanglesOverlap(layout.heading, layout.upload)).toBe(false);
 
   await testInfo.attach('mobile-knowledge.png', {
-    body: await page.locator('.clawee-shell').screenshot({
+    body: await page.locator('.opencreator-shell').screenshot({
       animations: 'disabled'
     }),
     contentType: 'image/png'
@@ -524,7 +524,7 @@ test.skip('连接器在 390px 视口下可安装和开启且不产生溢出或�
   expect(fakeDaemon.unknownRequestPaths()).toEqual([]);
 
   await testInfo.attach('mobile-connections.png', {
-    body: await page.locator('.clawee-shell').screenshot({
+    body: await page.locator('.opencreator-shell').screenshot({
       animations: 'disabled'
     }),
     contentType: 'image/png'
@@ -552,12 +552,12 @@ async function runPlatform(input: {
   try {
     await page.goto(input.origin);
     await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
-    await expect(page.locator('.clawee-shell')).toBeVisible();
+    await expect(page.locator('.opencreator-shell')).toBeVisible();
     await openEnterpriseAccount(page);
-    await expect(page.getByRole('heading', { name: '欢迎使用 Clawee' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '欢迎使用 OpenCreator' })).toBeVisible();
     const checkpoints: Record<string, Checkpoint> = {
       account: await captureCheckpoint(page, [
-        '.clawee-shell',
+        '.opencreator-shell',
         '.enterprise-account-page',
         '.enterprise-auth-card'
       ])
@@ -598,8 +598,8 @@ async function runPlatform(input: {
     await mcpSwitch.click();
     await expect(mcpSwitch).toHaveAttribute('aria-checked', 'true');
     checkpoints.connections = await captureCheckpoint(page, [
-      '.clawee-sidebar-pane',
-      '.clawee-main-pane',
+      '.opencreator-sidebar-pane',
+      '.opencreator-main-pane',
       '.connections-page',
       '.connections-summary',
       '[data-testid="mcp-card"][data-connection-key="native:enterprise_crm-main_9f9de575"]'
@@ -618,10 +618,10 @@ async function runPlatform(input: {
       .toBeVisible();
     await expect(page.getByText('发布流程.md', { exact: true })).toBeVisible();
     checkpoints.knowledge = await captureCheckpoint(page, [
-      '.clawee-sidebar-pane',
-      '.clawee-main-pane',
+      '.opencreator-sidebar-pane',
+      '.opencreator-main-pane',
       '.knowledge-page',
-      '.knowledge-workbench',
+      '.knowledge-dashboard',
       '.knowledge-document-table'
     ]);
 
@@ -643,10 +643,10 @@ async function runPlatform(input: {
       'docs/design.md 已覆盖保存到项目“企业项目”'
     )).toBeVisible();
     checkpoints.drive = await captureCheckpoint(page, [
-      '.clawee-sidebar-pane',
-      '.clawee-main-pane',
+      '.opencreator-sidebar-pane',
+      '.opencreator-main-pane',
       '.shared-drive-page',
-      '.shared-drive-workbench',
+      '.shared-drive-dashboard',
       '.shared-drive-table'
     ]);
 
@@ -657,8 +657,8 @@ async function runPlatform(input: {
     })).toBeVisible();
     await expect(page.getByTestId('enterprise-skill-enterprise-skill')).toBeVisible();
     checkpoints.hub = await captureCheckpoint(page, [
-      '.clawee-sidebar-pane',
-      '.clawee-main-pane',
+      '.opencreator-sidebar-pane',
+      '.opencreator-main-pane',
       '.enterprise-skill-hub',
       '[data-testid="enterprise-skill-enterprise-skill"]'
     ]);
@@ -667,8 +667,8 @@ async function runPlatform(input: {
     await expect(page.getByRole('dialog', { name: 'enterprise-name 详情' })).toBeVisible();
     await expect(page.getByText('改进企业知识检索和输出格式。')).toBeVisible();
     checkpoints.detail = await captureCheckpoint(page, [
-      '.clawee-sidebar-pane',
-      '.clawee-main-pane',
+      '.opencreator-sidebar-pane',
+      '.opencreator-main-pane',
       '.enterprise-skill-detail'
     ]);
     await page.getByRole('button', { name: '关闭详情' }).click();
@@ -686,8 +686,8 @@ async function runPlatform(input: {
       .toHaveValue('');
     await expect(page).toHaveURL(/#\/thread\/thread-enterprise-skill$/);
     checkpoints.conversation = await captureCheckpoint(page, [
-      '.clawee-sidebar-pane',
-      '.clawee-main-pane',
+      '.opencreator-sidebar-pane',
+      '.opencreator-main-pane',
       '.conversation-page',
       '.composer-wrap'
     ]);
@@ -705,8 +705,8 @@ async function runPlatform(input: {
       state: input.fakeDaemon.snapshot(),
       nativeDirectorySelections: await page.evaluate(() => (
         Number((window as Window & {
-          __claweeConsistencyDirectorySelections?: number;
-        }).__claweeConsistencyDirectorySelections ?? 0)
+          __opencreatorConsistencyDirectorySelections?: number;
+        }).__opencreatorConsistencyDirectorySelections ?? 0)
       )),
       unknownRequests: input.fakeDaemon.unknownRequestPaths()
     };
@@ -744,27 +744,27 @@ async function openEnterpriseAccount(page: Page): Promise<void> {
 
 async function installPlatformEnvironment(page: Page, platform: Platform): Promise<void> {
   await page.addInitScript(({ currentPlatform }) => {
-    if (sessionStorage.getItem('clawee.consistency.initialized') !== '1') {
+    if (sessionStorage.getItem('opencreator.consistency.initialized') !== '1') {
       localStorage.clear();
-      localStorage.setItem('clawee.preferences.dynamicBackground', 'false');
-      localStorage.setItem('clawee.preferences.colorMode', 'dark');
-      localStorage.setItem('clawee.preferences.defaultPermission', 'follow-project');
-      sessionStorage.setItem('clawee.consistency.initialized', '1');
-      sessionStorage.setItem('clawee.consistency.directorySelections', '0');
+      localStorage.setItem('opencreator.preferences.dynamicBackground', 'false');
+      localStorage.setItem('opencreator.preferences.colorMode', 'dark');
+      localStorage.setItem('opencreator.preferences.defaultPermission', 'follow-project');
+      sessionStorage.setItem('opencreator.consistency.initialized', '1');
+      sessionStorage.setItem('opencreator.consistency.directorySelections', '0');
     }
-    Object.defineProperty(window, '__claweeConsistencyDirectorySelections', {
+    Object.defineProperty(window, '__opencreatorConsistencyDirectorySelections', {
       configurable: true,
       writable: true,
-      value: Number(sessionStorage.getItem('clawee.consistency.directorySelections') ?? 0)
+      value: Number(sessionStorage.getItem('opencreator.consistency.directorySelections') ?? 0)
     });
     if (currentPlatform !== 'desktop') return;
 
     const success = { ok: true as const };
-    Object.defineProperty(window, 'claweeDesktop', {
+    Object.defineProperty(window, 'opencreatorDesktop', {
       configurable: true,
       value: {
         kind: 'desktop',
-        readConnectionConfig: async () => ({ baseUrl: '/.clawee/runtime' }),
+        readConnectionConfig: async () => ({ baseUrl: '/.opencreator/runtime' }),
         subscribeConnectionConfig: () => () => undefined,
         restartRuntime: async () => success,
         reloadWorkspace: async () => success,
@@ -773,13 +773,13 @@ async function installPlatformEnvironment(page: Page, platform: Platform): Promi
         updateDesktopPreferences: async () => ({ closeBehavior: 'hide' as const }),
         selectProjectDirectory: async () => {
           const target = window as Window & {
-            __claweeConsistencyDirectorySelections?: number;
+            __opencreatorConsistencyDirectorySelections?: number;
           };
-          target.__claweeConsistencyDirectorySelections =
-            (target.__claweeConsistencyDirectorySelections ?? 0) + 1;
+          target.__opencreatorConsistencyDirectorySelections =
+            (target.__opencreatorConsistencyDirectorySelections ?? 0) + 1;
           sessionStorage.setItem(
-            'clawee.consistency.directorySelections',
-            String(target.__claweeConsistencyDirectorySelections)
+            'opencreator.consistency.directorySelections',
+            String(target.__opencreatorConsistencyDirectorySelections)
           );
           return null;
         },
@@ -798,7 +798,7 @@ async function verifyNativeProjectCapability(
   page: Page,
   platform: Platform
 ): Promise<void> {
-  await page.getByRole('button', { name: '工作台' }).click();
+  await page.getByRole('button', { name: 'Dashboard' }).click();
   await expect(page.getByRole('textbox', { name: '输入任务' })).toBeVisible();
   await page.getByRole('button', { name: '选择项目 企业项目' }).click();
   const existingFolder = page.getByRole('button', { name: '使用现有文件夹' });
@@ -807,8 +807,8 @@ async function verifyNativeProjectCapability(
     await existingFolder.click();
     await expect.poll(() => page.evaluate(() => (
       Number((window as Window & {
-        __claweeConsistencyDirectorySelections?: number;
-      }).__claweeConsistencyDirectorySelections ?? 0)
+        __opencreatorConsistencyDirectorySelections?: number;
+      }).__opencreatorConsistencyDirectorySelections ?? 0)
     ))).toBe(1);
   } else {
     await expect(existingFolder).toHaveCount(0);
@@ -823,7 +823,7 @@ async function captureCheckpoint(
   await page.evaluate(() => document.fonts.ready);
   const text = normalizeText(
     await page.locator(
-      '.clawee-main-content, .enterprise-access-gate'
+      '.opencreator-main-content, .enterprise-access-gate'
     ).first().innerText()
   );
   const boxes: Checkpoint['boxes'] = {};
@@ -841,7 +841,7 @@ async function captureCheckpoint(
     text,
     boxes,
     screenshot: await page.locator(
-      '.clawee-shell, .enterprise-access-gate'
+      '.opencreator-shell, .enterprise-access-gate'
     ).first().screenshot({ animations: 'disabled' })
   };
 }

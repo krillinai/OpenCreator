@@ -18,15 +18,15 @@ const desktopDir = resolve(scriptDir, '..');
 const rootDir = resolve(desktopDir, '../..');
 const targetDir = resolve(desktopDir, '.pack/daemon');
 const targetPlatform =
-  process.env.CLAWEE_DESKTOP_TARGET_PLATFORM ?? process.platform;
-const targetArch = process.env.CLAWEE_DESKTOP_TARGET_ARCH ?? process.arch;
-const targetLibc = process.env.CLAWEE_DESKTOP_TARGET_LIBC;
+  process.env.OPENCREATOR_DESKTOP_TARGET_PLATFORM ?? process.platform;
+const targetArch = process.env.OPENCREATOR_DESKTOP_TARGET_ARCH ?? process.arch;
+const targetLibc = process.env.OPENCREATOR_DESKTOP_TARGET_LIBC;
 const cacheDir = resolve(
-  process.env.CLAWEE_DESKTOP_CACHE_DIR
+  process.env.OPENCREATOR_DESKTOP_CACHE_DIR
     ?? resolve(desktopDir, '.cache')
 );
-const offline = process.env.CLAWEE_DESKTOP_OFFLINE === '1';
-const deployOffline = process.env.CLAWEE_DESKTOP_OFFLINE !== '0';
+const offline = process.env.OPENCREATOR_DESKTOP_OFFLINE === '1';
+const deployOffline = process.env.OPENCREATOR_DESKTOP_OFFLINE !== '0';
 const nativeBuildEnv = { ...process.env };
 delete nativeBuildEnv.npm_config_recursive;
 mkdirSync(cacheDir, { recursive: true });
@@ -41,11 +41,11 @@ await runStage('校验冻结锁文件', 'pnpm', [
   cwd: rootDir,
   timeoutMs: 60_000
 });
-await runStage('构建 Daemon', 'pnpm', ['--filter', '@clawee/daemon', 'build'], {
+await runStage('构建 Daemon', 'pnpm', ['--filter', '@opencreator/daemon', 'build'], {
   cwd: rootDir,
   timeoutMs: 5 * 60_000
 });
-await runStage('构建 Web', 'pnpm', ['--filter', '@clawee/web', 'build'], {
+await runStage('构建 Web', 'pnpm', ['--filter', '@opencreator/web', 'build'], {
   cwd: rootDir,
   timeoutMs: 5 * 60_000
 });
@@ -55,7 +55,7 @@ await runStage('部署 Daemon 生产依赖', 'pnpm', [
   ...(deployOffline ? ['--offline'] : []),
   '--config.ignore-scripts=true',
   '--filter',
-  '@clawee/daemon',
+  '@opencreator/daemon',
   'deploy',
   '--prod',
   targetDir
@@ -114,7 +114,7 @@ function pruneDeploymentRoot() {
     rmSync(resolve(targetDir, entry), { recursive: true, force: true });
   }
   rmSync(
-    resolve(targetDir, 'node_modules/.pnpm/node_modules/@clawee/daemon'),
+    resolve(targetDir, 'node_modules/.pnpm/node_modules/@opencreator/daemon'),
     { force: true }
   );
 }

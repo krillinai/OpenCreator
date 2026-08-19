@@ -22,7 +22,7 @@ let runtimeProcess: RuntimeProcess | undefined;
 const MAX_RUNTIME_OUTPUT_BUFFER = 1024 * 1024;
 
 export default defineConfig({
-  plugins: [react(), claweeRuntimeDevPlugin()],
+  plugins: [react(), opencreatorRuntimeDevPlugin()],
   server: {
     host: '127.0.0.1',
     port: 9000,
@@ -34,11 +34,11 @@ export default defineConfig({
   }
 });
 
-function claweeRuntimeDevPlugin(): Plugin {
+function opencreatorRuntimeDevPlugin(): Plugin {
   return {
-    name: 'clawee-runtime-dev',
+    name: 'opencreator-runtime-dev',
     configureServer(server) {
-      server.middlewares.use('/.clawee/runtime-config', async (_request, response) => {
+      server.middlewares.use('/.opencreator/runtime-config', async (_request, response) => {
         try {
           const config = await getRuntimeConfig();
           response.statusCode = 200;
@@ -89,7 +89,7 @@ function getRuntimeConfig(): Promise<RuntimeConfig> {
 }
 
 function startRuntimeProcess(): RuntimeProcess {
-  const child = spawn('pnpm', ['--filter', '@clawee/daemon', 'dev'], {
+  const child = spawn('pnpm', ['--filter', '@opencreator/daemon', 'dev'], {
     cwd: process.cwd(),
     env: process.env,
     stdio: ['ignore', 'pipe', 'pipe']

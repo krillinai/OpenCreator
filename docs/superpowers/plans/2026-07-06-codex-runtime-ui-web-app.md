@@ -6,7 +6,7 @@
 
 **Architecture:** 第一版采用 React/Vite Web App。Runtime 已支持能力通过 `RuntimeClient` 调用真实 HTTP/SSE API；Runtime 暂不支持能力通过 service adapter 接入 IndexedDB/localStorage mock store；桌面版能力通过 `HostBridge` 预留。daemon 需要补受限 CORS，前端 SSE 使用 fetch + ReadableStream，不使用原生 EventSource。
 
-**Tech Stack:** pnpm workspace, TypeScript, React, Vite, Vitest, Testing Library, lucide-react, IndexedDB, Fastify, @fastify/cors, @clawee/protocol.
+**Tech Stack:** pnpm workspace, TypeScript, React, Vite, Vitest, Testing Library, lucide-react, IndexedDB, Fastify, @fastify/cors, @opencreator/protocol.
 
 ---
 
@@ -59,7 +59,7 @@ apps/web/
   src/services/file-service.ts
   src/services/approval-service.ts
   src/services/change-service.ts
-  src/components/layout/WorkbenchLayout.tsx
+  src/components/layout/AppLayout.tsx
   src/components/timeline/Timeline.tsx
   src/components/editor/FileEditor.tsx
   src/components/editor/FileTree.tsx
@@ -124,7 +124,7 @@ it('does not allow arbitrary web origins', async () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "CORS"
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts -t "CORS"
 ```
 
 Expected: FAIL，原因是 daemon 尚未注册 CORS，OPTIONS 返回 404 或没有 CORS headers。
@@ -135,7 +135,7 @@ Expected: FAIL，原因是 daemon 尚未注册 CORS，OPTIONS 返回 404 或没�
 
 ```json
 "dependencies": {
-  "@clawee/protocol": "workspace:*",
+  "@opencreator/protocol": "workspace:*",
   "@fastify/cors": "^11.0.1",
   "better-sqlite3": "^11.8.1",
   "cron-parser": "^5.6.1",
@@ -190,8 +190,8 @@ Run:
 
 ```bash
 pnpm install
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "CORS"
-pnpm --filter @clawee/daemon typecheck
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts -t "CORS"
+pnpm --filter @opencreator/daemon typecheck
 ```
 
 Expected: PASS。
@@ -222,7 +222,7 @@ git commit -m "feat: allow local web cors for daemon"
 
 ```json
 {
-  "name": "@clawee/web",
+  "name": "@opencreator/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -233,7 +233,7 @@ git commit -m "feat: allow local web cors for daemon"
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@clawee/protocol": "workspace:*",
+    "@opencreator/protocol": "workspace:*",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -320,7 +320,7 @@ export default defineConfig({
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Clawee Agent</title>
+    <title>OpenCreator Agent</title>
   </head>
   <body>
     <div id="root"></div>
@@ -342,7 +342,7 @@ import 'fake-indexeddb/auto';
 export function App() {
   return (
     <main>
-      <h1>Clawee Agent</h1>
+      <h1>OpenCreator Agent</h1>
     </main>
   );
 }
@@ -367,7 +367,7 @@ createRoot(document.getElementById('root')!).render(
 修改根 `package.json` scripts：
 
 ```json
-"web:dev": "pnpm --filter @clawee/web dev"
+"web:dev": "pnpm --filter @opencreator/web dev"
 ```
 
 - [ ] **Step 5: 安装并验证**
@@ -376,9 +376,9 @@ Run:
 
 ```bash
 pnpm install
-pnpm --filter @clawee/web typecheck
-pnpm --filter @clawee/web build
-pnpm --filter @clawee/web test
+pnpm --filter @opencreator/web typecheck
+pnpm --filter @opencreator/web build
+pnpm --filter @opencreator/web test
 ```
 
 Expected: all PASS。
@@ -458,7 +458,7 @@ describe('RuntimeClient', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/runtime/client.test.ts
+pnpm --filter @opencreator/web test -- src/runtime/client.test.ts
 ```
 
 Expected: FAIL，RuntimeClient 尚不存在。
@@ -616,8 +616,8 @@ function parseApiError(payload: unknown): ApiErrorPayload {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/runtime/client.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/runtime/client.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -678,7 +678,7 @@ describe('sse parser', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/runtime/sse.test.ts
+pnpm --filter @opencreator/web test -- src/runtime/sse.test.ts
 ```
 
 Expected: FAIL，`sse.ts` 尚不存在。
@@ -688,7 +688,7 @@ Expected: FAIL，`sse.ts` 尚不存在。
 `apps/web/src/runtime/sse.ts`：
 
 ```ts
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope } from '@opencreator/protocol';
 import { assertKnownEventType, isRecord } from './validators.js';
 
 export type SseFrame = {
@@ -785,8 +785,8 @@ function parseAgentEvent(raw: string): AgentEventEnvelope | undefined {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/runtime/sse.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/runtime/sse.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -817,7 +817,7 @@ import { createIndexedDbStore } from './indexed-db.js';
 
 describe('IndexedDB store', () => {
   it('saves and loads mock file content', async () => {
-    const store = createIndexedDbStore('clawee.web.test');
+    const store = createIndexedDbStore('opencreator.web.test');
     await store.saveFile({ path: 'docs/demo.md', content: '# Demo', updatedAt: '2026-07-06T00:00:00.000Z' });
 
     await expect(store.getFile('docs/demo.md')).resolves.toMatchObject({
@@ -827,7 +827,7 @@ describe('IndexedDB store', () => {
   });
 
   it('rejects files larger than 512KB', async () => {
-    const store = createIndexedDbStore('clawee.web.test.limit');
+    const store = createIndexedDbStore('opencreator.web.test.limit');
     const content = 'x'.repeat(512 * 1024 + 1);
 
     await expect(store.saveFile({ path: 'large.txt', content, updatedAt: '2026-07-06T00:00:00.000Z' }))
@@ -881,7 +881,7 @@ import type { ConnectionConfig } from '../runtime/types.js';
 import { readJsonFromStorage, writeJsonToStorage } from '../storage/browser-storage.js';
 import type { HostBridge, HostBridgeResult, HostNotification } from './bridge.js';
 
-const CONNECTION_KEY = 'clawee.web.connection.v1';
+const CONNECTION_KEY = 'opencreator.web.connection.v1';
 
 export const browserBridge: HostBridge = {
   kind: 'browser',
@@ -917,7 +917,7 @@ export type MockFileRecord = {
 const DB_VERSION = 1;
 const MAX_FILE_BYTES = 512 * 1024;
 
-export function createIndexedDbStore(databaseName = 'clawee.web.v1') {
+export function createIndexedDbStore(databaseName = 'opencreator.web.v1') {
   return {
     async saveFile(file: MockFileRecord): Promise<void> {
       if (new Blob([file.content]).size > MAX_FILE_BYTES) {
@@ -961,8 +961,8 @@ function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/storage/indexed-db.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/storage/indexed-db.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -1002,7 +1002,7 @@ describe('mock services', () => {
 
   it('opens edits and saves a mock file', async () => {
     const service = createMockFileService();
-    const file = await service.openFile('docs/design/enterprise-agent-workbench.md');
+    const file = await service.openFile('docs/design/enterprise-agent-dashboard.md');
     expect(file.dirty).toBe(false);
 
     await service.saveFile(file.path, `${file.content}\nupdated`);
@@ -1029,8 +1029,8 @@ export type Project = {
 
 const DEFAULT_PROJECT: Project = {
   id: 'default-project',
-  name: 'Clawee Agent Demo',
-  rootPath: '/mock/clawee-agent',
+  name: 'OpenCreator Agent Demo',
+  rootPath: '/mock/opencreator-agent',
   source: 'mock'
 };
 
@@ -1075,10 +1075,10 @@ export type FileTreeNode = {
 
 const seedFiles: WorkspaceFile[] = [
   {
-    path: 'docs/design/enterprise-agent-workbench.md',
-    name: 'enterprise-agent-workbench.md',
+    path: 'docs/design/enterprise-agent-dashboard.md',
+    name: 'enterprise-agent-dashboard.md',
     language: 'markdown',
-    content: '# 企业 Agent 工作台 UI 方案\n\n这是 mock workspace 中的 Markdown 文件。',
+    content: '# 企业 Agent Dashboard UI 方案\n\n这是 mock workspace 中的 Markdown 文件。',
     saved: true,
     dirty: false,
     updatedAt: new Date(0).toISOString(),
@@ -1095,10 +1095,10 @@ const seedFiles: WorkspaceFile[] = [
     source: 'mock'
   },
   {
-    path: 'screens/workbench.html',
-    name: 'workbench.html',
+    path: 'screens/dashboard.html',
+    name: 'dashboard.html',
     language: 'html',
-    content: '<main class="workbench">Agent 对话</main>\n',
+    content: '<main class="dashboard">Agent 对话</main>\n',
     saved: true,
     dirty: false,
     updatedAt: new Date(0).toISOString(),
@@ -1108,7 +1108,7 @@ const seedFiles: WorkspaceFile[] = [
     path: 'notes/release-notes.txt',
     name: 'release-notes.txt',
     language: 'text',
-    content: 'Agent Workbench v0.2\n',
+    content: 'Agent Dashboard v0.2\n',
     saved: true,
     dirty: false,
     updatedAt: new Date(0).toISOString(),
@@ -1133,11 +1133,11 @@ export function createMockFileService() {
       return [
         { type: 'folder', name: 'docs', path: 'docs', depth: 0 },
         { type: 'folder', name: 'design', path: 'docs/design', depth: 1 },
-        { type: 'file', name: 'enterprise-agent-workbench.md', path: 'docs/design/enterprise-agent-workbench.md', depth: 2, language: 'markdown' },
+        { type: 'file', name: 'enterprise-agent-dashboard.md', path: 'docs/design/enterprise-agent-dashboard.md', depth: 2, language: 'markdown' },
         { type: 'folder', name: 'transcripts', path: 'transcripts', depth: 0 },
         { type: 'file', name: 'demo-agent-task.srt', path: 'transcripts/demo-agent-task.srt', depth: 1, language: 'srt' },
         { type: 'folder', name: 'screens', path: 'screens', depth: 0 },
-        { type: 'file', name: 'workbench.html', path: 'screens/workbench.html', depth: 1, language: 'html' },
+        { type: 'file', name: 'dashboard.html', path: 'screens/dashboard.html', depth: 1, language: 'html' },
         { type: 'folder', name: 'notes', path: 'notes', depth: 0 },
         { type: 'file', name: 'release-notes.txt', path: 'notes/release-notes.txt', depth: 1, language: 'text' }
       ];
@@ -1211,8 +1211,8 @@ export function createMockChangeService() {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/services/mock-services.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/services/mock-services.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -1265,7 +1265,7 @@ describe('RunService', () => {
 `apps/web/src/services/connection-service.ts`：
 
 ```ts
-import type { CodexStatusResponse } from '@clawee/protocol';
+import type { CodexStatusResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export type ConnectionState =
@@ -1287,7 +1287,7 @@ export function createConnectionService(client: RuntimeClient) {
 `apps/web/src/services/thread-service.ts`：
 
 ```ts
-import type { CreateThreadRequest, ThreadListResponse, ThreadResponse, ThreadRunsResponse } from '@clawee/protocol';
+import type { CreateThreadRequest, ThreadListResponse, ThreadResponse, ThreadRunsResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createThreadService(client: RuntimeClient) {
@@ -1308,7 +1308,7 @@ export function createThreadService(client: RuntimeClient) {
 `apps/web/src/services/run-service.ts`：
 
 ```ts
-import type { ResumeMode, RunResponse } from '@clawee/protocol';
+import type { ResumeMode, RunResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 type ClientLike = Pick<RuntimeClient, 'post' | 'get'>;
@@ -1341,7 +1341,7 @@ export function createRunService(client: ClientLike) {
 
 ```ts
 // apps/web/src/services/diagnostics-service.ts
-import type { RunDiagnosticsResponse } from '@clawee/protocol';
+import type { RunDiagnosticsResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createDiagnosticsService(client: RuntimeClient) {
@@ -1355,7 +1355,7 @@ export function createDiagnosticsService(client: RuntimeClient) {
 
 ```ts
 // apps/web/src/services/capability-service.ts
-import type { CodexMcpListResponse, CodexSkillListResponse } from '@clawee/protocol';
+import type { CodexMcpListResponse, CodexSkillListResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export type CodexProfileListResponse = {
@@ -1392,7 +1392,7 @@ export function createCapabilityService(client: RuntimeClient) {
 
 ```ts
 // apps/web/src/services/schedule-service.ts
-import type { CreateScheduleRequest, ScheduleListResponse, ScheduleResponse, UpdateScheduleRequest } from '@clawee/protocol';
+import type { CreateScheduleRequest, ScheduleListResponse, ScheduleResponse, UpdateScheduleRequest } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createScheduleService(client: RuntimeClient) {
@@ -1418,7 +1418,7 @@ export function createScheduleService(client: RuntimeClient) {
 
 ```ts
 // apps/web/src/services/settings-service.ts
-import type { CleanupDeleteResponse, CleanupPreviewResponse } from '@clawee/protocol';
+import type { CleanupDeleteResponse, CleanupPreviewResponse } from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 export function createSettingsService(client: RuntimeClient) {
@@ -1438,8 +1438,8 @@ export function createSettingsService(client: RuntimeClient) {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/services/run-service.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/services/run-service.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -1513,7 +1513,7 @@ export function parseRoute(hash: string): AppRoute {
 `apps/web/src/app/app-state.ts`：
 
 ```ts
-import type { PublicRunStatus } from '@clawee/protocol';
+import type { PublicRunStatus } from '@opencreator/protocol';
 
 export type RightPanelMode = 'editor' | 'run_detail';
 
@@ -1534,7 +1534,7 @@ export type AppAction =
   | { type: 'run_done'; threadId: string; runId: string };
 
 export const initialAppState: AppState = {
-  selectedFilePath: 'docs/design/enterprise-agent-workbench.md',
+  selectedFilePath: 'docs/design/enterprise-agent-dashboard.md',
   rightPanelMode: 'editor',
   activeRunByThreadId: {}
 };
@@ -1564,8 +1564,8 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/app/app-state.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/app/app-state.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -1580,7 +1580,7 @@ git commit -m "feat: add web app state model"
 ## Task 9: 四区布局和基础样式
 
 **Files:**
-- Create: `apps/web/src/components/layout/WorkbenchLayout.tsx`
+- Create: `apps/web/src/components/layout/AppLayout.tsx`
 - Create: `apps/web/src/styles/tokens.css`
 - Create: `apps/web/src/styles/app.css`
 - Modify: `apps/web/src/main.tsx`
@@ -1588,17 +1588,17 @@ git commit -m "feat: add web app state model"
 
 - [ ] **Step 1: 写布局 smoke 测试**
 
-创建 `apps/web/src/components/layout/WorkbenchLayout.test.tsx`：
+创建 `apps/web/src/components/layout/AppLayout.test.tsx`：
 
 ```tsx
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { WorkbenchLayout } from './WorkbenchLayout.js';
+import { AppLayout } from './AppLayout.js';
 
-describe('WorkbenchLayout', () => {
-  it('renders four workbench regions', () => {
+describe('AppLayout', () => {
+  it('renders four dashboard regions', () => {
     render(
-      <WorkbenchLayout
+      <AppLayout
         sidebar={<div>左侧</div>}
         timeline={<div>中间</div>}
         rightPanel={<div>右侧</div>}
@@ -1616,19 +1616,19 @@ describe('WorkbenchLayout', () => {
 
 - [ ] **Step 2: 实现布局组件**
 
-`apps/web/src/components/layout/WorkbenchLayout.tsx`：
+`apps/web/src/components/layout/AppLayout.tsx`：
 
 ```tsx
 import type { ReactNode } from 'react';
 
-export function WorkbenchLayout(props: {
+export function AppLayout(props: {
   sidebar: ReactNode;
   timeline: ReactNode;
   rightPanel: ReactNode;
   fileTree: ReactNode;
 }) {
   return (
-    <main className="workbench-shell">
+    <main className="dashboard-shell">
       <aside className="sidebar-pane" aria-label="主导航和会话">{props.sidebar}</aside>
       <section className="timeline-pane" aria-label="Agent 对话">{props.timeline}</section>
       <section className="right-pane" aria-label="文件和运行详情">{props.rightPanel}</section>
@@ -1684,7 +1684,7 @@ select {
   font: inherit;
 }
 
-.workbench-shell {
+.dashboard-shell {
   display: grid;
   grid-template-columns: 260px minmax(360px, 1fr) minmax(360px, 520px) 280px;
   height: 100vh;
@@ -1731,12 +1731,12 @@ import './styles/app.css';
 `apps/web/src/app/App.tsx`：
 
 ```tsx
-import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
+import { AppLayout } from '../components/layout/AppLayout.js';
 
 export function App() {
   return (
-    <WorkbenchLayout
-      sidebar={<div className="panel-header">Clawee Agent</div>}
+    <AppLayout
+      sidebar={<div className="panel-header">OpenCreator Agent</div>}
       timeline={<div className="panel-header">Agent 对话</div>}
       rightPanel={<div className="panel-header">文件</div>}
       fileTree={<div className="panel-header">项目文件</div>}
@@ -1750,8 +1750,8 @@ export function App() {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/components/layout/WorkbenchLayout.test.tsx
-pnpm --filter @clawee/web build
+pnpm --filter @opencreator/web test -- src/components/layout/AppLayout.test.tsx
+pnpm --filter @opencreator/web build
 ```
 
 Expected: PASS。
@@ -1760,7 +1760,7 @@ Expected: PASS。
 
 ```bash
 git add apps/web/src/components apps/web/src/styles apps/web/src/app/App.tsx apps/web/src/main.tsx
-git commit -m "feat: add web workbench layout"
+git commit -m "feat: add web dashboard layout"
 ```
 
 ## Task 10: 连接状态、Thread 列表和发送 Run
@@ -1794,7 +1794,7 @@ describe('Composer', () => {
 `apps/web/src/features/connection/ConnectionPanel.tsx`：
 
 ```tsx
-import type { CodexStatusResponse } from '@clawee/protocol';
+import type { CodexStatusResponse } from '@opencreator/protocol';
 
 export function ConnectionPanel(props: {
   status: 'connected' | 'disconnected' | 'invalid_token';
@@ -1819,7 +1819,7 @@ export function ConnectionPanel(props: {
 `apps/web/src/features/threads/ThreadList.tsx`：
 
 ```tsx
-import type { ThreadResponse } from '@clawee/protocol';
+import type { ThreadResponse } from '@opencreator/protocol';
 
 export function ThreadList(props: {
   threads: ThreadResponse[];
@@ -1895,8 +1895,8 @@ export function Composer(props: {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/features/runs/Composer.test.tsx
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/features/runs/Composer.test.tsx
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -1921,7 +1921,7 @@ git commit -m "feat: add connection threads and composer ui"
 `apps/web/src/components/timeline/timeline-model.test.ts`：
 
 ```ts
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope } from '@opencreator/protocol';
 import { describe, expect, it } from 'vitest';
 import { eventToTimelineItem } from './timeline-model.js';
 
@@ -1951,7 +1951,7 @@ describe('timeline model', () => {
 `apps/web/src/components/timeline/timeline-model.ts`：
 
 ```ts
-import type { AgentEventEnvelope } from '@clawee/protocol';
+import type { AgentEventEnvelope } from '@opencreator/protocol';
 
 export type TimelineItem =
   | { kind: 'user_message'; id: string; text: string; source: 'runtime' | 'mock' }
@@ -2009,7 +2009,7 @@ export function Timeline(props: { items: TimelineItem[] }) {
 `apps/web/src/features/runs/RunDetailPanel.tsx`：
 
 ```tsx
-import type { RunDiagnosticsResponse } from '@clawee/protocol';
+import type { RunDiagnosticsResponse } from '@opencreator/protocol';
 
 export function RunDetailPanel(props: {
   runId?: string;
@@ -2036,8 +2036,8 @@ export function RunDetailPanel(props: {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/components/timeline/timeline-model.test.ts
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/components/timeline/timeline-model.test.ts
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -2148,8 +2148,8 @@ export function FileEditor(props: {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/components/editor/FileEditor.test.tsx
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/components/editor/FileEditor.test.tsx
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -2190,7 +2190,7 @@ describe('CapabilitiesView', () => {
 `apps/web/src/features/capabilities/CapabilitiesView.tsx`：
 
 ```tsx
-import type { CodexMcpListResponse, CodexSkillListResponse } from '@clawee/protocol';
+import type { CodexMcpListResponse, CodexSkillListResponse } from '@opencreator/protocol';
 import type { CodexProfileListResponse } from '../../services/capability-service.js';
 
 export function CapabilitiesView(props: {
@@ -2227,8 +2227,8 @@ export function CapabilitiesView(props: {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/features/capabilities/CapabilitiesView.test.tsx
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/features/capabilities/CapabilitiesView.test.tsx
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -2268,7 +2268,7 @@ describe('SchedulesView', () => {
 `apps/web/src/features/schedules/SchedulesView.tsx`：
 
 ```tsx
-import type { ScheduleResponse } from '@clawee/protocol';
+import type { ScheduleResponse } from '@opencreator/protocol';
 
 export function SchedulesView(props: {
   connected: boolean;
@@ -2298,8 +2298,8 @@ export function SchedulesView(props: {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/features/schedules/SchedulesView.test.tsx
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/features/schedules/SchedulesView.test.tsx
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -2365,8 +2365,8 @@ export function SettingsView(props: {
 Run:
 
 ```bash
-pnpm --filter @clawee/web test -- src/features/settings/SettingsView.test.tsx
-pnpm --filter @clawee/web typecheck
+pnpm --filter @opencreator/web test -- src/features/settings/SettingsView.test.tsx
+pnpm --filter @opencreator/web typecheck
 ```
 
 Expected: PASS。
@@ -2384,7 +2384,7 @@ git commit -m "feat: add settings cleanup view"
 - Modify: `apps/web/src/app/App.tsx`
 - Modify: `apps/web/src/styles/app.css`
 
-- [ ] **Step 1: 替换 App 为可运行工作台**
+- [ ] **Step 1: 替换 App 为可运行 Dashboard**
 
 `apps/web/src/app/App.tsx`：
 
@@ -2392,7 +2392,7 @@ git commit -m "feat: add settings cleanup view"
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { FileEditor } from '../components/editor/FileEditor.js';
 import { FileTree } from '../components/editor/FileTree.js';
-import { WorkbenchLayout } from '../components/layout/WorkbenchLayout.js';
+import { AppLayout } from '../components/layout/AppLayout.js';
 import { Timeline } from '../components/timeline/Timeline.js';
 import type { TimelineItem } from '../components/timeline/timeline-model.js';
 import { ConnectionPanel } from '../features/connection/ConnectionPanel.js';
@@ -2448,7 +2448,7 @@ export function App() {
   }
 
   return (
-    <WorkbenchLayout
+    <AppLayout
       sidebar={
         <div>
           <ConnectionPanel status="disconnected" />
@@ -2568,9 +2568,9 @@ export function App() {
 Run:
 
 ```bash
-pnpm --filter @clawee/web typecheck
-pnpm --filter @clawee/web build
-pnpm --filter @clawee/web test
+pnpm --filter @opencreator/web typecheck
+pnpm --filter @opencreator/web build
+pnpm --filter @opencreator/web test
 ```
 
 Expected: PASS。
@@ -2633,7 +2633,7 @@ Run:
 ```bash
 pnpm typecheck
 pnpm test
-pnpm --filter @clawee/web build
+pnpm --filter @opencreator/web build
 git diff --check
 ```
 
@@ -2660,7 +2660,7 @@ git commit -m "docs: update ui runtime verification notes"
 6. mock Project/File/Approval/Change services：Task 6。
 7. Runtime-backed services：Task 7。
 8. app state、activeRunByThreadId、router：Task 8。
-9. 四区工作台布局：Task 9。
+9. 四区 Dashboard 布局：Task 9。
 10. connection/thread/run composer：Task 10。
 11. timeline 和右侧 Run detail/diagnostics：Task 11。
 12. 文件树和文件编辑器：Task 12。

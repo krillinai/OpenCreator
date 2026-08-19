@@ -40,8 +40,8 @@ button {
   z-index: 10;
   top: 0;
   right: 0;
-  left: var(--clawee-traffic-light-inset, 76px);
-  height: var(--clawee-titlebar-height, 38px);
+  left: var(--opencreator-traffic-light-inset, 76px);
+  height: var(--opencreator-titlebar-height, 38px);
   content: "";
   -webkit-app-region: drag;
   user-select: none;

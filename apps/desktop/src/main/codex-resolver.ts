@@ -23,8 +23,8 @@ import {
   win32 as win32Path
 } from 'node:path';
 
-const ENV_START = '__CLAWEE_ENV_START__';
-const ENV_END = '__CLAWEE_ENV_END__';
+const ENV_START = '__OPENCREATOR_ENV_START__';
+const ENV_END = '__OPENCREATOR_ENV_END__';
 const MAX_ENV_OUTPUT_BYTES = 1024 * 1024;
 const DEFAULT_CANDIDATE_PROBE_TIMEOUT_MS = 5_000;
 
@@ -643,7 +643,7 @@ function configuredApplicationRoots(
   homeDir: string,
   platform: NodeJS.Platform
 ): string[] | undefined {
-  const configured = env.CLAWEE_CODEX_APPLICATION_ROOTS;
+  const configured = env.OPENCREATOR_CODEX_APPLICATION_ROOTS;
   if (configured === undefined) return undefined;
   const pathDelimiter = platform === 'win32' ? ';' : delimiter;
   return unique(configured

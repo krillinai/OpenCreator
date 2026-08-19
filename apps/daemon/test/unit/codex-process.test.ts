@@ -14,7 +14,7 @@ afterEach(() => {
 describe('Codex process launcher', () => {
   it('runs an executable without a shell on Unix', async () => {
     if (process.platform === 'win32') return;
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-process-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-process-'));
     const bin = join(tempDir, 'codex');
     writeFileSync(bin, '#!/bin/sh\nprintf \"%s\" \"$1\"\n');
     chmodSync(bin, 0o755);
@@ -34,7 +34,7 @@ describe('Codex process launcher', () => {
 
   it('runs an npm-style .cmd entry on Windows', async () => {
     if (process.platform !== 'win32') return;
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-codex-process-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-process-'));
     const bin = join(tempDir, 'codex.cmd');
     writeFileSync(bin, '@echo off\r\n<nul set /p=\"%~1\"\r\n');
 

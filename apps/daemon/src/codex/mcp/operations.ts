@@ -2,7 +2,7 @@ import type {
   CodexMcpOperationResponse,
   CodexMcpOperationStatus,
   CodexMcpOperationType
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 

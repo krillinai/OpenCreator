@@ -2,7 +2,7 @@ import type {
   CodexSkillOperationResponse,
   CodexSkillResponse,
   EnterpriseSkillStatus
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -256,7 +256,7 @@ function createManager(overrides: {
   sleep?: (milliseconds: number) => Promise<void>;
   digest?: (path: string) => Promise<string>;
 } = {}) {
-  const dataDir = mkdtempSync(join(tmpdir(), 'clawee-enterprise-manager-'));
+  const dataDir = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-manager-'));
   tempDirectories.push(dataDir);
   return createEnterpriseSkillManager({
     dataDir,

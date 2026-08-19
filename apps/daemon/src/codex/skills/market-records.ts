@@ -1,4 +1,4 @@
-import type { CodexSkillMarketInstallRecordResponse } from '@clawee/protocol';
+import type { CodexSkillMarketInstallRecordResponse } from '@opencreator/protocol';
 import type Database from 'better-sqlite3';
 
 export type SkillMarketRecordRepository = {

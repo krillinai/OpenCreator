@@ -18,15 +18,15 @@ import type {
   EnterpriseSkillDetailResponse,
   EnterpriseSkillListResponse,
   EnterpriseSkillMutationResponse
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import type { RuntimeClient } from '../runtime/client.js';
 
 type ClientLike = Pick<RuntimeClient, 'get' | 'post' | 'postBinary' | 'patch'>;
 
 const KNOWLEDGE_DOCUMENT_CONTENT_TYPE =
-  'application/vnd.clawee.knowledge-document';
+  'application/vnd.opencreator.knowledge-document';
 const SHARED_FILE_CONTENT_TYPE =
-  'application/vnd.clawee.shared-file';
+  'application/vnd.opencreator.shared-file';
 
 export function createEnterpriseService(client: ClientLike) {
   return {

@@ -12,7 +12,7 @@ test('browser first launch uses the Runtime default project without desktop-only
   const projects: Array<Record<string, unknown>> = [];
   const projectApiCalls: Array<{ method: string; path: string }> = [];
 
-  await page.route('**/.clawee/runtime/projects**', async route => {
+  await page.route('**/.opencreator/runtime/projects**', async route => {
     const request = route.request();
     const url = new URL(request.url());
     projectApiCalls.push({ method: request.method(), path: url.pathname });
@@ -30,7 +30,7 @@ test('browser first launch uses the Runtime default project without desktop-only
     }
     if (url.pathname.endsWith('/projects/default') && request.method() === 'POST') {
       if (projects.length === 0) {
-        projects.push(e2eProject('project-default', '默认项目', '/tmp/Clawee/Default Project'));
+        projects.push(e2eProject('project-default', '默认项目', '/tmp/OpenCreator/Default Project'));
       }
       await route.fulfill({ json: { project: projects[0] } });
       return;
@@ -40,7 +40,7 @@ test('browser first launch uses the Runtime default project without desktop-only
       const project = e2eProject(
         `project-${body.name}`,
         body.name,
-        `/tmp/Clawee/${body.name}`
+        `/tmp/OpenCreator/${body.name}`
       );
       projects.unshift(project);
       await route.fulfill({ status: 201, json: { project } });
@@ -52,7 +52,7 @@ test('browser first launch uses the Runtime default project without desktop-only
     }
     await route.fallback();
   });
-  await page.route('**/.clawee/runtime/threads**', async route => {
+  await page.route('**/.opencreator/runtime/threads**', async route => {
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === 'GET' && url.pathname.endsWith('/threads')) {
@@ -63,7 +63,7 @@ test('browser first launch uses the Runtime default project without desktop-only
   });
   await page.addInitScript(() => {
     localStorage.clear();
-    localStorage.setItem('clawee.preferences.dynamicBackground', 'false');
+    localStorage.setItem('opencreator.preferences.dynamicBackground', 'false');
   });
 
   await page.goto(runtime.origin);
@@ -98,7 +98,7 @@ test('restored conversations wait for history before entering the empty layout',
   const historyGate = new Promise<void>(resolve => {
     releaseHistory = resolve;
   });
-  await page.route('**/.clawee/runtime/threads/*/history?**', async route => {
+  await page.route('**/.opencreator/runtime/threads/*/history?**', async route => {
     await historyGate;
     await route.fallback();
   });
@@ -121,7 +121,7 @@ test('restored conversations wait for history before entering the empty layout',
   await expect(page.getByRole('button', { name: /选择项目/ })).toBeVisible();
 });
 
-test('Clawee owns projects and mapped sessions across reloads', async ({ page, runtime }) => {
+test('OpenCreator owns projects and mapped sessions across reloads', async ({ page, runtime }) => {
   runtime.configureInvocations([{
     threadId: 'codex-owned-e2e',
     message: '刷新后仍从 Codex 会话恢复的回答'
@@ -133,7 +133,7 @@ test('Clawee owns projects and mapped sessions across reloads', async ({ page, r
   await page.getByRole('button', { name: /普通会话/ }).click();
   await expect(page.getByRole('heading', { name: '普通会话' })).toBeVisible();
 
-  const prompt = '验证 Clawee 项目和 Codex 会话映射';
+  const prompt = '验证 OpenCreator 项目和 Codex 会话映射';
   await page.getByRole('textbox', { name: '输入任务' }).fill(prompt);
   await page.getByRole('button', { name: '发送' }).click();
   await expect(page.getByText('刷新后仍从 Codex 会话恢复的回答')).toBeVisible();
@@ -261,7 +261,7 @@ test('legacy localStorage projects migrate once without restoring local home', a
   await expect(page.getByText('本机目录')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /普通会话/ })).toBeVisible();
 
-  const stored = await page.evaluate(() => localStorage.getItem('clawee.projects.v1'));
+  const stored = await page.evaluate(() => localStorage.getItem('opencreator.projects.v1'));
   expect(stored).toBe(JSON.stringify(legacyProjects));
 
   const repeated = await runtime.api<{

@@ -164,7 +164,7 @@ packages/protocol/src/
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts
 ```
 
 Expected:
@@ -242,7 +242,7 @@ export type CleanupDeleteResponse = {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/protocol-shape.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/protocol-shape.test.ts
 ```
 
 Expected:
@@ -345,7 +345,7 @@ describe('codex status response builder', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-status.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/codex-status.test.ts
 ```
 
 Expected:
@@ -360,7 +360,7 @@ Cannot find module '../../src/codex/status.js'
 创建 `apps/daemon/src/codex/status.ts`：
 
 ```ts
-import type { CodexStatusResponse } from '@clawee/protocol';
+import type { CodexStatusResponse } from '@opencreator/protocol';
 import type { RuntimeCapabilityMatrix } from './capabilities.js';
 import type { ResolvedCodexHome } from './home.js';
 
@@ -407,7 +407,7 @@ export async function registerCodexRoutes(
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/codex-status.test.ts test/integration/api.test.ts -t "returns codex status with auth"
+pnpm --filter @opencreator/daemon test -- test/unit/codex-status.test.ts test/integration/api.test.ts -t "returns codex status with auth"
 ```
 
 Expected:
@@ -489,7 +489,7 @@ describe('diagnostics redactor', () => {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/diagnostics-redactor.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/diagnostics-redactor.test.ts
 ```
 
 Expected:
@@ -517,7 +517,7 @@ export function redactText(input: string): string {
 创建 `apps/daemon/src/diagnostics/redactor.ts`：
 
 ```ts
-import type { DiagnosticFileResponse } from '@clawee/protocol';
+import type { DiagnosticFileResponse } from '@opencreator/protocol';
 import { redactText } from '../security/redaction.js';
 
 export const DIAGNOSTICS_REDACTION_WARNING =
@@ -540,7 +540,7 @@ export function redactDiagnosticFiles(files: DiagnosticFileResponse[]): Diagnost
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/diagnostics-redactor.test.ts \
   test/unit/codex-mcp-parser.test.ts \
   test/unit/codex-mcp-redaction.test.ts \
@@ -594,7 +594,7 @@ afterEach(() => {
 
 describe('diagnostics collector', () => {
   it('collects the default diagnostic files without raw.redacted.ndjson', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     writeRunFiles(tempDir, 'run_1', {
       'meta.json': '{"id":"run_1"}',
       'events.ndjson': '{"type":"done"}\n',
@@ -622,7 +622,7 @@ describe('diagnostics collector', () => {
   });
 
   it('includes raw.redacted.ndjson only when requested', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     writeRunFiles(tempDir, 'run_1', {
       'meta.json': '{"id":"run_1"}',
       'raw.redacted.ndjson': 'AUTH=raw-auth\n'
@@ -642,7 +642,7 @@ describe('diagnostics collector', () => {
   });
 
   it('rejects invalid run ids before filesystem access', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
 
     expect(() =>
       collectRunDiagnostics({
@@ -654,7 +654,7 @@ describe('diagnostics collector', () => {
   });
 
   it('returns RUN_NOT_FOUND for syntactically valid missing runs', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
 
     expect(() =>
       collectRunDiagnostics({
@@ -666,7 +666,7 @@ describe('diagnostics collector', () => {
   });
 
   it('keeps a 200-style collection result when files are missing', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     mkdirSync(join(tempDir, 'runs', 'run_1'), { recursive: true });
 
     const result = collectRunDiagnostics({
@@ -688,7 +688,7 @@ describe('diagnostics collector', () => {
   });
 
   it('skips symlinked diagnostic files', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     const runDir = join(tempDir, 'runs', 'run_1');
     const outsideDir = join(tempDir, 'outside');
     mkdirSync(runDir, { recursive: true });
@@ -731,7 +731,7 @@ function makeRunRepository(ids: string[]): Pick<RunRepository, 'getRun'> {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/diagnostics-collector.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/diagnostics-collector.test.ts
 ```
 
 Expected:
@@ -746,7 +746,7 @@ Cannot find module '../../src/diagnostics/collector.js'
 创建 `apps/daemon/src/diagnostics/collector.ts`：
 
 ```ts
-import type { DiagnosticFileResponse, RuntimeErrorCode } from '@clawee/protocol';
+import type { DiagnosticFileResponse, RuntimeErrorCode } from '@opencreator/protocol';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { redactDiagnosticFiles, DIAGNOSTICS_REDACTION_WARNING } from './redactor.js';
@@ -897,7 +897,7 @@ function isPathInside(parent: string, child: string): boolean {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/diagnostics-collector.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/diagnostics-collector.test.ts
 ```
 
 Expected:
@@ -921,7 +921,7 @@ import { collectRunDiagnostics } from '../../src/api/routes.diagnostics.js';
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/diagnostics-collector.test.ts \
   test/unit/diagnostics-redactor.test.ts \
   test/integration/diagnostics.test.ts
@@ -961,7 +961,7 @@ import { createRunRepository } from '../../src/storage/repositories.js';
 
 ```ts
   it('returns enhanced diagnostics with codex status snapshot', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-'));
     const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     db = database;
     insertFinishedRun(database, 'run_1');
@@ -1008,7 +1008,7 @@ import { createRunRepository } from '../../src/storage/repositories.js';
   });
 
   it('includes raw.redacted.ndjson only when includeRawRedacted=true', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-'));
     const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     db = database;
     insertFinishedRun(database, 'run_1');
@@ -1032,7 +1032,7 @@ import { createRunRepository } from '../../src/storage/repositories.js';
   });
 
   it('maps invalid and missing diagnostics runs to API errors', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-'));
     const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     db = database;
     server = await buildServer({ token: 'secret', dataDir: tempDir, db: database });
@@ -1055,7 +1055,7 @@ import { createRunRepository } from '../../src/storage/repositories.js';
   });
 
   it('keeps diagnostics available after run log files are deleted', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-'));
     const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     db = database;
     insertFinishedRun(database, 'run_1');
@@ -1119,7 +1119,7 @@ function insertFinishedRun(database: Database.Database, id: string): void {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/diagnostics.test.ts
+pnpm --filter @opencreator/daemon test -- test/integration/diagnostics.test.ts
 ```
 
 Expected:
@@ -1134,7 +1134,7 @@ Expected enhanced response but received old { runId, files } shape, or missing r
 替换 `apps/daemon/src/api/routes.diagnostics.ts` 为：
 
 ```ts
-import type { CodexStatusResponse, RunDiagnosticsResponse } from '@clawee/protocol';
+import type { CodexStatusResponse, RunDiagnosticsResponse } from '@opencreator/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
   collectRunDiagnostics,
@@ -1243,7 +1243,7 @@ import { createRunRepository } from '../storage/repositories.js';
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/diagnostics-collector.test.ts \
   test/integration/diagnostics.test.ts
 ```
@@ -1292,7 +1292,7 @@ afterEach(() => {
 
 describe('cleanup service', () => {
   it('previews old non-active run log directories', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-'));
     writeRuntimeDir(join(tempDir, 'runs', 'run_old'), old, { 'meta.json': '12345' });
     writeRuntimeDir(join(tempDir, 'runs', 'run_recent'), recent, { 'meta.json': '12345' });
     writeRuntimeDir(join(tempDir, 'runs', 'run_active'), old, { 'meta.json': '12345' });
@@ -1328,7 +1328,7 @@ describe('cleanup service', () => {
   });
 
   it('previews only archived managed thread workspaces', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-'));
     writeRuntimeDir(join(tempDir, 'workspaces', 'thread_archived'), old, { 'file.txt': '123' });
     writeRuntimeDir(join(tempDir, 'workspaces', 'thread_active'), old, { 'file.txt': '123' });
     writeRuntimeDir(join(tempDir, 'workspaces', 'thread_external'), old, { 'file.txt': '123' });
@@ -1358,7 +1358,7 @@ describe('cleanup service', () => {
   });
 
   it('rejects invalid olderThanDays values', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-'));
     const service = createCleanupService({
       dataDir: tempDir,
       runs: makeRunRepository({}),
@@ -1375,7 +1375,7 @@ describe('cleanup service', () => {
   });
 
   it('skips symlinked candidates with warnings', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-'));
     const outside = join(tempDir, 'outside');
     mkdirSync(join(tempDir, 'runs'), { recursive: true });
     mkdirSync(outside, { recursive: true });
@@ -1397,7 +1397,7 @@ describe('cleanup service', () => {
   });
 
   it('skips symlinked runtime roots with warnings', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-'));
     const outside = join(tempDir, 'outside-runs');
     mkdirSync(outside, { recursive: true });
     symlinkSync(outside, join(tempDir, 'runs'));
@@ -1418,7 +1418,7 @@ describe('cleanup service', () => {
   });
 
   it('deletes candidates after rescanning and does not delete non-candidates', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-cleanup-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-'));
     const oldRun = join(tempDir, 'runs', 'run_old');
     const activeRun = join(tempDir, 'runs', 'run_active');
     writeRuntimeDir(oldRun, old, { 'meta.json': '12345' });
@@ -1495,7 +1495,7 @@ function makeThreadRow(id: string, workspaceMode: string, status: 'active' | 'ar
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/cleanup-service.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/cleanup-service.test.ts
 ```
 
 Expected:
@@ -1516,7 +1516,7 @@ import type {
   CleanupPreviewItem,
   CleanupPreviewResponse,
   RuntimeErrorCode
-} from '@clawee/protocol';
+} from '@opencreator/protocol';
 import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { RunRepository, RunRow, ThreadRepository, ThreadRow } from '../storage/repositories.js';
@@ -1790,7 +1790,7 @@ function formatError(error: unknown): string {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/unit/cleanup-service.test.ts
+pnpm --filter @opencreator/daemon test -- test/unit/cleanup-service.test.ts
 ```
 
 Expected:
@@ -1825,7 +1825,7 @@ import { createRunRepository, createThreadRepository } from '../../src/storage/r
 
 ```ts
   it('previews and confirms runtime cleanup without deleting database rows', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     db = database;
     insertApiRun(database, 'run_old', 'succeeded', 'succeeded');
@@ -1879,7 +1879,7 @@ import { createRunRepository, createThreadRepository } from '../../src/storage/r
   });
 
   it('validates runtime cleanup query and body parameters', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     db = database;
     server = await buildServer({ token: 'secret', dataDir: tempDir, db: database });
@@ -1974,7 +1974,7 @@ function writeOldApiDir(path: string, files: Record<string, string>): void {
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "runtime cleanup"
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts -t "runtime cleanup"
 ```
 
 Expected:
@@ -1989,7 +1989,7 @@ GET /runtime/cleanup/preview returns 404
 创建 `apps/daemon/src/api/routes.cleanup.ts`：
 
 ```ts
-import type { CleanupDeleteRequest } from '@clawee/protocol';
+import type { CleanupDeleteRequest } from '@opencreator/protocol';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { CleanupError, type CleanupRequest } from '../cleanup/service.js';
 import { apiError } from './errors.js';
@@ -2123,7 +2123,7 @@ import { registerCleanupRoutes } from './routes.cleanup.js';
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "runtime cleanup"
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts -t "runtime cleanup"
 ```
 
 Expected:
@@ -2137,7 +2137,7 @@ PASS apps/daemon/test/integration/api.test.ts
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/cleanup-service.test.ts \
   test/integration/api.test.ts \
   test/integration/diagnostics.test.ts
@@ -2170,7 +2170,7 @@ git commit -m "feat: expose runtime cleanup api"
 
 ```ts
   it('keeps run database records after cleanup so diagnostics reports missing files', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
     const database = openRuntimeDatabase(join(tempDir, 'app.sqlite'));
     db = database;
     insertApiRun(database, 'run_old', 'succeeded', 'succeeded');
@@ -2199,7 +2199,7 @@ git commit -m "feat: expose runtime cleanup api"
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/integration/api.test.ts -t "keeps run database records after cleanup"
+pnpm --filter @opencreator/daemon test -- test/integration/api.test.ts -t "keeps run database records after cleanup"
 ```
 
 Expected:
@@ -2215,7 +2215,7 @@ PASS apps/daemon/test/integration/api.test.ts
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/integration/api.test.ts \
   test/integration/diagnostics.test.ts
 ```
@@ -2244,7 +2244,7 @@ git commit -m "test: cover diagnostics after cleanup"
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- \
+pnpm --filter @opencreator/daemon test -- \
   test/unit/protocol-shape.test.ts \
   test/unit/codex-status.test.ts \
   test/unit/diagnostics-redactor.test.ts \
@@ -2292,7 +2292,7 @@ Expected:
 
 ```text
 All workspace test scripts exit with code 0.
-Real Codex gated smoke remains skipped unless CLAWEE_RUN_REAL_CODEX_SMOKE=1 is set.
+Real Codex gated smoke remains skipped unless OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 is set.
 ```
 
 - [ ] **Step 4: 运行默认 real Codex smoke 文件**
@@ -2300,14 +2300,14 @@ Real Codex gated smoke remains skipped unless CLAWEE_RUN_REAL_CODEX_SMOKE=1 is s
 Run:
 
 ```bash
-pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts
+pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
 Expected:
 
 ```text
 PASS apps/daemon/test/smoke/real-codex-smoke.test.ts
-Real Codex tests that require CLAWEE_RUN_REAL_CODEX_SMOKE=1 are skipped by default.
+Real Codex tests that require OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 are skipped by default.
 ```
 
 - [ ] **Step 5: 运行 diff whitespace gate**
@@ -2329,7 +2329,7 @@ No output and exit code 0.
 只有当前机器 Codex 登录态、网络和额度都可用时运行：
 
 ```bash
-CLAWEE_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @clawee/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
+OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts -t "creates a schedule run-now path through the daemon"
 ```
 
 Expected:

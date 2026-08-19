@@ -3,8 +3,6 @@ import { useState } from 'react';
 import type { SkillMarketViewEntry } from './skill-market-model.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
-const defaultCover = '/skill-market/skills-empty.png';
-
 const githubPreviewCacheKey =
   '23d7b9595ae1f6dd0e2cdfe74393932763af58e35606729e825c6d65b2429725';
 
@@ -17,14 +15,10 @@ export function SkillMarketCover({
   }) {
   const l = useLocalizedCopy();
   const approvedExample = item.entry.examples.find((example) => example.approved);
-  const usesDefaultCover = approvedExample?.url === defaultCover;
-  const sources = (usesDefaultCover
-    ? [defaultCover]
-    : [
-        approvedExample?.url,
-        githubSocialPreviewUrl(item.entry.githubRepository),
-        defaultCover,
-      ])
+  const sources = [
+    approvedExample?.url,
+    githubSocialPreviewUrl(item.entry.githubRepository),
+  ]
     .map((source) => (source ? normalizeSkillMarketAssetUrl(source) : undefined))
     .filter(Boolean) as string[];
   const [sourceIndex, setSourceIndex] = useState(sources.length > 0 ? 0 : -1);

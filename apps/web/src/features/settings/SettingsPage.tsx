@@ -1,1 +1,1 @@
-export { ClaweeSettingsView as default } from './ClaweeSettingsView.js';
+export { OpenCreatorSettingsView as default } from './OpenCreatorSettingsView.js';

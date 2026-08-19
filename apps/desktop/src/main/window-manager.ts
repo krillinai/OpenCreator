@@ -164,7 +164,7 @@ export class WindowManager {
     window.webContents.once('dom-ready', onDomReady);
     window.webContents.once('did-finish-load', onFinish);
     try {
-      await window.loadURL('clawee-app://bootstrap/index.html');
+      await window.loadURL('opencreator-app://bootstrap/index.html');
     } finally {
       window.webContents.removeListener('dom-ready', onDomReady);
       window.webContents.removeListener('did-finish-load', onFinish);
@@ -273,7 +273,7 @@ export class WindowManager {
   private workspaceUrl(): string {
     return this.input.development
       ? 'http://127.0.0.1:9000'
-      : 'clawee-app://app/index.html';
+      : 'opencreator-app://app/index.html';
   }
 
   private cancelWorkspaceLoad(error: Error): void {
@@ -332,7 +332,7 @@ function visibleBounds(
 function isInternalWindowUrl(value: string, development: boolean): boolean {
   try {
     const url = new URL(value);
-    if (url.protocol === 'clawee-app:' && (url.hostname === 'app' || url.hostname === 'bootstrap')) {
+    if (url.protocol === 'opencreator-app:' && (url.hostname === 'app' || url.hostname === 'bootstrap')) {
       return true;
     }
     return development
@@ -347,7 +347,7 @@ function isInternalWindowUrl(value: string, development: boolean): boolean {
 export function isWorkspaceUrl(value: string, development: boolean): boolean {
   try {
     const url = new URL(value);
-    if (url.protocol === 'clawee-app:' && url.hostname === 'app') return true;
+    if (url.protocol === 'opencreator-app:' && url.hostname === 'app') return true;
     return development
       && url.protocol === 'http:'
       && url.hostname === '127.0.0.1'
