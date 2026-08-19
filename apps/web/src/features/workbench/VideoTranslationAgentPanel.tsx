@@ -74,6 +74,7 @@ export default function VideoTranslationAgentPanel(props: {
   canRegenerate: boolean;
   regenerationPending: boolean;
   nextVersion: number;
+  promptHint?: string;
   lastChange?: string;
   onApply(action: VideoTranslationAgentAction): string;
   onUndo(): void;
@@ -101,7 +102,7 @@ export default function VideoTranslationAgentPanel(props: {
       ? l('例如：开启配音并输出竖屏', 'For example: enable dubbing and use vertical output')
       : props.step === 1
         ? l('例如：翻译成日语', 'For example: translate into Japanese')
-        : l('添加视频后，告诉我翻译要求', 'Add a video, then tell me your translation requirements');
+        : props.promptHint ?? l('添加视频后，告诉我翻译要求', 'Add a video, then tell me your translation requirements');
 
   const interpretedAction = useMemo((): VideoTranslationAgentAction | undefined => {
     const prompt = input.trim();

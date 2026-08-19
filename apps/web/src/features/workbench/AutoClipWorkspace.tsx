@@ -62,7 +62,7 @@ function isValidUrl(value: string) {
   try { return ['http:', 'https:'].includes(new URL(value.trim()).protocol); } catch { return false; }
 }
 
-export default function AutoClipWorkspace(props: { onBack(): void }) {
+export default function AutoClipWorkspace(props: { onBack(): void; promptHint?: string }) {
   const l = useLocalizedCopy();
   const [videoUrl, setVideoUrl] = useState('');
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -208,7 +208,7 @@ export default function AutoClipWorkspace(props: { onBack(): void }) {
       context={selectedResult ? l(`V${resultVersion}，10 个候选，已选 ${selected.length} 个`, `V${resultVersion}, 10 candidates, ${selected.length} selected`) : l('等待分析长视频', 'Waiting to analyze a long video')}
       initialMessage={l('上传长视频或发送链接，我会先确认分析目标，再提取 10 个候选片段，每条都提供四维评分和完整字幕。', 'Upload a long video or send a link. I will confirm the analysis goal, then extract 10 candidates with four scores and full transcripts.')}
       suggestions={selectedResult ? [l('选择评分最高的 3 个', 'Select the top 3 clips'), l('导出已选片段', 'Export selected clips')] : [l('开始分析', 'Start analysis')]}
-      placeholder={l('发送视频链接或描述剪辑要求', 'Send a video link or describe your editing requirements')}
+      placeholder={props.promptHint ?? l('发送视频链接或描述剪辑要求', 'Send a video link or describe your editing requirements')}
       onBack={props.onBack}
       onCommand={handleCommand}
     >

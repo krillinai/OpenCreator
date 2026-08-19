@@ -4,6 +4,26 @@ import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import WorkbenchPage from './WorkbenchPage.js';
 
 describe('WorkbenchPage', () => {
+  it('opens a Skill workspace directly and keeps its prompt as an inactive hint', () => {
+    const onSelectPrompt = vi.fn();
+    render(
+      <WorkbenchPage
+        onSelectPrompt={onSelectPrompt}
+        skillLaunch={{
+          skillId: 'video-translation-multilingual',
+          workspace: 'video-translation',
+          promptHint: '上传视频，或者输入有效的视频链接'
+        }}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '告诉 Agent 你的要求' }))
+      .toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
+    expect(screen.getByRole('textbox', { name: '告诉 Agent 你的要求' })).toHaveValue('');
+    expect(onSelectPrompt).not.toHaveBeenCalled();
+  });
+
   it('renders the app directory in the selected English display language', () => {
     render(
       <LanguageProvider initialPreference="en-US">

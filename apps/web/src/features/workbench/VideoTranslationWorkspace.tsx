@@ -284,6 +284,7 @@ function isValidVideoUrl(value: string) {
 
 export default function VideoTranslationWorkspace(props: {
   onBack(): void;
+  promptHint?: string;
 }) {
   const l = useLocalizedCopy();
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -1407,6 +1408,7 @@ export default function VideoTranslationWorkspace(props: {
             canRegenerate={workspacePhase === 'result' && hasPendingChanges}
             regenerationPending={resultProposal === 'regenerate'}
             nextVersion={nextVersion}
+            promptHint={props.promptHint}
             lastChange={agentUndo?.description}
             onApply={applyAgentAction}
             onUndo={undoAgentAction}

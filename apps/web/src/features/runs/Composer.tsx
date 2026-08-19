@@ -116,6 +116,7 @@ const CLIPPING_OVERFLOW_VALUES = new Set(['auto', 'clip', 'hidden', 'scroll']);
 export function Composer(props: {
   disabled?: boolean;
   disabledReason?: string;
+  promptHint?: string;
   running?: boolean;
   canceling?: boolean;
   permissionChangeDisabled?: boolean;
@@ -1218,7 +1219,7 @@ export function Composer(props: {
           placeholder={
             props.disabled
               ? props.disabledReason ?? t('composer.input.unavailable')
-              : hasComposerContent ? '' : t('composer.input.placeholder')
+              : hasComposerContent ? '' : props.promptHint ?? t('composer.input.placeholder')
           }
         />
         {slashMenuOpen ? (

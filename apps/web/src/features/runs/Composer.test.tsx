@@ -916,6 +916,14 @@ describe('Composer', () => {
     expect(textbox).toHaveAttribute('placeholder', '');
   });
 
+  it('shows a Skill prompt hint without adding it to the draft', () => {
+    render(<Composer {...defaultProps} promptHint="上传视频，或者输入有效的视频链接" />);
+
+    const textbox = screen.getByRole('textbox', { name: '输入任务' });
+    expect(textbox).toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
+    expect(textbox).toHaveValue('');
+  });
+
   it('uploads a selected image, blocks submit while uploading, and submits attachment metadata', async () => {
     const user = userEvent.setup();
     let resolveUpload!: (value: ReturnType<typeof attachment>) => void;

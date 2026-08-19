@@ -30,7 +30,7 @@ function platformFor(value: string, l: ReturnType<typeof useLocalizedCopy>) {
   return l('网页视频', 'Web video');
 }
 
-export default function VideoDownloadWorkspace(props: { onBack(): void }) {
+export default function VideoDownloadWorkspace(props: { onBack(): void; promptHint?: string }) {
   const l = useLocalizedCopy();
   const [url, setUrl] = useState('');
   const [format, setFormat] = useState<DownloadFormat>('mp4');
@@ -134,7 +134,7 @@ export default function VideoDownloadWorkspace(props: { onBack(): void }) {
       context={context}
       initialMessage={l('发送公开视频链接，我会解析标题、时长和可用清晰度，再由你选择下载规格。', 'Send a public video link. I will analyze its title, duration, and available qualities before you choose a format.')}
       suggestions={analyzed ? [l('下载 1080p 视频', 'Download 1080p video'), l('切换为 MP3 音频', 'Switch to MP3 audio')] : [l('链接支持哪些平台', 'Which platforms are supported?')]}
-      placeholder={l('粘贴 YouTube、Bilibili 等视频链接', 'Paste a YouTube, Bilibili, or other video link')}
+      placeholder={props.promptHint ?? l('粘贴 YouTube、Bilibili 等视频链接', 'Paste a YouTube, Bilibili, or other video link')}
       onBack={props.onBack}
       onCommand={handleCommand}
     >

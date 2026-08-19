@@ -920,6 +920,33 @@ describe('App', () => {
     expect(screen.queryByText(/Token|API Key|连接 Runtime/)).not.toBeInTheDocument();
   });
 
+  it('opens a Home Skill interaction without submitting its prompt hint', async () => {
+    const user = userEvent.setup();
+    render(<App fileService={createFileService()} />);
+
+    await user.click(await screen.findByRole('button', {
+      name: '使用多语言视频翻译 Skill'
+    }));
+
+    expect(await screen.findByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
+    const agentInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
+    expect(agentInput).toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
+    expect(agentInput).toHaveValue('');
+    await waitFor(() => expect(window.location.hash).toBe('#/workbench'));
+  });
+
+  it('keeps a non-workspace Home Skill inactive until the user writes a prompt', async () => {
+    const user = userEvent.setup();
+    render(<App fileService={createFileService()} />);
+
+    await user.click(await screen.findByRole('button', { name: '使用数字人口播 Skill' }));
+
+    const composer = screen.getByRole('textbox', { name: '输入任务' });
+    expect(composer).toHaveValue('');
+    expect(screen.getByRole('heading', { name: 'Skills' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+  });
+
   it('adds a title bar safe area only when the host exposes the capability', async () => {
     const hostBridge = createHostBridge();
     hostBridge.windowChrome = {
@@ -1056,7 +1083,7 @@ describe('App', () => {
       .toBeInTheDocument();
     expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '示例模版' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Skills' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     history.resolve(jsonResponse({
@@ -1071,7 +1098,7 @@ describe('App', () => {
     });
     expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '示例模版' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Skills' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: /^视频翻译/ })).not.toBeInTheDocument();

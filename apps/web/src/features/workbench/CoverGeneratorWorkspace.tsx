@@ -31,7 +31,7 @@ function isValidUrl(value: string) {
   try { return ['http:', 'https:'].includes(new URL(value.trim()).protocol); } catch { return false; }
 }
 
-export default function CoverGeneratorWorkspace(props: { onBack(): void }) {
+export default function CoverGeneratorWorkspace(props: { onBack(): void; promptHint?: string }) {
   const l = useLocalizedCopy();
   const { language } = useAppLanguage();
   const [ratio, setRatio] = useState<CoverRatio>('16:9');
@@ -156,7 +156,7 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void }) {
       context={selectedResult ? l(`V${resultVersion}，4 个方案，${selectedResult.ratio}`, `V${resultVersion}, 4 options, ${selectedResult.ratio}`) : l(`等待生成，${ratio}`, `Waiting to generate, ${ratio}`)}
       initialMessage={l('告诉我封面主题和比例，也可以直接发送 YouTube 链接。我会结合视频内容与参考图生成多个方案。', 'Tell me the thumbnail topic and ratio, or send a YouTube link. I will combine the video content with any reference image to create several options.')}
       suggestions={selectedResult ? [l('改为竖版封面', 'Switch to vertical'), l('重新生成封面', 'Regenerate thumbnails')] : [l('生成封面方案', 'Generate thumbnail options'), l('改为 16:9 横版', 'Use 16:9 horizontal')]}
-      placeholder={l('描述封面，或粘贴 YouTube 链接', 'Describe a thumbnail or paste a YouTube link')}
+      placeholder={props.promptHint ?? l('描述封面，或粘贴 YouTube 链接', 'Describe a thumbnail or paste a YouTube link')}
       onBack={props.onBack}
       onCommand={handleCommand}
     >

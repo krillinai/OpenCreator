@@ -23,8 +23,10 @@ import CoverGeneratorWorkspace from './CoverGeneratorWorkspace.js';
 import StickmanVideoWorkspace from './StickmanVideoWorkspace.js';
 import VideoDownloadWorkspace from './VideoDownloadWorkspace.js';
 import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
-
-type CreatorWorkspace = 'video-translation' | 'video-download' | 'stickman-video' | 'auto-clips' | 'cover-generator';
+import type {
+  CreatorSkillLaunch,
+  CreatorWorkspace
+} from './creator-workspace.js';
 
 type WorkbenchCategory = '视频创作' | '图像创作' | '音频处理' | '视频编辑' | '数字人';
 
@@ -166,9 +168,15 @@ type CategoryFilter = typeof categories[number];
 export default function WorkbenchPage(props: {
   onSelectPrompt(prompt: string): void;
   onWorkspaceModeChange?(active: boolean): void;
+  skillLaunch?: CreatorSkillLaunch;
 }) {
   const { language, t } = useAppLanguage();
-  const [activeWorkspace, setActiveWorkspace] = useState<CreatorWorkspace | null>(null);
+  const [activeWorkspace, setActiveWorkspace] = useState<CreatorWorkspace | null>(
+    () => props.skillLaunch?.workspace ?? null
+  );
+  const [activePromptHint, setActivePromptHint] = useState(
+    () => props.skillLaunch?.promptHint
+  );
   const [category, setCategory] = useState<CategoryFilter>('全部');
   const [query, setQuery] = useState('');
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -192,25 +200,61 @@ export default function WorkbenchPage(props: {
   if (activeWorkspace === 'video-translation') {
     return (
       <VideoTranslationWorkspace
-        onBack={() => setActiveWorkspace(null)}
+        promptHint={activePromptHint}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
       />
     );
   }
 
   if (activeWorkspace === 'video-download') {
-    return <VideoDownloadWorkspace onBack={() => setActiveWorkspace(null)} />;
+    return (
+      <VideoDownloadWorkspace
+        promptHint={activePromptHint}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
+      />
+    );
   }
 
   if (activeWorkspace === 'stickman-video') {
-    return <StickmanVideoWorkspace onBack={() => setActiveWorkspace(null)} />;
+    return (
+      <StickmanVideoWorkspace
+        promptHint={activePromptHint}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
+      />
+    );
   }
 
   if (activeWorkspace === 'auto-clips') {
-    return <AutoClipWorkspace onBack={() => setActiveWorkspace(null)} />;
+    return (
+      <AutoClipWorkspace
+        promptHint={activePromptHint}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
+      />
+    );
   }
 
   if (activeWorkspace === 'cover-generator') {
-    return <CoverGeneratorWorkspace onBack={() => setActiveWorkspace(null)} />;
+    return (
+      <CoverGeneratorWorkspace
+        promptHint={activePromptHint}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
+      />
+    );
   }
 
   return (

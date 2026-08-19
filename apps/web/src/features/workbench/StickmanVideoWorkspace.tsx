@@ -112,7 +112,7 @@ type StickmanResultVersion = {
   style: string;
 };
 
-export default function StickmanVideoWorkspace(props: { onBack(): void }) {
+export default function StickmanVideoWorkspace(props: { onBack(): void; promptHint?: string }) {
   const l = useLocalizedCopy();
   const { language } = useAppLanguage();
   const [characterMode, setCharacterMode] = useState<CharacterSource>('preset');
@@ -430,7 +430,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void }) {
           : characterReady
             ? [l('让 Agent 生成分镜', 'Ask Agent to generate storyboard')]
             : [l('让 Agent 生成角色', 'Ask Agent to generate character')]}
-      placeholder={l('描述角色、故事或生成要求', 'Describe the character, story, or generation requirements')}
+      placeholder={props.promptHint ?? l('描述角色、故事或生成要求', 'Describe the character, story, or generation requirements')}
       onBack={props.onBack}
       onCommand={handleCommand}
     >

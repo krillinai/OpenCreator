@@ -44,7 +44,12 @@ import {
   type ConsumerUser
 } from '../features/account/consumer-user.js';
 import { ConversationEmptyState } from '../features/conversation/ConversationEmptyState.js';
-import { CreatorWorkbench } from '../features/conversation/CreatorWorkbench.js';
+import {
+  CreatorWorkbench,
+  getCreatorSkillPromptHint,
+  type CreatorSkill
+} from '../features/conversation/CreatorWorkbench.js';
+import type { CreatorSkillLaunch } from '../features/workbench/creator-workspace.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
 import { MemorySuggestion } from '../features/conversation/MemorySuggestion.js';
 import { ApprovalPanel } from '../features/approvals/ApprovalPanel.js';
@@ -282,7 +287,7 @@ export type AppControllerProps = {
 };
 
 export function AppController(props: AppControllerProps) {
-  const { t } = useAppLanguage();
+  const { language, t } = useAppLanguage();
   const persistedNavigation = useMemo(readPersistedNavigation, []);
   const initialState = useMemo(
     () => createInitialState(props.route, persistedNavigation),
@@ -411,6 +416,8 @@ export function AppController(props: AppControllerProps) {
     { threadId?: string; request: ComposerDraftRequest } | undefined
   >();
   const [pendingComposerFocusRequestId, setPendingComposerFocusRequestId] = useState<number>();
+  const [homeSkillPromptHint, setHomeSkillPromptHint] = useState<string>();
+  const [creatorSkillLaunch, setCreatorSkillLaunch] = useState<CreatorSkillLaunch>();
   useEffect(() => {
     if (threadConfigUpdateError === undefined) return;
     const timeoutId = window.setTimeout(() => {
@@ -753,9 +760,29 @@ export function AppController(props: AppControllerProps) {
     });
     setPendingComposerFocusRequestId(nextComposerFocusRequestIdRef.current);
   }, []);
-  const applyWorkbenchPrompt = useCallback((text: string) => {
-    queueComposerPrompt(text, selectedThreadIdRef.current);
-  }, [queueComposerPrompt]);
+  function applyWorkbenchSkill(skill: CreatorSkill) {
+    const promptHint = getCreatorSkillPromptHint(skill, language);
+    if (skill.interaction?.type === 'workspace') {
+      setHomeSkillPromptHint(undefined);
+      setCreatorSkillLaunch({
+        skillId: skill.id,
+        workspace: skill.interaction.workspace,
+        promptHint
+      });
+      closeMobileSidebar();
+      dispatch({ type: 'set_active_view', activeView: 'workbench' });
+      navigateToRoute({ view: 'workbench' });
+      return;
+    }
+
+    setHomeSkillPromptHint(promptHint);
+    nextComposerFocusRequestIdRef.current += 1;
+    setPendingComposerFocusRequestId(nextComposerFocusRequestIdRef.current);
+  }
+  const handleCreatorWorkspaceModeChange = useCallback((active: boolean) => {
+    setImmersiveWorkspace(active);
+    if (active) setCreatorSkillLaunch(undefined);
+  }, []);
   const editUserMessage = useCallback((
     item: Extract<TimelineItem, { kind: 'user_message' }>
   ) => {
@@ -2524,6 +2551,8 @@ export function AppController(props: AppControllerProps) {
     setSearchHistoryTarget(undefined);
     setTimelineRunTarget(undefined);
     setTimelineApprovalTarget(undefined);
+    setHomeSkillPromptHint(undefined);
+    setCreatorSkillLaunch(undefined);
     if (
       options.projectId !== undefined
       && options.projectId !== state.currentProjectId
@@ -4846,6 +4875,7 @@ export function AppController(props: AppControllerProps) {
           modelsNotice={codexModelsNotice}
           disabled={composerDisabled}
           disabledReason={composerDisabledReason}
+          promptHint={showConversationEmptyState ? homeSkillPromptHint : undefined}
           running={currentRunBusy}
           canceling={currentRunCanceling}
           permissionChangeDisabled={selectedThread !== undefined && currentRunBusy}
@@ -4917,7 +4947,7 @@ export function AppController(props: AppControllerProps) {
           onSubmit={submitPrompt}
         />
         {showConversationEmptyState ? (
-          <CreatorWorkbench onSelectPrompt={applyWorkbenchPrompt} />
+          <CreatorWorkbench onSelectSkill={applyWorkbenchSkill} />
         ) : null}
       </div>
     </section>
@@ -4969,7 +4999,8 @@ export function AppController(props: AppControllerProps) {
   ) : state.activeView === 'workbench' ? (
     <WorkbenchPage
       onSelectPrompt={startCreatorTool}
-      onWorkspaceModeChange={setImmersiveWorkspace}
+      skillLaunch={creatorSkillLaunch}
+      onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
     />
   ) : state.activeView === 'search' ? (
     <SearchPage
