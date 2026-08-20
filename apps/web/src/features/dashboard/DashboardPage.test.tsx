@@ -188,6 +188,8 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
 
     expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('来源平台YouTube');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('当前规格1080p');
     expect(screen.queryByRole('button', { name: /已完成，V/ })).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /1080p/ })).toBeChecked();
     fireEvent.click(screen.getByRole('tab', { name: /MP3 音频/ }));
@@ -231,10 +233,14 @@ describe('DashboardPage', () => {
       'src',
       '/dashboard/characters/tech-guy.png'
     );
+    fireEvent.click(screen.getByRole('tab', { name: '上传角色' }));
+    expect(screen.getByRole('complementary', { name: '角色图片上传建议' })).toHaveTextContent(
+      '人物全身完整可见，背景干净简洁，保持单人清晰且无遮挡。'
+    );
     fireEvent.click(screen.getByRole('tab', { name: '生成角色' }));
     const generateCharacterButton = screen.getByRole('button', { name: '生成角色形象' });
-    const characterActions = generateCharacterButton.parentElement;
-    expect(characterActions).toHaveClass('stickman-character-actions');
+    const characterActions = generateCharacterButton.closest('footer');
+    expect(characterActions).toHaveClass('stickman-wizard-actions');
     expect(within(characterActions!).getByRole('button', { name: '下一步：故事与分镜' })).toBeEnabled();
     fireEvent.click(generateCharacterButton);
     expect(screen.getByRole('img', { name: '生成的火柴人角色形象' })).toHaveAttribute(
@@ -247,13 +253,20 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步：故事与分镜' }));
     expect(screen.queryByRole('heading', { name: '准备主角' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '生成分镜' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '故事创意' })).toHaveAttribute('rows', '5');
+    fireEvent.click(screen.getByRole('button', { name: '上一步' }));
+    expect(screen.getByRole('heading', { name: '准备主角' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '下一步：故事与分镜' }));
     fireEvent.click(screen.getByRole('button', { name: '生成分镜图' }));
     expect(screen.getByText('建立场景')).toBeInTheDocument();
     expect(screen.getAllByText(/s$/)).toHaveLength(4);
     expect(screen.queryByRole('button', { name: /根据分镜生成视频/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '下一步：生成视频' }));
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('角色科技男');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('分镜4 个镜头');
     fireEvent.click(screen.getByRole('button', { name: /根据分镜生成视频/ }));
     expect(screen.getByText('火柴人动画-V1.mp4')).toBeInTheDocument();
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('当前版本V1');
     expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '成片' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '分镜' })).toBeInTheDocument();
@@ -336,6 +349,8 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '识别语义并提取片段' }));
 
     expect(screen.getByText('已找到 10 个候选片段')).toBeInTheDocument();
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('内容偏好综合表现');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('候选片段10');
     expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '候选片段' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '字幕与评分' })).toBeInTheDocument();
@@ -373,6 +388,8 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成 4 个封面' }));
 
     expect(screen.getByRole('region', { name: '封面生成项目产出' })).toBeInTheDocument();
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('封面比例1:1');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('生成数量4');
     expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '封面方案' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '参考素材' })).toBeInTheDocument();

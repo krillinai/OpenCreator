@@ -16,6 +16,7 @@ export default function CreatorToolShell(props: {
   initialMessage: string;
   suggestions: string[];
   placeholder: string;
+  contentClassName?: string;
   children: ReactNode;
   onBack(): void;
   onCommand(command: string): string;
@@ -57,7 +58,7 @@ export default function CreatorToolShell(props: {
               <p>{props.subtitle}</p>
             </div>
           </header>
-          <div className="creator-workspace-content">{props.children}</div>
+          <div className={`creator-workspace-content${props.contentClassName ? ` ${props.contentClassName}` : ''}`}>{props.children}</div>
         </section>
 
         <aside className="creator-tool-agent" aria-label="OpenCreator">

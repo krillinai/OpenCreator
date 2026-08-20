@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Check, CheckCircle2, Download, Link2, Music2, Video } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
+import CreatorTaskSummary from './CreatorTaskSummary.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 type DownloadFormat = 'mp4' | 'mp3';
@@ -184,6 +185,18 @@ export default function VideoDownloadWorkspace(props: { onBack(): void; promptHi
                 <button type="button" role="tab" aria-selected={resultTab === 'history'} onClick={() => setResultTab('history')}><CheckCircle2 size={15} strokeWidth={1.8} aria-hidden="true" />{l('下载记录', 'Downloads')}</button>
               </div>
             </div>
+            <CreatorTaskSummary
+              compact
+              sourceIcon={Link2}
+              sourceLabel={l('视频链接', 'Video link')}
+              sourceValue={url}
+              items={[
+                { label: l('来源平台', 'Platform'), value: platform },
+                { label: l('下载格式', 'Format'), value: format.toUpperCase() },
+                { label: l('当前规格', 'Quality'), value: quality },
+                { label: l('下载任务', 'Downloads'), value: String(downloadRecords.length) }
+              ]}
+            />
 
             {resultTab === 'info' ? (
               <div className="video-result-pane">

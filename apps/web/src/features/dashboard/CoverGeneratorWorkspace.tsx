@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Download, ImagePlus, Images, Link2, Settings2, Sparkles, UploadCloud } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
+import CreatorTaskSummary from './CreatorTaskSummary.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 
@@ -188,6 +189,18 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
               <CreatorResultVersionMenu version={resultVersion} versions={resultVersions.map(({ value, description }) => ({ value, description }))} onVersionChange={selectVersion} />
             </div>
             {hasPendingChanges ? <div className="stickman-version-draft" role="status"><div><strong>{l(`正在基于 V${resultVersion} 调整`, `Adjusting from V${resultVersion}`)}</strong><span>{l('当前版本的封面方案仍可查看', 'The current version remains available')}</span></div><button type="button" onClick={() => setCurrentStep(0)}>{l('继续设置', 'Continue settings')}</button></div> : null}
+            <CreatorTaskSummary
+              compact
+              sourceIcon={ImagePlus}
+              sourceLabel={l('生成依据', 'Source')}
+              sourceValue={selectedResult.youtubeUrl || selectedResult.prompt || l('视频内容', 'Video content')}
+              items={[
+                { label: l('封面比例', 'Ratio'), value: selectedResult.ratio },
+                { label: l('生成数量', 'Options'), value: '4' },
+                { label: l('参考图', 'Reference'), value: selectedResult.reference?.name ?? l('未添加', 'Not added') },
+                { label: l('当前版本', 'Version'), value: `V${selectedResult.value}` }
+              ]}
+            />
 
             {resultTab === 'options' ? (
               <div className="video-result-pane">

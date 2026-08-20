@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   Download,
   FileVideo,
   ImagePlus,
+  Info,
   PanelsTopLeft,
   PersonStanding,
   Play,
@@ -14,6 +16,7 @@ import {
 } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
+import CreatorTaskSummary from './CreatorTaskSummary.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 
@@ -171,6 +174,11 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     ?? (selectedResult?.characterSource === 'upload' && selectedResult.characterFile === characterFile && characterPreview
       ? characterPreview
       : generatedCharacterImages.image);
+  const taskCharacterName = characterSource === 'preset' && selectedPreset
+    ? l(selectedPreset.nameZh, selectedPreset.nameEn)
+    : characterSource === 'upload'
+      ? characterFile?.name ?? l('上传角色', 'Uploaded character')
+      : l('AI 生成角色', 'AI-generated character');
 
   useEffect(() => {
     setCharacterPrompt(current => current === characterPromptZh || current === characterPromptEn
@@ -433,10 +441,11 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
             ? [l('让 Agent 生成分镜', 'Ask Agent to generate storyboard')]
             : [l('让 Agent 生成角色', 'Ask Agent to generate character')]}
       placeholder={props.promptHint ?? l('描述角色、故事或生成要求', 'Describe the character, story, or generation requirements')}
+      contentClassName="stickman-workspace-content"
       onBack={props.onBack}
       onCommand={handleCommand}
     >
-      <div className="creator-tool-stack">
+      <div className="creator-tool-stack stickman-tool-stack">
         <nav className="video-translation-steps creator-tool-steps" aria-label={l('火柴人生成流程', 'Stick figure generation steps')}>
           <ol>
             {steps.map((step, index) => {
@@ -458,6 +467,8 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
             })}
           </ol>
         </nav>
+
+        <div className="stickman-step-scroll">
 
         {currentStep === 0 ? (
           <section className="creator-tool-panel" aria-labelledby="stickman-character-title">
@@ -522,34 +533,31 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
               )}
             </div>
           ) : (
-            <label className="creator-tool-upload">
-              <input type="file" accept="image/*" aria-label={l('上传火柴人角色形象', 'Upload a stick figure character')} onChange={event => uploadCharacter(event.target.files?.[0] ?? null)} />
-              {characterFile ? (
-                <><CharacterArtwork image={characterPreview || generatedCharacterImages.image} alt={l('上传的角色形象', 'Uploaded character')} /><strong>{characterFile.name}</strong><span>{l('点击重新选择', 'Click to choose another')}</span></>
-              ) : (
-                <><UploadCloud size={25} strokeWidth={1.5} /><strong>{l('上传角色设定图', 'Upload character sheet')}</strong><span>{l('支持 PNG、JPG、WebP', 'Supports PNG, JPG, and WebP')}</span></>
-              )}
-            </label>
-          )}
-            <div className="creator-tool-actions stickman-character-actions">
-              {characterMode === 'generate' ? (
-                <button className="creator-tool-secondary" type="button" onClick={generateCharacter}>
-                  <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />
-                  {l('生成角色形象', 'Generate character')}
-                </button>
-              ) : null}
-              <button className="creator-tool-primary" type="button" disabled={!characterReady} onClick={continueToStory}>
-                {l('下一步：故事与分镜', 'Next: Story and storyboard')}
-                <ArrowRight size={15} strokeWidth={1.8} aria-hidden="true" />
-              </button>
+            <div className="stickman-character-upload">
+              <label className="creator-tool-upload">
+                <input type="file" accept="image/*" aria-label={l('上传火柴人角色形象', 'Upload a stick figure character')} onChange={event => uploadCharacter(event.target.files?.[0] ?? null)} />
+                {characterFile ? (
+                  <><CharacterArtwork image={characterPreview || generatedCharacterImages.image} alt={l('上传的角色形象', 'Uploaded character')} /><strong>{characterFile.name}</strong><span>{l('点击重新选择', 'Click to choose another')}</span></>
+                ) : (
+                  <><UploadCloud size={25} strokeWidth={1.5} /><strong>{l('上传角色设定图', 'Upload character sheet')}</strong><span>{l('支持 PNG、JPG、WebP', 'Supports PNG, JPG, and WebP')}</span></>
+                )}
+              </label>
+              <aside className="stickman-upload-guidance" aria-label={l('角色图片上传建议', 'Character image upload guidance')}>
+                <Info size={16} strokeWidth={1.8} aria-hidden="true" />
+                <div>
+                  <strong>{l('上传建议', 'Upload guidance')}</strong>
+                  <p>{l('人物全身完整可见，背景干净简洁，保持单人清晰且无遮挡。', 'Keep the full body visible, use a clean background, and provide one clear, unobstructed character.')}</p>
+                </div>
+              </aside>
             </div>
+          )}
           </section>
         ) : null}
 
         {currentStep === 1 ? (
           <section className="creator-tool-panel" aria-labelledby="stickman-story-title">
           <div className="creator-tool-panel-heading"><div><span>{l('故事与画面', 'Story and visuals')}</span><h2 id="stickman-story-title">{l('生成分镜', 'Generate storyboard')}</h2><p>{l('角色会在所有镜头中保持一致', 'The character remains consistent across every shot')}</p></div></div>
-          <label className="creator-tool-field"><span>{l('故事创意', 'Story idea')}</span><textarea value={story} onChange={event => { setStory(event.target.value); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 2 : 1); }} rows={4} /></label>
+          <label className="creator-tool-field stickman-story-field"><span>{l('故事创意', 'Story idea')}</span><textarea value={story} onChange={event => { setStory(event.target.value); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 2 : 1); }} rows={5} /></label>
           <div className="creator-tool-form-row">
             <label className="creator-tool-field"><span>{l('画面风格', 'Visual style')}</span><select value={style} onChange={event => { setStyle(event.target.value); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 2 : 1); }}><option value="手绘线稿">{l('手绘线稿', 'Hand-drawn line art')}</option><option value="漫画网点">{l('漫画网点', 'Manga halftone')}</option><option value="极简黑白">{l('极简黑白', 'Minimal black and white')}</option></select></label>
             <label className="creator-tool-field"><span>{l('视频比例', 'Video ratio')}</span><select value={ratio} onChange={event => { setRatio(event.target.value as typeof ratio); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 2 : 1); }}><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
@@ -564,11 +572,6 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
               ))}
             </div>
           ) : null}
-          <div className="creator-tool-actions">
-            <button className="creator-tool-primary" type="button" disabled={!characterReady || !story.trim()} onClick={storyboardReady ? continueToVideo : generateStoryboard}>
-              {storyboardReady ? l('下一步：生成视频', 'Next: Generate video') : l('生成分镜图', 'Generate storyboard')}
-            </button>
-          </div>
           </section>
         ) : null}
 
@@ -610,6 +613,18 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                   </button>
                 </div>
               ) : null}
+              <CreatorTaskSummary
+                compact
+                sourceIcon={PersonStanding}
+                sourceLabel={l('角色', 'Character')}
+                sourceValue={resultCharacterName}
+                items={[
+                  { label: l('分镜', 'Storyboard'), value: l('4 个镜头', '4 shots') },
+                  { label: l('画面风格', 'Visual style'), value: localizeShot(selectedResult.style, l) },
+                  { label: l('视频比例', 'Video ratio'), value: selectedResult.ratio },
+                  { label: l('当前版本', 'Version'), value: `V${selectedResult.value}` }
+                ]}
+              />
 
               {resultTab === 'video' ? (
                 <div className="video-result-pane">
@@ -677,15 +692,61 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
               ) : null}
             </section>
           ) : (
-            <section className="creator-tool-panel" aria-label={l('火柴人视频输出', 'Stick figure video output')}>
-              <div className="stickman-result-toolbar">
-                <div><h2>{l('视频成片', 'Final video')}</h2><p>{l('确认分镜后生成第一版成片', 'Generate the first video after confirming the storyboard')}</p></div>
-              </div>
-              <div className="creator-tool-actions"><button className="creator-tool-primary" type="button" onClick={generateVideo}><Play size={16} />{l('根据分镜生成视频', 'Generate video from storyboard')}</button></div>
-            </section>
+            <div className="creator-task-final-grid">
+              <section className="creator-tool-panel" aria-label={l('火柴人视频输出', 'Stick figure video output')}>
+                <div className="stickman-result-toolbar">
+                  <div><h2>{l('视频成片', 'Final video')}</h2><p>{l('确认分镜后生成第一版成片', 'Generate the first video after confirming the storyboard')}</p></div>
+                </div>
+                <div className="creator-tool-actions"><button className="creator-tool-primary" type="button" onClick={generateVideo}><Play size={16} />{l('根据分镜生成视频', 'Generate video from storyboard')}</button></div>
+              </section>
+              <CreatorTaskSummary
+                sourceIcon={PersonStanding}
+                sourceLabel={l('角色', 'Character')}
+                sourceValue={taskCharacterName}
+                items={[
+                  { label: l('分镜', 'Storyboard'), value: l('4 个镜头', '4 shots') },
+                  { label: l('画面风格', 'Visual style'), value: localizeShot(style, l) },
+                  { label: l('视频比例', 'Video ratio'), value: ratio },
+                  { label: l('视频时长', 'Duration'), value: l('15 秒', '15 sec') }
+                ]}
+                note={l('角色、故事与画面设置将用于生成成片', 'The character, story, and visual settings will be used for the final video')}
+                noteIcon={PanelsTopLeft}
+              />
+            </div>
           )
         ) : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
+        </div>
+
+        {currentStep < 2 ? (
+          <footer className="video-translation-wizard-actions stickman-wizard-actions">
+            {currentStep === 1 ? (
+              <button className="video-translation-secondary-action" type="button" onClick={() => setCurrentStep(0)}>
+                <ArrowLeft size={16} strokeWidth={1.8} aria-hidden="true" />
+                {l('上一步', 'Back')}
+              </button>
+            ) : <span />}
+            <div className="video-translation-action-group">
+              {currentStep === 0 && characterMode === 'generate' ? (
+                <button className="video-translation-secondary-action" type="button" onClick={generateCharacter}>
+                  <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />
+                  {l('生成角色形象', 'Generate character')}
+                </button>
+              ) : null}
+              {currentStep === 0 ? (
+                <button className="video-translation-primary-action" type="button" disabled={!characterReady} onClick={continueToStory}>
+                  {l('下一步：故事与分镜', 'Next: Story and storyboard')}
+                  <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              ) : (
+                <button className="video-translation-primary-action" type="button" disabled={!characterReady || !story.trim()} onClick={storyboardReady ? continueToVideo : generateStoryboard}>
+                  {storyboardReady ? l('下一步：生成视频', 'Next: Generate video') : l('生成分镜图', 'Generate storyboard')}
+                  {storyboardReady ? <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" /> : null}
+                </button>
+              )}
+            </div>
+          </footer>
+        ) : null}
       </div>
     </CreatorToolShell>
   );

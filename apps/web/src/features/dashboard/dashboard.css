@@ -1048,6 +1048,53 @@
   text-align: center;
 }
 
+.creator-task-summary {
+  position: static;
+}
+
+.creator-task-final-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  align-items: start;
+  gap: 14px;
+}
+
+.creator-task-summary.is-compact {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.4fr);
+  align-items: stretch;
+  gap: 10px 14px;
+  padding: 14px;
+}
+
+.creator-task-summary.is-compact .video-translation-summary-heading {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.creator-task-summary.is-compact .video-translation-source-summary {
+  grid-column: 1;
+}
+
+.creator-task-summary.is-compact dl {
+  grid-column: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: stretch;
+  gap: 0 14px;
+  margin: 0;
+}
+
+.creator-task-summary.is-compact dl > div {
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  padding: 6px 0;
+}
+
+.creator-task-summary.is-compact > p {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
 .video-translation-header button:focus-visible,
 .video-translation-source-tabs button:focus-visible,
 .video-translation-upload button:focus-visible,
@@ -1166,6 +1213,28 @@
   display: grid;
   gap: 14px;
   margin: 0 auto;
+}
+
+.stickman-workspace-content {
+  overflow: hidden;
+}
+
+.stickman-tool-stack {
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.stickman-step-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px;
+  scrollbar-gutter: stable;
+}
+
+.stickman-wizard-actions {
+  margin-top: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-hairline);
 }
 
 .video-translation-steps.creator-tool-steps-two ol {
@@ -1384,6 +1453,39 @@
   height: 68px;
   object-fit: cover;
   border-radius: 7px;
+}
+
+.stickman-character-upload {
+  display: grid;
+  gap: 12px;
+}
+
+.stickman-upload-guidance {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 0 2px;
+  color: var(--muted);
+}
+
+.stickman-upload-guidance > svg {
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.stickman-upload-guidance strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.stickman-upload-guidance p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .creator-tool-notice {
@@ -1951,7 +2053,7 @@
 
 .stickman-character-picker {
   display: grid;
-  grid-template-columns: max-content 260px;
+  grid-template-columns: max-content 240px;
   align-items: start;
   justify-content: start;
   column-gap: 24px;
@@ -1963,21 +2065,21 @@
   grid-template-columns: repeat(5, 82px);
   align-content: start;
   justify-content: start;
-  gap: 12px 10px;
+  gap: 8px 10px;
 }
 
 .stickman-character-presets > button {
   position: relative;
   min-width: 0;
   display: grid;
-  gap: 4px;
-  padding: 6px;
+  gap: 3px;
+  padding: 4px 6px;
   border: 1px solid transparent;
   border-radius: 8px;
   outline: 0;
   background: transparent;
   color: var(--text);
-  text-align: left;
+  text-align: center;
 }
 
 .stickman-character-presets > button:hover {
@@ -1998,12 +2100,12 @@
 .stickman-character-preset-visual {
   position: relative;
   width: 100%;
-  height: 144px;
+  height: 124px;
   display: grid;
   place-items: center;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   overflow: hidden;
-  padding: 8px 6px 14px;
+  padding: 6px 6px 10px;
   background: transparent;
   color: var(--text);
   box-sizing: border-box;
@@ -2011,15 +2113,16 @@
 
 .stickman-character-preset-visual img {
   position: absolute;
-  inset: 8px 6px 14px;
+  inset: 6px 6px 10px;
   width: calc(100% - 12px);
-  height: calc(100% - 22px);
+  height: calc(100% - 16px);
   display: block;
   object-fit: contain;
   object-position: center;
 }
 
 .stickman-character-presets strong {
+  width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2051,7 +2154,7 @@
 .stickman-character-selected > div {
   position: relative;
   width: 100%;
-  aspect-ratio: 2 / 3;
+  height: 308px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -2073,7 +2176,7 @@
 
 @media (max-width: 1180px) {
   .stickman-character-picker {
-    grid-template-columns: max-content 260px;
+    grid-template-columns: max-content 240px;
     column-gap: 20px;
   }
 
@@ -2129,20 +2232,6 @@
   text-align: center;
 }
 
-.stickman-character-actions {
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-hairline);
-}
-
-.stickman-character-actions > button {
-  min-height: 40px;
-  padding-right: 16px;
-  padding-left: 16px;
-}
-
 .creator-tool-actions > .creator-tool-secondary {
   border-color: var(--border);
   background: var(--surface);
@@ -2152,6 +2241,10 @@
 .creator-tool-actions > .creator-tool-secondary:hover {
   border-color: var(--border-strong);
   background: var(--surface-2);
+}
+
+.stickman-story-field textarea {
+  min-height: 112px;
 }
 
 .stickman-storyboard {
