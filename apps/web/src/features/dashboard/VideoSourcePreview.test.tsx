@@ -59,6 +59,45 @@ describe('VideoSourcePreview', () => {
     expect(screen.queryByText('Choose another')).not.toBeInTheDocument();
   });
 
+  it('shows a YouTube thumbnail before loading the embedded player', () => {
+    const { rerender } = render(
+      <VideoSourcePreview
+        file={null}
+        sourceType="url"
+        url="https://www.youtube.com/watch?v=preview-one"
+        onChooseFile={vi.fn()}
+        onClear={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('img', { name: 'YouTube 视频缩略图' })).toHaveAttribute(
+      'src',
+      'https://i.ytimg.com/vi/preview-one/hqdefault.jpg'
+    );
+    expect(screen.queryByTitle('YouTube 视频预览')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '播放 YouTube 视频预览' }));
+    expect(screen.getByTitle('YouTube 视频预览')).toHaveAttribute(
+      'src',
+      'https://www.youtube-nocookie.com/embed/preview-one'
+    );
+
+    rerender(
+      <VideoSourcePreview
+        file={null}
+        sourceType="url"
+        url="https://youtu.be/preview-two"
+        onChooseFile={vi.fn()}
+        onClear={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('img', { name: 'YouTube 视频缩略图' })).toHaveAttribute(
+      'src',
+      'https://i.ytimg.com/vi/preview-two/hqdefault.jpg'
+    );
+    expect(screen.queryByTitle('YouTube 视频预览')).not.toBeInTheDocument();
+  });
+
   it('recognizes Bilibili and direct video links', () => {
     const { rerender } = render(
       <VideoSourcePreview

@@ -21,9 +21,7 @@ type CoverResultVersion = {
 
 const coverImages = [
   '/dashboard/templates/video-localization.jpg',
-  '/dashboard/templates/animated-story.jpg',
-  '/dashboard/templates/ai-video-insane.jpg',
-  '/dashboard/templates/digital-presenter.jpg'
+  '/dashboard/templates/animated-story.jpg'
 ];
 const defaultPromptZh = '面向创作者的 AI 视频工作流，主体清晰，高对比标题，专业但有冲击力';
 const defaultPromptEn = 'An AI video workflow for creators, with a clear subject, high-contrast title, and a professional, bold look';
@@ -97,7 +95,7 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
     setResultTab('options');
     setCurrentStep(1);
     setFurthestStep(1);
-    setNotice(version === 1 ? l('已生成 4 个封面方案，V1 已完成', 'Generated four thumbnail options. V1 is ready.') : l(`V${version} 已生成完成，之前的版本仍可查看`, `V${version} is ready. Previous versions remain available.`));
+    setNotice(version === 1 ? l('已生成 2 个封面方案，V1 已完成', 'Generated two thumbnail options. V1 is ready.') : l(`V${version} 已生成完成，之前的版本仍可查看`, `V${version} is ready. Previous versions remain available.`));
     return true;
   }
 
@@ -122,7 +120,7 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
       setCurrentStep(0);
       if (/生成|generate/i.test(command)) {
         generate({ youtubeUrl: foundUrl });
-        return l('已读取视频主题并生成 4 个封面方案。你可以在结果页比较和下载。', 'I analyzed the video topic and generated four options. Compare and download them in the results.');
+        return l('已读取视频主题并生成 2 个封面方案。你可以在结果页比较和下载。', 'I analyzed the video topic and generated two options. Compare and download them in the results.');
       }
       return l('YouTube 链接已同步，可以继续补充视觉要求或直接生成。', 'The YouTube link is synchronized. Add visual requirements or generate now.');
     }
@@ -141,7 +139,7 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
       setCurrentStep(0);
       return l('封面比例已切换为 16:9。现有结果仍保留，重新生成后会创建新版本。', 'Thumbnail ratio changed to 16:9. Existing results remain; regenerating will create a new version.');
     }
-    if (/生成封面|开始生成|生成方案|重新生成|generate|create thumbnail/i.test(command)) return generate() ? l('4 个封面方案已经生成，可以在结果页查看。', 'Four thumbnail options are ready in the results.') : l('请先提供主题提示词或 YouTube 链接。', 'Provide a topic prompt or YouTube link first.');
+    if (/生成封面|开始生成|生成方案|重新生成|generate|create thumbnail/i.test(command)) return generate() ? l('2 个封面方案已经生成，可以在结果页查看。', 'Two thumbnail options are ready in the results.') : l('请先提供主题提示词或 YouTube 链接。', 'Provide a topic prompt or YouTube link first.');
     if (command.length > 8) {
       setPrompt(command);
       setCurrentStep(0);
@@ -154,7 +152,7 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
     <CreatorToolShell
       title={l('封面生成', 'Thumbnail Generator')}
       subtitle={l('使用提示词、参考图或视频链接生成多比例封面', 'Generate thumbnails from prompts, reference images, or video links')}
-      context={selectedResult ? l(`V${resultVersion}，4 个方案，${selectedResult.ratio}`, `V${resultVersion}, 4 options, ${selectedResult.ratio}`) : l(`等待生成，${ratio}`, `Waiting to generate, ${ratio}`)}
+      context={selectedResult ? l(`V${resultVersion}，2 个方案，${selectedResult.ratio}`, `V${resultVersion}, 2 options, ${selectedResult.ratio}`) : l(`等待生成，${ratio}`, `Waiting to generate, ${ratio}`)}
       initialMessage={l('告诉我封面主题和比例，也可以直接发送 YouTube 链接。我会结合视频内容与参考图生成多个方案。', 'Tell me the thumbnail topic and ratio, or send a YouTube link. I will combine the video content with any reference image to create several options.')}
       suggestions={selectedResult ? [l('改为竖版封面', 'Switch to vertical'), l('重新生成封面', 'Regenerate thumbnails')] : [l('生成封面方案', 'Generate thumbnail options'), l('改为 16:9 横版', 'Use 16:9 horizontal')]}
       placeholder={props.promptHint ?? l('描述封面，或粘贴 YouTube 链接', 'Describe a thumbnail or paste a YouTube link')}
@@ -173,8 +171,8 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
             <label className="creator-tool-field"><span>{l('封面提示词', 'Thumbnail prompt')}</span><textarea rows={5} value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={l('描述主题、标题、主体、风格和色彩', 'Describe the topic, title, subject, style, and colors')} /></label>
             <label className="creator-tool-field cover-youtube-field"><span>YouTube {l('链接', 'link')} <small>{l('选填', 'Optional')}</small></span><div><Link2 size={16} strokeWidth={1.8} /><input type="url" value={youtubeUrl} onChange={event => setYoutubeUrl(event.target.value)} placeholder={l('从视频内容提取主题和关键画面', 'Extract the topic and key frames from the video')} /></div></label>
             <label className="creator-tool-upload cover-reference-upload"><input type="file" accept="image/*" aria-label={l('上传封面参考图', 'Upload a thumbnail reference image')} onChange={event => setReference(event.target.files?.[0] ?? null)} />{reference ? <><img src={referencePreview || coverImages[0]} alt={l('封面参考图', 'Thumbnail reference')} /><strong>{reference.name}</strong><span>{l('点击更换参考图', 'Click to replace the reference')}</span></> : <><UploadCloud size={23} strokeWidth={1.5} /><strong>{l('添加参考图', 'Add reference image')}</strong><span>{l('选填，用于参考主体、构图或风格', 'Optional, for the subject, composition, or style')}</span></>}</label>
-            {selectedResult && hasPendingChanges ? <div className="cover-version-preserved"><strong>{l(`正在基于 V${resultVersion} 调整`, `Adjusting from V${resultVersion}`)}</strong><span>{l('原来的 4 个封面方案仍保留在查看方案中', 'The original four options remain available under Review options')}</span></div> : null}
-            <div className="creator-tool-actions"><button className="creator-tool-primary" type="button" disabled={!canGenerate} onClick={() => generate()}><Sparkles size={16} />{selectedResult && hasPendingChanges ? l(`生成 V${nextVersion}`, `Generate V${nextVersion}`) : l('生成 4 个封面', 'Generate 4 thumbnails')}</button></div>
+            {selectedResult && hasPendingChanges ? <div className="cover-version-preserved"><strong>{l(`正在基于 V${resultVersion} 调整`, `Adjusting from V${resultVersion}`)}</strong><span>{l('原来的 2 个封面方案仍保留在查看方案中', 'The original two options remain available under Review options')}</span></div> : null}
+            <div className="creator-tool-actions"><button className="creator-tool-primary" type="button" disabled={!canGenerate} onClick={() => generate()}><Sparkles size={16} />{selectedResult && hasPendingChanges ? l(`生成 V${nextVersion}`, `Generate V${nextVersion}`) : l('生成 2 个封面', 'Generate 2 thumbnails')}</button></div>
           </section>
         ) : null}
 
@@ -189,18 +187,7 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
               <CreatorResultVersionMenu version={resultVersion} versions={resultVersions.map(({ value, description }) => ({ value, description }))} onVersionChange={selectVersion} />
             </div>
             {hasPendingChanges ? <div className="stickman-version-draft" role="status"><div><strong>{l(`正在基于 V${resultVersion} 调整`, `Adjusting from V${resultVersion}`)}</strong><span>{l('当前版本的封面方案仍可查看', 'The current version remains available')}</span></div><button type="button" onClick={() => setCurrentStep(0)}>{l('继续设置', 'Continue settings')}</button></div> : null}
-            <CreatorTaskSummary
-              compact
-              sourceIcon={ImagePlus}
-              sourceLabel={l('生成依据', 'Source')}
-              sourceValue={selectedResult.youtubeUrl || selectedResult.prompt || l('视频内容', 'Video content')}
-              items={[
-                { label: l('封面比例', 'Ratio'), value: selectedResult.ratio },
-                { label: l('生成数量', 'Options'), value: '4' },
-                { label: l('参考图', 'Reference'), value: selectedResult.reference?.name ?? l('未添加', 'Not added') },
-                { label: l('当前版本', 'Version'), value: `V${selectedResult.value}` }
-              ]}
-            />
+            <div className="creator-result-layout">
 
             {resultTab === 'options' ? (
               <div className="video-result-pane">
@@ -223,9 +210,21 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
             {resultTab === 'settings' ? (
               <div className="video-result-pane">
                 <header className="video-result-pane-heading"><div><h2>{l('当前版本设置', 'Current version settings')}</h2><p>{l('调整后生成新版本，当前方案不会被覆盖', 'Generating after changes creates a new version without replacing this one')}</p></div><button type="button" onClick={() => setCurrentStep(0)}><Settings2 size={15} />{l('调整设置', 'Adjust settings')}</button></header>
-                <dl className="video-result-settings"><div><dt>{l('封面比例', 'Thumbnail ratio')}</dt><dd>{selectedResult.ratio}</dd></div><div><dt>{l('生成数量', 'Options')}</dt><dd>4</dd></div><div><dt>YouTube {l('链接', 'link')}</dt><dd>{selectedResult.youtubeUrl || l('未添加', 'Not added')}</dd></div><div><dt>{l('参考图', 'Reference image')}</dt><dd>{selectedResult.reference?.name ?? l('未添加', 'Not added')}</dd></div><div className="cover-result-prompt-setting"><dt>{l('封面提示词', 'Thumbnail prompt')}</dt><dd>{selectedResult.prompt || l('根据视频内容生成', 'Generated from video content')}</dd></div></dl>
+                <dl className="video-result-settings"><div><dt>{l('封面比例', 'Thumbnail ratio')}</dt><dd>{selectedResult.ratio}</dd></div><div><dt>{l('生成数量', 'Options')}</dt><dd>2</dd></div><div><dt>YouTube {l('链接', 'link')}</dt><dd>{selectedResult.youtubeUrl || l('未添加', 'Not added')}</dd></div><div><dt>{l('参考图', 'Reference image')}</dt><dd>{selectedResult.reference?.name ?? l('未添加', 'Not added')}</dd></div><div className="cover-result-prompt-setting"><dt>{l('封面提示词', 'Thumbnail prompt')}</dt><dd>{selectedResult.prompt || l('根据视频内容生成', 'Generated from video content')}</dd></div></dl>
               </div>
             ) : null}
+              <CreatorTaskSummary
+                sourceIcon={ImagePlus}
+                sourceLabel={l('生成依据', 'Source')}
+                sourceValue={selectedResult.youtubeUrl || selectedResult.prompt || l('视频内容', 'Video content')}
+                items={[
+                  { label: l('封面比例', 'Ratio'), value: selectedResult.ratio },
+                  { label: l('生成数量', 'Options'), value: '2' },
+                  { label: l('参考图', 'Reference'), value: selectedResult.reference?.name ?? l('未添加', 'Not added') },
+                  { label: l('当前版本', 'Version'), value: `V${selectedResult.value}` }
+                ]}
+              />
+            </div>
           </section>
         ) : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}

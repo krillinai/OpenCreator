@@ -3,14 +3,11 @@ import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import {
   ArrowUpRight,
   Clapperboard,
-  Crop,
   Download,
-  FileVideo,
   Image,
   ImagePlus,
   Languages,
   Mic2,
-  ScanFace,
   Search,
   Sparkles,
   UserRound,
@@ -132,33 +129,12 @@ const creatorTools: DashboardEntry[] = [
     workspace: 'cover-generator'
   },
   {
-    title: '画面扩展',
-    description: '智能补全画面边界',
-    prompt: '帮我扩展这张图片的画面范围，保持主体、光线、透视和原有风格一致。',
-    category: '图像创作',
-    icon: Crop
-  },
-  {
-    title: '视频转格式',
-    description: '适配不同平台与尺寸',
-    prompt: '帮我把视频转换为目标平台需要的格式、分辨率和画幅，并尽量保持画质。',
-    category: '视频编辑',
-    icon: FileVideo
-  },
-  {
     title: '视频下载',
     description: '支持YouTube，Bilibili等',
     prompt: '帮我下载这个视频链接，支持 YouTube、Bilibili 等平台，并保存为可用的视频文件。',
     category: '视频编辑',
     icon: Download,
     workspace: 'video-download'
-  },
-  {
-    title: '数字人分身',
-    description: '创建专属数字人形象',
-    prompt: '帮我创建一个专属数字人分身，请先规划人物形象、表达风格和适用场景。',
-    category: '数字人',
-    icon: ScanFace
   },
 ];
 
@@ -378,12 +354,6 @@ const englishDashboardLabels: Record<string, string> = {
   生成创意图片与视觉素材: 'Generate images and visual assets',
   封面生成: 'Thumbnail Generator',
   生成视频与内容封面: 'Create thumbnails for videos and content',
-  画面扩展: 'Image Expansion',
-  智能补全画面边界: 'Extend image boundaries intelligently',
-  视频转格式: 'Video Converter',
-  适配不同平台与尺寸: 'Adapt videos for platforms and formats',
   视频下载: 'Video Downloader',
   '支持YouTube，Bilibili等': 'Supports YouTube, Bilibili, and more',
-  数字人分身: 'Digital Human Avatar',
-  创建专属数字人形象: 'Create a custom digital human avatar'
 };

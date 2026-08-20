@@ -67,6 +67,7 @@ describe('Desktop static response', () => {
     const response = await staticResponse(root, '/', true);
     const policy = response.headers.get('content-security-policy');
 
+    expect(policy).toContain("img-src 'self' data: blob: https://i.ytimg.com");
     expect(policy).toContain("media-src 'self' blob: https: http:");
     expect(policy).toContain(
       'frame-src https://www.youtube-nocookie.com https://player.bilibili.com'

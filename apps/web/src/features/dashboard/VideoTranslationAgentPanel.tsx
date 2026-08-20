@@ -52,15 +52,18 @@ const quickActions: Record<number, Array<{ label: string; action: VideoTranslati
     { label: '翻译成英文', action: { type: 'set_target_language', value: 'en', label: 'English' } },
     { label: '翻译成日语', action: { type: 'set_target_language', value: 'ja', label: '日本語' } },
     { label: '关闭双语字幕', action: { type: 'set_bilingual', value: false } },
-    { label: '进入配音与输出', action: { type: 'advance_task' } }
+    { label: '进入字幕样式', action: { type: 'advance_task' } }
   ],
   2: [
+    { label: '进入配音与输出', action: { type: 'advance_task' } }
+  ],
+  3: [
     { label: '开启配音', action: { type: 'set_dubbing', value: true } },
     { label: '输出竖屏视频', action: { type: 'set_output', value: 'vertical' } },
     { label: '仅生成字幕', action: { type: 'subtitle_only' } },
     { label: '按当前设置开始', action: { type: 'run_translation' } }
   ],
-  3: [
+  4: [
     { label: '修改字幕', action: { type: 'open_subtitle_editor' } },
     { label: '调整任务设置', action: { type: 'open_result_settings' } },
     { label: '生成新版本', action: { type: 'regenerate_result' } }
@@ -96,10 +99,12 @@ export default function VideoTranslationAgentPanel(props: {
         .filter(item => item.action.type !== 'regenerate_result' || props.canRegenerate)
         .map(item => ({ ...item, label: localizeQuickAction(item.label, l) }));
   const nextMessageId = messages.length === 0 ? 1 : messages[messages.length - 1]!.id + 1;
-  const placeholder = props.step === 3
+  const placeholder = props.step === 4
     ? l('例如：把第 2 条字幕改为……', 'For example: change subtitle 2 to...')
-    : props.step === 2
+    : props.step === 3
       ? l('例如：开启配音并输出竖屏', 'For example: enable dubbing and use vertical output')
+      : props.step === 2
+        ? l('例如：继续设置配音与输出', 'For example: continue to dubbing and output')
       : props.step === 1
         ? l('例如：翻译成日语', 'For example: translate into Japanese')
         : props.promptHint ?? l('添加视频后，告诉我翻译要求', 'Add a video, then tell me your translation requirements');
@@ -116,7 +121,7 @@ export default function VideoTranslationAgentPanel(props: {
         return { type: 'cancel_regeneration' };
       }
     }
-    if (props.step === 3) {
+    if (props.step === 4) {
       const subtitleEdit = prompt.match(
         /^(?:请)?(?:(?:把|将)\s*)?第\s*(\d+)\s*(?:条|句)?字幕\s*(?:改成|改为|修改为|换成)\s*[“"'：:]?(.+?)[”"']?$/
       );
@@ -194,7 +199,7 @@ export default function VideoTranslationAgentPanel(props: {
     if (text.includes('英语') || text.includes('英文') || text.includes('english')) {
       return { type: 'set_target_language', value: 'en', label: 'English' };
     }
-    if (props.step === 3 && (text.includes('设置') || text.includes('语言') || text.includes('音色') || text.includes('settings') || text.includes('language') || text.includes('voice'))) {
+    if (props.step === 4 && (text.includes('设置') || text.includes('语言') || text.includes('音色') || text.includes('settings') || text.includes('language') || text.includes('voice'))) {
       return { type: 'open_result_settings' };
     }
     if (text.includes('平台') || text.includes('链接') || text.includes('platform') || text.includes('link')) return { type: 'explain_source' };
@@ -308,6 +313,7 @@ function localizeQuickAction(label: string, l: LocalizeCopy): string {
     '翻译成英文': 'Translate into English',
     '翻译成日语': 'Translate into Japanese',
     '关闭双语字幕': 'Disable bilingual subtitles',
+    '进入字幕样式': 'Continue to subtitle style',
     '进入配音与输出': 'Continue to dubbing and output',
     '开启配音': 'Enable dubbing',
     '输出竖屏视频': 'Use vertical video output',

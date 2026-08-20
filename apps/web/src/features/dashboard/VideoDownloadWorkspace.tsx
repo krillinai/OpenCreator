@@ -185,18 +185,7 @@ export default function VideoDownloadWorkspace(props: { onBack(): void; promptHi
                 <button type="button" role="tab" aria-selected={resultTab === 'history'} onClick={() => setResultTab('history')}><CheckCircle2 size={15} strokeWidth={1.8} aria-hidden="true" />{l('下载记录', 'Downloads')}</button>
               </div>
             </div>
-            <CreatorTaskSummary
-              compact
-              sourceIcon={Link2}
-              sourceLabel={l('视频链接', 'Video link')}
-              sourceValue={url}
-              items={[
-                { label: l('来源平台', 'Platform'), value: platform },
-                { label: l('下载格式', 'Format'), value: format.toUpperCase() },
-                { label: l('当前规格', 'Quality'), value: quality },
-                { label: l('下载任务', 'Downloads'), value: String(downloadRecords.length) }
-              ]}
-            />
+            <div className="creator-result-layout">
 
             {resultTab === 'info' ? (
               <div className="video-result-pane">
@@ -238,6 +227,18 @@ export default function VideoDownloadWorkspace(props: { onBack(): void; promptHi
                 ) : <div className="video-result-empty"><Download size={26} strokeWidth={1.5} aria-hidden="true" /><strong>{l('还没有下载任务', 'No downloads yet')}</strong><button type="button" onClick={() => setResultTab('formats')}>{l('选择下载规格', 'Choose a format')}</button></div>}
               </div>
             ) : null}
+              <CreatorTaskSummary
+                sourceIcon={Link2}
+                sourceLabel={l('视频链接', 'Video link')}
+                sourceValue={url}
+                items={[
+                  { label: l('来源平台', 'Platform'), value: platform },
+                  { label: l('下载格式', 'Format'), value: format.toUpperCase() },
+                  { label: l('当前规格', 'Quality'), value: quality },
+                  { label: l('下载任务', 'Downloads'), value: String(downloadRecords.length) }
+                ]}
+              />
+            </div>
           </section>
         ) : null}
         {notice ? <p className="creator-tool-notice" role="status"><CheckCircle2 size={15} strokeWidth={1.9} />{notice}</p> : null}

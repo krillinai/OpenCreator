@@ -45,6 +45,7 @@ export default function VideoTranslationResultWorkspace(props: {
   url: string;
   targetLanguage: string;
   outputLabel: string;
+  subtitleStyleLabel: string;
   dubbing: boolean;
   subtitleCues: SubtitleCue[];
   subtitleDirty: boolean;
@@ -204,6 +205,7 @@ export default function VideoTranslationResultWorkspace(props: {
           </header>
           <dl className="video-result-settings">
             <div><dt>{l('目标语言', 'Target language')}</dt><dd>{props.targetLanguage}</dd></div>
+            <div><dt>{l('字幕样式', 'Subtitle style')}</dt><dd>{props.subtitleStyleLabel}</dd></div>
             <div><dt>{l('配音', 'Dubbing')}</dt><dd>{props.dubbing ? l('已开启', 'Enabled') : l('未开启', 'Disabled')}</dd></div>
             <div><dt>{l('输出内容', 'Output')}</dt><dd>{props.outputLabel}</dd></div>
             <div><dt>{l('字幕文件', 'Subtitle file')}</dt><dd>{props.subtitleCues.length} {l('条字幕', 'subtitles')}</dd></div>

@@ -252,18 +252,7 @@ export default function AutoClipWorkspace(props: { onBack(): void; promptHint?: 
               <CreatorResultVersionMenu version={resultVersion} versions={resultVersions.map(({ value, description }) => ({ value, description }))} onVersionChange={selectVersion} />
             </div>
             {hasPendingChanges ? <div className="stickman-version-draft" role="status"><div><strong>{l(`正在基于 V${resultVersion} 调整`, `Adjusting from V${resultVersion}`)}</strong><span>{l('原版本的候选片段、字幕与评分仍可查看', 'The original candidates, transcripts, and scores remain available')}</span></div><button type="button" onClick={() => setCurrentStep(1)}>{l('继续设置', 'Continue settings')}</button></div> : null}
-            <CreatorTaskSummary
-              compact
-              sourceIcon={FileVideo}
-              sourceLabel={l('视频来源', 'Video source')}
-              sourceValue={selectedResult.videoFile?.name ?? selectedResult.videoUrl}
-              items={[
-                { label: l('内容偏好', 'Content focus'), value: focusLabel(selectedResult.focus, l) },
-                { label: l('目标时长', 'Target duration'), value: `${selectedResult.duration} ${l('秒', 'sec')}` },
-                { label: l('候选片段', 'Candidates'), value: '10' },
-                { label: l('已选择', 'Selected'), value: String(selected.length) }
-              ]}
-            />
+            <div className="creator-result-layout">
 
             {resultTab === 'candidates' ? (
               <div className="video-result-pane">
@@ -292,6 +281,18 @@ export default function AutoClipWorkspace(props: { onBack(): void; promptHint?: 
                 <dl className="video-result-settings"><div><dt>{l('视频来源', 'Video source')}</dt><dd>{selectedResult.videoFile?.name ?? selectedResult.videoUrl}</dd></div><div><dt>{l('候选数量', 'Candidates')}</dt><dd>10</dd></div><div><dt>{l('内容偏好', 'Content focus')}</dt><dd>{focusLabel(selectedResult.focus, l)}</dd></div><div><dt>{l('目标时长', 'Target duration')}</dt><dd>{selectedResult.duration} {l('秒', 'sec')}</dd></div></dl>
               </div>
             ) : null}
+              <CreatorTaskSummary
+                sourceIcon={FileVideo}
+                sourceLabel={l('视频来源', 'Video source')}
+                sourceValue={selectedResult.videoFile?.name ?? selectedResult.videoUrl}
+                items={[
+                  { label: l('内容偏好', 'Content focus'), value: focusLabel(selectedResult.focus, l) },
+                  { label: l('目标时长', 'Target duration'), value: `${selectedResult.duration} ${l('秒', 'sec')}` },
+                  { label: l('候选片段', 'Candidates'), value: '10' },
+                  { label: l('已选择', 'Selected'), value: String(selected.length) }
+                ]}
+              />
+            </div>
           </section>
         ) : null}
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}

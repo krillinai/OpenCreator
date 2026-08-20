@@ -11,7 +11,6 @@ export default function CreatorTaskSummary(props: {
   sourceLabel: string;
   sourceValue: string;
   items: SummaryItem[];
-  compact?: boolean;
   note?: string;
   noteIcon?: LucideIcon;
 }) {
@@ -21,7 +20,7 @@ export default function CreatorTaskSummary(props: {
 
   return (
     <aside
-      className={`video-translation-summary creator-task-summary${props.compact ? ' is-compact' : ''}`}
+      className="video-translation-summary creator-task-summary"
       aria-label={l('任务摘要', 'Task summary')}
     >
       <div className="video-translation-summary-heading">

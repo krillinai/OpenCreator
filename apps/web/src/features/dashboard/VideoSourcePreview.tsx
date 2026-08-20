@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, FileVideo, Link2, RotateCcw, Trash2 } from 'lucide-react';
+import { ExternalLink, FileVideo, Link2, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 type VideoSource =
-  | { kind: 'youtube'; embedUrl: string; label: string }
+  | { kind: 'youtube'; embedUrl: string; thumbnailUrl: string; label: string }
   | { kind: 'bilibili'; embedUrl: string; label: string }
   | { kind: 'direct'; url: string; label: string }
   | { kind: 'link'; url: string; hostname: string; label: string }
@@ -30,9 +30,11 @@ function parseVideoSource(value: string): VideoSource {
       }
     }
     if (youtubeId) {
+      const encodedId = encodeURIComponent(youtubeId);
       return {
         kind: 'youtube',
-        embedUrl: `https://www.youtube-nocookie.com/embed/${encodeURIComponent(youtubeId)}`,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${encodedId}`,
+        thumbnailUrl: `https://i.ytimg.com/vi/${encodedId}/hqdefault.jpg`,
         label: 'YouTube 视频'
       };
     }
@@ -115,6 +117,7 @@ export default function VideoSourcePreview(props: {
   displayDetail?: string;
 }) {
   const l = useLocalizedCopy();
+  const [showYouTubePlayer, setShowYouTubePlayer] = useState(false);
   const source = useMemo(() => parseVideoSource(props.url), [props.url]);
   const localFile = props.sourceType === 'file' ? props.file : null;
   const isLocal = localFile !== null;
@@ -136,11 +139,26 @@ export default function VideoSourcePreview(props: {
         ? l('请检查链接是否完整', 'Check that the link is complete')
         : localizedLabel);
 
+  useEffect(() => {
+    setShowYouTubePlayer(false);
+  }, [props.sourceType, props.url]);
+
   return (
     <div className="video-source-preview">
       <div className="video-source-preview-media">
         {localFile ? <LocalVideoPreview file={localFile} /> : null}
-        {!isLocal && (source.kind === 'youtube' || source.kind === 'bilibili') ? (
+        {!isLocal && source.kind === 'youtube' && !showYouTubePlayer ? (
+          <button
+            className="video-source-youtube-poster"
+            type="button"
+            onClick={() => setShowYouTubePlayer(true)}
+            aria-label={l('播放 YouTube 视频预览', 'Play YouTube video preview')}
+          >
+            <img src={source.thumbnailUrl} alt={l('YouTube 视频缩略图', 'YouTube video thumbnail')} />
+            <span aria-hidden="true"><Play size={24} fill="currentColor" /></span>
+          </button>
+        ) : null}
+        {!isLocal && ((source.kind === 'youtube' && showYouTubePlayer) || source.kind === 'bilibili') ? (
           <iframe
             src={source.embedUrl}
             title={l(`${localizedLabel}预览`, `${localizedLabel} preview`)}

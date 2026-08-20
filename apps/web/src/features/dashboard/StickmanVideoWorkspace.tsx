@@ -763,20 +763,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                   </button>
                 </div>
               ) : null}
-              <CreatorTaskSummary
-                compact
-                sourceIcon={PersonStanding}
-                sourceLabel={l('角色', 'Character')}
-                sourceValue={resultCharacterName}
-                items={[
-                  { label: l('分镜', 'Storyboard'), value: l(`${storyboardShots.length} 个镜头`, `${storyboardShots.length} shots`) },
-                  { label: l('画面风格', 'Visual style'), value: localizeShot(selectedResult.style, l) },
-                  { label: l('视频比例', 'Video ratio'), value: selectedResult.ratio },
-                  { label: l('配音', 'Voiceover'), value: resultVoiceover },
-                  { label: l('背景音乐', 'Music'), value: resultBackgroundMusic },
-                  { label: l('当前版本', 'Version'), value: `V${selectedResult.value}` }
-                ]}
-              />
+              <div className="creator-result-layout">
 
               {resultTab === 'video' ? (
                 <div className="video-result-pane">
@@ -843,6 +830,20 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                   </dl>
                 </div>
               ) : null}
+                <CreatorTaskSummary
+                  sourceIcon={PersonStanding}
+                  sourceLabel={l('角色', 'Character')}
+                  sourceValue={resultCharacterName}
+                  items={[
+                    { label: l('分镜', 'Storyboard'), value: l(`${storyboardShots.length} 个镜头`, `${storyboardShots.length} shots`) },
+                    { label: l('画面风格', 'Visual style'), value: localizeShot(selectedResult.style, l) },
+                    { label: l('视频比例', 'Video ratio'), value: selectedResult.ratio },
+                    { label: l('配音', 'Voiceover'), value: resultVoiceover },
+                    { label: l('背景音乐', 'Music'), value: resultBackgroundMusic },
+                    { label: l('当前版本', 'Version'), value: `V${selectedResult.value}` }
+                  ]}
+                />
+              </div>
             </section>
           ) : (
             <div className="creator-task-final-grid">
