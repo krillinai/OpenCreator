@@ -1059,6 +1059,16 @@
   gap: 14px;
 }
 
+.creator-task-final-grid > .stickman-version-draft {
+  grid-column: 1 / -1;
+}
+
+.stickman-storyboard-step {
+  display: grid;
+  align-items: start;
+  gap: 14px;
+}
+
 .creator-task-summary.is-compact {
   display: grid;
   grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.4fr);
@@ -1239,6 +1249,10 @@
 
 .video-translation-steps.creator-tool-steps-two ol {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stickman-tool-stack .creator-tool-steps ol {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .creator-tool-panel {
@@ -2247,66 +2261,421 @@
   min-height: 112px;
 }
 
-.stickman-storyboard {
+.stickman-story-panel .creator-tool-field select:focus {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.creator-workspace-page .stickman-story-panel select:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: 1px;
+}
+
+.stickman-storyboard-editor {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
   margin-top: 18px;
 }
 
-.stickman-storyboard article {
+.stickman-storyboard-review .stickman-storyboard-editor {
+  margin-top: 0;
+}
+
+.stickman-storyboard-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 76px 150px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.stickman-storyboard-row:first-child {
+  padding-top: 0;
+}
+
+.stickman-storyboard-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.stickman-storyboard-meta,
+.stickman-storyboard-media,
+.stickman-storyboard-copy {
   min-width: 0;
 }
 
-.stickman-storyboard article > div {
+.stickman-storyboard-meta {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.stickman-storyboard-meta strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.4;
+}
+
+.stickman-storyboard-meta small {
+  color: var(--subtle);
+  font-size: 10px;
+}
+
+.stickman-storyboard-media {
+  width: 100%;
+  max-width: 150px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.stickman-storyboard-image {
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  margin-bottom: 8px;
   border-radius: 7px;
   background: var(--surface-2);
 }
 
-.stickman-storyboard img {
+.stickman-storyboard-image img {
   width: 100%;
   height: 100%;
+  display: block;
   object-fit: cover;
 }
 
-.stickman-storyboard article:nth-child(2) img { object-position: 34% center; }
-.stickman-storyboard article:nth-child(3) img { object-position: 66% center; }
-.stickman-storyboard article:nth-child(4) img { object-position: right center; }
-
-.stickman-storyboard article > div span {
+.stickman-storyboard-image > span {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  width: 22px;
-  height: 22px;
+  top: 7px;
+  left: 7px;
+  width: 20px;
+  height: 20px;
   display: grid;
   place-items: center;
   border-radius: 6px;
-  background: rgba(20, 22, 26, 0.8);
+  background: rgba(20, 22, 26, 0.82);
   color: #f7f7f8;
   font-size: 11px;
+  font-weight: 650;
 }
 
-.stickman-storyboard strong {
-  display: block;
-  font-size: 12px;
+.stickman-storyboard-actions {
+  min-width: 0;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.stickman-storyboard p {
-  min-height: 48px;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.stickman-storyboard small {
+.stickman-storyboard-regenerate,
+.stickman-storyboard-prompt {
+  width: max-content;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
   color: var(--subtle);
   font-size: 10px;
+  font-weight: 580;
+}
+
+.stickman-storyboard-regenerate:hover,
+.stickman-storyboard-prompt:hover {
+  background: transparent;
+  color: var(--text);
+}
+
+.stickman-storyboard-copy {
+  display: grid;
+  align-content: start;
+}
+
+.stickman-storyboard-subtitle textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.stickman-storyboard-readonly-subtitle {
+  display: grid;
+}
+
+.stickman-storyboard-readonly-subtitle p {
+  min-height: 48px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.stickman-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 17, 21, 0.52);
+}
+
+.stickman-prompt-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(680px, calc(100dvh - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 24px 72px rgba(15, 17, 21, 0.24);
+}
+
+.stickman-prompt-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.stickman-prompt-dialog > header span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.stickman-prompt-dialog > header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 640;
+}
+
+.stickman-prompt-dialog > header > button {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.stickman-prompt-dialog > header > button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.stickman-prompt-content {
+  min-height: 0;
+  display: grid;
+  gap: 7px;
+  overflow: auto;
+  padding: 18px 20px;
+}
+
+.stickman-prompt-content > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 580;
+}
+
+.stickman-prompt-content textarea {
+  width: 100%;
+  min-height: 220px;
+  box-sizing: border-box;
+  resize: none;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  outline: 0;
+  background: var(--conversation-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.stickman-prompt-content textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 64%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.stickman-prompt-dialog > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.stickman-prompt-dialog > footer button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 580;
+}
+
+.stickman-prompt-dialog > footer button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.stickman-prompt-dialog > footer .is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.stickman-prompt-dialog > footer .is-primary:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 88%, var(--text));
+  color: var(--on-accent);
+}
+
+.stickman-prompt-dialog > footer .is-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+@media (max-width: 600px) {
+  .stickman-prompt-backdrop {
+    padding: 16px;
+  }
+
+  .stickman-prompt-dialog {
+    max-height: calc(100dvh - 32px);
+  }
+
+  .stickman-prompt-dialog > header,
+  .stickman-prompt-content,
+  .stickman-prompt-dialog > footer {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .stickman-prompt-content textarea {
+    min-height: 180px;
+  }
+}
+
+.stickman-audio-settings {
+  min-width: 0;
+}
+
+.stickman-audio-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+.stickman-voice-settings,
+.stickman-music-settings {
+  min-width: 0;
+}
+
+.stickman-music-settings {
+  padding-left: 18px;
+  border-left: 1px solid var(--border-hairline);
+}
+
+.stickman-music-heading {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+}
+
+.stickman-music-heading > span {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.stickman-music-heading strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 570;
+}
+
+.stickman-music-heading small {
+  color: var(--subtle);
+  font-size: 10px;
+}
+
+.stickman-music-upload-row {
+  position: relative;
+}
+
+.stickman-music-upload {
+  min-height: 102px;
+  padding: 10px 36px 10px 10px;
+}
+
+.stickman-music-upload strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stickman-music-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.stickman-music-volume {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.stickman-music-volume > span {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.stickman-music-volume output {
+  color: var(--text);
+  font-weight: 620;
+}
+
+.stickman-music-volume input {
+  width: 100%;
+  accent-color: var(--accent);
 }
 
 .stickman-video-result {
@@ -3728,6 +4097,26 @@
 
   .video-translation-final-grid .video-translation-summary {
     position: static;
+  }
+
+  .creator-task-final-grid,
+  .stickman-audio-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stickman-music-settings {
+    padding-top: 14px;
+    padding-left: 0;
+    border-top: 1px solid var(--border-hairline);
+    border-left: 0;
+  }
+
+}
+
+@container video-translation-workspace (max-width: 480px) {
+  .stickman-audio-panel .creator-tool-form-row,
+  .stickman-storyboard-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

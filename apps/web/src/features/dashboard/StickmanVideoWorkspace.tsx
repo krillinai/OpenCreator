@@ -1,18 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   Download,
+  Eye,
   FileVideo,
   ImagePlus,
   Info,
+  Music2,
   PanelsTopLeft,
   PersonStanding,
   Play,
+  RefreshCw,
   Settings2,
   Sparkles,
-  UploadCloud
+  UploadCloud,
+  Volume2,
+  X
 } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
@@ -21,10 +27,42 @@ import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 
 const storyboardShots = [
-  { title: '建立场景', detail: '角色站在城市天台，远景缓慢推进', duration: '0-3s' },
-  { title: '冲突出现', detail: '风吹走手中的纸张，角色快速追赶', duration: '3-7s' },
-  { title: '动作高潮', detail: '角色越过障碍，在空中抓住纸张', duration: '7-12s' },
-  { title: '结尾定格', detail: '角色落地举起纸张，镜头定格', duration: '12-15s' }
+  {
+    titleZh: '建立场景',
+    titleEn: 'Establish the scene',
+    subtitleZh: '灵感来了，就别让它从手中溜走。',
+    subtitleEn: 'When inspiration arrives, do not let it slip away.',
+    visualZh: '角色站在城市天台，远景缓慢推进，风吹动围巾和手中的创意手稿。',
+    visualEn: 'The character stands on a city rooftop as the wide shot slowly pushes in, with the wind moving the scarf and manuscript.',
+    duration: '0-3s'
+  },
+  {
+    titleZh: '冲突出现',
+    titleEn: 'Conflict appears',
+    subtitleZh: '风把手稿卷向城市上空。',
+    subtitleEn: 'The wind carries the manuscript above the city.',
+    visualZh: '一阵强风吹走角色手中的纸张，角色转身快速追赶，画面表现突然发生的动作。',
+    visualEn: 'A strong gust carries the paper away, and the character turns to chase it as the action begins suddenly.',
+    duration: '3-7s'
+  },
+  {
+    titleZh: '动作高潮',
+    titleEn: 'Action climax',
+    subtitleZh: '再高的障碍，也拦不住这次追赶。',
+    subtitleEn: 'No obstacle can stop this chase.',
+    visualZh: '角色越过天台障碍，在空中伸手抓向纸张，使用有速度感的动态构图。',
+    visualEn: 'The character clears a rooftop obstacle and reaches for the paper in midair, using a dynamic composition with a sense of speed.',
+    duration: '7-12s'
+  },
+  {
+    titleZh: '结尾定格',
+    titleEn: 'Final freeze frame',
+    subtitleZh: '抓住手稿，也抓住了最重要的想法。',
+    subtitleEn: 'The manuscript is safe, along with the idea that matters most.',
+    visualZh: '角色平稳落地并举起找回的手稿，镜头定格，结尾轻松而有成就感。',
+    visualEn: 'The character lands safely and raises the recovered manuscript as the frame freezes on a relaxed, accomplished ending.',
+    duration: '12-15s'
+  }
 ];
 const characterPromptZh = '黑色线条、白色圆形头部、红色围巾，动作灵活';
 const characterPromptEn = 'Black lines, a round white head, a red scarf, and agile movement';
@@ -97,9 +135,12 @@ const characterPresets = [
 ] as const;
 
 type CharacterPresetId = typeof characterPresets[number]['id'];
-type StickmanStep = 0 | 1 | 2;
+type StickmanStep = 0 | 1 | 2 | 3;
 type CharacterSource = 'preset' | 'generate' | 'upload';
 type StickmanResultTab = 'video' | 'storyboard' | 'character' | 'settings';
+type VoiceLanguage = 'auto' | 'zh-CN' | 'en-US';
+type VoiceTone = 'natural' | 'energetic' | 'calm';
+type StoryboardDialogState = { shotIndex: number; mode: 'view' | 'regenerate' };
 
 type StickmanResultVersion = {
   value: number;
@@ -113,6 +154,14 @@ type StickmanResultVersion = {
   story: string;
   ratio: '16:9' | '9:16' | '1:1';
   style: string;
+  storyboardSubtitles: string[];
+  storyboardImageVersions: number[];
+  storyboardPromptOverrides: Array<string | null>;
+  voiceover: boolean;
+  voiceLanguage: VoiceLanguage;
+  voiceTone: VoiceTone;
+  backgroundMusic: File | null;
+  backgroundMusicVolume: number;
 };
 
 export default function StickmanVideoWorkspace(props: { onBack(): void; promptHint?: string }) {
@@ -128,6 +177,14 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   const [story, setStory] = useState(() => l(storyZh, storyEn));
   const [ratio, setRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
   const [style, setStyle] = useState('手绘线稿');
+  const [storyboardSubtitles, setStoryboardSubtitles] = useState(() => storyboardShots.map(shot => l(shot.subtitleZh, shot.subtitleEn)));
+  const [storyboardImageVersions, setStoryboardImageVersions] = useState(() => storyboardShots.map(() => 0));
+  const [storyboardPromptOverrides, setStoryboardPromptOverrides] = useState<Array<string | null>>(() => storyboardShots.map(() => null));
+  const [voiceover, setVoiceover] = useState(true);
+  const [voiceLanguage, setVoiceLanguage] = useState<VoiceLanguage>('auto');
+  const [voiceTone, setVoiceTone] = useState<VoiceTone>('natural');
+  const [backgroundMusic, setBackgroundMusic] = useState<File | null>(null);
+  const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(25);
   const [storyboardReady, setStoryboardReady] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [notice, setNotice] = useState('');
@@ -136,13 +193,15 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   const [resultVersions, setResultVersions] = useState<StickmanResultVersion[]>([]);
   const [resultVersion, setResultVersion] = useState(0);
   const [resultTab, setResultTab] = useState<StickmanResultTab>('video');
+  const [audioEditing, setAudioEditing] = useState(false);
+  const [storyboardDialog, setStoryboardDialog] = useState<StoryboardDialogState | null>(null);
   const selectedPreset = characterPresets.find(preset => preset.id === selectedPresetId);
   const characterReady = characterSource === 'preset'
     ? selectedPreset !== undefined
     : characterSource === 'generate'
       ? characterGenerated
       : characterFile !== null;
-  const steps = [l('选择角色', 'Choose character'), l('故事与分镜', 'Story and storyboard'), l('生成视频', 'Generate video')];
+  const steps = [l('选择角色', 'Choose character'), l('故事与分镜', 'Story and storyboard'), l('确认分镜', 'Review storyboard'), l('配音与音乐', 'Voice and music')];
   const currentSignature = createVersionSignature({
     characterSource,
     selectedPresetId,
@@ -151,7 +210,15 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     characterGenerated,
     story,
     ratio,
-    style
+    style,
+    storyboardSubtitles,
+    storyboardImageVersions,
+    storyboardPromptOverrides,
+    voiceover,
+    voiceLanguage,
+    voiceTone,
+    backgroundMusic,
+    backgroundMusicVolume
   });
   const selectedResult = resultVersions.find(version => version.value === resultVersion);
   const nextVersion = resultVersions.reduce((highest, version) => Math.max(highest, version.value), 0) + 1;
@@ -179,6 +246,18 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     : characterSource === 'upload'
       ? characterFile?.name ?? l('上传角色', 'Uploaded character')
       : l('AI 生成角色', 'AI-generated character');
+  const taskVoiceover = voiceover
+    ? `${voiceLanguageLabel(voiceLanguage, l)} · ${voiceToneLabel(voiceTone, l)}`
+    : l('关闭', 'Off');
+  const taskBackgroundMusic = backgroundMusic
+    ? `${backgroundMusic.name} · ${backgroundMusicVolume}%`
+    : l('未添加', 'Not added');
+  const resultVoiceover = selectedResult?.voiceover
+    ? `${voiceLanguageLabel(selectedResult.voiceLanguage, l)} · ${voiceToneLabel(selectedResult.voiceTone, l)}`
+    : l('关闭', 'Off');
+  const resultBackgroundMusic = selectedResult?.backgroundMusic
+    ? `${selectedResult.backgroundMusic.name} · ${selectedResult.backgroundMusicVolume}%`
+    : l('未添加', 'Not added');
 
   useEffect(() => {
     setCharacterPrompt(current => current === characterPromptZh || current === characterPromptEn
@@ -187,6 +266,11 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     setStory(current => current === storyZh || current === storyEn
       ? l(storyZh, storyEn)
       : current);
+    setStoryboardSubtitles(current => current.map((subtitle, index) => {
+      const shot = storyboardShots[index];
+      if (!shot || (subtitle !== shot.subtitleZh && subtitle !== shot.subtitleEn)) return subtitle;
+      return l(shot.subtitleZh, shot.subtitleEn);
+    }));
   }, [l, language]);
 
   useEffect(() => {
@@ -212,7 +296,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     setStoryboardReady(false);
     setVideoReady(false);
     setCurrentStep(0);
-    setFurthestStep(hasSavedResults ? 2 : 0);
+    setFurthestStep(hasSavedResults ? 3 : 0);
     setNotice(l('角色形象已生成，可以继续生成分镜', 'Character image generated. Continue to the storyboard.'));
     return true;
   }
@@ -226,7 +310,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     setStoryboardReady(false);
     setVideoReady(false);
     setCurrentStep(0);
-    setFurthestStep(hasSavedResults ? 2 : 0);
+    setFurthestStep(hasSavedResults ? 3 : 0);
     const preset = characterPresets.find(item => item.id === id)!;
     setNotice(l(`已选择${preset.nameZh}，可以继续生成分镜`, `${preset.nameEn} selected. Continue to the storyboard.`));
   }
@@ -238,7 +322,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     setStoryboardReady(false);
     setVideoReady(false);
     setCurrentStep(0);
-    setFurthestStep(hasSavedResults ? 2 : 0);
+    setFurthestStep(hasSavedResults ? 3 : 0);
   }
 
   function uploadCharacter(file: File | null) {
@@ -251,7 +335,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     setStoryboardReady(false);
     setVideoReady(false);
     setCurrentStep(0);
-    setFurthestStep(hasSavedResults ? 2 : 0);
+    setFurthestStep(hasSavedResults ? 3 : 0);
     setNotice(l('角色图片已上传，可以继续生成分镜', 'Character image uploaded. Continue to the storyboard.'));
   }
 
@@ -266,24 +350,28 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
       setNotice(l('请先填写故事创意', 'Enter a story idea first'));
       return false;
     }
-    setCurrentStep(1);
-    setFurthestStep(current => Math.max(current, 1) as StickmanStep);
+    setCurrentStep(2);
+    setFurthestStep(2);
+    setStoryboardSubtitles(storyboardShots.map(shot => l(shot.subtitleZh, shot.subtitleEn)));
+    setStoryboardImageVersions(storyboardShots.map(() => 0));
+    setStoryboardPromptOverrides(storyboardShots.map(() => null));
     setStoryboardReady(true);
     setVideoReady(false);
-    setNotice(l('已生成 4 个关键分镜，请确认后生成视频', 'Generated 4 key storyboard shots. Review them before creating the video.'));
+    setNotice(l(`已生成 ${storyboardShots.length} 个关键分镜，请确认后生成视频`, `Generated ${storyboardShots.length} key storyboard shots. Review them before creating the video.`));
     return true;
   }
 
   function generateVideo() {
     if (!storyboardReady) {
       setCurrentStep(characterReady ? 1 : 0);
-      setFurthestStep(hasSavedResults ? 2 : characterReady ? 1 : 0);
+      setFurthestStep(hasSavedResults ? 3 : characterReady ? 1 : 0);
       setNotice(l('请先生成并确认分镜图', 'Generate and review the storyboard first'));
       return false;
     }
     if (selectedResult?.signature === currentSignature) {
-      setCurrentStep(2);
-      setFurthestStep(2);
+      setCurrentStep(3);
+      setFurthestStep(3);
+      setAudioEditing(false);
       setVideoReady(true);
       setNotice(l(`当前设置没有变化，继续查看 V${resultVersion}`, `Nothing changed. Continuing with V${resultVersion}.`));
       return true;
@@ -304,13 +392,22 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
         characterGenerated,
         story,
         ratio,
-        style
+        style,
+        storyboardSubtitles,
+        storyboardImageVersions,
+        storyboardPromptOverrides,
+        voiceover,
+        voiceLanguage,
+        voiceTone,
+        backgroundMusic,
+        backgroundMusicVolume
       }
     ]);
     setResultVersion(version);
     setResultTab('video');
-    setCurrentStep(2);
-    setFurthestStep(2);
+    setCurrentStep(3);
+    setFurthestStep(3);
+    setAudioEditing(false);
     setVideoReady(true);
     setNotice(version === 1
       ? l('V1 已生成完成', 'V1 is ready.')
@@ -333,11 +430,32 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     setStory(result.story);
     setRatio(result.ratio);
     setStyle(result.style);
+    setStoryboardSubtitles(result.storyboardSubtitles);
+    setStoryboardImageVersions(result.storyboardImageVersions);
+    setStoryboardPromptOverrides(result.storyboardPromptOverrides);
+    setVoiceover(result.voiceover);
+    setVoiceLanguage(result.voiceLanguage);
+    setVoiceTone(result.voiceTone);
+    setBackgroundMusic(result.backgroundMusic);
+    setBackgroundMusicVolume(result.backgroundMusicVolume);
     setStoryboardReady(true);
     setVideoReady(true);
-    setCurrentStep(2);
-    setFurthestStep(2);
+    setCurrentStep(3);
+    setFurthestStep(3);
+    setAudioEditing(false);
     setNotice('');
+  }
+
+  function updateStoryboardSubtitle(index: number, value: string) {
+    setStoryboardSubtitles(current => current.map((subtitle, itemIndex) => itemIndex === index ? value : subtitle));
+    setVideoReady(false);
+  }
+
+  function regenerateStoryboardImage(index: number, prompt: string) {
+    setStoryboardImageVersions(current => current.map((version, itemIndex) => itemIndex === index ? version + 1 : version));
+    setStoryboardPromptOverrides(current => current.map((value, itemIndex) => itemIndex === index ? prompt.trim() : value));
+    setVideoReady(false);
+    setNotice(l(`分镜 ${index + 1} 的图片已重新生成`, `The image for shot ${index + 1} has been regenerated.`));
   }
 
   function continueToStory() {
@@ -357,6 +475,18 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
     }
     setCurrentStep(2);
     setFurthestStep(2);
+    setNotice('');
+  }
+
+  function continueToAudio() {
+    if (!storyboardReady) {
+      setCurrentStep(1);
+      setNotice(l('请先生成并确认分镜图', 'Generate and review the storyboard first'));
+      return;
+    }
+    setAudioEditing(true);
+    setCurrentStep(3);
+    setFurthestStep(3);
     setNotice('');
   }
 
@@ -384,7 +514,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
       return generateCharacter() ? l('角色形象已经生成，左侧可以查看。下一步可以生成故事分镜。', 'The character is ready on the left. Next, generate the storyboard.') : l('请先补充角色外观描述。', 'Add a character appearance description first.');
     }
     if (/生成分镜|分镜图|generate storyboard|storyboard/i.test(command)) {
-      return generateStoryboard() ? l('4 个关键分镜已生成，请在左侧检查镜头和节奏。', 'Four key shots are ready. Review the scenes and pacing on the left.') : l('需要先准备角色形象和故事创意。', 'Prepare a character and story idea first.');
+      return generateStoryboard() ? l(`${storyboardShots.length} 个关键分镜已生成，请在左侧检查镜头和节奏。`, `${storyboardShots.length} key shots are ready. Review the scenes and pacing on the left.`) : l('需要先准备角色形象和故事创意。', 'Prepare a character and story idea first.');
     }
     if (/生成视频|开始生成|generate video|create video/i.test(command)) {
       const unchanged = selectedResult?.signature === currentSignature;
@@ -413,7 +543,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
       setStoryboardReady(false);
       setVideoReady(false);
       setCurrentStep(1);
-      setFurthestStep(hasSavedResults ? 2 : 1);
+      setFurthestStep(hasSavedResults ? 3 : 1);
       return l('已把这段内容作为故事创意同步到左侧。准备好角色后即可生成分镜。', 'This is now the story idea on the left. Once the character is ready, generate the storyboard.');
     }
     return l('你可以描述角色外观和故事，也可以直接让我生成角色、分镜或视频。', 'Describe the character and story, or ask me to generate the character, storyboard, or video.');
@@ -422,13 +552,15 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   const context = videoReady
     ? l(`视频已完成，${ratio}`, `Video complete, ${ratio}`)
     : storyboardReady
-      ? l(`4 个分镜，${ratio}`, `4 storyboard shots, ${ratio}`)
+      ? l(`${storyboardShots.length} 个分镜，${ratio}`, `${storyboardShots.length} storyboard shots, ${ratio}`)
       : characterReady
         ? l('角色已准备，等待分镜', 'Character ready, waiting for storyboard')
         : l('等待角色形象', 'Waiting for a character');
+  const dialogShot = storyboardDialog ? storyboardShots[storyboardDialog.shotIndex] : undefined;
 
   return (
-    <CreatorToolShell
+    <>
+      <CreatorToolShell
       title={l('火柴人视频生成', 'Stick Figure Video')}
       subtitle={l('先创建角色与分镜，再生成完整动画', 'Create a character and storyboard, then generate the full animation')}
       context={context}
@@ -555,28 +687,46 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
         ) : null}
 
         {currentStep === 1 ? (
-          <section className="creator-tool-panel" aria-labelledby="stickman-story-title">
+          <section className="creator-tool-panel stickman-story-panel" aria-labelledby="stickman-story-title">
           <div className="creator-tool-panel-heading"><div><span>{l('故事与画面', 'Story and visuals')}</span><h2 id="stickman-story-title">{l('生成分镜', 'Generate storyboard')}</h2><p>{l('角色会在所有镜头中保持一致', 'The character remains consistent across every shot')}</p></div></div>
-          <label className="creator-tool-field stickman-story-field"><span>{l('故事创意', 'Story idea')}</span><textarea value={story} onChange={event => { setStory(event.target.value); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 2 : 1); }} rows={5} /></label>
+          <label className="creator-tool-field stickman-story-field"><span>{l('故事创意', 'Story idea')}</span><textarea value={story} onChange={event => { setStory(event.target.value); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 3 : 1); }} rows={5} /></label>
           <div className="creator-tool-form-row">
-            <label className="creator-tool-field"><span>{l('画面风格', 'Visual style')}</span><select value={style} onChange={event => { setStyle(event.target.value); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 2 : 1); }}><option value="手绘线稿">{l('手绘线稿', 'Hand-drawn line art')}</option><option value="漫画网点">{l('漫画网点', 'Manga halftone')}</option><option value="极简黑白">{l('极简黑白', 'Minimal black and white')}</option></select></label>
-            <label className="creator-tool-field"><span>{l('视频比例', 'Video ratio')}</span><select value={ratio} onChange={event => { setRatio(event.target.value as typeof ratio); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 2 : 1); }}><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
+            <label className="creator-tool-field"><span>{l('画面风格', 'Visual style')}</span><select value={style} onChange={event => { setStyle(event.target.value); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 3 : 1); }}><option value="手绘线稿">{l('手绘线稿', 'Hand-drawn line art')}</option><option value="漫画网点">{l('漫画网点', 'Manga halftone')}</option><option value="极简黑白">{l('极简黑白', 'Minimal black and white')}</option></select></label>
+            <label className="creator-tool-field"><span>{l('视频比例', 'Video ratio')}</span><select value={ratio} onChange={event => { setRatio(event.target.value as typeof ratio); setStoryboardReady(false); setVideoReady(false); setFurthestStep(hasSavedResults ? 3 : 1); }}><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
           </div>
-          {storyboardReady ? (
-            <div className="stickman-storyboard" aria-label={l('火柴人故事分镜', 'Stick figure storyboard')}>
-              {storyboardShots.map((shot, index) => (
-                <article key={shot.title}>
-                  <div><img src="/dashboard/templates/ai-video-insane.jpg" alt="" /><span>{index + 1}</span></div>
-                  <strong>{localizeShot(shot.title, l)}</strong><p>{localizeShot(shot.detail, l)}</p><small>{shot.duration}</small>
-                </article>
-              ))}
-            </div>
-          ) : null}
           </section>
         ) : null}
 
         {currentStep === 2 ? (
-          hasSavedResults && selectedResult ? (
+          <div className="stickman-storyboard-step">
+            {hasSavedResults && hasPendingChanges ? (
+              <div className="stickman-version-draft" role="status">
+                <div>
+                  <strong>{l(`正在基于 V${resultVersion} 调整`, `Adjusting from V${resultVersion}`)}</strong>
+                  <span>{l('原版本的角色、分镜和成片仍可查看', 'The original character, storyboard, and video remain available')}</span>
+                </div>
+              </div>
+            ) : null}
+            <section className="creator-tool-panel stickman-storyboard-review" aria-labelledby="stickman-storyboard-review-title">
+              <div className="creator-tool-panel-heading">
+                <div><span>{l('故事分镜', 'Storyboard')}</span><h2 id="stickman-storyboard-review-title">{l('确认故事分镜', 'Review storyboard')}</h2><p>{l('逐镜头修改字幕，或重新生成不合适的画面', 'Edit each subtitle or regenerate any image that does not fit')}</p></div>
+              </div>
+              <StickmanStoryboard
+                ariaLabel={l('待确认的火柴人故事分镜', 'Stick figure storyboard to review')}
+                subtitles={storyboardSubtitles}
+                imageVersions={storyboardImageVersions}
+                editable
+                l={l}
+                onSubtitleChange={updateStoryboardSubtitle}
+                onRegenerateRequest={index => setStoryboardDialog({ shotIndex: index, mode: 'regenerate' })}
+                onViewPrompt={index => setStoryboardDialog({ shotIndex: index, mode: 'view' })}
+              />
+            </section>
+          </div>
+        ) : null}
+
+        {currentStep === 3 ? (
+          hasSavedResults && selectedResult && !audioEditing ? (
             <section className="video-result-workspace stickman-result-workspace" aria-label={l('火柴人项目产出', 'Stick figure project outputs')}>
               <div className="video-result-toolbar">
                 <div className="video-result-tabs" role="tablist" aria-label={l('产出物类型', 'Output types')}>
@@ -619,9 +769,11 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                 sourceLabel={l('角色', 'Character')}
                 sourceValue={resultCharacterName}
                 items={[
-                  { label: l('分镜', 'Storyboard'), value: l('4 个镜头', '4 shots') },
+                  { label: l('分镜', 'Storyboard'), value: l(`${storyboardShots.length} 个镜头`, `${storyboardShots.length} shots`) },
                   { label: l('画面风格', 'Visual style'), value: localizeShot(selectedResult.style, l) },
                   { label: l('视频比例', 'Video ratio'), value: selectedResult.ratio },
+                  { label: l('配音', 'Voiceover'), value: resultVoiceover },
+                  { label: l('背景音乐', 'Music'), value: resultBackgroundMusic },
                   { label: l('当前版本', 'Version'), value: `V${selectedResult.value}` }
                 ]}
               />
@@ -634,7 +786,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                   </header>
                   <div className="stickman-video-result">
                     <div><img src="/dashboard/templates/ai-video-insane.jpg" alt={l('火柴人视频预览', 'Stick figure video preview')} /><span><Play size={22} fill="currentColor" /></span></div>
-                    <section><h2>{l('火柴人动画', 'stick-figure-animation')}-V{resultVersion}.mp4</h2><p>{selectedResult.ratio} · 15 {l('秒', 'sec')} · {localizeShot(selectedResult.style, l)}</p></section>
+                    <section><h2>{l('火柴人动画', 'stick-figure-animation')}-V{resultVersion}.mp4</h2><p>{selectedResult.ratio} · 15 {l('秒', 'sec')} · {localizeShot(selectedResult.style, l)} · {selectedResult.voiceover ? l('含配音', 'Voiceover') : l('无配音', 'No voiceover')}</p></section>
                   </div>
                 </div>
               ) : null}
@@ -642,17 +794,15 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
               {resultTab === 'storyboard' ? (
                 <div className="video-result-pane">
                   <header className="video-result-pane-heading">
-                    <div><h2>{l('故事分镜', 'Storyboard')}</h2><p>{l('当前版本共 4 个关键镜头', 'Four key shots in this version')}</p></div>
-                    <button type="button" onClick={() => setCurrentStep(1)}><PanelsTopLeft size={15} strokeWidth={1.8} aria-hidden="true" />{l('调整分镜', 'Adjust storyboard')}</button>
+                    <div><h2>{l('故事分镜', 'Storyboard')}</h2><p>{l(`当前版本共 ${storyboardShots.length} 个关键镜头`, `${storyboardShots.length} key shots in this version`)}</p></div>
+                    <button type="button" onClick={() => setCurrentStep(2)}><PanelsTopLeft size={15} strokeWidth={1.8} aria-hidden="true" />{l('调整分镜', 'Adjust storyboard')}</button>
                   </header>
-                  <div className="stickman-storyboard" aria-label={l(`V${resultVersion} 火柴人故事分镜`, `V${resultVersion} stick figure storyboard`)}>
-                    {storyboardShots.map((shot, index) => (
-                      <article key={shot.title}>
-                        <div><img src="/dashboard/templates/ai-video-insane.jpg" alt="" /><span>{index + 1}</span></div>
-                        <strong>{localizeShot(shot.title, l)}</strong><p>{localizeShot(shot.detail, l)}</p><small>{shot.duration}</small>
-                      </article>
-                    ))}
-                  </div>
+                  <StickmanStoryboard
+                    ariaLabel={l(`V${resultVersion} 火柴人故事分镜`, `V${resultVersion} stick figure storyboard`)}
+                    subtitles={selectedResult.storyboardSubtitles}
+                    imageVersions={selectedResult.storyboardImageVersions}
+                    l={l}
+                  />
                 </div>
               ) : null}
 
@@ -679,6 +829,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                     <div className="video-result-pane-actions">
                       <button type="button" onClick={() => setCurrentStep(0)}><PersonStanding size={15} strokeWidth={1.8} aria-hidden="true" />{l('调整角色', 'Adjust character')}</button>
                       <button type="button" onClick={() => setCurrentStep(1)}><Settings2 size={15} strokeWidth={1.8} aria-hidden="true" />{l('调整故事与画面', 'Adjust story and visuals')}</button>
+                      <button type="button" onClick={() => { setAudioEditing(true); setCurrentStep(3); }}><Volume2 size={15} strokeWidth={1.8} aria-hidden="true" />{l('调整配音与音乐', 'Adjust voice and music')}</button>
                     </div>
                   </header>
                   <dl className="video-result-settings">
@@ -686,6 +837,8 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                     <div><dt>{l('画面风格', 'Visual style')}</dt><dd>{localizeShot(selectedResult.style, l)}</dd></div>
                     <div><dt>{l('视频比例', 'Video ratio')}</dt><dd>{selectedResult.ratio}</dd></div>
                     <div><dt>{l('视频时长', 'Duration')}</dt><dd>15 {l('秒', 'sec')}</dd></div>
+                    <div><dt>{l('配音', 'Voiceover')}</dt><dd>{resultVoiceover}</dd></div>
+                    <div><dt>{l('背景音乐', 'Music')}</dt><dd>{resultBackgroundMusic}</dd></div>
                     <div className="stickman-result-story-setting"><dt>{l('故事创意', 'Story idea')}</dt><dd title={selectedResult.story}>{selectedResult.story}</dd></div>
                   </dl>
                 </div>
@@ -693,24 +846,69 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
             </section>
           ) : (
             <div className="creator-task-final-grid">
-              <section className="creator-tool-panel" aria-label={l('火柴人视频输出', 'Stick figure video output')}>
-                <div className="stickman-result-toolbar">
-                  <div><h2>{l('视频成片', 'Final video')}</h2><p>{l('确认分镜后生成第一版成片', 'Generate the first video after confirming the storyboard')}</p></div>
+              {hasSavedResults && hasPendingChanges ? (
+                <div className="stickman-version-draft" role="status">
+                  <div>
+                    <strong>{l(`正在基于 V${resultVersion} 调整`, `Adjusting from V${resultVersion}`)}</strong>
+                    <span>{l('原版本的角色、分镜和成片仍可查看', 'The original character, storyboard, and video remain available')}</span>
+                  </div>
                 </div>
-                <div className="creator-tool-actions"><button className="creator-tool-primary" type="button" onClick={generateVideo}><Play size={16} />{l('根据分镜生成视频', 'Generate video from storyboard')}</button></div>
+              ) : null}
+              <section className="creator-tool-panel stickman-audio-panel" aria-labelledby="stickman-audio-title">
+                <div className="creator-tool-panel-heading">
+                  <div><span>{l('音频设置', 'Audio settings')}</span><h2 id="stickman-audio-title">{l('配音与音乐', 'Voice and music')}</h2><p>{l('为成片添加旁白，也可以上传背景音乐', 'Add narration and optionally upload background music')}</p></div>
+                </div>
+                <div className="stickman-audio-settings">
+                  <div className="stickman-audio-layout">
+                    <div className="stickman-voice-settings">
+                      <StickmanSwitch
+                        checked={voiceover}
+                        label={l('生成旁白配音', 'Generate narration')}
+                        description={l('根据故事内容自动生成旁白', 'Generate narration from the story')}
+                        onChange={value => { setVoiceover(value); setVideoReady(false); }}
+                      />
+                      {voiceover ? (
+                        <div className="creator-tool-form-row">
+                          <label className="creator-tool-field"><span>{l('配音语言', 'Voice language')}</span><select aria-label={l('配音语言', 'Voice language')} value={voiceLanguage} onChange={event => { setVoiceLanguage(event.target.value as VoiceLanguage); setVideoReady(false); }}><option value="auto">{l('自动匹配', 'Auto match')}</option><option value="zh-CN">{l('中文', 'Chinese')}</option><option value="en-US">English</option></select></label>
+                          <label className="creator-tool-field"><span>{l('配音音色', 'Voice tone')}</span><select aria-label={l('配音音色', 'Voice tone')} value={voiceTone} onChange={event => { setVoiceTone(event.target.value as VoiceTone); setVideoReady(false); }}><option value="natural">{l('自然叙事', 'Natural narration')}</option><option value="energetic">{l('活力青年', 'Energetic')}</option><option value="calm">{l('沉稳讲述', 'Calm')}</option></select></label>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="stickman-music-settings">
+                      <div className="stickman-music-heading"><Music2 size={16} strokeWidth={1.8} aria-hidden="true" /><span><strong>{l('背景音乐', 'Background music')}</strong><small>{l('选填', 'Optional')}</small></span></div>
+                      <div className="stickman-music-upload-row">
+                        <label className="creator-tool-upload stickman-music-upload">
+                          <input type="file" accept="audio/*" aria-label={l('上传背景音乐', 'Upload background music')} onChange={event => { setBackgroundMusic(event.target.files?.[0] ?? null); setVideoReady(false); }} />
+                          <UploadCloud size={20} strokeWidth={1.6} aria-hidden="true" />
+                          <strong>{backgroundMusic?.name ?? l('上传背景音乐', 'Upload background music')}</strong>
+                          <span>{backgroundMusic ? l('点击更换音频', 'Click to replace audio') : l('支持 MP3、WAV、M4A', 'Supports MP3, WAV, and M4A')}</span>
+                        </label>
+                        {backgroundMusic ? <button className="stickman-music-remove" type="button" onClick={() => { setBackgroundMusic(null); setVideoReady(false); }} aria-label={l('移除背景音乐', 'Remove background music')}><X size={16} strokeWidth={1.8} aria-hidden="true" /></button> : null}
+                      </div>
+                      {backgroundMusic ? (
+                        <label className="stickman-music-volume">
+                          <span>{l('音乐音量', 'Music volume')} <output>{backgroundMusicVolume}%</output></span>
+                          <input type="range" min="0" max="100" step="5" value={backgroundMusicVolume} aria-label={l('背景音乐音量', 'Background music volume')} onChange={event => { setBackgroundMusicVolume(Number(event.target.value)); setVideoReady(false); }} />
+                        </label>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
               </section>
               <CreatorTaskSummary
                 sourceIcon={PersonStanding}
                 sourceLabel={l('角色', 'Character')}
                 sourceValue={taskCharacterName}
                 items={[
-                  { label: l('分镜', 'Storyboard'), value: l('4 个镜头', '4 shots') },
+                  { label: l('分镜', 'Storyboard'), value: l(`${storyboardShots.length} 个镜头`, `${storyboardShots.length} shots`) },
                   { label: l('画面风格', 'Visual style'), value: localizeShot(style, l) },
                   { label: l('视频比例', 'Video ratio'), value: ratio },
+                  { label: l('配音', 'Voiceover'), value: taskVoiceover },
+                  { label: l('背景音乐', 'Music'), value: taskBackgroundMusic },
                   { label: l('视频时长', 'Duration'), value: l('15 秒', '15 sec') }
                 ]}
-                note={l('角色、故事与画面设置将用于生成成片', 'The character, story, and visual settings will be used for the final video')}
-                noteIcon={PanelsTopLeft}
+                note={l('分镜、配音与音乐设置将用于生成成片', 'Storyboard, voice, and music settings will be used for the final video')}
+                noteIcon={Volume2}
               />
             </div>
           )
@@ -718,10 +916,10 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
         </div>
 
-        {currentStep < 2 ? (
+        {currentStep < 3 || audioEditing || !hasSavedResults ? (
           <footer className="video-translation-wizard-actions stickman-wizard-actions">
-            {currentStep === 1 ? (
-              <button className="video-translation-secondary-action" type="button" onClick={() => setCurrentStep(0)}>
+            {currentStep > 0 ? (
+              <button className="video-translation-secondary-action" type="button" onClick={() => setCurrentStep((currentStep - 1) as StickmanStep)}>
                 <ArrowLeft size={16} strokeWidth={1.8} aria-hidden="true" />
                 {l('上一步', 'Back')}
               </button>
@@ -738,18 +936,275 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                   {l('下一步：故事与分镜', 'Next: Story and storyboard')}
                   <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" />
                 </button>
-              ) : (
+              ) : currentStep === 1 ? (
                 <button className="video-translation-primary-action" type="button" disabled={!characterReady || !story.trim()} onClick={storyboardReady ? continueToVideo : generateStoryboard}>
-                  {storyboardReady ? l('下一步：生成视频', 'Next: Generate video') : l('生成分镜图', 'Generate storyboard')}
+                  {storyboardReady ? l('下一步：查看分镜', 'Next: Review storyboard') : l('生成分镜图', 'Generate storyboard')}
                   {storyboardReady ? <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" /> : null}
+                </button>
+              ) : currentStep === 2 ? (
+                <button className="video-translation-primary-action" type="button" onClick={continueToAudio}>
+                  {l('下一步：配音与音乐', 'Next: Voice and music')}
+                  <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              ) : (
+                <button className="video-translation-primary-action" type="button" onClick={generateVideo}>
+                  <Play size={16} strokeWidth={1.8} aria-hidden="true" />
+                  {hasSavedResults ? l(`生成 V${nextVersion}`, `Generate V${nextVersion}`) : l('根据分镜生成视频', 'Generate video from storyboard')}
                 </button>
               )}
             </div>
           </footer>
         ) : null}
       </div>
-    </CreatorToolShell>
+      </CreatorToolShell>
+      {storyboardDialog && dialogShot ? (
+        <StickmanPromptDialog
+          mode={storyboardDialog.mode}
+          shot={dialogShot}
+          shotIndex={storyboardDialog.shotIndex}
+          story={story}
+          characterName={taskCharacterName}
+          style={localizeShot(style, l)}
+          ratio={ratio}
+          promptOverride={storyboardPromptOverrides[storyboardDialog.shotIndex]}
+          l={l}
+          onClose={() => setStoryboardDialog(null)}
+          onRegenerate={prompt => {
+            regenerateStoryboardImage(storyboardDialog.shotIndex, prompt);
+            setStoryboardDialog(null);
+          }}
+        />
+      ) : null}
+    </>
   );
+}
+
+function StickmanSwitch(props: {
+  checked: boolean;
+  label: string;
+  description: string;
+  onChange(checked: boolean): void;
+}) {
+  return (
+    <div className="video-translation-toggle-row">
+      <span><strong>{props.label}</strong><small>{props.description}</small></span>
+      <button className="video-translation-switch" type="button" role="switch" aria-checked={props.checked} aria-label={props.label} onClick={() => props.onChange(!props.checked)}><span /></button>
+    </div>
+  );
+}
+
+function StickmanStoryboard(props: {
+  ariaLabel: string;
+  subtitles: string[];
+  imageVersions: number[];
+  editable?: boolean;
+  l: ReturnType<typeof useLocalizedCopy>;
+  onSubtitleChange?(index: number, value: string): void;
+  onRegenerateRequest?(index: number): void;
+  onViewPrompt?(index: number): void;
+}) {
+  return (
+    <div className="stickman-storyboard-editor" aria-label={props.ariaLabel}>
+      {storyboardShots.map((shot, index) => {
+        const imageVersion = props.imageVersions[index] ?? 0;
+        const title = props.l(shot.titleZh, shot.titleEn);
+        return (
+          <article className="stickman-storyboard-row" key={shot.titleZh}>
+            <div className="stickman-storyboard-meta">
+              <strong>{title}</strong>
+              <small>{shot.duration}</small>
+            </div>
+            <div className="stickman-storyboard-media">
+              <div className="stickman-storyboard-image">
+                <img
+                  src={`/dashboard/templates/ai-video-insane.jpg?shot=${index + 1}&version=${imageVersion}`}
+                  alt={props.l(`分镜 ${index + 1}：${title}`, `Shot ${index + 1}: ${title}`)}
+                  data-image-version={imageVersion}
+                  style={{ objectPosition: storyboardImagePosition(index, imageVersion) }}
+                />
+                <span aria-hidden="true">{index + 1}</span>
+              </div>
+              {props.editable ? (
+                <div className="stickman-storyboard-actions">
+                  <button
+                    className="stickman-storyboard-regenerate"
+                    type="button"
+                    aria-label={props.l(`重新生成分镜 ${index + 1} 图片`, `Regenerate image for shot ${index + 1}`)}
+                    onClick={() => props.onRegenerateRequest?.(index)}
+                  >
+                    <RefreshCw size={12} strokeWidth={1.8} aria-hidden="true" />
+                    {props.l('重新生成', 'Regenerate')}
+                  </button>
+                  <button
+                    className="stickman-storyboard-prompt"
+                    type="button"
+                    aria-label={props.l(`查看分镜 ${index + 1} 提示词`, `View prompt for shot ${index + 1}`)}
+                    onClick={() => props.onViewPrompt?.(index)}
+                  >
+                    <Eye size={12} strokeWidth={1.8} aria-hidden="true" />
+                    {props.l('查看提示词', 'View prompt')}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <div className="stickman-storyboard-copy">
+              {props.editable ? (
+                <label className="creator-tool-field stickman-storyboard-subtitle">
+                  <textarea
+                    aria-label={props.l(`分镜 ${index + 1} 字幕`, `Subtitle for shot ${index + 1}`)}
+                    rows={2}
+                    value={props.subtitles[index] ?? ''}
+                    onChange={event => props.onSubtitleChange?.(index, event.target.value)}
+                  />
+                </label>
+              ) : (
+                <div className="stickman-storyboard-readonly-subtitle">
+                  <p>{props.subtitles[index]}</p>
+                </div>
+              )}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function StickmanPromptDialog(props: {
+  mode: 'view' | 'regenerate';
+  shot: (typeof storyboardShots)[number];
+  shotIndex: number;
+  story: string;
+  characterName: string;
+  style: string;
+  ratio: '16:9' | '9:16' | '1:1';
+  promptOverride?: string | null;
+  l: ReturnType<typeof useLocalizedCopy>;
+  onClose(): void;
+  onRegenerate(prompt: string): void;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(props.onClose);
+  const [prompt, setPrompt] = useState(() => props.promptOverride ?? createStoryboardImagePrompt(props));
+
+  useEffect(() => {
+    onCloseRef.current = props.onClose;
+  }, [props.onClose]);
+
+  useEffect(() => {
+    const previousFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeRef.current?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button, textarea, [tabindex]:not([tabindex="-1"])') ?? [])
+        .filter(element => !element.hasAttribute('disabled'));
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocused?.focus();
+    };
+  }, []);
+
+  return createPortal(
+    <div
+      className="stickman-prompt-backdrop"
+      onMouseDown={event => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="stickman-prompt-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stickman-prompt-dialog-title"
+      >
+        <header>
+          <div>
+            <span>{props.l(`分镜 ${props.shotIndex + 1}，${props.shot.titleZh}，${props.shot.duration}`, `Shot ${props.shotIndex + 1}, ${props.shot.titleEn}, ${props.shot.duration}`)}</span>
+            <h2 id="stickman-prompt-dialog-title">
+              {props.mode === 'regenerate' ? props.l('重新生成图片', 'Regenerate image') : props.l('画面提示词', 'Image prompt')}
+            </h2>
+          </div>
+          <button ref={closeRef} type="button" aria-label={props.l('关闭提示词', 'Close prompt')} onClick={props.onClose}>
+            <X size={17} strokeWidth={1.8} aria-hidden="true" />
+          </button>
+        </header>
+        <label className="stickman-prompt-content">
+          <span>{props.mode === 'regenerate' ? props.l('可编辑提示词', 'Editable prompt') : props.l('完整提示词', 'Full prompt')}</span>
+          <textarea
+            readOnly={props.mode === 'view'}
+            rows={10}
+            aria-label={props.l(`分镜 ${props.shotIndex + 1} 画面提示词`, `Image prompt for shot ${props.shotIndex + 1}`)}
+            value={prompt}
+            onChange={event => setPrompt(event.target.value)}
+          />
+        </label>
+        <footer>
+          {props.mode === 'regenerate' ? (
+            <>
+              <button className="is-secondary" type="button" onClick={props.onClose}>{props.l('取消', 'Cancel')}</button>
+              <button className="is-primary" type="button" disabled={!prompt.trim()} onClick={() => props.onRegenerate(prompt)}>{props.l('确认重新生成', 'Confirm regeneration')}</button>
+            </>
+          ) : (
+            <button className="is-secondary" type="button" onClick={props.onClose}>{props.l('关闭', 'Close')}</button>
+          )}
+        </footer>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function createStoryboardImagePrompt(input: {
+  shot: (typeof storyboardShots)[number];
+  story: string;
+  characterName: string;
+  style: string;
+  ratio: '16:9' | '9:16' | '1:1';
+  l: ReturnType<typeof useLocalizedCopy>;
+}) {
+  const visualZh = ensurePromptSentence(input.shot.visualZh, '。');
+  const storyZh = ensurePromptSentence(input.story, '。');
+  const visualEn = ensurePromptSentence(input.shot.visualEn, '.');
+  const storyEn = ensurePromptSentence(input.story, '.');
+  return input.l(
+    `创建一张${input.style}风格的火柴人故事分镜。镜头主题：${input.shot.titleZh}。画面内容：${visualZh}主角：${input.characterName}。故事背景：${storyZh}画面比例：${input.ratio}。保持角色的外观、线条、服装和配色与其他镜头一致，构图清晰，人物动作完整，不要在画面中渲染字幕、标识或其他文字。`,
+    `Create a ${input.style} stick figure storyboard image. Shot: ${input.shot.titleEn}. Visual direction: ${visualEn} Character: ${input.characterName}. Story context: ${storyEn} Aspect ratio: ${input.ratio}. Keep the character's appearance, line work, clothing, and colors consistent with the other shots. Use a clear composition and complete body action. Do not render subtitles, labels, or other text in the image.`
+  );
+}
+
+function ensurePromptSentence(value: string, punctuation: '。' | '.') {
+  const trimmed = value.trim();
+  return /[。！？.!?]$/.test(trimmed) ? trimmed : `${trimmed}${punctuation}`;
+}
+
+function storyboardImagePosition(index: number, version: number) {
+  const positions = ['left center', '34% center', '66% center', 'right center'];
+  return positions[(index + version) % positions.length];
 }
 
 function CharacterArtwork(props: {
@@ -763,6 +1218,18 @@ function CharacterArtwork(props: {
       alt={props.alt}
     />
   );
+}
+
+function voiceLanguageLabel(value: VoiceLanguage, l: ReturnType<typeof useLocalizedCopy>) {
+  if (value === 'zh-CN') return l('中文', 'Chinese');
+  if (value === 'en-US') return 'English';
+  return l('自动匹配', 'Auto match');
+}
+
+function voiceToneLabel(value: VoiceTone, l: ReturnType<typeof useLocalizedCopy>) {
+  if (value === 'energetic') return l('活力青年', 'Energetic');
+  if (value === 'calm') return l('沉稳讲述', 'Calm');
+  return l('自然叙事', 'Natural narration');
 }
 
 function localizeShot(value: string, l: ReturnType<typeof useLocalizedCopy>): string {
@@ -791,6 +1258,14 @@ function createVersionSignature(input: {
   story: string;
   ratio: '16:9' | '9:16' | '1:1';
   style: string;
+  storyboardSubtitles: string[];
+  storyboardImageVersions: number[];
+  storyboardPromptOverrides: Array<string | null>;
+  voiceover: boolean;
+  voiceLanguage: VoiceLanguage;
+  voiceTone: VoiceTone;
+  backgroundMusic: File | null;
+  backgroundMusicVolume: number;
 }) {
   const file = input.characterSource === 'upload' && input.characterFile
     ? {
@@ -798,6 +1273,14 @@ function createVersionSignature(input: {
         size: input.characterFile.size,
         type: input.characterFile.type,
         lastModified: input.characterFile.lastModified
+      }
+    : null;
+  const backgroundMusic = input.backgroundMusic
+    ? {
+        name: input.backgroundMusic.name,
+        size: input.backgroundMusic.size,
+        type: input.backgroundMusic.type,
+        lastModified: input.backgroundMusic.lastModified
       }
     : null;
 
@@ -809,6 +1292,14 @@ function createVersionSignature(input: {
     file,
     story: input.story.trim(),
     ratio: input.ratio,
-    style: input.style
+    style: input.style,
+    storyboardSubtitles: input.storyboardSubtitles,
+    storyboardImageVersions: input.storyboardImageVersions,
+    storyboardPromptOverrides: input.storyboardPromptOverrides,
+    voiceover: input.voiceover,
+    voiceLanguage: input.voiceover ? input.voiceLanguage : null,
+    voiceTone: input.voiceover ? input.voiceTone : null,
+    backgroundMusic,
+    backgroundMusicVolume: backgroundMusic ? input.backgroundMusicVolume : null
   });
 }
