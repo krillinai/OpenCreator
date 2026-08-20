@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const desktopRoot = resolve(repoRoot, 'apps/desktop');
 const webPublicRoot = resolve(repoRoot, 'apps/web/public');
+const brandMarkPath = 'M21.4 8.2A10.5 10.5 0 1 0 21.4 23.8';
 const legacyAssetHashes = new Set([
   '16921fe7d74d219cb9818d0d479f0e98f51b3cde41709b1118640f71c69a589e',
   '752b523394689bcb2851bbe746588fa6c44dfb9de94041269f265a48cbfc54ab',
@@ -30,6 +31,22 @@ describe('品牌资源', () => {
     expect(trayManager).toContain('height: size');
     expect(existsSync(resolve(desktopRoot, 'resources/tray.png'))).toBe(true);
     expect(existsSync(resolve(desktopRoot, 'resources/icon.png'))).toBe(true);
+  });
+
+  it('Desktop 图标、托盘和侧边栏使用同一枚 C 星形品牌图形', () => {
+    const iconSvg = readFileSync(resolve(desktopRoot, 'resources/icon.svg'), 'utf8');
+    const traySvg = readFileSync(resolve(desktopRoot, 'resources/tray.svg'), 'utf8');
+    const sidebar = readFileSync(
+      resolve(repoRoot, 'apps/web/src/features/shell/OpenCreatorSidebar.tsx'),
+      'utf8'
+    );
+
+    expect(iconSvg).toContain(brandMarkPath);
+    expect(iconSvg).toContain('transform="translate(1.6 1.12) scale(.9 .93)"');
+    expect(traySvg).toContain(brandMarkPath);
+    expect(sidebar).toContain(brandMarkPath);
+    expect(iconSvg).not.toContain('<circle');
+    expect(traySvg).not.toContain('<circle');
   });
 
   it('不再发布旧品牌素材或历史兼容路径', () => {

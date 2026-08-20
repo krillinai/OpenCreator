@@ -468,16 +468,17 @@ describe('app CSS visual contracts', () => {
     ).toContain('border: 0;');
   });
 
-  it('uses a text wordmark in the expanded sidebar and centers the collapsed brand button', () => {
+  it('vertically aligns the expanded wordmark with its actions and centers the collapsed brand button', () => {
     const brandButton = cssBlock('.sidebar-brand-button');
     const logoLockup = cssBlock('.sidebar-logo-lockup');
-    const logoMark = cssBlock('.sidebar-logo-mark');
+    const logoImage = cssBlock('.sidebar-logo-image');
     const productName = cssBlock('.sidebar-logo-word');
 
     expect(brandButton).toContain('padding: 0;');
-    expect(logoLockup).toContain('justify-content: flex-start;');
+    expect(logoLockup).toContain('height: 38px;');
+    expect(logoLockup).toContain('justify-content: center;');
     expect(logoLockup).toContain('flex-direction: column;');
-    expect(logoLockup).toContain('padding-top: 3px;');
+    expect(logoLockup).not.toContain('padding-top:');
     expect(productName).toContain('font-size: 17px;');
     expect(appCss).not.toContain('.sidebar-brand-version');
     expect(appCss).not.toContain('.sidebar-brand-lockup-logo');
@@ -485,10 +486,10 @@ describe('app CSS visual contracts', () => {
     expect(appCss).toMatch(
       /\n\.sidebar-collapse-button\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/
     );
-    expect(logoMark).toContain('width: 28px;');
-    expect(logoMark).toContain('height: 28px;');
+    expect(logoImage).toContain('width: 28px;');
+    expect(logoImage).toContain('height: 28px;');
     expect(appCss).toMatch(/\n\.sidebar-brand-button\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/);
-    expect(appCss).not.toContain('.sidebar-logo-mark-crop');
+    expect(appCss).not.toContain('.sidebar-logo-mark');
   });
 
   it('aligns sidebar project actions to shared hierarchy columns', () => {

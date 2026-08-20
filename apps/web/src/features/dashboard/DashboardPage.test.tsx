@@ -214,15 +214,35 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('tab', { name: '生成角色' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '上传角色' })).toBeInTheDocument();
     const characterPresets = screen.getByRole('radiogroup', { name: '默认角色' });
-    expect(within(characterPresets).getAllByRole('radio')).toHaveLength(8);
-    expect(within(characterPresets).getByRole('radio', { name: /基础角色/ })).toBeChecked();
-    fireEvent.click(within(characterPresets).getByRole('radio', { name: /商务角色/ }));
-    expect(within(characterPresets).getByRole('radio', { name: /商务角色/ })).toBeChecked();
+    expect(within(characterPresets).getAllByRole('radio')).toHaveLength(10);
+    const defaultCharacter = within(characterPresets).getByRole('radio', { name: /默认角色/ });
+    expect(defaultCharacter).toBeChecked();
+    expect(screen.queryByText('简洁造型，适合通用叙事')).not.toBeInTheDocument();
+    const selectedCharacterPreview = screen.getByRole('complementary', { name: '已选角色全身预览' });
+    expect(within(selectedCharacterPreview).getByRole('img', { name: '默认角色' })).toHaveAttribute(
+      'src',
+      '/dashboard/characters/default.png'
+    );
+    expect(within(characterPresets).getByRole('radio', { name: /^健身$/ })).toBeInTheDocument();
+    expect(within(characterPresets).getByRole('radio', { name: /^嘻哈$/ })).toBeInTheDocument();
+    fireEvent.click(within(characterPresets).getByRole('radio', { name: /科技男/ }));
+    expect(within(characterPresets).getByRole('radio', { name: /科技男/ })).toBeChecked();
+    expect(within(selectedCharacterPreview).getByRole('img', { name: '科技男' })).toHaveAttribute(
+      'src',
+      '/dashboard/characters/tech-guy.png'
+    );
     fireEvent.click(screen.getByRole('tab', { name: '生成角色' }));
-    fireEvent.click(screen.getByRole('button', { name: '生成角色形象' }));
-    expect(screen.getByRole('img', { name: '生成的火柴人角色形象' })).toBeInTheDocument();
+    const generateCharacterButton = screen.getByRole('button', { name: '生成角色形象' });
+    const characterActions = generateCharacterButton.parentElement;
+    expect(characterActions).toHaveClass('stickman-character-actions');
+    expect(within(characterActions!).getByRole('button', { name: '下一步：故事与分镜' })).toBeEnabled();
+    fireEvent.click(generateCharacterButton);
+    expect(screen.getByRole('img', { name: '生成的火柴人角色形象' })).toHaveAttribute(
+      'src',
+      '/dashboard/characters/default.png'
+    );
     fireEvent.click(screen.getByRole('tab', { name: '默认角色' }));
-    fireEvent.click(screen.getByRole('radio', { name: /商务角色/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /科技男/ }));
     expect(screen.queryByRole('heading', { name: '生成分镜' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '下一步：故事与分镜' }));
     expect(screen.queryByRole('heading', { name: '准备主角' })).not.toBeInTheDocument();
@@ -244,7 +264,7 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('heading', { name: '故事分镜' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '调整分镜' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '角色' }));
-    expect(screen.getByRole('img', { name: '商务角色' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '科技男' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '更换角色' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     expect(screen.getByRole('heading', { name: '当前版本设置' })).toBeInTheDocument();
@@ -284,6 +304,20 @@ describe('DashboardPage', () => {
     expect(screen.getByText('火柴人动画-V3.mp4')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '已完成，V3' }));
     expect(screen.getByRole('menu')).toHaveTextContent('基于 V1 调整，当前查看');
+  });
+
+  it('uses the same transparent stickman artwork in dark and light themes', () => {
+    document.documentElement.dataset.theme = 'dark';
+    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '打开火柴人动画生成' }));
+
+    const defaultCharacter = screen.getByRole('radio', { name: /默认角色/ });
+    const artwork = defaultCharacter.querySelector<HTMLImageElement>('.stickman-character-artwork');
+    expect(artwork).toHaveAttribute('src', '/dashboard/characters/default.png');
+
+    document.documentElement.dataset.theme = 'light';
+    expect(artwork).toHaveAttribute('src', '/dashboard/characters/default.png');
+    document.documentElement.dataset.theme = 'dark';
   });
 
   it('extracts ten scored clips with subtitles from a long video', () => {

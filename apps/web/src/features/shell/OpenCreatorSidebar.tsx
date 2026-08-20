@@ -242,7 +242,23 @@ export function OpenCreatorSidebar(props: {
             title={autoCollapsed ? t('nav.autoCollapsedHint') : t('nav.expand')}
             onClick={autoCollapsed ? undefined : props.onToggleCollapsed}
           >
-            <span className="sidebar-logo-mark" aria-hidden="true">OC</span>
+            <svg
+              className="sidebar-logo-image"
+              viewBox="0 0 32 32"
+              aria-hidden="true"
+            >
+              <path
+                d="M21.4 8.2A10.5 10.5 0 1 0 21.4 23.8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="4.6"
+                strokeLinecap="round"
+              />
+              <path
+                d="M24.5 11.5 25.7 14.8 29 16l-3.3 1.2-1.2 3.3-1.2-3.3L20 16l3.3-1.2 1.2-3.3Z"
+                fill="currentColor"
+              />
+            </svg>
             <PanelLeftOpen className="sidebar-expand-icon" size={19} strokeWidth={1.85} aria-hidden="true" />
           </button>
         ) : (

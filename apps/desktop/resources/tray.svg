@@ -1,4 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480">
-  <circle cx="160" cy="240" r="92" fill="none" stroke="#000" stroke-width="54"/>
-  <path d="M 390 163 A 92 92 0 1 0 390 317" fill="none" stroke="#000" stroke-linecap="round" stroke-width="54"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 32 32">
+  <path
+    d="M21.4 8.2A10.5 10.5 0 1 0 21.4 23.8"
+    fill="none"
+    stroke="#000"
+    stroke-width="4.6"
+    stroke-linecap="round"
+  />
+  <path
+    d="M24.5 11.5 25.7 14.8 29 16l-3.3 1.2-1.2 3.3-1.2-3.3L20 16l3.3-1.2 1.2-3.3Z"
+    fill="#000"
+  />
 </svg>

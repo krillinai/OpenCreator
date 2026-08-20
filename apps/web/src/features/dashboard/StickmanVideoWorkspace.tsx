@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  ArrowRight,
   Check,
   Download,
   FileVideo,
@@ -24,72 +25,71 @@ const storyboardShots = [
 ];
 const characterPromptZh = '黑色线条、白色圆形头部、红色围巾，动作灵活';
 const characterPromptEn = 'Black lines, a round white head, a red scarf, and agile movement';
+const generatedCharacterImages = {
+  image: '/dashboard/characters/default.png'
+} as const;
 const storyZh = '一个火柴人在城市天台追逐被风吹走的创意手稿，最后成功抓住。';
 const storyEn = 'A stick figure chases a creative manuscript blown across a city rooftop and catches it at the last moment.';
 const characterPresets = [
   {
-    id: 'basic',
-    nameZh: '基础角色',
-    nameEn: 'Basic',
-    detailZh: '简洁造型，适合通用叙事',
-    detailEn: 'Simple style for general stories',
-    image: '/dashboard/characters/basic.png'
+    id: 'default',
+    nameZh: '默认角色',
+    nameEn: 'Default',
+    image: '/dashboard/characters/default.png'
   },
   {
-    id: 'business',
-    nameZh: '商务角色',
-    nameEn: 'Business',
-    detailZh: '衬衫领带，适合职场内容',
-    detailEn: 'Shirt and tie for workplace stories',
-    image: '/dashboard/characters/business.png'
-  },
-  {
-    id: 'casual',
-    nameZh: '休闲角色',
-    nameEn: 'Casual',
-    detailZh: '眼镜格纹，适合知识讲解',
-    detailEn: 'Glasses and checks for explainers',
-    image: '/dashboard/characters/casual.png'
+    id: 'tech-guy',
+    nameZh: '科技男',
+    nameEn: 'Tech Guy',
+    image: '/dashboard/characters/tech-guy.png'
   },
   {
     id: 'long-hair',
     nameZh: '长发角色',
     nameEn: 'Long Hair',
-    detailZh: '长发连衣裙，适合生活故事',
-    detailEn: 'Long hair and dress for lifestyle stories',
     image: '/dashboard/characters/long-hair.png'
   },
   {
     id: 'short-hair',
     nameZh: '短发角色',
     nameEn: 'Short Hair',
-    detailZh: '短发连衣裙，适合日常场景',
-    detailEn: 'Short hair and dress for everyday scenes',
     image: '/dashboard/characters/short-hair.png'
   },
   {
-    id: 'streetwear',
-    nameZh: '街头角色',
-    nameEn: 'Streetwear',
-    detailZh: '帽衫球鞋，适合潮流内容',
-    detailEn: 'Hoodie and sneakers for street stories',
-    image: '/dashboard/characters/streetwear.png'
+    id: 'hiphop',
+    nameZh: '嘻哈',
+    nameEn: 'HipHop',
+    image: '/dashboard/characters/hiphop.png'
   },
   {
     id: 'student',
     nameZh: '学生角色',
     nameEn: 'Student',
-    detailZh: '水手服，适合校园故事',
-    detailEn: 'School uniform for campus stories',
     image: '/dashboard/characters/student.png'
   },
   {
     id: 'elder',
     nameZh: '长者角色',
     nameEn: 'Elder',
-    detailZh: '胡须马甲，适合长者叙事',
-    detailEn: 'Beard and vest for elder characters',
     image: '/dashboard/characters/elder.png'
+  },
+  {
+    id: 'manager',
+    nameZh: '经理',
+    nameEn: 'Manager',
+    image: '/dashboard/characters/manager.png'
+  },
+  {
+    id: 'chef',
+    nameZh: '厨师',
+    nameEn: 'Chef',
+    image: '/dashboard/characters/chef.png'
+  },
+  {
+    id: 'fitness',
+    nameZh: '健身',
+    nameEn: 'Fitness',
+    image: '/dashboard/characters/fitness.png'
   }
 ] as const;
 
@@ -117,7 +117,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   const { language } = useAppLanguage();
   const [characterMode, setCharacterMode] = useState<CharacterSource>('preset');
   const [characterSource, setCharacterSource] = useState<CharacterSource>('preset');
-  const [selectedPresetId, setSelectedPresetId] = useState<CharacterPresetId | null>('basic');
+  const [selectedPresetId, setSelectedPresetId] = useState<CharacterPresetId | null>('default');
   const [characterPrompt, setCharacterPrompt] = useState(() => l(characterPromptZh, characterPromptEn));
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [characterPreview, setCharacterPreview] = useState('');
@@ -170,7 +170,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   const resultCharacterImage = resultPreset?.image
     ?? (selectedResult?.characterSource === 'upload' && selectedResult.characterFile === characterFile && characterPreview
       ? characterPreview
-      : '/dashboard/templates/ai-video-insane.jpg');
+      : generatedCharacterImages.image);
 
   useEffect(() => {
     setCharacterPrompt(current => current === characterPromptZh || current === characterPromptEn
@@ -355,14 +355,16 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   function handleCommand(command: string) {
     const requestedPreset = characterPresets.find(preset => {
       const keywords: Record<CharacterPresetId, RegExp> = {
-        basic: /基础|简单|basic|simple/i,
-        business: /商务|职场|领带|business|office|tie/i,
-        casual: /休闲|格纹|眼镜|casual|checks|glasses/i,
+        default: /默认|基础|简单|default|basic|simple/i,
+        'tech-guy': /科技男|技术宅|科技|格纹|眼镜|tech guy|tech enthusiast|tech|checks|glasses/i,
         'long-hair': /长发|long hair/i,
         'short-hair': /短发|short hair/i,
-        streetwear: /街头|帽衫|球鞋|street|hoodie|sneakers/i,
+        hiphop: /嘻哈|说唱|歌手|街头|帽衫|球鞋|hiphop|hip hop|rapper|street|hoodie|sneakers/i,
         student: /学生|校园|水手服|student|school|campus/i,
-        elder: /长者|老人|胡须|elder|older|beard/i
+        elder: /长者|老人|胡须|elder|older|beard/i,
+        manager: /经理|管理者|西装|manager|executive|suit/i,
+        chef: /厨师|美食|餐厅|chef|cook|food/i,
+        fitness: /健身|教练|肌肉|fitness|fitness coach|coach|trainer|muscle/i
       };
       return keywords[preset.id].test(command);
     });
@@ -475,26 +477,37 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
             </button>
           </div>
           {characterMode === 'preset' ? (
-            <div className="stickman-character-presets" role="radiogroup" aria-label={l('默认角色', 'Default characters')}>
-              {characterPresets.map(preset => {
-                const selected = preset.id === selectedPresetId;
-                return (
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    key={preset.id}
-                    onClick={() => selectPreset(preset.id)}
-                  >
-                    <span className="stickman-character-preset-visual" aria-hidden="true">
-                      <img src={preset.image} alt="" />
-                    </span>
-                    <strong>{l(preset.nameZh, preset.nameEn)}</strong>
-                    <small>{l(preset.detailZh, preset.detailEn)}</small>
-                    {selected ? <Check className="stickman-character-preset-check" size={15} strokeWidth={2.2} aria-hidden="true" /> : null}
-                  </button>
-                );
-              })}
+            <div className="stickman-character-picker">
+              <div className="stickman-character-presets" role="radiogroup" aria-label={l('默认角色', 'Default characters')}>
+                {characterPresets.map(preset => {
+                  const selected = preset.id === selectedPresetId;
+                  return (
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      key={preset.id}
+                      onClick={() => selectPreset(preset.id)}
+                    >
+                      <span className="stickman-character-preset-visual" aria-hidden="true">
+                        <CharacterArtwork image={preset.image} alt="" />
+                      </span>
+                      <strong>{l(preset.nameZh, preset.nameEn)}</strong>
+                      {selected ? <Check className="stickman-character-preset-check" size={15} strokeWidth={2.2} aria-hidden="true" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedPreset ? (
+                <aside className="stickman-character-selected" aria-label={l('已选角色全身预览', 'Full view of selected character')}>
+                  <div>
+                    <CharacterArtwork
+                      image={selectedPreset.image}
+                      alt={l(selectedPreset.nameZh, selectedPreset.nameEn)}
+                    />
+                  </div>
+                </aside>
+              ) : null}
             </div>
           ) : characterMode === 'generate' ? (
             <div className="stickman-character-grid">
@@ -503,25 +516,31 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                 <textarea value={characterPrompt} onChange={event => updateCharacterPrompt(event.target.value)} rows={4} />
               </label>
               {characterGenerated ? (
-                <div className="stickman-character-preview"><img src="/dashboard/templates/ai-video-insane.jpg" alt={l('生成的火柴人角色形象', 'Generated stick figure character')} /></div>
+                <div className="stickman-character-preview"><CharacterArtwork {...generatedCharacterImages} alt={l('生成的火柴人角色形象', 'Generated stick figure character')} /></div>
               ) : (
                 <div className="stickman-character-empty"><ImagePlus size={24} strokeWidth={1.5} /><span>{l('角色设定图将在这里生成', 'The character sheet will appear here')}</span></div>
               )}
-              <button className="creator-tool-primary" type="button" onClick={generateCharacter}>{l('生成角色形象', 'Generate character')}</button>
             </div>
           ) : (
             <label className="creator-tool-upload">
               <input type="file" accept="image/*" aria-label={l('上传火柴人角色形象', 'Upload a stick figure character')} onChange={event => uploadCharacter(event.target.files?.[0] ?? null)} />
               {characterFile ? (
-                <><img src={characterPreview || '/dashboard/templates/ai-video-insane.jpg'} alt={l('上传的角色形象', 'Uploaded character')} /><strong>{characterFile.name}</strong><span>{l('点击重新选择', 'Click to choose another')}</span></>
+                <><CharacterArtwork image={characterPreview || generatedCharacterImages.image} alt={l('上传的角色形象', 'Uploaded character')} /><strong>{characterFile.name}</strong><span>{l('点击重新选择', 'Click to choose another')}</span></>
               ) : (
                 <><UploadCloud size={25} strokeWidth={1.5} /><strong>{l('上传角色设定图', 'Upload character sheet')}</strong><span>{l('支持 PNG、JPG、WebP', 'Supports PNG, JPG, and WebP')}</span></>
               )}
             </label>
           )}
-            <div className="creator-tool-actions">
+            <div className="creator-tool-actions stickman-character-actions">
+              {characterMode === 'generate' ? (
+                <button className="creator-tool-secondary" type="button" onClick={generateCharacter}>
+                  <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />
+                  {l('生成角色形象', 'Generate character')}
+                </button>
+              ) : null}
               <button className="creator-tool-primary" type="button" disabled={!characterReady} onClick={continueToStory}>
                 {l('下一步：故事与分镜', 'Next: Story and storyboard')}
+                <ArrowRight size={15} strokeWidth={1.8} aria-hidden="true" />
               </button>
             </div>
           </section>
@@ -629,7 +648,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                     <button type="button" onClick={() => setCurrentStep(0)}><PersonStanding size={15} strokeWidth={1.8} aria-hidden="true" />{l('更换角色', 'Change character')}</button>
                   </header>
                   <div className="stickman-result-character">
-                    <div><img src={resultCharacterImage} alt={resultCharacterName} /></div>
+                    <div><CharacterArtwork image={resultCharacterImage} alt={resultCharacterName} /></div>
                     <section>
                       <h3>{resultCharacterName}</h3>
                       <p>{selectedResult.characterSource === 'generate' ? selectedResult.characterPrompt : resultCharacterSource}</p>
@@ -669,6 +688,19 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
         {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
       </div>
     </CreatorToolShell>
+  );
+}
+
+function CharacterArtwork(props: {
+  image: string;
+  alt: string;
+}) {
+  return (
+    <img
+      className="stickman-character-artwork"
+      src={props.image}
+      alt={props.alt}
+    />
   );
 }
 

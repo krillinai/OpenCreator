@@ -176,10 +176,11 @@ describe('OpenCreatorSidebar', () => {
   });
 
   it('shows only the OpenCreator wordmark without an image logo in light mode', () => {
-    renderSidebar({ colorMode: 'light' });
+    const { container } = renderSidebar({ colorMode: 'light' });
 
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(screen.getByText('OpenCreator')).toHaveClass('sidebar-logo-word');
+    expect(container.querySelector('.sidebar-logo-image')).not.toBeInTheDocument();
     expect(screen.queryByText('v1.0')).not.toBeInTheDocument();
   });
 
@@ -686,14 +687,16 @@ describe('OpenCreatorSidebar', () => {
     const user = userEvent.setup();
     const onToggleCollapsed = vi.fn();
 
-    renderSidebar({
+    const { container } = renderSidebar({
       collapsed: true,
       onToggleCollapsed,
       tasks: [createTask({ name: '折叠时隐藏的任务' })]
     });
 
     expect(screen.getByRole('button', { name: '展开侧栏' })).toBeInTheDocument();
-    expect(screen.getByText('OC')).toHaveClass('sidebar-logo-mark');
+    expect(container.querySelector('.sidebar-logo-image')).toBeInTheDocument();
+    expect(screen.queryByText('OC')).not.toBeInTheDocument();
+    expect(screen.queryByText('OpenCreator')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '收起侧栏' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '我的项目' })).toHaveAttribute('title', '我的项目');
     expect(screen.queryByText('折叠时隐藏的任务')).not.toBeInTheDocument();

@@ -4927,12 +4927,11 @@ html.is-pane-resizing * {
 .sidebar-logo-lockup {
   flex: 1 1 auto;
   min-width: 0;
-  height: 42px;
+  height: 38px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: flex-start;
-  padding-top: 3px;
+  justify-content: center;
 }
 
 .sidebar-brand-actions {
@@ -4949,15 +4948,10 @@ html.is-pane-resizing * {
   line-height: 21px;
 }
 
-.sidebar-logo-mark {
-  display: grid;
-  place-items: center;
+.sidebar-logo-image {
   width: 28px;
   height: 28px;
   color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
 }
 
 .sidebar-collapse-button,
