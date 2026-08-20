@@ -54,6 +54,34 @@ describe('CreatorServicesConfigStore', () => {
     });
   });
 
+  it('migrates the previous single image and video provider settings', async () => {
+    const legacy = structuredClone(createDefaultCreatorServicesConfig()) as unknown as Record<string, unknown>;
+    legacy.image = {
+      provider: 'openai-compatible',
+      openai: { baseUrl: 'https://images.example.test/v1', apiKey: 'old-image-key', model: 'gpt-image-1' }
+    };
+    legacy.video = {
+      provider: 'openai-compatible',
+      openai: { baseUrl: 'https://video.example.test/v1', apiKey: 'old-video-key', model: 'sora-2' }
+    };
+    const store = createCreatorServicesConfigStore({
+      getPassword: vi.fn(async () => JSON.stringify(legacy)),
+      setPassword: vi.fn(async () => undefined),
+      deletePassword: vi.fn(async () => undefined)
+    });
+
+    await expect(store.read()).resolves.toMatchObject({
+      image: {
+        provider: 'openai',
+        openai: { baseUrl: 'https://images.example.test/v1', apiKey: 'old-image-key', model: 'gpt-image-1' }
+      },
+      video: {
+        provider: 'seedance',
+        seedance: { apiKey: '', model: 'doubao-seedance-1-0-pro-250528' }
+      }
+    });
+  });
+
   it('does not expose malformed secure-storage values', async () => {
     const store = createCreatorServicesConfigStore({
       getPassword: vi.fn(async () => '{"llm":true}'),

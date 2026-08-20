@@ -12,6 +12,12 @@ const openAiCompatibleSchema = z.object({
   apiKey: boundedString(4096),
   model: boundedString(128)
 }).strict();
+const klingAiSchema = z.object({
+  baseUrl: boundedString(2048),
+  accessKey: boundedString(4096),
+  secretKey: boundedString(4096),
+  model: boundedString(128)
+}).strict();
 const aliyunOssSchema = z.object({
   accessKeyId: boundedString(256),
   accessKeySecret: boundedString(4096),
@@ -26,7 +32,37 @@ const aliyunSchema = z.object({
   oss: aliyunOssSchema,
   speech: aliyunSpeechSchema
 }).strict();
-const videoConfigDefault = createDefaultCreatorServicesConfig().video;
+const creatorServicesDefaults = createDefaultCreatorServicesConfig();
+const imageConfigDefault = creatorServicesDefaults.image;
+const videoConfigDefault = creatorServicesDefaults.video;
+const imageConfigSchema = z.object({
+  provider: z.enum(['openai', 'jimeng', 'kling', 'gemini']),
+  openai: openAiCompatibleSchema,
+  jimeng: openAiCompatibleSchema,
+  kling: klingAiSchema,
+  gemini: openAiCompatibleSchema
+}).strict();
+const legacyImageConfigSchema = z.object({
+  provider: z.literal('openai-compatible'),
+  openai: openAiCompatibleSchema
+}).strict().transform(value => ({
+  ...structuredClone(imageConfigDefault),
+  provider: 'openai' as const,
+  openai: value.openai
+}));
+const videoConfigSchema = z.object({
+  provider: z.enum(['seedance', 'kling', 'veo']),
+  seedance: openAiCompatibleSchema,
+  kling: klingAiSchema,
+  veo: openAiCompatibleSchema
+}).strict();
+const legacyVideoConfigSchema = z.object({
+  provider: z.literal('openai-compatible'),
+  openai: openAiCompatibleSchema
+}).strict().transform(() => ({
+  ...structuredClone(videoConfigDefault),
+  provider: 'seedance' as const
+}));
 
 export const creatorServicesConfigSchema = z.object({
   proxy: boundedString(2048),
@@ -46,14 +82,8 @@ export const creatorServicesConfigSchema = z.object({
     minimax: openAiCompatibleSchema,
     aliyun: aliyunSchema
   }).strict(),
-  image: z.object({
-    provider: z.literal('openai-compatible'),
-    openai: openAiCompatibleSchema
-  }).strict(),
-  video: z.object({
-    provider: z.literal('openai-compatible'),
-    openai: openAiCompatibleSchema
-  }).strict().default(videoConfigDefault)
+  image: z.union([imageConfigSchema, legacyImageConfigSchema]),
+  video: z.union([videoConfigSchema, legacyVideoConfigSchema]).default(videoConfigDefault)
 }).strict();
 
 export type CreatorServicesConfigStore = {

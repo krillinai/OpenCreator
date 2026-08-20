@@ -59,7 +59,13 @@ describe('VideoSourcePreview', () => {
     expect(screen.queryByText('Choose another')).not.toBeInTheDocument();
   });
 
-  it('shows a YouTube thumbnail before loading the embedded player', () => {
+  it('shows YouTube title information before loading the embedded player', async () => {
+    const getVideoMetadata = vi.fn(async (url: string) => ({
+      platform: 'youtube' as const,
+      title: url.includes('preview-two') ? 'Second video title' : 'First video title',
+      authorName: 'Example creator',
+      thumbnailUrl: 'https://i.ytimg.com/vi/preview-one/hqdefault.jpg'
+    }));
     const { rerender } = render(
       <VideoSourcePreview
         file={null}
@@ -67,6 +73,7 @@ describe('VideoSourcePreview', () => {
         url="https://www.youtube.com/watch?v=preview-one"
         onChooseFile={vi.fn()}
         onClear={vi.fn()}
+        metadataService={{ getVideoMetadata }}
       />
     );
 
@@ -75,6 +82,8 @@ describe('VideoSourcePreview', () => {
       'https://i.ytimg.com/vi/preview-one/hqdefault.jpg'
     );
     expect(screen.queryByTitle('YouTube 视频预览')).not.toBeInTheDocument();
+    expect(await screen.findByText('First video title')).toBeInTheDocument();
+    expect(screen.getByText('YouTube 视频 · Example creator')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '播放 YouTube 视频预览' }));
     expect(screen.getByTitle('YouTube 视频预览')).toHaveAttribute(
@@ -89,12 +98,14 @@ describe('VideoSourcePreview', () => {
         url="https://youtu.be/preview-two"
         onChooseFile={vi.fn()}
         onClear={vi.fn()}
+        metadataService={{ getVideoMetadata }}
       />
     );
     expect(screen.getByRole('img', { name: 'YouTube 视频缩略图' })).toHaveAttribute(
       'src',
       'https://i.ytimg.com/vi/preview-two/hqdefault.jpg'
     );
+    expect(await screen.findByText('Second video title')).toBeInTheDocument();
     expect(screen.queryByTitle('YouTube 视频预览')).not.toBeInTheDocument();
   });
 
@@ -130,6 +141,7 @@ describe('VideoSourcePreview', () => {
   });
 
   it('uses the source video dimensions as the preview aspect ratio', () => {
+    const onDimensions = vi.fn();
     render(
       <VideoSourcePreview
         file={null}
@@ -137,6 +149,7 @@ describe('VideoSourcePreview', () => {
         url="https://cdn.example.com/portrait.mp4"
         onChooseFile={vi.fn()}
         onClear={vi.fn()}
+        onDimensions={onDimensions}
       />
     );
 
@@ -148,6 +161,7 @@ describe('VideoSourcePreview', () => {
     fireEvent.loadedMetadata(video);
 
     expect(video).toHaveStyle({ aspectRatio: '1080 / 1920' });
+    expect(onDimensions).toHaveBeenCalledWith(1080, 1920);
   });
 
   it('shows a useful fallback without offering another source type', () => {

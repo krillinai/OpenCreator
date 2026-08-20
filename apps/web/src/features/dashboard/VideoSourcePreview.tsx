@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, FileVideo, Link2, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import type { VideoMetadataResponse } from '@opencreator/protocol';
+import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 
 type VideoSource =
   | { kind: 'youtube'; embedUrl: string; thumbnailUrl: string; label: string }
@@ -63,7 +65,7 @@ function parseVideoSource(value: string): VideoSource {
   }
 }
 
-function LocalVideoPreview(props: { file: File }) {
+function LocalVideoPreview(props: { file: File; onDimensions?(width: number, height: number): void }) {
   const l = useLocalizedCopy();
   const [objectUrl, setObjectUrl] = useState('');
 
@@ -83,11 +85,11 @@ function LocalVideoPreview(props: { file: File }) {
   return props.file.type.startsWith('audio/') ? (
     <audio controls src={objectUrl} aria-label={l('本地音频预览', 'Local audio preview')} />
   ) : (
-    <PreviewVideo key={objectUrl} src={objectUrl} label={l('本地视频预览', 'Local video preview')} />
+    <PreviewVideo key={objectUrl} src={objectUrl} label={l('本地视频预览', 'Local video preview')} onDimensions={props.onDimensions} />
   );
 }
 
-function PreviewVideo(props: { src: string; label: string }) {
+function PreviewVideo(props: { src: string; label: string; onDimensions?(width: number, height: number): void }) {
   const [aspectRatio, setAspectRatio] = useState<string>();
 
   return (
@@ -100,6 +102,7 @@ function PreviewVideo(props: { src: string; label: string }) {
         const { videoWidth, videoHeight } = event.currentTarget;
         if (videoWidth > 0 && videoHeight > 0) {
           setAspectRatio(`${videoWidth} / ${videoHeight}`);
+          props.onDimensions?.(videoWidth, videoHeight);
         }
       }}
     />
@@ -115,9 +118,12 @@ export default function VideoSourcePreview(props: {
   readOnly?: boolean;
   displayLabel?: string;
   displayDetail?: string;
+  metadataService?: VideoMetadataService;
+  onDimensions?(width: number, height: number): void;
 }) {
   const l = useLocalizedCopy();
   const [showYouTubePlayer, setShowYouTubePlayer] = useState(false);
+  const [metadata, setMetadata] = useState<VideoMetadataResponse>();
   const source = useMemo(() => parseVideoSource(props.url), [props.url]);
   const localFile = props.sourceType === 'file' ? props.file : null;
   const isLocal = localFile !== null;
@@ -130,9 +136,11 @@ export default function VideoSourcePreview(props: {
         : source.kind === 'link'
           ? l('视频链接', 'Video link')
           : source.label;
-  const sourceLabel = props.displayLabel ?? (localFile ? localFile.name : localizedLabel);
+  const sourceLabel = props.displayLabel ?? (localFile ? localFile.name : metadata?.title ?? localizedLabel);
   const sourceDetail = props.displayDetail ?? (localFile
     ? `${localFile.type.startsWith('audio/') ? l('本地音频', 'Local audio') : l('本地视频', 'Local video')} · ${formatFileSize(localFile.size)}`
+    : metadata
+      ? `${localizedLabel}${metadata.authorName ? ` · ${metadata.authorName}` : ''}`
     : source.kind === 'link'
       ? source.hostname
       : source.kind === 'invalid'
@@ -143,10 +151,26 @@ export default function VideoSourcePreview(props: {
     setShowYouTubePlayer(false);
   }, [props.sourceType, props.url]);
 
+  useEffect(() => {
+    let active = true;
+    setMetadata(undefined);
+    if ((source.kind !== 'youtube' && source.kind !== 'bilibili') || props.metadataService === undefined) return undefined;
+    void props.metadataService.getVideoMetadata(props.url).then(result => {
+      if (!active) return;
+      setMetadata(result);
+      if (result.width !== undefined && result.height !== undefined) {
+        props.onDimensions?.(result.width, result.height);
+      }
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [props.metadataService, props.url, source.kind]);
+
   return (
     <div className="video-source-preview">
       <div className="video-source-preview-media">
-        {localFile ? <LocalVideoPreview file={localFile} /> : null}
+        {localFile ? <LocalVideoPreview file={localFile} onDimensions={props.onDimensions} /> : null}
         {!isLocal && source.kind === 'youtube' && !showYouTubePlayer ? (
           <button
             className="video-source-youtube-poster"
@@ -168,7 +192,7 @@ export default function VideoSourcePreview(props: {
           />
         ) : null}
         {!isLocal && source.kind === 'direct' ? (
-          <PreviewVideo key={source.url} src={source.url} label={l('视频链接预览', 'Video link preview')} />
+          <PreviewVideo key={source.url} src={source.url} label={l('视频链接预览', 'Video link preview')} onDimensions={props.onDimensions} />
         ) : null}
         {!isLocal && (source.kind === 'link' || source.kind === 'invalid') ? (
           <div className="video-source-link-preview">

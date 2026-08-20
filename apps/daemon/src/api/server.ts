@@ -70,6 +70,18 @@ import {
   createSystemCreatorServicesConfigStore,
   type CreatorServicesConfigStore
 } from '../creator-services/config-store.js';
+import {
+  createSmartDubbingService,
+  type SmartDubbingService
+} from '../smart-dubbing/service.js';
+import {
+  createImageGenerationService,
+  type ImageGenerationService
+} from '../image-generation/service.js';
+import {
+  createVideoGenerationService,
+  type VideoGenerationService
+} from '../video-generation/service.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { createPersistentAppServerExecutor } from '../runs/persistent-app-server-executor-2026-07-28.js';
 import {
@@ -84,6 +96,10 @@ import { createThreadManager } from '../threads/manager.js';
 import { createTaskService } from '../tasks/service.js';
 import { createDefaultRevealExecutor } from '../workspace-files/reveal.js';
 import { createWorkspaceFileService } from '../workspace-files/service.js';
+import {
+  createVideoMetadataService,
+  type VideoMetadataService
+} from '../video-metadata/service.js';
 import { prepareSchedulerStartup } from '../startup.js';
 import type { EnterpriseCredentialStore } from '../enterprise/credential-store-2026-07-30.js';
 import {
@@ -148,10 +164,14 @@ import { registerSearchRoutes } from './routes.search.js';
 import { registerScheduleRoutes } from './routes.schedules.js';
 import { registerSkillMarketRoutes } from './routes.skill-market.js';
 import { registerSkillRoutes } from './routes.skills.js';
+import { registerSmartDubbingRoutes } from './routes.smart-dubbing.js';
+import { registerImageGenerationRoutes } from './routes.image-generation.js';
+import { registerVideoGenerationRoutes } from './routes.video-generation.js';
 import { registerTaskRoutes } from './routes.tasks.js';
 import { registerThreadRoutes } from './routes.threads.js';
 import { registerKnowledgeConversationRoutes } from './routes.knowledge-conversation-2026-08-05.js';
 import { registerWorkspaceFileRoutes } from './routes.workspace-files.js';
+import { registerVideoMetadataRoutes } from './routes.video-metadata.js';
 import { registerEnterpriseRoutes } from './routes.enterprise-2026-07-30.js';
 import {
   registerEnterpriseKnowledgeRoutes
@@ -190,6 +210,10 @@ export type BuildServerInput = {
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
   memoryHistoryReader?(threadId: string): { items: import('@opencreator/protocol').ThreadHistoryItem[] } | undefined;
   creatorServicesConfigStore?: CreatorServicesConfigStore;
+  smartDubbingService?: SmartDubbingService;
+  imageGenerationService?: ImageGenerationService;
+  videoGenerationService?: VideoGenerationService;
+  videoMetadataService?: VideoMetadataService;
   allowedWebOrigins?: string[];
   enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
   enterpriseConfigPath?: string;
@@ -650,6 +674,39 @@ export async function buildServer(input: BuildServerInput) {
   });
   await registerCleanupRoutes(server, cleanupService);
   await registerCreatorServicesRoutes(server, creatorServicesConfigStore);
+  await registerSmartDubbingRoutes(
+    server,
+    input.smartDubbingService ?? createSmartDubbingService({
+      dataDir,
+      configStore: creatorServicesConfigStore
+    })
+  );
+  await registerImageGenerationRoutes(
+    server,
+    input.imageGenerationService ?? createImageGenerationService({
+      dataDir,
+      configStore: creatorServicesConfigStore
+    })
+  );
+  await registerVideoGenerationRoutes(
+    server,
+    input.videoGenerationService ?? createVideoGenerationService({
+      dataDir,
+      configStore: creatorServicesConfigStore
+    })
+  );
+  await registerVideoMetadataRoutes(
+    server,
+    input.videoMetadataService ?? createVideoMetadataService({
+      async getProxy() {
+        try {
+          return (await creatorServicesConfigStore.read()).proxy;
+        } catch {
+          return '';
+        }
+      }
+    })
+  );
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });

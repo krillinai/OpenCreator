@@ -3,6 +3,7 @@ import {
   type AliyunOssConfig,
   type AliyunSpeechConfig,
   type CreatorServicesConfig,
+  type KlingAiConfig,
   type OpenAiCompatibleConfig
 } from '@opencreator/protocol';
 import {
@@ -421,40 +422,58 @@ function TtsSettings(props: SettingsGroupProps) {
 
 function ImageSettings(props: SettingsGroupProps) {
   const l = useLocalizedCopy();
+  const provider = props.config.image.provider;
   return (
     <SettingsFieldset
       title={l('图像生成', 'Image generation')}
-      description={l('使用 OpenAI Images API 兼容服务生成图片和创作素材。', 'Generate images and creative assets with an OpenAI Images API-compatible service.')}
+      description={l('配置 GPT Image、即梦、可灵或 Gemini 图像服务。', 'Configure GPT Image, Jimeng, Kling, or Gemini image generation.')}
     >
-      <ReadonlyModelField label={l('接口类型', 'API type')} value="OpenAI-compatible" />
-      <OpenAiFields
-        id="image-openai"
-        value={props.config.image.openai}
-        modelPlaceholder="gpt-image-1"
+      <SelectField
+        id="image-provider"
+        label={l('服务商', 'Provider')}
+        value={provider}
+        options={[
+          ['openai', 'GPT Image'],
+          ['jimeng', l('即梦', 'Jimeng')],
+          ['kling', l('可灵', 'Kling')],
+          ['gemini', 'Gemini']
+        ]}
         onChange={value => props.update(config => {
-          config.image.openai = value;
+          config.image.provider = value as CreatorServicesConfig['image']['provider'];
         })}
       />
+      {provider === 'openai' ? <OpenAiFields id="image-openai" value={props.config.image.openai} modelPlaceholder="gpt-image-1" onChange={value => props.update(config => { config.image.openai = value; })} /> : null}
+      {provider === 'jimeng' ? <OpenAiFields id="image-jimeng" value={props.config.image.jimeng} modelPlaceholder="doubao-seedream-4-0-250828" baseUrlPlaceholder="https://ark.cn-beijing.volces.com/api/v3" onChange={value => props.update(config => { config.image.jimeng = value; })} /> : null}
+      {provider === 'kling' ? <KlingFields id="image-kling" value={props.config.image.kling} modelPlaceholder="kling-v2-1" onChange={value => props.update(config => { config.image.kling = value; })} /> : null}
+      {provider === 'gemini' ? <OpenAiFields id="image-gemini" value={props.config.image.gemini} modelPlaceholder="gemini-2.5-flash-image" baseUrlPlaceholder="https://generativelanguage.googleapis.com/v1beta" onChange={value => props.update(config => { config.image.gemini = value; })} /> : null}
     </SettingsFieldset>
   );
 }
 
 function VideoSettings(props: SettingsGroupProps) {
   const l = useLocalizedCopy();
+  const provider = props.config.video.provider;
   return (
     <SettingsFieldset
       title={l('视频生成', 'Video generation')}
-      description={l('配置用于文生视频、图生视频和动画生成的视频模型服务。', 'Configure the video model used for text-to-video, image-to-video, and animation generation.')}
+      description={l('配置 Seedance、可灵或 Veo 视频生成服务。', 'Configure Seedance, Kling, or Veo video generation.')}
     >
-      <ReadonlyModelField label={l('接口类型', 'API type')} value="OpenAI-compatible" />
-      <OpenAiFields
-        id="video-openai"
-        value={props.config.video.openai}
-        modelPlaceholder="sora-2"
+      <SelectField
+        id="video-provider"
+        label={l('服务商', 'Provider')}
+        value={provider}
+        options={[
+          ['seedance', 'Seedance'],
+          ['kling', l('可灵', 'Kling')],
+          ['veo', 'Veo']
+        ]}
         onChange={value => props.update(config => {
-          config.video.openai = value;
+          config.video.provider = value as CreatorServicesConfig['video']['provider'];
         })}
       />
+      {provider === 'seedance' ? <OpenAiFields id="video-seedance" value={props.config.video.seedance} modelPlaceholder="doubao-seedance-1-0-pro-250528" baseUrlPlaceholder="https://ark.cn-beijing.volces.com/api/v3" onChange={value => props.update(config => { config.video.seedance = value; })} /> : null}
+      {provider === 'kling' ? <KlingFields id="video-kling" value={props.config.video.kling} modelPlaceholder="kling-v2-1-master" onChange={value => props.update(config => { config.video.kling = value; })} /> : null}
+      {provider === 'veo' ? <OpenAiFields id="video-veo" value={props.config.video.veo} modelPlaceholder="veo-3.1-generate-preview" baseUrlPlaceholder="https://generativelanguage.googleapis.com/v1beta" onChange={value => props.update(config => { config.video.veo = value; })} /> : null}
     </SettingsFieldset>
   );
 }
@@ -505,6 +524,22 @@ function OpenAiFields(props: {
         placeholder={props.modelPlaceholder}
         onChange={model => props.onChange({ ...props.value, model })}
       />
+    </>
+  );
+}
+
+function KlingFields(props: {
+  id: string;
+  value: KlingAiConfig;
+  modelPlaceholder: string;
+  onChange(value: KlingAiConfig): void;
+}) {
+  return (
+    <>
+      <TextField id={`${props.id}-base-url`} label="Base URL" value={props.value.baseUrl} placeholder="https://api-beijing.klingai.com" onChange={baseUrl => props.onChange({ ...props.value, baseUrl })} wide />
+      <PasswordField id={`${props.id}-access-key`} label="Access Key" value={props.value.accessKey} onChange={accessKey => props.onChange({ ...props.value, accessKey })} />
+      <PasswordField id={`${props.id}-secret-key`} label="Secret Key" value={props.value.secretKey} onChange={secretKey => props.onChange({ ...props.value, secretKey })} />
+      <TextField id={`${props.id}-model`} label="Model" value={props.value.model} placeholder={props.modelPlaceholder} onChange={model => props.onChange({ ...props.value, model })} />
     </>
   );
 }

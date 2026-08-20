@@ -65,11 +65,20 @@ describe('CreatorServicesSettingsView', () => {
     await screen.findByRole('tabpanel');
 
     await user.click(screen.getByRole('tab', { name: '图像生成' }));
+    expect(screen.getByRole('combobox', { name: '服务商' })).toHaveTextContent('GPT Image');
     expect(screen.getByLabelText('模型')).toHaveValue('gpt-image-1');
+    await user.click(screen.getByRole('combobox', { name: '服务商' }));
+    await user.click(screen.getByRole('option', { name: '可灵' }));
+    expect(screen.getByLabelText('Access Key')).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText('Secret Key')).toHaveAttribute('type', 'password');
 
     await user.click(screen.getByRole('tab', { name: '视频生成' }));
-    expect(screen.getByLabelText('模型')).toHaveValue('sora-2');
+    expect(screen.getByRole('combobox', { name: '服务商' })).toHaveTextContent('Seedance');
+    expect(screen.getByLabelText('模型')).toHaveValue('doubao-seedance-1-0-pro-250528');
     expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
+    await user.click(screen.getByRole('combobox', { name: '服务商' }));
+    await user.click(screen.getByRole('option', { name: 'Veo' }));
+    expect(screen.getByLabelText('模型')).toHaveValue('veo-3.1-generate-preview');
   });
 
   it('explains that the local Runtime is required when disconnected', () => {

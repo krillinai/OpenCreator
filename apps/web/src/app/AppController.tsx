@@ -154,9 +154,13 @@ import { createProfileService } from '../services/profile-service.js';
 import { createRunService } from '../services/run-service.js';
 import { createScheduleService } from '../services/schedule-service.js';
 import { createSearchService } from '../services/search-service.js';
+import { createSmartDubbingService } from '../services/smart-dubbing-service.js';
+import { createImageGenerationService } from '../services/image-generation-service.js';
+import { createVideoGenerationService } from '../services/video-generation-service.js';
 import { createSkillMarketService } from '../services/skill-market-service.js';
 import { createTaskService } from '../services/task-service.js';
 import { createThreadService } from '../services/thread-service.js';
+import { createVideoMetadataService } from '../services/video-metadata-service.js';
 import { createWorkspaceFileService } from '../services/workspace-file-service.js';
 import { readJsonFromStorage, writeJsonToStorage } from '../storage/browser-storage.js';
 import {
@@ -564,6 +568,22 @@ export function AppController(props: AppControllerProps) {
   );
   const searchService: SearchService | null = useMemo(
     () => runtimeClient === null ? null : createSearchService(runtimeClient),
+    [runtimeClient]
+  );
+  const videoMetadataService = useMemo(
+    () => runtimeClient === null ? undefined : createVideoMetadataService(runtimeClient),
+    [runtimeClient]
+  );
+  const smartDubbingService = useMemo(
+    () => runtimeClient === null ? undefined : createSmartDubbingService(runtimeClient),
+    [runtimeClient]
+  );
+  const imageGenerationService = useMemo(
+    () => runtimeClient === null ? undefined : createImageGenerationService(runtimeClient),
+    [runtimeClient]
+  );
+  const videoGenerationService = useMemo(
+    () => runtimeClient === null ? undefined : createVideoGenerationService(runtimeClient),
     [runtimeClient]
   );
   const scheduleService = useMemo(
@@ -4996,6 +5016,10 @@ export function AppController(props: AppControllerProps) {
       onSelectPrompt={startCreatorTool}
       skillLaunch={creatorSkillLaunch}
       onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
+      smartDubbingService={smartDubbingService}
+      imageGenerationService={imageGenerationService}
+      videoGenerationService={videoGenerationService}
+      videoMetadataService={videoMetadataService}
     />
   ) : state.activeView === 'search' ? (
     <SearchPage

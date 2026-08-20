@@ -3,7 +3,11 @@ export type CreatorWorkspace =
   | 'video-download'
   | 'stickman-video'
   | 'auto-clips'
-  | 'cover-generator';
+  | 'smart-dubbing'
+  | 'digital-avatar'
+  | 'cover-generator'
+  | 'image-generation'
+  | 'video-generation';
 
 export type CreatorSkillLaunch = {
   skillId: string;

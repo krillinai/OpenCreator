@@ -4,6 +4,13 @@ export type OpenAiCompatibleConfig = {
   model: string;
 };
 
+export type KlingAiConfig = {
+  baseUrl: string;
+  accessKey: string;
+  secretKey: string;
+  model: string;
+};
+
 export type AliyunOssConfig = {
   accessKeyId: string;
   accessKeySecret: string;
@@ -43,12 +50,17 @@ export type CreatorServicesConfig = {
     };
   };
   image: {
-    provider: 'openai-compatible';
+    provider: 'openai' | 'jimeng' | 'kling' | 'gemini';
     openai: OpenAiCompatibleConfig;
+    jimeng: OpenAiCompatibleConfig;
+    kling: KlingAiConfig;
+    gemini: OpenAiCompatibleConfig;
   };
   video: {
-    provider: 'openai-compatible';
-    openai: OpenAiCompatibleConfig;
+    provider: 'seedance' | 'kling' | 'veo';
+    seedance: OpenAiCompatibleConfig;
+    kling: KlingAiConfig;
+    veo: OpenAiCompatibleConfig;
   };
 };
 
@@ -99,19 +111,46 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
       }
     },
     image: {
-      provider: 'openai-compatible',
+      provider: 'openai',
       openai: {
         baseUrl: '',
         apiKey: '',
         model: 'gpt-image-1'
+      },
+      jimeng: {
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        apiKey: '',
+        model: 'doubao-seedream-4-0-250828'
+      },
+      kling: {
+        baseUrl: 'https://api-beijing.klingai.com',
+        accessKey: '',
+        secretKey: '',
+        model: 'kling-v2-1'
+      },
+      gemini: {
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: '',
+        model: 'gemini-2.5-flash-image'
       }
     },
     video: {
-      provider: 'openai-compatible',
-      openai: {
-        baseUrl: '',
+      provider: 'seedance',
+      seedance: {
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
         apiKey: '',
-        model: 'sora-2'
+        model: 'doubao-seedance-1-0-pro-250528'
+      },
+      kling: {
+        baseUrl: 'https://api-beijing.klingai.com',
+        accessKey: '',
+        secretKey: '',
+        model: 'kling-v2-1-master'
+      },
+      veo: {
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: '',
+        model: 'veo-3.1-generate-preview'
       }
     }
   };

@@ -24,6 +24,7 @@
     "cron-parser": "^5.6.1",
     "cross-spawn": "^7.0.6",
     "fastify": "^5.2.1",
+    "https-proxy-agent": "^7.0.6",
     "nanoid": "^5.0.9",
     "toml": "^3.0.0",
     "yaml": "^2.8.1",

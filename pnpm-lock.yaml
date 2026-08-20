@@ -64,6 +64,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.9.0
+      https-proxy-agent:
+        specifier: ^7.0.6
+        version: 7.0.6
       nanoid:
         specifier: ^5.0.9
         version: 5.1.16

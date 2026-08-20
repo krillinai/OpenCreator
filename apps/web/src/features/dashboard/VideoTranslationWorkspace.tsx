@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type DragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent
 } from 'react';
@@ -18,19 +17,18 @@ import {
   FileVideo,
   History,
   Languages,
-  Link2,
   Mic2,
   MonitorPlay,
-  Sparkles,
-  UploadCloud
+  Sparkles
 } from 'lucide-react';
 import { beginPaneResize } from '../../components/layout/pane-resize-2026-07-29.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
+import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import VideoTranslationAgentPanel, {
   type VideoTranslationAgentAction
 } from './VideoTranslationAgentPanel.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
-import VideoSourcePreview from './VideoSourcePreview.js';
+import VideoSourceInput from './VideoSourceInput.js';
 import VideoTranslationResultWorkspace, {
   type SubtitleCue,
   type VideoTranslationResultTab
@@ -324,21 +322,20 @@ function isValidVideoUrl(value: string) {
 export default function VideoTranslationWorkspace(props: {
   onBack(): void;
   promptHint?: string;
+  videoMetadataService?: VideoMetadataService;
 }) {
   const l = useLocalizedCopy();
-  const videoInputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const collabLayoutRef = useRef<HTMLDivElement>(null);
   const agentFocusTimeoutRef = useRef<number>();
   const [currentStep, setCurrentStep] = useState<WizardStep>(0);
   const [furthestStep, setFurthestStep] = useState<WizardStep>(0);
   const [workspacePhase, setWorkspacePhase] = useState<WorkspacePhase>('configure');
-  const [dragActive, setDragActive] = useState(false);
   const [sourceType, setSourceType] = useState<SourceType>('url');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [sourceLanguage, setSourceLanguage] = useState('zh_cn');
-  const [targetLanguage, setTargetLanguage] = useState('en');
+  const [sourceLanguage, setSourceLanguage] = useState('en');
+  const [targetLanguage, setTargetLanguage] = useState('zh_cn');
   const [bilingual, setBilingual] = useState(true);
   const [subtitlePosition, setSubtitlePosition] = useState<SubtitlePosition>('top');
   const [preferPlatformCaptions, setPreferPlatformCaptions] = useState(true);
@@ -521,19 +518,6 @@ export default function VideoTranslationWorkspace(props: {
       setSourceType('url');
     }
     setAttemptedContinue(false);
-  }
-
-  function openVideoPicker() {
-    if (videoInputRef.current) {
-      videoInputRef.current.value = '';
-      videoInputRef.current.click();
-    }
-  }
-
-  function dropVideo(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setDragActive(false);
-    chooseVideo(event.dataTransfer.files[0] ?? null);
   }
 
   function clearCurrentSource() {
@@ -1151,75 +1135,22 @@ export default function VideoTranslationWorkspace(props: {
           ) : null}
 
           {workspacePhase === 'configure' && currentStep === 0 ? (
-            <section
-              className="video-translation-step-panel video-translation-source-step"
-              aria-label={hasSource ? l('视频预览', 'Video preview') : undefined}
-              aria-labelledby={hasSource ? undefined : 'add-video-title'}
-            >
-              <div
-                className={hasSource ? 'video-translation-preview-drop-target' : 'video-translation-dropzone'}
-                data-dragging={dragActive}
-                onDragEnter={event => { event.preventDefault(); setDragActive(true); }}
-                onDragOver={event => event.preventDefault()}
-                onDragLeave={event => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragActive(false);
-                }}
-                onDrop={dropVideo}
-              >
-                <input
-                  ref={videoInputRef}
-                  type="file"
-                  accept="video/*,audio/*"
-                  onChange={event => chooseVideo(event.target.files?.[0] ?? null)}
-                  aria-label={l('上传本地视频', 'Upload a local video')}
-                />
-                {hasSource ? (
-                  <VideoSourcePreview
-                    file={videoFile}
-                    sourceType={sourceType}
-                    url={videoUrl}
-                    onChooseFile={openVideoPicker}
-                    onClear={clearCurrentSource}
-                  />
-                ) : (
-                  <>
-                    <span className="video-translation-dropzone-icon" aria-hidden="true">
-                      <UploadCloud size={25} strokeWidth={1.6} />
-                    </span>
-                    <h2 id="add-video-title">{l('拖放视频到这里', 'Drop a video here')}</h2>
-                    <p>{l('支持常见视频与音频格式', 'Supports common video and audio formats')}</p>
-                    <button className="video-translation-browse" type="button" onClick={openVideoPicker}>
-                      {l('选择本地视频', 'Choose a local video')}
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {!hasSource ? (
-                <>
-                  <div className="video-translation-or"><span>{l('或', 'or')}</span></div>
-
-                  <label className="video-translation-field video-translation-url-field">
-                    <span>{l('视频链接', 'Video link')}</span>
-                    <div>
-                      <Link2 size={17} strokeWidth={1.7} aria-hidden="true" />
-                      <input
-                        type="url"
-                        value={videoUrl}
-                        onChange={event => {
-                          setVideoUrl(event.target.value);
-                          setSourceType('url');
-                          setVideoFile(null);
-                          setAttemptedContinue(false);
-                        }}
-                        placeholder={l('粘贴 YouTube、Bilibili 或其他视频链接', 'Paste a YouTube, Bilibili, or other video link')}
-                        aria-invalid={attemptedContinue && !hasSource}
-                      />
-                    </div>
-                  </label>
-                </>
-              ) : null}
-            </section>
+            <VideoSourceInput
+              file={videoFile}
+              sourceType={sourceType}
+              url={videoUrl}
+              hasSource={hasSource}
+              invalid={attemptedContinue && !hasSource}
+              metadataService={props.videoMetadataService}
+              onFileChange={chooseVideo}
+              onUrlChange={url => {
+                setVideoUrl(url);
+                setSourceType('url');
+                setVideoFile(null);
+                setAttemptedContinue(false);
+              }}
+              onClear={clearCurrentSource}
+            />
           ) : null}
 
           {workspacePhase === 'configure' && currentStep === 1 ? (
@@ -1360,7 +1291,7 @@ export default function VideoTranslationWorkspace(props: {
                   <div
                     style={{
                       '--subtitle-preview-color': subtitleColor,
-                      '--subtitle-preview-font-size': ({ small: '18px', medium: '22px', large: '27px' } as const)[subtitleSize],
+                      '--subtitle-preview-font-size': ({ small: '14px', medium: '16px', large: '18px' } as const)[subtitleSize],
                       '--subtitle-preview-font-family': subtitleFontFamily(subtitleFont)
                     } as CSSProperties}
                   >

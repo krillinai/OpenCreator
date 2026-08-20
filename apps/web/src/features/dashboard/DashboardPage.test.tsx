@@ -121,9 +121,21 @@ describe('DashboardPage', () => {
       .toBeInTheDocument();
   });
 
-  it('opens the video translation workspace and keeps its result in place', () => {
+  it('opens the video translation workspace and keeps its result in place', async () => {
     const onSelectPrompt = vi.fn();
-    render(<DashboardPage onSelectPrompt={onSelectPrompt} />);
+    render(
+      <DashboardPage
+        onSelectPrompt={onSelectPrompt}
+        videoMetadataService={{
+          getVideoMetadata: vi.fn(async () => ({
+            platform: 'youtube' as const,
+            title: '测试视频标题',
+            authorName: '测试作者',
+            thumbnailUrl: 'https://i.ytimg.com/vi/test/hqdefault.jpg'
+          }))
+        }}
+      />
+    );
 
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
 
@@ -137,6 +149,8 @@ describe('DashboardPage', () => {
       'src',
       'https://i.ytimg.com/vi/test/hqdefault.jpg'
     );
+    expect(await screen.findByText('测试视频标题')).toBeInTheDocument();
+    expect(screen.getByText('YouTube 视频 · 测试作者')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '播放 YouTube 视频预览' }));
     expect(screen.getByTitle('YouTube 视频预览')).toHaveAttribute('src', 'https://www.youtube-nocookie.com/embed/test');
     expect(screen.queryByRole('heading', { name: '拖放视频到这里' })).not.toBeInTheDocument();
@@ -144,6 +158,8 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('textbox', { name: '视频链接' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     expect(screen.getByRole('heading', { name: '设置翻译语言' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '源语言' })).toHaveValue('en');
+    expect(screen.getByRole('combobox', { name: '翻译为' })).toHaveValue('zh_cn');
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     expect(screen.getByRole('heading', { name: '设置字幕样式' })).toBeInTheDocument();
     fireEvent.change(screen.getByRole('combobox', { name: '字幕字体' }), { target: { value: 'rounded' } });
@@ -153,8 +169,9 @@ describe('DashboardPage', () => {
     expect(subtitlePreview).toHaveTextContent('这是一段译文字幕');
     expect(subtitlePreview).toHaveTextContent('这是一段原文字幕');
     expect(subtitlePreview.querySelectorAll('[data-subtitle-kind]')[0]).toHaveAttribute('data-subtitle-kind', 'translation');
+    expect(subtitlePreview.querySelector(':scope > div')).toHaveStyle({ '--subtitle-preview-font-size': '18px' });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('简体中文 → English');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('English → 简体中文');
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('圆体 · 大 · #FFE45C');
     expect(screen.getByLabelText('任务摘要')).toHaveClass('video-translation-summary', 'creator-task-summary');
     expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('video-translation-final-grid');
@@ -421,6 +438,74 @@ describe('DashboardPage', () => {
     document.documentElement.dataset.theme = 'dark';
   });
 
+  it('previews an Auto Clips video from a link or local upload', async () => {
+    const createObjectURL = vi.fn(() => 'blob:auto-clips-preview');
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURL
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn()
+    });
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        videoMetadataService={{
+          getVideoMetadata: vi.fn(async () => ({
+            platform: 'youtube' as const,
+            title: '自动剪辑测试视频',
+            authorName: '测试创作者',
+            thumbnailUrl: 'https://i.ytimg.com/vi/auto-clips/hqdefault.jpg'
+          }))
+        }}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^自动剪辑/ }));
+
+    expect(screen.getByRole('heading', { name: '拖放视频到这里' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择本地视频' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '视频链接' })).toHaveAttribute(
+      'placeholder',
+      '粘贴 YouTube、Bilibili 或其他视频链接'
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=auto-clips' }
+    });
+    expect(screen.getByRole('img', { name: 'YouTube 视频缩略图' })).toHaveAttribute(
+      'src',
+      'https://i.ytimg.com/vi/auto-clips/hqdefault.jpg'
+    );
+    expect(await screen.findByText('自动剪辑测试视频')).toBeInTheDocument();
+    expect(screen.getByText('YouTube 视频 · 测试创作者')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: '视频链接' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '播放 YouTube 视频预览' }));
+    expect(screen.getByTitle('YouTube 视频预览')).toHaveAttribute(
+      'src',
+      'https://www.youtube-nocookie.com/embed/auto-clips'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '清除当前视频来源' }));
+    expect(screen.getByRole('textbox', { name: '视频链接' })).toBeInTheDocument();
+
+    const file = new File(['video'], 'long-interview.mp4', { type: 'video/mp4' });
+    fireEvent.change(screen.getByLabelText('上传本地视频'), { target: { files: [file] } });
+    const localPreview = await screen.findByLabelText('本地视频预览');
+    expect(localPreview).toHaveAttribute('src', 'blob:auto-clips-preview');
+    Object.defineProperties(localPreview, {
+      videoWidth: { configurable: true, value: 1080 },
+      videoHeight: { configurable: true, value: 1920 }
+    });
+    fireEvent.loadedMetadata(localPreview);
+    expect(screen.getByText('long-interview.mp4')).toBeInTheDocument();
+    expect(createObjectURL).toHaveBeenCalledWith(file);
+    expect(screen.queryByRole('textbox', { name: '视频链接' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '下一步：分析设置' }));
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('输出画幅竖屏');
+    fireEvent.click(screen.getByRole('button', { name: '识别语义并提取片段' }));
+    expect(screen.getByRole('region', { name: '候选片段网格' })).toHaveAttribute('data-orientation', 'portrait');
+  });
+
   it('extracts ten scored clips with subtitles from a long video', () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^自动剪辑/ }));
@@ -429,24 +514,35 @@ describe('DashboardPage', () => {
     expect(within(clipSteps).getByRole('button', { name: '1 添加视频' })).toHaveAttribute('aria-current', 'step');
     expect(within(clipSteps).getByRole('button', { name: '2 分析设置' })).toBeDisabled();
     expect(within(clipSteps).getByRole('button', { name: '3 选择与导出' })).toBeDisabled();
-    fireEvent.change(screen.getByRole('textbox', { name: '公开视频链接' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
       target: { value: 'https://www.youtube.com/watch?v=long-video' }
     });
     fireEvent.click(screen.getByRole('button', { name: '下一步：分析设置' }));
     expect(screen.getByRole('heading', { name: '设置分析目标' })).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: '片段数量' })).toHaveValue(10);
+    expect(screen.getByText('将生成 10 个候选片段')).toBeInTheDocument();
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('内容偏好综合表现');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('候选片段10');
+    expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-task-final-grid');
     fireEvent.click(screen.getByRole('button', { name: '识别语义并提取片段' }));
 
     expect(screen.getByText('已找到 10 个候选片段')).toBeInTheDocument();
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('内容偏好综合表现');
-    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('候选片段10');
-    expect(screen.getByLabelText('任务摘要')).not.toHaveClass('is-compact');
-    expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-result-layout');
+    expect(screen.queryByLabelText('任务摘要')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '候选片段' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '字幕与评分' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '导出内容' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '任务设置' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '网格视图' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('region', { name: '候选片段网格' })).toHaveAttribute('data-orientation', 'landscape');
     expect(screen.getAllByRole('button', { name: /^查看片段/ })).toHaveLength(10);
+    fireEvent.click(screen.getByRole('button', { name: '列表视图' }));
+    expect(screen.getByRole('button', { name: '列表视图' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('region', { name: '候选片段列表' })).toBeInTheDocument();
+    expect(screen.getByText(/很多人一开始就急着使用工具/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^下载片段/ })).toHaveLength(10);
+    fireEvent.click(screen.getByRole('button', { name: '网格视图' }));
+    expect(screen.getByRole('region', { name: '候选片段网格' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^查看片段 1 / }));
     const detail = screen.getByRole('complementary', { name: '片段 1 详情' });
     expect(detail).toHaveTextContent('开头吸引力94');
@@ -460,8 +556,14 @@ describe('DashboardPage', () => {
 
     fireEvent.click(within(clipSteps).getByRole('button', { name: /分析设置$/ }));
     fireEvent.change(screen.getByRole('combobox', { name: '内容偏好' }), { target: { value: 'viral' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: '片段数量' }), { target: { value: '5' } });
+    expect(screen.getByText('将生成 5 个候选片段')).toBeInTheDocument();
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('候选片段5');
     fireEvent.click(screen.getByRole('button', { name: '重新分析并生成 V2' }));
     expect(screen.getByRole('button', { name: '已完成，V2' })).toBeInTheDocument();
+    expect(screen.getByText('已找到 5 个候选片段')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^查看片段/ })).toHaveLength(5);
+    expect(screen.queryByLabelText('任务摘要')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
     expect(screen.getByRole('menu')).toHaveTextContent('已完成，V1');
   });
@@ -649,7 +751,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText('原成品已保留，当前修改为配置草稿')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '返回 V1 成品' }));
     expect(screen.getByText('已完成，V1')).toBeInTheDocument();
-    expect(screen.getByText('English，字幕文件')).toBeInTheDocument();
+    expect(screen.getByText('简体中文，字幕文件')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'YouTube 视频缩略图' })).toHaveAttribute(
       'src',
       'https://i.ytimg.com/vi/test/hqdefault.jpg'
@@ -685,7 +787,7 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     const settings = screen.getByText('目标语言').closest('dl');
     expect(settings).not.toBeNull();
-    expect(within(settings as HTMLElement).getByText('English')).toBeInTheDocument();
+    expect(within(settings as HTMLElement).getByText('简体中文')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
     expect(screen.getByRole('textbox', { name: '字幕 1' })).toHaveValue('Saved in the V1 artifact.');
   });
@@ -775,7 +877,7 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('status')).toHaveTextContent('目标语言已改为日本語');
 
     fireEvent.click(screen.getByRole('button', { name: '撤销 Agent 修改' }));
-    expect(screen.getByRole('combobox', { name: '翻译为' })).toHaveValue('en');
+    expect(screen.getByRole('combobox', { name: '翻译为' })).toHaveValue('zh_cn');
   });
 
   it('opens and highlights the matching left controls for Agent changes after generation', () => {
@@ -877,11 +979,231 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('selects a featured app prompt', () => {
+  it('creates downloadable audio in the smart dubbing workspace', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:smart-dubbing')
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn()
+    });
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    const result = {
+      id: 'result_123456',
+      fileName: 'OpenCreator-dubbing-result_123456.mp3',
+      mime: 'audio/mpeg' as const,
+      size: 2048,
+      provider: 'openai' as const,
+      model: 'gpt-4o-mini-tts',
+      voice: 'nova' as const,
+      style: 'warm' as const,
+      speed: 1,
+      format: 'mp3' as const,
+      characterCount: 10,
+      createdAt: '2026-08-20T00:00:00.000Z'
+    };
+    const generate = vi.fn(async () => ({ result }));
+    const preview = vi.fn(async () => new Response(new Blob(['preview-audio'], { type: 'audio/mpeg' })));
+    const openContent = vi.fn(async () => new Response(new Blob(['audio'], { type: 'audio/mpeg' })));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        smartDubbingService={{ generate, preview, openContent }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^智能配音/ }));
+    expect(screen.getByRole('heading', { name: '智能配音' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '配音文案内容' }), {
+      target: { value: '这是一段需要生成语音的测试文案。' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '试听 星语' }));
+    expect(await screen.findByRole('button', { name: '暂停 星语' })).toBeInTheDocument();
+    expect(preview).toHaveBeenCalledWith(expect.objectContaining({
+      voice: 'nova',
+      style: 'natural',
+      speed: 1,
+      format: 'mp3'
+    }));
+    expect(play).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: '暂停 星语' }));
+    expect(pause).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('radio', { name: '温暖' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+
+    const summary = screen.getByLabelText('任务摘要');
+    expect(summary).toHaveTextContent('星语');
+    expect(summary).toHaveTextContent('温暖');
+    expect(summary).toHaveTextContent('1.00x');
+    expect(summary).toHaveTextContent('MP3');
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+
+    expect(await screen.findByLabelText('智能配音试听')).toHaveAttribute('src', 'blob:smart-dubbing');
+    expect(screen.getByText(result.fileName)).toBeInTheDocument();
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      voice: 'nova',
+      style: 'warm',
+      speed: 1,
+      format: 'mp3'
+    }));
+    expect(openContent).toHaveBeenCalledWith(result.id);
+  });
+
+  it('generates image assets through the shared Runtime service', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((blob: Blob) => `blob:image-${blob.size}`)
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn()
+    });
+    const result = {
+      id: 'image_result_1234',
+      prompt: '一间清晨的现代创意工作室',
+      provider: 'openai' as const,
+      model: 'gpt-image-1',
+      imageSize: '1536x1024' as const,
+      quality: 'high' as const,
+      count: 2,
+      images: [
+        { index: 0, fileName: 'image-1.png', mime: 'image/png' as const, size: 1024 },
+        { index: 1, fileName: 'image-2.png', mime: 'image/png' as const, size: 2048 }
+      ],
+      createdAt: '2026-08-20T00:00:00.000Z'
+    };
+    const generate = vi.fn(async () => ({ result }));
+    const openContent = vi.fn(async () => new Response(new Blob(['image'], { type: 'image/png' })));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        imageGenerationService={{ generate, openContent }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^图像生成/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
+      target: { value: result.prompt }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('radio', { name: /横向/ }));
+    fireEvent.click(screen.getByRole('radio', { name: '高清' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('横向 · 3:2');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('高清');
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+
+    expect(await screen.findByRole('img', { name: '生成图片 1' })).toHaveAttribute('src', 'blob:image-13');
+    expect(screen.getByRole('img', { name: '生成图片 2' })).toBeInTheDocument();
+    expect(generate).toHaveBeenCalledWith({
+      prompt: result.prompt,
+      provider: 'openai',
+      size: '1536x1024',
+      quality: 'high',
+      count: 2
+    });
+    expect(openContent).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits and previews an AI video generation result', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:generated-video')
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn()
+    });
+    const result = {
+      id: 'video_result_1234',
+      prompt: '一辆红色跑车沿着海岸公路行驶',
+      provider: 'veo' as const,
+      model: 'veo-3.1-generate-preview',
+      videoSize: '720x1280' as const,
+      duration: 8 as const,
+      status: 'completed' as const,
+      progress: 100,
+      fileName: 'OpenCreator-video.mp4',
+      mime: 'video/mp4' as const,
+      size: 4096,
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:02:00.000Z'
+    };
+    const generate = vi.fn(async () => ({ result }));
+    const get = vi.fn(async () => ({ result }));
+    const openContent = vi.fn(async () => new Response(new Blob(['video'], { type: 'video/mp4' })));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        videoGenerationService={{ generate, get, openContent }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^AI 视频生成/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
+      target: { value: result.prompt }
+    });
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Veo' }));
+    fireEvent.click(screen.getByRole('radio', { name: /竖屏/ }));
+    fireEvent.click(screen.getByRole('radio', { name: '8 秒' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('竖屏 · 9:16');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('8 秒');
+    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+
+    expect(await screen.findByLabelText('AI 生成视频预览')).toHaveAttribute('src', 'blob:generated-video');
+    expect(generate).toHaveBeenCalledWith({
+      prompt: result.prompt,
+      provider: 'veo',
+      size: '720x1280',
+      duration: 8
+    });
+    expect(openContent).toHaveBeenCalledWith(result.id);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('builds and confirms a digital avatar production plan from the featured app', () => {
     const onSelectPrompt = vi.fn();
     render(<DashboardPage onSelectPrompt={onSelectPrompt} />);
 
     fireEvent.click(screen.getByRole('button', { name: '打开数字人口播' }));
-    expect(onSelectPrompt).toHaveBeenCalledWith(expect.stringContaining('数字人口播'));
+    expect(screen.getByRole('heading', { name: '数字人口播' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '数字人口播画面预览' }).querySelector('img'))
+      .toHaveAttribute('src', '/dashboard/templates/digital-presenter.jpg');
+
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    expect(screen.getByRole('heading', { name: '文案与声音' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '口播文案' }), {
+      target: { value: '这是一段用于数字人口播原型测试的文案。' }
+    });
+    fireEvent.click(screen.getByRole('radio', { name: '专业' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+
+    expect(screen.getByRole('heading', { name: '画面设置' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: '9:16' }));
+    fireEvent.click(screen.getByRole('radio', { name: '居右' }));
+    fireEvent.click(screen.getByRole('radio', { name: '深色' }));
+    fireEvent.click(screen.getByRole('switch', { name: '显示字幕' }));
+    expect(screen.getByRole('img', { name: '数字人口播画面预览' }))
+      .toHaveAttribute('data-ratio', '9:16');
+    expect(screen.getByRole('img', { name: '数字人口播画面预览' }))
+      .toHaveAttribute('data-position', 'right');
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+
+    const summary = screen.getByLabelText('任务摘要');
+    expect(summary).toHaveTextContent('示例人物');
+    expect(summary).toHaveTextContent('星语 · 专业');
+    expect(summary).toHaveTextContent('9:16 · 居右');
+    expect(summary).toHaveTextContent('关闭');
+    fireEvent.click(screen.getByRole('button', { name: '确认制作方案' }));
+    expect(screen.getByRole('button', { name: '已确认' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('制作方案已确认');
+    expect(onSelectPrompt).not.toHaveBeenCalled();
   });
 });

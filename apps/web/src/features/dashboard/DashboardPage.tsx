@@ -17,13 +17,21 @@ import {
 import './dashboard.css';
 import AutoClipWorkspace from './AutoClipWorkspace.js';
 import CoverGeneratorWorkspace from './CoverGeneratorWorkspace.js';
+import DigitalAvatarWorkspace from './DigitalAvatarWorkspace.js';
+import ImageGenerationWorkspace from './ImageGenerationWorkspace.js';
+import SmartDubbingWorkspace from './SmartDubbingWorkspace.js';
 import StickmanVideoWorkspace from './StickmanVideoWorkspace.js';
 import VideoDownloadWorkspace from './VideoDownloadWorkspace.js';
 import VideoTranslationWorkspace from './VideoTranslationWorkspace.js';
+import VideoGenerationWorkspace from './VideoGenerationWorkspace.js';
 import type {
   CreatorSkillLaunch,
   CreatorWorkspace
 } from './creator-workspace.js';
+import type { VideoMetadataService } from '../../services/video-metadata-service.js';
+import type { SmartDubbingService } from '../../services/smart-dubbing-service.js';
+import type { ImageGenerationService } from '../../services/image-generation-service.js';
+import type { VideoGenerationService } from '../../services/video-generation-service.js';
 
 type DashboardCategory = '视频创作' | '图像创作' | '音频处理' | '视频编辑' | '数字人';
 
@@ -62,7 +70,8 @@ const featuredTools: FeaturedEntry[] = [
     title: '数字人口播',
     image: '/dashboard/templates/digital-presenter.jpg',
     prompt: '帮我制作一支数字人口播视频，请先优化文案，再规划人物、声音和画面。',
-    accent: 'neutral'
+    accent: 'neutral',
+    workspace: 'digital-avatar'
   }
 ];
 
@@ -81,14 +90,16 @@ const creatorTools: DashboardEntry[] = [
     description: '从创意生成完整视频',
     prompt: '根据我的创意和素材生成一支完整的 AI 视频，请先帮我梳理画面风格、镜头和节奏。',
     category: '视频创作',
-    icon: WandSparkles
+    icon: WandSparkles,
+    workspace: 'video-generation'
   },
   {
     title: '数字人口播',
     description: '快速制作专业口播',
     prompt: '帮我制作一支数字人口播视频，请先优化文案，再规划人物、声音和画面。',
     category: '数字人',
-    icon: UserRound
+    icon: UserRound,
+    workspace: 'digital-avatar'
   },
   {
     title: '火柴人视频生成',
@@ -111,14 +122,16 @@ const creatorTools: DashboardEntry[] = [
     description: '自然音色与情绪表达',
     prompt: '帮我为这段内容制作配音，请根据使用场景优化文本、语速、停顿和情绪。',
     category: '音频处理',
-    icon: Mic2
+    icon: Mic2,
+    workspace: 'smart-dubbing'
   },
   {
     title: '图像生成',
     description: '生成创意图片与视觉素材',
     prompt: '根据我的创意生成一组图片，请先确认画面主体、风格、构图和使用场景。',
     category: '图像创作',
-    icon: Image
+    icon: Image,
+    workspace: 'image-generation'
   },
   {
     title: '封面生成',
@@ -145,6 +158,10 @@ export default function DashboardPage(props: {
   onSelectPrompt(prompt: string): void;
   onWorkspaceModeChange?(active: boolean): void;
   skillLaunch?: CreatorSkillLaunch;
+  smartDubbingService?: SmartDubbingService;
+  imageGenerationService?: ImageGenerationService;
+  videoGenerationService?: VideoGenerationService;
+  videoMetadataService?: VideoMetadataService;
 }) {
   const { language, t } = useAppLanguage();
   const [activeWorkspace, setActiveWorkspace] = useState<CreatorWorkspace | null>(
@@ -177,6 +194,7 @@ export default function DashboardPage(props: {
     return (
       <VideoTranslationWorkspace
         promptHint={activePromptHint}
+        videoMetadataService={props.videoMetadataService}
         onBack={() => {
           setActiveWorkspace(null);
           setActivePromptHint(undefined);
@@ -188,6 +206,57 @@ export default function DashboardPage(props: {
   if (activeWorkspace === 'video-download') {
     return (
       <VideoDownloadWorkspace
+        promptHint={activePromptHint}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
+      />
+    );
+  }
+
+  if (activeWorkspace === 'smart-dubbing') {
+    return (
+      <SmartDubbingWorkspace
+        promptHint={activePromptHint}
+        service={props.smartDubbingService}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
+      />
+    );
+  }
+
+  if (activeWorkspace === 'image-generation') {
+    return (
+      <ImageGenerationWorkspace
+        promptHint={activePromptHint}
+        service={props.imageGenerationService}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
+      />
+    );
+  }
+
+  if (activeWorkspace === 'video-generation') {
+    return (
+      <VideoGenerationWorkspace
+        promptHint={activePromptHint}
+        service={props.videoGenerationService}
+        onBack={() => {
+          setActiveWorkspace(null);
+          setActivePromptHint(undefined);
+        }}
+      />
+    );
+  }
+
+  if (activeWorkspace === 'digital-avatar') {
+    return (
+      <DigitalAvatarWorkspace
         promptHint={activePromptHint}
         onBack={() => {
           setActiveWorkspace(null);
@@ -213,6 +282,7 @@ export default function DashboardPage(props: {
     return (
       <AutoClipWorkspace
         promptHint={activePromptHint}
+        videoMetadataService={props.videoMetadataService}
         onBack={() => {
           setActiveWorkspace(null);
           setActivePromptHint(undefined);
