@@ -33,6 +33,8 @@ OpenCreator 是一站式内容创作 Agent 工作台，把视频、图像、配�
 > [!IMPORTANT]
 > OpenCreator 当前处于快速迭代阶段，建议先从源码运行。执行真实 Agent 任务需要本机已安装并登录 [Codex CLI](https://github.com/openai/codex)；AI 图像、视频和语音能力还取决于对应服务配置。
 
+![OpenCreator Agent 工作台](../images/opencreator-home-en.png)
+
 ## 项目介绍
 
 OpenCreator 面向需要在本机持续完成创作与开发任务的个人和团队。它不重新实现一套 Agent loop，而是以 Codex CLI 作为执行内核，在其上提供稳定的本地 Runtime、可视化工作台和 Desktop 宿主。
@@ -76,12 +78,6 @@ Dashboard 当前提供以下专用入口。实际可用的模型与服务由本�
 | 视频下载 | 解析 YouTube、Bilibili 等视频链接并选择可用下载格式 |
 
 ## 产品展示
-
-### Agent 工作台
-
-从带有项目上下文的会话开始，选择 Skill 或模型、添加附件，并在同一个工作空间中持续查看长期 Agent 任务。
-
-![OpenCreator Agent 工作台](../images/opencreator-home-en.png)
 
 ### 创作 Dashboard
 

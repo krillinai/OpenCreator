@@ -33,6 +33,8 @@ OpenCreator is a one-stop content creation Agent workspace that brings video, im
 > [!IMPORTANT]
 > OpenCreator is under active development and is currently best run from source. Real Agent tasks require the [Codex CLI](https://github.com/openai/codex) to be installed and authenticated on your machine. AI image, video, and voice features also depend on their corresponding service configuration.
 
+![OpenCreator Agent workspace](./docs/images/opencreator-home-en.png)
+
 ## Project Overview
 
 OpenCreator is built for individuals and teams who want to keep creative and development work running locally. Instead of reimplementing an Agent loop, it uses Codex CLI as the execution engine and adds a stable local Runtime, a visual workspace, and a Desktop host around it.
@@ -76,12 +78,6 @@ The Dashboard currently provides the workspaces below. Available models and serv
 | Video Downloader | Parse YouTube, Bilibili, and other video links and choose an available download format |
 
 ## Product Tour
-
-### Agent Workspace
-
-Start from a project-aware conversation, choose a Skill or model, attach context, and keep long-running Agent work visible in one place.
-
-![OpenCreator Agent workspace](./docs/images/opencreator-home-en.png)
 
 ### Creator Dashboard
 
