@@ -140,11 +140,11 @@ export function getSkillMarketAction(
       label: l('状态未知', 'Unknown status'),
       kind: 'disabled',
       disabled: true,
-      reason: l('Skill 安装状态未知', 'Skill installation status is unknown'),
+      reason: l('技能安装状态未知', 'Skill installation status is unknown'),
     };
   }
   if (status === 'invalid') {
-    return { label: l('不可使用', 'Unavailable'), kind: 'disabled', disabled: true, reason: l('本地 Skill 状态异常', 'The local Skill is in an invalid state') };
+    return { label: l('不可使用', 'Unavailable'), kind: 'disabled', disabled: true, reason: l('本地技能状态异常', 'The local Skill is in an invalid state') };
   }
   if (status === 'installing') {
     return { label: l('安装中', 'Installing'), kind: 'install', disabled: true };

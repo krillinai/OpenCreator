@@ -175,7 +175,7 @@ function pushTextWithLinks(
           <span
             key={`${baseKey}-${key++}`}
             className="md-skill-reference"
-            title={`Skill：${reference.slice(1)}`}
+            title={`技能：${reference.slice(1)}`}
           >
             <Blocks aria-hidden="true" size={14} strokeWidth={1.8} />
             <span>{formatSkillName(reference)}</span>

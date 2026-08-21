@@ -83,7 +83,7 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '移除 translation-notes.txt' }));
     expect(screen.queryByText('translation-notes.txt')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '返回 Dashboard' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回工作台' }));
     fireEvent.click(screen.getByRole('button', { name: /^视频下载/ }));
     const downloadInput = screen.getByRole('textbox', { name: '告诉 Agent 视频下载 要求' });
     expect(downloadInput.closest('form')).toHaveClass('tool-agent-composer');
@@ -94,7 +94,7 @@ describe('DashboardPage', () => {
   it('renders featured apps and the searchable creator app directory', () => {
     const { container } = render(<DashboardPage onSelectPrompt={vi.fn()} />);
 
-    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '工作台' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '精选应用' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /打开.+/ })).toHaveLength(3);
     expect(screen.getByRole('button', { name: '打开火柴人动画生成' }).querySelector('img'))
@@ -956,7 +956,7 @@ describe('DashboardPage', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     expect(onWorkspaceModeChange).toHaveBeenLastCalledWith(true);
-    fireEvent.click(screen.getByRole('button', { name: '返回 Dashboard' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回工作台' }));
 
     expect(screen.getByRole('heading', { name: '精选应用' })).toBeInTheDocument();
     expect(onWorkspaceModeChange).toHaveBeenLastCalledWith(false);

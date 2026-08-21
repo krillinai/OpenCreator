@@ -157,7 +157,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '字幕');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '字幕');
 
     const expectedIds = filterAndSortSkillMarketEntries({
       entries: skillMarketCatalog,
@@ -181,7 +181,7 @@ describe('SkillMarketView', () => {
     await intersectSkillMarketSentinel();
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(24);
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(1);
 
     const card = getSkillCard('frontend-slides');
@@ -193,7 +193,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
 
     const dialog = screen.getByRole('dialog');
@@ -256,7 +256,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const previewTrigger = screen.getByRole('button', { name: '预览 编辑风格演示页' });
     await user.click(previewTrigger);
@@ -279,7 +279,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
 
     const image = screen.getByRole('img', { name: '编辑风格演示页' });
@@ -293,7 +293,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     const trigger = getSkillDetailButton('frontend-slides');
     trigger.focus();
     await user.keyboard('{Enter}');
@@ -314,7 +314,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = screen.getByRole('dialog');
 
@@ -327,7 +327,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = screen.getByRole('dialog');
     const firstButton = within(dialog).getByRole('button', { name: '关闭详情' });
@@ -342,7 +342,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     const rendered = renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const dialog = screen.getByRole('dialog');
     const actionButton = within(dialog).getByRole('button', { name: '安装' });
@@ -367,7 +367,7 @@ describe('SkillMarketView', () => {
     });
     expect(screen.getByRole('button', { name: /已安装\s+1/ })).toBeInTheDocument();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     const card = getSkillCard('frontend-slides');
 
     const useButton = within(card).getByRole('button', { name: '使用' });
@@ -381,8 +381,8 @@ describe('SkillMarketView', () => {
     expect(onUse).toHaveBeenCalledWith('frontend-slides', 'content-design');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'guizang-social-card-skill');
+    await user.clear(screen.getByRole('searchbox', { name: '搜索技能' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), 'guizang-social-card-skill');
     const installCard = getSkillCard('guizang-social-card-skill');
     within(installCard).getByRole('button', { name: '安装' }).focus();
     await user.keyboard(' ');
@@ -399,7 +399,7 @@ describe('SkillMarketView', () => {
     const onInstall = vi.fn();
     renderSkillMarket({ onInstall });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'GStack');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), 'GStack');
     const gstackAction = within(getSkillCard('garrytan-gstack')).getByRole('button', {
       name: '安装',
     });
@@ -407,8 +407,8 @@ describe('SkillMarketView', () => {
     await user.click(gstackAction);
     expect(onInstall).toHaveBeenCalledWith('garrytan-gstack');
 
-    await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '卡卡字幕助手');
+    await user.clear(screen.getByRole('searchbox', { name: '搜索技能' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '卡卡字幕助手');
     const captionAction = within(getSkillCard('videocaptioner')).getByRole('button', {
       name: '安装',
     });
@@ -449,7 +449,7 @@ describe('SkillMarketView', () => {
       ]),
     });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     const card = getSkillCard('frontend-slides');
 
     expect(within(card).queryByText('版本未知')).not.toBeInTheDocument();
@@ -461,7 +461,7 @@ describe('SkillMarketView', () => {
     const onInstall = vi.fn();
     renderSkillMarket({ onInstall });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(screen.getByRole('button', { name: '安装' }));
 
     expect(onInstall).toHaveBeenCalledWith('frontend-slides');
@@ -478,7 +478,7 @@ describe('SkillMarketView', () => {
       onUpdate,
     });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(screen.getByRole('button', { name: '更新' }));
 
     expect(onUpdate).toHaveBeenCalledWith('frontend-slides');
@@ -495,7 +495,7 @@ describe('SkillMarketView', () => {
       onUse,
     });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(screen.getByRole('button', { name: '使用' }));
 
     expect(onUse).not.toHaveBeenCalled();
@@ -517,7 +517,7 @@ describe('SkillMarketView', () => {
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
     expect(screen.getByText('Runtime 未连接，目录可浏览，安装、更新和使用需连接后操作。')).toBeInTheDocument();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     expect(screen.getByRole('button', { name: '连接后安装' })).toBeDisabled();
   });
 
@@ -535,11 +535,11 @@ describe('SkillMarketView', () => {
       ],
     });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     expect(screen.getByRole('button', { name: '连接后使用' })).toBeDisabled();
 
-    await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'guizang-social-card-skill');
+    await user.clear(screen.getByRole('searchbox', { name: '搜索技能' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), 'guizang-social-card-skill');
     expect(screen.getByRole('button', { name: '连接后更新' })).toBeDisabled();
     expect(screen.getAllByText('需要连接 Runtime').length).toBeGreaterThan(0);
   });
@@ -556,12 +556,12 @@ describe('SkillMarketView', () => {
     );
 
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     const action = within(getSkillCard('frontend-slides')).getByRole('button', {
       name: '状态未知',
     });
     expect(action).toBeDisabled();
-    expect(action).toHaveAccessibleDescription('Skill 安装状态未知');
+    expect(action).toHaveAccessibleDescription('技能安装状态未知');
   });
 
   it('operation error 显示在对应卡片与详情中且按钮可重试', async () => {
@@ -576,7 +576,7 @@ describe('SkillMarketView', () => {
       onInstall,
     });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     const card = getSkillCard('frontend-slides');
     expect(within(card).getByText('安装失败，请重试')).toBeInTheDocument();
 
@@ -608,7 +608,7 @@ describe('SkillMarketView', () => {
     });
 
     expect(screen.getByText('使用失败：启动失败，请重试')).toBeInTheDocument();
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
     const frontendDialog = screen.getByRole('dialog');
     expect(within(frontendDialog).getByText('使用失败：启动失败，请重试')).toBeInTheDocument();
@@ -617,8 +617,8 @@ describe('SkillMarketView', () => {
     await user.click(within(projectDialog).getByRole('button', { name: '在 content-design' }));
     expect(onUse).toHaveBeenCalledWith('frontend-slides', 'content-design');
 
-    await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'humanizer-zh');
+    await user.clear(screen.getByRole('searchbox', { name: '搜索技能' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), 'humanizer-zh');
     await user.click(getSkillDetailButton('op7418-humanizer-zh'));
     expect(
       within(screen.getByRole('dialog')).queryByText('使用失败：启动失败，请重试')
@@ -646,7 +646,7 @@ describe('SkillMarketView', () => {
       onUse,
     });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '小红书图文与公众号封面');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '小红书图文与公众号封面');
     const updateButton = within(getSkillCard('guizang-social-card-skill')).getByRole('button', { name: '更新' });
     expect(updateButton).toBeDisabled();
     expect(updateButton).toHaveAttribute('title', '请等待当前操作完成');
@@ -667,8 +667,8 @@ describe('SkillMarketView', () => {
     expect(modalUpdateButton).toHaveAccessibleDescription('请等待当前操作完成');
     await user.keyboard('{Escape}');
 
-    await user.clear(screen.getByRole('searchbox', { name: '搜索 Skill' }));
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'humanizer-zh');
+    await user.clear(screen.getByRole('searchbox', { name: '搜索技能' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), 'humanizer-zh');
     const useButton = within(getSkillCard('op7418-humanizer-zh')).getByRole('button', { name: '使用' });
     expect(useButton).toBeEnabled();
     expect(useButton).not.toHaveAttribute('title', '请等待当前操作完成');
@@ -690,7 +690,7 @@ describe('SkillMarketView', () => {
       onInstall,
     });
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'AI Builders 动态摘要');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), 'AI Builders 动态摘要');
     const installButton = within(getSkillCard('follow-builders')).getByRole('button', { name: '安装' });
     expect(installButton).toBeEnabled();
     expect(installButton).not.toHaveAttribute('title', '请等待当前操作完成');
@@ -791,7 +791,7 @@ describe('SkillMarketView', () => {
     const user = userEvent.setup();
     renderSkillMarket();
 
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), '网页演示稿生成');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), '网页演示稿生成');
     await user.click(getSkillDetailButton('frontend-slides'));
 
     const dialog = screen.getByRole('dialog');
@@ -803,7 +803,7 @@ describe('SkillMarketView', () => {
   it('loading 和 loadError 作为 banner 显示且不替换目录', async () => {
     const user = userEvent.setup();
     const { rerender } = renderSkillMarket({ loading: true });
-    expect(screen.getByRole('status')).toHaveTextContent('正在加载 Skills 目录');
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载技能目录');
     expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12);
 
     rerender(<SkillMarketView {...createProps({ loadError: '目录加载失败' })} />);
@@ -814,8 +814,8 @@ describe('SkillMarketView', () => {
     expect(screen.getByRole('status')).toHaveTextContent('目录暂时为空');
 
     rerender(<SkillMarketView {...createProps()} />);
-    await user.type(screen.getByRole('searchbox', { name: '搜索 Skill' }), 'not-a-real-skill-query');
-    expect(screen.getByRole('status')).toHaveTextContent('没有找到匹配的 Skill');
+    await user.type(screen.getByRole('searchbox', { name: '搜索技能' }), 'not-a-real-skill-query');
+    expect(screen.getByRole('status')).toHaveTextContent('没有找到匹配的技能');
   });
 });
 

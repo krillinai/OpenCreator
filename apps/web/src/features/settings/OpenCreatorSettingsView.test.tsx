@@ -226,7 +226,7 @@ describe('OpenCreatorSettingsView', () => {
     fireEvent.click(screen.getByRole('button', { name: '插件' }));
 
     expect(screen.getByRole('button', { name: '插件' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByText('Skills 状态')).toBeInTheDocument();
+    expect(screen.getByText('技能状态')).toBeInTheDocument();
     expect(screen.getByText('MCP 服务状态')).toBeInTheDocument();
     expect(screen.getByText('最近检测时间')).toBeInTheDocument();
     expect(screen.getByText(runtimeStatus.lastCheckedAt)).toBeInTheDocument();

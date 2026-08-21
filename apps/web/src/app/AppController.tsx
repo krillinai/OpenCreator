@@ -1932,7 +1932,7 @@ export function AppController(props: AppControllerProps) {
         if (recordsResult?.status === 'fulfilled') setSkillMarketInstallRecords(recordsResult.value.records);
         else setSkillMarketInstallRecords(undefined);
         const marketErrors: string[] = [];
-        if (skillsResult?.status === 'rejected') marketErrors.push('Skill 状态加载失败');
+        if (skillsResult?.status === 'rejected') marketErrors.push('技能状态加载失败');
         if (recordsResult?.status === 'rejected') marketErrors.push('安装记录加载失败');
         setSkillMarketLoadError(marketErrors.length > 0 ? marketErrors.join('；') : undefined);
       })
@@ -3631,7 +3631,7 @@ export function AppController(props: AppControllerProps) {
       setCodexSkills(skillsResult.value);
     } else {
       setCodexSkills(undefined);
-      refreshErrors.push('Skill 状态刷新失败');
+      refreshErrors.push('技能状态刷新失败');
     }
     if (recordsResult.status === 'fulfilled') {
       setSkillMarketInstallRecords(recordsResult.value.records);
@@ -3705,7 +3705,7 @@ export function AppController(props: AppControllerProps) {
     const isSkillCreator = skillId === 'skill-creator';
     const entry = isSkillCreator ? undefined : getSkillMarketEntry(skillId);
     if (!isSkillCreator && entry === undefined) {
-      setSkillMarketUseError({ skillId, error: '未找到这个 Skill' });
+      setSkillMarketUseError({ skillId, error: '未找到这个技能' });
       return;
     }
     await useSkillByName({

@@ -168,13 +168,13 @@ export function SkillMarketView({
   }
 
   return (
-    <section className="skill-market" aria-label={l('Skill 功能目录', 'Skill catalog')}>
+    <section className="skill-market" aria-label={l('技能目录', 'Skill catalog')}>
       <header className="skill-market-heading">
         <div className="skill-market__toolbar">
           <label className="skill-market-search">
             <Search size={17} aria-hidden="true" />
             <input
-              aria-label={l('搜索 Skill', 'Search Skills')}
+              aria-label={l('搜索技能', 'Search Skills')}
               onChange={(event) => {
                 setQuery(event.target.value);
                 resetVisibleCount();
@@ -252,7 +252,7 @@ export function SkillMarketView({
       {loading ? (
         <p className="skill-market-banner" role="status">
           <Loader2 size={18} aria-hidden="true" />
-          {l('正在加载 Skills 目录', 'Loading the Skills catalog')}
+          {l('正在加载技能目录', 'Loading the Skills catalog')}
         </p>
       ) : null}
       {loadError ? (
@@ -269,7 +269,7 @@ export function SkillMarketView({
       {catalog.length === 0 ? (
         <StateMessage text={l('目录暂时为空', 'The catalog is empty')} />
       ) : filteredResult.entries.length === 0 ? (
-        <StateMessage text={query.trim().length > 0 ? l('没有找到匹配的 Skill', 'No matching Skills') : l('当前筛选没有可显示的 Skill', 'No Skills match the current filters')} />
+        <StateMessage text={query.trim().length > 0 ? l('没有找到匹配的技能', 'No matching Skills') : l('当前筛选没有可显示的技能', 'No Skills match the current filters')} />
       ) : (
         <div className="skill-market-grid">
           {page.entries.map((item) => (

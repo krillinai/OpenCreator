@@ -798,7 +798,7 @@ async function verifyNativeProjectCapability(
   page: Page,
   platform: Platform
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await page.getByRole('button', { name: '工作台' }).click();
   await expect(page.getByRole('textbox', { name: '输入任务' })).toBeVisible();
   await page.getByRole('button', { name: '选择项目 企业项目' }).click();
   const existingFolder = page.getByRole('button', { name: '使用现有文件夹' });

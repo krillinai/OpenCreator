@@ -8,7 +8,7 @@ describe('CapabilitiesView', () => {
   it('shows a runtime connection prompt when disconnected', () => {
     render(<CapabilitiesView connected={false} />);
 
-    expect(screen.getByText('本机 Runtime 就绪后查看 Skills、MCP 和 Profiles')).toBeInTheDocument();
+    expect(screen.getByText('本机 Runtime 就绪后查看技能、MCP 和 Profiles')).toBeInTheDocument();
   });
 
   it('shows capability section headings and counts when connected', () => {
@@ -98,10 +98,10 @@ describe('CapabilitiesView', () => {
 
     render(<CapabilitiesView connected skills={skills} mcp={mcp} profiles={profiles} />);
 
-    expect(screen.getByRole('heading', { name: 'Skills' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '技能' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'MCP' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Profiles' })).toBeInTheDocument();
-    expect(screen.getByText('2 个 skills')).toBeInTheDocument();
+    expect(screen.getByText('2 个技能')).toBeInTheDocument();
     expect(screen.getByText('1 个 servers')).toBeInTheDocument();
     expect(screen.getByText('3 个 profiles')).toBeInTheDocument();
   });
@@ -109,7 +109,7 @@ describe('CapabilitiesView', () => {
   it('shows zero counts when connected capability data is missing', () => {
     render(<CapabilitiesView connected />);
 
-    expect(screen.getByText('0 个 skills')).toBeInTheDocument();
+    expect(screen.getByText('0 个技能')).toBeInTheDocument();
     expect(screen.getByText('0 个 servers')).toBeInTheDocument();
     expect(screen.getByText('0 个 profiles')).toBeInTheDocument();
   });

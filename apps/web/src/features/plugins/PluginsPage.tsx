@@ -44,7 +44,7 @@ export default function PluginsPage(props: PluginsPageProps) {
             onClick={() => props.onTabChange?.('skills')}
             onKeyDown={handleTabKeyDown}
           >
-            Skills
+            {l('技能', 'Skills')}
           </button>
           <button
             id="plugin-center-tab-connections"

@@ -79,7 +79,7 @@ describe('ProjectsPage', () => {
   it('keeps the empty state focused on projects created from Dashboard', () => {
     render(<ProjectsPage projects={[]} onOpenProject={vi.fn()} />);
 
-    expect(screen.getByRole('status')).toHaveTextContent('从 Dashboard 开始创作后，项目会自动显示在这里。');
+    expect(screen.getByRole('status')).toHaveTextContent('从工作台开始创作后，项目会自动显示在这里。');
     expect(screen.queryByRole('button', { name: '新建项目' })).not.toBeInTheDocument();
   });
 

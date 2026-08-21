@@ -193,7 +193,7 @@ describe('MarkdownRenderer', () => {
     expect(skill).toBeInTheDocument();
     expect(skill).toHaveAttribute(
       'title',
-      'Skill：zhiyu-brainstorm'
+      '技能：zhiyu-brainstorm'
     );
     expect(screen.getByText(/分析需求，再继续执行/)).toBeInTheDocument();
   });

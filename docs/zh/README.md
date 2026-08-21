@@ -12,7 +12,7 @@
   </picture>
 </p>
 
-OpenCreator 是一站式内容创作 Agent 工作台，把视频、图像、配音等创作工具，与项目、会话、Skills、MCP 和长期任务放进同一个工作空间。
+OpenCreator 是一站式内容创作 Agent 工作台，把视频、图像、配音等创作工具，与项目、会话、技能、MCP 和长期任务放进同一个工作空间。
 
 OpenCreator 由 [KrillinAI](https://github.com/krillinai/KrillinAI) 全面升级而来，从 AI 视频翻译工具演进为一站式内容创作 Agent 工作台。
 
@@ -39,8 +39,8 @@ OpenCreator 面向需要在本机持续完成创作与开发任务的个人和�
 
 产品包含两条可以相互衔接的主线：
 
-- **AI 内容创作**：从 Dashboard 进入视频翻译、视频生成、数字人口播、智能配音、自动剪辑、图像生成等专用工作区。
-- **通用 Agent 工作台**：按项目组织会话，让 Run 在后台持续执行，并统一处理审批、附件、文件、Skills、MCP、计划任务、通知、记忆和诊断。
+- **AI 内容创作**：从工作台进入视频翻译、视频生成、数字人口播、智能配音、自动剪辑、图像生成等专用工作区。
+- **通用 Agent 工作台**：按项目组织会话，让 Run 在后台持续执行，并统一处理审批、附件、文件、技能、MCP、计划任务、通知、记忆和诊断。
 
 Web 是唯一的前端实现；Desktop 直接加载同一份 Web 构建产物，只额外提供目录选择、窗口生命周期、托盘和原生通知等系统能力。因此在相同数据和内容视口下，两端拥有一致的通用界面与 Runtime 行为。
 
@@ -49,11 +49,11 @@ Web 是唯一的前端实现；Desktop 直接加载同一份 Web 构建产物，
 | 能力 | 说明 |
 | --- | --- |
 | AI 创作工作区 | 围绕视频、图像、声音和数字人提供分步骤表单、预览、结果与 Agent 辅助 |
-| Codex 原生执行 | 复用 Codex 的 Agent loop、模型、推理、Skills、MCP、工具调用和会话能力 |
+| Codex 原生执行 | 复用 Codex 的 Agent loop、模型、推理、技能、MCP、工具调用和会话能力 |
 | 后台 Run | 刷新或切换会话不会中断任务；支持排队发送、立即打断、继续执行和结果追踪 |
 | 项目与文件 | 管理空白项目或本机工作区，支持图片附件、文本编辑以及图片、PDF、HTML 预览 |
 | 审批与权限 | 在 Timeline 和全局任务中心处理受控操作，按项目保存权限偏好和审批记录 |
-| Skills 与 MCP | 浏览、安装和使用 Skills，并通过 Codex 原生配置管理 MCP 服务 |
+| 技能与 MCP | 浏览、安装和使用技能，并通过 Codex 原生配置管理 MCP 服务 |
 | 长期计划任务 | 创建、编辑、暂停、恢复、立即运行定时任务，并在专属会话中持续追踪结果 |
 | 本地记忆与摘要 | 显式管理全局、项目和线程记忆，生成版本化会话摘要并记录每次 Run 的输入快照 |
 | Web / Desktop 同源 | React 前端只实现一次；Electron 负责原生能力并内嵌经过哈希校验的 Web 产物 |
@@ -61,7 +61,7 @@ Web 是唯一的前端实现；Desktop 直接加载同一份 Web 构建产物，
 
 ## 创作工具
 
-Dashboard 当前提供以下专用入口。实际可用的模型与服务由本地 Codex 环境、AI 服务设置和可选企业网关共同决定。
+工作台当前提供以下专用入口。实际可用的模型与服务由本地 Codex 环境、AI 服务设置和可选企业网关共同决定。
 
 | 工作区 | 典型用途 |
 | --- | --- |
@@ -77,11 +77,11 @@ Dashboard 当前提供以下专用入口。实际可用的模型与服务由本�
 
 ## 产品展示
 
-### 创作 Dashboard
+### 创作工作台
 
-从 Dashboard 进入视频翻译、动画、数字人、图像生成、配音、剪辑等专用创作工作区。
+从工作台进入视频翻译、动画、数字人、图像生成、配音、剪辑等专用创作工作区。
 
-![OpenCreator 创作 Dashboard](../images/product/opencreator-dashboard-en.png)
+![OpenCreator 创作工作台](../images/product/opencreator-dashboard-en.png)
 
 ### 我的项目
 
@@ -211,12 +211,12 @@ Desktop 打包会重新构建当前工作区的 Web，记录 commit、dirty 状�
 4. 在 Timeline 查看推理摘要、工具调用、文件变更、审批和最终结果。
 5. 从任务中心统一追踪运行中、已完成、失败和待审批任务。
 
-### Skills 与 MCP
+### 技能与 MCP
 
-- 在插件中心浏览 Skill 市场、安装记录和本机已有 Skills。
-- 在输入框中通过 `/` 或添加菜单选择 Skill，让后续任务按对应工作流执行。
+- 在插件中心浏览技能市场、安装记录和本机已有技能。
+- 在输入框中通过 `/` 或添加菜单选择技能，让后续任务按对应工作流执行。
 - MCP 管理优先透传 Codex 原生命令与配置，不维护第二套执行引擎。
-- 默认使用当前 `$CODEX_HOME`，因此修改全局 Skills 或 MCP 前应确认影响范围。
+- 默认使用当前 `$CODEX_HOME`，因此修改全局技能或 MCP 前应确认影响范围。
 
 ### 已安排与任务会话
 
@@ -237,14 +237,14 @@ flowchart LR
     Daemon --> DB[".runtime/app.sqlite"]
     Daemon --> Files["Runs / Attachments / Workspaces"]
     Daemon --> Codex["Codex CLI / app-server"]
-    Codex --> CodexHome["$CODEX_HOME<br/>Sessions / Skills / MCP / Profiles"]
+    Codex --> CodexHome["$CODEX_HOME<br/>Sessions / 技能 / MCP / Profiles"]
 ```
 
 核心原则：
 
 - 前端不直接启动 Codex，也不依赖 Codex 原始 JSONL 事件格式。
 - daemon 负责进程生命周期、事件标准化、持久化、审批、计划任务和通知 outbox。
-- Codex 仍然是 Agent loop、Skills 和 MCP 的执行真相源。
+- Codex 仍然是 Agent loop、技能和 MCP 的执行真相源。
 - Browser Bridge 与 Desktop Bridge 不分别实现通用业务逻辑。
 
 ## 项目结构
@@ -258,7 +258,7 @@ OpenCreator/
 │   └── harness/      # Runtime 命令行验证工具
 ├── packages/
 │   ├── protocol/     # Web、Daemon、Desktop 共用的 Runtime 契约
-│   └── skill-market/ # Skill 市场模型与共享逻辑
+│   └── skill-market/ # 技能市场模型与共享逻辑
 ├── docs/             # 设计、API、运行手册和验收文档
 ├── scripts/          # 仓库级检查脚本
 └── .runtime/         # 本地运行数据（首次启动后生成）
@@ -282,7 +282,7 @@ OpenCreator/
 | --- | --- | --- |
 | `OPENCREATOR_DATA_DIR` | `.runtime` | OpenCreator 数据库、Run、附件和托管工作区目录 |
 | `OPENCREATOR_CODEX_BIN` | `codex` | Codex CLI 可执行文件路径 |
-| `CODEX_HOME` | `~/.codex` | Codex 会话、配置、Skills、MCP 和 Profile 的真相源 |
+| `CODEX_HOME` | `~/.codex` | Codex 会话、配置、技能、MCP 和 Profile 的真相源 |
 | `OPENCREATOR_DEFAULT_CWD` | 当前工作目录 | daemon 的默认执行目录 |
 | `OPENCREATOR_DEFAULT_PROJECT_ROOT` | Runtime 默认策略 | 托管项目根目录；设置后使用其下的 `OpenCreator/` |
 | `OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD` | `50` | 长期计划任务底层 Codex thread 的终态 Run 轮换阈值，设为 `0` 可关闭主动轮换 |

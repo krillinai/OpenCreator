@@ -162,7 +162,7 @@ describe('App', () => {
 
     window.history.replaceState(null, '', '#/plugins');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: '技能目录' })).toBeInTheDocument();
 
     window.history.replaceState(null, '', '#/activity/agent/collector-beijing/agent-customer?range=30d');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
@@ -175,8 +175,8 @@ describe('App', () => {
     window.location.hash = '#/dashboard';
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByText('数据看板')).not.toBeInTheDocument();
   });
 
@@ -202,12 +202,12 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: '正在等待本地 Runtime' }))
       .toBeInTheDocument();
 
-    await user.click(screen.getByRole('tab', { name: 'Skills' }));
+    await user.click(screen.getByRole('tab', { name: '技能' }));
 
     await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
-    expect(screen.getByRole('tab', { name: 'Skills' }))
+    expect(screen.getByRole('tab', { name: '技能' }))
       .toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '技能目录' })).toBeInTheDocument();
   });
 
   it('restores my assets and switches between knowledge and materials', async () => {
@@ -223,7 +223,7 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 1, name: '素材中心' })).toBeInTheDocument();
     window.history.replaceState(null, '', '#/plugins');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: '技能目录' })).toBeInTheDocument();
     window.history.replaceState(null, '', '#/knowledge');
     act(() => window.dispatchEvent(new PopStateEvent('popstate')));
     expect(await screen.findByRole('heading', { level: 1, name: '知识库' })).toBeInTheDocument();
@@ -604,7 +604,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: '插件中心' }));
 
     await waitFor(() => expect(window.location.hash).toBe('#/plugins'));
-    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: '技能目录' })).toBeInTheDocument();
   });
 
   it('keeps the account route available without exposing a guest login entry', async () => {
@@ -901,7 +901,7 @@ describe('App', () => {
     render(<App fileService={createFileService()} />);
 
     expect(await screen.findByRole('button', { name: '首页' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '工作台' })).toBeInTheDocument();
     expect(await screen.findByText('需要帮你做点什么')).toBeInTheDocument();
     expect(screen.getByRole('heading', {
       name: /^(上午|下午|晚上)好，创作者$/
@@ -925,7 +925,7 @@ describe('App', () => {
     render(<App fileService={createFileService()} />);
 
     await user.click(await screen.findByRole('button', {
-      name: '使用多语言视频翻译 Skill'
+      name: '使用多语言视频翻译技能'
     }));
 
     expect(await screen.findByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
@@ -939,11 +939,11 @@ describe('App', () => {
     const user = userEvent.setup();
     render(<App fileService={createFileService()} />);
 
-    await user.click(await screen.findByRole('button', { name: '使用数字人口播 Skill' }));
+    await user.click(await screen.findByRole('button', { name: '使用数字人口播技能' }));
 
     const composer = screen.getByRole('textbox', { name: '输入任务' });
     expect(composer).toHaveValue('');
-    expect(screen.getByRole('heading', { name: 'Skills' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '技能' })).toBeInTheDocument();
     expect(window.location.hash).toBe('');
   });
 
@@ -957,7 +957,7 @@ describe('App', () => {
 
     render(<App fileService={createFileService()} hostBridge={hostBridge} />);
 
-    await screen.findByRole('button', { name: 'Dashboard' });
+    await screen.findByRole('button', { name: '工作台' });
     const shell = document.querySelector<HTMLElement>('.app-drop-shell');
     expect(shell).toHaveAttribute('data-integrated-title-bar', 'true');
     expect(shell?.style.getPropertyValue('--opencreator-titlebar-height')).toBe('38px');
@@ -1083,7 +1083,7 @@ describe('App', () => {
       .toBeInTheDocument();
     expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Skills' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '技能' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     history.resolve(jsonResponse({
@@ -1098,12 +1098,12 @@ describe('App', () => {
     });
     expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Skills' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '技能' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: /^视频翻译/ })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '工作台' }));
+    expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^视频翻译/ }));
     expect(screen.getByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
     await user.type(
@@ -2677,9 +2677,9 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: '技能目录' })).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.queryByText('正在加载 Skills 目录')).not.toBeInTheDocument();
+      expect(screen.queryByText('正在加载技能目录')).not.toBeInTheDocument();
     });
     expect(fetchUrls.some(url => url.endsWith('/codex/skills'))).toBe(true);
     expect(fetchUrls.some(url => url.endsWith('/codex/skill-market/install-records'))).toBe(true);
@@ -2895,7 +2895,7 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: '登录企业账户' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Skill市场' }));
 
-    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: '技能目录' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     expect(window.location.hash).toBe('#/plugins?source=public');
   });
@@ -3088,7 +3088,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '插件中心' }));
     await waitFor(() => expect(recordRequests).toBe(1));
     expect(screen.queryByRole('heading', { name: 'OpenCreator：插件' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: '技能目录' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
 
@@ -3124,7 +3124,7 @@ describe('App', () => {
     expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
     expect(await screen.findByRole('heading', { name: '网页演示稿生成' })).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByLabelText('已选择 Skill frontend-slides')).toBeInTheDocument();
+      expect(screen.getByLabelText('已选择技能 frontend-slides')).toBeInTheDocument();
       expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveValue('');
       expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveFocus();
     });
@@ -3247,12 +3247,12 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '插件中心' }));
     await waitFor(() => expect(screen.getAllByTestId('skill-market-card')).toHaveLength(12));
     await showSkillMarketCard(user, 'frontend-slides');
-    expect(screen.getByRole('alert')).toHaveTextContent('Skill 状态加载失败');
+    expect(screen.getByRole('alert')).toHaveTextContent('技能状态加载失败');
     const action = within(getSkillMarketCard('frontend-slides')).getByRole('button', {
       name: '状态未知'
     });
     expect(action).toBeDisabled();
-    expect(action).toHaveAccessibleDescription('Skill 安装状态未知');
+    expect(action).toHaveAccessibleDescription('技能安装状态未知');
   });
 
   it('keeps the plugin market open and shows an error when using a skill cannot create a thread', async () => {
@@ -3320,7 +3320,7 @@ describe('App', () => {
         fetchCalls.filter(call => call.url.endsWith('/threads') && call.init?.method === 'POST')
       ).toHaveLength(2);
     });
-    expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '技能目录' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '网页演示稿生成' })).not.toBeInTheDocument();
     expect(findPostCall(fetchCalls, '/runs')).toBeUndefined();
   });
@@ -3679,7 +3679,7 @@ describe('App', () => {
     await showSkillMarketCard(user, 'frontend-slides');
     await user.click(await within(getSkillMarketCard('frontend-slides')).findByRole('button', { name: '更新' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Skill 状态刷新失败');
+    expect(await screen.findByRole('alert')).toHaveTextContent('技能状态刷新失败');
     const action = within(getSkillMarketCard('frontend-slides')).getByRole('button', {
       name: '状态未知'
     });
@@ -8488,7 +8488,7 @@ async function showSkillMarketCard(
   user: ReturnType<typeof userEvent.setup>,
   skillId: string
 ): Promise<HTMLElement> {
-  const search = screen.getByRole('searchbox', { name: '搜索 Skill' });
+  const search = screen.getByRole('searchbox', { name: '搜索技能' });
   await user.clear(search);
   await user.type(search, skillId);
   return waitFor(() => getSkillMarketCard(skillId));

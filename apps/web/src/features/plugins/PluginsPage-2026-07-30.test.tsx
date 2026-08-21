@@ -13,6 +13,7 @@ describe('PluginsPage', () => {
     );
 
     expect(screen.getByRole('region', { name: 'Plugins' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Skills' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Connectors' })).toBeInTheDocument();
     expect(screen.getByRole('searchbox', { name: 'Search Skills' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Installed/ })).toBeInTheDocument();
@@ -22,8 +23,8 @@ describe('PluginsPage', () => {
     render(<PluginsPage {...createProps()} />);
 
     expect(screen.getByRole('region', { name: '插件中心' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Skills' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: '技能目录' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '技能' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '连接器' })).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByRole('status')).toHaveTextContent('目录暂时为空');
     expect(screen.queryByTestId('skill-market-card')).not.toBeInTheDocument();
@@ -43,7 +44,7 @@ describe('PluginsPage', () => {
     expect(screen.getByRole('tab', { name: '连接器' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('连接器');
     expect(screen.getByRole('heading', { name: '正在等待本地 Runtime' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Skill 功能目录' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '技能目录' })).not.toBeInTheDocument();
   });
 });
 

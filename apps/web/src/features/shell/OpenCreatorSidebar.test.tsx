@@ -77,11 +77,11 @@ describe('OpenCreatorSidebar', () => {
     expect(screen.getByRole('button', { name: '收起侧栏' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '首页' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '我的项目' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '工作台' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '数据看板' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Agent动态' })).not.toBeInTheDocument();
     const primaryActions = screen.getByRole('button', { name: '首页' }).parentElement;
-    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: 'Dashboard' }));
+    expect(primaryActions?.children[1]).toBe(screen.getByRole('button', { name: '工作台' }));
     expect(primaryActions?.children[2]).toBe(screen.getByRole('button', { name: '插件中心' }));
     expect(primaryActions?.children[3]).toBe(screen.getByRole('separator'));
     const searchButton = screen.getByRole('button', { name: '搜索' });
@@ -115,14 +115,14 @@ describe('OpenCreatorSidebar', () => {
   it('does not expose the legacy data dashboard in primary navigation', () => {
     renderSidebar({ activeView: 'dashboard' });
 
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: '数据看板' })).not.toBeInTheDocument();
   });
 
   it('uses creator-focused icons for the primary navigation', () => {
     const view = renderSidebar();
 
-    expect(screen.getByRole('button', { name: 'Dashboard' })
+    expect(screen.getByRole('button', { name: '工作台' })
       .querySelector('.lucide-panels-top-left')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '插件中心' })
       .querySelector('.lucide-puzzle')).toBeInTheDocument();
@@ -656,7 +656,7 @@ describe('OpenCreatorSidebar', () => {
 
     renderSidebar({ onOpenView });
 
-    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
+    await user.click(screen.getByRole('button', { name: '工作台' }));
 
     expect(onOpenView).toHaveBeenCalledWith('dashboard');
   });

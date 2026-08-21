@@ -98,7 +98,7 @@ function ActivityConversation(props: { range: ActivityRange }) {
   ]);
   const suggestions = getActivityChatSuggestions('admin');
   const rangeLabel = getActivityRangeLabel(props.range);
-  const scopes = ['组织 Token 汇总', '员工用量', 'Skill 使用', 'MCP 使用', 'Agent 执行'];
+  const scopes = ['组织 Token 汇总', '员工用量', '技能使用', 'MCP 使用', 'Agent 执行'];
 
   function sendQuestion(value: string) {
     const question = value.trim();
@@ -162,7 +162,7 @@ function ActivityConversation(props: { range: ActivityRange }) {
             aria-label="询问 Agent动态"
             onChange={event => setDraft(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="询问 Token、Skill、MCP 或 Agent 执行情况"
+            placeholder="询问 Token、技能、MCP 或 Agent 执行情况"
             rows={2}
             value={draft}
           />
@@ -190,7 +190,7 @@ function createActivityWelcome(range: ActivityRange): ActivityChatMessage {
   return {
     id: `welcome-admin-${range}`,
     role: 'assistant',
-    text: `${rangeLabel}组织活动数据已准备好。你可以询问 Token、员工用量、Skill、MCP 和 Agent 执行情况。`
+    text: `${rangeLabel}组织活动数据已准备好。你可以询问 Token、员工用量、技能、MCP 和 Agent 执行情况。`
   };
 }
 
@@ -213,7 +213,7 @@ function AdminView(props: { range: ActivityRange; onNavigate(route: AppRoute): v
         <TokenBreakdown usage={snapshot.organization.usage} />
       </div>
       <div className="activity-usage-grid">
-        <UsageDistribution title="Skill 使用分布" items={snapshot.organization.skillDistribution} />
+        <UsageDistribution title="技能使用分布" items={snapshot.organization.skillDistribution} />
         <UsageDistribution title="MCP 使用分布" items={snapshot.organization.mcpDistribution} />
       </div>
       <section className="activity-section">

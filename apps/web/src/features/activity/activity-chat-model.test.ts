@@ -16,7 +16,7 @@ describe('activity static conversation model', () => {
   });
 
   it('answers Skill and MCP questions from role-specific distributions', () => {
-    const skill = createActivityChatAnswer('admin', '7d', 'Skill 使用最多的是哪个？');
+    const skill = createActivityChatAnswer('admin', '7d', '技能使用最多的是哪个？');
     expect(skill.text).toContain('网页检索');
     expect(skill.text).toContain('18 次');
     expect(skill.text).toContain('38%');

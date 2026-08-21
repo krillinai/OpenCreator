@@ -15,7 +15,7 @@ describe('ActivityPage static prototype', () => {
     expect(screen.getByText('输入 Token')).toBeInTheDocument();
     expect(screen.getByText('缓存输入')).toBeInTheDocument();
     expect(screen.getByText('推理输出')).toBeInTheDocument();
-    expect(screen.getByText('Skill 使用分布')).toBeInTheDocument();
+    expect(screen.getByText('技能使用分布')).toBeInTheDocument();
     expect(screen.getByText('MCP 使用分布')).toBeInTheDocument();
     expect(screen.getByText('网页检索').closest('p')).toHaveTextContent('18 次 · 38%');
   });

@@ -30,7 +30,7 @@ const seedFiles: WorkspaceFile[] = [
     path: 'docs/design/enterprise-agent-dashboard.md',
     name: 'enterprise-agent-dashboard.md',
     language: 'markdown',
-    content: '# OpenCreator Dashboard UI 方案\n\n这是 mock workspace 中的 Markdown 文件。',
+    content: '# OpenCreator 工作台 UI 方案\n\n这是 mock workspace 中的 Markdown 文件。',
     saved: true,
     dirty: false,
     updatedAt: new Date(0).toISOString(),

@@ -189,7 +189,7 @@ export default function ProjectsPage(props: {
               </strong>
               <p>
                 {props.projects.length === 0
-                  ? l('从 Dashboard 开始创作后，项目会自动显示在这里。', 'Projects appear here automatically after you start creating from Dashboard.')
+                  ? l('从工作台开始创作后，项目会自动显示在这里。', 'Projects appear here automatically after you start creating from Dashboard.')
                   : normalizedQuery.length > 0
                     ? l('换个名称重新搜索。', 'Try searching with another name.')
                     : l('完成对应类型的创作后，项目会显示在这里。', 'Projects of this type will appear here after you create them.')}
@@ -238,7 +238,7 @@ export default function ProjectsPage(props: {
                   : l('这个分类还没有产出', 'No outputs in this category')}</strong>
               <p>{normalizedQuery.length > 0
                 ? l('换个名称重新搜索。', 'Try searching with another name.')
-                : l('完成 Dashboard 任务后，生成的文件会集中显示在这里。', 'Generated files will appear here after you complete a Dashboard task.')}</p>
+                : l('完成工作台任务后，生成的文件会集中显示在这里。', 'Generated files will appear here after you complete a Dashboard task.')}</p>
             </div>
           )}
         </section>

@@ -22,13 +22,13 @@ const rangeLabels: Record<ActivityRange, string> = {
 const suggestions: Record<ActivityChatRole, string[]> = {
   admin: [
     '哪位员工的 Token 用量最高？',
-    'Skill 使用最多的是哪个？',
+    '技能使用最多的是哪个？',
     'MCP 调用分布怎么样？',
     '当前有多少活跃 Agent？'
   ],
   employee: [
     '我的 Token 用量是多少？',
-    '我最常用的 Skill 是什么？',
+    '我最常用的技能是什么？',
     '我的 MCP 调用情况如何？',
     '我有多少活跃 Agent？'
   ]
@@ -53,7 +53,7 @@ export function createActivityChatAnswer(
   if (/员工|同事|成员|排行|排名|最高/u.test(question)) {
     if (role === 'employee') {
       return {
-        text: '员工视图只展示你自己的活动数据，不能查询其他员工的用量或排名。你可以继续询问自己的 Token、Skill、MCP 或 Agent 使用情况。',
+        text: '员工视图只展示你自己的活动数据，不能查询其他员工的用量或排名。你可以继续询问自己的 Token、技能、MCP 或 Agent 使用情况。',
         evidence: [`${rangeLabel} · 个人权限`]
       };
     }
@@ -83,7 +83,7 @@ export function createActivityChatAnswer(
     const items = role === 'admin'
       ? snapshot.organization.skillDistribution
       : snapshot.employeeView.skillDistribution;
-    return distributionAnswer(rangeLabel, role, 'Skill', items);
+    return distributionAnswer(rangeLabel, role, '技能', items);
   }
 
   if (/mcp|工具|系统/iu.test(question)) {
@@ -107,7 +107,7 @@ export function createActivityChatAnswer(
 function distributionAnswer(
   rangeLabel: string,
   role: ActivityChatRole,
-  kind: 'Skill' | 'MCP',
+  kind: '技能' | 'MCP',
   items: UsageDistributionItem[]
 ): ActivityChatAnswer {
   const top = items[0];
@@ -121,7 +121,7 @@ function distributionAnswer(
 
 function fallback(rangeLabel: string): ActivityChatAnswer {
   return {
-    text: '当前静态数据暂时无法回答这个问题。你可以询问 Token 用量、活跃 Agent、完成轮次、Skill 或 MCP 使用情况。',
+    text: '当前静态数据暂时无法回答这个问题。你可以询问 Token 用量、活跃 Agent、完成轮次、技能或 MCP 使用情况。',
     evidence: [`${rangeLabel} · 静态采样数据`]
   };
 }

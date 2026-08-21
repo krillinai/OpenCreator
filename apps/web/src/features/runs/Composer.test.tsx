@@ -513,7 +513,7 @@ describe('Composer', () => {
     expect(screen.queryByRole('menuitem', { name: /github/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('menuitem', { name: /brainstorming/ }));
-    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+    expect(screen.getByLabelText('已选择技能 brainstorming')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveAttribute('placeholder', '');
   });
 
@@ -698,7 +698,7 @@ describe('Composer', () => {
     await user.click(screen.getByRole('menuitem', { name: '连接器' }));
     await user.click(screen.getByRole('menuitem', { name: /github.*已配置/ }));
 
-    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+    expect(screen.getByLabelText('已选择技能 brainstorming')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '输入任务' })).toHaveValue('使用 MCP：github ');
   });
 
@@ -1258,7 +1258,7 @@ describe('Composer', () => {
 
     await user.click(screen.getByRole('option', { name: /brainstorming/ }));
 
-    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+    expect(screen.getByLabelText('已选择技能 brainstorming')).toBeInTheDocument();
     expect(textbox).toHaveValue('');
     expect(callbacks.size).toBe(1);
     await user.type(textbox, '整');
@@ -1302,7 +1302,7 @@ describe('Composer', () => {
 
     await user.keyboard('{Enter}');
 
-    expect(screen.getByLabelText('已选择 Skill zhiyu-helper')).toBeInTheDocument();
+    expect(screen.getByLabelText('已选择技能 zhiyu-helper')).toBeInTheDocument();
     expect(textbox).toHaveValue('');
   });
 
@@ -1362,11 +1362,11 @@ describe('Composer', () => {
     const textbox = screen.getByRole('textbox', { name: '输入任务' });
     await user.type(textbox, '/');
     await user.keyboard('{Enter}');
-    expect(screen.getByLabelText('已选择 Skill brainstorming')).toBeInTheDocument();
+    expect(screen.getByLabelText('已选择技能 brainstorming')).toBeInTheDocument();
 
     await user.keyboard('{Backspace}');
 
-    expect(screen.queryByLabelText('已选择 Skill brainstorming')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('已选择技能 brainstorming')).not.toBeInTheDocument();
     expect(textbox).toHaveValue('');
   });
 

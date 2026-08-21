@@ -1037,7 +1037,7 @@ export default function VideoTranslationWorkspace(props: {
             aria-label={l('视频翻译操作区', 'Video translation workspace')}
           >
         <header className="video-translation-header">
-          <button type="button" onClick={props.onBack} aria-label={l('返回 Dashboard', 'Back to Dashboard')}>
+          <button type="button" onClick={props.onBack} aria-label={l('返回工作台', 'Back to Dashboard')}>
             <ArrowLeft size={18} strokeWidth={1.8} aria-hidden="true" />
           </button>
           <span className="video-translation-title-icon" aria-hidden="true">
