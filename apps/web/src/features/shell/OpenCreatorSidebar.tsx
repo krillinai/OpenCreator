@@ -11,7 +11,6 @@ import {
   FolderPlus,
   FolderOpen,
   House,
-  LogIn,
   LoaderCircle,
   MoreHorizontal,
   Pencil,
@@ -124,7 +123,6 @@ export function OpenCreatorSidebar(props: {
   const renameCanceledRef = useRef(false);
   const collapsed = props.collapsed === true;
   const autoCollapsed = props.autoCollapsed === true;
-  const accountTitle = props.user?.name ?? t('account.signIn');
   const globalActions: Array<{
     label: string;
     icon: LucideIcon;
@@ -820,44 +818,25 @@ export function OpenCreatorSidebar(props: {
         </section>
       )}
 
-      <div className="sidebar-bottom" data-authenticated={props.user === undefined ? 'false' : 'true'}>
-        {props.user === undefined && !collapsed ? (
-          <div className="sidebar-login-card">
-            <p>{t('account.signInHint')}</p>
-            <button
-              className="sidebar-login-button"
-              type="button"
-              aria-current={props.activeView === 'account' ? 'page' : undefined}
-              onClick={props.onOpenAccount}
-            >
-              <LogIn size={15} strokeWidth={2} aria-hidden="true" />
-              <span>{t('account.signIn')}</span>
-            </button>
-          </div>
-        ) : (
+      {props.user === undefined ? null : (
+        <div className="sidebar-bottom" data-authenticated="true">
           <button
             className="sidebar-account-button"
             type="button"
-            aria-label={accountTitle}
+            aria-label={props.user.name}
             aria-current={props.activeView === 'account' ? 'page' : undefined}
-            title={collapsed ? accountTitle : undefined}
+            title={collapsed ? props.user.name : undefined}
             onClick={props.onOpenAccount}
           >
-            {props.user === undefined ? (
-              <LogIn size={17} strokeWidth={2} aria-hidden="true" />
-            ) : (
-              <>
-                <span className="sidebar-account-avatar" aria-hidden="true">
-                  {props.user.initials}
-                </span>
-                <span className="sidebar-account-copy">
-                  <strong>{accountTitle}</strong>
-                </span>
-              </>
-            )}
+            <span className="sidebar-account-avatar" aria-hidden="true">
+              {props.user.initials}
+            </span>
+            <span className="sidebar-account-copy">
+              <strong>{props.user.name}</strong>
+            </span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
       <ConfirmDialog
         open={conversationPendingDeletion !== undefined}
         title="删除任务"

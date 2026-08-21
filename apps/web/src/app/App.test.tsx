@@ -607,17 +607,16 @@ describe('App', () => {
     expect(await screen.findByRole('region', { name: 'Skill 功能目录' })).toBeInTheDocument();
   });
 
-  it('opens the account route independently from settings', async () => {
+  it('keeps the account route available without exposing a guest login entry', async () => {
     const user = userEvent.setup();
+    window.location.hash = '#/account';
     render(<App fileService={createFileService()} />);
 
     const navigation = await screen.findByLabelText('OpenCreator 导航');
-    await user.click(within(navigation).getByRole('button', { name: '登录' }));
-
     expect(await screen.findByRole('heading', { name: '登录 OpenCreator' })).toBeInTheDocument();
     expect(window.location.hash).toBe('#/account');
-    expect(within(navigation).getByRole('button', { name: '登录' }))
-      .toHaveAttribute('aria-current', 'page');
+    expect(within(navigation).queryByRole('button', { name: '登录' }))
+      .not.toBeInTheDocument();
 
     await user.click(within(document.querySelector<HTMLElement>('.consumer-account-page')!)
       .getByRole('button', { name: '登录' }));
@@ -2708,8 +2707,8 @@ describe('App', () => {
       );
 
       expect(await screen.findByLabelText('OpenCreator 导航')).toBeInTheDocument();
-      expect(screen.getByText('登录即可享受云端协作')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument();
+      expect(screen.queryByText('登录即可享受云端协作')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '登录' })).not.toBeInTheDocument();
       expect(screen.queryByText(/登录企业账户/)).not.toBeInTheDocument();
     }
   );

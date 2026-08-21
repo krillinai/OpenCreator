@@ -114,6 +114,8 @@ test('成功 Probe 后进入 Dashboard，刷新不重复 Probe，并代理 JSON�
   const fixture = await launchPackagedDesktop('success');
   try {
     await waitForWorkspace(fixture.page);
+    await expect(fixture.page.getByText('登录即可享受云端协作')).toHaveCount(0);
+    await expect(fixture.page.getByRole('button', { name: '登录' })).toHaveCount(0);
     await expect.poll(() => readCounter(fixture.stateDir, 'probe-count.txt')).toBe(1);
     const startupMetrics = await fixture.page.evaluate(async () => (
       await window.opencreatorDesktop?.readBootstrapState()

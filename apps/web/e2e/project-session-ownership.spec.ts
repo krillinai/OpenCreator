@@ -90,6 +90,27 @@ test('browser first launch uses the Runtime default project without desktop-only
   ))).toHaveLength(1);
 });
 
+test('browser shared sidebar hides the guest login entry', async ({
+  page,
+  runtime
+}) => {
+  await page.route('**/.opencreator/runtime/enterprise/mcp', async route => {
+    await route.fulfill({
+      json: {
+        agentId: 'sidebar-login-e2e-agent',
+        tokenStatus: 'missing',
+        upstreams: [],
+        refreshedAt: '2026-08-21T13:30:00.000Z'
+      }
+    });
+  });
+  await runtime.openApp(page);
+
+  await expect(page.getByRole('navigation', { name: 'OpenCreator' })).toBeVisible();
+  await expect(page.getByText('登录即可享受云端协作')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '登录' })).toHaveCount(0);
+});
+
 test('restored conversations wait for history before entering the empty layout', async ({
   page,
   runtime

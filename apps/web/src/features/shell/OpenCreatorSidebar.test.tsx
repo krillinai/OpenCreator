@@ -106,8 +106,8 @@ describe('OpenCreatorSidebar', () => {
     expect(screen.getByRole('button', { name: '整理本周项目进展 4天' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '生成 B 站封面 1天' })).not.toBeInTheDocument();
     expect(screen.getByText('4天')).toBeInTheDocument();
-    expect(screen.getByText('登录即可享受云端协作')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '登录' })).toBeInTheDocument();
+    expect(screen.queryByText('登录即可享受云端协作')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '登录' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '更新' })).not.toBeInTheDocument();
   });
@@ -160,7 +160,7 @@ describe('OpenCreatorSidebar', () => {
     expect(screen.queryByRole('button', { name: 'My Assets' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'My Projects' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 
   it('expands projects with conversations without selecting the project', async () => {
@@ -484,15 +484,35 @@ describe('OpenCreatorSidebar', () => {
       .toHaveClass('sidebar-primary');
   });
 
-  it('opens the account page from the guest login entry', async () => {
-    const user = userEvent.setup();
+  it('hides the guest login entry when expanded or collapsed', () => {
     const onOpenAccount = vi.fn();
+    const view = renderSidebar({ onOpenAccount });
 
-    renderSidebar({ onOpenAccount });
+    expect(screen.queryByText('登录即可享受云端协作')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '登录' })).not.toBeInTheDocument();
+    expect(view.container.querySelector('.sidebar-bottom')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '登录' }));
+    view.rerender(
+      <OpenCreatorSidebar
+        projects={projects}
+        conversations={conversations}
+        tasks={[]}
+        activeView="conversation"
+        collapsed
+        onNewConversation={vi.fn()}
+        onSelectProject={vi.fn()}
+        onSelectConversation={vi.fn()}
+        onSelectTask={vi.fn()}
+        onOpenView={vi.fn()}
+        onOpenAccount={onOpenAccount}
+        onOpenSettings={vi.fn()}
+        onToggleCollapsed={vi.fn()}
+      />
+    );
 
-    expect(onOpenAccount).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: '登录' })).not.toBeInTheDocument();
+    expect(view.container.querySelector('.sidebar-bottom')).not.toBeInTheDocument();
+    expect(onOpenAccount).not.toHaveBeenCalled();
   });
 
   it('keeps account and settings separately accessible when expanded or collapsed', async () => {
@@ -700,7 +720,7 @@ describe('OpenCreatorSidebar', () => {
     expect(screen.queryByRole('button', { name: '收起侧栏' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '我的项目' })).toHaveAttribute('title', '我的项目');
     expect(screen.queryByText('折叠时隐藏的任务')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '登录' })).toHaveAttribute('title', '登录');
+    expect(screen.queryByRole('button', { name: '登录' })).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'OpenCreator' })).toHaveAttribute('data-collapsed', 'true');
 
     await user.click(screen.getByRole('button', { name: '展开侧栏' }));
