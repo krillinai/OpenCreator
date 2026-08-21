@@ -1,11 +1,18 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../images/opencreator-lockup-dark.svg" />
-  <img src="../images/opencreator-lockup.svg" alt="OpenCreator" width="420" />
-</picture>
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../images/opencreator-lockup-dark.svg" />
+    <img src="../images/opencreator-lockup.svg" alt="OpenCreator" width="420" />
+  </picture>
+</p>
 
-<h3>创作让我快乐！</h3>
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="../images/opencreator-slogan-zh-dark.svg" />
+    <img src="../images/opencreator-slogan-zh.svg" alt="创作让我快乐！" width="520" />
+  </picture>
+</p>
 
 OpenCreator 是一站式内容创作 Agent 工作台，把视频、图像、配音等创作工具，与项目、会话、Skills、MCP 和长期任务放进同一个工作空间。
 

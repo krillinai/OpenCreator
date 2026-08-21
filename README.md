@@ -1,11 +1,18 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/images/opencreator-lockup-dark.svg" />
-  <img src="./docs/images/opencreator-lockup.svg" alt="OpenCreator" width="420" />
-</picture>
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/images/opencreator-lockup-dark.svg" />
+    <img src="./docs/images/opencreator-lockup.svg" alt="OpenCreator" width="420" />
+  </picture>
+</p>
 
-<h3>Creating is fun!</h3>
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./docs/images/opencreator-slogan-en-dark.svg" />
+    <img src="./docs/images/opencreator-slogan-en.svg" alt="Creating is fun!" width="520" />
+  </picture>
+</p>
 
 OpenCreator is a one-stop content creation Agent workspace that brings video, image, and voice creation together with projects, conversations, Skills, MCP, and long-running tasks.
 

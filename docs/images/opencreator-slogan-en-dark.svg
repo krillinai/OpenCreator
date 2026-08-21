@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 80" role="img" aria-labelledby="title">
+  <title id="title">Creating is fun!</title>
+  <text
+    x="300"
+    y="56"
+    fill="#f0f6fc"
+    font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    font-size="48"
+    font-weight="700"
+    text-anchor="middle"
+  >Creating is fun!</text>
+</svg>
