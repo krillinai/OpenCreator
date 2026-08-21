@@ -8,7 +8,7 @@
   <br />
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="../images/opencreator-slogan-zh-dark.svg" />
-    <img src="../images/opencreator-slogan-zh.svg" alt="创作让我快乐！" width="500" />
+    <img src="../images/opencreator-slogan-zh.svg" alt="创作使我快乐" width="500" />
   </picture>
 </p>
 
