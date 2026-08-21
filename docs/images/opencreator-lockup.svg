@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="112" viewBox="0 0 460 112" role="img" aria-labelledby="title">
+  <title id="title">OpenCreator</title>
+  <g transform="translate(4 4) scale(3.2)">
+    <path
+      d="M21.4 8.2A10.5 10.5 0 1 0 21.4 23.8"
+      fill="none"
+      stroke="#111113"
+      stroke-width="4.6"
+      stroke-linecap="round"
+    />
+    <path
+      d="M24.5 11.5 25.7 14.8 29 16l-3.3 1.2-1.2 3.3-1.2-3.3L20 16l3.3-1.2 1.2-3.3Z"
+      fill="#111113"
+    />
+  </g>
+  <text
+    x="116"
+    y="72"
+    fill="#111113"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    font-size="44"
+    font-weight="400"
+    letter-spacing="0"
+  >OpenCreator</text>
+</svg>

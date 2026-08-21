@@ -1,112 +1,419 @@
-# OpenCreator Agent
+<div align="center">
 
-OpenCreator Agent 是一个本地优先的 Codex Agent 工作台。Web 前端负责会话、任务、文件、插件和设置体验；本地 Fastify daemon 负责 Codex CLI 调用、持久化、审批、附件、计划任务、搜索、通知状态和显式长期记忆。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/images/opencreator-lockup-dark.svg" />
+  <img src="./docs/images/opencreator-lockup.svg" alt="OpenCreator" width="420" />
+</picture>
 
-## 环境要求
+<h3>Creating is fun!</h3>
 
-- Node.js 22 或更高版本。
-- pnpm 9.15。
-- 已安装并可执行 `codex`。
-- 如需真实模型任务，Codex CLI 必须处于有效登录状态。
+OpenCreator is a one-stop content creation Agent workspace that brings video, image, and voice creation together with projects, conversations, Skills, MCP, and long-running tasks.
 
-## 安装与启动
+**English** | [简体中文](./docs/zh/README.md)
+
+[![Codex Native](https://img.shields.io/badge/Codex-Native-111113?style=for-the-badge&logo=openai&logoColor=white)](https://github.com/openai/codex)
+![Web + Desktop](https://img.shields.io/badge/Web_%2B_Desktop-One_UI-2563EB?style=for-the-badge)
+
+[![GitHub Stars](https://img.shields.io/badge/Stars-0-gold?logo=github)](https://github.com/krillinai/OpenCreator/stargazers)
+[![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
+[![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
+[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+
+[Highlights](#highlights) · [Creator Tools](#creator-tools) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation)
+
+</div>
+
+> [!IMPORTANT]
+> OpenCreator is under active development and is currently best run from source. Real Agent tasks require the [Codex CLI](https://github.com/openai/codex) to be installed and authenticated on your machine. AI image, video, and voice features also depend on their corresponding service configuration.
+
+## Project Overview
+
+OpenCreator is built for individuals and teams who want to keep creative and development work running locally. Instead of reimplementing an Agent loop, it uses Codex CLI as the execution engine and adds a stable local Runtime, a visual workspace, and a Desktop host around it.
+
+The product brings together two connected workflows:
+
+- **AI content creation**: open dedicated workspaces for video translation, video generation, digital avatars, AI dubbing, automatic clipping, image generation, and more.
+- **General Agent workspace**: organize conversations by project, keep Runs working in the background, and manage approvals, attachments, files, Skills, MCP, schedules, notifications, memory, and diagnostics from one place.
+
+Web is the single frontend implementation. Desktop loads the same Web build and adds only capabilities that require the operating system, such as directory selection, window lifecycle, tray behavior, and native notifications. With the same data and content viewport, both platforms share the same general UI and Runtime behavior.
+
+## Highlights
+
+| Capability | What it provides |
+| --- | --- |
+| AI creator workspaces | Guided forms, previews, results, and Agent assistance for video, image, voice, and avatar workflows |
+| Codex-native execution | Reuses the Codex Agent loop, models, reasoning, Skills, MCP, tool calls, and conversation capabilities |
+| Background Runs | Keeps tasks running across refreshes and conversation switches, with queuing, interruption, continuation, and result tracking |
+| Projects and files | Manages blank or existing local projects, image attachments, text editing, and image, PDF, and safe HTML previews |
+| Approvals and permissions | Handles controlled actions in the Timeline and global task center, with project-level permission preferences and persisted approvals |
+| Skills and MCP | Browses, installs, and uses Skills while managing MCP servers through Codex-native configuration |
+| Long-running schedules | Creates, edits, pauses, resumes, and runs scheduled tasks inside persistent dedicated conversations |
+| Local memory and summaries | Manages explicit global, project, and thread memory with versioned summaries and per-Run input snapshots |
+| Shared Web and Desktop UI | Implements React once; Electron supplies native capabilities and embeds a hash-verified Web build |
+| Local-first diagnostics | Keeps SQLite data, attachments, and Run logs local by default, with redaction before diagnostics are exported |
+
+## Creator Tools
+
+The Dashboard currently provides the workspaces below. Available models and services depend on your local Codex environment, AI service settings, and optional enterprise gateway.
+
+| Workspace | Typical use |
+| --- | --- |
+| Video Translation | Organize source video, target language, subtitles, dubbing, and lip-sync workflows |
+| AI Video Generation | Set a prompt, provider, aspect ratio, resolution, and duration, then preview generated results |
+| Digital Avatar | Plan the presenter, script, voice delivery, scene, and composition |
+| Stick Figure Video | Design characters and stories, generate and edit storyboards, then combine narration, music, and animation |
+| Auto Clips | Analyze video semantics and extract highlights by content focus, target duration, and clip count |
+| AI Dubbing | Refine scripts, voices, delivery styles, speaking rates, and export formats |
+| Image Generation | Configure prompts, providers, aspect ratios, quality, and output count, then preview and download images |
+| Thumbnail Generator | Combine a topic, video link, and reference image to produce multiple thumbnail variations |
+| Video Downloader | Parse YouTube, Bilibili, and other video links and choose an available download format |
+
+## Product Tour
+
+### Agent Workspace
+
+Start from a project-aware conversation, choose a Skill or model, attach context, and keep long-running Agent work visible in one place.
+
+![OpenCreator Agent workspace](./docs/images/opencreator-home-en.png)
+
+### Creator Dashboard
+
+Open dedicated creation workspaces for video translation, animation, avatars, image generation, dubbing, clipping, and more.
+
+![OpenCreator Creator Dashboard](./docs/images/product/opencreator-dashboard-en.png)
+
+### My Projects
+
+Continue recent work, search across projects, and switch between video, avatar, image, and marketing collections.
+
+![OpenCreator My Projects](./docs/images/product/opencreator-projects-en.png)
+
+### Output Center
+
+Review generated videos, images, audio, subtitles, and documents across every project from a single output library.
+
+![OpenCreator Output Center](./docs/images/product/opencreator-output-center-en.png)
+
+## Examples
+
+### Video Translation
+
+The public examples below come from [KrillinAI](https://github.com/krillinai/KrillinAI), the open-source video localization project from the same team. They demonstrate the established subtitle alignment, translation, dubbing, and portrait-video workflow that OpenCreator's Video Translation workspace is designed to bring into a wider Agent workflow.
+
+KrillinAI generated the subtitle file below from a 46-minute local video in one run, without manual subtitle adjustments. The published result shows complete coverage, no overlapping lines, natural segmentation, and high-quality translation.
+
+![KrillinAI subtitle alignment example](./docs/images/examples/krillinai-subtitle-alignment.png)
+
+<table>
+<tr>
+<td width="33%">
+
+#### Subtitle Translation
+
+https://github.com/user-attachments/assets/bba1ac0a-fe6b-4947-b58d-ba99306d0339
+
+</td>
+<td width="33%">
+
+#### Dubbing
+
+https://github.com/user-attachments/assets/0b32fad3-c3ad-4b6a-abf0-0865f0dd2385
+
+</td>
+<td width="33%">
+
+#### Portrait Mode
+
+https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
+
+</td>
+</tr>
+</table>
+
+> Video examples and subtitle alignment image: [KrillinAI](https://github.com/krillinai/KrillinAI).
+
+### Stick Figure Animation
+
+OpenCreator developed this original character collection in collaboration with artists. The preset cast gives creators consistent, production-ready identities for stories and animation, while the workspace also supports uploaded references and generated characters.
+
+![OpenCreator stick figure characters developed with artists](./docs/images/examples/stick-figure-characters.webp)
+
+From a character and story idea, the Agent workspace guides the project through storyboard generation, shot review, voiceover, music, and versioned animation output.
+
+![OpenCreator stick figure animation example frame](./docs/images/examples/stick-figure-animation-frame.jpg)
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 22 or later
+- pnpm 9.15.0, pinned through the repository's `packageManager` field
+- A Codex CLI executable available in your terminal
+- A valid Codex CLI login for real model tasks
+
+Check your local environment first:
 
 ```bash
+node --version
+pnpm --version
+codex --version
+```
+
+### Run Web from Source
+
+```bash
+git clone https://github.com/krillinai/OpenCreator.git
+cd OpenCreator
 corepack enable
 pnpm install
 pnpm web:dev
 ```
 
-浏览器打开 `http://127.0.0.1:9000/`。
+Open `http://127.0.0.1:9000/`. The development server starts the local daemon on demand and injects a temporary Runtime token through a same-origin proxy, so no connection token needs to be copied manually.
 
-开发 Web 服务会自动启动本地 daemon，并通过同源代理连接，无需手工复制 Runtime token。若只调试 daemon：
+On first launch, the Runtime prepares a default project. The composer is ready as soon as the connection completes. To work on the daemon only:
 
 ```bash
 pnpm daemon:dev
 ```
 
-daemon 会监听随机本机端口，并在 stdout 输出一次连接地址和临时 token。
+The daemon listens only on a loopback address and prints its connection address and temporary token to stdout once.
 
-长期计划任务默认在同一个底层 Codex thread 完成 50 次终态 Run 后，使用最新
-ConversationSummary 建立新 Codex thread；resume 目标失效时也会自动尝试一次相同恢复。
-OpenCreator Thread、Schedule 绑定和页面路由保持不变。可通过环境变量调整阈值，设为 `0`
-可关闭按次数主动轮换：
+## Desktop
 
-```bash
-OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD=100 pnpm daemon:dev
-```
+Desktop and the browser use the same React frontend from `apps/web`. General project, conversation, task, and settings behavior calls the same Daemon/API. Electron adds only real system paths, window controls, tray behavior, and native notifications.
 
-该自动恢复只用于 `resumeMode: "auto"` 的计划任务；普通会话或显式
-`resumeMode: "resume_thread"` 仍按原错误语义失败，不会静默新建上下文。
-
-每条计划任务都有唯一的长期任务会话。“已安排”用于创建、编辑、暂停、恢复、立即运行
-和删除；侧栏“任务”用于查看每次触发、审批、结果和后续对话。同一任务的自动触发、
-立即运行和用户消息都复用同一个 OpenCreator Thread，并按 `queue` 或 `skip` 串行处理。
-
-计划任务完成、失败、取消或等待审批时，daemon 会把脱敏通知写入持久 outbox。支持
-`configureBackgroundNotifications` 的 Desktop Host 可在页面关闭后继续读取并确认通知；
-浏览器版仍受页面存活和 Notification 权限限制。可用 harness 验证 outbox 消费：
+### Development Mode
 
 ```bash
-pnpm harness notifications \
-  --base-url http://127.0.0.1:<port> \
-  --token <runtime-token> \
-  --watch
+pnpm desktop:dev
 ```
 
-## 主要能力
+### Local Packaging
 
-- 会话分页、长列表虚拟化、正文搜索和目标消息定位。
-- Run 后台执行、刷新恢复、跨会话切换、排队发送、立即打断并继续。
-- 图片附件、多模态 Run、工作区文件浏览和安全 HTML 预览。
-- Codex Skills 市场、MCP、Profiles、Schedules、Cleanup 和 Diagnostics。
-- Codex app-server 审批闭环、全局任务中心和显式系统通知授权。
-- 用户显式管理的全局、项目和线程记忆，以及版本化会话摘要。
+| Command | Output |
+| --- | --- |
+| `pnpm desktop:package` | A runnable directory for the current platform, intended for local verification |
+| `pnpm desktop:dist` | An installer for the current platform |
+| `pnpm desktop:release` | The formal release packaging entry point |
+| `pnpm --filter @opencreator/desktop verify:package` | Verification for an existing Desktop package |
 
-## 数据目录
+Desktop packaging rebuilds Web from the current workspace, records the commit, dirty state, platform, architecture, and Web hash, and compares `apps/web/dist` with the resources embedded in the application. Packaging fails if they differ. See the [Desktop release runbook](./docs/operations/opencreator-desktop-release-runbook.md) for signing, notarization, Windows builds, and release requirements.
 
-默认 Runtime 数据位于仓库根目录的 `.runtime/`：
+## Core Workflows
 
-- `.runtime/app.sqlite`：线程、Run、事件、任务、通知 outbox、附件元数据、审批、记忆和摘要。
-- `.runtime/runs/`：每次 Run 的脱敏日志、诊断和元数据。
-- `.runtime/attachments/`：受控附件文件。
-- `.runtime/workspaces/`：Runtime 托管工作区。
+### Conversations and Runs
 
-Codex 会话、配置、Skills 和 MCP 默认仍使用当前 `$CODEX_HOME`；未设置时使用 `~/.codex`。
+1. Select a project or start a new conversation.
+2. Enter a task and choose the permission level, Profile, model, and reasoning effort.
+3. While a Run is active, queue follow-up tasks or interrupt it and continue immediately.
+4. Use the Timeline to inspect reasoning summaries, tool calls, file changes, approvals, and final results.
+5. Use the task center to track running, completed, failed, and approval-blocked tasks globally.
 
-## 验证
+### Skills and MCP
+
+- Browse the Skill marketplace, installation history, and locally available Skills in the plugin center.
+- Select a Skill from the composer with `/` or the add menu so the next task follows its workflow.
+- MCP management passes through Codex-native commands and configuration instead of maintaining a second execution engine.
+- OpenCreator uses the active `$CODEX_HOME` by default, so confirm the impact before changing global Skills or MCP configuration.
+
+### Schedules and Dedicated Task Threads
+
+- Every schedule owns a persistent, dedicated OpenCreator conversation.
+- Automatic triggers, manual runs, and user follow-ups reuse that conversation and run serially with the `queue` or `skip` policy.
+- Deleting a schedule archives its dedicated conversation while preserving existing Runs, results, and underlying Codex history.
+- Rotating or recovering an underlying Codex thread does not change the OpenCreator task entry or page route.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser["Browser"] --> Web["apps/web<br/>React + Vite"]
+    Desktop["apps/desktop<br/>Electron Host"] --> WebBuild["The same Web dist"]
+    WebBuild --> Web
+    Desktop --> Native["Directories / Windows / Tray / Native notifications"]
+    Web -->|"Runtime API + SSE"| Daemon["apps/daemon<br/>Fastify Runtime"]
+    Daemon --> DB[".runtime/app.sqlite"]
+    Daemon --> Files["Runs / Attachments / Workspaces"]
+    Daemon --> Codex["Codex CLI / app-server"]
+    Codex --> CodexHome["$CODEX_HOME<br/>Sessions / Skills / MCP / Profiles"]
+```
+
+Core principles:
+
+- The frontend does not launch Codex directly and does not depend on raw Codex JSONL event formats.
+- The daemon owns process lifecycle, event normalization, persistence, approvals, schedules, and the notification outbox.
+- Codex remains the execution source of truth for the Agent loop, Skills, and MCP.
+- Browser Bridge and Desktop Bridge do not implement separate copies of general product logic.
+
+## Repository Layout
+
+```text
+OpenCreator/
+├── apps/
+│   ├── web/          # The single React frontend implementation
+│   ├── daemon/       # Local Fastify Runtime and Codex adapter
+│   ├── desktop/      # Electron Main, Preload, native capabilities, and packaging
+│   └── harness/      # Runtime command-line verification tool
+├── packages/
+│   ├── protocol/     # Runtime contracts shared by Web, Daemon, and Desktop
+│   └── skill-market/ # Skill marketplace models and shared logic
+├── docs/             # Design docs, API references, runbooks, and test reports
+├── scripts/          # Repository-level checks
+└── .runtime/         # Local Runtime data, created on first launch
+```
+
+## Configuration
+
+### AI Service API Keys
+
+Open **Settings → AI Services** to configure the providers used for text, transcription, voice, image, and video generation. Each category exposes only the fields required by its selected provider, including the Base URL, API Key, model, proxy, or provider-specific credentials.
+
+![OpenCreator AI Services API Key settings](./docs/images/product/opencreator-ai-services-en.png)
+
+Credentials are saved through the local Runtime's system credential storage and should never be committed to the repository. Some local or system-backed providers, such as Edge TTS, do not require an API Key.
+
+### Runtime Environment Variables
+
+Most users do not need environment variables. Use these when you need isolated data, a specific Codex executable, or a custom managed-project directory:
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `OPENCREATOR_DATA_DIR` | `.runtime` | OpenCreator database, Runs, attachments, and managed workspaces |
+| `OPENCREATOR_CODEX_BIN` | `codex` | Path to the Codex CLI executable |
+| `CODEX_HOME` | `~/.codex` | Source of truth for Codex sessions, configuration, Skills, MCP, and Profiles |
+| `OPENCREATOR_DEFAULT_CWD` | Current working directory | Default daemon working directory |
+| `OPENCREATOR_DEFAULT_PROJECT_ROOT` | Runtime default policy | Managed-project root; when set, OpenCreator uses its `OpenCreator/` child directory |
+| `OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD` | `50` | Terminal Run threshold for rotating the Codex thread behind a long-running schedule; use `0` to disable proactive rotation |
+
+For example, isolate both Runtime data and the Codex environment:
+
+```bash
+OPENCREATOR_DATA_DIR=/path/to/opencreator-data \
+CODEX_HOME=/path/to/codex-home \
+pnpm web:dev
+```
+
+The enterprise gateway cannot be injected through arbitrary environment variables and must use a controlled startup configuration file. See [Enterprise gateway configuration](./docs/企业网关配置说明-2026-08-06.md).
+
+## Data and Security
+
+Runtime data is stored under `.runtime/` in the repository root by default:
+
+| Path | Contents |
+| --- | --- |
+| `.runtime/app.sqlite` | Projects, threads, Runs, events, schedules, notifications, attachment metadata, approvals, memory, and summaries |
+| `.runtime/runs/` | Redacted logs, diagnostics, and metadata for individual Runs |
+| `.runtime/attachments/` | Controlled attachment files |
+| `.runtime/workspaces/` | Runtime-managed project workspaces |
+
+Codex sessions and configuration remain in `$CODEX_HOME` and must be backed up separately from `.runtime/`.
+
+Security boundaries include:
+
+- The daemon listens only on `127.0.0.1`; every API except the health check requires a Bearer token.
+- HTML preview disables scripts, navigation, and popups by default and allows only controlled same-workspace relative resources.
+- Sensitive memory requires a second confirmation. OpenCreator never permanently stores unconfirmed suggestions automatically.
+- Diagnostics and Run logs are redacted before they are returned or exported.
+- Desktop packages enable ASAR integrity and cookie encryption while disabling RunAsNode, `NODE_OPTIONS`, and the Node CLI Inspector.
+
+See the [user guide and troubleshooting reference](./docs/opencreator-user-guide-and-troubleshooting.md) for complete backup, restore, cleanup, and reset procedures.
+
+## Development
+
+### Common Commands
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm web:dev` | Start Web and launch the local daemon on demand |
+| `pnpm daemon:dev` | Start the daemon only |
+| `pnpm desktop:dev` | Build dependencies and start Electron in development mode |
+| `pnpm test` | Run workspace unit and integration tests |
+| `pnpm typecheck` | Run TypeScript checks across the repository |
+| `pnpm build` | Build every workspace |
+| `pnpm e2e` | Run Web Playwright E2E tests |
+| `pnpm smoke:ci` | Run the fake-Codex Runtime smoke test |
+| `pnpm perf:check` | Check the recorded performance baseline |
+
+Before submitting a change, run at least:
 
 ```bash
 pnpm test
 pnpm typecheck
 pnpm build
-pnpm smoke:ci
-pnpm release:verify-scheduled-task-upgrade
-pnpm perf:check
-pnpm audit --audit-level high
 ```
 
-真实 Codex 发布 smoke：
+Changes to Desktop, Host Bridge, the Runtime proxy, or shared frontend workflows also require Web/Desktop consistency tests, packaged application E2E, and Web build hash verification. Passing Web unit tests alone does not establish Desktop release readiness.
+
+The real Codex smoke test is disabled by default. Enable it explicitly with:
 
 ```bash
 OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 \
 pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 ```
 
-## 安全边界
+## Frequently Asked Questions
 
-- daemon 仅监听 `127.0.0.1`，除健康检查外所有 API 都要求 Bearer token。
-- HTML 预览默认禁用脚本、导航和弹窗，只允许受控的同工作区相对资源。
-- 敏感记忆必须二次确认；OpenCreator 不会自动永久保存未确认内容，也不会写入外部知识库。
-- Diagnostics 和 Run 日志在返回或导出前进行脱敏。
+<details>
+<summary><strong>The page remains stuck on "Connecting to the local runtime"</strong></summary>
 
-## 文档
+Confirm that `pnpm web:dev` is still running, then open `http://127.0.0.1:9000/.opencreator/runtime/healthz`. A healthy response is `{"ok":true}`. If port 9000 is occupied, stop the old process and try again.
 
-- [用户指南与故障排查](docs/opencreator-user-guide-and-troubleshooting.md)
-- [Runtime API v1](docs/runtime-api-for-ui-v1.md)
-- [定时任务专属会话规格](docs/specs/2026-07-14-scheduled-task-dedicated-thread-design.md)
-- [定时任务专属会话执行计划](docs/plans/2026-07-14-scheduled-task-dedicated-thread-design-plan.md)
-- [定时任务发布、迁移与回滚运行手册](docs/operations/2026-07-15-scheduled-task-dedicated-thread-release-runbook.md)
-- [定时任务专属会话最终验收报告](docs/test-reports/2026-07-15-scheduled-task-dedicated-thread-final-acceptance.md)
-- [完整优化实施计划](docs/superpowers/plans/2026-07-12-opencreator-agent-complete-optimization.md)
-- [最终验收报告](docs/superpowers/test-reports/2026-07-12-opencreator-agent-final-acceptance.md)
+</details>
+
+<details>
+<summary><strong>The interface opens, but real tasks do not run</strong></summary>
+
+Run `codex --version` to confirm the CLI is available, then check your Codex authentication. Errors such as `401 token_expired` or `refresh_token_reused` require signing in to Codex again. Do not delete `.runtime` to work around an authentication failure.
+
+</details>
+
+<details>
+<summary><strong>Why does the browser not show local folder selection or window controls?</strong></summary>
+
+Those actions require Electron to provide real system paths or window capabilities and appear only when the corresponding Desktop capability is available. Projects, conversations, tasks, and file editing remain shared between Web and Desktop.
+
+</details>
+
+<details>
+<summary><strong>How do I back up all local data?</strong></summary>
+
+Stop Web and the daemon, then back up the entire `.runtime/` directory rather than only SQLite. Attachments and Run snapshots live in separate subdirectories. Back up Codex `$CODEX_HOME` separately.
+
+</details>
+
+See the [user guide and troubleshooting reference](./docs/opencreator-user-guide-and-troubleshooting.md) for more.
+
+## Documentation
+
+- [User guide and troubleshooting](./docs/opencreator-user-guide-and-troubleshooting.md)
+- [Runtime API v1](./docs/runtime-api-for-ui-v1.md)
+- [Codex-native Runtime design](./docs/2026-07-03-codex-native-agent-runtime-design.md)
+- [Desktop release runbook](./docs/operations/opencreator-desktop-release-runbook.md)
+- [Windows Desktop release guide](./docs/operations/opencreator-desktop-windows-release.md)
+- [Enterprise gateway configuration](./docs/企业网关配置说明-2026-08-06.md)
+- [Visual component guidelines](./docs/visual-component-guidelines.md)
+
+## Translation Convention
+
+The root `README.md` is the canonical English document. Maintained translations live at `docs/<locale>/README.md`. Add a language to the switcher only after its full document has been translated and synchronized with the English structure.
+
+## Contributing
+
+1. Describe the problem, use case, and expected behavior in [Issues](https://github.com/krillinai/OpenCreator/issues).
+2. Create a focused feature or fix branch from the latest development branch.
+3. Follow the existing architecture: implement general product capabilities once in Web and Daemon, and isolate native differences behind explicit capabilities.
+4. Add appropriate unit, integration, or E2E coverage for behavior changes, and list both completed and skipped verification in the Pull Request.
+5. Never commit `.runtime/`, local credentials, Codex sessions, build caches, or other user data.
+
+## Acknowledgements
+
+OpenCreator is built on [OpenAI Codex](https://github.com/openai/codex), [React](https://react.dev/), [Fastify](https://fastify.dev/), [Electron](https://www.electronjs.org/), [SQLite](https://www.sqlite.org/), and the [Model Context Protocol](https://modelcontextprotocol.io/).
+
+---
+
+<div align="center">
+
+**OpenCreator · Create locally, work continuously.**
+
+</div>
