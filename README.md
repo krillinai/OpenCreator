@@ -5,12 +5,10 @@
     <source media="(prefers-color-scheme: dark)" srcset="./docs/images/opencreator-lockup-dark.svg" />
     <img src="./docs/images/opencreator-lockup.svg" alt="OpenCreator" width="340" />
   </picture>
-</p>
-
-<p>
+  <br />
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./docs/images/opencreator-slogan-en-dark.svg" />
-    <img src="./docs/images/opencreator-slogan-en.svg" alt="Creating is fun!" width="520" />
+    <img src="./docs/images/opencreator-slogan-en.svg" alt="Creating is fun!" width="500" />
   </picture>
 </p>
 

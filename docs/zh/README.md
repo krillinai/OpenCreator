@@ -5,12 +5,10 @@
     <source media="(prefers-color-scheme: dark)" srcset="../images/opencreator-lockup-dark.svg" />
     <img src="../images/opencreator-lockup.svg" alt="OpenCreator" width="340" />
   </picture>
-</p>
-
-<p>
+  <br />
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="../images/opencreator-slogan-zh-dark.svg" />
-    <img src="../images/opencreator-slogan-zh.svg" alt="创作让我快乐！" width="520" />
+    <img src="../images/opencreator-slogan-zh.svg" alt="创作让我快乐！" width="500" />
   </picture>
 </p>
 
