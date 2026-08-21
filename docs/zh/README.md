@@ -14,17 +14,19 @@
 
 OpenCreator 是一站式内容创作 Agent 工作台，把视频、图像、配音等创作工具，与项目、会话、Skills、MCP 和长期任务放进同一个工作空间。
 
+<a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="KrillinAI：Trendshift 单日排名第一仓库" width="250" height="55" /></a>
+
 [English](../../README.md) | **简体中文**
 
 [![Codex Native](https://img.shields.io/badge/Codex-Native-111113?style=for-the-badge&logo=openai&logoColor=white)](https://github.com/openai/codex)
 ![Web + Desktop](https://img.shields.io/badge/Web_%2B_Desktop-One_UI-2563EB?style=for-the-badge)
 
-[![GitHub Stars](https://img.shields.io/badge/Stars-0-gold?logo=github)](https://github.com/krillinai/OpenCreator/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/krillinai/KrillinAI?style=flat&logo=github&label=Stars&color=gold)](https://github.com/krillinai/KrillinAI/stargazers)
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-[功能亮点](#功能亮点) · [创作工具](#创作工具) · [产品展示](#产品展示) · [案例展示](#案例展示) · [快速开始](#快速开始) · [Desktop](#desktop) · [系统架构](#系统架构) · [开发指南](#开发指南) · [文档](#文档)
+[功能亮点](#功能亮点) · [创作工具](#创作工具) · [产品展示](#产品展示) · [案例展示](#案例展示) · [快速开始](#快速开始) · [Desktop](#desktop) · [系统架构](#系统架构) · [开发指南](#开发指南) · [文档](#文档) · [Star 趋势](#star-趋势)
 
 </div>
 
@@ -406,6 +408,12 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 3. 遵循仓库现有架构，通用产品能力只在 Web + Daemon 实现一次，原生差异通过 capability 隔离。
 4. 为行为变化补充相应的单元、集成或 E2E 测试，并在 Pull Request 中写明已运行和未运行的验证。
 5. 不提交 `.runtime/`、本机凭据、Codex 会话、构建缓存或其他用户数据。
+
+## Star 趋势
+
+OpenCreator 是 KrillinAI 的下一阶段演进。在仓库升级完成前，下图沿用原 [`krillinai/KrillinAI`](https://github.com/krillinai/KrillinAI) 仓库的 Star 历史。
+
+[![KrillinAI 到 OpenCreator Star 趋势](https://star-history.dera.page/svg?repos=KrillinAI/KrillinAI&type=Date)](https://star-history.dera.page/#KrillinAI/KrillinAI&Date)
 
 ## 致谢
 

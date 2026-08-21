@@ -14,17 +14,19 @@
 
 OpenCreator is a one-stop content creation Agent workspace that brings video, image, and voice creation together with projects, conversations, Skills, MCP, and long-running tasks.
 
+<a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="KrillinAI: #1 Repository of the Day on Trendshift" width="250" height="55" /></a>
+
 **English** | [简体中文](./docs/zh/README.md)
 
 [![Codex Native](https://img.shields.io/badge/Codex-Native-111113?style=for-the-badge&logo=openai&logoColor=white)](https://github.com/openai/codex)
 ![Web + Desktop](https://img.shields.io/badge/Web_%2B_Desktop-One_UI-2563EB?style=for-the-badge)
 
-[![GitHub Stars](https://img.shields.io/badge/Stars-0-gold?logo=github)](https://github.com/krillinai/OpenCreator/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/krillinai/KrillinAI?style=flat&logo=github&label=Stars&color=gold)](https://github.com/krillinai/KrillinAI/stargazers)
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-[Highlights](#highlights) · [Creator Tools](#creator-tools) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation)
+[Highlights](#highlights) · [Creator Tools](#creator-tools) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation) · [Star History](#star-history)
 
 </div>
 
@@ -406,6 +408,12 @@ The root `README.md` is the canonical English document. Maintained translations 
 3. Follow the existing architecture: implement general product capabilities once in Web and Daemon, and isolate native differences behind explicit capabilities.
 4. Add appropriate unit, integration, or E2E coverage for behavior changes, and list both completed and skipped verification in the Pull Request.
 5. Never commit `.runtime/`, local credentials, Codex sessions, build caches, or other user data.
+
+## Star History
+
+OpenCreator is the next evolution of KrillinAI. Until the repository upgrade is complete, this chart follows the original [`krillinai/KrillinAI`](https://github.com/krillinai/KrillinAI) repository history.
+
+[![KrillinAI to OpenCreator Star History](https://star-history.dera.page/svg?repos=KrillinAI/KrillinAI&type=Date)](https://star-history.dera.page/#KrillinAI/KrillinAI&Date)
 
 ## Acknowledgements
 
