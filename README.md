@@ -24,7 +24,7 @@ OpenCreator is the next-generation upgrade of [KrillinAI](https://github.com/kri
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
 
-[Highlights](#highlights) · [Creator Tools](#creator-tools) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation) · [Star History](#star-history)
+[Features](#key-features-and-functions) · [Creator Tools](#creator-tools) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation) · [Star History](#star-history)
 
 </div>
 
@@ -44,22 +44,34 @@ The product brings together two connected workflows:
 
 Web is the single frontend implementation. Desktop loads the same Web build and adds only capabilities that require the operating system, such as directory selection, window lifecycle, tray behavior, and native notifications. With the same data and content viewport, both platforms share the same general UI and Runtime behavior.
 
-## Highlights
+## Key Features and Functions
 
-| Capability | What it provides |
-| --- | --- |
-| AI creator workspaces | Guided forms, previews, results, and Agent assistance for video, image, voice, and avatar workflows |
-| State-machine workflows | Keeps structured workspace actions and Agent conversations synchronized through one shared workflow state |
-| Versioned iteration | Lets creators keep refining a result without overwriting it, with earlier versions retained for review and comparison |
-| Codex-native execution | Reuses the Codex Agent loop, models, reasoning, Skills, MCP, tool calls, and conversation capabilities |
-| Background Runs | Keeps tasks running across refreshes and conversation switches, with queuing, interruption, continuation, and result tracking |
-| Projects and files | Manages blank or existing local projects, image attachments, text editing, and image, PDF, and safe HTML previews |
-| Approvals and permissions | Handles controlled actions in the Timeline and global task center, with project-level permission preferences and persisted approvals |
-| Skills and MCP | Browses, installs, and uses Skills while managing MCP servers through Codex-native configuration |
-| Long-running schedules | Creates, edits, pauses, resumes, and runs scheduled tasks inside persistent dedicated conversations |
-| Local memory and summaries | Manages explicit global, project, and thread memory with versioned summaries and per-Run input snapshots |
-| Shared Web and Desktop UI | Implements React once; Electron supplies native capabilities and embeds a hash-verified Web build |
-| Local-first diagnostics | Keeps SQLite data, attachments, and Run logs local by default, with redaction before diagnostics are exported |
+### Content Creation
+
+- 📥 **Flexible Video Acquisition**: Upload local media or bring in public YouTube, Bilibili, and other supported video links through dedicated import and download workflows.
+- 📜 **Accurate Speech Recognition**: Choose cloud transcription or local Whisper options, including OpenAI Whisper, FasterWhisper, WhisperKit, whisper.cpp, and Alibaba Cloud Speech.
+- 🧠 **Semantic Subtitle Processing**: Use LLM context for natural segmentation, alignment, correction, and editable subtitle cues instead of splitting only by character count.
+- 🔄 **Terminology and Subtitle Revision**: Normalize names and professional vocabulary through Agent instructions, then review and edit individual cues before export.
+- 🌍 **Context-Aware Translation**: Translate with surrounding context, configure target languages and bilingual subtitles, and preserve natural meaning across a complete video.
+- 🎙️ **Dubbing and Voice Cloning**: Select voices and speaking styles, adjust delivery, or provide a custom voice sample, with configurable OpenAI, MiniMax, Alibaba Cloud, and Edge TTS services.
+- 🎬 **Adaptive Video Composition**: Produce landscape and portrait layouts, customize subtitle position, font, size, and color, and export subtitles, dubbing, or the composed video.
+- ✂️ **Smart Editing**: Analyze long-form video semantics, score highlights for hook, completeness, emotion, and shareability, then select and export standalone clips.
+- 🎨 **AI Image and Video Generation**: Generate downloadable visual assets with GPT Image, Jimeng, Kling, Gemini, Seedance, or Veo, plus configurable prompts, aspect ratios, quality, resolution, duration, and output count.
+- 🎭 **Avatars and Story Animation**: Develop digital-presenter videos or turn characters and stories into reviewed storyboards, voiceover, music, and versioned animation output.
+- 🖼️ **Thumbnails and Output Management**: Create thumbnail variations from topics and references, then review videos, images, audio, subtitles, and documents in one output center.
+
+### Agent Workspace
+
+- 🔗 **Synchronized Workspace and Conversation**: A shared workflow state machine keeps form actions, Agent commands, progress, and results consistent across both interfaces.
+- 🕘 **Versioned Creative Iteration**: Every correction or regeneration creates a new version instead of overwriting the current result, preserving earlier settings and outputs for review and comparison.
+- 🤖 **Codex-Native Execution**: Reuse the Codex Agent loop, models, reasoning, tool calls, conversation history, Skills, MCP, and Profiles instead of maintaining a second execution engine.
+- ⚙️ **Persistent Background Runs**: Keep work running across refreshes and conversation switches, with queueing, interruption, continuation, approval handling, and global result tracking.
+- 📁 **Projects and File Workspace**: Organize conversations and assets by project, work with blank or existing local folders, edit text, and preview images, PDFs, and safe HTML.
+- 🧩 **Skills and MCP Extensions**: Browse and install Skills, invoke them from the composer, and manage MCP servers through Codex-native configuration.
+- 📅 **Long-Running Schedules**: Create, edit, pause, resume, and trigger scheduled tasks in persistent dedicated conversations that retain their complete Run history.
+- 🧠 **Memory and Summaries**: Manage explicit global, project, and thread memory with versioned summaries and a reproducible input snapshot for each Run.
+- 🔐 **Controlled Local Runtime**: Keep SQLite data, attachments, and Run logs local by default, enforce project permissions and approvals, and redact diagnostics before export.
+- 💻 **Cross-Platform Web and Desktop**: Use one React frontend across macOS, Windows, and Linux in the browser or Electron Desktop, with the same general workflows and only genuine operating-system capabilities kept platform-specific.
 
 ## Creator Tools
 
