@@ -133,6 +133,12 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 > Video examples and subtitle alignment image: [KrillinAI](https://github.com/krillinai/KrillinAI).
 
+### Smart Editing
+
+Turn long interviews, podcasts, lessons, and other source videos into standalone highlights. The Auto Clips workspace analyzes transcript semantics, scores each candidate for its hook, completeness, emotion, and shareability, then helps creators review, select, and export the strongest moments.
+
+![OpenCreator Smart Editing example with scored highlight clips](./docs/images/examples/opencreator-auto-clips-en.png)
+
 ### Stick Figure Animation
 
 OpenCreator developed this original character collection in collaboration with artists. The preset cast gives creators consistent, production-ready identities for stories and animation, while the workspace also supports uploaded references and generated characters.
