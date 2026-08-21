@@ -137,7 +137,7 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 把访谈、播客、课程等长视频转成能够独立传播的高光片段。自动剪辑工作区会分析字幕语义，并从开头吸引力、语义完整度、情绪强度和传播潜力四个维度为候选片段评分，再帮助创作者审核、选择和导出最值得发布的内容。
 
-![OpenCreator 智能剪辑候选片段与评分案例](../images/examples/opencreator-auto-clips-en.png)
+![OpenCreator 智能剪辑片段详情、字幕与四维评分案例](../images/examples/opencreator-auto-clips-en.png)
 
 ### 火柴人动画
 

@@ -137,7 +137,7 @@ https://github.com/user-attachments/assets/c2c7b528-0ef8-4ba9-b8ac-f9f92f6d4e71
 
 Turn long interviews, podcasts, lessons, and other source videos into standalone highlights. The Auto Clips workspace analyzes transcript semantics, scores each candidate for its hook, completeness, emotion, and shareability, then helps creators review, select, and export the strongest moments.
 
-![OpenCreator Smart Editing example with scored highlight clips](./docs/images/examples/opencreator-auto-clips-en.png)
+![OpenCreator Smart Editing clip detail with transcript and four scores](./docs/images/examples/opencreator-auto-clips-en.png)
 
 ### Stick Figure Animation
 
