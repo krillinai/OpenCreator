@@ -14,6 +14,8 @@
 
 OpenCreator 是一站式内容创作 Agent 工作台，把视频、图像、配音等创作工具，与项目、会话、Skills、MCP 和长期任务放进同一个工作空间。
 
+OpenCreator 由 [KrillinAI](https://github.com/krillinai/KrillinAI) 全面升级而来，从 AI 视频翻译工具演进为一站式内容创作 Agent 工作台。
+
 <a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="KrillinAI：Trendshift 单日排名第一仓库" width="250" height="55" /></a>
 
 [English](../../README.md) | **简体中文**

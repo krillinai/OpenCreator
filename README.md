@@ -14,6 +14,8 @@
 
 OpenCreator is a one-stop content creation Agent workspace that brings video, image, and voice creation together with projects, conversations, Skills, MCP, and long-running tasks.
 
+OpenCreator is the next-generation upgrade of [KrillinAI](https://github.com/krillinai/KrillinAI), evolving from AI video translation into an all-in-one content creation Agent workspace.
+
 <a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="KrillinAI: #1 Repository of the Day on Trendshift" width="250" height="55" /></a>
 
 **English** | [简体中文](./docs/zh/README.md)
