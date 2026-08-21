@@ -49,6 +49,7 @@ Web 是唯一的前端实现；Desktop 直接加载同一份 Web 构建产物，
 | 能力 | 说明 |
 | --- | --- |
 | AI 创作工作区 | 围绕视频、图像、声音和数字人提供分步骤表单、预览、结果与 Agent 辅助 |
+| 状态机驱动工作流 | 通过同一份工作流状态，让结构化工作台操作与 Agent 对话始终保持同步 |
 | Codex 原生执行 | 复用 Codex 的 Agent loop、模型、推理、技能、MCP、工具调用和会话能力 |
 | 后台 Run | 刷新或切换会话不会中断任务；支持排队发送、立即打断、继续执行和结果追踪 |
 | 项目与文件 | 管理空白项目或本机工作区，支持图片附件、文本编辑以及图片、PDF、HTML 预览 |
@@ -233,13 +234,21 @@ Desktop 打包会重新构建当前工作区的 Web，记录 commit、dirty 状�
 
 ## 系统架构
 
+OpenCreator 将可视化工作台与 Agent 对话视为同一创作任务的两种交互界面，而不是两套彼此独立的流程。每个创作工作流都通过状态机建模：素材输入、参数设置、生成、审核、修改和导出被定义为明确的状态与事件。工作台操作和对话指令进入同一个状态机，当前步骤、配置、进度、版本与结果再同步呈现在两侧，从架构上避免出现两份相互冲突的任务状态。
+
 ```mermaid
 flowchart LR
     Browser["Browser"] --> Web["apps/web<br/>React + Vite"]
     Desktop["apps/desktop<br/>Electron Host"] --> WebBuild["同一份 Web dist"]
     WebBuild --> Web
     Desktop --> Native["目录 / 窗口 / 托盘 / 原生通知"]
-    Web -->|"Runtime API + SSE"| Daemon["apps/daemon<br/>Fastify Runtime"]
+    Web --> Workspace["创作工作台<br/>表单 / 预览 / 结果"]
+    Web --> Conversation["Agent 对话"]
+    Workspace -->|"界面事件"| StateMachine["共享工作流<br/>状态机"]
+    Conversation -->|"对话指令"| StateMachine
+    StateMachine -->|"状态 / 进度 / 结果"| Workspace
+    StateMachine -->|"上下文 / 回复"| Conversation
+    StateMachine -->|"Runtime API + SSE"| Daemon["apps/daemon<br/>Fastify Runtime"]
     Daemon --> DB[".runtime/app.sqlite"]
     Daemon --> Files["Runs / Attachments / Workspaces"]
     Daemon --> Codex["Codex CLI / app-server"]
@@ -248,6 +257,7 @@ flowchart LR
 
 核心原则：
 
+- 工作台与 Agent 对话是同一份工作流状态的同步投影；两侧都向同一个状态机发送事件，不各自维护一套任务状态。
 - 前端不直接启动 Codex，也不依赖 Codex 原始 JSONL 事件格式。
 - daemon 负责进程生命周期、事件标准化、持久化、审批、计划任务和通知 outbox。
 - Codex 仍然是 Agent loop、技能和 MCP 的执行真相源。

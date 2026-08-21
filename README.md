@@ -49,6 +49,7 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 | Capability | What it provides |
 | --- | --- |
 | AI creator workspaces | Guided forms, previews, results, and Agent assistance for video, image, voice, and avatar workflows |
+| State-machine workflows | Keeps structured workspace actions and Agent conversations synchronized through one shared workflow state |
 | Codex-native execution | Reuses the Codex Agent loop, models, reasoning, Skills, MCP, tool calls, and conversation capabilities |
 | Background Runs | Keeps tasks running across refreshes and conversation switches, with queuing, interruption, continuation, and result tracking |
 | Projects and files | Manages blank or existing local projects, image attachments, text editing, and image, PDF, and safe HTML previews |
@@ -233,13 +234,21 @@ Desktop packaging rebuilds Web from the current workspace, records the commit, d
 
 ## Architecture
 
+OpenCreator treats the visual workspace and the Agent conversation as two interfaces to the same creative task, rather than two separate workflows. Each creator workflow is modeled as a state machine: source input, configuration, generation, review, revision, and export become explicit states and events. Workspace actions and conversational commands enter the same state machine, while the current step, configuration, progress, versions, and results are projected back into both interfaces. This keeps the workspace and conversation synchronized without introducing a second source of truth.
+
 ```mermaid
 flowchart LR
     Browser["Browser"] --> Web["apps/web<br/>React + Vite"]
     Desktop["apps/desktop<br/>Electron Host"] --> WebBuild["The same Web dist"]
     WebBuild --> Web
     Desktop --> Native["Directories / Windows / Tray / Native notifications"]
-    Web -->|"Runtime API + SSE"| Daemon["apps/daemon<br/>Fastify Runtime"]
+    Web --> Workspace["Creator workspace<br/>Forms / Preview / Results"]
+    Web --> Conversation["Agent conversation"]
+    Workspace -->|"UI events"| StateMachine["Shared workflow<br/>state machine"]
+    Conversation -->|"Commands"| StateMachine
+    StateMachine -->|"State / Progress / Results"| Workspace
+    StateMachine -->|"Context / Responses"| Conversation
+    StateMachine -->|"Runtime API + SSE"| Daemon["apps/daemon<br/>Fastify Runtime"]
     Daemon --> DB[".runtime/app.sqlite"]
     Daemon --> Files["Runs / Attachments / Workspaces"]
     Daemon --> Codex["Codex CLI / app-server"]
@@ -248,6 +257,7 @@ flowchart LR
 
 Core principles:
 
+- The workspace and Agent conversation are synchronized projections of one workflow state; both dispatch events to the same state machine instead of maintaining parallel task state.
 - The frontend does not launch Codex directly and does not depend on raw Codex JSONL event formats.
 - The daemon owns process lifecycle, event normalization, persistence, approvals, schedules, and the notification outbox.
 - Codex remains the execution source of truth for the Agent loop, Skills, and MCP.
