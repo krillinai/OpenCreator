@@ -3,7 +3,7 @@
 <p>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./docs/images/opencreator-lockup-dark.svg" />
-    <img src="./docs/images/opencreator-lockup.svg" alt="OpenCreator" width="420" />
+    <img src="./docs/images/opencreator-lockup.svg" alt="OpenCreator" width="340" />
   </picture>
 </p>
 
