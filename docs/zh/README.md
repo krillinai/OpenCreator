@@ -21,7 +21,6 @@ OpenCreator 是一站式内容创作 Agent 工作台，把视频、图像、配�
 [![GitHub Stars](https://img.shields.io/github/stars/krillinai/KrillinAI?style=flat&logo=github&label=Stars&color=gold)](https://github.com/krillinai/KrillinAI/stargazers)
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
-[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
 [功能亮点](#功能亮点) · [创作工具](#创作工具) · [产品展示](#产品展示) · [案例展示](#案例展示) · [快速开始](#快速开始) · [Desktop](#desktop) · [系统架构](#系统架构) · [开发指南](#开发指南) · [文档](#文档) · [Star 趋势](#star-趋势)
 
