@@ -6,9 +6,11 @@ import DashboardPage from './DashboardPage.js';
 describe('DashboardPage', () => {
   it('opens a Skill workspace directly and keeps its prompt as an inactive hint', () => {
     const onSelectPrompt = vi.fn();
+    const onBackToHome = vi.fn();
     render(
       <DashboardPage
         onSelectPrompt={onSelectPrompt}
+        onBackToHome={onBackToHome}
         skillLaunch={{
           skillId: 'video-translation-multilingual',
           workspace: 'video-translation',
@@ -22,6 +24,8 @@ describe('DashboardPage', () => {
       .toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
     expect(screen.getByRole('textbox', { name: '告诉 Agent 你的要求' })).toHaveValue('');
     expect(onSelectPrompt).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '返回' }));
+    expect(onBackToHome).toHaveBeenCalledOnce();
   });
 
   it('renders the app directory in the selected English display language', () => {
@@ -83,7 +87,7 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '移除 translation-notes.txt' }));
     expect(screen.queryByText('translation-notes.txt')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '返回工作台' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回' }));
     fireEvent.click(screen.getByRole('button', { name: /^视频下载/ }));
     const downloadInput = screen.getByRole('textbox', { name: '告诉 Agent 视频下载 要求' });
     expect(downloadInput.closest('form')).toHaveClass('tool-agent-composer');
@@ -106,7 +110,19 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: /^视频翻译/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^火柴人动画/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^数字人口播/ })).toBeInTheDocument();
-    expect(container.querySelectorAll('.dashboard-app-card')).toHaveLength(9);
+    const appCards = Array.from(container.querySelectorAll('.dashboard-app-card'));
+    expect(appCards).toHaveLength(9);
+    expect(appCards.map(card => card.querySelector('strong')?.textContent)).toEqual([
+      '视频翻译',
+      '火柴人动画',
+      '视频下载',
+      '自动剪辑',
+      '封面生成',
+      '智能配音',
+      '视频生成',
+      '数字人口播',
+      '图像生成'
+    ]);
     expect(screen.queryByRole('button', { name: /^视频转格式/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^画面扩展/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^数字人分身/ })).not.toBeInTheDocument();
@@ -956,7 +972,7 @@ describe('DashboardPage', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     expect(onWorkspaceModeChange).toHaveBeenLastCalledWith(true);
-    fireEvent.click(screen.getByRole('button', { name: '返回工作台' }));
+    fireEvent.click(screen.getByRole('button', { name: '返回' }));
 
     expect(screen.getByRole('heading', { name: '精选应用' })).toBeInTheDocument();
     expect(onWorkspaceModeChange).toHaveBeenLastCalledWith(false);

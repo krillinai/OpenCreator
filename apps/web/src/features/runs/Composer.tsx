@@ -234,6 +234,9 @@ export function Composer(props: {
     props.modelsLoading === true,
     t
   );
+  const selectedReasoningLabel = selectedReasoning === null || selectedReasoning === 'default'
+    ? t('composer.reasoning.default')
+    : reasoningEffortLabel(selectedReasoning, t);
   const selectedModelSupportsImages =
     resolvedSelectedModel?.inputModalities.includes('image');
   const canAttachImages =
@@ -1539,6 +1542,9 @@ export function Composer(props: {
               }}
             >
               <span>{selectedModelLabel}</span>
+              <span className="composer-model-reasoning" aria-hidden="true">
+                {` · ${selectedReasoningLabel}`}
+              </span>
               <ChevronDown aria-hidden="true" size={13} />
             </button>
             {openMenu === 'model' ? (

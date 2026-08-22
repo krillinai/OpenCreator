@@ -4258,6 +4258,11 @@ html.is-pane-resizing * {
   text-overflow: ellipsis;
 }
 
+.composer-model-button .composer-model-reasoning {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
 .composer-select-danger-full-access {
   color: var(--muted);
 }

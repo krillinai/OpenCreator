@@ -314,7 +314,7 @@ export default function DigitalAvatarWorkspace(props: { onBack(): void; promptHi
 
         <footer className="video-translation-wizard-actions digital-avatar-actions">
           <button className="video-translation-secondary-action" type="button" onClick={() => currentStep === 0 ? props.onBack() : openStep((currentStep - 1) as AvatarStep)}>
-            {currentStep === 0 ? l('返回工作台', 'Back to Dashboard') : l('上一步', 'Back')}
+            {currentStep === 0 ? l('返回', 'Back') : l('上一步', 'Back')}
           </button>
           {currentStep < 3 ? <button className="video-translation-primary-action" type="button" onClick={continueFlow}>{l('继续', 'Continue')}</button> : null}
         </footer>

@@ -224,7 +224,7 @@ export default function ImageGenerationWorkspace(props: {
         </div>
 
         <footer className="video-translation-wizard-actions media-generation-actions">
-          <button className="video-translation-secondary-action" type="button" onClick={() => currentStep === 0 ? props.onBack() : openStep((currentStep - 1) as ImageStep)}>{currentStep === 0 ? l('返回工作台', 'Back to Dashboard') : l('上一步', 'Back')}</button>
+          <button className="video-translation-secondary-action" type="button" onClick={() => currentStep === 0 ? props.onBack() : openStep((currentStep - 1) as ImageStep)}>{currentStep === 0 ? l('返回', 'Back') : l('上一步', 'Back')}</button>
           {currentStep < 2 ? <button className="video-translation-primary-action" type="button" onClick={nextStep}>{l('继续', 'Continue')}</button> : null}
         </footer>
       </div>

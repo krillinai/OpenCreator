@@ -20,6 +20,13 @@ describe('CreatorDashboard', () => {
     expect(screen.getByRole('tab', { name: '最近' })).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByRole('heading', { name: '技能' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /使用.+技能/ })).toHaveLength(5);
+    const recommendedSkills = screen.getAllByRole('button', { name: /使用.+技能/ });
+    expect(recommendedSkills[3]).toHaveAccessibleName('使用封面生成技能');
+    expect(recommendedSkills[3]?.querySelector('img'))
+      .toHaveAttribute('src', '/dashboard/templates/peter-openclaw-cover.png');
+    expect(recommendedSkills[4]).toHaveAccessibleName('使用智能剪辑技能');
+    expect(recommendedSkills[4]?.querySelector('img'))
+      .toHaveAttribute('src', '/dashboard/templates/intelligent-clipping-cover.png');
     expect(screen.queryByRole('button', { name: '使用知识卡片技能' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '使用多语言视频翻译技能' }))
       .toHaveAttribute('data-skill-id', 'video-translation-multilingual');
@@ -62,6 +69,23 @@ describe('CreatorDashboard', () => {
         zhCN: '上传视频，或者输入有效的视频链接',
         enUS: 'Upload a video or enter a valid video link'
       }
+    }));
+  });
+
+  it('opens the clipping and cover generation workspaces from the recommended Skills', () => {
+    const onSelectSkill = vi.fn();
+    render(<CreatorDashboard onSelectSkill={onSelectSkill} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '使用智能剪辑技能' }));
+    expect(onSelectSkill).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'intelligent-clipping',
+      interaction: { type: 'workspace', workspace: 'auto-clips' }
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: '使用封面生成技能' }));
+    expect(onSelectSkill).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'cover-generation',
+      interaction: { type: 'workspace', workspace: 'cover-generator' }
     }));
   });
 

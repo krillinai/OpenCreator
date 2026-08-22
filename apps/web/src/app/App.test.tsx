@@ -933,6 +933,10 @@ describe('App', () => {
     expect(agentInput).toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
     expect(agentInput).toHaveValue('');
     await waitFor(() => expect(window.location.hash).toBe('#/dashboard'));
+
+    await user.click(screen.getByRole('button', { name: '返回' }));
+    expect(await screen.findByRole('heading', { name: '技能' })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
   });
 
   it('keeps a non-workspace Home Skill inactive until the user writes a prompt', async () => {

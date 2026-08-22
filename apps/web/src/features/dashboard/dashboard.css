@@ -3238,6 +3238,10 @@
   gap: 14px;
 }
 
+.stickman-character-grid > .creator-tool-field {
+  align-self: start;
+}
+
 .stickman-character-preview,
 .stickman-character-empty {
   width: 100%;

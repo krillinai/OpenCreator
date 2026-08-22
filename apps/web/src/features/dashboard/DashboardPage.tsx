@@ -86,6 +86,46 @@ const creatorTools: DashboardEntry[] = [
     workspace: 'video-translation'
   },
   {
+    title: '火柴人动画',
+    description: '角色、分镜与完整动画',
+    prompt: '根据我的创意生成一支动画短片，请先帮我完善故事、角色和分镜。',
+    category: '视频创作',
+    icon: Sparkles,
+    workspace: 'stickman-video'
+  },
+  {
+    title: '视频下载',
+    description: '支持YouTube，Bilibili等',
+    prompt: '帮我下载这个视频链接，支持 YouTube、Bilibili 等平台，并保存为可用的视频文件。',
+    category: '视频编辑',
+    icon: Download,
+    workspace: 'video-download'
+  },
+  {
+    title: '自动剪辑',
+    description: '语义识别与高光切片',
+    prompt: '帮我剪辑这些视频素材，请梳理叙事节奏，给出剪辑方案并生成成片。',
+    category: '视频编辑',
+    icon: Clapperboard,
+    workspace: 'auto-clips'
+  },
+  {
+    title: '封面生成',
+    description: '生成视频与内容封面',
+    prompt: '根据我的内容主题生成一张封面，请先规划标题层级、主体画面、构图和视觉风格。',
+    category: '图像创作',
+    icon: ImagePlus,
+    workspace: 'cover-generator'
+  },
+  {
+    title: '智能配音',
+    description: '自然音色与情绪表达',
+    prompt: '帮我为这段内容制作配音，请根据使用场景优化文本、语速、停顿和情绪。',
+    category: '音频处理',
+    icon: Mic2,
+    workspace: 'smart-dubbing'
+  },
+  {
     title: '视频生成',
     description: '从创意生成完整视频',
     prompt: '根据我的创意和素材生成一支完整的 AI 视频，请先帮我梳理画面风格、镜头和节奏。',
@@ -102,52 +142,12 @@ const creatorTools: DashboardEntry[] = [
     workspace: 'digital-avatar'
   },
   {
-    title: '火柴人动画',
-    description: '角色、分镜与完整动画',
-    prompt: '根据我的创意生成一支动画短片，请先帮我完善故事、角色和分镜。',
-    category: '视频创作',
-    icon: Sparkles,
-    workspace: 'stickman-video'
-  },
-  {
-    title: '自动剪辑',
-    description: '语义识别与高光切片',
-    prompt: '帮我剪辑这些视频素材，请梳理叙事节奏，给出剪辑方案并生成成片。',
-    category: '视频编辑',
-    icon: Clapperboard,
-    workspace: 'auto-clips'
-  },
-  {
-    title: '智能配音',
-    description: '自然音色与情绪表达',
-    prompt: '帮我为这段内容制作配音，请根据使用场景优化文本、语速、停顿和情绪。',
-    category: '音频处理',
-    icon: Mic2,
-    workspace: 'smart-dubbing'
-  },
-  {
     title: '图像生成',
     description: '生成创意图片与视觉素材',
     prompt: '根据我的创意生成一组图片，请先确认画面主体、风格、构图和使用场景。',
     category: '图像创作',
     icon: Image,
     workspace: 'image-generation'
-  },
-  {
-    title: '封面生成',
-    description: '生成视频与内容封面',
-    prompt: '根据我的内容主题生成一张封面，请先规划标题层级、主体画面、构图和视觉风格。',
-    category: '图像创作',
-    icon: ImagePlus,
-    workspace: 'cover-generator'
-  },
-  {
-    title: '视频下载',
-    description: '支持YouTube，Bilibili等',
-    prompt: '帮我下载这个视频链接，支持 YouTube、Bilibili 等平台，并保存为可用的视频文件。',
-    category: '视频编辑',
-    icon: Download,
-    workspace: 'video-download'
   },
 ];
 
@@ -156,6 +156,7 @@ type CategoryFilter = typeof categories[number];
 
 export default function DashboardPage(props: {
   onSelectPrompt(prompt: string): void;
+  onBackToHome?(): void;
   onWorkspaceModeChange?(active: boolean): void;
   skillLaunch?: CreatorSkillLaunch;
   smartDubbingService?: SmartDubbingService;
@@ -169,6 +170,9 @@ export default function DashboardPage(props: {
   );
   const [activePromptHint, setActivePromptHint] = useState(
     () => props.skillLaunch?.promptHint
+  );
+  const [workspaceOrigin, setWorkspaceOrigin] = useState<'home' | 'dashboard'>(
+    () => props.skillLaunch === undefined ? 'dashboard' : 'home'
   );
   const [category, setCategory] = useState<CategoryFilter>('全部');
   const [query, setQuery] = useState('');
@@ -190,15 +194,24 @@ export default function DashboardPage(props: {
     return () => props.onWorkspaceModeChange?.(false);
   }, [activeWorkspace, props.onWorkspaceModeChange]);
 
+  const closeWorkspace = () => {
+    setActiveWorkspace(null);
+    setActivePromptHint(undefined);
+    if (workspaceOrigin === 'home') props.onBackToHome?.();
+  };
+
+  const openWorkspace = (workspace: CreatorWorkspace) => {
+    setWorkspaceOrigin('dashboard');
+    setActivePromptHint(undefined);
+    setActiveWorkspace(workspace);
+  };
+
   if (activeWorkspace === 'video-translation') {
     return (
       <VideoTranslationWorkspace
         promptHint={activePromptHint}
         videoMetadataService={props.videoMetadataService}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -207,10 +220,7 @@ export default function DashboardPage(props: {
     return (
       <VideoDownloadWorkspace
         promptHint={activePromptHint}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -220,10 +230,7 @@ export default function DashboardPage(props: {
       <SmartDubbingWorkspace
         promptHint={activePromptHint}
         service={props.smartDubbingService}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -233,10 +240,7 @@ export default function DashboardPage(props: {
       <ImageGenerationWorkspace
         promptHint={activePromptHint}
         service={props.imageGenerationService}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -246,10 +250,7 @@ export default function DashboardPage(props: {
       <VideoGenerationWorkspace
         promptHint={activePromptHint}
         service={props.videoGenerationService}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -258,10 +259,7 @@ export default function DashboardPage(props: {
     return (
       <DigitalAvatarWorkspace
         promptHint={activePromptHint}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -270,10 +268,7 @@ export default function DashboardPage(props: {
     return (
       <StickmanVideoWorkspace
         promptHint={activePromptHint}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -283,10 +278,7 @@ export default function DashboardPage(props: {
       <AutoClipWorkspace
         promptHint={activePromptHint}
         videoMetadataService={props.videoMetadataService}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -295,10 +287,7 @@ export default function DashboardPage(props: {
     return (
       <CoverGeneratorWorkspace
         promptHint={activePromptHint}
-        onBack={() => {
-          setActiveWorkspace(null);
-          setActivePromptHint(undefined);
-        }}
+        onBack={closeWorkspace}
       />
     );
   }
@@ -320,7 +309,7 @@ export default function DashboardPage(props: {
                 type="button"
                 key={tool.title}
                 onClick={() => tool.workspace
-                  ? setActiveWorkspace(tool.workspace)
+                  ? openWorkspace(tool.workspace)
                   : props.onSelectPrompt(tool.prompt)}
                 aria-label={t('dashboard.openTool', { title: localize(tool.title) })}
               >
@@ -369,7 +358,7 @@ export default function DashboardPage(props: {
                   className="dashboard-app-card"
                   type="button"
                   key={title}
-                  onClick={() => workspace ? setActiveWorkspace(workspace) : props.onSelectPrompt(prompt)}
+                  onClick={() => workspace ? openWorkspace(workspace) : props.onSelectPrompt(prompt)}
                 >
                   <span className="dashboard-app-icon">
                     <Icon size={19} strokeWidth={1.7} aria-hidden="true" />

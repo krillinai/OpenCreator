@@ -339,7 +339,7 @@ export default function VideoGenerationWorkspace(props: {
         </div>
 
         <footer className="video-translation-wizard-actions media-generation-actions" aria-label={l('视频生成操作', 'Video generation actions')}>
-          <button className="video-translation-secondary-action" type="button" onClick={() => currentStep === 0 ? props.onBack() : openStep((currentStep - 1) as VideoStep)}>{currentStep === 0 ? l('返回工作台', 'Back to Dashboard') : l('上一步', 'Back')}</button>
+          <button className="video-translation-secondary-action" type="button" onClick={() => currentStep === 0 ? props.onBack() : openStep((currentStep - 1) as VideoStep)}>{currentStep === 0 ? l('返回', 'Back') : l('上一步', 'Back')}</button>
           {currentStep < 2 ? <button className="video-translation-primary-action" type="button" onClick={nextStep}>{l('继续', 'Continue')}</button> : null}
           {currentStep === 2 && !videoUrl && !(result && (result.status === 'queued' || result.status === 'in_progress')) ? <button className="video-translation-primary-action" type="button" onClick={generate} disabled={generating}>{generating ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}{generating ? l('正在提交', 'Submitting') : l('开始生成', 'Generate')}</button> : null}
         </footer>

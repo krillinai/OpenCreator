@@ -100,6 +100,7 @@ describe('Composer', () => {
     expect(screen.queryByRole('button', { name: /Profile/ })).not.toBeInTheDocument();
     const modelButton = screen.getByRole('button', { name: '选择模型 默认模型' });
     expect(modelButton).toBeInTheDocument();
+    expect(modelButton).toHaveTextContent('默认模型 · 默认');
     expect(modelButton.querySelector('.lucide-circle')).not.toBeInTheDocument();
     expect(modelButton.querySelector('.lucide-chevron-down')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
@@ -121,7 +122,7 @@ describe('Composer', () => {
     expect(screen.getByRole('button', { name: 'Select access level: Ask for approval' }))
       .toHaveAttribute('title', 'Change project access');
     expect(screen.getByRole('button', { name: 'Select model: Default model' }))
-      .toBeInTheDocument();
+      .toHaveTextContent('Default model · Default');
     expect(screen.getByRole('button', { name: 'Add context' }))
       .toHaveAttribute('title', 'Add files and more');
     expect(screen.getByPlaceholderText('Type a message or use a plugin')).toBeInTheDocument();
@@ -303,6 +304,8 @@ describe('Composer', () => {
       .toBeInTheDocument();
     await user.click(screen.getByRole('menuitemradio', { name: /GPT-5.5/ }));
     await user.click(screen.getByRole('menuitemradio', { name: /^超高 / }));
+    expect(screen.getByRole('button', { name: '选择模型 GPT-5.5' }))
+      .toHaveTextContent('GPT-5.5 · 超高');
     expect(onModelConfigChange).toHaveBeenLastCalledWith({
       model: 'gpt-5.5',
       reasoning: 'xhigh'

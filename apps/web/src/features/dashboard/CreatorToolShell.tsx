@@ -50,7 +50,7 @@ export default function CreatorToolShell(props: {
       <div className="creator-workspace-layout">
         <section className="creator-workspace-main" aria-label={`${props.title} ${l('操作区', 'workspace')}`}>
           <header className="creator-workspace-header">
-            <button type="button" onClick={props.onBack} aria-label={l('返回工作台', 'Back to Dashboard')}>
+            <button type="button" onClick={props.onBack} aria-label={l('返回', 'Back')}>
               <ArrowLeft size={18} strokeWidth={1.8} aria-hidden="true" />
             </button>
             <div>

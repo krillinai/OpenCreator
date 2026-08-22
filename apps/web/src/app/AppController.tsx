@@ -5014,6 +5014,7 @@ export function AppController(props: AppControllerProps) {
   ) : state.activeView === 'dashboard' ? (
     <DashboardPage
       onSelectPrompt={startCreatorTool}
+      onBackToHome={() => startNewConversation()}
       skillLaunch={creatorSkillLaunch}
       onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
       smartDubbingService={smartDubbingService}

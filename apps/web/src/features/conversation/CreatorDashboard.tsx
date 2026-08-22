@@ -61,16 +61,26 @@ const creatorSkillsByCategory: Record<CreatorSkillCategory, CreatorSkill[]> = {
       }
     },
     {
-      id: 'creative-short-planning',
-      title: '创意短片策划',
-      category: '视频创作',
-      image: '/dashboard/templates/animated-story.jpg'
+      id: 'cover-generation',
+      title: '封面生成',
+      category: '封面设计',
+      image: '/dashboard/templates/peter-openclaw-cover.png',
+      interaction: { type: 'workspace', workspace: 'cover-generator' },
+      promptHint: {
+        zhCN: '描述封面，添加参考图，或者输入有效的 YouTube 链接',
+        enUS: 'Describe the thumbnail, add a reference, or enter a valid YouTube link'
+      }
     },
     {
-      id: 'product-visual-poster',
-      title: '产品视觉海报',
-      category: '图像生成',
-      image: '/skill-market/examples/nano-banana-pro-product-visual.png'
+      id: 'intelligent-clipping',
+      title: '智能剪辑',
+      category: '视频剪辑',
+      image: '/dashboard/templates/intelligent-clipping-cover.png',
+      interaction: { type: 'workspace', workspace: 'auto-clips' },
+      promptHint: {
+        zhCN: '上传长视频，设置内容重点、目标时长和片段数量',
+        enUS: 'Upload a long video, then set the content focus, target duration, and clip count'
+      }
     }
   ],
   视频创作: [
@@ -315,6 +325,9 @@ const englishCreatorLabels: Record<string, string> = {
   数字人口播: 'Digital Avatar',
   火柴人动画: 'Stick Figure Animation',
   动画生成: 'Animation',
+  智能剪辑: 'Intelligent Curation',
+  视频剪辑: 'Video Editing',
+  封面生成: 'Cover Generation',
   创意短片策划: 'Creative Short Planning',
   产品视觉海报: 'Product Visual Poster',
   图像生成: 'Image Generation',
