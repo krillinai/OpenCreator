@@ -83,18 +83,6 @@ Open dedicated creation workspaces for video translation, animation, avatars, im
 
 ![OpenCreator Creator Dashboard](./docs/images/product/opencreator-dashboard-en.png)
 
-### My Projects
-
-Continue recent work, search across projects, and switch between video, avatar, image, and marketing collections.
-
-![OpenCreator My Projects](./docs/images/product/opencreator-projects-en.png)
-
-### Output Center
-
-Review generated videos, images, audio, subtitles, and documents across every project from a single output library.
-
-![OpenCreator Output Center](./docs/images/product/opencreator-output-center-en.png)
-
 ## Examples
 
 ### Video Translation

@@ -83,18 +83,6 @@ Web 是唯一的前端实现；Desktop 直接加载同一份 Web 构建产物，
 
 ![OpenCreator 创作工作台](../images/product/opencreator-dashboard-en.png)
 
-### 我的项目
-
-继续最近的创作、搜索项目，并在视频、数字人、图像和内容营销等分类间快速切换。
-
-![OpenCreator 我的项目](../images/product/opencreator-projects-en.png)
-
-### 产出中心
-
-在统一的产出库中查看所有项目生成的视频、图像、音频、字幕和文档。
-
-![OpenCreator 产出中心](../images/product/opencreator-output-center-en.png)
-
 ## 案例展示
 
 ### 视频翻译
