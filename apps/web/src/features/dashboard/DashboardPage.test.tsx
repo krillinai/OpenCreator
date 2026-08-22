@@ -1144,19 +1144,22 @@ describe('DashboardPage', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /^视频生成/ }));
-    fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
+    const promptInput = screen.getByRole('textbox', { name: '提示词' });
+    const referenceImageInput = screen.getByLabelText('上传视频参考图');
+    expect(referenceImageInput.compareDocumentPosition(promptInput) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    fireEvent.change(promptInput, {
       target: { value: result.prompt }
     });
     const referenceImage = new File(['reference'], 'coast-reference.png', {
       type: 'image/png'
     });
-    fireEvent.change(screen.getByLabelText('上传视频参考图'), {
+    fireEvent.change(referenceImageInput, {
       target: { files: [referenceImage] }
     });
     expect(screen.getByRole('img', { name: '视频参考图预览' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '移除参考图' }));
     expect(screen.queryByRole('img', { name: '视频参考图预览' })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('上传视频参考图'), {
+    fireEvent.change(referenceImageInput, {
       target: { files: [referenceImage] }
     });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
