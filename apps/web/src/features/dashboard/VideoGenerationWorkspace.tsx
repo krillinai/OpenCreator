@@ -138,6 +138,13 @@ export default function VideoGenerationWorkspace(props: {
     setError('');
   }
 
+  function updateProvider(nextProvider: VideoGenerationProvider) {
+    const nextDurations = providerDurations[nextProvider];
+    setProvider(nextProvider);
+    if (!nextDurations.includes(duration)) setDuration(nextDurations[0]!);
+    setResult(undefined);
+  }
+
   async function generate() {
     if (generating) return;
     if (!props.service) {
@@ -186,10 +193,7 @@ export default function VideoGenerationWorkspace(props: {
     }
     const providerMatch = providers.find(item => command.toLowerCase().includes(item.value) || command.includes(item.zh) || command.toLowerCase().includes(item.en.toLowerCase()));
     if (providerMatch) {
-      const nextDurations = providerDurations[providerMatch.value];
-      setProvider(providerMatch.value);
-      if (!nextDurations.includes(duration)) setDuration(nextDurations[0]!);
-      setResult(undefined);
+      updateProvider(providerMatch.value);
       openStep(1);
       return l(`视频服务已改为${providerMatch.zh}。`, `Video provider changed to ${providerMatch.en}.`);
     }
@@ -247,8 +251,8 @@ export default function VideoGenerationWorkspace(props: {
 
           {currentStep === 1 ? (
             <section className="creator-tool-panel" aria-labelledby="video-settings-title">
-              <div className="creator-tool-panel-heading"><div><h2 id="video-settings-title">{l('生成设置', 'Generation settings')}</h2><p>{l('选择成片画幅、分辨率和时长', 'Choose the video format, resolution, and duration')}</p></div></div>
-              <div className="media-generation-control"><span>{l('视频服务', 'Video provider')}</span><div className="creator-tool-segmented media-generation-provider-options" role="radiogroup" aria-label={l('视频服务', 'Video provider')}>{providers.map(item => <button type="button" role="radio" aria-checked={provider === item.value} aria-selected={provider === item.value} key={item.value} onClick={() => { const next = providerDurations[item.value]; setProvider(item.value); if (!next.includes(duration)) setDuration(next[0]!); setResult(undefined); }}>{l(item.zh, item.en)}</button>)}</div></div>
+              <div className="creator-tool-panel-heading"><div><h2 id="video-settings-title">{l('生成设置', 'Generation settings')}</h2><p>{l('分别设置视频服务、画幅、分辨率和时长', 'Set the video provider, format, resolution, and duration independently')}</p></div></div>
+              <div className="media-generation-control"><label className="creator-tool-field"><span>{l('视频服务', 'Video provider')}</span><select value={provider} onChange={event => updateProvider(event.target.value as VideoGenerationProvider)}>{providers.map(item => <option key={item.value} value={item.value}>{l(item.zh, item.en)}</option>)}</select></label></div>
               <div className="media-generation-control"><span>{l('画幅', 'Format')}</span><div className="media-generation-option-grid" role="radiogroup" aria-label={l('视频画幅', 'Video format')}>{sizes.map(item => <button type="button" role="radio" aria-checked={size === item.value} data-selected={size === item.value} key={item.value} onClick={() => { setSize(item.value); setResult(undefined); }}><span className="media-generation-ratio-swatch" data-ratio={item.ratio} /><strong>{l(item.zh, item.en)}</strong><small>{item.ratio} · {item.value}</small></button>)}</div></div>
               <div className="media-generation-control"><span>{l('视频时长', 'Duration')}</span><div className="creator-tool-segmented" role="radiogroup" aria-label={l('视频时长', 'Video duration')}>{durations.map(value => <button type="button" role="radio" aria-checked={duration === value} aria-selected={duration === value} key={value} onClick={() => { setDuration(value); setResult(undefined); }}>{value} {l('秒', 'seconds')}</button>)}</div></div>
               <div className="media-generation-setting-note"><Film size={17} strokeWidth={1.7} /><span><strong>{l('生成时间', 'Generation time')}</strong><small>{l('视频生成通常需要几分钟，任务提交后页面会自动刷新进度', 'Video generation typically takes several minutes. Progress refreshes automatically after submission.')}</small></span></div>

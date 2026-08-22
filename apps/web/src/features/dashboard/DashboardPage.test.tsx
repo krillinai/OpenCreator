@@ -1148,7 +1148,11 @@ describe('DashboardPage', () => {
       target: { value: result.prompt }
     });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('radio', { name: 'Veo' }));
+    const providerSelect = screen.getByRole('combobox', { name: '视频服务' });
+    expect(providerSelect).toHaveValue('seedance');
+    fireEvent.change(providerSelect, { target: { value: 'veo' } });
+    expect(providerSelect).toHaveValue('veo');
+    expect(screen.getByRole('radio', { name: '4 秒' })).toBeChecked();
     fireEvent.click(screen.getByRole('radio', { name: /竖屏/ }));
     fireEvent.click(screen.getByRole('radio', { name: '8 秒' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
