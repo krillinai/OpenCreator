@@ -66,7 +66,7 @@ The Dashboard currently provides the workspaces below. Available models and serv
 
 - 🔗 **State Sync**: Workspace actions and Agent commands share one state machine, keeping steps, progress, and results aligned.
 - 🕘 **Versioning**: Every revision creates a new version while preserving earlier settings and outputs for review and comparison.
-- 🤖 **Codex Native**: Reuse Codex models, reasoning, tools, conversations, Skills, and MCP without a second Agent engine.
+- 🤖 **Codex Native**: Reuse the Codex Agent loop, models, reasoning, tool calls, conversations, Skills, and MCP without maintaining a second execution engine.
 - 🧩 **Skills and MCP**: Browse, install, and invoke Skills while managing MCP through Codex-native configuration.
 - 📅 **Schedules**: Manage recurring tasks in dedicated conversations while retaining complete Run history.
 - 🧠 **Memory**: Keep global, project, and thread memory with summaries and reproducible Run input snapshots.
