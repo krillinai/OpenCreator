@@ -22,6 +22,7 @@ import {
 } from '../creator-services/upstream-fetch.js';
 
 const MAX_PROMPT_LENGTH = 4_000;
+const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_JSON_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 1024 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 180_000;
@@ -32,6 +33,7 @@ const videoProviders = ['seedance', 'kling', 'veo'] as const;
 type StoredVideoGeneration = {
   result: VideoGenerationResult;
   upstreamId: string;
+  generationMode?: 'text-to-video' | 'image-to-video';
 };
 
 export type VideoGenerationService = {
@@ -172,6 +174,7 @@ export function createVideoGenerationService(input: {
       const timestamp = now().toISOString();
       let stored: StoredVideoGeneration = {
         upstreamId: remote.upstreamId,
+        generationMode: request.referenceImage ? 'image-to-video' : 'text-to-video',
         result: {
           id,
           prompt: request.prompt.trim(),
@@ -297,7 +300,10 @@ async function refreshRemoteVideoJob(
   if (provider === 'kling') {
     const settings = config.video.kling;
     requireKlingConfig(settings.accessKey, settings.secretKey, 'kling');
-    endpoint = appendEndpointPath(klingVideoEndpoint(settings.baseUrl), stored.upstreamId);
+    endpoint = appendEndpointPath(
+      klingVideoEndpoint(settings.baseUrl, stored.generationMode === 'image-to-video'),
+      stored.upstreamId
+    );
     headers = { Authorization: createKlingAuthorization(settings.accessKey, settings.secretKey) };
   } else if (provider === 'veo') {
     const settings = config.video.veo;
@@ -327,13 +333,24 @@ async function createSeedanceVideoJob(
   const settings = config.video.seedance;
   requireApiKey(settings.apiKey, 'seedance');
   const model = settings.model.trim() || 'doubao-seedance-1-0-pro-250528';
+  const content: Array<Record<string, unknown>> = [
+    { type: 'text', text: request.prompt.trim() }
+  ];
+  if (request.referenceImage) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: referenceImageDataUrl(request.referenceImage)
+      }
+    });
+  }
   const payload = await requestVideoJson({
     endpoint: seedanceVideoEndpoint(settings.baseUrl),
     method: 'POST',
     headers: { Authorization: `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      content: [{ type: 'text', text: request.prompt.trim() }],
+      content,
       ratio: videoAspectRatio(request.size),
       duration: request.duration,
       watermark: false
@@ -357,7 +374,7 @@ async function createKlingVideoJob(
   requireKlingConfig(settings.accessKey, settings.secretKey, 'kling');
   const model = settings.model.trim() || 'kling-v2-1-master';
   const payload = await requestVideoJson({
-    endpoint: klingVideoEndpoint(settings.baseUrl),
+    endpoint: klingVideoEndpoint(settings.baseUrl, request.referenceImage !== undefined),
     method: 'POST',
     headers: {
       Authorization: createKlingAuthorization(settings.accessKey, settings.secretKey),
@@ -366,6 +383,7 @@ async function createKlingVideoJob(
     body: JSON.stringify({
       model_name: model,
       prompt: request.prompt.trim(),
+      ...(request.referenceImage ? { image: request.referenceImage.data } : {}),
       mode: 'std',
       duration: String(request.duration),
       aspect_ratio: videoAspectRatio(request.size)
@@ -388,6 +406,15 @@ async function createVeoVideoJob(
   const settings = config.video.veo;
   requireApiKey(settings.apiKey, 'veo');
   const model = settings.model.trim() || 'veo-3.1-generate-preview';
+  const instance = {
+    prompt: request.prompt.trim(),
+    ...(request.referenceImage ? {
+      image: {
+        bytesBase64Encoded: request.referenceImage.data,
+        mimeType: request.referenceImage.mime
+      }
+    } : {})
+  };
   const payload = await requestVideoJson({
     endpoint: creatorProviderEndpoint(
       settings.baseUrl,
@@ -397,7 +424,7 @@ async function createVeoVideoJob(
     method: 'POST',
     headers: { 'x-goog-api-key': settings.apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      instances: [{ prompt: request.prompt.trim() }],
+      instances: [instance],
       parameters: {
         aspectRatio: videoAspectRatio(request.size),
         durationSeconds: request.duration,
@@ -515,12 +542,16 @@ function seedanceVideoEndpoint(baseUrl: string) {
   );
 }
 
-function klingVideoEndpoint(baseUrl: string) {
+function klingVideoEndpoint(baseUrl: string, imageToVideo = false) {
   return creatorProviderEndpoint(
     baseUrl,
     'https://api-beijing.klingai.com',
-    'v1/videos/text2video'
+    imageToVideo ? 'v1/videos/image2video' : 'v1/videos/text2video'
   );
+}
+
+function referenceImageDataUrl(referenceImage: NonNullable<CreateVideoGenerationRequest['referenceImage']>) {
+  return `data:${referenceImage.mime};base64,${referenceImage.data}`;
 }
 
 function videoAspectRatio(size: CreateVideoGenerationRequest['size']) {
@@ -612,6 +643,33 @@ function validateRequest(request: CreateVideoGenerationRequest) {
   if (!validDurations.includes(request.duration)) {
     throw new VideoGenerationError('VALIDATION_FAILED', `video duration is not supported by ${request.provider}`, 400);
   }
+  validateReferenceImage(request.referenceImage);
+}
+
+function validateReferenceImage(referenceImage: CreateVideoGenerationRequest['referenceImage']) {
+  if (referenceImage === undefined) return;
+  if (!isRecord(referenceImage)) {
+    throw new VideoGenerationError('VALIDATION_FAILED', 'reference image must be an object', 400);
+  }
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(referenceImage.mime)) {
+    throw new VideoGenerationError('VALIDATION_FAILED', 'reference image type is invalid', 400);
+  }
+  if (
+    typeof referenceImage.data !== 'string'
+    || referenceImage.data.length === 0
+    || referenceImage.data.length % 4 !== 0
+    || !/^[A-Za-z0-9+/]+={0,2}$/.test(referenceImage.data)
+  ) {
+    throw new VideoGenerationError('VALIDATION_FAILED', 'reference image data is invalid', 400);
+  }
+  const content = Buffer.from(referenceImage.data, 'base64');
+  if (content.length === 0 || content.length > MAX_REFERENCE_IMAGE_BYTES) {
+    throw new VideoGenerationError(
+      'VALIDATION_FAILED',
+      `reference image must be no larger than ${MAX_REFERENCE_IMAGE_BYTES} bytes`,
+      400
+    );
+  }
 }
 
 function validateResultId(id: string) {
@@ -623,6 +681,11 @@ function validateResultId(id: string) {
 function isStoredVideoGeneration(value: unknown): value is StoredVideoGeneration {
   return isRecord(value)
     && typeof value.upstreamId === 'string'
+    && (
+      value.generationMode === undefined
+      || value.generationMode === 'text-to-video'
+      || value.generationMode === 'image-to-video'
+    )
     && isVideoGenerationResult(value.result);
 }
 

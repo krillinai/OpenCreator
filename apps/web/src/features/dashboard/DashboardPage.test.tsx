@@ -1147,6 +1147,18 @@ describe('DashboardPage', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
       target: { value: result.prompt }
     });
+    const referenceImage = new File(['reference'], 'coast-reference.png', {
+      type: 'image/png'
+    });
+    fireEvent.change(screen.getByLabelText('上传视频参考图'), {
+      target: { files: [referenceImage] }
+    });
+    expect(screen.getByRole('img', { name: '视频参考图预览' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '移除参考图' }));
+    expect(screen.queryByRole('img', { name: '视频参考图预览' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('上传视频参考图'), {
+      target: { files: [referenceImage] }
+    });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     const providerSelect = screen.getByRole('combobox', { name: '视频服务' });
     expect(providerSelect).toHaveValue('seedance');
@@ -1159,6 +1171,7 @@ describe('DashboardPage', () => {
 
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('竖屏 · 9:16');
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('8 秒');
+    expect(screen.getByLabelText('任务摘要')).toHaveTextContent('coast-reference.png');
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
 
     expect(await screen.findByLabelText('AI 生成视频预览')).toHaveAttribute('src', 'blob:generated-video');
@@ -1166,7 +1179,11 @@ describe('DashboardPage', () => {
       prompt: result.prompt,
       provider: 'veo',
       size: '720x1280',
-      duration: 8
+      duration: 8,
+      referenceImage: {
+        mime: 'image/png',
+        data: 'cmVmZXJlbmNl'
+      }
     });
     expect(openContent).toHaveBeenCalledWith(result.id);
     expect(get).not.toHaveBeenCalled();

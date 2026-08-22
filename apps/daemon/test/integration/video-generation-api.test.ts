@@ -195,6 +195,76 @@ describe('video generation API', () => {
     expect((fetchImpl.mock.calls[2]?.[1]?.headers as Record<string, string>)['x-goog-api-key']).toBe('google-test');
   });
 
+  it('maps an optional reference image to Seedance, Kling, and Veo image-to-video requests', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.video.seedance.apiKey = 'seedance-test';
+    config.video.seedance.baseUrl = 'https://seedance.example.test/api/v3';
+    config.video.kling.accessKey = 'kling-access';
+    config.video.kling.secretKey = 'kling-secret';
+    config.video.kling.baseUrl = 'https://kling.example.test';
+    config.video.veo.apiKey = 'veo-test';
+    config.video.veo.baseUrl = 'https://veo.example.test/v1beta';
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) => {
+      const value = String(url);
+      if (value.includes('seedance.example.test')) {
+        return new Response(JSON.stringify({ id: 'seedance-image-job', status: 'queued' }));
+      }
+      if (value.includes('kling.example.test')) {
+        return new Response(JSON.stringify({
+          data: { task_id: 'kling-image-job', task_status: 'submitted' }
+        }));
+      }
+      return new Response(JSON.stringify({ name: 'operations/veo-image-job', done: false }));
+    });
+    const ids = ['seedance_image_result', 'kling_image_result', 'veo_image_result'];
+    const service = createVideoGenerationService({
+      dataDir,
+      configStore: createConfigStore(config),
+      fetchImpl: fetchImpl as typeof fetch,
+      createId: () => ids.shift()!
+    });
+    const referenceImage = {
+      mime: 'image/png' as const,
+      data: Buffer.from('reference-image').toString('base64')
+    };
+
+    await service.create({
+      prompt: 'Coast road',
+      provider: 'seedance',
+      size: '1280x720',
+      duration: 5,
+      referenceImage
+    });
+    await service.create({
+      prompt: 'Coast road',
+      provider: 'kling',
+      size: '1280x720',
+      duration: 5,
+      referenceImage
+    });
+    await service.create({
+      prompt: 'Coast road',
+      provider: 'veo',
+      size: '1280x720',
+      duration: 8,
+      referenceImage
+    });
+
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain('/v1/videos/image2video');
+    const seedanceBody = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
+    expect(seedanceBody.content[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: `data:image/png;base64,${referenceImage.data}` }
+    });
+    const klingBody = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body));
+    expect(klingBody.image).toBe(referenceImage.data);
+    const veoBody = JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body));
+    expect(veoBody.instances[0].image).toEqual({
+      bytesBase64Encoded: referenceImage.data,
+      mimeType: 'image/png'
+    });
+  });
+
   it('validates requests and requires video service configuration', async () => {
     const config = createDefaultCreatorServicesConfig();
     await registerVideoGenerationRoutes(server, createVideoGenerationService({
@@ -210,6 +280,20 @@ describe('video generation API', () => {
     });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().error.code).toBe('VALIDATION_FAILED');
+
+    const invalidReference = await server.inject({
+      method: 'POST',
+      url: '/video-generation/results',
+      payload: {
+        prompt: 'A real prompt',
+        provider: 'seedance',
+        size: '1280x720',
+        duration: 5,
+        referenceImage: { mime: 'image/gif', data: 'R0lGODlh' }
+      }
+    });
+    expect(invalidReference.statusCode).toBe(400);
+    expect(invalidReference.json().error.code).toBe('VALIDATION_FAILED');
 
     const missingConfig = await server.inject({
       method: 'POST',

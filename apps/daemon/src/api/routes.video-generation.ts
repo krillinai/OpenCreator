@@ -10,13 +10,17 @@ export async function registerVideoGenerationRoutes(
   server: FastifyInstance,
   service: VideoGenerationService
 ): Promise<void> {
-  server.post<{ Body: CreateVideoGenerationRequest }>('/video-generation/results', async (request, reply) => {
-    try {
-      return reply.code(202).send({ result: await service.create(request.body) });
-    } catch (error) {
-      return sendError(reply, error);
+  server.post<{ Body: CreateVideoGenerationRequest }>(
+    '/video-generation/results',
+    { config: { bodyLimit: 8 * 1024 * 1024 } },
+    async (request, reply) => {
+      try {
+        return reply.code(202).send({ result: await service.create(request.body) });
+      } catch (error) {
+        return sendError(reply, error);
+      }
     }
-  });
+  );
 
   server.get<{ Params: { id: string } }>('/video-generation/results/:id', async (request, reply) => {
     try {

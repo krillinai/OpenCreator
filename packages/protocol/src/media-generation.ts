@@ -41,11 +41,17 @@ export type VideoGenerationDuration = typeof videoGenerationDurations[number];
 export type VideoGenerationStatus = 'queued' | 'in_progress' | 'completed' | 'failed';
 export type VideoGenerationProvider = 'seedance' | 'kling' | 'veo';
 
+export type VideoGenerationReferenceImage = {
+  mime: 'image/jpeg' | 'image/png' | 'image/webp';
+  data: string;
+};
+
 export type CreateVideoGenerationRequest = {
   prompt: string;
   provider: VideoGenerationProvider;
   size: VideoGenerationSize;
   duration: VideoGenerationDuration;
+  referenceImage?: VideoGenerationReferenceImage;
 };
 
 export type VideoGenerationResult = {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type {
   VideoGenerationDuration,
   VideoGenerationProvider,
+  VideoGenerationReferenceImage,
   VideoGenerationResult,
   VideoGenerationSize
 } from '@opencreator/protocol';
@@ -13,7 +14,9 @@ import {
   LoaderCircle,
   RotateCcw,
   Sparkles,
-  WandSparkles
+  UploadCloud,
+  WandSparkles,
+  X
 } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { VideoGenerationService } from '../../services/video-generation-service.js';
@@ -42,6 +45,8 @@ const providerDurations: Record<VideoGenerationProvider, VideoGenerationDuration
 
 const samplePromptZh = '一辆复古红色跑车沿着海岸公路行驶，黄昏金色阳光，低机位跟拍，海风吹动路边植物，电影级真实质感，镜头运动平稳';
 const samplePromptEn = 'A vintage red sports car driving along a coastal road at golden hour, low-angle tracking shot, sea breeze moving roadside plants, cinematic realism, smooth camera motion';
+const referenceImageTypes = ['image/jpeg', 'image/png', 'image/webp'] as const;
+const maxReferenceImageBytes = 5 * 1024 * 1024;
 
 export default function VideoGenerationWorkspace(props: {
   onBack(): void;
@@ -52,6 +57,8 @@ export default function VideoGenerationWorkspace(props: {
   const [currentStep, setCurrentStep] = useState<VideoStep>(0);
   const [furthestStep, setFurthestStep] = useState<VideoStep>(0);
   const [prompt, setPrompt] = useState('');
+  const [referenceImageFile, setReferenceImageFile] = useState<File>();
+  const [referenceImageUrl, setReferenceImageUrl] = useState('');
   const [provider, setProvider] = useState<VideoGenerationProvider>('seedance');
   const [size, setSize] = useState<VideoGenerationSize>('1280x720');
   const [duration, setDuration] = useState<VideoGenerationDuration>(5);
@@ -68,6 +75,16 @@ export default function VideoGenerationWorkspace(props: {
   useEffect(() => () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
   }, [videoUrl]);
+
+  useEffect(() => {
+    if (!referenceImageFile) {
+      setReferenceImageUrl('');
+      return;
+    }
+    const url = URL.createObjectURL(referenceImageFile);
+    setReferenceImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [referenceImageFile]);
 
   useEffect(() => {
     if (!result || !props.service) return;
@@ -145,6 +162,25 @@ export default function VideoGenerationWorkspace(props: {
     setResult(undefined);
   }
 
+  function updateReferenceImage(file: File | null) {
+    if (!file) return;
+    if (!(referenceImageTypes as readonly string[]).includes(file.type) || file.size > maxReferenceImageBytes) {
+      setError(l('请上传 5MB 以内的 JPG、PNG 或 WebP 图片', 'Upload a JPG, PNG, or WebP image up to 5 MB'));
+      return;
+    }
+    setReferenceImageFile(file);
+    setResult(undefined);
+    setError('');
+    setNotice(l('参考图已添加', 'Reference image added'));
+  }
+
+  function removeReferenceImage() {
+    setReferenceImageFile(undefined);
+    setResult(undefined);
+    setError('');
+    setNotice(l('参考图已移除', 'Reference image removed'));
+  }
+
   async function generate() {
     if (generating) return;
     if (!props.service) {
@@ -157,7 +193,16 @@ export default function VideoGenerationWorkspace(props: {
     setError('');
     setNotice('');
     try {
-      const response = await props.service.generate({ prompt, provider, size, duration });
+      const referenceImage = referenceImageFile
+        ? await readReferenceImage(referenceImageFile)
+        : undefined;
+      const response = await props.service.generate({
+        prompt,
+        provider,
+        size,
+        duration,
+        ...(referenceImage ? { referenceImage } : {})
+      });
       setResult(response.result);
       if (response.result.status === 'failed') setGenerating(false);
     } catch (caught) {
@@ -245,6 +290,16 @@ export default function VideoGenerationWorkspace(props: {
             <section className="creator-tool-panel media-generation-prompt-panel" aria-labelledby="video-prompt-title">
               <div className="creator-tool-panel-heading"><div><h2 id="video-prompt-title">{l('视频描述', 'Video prompt')}</h2><p>{l('写清主体动作、环境、镜头运动、光线和风格，最多 4000 字', 'Describe action, setting, camera movement, lighting, and style, up to 4,000 characters')}</p></div><small>{characterCount} / 4000</small></div>
               <label className="creator-tool-field"><span>{l('提示词', 'Prompt')}</span><textarea rows={12} maxLength={4000} value={prompt} onChange={event => updatePrompt(event.target.value)} placeholder={l('例如：低机位跟随一辆红色跑车驶过海岸公路，黄昏金色光线，镜头平稳', 'For example: A low-angle tracking shot following a red sports car along a coastal road at golden hour, smooth camera motion')} /></label>
+              <div className="video-reference-field">
+                <span>{l('参考图', 'Reference image')} <small>{l('选填', 'Optional')}</small></span>
+                <div className="video-reference-upload-wrap">
+                  <label className="creator-tool-upload video-reference-upload">
+                    <input type="file" accept="image/jpeg,image/png,image/webp" aria-label={l('上传视频参考图', 'Upload video reference image')} onChange={event => updateReferenceImage(event.target.files?.[0] ?? null)} />
+                    {referenceImageFile ? <><img src={referenceImageUrl} alt={l('视频参考图预览', 'Video reference preview')} /><strong>{referenceImageFile.name}</strong><span>{l('点击更换参考图', 'Click to replace the reference')}</span></> : <><UploadCloud size={23} strokeWidth={1.6} /><strong>{l('添加参考图', 'Add reference image')}</strong><span>{l('选填，用于参考主体、构图或画面风格', 'Optional, for the subject, composition, or visual style')}</span></>}
+                  </label>
+                  {referenceImageFile ? <button className="video-reference-remove" type="button" onClick={removeReferenceImage} aria-label={l('移除参考图', 'Remove reference image')} title={l('移除参考图', 'Remove reference image')}><X size={15} strokeWidth={1.8} /></button> : null}
+                </div>
+              </div>
               <button className="smart-dubbing-sample" type="button" onClick={() => updatePrompt(l(samplePromptZh, samplePromptEn))}><WandSparkles size={14} strokeWidth={1.8} />{l('填入示例提示词', 'Use sample prompt')}</button>
             </section>
           ) : null}
@@ -271,7 +326,7 @@ export default function VideoGenerationWorkspace(props: {
                   <div className="smart-dubbing-ready"><span><Clapperboard size={24} strokeWidth={1.6} /></span><strong>{l('准备生成视频', 'Ready to generate video')}</strong><p>{l(`${l(selectedProvider.zh, selectedProvider.en)} · ${selectedSize.ratio} · ${duration} 秒 · ${size}`, `${selectedProvider.en} · ${selectedSize.ratio} · ${duration} seconds · ${size}`)}</p><button className="creator-tool-primary" type="button" onClick={generate} disabled={generating}>{generating ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}{generating ? l('正在提交', 'Submitting') : l('开始生成', 'Generate')}</button></div>
                 )}
               </section>
-              <CreatorTaskSummary sourceIcon={Clapperboard} sourceLabel={l('视频描述', 'Prompt')} sourceValue={prompt.trim()} items={[{ label: l('视频服务', 'Provider'), value: l(selectedProvider.zh, selectedProvider.en) }, { label: l('画幅', 'Format'), value: `${l(selectedSize.zh, selectedSize.en)} · ${selectedSize.ratio}` }, { label: l('分辨率', 'Resolution'), value: size }, { label: l('时长', 'Duration'), value: l(`${duration} 秒`, `${duration} seconds`) }, { label: l('输出格式', 'Format'), value: 'MP4' }]} />
+              <CreatorTaskSummary sourceIcon={Clapperboard} sourceLabel={l('视频描述', 'Prompt')} sourceValue={prompt.trim()} items={[...(referenceImageFile ? [{ label: l('参考图', 'Reference image'), value: referenceImageFile.name }] : []), { label: l('视频服务', 'Provider'), value: l(selectedProvider.zh, selectedProvider.en) }, { label: l('画幅', 'Format'), value: `${l(selectedSize.zh, selectedSize.en)} · ${selectedSize.ratio}` }, { label: l('分辨率', 'Resolution'), value: size }, { label: l('时长', 'Duration'), value: l(`${duration} 秒`, `${duration} seconds`) }, { label: l('输出格式', 'Format'), value: 'MP4' }]} />
             </div>
           ) : null}
           {error ? <p className="creator-tool-error" role="alert">{error}</p> : null}
@@ -287,6 +342,26 @@ export default function VideoGenerationWorkspace(props: {
   );
 }
 
+function readReferenceImage(file: File): Promise<VideoGenerationReferenceImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('REFERENCE_IMAGE_READ_FAILED'));
+    reader.onload = () => {
+      const value = typeof reader.result === 'string' ? reader.result : '';
+      const separator = value.indexOf(',');
+      if (separator < 0) {
+        reject(new Error('REFERENCE_IMAGE_READ_FAILED'));
+        return;
+      }
+      resolve({
+        mime: file.type as VideoGenerationReferenceImage['mime'],
+        data: value.slice(separator + 1)
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function formatBytes(size: number) {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
@@ -294,6 +369,7 @@ function formatBytes(size: number) {
 
 function formatVideoError(error: unknown, l: (zh: string, en: string) => string) {
   const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : '';
+  if (error instanceof Error && error.message === 'REFERENCE_IMAGE_READ_FAILED') return l('参考图读取失败，请重新选择图片', 'The reference image could not be read. Choose it again.');
   if (code === 'VIDEO_GENERATION_CONFIG_REQUIRED') return l('请先在设置的 AI 服务中配置视频生成 API Key', 'Configure a video generation API key in AI Services first');
   if (code === 'VIDEO_GENERATION_UPSTREAM_ERROR') return l('视频生成请求失败，请检查模型服务配置和网络后重试', 'Video generation failed. Check the model service configuration and network, then retry.');
   return error instanceof Error ? error.message : l('视频生成失败，请稍后重试', 'Video generation failed. Try again later.');

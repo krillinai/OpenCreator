@@ -1681,6 +1681,76 @@
   font-variant-numeric: tabular-nums;
 }
 
+.video-reference-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.video-reference-field > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.video-reference-field > span small {
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 450;
+}
+
+.video-reference-upload-wrap {
+  position: relative;
+}
+
+.video-reference-upload {
+  min-height: 86px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  place-items: center start;
+  align-content: center;
+  padding-right: 42px;
+  text-align: left;
+}
+
+.video-reference-upload > svg,
+.video-reference-upload img {
+  grid-row: 1 / 3;
+  justify-self: center;
+}
+
+.video-reference-upload img {
+  width: 52px;
+  height: 52px;
+}
+
+.video-reference-upload strong,
+.video-reference-upload span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-reference-remove {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.video-reference-remove:hover {
+  color: var(--text);
+}
+
 .media-generation-control {
   display: grid;
   gap: 9px;
