@@ -53,7 +53,7 @@ type FeaturedEntry = Pick<DashboardEntry, 'title' | 'prompt'> & {
 
 const featuredTools: FeaturedEntry[] = [
   {
-    title: '火柴人动画生成',
+    title: '火柴人动画',
     image: '/dashboard/templates/ai-video-insane.jpg',
     prompt: '根据我的创意生成一支火柴人动画，请先帮我完善故事、角色动作、画面节奏和分镜。',
     accent: 'warm',
@@ -102,7 +102,7 @@ const creatorTools: DashboardEntry[] = [
     workspace: 'digital-avatar'
   },
   {
-    title: '火柴人视频生成',
+    title: '火柴人动画',
     description: '角色、分镜与完整动画',
     prompt: '根据我的创意生成一支动画短片，请先帮我完善故事、角色和分镜。',
     category: '视频创作',
@@ -406,7 +406,7 @@ const englishDashboardLabels: Record<string, string> = {
   音频处理: 'Audio',
   视频编辑: 'Video Editing',
   数字人: 'Avatars',
-  火柴人动画生成: 'Stick Figure Animation',
+  火柴人动画: 'Stick Figure Animation',
   视频翻译配音: 'Translate & Dub Video',
   数字人口播: 'Digital Avatar',
   视频翻译: 'Video Translation',
@@ -414,7 +414,6 @@ const englishDashboardLabels: Record<string, string> = {
   'AI 视频生成': 'AI Video Generation',
   从创意生成完整视频: 'Generate complete videos from an idea',
   快速制作专业口播: 'Create professional presenter videos quickly',
-  火柴人视频生成: 'Stick Figure Video',
   '角色、分镜与完整动画': 'Characters, storyboards, and animation',
   自动剪辑: 'Auto Clips',
   语义识别与高光切片: 'Semantic detection and highlight clips',

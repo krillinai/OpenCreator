@@ -97,14 +97,14 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('heading', { name: '工作台' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '精选应用' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /打开.+/ })).toHaveLength(3);
-    expect(screen.getByRole('button', { name: '打开火柴人动画生成' }).querySelector('img'))
+    expect(screen.getByRole('button', { name: '打开火柴人动画' }).querySelector('img'))
       .toHaveAttribute('src', '/dashboard/templates/ai-video-insane.jpg');
     expect(screen.getByRole('button', { name: '打开视频翻译配音' }).querySelector('img'))
       .toHaveAttribute('src', '/dashboard/templates/video-translation-example.png');
     expect(screen.getByRole('region', { name: '创作应用' })).toBeInTheDocument();
     expect(screen.getByRole('searchbox', { name: '搜索应用' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^视频翻译/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^火柴人视频生成/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^火柴人动画/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^数字人口播/ })).toBeInTheDocument();
     expect(container.querySelectorAll('.dashboard-app-card')).toHaveLength(9);
     expect(screen.queryByRole('button', { name: /^视频转格式/ })).not.toBeInTheDocument();
@@ -261,9 +261,9 @@ describe('DashboardPage', () => {
 
   it('generates a stickman character before storyboard and video', () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: '打开火柴人动画生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开火柴人动画' }));
 
-    expect(screen.getByRole('heading', { name: '火柴人视频生成' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '火柴人动画' })).toBeInTheDocument();
     const stickmanSteps = screen.getByRole('navigation', { name: '火柴人生成流程' });
     expect(within(stickmanSteps).getByRole('button', { name: '1 选择角色' })).toHaveAttribute('aria-current', 'step');
     expect(within(stickmanSteps).getByRole('button', { name: '2 故事与分镜' })).toBeDisabled();
@@ -427,7 +427,7 @@ describe('DashboardPage', () => {
   it('uses the same transparent stickman artwork in dark and light themes', () => {
     document.documentElement.dataset.theme = 'dark';
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: '打开火柴人动画生成' }));
+    fireEvent.click(screen.getByRole('button', { name: '打开火柴人动画' }));
 
     const defaultCharacter = screen.getByRole('radio', { name: /默认角色/ });
     const artwork = defaultCharacter.querySelector<HTMLImageElement>('.stickman-character-artwork');

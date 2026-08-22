@@ -561,7 +561,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   return (
     <>
       <CreatorToolShell
-      title={l('火柴人视频生成', 'Stick Figure Video')}
+      title={l('火柴人动画', 'Stick Figure Animation')}
       subtitle={l('先创建角色与分镜，再生成完整动画', 'Create a character and storyboard, then generate the full animation')}
       context={context}
       initialMessage={l('已经为你选好一个默认角色。你可以直接生成分镜，也可以换一个默认角色、上传参考图或生成自己的角色。', 'A default character is ready. Generate the storyboard now, or choose another character, upload a reference, or generate your own.')}
@@ -772,7 +772,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
                     <button type="button" onClick={() => setNotice(l(`V${resultVersion} 已加入下载队列`, `V${resultVersion} added to the download queue`))}><Download size={15} strokeWidth={1.8} aria-hidden="true" />{l('下载视频', 'Download video')}</button>
                   </header>
                   <div className="stickman-video-result">
-                    <div><img src="/dashboard/templates/ai-video-insane.jpg" alt={l('火柴人视频预览', 'Stick figure video preview')} /><span><Play size={22} fill="currentColor" /></span></div>
+                    <div><img src="/dashboard/templates/ai-video-insane.jpg" alt={l('火柴人动画预览', 'Stick figure animation preview')} /><span><Play size={22} fill="currentColor" /></span></div>
                     <section><h2>{l('火柴人动画', 'stick-figure-animation')}-V{resultVersion}.mp4</h2><p>{selectedResult.ratio} · 15 {l('秒', 'sec')} · {localizeShot(selectedResult.style, l)} · {selectedResult.voiceover ? l('含配音', 'Voiceover') : l('无配音', 'No voiceover')}</p></section>
                   </div>
                 </div>
