@@ -66,6 +66,8 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 
 The Dashboard currently provides the workspaces below. Available models and services depend on your local Codex environment, AI service settings, and optional enterprise gateway.
 
+> More creator tools are continuously being added.
+
 | Workspace | Capabilities |
 | --- | --- |
 | Video Downloader | Parse YouTube, Bilibili, and other supported public links, inspect available quality and format options, and download video or audio for later workflows |
