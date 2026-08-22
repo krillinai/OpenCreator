@@ -24,7 +24,7 @@ OpenCreator 由 [KrillinAI](https://github.com/krillinai/KrillinAI) 全面升级
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
 
-[项目特色](#项目特色) · [创作工具](#创作工具) · [产品展示](#产品展示) · [案例展示](#案例展示) · [快速开始](#快速开始) · [Desktop](#desktop) · [系统架构](#系统架构) · [开发指南](#开发指南) · [文档](#文档) · [Star 趋势](#star-趋势)
+[项目特色](#项目特色) · [创作工具](#创作工具) · [案例展示](#案例展示) · [快速开始](#快速开始) · [Desktop](#desktop) · [系统架构](#系统架构) · [开发指南](#开发指南) · [文档](#文档) · [Star 趋势](#star-趋势)
 
 </div>
 
@@ -79,10 +79,6 @@ Web 是唯一的前端实现；Desktop 直接加载同一份 Web 构建产物，
 | 智能配音 | 修改文案，选择音色与表达风格，调整语速，试听生成音频，并导出 MP3、WAV 或其他已配置格式 |
 | 图像生成 | 使用 GPT Image、即梦、可灵或 Gemini，设置提示词、画幅、质量和生成数量，预览并单独下载图片 |
 | 封面生成 | 结合主题、视频链接和参考图片生成多版内容封面，并进行对比选择 |
-
-## 产品展示
-
-### 创作工作台
 
 从工作台进入视频翻译、动画、数字人、图像生成、配音、剪辑等专用创作工作区。
 
