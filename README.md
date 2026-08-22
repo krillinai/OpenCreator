@@ -52,7 +52,7 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 
 - 🎨 **Multimodal Creation**: Create and manage video, images, audio, subtitles, and documents through one connected workflow.
 
-- 🔗 **State Sync**: Workspace actions and Agent commands share one state machine, keeping steps, progress, and results aligned.
+- 🔗 **Dual-Mode Workflow**: Work through either the visual workspace or Agent conversation while one shared state machine keeps steps, progress, and results synchronized.
 
 - 🕘 **Versioning**: Every revision creates a new version while preserving earlier settings and outputs for review and comparison.
 
