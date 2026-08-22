@@ -29,7 +29,7 @@ OpenCreator 由 [KrillinAI](https://github.com/krillinai/KrillinAI) 全面升级
 </div>
 
 > [!IMPORTANT]
-> OpenCreator 当前处于快速迭代阶段，建议先从源码运行。源码版本目前需要本机安装并登录 [Codex CLI](https://github.com/openai/codex)；桌面正式版计划内置 Codex CLI，普通用户将无需另行安装。AI 图像、视频和语音能力还取决于对应服务配置。
+> OpenCreator 当前处于快速迭代阶段，建议先从源码运行。源码版本目前需要本机安装并登录 [Codex CLI](https://github.com/openai/codex)；OpenCreator 桌面版默认内置 Codex CLI，普通用户无需另行安装。AI 图像、视频和语音能力还取决于对应服务配置。
 
 ![OpenCreator Agent 工作台](../images/opencreator-home-en.png)
 

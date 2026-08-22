@@ -29,7 +29,7 @@ OpenCreator is the next-generation upgrade of [KrillinAI](https://github.com/kri
 </div>
 
 > [!IMPORTANT]
-> OpenCreator is under active development and is currently best run from source. Source builds currently use a locally installed and authenticated [Codex CLI](https://github.com/openai/codex). We plan to bundle Codex CLI with desktop releases so end users will not need to install it separately. AI image, video, and voice features also depend on their corresponding service configuration.
+> OpenCreator is under active development and is currently best run from source. Source builds currently use a locally installed and authenticated [Codex CLI](https://github.com/openai/codex). OpenCreator desktop releases include Codex CLI by default, so end users do not need to install it separately. AI image, video, and voice features also depend on their corresponding service configuration.
 
 ![OpenCreator Agent workspace](./docs/images/opencreator-home-en.png)
 
