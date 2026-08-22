@@ -58,8 +58,6 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 
 - 🧩 **Skills and MCP**: Browse, install, and invoke Skills while managing MCP through Codex-native configuration.
 
-- 📅 **Schedules**: Manage recurring tasks in dedicated conversations while retaining complete Run history.
-
 - 🧠 **Memory**: Keep global, project, and thread memory with summaries and reproducible Run input snapshots.
 
 - 🔐 **Local Security**: Keep data, attachments, and logs local by default, with approvals and redacted diagnostics.
