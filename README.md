@@ -24,7 +24,7 @@ OpenCreator is the next-generation upgrade of [KrillinAI](https://github.com/kri
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
 
-[Creator Tools](#creator-tools) · [Features](#key-features-and-functions) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation) · [Star History](#star-history)
+[Project Highlights](#project-highlights) · [Creator Tools](#creator-tools) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation) · [Star History](#star-history)
 
 </div>
 
@@ -44,6 +44,16 @@ The product brings together two connected workflows:
 
 Web is the single frontend implementation. Desktop loads the same Web build and adds only capabilities that require the operating system, such as directory selection, window lifecycle, tray behavior, and native notifications. With the same data and content viewport, both platforms share the same general UI and Runtime behavior.
 
+## Project Highlights
+
+- 🔗 **State Sync**: Workspace actions and Agent commands share one state machine, keeping steps, progress, and results aligned.
+- 🕘 **Versioning**: Every revision creates a new version while preserving earlier settings and outputs for review and comparison.
+- 🤖 **Codex Native**: Reuse the Codex Agent loop, models, reasoning, tool calls, conversations, Skills, and MCP without maintaining a second execution engine.
+- 🧩 **Skills and MCP**: Browse, install, and invoke Skills while managing MCP through Codex-native configuration.
+- 📅 **Schedules**: Manage recurring tasks in dedicated conversations while retaining complete Run history.
+- 🧠 **Memory**: Keep global, project, and thread memory with summaries and reproducible Run input snapshots.
+- 🔐 **Local Security**: Keep data, attachments, and logs local by default, with approvals and redacted diagnostics.
+
 ## Creator Tools
 
 The Dashboard currently provides the workspaces below. Available models and services depend on your local Codex environment, AI service settings, and optional enterprise gateway.
@@ -59,18 +69,6 @@ The Dashboard currently provides the workspaces below. Available models and serv
 | AI Dubbing | Refine a script, choose a voice and delivery style, adjust speaking rate, preview the audio, and export MP3, WAV, or other configured formats |
 | Image Generation | Generate with GPT Image, Jimeng, Kling, or Gemini using configurable prompts, aspect ratios, quality, and output count, then preview and download individual images |
 | Thumbnail Generator | Combine a topic, video link, and reference image to generate and compare multiple content-thumbnail variations |
-
-## Key Features and Functions
-
-### Project Highlights
-
-- 🔗 **State Sync**: Workspace actions and Agent commands share one state machine, keeping steps, progress, and results aligned.
-- 🕘 **Versioning**: Every revision creates a new version while preserving earlier settings and outputs for review and comparison.
-- 🤖 **Codex Native**: Reuse the Codex Agent loop, models, reasoning, tool calls, conversations, Skills, and MCP without maintaining a second execution engine.
-- 🧩 **Skills and MCP**: Browse, install, and invoke Skills while managing MCP through Codex-native configuration.
-- 📅 **Schedules**: Manage recurring tasks in dedicated conversations while retaining complete Run history.
-- 🧠 **Memory**: Keep global, project, and thread memory with summaries and reproducible Run input snapshots.
-- 🔐 **Local Security**: Keep data, attachments, and logs local by default, with approvals and redacted diagnostics.
 
 ## Product Tour
 
