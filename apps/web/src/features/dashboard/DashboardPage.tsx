@@ -86,7 +86,7 @@ const creatorTools: DashboardEntry[] = [
     workspace: 'video-translation'
   },
   {
-    title: 'AI 视频生成',
+    title: '视频生成',
     description: '从创意生成完整视频',
     prompt: '根据我的创意和素材生成一支完整的 AI 视频，请先帮我梳理画面风格、镜头和节奏。',
     category: '视频创作',
@@ -411,7 +411,7 @@ const englishDashboardLabels: Record<string, string> = {
   数字人口播: 'Digital Avatar',
   视频翻译: 'Video Translation',
   '字幕、配音与口型同步': 'Subtitles, dubbing, and lip sync',
-  'AI 视频生成': 'AI Video Generation',
+  视频生成: 'Video Generation',
   从创意生成完整视频: 'Generate complete videos from an idea',
   快速制作专业口播: 'Create professional presenter videos quickly',
   '角色、分镜与完整动画': 'Characters, storyboards, and animation',

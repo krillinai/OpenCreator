@@ -1109,7 +1109,7 @@ describe('DashboardPage', () => {
     expect(openContent).toHaveBeenCalledTimes(2);
   });
 
-  it('submits and previews an AI video generation result', async () => {
+  it('submits and previews a video generation result', async () => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
       value: vi.fn(() => 'blob:generated-video')
@@ -1143,7 +1143,7 @@ describe('DashboardPage', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /^AI 视频生成/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^视频生成/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
       target: { value: result.prompt }
     });
@@ -1176,7 +1176,7 @@ describe('DashboardPage', () => {
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('coast-reference.png');
     fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
 
-    expect(await screen.findByLabelText('AI 生成视频预览')).toHaveAttribute('src', 'blob:generated-video');
+    expect(await screen.findByLabelText('生成视频预览')).toHaveAttribute('src', 'blob:generated-video');
     expect(generate).toHaveBeenCalledWith({
       prompt: result.prompt,
       provider: 'veo',

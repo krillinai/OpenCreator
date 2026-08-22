@@ -264,7 +264,7 @@ export default function VideoGenerationWorkspace(props: {
 
   return (
     <CreatorToolShell
-      title={l('AI 视频生成', 'AI Video Generation')}
+      title={l('视频生成', 'Video Generation')}
       subtitle={l('从文字创意生成可预览和下载的视频', 'Turn a written idea into a previewable, downloadable video')}
       context={result?.status === 'completed' ? l('视频已完成', 'Video ready') : result && result.status !== 'failed' ? `${statusLabel} · ${result.progress}%` : currentStep === 0 ? l('正在编辑视频描述', 'Editing video description') : currentStep === 1 ? `${l(selectedSize.zh, selectedSize.en)} · ${duration}s` : l('等待生成', 'Ready to generate')}
       initialMessage={l('描述你想生成的视频，包括主体动作、镜头和画面风格。', 'Describe the video, including subject movement, camera direction, and visual style.')}
@@ -321,7 +321,7 @@ export default function VideoGenerationWorkspace(props: {
               <section className="creator-tool-panel media-generation-output-panel" aria-labelledby="video-output-title">
                 <div className="creator-tool-panel-heading"><div><h2 id="video-output-title">{videoUrl ? l('生成结果', 'Generated video') : l('生成视频', 'Generate video')}</h2><p>{videoUrl ? l('预览成片并下载视频文件', 'Preview and download the finished video') : result && result.status !== 'failed' ? l('任务已提交，完成后会自动载入成片', 'The job is running. The finished video will load automatically.') : l('确认设置后提交视频生成任务', 'Review the settings, then submit the generation job')}</p></div></div>
                 {videoUrl && result?.status === 'completed' ? (
-                  <div className="video-generation-result" data-ratio={selectedSize.ratio}><video controls src={videoUrl} aria-label={l('AI 生成视频预览', 'AI generated video preview')} /><div><span><strong>{result.fileName}</strong><small>{result.size ? formatBytes(result.size) : 'MP4'} · {result.model}</small></span><div><button type="button" onClick={generate} disabled={generating}><RotateCcw size={15} />{l('重新生成', 'Regenerate')}</button><button className="creator-tool-primary" type="button" onClick={download}><Download size={15} />{l('下载视频', 'Download video')}</button></div></div></div>
+                  <div className="video-generation-result" data-ratio={selectedSize.ratio}><video controls src={videoUrl} aria-label={l('生成视频预览', 'Generated video preview')} /><div><span><strong>{result.fileName}</strong><small>{result.size ? formatBytes(result.size) : 'MP4'} · {result.model}</small></span><div><button type="button" onClick={generate} disabled={generating}><RotateCcw size={15} />{l('重新生成', 'Regenerate')}</button><button className="creator-tool-primary" type="button" onClick={download}><Download size={15} />{l('下载视频', 'Download video')}</button></div></div></div>
                 ) : result && (result.status === 'queued' || result.status === 'in_progress') ? (
                   <div className="video-generation-progress" role="status"><span><LoaderCircle className="smart-dubbing-spinner" size={25} /></span><strong>{statusLabel}</strong><p>{l('可以停留在当前页面，完成后将自动显示预览', 'Stay on this page. The preview will appear automatically when complete.')}</p><div><span style={{ width: `${Math.max(4, result.progress)}%` }} /></div><small>{result.progress}%</small></div>
                 ) : (
