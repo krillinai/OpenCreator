@@ -1161,12 +1161,14 @@ describe('DashboardPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     const providerSelect = screen.getByRole('combobox', { name: '视频服务' });
+    const formatSelect = screen.getByRole('combobox', { name: '画幅' });
+    const durationSelect = screen.getByRole('combobox', { name: '视频时长' });
     expect(providerSelect).toHaveValue('seedance');
     fireEvent.change(providerSelect, { target: { value: 'veo' } });
     expect(providerSelect).toHaveValue('veo');
-    expect(screen.getByRole('radio', { name: '4 秒' })).toBeChecked();
-    fireEvent.click(screen.getByRole('radio', { name: /竖屏/ }));
-    fireEvent.click(screen.getByRole('radio', { name: '8 秒' }));
+    expect(durationSelect).toHaveValue('4');
+    fireEvent.change(formatSelect, { target: { value: '720x1280' } });
+    fireEvent.change(durationSelect, { target: { value: '8' } });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
 
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('竖屏 · 9:16');

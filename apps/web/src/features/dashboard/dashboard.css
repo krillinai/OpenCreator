@@ -1751,6 +1751,23 @@
   color: var(--text);
 }
 
+.video-generation-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.video-generation-settings-grid .creator-tool-field {
+  min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .video-generation-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .media-generation-control {
   display: grid;
   gap: 9px;
