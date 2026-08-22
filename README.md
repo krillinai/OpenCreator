@@ -66,6 +66,10 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 
 The Dashboard currently provides the workspaces below. Available models and services depend on your local Codex environment, AI service settings, and optional enterprise gateway.
 
+Open dedicated creation workspaces for video translation, animation, avatars, image generation, dubbing, clipping, and more.
+
+![OpenCreator Creator Dashboard](./docs/images/product/opencreator-dashboard-en.png)
+
 > More creator tools are continuously being added.
 
 | Workspace | Capabilities |
@@ -79,10 +83,6 @@ The Dashboard currently provides the workspaces below. Available models and serv
 | AI Dubbing | Refine a script, choose a voice and delivery style, adjust speaking rate, preview the audio, and export MP3, WAV, or other configured formats |
 | Image Generation | Generate with GPT Image, Jimeng, Kling, or Gemini using configurable prompts, aspect ratios, quality, and output count, then preview and download individual images |
 | Thumbnail Generator | Combine a topic, video link, and reference image to generate and compare multiple content-thumbnail variations |
-
-Open dedicated creation workspaces for video translation, animation, avatars, image generation, dubbing, clipping, and more.
-
-![OpenCreator Creator Dashboard](./docs/images/product/opencreator-dashboard-en.png)
 
 ## Examples
 
