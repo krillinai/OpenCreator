@@ -925,7 +925,7 @@ describe('App', () => {
     render(<App fileService={createFileService()} />);
 
     await user.click(await screen.findByRole('button', {
-      name: '使用多语言视频翻译技能'
+      name: '使用多语言视频翻译模板'
     }));
 
     expect(await screen.findByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
@@ -935,7 +935,7 @@ describe('App', () => {
     await waitFor(() => expect(window.location.hash).toBe('#/dashboard'));
 
     await user.click(screen.getByRole('button', { name: '返回' }));
-    expect(await screen.findByRole('heading', { name: '技能' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '创作模板' })).toBeInTheDocument();
     await waitFor(() => expect(window.location.hash).toBe('#/'));
   });
 
@@ -943,11 +943,11 @@ describe('App', () => {
     const user = userEvent.setup();
     render(<App fileService={createFileService()} />);
 
-    await user.click(await screen.findByRole('button', { name: '使用数字人口播技能' }));
+    await user.click(await screen.findByRole('button', { name: '使用数字人口播模板' }));
 
     const composer = screen.getByRole('textbox', { name: '输入任务' });
     expect(composer).toHaveValue('');
-    expect(screen.getByRole('heading', { name: '技能' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '创作模板' })).toBeInTheDocument();
     expect(window.location.hash).toBe('');
   });
 
@@ -1087,7 +1087,7 @@ describe('App', () => {
       .toBeInTheDocument();
     expect(document.querySelector('.conversation-page')).not.toHaveClass('is-empty');
     expect(screen.queryByText('需要帮你做点什么')).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '技能' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '创作模板' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     history.resolve(jsonResponse({
@@ -1102,7 +1102,7 @@ describe('App', () => {
     });
     expect(document.querySelector('.conversation-page')).toHaveClass('is-empty');
     expect(screen.getByText('需要帮你做点什么')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '技能' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '创作模板' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /选择项目/ })).not.toBeInTheDocument();
 
     expect(screen.queryByRole('button', { name: /^视频翻译/ })).not.toBeInTheDocument();
