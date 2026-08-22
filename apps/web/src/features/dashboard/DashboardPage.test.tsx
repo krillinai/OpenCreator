@@ -1177,7 +1177,10 @@ describe('DashboardPage', () => {
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('竖屏 · 9:16');
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('8 秒');
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('coast-reference.png');
-    fireEvent.click(screen.getByRole('button', { name: '开始生成' }));
+    const generationActions = screen.getByLabelText('视频生成操作');
+    const generateButton = within(generationActions).getByRole('button', { name: '开始生成' });
+    expect(screen.getByText('准备生成视频')).not.toContainElement(generateButton);
+    fireEvent.click(generateButton);
 
     expect(await screen.findByLabelText('生成视频预览')).toHaveAttribute('src', 'blob:generated-video');
     expect(generate).toHaveBeenCalledWith({

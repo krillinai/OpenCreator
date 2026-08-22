@@ -328,7 +328,7 @@ export default function VideoGenerationWorkspace(props: {
                 ) : result && (result.status === 'queued' || result.status === 'in_progress') ? (
                   <div className="video-generation-progress" role="status"><span><LoaderCircle className="smart-dubbing-spinner" size={25} /></span><strong>{statusLabel}</strong><p>{l('可以停留在当前页面，完成后将自动显示预览', 'Stay on this page. The preview will appear automatically when complete.')}</p><div><span style={{ width: `${Math.max(4, result.progress)}%` }} /></div><small>{result.progress}%</small></div>
                 ) : (
-                  <div className="smart-dubbing-ready"><span><Clapperboard size={24} strokeWidth={1.6} /></span><strong>{l('准备生成视频', 'Ready to generate video')}</strong><p>{l(`${l(selectedProvider.zh, selectedProvider.en)} · ${selectedSize.ratio} · ${duration} 秒 · ${size}`, `${selectedProvider.en} · ${selectedSize.ratio} · ${duration} seconds · ${size}`)}</p><button className="creator-tool-primary" type="button" onClick={generate} disabled={generating}>{generating ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}{generating ? l('正在提交', 'Submitting') : l('开始生成', 'Generate')}</button></div>
+                  <div className="smart-dubbing-ready"><span><Clapperboard size={24} strokeWidth={1.6} /></span><strong>{l('准备生成视频', 'Ready to generate video')}</strong><p>{l(`${l(selectedProvider.zh, selectedProvider.en)} · ${selectedSize.ratio} · ${duration} 秒 · ${size}`, `${selectedProvider.en} · ${selectedSize.ratio} · ${duration} seconds · ${size}`)}</p></div>
                 )}
               </section>
               <CreatorTaskSummary sourceIcon={Clapperboard} sourceLabel={l('视频描述', 'Prompt')} sourceValue={prompt.trim()} items={[...(referenceImageFile ? [{ label: l('参考图', 'Reference image'), value: referenceImageFile.name }] : []), { label: l('视频服务', 'Provider'), value: l(selectedProvider.zh, selectedProvider.en) }, { label: l('画幅', 'Format'), value: `${l(selectedSize.zh, selectedSize.en)} · ${selectedSize.ratio}` }, { label: l('分辨率', 'Resolution'), value: size }, { label: l('时长', 'Duration'), value: l(`${duration} 秒`, `${duration} seconds`) }, { label: l('输出格式', 'Format'), value: 'MP4' }]} />
@@ -338,9 +338,10 @@ export default function VideoGenerationWorkspace(props: {
           {notice ? <p className="creator-tool-notice" role="status">{notice}</p> : null}
         </div>
 
-        <footer className="video-translation-wizard-actions media-generation-actions">
+        <footer className="video-translation-wizard-actions media-generation-actions" aria-label={l('视频生成操作', 'Video generation actions')}>
           <button className="video-translation-secondary-action" type="button" onClick={() => currentStep === 0 ? props.onBack() : openStep((currentStep - 1) as VideoStep)}>{currentStep === 0 ? l('返回工作台', 'Back to Dashboard') : l('上一步', 'Back')}</button>
           {currentStep < 2 ? <button className="video-translation-primary-action" type="button" onClick={nextStep}>{l('继续', 'Continue')}</button> : null}
+          {currentStep === 2 && !videoUrl && !(result && (result.status === 'queued' || result.status === 'in_progress')) ? <button className="video-translation-primary-action" type="button" onClick={generate} disabled={generating}>{generating ? <LoaderCircle className="smart-dubbing-spinner" size={16} /> : <Sparkles size={16} />}{generating ? l('正在提交', 'Submitting') : l('开始生成', 'Generate')}</button> : null}
         </footer>
       </div>
     </CreatorToolShell>
