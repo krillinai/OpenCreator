@@ -47,13 +47,21 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 ## Project Highlights
 
 - 🤖 **Codex Native**: Reuse the Codex Agent loop, models, reasoning, tool calls, conversations, Skills, and MCP without maintaining a second execution engine.
+
 - 🚀 **One-Click Start**: Start Web with one command while the local Runtime launches on demand and prepares a default project automatically.
+
 - 🎨 **Multimodal Creation**: Create and manage video, images, audio, subtitles, and documents through one connected workflow.
+
 - 🔗 **State Sync**: Workspace actions and Agent commands share one state machine, keeping steps, progress, and results aligned.
+
 - 🕘 **Versioning**: Every revision creates a new version while preserving earlier settings and outputs for review and comparison.
+
 - 🧩 **Skills and MCP**: Browse, install, and invoke Skills while managing MCP through Codex-native configuration.
+
 - 📅 **Schedules**: Manage recurring tasks in dedicated conversations while retaining complete Run history.
+
 - 🧠 **Memory**: Keep global, project, and thread memory with summaries and reproducible Run input snapshots.
+
 - 🔐 **Local Security**: Keep data, attachments, and logs local by default, with approvals and redacted diagnostics.
 
 ## Creator Tools
