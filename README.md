@@ -62,18 +62,18 @@ The Dashboard currently provides the workspaces below. Available models and serv
 
 ## Key Features and Functions
 
-### Agent Workspace
+### Project Highlights
 
-- 🔗 **Synchronized Workspace and Conversation**: A shared workflow state machine keeps form actions, Agent commands, progress, and results consistent across both interfaces.
-- 🕘 **Versioned Creative Iteration**: Every correction or regeneration creates a new version instead of overwriting the current result, preserving earlier settings and outputs for review and comparison.
-- 🤖 **Codex-Native Execution**: Reuse the Codex Agent loop, models, reasoning, tool calls, conversation history, Skills, MCP, and Profiles instead of maintaining a second execution engine.
-- ⚙️ **Persistent Background Runs**: Keep work running across refreshes and conversation switches, with queueing, interruption, continuation, approval handling, and global result tracking.
-- 📁 **Projects and File Workspace**: Organize conversations and assets by project, work with blank or existing local folders, edit text, and preview images, PDFs, and safe HTML.
-- 🧩 **Skills and MCP Extensions**: Browse and install Skills, invoke them from the composer, and manage MCP servers through Codex-native configuration.
-- 📅 **Long-Running Schedules**: Create, edit, pause, resume, and trigger scheduled tasks in persistent dedicated conversations that retain their complete Run history.
-- 🧠 **Memory and Summaries**: Manage explicit global, project, and thread memory with versioned summaries and a reproducible input snapshot for each Run.
-- 🔐 **Controlled Local Runtime**: Keep SQLite data, attachments, and Run logs local by default, enforce project permissions and approvals, and redact diagnostics before export.
-- 💻 **Cross-Platform Web and Desktop**: Use one React frontend across macOS, Windows, and Linux in the browser or Electron Desktop, with the same general workflows and only genuine operating-system capabilities kept platform-specific.
+- 🔗 **State Sync**: Workspace actions and Agent commands share one state machine, keeping steps, progress, and results aligned.
+- 🕘 **Versioning**: Every revision creates a new version while preserving earlier settings and outputs for review and comparison.
+- 🤖 **Codex Native**: Reuse Codex models, reasoning, tools, conversations, Skills, and MCP without a second Agent engine.
+- ⚙️ **Background Runs**: Tasks survive refreshes and conversation switches, with queueing, interruption, continuation, and global tracking.
+- 📁 **Project Files**: Organize conversations and assets by project, edit text, and preview images, PDFs, and safe HTML.
+- 🧩 **Skills and MCP**: Browse, install, and invoke Skills while managing MCP through Codex-native configuration.
+- 📅 **Schedules**: Manage recurring tasks in dedicated conversations while retaining complete Run history.
+- 🧠 **Memory**: Keep global, project, and thread memory with summaries and reproducible Run input snapshots.
+- 🔐 **Local Security**: Keep data, attachments, and logs local by default, with approvals and redacted diagnostics.
+- 💻 **Cross-Platform**: Web and Desktop share one frontend and workflow, isolating only genuine operating-system capabilities.
 
 ## Product Tour
 
