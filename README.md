@@ -39,7 +39,7 @@ OpenCreator is built for individuals and teams who want to keep creative and dev
 
 The product brings together two connected workflows:
 
-- **AI content creation**: open dedicated workspaces for video translation, video generation, digital avatars, AI dubbing, automatic clipping, image generation, and more.
+- **AI content creation**: open dedicated workspaces for video translation, video generation, digital avatars, AI voice generation, automatic clipping, image generation, and more.
 - **General Agent workspace**: organize conversations by project, keep Runs working in the background, and manage approvals, attachments, files, Skills, MCP, schedules, notifications, memory, and diagnostics from one place.
 
 Web is the single frontend implementation. Desktop loads the same Web build and adds only capabilities that require the operating system, such as directory selection, window lifecycle, tray behavior, and native notifications. With the same data and content viewport, both platforms share the same general UI and Runtime behavior.
@@ -66,7 +66,7 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 
 The Dashboard currently provides the workspaces below. Available models and services depend on your local Codex environment, AI service settings, and optional enterprise gateway.
 
-Open dedicated creation workspaces for video translation, animation, avatars, image generation, dubbing, clipping, and more.
+Open dedicated creation workspaces for video translation, animation, avatars, image generation, voice generation, clipping, and more.
 
 ![OpenCreator Creator Dashboard](./docs/images/product/opencreator-dashboard-en.png)
 
@@ -80,7 +80,7 @@ Open dedicated creation workspaces for video translation, animation, avatars, im
 | Stick Figure Animation | Choose preset or custom characters, develop a story, generate and edit storyboards, review every shot, add narration and music, and retain versioned animation results |
 | AI Video Generation | Generate video with Seedance, Kling, or Veo from a prompt, provider, aspect ratio, resolution, and duration, then track progress, preview the result, and download the output |
 | Digital Avatar | Plan the presenter, script, voice delivery, scene, and composition for a structured digital-presenter video workflow |
-| AI Dubbing | Refine a script, choose a voice and delivery style, adjust speaking rate, preview the audio, and export MP3, WAV, or other configured formats |
+| AI Voice Generation | Refine a script, choose a voice and delivery style, adjust speaking rate, preview the audio, and export MP3, WAV, or other configured formats |
 | Image Generation | Generate with GPT Image, Jimeng, Kling, or Gemini using configurable prompts, aspect ratios, quality, and output count, then preview and download individual images |
 | Thumbnail Generator | Combine a topic, video link, and reference image to generate and compare multiple content-thumbnail variations |
 
