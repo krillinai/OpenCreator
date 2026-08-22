@@ -24,7 +24,7 @@ OpenCreator is the next-generation upgrade of [KrillinAI](https://github.com/kri
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=%E7%B2%89%E4%B8%9D&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
 [![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
 
-[Features](#key-features-and-functions) · [Creator Tools](#creator-tools) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation) · [Star History](#star-history)
+[Creator Tools](#creator-tools) · [Features](#key-features-and-functions) · [Product Tour](#product-tour) · [Examples](#examples) · [Quick Start](#quick-start) · [Desktop](#desktop) · [Architecture](#architecture) · [Development](#development) · [Documentation](#documentation) · [Star History](#star-history)
 
 </div>
 
@@ -44,21 +44,6 @@ The product brings together two connected workflows:
 
 Web is the single frontend implementation. Desktop loads the same Web build and adds only capabilities that require the operating system, such as directory selection, window lifecycle, tray behavior, and native notifications. With the same data and content viewport, both platforms share the same general UI and Runtime behavior.
 
-## Key Features and Functions
-
-### Agent Workspace
-
-- 🔗 **Synchronized Workspace and Conversation**: A shared workflow state machine keeps form actions, Agent commands, progress, and results consistent across both interfaces.
-- 🕘 **Versioned Creative Iteration**: Every correction or regeneration creates a new version instead of overwriting the current result, preserving earlier settings and outputs for review and comparison.
-- 🤖 **Codex-Native Execution**: Reuse the Codex Agent loop, models, reasoning, tool calls, conversation history, Skills, MCP, and Profiles instead of maintaining a second execution engine.
-- ⚙️ **Persistent Background Runs**: Keep work running across refreshes and conversation switches, with queueing, interruption, continuation, approval handling, and global result tracking.
-- 📁 **Projects and File Workspace**: Organize conversations and assets by project, work with blank or existing local folders, edit text, and preview images, PDFs, and safe HTML.
-- 🧩 **Skills and MCP Extensions**: Browse and install Skills, invoke them from the composer, and manage MCP servers through Codex-native configuration.
-- 📅 **Long-Running Schedules**: Create, edit, pause, resume, and trigger scheduled tasks in persistent dedicated conversations that retain their complete Run history.
-- 🧠 **Memory and Summaries**: Manage explicit global, project, and thread memory with versioned summaries and a reproducible input snapshot for each Run.
-- 🔐 **Controlled Local Runtime**: Keep SQLite data, attachments, and Run logs local by default, enforce project permissions and approvals, and redact diagnostics before export.
-- 💻 **Cross-Platform Web and Desktop**: Use one React frontend across macOS, Windows, and Linux in the browser or Electron Desktop, with the same general workflows and only genuine operating-system capabilities kept platform-specific.
-
 ## Creator Tools
 
 The Dashboard currently provides the workspaces below. Available models and services depend on your local Codex environment, AI service settings, and optional enterprise gateway.
@@ -74,6 +59,21 @@ The Dashboard currently provides the workspaces below. Available models and serv
 | Image Generation | Generate with GPT Image, Jimeng, Kling, or Gemini using configurable prompts, aspect ratios, quality, and output count, then preview and download individual images |
 | Thumbnail Generator | Combine a topic, video link, and reference image to generate and compare multiple content-thumbnail variations |
 | Video Downloader | Parse YouTube, Bilibili, and other supported public links, inspect available quality and format options, and download video or audio for later workflows |
+
+## Key Features and Functions
+
+### Agent Workspace
+
+- 🔗 **Synchronized Workspace and Conversation**: A shared workflow state machine keeps form actions, Agent commands, progress, and results consistent across both interfaces.
+- 🕘 **Versioned Creative Iteration**: Every correction or regeneration creates a new version instead of overwriting the current result, preserving earlier settings and outputs for review and comparison.
+- 🤖 **Codex-Native Execution**: Reuse the Codex Agent loop, models, reasoning, tool calls, conversation history, Skills, MCP, and Profiles instead of maintaining a second execution engine.
+- ⚙️ **Persistent Background Runs**: Keep work running across refreshes and conversation switches, with queueing, interruption, continuation, approval handling, and global result tracking.
+- 📁 **Projects and File Workspace**: Organize conversations and assets by project, work with blank or existing local folders, edit text, and preview images, PDFs, and safe HTML.
+- 🧩 **Skills and MCP Extensions**: Browse and install Skills, invoke them from the composer, and manage MCP servers through Codex-native configuration.
+- 📅 **Long-Running Schedules**: Create, edit, pause, resume, and trigger scheduled tasks in persistent dedicated conversations that retain their complete Run history.
+- 🧠 **Memory and Summaries**: Manage explicit global, project, and thread memory with versioned summaries and a reproducible input snapshot for each Run.
+- 🔐 **Controlled Local Runtime**: Keep SQLite data, attachments, and Run logs local by default, enforce project permissions and approvals, and redact diagnostics before export.
+- 💻 **Cross-Platform Web and Desktop**: Use one React frontend across macOS, Windows, and Linux in the browser or Electron Desktop, with the same general workflows and only genuine operating-system capabilities kept platform-specific.
 
 ## Product Tour
 
