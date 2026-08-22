@@ -46,20 +46,6 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 
 ## Key Features and Functions
 
-### Content Creation
-
-- 📥 **Flexible Video Acquisition**: Upload local media or bring in public YouTube, Bilibili, and other supported video links through dedicated import and download workflows.
-- 📜 **Accurate Speech Recognition**: Choose cloud transcription or local Whisper options, including OpenAI Whisper, FasterWhisper, WhisperKit, whisper.cpp, and Alibaba Cloud Speech.
-- 🧠 **Semantic Subtitle Processing**: Use LLM context for natural segmentation, alignment, correction, and editable subtitle cues instead of splitting only by character count.
-- 🔄 **Terminology and Subtitle Revision**: Normalize names and professional vocabulary through Agent instructions, then review and edit individual cues before export.
-- 🌍 **Context-Aware Translation**: Translate with surrounding context, configure target languages and bilingual subtitles, and preserve natural meaning across a complete video.
-- 🎙️ **Dubbing and Voice Cloning**: Select voices and speaking styles, adjust delivery, or provide a custom voice sample, with configurable OpenAI, MiniMax, Alibaba Cloud, and Edge TTS services.
-- 🎬 **Adaptive Video Composition**: Produce landscape and portrait layouts, customize subtitle position, font, size, and color, and export subtitles, dubbing, or the composed video.
-- ✂️ **Smart Editing**: Analyze long-form video semantics, score highlights for hook, completeness, emotion, and shareability, then select and export standalone clips.
-- 🎨 **AI Image and Video Generation**: Generate downloadable visual assets with GPT Image, Jimeng, Kling, Gemini, Seedance, or Veo, plus configurable prompts, aspect ratios, quality, resolution, duration, and output count.
-- 🎭 **Avatars and Story Animation**: Develop digital-presenter videos or turn characters and stories into reviewed storyboards, voiceover, music, and versioned animation output.
-- 🖼️ **Thumbnails and Output Management**: Create thumbnail variations from topics and references, then review videos, images, audio, subtitles, and documents in one output center.
-
 ### Agent Workspace
 
 - 🔗 **Synchronized Workspace and Conversation**: A shared workflow state machine keeps form actions, Agent commands, progress, and results consistent across both interfaces.
@@ -77,17 +63,17 @@ Web is the single frontend implementation. Desktop loads the same Web build and 
 
 The Dashboard currently provides the workspaces below. Available models and services depend on your local Codex environment, AI service settings, and optional enterprise gateway.
 
-| Workspace | Typical use |
+| Workspace | Capabilities |
 | --- | --- |
-| Video Translation | Organize source video, target language, subtitles, dubbing, and lip-sync workflows |
-| AI Video Generation | Set a prompt, provider, aspect ratio, resolution, and duration, then preview generated results |
-| Digital Avatar | Plan the presenter, script, voice delivery, scene, and composition |
-| Stick Figure Video | Design characters and stories, generate and edit storyboards, then combine narration, music, and animation |
-| Auto Clips | Analyze video semantics and extract highlights by content focus, target duration, and clip count |
-| AI Dubbing | Refine scripts, voices, delivery styles, speaking rates, and export formats |
-| Image Generation | Configure prompts, providers, aspect ratios, quality, and output count, then preview and download images |
-| Thumbnail Generator | Combine a topic, video link, and reference image to produce multiple thumbnail variations |
-| Video Downloader | Parse YouTube, Bilibili, and other video links and choose an available download format |
+| Video Translation | Import local or public videos; transcribe with cloud or local Whisper services; use LLM context for subtitle segmentation, alignment, terminology, and translation; configure bilingual subtitles, dubbing or a custom voice sample, subtitle styles, landscape or portrait composition, and export SRT, audio, or video |
+| AI Video Generation | Generate video with Seedance, Kling, or Veo from a prompt, provider, aspect ratio, resolution, and duration, then track progress, preview the result, and download the output |
+| Digital Avatar | Plan the presenter, script, voice delivery, scene, and composition for a structured digital-presenter video workflow |
+| Stick Figure Video | Choose preset or custom characters, develop a story, generate and edit storyboards, review every shot, add narration and music, and retain versioned animation results |
+| Auto Clips | Analyze long-video semantics, control content focus, target duration, frame, and clip count, score highlights for hook, completeness, emotion, and shareability, then review transcripts and export selected clips |
+| AI Dubbing | Refine a script, choose a voice and delivery style, adjust speaking rate, preview the audio, and export MP3, WAV, or other configured formats |
+| Image Generation | Generate with GPT Image, Jimeng, Kling, or Gemini using configurable prompts, aspect ratios, quality, and output count, then preview and download individual images |
+| Thumbnail Generator | Combine a topic, video link, and reference image to generate and compare multiple content-thumbnail variations |
+| Video Downloader | Parse YouTube, Bilibili, and other supported public links, inspect available quality and format options, and download video or audio for later workflows |
 
 ## Product Tour
 
