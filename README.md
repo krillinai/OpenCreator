@@ -50,15 +50,15 @@ The Dashboard currently provides the workspaces below. Available models and serv
 
 | Workspace | Capabilities |
 | --- | --- |
+| Video Downloader | Parse YouTube, Bilibili, and other supported public links, inspect available quality and format options, and download video or audio for later workflows |
 | Video Translation | Import local or public videos; transcribe with cloud or local Whisper services; use LLM context for subtitle segmentation, alignment, terminology, and translation; configure bilingual subtitles, dubbing or a custom voice sample, subtitle styles, landscape or portrait composition, and export SRT, audio, or video |
+| Smart Editing | Analyze long-video semantics, control content focus, target duration, frame, and clip count, score highlights for hook, completeness, emotion, and shareability, then review transcripts and export selected clips |
+| Stick Figure Video | Choose preset or custom characters, develop a story, generate and edit storyboards, review every shot, add narration and music, and retain versioned animation results |
 | AI Video Generation | Generate video with Seedance, Kling, or Veo from a prompt, provider, aspect ratio, resolution, and duration, then track progress, preview the result, and download the output |
 | Digital Avatar | Plan the presenter, script, voice delivery, scene, and composition for a structured digital-presenter video workflow |
-| Stick Figure Video | Choose preset or custom characters, develop a story, generate and edit storyboards, review every shot, add narration and music, and retain versioned animation results |
-| Auto Clips | Analyze long-video semantics, control content focus, target duration, frame, and clip count, score highlights for hook, completeness, emotion, and shareability, then review transcripts and export selected clips |
 | AI Dubbing | Refine a script, choose a voice and delivery style, adjust speaking rate, preview the audio, and export MP3, WAV, or other configured formats |
 | Image Generation | Generate with GPT Image, Jimeng, Kling, or Gemini using configurable prompts, aspect ratios, quality, and output count, then preview and download individual images |
 | Thumbnail Generator | Combine a topic, video link, and reference image to generate and compare multiple content-thumbnail variations |
-| Video Downloader | Parse YouTube, Bilibili, and other supported public links, inspect available quality and format options, and download video or audio for later workflows |
 
 ## Key Features and Functions
 
