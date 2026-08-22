@@ -12,9 +12,9 @@ import {
   Download,
   Film,
   LoaderCircle,
+  Plus,
   RotateCcw,
   Sparkles,
-  UploadCloud,
   WandSparkles,
   X
 } from 'lucide-react';
@@ -291,11 +291,11 @@ export default function VideoGenerationWorkspace(props: {
               <div className="creator-tool-panel-heading"><div><h2 id="video-prompt-title">{l('视频描述', 'Video prompt')}</h2><p>{l('写清主体动作、环境、镜头运动、光线和风格，最多 4000 字', 'Describe action, setting, camera movement, lighting, and style, up to 4,000 characters')}</p></div><small>{characterCount} / 4000</small></div>
               <label className="creator-tool-field"><span>{l('提示词', 'Prompt')}</span><textarea rows={12} maxLength={4000} value={prompt} onChange={event => updatePrompt(event.target.value)} placeholder={l('例如：低机位跟随一辆红色跑车驶过海岸公路，黄昏金色光线，镜头平稳', 'For example: A low-angle tracking shot following a red sports car along a coastal road at golden hour, smooth camera motion')} /></label>
               <div className="video-reference-field">
-                <span>{l('参考图', 'Reference image')} <small>{l('选填', 'Optional')}</small></span>
                 <div className="video-reference-upload-wrap">
-                  <label className="creator-tool-upload video-reference-upload">
+                  <label className="video-reference-upload">
                     <input type="file" accept="image/jpeg,image/png,image/webp" aria-label={l('上传视频参考图', 'Upload video reference image')} onChange={event => updateReferenceImage(event.target.files?.[0] ?? null)} />
-                    {referenceImageFile ? <><img src={referenceImageUrl} alt={l('视频参考图预览', 'Video reference preview')} /><strong>{referenceImageFile.name}</strong><span>{l('点击更换参考图', 'Click to replace the reference')}</span></> : <><UploadCloud size={23} strokeWidth={1.6} /><strong>{l('添加参考图', 'Add reference image')}</strong><span>{l('选填，用于参考主体、构图或画面风格', 'Optional, for the subject, composition, or visual style')}</span></>}
+                    <span className="video-reference-thumbnail" data-loaded={referenceImageFile ? 'true' : 'false'}>{referenceImageFile ? <img src={referenceImageUrl} alt={l('视频参考图预览', 'Video reference preview')} /> : <><Plus size={22} strokeWidth={1.6} /><small>{l('参考图', 'Reference')}</small></>}</span>
+                    <span className="video-reference-copy"><strong>{referenceImageFile?.name ?? l('添加参考图', 'Add reference image')}{referenceImageFile ? null : <small>{l('选填', 'Optional')}</small>}</strong><span>{referenceImageFile ? l('点击缩略图可更换', 'Click the thumbnail to replace it') : l('参考主体、构图或画面风格，最大 5MB', 'Use for subject, composition, or visual style, up to 5 MB')}</span></span>
                   </label>
                   {referenceImageFile ? <button className="video-reference-remove" type="button" onClick={removeReferenceImage} aria-label={l('移除参考图', 'Remove reference image')} title={l('移除参考图', 'Remove reference image')}><X size={15} strokeWidth={1.8} /></button> : null}
                 </div>

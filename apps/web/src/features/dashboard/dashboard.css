@@ -1682,62 +1682,115 @@
 }
 
 .video-reference-field {
-  display: grid;
-  gap: 7px;
   margin-top: 14px;
 }
 
-.video-reference-field > span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 560;
-}
-
-.video-reference-field > span small {
-  color: var(--subtle);
-  font-size: 11px;
-  font-weight: 450;
-}
-
 .video-reference-upload-wrap {
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .video-reference-upload {
-  min-height: 86px;
-  grid-template-columns: 58px minmax(0, 1fr);
-  place-items: center start;
-  align-content: center;
-  padding-right: 42px;
-  text-align: left;
-}
-
-.video-reference-upload > svg,
-.video-reference-upload img {
-  grid-row: 1 / 3;
-  justify-self: center;
-}
-
-.video-reference-upload img {
-  width: 52px;
-  height: 52px;
-}
-
-.video-reference-upload strong,
-.video-reference-upload span {
   min-width: 0;
-  max-width: 100%;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.video-reference-upload > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.video-reference-thumbnail {
+  width: 54px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  overflow: hidden;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  background: var(--conversation-bg);
+  color: var(--subtle);
+  transform: rotate(-4deg);
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.video-reference-thumbnail small {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.video-reference-thumbnail[data-loaded="true"] {
+  transform: none;
+}
+
+.video-reference-thumbnail img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.video-reference-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.video-reference-copy strong,
+.video-reference-copy > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.video-reference-copy strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.video-reference-copy strong small {
+  margin-left: 5px;
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 450;
+}
+
+.video-reference-copy > span {
+  color: var(--subtle);
+  font-size: 11px;
+}
+
+.video-reference-upload:hover .video-reference-thumbnail,
+.video-reference-upload:focus-within .video-reference-thumbnail {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--conversation-bg));
+  transform: rotate(-2deg);
+}
+
+.video-reference-upload:hover .video-reference-thumbnail[data-loaded="true"],
+.video-reference-upload:focus-within .video-reference-thumbnail[data-loaded="true"] {
+  transform: none;
+}
+
 .video-reference-remove {
-  position: absolute;
-  top: 9px;
-  right: 9px;
   width: 28px;
   height: 28px;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
   padding: 0;
