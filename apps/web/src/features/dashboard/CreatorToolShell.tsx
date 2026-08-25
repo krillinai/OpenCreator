@@ -1,41 +1,34 @@
 import { useState, type ReactNode } from 'react';
-import { ArrowLeft, Bot, MessageSquareText, Sparkles } from 'lucide-react';
+import { ArrowLeft, ServerOff } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import ToolAgentComposer from './ToolAgentComposer.js';
-
-type ToolMessage = {
-  id: number;
-  role: 'agent' | 'user';
-  text: string;
-};
+import CreatorAgentPanel from './CreatorAgentPanel.js';
+import { useOptionalCreatorSession } from './creator-session-store.js';
 
 export default function CreatorToolShell(props: {
   title: string;
   subtitle: string;
   context: string;
-  initialMessage: string;
+  initialMessage?: string;
   suggestions: string[];
   placeholder: string;
   contentClassName?: string;
   children: ReactNode;
   onBack(): void;
-  onCommand(command: string): string;
+  onCommand?(command: string): string;
 }) {
   const l = useLocalizedCopy();
-  const [messages, setMessages] = useState<ToolMessage[]>([
-    { id: 1, role: 'agent', text: props.initialMessage }
-  ]);
+  const session = useOptionalCreatorSession();
   const [input, setInput] = useState('');
 
   function runCommand(command: string) {
     const prompt = command.trim();
     if (!prompt) return;
-    const response = props.onCommand(prompt);
-    setMessages(current => [
-      ...current,
-      { id: current.length + 1, role: 'user', text: prompt },
-      { id: current.length + 2, role: 'agent', text: response }
-    ]);
+    if (session === null) return;
+    const operation = session.agentBusy
+      ? session.steerAgentTurn(prompt)
+      : session.runAgentTurn(prompt);
+    void operation.catch(() => undefined);
   }
 
   function submit() {
@@ -61,36 +54,42 @@ export default function CreatorToolShell(props: {
           <div className={`creator-workspace-content${props.contentClassName ? ` ${props.contentClassName}` : ''}`}>{props.children}</div>
         </section>
 
-        <aside className="creator-tool-agent" aria-label="OpenCreator">
-          <header>
-            <span aria-hidden="true"><Bot size={17} strokeWidth={1.8} /></span>
-            <div><h2>OpenCreator</h2><p>{l('正在协助：', 'Helping with: ')}{props.title}</p></div>
-          </header>
-          <div className="creator-tool-agent-context">
-            <Sparkles size={14} strokeWidth={1.8} aria-hidden="true" />
-            <span><small>{l('当前任务', 'Current task')}</small><strong>{props.context}</strong></span>
-          </div>
-          <div className="creator-tool-agent-messages" aria-live="polite">
-            {messages.map(message => (
-              <div data-role={message.role} key={message.id}>
-                {message.role === 'agent' ? <MessageSquareText size={14} strokeWidth={1.8} aria-hidden="true" /> : null}
-                <p>{message.text}</p>
-              </div>
-            ))}
-          </div>
-          <div className="creator-tool-agent-suggestions" aria-label={l('Agent 建议', 'Agent suggestions')}>
-            {props.suggestions.map(suggestion => (
-              <button type="button" key={suggestion} onClick={() => runCommand(suggestion)}>{suggestion}</button>
-            ))}
-          </div>
-          <ToolAgentComposer
-            value={input}
-            onChange={setInput}
-            onSubmit={submit}
-            ariaLabel={`${l('告诉 Agent', 'Tell the Agent your')} ${props.title} ${l('要求', 'requirements')}`}
-            placeholder={props.placeholder}
+        {session !== null ? (
+          <CreatorAgentPanel
+            title="OpenCreator"
+            statusSummary={props.context}
+            activities={session.job.activities}
+            turns={session.turns}
+            items={session.items}
+            approvals={session.approvals}
+            busy={session.agentBusy}
+            onInterrupt={() => void session.interruptAgentTurn().catch(() => undefined)}
+            onApproval={(approval, decision) => void session.respondAgentApproval(
+              approval.id,
+              decision,
+              approval.processGeneration
+            ).catch(() => undefined)}
+            composer={(
+              <>
+                <div className="creator-tool-agent-suggestions" aria-label={l('Agent 建议', 'Agent suggestions')}>
+                  {props.suggestions.map(suggestion => (
+                    <button type="button" key={suggestion} onClick={() => runCommand(suggestion)}>{suggestion}</button>
+                  ))}
+                </div>
+                <ToolAgentComposer
+                  value={input}
+                  onChange={setInput}
+                  onSubmit={submit}
+                  ariaLabel={`${l('告诉 Agent', 'Tell the Agent your')} ${props.title} ${l('要求', 'requirements')}`}
+                  placeholder={props.placeholder}
+                />
+              </>
+            )}
           />
-        </aside>
+        ) : <aside className="creator-tool-agent" aria-label="OpenCreator" role="alert">
+          <ServerOff size={18} aria-hidden="true" />
+          <p>{l('Creator Runtime 未连接，无法启动 Agent。', 'Creator Runtime is disconnected, so the Agent cannot start.')}</p>
+        </aside>}
       </div>
     </main>
   );

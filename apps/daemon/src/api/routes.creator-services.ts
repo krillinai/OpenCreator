@@ -3,6 +3,8 @@ import { ZodError } from 'zod';
 import {
   CreatorServicesConfigStoreError,
   parseCreatorServicesConfig,
+  presentCreatorServicesConfig,
+  retainCreatorServicesCredentials,
   type CreatorServicesConfigStore
 } from '../creator-services/config-store.js';
 import { apiError } from './errors.js';
@@ -13,7 +15,7 @@ export async function registerCreatorServicesRoutes(
 ): Promise<void> {
   server.get('/creator-services/config', async (_request, reply) => {
     try {
-      return { config: await store.read() };
+      return presentCreatorServicesConfig(await store.read());
     } catch (error) {
       return sendStoreError(reply, error);
     }
@@ -22,7 +24,9 @@ export async function registerCreatorServicesRoutes(
   server.patch<{ Body: unknown }>('/creator-services/config', async (request, reply) => {
     try {
       const config = parseCreatorServicesConfig(request.body);
-      return { config: await store.write(config) };
+      const current = await store.read();
+      const saved = await store.write(retainCreatorServicesCredentials(config, current));
+      return presentCreatorServicesConfig(saved);
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send(apiError(
@@ -36,7 +40,7 @@ export async function registerCreatorServicesRoutes(
 
   server.delete('/creator-services/config', async (_request, reply) => {
     try {
-      return { config: await store.reset() };
+      return presentCreatorServicesConfig(await store.reset());
     } catch (error) {
       return sendStoreError(reply, error);
     }

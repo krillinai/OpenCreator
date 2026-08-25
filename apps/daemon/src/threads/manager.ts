@@ -152,7 +152,7 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
 
     getPublicThread(id: string): RuntimeThread | undefined {
       const row = threads.getThread(id);
-      if (row === undefined || isHiddenDiscoveredConversation(row)) return undefined;
+      if (row === undefined || isHiddenPublicThread(row)) return undefined;
       return mapThreadRow(row);
     },
 
@@ -179,7 +179,9 @@ export function createThreadManager(input: CreateThreadManagerInput): ThreadMana
     },
 
     listPublicThreads(filter = {}): RuntimeThread[] {
-      return threads.listPublicThreads(filter).map(mapThreadRow);
+      return threads.listPublicThreads(filter)
+        .filter(row => row.purpose !== 'creator_agent')
+        .map(mapThreadRow);
     },
 
     assignProject(id: string, projectId: string): RuntimeThread {
@@ -418,6 +420,7 @@ function isSqliteUniqueConstraintError(error: unknown): boolean {
     && error.code.startsWith('SQLITE_CONSTRAINT');
 }
 
-function isHiddenDiscoveredConversation(row: ThreadRow): boolean {
-  return row.purpose === 'conversation' && row.origin === 'codex_discovered';
+function isHiddenPublicThread(row: ThreadRow): boolean {
+  return row.purpose === 'creator_agent'
+    || (row.purpose === 'conversation' && row.origin === 'codex_discovered');
 }

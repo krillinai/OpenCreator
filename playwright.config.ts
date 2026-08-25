@@ -16,6 +16,7 @@ export default defineConfig({
   use: {
     actionTimeout: 12_000,
     navigationTimeout: 30_000,
+    locale: 'zh-CN',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure'

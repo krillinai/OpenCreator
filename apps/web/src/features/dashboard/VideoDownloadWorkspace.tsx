@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, CheckCircle2, Download, Link2, Music2, Video } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { useOptionalCreatorSession } from './creator-session-store.js';
 
 type DownloadFormat = 'mp4' | 'mp3';
 type DownloadStep = 0 | 1;
@@ -33,10 +34,11 @@ function platformFor(value: string, l: ReturnType<typeof useLocalizedCopy>) {
 
 export default function VideoDownloadWorkspace(props: { onBack(): void; promptHint?: string }) {
   const l = useLocalizedCopy();
-  const [url, setUrl] = useState('');
-  const [format, setFormat] = useState<DownloadFormat>('mp4');
-  const [quality, setQuality] = useState('1080p');
-  const [analyzed, setAnalyzed] = useState(false);
+  const session = useOptionalCreatorSession();
+  const [url, setUrl] = useState(() => typeof session?.state.sourceUrl === 'string' ? session.state.sourceUrl : '');
+  const [format, setFormat] = useState<DownloadFormat>(() => session?.state.downloadFormat === 'mp3' ? 'mp3' : 'mp4');
+  const [quality, setQuality] = useState(() => typeof session?.state.selectedQuality === 'string' ? session.state.selectedQuality : '1080p');
+  const [analyzed, setAnalyzed] = useState(() => session?.job.artifacts.some(artifact => artifact.kind === 'download_probe' && artifact.status === 'completed') ?? false);
   const [notice, setNotice] = useState('');
   const [currentStep, setCurrentStep] = useState<DownloadStep>(0);
   const [furthestStep, setFurthestStep] = useState<DownloadStep>(0);
@@ -44,7 +46,11 @@ export default function VideoDownloadWorkspace(props: { onBack(): void; promptHi
   const [downloadRecords, setDownloadRecords] = useState<DownloadRecord[]>([]);
   const validUrl = isValidUrl(url);
   const platform = platformFor(url, l);
-  const context = analyzed ? `${platform}, ${format.toUpperCase()} ${quality}` : l('等待解析视频链接', 'Waiting for a video link');
+  const context = analyzed
+    ? `${platform}, ${format.toUpperCase()} ${quality}`
+    : validUrl
+      ? `${platform}, ${l('待解析', 'waiting to analyze')}`
+      : l('等待解析视频链接', 'Waiting for a video link');
   const variants = useMemo(() => format === 'mp4'
     ? [
         { label: '1080p', detail: 'MP4 · H.264 · 84.6 MB' },
@@ -56,6 +62,10 @@ export default function VideoDownloadWorkspace(props: { onBack(): void; promptHi
         { label: '192kbps', detail: 'MP3 · 5.1 MB' },
         { label: '128kbps', detail: 'MP3 · 3.6 MB' }
       ], [format]);
+
+  useEffect(() => {
+    session?.updateDraft({ sourceUrl: url, downloadFormat: format, selectedQuality: quality });
+  }, [format, quality, session?.updateDraft, url]);
 
   function selectFormat(nextFormat: DownloadFormat) {
     setFormat(nextFormat);
@@ -72,6 +82,7 @@ export default function VideoDownloadWorkspace(props: { onBack(): void; promptHi
     setCurrentStep(1);
     setFurthestStep(1);
     setResultTab('formats');
+    if (session !== null) void session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'probe' } });
     setNotice(l('链接解析完成，请选择下载规格', 'Link analyzed. Choose a download format.'));
     return true;
   }
@@ -79,65 +90,19 @@ export default function VideoDownloadWorkspace(props: { onBack(): void; promptHi
   function queueDownload(label: string) {
     setDownloadRecords(current => [...current, { id: current.length + 1, platform, format, quality: label }]);
     setResultTab('history');
+    if (session !== null) void session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'download' } });
     setNotice(l(`${platform} ${format.toUpperCase()} ${label} 已加入下载队列`, `${platform} ${format.toUpperCase()} ${label} was added to the download queue`));
   }
 
-  function handleCommand(command: string) {
-    const foundUrl = command.match(/https?:\/\/[^\s,，。;；]+/i)?.[0];
-    if (foundUrl) {
-      const nextFormat: DownloadFormat = /音频|mp3/i.test(command) ? 'mp3' : 'mp4';
-      const requestedQuality = command.match(/(?:1080p|720p|480p|320kbps|192kbps|128kbps)/i)?.[0];
-      const nextQuality = requestedQuality ?? (nextFormat === 'mp4' ? '1080p' : '320kbps');
-      setUrl(foundUrl);
-      setAnalyzed(true);
-      setCurrentStep(1);
-      setFurthestStep(1);
-      setFormat(nextFormat);
-      setQuality(nextQuality);
-      if (/下载|download/i.test(command)) {
-        const foundPlatform = platformFor(foundUrl, l);
-        setDownloadRecords(current => [...current, { id: current.length + 1, platform: foundPlatform, format: nextFormat, quality: nextQuality }]);
-        setResultTab('history');
-        setNotice(l(`${foundPlatform} ${nextFormat.toUpperCase()} ${nextQuality} 已加入下载队列`, `${foundPlatform} ${nextFormat.toUpperCase()} ${nextQuality} was added to the download queue`));
-        return l(`已解析 ${foundPlatform} 链接，并创建 ${nextFormat.toUpperCase()} ${nextQuality} 下载任务。`, `I analyzed the ${foundPlatform} link and created a ${nextFormat.toUpperCase()} ${nextQuality} download.`);
-      }
-      setResultTab('formats');
-      setNotice(l('链接解析完成，请选择下载规格', 'Link analyzed. Choose a download format.'));
-      return l(`已识别 ${platformFor(foundUrl, l)} 链接并完成解析。你可以在左侧选择视频清晰度或 MP3 音频。`, `I recognized and analyzed the ${platformFor(foundUrl, l)} link. Choose a video quality or MP3 audio on the left.`);
-    }
-    if (/下载|download/i.test(command)) {
-      if (!analyzed) return l('请先发送需要下载的视频链接。', 'Send the video link you want to download first.');
-      const nextFormat: DownloadFormat = /音频|mp3/i.test(command) ? 'mp3' : /视频|mp4|\dp/i.test(command) ? 'mp4' : format;
-      const requestedQuality = command.match(/(?:1080p|720p|480p|320kbps|192kbps|128kbps)/i)?.[0];
-      const nextQuality = requestedQuality ?? (nextFormat === format ? quality : nextFormat === 'mp4' ? '1080p' : '320kbps');
-      setFormat(nextFormat);
-      setQuality(nextQuality);
-      setDownloadRecords(current => [...current, { id: current.length + 1, platform, format: nextFormat, quality: nextQuality }]);
-      setResultTab('history');
-      setNotice(l(`${platform} ${nextFormat.toUpperCase()} ${nextQuality} 已加入下载队列`, `${platform} ${nextFormat.toUpperCase()} ${nextQuality} was added to the download queue`));
-      return l(`已创建 ${nextFormat.toUpperCase()} ${nextQuality} 下载任务。`, `Created a ${nextFormat.toUpperCase()} ${nextQuality} download.`);
-    }
-    if (/音频|mp3/i.test(command)) {
-      selectFormat('mp3');
-      return l('已切换为 MP3 音频下载。', 'Switched to MP3 audio.');
-    }
-    if (/视频|mp4|1080/i.test(command)) {
-      selectFormat('mp4');
-      return l('已切换为 1080p MP4 视频。', 'Switched to 1080p MP4 video.');
-    }
-    return l('请发送 YouTube、Bilibili、Vimeo 等公开视频链接，或告诉我需要 MP4 视频还是 MP3 音频。', 'Send a public YouTube, Bilibili, or Vimeo link, and tell me whether you need MP4 video or MP3 audio.');
-  }
 
   return (
     <CreatorToolShell
       title={l('视频下载', 'Video Downloader')}
       subtitle={l('解析公开视频并选择下载规格', 'Analyze public videos and choose a download format')}
       context={context}
-      initialMessage={l('发送公开视频链接，我会解析标题、时长和可用清晰度，再由你选择下载规格。', 'Send a public video link. I will analyze its title, duration, and available qualities before you choose a format.')}
       suggestions={analyzed ? [l('下载 1080p 视频', 'Download 1080p video'), l('切换为 MP3 音频', 'Switch to MP3 audio')] : [l('链接支持哪些平台', 'Which platforms are supported?')]}
       placeholder={props.promptHint ?? l('粘贴 YouTube、Bilibili 等视频链接', 'Paste a YouTube, Bilibili, or other video link')}
       onBack={props.onBack}
-      onCommand={handleCommand}
     >
       <div className="creator-tool-stack">
         <nav className="video-translation-steps creator-tool-steps creator-tool-steps-two" aria-label={l('视频下载流程', 'Video download steps')}>

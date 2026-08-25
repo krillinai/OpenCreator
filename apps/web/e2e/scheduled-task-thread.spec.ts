@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures/runtime.js';
 
 test('手动创建后可从最近进入专属会话，并可暂停、恢复、编辑和删除', async ({ page, runtime }) => {
@@ -9,7 +9,6 @@ test('手动创建后可从最近进入专属会话，并可暂停、恢复、�
     prompt: '汇总当天端到端测试结果'
   });
 
-  await expect(page.getByRole('heading', { name: '每日端到端简报' })).toBeVisible();
   await selectTask(page, '每日端到端简报');
 
   await page.getByRole('button', { name: '暂停任务' }).click();
@@ -23,14 +22,16 @@ test('手动创建后可从最近进入专属会话，并可暂停、恢复、�
   await editor.getByLabel('定时任务标题').fill('每周端到端简报');
   await editor.getByRole('button', { name: '保存更改' }).click();
   await expect(page.getByRole('heading', { name: '每周端到端简报' })).toBeVisible();
-  await expectTaskInSidebar(page, '每周端到端简报');
-
   await openSchedules(page);
-  page.once('dialog', dialog => void dialog.accept());
+  await expect(page.getByRole('button', { name: '打开任务会话 每周端到端简报' }))
+    .toBeVisible();
+
   await page.getByRole('button', { name: '删除每周端到端简报' }).click();
+  const deleteDialog = page.getByRole('alertdialog', { name: '删除任务' });
+  await expect(deleteDialog).toBeVisible();
+  await deleteDialog.getByRole('button', { name: '删除任务' }).click();
   await expect(page.getByRole('button', { name: '打开任务会话 每周端到端简报' }))
     .toHaveCount(0);
-  await expectTaskAbsentFromSidebar(page, '每周端到端简报');
   await expectNoHorizontalOverflow(page);
 });
 
@@ -39,7 +40,7 @@ test('连续立即执行只排队一次，结果追加到同一会话且切换�
     { message: '第一次专属任务结果', initialDelayMs: 800 },
     { message: '第二次专属任务结果' }
   ]);
-  await runtime.createSchedule({
+  const schedule = await runtime.createSchedule({
     name: '连续运行任务',
     prompt: '连续生成两次结果',
     concurrencyPolicy: 'queue'
@@ -54,19 +55,18 @@ test('连续立即执行只排队一次，结果追加到同一会话且切换�
   await runNow.click();
   await expect(page.getByText('本次运行已排队，会在当前任务结束后执行')).toBeVisible();
 
-  await openSidebar(page);
-  await page.getByRole('button', { name: /普通会话/ }).click();
+  await page.goto(`${runtime.origin}/#/thread/${encodeURIComponent(runtime.ordinaryThreadId)}`);
   await expect(page).not.toHaveURL(taskUrl);
   await expect(page.getByText('第一次专属任务结果')).toHaveCount(0);
   await expect(page.getByText('第二次专属任务结果')).toHaveCount(0);
 
-  await openSidebar(page);
-  await taskButton(page, '连续运行任务').click();
+  await page.goto(`${runtime.origin}/#/thread/${encodeURIComponent(schedule.threadId)}`);
   await expect(page.getByText('第一次专属任务结果')).toBeVisible();
   await expect.poll(
     () => runtime.readInvocationCount(),
     { timeout: 20_000 }
   ).toBe(2);
+  expect(runtime.readCodexMethods()).toContain('thread/read');
   await expect(page.getByText('第二次专属任务结果')).toBeVisible();
   await expect(page).toHaveURL(taskUrl);
   await expectNoHorizontalOverflow(page);
@@ -118,8 +118,7 @@ test('审批通知进入正确任务，批准后成功通知可打开 HTML 结�
   await expect(approval).toBeVisible();
   await approval.getByRole('button', { name: '允许一次' }).click();
 
-  await openSidebar(page);
-  await page.getByRole('button', { name: /普通会话/ }).click();
+  await page.goto(`${runtime.origin}/#/thread/${encodeURIComponent(runtime.ordinaryThreadId)}`);
   await waitForNotification(page, '审批报告任务');
   await clickLatestNotification(page);
   await expect(page).toHaveURL(new RegExp(
@@ -177,41 +176,15 @@ async function createManualSchedule(
 }
 
 async function openSchedules(page: Page) {
-  await openSidebar(page);
-  await page.getByRole('button', { name: '定时任务' }).click();
+  const origin = new URL(page.url()).origin;
+  await page.goto(`${origin}/#/schedules`);
   await expect(page.getByRole('heading', { name: '定时任务' })).toBeVisible();
 }
 
 async function selectTask(page: Page, name: string) {
-  await openSidebar(page);
-  await taskButton(page, name).click();
+  await openSchedules(page);
+  await page.getByRole('button', { name: `打开任务会话 ${name}` }).click();
   await expect(page.getByRole('heading', { name })).toBeVisible();
-}
-
-async function expectTaskInSidebar(page: Page, name: string) {
-  await openSidebar(page);
-  await expect(taskButton(page, name)).toBeVisible();
-  await closeMobileSidebar(page);
-}
-
-async function expectTaskAbsentFromSidebar(page: Page, name: string) {
-  await openSidebar(page);
-  await expect(taskButton(page, name)).toHaveCount(0);
-  await closeMobileSidebar(page);
-}
-
-function taskButton(page: Page, name: string): Locator {
-  return page.getByLabel('最近会话').getByRole('link', { name: new RegExp(escapeRegExp(name)) });
-}
-
-async function openSidebar(page: Page) {
-  const trigger = page.getByRole('button', { name: '打开导航' });
-  if (await trigger.isVisible()) await trigger.click();
-}
-
-async function closeMobileSidebar(page: Page) {
-  const trigger = page.getByRole('button', { name: '关闭导航', exact: true });
-  if (await trigger.isVisible()) await trigger.click();
 }
 
 async function expectNoHorizontalOverflow(page: Page) {

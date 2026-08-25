@@ -1,0 +1,20 @@
+{
+  "protocolVersion": 1,
+  "jobId": "job_1",
+  "stageRunId": "stage_1",
+  "stageType": "subtitle",
+  "idempotencyKey": "stage_1",
+  "requestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "inputArtifactIds": ["source_1"],
+  "options": {
+    "originLanguage": "en",
+    "targetLanguage": "zh_cn",
+    "captionSource": "any"
+  },
+  "providerConfig": {
+    "transcribe": {
+      "provider": "fasterwhisper",
+      "model": "medium"
+    }
+  }
+}

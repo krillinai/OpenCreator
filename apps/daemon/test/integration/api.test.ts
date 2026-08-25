@@ -20,11 +20,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type Database from 'better-sqlite3';
 import type { CodexModelListResponse } from '@opencreator/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildServer } from '../../src/api/server.js';
+import {
+  buildServer as buildRuntimeServer,
+  type BuildServerInput
+} from '../../src/api/server.js';
 import type { RuntimeCapabilityMatrix } from '../../src/codex/capabilities.js';
 import type { CodexSessionProvider } from '../../src/codex/sessions/app-server-provider.js';
 import type { CodexModelCatalog } from '../../src/codex/model-catalog-2026-08-05.js';
-import type { CodexSkillSourceInstaller } from '../../src/codex/skills/source-installer.js';
 import { createProjectManager } from '../../src/projects/manager.js';
 import { SchedulerError, type SchedulerService } from '../../src/scheduler/service.js';
 import type { ScheduleCoordinator } from '../../src/scheduler/coordinator.js';
@@ -40,6 +42,12 @@ let tempDir = '';
 let db: Database.Database | undefined;
 const RUN_STATUS_TIMEOUT_MS = 5_000;
 type TestInjectPayload = string | object;
+
+const buildServer = (input: BuildServerInput) => buildRuntimeServer({
+  persistentAppServerEnabled: false,
+  runtimeTransport: 'exec',
+  ...input
+});
 
 afterEach(async () => {
   await server?.close();
@@ -1806,59 +1814,34 @@ describe('runtime api', () => {
     expect(invalidInstall.json().error.code).toBe('CODEX_SKILL_INVALID');
   });
 
-  it('installs, updates, and lists codex skill market records', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
-    const codexHome = join(tempDir, 'codex-home');
-    const sourceInstaller = createFakeSkillSourceInstaller();
+  it('keeps unpublished candidate skills out of the production market', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
     server = await buildServer({
       token: 'secret',
       dataDir: tempDir,
-      codexHome,
-      skillMarketSourceInstaller: sourceInstaller
+      codexHome: join(tempDir, 'codex-home')
     });
 
-    const installed = await authPost('/codex/skill-market/frontend-slides/install', {});
-    expect(installed.statusCode).toBe(201);
-    expect(installed.json().skill).toMatchObject({
-      id: 'frontend-slides',
-      description: 'market version 1'
-    });
-    expect(installed.json().record).toMatchObject({
-      skillId: 'frontend-slides',
-      repository: 'zarazhangrui/frontend-slides',
-      skillPath: '.',
-      commit: 'main',
-      marketRevision: 1
-    });
-
-    const updated = await authPost('/codex/skill-market/frontend-slides/update', {});
-    expect(updated.statusCode).toBe(200);
-    expect(updated.json().skill).toMatchObject({
-      id: 'frontend-slides',
-      description: 'market version 2'
-    });
-    expect(updated.json().operation.operation).toBe('overwrite');
+    const install = await authPost('/codex/skill-market/frontend-slides/install', {});
+    const update = await authPost('/codex/skill-market/frontend-slides/update', {});
 
     const records = await authGet('/codex/skill-market/install-records');
+    expect(install.statusCode).toBe(404);
+    expect(install.json().error.code).toBe('CODEX_SKILL_MARKET_ENTRY_NOT_FOUND');
+    expect(update.statusCode).toBe(404);
+    expect(update.json().error.code).toBe('CODEX_SKILL_MARKET_ENTRY_NOT_FOUND');
     expect(records.statusCode).toBe(200);
-    expect(records.json().records).toEqual([
-      expect.objectContaining({
-        skillId: 'frontend-slides',
-        repository: 'zarazhangrui/frontend-slides',
-        marketRevision: 1
-      })
-    ]);
+    expect(records.json().records).toEqual([]);
   });
 
-  it('maps codex skill market API errors', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
-    const codexHome = join(tempDir, 'codex-home');
-    const sourceInstaller = createFakeSkillSourceInstaller();
+  it('does not invoke the installer for unpublished market entries', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-api-'));
+    const install = vi.fn();
     server = await buildServer({
       token: 'secret',
       dataDir: tempDir,
-      codexHome,
-      skillMarketSourceInstaller: sourceInstaller
+      codexHome: join(tempDir, 'codex-home'),
+      skillMarketSourceInstaller: { install }
     });
 
     const unknown = await authPost('/codex/skill-market/missing-market-skill/install', {
@@ -1866,64 +1849,13 @@ describe('runtime api', () => {
       commit: 'bad',
       path: '../../bad'
     });
-    const previouslyBlocked = await authPost('/codex/skill-market/garrytan-gstack/install', {});
-    const missingUpdate = await authPost('/codex/skill-market/frontend-slides/update', {});
+    const candidate = await authPost('/codex/skill-market/garrytan-gstack/install', {});
 
     expect(unknown.statusCode).toBe(404);
     expect(unknown.json().error.code).toBe('CODEX_SKILL_MARKET_ENTRY_NOT_FOUND');
-    expect(previouslyBlocked.statusCode).toBe(201);
-    expect(previouslyBlocked.json().skill.id).toBe('garrytan-gstack');
-    expect(missingUpdate.statusCode).toBe(404);
-    expect(missingUpdate.json().error.code).toBe('CODEX_SKILL_NOT_FOUND');
-  });
-
-  it('maps Codex Skill Installer failures to bad gateway with the real installer message', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
-    server = await buildServer({
-      token: 'secret',
-      dataDir: tempDir,
-      codexHome: join(tempDir, 'codex-home'),
-      skillMarketSourceInstaller: {
-        async install() {
-          throw new Error(
-            'CODEX_SKILL_MARKET_INSTALL_FAILED: SKILL.md not found in selected skill directory.'
-          );
-        }
-      }
-    });
-
-    const response = await authPost('/codex/skill-market/frontend-slides/install', {});
-
-    expect(response.statusCode).toBe(502);
-    expect(response.json().error.code).toBe('CODEX_SKILL_MARKET_INSTALL_FAILED');
-    expect(response.json().error.message).toBe(
-      'SKILL.md not found in selected skill directory.'
-    );
-  });
-
-  it('confirms global CODEX_HOME writes for codex skill market installs', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-api-'));
-    const previousCodexHome = process.env.CODEX_HOME;
-    process.env.CODEX_HOME = join(tempDir, 'fake-global-codex-home');
-    try {
-      server = await buildServer({
-        token: 'secret',
-        dataDir: tempDir,
-        skillMarketSourceInstaller: createFakeSkillSourceInstaller()
-      });
-
-      const response = await authPost('/codex/skill-market/frontend-slides/install', {});
-
-      expect(response.statusCode).toBe(201);
-      expect(response.json().skill).toMatchObject({ id: 'frontend-slides' });
-      expect(response.json().operation.codexHome).toBe(process.env.CODEX_HOME);
-    } finally {
-      if (previousCodexHome === undefined) {
-        delete process.env.CODEX_HOME;
-      } else {
-        process.env.CODEX_HOME = previousCodexHome;
-      }
-    }
+    expect(candidate.statusCode).toBe(404);
+    expect(candidate.json().error.code).toBe('CODEX_SKILL_MARKET_ENTRY_NOT_FOUND');
+    expect(install).not.toHaveBeenCalled();
   });
 
   it('lists, adds, gets, removes, and logs codex mcp servers', async () => {
@@ -3735,7 +3667,7 @@ describe('runtime api', () => {
     })).json().thread;
 
     const equivalentCwd = join(tempDir, 'equivalent-cwd');
-    symlinkSync(tempDir, equivalentCwd);
+    symlinkSync(tempDir, equivalentCwd, process.platform === 'win32' ? 'junction' : 'dir');
 
     const createdRun = await authPost('/runs', {
       threadId: thread.id,
@@ -4536,26 +4468,6 @@ function createFakeMcpCodex(dir: string): { bin: string; readCommands: () => str
   return {
     bin,
     readCommands: () => JSON.parse(readFileSync(commandsPath, 'utf8')) as string[]
-  };
-}
-
-function createFakeSkillSourceInstaller(): CodexSkillSourceInstaller {
-  let version = 0;
-  return {
-    async install(input) {
-      version += 1;
-      const sourcePath = join(input.workDir, `fake-market-source-${version}`, input.skillId);
-      mkdirSync(sourcePath, { recursive: true });
-      writeFileSync(join(sourcePath, 'SKILL.md'), [
-        '---',
-        `name: ${input.skillId}`,
-        `description: "market version ${version}"`,
-        '---',
-        '',
-        `market version ${version}`
-      ].join('\n'));
-      return sourcePath;
-    }
   };
 }
 

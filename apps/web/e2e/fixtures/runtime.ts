@@ -1,11 +1,14 @@
 import { expect, test as base, type Page } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import {
+  copyFileSync,
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs';
 import { createServer } from 'node:net';
@@ -99,6 +102,11 @@ type TestFixtures = {
 
 const repoRoot = resolve(fileURLToPath(new URL('../../../../', import.meta.url)));
 const fakeCodexScript = join(repoRoot, 'apps/web/e2e/support/fake-codex.mjs');
+const fakeCodexLauncherSource = join(
+  repoRoot,
+  'apps/desktop/e2e/fixtures/fake-codex-launcher.go'
+);
+let daemonDevelopmentPrepared = false;
 
 export const test = base.extend<TestFixtures>({
   runtime: async ({}, use, testInfo) => {
@@ -108,7 +116,7 @@ export const test = base.extend<TestFixtures>({
     const stateDir = join(rootDir, 'fake-codex-state');
     const projectDir = join(rootDir, 'workspace');
     const configPath = join(rootDir, 'fake-codex-config.json');
-    const wrapperPath = join(rootDir, 'fake-codex');
+    const wrapperPath = join(rootDir, process.platform === 'win32' ? 'fake-codex.exe' : 'fake-codex');
     const serverLogPath = join(rootDir, 'server.log');
     mkdirSync(dataDir, { recursive: true });
     mkdirSync(codexHome, { recursive: true });
@@ -119,39 +127,48 @@ export const test = base.extend<TestFixtures>({
       threads: [],
       searchResults: []
     }));
-    writeFileSync(
-      wrapperPath,
-      `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`,
-      { mode: 0o755 }
-    );
+    writeFakeCodexLauncher(wrapperPath);
 
     const port = await reservePort();
     const origin = `http://127.0.0.1:${port}`;
     let serverLog = '';
+    const packageManagerArgs = [
+      '--filter',
+      '@opencreator/web',
+      'exec',
+      'vite',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(port),
+      '--strictPort'
+    ];
+    const packageManagerScript = [
+      process.env.npm_execpath,
+      process.platform === 'win32' && process.env.APPDATA !== undefined
+        ? join(process.env.APPDATA, 'npm', 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')
+        : undefined
+    ].find(candidate => candidate !== undefined && existsSync(candidate));
+    prepareDaemonDevelopment(packageManagerScript);
     const child = spawn(
-      'pnpm',
-      [
-        '--filter',
-        '@opencreator/web',
-        'exec',
-        'vite',
-        '--host',
-        '127.0.0.1',
-        '--port',
-        String(port),
-        '--strictPort'
-      ],
+      packageManagerScript === undefined ? 'pnpm' : process.execPath,
+      packageManagerScript === undefined
+        ? packageManagerArgs
+        : [packageManagerScript, ...packageManagerArgs],
       {
         cwd: repoRoot,
         detached: process.platform !== 'win32',
         env: {
           ...process.env,
-          OPENCREATOR_DATA_DIR: dataDir,
-          OPENCREATOR_CODEX_BIN: wrapperPath,
-          OPENCREATOR_CODEX_HOME: codexHome,
-          OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD: '0',
-          OPENCREATOR_E2E_FAKE_CODEX_CONFIG: configPath,
-          OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir
+          CLAWEE_DATA_DIR: dataDir,
+          CLAWEE_CODEX_BIN: wrapperPath,
+          CLAWEE_CODEX_HOME: codexHome,
+          CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD: '0',
+          CLAWEE_RUNTIME_DEV_PREPARED: '1',
+          CLAWEE_E2E_FAKE_CODEX_CONFIG: configPath,
+          CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
+          CLAWEE_E2E_NODE_BINARY: process.execPath,
+          CLAWEE_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript
         },
         stdio: ['ignore', 'pipe', 'pipe']
       }
@@ -237,8 +254,9 @@ export const test = base.extend<TestFixtures>({
             legacyProjects
           }) => {
             if (window.top !== window) return;
-            localStorage.setItem('opencreator.preferences.dynamicBackground', 'false');
-            localStorage.setItem('opencreator.tasks.notifications.v1', JSON.stringify({
+            localStorage.setItem('clawee.preferences.dynamicBackground', 'false');
+            localStorage.setItem('opencreator.preferences.language', 'zh-CN');
+            localStorage.setItem('clawee.tasks.notifications.v1', JSON.stringify({
               enabled: true,
               permission: 'granted'
             }));
@@ -280,7 +298,7 @@ export const test = base.extend<TestFixtures>({
             selectedThreadId,
             legacyProjects: options.legacyProjects
           });
-          await page.goto(origin);
+          await page.goto(`${origin}/#/thread/${encodeURIComponent(selectedThreadId)}`);
           await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
         },
         api,
@@ -354,8 +372,14 @@ export const test = base.extend<TestFixtures>({
         });
       }
       await stopProcessTree(child);
-      if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
-        rmSync(rootDir, { recursive: true, force: true });
+      terminateRecordedFakeCodexProcesses(stateDir);
+      if (process.env.CLAWEE_E2E_KEEP_TEMP !== '1') {
+        rmSync(rootDir, {
+          recursive: true,
+          force: true,
+          maxRetries: 30,
+          retryDelay: 200
+        });
       }
     }
   },
@@ -370,13 +394,20 @@ export const test = base.extend<TestFixtures>({
     });
     page.on('console', message => {
       if (message.type() !== 'error') return;
+      const location = message.location().url;
       if (
         message.text().includes("Blocked script execution in 'about:srcdoc'")
         && message.text().includes("'allow-scripts'")
       ) {
         return;
       }
-      issues.push(`console: ${message.text()}`);
+      if (
+        message.text().includes('Failed to load resource')
+        && location.includes('/.clawee/runtime/enterprise/mcp')
+      ) {
+        return;
+      }
+      issues.push(`console: ${message.text()}${location.length > 0 ? ` (${location})` : ''}`);
     });
     page.on('response', response => {
       if (response.status() >= 500) {
@@ -418,6 +449,71 @@ async function reservePort(): Promise<number> {
   });
 }
 
+function writeFakeCodexLauncher(targetPath: string): void {
+  if (process.platform !== 'win32') {
+    writeFileSync(
+      targetPath,
+      `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`,
+      { mode: 0o755 }
+    );
+    return;
+  }
+
+  const cacheDir = join(repoRoot, 'apps/web/.cache/e2e');
+  const cachedLauncher = join(cacheDir, 'fake-codex-launcher.exe');
+  mkdirSync(cacheDir, { recursive: true });
+  if (
+    !existsSync(cachedLauncher)
+    || statSync(cachedLauncher).mtimeMs < statSync(fakeCodexLauncherSource).mtimeMs
+  ) {
+    execFileSync('go', ['build', '-trimpath', '-o', cachedLauncher, fakeCodexLauncherSource], {
+      cwd: repoRoot,
+      stdio: 'inherit'
+    });
+  }
+  copyFileSync(cachedLauncher, targetPath);
+}
+
+function prepareDaemonDevelopment(packageManagerScript: string | undefined): void {
+  if (daemonDevelopmentPrepared) return;
+  const args = ['--filter', '@opencreator/daemon', 'run', 'predev'];
+  if (packageManagerScript !== undefined) {
+    execFileSync(process.execPath, [packageManagerScript, ...args], {
+      cwd: repoRoot,
+      stdio: 'inherit'
+    });
+  } else {
+    execFileSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args, {
+      cwd: repoRoot,
+      stdio: 'inherit'
+    });
+  }
+  daemonDevelopmentPrepared = true;
+}
+
+function terminateRecordedFakeCodexProcesses(stateDir: string): void {
+  const path = join(stateDir, 'app-server-pids.txt');
+  if (!existsSync(path)) return;
+  const pids = [...new Set(readFileSync(path, 'utf8')
+    .split(/\r?\n/)
+    .map(value => Number(value))
+    .filter(value => Number.isInteger(value) && value > 0))].reverse();
+  for (const pid of pids) {
+    try {
+      if (process.platform === 'win32') {
+        execFileSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+          stdio: 'ignore',
+          windowsHide: true
+        });
+      } else {
+        process.kill(pid, 'SIGKILL');
+      }
+    } catch {
+      // The process may already have exited with the Daemon tree.
+    }
+  }
+}
+
 async function waitForRuntime(
   origin: string,
   child: ChildProcess,
@@ -447,16 +543,21 @@ async function stopProcessTree(child: ChildProcess): Promise<void> {
     child.once('exit', () => resolveExit());
   });
   try {
-    if (process.platform === 'win32') child.kill('SIGTERM');
-    else process.kill(-child.pid, 'SIGTERM');
+    if (process.platform === 'win32') {
+      execFileSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true
+      });
+    } else {
+      process.kill(-child.pid, 'SIGTERM');
+    }
   } catch {
     child.kill('SIGTERM');
   }
   await Promise.race([exited, delay(3_000)]);
   if (child.exitCode !== null) return;
   try {
-    if (process.platform === 'win32') child.kill('SIGKILL');
-    else process.kill(-child.pid, 'SIGKILL');
+    process.kill(-child.pid, 'SIGKILL');
   } catch {
     child.kill('SIGKILL');
   }

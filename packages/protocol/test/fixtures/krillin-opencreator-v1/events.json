@@ -1,0 +1,19 @@
+{
+  "events": [
+    {
+      "taskId": "task_1",
+      "seq": 2,
+      "type": "status",
+      "payload": { "status": "running" },
+      "createdAt": "2026-08-21T00:00:01.000Z"
+    },
+    {
+      "taskId": "task_1",
+      "seq": 3,
+      "type": "progress",
+      "payload": { "percent": 25 },
+      "createdAt": "2026-08-21T00:00:02.000Z"
+    }
+  ],
+  "nextSeq": 3
+}

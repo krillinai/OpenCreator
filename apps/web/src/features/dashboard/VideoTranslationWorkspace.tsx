@@ -24,15 +24,21 @@ import {
 import { beginPaneResize } from '../../components/layout/pane-resize-2026-07-29.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
-import VideoTranslationAgentPanel, {
-  type VideoTranslationAgentAction
-} from './VideoTranslationAgentPanel.js';
+import VideoTranslationAgentPanel from './VideoTranslationAgentPanel.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import VideoSourceInput from './VideoSourceInput.js';
+import VideoSourcePreview from './VideoSourcePreview.js';
 import VideoTranslationResultWorkspace, {
   type SubtitleCue,
   type VideoTranslationResultTab
 } from './VideoTranslationResultWorkspace.js';
+import { useOptionalCreatorSession } from './creator-session-store.js';
+import {
+  readCreatorResultSnapshots,
+  type CreatorArtifact,
+  type CreatorJson,
+  type CreatorResultSnapshot
+} from '@opencreator/protocol';
 
 type SourceType = 'url' | 'file';
 type SubtitlePosition = 'top' | 'bottom';
@@ -76,27 +82,15 @@ type TranslationResultVersion = {
   subtitleCues: SubtitleCue[];
   savedSubtitleSnapshot: string;
   generatedSubtitleSnapshot: string;
+  artifactRefs: Record<string, string[]>;
+  changedArtifactIds: string[];
+  staleArtifactIds: string[];
 };
 
-type AgentUndo =
-  | { type: 'target_language'; value: string; description: string }
-  | { type: 'bilingual'; value: boolean; description: string }
-  | { type: 'dubbing'; value: boolean; description: string }
-  | { type: 'output'; composeVideo: boolean; videoFormat: VideoFormat; description: string }
-  | {
-      type: 'subtitle_only';
-      dubbing: boolean;
-      composeVideo: boolean;
-      videoFormat: VideoFormat;
-      description: string;
-    }
-  | {
-      type: 'task_snapshot';
-      settings: TranslationSettingsSnapshot;
-      source: TranslationSourceSnapshot;
-      description: string;
-    }
-  | { type: 'subtitle_text'; version: number; cueId: number; value: string; description: string };
+type PersistedTranslationResultVersion = Omit<TranslationResultVersion, 'source' | 'settings'> & {
+  source: Omit<TranslationSourceSnapshot, 'videoFile'> & { videoFileName: string | null };
+  settings: Omit<TranslationSettingsSnapshot, 'voiceSample'> & { voiceSampleName: string | null };
+};
 
 type LanguageOption = {
   value: string;
@@ -109,24 +103,6 @@ const WORKSPACE_MIN_WIDTH = 780;
 const AGENT_MIN_WIDTH = 320;
 const WORKSPACE_RESIZE_HANDLE_WIDTH = 7;
 const WORKSPACE_RESIZE_KEY_STEP = 32;
-
-function createSubtitleCues(targetLanguage: string): SubtitleCue[] {
-  if (targetLanguage === 'ja') {
-    return [
-      { id: 1, start: '00:00:00,000', end: '00:00:03,200', text: 'OpenCreator へようこそ。' },
-      { id: 2, start: '00:00:03,200', end: '00:00:07,100', text: '元の動画から音声を自動的に認識します。' },
-      { id: 3, start: '00:00:07,100', end: '00:00:11,400', text: '自然なニュアンスを保ちながら字幕を翻訳します。' },
-      { id: 4, start: '00:00:11,400', end: '00:00:15,000', text: '確認後、吹き替えと動画を生成できます。' }
-    ];
-  }
-
-  return [
-    { id: 1, start: '00:00:00,000', end: '00:00:03,200', text: 'Welcome to OpenCreator.' },
-    { id: 2, start: '00:00:03,200', end: '00:00:07,100', text: 'We automatically identify the speech in your original video.' },
-    { id: 3, start: '00:00:07,100', end: '00:00:11,400', text: 'Your subtitles are translated while keeping the original tone.' },
-    { id: 4, start: '00:00:11,400', end: '00:00:15,000', text: 'Review the result, then generate the voice and final video.' }
-  ];
-}
 
 const sourceLanguages: LanguageOption[] = [
   { value: 'zh_cn', label: '简体中文' },
@@ -249,6 +225,469 @@ function canReuseSubtitleCues(
     && version.settings.preferPlatformCaptions === settings.preferPlatformCaptions;
 }
 
+function serializeResultVersions(versions: TranslationResultVersion[]): CreatorJson {
+  return versions.map((version): PersistedTranslationResultVersion => ({
+    ...version,
+    source: {
+      sourceType: version.source.sourceType,
+      videoUrl: version.source.videoUrl,
+      videoFileName: version.source.videoFile?.name ?? null
+    },
+    settings: {
+      ...version.settings,
+      voiceSampleName: version.settings.voiceSample?.name ?? null,
+      voiceSample: undefined
+    } as Omit<TranslationSettingsSnapshot, 'voiceSample'> & { voiceSampleName: string | null }
+  })) as CreatorJson;
+}
+
+function deserializeResultVersions(value: CreatorJson | undefined): TranslationResultVersion[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(item => {
+    if (item === null || Array.isArray(item) || typeof item !== 'object') return [];
+    const version = item as Record<string, CreatorJson>;
+    const source = version.source;
+    const settings = version.settings;
+    const cues = version.subtitleCues;
+    if (
+      typeof version.value !== 'number'
+      || typeof version.description !== 'string'
+      || source === null || Array.isArray(source) || typeof source !== 'object'
+      || settings === null || Array.isArray(settings) || typeof settings !== 'object'
+      || !Array.isArray(cues)
+    ) return [];
+    const sourceRecord = source as Record<string, CreatorJson>;
+    const settingsRecord = settings as Record<string, CreatorJson>;
+    if (sourceRecord.sourceType !== 'url' && sourceRecord.sourceType !== 'file') return [];
+    if (typeof sourceRecord.videoUrl !== 'string') return [];
+    if (
+      typeof settingsRecord.sourceLanguage !== 'string'
+      || typeof settingsRecord.targetLanguage !== 'string'
+      || typeof settingsRecord.bilingual !== 'boolean'
+      || (settingsRecord.subtitlePosition !== 'top' && settingsRecord.subtitlePosition !== 'bottom')
+      || typeof settingsRecord.preferPlatformCaptions !== 'boolean'
+      || typeof settingsRecord.dubbing !== 'boolean'
+      || typeof settingsRecord.voiceCode !== 'string'
+      || typeof settingsRecord.composeVideo !== 'boolean'
+      || (settingsRecord.videoFormat !== 'horizontal' && settingsRecord.videoFormat !== 'vertical' && settingsRecord.videoFormat !== 'all')
+      || typeof settingsRecord.verticalTitle !== 'string'
+      || typeof settingsRecord.verticalSubtitle !== 'string'
+    ) return [];
+    const subtitleCues = cues.flatMap(cue => {
+      if (cue === null || Array.isArray(cue) || typeof cue !== 'object') return [];
+      const record = cue as Record<string, CreatorJson>;
+      if (
+        (typeof record.id !== 'string' && typeof record.id !== 'number')
+        || typeof record.start !== 'string'
+        || typeof record.end !== 'string'
+        || typeof record.text !== 'string'
+      ) return [];
+      return [{ id: record.id as number, start: record.start, end: record.end, text: record.text }];
+    });
+    return [{
+      value: version.value,
+      description: version.description,
+      source: {
+        sourceType: sourceRecord.sourceType,
+        videoUrl: sourceRecord.videoUrl,
+        videoFile: null
+      },
+      settings: {
+        sourceLanguage: settingsRecord.sourceLanguage,
+        targetLanguage: settingsRecord.targetLanguage,
+        bilingual: settingsRecord.bilingual,
+        subtitlePosition: settingsRecord.subtitlePosition,
+        preferPlatformCaptions: settingsRecord.preferPlatformCaptions,
+        subtitleFont: settingsRecord.subtitleFont === 'sans'
+          || settingsRecord.subtitleFont === 'serif'
+          || settingsRecord.subtitleFont === 'rounded'
+          ? settingsRecord.subtitleFont
+          : 'system',
+        subtitleSize: settingsRecord.subtitleSize === 'small'
+          || settingsRecord.subtitleSize === 'large'
+          ? settingsRecord.subtitleSize
+          : 'medium',
+        subtitleColor: typeof settingsRecord.subtitleColor === 'string'
+          ? settingsRecord.subtitleColor
+          : '#FFFFFF',
+        dubbing: settingsRecord.dubbing,
+        voiceCode: settingsRecord.voiceCode,
+        voiceSample: null,
+        composeVideo: settingsRecord.composeVideo,
+        videoFormat: settingsRecord.videoFormat,
+        verticalTitle: settingsRecord.verticalTitle,
+        verticalSubtitle: settingsRecord.verticalSubtitle
+      },
+      subtitleCues,
+      savedSubtitleSnapshot: typeof version.savedSubtitleSnapshot === 'string'
+        ? version.savedSubtitleSnapshot
+        : JSON.stringify(subtitleCues),
+      generatedSubtitleSnapshot: typeof version.generatedSubtitleSnapshot === 'string'
+        ? version.generatedSubtitleSnapshot
+        : JSON.stringify(subtitleCues),
+      artifactRefs: readArtifactRefs(version.artifactRefs),
+      changedArtifactIds: readStringArray(version.changedArtifactIds),
+      staleArtifactIds: readStringArray(version.staleArtifactIds)
+    }];
+  });
+}
+
+function readArtifactRefs(value: CreatorJson | undefined): Record<string, string[]> {
+  if (value === null || value === undefined || Array.isArray(value) || typeof value !== 'object') return {};
+  return Object.fromEntries(Object.entries(value).flatMap(([kind, ids]) => (
+    Array.isArray(ids) && ids.every(id => typeof id === 'string')
+      ? [[kind, ids as string[]]]
+      : []
+  )));
+}
+
+function readStringArray(value: CreatorJson | undefined): string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+    ? value as string[]
+    : [];
+}
+
+const videoArtifactKinds = ['horizontal_video', 'vertical_video', 'dubbed_video'] as const;
+
+export function resultVersionsFromArtifacts(
+  artifacts: CreatorArtifact[],
+  fallbackState: Record<string, CreatorJson>
+): TranslationResultVersion[] {
+  const versions = new Map(
+    legacyResultVersionsFromArtifacts(artifacts, fallbackState)
+      .map(version => [version.value, version] as const)
+  );
+  const persistedVersions = deserializeResultVersions(fallbackState.resultVersions);
+  for (const snapshot of readCreatorResultSnapshots(fallbackState.resultSnapshots)) {
+    const version = resultVersionFromSnapshot(artifacts, snapshot, fallbackState, persistedVersions);
+    if (version !== undefined) versions.set(version.value, version);
+  }
+  return [...versions.values()].sort((left, right) => left.value - right.value);
+}
+
+function legacyResultVersionsFromArtifacts(
+  artifacts: CreatorArtifact[],
+  fallbackState: Record<string, CreatorJson>
+): TranslationResultVersion[] {
+  const persistedVersions = deserializeResultVersions(fallbackState.resultVersions);
+  const groups = new Map<number, CreatorArtifact[]>();
+  for (const artifact of artifacts) {
+    if (
+      artifact.status !== 'completed'
+      || (artifact.kind !== 'target_subtitle' && !isVideoArtifactKind(artifact.kind))
+    ) continue;
+    const version = artifactResultVersion(artifact);
+    const group = groups.get(version) ?? [];
+    group.push(artifact);
+    groups.set(version, group);
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => left - right)
+    .flatMap(([value, group]) => {
+      const videoArtifacts = group
+        .filter(artifact => isVideoArtifactKind(artifact.kind))
+        .sort(compareArtifactFreshness);
+      const representative = videoArtifacts.at(-1)
+        ?? group.filter(artifact => artifact.kind === 'target_subtitle')
+          .sort(compareArtifactFreshness)
+          .at(-1);
+      if (representative === undefined) return [];
+      const subtitleArtifact = representative.kind === 'target_subtitle'
+        ? representative
+        : relatedArtifact(artifacts, representative, ['target_subtitle'])
+          ?? latestArtifactBefore(artifacts, representative, 'target_subtitle');
+      const settings = representative.metadata.settingsSnapshot
+        ?? subtitleArtifact?.metadata.settingsSnapshot;
+      const sourceState = settings !== null && typeof settings === 'object' && !Array.isArray(settings)
+        ? settings as Record<string, CreatorJson>
+        : fallbackState;
+      const persisted = persistedVersions.find(version => version.value === value);
+      const hasHorizontal = group.some(artifact => artifact.kind === 'horizontal_video');
+      const hasVertical = group.some(artifact => artifact.kind === 'vertical_video');
+      const inferredVideoFormat = hasHorizontal && hasVertical
+        ? 'all'
+        : hasVertical
+          ? 'vertical'
+          : hasHorizontal
+            ? 'horizontal'
+            : undefined;
+      const subtitleCues = Array.isArray(subtitleArtifact?.metadata.cues)
+        ? subtitleArtifact.metadata.cues
+        : persisted?.subtitleCues ?? [];
+      const parsed = deserializeResultVersions([{
+        value,
+        description: value === 1
+          ? '初次生成'
+          : videoArtifacts.length > 0
+            ? `成片版本 V${value}`
+            : `字幕版本 V${value}`,
+        source: {
+          sourceType: sourceState.sourceType === 'file'
+            ? 'file'
+            : persisted?.source.sourceType ?? 'url',
+          videoUrl: typeof sourceState.sourceUrl === 'string'
+            ? sourceState.sourceUrl
+            : persisted?.source.videoUrl ?? '',
+          videoFileName: null
+        },
+        settings: {
+          sourceLanguage: typeof sourceState.sourceLanguage === 'string'
+            ? sourceState.sourceLanguage
+            : persisted?.settings.sourceLanguage ?? 'zh_cn',
+          targetLanguage: typeof sourceState.targetLanguage === 'string'
+            ? sourceState.targetLanguage
+            : persisted?.settings.targetLanguage ?? 'en',
+          bilingual: typeof sourceState.bilingual === 'boolean'
+            ? sourceState.bilingual
+            : persisted?.settings.bilingual ?? true,
+          subtitlePosition: sourceState.subtitlePosition === 'bottom'
+            ? 'bottom'
+            : persisted?.settings.subtitlePosition ?? 'top',
+          preferPlatformCaptions: typeof sourceState.preferPlatformCaptions === 'boolean'
+            ? sourceState.preferPlatformCaptions
+            : persisted?.settings.preferPlatformCaptions ?? true,
+          dubbing: typeof sourceState.dubbing === 'boolean'
+            ? sourceState.dubbing
+            : persisted?.settings.dubbing ?? false,
+          voiceCode: typeof sourceState.voiceCode === 'string'
+            ? sourceState.voiceCode
+            : persisted?.settings.voiceCode ?? '',
+          voiceSampleName: null,
+          composeVideo: videoArtifacts.length > 0 || sourceState.composeVideo === true,
+          videoFormat: inferredVideoFormat
+            ?? (sourceState.videoFormat === 'vertical' || sourceState.videoFormat === 'all'
+              ? sourceState.videoFormat
+              : persisted?.settings.videoFormat ?? 'horizontal'),
+          verticalTitle: typeof sourceState.verticalTitle === 'string'
+            ? sourceState.verticalTitle
+            : persisted?.settings.verticalTitle ?? '',
+          verticalSubtitle: typeof sourceState.verticalSubtitle === 'string'
+            ? sourceState.verticalSubtitle
+            : persisted?.settings.verticalSubtitle ?? ''
+        },
+        subtitleCues,
+        savedSubtitleSnapshot: JSON.stringify(subtitleCues),
+        generatedSubtitleSnapshot: JSON.stringify(subtitleCues),
+        artifactRefs: legacyArtifactRefsForVersion(artifacts, group, representative, subtitleArtifact),
+        changedArtifactIds: group.map(artifact => artifact.id),
+        staleArtifactIds: []
+      }]);
+      return parsed;
+    });
+}
+
+function resultVersionFromSnapshot(
+  artifacts: CreatorArtifact[],
+  snapshot: CreatorResultSnapshot,
+  fallbackState: Record<string, CreatorJson>,
+  persistedVersions: TranslationResultVersion[]
+): TranslationResultVersion | undefined {
+  const subtitleArtifact = artifactFromRefs(artifacts, snapshot.artifactRefs, ['target_subtitle']);
+  const videoArtifacts = videoArtifactKinds.flatMap(kind => {
+    const artifact = artifactFromRefs(artifacts, snapshot.artifactRefs, [kind]);
+    return artifact === undefined ? [] : [artifact];
+  });
+  if (subtitleArtifact === undefined && videoArtifacts.length === 0) return undefined;
+  const persisted = persistedVersions.find(version => version.value === snapshot.version);
+  const sourceState = snapshot.state;
+  const hasHorizontal = (snapshot.artifactRefs.horizontal_video?.length ?? 0) > 0;
+  const hasVertical = (snapshot.artifactRefs.vertical_video?.length ?? 0) > 0;
+  const inferredVideoFormat = hasHorizontal && hasVertical
+    ? 'all'
+    : hasVertical
+      ? 'vertical'
+      : hasHorizontal
+        ? 'horizontal'
+        : undefined;
+  const subtitleCues = Array.isArray(subtitleArtifact?.metadata.cues)
+    ? subtitleArtifact.metadata.cues
+    : persisted?.subtitleCues ?? [];
+  const parsed = deserializeResultVersions([{
+    value: snapshot.version,
+    description: snapshot.description || `项目版本 V${snapshot.version}`,
+    source: {
+      sourceType: sourceState.sourceType === 'file'
+        ? 'file'
+        : persisted?.source.sourceType ?? (fallbackState.sourceType === 'file' ? 'file' : 'url'),
+      videoUrl: typeof sourceState.sourceUrl === 'string'
+        ? sourceState.sourceUrl
+        : persisted?.source.videoUrl ?? (typeof fallbackState.sourceUrl === 'string' ? fallbackState.sourceUrl : ''),
+      videoFileName: null
+    },
+    settings: {
+      sourceLanguage: readStringSetting(sourceState, fallbackState, persisted, 'sourceLanguage', 'zh_cn'),
+      targetLanguage: readStringSetting(sourceState, fallbackState, persisted, 'targetLanguage', 'en'),
+      bilingual: readBooleanSetting(sourceState, fallbackState, persisted, 'bilingual', true),
+      subtitlePosition: sourceState.subtitlePosition === 'bottom'
+        ? 'bottom'
+        : sourceState.subtitlePosition === 'top'
+          ? 'top'
+          : persisted?.settings.subtitlePosition ?? (fallbackState.subtitlePosition === 'bottom' ? 'bottom' : 'top'),
+      preferPlatformCaptions: readBooleanSetting(
+        sourceState,
+        fallbackState,
+        persisted,
+        'preferPlatformCaptions',
+        true
+      ),
+      dubbing: readBooleanSetting(sourceState, fallbackState, persisted, 'dubbing', false),
+      voiceCode: readStringSetting(sourceState, fallbackState, persisted, 'voiceCode', ''),
+      voiceSampleName: null,
+      composeVideo: videoArtifacts.length > 0
+        || readBooleanSetting(sourceState, fallbackState, persisted, 'composeVideo', false),
+      videoFormat: inferredVideoFormat
+        ?? (sourceState.videoFormat === 'vertical' || sourceState.videoFormat === 'all'
+          ? sourceState.videoFormat
+          : persisted?.settings.videoFormat
+            ?? (fallbackState.videoFormat === 'vertical' || fallbackState.videoFormat === 'all'
+              ? fallbackState.videoFormat
+              : 'horizontal')),
+      verticalTitle: readStringSetting(sourceState, fallbackState, persisted, 'verticalTitle', ''),
+      verticalSubtitle: readStringSetting(sourceState, fallbackState, persisted, 'verticalSubtitle', '')
+    },
+    subtitleCues,
+    savedSubtitleSnapshot: JSON.stringify(subtitleCues),
+    generatedSubtitleSnapshot: JSON.stringify(subtitleCues),
+    artifactRefs: snapshot.artifactRefs,
+    changedArtifactIds: snapshot.changedArtifactIds,
+    staleArtifactIds: snapshot.staleArtifactIds
+  }]);
+  return parsed[0];
+}
+
+function legacyArtifactRefsForVersion(
+  artifacts: CreatorArtifact[],
+  group: CreatorArtifact[],
+  representative: CreatorArtifact,
+  subtitleArtifact: CreatorArtifact | undefined
+): Record<string, string[]> {
+  const refs: Record<string, string[]> = {};
+  for (const artifact of group) (refs[artifact.kind] ??= []).push(artifact.id);
+  if (subtitleArtifact !== undefined) refs.target_subtitle = [subtitleArtifact.id];
+  for (const kind of ['dubbed_audio', 'bilingual_subtitle', 'source_subtitle', 'source_video']) {
+    const artifact = relatedArtifact(artifacts, representative, [kind]);
+    if (artifact !== undefined) refs[kind] = [artifact.id];
+  }
+  return refs;
+}
+
+function readStringSetting(
+  state: Record<string, CreatorJson>,
+  fallback: Record<string, CreatorJson>,
+  persisted: TranslationResultVersion | undefined,
+  key: 'sourceLanguage' | 'targetLanguage' | 'voiceCode' | 'verticalTitle' | 'verticalSubtitle',
+  defaultValue: string
+): string {
+  const value = state[key] ?? fallback[key];
+  return typeof value === 'string' ? value : persisted?.settings[key] ?? defaultValue;
+}
+
+function readBooleanSetting(
+  state: Record<string, CreatorJson>,
+  fallback: Record<string, CreatorJson>,
+  persisted: TranslationResultVersion | undefined,
+  key: 'bilingual' | 'preferPlatformCaptions' | 'dubbing' | 'composeVideo',
+  defaultValue: boolean
+): boolean {
+  const value = state[key] ?? fallback[key];
+  return typeof value === 'boolean' ? value : persisted?.settings[key] ?? defaultValue;
+}
+
+function artifactFileName(artifact: CreatorArtifact | undefined): string | undefined {
+  return typeof artifact?.metadata.fileName === 'string' ? artifact.metadata.fileName : undefined;
+}
+
+export function latestArtifactForResultVersion(
+  artifacts: CreatorArtifact[],
+  resultVersion: number,
+  kinds: readonly string[],
+  resultSnapshots?: CreatorJson
+): CreatorArtifact | undefined {
+  const snapshot = readCreatorResultSnapshots(resultSnapshots)
+    .find(candidate => candidate.version === resultVersion);
+  if (snapshot !== undefined) return artifactFromRefs(artifacts, snapshot.artifactRefs, kinds);
+  for (const kind of kinds) {
+    const selected = artifacts.filter(artifact => (
+      artifact.kind === kind
+      && artifact.status === 'completed'
+      && artifactResultVersion(artifact) === resultVersion
+    ))
+      .sort(compareArtifactFreshness)
+      .at(-1);
+    if (selected !== undefined) return selected;
+  }
+  const resultVideo = artifacts.filter(artifact => (
+    isVideoArtifactKind(artifact.kind)
+    && artifact.status === 'completed'
+    && artifactResultVersion(artifact) === resultVersion
+  )).sort(compareArtifactFreshness).at(-1);
+  if (resultVideo !== undefined) return relatedArtifact(artifacts, resultVideo, kinds);
+  return undefined;
+}
+
+function artifactFromRefs(
+  artifacts: CreatorArtifact[],
+  refs: Record<string, string[]>,
+  kinds: readonly string[]
+): CreatorArtifact | undefined {
+  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]));
+  for (const kind of kinds) {
+    for (const id of [...(refs[kind] ?? [])].reverse()) {
+      const artifact = artifactsById.get(id);
+      if (artifact !== undefined && ['completed', 'stale'].includes(artifact.status)) return artifact;
+    }
+  }
+  return undefined;
+}
+
+function artifactResultVersion(artifact: CreatorArtifact): number {
+  const value = artifact.metadata.resultVersion;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : artifact.version;
+}
+
+function isVideoArtifactKind(kind: string): kind is typeof videoArtifactKinds[number] {
+  return videoArtifactKinds.includes(kind as typeof videoArtifactKinds[number]);
+}
+
+function relatedArtifact(
+  artifacts: CreatorArtifact[],
+  output: CreatorArtifact,
+  kinds: readonly string[]
+): CreatorArtifact | undefined {
+  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]));
+  const queue = [...output.sourceArtifactIds];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    const artifact = artifactsById.get(id);
+    if (artifact === undefined) continue;
+    if (['completed', 'stale'].includes(artifact.status) && kinds.includes(artifact.kind)) return artifact;
+    queue.push(...artifact.sourceArtifactIds);
+  }
+  return undefined;
+}
+
+function latestArtifactBefore(
+  artifacts: CreatorArtifact[],
+  output: CreatorArtifact,
+  kind: string
+): CreatorArtifact | undefined {
+  return artifacts.filter(artifact => (
+    artifact.kind === kind
+    && ['completed', 'stale'].includes(artifact.status)
+    && artifact.createdAt <= output.createdAt
+  )).sort(compareArtifactFreshness).at(-1);
+}
+
+function compareArtifactFreshness(left: CreatorArtifact, right: CreatorArtifact): number {
+  if (left.version !== right.version) return left.version - right.version;
+  return left.createdAt.localeCompare(right.createdAt);
+}
+
 function affectedArtifacts(
   version: TranslationResultVersion,
   settings: TranslationSettingsSnapshot,
@@ -325,9 +764,12 @@ export default function VideoTranslationWorkspace(props: {
   videoMetadataService?: VideoMetadataService;
 }) {
   const l = useLocalizedCopy();
+  const creatorSession = useOptionalCreatorSession();
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const collabLayoutRef = useRef<HTMLDivElement>(null);
   const agentFocusTimeoutRef = useRef<number>();
+  const skipPersistRef = useRef(false);
   const [currentStep, setCurrentStep] = useState<WizardStep>(0);
   const [furthestStep, setFurthestStep] = useState<WizardStep>(0);
   const [workspacePhase, setWorkspacePhase] = useState<WorkspacePhase>('configure');
@@ -350,7 +792,6 @@ export default function VideoTranslationWorkspace(props: {
   const [verticalTitle, setVerticalTitle] = useState('');
   const [verticalSubtitle, setVerticalSubtitle] = useState('');
   const [attemptedContinue, setAttemptedContinue] = useState(false);
-  const [agentUndo, setAgentUndo] = useState<AgentUndo>();
   const [workspacePaneWidth, setWorkspacePaneWidth] = useState<number>();
   const [resultTab, setResultTab] = useState<VideoTranslationResultTab>('video');
   const [resultVersion, setResultVersion] = useState(1);
@@ -358,7 +799,137 @@ export default function VideoTranslationWorkspace(props: {
   const [draftBaseVersion, setDraftBaseVersion] = useState<number>();
   const [resultProposal, setResultProposal] = useState<ResultProposal>();
   const [resultNotice, setResultNotice] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [agentFocus, setAgentFocus] = useState<AgentFocus>();
+
+  useEffect(() => {
+    if (creatorSession === null) return;
+    skipPersistRef.current = true;
+    const persisted = creatorSession.state;
+    if (persisted.sourceType === 'url' || persisted.sourceType === 'file') setSourceType(persisted.sourceType);
+    if (typeof persisted.sourceUrl === 'string') setVideoUrl(persisted.sourceUrl);
+    if (typeof persisted.sourceLanguage === 'string') setSourceLanguage(persisted.sourceLanguage);
+    if (typeof persisted.targetLanguage === 'string') setTargetLanguage(persisted.targetLanguage);
+    if (typeof persisted.bilingual === 'boolean') setBilingual(persisted.bilingual);
+    if (persisted.subtitlePosition === 'top' || persisted.subtitlePosition === 'bottom') setSubtitlePosition(persisted.subtitlePosition);
+    if (typeof persisted.preferPlatformCaptions === 'boolean') setPreferPlatformCaptions(persisted.preferPlatformCaptions);
+    if (typeof persisted.dubbing === 'boolean') setDubbing(persisted.dubbing);
+    if (typeof persisted.voiceCode === 'string') setVoiceCode(persisted.voiceCode);
+    if (typeof persisted.composeVideo === 'boolean') setComposeVideo(persisted.composeVideo);
+    if (persisted.videoFormat === 'horizontal' || persisted.videoFormat === 'vertical' || persisted.videoFormat === 'all') {
+      setVideoFormat(persisted.videoFormat);
+    }
+    if (typeof persisted.verticalTitle === 'string') setVerticalTitle(persisted.verticalTitle);
+    if (typeof persisted.verticalSubtitle === 'string') setVerticalSubtitle(persisted.verticalSubtitle);
+    if (persisted.currentStep === 0 || persisted.currentStep === 1 || persisted.currentStep === 2) {
+      setCurrentStep(persisted.currentStep);
+    }
+    if (persisted.furthestStep === 0 || persisted.furthestStep === 1 || persisted.furthestStep === 2) {
+      setFurthestStep(persisted.furthestStep);
+    }
+    const persistedPhase = persisted.workspacePhase === 'configure' || persisted.workspacePhase === 'result'
+      ? persisted.workspacePhase
+      : undefined;
+    const persistedTab = persisted.resultTab === 'video'
+      || persisted.resultTab === 'subtitles'
+      || persisted.resultTab === 'voice'
+      || persisted.resultTab === 'settings'
+      ? persisted.resultTab
+      : undefined;
+    const persistedDraftBaseVersion = typeof persisted.draftBaseVersion === 'number'
+      ? persisted.draftBaseVersion
+      : undefined;
+    const artifactVersions = resultVersionsFromArtifacts(creatorSession.job.artifacts, persisted);
+    setResultVersions(artifactVersions);
+    if (artifactVersions.length > 0) {
+      const latest = artifactVersions[artifactVersions.length - 1]!;
+      const persistedLatestVersion = typeof persisted.latestResultVersion === 'number'
+        ? persisted.latestResultVersion
+        : 0;
+      const selectedVersion = latest.value > persistedLatestVersion
+        ? latest.value
+        : typeof persisted.resultVersion === 'number'
+          && artifactVersions.some(version => version.value === persisted.resultVersion)
+          ? persisted.resultVersion
+          : latest.value;
+      const hasVideo = latestArtifactForResultVersion(
+        creatorSession.job.artifacts,
+        selectedVersion,
+        videoArtifactKinds,
+        persisted.resultSnapshots
+      ) !== undefined;
+      setResultVersion(selectedVersion);
+      setDraftBaseVersion(persistedDraftBaseVersion ?? latest.value);
+      setResultTab(persistedTab === 'video' && !hasVideo
+        ? 'subtitles'
+        : persistedTab ?? (hasVideo ? 'video' : 'subtitles'));
+      setWorkspacePhase(
+        persistedPhase === 'configure' && persistedDraftBaseVersion !== undefined
+          ? 'configure'
+          : 'result'
+      );
+    } else {
+      setDraftBaseVersion(undefined);
+      setWorkspacePhase('configure');
+    }
+  }, [creatorSession?.job.revision]);
+
+  useEffect(() => {
+    if (creatorSession === null) return;
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false;
+      return;
+    }
+    const next = {
+      sourceType,
+      sourceUrl: videoUrl,
+      sourceLanguage,
+      targetLanguage,
+      bilingual,
+      subtitlePosition,
+      preferPlatformCaptions,
+      dubbing,
+      voiceCode,
+      composeVideo,
+      videoFormat,
+      verticalTitle,
+      verticalSubtitle,
+      currentStep,
+      furthestStep,
+      workspacePhase,
+      resultVersion: resultVersions.length > 0 ? resultVersion : null,
+      latestResultVersion: resultVersions.at(-1)?.value ?? null,
+      resultTab,
+      resultVersions: serializeResultVersions(resultVersions),
+      draftBaseVersion: draftBaseVersion ?? null
+    } as const;
+    const patch = Object.fromEntries(Object.entries(next).filter(([key, value]) => (
+      JSON.stringify(creatorSession.state[key]) !== JSON.stringify(value)
+    )));
+    if (Object.keys(patch).length > 0) creatorSession.updateDraft(patch);
+  }, [
+    bilingual,
+    composeVideo,
+    creatorSession,
+    currentStep,
+    dubbing,
+    furthestStep,
+    preferPlatformCaptions,
+    resultTab,
+    resultVersion,
+    resultVersions,
+    sourceLanguage,
+    sourceType,
+    subtitlePosition,
+    targetLanguage,
+    verticalSubtitle,
+    verticalTitle,
+    videoFormat,
+    videoUrl,
+    voiceCode,
+    workspacePhase,
+    draftBaseVersion
+  ]);
 
   useEffect(() => () => {
     if (agentFocusTimeoutRef.current !== undefined) {
@@ -367,6 +938,26 @@ export default function VideoTranslationWorkspace(props: {
   }, []);
 
   const hasSource = sourceType === 'url' ? isValidVideoUrl(videoUrl) : videoFile !== null;
+  const latestStage = creatorSession === null
+    ? undefined
+    : [...creatorSession.job.stages].reverse().find(stage => stage.stageId === 'subtitle')
+      ?? creatorSession.job.stages[creatorSession.job.stages.length - 1];
+  const stageFailure = latestStage?.status === 'failed' || latestStage?.status === 'interrupted'
+    ? latestStage
+    : undefined;
+  const stageConfigurationCode = normalizeStageConfigurationError(
+    stageFailure?.errorCode,
+    stageFailure?.errorMessage
+  );
+  const sessionError = creatorSession?.error ?? null;
+  const needsInput = readCreatorNeedsInput(creatorSession?.state.needsInput);
+  const runIssueMessage = sessionError !== null
+    ? creatorErrorMessage(sessionError, l)
+    : needsInput !== null
+      ? creatorErrorMessage(needsInput, l)
+      : stageFailure !== undefined
+        ? stageErrorMessage(stageFailure.errorCode, stageFailure.errorMessage, l)
+        : '';
   const sourceName = sourceType === 'url'
     ? (videoUrl.trim() || l('等待填写链接', 'Waiting for a link'))
     : (videoFile?.name ?? l('等待上传视频', 'Waiting for an upload'));
@@ -381,6 +972,69 @@ export default function VideoTranslationWorkspace(props: {
   ], [bilingual, dubbing, l, outputLabel, sourceLanguage, subtitlePosition, subtitleStyleLabel, targetLanguage, voiceCode]);
   const targetLanguageLabel = languageLabel(targetLanguages, targetLanguage);
   const selectedResult = resultVersions.find(version => version.value === resultVersion);
+  const jobArtifacts = creatorSession?.job.artifacts ?? [];
+  const selectedVideoArtifact = latestArtifactForResultVersion(
+    jobArtifacts,
+    resultVersion,
+    videoArtifactKinds,
+    creatorSession?.state.resultSnapshots
+  );
+  const selectedVoiceArtifact = latestArtifactForResultVersion(
+    jobArtifacts,
+    resultVersion,
+    ['dubbed_audio'],
+    creatorSession?.state.resultSnapshots
+  );
+  const selectedSubtitleArtifact = latestArtifactForResultVersion(
+    jobArtifacts,
+    resultVersion,
+    ['target_subtitle'],
+    creatorSession?.state.resultSnapshots
+  );
+  const hasVideoArtifact = selectedVideoArtifact !== undefined;
+  const hasVoiceArtifact = selectedVoiceArtifact !== undefined;
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string>();
+  const [videoPreviewLoading, setVideoPreviewLoading] = useState(false);
+  const [videoPreviewError, setVideoPreviewError] = useState<string>();
+  const openArtifact = creatorSession?.openArtifact;
+  useEffect(() => {
+    const artifactId = selectedVideoArtifact?.id;
+    if (artifactId === undefined || openArtifact === undefined) {
+      setVideoPreviewUrl(undefined);
+      setVideoPreviewLoading(false);
+      setVideoPreviewError(undefined);
+      return;
+    }
+    let canceled = false;
+    let objectUrl: string | undefined;
+    setVideoPreviewUrl(undefined);
+    setVideoPreviewLoading(true);
+    setVideoPreviewError(undefined);
+    void openArtifact(artifactId)
+      .then(response => {
+        if (!response.ok) throw new Error(`Creator artifact HTTP ${response.status}`);
+        return response.blob();
+      })
+      .then(blob => {
+        objectUrl = URL.createObjectURL(blob);
+        if (canceled) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = undefined;
+          return;
+        }
+        setVideoPreviewUrl(objectUrl);
+        setVideoPreviewLoading(false);
+      })
+      .catch(cause => {
+        if (canceled) return;
+        setVideoPreviewLoading(false);
+        setVideoPreviewError(creatorErrorMessage(cause, l));
+      });
+    return () => {
+      canceled = true;
+      if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
+    };
+  }, [l, openArtifact, selectedVideoArtifact?.id]);
   const selectedResultSource = selectedResult?.source;
   const selectedResultSettings = selectedResult?.settings;
   const selectedSubtitleCues = selectedResult?.subtitleCues ?? [];
@@ -402,6 +1056,13 @@ export default function VideoTranslationWorkspace(props: {
   const subtitleNeedsRegeneration = selectedResult
     ? JSON.stringify(selectedResult.subtitleCues) !== selectedResult.generatedSubtitleSnapshot
     : false;
+  const selectedHasStaleArtifacts = (selectedResult?.staleArtifactIds.length ?? 0) > 0;
+  const visibleResultNotice = resultNotice || (selectedHasStaleArtifacts
+    ? l(
+        '当前项目版本中的部分配音或成片基于较早内容，可继续使用；重新生成后会更新引用。',
+        'Some dubbing or video outputs in this project version are based on earlier content. They remain usable until regenerated.'
+      )
+    : '');
   const nextVersion = resultVersions.reduce((highest, version) => Math.max(highest, version.value), 0) + 1;
   const agentContextSummary = workspacePhase === 'result'
     ? `${({ video: l('成片', 'Final video'), subtitles: l('字幕', 'Subtitles'), voice: l('配音', 'Dubbing'), settings: l('任务设置', 'Task settings') } as const)[resultTab]} V${resultVersion}`
@@ -536,342 +1197,80 @@ export default function VideoTranslationWorkspace(props: {
     openWizardStep(1);
   }
 
-  function generateResult(
-    settings: TranslationSettingsSnapshot = currentDraftSettings(),
-    baseVersion = draftBaseVersion,
-    source: TranslationSourceSnapshot = currentDraftSource(),
-    subtitleCues?: SubtitleCue[]
-  ) {
-    const version = nextVersion;
-    const nextCues = (subtitleCues ?? createSubtitleCues(settings.targetLanguage))
-      .map(cue => ({ ...cue }));
-    applySettingsSnapshot(settings);
-    applySourceSnapshot(source);
-    setResultVersion(version);
-    setResultVersions(current => [
-      ...current,
-      {
-        value: version,
-        description: version === 1 ? l('初次生成', 'Initial generation') : l(`基于 V${baseVersion ?? resultVersion} 调整`, `Adjusted from V${baseVersion ?? resultVersion}`),
-        source,
-        settings,
-        subtitleCues: nextCues,
-        savedSubtitleSnapshot: JSON.stringify(nextCues),
-        generatedSubtitleSnapshot: JSON.stringify(nextCues)
-      }
-    ]);
-    setDraftBaseVersion(version);
-    setAgentUndo(undefined);
-    setResultProposal(undefined);
-    setResultNotice(
-      version === 1
-        ? l('V1 已生成完成', 'V1 is ready.')
-        : l(
-            `V${version} 已生成完成，之前的版本仍可查看`,
-            `V${version} is ready. Previous versions remain available.`
-          )
-    );
-    setResultTab('video');
-    setWorkspacePhase('result');
-  }
-
-  function submit() {
+  async function submit() {
     if (!hasSource) {
       setCurrentStep(0);
       setAttemptedContinue(true);
       return;
     }
-    const settings = currentDraftSettings();
-    const source = currentDraftSource();
-    const baseVersion = resultVersions.find(version => version.value === draftBaseVersion);
-    generateResult(
-      settings,
-      draftBaseVersion,
-      source,
-      baseVersion && canReuseSubtitleCues(baseVersion, settings, source)
-        ? baseVersion.subtitleCues
-        : undefined
-    );
-  }
-
-  function applyAgentAction(action: VideoTranslationAgentAction) {
-    const settingsBeforeAction = workspacePhase === 'result'
-      && selectedResult
-      && draftBaseVersion !== selectedResult.value
-      ? selectedResult.settings
-      : draftSettingsSnapshot;
-
-    switch (action.type) {
-      case 'explain_source':
-        return l('可以粘贴 YouTube、Bilibili 等公开视频链接，也可以直接上传本地视频或音频文件。', 'Paste a public YouTube, Bilibili, or similar link, or upload a local video or audio file.');
-      case 'apply_task_request': {
-        const sourceBeforeAction = workspacePhase === 'result'
-          && selectedResult
-          && draftBaseVersion !== selectedResult.value
-          ? selectedResult.source
-          : draftSourceSnapshot;
-        const nextSource = action.request.videoUrl
-          ? { sourceType: 'url' as const, videoUrl: action.request.videoUrl, videoFile: null }
-          : sourceBeforeAction;
-        const nextSettings: TranslationSettingsSnapshot = {
-          ...settingsBeforeAction,
-          targetLanguage: action.request.targetLanguage?.value ?? settingsBeforeAction.targetLanguage,
-          bilingual: action.request.bilingual ?? settingsBeforeAction.bilingual,
-          dubbing: action.request.output === 'subtitles'
-            ? false
-            : action.request.dubbing ?? settingsBeforeAction.dubbing,
-          composeVideo: action.request.output === 'subtitles'
-            ? false
-            : action.request.output
-              ? true
-              : settingsBeforeAction.composeVideo,
-          videoFormat: action.request.output === 'horizontal' || action.request.output === 'vertical'
-            ? action.request.output
-            : settingsBeforeAction.videoFormat
-        };
-        const changes: string[] = [];
-        if (action.request.videoUrl) changes.push(l('已添加视频链接', 'Video link added'));
-        if (action.request.targetLanguage) changes.push(l(`目标语言为${action.request.targetLanguage.label}`, `Target language: ${action.request.targetLanguage.label}`));
-        if (action.request.bilingual !== undefined) {
-          changes.push(action.request.bilingual ? l('已开启双语字幕', 'Bilingual subtitles enabled') : l('已关闭双语字幕', 'Bilingual subtitles disabled'));
-        }
-        if (action.request.output === 'subtitles') {
-          changes.push(l('仅生成字幕', 'Subtitles only'));
-        } else {
-          if (action.request.dubbing !== undefined) {
-            changes.push(action.request.dubbing ? l('已开启配音', 'Dubbing enabled') : l('已关闭配音', 'Dubbing disabled'));
-          }
-          if (action.request.output) {
-            changes.push(action.request.output === 'vertical' ? l('输出竖屏视频', 'Vertical video output') : l('输出横屏视频', 'Horizontal video output'));
-          }
-        }
-        const description = changes.join(l('，', ', ')) || l('已更新任务设置', 'Task settings updated');
-
-        setAgentUndo({
-          type: 'task_snapshot',
-          settings: settingsBeforeAction,
-          source: sourceBeforeAction,
-          description
-        });
-        applySourceSnapshot(nextSource);
-        applySettingsSnapshot(nextSettings);
-        setAttemptedContinue(false);
-
-        if (workspacePhase === 'result' && selectedResult) {
-          setDraftBaseVersion(selectedResult.value);
-          setResultProposal(undefined);
-          setResultNotice('');
-        }
-
-        if (action.request.execute) {
-          const sourceReady = nextSource.sourceType === 'url'
-            ? isValidVideoUrl(nextSource.videoUrl)
-            : nextSource.videoFile !== null;
-          if (!sourceReady) {
-            setWorkspacePhase('configure');
-            setCurrentStep(0);
-            return l('还缺少视频。请在对话中发送公开视频链接，或从左侧上传本地文件。', 'A video is still required. Send a public link here or upload a local file on the left.');
-          }
-          if (workspacePhase === 'result' && selectedResult) {
-            const requestHasChanges = subtitleNeedsRegeneration
-              || !sameSettings(nextSettings, selectedResult.settings)
-              || !sameSource(nextSource, selectedResult.source);
-            if (!requestHasChanges) {
-              setResultProposal(undefined);
-              return l('当前版本没有修改，不需要重新生成。', 'Nothing changed in this version, so regeneration is not needed.');
-            }
-            setResultProposal('regenerate');
-            return l(`${description}。将基于 V${selectedResult.value} 生成 V${nextVersion}，请确认后执行。`, `${description}. V${nextVersion} will be generated from V${selectedResult.value}. Confirm to continue.`);
-          }
-          const baseVersion = resultVersions.find(version => version.value === draftBaseVersion);
-          generateResult(
-            nextSettings,
-            draftBaseVersion,
-            nextSource,
-            baseVersion && canReuseSubtitleCues(baseVersion, nextSettings, nextSource)
-              ? baseVersion.subtitleCues
-              : undefined
-          );
-          return l(`${description}。视频翻译已完成，V${nextVersion} 的产出已打开。`, `${description}. Translation is complete and the V${nextVersion} output is open.`);
-        }
-
-        if (workspacePhase === 'result') setWorkspacePhase('configure');
-        if (action.request.output || action.request.dubbing !== undefined) {
-          openWizardStep(3);
-          focusAgentControl(action.request.dubbing !== undefined ? 'dubbing' : 'output');
-          return l(`${description}。左侧已同步到配音与输出设置。`, `${description}. The dubbing and output settings are synchronized on the left.`);
-        }
-        if (action.request.targetLanguage || action.request.bilingual !== undefined) {
-          openWizardStep(1);
-          focusAgentControl(action.request.targetLanguage ? 'language' : 'subtitles');
-          return l(`${description}。左侧已同步到翻译设置。`, `${description}. The translation settings are synchronized on the left.`);
-        }
-        setCurrentStep(0);
-        return l(`${description}。视频预览已显示在左侧，可以继续设置或直接开始翻译。`, `${description}. The video preview is open on the left. Continue setup or start translating.`);
-      }
-      case 'advance_task':
-        if (workspacePhase === 'result') {
-          return l('当前任务已经完成。你可以修改字幕或设置，再生成新版本。', 'This task is complete. Edit subtitles or settings, then generate a new version.');
-        }
-        if (currentStep === 0) {
-          if (!hasSource) return l('请先发送公开视频链接，或从左侧上传本地文件。', 'Send a public video link or upload a local file on the left first.');
-          openWizardStep(1);
-          return l('视频已就绪。请确认目标语言和字幕设置，也可以直接告诉我要翻译成哪种语言。', 'The video is ready. Confirm the target language and subtitle settings, or tell me the language you want.');
-        }
-        if (currentStep === 1) {
-          openWizardStep(2);
-          return l('翻译设置已确认。接下来可以设置字幕字体、大小和颜色。', 'Translation settings are confirmed. Next, choose the subtitle font, size, and color.');
-        }
-        if (currentStep === 2) {
-          openWizardStep(3);
-          return l('字幕样式已确认。接下来可以选择配音和输出画幅，或直接开始翻译。', 'Subtitle styling is confirmed. Choose dubbing and output format, or start translating now.');
-        }
-        return applyAgentAction({ type: 'run_translation' });
-      case 'run_translation': {
-        if (!hasSource) {
-          setCurrentStep(0);
-          return l('还缺少视频。请在对话中发送公开视频链接，或从左侧上传本地文件。', 'A video is still required. Send a public link here or upload a local file on the left.');
-        }
-        if (workspacePhase === 'result') {
-          if (!hasPendingChanges) return l('当前版本没有修改，不需要重新生成。', 'Nothing changed in this version, so regeneration is not needed.');
-          setResultProposal('regenerate');
-          return l(`将基于 V${resultVersion} 生成 V${nextVersion}，请确认后执行。`, `V${nextVersion} will be generated from V${resultVersion}. Confirm to continue.`);
-        }
-        const settings = currentDraftSettings();
-        const source = currentDraftSource();
-        const baseVersion = resultVersions.find(version => version.value === draftBaseVersion);
-        generateResult(
-          settings,
-          draftBaseVersion,
-          source,
-          baseVersion && canReuseSubtitleCues(baseVersion, settings, source)
-            ? baseVersion.subtitleCues
-            : undefined
-        );
-        return l(`视频翻译已完成，V${nextVersion} 的产出已打开。`, `Translation is complete and the V${nextVersion} output is open.`);
-      }
-      case 'set_target_language': {
-        const description = l(`目标语言已改为${action.label}`, `Target language changed to ${action.label}`);
-        setAgentUndo({ type: 'target_language', value: settingsBeforeAction.targetLanguage, description });
-        openAgentConfiguration(1, 'language');
-        setTargetLanguage(action.value);
-        return l(`${description}，左侧设置已同步更新。`, `${description}. The settings on the left are synchronized.`);
-      }
-      case 'set_bilingual': {
-        const description = action.value ? l('已开启双语字幕', 'Bilingual subtitles enabled') : l('已关闭双语字幕', 'Bilingual subtitles disabled');
-        setAgentUndo({ type: 'bilingual', value: settingsBeforeAction.bilingual, description });
-        openAgentConfiguration(1, 'subtitles');
-        setBilingual(action.value);
-        return l(`${description}，左侧设置已同步更新。`, `${description}. The settings on the left are synchronized.`);
-      }
-      case 'set_dubbing': {
-        const description = action.value ? l('已开启目标语言配音', 'Target-language dubbing enabled') : l('已关闭目标语言配音', 'Target-language dubbing disabled');
-        setAgentUndo({ type: 'dubbing', value: settingsBeforeAction.dubbing, description });
-        openAgentConfiguration(3, 'dubbing');
-        setDubbing(action.value);
-        return l(`${description}，左侧已打开配音设置，你仍可以继续选择音色。`, `${description}. Dubbing settings are open on the left, where you can choose a voice.`);
-      }
-      case 'set_output': {
-        const description = action.value === 'vertical' ? l('已改为竖屏视频输出', 'Output changed to vertical video') : l('已改为横屏视频输出', 'Output changed to horizontal video');
-        setAgentUndo({
-          type: 'output',
-          composeVideo: settingsBeforeAction.composeVideo,
-          videoFormat: settingsBeforeAction.videoFormat,
-          description
-        });
-        openAgentConfiguration(3, 'output');
-        setComposeVideo(true);
-        setVideoFormat(action.value);
-        return l(`${description}，左侧输出选项已展开。`, `${description}. Output options are open on the left.`);
-      }
-      case 'subtitle_only': {
-        const description = l('已改为仅生成字幕', 'Output changed to subtitles only');
-        setAgentUndo({
-          type: 'subtitle_only',
-          dubbing: settingsBeforeAction.dubbing,
-          composeVideo: settingsBeforeAction.composeVideo,
-          videoFormat: settingsBeforeAction.videoFormat,
-          description
-        });
-        openAgentConfiguration(3, 'output');
-        setDubbing(false);
-        setComposeVideo(false);
-        return l(`${description}，配音和视频合成都已关闭。`, `${description}. Dubbing and video rendering are disabled.`);
-      }
-      case 'open_subtitle_editor':
-        setResultTab('subtitles');
-        setResultProposal(undefined);
-        return l('已打开左侧字幕。你可以直接编辑，或告诉我“把第 2 条字幕改为……”。', 'Subtitles are open on the left. Edit them directly, or tell me "change subtitle 2 to...".');
-      case 'edit_subtitle': {
-        if (!selectedResult) return l('请先完成一次视频翻译，再修改字幕。', 'Complete a video translation before editing subtitles.');
-        const cue = selectedResult.subtitleCues[action.index - 1];
-        if (!cue) return l(`当前只有 ${selectedResult.subtitleCues.length} 条字幕，请换一个有效序号。`, `There are only ${selectedResult.subtitleCues.length} subtitles. Choose a valid number.`);
-        const description = l(`已修改第 ${action.index} 条字幕`, `Subtitle ${action.index} updated`);
-        setAgentUndo({
-          type: 'subtitle_text',
-          version: selectedResult.value,
-          cueId: cue.id,
-          value: cue.text,
-          description
-        });
-        setResultVersions(current => current.map(version => version.value === selectedResult.value
-          ? {
-              ...version,
-              subtitleCues: version.subtitleCues.map(item => item.id === cue.id
-                ? { ...item, text: action.text }
-                : item)
-            }
-          : version));
-        setResultTab('subtitles');
-        setResultProposal(undefined);
-        setResultNotice('');
-        return l(`${description}，左侧编辑稿已同步。确认无误后保存字幕，再生成新版本。`, `${description}. The draft on the left is synchronized. Save the subtitles, then generate a new version.`);
-      }
-      case 'open_result_settings':
-        openAgentConfiguration(1, 'language');
-        return l('已在左侧打开当前版本的任务设置，你可以直接修改参数。', 'The current version settings are open on the left for direct editing.');
-      case 'regenerate_result':
-        if (!hasPendingChanges) {
-          setResultProposal(undefined);
-          return l('当前版本没有修改，不需要生成新版本。', 'Nothing changed in this version, so a new version is not needed.');
-        }
-        setResultProposal('regenerate');
-        return l(`重新生成会创建 V${nextVersion}，当前版本会保留。请在左侧确认后执行。`, `Regeneration will create V${nextVersion} and preserve the current version. Confirm on the left to continue.`);
-      case 'confirm_regeneration': {
-        if (resultProposal !== 'regenerate') return l('当前没有等待确认的生成任务。', 'There is no generation waiting for confirmation.');
-        const generatedVersion = nextVersion;
-        confirmRegeneration();
-        return l(`V${generatedVersion} 已生成完成，之前的版本仍可在版本历史中查看。`, `V${generatedVersion} is ready. Previous versions remain available in version history.`);
-      }
-      case 'cancel_regeneration':
-        setResultProposal(undefined);
-        return l('已取消生成，当前修改仍然保留。', 'Generation canceled. Current edits are still saved.');
-    }
-  }
-
-  function saveSubtitles() {
-    setResultVersions(current => current.map(version => version.value === resultVersion
-      ? { ...version, savedSubtitleSnapshot: JSON.stringify(version.subtitleCues) }
-      : version));
-    setResultNotice(l(`V${resultVersion} 字幕修改已保存，成片需要重新生成后才会更新`, `Subtitle edits for V${resultVersion} were saved. Regenerate the final video to apply them.`));
-  }
-
-  function exportResult(type: 'video' | 'subtitles' | 'voice') {
-    if (type === 'subtitles') {
-      const content = selectedSubtitleCues
-        .map((cue, index) => `${index + 1}\n${cue.start} --> ${cue.end}\n${cue.text}`)
-        .join('\n\n');
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `OpenCreator-subtitles-V${resultVersion}.srt`;
-      link.click();
-      URL.revokeObjectURL(url);
-      setResultNotice(l('字幕文件已开始下载', 'Subtitle download started'));
+    if (creatorSession === null) {
+      setResultNotice(l('Creator Runtime 当前不可用，无法启动真实翻译任务', 'Creator Runtime is unavailable, so a real translation task cannot start.'));
       return;
     }
-    setResultNotice(type === 'video' ? l('成片已加入下载队列', 'Final video added to the download queue') : l('配音文件已加入下载队列', 'Dubbing file added to the download queue'));
+    creatorSession.clearError();
+    setSubmitting(true);
+    setResultNotice('');
+    try {
+      await creatorSession.applyAction({
+        action: 'run-stage',
+        input: { stageId: 'subtitle', workflow: true }
+      });
+      setResultNotice(l('翻译任务已开始，进度会实时同步到创作动态', 'Translation started. Progress will appear in creation activity.'));
+    } catch (cause) {
+      setResultNotice(creatorErrorMessage(cause, l));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function saveSubtitles() {
+    if (creatorSession === null || selectedSubtitleArtifact === undefined || selectedResult === undefined) {
+      setResultNotice(l('当前项目版本没有可编辑的真实字幕产物', 'This project version has no editable subtitle artifact.'));
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await creatorSession.applyAction({
+        action: 'edit-subtitle',
+        input: { artifactId: selectedSubtitleArtifact.id, cues: selectedResult.subtitleCues }
+      });
+      setResultNotice(l(
+        `字幕已保存为项目 V${nextVersion}，未变化的产物继续复用原文件`,
+        `Subtitles were saved as project V${nextVersion}; unchanged outputs still reuse their existing files.`
+      ));
+    } catch (cause) {
+      setResultNotice(creatorErrorMessage(cause, l));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function exportResult(type: 'video' | 'subtitles' | 'voice') {
+    if (creatorSession !== null) {
+      const artifact = type === 'video'
+        ? selectedVideoArtifact
+        : type === 'voice'
+          ? selectedVoiceArtifact
+          : selectedSubtitleArtifact;
+      if (artifact === undefined) {
+        setResultNotice(l('当前版本没有对应的真实产物。', 'This version has no matching generated artifact.'));
+        return;
+      }
+      try {
+        const response = await creatorSession.openArtifact(artifact.id);
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = artifactFileName(artifact) ?? `OpenCreator-${artifact.kind}-V${resultVersion}`;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+        setResultNotice(l('产物文件已开始下载', 'Artifact download started'));
+      } catch (cause) {
+        setResultNotice(creatorErrorMessage(cause, l));
+      }
+      return;
+    }
+    setResultNotice(l('Creator Runtime 当前不可用，没有可导出的真实产物', 'Creator Runtime is unavailable and there is no real artifact to export.'));
   }
 
   function adjustSettingsFromResult() {
@@ -903,68 +1302,38 @@ export default function VideoTranslationWorkspace(props: {
     setResultNotice(l(`正在查看 V${version}`, `Viewing V${version}`));
   }
 
-  function confirmRegeneration() {
+  async function confirmRegeneration() {
     if (!selectedResult || !regenerationSettings || !regenerationSource) return;
     if (!hasPendingChanges) {
       setResultProposal(undefined);
       setResultNotice(l('当前版本没有修改，不需要生成新版本', 'Nothing changed, so a new version is not needed'));
       return;
     }
-    if (subtitleDirty) {
-      setResultVersions(current => current.map(version => version.value === selectedResult.value
-        ? { ...version, savedSubtitleSnapshot: JSON.stringify(version.subtitleCues) }
-        : version));
+    if (creatorSession === null) {
+      setResultNotice(l('Creator Runtime 当前不可用，无法生成新版本', 'Creator Runtime is unavailable, so a new version cannot be generated.'));
+      return;
     }
-    generateResult(
-      regenerationSettings,
-      selectedResult.value,
-      regenerationSource,
-      canReuseSubtitleCues(selectedResult, regenerationSettings, regenerationSource)
-        ? selectedResult.subtitleCues
-        : undefined
-    );
-  }
-
-  function undoAgentAction() {
-    if (!agentUndo) return;
-    switch (agentUndo.type) {
-      case 'target_language':
-        setTargetLanguage(agentUndo.value);
-        break;
-      case 'bilingual':
-        setBilingual(agentUndo.value);
-        break;
-      case 'dubbing':
-        setDubbing(agentUndo.value);
-        break;
-      case 'output':
-        setComposeVideo(agentUndo.composeVideo);
-        setVideoFormat(agentUndo.videoFormat);
-        break;
-      case 'subtitle_only':
-        setDubbing(agentUndo.dubbing);
-        setComposeVideo(agentUndo.composeVideo);
-        setVideoFormat(agentUndo.videoFormat);
-        break;
-      case 'task_snapshot':
-        applySettingsSnapshot(agentUndo.settings);
-        applySourceSnapshot(agentUndo.source);
-        break;
-      case 'subtitle_text':
-        setResultVersions(current => current.map(version => version.value === agentUndo.version
-          ? {
-              ...version,
-              subtitleCues: version.subtitleCues.map(cue => cue.id === agentUndo.cueId
-                ? { ...cue, text: agentUndo.value }
-                : cue)
-            }
-          : version));
-        setResultVersion(agentUndo.version);
-        setWorkspacePhase('result');
-        setResultTab('subtitles');
-        break;
+    setSubmitting(true);
+    try {
+      if (subtitleDirty) {
+        if (selectedSubtitleArtifact !== undefined) {
+          await creatorSession.applyAction({
+            action: 'edit-subtitle',
+            input: { artifactId: selectedSubtitleArtifact.id, cues: selectedResult.subtitleCues }
+          });
+        }
+      }
+      await creatorSession.applyAction({
+        action: 'run-stage',
+        input: { stageId: 'subtitle', workflow: true }
+      });
+      setResultProposal(undefined);
+      setResultNotice(l('新版本任务已启动，旧版本会继续保留', 'The new version started and previous versions remain available.'));
+    } catch (cause) {
+      setResultNotice(creatorErrorMessage(cause, l));
+    } finally {
+      setSubmitting(false);
     }
-    setAgentUndo(undefined);
   }
 
   function paneWidthBounds() {
@@ -1094,20 +1463,27 @@ export default function VideoTranslationWorkspace(props: {
               activeTab={resultTab}
               version={resultVersion}
               versions={resultVersions.map(({ value, description }) => ({ value, description }))}
-              file={selectedResultSource?.videoFile ?? null}
-              sourceType={selectedResultSource?.sourceType ?? 'url'}
-              url={selectedResultSource?.videoUrl ?? ''}
               targetLanguage={selectedTargetLanguageLabel}
               outputLabel={selectedOutputLabel}
               subtitleStyleLabel={selectedSubtitleStyleLabel}
               dubbing={selectedResultSettings?.dubbing ?? false}
+              hasVideoArtifact={hasVideoArtifact}
+              hasVoiceArtifact={hasVoiceArtifact}
+              videoSrc={videoPreviewUrl}
+              videoPreviewLoading={videoPreviewLoading}
+              videoPreviewError={videoPreviewError}
+              videoFileName={artifactFileName(selectedVideoArtifact)}
+              voiceFileName={artifactFileName(selectedVoiceArtifact)}
+              videoArtifactVersion={selectedVideoArtifact?.version}
+              voiceArtifactVersion={selectedVoiceArtifact?.version}
+              subtitleArtifactVersion={selectedSubtitleArtifact?.version}
               subtitleCues={selectedSubtitleCues}
               subtitleDirty={subtitleDirty}
               nextVersion={nextVersion}
               affectedArtifacts={regenerationArtifacts}
               hasPendingChanges={hasPendingChanges}
               regenerationPending={resultProposal === 'regenerate'}
-              notice={resultNotice}
+              notice={visibleResultNotice}
               onTabChange={tab => {
                 setResultTab(tab);
                 setResultNotice('');
@@ -1176,7 +1552,6 @@ export default function VideoTranslationWorkspace(props: {
                   <div className="video-translation-select-wrap">
                     <select value={targetLanguage} onChange={event => {
                       setTargetLanguage(event.target.value);
-                      setAgentUndo(undefined);
                     }}>
                       {targetLanguages.map(language => <option key={language.value} value={language.value}>{language.label}</option>)}
                     </select>
@@ -1192,7 +1567,6 @@ export default function VideoTranslationWorkspace(props: {
                   description={l('同时保留原文和译文', 'Keep both the original and translated text')}
                   onChange={value => {
                     setBilingual(value);
-                    setAgentUndo(undefined);
                   }}
                 />
                 {bilingual ? (
@@ -1325,7 +1699,6 @@ export default function VideoTranslationWorkspace(props: {
                       description={l('匹配翻译后的语速与停顿', 'Match the translated pacing and pauses')}
                       onChange={value => {
                         setDubbing(value);
-                        setAgentUndo(undefined);
                       }}
                     />
                   </div>
@@ -1364,7 +1737,6 @@ export default function VideoTranslationWorkspace(props: {
                       description={l('将字幕直接嵌入成片', 'Embed subtitles directly in the final video')}
                       onChange={value => {
                         setComposeVideo(value);
-                        setAgentUndo(undefined);
                       }}
                     />
                   </div>
@@ -1383,7 +1755,6 @@ export default function VideoTranslationWorkspace(props: {
                             key={value}
                             onClick={() => {
                               setVideoFormat(value);
-                              setAgentUndo(undefined);
                             }}
                           >
                             <span>{ratio}</span>
@@ -1422,6 +1793,7 @@ export default function VideoTranslationWorkspace(props: {
         </div>
 
         {workspacePhase === 'configure' ? (
+        <div className="video-translation-actions-stack">
         <footer className="video-translation-wizard-actions">
           {currentStep > 0 ? (
             <button className="video-translation-secondary-action" type="button" onClick={() => setCurrentStep((currentStep - 1) as WizardStep)}>
@@ -1445,12 +1817,30 @@ export default function VideoTranslationWorkspace(props: {
               <ArrowRight size={16} strokeWidth={1.8} aria-hidden="true" />
             </button>
           ) : (
-            <button className="video-translation-primary-action" type="button" onClick={submit}>
-              {draftBaseVersion === undefined ? l('开始翻译', 'Start translation') : `${l('生成', 'Generate')} V${nextVersion}`}
+            <button className="video-translation-primary-action" type="button" disabled={submitting} onClick={() => void submit()}>
+              {submitting
+                ? l('正在启动...', 'Starting...')
+                : draftBaseVersion === undefined
+                  ? l('开始翻译', 'Start translation')
+                  : `${l('生成', 'Generate')} V${nextVersion}`}
               <Sparkles size={16} strokeWidth={1.8} aria-hidden="true" />
             </button>
           )}
         </footer>
+        {sessionError !== null || needsInput !== null || stageFailure !== undefined || resultNotice ? (
+          <div
+            className={`video-translation-run-notice${sessionError !== null || needsInput !== null || stageFailure !== undefined ? ' is-error' : ''}`}
+            role={sessionError !== null || needsInput !== null || stageFailure !== undefined ? 'alert' : 'status'}
+          >
+            <span>
+              {runIssueMessage || resultNotice}
+            </span>
+            {needsCreatorServicesConfiguration(sessionError?.code, needsInput?.code, stageConfigurationCode) ? (
+              <a href="#/settings?tab=ai-services">{l('打开 AI 服务设置', 'Open AI service settings')}</a>
+            ) : null}
+          </div>
+        ) : null}
+        </div>
         ) : null}
           </div>
 
@@ -1472,16 +1862,34 @@ export default function VideoTranslationWorkspace(props: {
           />
 
           <VideoTranslationAgentPanel
-            step={workspacePhase === 'result' ? 4 : currentStep}
             stepLabel={workspacePhase === 'result' ? l('项目结果', 'Project results') : localizeStep(steps[currentStep], l)}
             contextSummary={agentContextSummary}
-            canRegenerate={workspacePhase === 'result' && hasPendingChanges}
-            regenerationPending={resultProposal === 'regenerate'}
-            nextVersion={nextVersion}
             promptHint={props.promptHint}
-            lastChange={agentUndo?.description}
-            onApply={applyAgentAction}
-            onUndo={undoAgentAction}
+            currentIssue={runIssueMessage || undefined}
+            quickActions={[
+              {
+                id: 'open-settings',
+                label: workspacePhase === 'result'
+                  ? l('调整任务设置', 'Adjust settings')
+                  : l('打开翻译设置', 'Open translation settings'),
+                kind: 'action',
+                onAction: () => workspacePhase === 'result'
+                  ? adjustSettingsFromResult()
+                  : openWizardStep(1)
+              },
+              {
+                id: 'run-translation',
+                label: l('开始翻译', 'Start translation'),
+                kind: 'action',
+                onAction: () => void submit()
+              },
+              {
+                id: 'agent-review',
+                label: l('让 Agent 检查设置', 'Ask Agent to review settings'),
+                kind: 'agent',
+                prompt: l('检查当前视频翻译设置，指出缺失项，并给出下一步建议。', 'Review the current video translation settings, identify missing inputs, and recommend the next step.')
+              }
+            ]}
           />
         </div>
       </div>
@@ -1491,6 +1899,69 @@ export default function VideoTranslationWorkspace(props: {
 
 function clampPaneWidth(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function creatorErrorMessage(cause: unknown, l: LocalizeCopy): string {
+  const candidate = cause as { code?: unknown; message?: unknown };
+  const code = typeof candidate?.code === 'string' ? candidate.code : '';
+  if (code === 'creator_revision_conflict') {
+    return l('任务状态刚刚发生变化，请重试一次。你的设置没有丢失。', 'The task changed just now. Retry once; your settings are preserved.');
+  }
+  if (code === 'creator_llm_config_missing') {
+    return l('开始翻译前需要配置文本翻译模型 API。', 'Configure the text translation model API before starting.');
+  }
+  if (code === 'creator_transcription_config_missing') {
+    return l('当前字幕策略需要配置语音识别服务。', 'The current subtitle strategy requires a transcription service.');
+  }
+  if (code === 'creator_tts_config_missing') {
+    return l('已开启配音，请先配置配音服务。', 'Dubbing is enabled. Configure a TTS service first.');
+  }
+  if (code === 'unsupported_source') {
+    return l('当前仅支持 YouTube、Bilibili 公共链接或已上传的本地视频。', 'Only public YouTube/Bilibili links or uploaded local videos are supported.');
+  }
+  const message = typeof candidate?.message === 'string' ? candidate.message : '';
+  return message || l('启动翻译失败，请检查配置后重试。', 'Failed to start translation. Check the configuration and retry.');
+}
+
+function stageErrorMessage(code: string | null, message: string | null, l: LocalizeCopy): string {
+  const configurationCode = normalizeStageConfigurationError(code, message);
+  if (configurationCode !== null) return creatorErrorMessage({ code: configurationCode }, l);
+  if (code === 'dependency_not_packaged') {
+    return l('当前安装包缺少所选语音识别能力，请更换服务或重新安装完整运行时。', 'The selected transcription runtime is not packaged. Choose another service or reinstall the full runtime.');
+  }
+  return message || l('翻译阶段执行失败，请检查创作动态和服务配置。', 'The translation stage failed. Check activity and service configuration.');
+}
+
+function normalizeStageConfigurationError(code: string | null | undefined, message: string | null | undefined): string | null {
+  if (
+    code === 'creator_llm_config_missing'
+    || code === 'creator_transcription_config_missing'
+    || code === 'creator_tts_config_missing'
+  ) return code;
+  if (code === 'usage' && typeof message === 'string') {
+    if (/OpenAI.*(?:转录|transcri)|(?:转录|transcri).*OpenAI/i.test(message)) return 'creator_transcription_config_missing';
+    if (/(?:TTS|配音|语音合成)/i.test(message)) return 'creator_tts_config_missing';
+    if (/(?:LLM|大模型|文本翻译)/i.test(message)) return 'creator_llm_config_missing';
+  }
+  return null;
+}
+
+function needsCreatorServicesConfiguration(...codes: Array<string | null | undefined>): boolean {
+  return codes.some(code => (
+    code === 'creator_llm_config_missing'
+    || code === 'creator_transcription_config_missing'
+    || code === 'creator_tts_config_missing'
+  ));
+}
+
+function readCreatorNeedsInput(value: unknown): { code: string; message: string } | null {
+  if (value === null || Array.isArray(value) || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.code !== 'string') return null;
+  return {
+    code: record.code,
+    message: typeof record.message === 'string' ? record.message : ''
+  };
 }
 
 function localizeStep(step: typeof steps[number], l: LocalizeCopy): string {

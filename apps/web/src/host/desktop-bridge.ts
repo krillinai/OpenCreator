@@ -17,6 +17,7 @@ type DesktopApi = {
     listener: (connection: ConnectionConfig | null) => void
   ): () => void;
   restartRuntime(): Promise<HostBridgeResult>;
+  selectCodexPath(): Promise<HostBridgeResult>;
   reloadWorkspace(): Promise<HostBridgeResult>;
   workspaceReady(): void;
   readDesktopPreferences(): Promise<{
@@ -70,6 +71,7 @@ export function readDesktopHostBridge(): DesktopHostBridge | undefined {
     readConnectionConfig: () => api.readConnectionConfig(),
     subscribeConnectionConfig: listener => api.subscribeConnectionConfig(listener),
     restartRuntime: () => api.restartRuntime(),
+    selectCodexPath: () => api.selectCodexPath(),
     readDesktopPreferences: () => api.readDesktopPreferences(),
     updateDesktopPreferences: preferences =>
       api.updateDesktopPreferences(preferences),

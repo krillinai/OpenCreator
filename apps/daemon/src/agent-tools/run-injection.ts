@@ -14,6 +14,8 @@ import { KNOWLEDGE_SEARCH_TOOL_NAME } from './knowledge-tools-2026-08-05.js';
 
 export const AGENT_SCHEDULE_MCP_SERVER_NAME = 'opencreator_schedule';
 export const AGENT_KNOWLEDGE_MCP_SERVER_NAME = 'opencreator_knowledge';
+export const AGENT_CREATOR_MCP_SERVER_NAME = 'opencreator_tools';
+export const AGENT_CREATOR_MCP_ROUTE = '/internal/agent-tools/mcp/creator';
 export const AGENT_KNOWLEDGE_MCP_ROUTE = '/internal/agent-tools/mcp/knowledge';
 export const AGENT_TOOL_BASE_URL_ENV = 'OPENCREATOR_AGENT_TOOL_URL';
 export const AGENT_TOOL_CAPABILITY_TOKEN_ENV = 'OPENCREATOR_AGENT_CAPABILITY_TOKEN';
@@ -51,6 +53,10 @@ export type AgentToolProcessInjection = {
     runId: string;
     thread: RuntimeThread;
     createdBy: 'api';
+    processGeneration?: number;
+    jobId?: string;
+    projectId?: string;
+    scopes?: AgentCapabilityScope[];
   }): {
     manifestKey: string;
   };
@@ -170,25 +176,46 @@ export function createAgentScheduleProcessInjector(input: {
   capabilities: AgentCapabilityTokenStore;
   getBaseUrl(): string | undefined;
   env?: NodeJS.ProcessEnv;
+  includeSchedule?: boolean;
+  includeCreator?: boolean;
 }): AgentScheduleProcessInjector {
   return {
     create() {
       const baseUrl = input.getBaseUrl();
       if (baseUrl === undefined) return undefined;
+      const includeSchedule = input.includeSchedule ?? true;
+      const includeCreator = input.includeCreator ?? true;
+      const maxScopes: AgentCapabilityScope[] = [
+        ...(includeSchedule ? TOOL_SCOPES.map(tool => tool.scope) : []),
+        ...(includeCreator
+          ? ['creator:context', 'creator:artifact:read', 'creator:action'] as AgentCapabilityScope[]
+          : [])
+      ];
+      if (maxScopes.length === 0) return undefined;
       const lease = input.capabilities.issueProcess({
         createdBy: 'api',
-        maxScopes: TOOL_SCOPES.map(tool => tool.scope)
+        maxScopes
       });
       const noProxy = loopbackNoProxy(input.env ?? process.env);
       return {
-        mcpServers: [{
-          name: AGENT_SCHEDULE_MCP_SERVER_NAME,
-          url: `${baseUrl}${AGENT_SCHEDULE_MCP_ROUTE}`,
-          bearerTokenEnvVar: AGENT_TOOL_CAPABILITY_TOKEN_ENV,
-          required: true,
-          startupTimeoutSec: 10,
-          toolTimeoutSec: 30
-        }],
+        mcpServers: [
+          ...(includeSchedule ? [{
+            name: AGENT_SCHEDULE_MCP_SERVER_NAME,
+            url: `${baseUrl}${AGENT_SCHEDULE_MCP_ROUTE}`,
+            bearerTokenEnvVar: AGENT_TOOL_CAPABILITY_TOKEN_ENV,
+            required: true,
+            startupTimeoutSec: 10,
+            toolTimeoutSec: 30
+          }] : []),
+          ...(includeCreator ? [{
+            name: AGENT_CREATOR_MCP_SERVER_NAME,
+            url: `${baseUrl}${AGENT_CREATOR_MCP_ROUTE}`,
+            bearerTokenEnvVar: AGENT_TOOL_CAPABILITY_TOKEN_ENV,
+            required: true,
+            startupTimeoutSec: 10,
+            toolTimeoutSec: 30
+          }] : [])
+        ],
         env: {
           [AGENT_TOOL_CAPABILITY_TOKEN_ENV]: lease.token,
           NO_PROXY: noProxy,
@@ -196,15 +223,19 @@ export function createAgentScheduleProcessInjector(input: {
         },
         activate(run) {
           const allowed = allowedTools(run.createdBy, run.thread);
+          const scopes = run.scopes ?? allowed.map(tool => tool.scope);
           lease.activate({
             runId: run.runId,
             threadId: run.thread.id,
             createdBy: run.createdBy,
-            scopes: allowed.map(tool => tool.scope)
+            scopes,
+            processGeneration: run.processGeneration,
+            jobId: run.jobId,
+            projectId: run.projectId
           });
           return {
             manifestKey: JSON.stringify(
-              allowed.map(tool => tool.name).sort()
+              scopes.slice().sort()
             )
           };
         },

@@ -3,6 +3,7 @@ import type {
   CodexSkillOperationResponse,
   CodexSkillResponse
 } from '@opencreator/protocol';
+import { skillMarketCandidateCatalog } from '@opencreator/skill-market';
 import type Database from 'better-sqlite3';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -311,6 +312,7 @@ function createManagerFixture(options: {
     skillManager,
     records,
     sourceInstaller,
+    resolveMarketEntry,
     ...(options.cleanupError === undefined
       ? {}
       : {
@@ -338,7 +340,13 @@ function createRealManagerFixture(options: { failRecordWrite: boolean }) {
     recordWriteError: options.failRecordWrite ? new Error('market record write failed') : undefined
   });
   const sourceInstaller = makeFakeSourceInstaller('real-market-source-root', 'new');
-  const manager = createSkillMarketManager({ dataDir, skillManager, records, sourceInstaller });
+  const manager = createSkillMarketManager({
+    dataDir,
+    skillManager,
+    records,
+    sourceInstaller,
+    resolveMarketEntry
+  });
 
   return { manager, skillManager, codexHome };
 }
@@ -364,6 +372,7 @@ function createConcurrentRealManagerFixture() {
       recordWriteError: new Error('market record write failed')
     }),
     sourceInstaller: makeFakeSourceInstaller('first-update-root', 'first-update'),
+    resolveMarketEntry,
     cleanupWorkDir(workDir) {
       cleanupCalls += 1;
       if (cleanupCalls === 1) {
@@ -377,7 +386,8 @@ function createConcurrentRealManagerFixture() {
     dataDir,
     skillManager,
     records: makeFakeRecords({}),
-    sourceInstaller: makeFakeSourceInstaller('second-update-root', 'second-update')
+    sourceInstaller: makeFakeSourceInstaller('second-update-root', 'second-update'),
+    resolveMarketEntry
   });
 
   return {
@@ -529,4 +539,8 @@ function createDeferred<T>() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function resolveMarketEntry(id: string) {
+  return skillMarketCandidateCatalog.find(entry => entry.id === id);
 }

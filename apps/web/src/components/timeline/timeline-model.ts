@@ -20,7 +20,7 @@ export type TimelineItem =
       submissionMode?: RunSubmissionMode;
       queuePosition?: number;
       wasQueued?: boolean;
-      source: 'runtime' | 'mock';
+      source: 'runtime';
     }
   | {
       kind: 'schedule_trigger';
@@ -32,9 +32,9 @@ export type TimelineItem =
     }
   | { kind: 'approval'; id: string; runId: string; approval: RuntimeApproval; source: 'runtime' }
   | { kind: 'reasoning_summary'; id: string; runId?: string; timestamp?: string; text: string; content?: string; source: 'runtime' }
-  | { kind: 'assistant_message'; id: string; runId?: string; timestamp?: string; text: string; content?: string; source: 'runtime' | 'mock' }
+  | { kind: 'assistant_message'; id: string; runId?: string; timestamp?: string; text: string; content?: string; source: 'runtime' }
   | { kind: 'tool_step'; id: string; runId?: string; timestamp?: string; name: string; content: string; source: 'runtime' }
-  | { kind: 'change_card'; id: string; runId?: string; title: string; path: string; delta: string; source: 'runtime' | 'mock' }
+  | { kind: 'change_card'; id: string; runId?: string; title: string; path: string; delta: string; source: 'runtime' }
   | {
       kind: 'diagnostic';
       id: string;

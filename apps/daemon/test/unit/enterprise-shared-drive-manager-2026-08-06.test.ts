@@ -295,7 +295,11 @@ describe('enterprise shared drive manager', () => {
     const outsideDir = join(tempDir, 'outside');
     mkdirSync(projectDir);
     mkdirSync(outsideDir);
-    symlinkSync(outsideDir, join(projectDir, 'linked'));
+    symlinkSync(
+      outsideDir,
+      join(projectDir, 'linked'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
     const downloadSharedFileContent = vi.fn();
     const getSharedFileDetail = vi.fn()
       .mockResolvedValueOnce(sharedFile({ logicalPath: '.git/config' }))

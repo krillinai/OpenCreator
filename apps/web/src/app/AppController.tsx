@@ -7,6 +7,7 @@ import type {
   CodexSkillListResponse,
   CodexSkillMarketInstallRecordResponse,
   ConversationSearchResult,
+  CreatorJob,
   CreateMemoryRequest,
   CreateThreadRequest,
   EnterpriseKnowledgeBaseResponse,
@@ -49,7 +50,10 @@ import {
   getCreatorSkillPromptHint,
   type CreatorSkill
 } from '../features/conversation/CreatorDashboard.js';
-import type { CreatorSkillLaunch } from '../features/dashboard/creator-workspace.js';
+import {
+  creatorWorkspaceForTemplate,
+  type CreatorSkillLaunch
+} from '../features/dashboard/creator-workspace.js';
 import { ConversationHeader } from '../features/conversation/ConversationHeader.js';
 import { MemorySuggestion } from '../features/conversation/MemorySuggestion.js';
 import { ApprovalPanel } from '../features/approvals/ApprovalPanel.js';
@@ -134,10 +138,11 @@ import { createAttachmentService } from '../services/attachment-service.js';
 import { createApprovalService } from '../services/approval-service.js';
 import { createConnectionService, type ConnectionState } from '../services/connection-service.js';
 import { createCreatorServicesService } from '../services/creator-services-service.js';
+import { createCreatorService } from '../services/creator-service.js';
 import { createCleanupService } from '../services/cleanup-service.js';
 import { createDiagnosticsService } from '../services/diagnostics-service.js';
 import { createEnterpriseService } from '../services/enterprise-service-2026-07-30.js';
-import { createMockFileService } from '../services/file-service.js';
+import { createUnavailableFileService } from '../services/file-service.js';
 import type { FileTreeNode, WorkspaceFile } from '../services/file-service.js';
 import { createProjectService } from '../services/project-service.js';
 import { createMcpService } from '../services/mcp-service.js';
@@ -304,7 +309,10 @@ export function AppController(props: AppControllerProps) {
   );
   const [projects, setProjects] = useState<OpenCreatorProject[]>([]);
   const [archivedProjects, setArchivedProjects] = useState<OpenCreatorProject[]>([]);
-  const defaultFileService = useMemo(() => createMockFileService(), []);
+  const [creatorJobs, setCreatorJobs] = useState<CreatorJob[]>([]);
+  const [creatorJobsLoading, setCreatorJobsLoading] = useState(false);
+  const [creatorJobsError, setCreatorJobsError] = useState<string>();
+  const defaultFileService = useMemo(() => createUnavailableFileService(), []);
   const fileService = props.fileService ?? defaultFileService;
   const hostBridge = props.hostBridge ?? browserBridge;
   const integratedTitleBar = hostBridge.windowChrome;
@@ -614,6 +622,10 @@ export function AppController(props: AppControllerProps) {
     () => runtimeClient === null ? null : createCreatorServicesService(runtimeClient),
     [runtimeClient]
   );
+  const creatorService = useMemo(
+    () => runtimeClient === null ? null : createCreatorService(runtimeClient),
+    [runtimeClient]
+  );
   const memoryService = useMemo(
     () => runtimeClient === null ? null : createMemoryService(runtimeClient),
     [runtimeClient]
@@ -787,7 +799,7 @@ export function AppController(props: AppControllerProps) {
       });
       closeMobileSidebar();
       dispatch({ type: 'set_active_view', activeView: 'dashboard' });
-      navigateToRoute({ view: 'dashboard' });
+      navigateToRoute({ view: 'workbench', tool: skill.interaction.workspace });
       return;
     }
 
@@ -1295,6 +1307,44 @@ export function AppController(props: AppControllerProps) {
       canceled = true;
     };
   }, [connectionState.status, hostBridge, projectService, threadService]);
+
+  useEffect(() => {
+    let canceled = false;
+    if (connectionState.status !== 'connected' || creatorService === null) {
+      if (connectionState.status !== 'connected') {
+        setCreatorJobs([]);
+        setCreatorJobsError(undefined);
+      }
+      setCreatorJobsLoading(false);
+      return () => {
+        canceled = true;
+      };
+    }
+    if (state.activeView !== 'projects') {
+      return () => {
+        canceled = true;
+      };
+    }
+
+    setCreatorJobsLoading(true);
+    setCreatorJobsError(undefined);
+    void creatorService.listJobs()
+      .then(response => {
+        if (!canceled) setCreatorJobs(response.jobs);
+      })
+      .catch(error => {
+        if (!canceled) {
+          setCreatorJobsError(getRuntimeErrorMessage(error, '无法加载最近项目'));
+        }
+      })
+      .finally(() => {
+        if (!canceled) setCreatorJobsLoading(false);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [connectionState.status, creatorService, state.activeView]);
 
   useEffect(() => {
     let canceled = false;
@@ -2582,6 +2632,20 @@ export function AppController(props: AppControllerProps) {
   function startCreatorTool(text: string) {
     startNewConversation();
     queueComposerPrompt(text, undefined);
+  }
+
+  function rememberCreatorJob(job: CreatorJob) {
+    setCreatorJobsError(undefined);
+    setCreatorJobs(current => [job, ...current.filter(candidate => candidate.id !== job.id)]);
+  }
+
+  function openCreatorJob(job: CreatorJob) {
+    const workspace = creatorWorkspaceForTemplate(job.templateId);
+    if (workspace === undefined) return;
+    setCreatorSkillLaunch(undefined);
+    selectProject(job.projectId, { updateRoute: false });
+    dispatch({ type: 'set_active_view', activeView: 'dashboard' });
+    navigateToRoute({ view: 'workbench', tool: workspace, jobId: job.id });
   }
 
   function selectProject(projectId: string, options: { updateRoute?: boolean } = {}) {
@@ -5006,10 +5070,12 @@ export function AppController(props: AppControllerProps) {
     <CapabilitiesPage {...props.capabilitiesView} />
   ) : state.activeView === 'projects' ? (
     <ProjectsPage
-      projects={projects}
-      currentProjectId={state.currentProjectId}
-      onOpenProject={selectProject}
-      onManageProject={projectId => void openProjectManagement(projectId)}
+      jobs={creatorJobs}
+      workspaces={projects}
+      loading={creatorJobsLoading}
+      error={creatorJobsError}
+      service={creatorService}
+      onOpenJob={openCreatorJob}
     />
   ) : state.activeView === 'dashboard' ? (
     <DashboardPage
@@ -5017,10 +5083,16 @@ export function AppController(props: AppControllerProps) {
       onBackToHome={() => startNewConversation()}
       skillLaunch={creatorSkillLaunch}
       onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
-      smartDubbingService={smartDubbingService}
-      imageGenerationService={imageGenerationService}
-      videoGenerationService={videoGenerationService}
-      videoMetadataService={videoMetadataService}
+      projectId={state.currentProjectId}
+      creatorService={creatorService}
+      workspace={props.route.view === 'workbench' ? props.route.tool : undefined}
+      jobId={props.route.view === 'workbench' ? props.route.jobId : undefined}
+      onJobCreated={rememberCreatorJob}
+      onWorkspaceNavigate={(workspace, jobId, options) => navigateToRoute({
+        view: 'workbench',
+        ...(workspace === null ? {} : { tool: workspace }),
+        ...(workspace === null || jobId === undefined ? {} : { jobId })
+      }, options)}
     />
   ) : state.activeView === 'search' ? (
     <SearchPage
@@ -5140,7 +5212,7 @@ export function AppController(props: AppControllerProps) {
       customAccentColor={customAccentColor}
       onCustomAccentColorChange={handleCustomAccentColorChange}
       desktopCloseBehavior={desktopCloseBehavior}
-      onDesktopCloseBehaviorChange={behavior => {
+      onDesktopCloseBehaviorChange={(behavior: 'hide' | 'quit') => {
         const update = hostBridge.updateDesktopPreferences;
         if (update === undefined) return;
         const previous = desktopCloseBehavior;
@@ -5154,10 +5226,16 @@ export function AppController(props: AppControllerProps) {
       onProfileDataChange={setCodexProfiles}
       cleanupService={cleanupService}
       creatorServicesService={creatorServicesService}
+      codexRuntimeService={connectionService}
+      onOpenExternal={(url: string) => hostBridge.openExternal(url)}
+      onSelectExternalCodex={hostBridge.selectCodexPath === undefined
+        ? undefined
+        : () => hostBridge.selectCodexPath!()}
       memoryService={memoryService}
       memoryProjects={memoryProjectOptions}
       memoryThreads={memoryThreadOptions}
       codexStatus={connectionState.status === 'connected' ? connectionState.codexStatus : undefined}
+      initialTab={props.route.view === 'settings' ? props.route.tab : undefined}
       onBack={() => {
         dispatch({ type: 'back_to_app' });
         navigateToRoute(routeForConversation(state.selectedThreadId));
@@ -5456,6 +5534,12 @@ function createInitialState(
         ...persistedState,
         activeView: 'conversation',
         selectedThreadId: route.threadId
+      };
+    case 'workbench':
+      return {
+        ...persistedState,
+        activeView: 'dashboard',
+        rightPanelMode: 'closed'
       };
     case 'search':
     case 'projects':

@@ -26,6 +26,8 @@ import {
   assertKeyringArtifacts,
   readEnterpriseGatewayPackageConfig
 } from './enterprise-package-contract-2026-07-30.mjs';
+import { verifyCreatorRuntime } from './creator-runtime-contract.mjs';
+import { verifyCodexRuntime } from './codex-runtime-contract.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
@@ -48,6 +50,8 @@ const resourcesDir = platformResourcesDir(packageRoot);
 const appAsar = join(resourcesDir, 'app.asar');
 const daemonDir = join(resourcesDir, 'daemon');
 const webDir = join(resourcesDir, 'web');
+const creatorRuntimeDir = join(resourcesDir, 'creator-runtime', 'krillinai');
+const codexRuntimeDir = join(resourcesDir, 'codex-runtime');
 const enterpriseGatewayConfigFilename = 'config.toml';
 const enterpriseGatewayConfigPath = join(
   resourcesDir,
@@ -82,10 +86,12 @@ assertBrandingContents();
 assertDaemonContents();
 assertEnterpriseGatewayConfig();
 assertWebContents();
+assertCreatorRuntime();
+assertCodexRuntime();
 assertNoLocalData();
 assertSize('app.asar', appAsar, 80 * 1024 * 1024);
 assertSize('Daemon resources', daemonDir, 250 * 1024 * 1024);
-assertSize('Desktop package', packageRoot, 1024 * 1024 * 1024);
+assertSize('Desktop package', packageRoot, 1536 * 1024 * 1024);
 await assertFuseConfiguration();
 verifyMacPackageMetadata();
 
@@ -135,7 +141,7 @@ function packagedExecutable(root) {
 }
 
 function assertAsarContents() {
-  const entries = listPackage(appAsar);
+  const entries = normalizedAsarEntries();
   const required = [
     '/dist/main/main.js',
     '/dist/preload/index.cjs',
@@ -166,14 +172,16 @@ function assertBrandingContents() {
   const packagedTray = join(desktopResourcesDir, 'tray.png');
   const sourceIcon = join(sourceResourcesDir, 'icon.png');
   const sourceTray = join(sourceResourcesDir, 'tray.png');
+
   assertSameFile('Desktop icon', packagedIcon, sourceIcon);
   assertSameFile('Desktop tray icon', packagedTray, sourceTray);
 
-  const bootstrapLogoEntry = listPackage(appAsar).find(entry =>
-    /^\/dist\/bootstrap\/assets\/logo-[^/]+\.png$/.test(entry)
-  );
-  if (bootstrapLogoEntry !== undefined) {
-    throw new Error(`app.asar contains a removed Desktop bootstrap logo: ${bootstrapLogoEntry}`);
+  const bootstrapHtml = extractFile(
+    appAsar,
+    join('dist', 'bootstrap', 'index.html')
+  ).toString('utf8');
+  if (!bootstrapHtml.includes('<title>OpenCreator</title>')) {
+    throw new Error('Packaged Desktop bootstrap branding is missing OpenCreator');
   }
 
   if (process.platform === 'darwin') {
@@ -203,6 +211,17 @@ function assertDaemonContents() {
       throw new Error(`Daemon resources contain a development artifact: ${path}`);
     }
   });
+  const protocolDir = join(daemonDir, 'node_modules', '@opencreator', 'protocol');
+  const protocolPackage = JSON.parse(
+    readFileSync(join(protocolDir, 'package.json'), 'utf8')
+  );
+  if (protocolPackage.exports?.['.']?.import !== './dist/index.js') {
+    throw new Error('Packaged Daemon Protocol does not export built JavaScript');
+  }
+  assertExists(join(protocolDir, 'dist', 'index.js'));
+  if (existsSync(join(protocolDir, 'src'))) {
+    throw new Error('Packaged Daemon Protocol contains TypeScript runtime sources');
+  }
 }
 
 function assertEnterpriseGatewayConfig() {
@@ -261,6 +280,39 @@ function assertWebContents() {
         'Desktop build manifest Web hash does not match apps/web/dist'
       );
     }
+  }
+}
+
+function normalizedAsarEntries() {
+  return listPackage(appAsar).map(entry => {
+    const normalized = entry.replaceAll('\\', '/');
+    return normalized.startsWith('/') ? normalized : `/${normalized}`;
+  });
+}
+
+function assertCreatorRuntime() {
+  const runtime = verifyCreatorRuntime(creatorRuntimeDir, targetPlatform, targetArch);
+  if (typeof manifest.packageRoot !== 'string') return;
+  if (
+    manifest.krillinServiceVersion !== runtime.serviceVersion
+    || manifest.krillinUpstreamCommit !== runtime.upstreamCommit
+    || manifest.krillinIntegrationPatchSha256 !== runtime.integrationPatchSha256
+    || manifest.krillinProtocolSha256 !== runtime.protocolSha256
+  ) {
+    throw new Error('Packaged Creator Runtime does not match the Desktop build manifest');
+  }
+}
+
+function assertCodexRuntime() {
+  const runtime = verifyCodexRuntime(codexRuntimeDir, targetPlatform, targetArch);
+  if (typeof manifest.packageRoot !== 'string') return;
+  if (
+    manifest.codexRuntimeVersion !== runtime.version
+    || manifest.codexRuntimeCommit !== runtime.commit
+    || manifest.codexRuntimeBinarySha256 !== runtime.binary.sha256
+    || manifest.codexAppServerProtocolSha256 !== runtime.appServerProtocol.schemaSha256
+  ) {
+    throw new Error('Packaged Codex Runtime does not match the Desktop build manifest');
   }
 }
 

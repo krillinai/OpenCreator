@@ -1,10 +1,12 @@
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
-  statSync
+  statSync,
+  writeFileSync
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +43,10 @@ await runStage('校验冻结锁文件', 'pnpm', [
   cwd: rootDir,
   timeoutMs: 60_000
 });
+await runStage('构建 Protocol', 'pnpm', ['--filter', '@opencreator/protocol', 'build'], {
+  cwd: rootDir,
+  timeoutMs: 5 * 60_000
+});
 await runStage('构建 Daemon', 'pnpm', ['--filter', '@opencreator/daemon', 'build'], {
   cwd: rootDir,
   timeoutMs: 5 * 60_000
@@ -64,6 +70,7 @@ await runStage('部署 Daemon 生产依赖', 'pnpm', [
   timeoutMs: 10 * 60_000
 });
 pruneDeploymentRoot();
+prepareWorkspaceRuntimePackages();
 await runStage('重建 Electron 原生 SQLite', 'npm', [
   'rebuild',
   'better-sqlite3',
@@ -86,10 +93,16 @@ await runStage('重建 Electron 原生 SQLite', 'npm', [
     npm_config_update_notifier: 'false'
   }
 });
+cpSync(
+  resolve(rootDir, 'apps', 'daemon', 'runtime'),
+  resolve(targetDir, 'runtime'),
+  { recursive: true }
+);
 pruneDevelopmentArtifacts(targetDir);
 
 assertExists(resolve(targetDir, 'dist/main.js'));
 assertExists(resolve(targetDir, 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'));
+assertProtocolRuntimePackage();
 const keyring = assertKeyringArtifacts(targetDir, {
   platform: targetPlatform,
   arch: targetArch,
@@ -108,7 +121,7 @@ function assertExists(path) {
 }
 
 function pruneDeploymentRoot() {
-  const allowed = new Set(['dist', 'node_modules', 'package.json']);
+  const allowed = new Set(['dist', 'node_modules', 'package.json', 'runtime']);
   for (const entry of readdirSync(targetDir)) {
     if (allowed.has(entry)) continue;
     rmSync(resolve(targetDir, entry), { recursive: true, force: true });
@@ -117,6 +130,37 @@ function pruneDeploymentRoot() {
     resolve(targetDir, 'node_modules/.pnpm/node_modules/@opencreator/daemon'),
     { force: true }
   );
+}
+
+function prepareWorkspaceRuntimePackages() {
+  const protocolDir = resolve(targetDir, 'node_modules/@opencreator/protocol');
+  const packagePath = resolve(protocolDir, 'package.json');
+  const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
+  delete packageJson.types;
+  packageJson.exports = {
+    '.': {
+      import: './dist/index.js',
+      default: './dist/index.js'
+    }
+  };
+  rmSync(packagePath, { force: true });
+  writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+  rmSync(resolve(protocolDir, 'src'), { recursive: true, force: true });
+  rmSync(resolve(protocolDir, 'tsconfig.json'), { force: true });
+}
+
+function assertProtocolRuntimePackage() {
+  const protocolDir = resolve(targetDir, 'node_modules/@opencreator/protocol');
+  const packageJson = JSON.parse(
+    readFileSync(resolve(protocolDir, 'package.json'), 'utf8')
+  );
+  if (packageJson.exports?.['.']?.import !== './dist/index.js') {
+    throw new Error('Desktop Protocol runtime package does not export built JavaScript');
+  }
+  assertExists(resolve(protocolDir, 'dist/index.js'));
+  if (existsSync(resolve(protocolDir, 'src'))) {
+    throw new Error('Desktop Protocol runtime package still contains TypeScript sources');
+  }
 }
 
 function pruneDevelopmentArtifacts(root) {

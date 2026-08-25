@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { isAbsolute } from 'node:path';
 
 export async function runStage(label, command, args, options = {}) {
   const timeoutMs = options.timeoutMs ?? 5 * 60_000;
@@ -9,7 +10,7 @@ export async function runStage(label, command, args, options = {}) {
     cwd: options.cwd,
     env: options.env ?? process.env,
     stdio: options.stdio ?? 'inherit',
-    shell: process.platform === 'win32',
+    shell: process.platform === 'win32' && !isAbsolute(command),
     detached: process.platform !== 'win32'
   });
 

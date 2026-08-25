@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "runtime": "codex",
+  "version": "0.149.0",
+  "tag": "rust-v0.149.0",
+  "commit": "758ef40f50c1a458425c7cfbf1eb12cbc07af0b0",
+  "platform": "win32",
+  "arch": "x64",
+  "officialAsset": "https://github.com/openai/codex/releases/download/rust-v0.149.0/codex-x86_64-pc-windows-msvc.exe.zip",
+  "sourcePackage": "npm:@openai/codex@0.149.0-win32-x64",
+  "binary": {
+    "relativePath": "bin/codex.exe",
+    "sha256": "14b7e6b2356e82d1d9275579eaa588757b4e0a501b65dcc19fccdf77bd83dc00"
+  },
+  "appServerProtocol": {
+    "sourceVersion": "v0_149_0",
+    "relativePath": "protocol/v0_149_0",
+    "schemaSha256": "6670c9dc6595e01472c7b7ec35e604bc132b9fb7fab4894ea78ebee50f36e1ac"
+  },
+  "resources": [
+    {
+      "path": "codex-package.json",
+      "sha256": "6d7001f446eacea5e4c421d0d0d042d9b67512b229f44bee2bd4d39d769b1541",
+      "kind": "metadata"
+    },
+    {
+      "path": "bin/codex-code-mode-host.exe",
+      "sha256": "3c6726ab12b8de7c0bccecf4551af686d9dbe1b9fcdaee90bd66f60837943ac2",
+      "kind": "executable"
+    },
+    {
+      "path": "bin/codex.exe",
+      "sha256": "14b7e6b2356e82d1d9275579eaa588757b4e0a501b65dcc19fccdf77bd83dc00",
+      "kind": "executable"
+    },
+    {
+      "path": "codex-path/rg.exe",
+      "sha256": "14231169855ec5205cf5a1b6f1db358ff4aed4247c86b69ce8aae647c77f6680",
+      "kind": "executable"
+    },
+    {
+      "path": "codex-resources/codex-command-runner.exe",
+      "sha256": "8fdae9f1e7ab322b976ce9cf1acd6c19504193a0dcdb9f0429e2f7ec20c128d4",
+      "kind": "executable"
+    },
+    {
+      "path": "codex-resources/codex-windows-sandbox-setup.exe",
+      "sha256": "17c9d3e69ca54a9ddcc6b7cbba6922b1310455f66b9d9f88706f80d1553ab2e2",
+      "kind": "executable"
+    }
+  ],
+  "builtAt": "2026-08-21T00:00:00.000Z"
+}

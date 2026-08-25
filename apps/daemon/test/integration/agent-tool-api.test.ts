@@ -22,7 +22,10 @@ import {
   type AgentScheduleActor,
   type AgentScheduleOperations
 } from '../../src/agent-tools/internal-routes.js';
-import { buildServer } from '../../src/api/server.js';
+import {
+  buildServer as buildRuntimeServer,
+  type BuildServerInput
+} from '../../src/api/server.js';
 import { createProjectManager } from '../../src/projects/manager.js';
 import { createRunManager } from '../../src/runs/manager.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
@@ -35,6 +38,12 @@ let runManager: ReturnType<typeof createRunManager> | undefined;
 let db: Database.Database | undefined;
 let tempDir = '';
 const RUN_STATUS_TIMEOUT_MS = 5_000;
+
+const buildServer = (input: BuildServerInput) => buildRuntimeServer({
+  persistentAppServerEnabled: false,
+  runtimeTransport: 'exec',
+  ...input
+});
 
 afterEach(async () => {
   await server?.close();

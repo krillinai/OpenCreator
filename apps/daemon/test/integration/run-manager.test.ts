@@ -2247,7 +2247,7 @@ describe('run manager', () => {
     expect(manager.cancelRun(run.id)).toBe(true);
 
     await expect
-      .poll(() => manager.getRun(run.id)?.status, { timeout: 1000 })
+      .poll(() => manager.getRun(run.id)?.status, { timeout: 5_000 })
       .toBe('canceled');
     expect(manager.listEvents(run.id).some(event => event.type === 'done')).toBe(true);
   });

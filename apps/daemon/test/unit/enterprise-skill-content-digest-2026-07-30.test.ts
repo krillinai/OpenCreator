@@ -61,8 +61,14 @@ describe('enterprise skill content digest', () => {
 
   it('rejects symlinks and non-directory roots', async () => {
     const directory = createDirectory();
-    writeFileSync(join(directory, 'target.txt'), 'target');
-    symlinkSync('target.txt', join(directory, 'linked.txt'));
+    const targetDirectory = join(directory, 'target');
+    mkdirSync(targetDirectory);
+    writeFileSync(join(targetDirectory, 'target.txt'), 'target');
+    symlinkSync(
+      targetDirectory,
+      join(directory, 'linked'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
 
     await expect(
       computeEnterpriseSkillContentDigest(directory)

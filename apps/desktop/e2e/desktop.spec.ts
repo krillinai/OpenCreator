@@ -1,10 +1,12 @@
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -40,6 +42,7 @@ import {
 const e2eDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(e2eDir, '..');
 const fakeCodexScript = join(e2eDir, 'fixtures', 'fake-codex.mjs');
+const fakeCodexLauncherSource = join(e2eDir, 'fixtures', 'fake-codex-launcher.go');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -54,10 +57,11 @@ test.afterAll(async () => {
   await enterpriseServer.close();
 });
 
-test('Finder 最小 PATH 下可发现 nvm 安装的 Codex', async () => {
+test('bundled 模式在最小 PATH 下忽略 nvm 安装的 Codex', async () => {
   const fixture = await launchPackagedDesktop('success', {
     codexLocation: 'nvm',
-    minimalPath: true
+    minimalPath: true,
+    runtimeMode: 'bundled'
   });
   try {
     await waitForRuntimeReady(fixture.page);
@@ -66,27 +70,20 @@ test('Finder 最小 PATH 下可发现 nvm 安装的 Codex', async () => {
     );
     expect(state).toMatchObject({
       phase: 'ready',
-      codexBin: join(
-        fixture.root,
-        '.nvm',
-        'versions',
-        'node',
-        'v22.14.0',
-        'bin',
-        process.platform === 'win32' ? 'codex.cmd' : 'codex'
-      )
+      codexBin: packagedCodexExecutablePath()
     });
-    await expect.poll(() => readCounter(fixture.stateDir, 'probe-count.txt')).toBe(1);
+    expect(readCounter(fixture.stateDir, 'probe-count.txt')).toBe(0);
   } finally {
     await closeFixture(fixture);
   }
 });
 
-test('Finder 最小 PATH 下可发现 ChatGPT 应用内置的 Codex', async () => {
+test('bundled 模式在最小 PATH 下忽略 ChatGPT 应用内置的 Codex', async () => {
   const fixture = await launchPackagedDesktop('success', {
     codexLocation: 'chatgpt-app',
     minimalPath: true,
-    misleadingCodexWrapper: true
+    misleadingCodexWrapper: true,
+    runtimeMode: 'bundled'
   });
   try {
     await waitForRuntimeReady(fixture.page);
@@ -95,16 +92,9 @@ test('Finder 最小 PATH 下可发现 ChatGPT 应用内置的 Codex', async () =
     );
     expect(state).toMatchObject({
       phase: 'ready',
-      codexBin: join(
-        fixture.root,
-        'Applications',
-        'ChatGPT.app',
-        'Contents',
-        'Resources',
-        process.platform === 'win32' ? 'codex.cmd' : 'codex'
-      )
+      codexBin: packagedCodexExecutablePath()
     });
-    await expect.poll(() => readCounter(fixture.stateDir, 'probe-count.txt')).toBe(1);
+    expect(readCounter(fixture.stateDir, 'probe-count.txt')).toBe(0);
   } finally {
     await closeFixture(fixture);
   }
@@ -388,10 +378,17 @@ test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可
     await expect(fixture.page.locator('.conversation-page')).toHaveClass(/is-empty/);
 
     const title = fixture.page.getByRole('heading', { name: 'hello' });
-    const fileButton = fixture.page
-      .locator('.opencreator-main-titlebar')
-      .getByRole('button', { name: '文件', exact: true });
+    const conversationHeader = fixture.page.locator(
+      process.platform === 'darwin'
+        ? '.clawee-main-titlebar'
+        : '.conversation-page > .conversation-header'
+    );
+    const fileButton = conversationHeader.getByRole('button', {
+      name: '文件',
+      exact: true
+    });
     await expect(title).toBeVisible();
+    await expect(conversationHeader).toBeVisible();
     await expect(fileButton).toBeVisible();
 
     if (process.platform === 'darwin') {
@@ -581,8 +578,7 @@ test('打包 App 可稳定预览隐藏正文和本地图片，并阻止用户脚
   }
 });
 
-test('packaged app persists OpenCreator projects when Codex app-server is unavailable', async ({
-}, testInfo) => {
+test('打包 App 使用 Codex app-server 并持久化项目与会话', async ({}, testInfo) => {
   let fixture = await launchPackagedDesktop('success');
   const projectDir = join(fixture.root, 'persistent-project');
   mkdirSync(projectDir);
@@ -590,35 +586,43 @@ test('packaged app persists OpenCreator projects when Codex app-server is unavai
   try {
     await waitForWorkspace(fixture.page);
     await expect(fixture.page.getByText('本机目录')).toHaveCount(0);
-    await expect.poll(async () => {
-      const response = await runtimeRequest<{
-        projects: Array<{ cwd: string; name: string; status: string }>;
-      }>(fixture.page, 'GET', '/projects?status=all');
-      return response.status === 200 ? response.body.projects : [];
-    }).toEqual([
-      expect.objectContaining({
-        cwd: join(fixture.root, 'Documents', 'OpenCreator', 'Default Project'),
-        name: '默认项目',
-        status: 'active'
-      })
-    ]);
     await expect(fixture.page.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
     expect(existsSync(
       join(fixture.root, 'Documents', 'OpenCreator', 'Default Project')
     )).toBe(true);
+
+    const initialProjects = await runtimeRequest<{
+      projects: Array<{ id: string; name: string }>;
+    }>(fixture.page, 'GET', '/projects?status=all');
+    expect(initialProjects.status).toBe(200);
+    expect(
+      initialProjects.body.projects.filter(project => project.name === '默认项目')
+    ).toHaveLength(1);
+    const defaultProject = initialProjects.body.projects.find(project => project.name === '默认项目');
+    if (defaultProject === undefined) throw new Error('打包 App 未创建默认工作目录');
+    const initialCreatorJob = await runtimeRequest<{
+      job: { id: string };
+    }>(fixture.page, 'POST', '/creator/jobs', {
+      projectId: defaultProject.id,
+      templateId: 'cover',
+      state: { prompt: '默认项目封面' }
+    });
+    expect(initialCreatorJob.status).toBe(201);
+
     await fixture.page.getByRole('button', { name: '我的项目' }).click();
+    await expect(fixture.page.getByRole('heading', { name: '我的项目' })).toBeVisible();
     await expect(fixture.page.getByRole('button', {
-      name: '打开项目 默认项目'
+      name: '打开项目 默认项目封面'
     })).toBeVisible();
     await fixture.page.screenshot({
-      path: testInfo.outputPath('project-library-2026-08-19.png')
+      path: testInfo.outputPath('project-library-2026-08-21.png')
     });
 
     const initialCodexStatus = await runtimeRequest<{
       capabilities: { appServer?: boolean };
     }>(fixture.page, 'GET', '/codex/status');
     expect(initialCodexStatus.status).toBe(200);
-    expect(initialCodexStatus.body.capabilities.appServer).toBe(false);
+    expect(initialCodexStatus.body.capabilities.appServer).toBe(true);
 
     const createdProject = await runtimeRequest<{
       project: { id: string; name: string };
@@ -638,15 +642,21 @@ test('packaged app persists OpenCreator projects when Codex app-server is unavai
     });
     expect(createdThread.status).toBe(201);
     expect(createdThread.body.thread.projectId).toBe(createdProject.body.project.id);
+    const createdCreatorJob = await runtimeRequest<{
+      job: { id: string };
+    }>(fixture.page, 'POST', '/creator/jobs', {
+      projectId: createdProject.body.project.id,
+      templateId: 'cover',
+      state: { prompt: '持久化项目封面' }
+    });
+    expect(createdCreatorJob.status).toBe(201);
 
     await fixture.page.reload({ waitUntil: 'domcontentloaded' });
     await waitForWorkspace(fixture.page);
-    const persistentProjectButton = fixture.page.getByRole('button', {
-      name: '打开项目 持久化项目'
-    });
-    await expect(persistentProjectButton).toBeVisible();
-    await persistentProjectButton.click();
-    await expect(fixture.page.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    await fixture.page.getByRole('button', { name: '我的项目' }).click();
+    await expect(fixture.page.getByRole('button', {
+      name: '打开项目 持久化项目封面'
+    })).toBeVisible();
     await expect(fixture.page.getByText('本机目录')).toHaveCount(0);
 
     const previous = fixture;
@@ -660,12 +670,9 @@ test('packaged app persists OpenCreator projects when Codex app-server is unavai
 
     await waitForWorkspace(fixture.page);
     await fixture.page.getByRole('button', { name: '我的项目' }).click();
-    const relaunchedPersistentProjectButton = fixture.page.getByRole('button', {
-      name: '打开项目 持久化项目'
-    });
-    await expect(relaunchedPersistentProjectButton).toBeVisible();
-    await relaunchedPersistentProjectButton.click();
-    await expect(fixture.page.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
+    await expect(fixture.page.getByRole('button', {
+      name: '打开项目 持久化项目封面'
+    })).toBeVisible();
     await expect(fixture.page.getByText('本机目录')).toHaveCount(0);
 
     const persistedProjects = await runtimeRequest<{
@@ -696,24 +703,28 @@ test('packaged app persists OpenCreator projects when Codex app-server is unavai
 
 test('打包 App 首页 Skills 菜单保持在内容区内', async ({}, testInfo) => {
   const fixture = await launchPackagedDesktop('success');
-  const skillsDir = join(fixture.root, 'codex-home', 'skills');
-  for (let index = 1; index <= 16; index += 1) {
-    const skillDir = join(skillsDir, `viewport-skill-${index}`);
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(
-      join(skillDir, 'SKILL.md'),
-      [
-        '---',
-        `name: viewport-skill-${index}`,
-        `description: 第 ${index} 个视口边界测试 Skill`,
-        '---',
-        ''
-      ].join('\n')
-    );
-  }
 
   try {
     await waitForWorkspace(fixture.page);
+    const codexHome = await fixture.page.evaluate(async () => (
+      await window.claweeDesktop?.readBootstrapState()
+    )?.codexHome);
+    if (codexHome === undefined) throw new Error('桌面启动状态未返回隔离 Codex Home');
+    const skillsDir = join(codexHome, 'skills');
+    for (let index = 1; index <= 16; index += 1) {
+      const skillDir = join(skillsDir, `viewport-skill-${index}`);
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, 'SKILL.md'),
+        [
+          '---',
+          `name: viewport-skill-${index}`,
+          `description: 第 ${index} 个视口边界测试 Skill`,
+          '---',
+          ''
+        ].join('\n')
+      );
+    }
     await fixture.page.reload({ waitUntil: 'domcontentloaded' });
     await waitForWorkspace(fixture.page);
 
@@ -868,19 +879,22 @@ test('IPC 拒绝非 OpenCreator 页面来源', async () => {
   }
 });
 
-test('启动页只显示 OpenCreator 文字品牌', async ({}, testInfo) => {
+test('启动页使用 OpenCreator 文字品牌', async ({}, testInfo) => {
   const fixture = await launchPackagedDesktop('probe-hang');
   try {
     await fixture.page.waitForURL(url => (
       url.protocol === 'opencreator-app:'
       && url.hostname === 'bootstrap'
     ));
-    await expect(fixture.page.locator('.brand-name')).toHaveText('OpenCreator');
-    await expect(fixture.page.locator('.brand-mark')).toHaveCount(0);
-    await expect(fixture.page.locator('img')).toHaveCount(0);
+    const brandName = fixture.page.locator('.brand-name');
+    await expect(brandName).toBeVisible();
+    await expect(brandName).toHaveText('OpenCreator');
+    await expect(brandName).toHaveCSS('font-size', '20px');
+    await expect(brandName).toHaveCSS('font-weight', '600');
+    await expect(fixture.page.locator('.bootstrap-panel img')).toHaveCount(0);
 
     await fixture.page.screenshot({
-      path: testInfo.outputPath('opencreator-startup-2026-08-19.png')
+      path: testInfo.outputPath('opencreator-startup-2026-08-21.png')
     });
   } finally {
     await closeFixture(fixture);
@@ -917,6 +931,7 @@ async function launchPackagedDesktop(
     codexLocation?: 'path' | 'nvm' | 'chatgpt-app';
     minimalPath?: boolean;
     misleadingCodexWrapper?: boolean;
+    runtimeMode?: 'bundled' | 'external';
   } = {}
 ): Promise<DesktopFixture> {
   const root = mkdtempSync(join(tmpdir(), 'opencreator-desktop-e2e-'));
@@ -931,6 +946,13 @@ async function launchPackagedDesktop(
   const enterpriseRunId = randomUUID();
   const enterpriseConfigPath = join(root, '.opencreator', 'config.toml');
   writeCodexShim(binDir);
+  mkdirSync(userData, { recursive: true });
+  writeFileSync(join(userData, 'desktop-settings.json'), `${JSON.stringify({
+    closeBehavior: 'hide',
+    notificationsEnabled: true,
+    codexRuntimeMode: options.runtimeMode ?? 'external',
+    externalCodexBin: join(binDir, process.platform === 'win32' ? 'codex.exe' : 'codex')
+  }, null, 2)}\n`);
   writeEnterpriseE2EConfig(enterpriseConfigPath, enterpriseOrigin);
   if (options.misleadingCodexWrapper === true) {
     writeMisleadingCodexWrapper(join(root, '.local', 'bin'));
@@ -958,10 +980,12 @@ async function launchPackagedDesktop(
         : {}),
       OPENCREATOR_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
       CODEX_HOME: codexHome,
-      OPENCREATOR_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
-      OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
-      OPENCREATOR_E2E_FAKE_CODEX_MODE: mode,
-      OPENCREATOR_ENTERPRISE_E2E_RUN_ID: enterpriseRunId,
+      CLAWEE_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
+      CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
+      CLAWEE_E2E_FAKE_CODEX_MODE: mode,
+      CLAWEE_E2E_NODE_BINARY: process.execPath,
+      CLAWEE_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript,
+      CLAWEE_ENTERPRISE_E2E_RUN_ID: enterpriseRunId,
       ...(mode === 'workspace-failure'
         ? {
             OPENCREATOR_E2E_IGNORE_FIRST_WORKSPACE_READY: '1',
@@ -981,6 +1005,19 @@ function minimalSystemPath(): string {
       : join(process.env.SystemRoot, 'System32');
   }
   return '/usr/bin:/bin:/usr/sbin:/sbin';
+}
+
+function packagedCodexExecutablePath(): string {
+  const packageRoot = dirname(packagedExecutable(desktopDir));
+  return process.platform === 'darwin'
+    ? resolve(packageRoot, '..', 'Resources', 'codex-runtime', 'bin', 'codex')
+    : join(
+        packageRoot,
+        'resources',
+        'codex-runtime',
+        'bin',
+        process.platform === 'win32' ? 'codex.exe' : 'codex'
+      );
 }
 
 async function waitForWorkspace(page: Page): Promise<void> {
@@ -1044,15 +1081,29 @@ async function closeFixture(fixture: DesktopFixture): Promise<void> {
 function writeCodexShim(binDir: string): void {
   mkdirSync(binDir, { recursive: true });
   const scriptPath = process.platform === 'win32'
-    ? join(binDir, 'codex.cmd')
+    ? join(binDir, 'codex.exe')
     : join(binDir, 'codex');
+  if (process.platform === 'win32') {
+    const cacheDir = join(desktopDir, '.cache', 'e2e');
+    const cachedLauncher = join(cacheDir, 'fake-codex-launcher.exe');
+    mkdirSync(cacheDir, { recursive: true });
+    if (
+      !existsSync(cachedLauncher)
+      || statSync(cachedLauncher).mtimeMs < statSync(fakeCodexLauncherSource).mtimeMs
+    ) {
+      execFileSync('go', ['build', '-trimpath', '-o', cachedLauncher, fakeCodexLauncherSource], {
+        cwd: desktopDir,
+        stdio: 'inherit'
+      });
+    }
+    copyFileSync(cachedLauncher, scriptPath);
+    return;
+  }
   writeFileSync(
     scriptPath,
-    process.platform === 'win32'
-      ? `@echo off\r\n"${process.execPath}" "${fakeCodexScript}" %*\r\n`
-      : `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`
+    `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`
   );
-  if (process.platform !== 'win32') chmodSync(scriptPath, 0o755);
+  chmodSync(scriptPath, 0o755);
 }
 
 function writeMisleadingCodexWrapper(binDir: string): void {

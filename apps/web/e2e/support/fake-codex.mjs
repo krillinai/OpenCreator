@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 
 const args = process.argv.slice(2);
@@ -23,6 +23,7 @@ if (!args.includes('app-server') || !args.includes('--stdio')) {
 const configPath = requireEnvironment('OPENCREATOR_E2E_FAKE_CODEX_CONFIG');
 const stateDir = requireEnvironment('OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR');
 mkdirSync(stateDir, { recursive: true });
+appendFileSync(resolve(stateDir, 'app-server-pids.txt'), `${process.pid}\n`);
 
 const invocationCountPath = resolve(stateDir, 'invocation-count.txt');
 const messagesPath = resolve(stateDir, 'messages.ndjson');
@@ -95,6 +96,22 @@ readline.on('line', line => {
     return;
   }
 
+  if (message.method === 'thread/read') {
+    const requestedThreadId = message.params?.threadId ?? threadId;
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: requestedThreadId,
+          turns: message.params?.includeTurns === true
+            ? readTurns(requestedThreadId)
+            : []
+        }
+      }
+    });
+    return;
+  }
+
   if (message.method === 'thread/search') {
     const config = readConfig(configPath);
     const searchTerm = String(message.params?.searchTerm ?? '').toLocaleLowerCase();
@@ -136,7 +153,7 @@ readline.on('line', line => {
   }
 
   if (message.method === 'turn/start') {
-    ensureInvocation();
+    prepareInvocationForTurn(message.params?.threadId);
     turnStartedAt = Date.now();
     send({ id: message.id, result: { turn: { id: turnId, status: 'inProgress' } } });
     send({
@@ -385,7 +402,8 @@ function writeWorkspaceFiles(files) {
   const root = resolve(process.cwd());
   for (const [relativePath, content] of Object.entries(files)) {
     const target = resolve(root, relativePath);
-    if (target !== root && !target.startsWith(`${root}/`)) {
+    const workspaceRelativePath = relative(root, target);
+    if (workspaceRelativePath.startsWith('..') || isAbsolute(workspaceRelativePath)) {
       throw new Error(`Refusing to write outside workspace: ${relativePath}`);
     }
     mkdirSync(dirname(target), { recursive: true });
@@ -397,7 +415,19 @@ function readConfig(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-function ensureInvocation() {
+function prepareInvocationForTurn(targetThreadId) {
+  if (invocationIndex !== undefined && turnFinished) {
+    invocationIndex = undefined;
+    invocation = {};
+    approvalRequestId = undefined;
+    turnStartedAt = 0;
+    currentPrompt = undefined;
+    currentAgentMessage = undefined;
+  }
+  ensureInvocation(targetThreadId);
+}
+
+function ensureInvocation(targetThreadId) {
   if (invocationIndex !== undefined) return;
   invocationIndex = existsSync(invocationCountPath)
     ? Number(readFileSync(invocationCountPath, 'utf8'))
@@ -408,8 +438,11 @@ function ensureInvocation() {
   invocation = invocations[
     Math.min(invocationIndex, Math.max(0, invocations.length - 1))
   ] ?? {};
-  threadId = invocation.threadId ?? `codex-e2e-thread-${invocationIndex + 1}`;
+  threadId = invocation.threadId
+    ?? targetThreadId
+    ?? `codex-e2e-thread-${invocationIndex + 1}`;
   turnId = `turn-e2e-${invocationIndex + 1}`;
+  turnFinished = false;
 }
 
 function sleep(value) {

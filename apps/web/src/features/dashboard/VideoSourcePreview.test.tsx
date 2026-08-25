@@ -140,6 +140,23 @@ describe('VideoSourcePreview', () => {
     );
   });
 
+  it('keeps the original platform link available when embedded playback fails', () => {
+    render(
+      <VideoSourcePreview
+        file={null}
+        sourceType="url"
+        url="https://www.youtube.com/watch?v=preview-test"
+        onChooseFile={vi.fn()}
+        onClear={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('link', { name: '在浏览器中打开原视频' })).toHaveAttribute(
+      'href',
+      'https://www.youtube.com/watch?v=preview-test'
+    );
+  });
+
   it('uses the source video dimensions as the preview aspect ratio', () => {
     const onDimensions = vi.fn();
     render(

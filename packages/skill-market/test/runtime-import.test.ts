@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -9,15 +9,30 @@ const workspaceDir = dirname(dirname(packageDir));
 const runtimeImportTestTimeoutMs = 60_000;
 
 describe('skill market runtime exports', () => {
-  it('builds from a clean dist and loads through native Node consumers', () => {
+  it('builds from a clean dist, loads natively, and boots the workspace daemon', () => {
     rmSync(join(packageDir, 'dist'), { recursive: true, force: true });
 
-    execFileSync('pnpm', ['--filter', '@opencreator/daemon', 'build'], {
+    const packageManagerArgs = ['--filter', '@opencreator/daemon', 'build'];
+    const packageManagerScript = [
+      process.env.npm_execpath,
+      process.platform === 'win32' && process.env.APPDATA !== undefined
+        ? join(process.env.APPDATA, 'npm', 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')
+        : undefined
+    ].find(candidate => candidate !== undefined && existsSync(candidate));
+    execFileSync(
+      packageManagerScript === undefined
+        ? process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+        : process.execPath,
+      packageManagerScript === undefined
+        ? packageManagerArgs
+        : [packageManagerScript, ...packageManagerArgs],
+      {
       cwd: workspaceDir,
       stdio: 'pipe'
-    });
+      }
+    );
 
-    const output = execFileSync(
+    const nativeOutput = execFileSync(
       process.execPath,
       [
         '--input-type=module',
@@ -26,6 +41,24 @@ describe('skill market runtime exports', () => {
           "const market = await import('@opencreator/skill-market');",
           "if (market.skillMarketCatalog.length !== 0) throw new Error('published catalog should be empty');",
           "if (market.skillMarketCandidateCatalog.length !== 53) throw new Error('candidate catalog import failed');",
+          "process.stdout.write('runtime-import-ok');"
+        ].join('\n')
+      ],
+      {
+        cwd: join(workspaceDir, 'apps/daemon'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe']
+      }
+    );
+
+    const daemonOutput = execFileSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        [
           "const { buildServer } = await import('./dist/api/server.js');",
           "const { mkdtempSync, rmSync } = await import('node:fs');",
           "const { tmpdir } = await import('node:os');",
@@ -40,7 +73,7 @@ describe('skill market runtime exports', () => {
           "await server.ready();",
           "await server.close();",
           "rmSync(smokeRoot, { recursive: true, force: true });",
-          "process.stdout.write('runtime-import-ok');"
+          "process.stdout.write('daemon-smoke-ok');"
         ].join('\n')
       ],
       {
@@ -50,6 +83,7 @@ describe('skill market runtime exports', () => {
       }
     );
 
-    expect(output).toBe('runtime-import-ok');
+    expect(nativeOutput).toBe('runtime-import-ok');
+    expect(daemonOutput).toBe('daemon-smoke-ok');
   }, runtimeImportTestTimeoutMs);
 });

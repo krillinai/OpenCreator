@@ -1,8 +1,10 @@
 import type Database from 'better-sqlite3';
-import type { CodexAvailabilityProbe } from '@opencreator/protocol';
+import type { CodexAvailabilityProbe, CodexRuntimeComponentReadiness } from '@opencreator/protocol';
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ATTACHMENT_DRAFT_TTL_MS,
   ATTACHMENT_MAX_SIZE_BYTES,
@@ -22,7 +24,35 @@ import {
   registerAgentToolRoutes,
   type AgentScheduleOperations
 } from '../agent-tools/internal-routes.js';
+import { createCreatorToolOperations } from '../agent-tools/creator-tools.js';
+import { createAgentContextBuilder } from '../creator/agent/context-builder.js';
+import { createCreatorAgentService } from '../creator/agent/agent-service.js';
+import { createCreatorAgentRepository } from '../creator/agent/repository.js';
+import { createCreatorAgentReconciler } from '../creator/agent/reconciler.js';
 import {
+  createUnavailableAgentRuntimeAdapter,
+  type AgentRuntimeAdapter
+} from '../creator/agent/runtime-adapter.js';
+import { bootstrapCreatorAgentRuntime } from '../creator/agent/bootstrap.js';
+import { createCodexCreatorAdapter } from '../creator/agent/codex-adapter.js';
+import { createCreatorStageRunner } from '../creator/stage-runner.js';
+import { createCreatorStageScheduler } from '../creator/stage-scheduler.js';
+import { createCreatorCommandDispatcher } from '../creator/command-dispatcher.js';
+import type { CreatorExecutor } from '../creator/executor.js';
+import { createKrillinExecutor } from '../creator/krillin/adapter.js';
+import { readKrillinRuntimeManifest, resolveInside, verifyKrillinRuntimeManifest } from '../creator/krillin/manifest.js';
+import { createKrillinRuntimeHost } from '../creator/krillin/runtime-host.js';
+import { createDownloadExecutor } from '../creator/download/executor.js';
+import { createImageExecutor } from '../creator/image/executor.js';
+import { createClipExecutor } from '../creator/clip/executor.js';
+import { createStickmanExecutor } from '../creator/stickman/executor.js';
+import { createCreatorProjectCoverService } from '../creator/project-cover.js';
+import {
+  createVideoTranslationWorkflow,
+  type VideoTranslationWorkflow
+} from '../creator/templates/video-translation-actions.js';
+import {
+  registerCreatorMcpRoute,
   registerAgentScheduleMcpRoute,
   registerKnowledgeMcpRoute
 } from '../agent-tools/mcp-routes.js';
@@ -39,6 +69,12 @@ import {
   type RuntimeCapabilityMatrix
 } from '../codex/capabilities.js';
 import { createCodexAppServerClient } from '../codex/app-server-client.js';
+import {
+  createAppServerRuntimeManager,
+  type AppServerRuntimeManager
+} from '../codex/app-server-runtime-manager.js';
+import { createCodexRuntimeReadiness } from '../codex/runtime-readiness.js';
+import { createCodexProviderConfigService } from '../codex/provider-config.js';
 import { resolveCodexHome } from '../codex/home.js';
 import { isEnterpriseKnowledgeThread } from '../threads/types.js';
 import {
@@ -71,17 +107,13 @@ import {
   type CreatorServicesConfigStore
 } from '../creator-services/config-store.js';
 import {
-  createSmartDubbingService,
-  type SmartDubbingService
-} from '../smart-dubbing/service.js';
-import {
-  createImageGenerationService,
-  type ImageGenerationService
-} from '../image-generation/service.js';
-import {
-  createVideoGenerationService,
-  type VideoGenerationService
-} from '../video-generation/service.js';
+  createCreatorEventHub,
+  creatorAgentEventKind,
+  creatorStageEventId
+} from '../creator/events.js';
+import { createCreatorRepository } from '../creator/repository.js';
+import { createCreatorService, type CreatorService } from '../creator/service.js';
+import { createDefaultCreatorTemplateRegistry } from '../creator/templates/registry.js';
 import { createRunManager, type RunManager } from '../runs/manager.js';
 import { createPersistentAppServerExecutor } from '../runs/persistent-app-server-executor-2026-07-28.js';
 import {
@@ -153,6 +185,7 @@ import { registerApprovalRoutes } from './routes.approvals.js';
 import { registerCodexRoutes } from './routes.codex.js';
 import { registerCleanupRoutes } from './routes.cleanup.js';
 import { registerCreatorServicesRoutes } from './routes.creator-services.js';
+import { registerCreatorRoutes } from './routes.creator.js';
 import { registerDiagnosticsRoutes } from './routes.diagnostics.js';
 import { registerMcpRoutes } from './routes.mcp.js';
 import { registerMemoryRoutes } from './routes.memory.js';
@@ -204,16 +237,15 @@ export type BuildServerInput = {
   agentScheduleOperations?: AgentScheduleOperations;
   agentToolsEnabled?: boolean;
   persistentAppServerEnabled?: boolean;
+  runtimeTransport?: 'exec' | 'app-server';
   codexThreadRotationRunThreshold?: number;
   codexSessionProvider?: CodexSessionProvider;
   codexModelCatalog?: CodexModelCatalog;
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
   memoryHistoryReader?(threadId: string): { items: import('@opencreator/protocol').ThreadHistoryItem[] } | undefined;
   creatorServicesConfigStore?: CreatorServicesConfigStore;
-  smartDubbingService?: SmartDubbingService;
-  imageGenerationService?: ImageGenerationService;
-  videoGenerationService?: VideoGenerationService;
-  videoMetadataService?: VideoMetadataService;
+  creatorService?: CreatorService;
+  creatorAgentRuntime?: AgentRuntimeAdapter;
   allowedWebOrigins?: string[];
   enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
   enterpriseConfigPath?: string;
@@ -250,7 +282,7 @@ export async function buildServer(input: BuildServerInput) {
     maxAge: 600
   });
   const auth = requireAuth(input.token);
-  const dataDir = input.dataDir ?? '.runtime';
+  const dataDir = resolve(input.dataDir ?? '.runtime');
   const enterpriseOrigin = resolveEnterpriseOrigin(input.enterpriseOrigin);
   const enterpriseConfigPath =
     input.enterpriseConfigPath ?? join(dataDir, 'config.toml');
@@ -314,6 +346,10 @@ export async function buildServer(input: BuildServerInput) {
     threadManager,
     httpClient: enterpriseHttpClient
   });
+  const codexControlClient = createCodexAppServerClient({
+    codexBin,
+    codexHome
+  });
   const codexSessionProvider = input.codexSessionProvider ?? createCodexSessionProvider({
     client: createCodexAppServerClient({
       codexBin,
@@ -372,12 +408,21 @@ export async function buildServer(input: BuildServerInput) {
   let persistentAppServerExecutor:
     | ReturnType<typeof createPersistentAppServerExecutor>
     | undefined;
-  const invalidatePersistentRuntime = (reason: string) => {
-    void persistentAppServerExecutor?.invalidate(reason).catch(error => {
+  let appServerRuntimeManager: AppServerRuntimeManager | undefined;
+  let creatorAppServerRuntimeManager: AppServerRuntimeManager | undefined;
+  const invalidatePersistentRuntime = (reason: string): Promise<void> => {
+    const work = Promise.all([
+      appServerRuntimeManager?.invalidate(reason)
+        ?? persistentAppServerExecutor?.invalidate(reason)
+        ?? Promise.resolve(),
+      creatorAppServerRuntimeManager?.invalidate(reason) ?? Promise.resolve()
+    ]).then(() => undefined);
+    void work.catch(error => {
       console.warn(
         `Persistent app-server invalidation failed: ${formatError(error)}`
       );
     });
+    return work;
   };
   const mcpManager = createMcpManager({
     codexBin,
@@ -417,24 +462,257 @@ export async function buildServer(input: BuildServerInput) {
   const memoryService = createMemoryService({ db });
   const creatorServicesConfigStore =
     input.creatorServicesConfigStore ?? createSystemCreatorServicesConfigStore();
+  const creatorEvents = createCreatorEventHub();
+  const creatorRepository = createCreatorRepository(db);
+  const creatorAgentRepository = createCreatorAgentRepository(db);
+  const creatorAgentReconciler = createCreatorAgentReconciler({
+    repository: creatorAgentRepository
+  });
+  creatorAgentReconciler.reconcileAfterDaemonRestart();
+  const creatorService = input.creatorService ?? createCreatorService({
+    repository: creatorRepository,
+    templates: createDefaultCreatorTemplateRegistry()
+  });
   const agentCapabilityTokens =
     input.agentCapabilityTokens ?? createAgentCapabilityTokenStore();
-  const runtimeTransport =
-    capabilities.appServerApprovals === true ? 'app-server' : 'exec';
+  const runtimeTransport = input.runtimeTransport ?? 'app-server';
   const getAgentToolBaseUrl = () =>
     resolveListeningOrigin(server.server.address());
+  const creatorAgentBootstrap = bootstrapCreatorAgentRuntime({
+    sourceCodexHome: codexHome,
+    runtimeRoot: join(dataDir, 'creator-runtime'),
+    bundledSkillDir: join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      'runtime',
+      'opencreator-runtime'
+    )
+  });
+  const codexRuntimeReadiness = createCodexRuntimeReadiness({
+    client: codexControlClient,
+    mode: process.env.OPENCREATOR_CODEX_RUNTIME_MODE === 'external'
+      ? 'external'
+      : 'bundled',
+    version: capabilities.codexVersion.replace(/^codex-cli\s+/, ''),
+    commit: process.env.OPENCREATOR_CODEX_RUNTIME_MODE === 'external'
+      ? null
+      : '758ef40f50c1a458425c7cfbf1eb12cbc07af0b0',
+    binaryPath: codexBin,
+    codexHome,
+    cwd: dataDir,
+    binary: readCodexBinaryReadiness(
+      process.env.OPENCREATOR_CODEX_RUNTIME_MODE === 'external'
+        ? undefined
+        : process.env.OPENCREATOR_CODEX_RUNTIME_ROOT
+    ),
+    checkToolServer: () => creatorAgentBootstrap.available
+      ? { status: 'ready' }
+      : {
+          status: 'unavailable',
+          errorCode: 'creator_agent_unavailable',
+          message: creatorAgentBootstrap.error ?? 'Creator Tool Server is unavailable'
+        }
+  });
+  const codexProviderConfig = createCodexProviderConfigService({
+    client: codexControlClient,
+    readiness: codexRuntimeReadiness,
+    async onConfigurationChanged() {
+      await Promise.all([
+        codexModelCatalog.restart?.(),
+        codexSessionProvider.restart?.(),
+        invalidatePersistentRuntime('codex_provider_config_changed')
+      ]);
+    }
+  });
+  const creatorRuntimeRoot = process.env.OPENCREATOR_CREATOR_RUNTIME_ROOT
+    ?? join(dataDir, 'creator-runtime', 'krillinai');
+  const creatorJobsRoot = join(dataDir, 'creator', 'jobs');
+  const krillinRuntimeHost = createKrillinRuntimeHost({
+    resourceRoot: creatorRuntimeRoot,
+    jobsRoot: creatorJobsRoot
+  });
+  const creatorExecutors: CreatorExecutor[] = [
+    createKrillinExecutor({
+      resourceRoot: creatorRuntimeRoot,
+      jobsRoot: creatorJobsRoot,
+      runtimeHost: krillinRuntimeHost,
+      configStore: creatorServicesConfigStore
+    }),
+    createImageExecutor({ configStore: creatorServicesConfigStore })
+  ];
+  let creatorFfmpegPath: string | undefined;
+  try {
+    const runtimeManifest = readKrillinRuntimeManifest(creatorRuntimeRoot);
+    verifyKrillinRuntimeManifest(creatorRuntimeRoot, runtimeManifest);
+    const executable = (pattern: RegExp) => {
+      const resource = runtimeManifest.resources.find(candidate => (
+        candidate.kind === 'executable' && pattern.test(candidate.path)
+      ));
+      return resource === undefined ? undefined : resolveInside(creatorRuntimeRoot, resource.path);
+    };
+    creatorFfmpegPath = executable(/(?:^|\/)ffmpeg(?:\.exe)?$/i);
+    const ffprobePath = executable(/(?:^|\/)ffprobe(?:\.exe)?$/i);
+    const ytDlpPath = executable(/(?:^|\/)yt-dlp(?:\.exe)?$/i);
+    if (ytDlpPath && ffprobePath) creatorExecutors.push(createDownloadExecutor({ ytDlpPath, ffprobePath }));
+    if (creatorFfmpegPath && ffprobePath) {
+      creatorExecutors.push(
+        createClipExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath }),
+        createStickmanExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath })
+      );
+    }
+  } catch (error) {
+    console.warn(`Creator optional runtime executors are unavailable: ${formatError(error)}`);
+  }
+  const creatorProjectCoverService = createCreatorProjectCoverService({
+    jobsRoot: creatorJobsRoot,
+    ...(creatorFfmpegPath === undefined ? {} : { ffmpegPath: creatorFfmpegPath })
+  });
+  let videoTranslationWorkflow: VideoTranslationWorkflow | undefined;
+  const creatorStageRunner = input.creatorService === undefined
+    ? createCreatorStageRunner({
+        repository: creatorRepository,
+        templates: creatorService.templates,
+        workRoot: creatorJobsRoot,
+        executors: creatorExecutors,
+        onJobChanged(job) {
+          creatorEvents.publish({
+            id: `snapshot:${job.revision}`,
+            jobId: job.id,
+            revision: job.revision,
+            kind: 'snapshot_changed',
+            payload: { revision: job.revision }
+          });
+        },
+        onStageChanged(stage) {
+          const job = creatorService.getJob(stage.jobId);
+          if (job === undefined) return;
+          creatorEvents.publish({
+            id: creatorStageEventId(stage),
+            jobId: stage.jobId,
+            revision: job.revision,
+            kind: 'stage_progress',
+            payload: { stage }
+          });
+        },
+        onStageSucceeded(stage) {
+          videoTranslationWorkflow?.handleStageChanged(stage);
+        }
+      })
+    : undefined;
+  const creatorStageScheduler = creatorStageRunner === undefined
+    ? undefined
+    : createCreatorStageScheduler({
+        repository: creatorRepository,
+        runner: creatorStageRunner
+      });
+  const creatorCommandDispatcher = createCreatorCommandDispatcher({
+    service: creatorService,
+    repository: creatorRepository,
+    receipts: creatorAgentRepository,
+    onQueuedStage: () => creatorStageScheduler?.wake(),
+    onCommitted(result) {
+      const activity = result.job.activities.find(candidate => (
+        candidate.revision === result.job.revision
+      ));
+      if (activity !== undefined) {
+        creatorEvents.publish({
+          id: `activity:${activity.id}`,
+          jobId: result.job.id,
+          revision: result.job.revision,
+          kind: 'activity_changed',
+          payload: { activity },
+          createdAt: activity.createdAt
+        });
+      }
+      const stageRunId = result.commandReceipt.stageRunId;
+      const stage = stageRunId === null
+        ? undefined
+        : result.job.stages.find(candidate => candidate.id === stageRunId)
+          ?? creatorRepository.getStageRun(stageRunId);
+      if (stage !== undefined) {
+        creatorEvents.publish({
+          id: creatorStageEventId(stage),
+          jobId: result.job.id,
+          revision: result.job.revision,
+          kind: 'stage_progress',
+          payload: { stage }
+        });
+      }
+      creatorEvents.publish({
+        id: `snapshot:${result.job.revision}`,
+        jobId: result.job.id,
+        revision: result.job.revision,
+        kind: 'snapshot_changed',
+        payload: { revision: result.job.revision }
+      });
+    }
+  });
+  videoTranslationWorkflow = creatorStageRunner === undefined
+    ? undefined
+    : createVideoTranslationWorkflow({
+        creator: creatorService,
+        dispatcher: creatorCommandDispatcher,
+        configStore: creatorServicesConfigStore
+      });
+  videoTranslationWorkflow?.recover();
   const scheduleRunInjector = createAgentScheduleRunInjector({
     capabilities: agentCapabilityTokens,
     getBaseUrl: getAgentToolBaseUrl,
     knowledgeToolIsolationSupported: capabilities.knowledgeToolIsolation === true,
     scheduleToolsEnabled: input.agentToolsEnabled === true
   });
-  const agentToolProcessInjector = input.agentToolsEnabled !== true
-    ? undefined
-    : createAgentScheduleProcessInjector({
-        capabilities: agentCapabilityTokens,
-        getBaseUrl: getAgentToolBaseUrl
+  const agentToolProcessInjector = createAgentScheduleProcessInjector({
+    capabilities: agentCapabilityTokens,
+    getBaseUrl: getAgentToolBaseUrl,
+    includeCreator: false
+  });
+  const creatorAgentToolProcessInjector = createAgentScheduleProcessInjector({
+    capabilities: agentCapabilityTokens,
+    getBaseUrl: getAgentToolBaseUrl,
+    includeSchedule: false
+  });
+  appServerRuntimeManager = createAppServerRuntimeManager({
+    codexBin,
+    codexHome,
+    processInjector: agentToolProcessInjector
+  });
+  creatorAppServerRuntimeManager = createAppServerRuntimeManager({
+    codexBin,
+    codexHome,
+    processInjector: creatorAgentToolProcessInjector
+  });
+  const creatorAgentRuntime = input.creatorAgentRuntime ?? (creatorAgentBootstrap.available
+    ? createCodexCreatorAdapter({
+        runtimeManager: creatorAppServerRuntimeManager,
+        threads: threadManager,
+        skillPath: creatorAgentBootstrap.skillPath,
+        guideVersion: creatorAgentBootstrap.guideVersion,
+        guideHash: creatorAgentBootstrap.hash,
+        available: true
+      })
+    : createUnavailableAgentRuntimeAdapter(creatorAgentBootstrap.error));
+  const creatorAgentContextBuilder = createAgentContextBuilder({ templates: creatorService.templates });
+  const creatorAgentService = createCreatorAgentService({
+    creator: creatorService,
+    dispatcher: creatorCommandDispatcher,
+    repository: creatorAgentRepository,
+    threads: threadManager,
+    contextBuilder: creatorAgentContextBuilder,
+    runtime: creatorAgentRuntime,
+    onEvent(event) {
+      const job = creatorService.getJob(event.jobId);
+      if (job === undefined) return;
+      creatorEvents.publish({
+        id: `agent:${event.sequence}`,
+        jobId: event.jobId,
+        revision: job.revision,
+        kind: creatorAgentEventKind(event),
+        payload: { event },
+        createdAt: event.createdAt
       });
+    }
+  });
   const enterpriseMcpRunInjector: RunMcpInjector = {
     prepare(run) {
       return enterpriseMcpManager.prepareRuntime(run);
@@ -455,7 +733,7 @@ export async function buildServer(input: BuildServerInput) {
       ? createPersistentAppServerExecutor({
           codexBin,
           codexHome,
-          processInjector: agentToolProcessInjector,
+          runtimeManager: appServerRuntimeManager,
           runtimeInjector: combineRunInjectors(
             codexMcpRuntimeInjector,
             enterpriseMcpRunInjector
@@ -594,8 +872,14 @@ export async function buildServer(input: BuildServerInput) {
     await capture(() => unsubscribeApprovalNotifications());
     await capture(() => scheduler.stop());
     await capture(() => runManager.close());
+    await capture(() => appServerRuntimeManager?.close());
+    await capture(() => creatorAppServerRuntimeManager?.close());
     await capture(() => codexSessionProvider.close());
     await capture(() => codexModelCatalog.close());
+    await capture(() => codexControlClient.close());
+    await capture(() => creatorStageScheduler?.close());
+    await capture(() => creatorStageRunner?.close());
+    await capture(() => krillinRuntimeHost.close());
     await capture(() => agentCapabilityTokens.close());
     if (ownsDb) {
       await capture(() => {
@@ -618,6 +902,8 @@ export async function buildServer(input: BuildServerInput) {
     codexHome: resolvedCodexHome,
     capabilities,
     modelCatalog: codexModelCatalog,
+    readiness: codexRuntimeReadiness,
+    providerConfig: codexProviderConfig,
     getAvailabilityProbe: input.getCodexAvailabilityProbe
   });
   await registerEnterpriseRoutes(server, {
@@ -660,7 +946,12 @@ export async function buildServer(input: BuildServerInput) {
   await registerScheduleRoutes(server, scheduleCoordinator, scheduler);
   await registerAgentToolRoutes(server, {
     capabilities: agentCapabilityTokens,
-    schedules: agentScheduleOperations
+    schedules: agentScheduleOperations,
+    creator: createCreatorToolOperations({
+      service: creatorService,
+      dispatcher: creatorCommandDispatcher,
+      contextBuilder: creatorAgentContextBuilder
+    })
   });
   if (input.agentToolsEnabled === true) {
     await registerAgentScheduleMcpRoute(server, {
@@ -668,45 +959,23 @@ export async function buildServer(input: BuildServerInput) {
       getBaseUrl: () => resolveListeningOrigin(server.server.address())
     });
   }
+  await registerCreatorMcpRoute(server, {
+    capabilities: agentCapabilityTokens,
+    getBaseUrl: () => resolveListeningOrigin(server.server.address())
+  });
   await registerKnowledgeMcpRoute(server, {
     capabilities: agentCapabilityTokens,
     manager: knowledgeConversationManager
   });
   await registerCleanupRoutes(server, cleanupService);
   await registerCreatorServicesRoutes(server, creatorServicesConfigStore);
-  await registerSmartDubbingRoutes(
-    server,
-    input.smartDubbingService ?? createSmartDubbingService({
-      dataDir,
-      configStore: creatorServicesConfigStore
-    })
-  );
-  await registerImageGenerationRoutes(
-    server,
-    input.imageGenerationService ?? createImageGenerationService({
-      dataDir,
-      configStore: creatorServicesConfigStore
-    })
-  );
-  await registerVideoGenerationRoutes(
-    server,
-    input.videoGenerationService ?? createVideoGenerationService({
-      dataDir,
-      configStore: creatorServicesConfigStore
-    })
-  );
-  await registerVideoMetadataRoutes(
-    server,
-    input.videoMetadataService ?? createVideoMetadataService({
-      async getProxy() {
-        try {
-          return (await creatorServicesConfigStore.read()).proxy;
-        } catch {
-          return '';
-        }
-      }
-    })
-  );
+  await registerCreatorRoutes(server, creatorService, creatorEvents, {
+    sseHeartbeatMs: input.sseHeartbeatMs,
+    agentService: creatorAgentService,
+    videoTranslationWorkflow,
+    projectCoverService: creatorProjectCoverService,
+    dispatcher: creatorCommandDispatcher
+  });
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes
   });
@@ -787,6 +1056,38 @@ export async function buildServer(input: BuildServerInput) {
 
   if (input.schedulerAutostart === true) scheduler.start();
   return server;
+}
+
+function readCodexBinaryReadiness(runtimeRoot: string | undefined): CodexRuntimeComponentReadiness {
+  if (runtimeRoot === undefined) return { status: 'ready' };
+  try {
+    const manifest = JSON.parse(readFileSync(join(runtimeRoot, 'manifest.json'), 'utf8')) as {
+      binary?: { sha256?: unknown };
+      appServerProtocol?: { schemaSha256?: unknown };
+    };
+    if (typeof manifest.binary?.sha256 !== 'string') {
+      return {
+        status: 'invalid',
+        errorCode: 'codex_runtime_hash_mismatch',
+        message: 'Codex Runtime manifest 未提供二进制 SHA-256'
+      };
+    }
+    return {
+      status: 'ready',
+      details: {
+        sha256: manifest.binary.sha256,
+        ...(typeof manifest.appServerProtocol?.schemaSha256 === 'string'
+          ? { protocolSchemaSha256: manifest.appServerProtocol.schemaSha256 }
+          : {})
+      }
+    };
+  } catch (cause) {
+    return {
+      status: 'invalid',
+      errorCode: 'codex_runtime_hash_mismatch',
+      message: cause instanceof Error ? cause.message : String(cause)
+    };
+  }
 }
 
 function createUnavailableCredentialStore(): EnterpriseCredentialStore {

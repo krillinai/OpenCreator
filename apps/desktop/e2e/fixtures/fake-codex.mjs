@@ -7,6 +7,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { parse, stringify } from '@iarna/toml';
 
 const args = process.argv.slice(2);
@@ -22,7 +23,7 @@ if (stateDir !== undefined) {
 }
 
 if (args.length === 1 && args[0] === '--version') {
-  process.stdout.write('codex-cli 0.0.0-opencreator-e2e\n');
+  process.stdout.write('codex-cli 0.149.0\n');
   process.exit(0);
 }
 
@@ -49,8 +50,15 @@ if (args[0] === 'mcp') {
 }
 
 if (args[0] === 'app-server' && args.at(-1) === '--help') {
-  process.stderr.write('app-server is intentionally unavailable in this fixture\n');
-  process.exit(2);
+  process.stdout.write(
+    'Run the app server\nUsage: codex app-server [OPTIONS]\n  --stdio\n  --disable <FEATURE>\n  generate-json-schema\n  generate-ts\n'
+  );
+  process.exit(0);
+}
+
+if (args.includes('app-server') && args.includes('--stdio')) {
+  await handleAppServer();
+  process.exit(0);
 }
 
 if (args[0] !== 'exec') {
@@ -123,6 +131,166 @@ function requireStateDir() {
 function increment(path) {
   const current = existsSync(path) ? Number(readFileSync(path, 'utf8')) : 0;
   writeFileSync(path, String(current + 1));
+}
+
+async function handleAppServer() {
+  const input = createInterface({ input: process.stdin });
+  let threadSequence = 0;
+  let turnSequence = 0;
+  let currentThreadId;
+  let currentTurnId;
+
+  const send = value => {
+    process.stdout.write(`${JSON.stringify(value)}\n`);
+  };
+
+  for await (const line of input) {
+    if (line.trim().length === 0) continue;
+    const message = JSON.parse(line);
+    const params = isRecord(message.params) ? message.params : {};
+
+    if (message.method === 'initialized') continue;
+
+    if (message.method === 'initialize') {
+      send({
+        id: message.id,
+        result: {
+          userAgent: 'opencreator-desktop-e2e',
+          codexHome: process.env.CODEX_HOME,
+          platformFamily: process.platform === 'win32' ? 'windows' : 'unix',
+          platformOs: process.platform
+        }
+      });
+      continue;
+    }
+
+    if (message.method === 'model/list') {
+      send({ id: message.id, result: { data: [], nextCursor: null } });
+      continue;
+    }
+
+    if (message.method === 'skills/extraRoots/set') {
+      send({ id: message.id, result: {} });
+      continue;
+    }
+
+    if (message.method === 'skills/list') {
+      send({
+        id: message.id,
+        result: {
+          data: [{
+            cwd: process.cwd(),
+            skills: [{
+              name: 'opencreator-runtime',
+              path: join(process.cwd(), 'opencreator-runtime', 'SKILL.md')
+            }]
+          }]
+        }
+      });
+      continue;
+    }
+
+    if (message.method === 'account/read') {
+      send({
+        id: message.id,
+        result: { account: null, requiresOpenaiAuth: true }
+      });
+      continue;
+    }
+
+    if (message.method === 'thread/start' || message.method === 'thread/resume') {
+      currentThreadId = typeof params.threadId === 'string'
+        ? params.threadId
+        : `desktop-e2e-thread-${++threadSequence}`;
+      send({
+        id: message.id,
+        result: { thread: { id: currentThreadId } }
+      });
+      continue;
+    }
+
+    if (message.method === 'thread/read') {
+      const threadId = typeof params.threadId === 'string'
+        ? params.threadId
+        : currentThreadId;
+      send({
+        id: message.id,
+        result: { thread: { id: threadId, turns: [] } }
+      });
+      continue;
+    }
+
+    if (message.method === 'config/mcpServer/reload') {
+      send({ id: message.id, result: {} });
+      continue;
+    }
+
+    if (message.method === 'turn/start') {
+      currentThreadId = typeof params.threadId === 'string'
+        ? params.threadId
+        : currentThreadId ?? `desktop-e2e-thread-${++threadSequence}`;
+      currentTurnId = `desktop-e2e-turn-${++turnSequence}`;
+      increment(join(requireStateDir(), 'run-count.txt'));
+      send({
+        id: message.id,
+        result: { turn: { id: currentTurnId, status: 'inProgress' } }
+      });
+      send({
+        method: 'turn/started',
+        params: {
+          threadId: currentThreadId,
+          turn: { id: currentTurnId, status: 'inProgress' }
+        }
+      });
+      send({
+        method: 'item/completed',
+        params: {
+          threadId: currentThreadId,
+          turnId: currentTurnId,
+          item: {
+            id: `desktop-e2e-item-${turnSequence}`,
+            type: 'agentMessage',
+            text: 'desktop e2e run completed'
+          }
+        }
+      });
+      send({
+        method: 'turn/completed',
+        params: {
+          threadId: currentThreadId,
+          turn: { id: currentTurnId, status: 'completed' }
+        }
+      });
+      continue;
+    }
+
+    if (message.method === 'turn/steer') {
+      send({ id: message.id, result: { turnId: currentTurnId } });
+      continue;
+    }
+
+    if (message.method === 'turn/interrupt') {
+      send({ id: message.id, result: {} });
+      send({
+        method: 'turn/completed',
+        params: {
+          threadId: currentThreadId,
+          turn: { id: currentTurnId, status: 'interrupted' }
+        }
+      });
+      continue;
+    }
+
+    if (message.id !== undefined) {
+      send({
+        id: message.id,
+        error: {
+          code: -32601,
+          message: `Unsupported fake app-server method: ${message.method}`
+        }
+      });
+    }
+  }
 }
 
 function handleMcpCommand(commandArgs) {

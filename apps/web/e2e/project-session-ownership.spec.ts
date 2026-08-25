@@ -1,4 +1,3 @@
-import type { Page } from '@playwright/test';
 import {
   expect,
   test,
@@ -68,26 +67,11 @@ test('browser first launch uses the Runtime default project without desktop-only
 
   await page.goto(runtime.origin);
 
-  await expect(page.getByRole('button', {
-    name: '选择项目 默认项目'
-  })).toBeVisible();
   await expect(page.getByRole('textbox', { name: '输入任务' })).toBeEnabled();
   expect(projectApiCalls.filter(call => (
     call.method === 'POST' && call.path.endsWith('/projects/default')
   ))).toHaveLength(1);
-
-  await page.getByRole('button', { name: '选择项目 默认项目' }).click();
-  await page.getByRole('button', { name: '新建项目' }).click();
-  await expect(page.getByRole('dialog', { name: '创建项目' })).toBeVisible();
-  await page.getByRole('textbox', { name: '文件夹名称' }).fill('browser-project');
-  await page.getByRole('button', { name: '创建', exact: true }).click();
-
-  await expect(page.getByRole('button', {
-    name: '选择项目 browser-project'
-  })).toBeVisible();
-  expect(projectApiCalls.filter(call => (
-    call.method === 'POST' && call.path.endsWith('/projects/managed')
-  ))).toHaveLength(1);
+  await expect(page.getByText('本机目录')).toHaveCount(0);
 });
 
 test('browser shared sidebar hides the guest login entry', async ({
@@ -138,8 +122,6 @@ test('restored conversations wait for history before entering the empty layout',
   await expect(page.getByRole('status', { name: '正在加载会话历史' })).toHaveCount(0);
   await expect(page.locator('.conversation-page')).toHaveClass(/is-empty/);
   await expect(page.getByText('需要帮你做点什么')).toBeVisible();
-  await expect(page.getByText('数据分析')).toBeVisible();
-  await expect(page.getByRole('button', { name: /选择项目/ })).toBeVisible();
 });
 
 test('OpenCreator owns projects and mapped sessions across reloads', async ({ page, runtime }) => {
@@ -150,8 +132,6 @@ test('OpenCreator owns projects and mapped sessions across reloads', async ({ pa
 
   await runtime.openApp(page);
   await expect(page.getByText('本机目录')).toHaveCount(0);
-  await openSidebar(page);
-  await page.getByRole('button', { name: /普通会话/ }).click();
   await expect(page.getByRole('heading', { name: '普通会话' })).toBeVisible();
 
   const prompt = '验证 OpenCreator 项目和 Codex 会话映射';
@@ -209,7 +189,6 @@ test('unknown Codex sessions stay isolated from lists, search, and deep links', 
     '/threads?status=active&limit=50'
   );
   await runtime.openApp(page);
-  await openSidebar(page);
   await expect(page.getByText('外部未知同目录会话')).toHaveCount(0);
   await expect(page.getByText('外部未知其他目录会话')).toHaveCount(0);
 
@@ -219,7 +198,7 @@ test('unknown Codex sessions stay isolated from lists, search, and deep links', 
   );
   expect(search.results).toEqual([]);
 
-  await page.getByRole('button', { name: '搜索' }).click();
+  await page.goto(`${runtime.origin}/#/search`);
   await page.getByRole('searchbox', { name: '搜索会话' }).fill('外部未知');
   await expect(page.getByText('没有找到匹配的会话')).toBeVisible();
 
@@ -276,11 +255,11 @@ test('legacy localStorage projects migrate once without restoring local home', a
     legacyProjects,
     currentProjectId: 'legacy-workspace'
   });
-  await openSidebar(page);
-  await expect(page.getByRole('button', { name: 'workspace', exact: true }))
-    .toHaveAttribute('data-current-project', 'true');
+  await expect.poll(() => page.evaluate(() => {
+    const stored = localStorage.getItem('clawee.navigation.v3');
+    return stored === null ? undefined : JSON.parse(stored).currentProjectId;
+  })).toBe(runtime.projectId);
   await expect(page.getByText('本机目录')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /普通会话/ })).toBeVisible();
 
   const stored = await page.evaluate(() => localStorage.getItem('opencreator.projects.v1'));
   expect(stored).toBe(JSON.stringify(legacyProjects));
@@ -316,7 +295,6 @@ function codexThread(id: string, name: string, cwd: string): FakeCodexThread {
     cwd
   };
 }
-
 function e2eProject(id: string, name: string, cwd: string): Record<string, unknown> {
   return {
     id,
@@ -333,9 +311,4 @@ function e2eProject(id: string, name: string, cwd: string): Record<string, unkno
     updatedAt: '2026-07-27T00:00:00.000Z',
     archivedAt: null
   };
-}
-
-async function openSidebar(page: Page): Promise<void> {
-  const trigger = page.getByRole('button', { name: '打开导航' });
-  if (await trigger.isVisible()) await trigger.click();
 }

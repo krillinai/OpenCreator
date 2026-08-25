@@ -28,6 +28,9 @@ export type DaemonStartInput = {
   codexBin: string;
   codexHome: string;
   dataDir: string;
+  creatorRuntimeRoot?: string;
+  codexRuntimeRoot?: string;
+  codexRuntimeMode?: 'bundled' | 'external';
   defaultCwd: string;
   defaultProjectRoot: string;
   requireProbe: boolean;
@@ -282,11 +285,20 @@ export function buildDaemonEnvironment(
   Object.assign(env, {
     OPENCREATOR_CODEX_BIN: input.codexBin,
     CODEX_HOME: input.codexHome,
-    OPENCREATOR_DATA_DIR: input.dataDir,
-    OPENCREATOR_DEFAULT_CWD: input.defaultCwd,
-    OPENCREATOR_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot,
-    OPENCREATOR_REQUIRE_CODEX_PROBE: input.requireProbe ? '1' : '0',
-    OPENCREATOR_CODEX_PROBE_VERIFIED: input.probeVerified ? '1' : '0'
+    CLAWEE_DATA_DIR: input.dataDir,
+    ...(input.creatorRuntimeRoot === undefined
+      ? {}
+      : { OPENCREATOR_CREATOR_RUNTIME_ROOT: input.creatorRuntimeRoot }),
+    ...(input.codexRuntimeRoot === undefined
+      ? {}
+      : { OPENCREATOR_CODEX_RUNTIME_ROOT: input.codexRuntimeRoot }),
+    ...(input.codexRuntimeMode === undefined
+      ? {}
+      : { OPENCREATOR_CODEX_RUNTIME_MODE: input.codexRuntimeMode }),
+    CLAWEE_DEFAULT_CWD: input.defaultCwd,
+    CLAWEE_DEFAULT_PROJECT_ROOT: input.defaultProjectRoot,
+    CLAWEE_REQUIRE_CODEX_PROBE: input.requireProbe ? '1' : '0',
+    CLAWEE_CODEX_PROBE_VERIFIED: input.probeVerified ? '1' : '0'
   });
   return env;
 }

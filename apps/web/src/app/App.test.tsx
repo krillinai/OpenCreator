@@ -11,6 +11,8 @@ import type {
   CodexSkillMarketInstallRecordResponse,
   CodexSkillResponse,
   CodexStatusResponse,
+  CreatorJson,
+  CreatorJob,
   CreateScheduleRequest,
   EnterpriseKnowledgeBaseResponse,
   EnterpriseKnowledgeDocumentResponse,
@@ -57,6 +59,7 @@ vi.mock('@opencreator/skill-market', async importOriginal => {
 });
 
 let testRuntimeProjects: ProjectResponse[] | undefined;
+let testCreatorJobs: CreatorJob[] = [];
 
 function App(props: AppProps = {}) {
   return <ProductionApp projectNavigationMode="tree" {...props} />;
@@ -215,7 +218,7 @@ describe('App', () => {
     window.location.hash = '#/assets';
     render(<App />);
     expect(await screen.findByRole('heading', { level: 1, name: '知识库' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '我的资产' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('region', { name: '我的资产' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '知识库' })).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('tab', { name: '素材中心' }));
     await waitFor(() => expect(window.location.hash).toBe('#/assets?tab=materials'));
@@ -252,8 +255,10 @@ describe('App', () => {
       />
     );
 
-    expect(await screen.findByRole('heading', { level: 1, name: '知识库' }))
-      .toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: '知识库' }))
+        .toBeInTheDocument();
+    });
     expect(screen.queryByRole('button', { name: '对话知识库' }))
       .not.toBeInTheDocument();
     expect(window.location.hash).toBe('#/knowledge');
@@ -893,6 +898,7 @@ describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     testRuntimeProjects = undefined;
+    testCreatorJobs = [];
     window.localStorage.clear();
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   });
@@ -922,21 +928,41 @@ describe('App', () => {
 
   it('opens a Home Skill interaction without submitting its prompt hint', async () => {
     const user = userEvent.setup();
-    render(<App fileService={createFileService()} />);
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
 
     await user.click(await screen.findByRole('button', {
       name: '使用多语言视频翻译模板'
     }));
 
     expect(await screen.findByRole('heading', { name: '视频翻译配音' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('OpenCreator 导航')).not.toBeInTheDocument();
     const agentInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
     expect(agentInput).toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
     expect(agentInput).toHaveValue('');
-    await waitFor(() => expect(window.location.hash).toBe('#/dashboard'));
-
-    await user.click(screen.getByRole('button', { name: '返回' }));
-    expect(await screen.findByRole('heading', { name: '创作模板' })).toBeInTheDocument();
-    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    await user.click(screen.getByRole('button', { name: '返回工作台' }));
+    expect(await screen.findByLabelText('OpenCreator 导航')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/workbench'));
   });
 
   it('keeps a non-workspace Home Skill inactive until the user writes a prompt', async () => {
@@ -1116,9 +1142,12 @@ describe('App', () => {
     );
     await user.click(screen.getByRole('button', { name: '继续' }));
     await user.click(screen.getByRole('button', { name: '继续' }));
-    await user.click(screen.getByRole('button', { name: '开始翻译' }));
+    await user.click(within(
+      screen.getByRole('region', { name: '视频翻译操作区' })
+    ).getByRole('button', { name: '开始翻译' }));
     expect(screen.getByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '成片' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: '成片' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '字幕' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('textbox', { name: '输入任务' })).not.toBeInTheDocument();
   });
 
@@ -7598,6 +7627,7 @@ describe('App', () => {
       await screen.findByRole('combobox', { name: '默认权限' }),
       'danger-full-access'
     );
+    await user.click(await screen.findByRole('button', { name: '开启' }));
 
     expect(window.localStorage.getItem('opencreator.preferences.defaultPermission'))
       .toBe('danger-full-access');
@@ -7694,6 +7724,7 @@ describe('App', () => {
       screen.getByRole('combobox', { name: '默认权限' }),
       'danger-full-access'
     );
+    await user.click(await screen.findByRole('button', { name: '开启' }));
 
     await waitFor(() => {
       expect(findPatchCall(fetchCalls, '/threads/thread-ordinary')).toBeDefined();
@@ -8022,7 +8053,7 @@ function createWorkspaceFile(path: string, content: string): WorkspaceFile {
     saved: true,
     dirty: false,
     updatedAt: new Date(0).toISOString(),
-    source: 'mock'
+    source: 'runtime'
   };
 }
 
@@ -8082,6 +8113,8 @@ function handleDefaultProjectApiRequest(
   url: string,
   init?: RequestInit
 ): Response | undefined {
+  const creatorResponse = handleDefaultCreatorApiRequest(url, init);
+  if (creatorResponse !== undefined) return creatorResponse;
   if (url.endsWith('/projects/migrations/local-storage-v1')) {
     const projects = readTestRuntimeProjects();
     return jsonResponse({
@@ -8181,6 +8214,135 @@ function handleDefaultProjectApiRequest(
     return jsonResponse({ project });
   }
   return undefined;
+}
+
+function handleDefaultCreatorApiRequest(
+  url: string,
+  init?: RequestInit
+): Response | undefined {
+  const method = init?.method ?? 'GET';
+  const parsedUrl = new URL(url);
+  if (parsedUrl.pathname === '/creator/jobs' && method === 'GET') {
+    const projectId = parsedUrl.searchParams.get('projectId');
+    return jsonResponse({
+      jobs: testCreatorJobs.filter(job => projectId === null || job.projectId === projectId)
+    });
+  }
+  if (parsedUrl.pathname === '/creator/jobs' && method === 'POST') {
+    const body = readRequestBody(init ?? {});
+    const now = new Date(0).toISOString();
+    const job: CreatorJob = {
+      id: `creator-job-${testCreatorJobs.length + 1}`,
+      projectId: typeof body.projectId === 'string' ? body.projectId : 'project-test',
+      templateId: typeof body.templateId === 'string' ? body.templateId : 'video-translation',
+      templateVersion: typeof body.templateVersion === 'number' ? body.templateVersion : 1,
+      status: 'draft',
+      revision: 0,
+      state: {
+        sourceType: 'url',
+        sourceUrl: '',
+        sourceLanguage: 'zh_cn',
+        targetLanguage: 'en',
+        preferPlatformCaptions: true,
+        bilingual: true,
+        subtitlePosition: 'top',
+        dubbing: false,
+        voiceCode: '',
+        composeVideo: false,
+        videoFormat: 'horizontal',
+        currentStage: null
+      },
+      agentThreadId: null,
+      stages: [],
+      artifacts: [],
+      activities: [],
+      createdAt: now,
+      updatedAt: now
+    };
+    testCreatorJobs.push(job);
+    return jsonResponse({ job }, { status: 201 });
+  }
+
+  const jobRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)$/);
+  if (jobRoute !== null && method === 'GET') {
+    const job = testCreatorJobs.find(candidate => candidate.id === decodeURIComponent(jobRoute[1]!));
+    return job === undefined ? jsonResponse({}, { status: 404 }) : jsonResponse({ job });
+  }
+  const historyRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/agent-history$/);
+  if (historyRoute !== null && method === 'GET') return jsonResponse({ turns: [] });
+  const eventsRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/events$/);
+  if (eventsRoute !== null && method === 'GET') {
+    return new Response('', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  }
+  const actionRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/actions$/);
+  if (actionRoute !== null && method === 'POST') {
+    const jobIndex = testCreatorJobs.findIndex(
+      candidate => candidate.id === decodeURIComponent(actionRoute[1]!)
+    );
+    if (jobIndex < 0) return jsonResponse({}, { status: 404 });
+    const body = readRequestBody(init ?? {});
+    const previous = testCreatorJobs[jobIndex]!;
+    const input = isPlainTestRecord(body.input) ? body.input : {};
+    const patch = (isPlainTestRecord(input.patch) ? input.patch : {}) as Record<string, CreatorJson>;
+    const revision = previous.revision + 1;
+    const now = new Date(revision * 1000).toISOString();
+    const runStage = body.action === 'run-stage';
+    const job: CreatorJob = {
+      ...previous,
+      status: runStage ? 'completed' : previous.status,
+      revision,
+      state: { ...previous.state, ...patch },
+      artifacts: runStage
+        ? [{
+            id: `artifact-${revision}`,
+            jobId: previous.id,
+            kind: 'target_subtitle',
+            version: 1,
+            status: 'completed',
+            path: '/tmp/translated.srt',
+            sourceArtifactIds: [],
+            metadata: {
+              cues: [
+                { id: 1, start: '00:00:00,000', end: '00:00:03,200', text: 'Welcome to OpenCreator.' }
+              ],
+              settingsSnapshot: { ...previous.state, ...patch }
+            },
+            createdAt: now
+          }]
+        : previous.artifacts,
+      activities: [
+        ...previous.activities,
+        {
+          id: `activity-${revision}`,
+          jobId: previous.id,
+          revision,
+          actor: body.actor === 'agent' ? 'agent' : 'user',
+          action: typeof body.action === 'string' ? body.action : 'update-settings',
+          summary: runStage ? '字幕生成完成' : '创作设置已更新',
+          details: {},
+          createdAt: now
+        }
+      ],
+      updatedAt: now
+    };
+    testCreatorJobs[jobIndex] = job;
+    return jsonResponse({
+      job,
+      receipt: {
+        actor: body.actor === 'agent' ? 'agent' : 'user',
+        action: typeof body.action === 'string' ? body.action : 'update-settings',
+        summary: runStage ? '字幕生成完成' : '创作设置已更新',
+        affectedArtifacts: runStage ? [`artifact-${revision}`] : [],
+        newRevision: revision,
+        createdAt: now
+      }
+    });
+  }
+  return undefined;
+}
+
+function isPlainTestRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function readTestRuntimeProjects(): ProjectResponse[] {

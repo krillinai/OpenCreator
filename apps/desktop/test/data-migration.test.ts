@@ -62,9 +62,15 @@ describe('Runtime data migration', () => {
 
   it('rejects symbolic links inside the source tree', () => {
     const { source, target } = createFixture();
-    const external = join(tempDir, 'external.txt');
-    writeFileSync(external, 'outside');
-    symlinkSync(external, join(source, 'external-link'));
+    const external = join(tempDir, process.platform === 'win32' ? 'external' : 'external.txt');
+    if (process.platform === 'win32') {
+      mkdirSync(external);
+      writeFileSync(join(external, 'outside.txt'), 'outside');
+      symlinkSync(external, join(source, 'external-link'), 'junction');
+    } else {
+      writeFileSync(external, 'outside');
+      symlinkSync(external, join(source, 'external-link'));
+    }
 
     expect(() => runRuntimeDataImport({ source, target }))
       .toThrow(/symbolic link/i);

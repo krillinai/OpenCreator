@@ -9,7 +9,7 @@ import {
   rmSync,
   statSync
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { skillsPathForCodexHome } from './scanner.js';
 import { assertNoSymlinks, assertValidSkillId, deriveSkillId, parseSkillMarkdown } from './validator.js';
 
@@ -197,7 +197,15 @@ function backupSkill(codexHome: string, id: string, targetPath: string): string 
 function ensurePathInside(parent: string, childName: string): string {
   const target = resolve(parent, childName);
   const normalizedParent = resolve(parent);
-  if (target !== normalizedParent && target.startsWith(`${normalizedParent}/`)) return target;
+  const relativeTarget = relative(normalizedParent, target);
+  if (
+    relativeTarget !== ''
+    && relativeTarget !== '..'
+    && !relativeTarget.startsWith(`..${sep}`)
+    && !isAbsolute(relativeTarget)
+  ) {
+    return target;
+  }
   throw new Error(`CODEX_SKILL_INVALID: target path escapes skills directory: ${childName}`);
 }
 

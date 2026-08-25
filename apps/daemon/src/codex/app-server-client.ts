@@ -9,7 +9,13 @@ import { BoundedFrameBuffer } from './bounded-buffer.js';
 
 export type CodexAppServerRequestClient = {
   request<Result>(method: string, params: unknown): Promise<Result>;
+  notify?(method: string, params?: unknown): void;
+  restart?(): Promise<void>;
   close(): Promise<void>;
+};
+
+export type RestartableCodexAppServerRequestClient = CodexAppServerRequestClient & {
+  restart(): Promise<void>;
 };
 
 export type CreateCodexAppServerClientInput = {
@@ -18,6 +24,7 @@ export type CreateCodexAppServerClientInput = {
   cwd?: string;
   requestTimeoutMs?: number;
   env?: Record<string, string>;
+  onNotification?(notification: Record<string, unknown>): void;
 };
 
 type PendingRequest = {
@@ -40,7 +47,7 @@ const CLOSE_GRACE_MS = 2_000;
 
 export function createCodexAppServerClient(
   input: CreateCodexAppServerClientInput
-): CodexAppServerRequestClient {
+): RestartableCodexAppServerRequestClient {
   const requestTimeoutMs = input.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   let processState: AppServerProcessState | undefined;
   let closing = false;
@@ -53,24 +60,39 @@ export function createCodexAppServerClient(
       return sendRequest(state, method, params) as Promise<Result>;
     },
 
+    notify(method: string, params?: unknown): void {
+      if (closing) throw new Error('Codex app-server client is closed');
+      const state = ensureProcess();
+      void state.initialize.then(() => sendNotification(state, method, params));
+    },
+
+    async restart(): Promise<void> {
+      if (closing) throw new Error('Codex app-server client is closed');
+      await stopProcess();
+    },
+
     async close(): Promise<void> {
       closing = true;
-      const state = processState;
-      processState = undefined;
-      if (state === undefined || state.settled) return;
-
-      const closed = new Promise<void>(resolve => {
-        state.child.once('close', () => resolve());
-      });
-      terminateCodexProcess(state.child, 'SIGTERM');
-      const forceKill = setTimeout(() => {
-        if (!state.settled) terminateCodexProcess(state.child, 'SIGKILL');
-      }, CLOSE_GRACE_MS);
-      forceKill.unref();
-      await closed;
-      clearTimeout(forceKill);
+      await stopProcess();
     }
   };
+
+  async function stopProcess(): Promise<void> {
+    const state = processState;
+    processState = undefined;
+    if (state === undefined || state.settled) return;
+
+    const closed = new Promise<void>(resolve => {
+      state.child.once('close', () => resolve());
+    });
+    terminateCodexProcess(state.child, 'SIGTERM');
+    const forceKill = setTimeout(() => {
+      if (!state.settled) terminateCodexProcess(state.child, 'SIGKILL');
+    }, CLOSE_GRACE_MS);
+    forceKill.unref();
+    await closed;
+    clearTimeout(forceKill);
+  }
 
   function ensureProcess(): AppServerProcessState {
     if (processState !== undefined && !processState.settled) return processState;
@@ -166,14 +188,25 @@ export function createCodexAppServerClient(
     });
   }
 
-  function sendNotification(state: AppServerProcessState, method: string): void {
+  function sendNotification(
+    state: AppServerProcessState,
+    method: string,
+    params?: unknown
+  ): void {
     if (state.settled || state.child.stdin.destroyed) return;
-    state.child.stdin.write(`${JSON.stringify({ method })}\n`);
+    state.child.stdin.write(`${JSON.stringify({
+      method,
+      ...(params === undefined ? {} : { params })
+    })}\n`);
   }
 
   function handleMessage(state: AppServerProcessState, value: unknown): void {
     if (!isRecord(value)) return;
     const id = value.id;
+    if ((typeof id !== 'string' && typeof id !== 'number') && typeof value.method === 'string') {
+      input.onNotification?.(value);
+      return;
+    }
     if (typeof id !== 'string' && typeof id !== 'number') return;
     const pending = state.pending.get(String(id));
     if (pending === undefined) {

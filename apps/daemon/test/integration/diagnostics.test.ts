@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildServer } from '../../src/api/server.js';
+import {
+  buildServer as buildRuntimeServer,
+  type BuildServerInput
+} from '../../src/api/server.js';
 import { openRuntimeDatabase } from '../../src/storage/database.js';
 import { createRunRepository, createThreadRepository } from '../../src/storage/repositories.js';
 import { createFakeCodex } from '../helpers/fake-codex.js';
@@ -14,6 +17,12 @@ let server: FastifyInstance | undefined;
 let db: Database.Database | undefined;
 const RUN_STATUS_TIMEOUT_MS = 5_000;
 type TestInjectPayload = string | object;
+
+const buildServer = (input: BuildServerInput) => buildRuntimeServer({
+  persistentAppServerEnabled: false,
+  runtimeTransport: 'exec',
+  ...input
+});
 
 afterEach(async () => {
   await server?.close();

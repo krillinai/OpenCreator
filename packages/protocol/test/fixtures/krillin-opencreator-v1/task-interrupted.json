@@ -1,0 +1,15 @@
+{
+  "id": "task_1",
+  "jobId": "job_1",
+  "stageRunId": "stage_1",
+  "stageType": "subtitle",
+  "status": "interrupted",
+  "lastEventSeq": 4,
+  "error": {
+    "code": "service_restarted",
+    "message": "KrillinAI service restarted while the task was running",
+    "retryable": true
+  },
+  "createdAt": "2026-08-21T00:00:00.000Z",
+  "updatedAt": "2026-08-21T00:00:04.000Z"
+}

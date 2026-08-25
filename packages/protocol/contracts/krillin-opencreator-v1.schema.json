@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencreator.local/contracts/krillin-opencreator-v1.schema.json",
+  "title": "KrillinAI OpenCreator Protocol V1",
+  "oneOf": [
+    { "$ref": "#/$defs/createTaskRequest" },
+    { "$ref": "#/$defs/task" },
+    { "$ref": "#/$defs/taskEvent" },
+    { "$ref": "#/$defs/taskEventsResponse" },
+    { "$ref": "#/$defs/resultManifest" },
+    { "$ref": "#/$defs/capabilities" }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+    },
+    "stageType": {
+      "enum": ["download", "subtitle", "tts", "render-horizontal", "render-vertical"]
+    },
+    "taskStatus": {
+      "enum": ["queued", "running", "succeeded", "failed", "canceled", "interrupted"]
+    },
+    "createTaskRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "jobId", "stageRunId", "stageType", "idempotencyKey", "requestHash", "inputArtifactIds", "options"],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "jobId": { "$ref": "#/$defs/identifier" },
+        "stageRunId": { "$ref": "#/$defs/identifier" },
+        "stageType": { "$ref": "#/$defs/stageType" },
+        "idempotencyKey": { "$ref": "#/$defs/identifier" },
+        "requestHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "inputArtifactIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/identifier" },
+          "uniqueItems": true
+        },
+        "options": { "type": "object" },
+        "providerConfig": { "type": "object" }
+      }
+    },
+    "taskError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "jobId", "stageRunId", "stageType", "status", "lastEventSeq", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "jobId": { "$ref": "#/$defs/identifier" },
+        "stageRunId": { "$ref": "#/$defs/identifier" },
+        "stageType": { "$ref": "#/$defs/stageType" },
+        "status": { "$ref": "#/$defs/taskStatus" },
+        "lastEventSeq": { "type": "integer", "minimum": 0 },
+        "resultManifestId": { "$ref": "#/$defs/identifier" },
+        "error": { "$ref": "#/$defs/taskError" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "taskEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "seq", "type", "payload", "createdAt"],
+      "properties": {
+        "taskId": { "$ref": "#/$defs/identifier" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "type": { "enum": ["status", "progress", "artifact", "result", "error"] },
+        "payload": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "taskEventsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "nextSeq"],
+      "properties": {
+        "events": { "type": "array", "items": { "$ref": "#/$defs/taskEvent" } },
+        "nextSeq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "resultArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "relativePath"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "kind": { "type": "string", "minLength": 1 },
+        "relativePath": { "type": "string", "minLength": 1 },
+        "mimeType": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "resultManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "id", "taskId", "jobId", "stageRunId", "artifacts", "metadata", "createdAt"],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "id": { "$ref": "#/$defs/identifier" },
+        "taskId": { "$ref": "#/$defs/identifier" },
+        "jobId": { "$ref": "#/$defs/identifier" },
+        "stageRunId": { "$ref": "#/$defs/identifier" },
+        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/resultArtifact" } },
+        "metadata": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion", "serviceVersion", "generation", "stages"],
+      "properties": {
+        "protocolVersion": { "const": 1 },
+        "serviceVersion": { "type": "string", "minLength": 1 },
+        "generation": { "type": "integer", "minimum": 1 },
+        "stages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/stageType" },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

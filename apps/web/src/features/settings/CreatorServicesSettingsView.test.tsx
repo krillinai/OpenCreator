@@ -24,13 +24,25 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByText('配置已安全保存')).toBeInTheDocument();
   });
 
+  it('shows configured credentials without loading their secret values', async () => {
+    render(<CreatorServicesSettingsView connected service={createService(['llm.apiKey'])} />);
+
+    const apiKey = await screen.findByLabelText('API Key');
+    expect(apiKey).toHaveValue('');
+    expect(apiKey).toHaveAttribute('placeholder', '已配置，留空则保持');
+  });
+
   it('shows only the fields required by the selected transcription and voice providers', async () => {
     const user = userEvent.setup();
     render(<CreatorServicesSettingsView connected service={createService()} />);
     await screen.findByRole('tabpanel');
 
     await user.click(screen.getByRole('tab', { name: '语音识别' }));
-    await user.click(screen.getByRole('combobox', { name: '服务商' }));
+    await user.click(screen.getByRole('combobox', { name: '优先服务' }));
+    await user.click(screen.getByRole('option', { name: 'Whisper.cpp' }));
+    expect(screen.getByRole('combobox', { name: '本地模型' })).toHaveTextContent('tiny');
+
+    await user.click(screen.getByRole('combobox', { name: '优先服务' }));
     await user.click(screen.getByRole('option', { name: '阿里云语音' }));
     expect(screen.getByText('OSS 存储')).toBeInTheDocument();
     expect(screen.getByText('语音服务')).toBeInTheDocument();
@@ -89,11 +101,11 @@ describe('CreatorServicesSettingsView', () => {
   });
 });
 
-function createService(): CreatorServicesSettingsService {
+function createService(configuredCredentials: Array<'llm.apiKey'> = []): CreatorServicesSettingsService {
   const config = createDefaultCreatorServicesConfig();
   return {
-    getConfig: vi.fn(async () => ({ config: structuredClone(config) })),
-    saveConfig: vi.fn(async next => ({ config: structuredClone(next) })),
-    resetConfig: vi.fn(async () => ({ config: createDefaultCreatorServicesConfig() }))
+    getConfig: vi.fn(async () => ({ config: structuredClone(config), configuredCredentials })),
+    saveConfig: vi.fn(async next => ({ config: structuredClone(next), configuredCredentials })),
+    resetConfig: vi.fn(async () => ({ config: createDefaultCreatorServicesConfig(), configuredCredentials: [] }))
   };
 }

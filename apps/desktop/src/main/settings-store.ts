@@ -65,6 +65,10 @@ function normalizeSettings(value: unknown): DesktopSettings {
   if (typeof value.successfulCodexBin === 'string' && value.successfulCodexBin.length > 0) {
     settings.successfulCodexBin = value.successfulCodexBin;
   }
+  settings.codexRuntimeMode = value.codexRuntimeMode === 'external' ? 'external' : 'bundled';
+  if (typeof value.externalCodexBin === 'string' && value.externalCodexBin.length > 0) {
+    settings.externalCodexBin = value.externalCodexBin;
+  }
   if (typeof value.importedRuntimeSource === 'string' && value.importedRuntimeSource.length > 0) {
     settings.importedRuntimeSource = value.importedRuntimeSource;
   }

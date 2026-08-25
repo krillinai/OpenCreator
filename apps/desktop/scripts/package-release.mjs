@@ -96,6 +96,20 @@ await runStage('准备打包 Daemon 与 Web', process.execPath, [
   env,
   timeoutMs: 25 * 60_000
 });
+await runStage('准备 Creator Runtime', process.execPath, [
+  resolve(scriptDir, 'prepare-creator-runtime.mjs')
+], {
+  cwd: rootDir,
+  env,
+  timeoutMs: 25 * 60_000
+});
+await runStage('准备 Codex Runtime', process.execPath, [
+  resolve(scriptDir, 'prepare-codex-runtime.mjs')
+], {
+  cwd: rootDir,
+  env,
+  timeoutMs: 10 * 60_000
+});
 const candidates = packageRootCandidates(platform, arch);
 for (const path of candidates) rmSync(path, { recursive: true, force: true });
 
@@ -113,10 +127,18 @@ await runStage(
 
 const packageRoot = findFreshPackageRoot(candidates);
 const webBuild = hashDirectory(resolve(rootDir, 'apps/web/dist'));
+const codexRuntimeManifest = JSON.parse(readFileSync(
+  resolve(desktopDir, '.pack', 'codex-runtime', 'manifest.json'),
+  'utf8'
+));
+const creatorRuntimeManifest = JSON.parse(readFileSync(
+  resolve(desktopDir, '.pack', 'creator-runtime', 'krillinai', 'manifest.json'),
+  'utf8'
+));
 const manifest = {
   version: 1,
   commit: gitOutput(['rev-parse', 'HEAD']) || 'unknown',
-  dirty: gitOutput(['status', '--porcelain', '--untracked-files=all']).length > 0,
+  dirty: gitOutput(['status', '--porcelain', '--untracked-files=normal']).length > 0,
   generatedAt: new Date().toISOString(),
   platform,
   arch,
@@ -129,7 +151,15 @@ const manifest = {
   packageRoot,
   packageRootRelative: relative(rootDir, packageRoot),
   webBuildHash: webBuild.hash,
-  webFileCount: webBuild.fileCount
+  webFileCount: webBuild.fileCount,
+  codexRuntimeVersion: codexRuntimeManifest.version,
+  codexRuntimeCommit: codexRuntimeManifest.commit,
+  codexRuntimeBinarySha256: codexRuntimeManifest.binary.sha256,
+  codexAppServerProtocolSha256: codexRuntimeManifest.appServerProtocol.schemaSha256,
+  krillinServiceVersion: creatorRuntimeManifest.serviceVersion,
+  krillinUpstreamCommit: creatorRuntimeManifest.upstreamCommit,
+  krillinIntegrationPatchSha256: creatorRuntimeManifest.integrationPatchSha256,
+  krillinProtocolSha256: creatorRuntimeManifest.protocolSha256
 };
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`[desktop-package] 构建清单：${manifestPath}`);
@@ -277,9 +307,16 @@ function gitOutput(args) {
   const result = spawnSync('git', args, {
     cwd: rootDir,
     encoding: 'utf8',
-    timeout: 10_000
+    timeout: 10_000,
+    maxBuffer: 2 * 1024 * 1024
   });
-  return result.status === 0 ? result.stdout.trim() : '';
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(
+      `Git command failed (${args.join(' ')}): ${result.stderr.trim()}`
+    );
+  }
+  return result.stdout.trim();
 }
 
 function hasValue(value) {

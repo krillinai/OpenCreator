@@ -6,7 +6,7 @@ import {
   symlinkSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -63,11 +63,11 @@ describe('attachment service', () => {
     });
     expect(first.attachment.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(first.attachment.storageKey).toMatch(/^[a-zA-Z0-9_-]{2}\/[a-zA-Z0-9_-]+\.bin$/);
-    expect(
-      resolve(tempDir, 'attachments', first.attachment.storageKey).startsWith(
-        `${resolve(tempDir, 'attachments')}/`
-      )
-    ).toBe(true);
+    const storedRelativePath = relative(
+      resolve(tempDir, 'attachments'),
+      resolve(tempDir, 'attachments', first.attachment.storageKey)
+    );
+    expect(storedRelativePath.startsWith('..') || isAbsolute(storedRelativePath)).toBe(false);
     expect(existsSync(resolve(tempDir, 'attachments', first.attachment.storageKey))).toBe(true);
     expect(duplicate).toEqual({
       attachment: first.attachment,
@@ -135,7 +135,11 @@ describe('attachment service', () => {
       dataDir: tempDir,
       createId: () => 'aa-attachment'
     });
-    symlinkSync(outsideDir, join(tempDir, 'attachments', 'aa'));
+    symlinkSync(
+      outsideDir,
+      join(tempDir, 'attachments', 'aa'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
 
     await expect(
       service.upload({
@@ -195,7 +199,7 @@ describe('attachment service', () => {
     })).toEqual([
       expect.objectContaining({
         attachment: expect.objectContaining({ id: committed.attachment.id }),
-        path: expect.stringContaining(committed.attachment.storageKey)
+        path: resolve(tempDir, 'attachments', committed.attachment.storageKey)
       })
     ]);
     await expect(

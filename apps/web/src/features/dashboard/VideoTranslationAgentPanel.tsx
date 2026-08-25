@@ -1,240 +1,170 @@
-import { useEffect, useMemo, useState } from 'react';
+import type {
+  CreatorActivity,
+  CreatorAgentItem,
+  CreatorAgentTurn,
+  CreatorJob,
+  CreatorStageRun
+} from '@opencreator/protocol';
 import {
   Bot,
-  Check,
+  CheckCircle2,
+  CircleDot,
+  LoaderCircle,
   MessageSquareText,
-  RotateCcw,
-  Sparkles
+  ServerOff,
+  Sparkles,
+  Square,
+  XCircle
 } from 'lucide-react';
-import { useAppLanguage } from '../../i18n/LanguageProvider.js';
-import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
-import ToolAgentComposer from './ToolAgentComposer.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer.js';
+import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import ToolAgentComposer, { type ToolAgentPermission } from './ToolAgentComposer.js';
+import { useOptionalCreatorSession } from './creator-session-store.js';
 
-export type VideoTranslationAgentAction =
-  | { type: 'explain_source' }
+export type VideoTranslationAgentQuickAction = {
+  id: string;
+  label: string;
+  kind: 'action' | 'agent';
+  prompt?: string;
+  onAction?(): void;
+};
+
+type SyncEvent = {
+  id: string;
+  actor: CreatorActivity['actor'];
+  action: string;
+  label: string;
+  fields: string[];
+  count: number;
+  createdAt: string;
+  stageId?: string;
+};
+
+type CollaborationMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: CreatorAgentTurn['status'] | CreatorAgentItem['status'];
+  createdAt: string;
+  source: 'agent';
+};
+
+type CollaborationTimelineItem =
   | {
-      type: 'apply_task_request';
-      request: {
-        videoUrl?: string;
-        targetLanguage?: { value: 'en' | 'ja' | 'ko'; label: string };
-        bilingual?: boolean;
-        dubbing?: boolean;
-        output?: 'horizontal' | 'vertical' | 'subtitles';
-        execute?: boolean;
-      };
+      id: string;
+      kind: 'message';
+      createdAt: string;
+      message: CollaborationMessage;
     }
-  | { type: 'advance_task' }
-  | { type: 'run_translation' }
-  | { type: 'set_target_language'; value: 'en' | 'ja' | 'ko'; label: string }
-  | { type: 'set_bilingual'; value: boolean }
-  | { type: 'set_dubbing'; value: boolean }
-  | { type: 'set_output'; value: 'horizontal' | 'vertical' }
-  | { type: 'subtitle_only' }
-  | { type: 'open_subtitle_editor' }
-  | { type: 'edit_subtitle'; index: number; text: string }
-  | { type: 'open_result_settings' }
-  | { type: 'regenerate_result' }
-  | { type: 'confirm_regeneration' }
-  | { type: 'cancel_regeneration' };
-
-type AgentMessage = {
-  id: number;
-  role: 'agent' | 'user';
-  text: string;
-};
-
-const quickActions: Record<number, Array<{ label: string; action: VideoTranslationAgentAction }>> = {
-  0: [
-    { label: '链接支持哪些平台', action: { type: 'explain_source' } },
-    { label: '继续设置', action: { type: 'advance_task' } }
-  ],
-  1: [
-    { label: '翻译成英文', action: { type: 'set_target_language', value: 'en', label: 'English' } },
-    { label: '翻译成日语', action: { type: 'set_target_language', value: 'ja', label: '日本語' } },
-    { label: '关闭双语字幕', action: { type: 'set_bilingual', value: false } },
-    { label: '进入字幕样式', action: { type: 'advance_task' } }
-  ],
-  2: [
-    { label: '进入配音与输出', action: { type: 'advance_task' } }
-  ],
-  3: [
-    { label: '开启配音', action: { type: 'set_dubbing', value: true } },
-    { label: '输出竖屏视频', action: { type: 'set_output', value: 'vertical' } },
-    { label: '仅生成字幕', action: { type: 'subtitle_only' } },
-    { label: '按当前设置开始', action: { type: 'run_translation' } }
-  ],
-  4: [
-    { label: '修改字幕', action: { type: 'open_subtitle_editor' } },
-    { label: '调整任务设置', action: { type: 'open_result_settings' } },
-    { label: '生成新版本', action: { type: 'regenerate_result' } }
-  ]
-};
+  | {
+      id: string;
+      kind: 'activity';
+      createdAt: string;
+      event: SyncEvent;
+    }
+  | {
+      id: string;
+      kind: 'stage';
+      createdAt: string;
+      stage: CreatorStageRun;
+      actor: CreatorActivity['actor'];
+    };
 
 export default function VideoTranslationAgentPanel(props: {
-  step: number;
   stepLabel: string;
   contextSummary: string;
-  canRegenerate: boolean;
-  regenerationPending: boolean;
-  nextVersion: number;
   promptHint?: string;
-  lastChange?: string;
-  onApply(action: VideoTranslationAgentAction): string;
-  onUndo(): void;
+  currentIssue?: string;
+  quickActions?: VideoTranslationAgentQuickAction[];
 }) {
-  const { language } = useAppLanguage();
   const l = useLocalizedCopy();
-  const [messages, setMessages] = useState<AgentMessage[]>(() => [initialMessage(l)]);
+  const session = useOptionalCreatorSession();
   const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [permission, setPermission] = useState<ToolAgentPermission>('approval');
+  const sendingRef = useRef(false);
+  const permissionSessionRef = useRef<string | null>(null);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const agentTurns = useMemo(() => session?.turns.filter(turn => (
+    (turn.role === 'user' || turn.role === 'assistant')
+    && (turn.content.trim().length > 0 || ['queued', 'running', 'waiting_approval'].includes(turn.status))
+  )) ?? [], [session?.turns]);
+  const conversationMessages = useMemo(
+    () => buildCollaborationMessages(agentTurns, session?.items ?? []),
+    [agentTurns, session?.items]
+  );
+  const syncEvents = useMemo(
+    () => buildSyncEvents(session?.job.activities ?? [], l),
+    [l, session?.job.activities]
+  );
+  const timelineItems = useMemo(
+    () => buildCollaborationTimeline(session?.job, conversationMessages, syncEvents),
+    [conversationMessages, session?.job, syncEvents]
+  );
+  const pendingApprovals = useMemo(
+    () => session?.approvals.filter(approval => approval.status === 'pending') ?? [],
+    [session?.approvals]
+  );
+  const hasActiveStage = useMemo(
+    () => latestStageRuns(session?.job.stages ?? []).some(stage => (
+      stage.status === 'queued' || stage.status === 'running'
+    )),
+    [session?.job.stages]
+  );
+  const showAgentWorking = (sending || session?.agentBusy === true)
+    && !hasActiveStage
+    && pendingApprovals.length === 0;
+
   useEffect(() => {
-    setMessages([initialMessage(l)]);
+    const sessionId = session?.agentSession?.id;
+    if (sessionId === undefined || permissionSessionRef.current === sessionId) return;
+    permissionSessionRef.current = sessionId;
+    const sandbox = session?.agentSession?.sandbox;
+    if (sandbox === 'danger-full-access') setPermission('full-access');
+    if (sandbox === 'workspace-write') setPermission('approval');
+  }, [session?.agentSession?.id, session?.agentSession?.sandbox]);
+
+  useEffect(() => {
+    const list = messageListRef.current;
+    if (list !== null) list.scrollTop = list.scrollHeight;
+  }, [
+    conversationMessages.at(-1)?.content,
+    conversationMessages.at(-1)?.status,
+    session?.job.updatedAt,
+    timelineItems.at(-1)?.id,
+    pendingApprovals.length,
+    session?.agentBusy,
+    showAgentWorking
+  ]);
+
+  async function send(message: string) {
+    const content = message.trim();
+    if (!content || session === null || sendingRef.current) return;
+    sendingRef.current = true;
     setInput('');
-  }, [language, l]);
-  const actions = props.regenerationPending
-    ? [
-        { label: `${l('确认并执行', 'Confirm and generate')} V${props.nextVersion}`, action: { type: 'confirm_regeneration' } as const },
-        { label: l('暂不生成', 'Not now'), action: { type: 'cancel_regeneration' } as const }
-      ]
-    : (quickActions[props.step] ?? [])
-        .filter(item => item.action.type !== 'regenerate_result' || props.canRegenerate)
-        .map(item => ({ ...item, label: localizeQuickAction(item.label, l) }));
-  const nextMessageId = messages.length === 0 ? 1 : messages[messages.length - 1]!.id + 1;
-  const placeholder = props.step === 4
-    ? l('例如：把第 2 条字幕改为……', 'For example: change subtitle 2 to...')
-    : props.step === 3
-      ? l('例如：开启配音并输出竖屏', 'For example: enable dubbing and use vertical output')
-      : props.step === 2
-        ? l('例如：继续设置配音与输出', 'For example: continue to dubbing and output')
-      : props.step === 1
-        ? l('例如：翻译成日语', 'For example: translate into Japanese')
-        : props.promptHint ?? l('添加视频后，告诉我翻译要求', 'Add a video, then tell me your translation requirements');
-
-  const interpretedAction = useMemo((): VideoTranslationAgentAction | undefined => {
-    const prompt = input.trim();
-    const text = prompt.toLocaleLowerCase();
-    if (!text) return undefined;
-    if (props.regenerationPending) {
-      if (text.includes('确认') || text === '生成' || text === '继续' || text.includes('confirm') || text === 'generate' || text === 'continue') {
-        return { type: 'confirm_regeneration' };
-      }
-      if (text.includes('取消') || text.includes('算了') || text.includes('cancel') || text.includes('not now')) {
-        return { type: 'cancel_regeneration' };
-      }
-    }
-    if (props.step === 4) {
-      const subtitleEdit = prompt.match(
-        /^(?:请)?(?:(?:把|将)\s*)?第\s*(\d+)\s*(?:条|句)?字幕\s*(?:改成|改为|修改为|换成)\s*[“"'：:]?(.+?)[”"']?$/
+    setSending(true);
+    try {
+      if (session.agentBusy) await session.steerAgentTurn(content);
+      else await session.runAgentTurn(
+        content,
+        permission === 'full-access' ? 'danger-full-access' : 'workspace-write'
       );
-      const englishSubtitleEdit = prompt.match(/^(?:please\s+)?(?:change|edit|set)\s+(?:subtitle\s*)?#?\s*(\d+)\s+(?:to|as)\s+(.+)$/i);
-      const matchedSubtitleEdit = subtitleEdit ?? englishSubtitleEdit;
-      if (matchedSubtitleEdit) {
-        return {
-          type: 'edit_subtitle',
-          index: Number(matchedSubtitleEdit[1]),
-          text: matchedSubtitleEdit[2]!.trim()
-        };
-      }
-      if (text.includes('重新生成') || text.includes('新版本') || text.includes('regenerate') || text.includes('new version')) {
-        return { type: 'regenerate_result' };
-      }
-      if (text === '字幕' || text.includes('修改字幕') || text.includes('编辑字幕') || text === 'subtitles' || text.includes('edit subtitles')) {
-        return { type: 'open_subtitle_editor' };
-      }
+    } catch (cause) {
+      setInput(current => current.trim().length > 0 ? current : content);
+      throw cause;
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
-    const videoUrl = prompt.match(/https?:\/\/[^\s,，。;；]+/i)?.[0];
-    const targetLanguage = text.includes('日语') || text.includes('日文') || text.includes('japanese')
-      ? { value: 'ja' as const, label: '日本語' }
-      : text.includes('韩语') || text.includes('韩文') || text.includes('korean')
-        ? { value: 'ko' as const, label: '한국어' }
-        : text.includes('英语') || text.includes('英文') || text.includes('english')
-          ? { value: 'en' as const, label: 'English' }
-          : undefined;
-    const bilingual = text.includes('不要双语') || text.includes('关闭双语') || text.includes('no bilingual') || text.includes('disable bilingual')
-      ? false
-      : text.includes('双语') || text.includes('bilingual')
-        ? true
-        : undefined;
-    const dubbing = text.includes('不要配音') || text.includes('关闭配音') || text.includes('no dubbing') || text.includes('disable dubbing')
-      ? false
-      : text.includes('配音') || text.includes('dubbing') || text.includes('dub')
-        ? true
-        : undefined;
-    const output = text.includes('仅生成字幕') || text.includes('只要字幕') || text.includes('subtitles only')
-      ? 'subtitles' as const
-      : text.includes('竖屏') || text.includes('9:16') || text.includes('vertical')
-        ? 'vertical' as const
-        : text.includes('横屏') || text.includes('16:9') || text.includes('horizontal')
-          ? 'horizontal' as const
-          : undefined;
-    const execute = text.includes('开始翻译')
-      || text.includes('直接翻译')
-      || text.includes('立即翻译')
-      || text.includes('开始执行')
-      || text.includes('帮我翻译')
-      || text.includes('start translating')
-      || text.includes('translate now')
-      || text.includes('start');
-    const requestChangeCount = [targetLanguage, bilingual, dubbing, output]
-      .filter(value => value !== undefined).length;
-    if (videoUrl || execute || requestChangeCount > 1) {
-      return {
-        type: 'apply_task_request',
-        request: { videoUrl, targetLanguage, bilingual, dubbing, output, execute }
-      };
-    }
-    if (text === '继续' || text.includes('下一步') || text === 'continue' || text.includes('next step')) return { type: 'advance_task' };
-    if (text.includes('不要配音') || text.includes('关闭配音') || text.includes('no dubbing') || text.includes('disable dubbing')) return { type: 'set_dubbing', value: false };
-    if (text.includes('配音') || text.includes('dubbing') || text.includes('dub')) return { type: 'set_dubbing', value: true };
-    if ((text.includes('仅') && text.includes('字幕')) || text.includes('subtitles only')) return { type: 'subtitle_only' };
-    if (text.includes('竖屏') || text.includes('9:16') || text.includes('vertical')) return { type: 'set_output', value: 'vertical' };
-    if (text.includes('横屏') || text.includes('16:9') || text.includes('horizontal')) return { type: 'set_output', value: 'horizontal' };
-    if (text.includes('不要双语') || text.includes('关闭双语') || text.includes('no bilingual') || text.includes('disable bilingual')) return { type: 'set_bilingual', value: false };
-    if (text.includes('双语') || text.includes('bilingual')) return { type: 'set_bilingual', value: true };
-    if (text.includes('日语') || text.includes('日文') || text.includes('japanese')) {
-      return { type: 'set_target_language', value: 'ja', label: '日本語' };
-    }
-    if (text.includes('韩语') || text.includes('韩文') || text.includes('korean')) {
-      return { type: 'set_target_language', value: 'ko', label: '한국어' };
-    }
-    if (text.includes('英语') || text.includes('英文') || text.includes('english')) {
-      return { type: 'set_target_language', value: 'en', label: 'English' };
-    }
-    if (props.step === 4 && (text.includes('设置') || text.includes('语言') || text.includes('音色') || text.includes('settings') || text.includes('language') || text.includes('voice'))) {
-      return { type: 'open_result_settings' };
-    }
-    if (text.includes('平台') || text.includes('链接') || text.includes('platform') || text.includes('link')) return { type: 'explain_source' };
-    return undefined;
-  }, [input, props.regenerationPending, props.step]);
-
-  function runAction(action: VideoTranslationAgentAction, userText?: string) {
-    const result = props.onApply(action);
-    const nextMessages: AgentMessage[] = [];
-    if (userText) nextMessages.push({ id: nextMessageId, role: 'user', text: userText });
-    nextMessages.push({
-      id: nextMessageId + (userText ? 1 : 0),
-      role: 'agent',
-      text: result
-    });
-    setMessages(current => [...current, ...nextMessages]);
   }
 
-  function submit() {
-    const prompt = input.trim();
-    if (!prompt) return;
-    setInput('');
-    if (interpretedAction) {
-      runAction(interpretedAction, prompt);
+  function runQuickAction(action: VideoTranslationAgentQuickAction) {
+    if (action.kind === 'action') {
+      action.onAction?.();
       return;
     }
-    setMessages(current => [
-      ...current,
-      { id: nextMessageId, role: 'user', text: prompt },
-      {
-        id: nextMessageId + 1,
-        role: 'agent',
-        text: l('我还不能直接执行这条要求。当前可以调整目标语言、双语字幕、配音和输出画幅，也可以在生成后按序号修改字幕。', 'I cannot execute that request yet. I can change the target language, bilingual subtitles, dubbing, and output format, or edit a numbered subtitle after generation.')
-      }
-    ]);
+    if (action.prompt) void send(action.prompt).catch(() => undefined);
   }
 
   return (
@@ -245,83 +175,555 @@ export default function VideoTranslationAgentPanel(props: {
           <h2>OpenCreator</h2>
           <p>{l('正在协助：', 'Helping with: ')}{props.stepLabel}</p>
         </div>
+        {session?.agentBusy ? (
+          <button
+            type="button"
+            onClick={() => void session.interruptAgentTurn().catch(() => undefined)}
+            aria-label={l('停止 Agent', 'Stop Agent')}
+          >
+            <Square size={14} aria-hidden="true" />
+          </button>
+        ) : null}
       </header>
 
       <div className="video-translation-agent-context">
         <Sparkles size={14} strokeWidth={1.8} aria-hidden="true" />
         <span>
           <small>{l('当前任务', 'Current task')}</small>
-          <strong>{props.contextSummary}</strong>
+          <strong>{props.currentIssue ?? props.contextSummary}</strong>
         </span>
       </div>
 
-      <div className="video-translation-agent-messages" aria-live="polite">
-        {messages.map(message => (
-          <div className="video-translation-agent-message" data-role={message.role} key={message.id}>
-            {message.role === 'agent' ? (
-              <span aria-hidden="true"><MessageSquareText size={14} strokeWidth={1.8} /></span>
-            ) : null}
-            <p>{message.text}</p>
-          </div>
-        ))}
-      </div>
-
-      {props.lastChange ? (
-        <div className="video-translation-agent-change" role="status">
-          <Check size={14} strokeWidth={2} aria-hidden="true" />
-          <span>{props.lastChange}</span>
-          <button type="button" onClick={props.onUndo} aria-label={l('撤销 Agent 修改', 'Undo Agent change')}>
-            <RotateCcw size={14} strokeWidth={1.8} aria-hidden="true" />
-          </button>
+      {session === null ? (
+        <div className="video-translation-agent-unavailable" role="alert">
+          <ServerOff size={16} aria-hidden="true" />
+          <p>{l('Creator Runtime 未连接，Agent 不会生成替代回复。', 'Creator Runtime is disconnected. The Agent will not generate substitute responses.')}</p>
         </div>
-      ) : null}
+      ) : (
+        <>
+          <div
+            ref={messageListRef}
+            className="video-translation-agent-messages"
+            role="log"
+            aria-label={l('协作时间线', 'Collaboration timeline')}
+            aria-live="polite"
+          >
+            {timelineItems.length === 0 ? (
+              <div className="video-translation-agent-empty">
+                <MessageSquareText size={16} strokeWidth={1.7} aria-hidden="true" />
+                <span>{l('尚无协作记录', 'No collaboration activity yet')}</span>
+              </div>
+            ) : timelineItems.map(item => {
+              if (item.kind === 'message') {
+                return <CollaborationMessageView key={item.id} message={item.message} />;
+              }
+              if (item.kind === 'activity') {
+                return <CollaborationActivityView key={item.id} event={item.event} />;
+              }
+              return (
+                <CollaborationStageView
+                  key={item.id}
+                  stage={item.stage}
+                  actor={item.actor}
+                />
+              );
+            })}
 
-      <div className="video-translation-agent-suggestions" aria-label={l('Agent 建议', 'Agent suggestions')}>
-        {actions.map(item => (
-          <button type="button" key={item.label} onClick={() => runAction(item.action)}>
-            {item.label}
-          </button>
-        ))}
-      </div>
+            {showAgentWorking ? (
+              <div
+                className="video-translation-agent-working"
+                role="status"
+                aria-label={l('Agent 正在工作', 'Agent is working')}
+              >
+                <span aria-hidden="true"><Bot size={13} strokeWidth={1.8} /></span>
+                <LoaderCircle
+                  className="video-translation-agent-spin"
+                  size={16}
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              </div>
+            ) : null}
 
-      <ToolAgentComposer
-        value={input}
-        onChange={setInput}
-        onSubmit={submit}
-        ariaLabel={l('告诉 Agent 你的要求', 'Tell the Agent your requirements')}
-        placeholder={placeholder}
-      />
+            {pendingApprovals.map(approval => (
+              <article className="video-translation-agent-approval" data-status={approval.status} key={approval.id}>
+                <strong>{approval.title}</strong>
+                <p>{approval.summary}</p>
+                <div>
+                  <button type="button" onClick={() => void session.respondAgentApproval(approval.id, 'approved', approval.processGeneration).catch(() => undefined)}>
+                    {l('批准', 'Approve')}
+                  </button>
+                  <button type="button" onClick={() => void session.respondAgentApproval(approval.id, 'rejected', approval.processGeneration).catch(() => undefined)}>
+                    {l('拒绝', 'Reject')}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {(props.quickActions?.length ?? 0) > 0 ? (
+            <div className="video-translation-agent-suggestions" aria-label={l('快捷操作', 'Quick actions')}>
+              {props.quickActions!.map(action => (
+                <button type="button" data-kind={action.kind} key={action.id} onClick={() => runQuickAction(action)}>
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <ToolAgentComposer
+            value={input}
+            onChange={setInput}
+            onSubmit={() => void send(input).catch(() => undefined)}
+            showAttachments={false}
+            showPermission
+            showModel={false}
+            permission={permission}
+            permissionDisabled={session.agentBusy}
+            onPermissionChange={setPermission}
+            submitting={sending}
+            ariaLabel={l('告诉 Agent 你的要求', 'Tell the Agent your requirements')}
+            placeholder={session.agentBusy
+              ? l('补充当前任务的要求', 'Add guidance to the active task')
+              : props.promptHint ?? l('询问状态，或描述要调整的语言、字幕、配音和成片要求', 'Ask about status or describe language, subtitle, dubbing, and video changes')}
+          />
+        </>
+      )}
     </aside>
   );
 }
 
-function initialMessage(l: LocalizeCopy): AgentMessage {
-  return {
-    id: 1,
-    role: 'agent',
-    text: l(
-      '把视频添加到左侧后，直接告诉我目标语言、是否需要配音和输出画幅，我会同步替你设置。',
-      'Add a video on the left, then tell me the target language, whether you need dubbing, and the output format. I will keep the settings in sync.'
-    )
-  };
+function CollaborationMessageView(props: { message: CollaborationMessage }) {
+  const l = useLocalizedCopy();
+  const { message } = props;
+  return (
+    <article
+      className="video-translation-agent-message"
+      data-role={message.role}
+      data-source={message.source}
+      data-status={message.status}
+    >
+      {message.role === 'assistant' ? (
+        <header>
+          <span aria-hidden="true"><Bot size={13} strokeWidth={1.8} /></span>
+          <strong>OpenCreator</strong>
+          <small>{l('Agent 回复', 'Agent reply')}</small>
+        </header>
+      ) : null}
+      <div className="video-translation-agent-bubble">
+        <MarkdownRenderer
+          text={message.content}
+          variant={message.role === 'user' ? 'user' : 'assistant'}
+        />
+      </div>
+    </article>
+  );
 }
 
-function localizeQuickAction(label: string, l: LocalizeCopy): string {
-  const translations: Record<string, string> = {
-    '链接支持哪些平台': 'Which platforms are supported?',
-    '继续设置': 'Continue setup',
-    '翻译成英文': 'Translate into English',
-    '翻译成日语': 'Translate into Japanese',
-    '关闭双语字幕': 'Disable bilingual subtitles',
-    '进入字幕样式': 'Continue to subtitle style',
-    '进入配音与输出': 'Continue to dubbing and output',
-    '开启配音': 'Enable dubbing',
-    '输出竖屏视频': 'Use vertical video output',
-    '仅生成字幕': 'Generate subtitles only',
-    '按当前设置开始': 'Start with current settings',
-    '修改字幕': 'Edit subtitles',
-    '调整任务设置': 'Adjust task settings',
-    '生成新版本': 'Generate a new version'
+function CollaborationActivityView(props: { event: SyncEvent }) {
+  const l = useLocalizedCopy();
+  const { event } = props;
+  return (
+    <article className="video-translation-agent-activity" data-actor={event.actor}>
+      <span aria-hidden="true"><CircleDot size={13} strokeWidth={1.8} /></span>
+      <div>
+        <header>
+          <strong>{actorLabel(event.actor, l)}</strong>
+          {event.count > 1 ? <small>{event.count} {l('次修改', 'changes')}</small> : null}
+        </header>
+        <p>{event.label}</p>
+        {event.fields.length > 0 ? <small>{event.fields.join('、')}</small> : null}
+      </div>
+    </article>
+  );
+}
+
+function CollaborationStageView(props: {
+  stage: CreatorStageRun;
+  actor: CreatorActivity['actor'];
+}) {
+  const l = useLocalizedCopy();
+  const { stage, actor } = props;
+  const label = stageLabel(stage.stageId, l);
+  const percent = stageProgressPercent(stage);
+  const active = stage.status === 'queued' || stage.status === 'running';
+  const hasProgress = percent !== null;
+  return (
+    <article className="video-translation-agent-stage" data-status={stage.status}>
+      <header>
+        <span aria-hidden="true">{stageStatusIcon(stage)}</span>
+        <div>
+          <small>{actorLabel(actor, l)} · {label}</small>
+          <strong>{stageProgressText(stage, l)}</strong>
+        </div>
+        {hasProgress ? <b>{percent}%</b> : null}
+      </header>
+      {hasProgress ? (
+        <div
+          className="video-translation-agent-stage-progress"
+          role="progressbar"
+          aria-label={l(`${label}进度`, `${label} progress`)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+          aria-valuetext={stageProgressAriaText(stage, percent, l)}
+        >
+          <span style={{ width: `${percent}%` }} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function buildCollaborationMessages(
+  agentTurns: CreatorAgentTurn[],
+  items: CreatorAgentItem[]
+): CollaborationMessage[] {
+  const assistantItemsByTurn = new Map<string, CreatorAgentItem[]>();
+  for (const item of items) {
+    if (item.kind !== 'assistant_message' || !item.text?.trim().length) continue;
+    const visible = assistantItemsByTurn.get(item.turnId) ?? [];
+    visible.push(item);
+    assistantItemsByTurn.set(item.turnId, visible);
+  }
+  const messages: CollaborationMessage[] = [];
+  for (const turn of agentTurns) {
+    if (turn.role === 'user') {
+      messages.push({
+        id: `agent:${turn.id}`,
+        role: 'user',
+        content: turn.content,
+        status: turn.status,
+        createdAt: turn.createdAt,
+        source: 'agent'
+      });
+      continue;
+    }
+    const visibleItems = assistantItemsByTurn.get(turn.id) ?? [];
+    if (visibleItems.length > 0) {
+      for (const item of visibleItems) {
+        messages.push({
+          id: `agent-item:${item.id}`,
+          role: 'assistant',
+          content: stripInternalRevision(item.text ?? ''),
+          status: item.status,
+          createdAt: item.createdAt,
+          source: 'agent'
+        });
+      }
+      continue;
+    }
+    messages.push({
+      id: `agent:${turn.id}`,
+      role: 'assistant',
+      content: stripInternalRevision(turn.content),
+      status: turn.status,
+      createdAt: turn.createdAt,
+      source: 'agent'
+    });
+  }
+  return messages
+    .filter(message => message.content.trim().length > 0)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
+    .slice(-40);
+}
+
+function buildCollaborationTimeline(
+  job: CreatorJob | undefined,
+  messages: CollaborationMessage[],
+  events: SyncEvent[]
+): CollaborationTimelineItem[] {
+  const stages = latestStageRuns(job?.stages ?? []);
+  const representedStageIds = new Set(stages.map(stage => stage.stageId));
+  const items: CollaborationTimelineItem[] = messages.map(message => ({
+    id: message.id,
+    kind: 'message',
+    createdAt: message.createdAt,
+    message
+  }));
+  for (const event of events) {
+    if (
+      event.action === 'run-stage'
+      && event.stageId !== undefined
+      && representedStageIds.has(event.stageId)
+    ) continue;
+    items.push({
+      id: `activity:${event.id}`,
+      kind: 'activity',
+      createdAt: event.createdAt,
+      event
+    });
+  }
+  for (const stage of stages) {
+    items.push({
+      id: `stage:${stage.stageId}`,
+      kind: 'stage',
+      createdAt: stage.startedAt ?? job?.updatedAt ?? '',
+      stage,
+      actor: stageActor(stage, job?.activities ?? [])
+    });
+  }
+  return items
+    .sort((left, right) => (
+      left.createdAt.localeCompare(right.createdAt)
+      || timelineItemOrder(left) - timelineItemOrder(right)
+      || left.id.localeCompare(right.id)
+    ))
+    .slice(-60);
+}
+
+function timelineItemOrder(item: CollaborationTimelineItem): number {
+  if (item.kind === 'message') return item.message.role === 'user' ? 0 : 3;
+  if (item.kind === 'activity') return 1;
+  return 2;
+}
+
+function buildSyncEvents(
+  activities: CreatorActivity[],
+  l: ReturnType<typeof useLocalizedCopy>
+): SyncEvent[] {
+  const result: SyncEvent[] = [];
+  for (const activity of activities) {
+    const normalized = normalizeActivity(activity, l);
+    if (normalized === null) continue;
+    const previous = result.at(-1);
+    if (
+      previous !== undefined
+      && previous.actor === activity.actor
+      && previous.label === normalized.label
+      && previous.action.startsWith('update-settings')
+      && activity.action.startsWith('update-settings')
+    ) {
+      previous.id = activity.id;
+      previous.count += 1;
+      previous.fields = [...new Set([...previous.fields, ...normalized.fields])];
+      previous.createdAt = activity.createdAt;
+      continue;
+    }
+    result.push({
+      id: activity.id,
+      actor: activity.actor,
+      action: activity.action,
+      label: normalized.label,
+      fields: normalized.fields,
+      count: 1,
+      createdAt: activity.createdAt,
+      ...(activity.action === 'run-stage'
+        ? { stageId: stageIdFromActivity(activity) ?? undefined }
+        : {})
+    });
+  }
+  return result;
+}
+
+function normalizeActivity(
+  activity: CreatorActivity,
+  l: ReturnType<typeof useLocalizedCopy>
+): { label: string; fields: string[] } | null {
+  if (activity.action === 'create-job') return null;
+  if (activity.action.startsWith('update-settings')) {
+    const objectId = typeof activity.details.objectId === 'string'
+      ? activity.details.objectId
+      : '';
+    const fields = objectId
+      .split(',')
+      .map(field => creativeFieldLabel(field, l))
+      .filter((field): field is string => field !== null);
+    if (fields.length === 0) return null;
+    return { label: l('更新了创作设置', 'Updated creative settings'), fields };
+  }
+  if (activity.action === 'edit-subtitle') {
+    return { label: l('保存了字幕修改', 'Saved subtitle changes'), fields: [] };
+  }
+  if (activity.action === 'run-stage') {
+    const stageId = stageIdFromActivity(activity);
+    if (stageId === 'subtitle') {
+      return { label: l('开始生成字幕', 'Started subtitle generation'), fields: [] };
+    }
+    if (stageId === 'tts') {
+      return { label: l('开始生成配音', 'Started dubbing generation'), fields: [] };
+    }
+    if (stageId === 'render-horizontal') {
+      return { label: l('开始生成横屏成片', 'Started landscape rendering'), fields: [] };
+    }
+    if (stageId === 'render-vertical') {
+      return { label: l('开始生成竖屏成片', 'Started portrait rendering'), fields: [] };
+    }
+    return { label: activity.summary, fields: [] };
+  }
+  if (activity.action === 'undo-action') {
+    return { label: l('撤销了上一次修改', 'Undid the previous change'), fields: [] };
+  }
+  if (activity.actor === 'system' && activity.summary.trim().length > 0) {
+    return { label: activity.summary, fields: [] };
+  }
+  return null;
+}
+
+function creativeFieldLabel(
+  field: string,
+  l: ReturnType<typeof useLocalizedCopy>
+): string | null {
+  const labels: Record<string, string> = {
+    sourceLanguage: l('源语言', 'Source language'),
+    targetLanguage: l('目标语言', 'Target language'),
+    bilingual: l('双语字幕', 'Bilingual subtitles'),
+    subtitlePosition: l('字幕位置', 'Subtitle position'),
+    subtitleStyle: l('字幕样式', 'Subtitle style'),
+    preferPlatformCaptions: l('平台字幕优先', 'Prefer platform captions'),
+    dubbing: l('配音', 'Dubbing'),
+    voiceCode: l('音色', 'Voice'),
+    composeVideo: l('成片输出', 'Video output'),
+    videoFormat: l('成片比例', 'Video format'),
+    verticalTitle: l('竖屏标题', 'Portrait title'),
+    verticalSubtitle: l('竖屏字幕', 'Portrait subtitles'),
+    voiceSampleName: l('声音样本', 'Voice sample'),
+    subtitleCues: l('字幕内容', 'Subtitle content')
   };
-  return l(label, translations[label] ?? label);
+  return labels[field] ?? null;
+}
+
+function actorLabel(
+  actor: CreatorActivity['actor'],
+  l: ReturnType<typeof useLocalizedCopy>
+): string {
+  if (actor === 'agent') return 'Agent';
+  if (actor === 'system') return l('系统', 'System');
+  return l('工作台', 'Workbench');
+}
+
+function stageIdFromActivity(activity: CreatorActivity): string | null {
+  if (activity.summary.includes('render-horizontal')) return 'render-horizontal';
+  if (activity.summary.includes('render-vertical')) return 'render-vertical';
+  if (activity.summary.includes('subtitle')) return 'subtitle';
+  if (activity.summary.includes('tts')) return 'tts';
+  return null;
+}
+
+function latestStageRuns(stages: CreatorStageRun[]): CreatorStageRun[] {
+  const latestByStage = new Map<string, CreatorStageRun>();
+  for (const stage of stages) {
+    const previous = latestByStage.get(stage.stageId);
+    if (
+      previous === undefined
+      || stage.attempt > previous.attempt
+      || (stage.startedAt ?? '').localeCompare(previous.startedAt ?? '') > 0
+    ) latestByStage.set(stage.stageId, stage);
+  }
+  return [...latestByStage.values()].sort((left, right) => (
+    (left.startedAt ?? '').localeCompare(right.startedAt ?? '')
+    || left.stageId.localeCompare(right.stageId)
+  ));
+}
+
+function stageActor(
+  stage: CreatorStageRun,
+  activities: CreatorActivity[]
+): CreatorActivity['actor'] {
+  const startedAt = stage.startedAt ?? '\uffff';
+  return activities
+    .filter(activity => (
+      activity.action === 'run-stage'
+      && stageIdFromActivity(activity) === stage.stageId
+      && activity.createdAt <= startedAt
+    ))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .at(-1)?.actor ?? 'system';
+}
+
+function stageLabel(
+  stageId: string,
+  l: ReturnType<typeof useLocalizedCopy>
+): string {
+  if (stageId === 'subtitle') return l('字幕翻译', 'Subtitle translation');
+  if (stageId === 'tts') return l('配音生成', 'Dubbing');
+  if (stageId === 'render-horizontal') return l('横屏成片', 'Landscape render');
+  if (stageId === 'render-vertical') return l('竖屏成片', 'Portrait render');
+  return l('创作任务', 'Creator task');
+}
+
+function stageProgressText(
+  stage: CreatorStageRun,
+  l: ReturnType<typeof useLocalizedCopy>
+): string {
+  if (stage.status === 'queued') return l('等待执行', 'Queued');
+  if (stage.status === 'succeeded') return l('已完成，结果已同步到工作台', 'Completed and synced to Workbench');
+  if (stage.status === 'failed') return stage.errorMessage ?? l('执行失败', 'Failed');
+  if (stage.status === 'interrupted') return l('已中断', 'Interrupted');
+  if (stage.status === 'canceled') return l('已取消', 'Canceled');
+  const payload = stageProgressPayload(stage);
+  if (typeof payload?.message === 'string' && payload.message.trim().length > 0) {
+    return payload.message.trim();
+  }
+  const phase = typeof stage.progress.phase === 'string'
+    ? stage.progress.phase
+    : typeof payload?.phase === 'string'
+      ? payload.phase
+      : null;
+  const phaseLabels: Record<string, string> = {
+    validating: l('检查任务设置', 'Checking task settings'),
+    preparing_source: l('准备视频来源', 'Preparing the video source'),
+    reading_platform_captions: l('获取平台字幕', 'Fetching platform captions'),
+    processing_platform_captions: l('解析平台字幕', 'Processing platform captions'),
+    translating_subtitles: l('翻译字幕', 'Translating subtitles'),
+    collecting_subtitles: l('生成双语字幕', 'Generating bilingual subtitles'),
+    preparing_original_media: l('准备原始视频', 'Preparing the original video'),
+    preparing_audio: l('准备音频转录', 'Preparing audio transcription'),
+    transcribing_audio: l('转录并翻译音频', 'Transcribing and translating audio'),
+    collecting_outputs: l('整理输出文件', 'Collecting outputs'),
+    generating_voice: l('生成配音', 'Generating dubbing'),
+    rendering_video: l('渲染视频', 'Rendering video')
+  };
+  return phase === null
+    ? l('执行中', 'Running')
+    : phaseLabels[phase] ?? phase;
+}
+
+function stageProgressPercent(stage: CreatorStageRun): number | null {
+  const payload = stageProgressPayload(stage);
+  const value = typeof stage.progress.percent === 'number'
+    ? stage.progress.percent
+    : typeof payload?.percent === 'number'
+      ? payload.percent
+      : null;
+  return value === null || !Number.isFinite(value)
+    ? null
+    : Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function stageProgressAriaText(
+  stage: CreatorStageRun,
+  percent: number,
+  l: ReturnType<typeof useLocalizedCopy>
+): string {
+  if (stage.status === 'failed') return l(`失败前进度 ${percent}%`, `Progress before failure: ${percent}%`);
+  if (stage.status === 'succeeded') return l(`已完成 ${percent}%`, `Completed: ${percent}%`);
+  return `${percent}%`;
+}
+
+function stageProgressPayload(stage: CreatorStageRun): Record<string, unknown> | null {
+  const payload = stage.progress.krillinEventPayload;
+  return payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : null;
+}
+
+function stageStatusIcon(stage: CreatorStageRun) {
+  if (stage.status === 'failed') return <XCircle size={15} strokeWidth={1.8} />;
+  if (stage.status === 'running' || stage.status === 'queued') {
+    return <LoaderCircle className="video-translation-agent-spin" size={15} strokeWidth={1.8} />;
+  }
+  if (stage.status === 'canceled' || stage.status === 'interrupted') {
+    return <Square size={13} strokeWidth={1.8} />;
+  }
+  return <CheckCircle2 size={15} strokeWidth={1.8} />;
+}
+
+function stripInternalRevision(content: string): string {
+  return content
+    .replace(/[^\n。！？!?]*\brevision\b[^\n。！？!?]*[。！？!?]?/gi, '')
+    .replace(/^\s*[-*]\s*(?:当前\s*)?revision\s*[：:]\s*`?\d+`?\s*$/gim, '')
+    .replace(/(?:任务未做修改[，,]\s*)?revision\s+仍为\s*`?\d+`?[。.]?/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

@@ -7,7 +7,10 @@ export const AGENT_CAPABILITY_SCOPES = [
   'schedule:update',
   'schedule:pause',
   'schedule:resume',
-  'schedule:run_now'
+  'schedule:run_now',
+  'creator:context',
+  'creator:artifact:read',
+  'creator:action'
 ] as const;
 
 export type AgentCapabilityScope = typeof AGENT_CAPABILITY_SCOPES[number];
@@ -15,6 +18,9 @@ export type AgentCapabilityScope = typeof AGENT_CAPABILITY_SCOPES[number];
 export type AgentCapabilityGrant = {
   runId: string;
   threadId: string;
+  jobId?: string;
+  projectId?: string;
+  processGeneration?: number;
   createdBy: 'api' | 'schedule';
   scopes: AgentCapabilityScope[];
   issuedAt: string;
@@ -51,6 +57,9 @@ export type AgentCapabilityTokenStore = {
     threadId: string;
     createdBy: 'api' | 'schedule';
     scopes: AgentCapabilityScope[];
+    jobId?: string;
+    projectId?: string;
+    processGeneration?: number;
   }): { token: string; expiresAt: string };
   issueProcess(input: {
     createdBy: 'api';
@@ -62,6 +71,9 @@ export type AgentCapabilityTokenStore = {
       scope: AgentCapabilityScope;
       runId?: string;
       threadId?: string;
+      jobId?: string;
+      projectId?: string;
+      processGeneration?: number;
     }
   ): AgentCapabilityGrant;
   inspect(token: string | undefined): AgentCapabilityGrant;
@@ -75,6 +87,9 @@ export type AgentCapabilityProcessLease = {
   activate(input: {
     runId: string;
     threadId: string;
+    jobId?: string;
+    projectId?: string;
+    processGeneration?: number;
     createdBy: 'api';
     scopes: AgentCapabilityScope[];
   }): AgentCapabilityGrant;
@@ -127,7 +142,8 @@ const MUTATION_SCOPES = new Set<AgentCapabilityScope>([
   'schedule:update',
   'schedule:pause',
   'schedule:resume',
-  'schedule:run_now'
+  'schedule:run_now',
+  'creator:action'
 ]);
 
 export function createAgentCapabilityTokenStore(
@@ -157,6 +173,8 @@ export function createAgentCapabilityTokenStore(
     threadId: string;
     createdBy: 'api' | 'schedule';
     scopes: AgentCapabilityScope[];
+    jobId?: string;
+    projectId?: string;
   }): { token: string; expiresAt: string } {
     if (closed) {
       throw new AgentCapabilityTokenError(
@@ -354,6 +372,9 @@ export function createAgentCapabilityTokenStore(
       scope: AgentCapabilityScope;
       runId?: string;
       threadId?: string;
+      jobId?: string;
+      projectId?: string;
+      processGeneration?: number;
     }
   ): AgentCapabilityGrant {
     const grant = inspect(token);
@@ -379,6 +400,30 @@ export function createAgentCapabilityTokenStore(
         'CAPABILITY_THREAD_FORBIDDEN',
         403,
         'Capability thread binding does not match'
+      );
+    }
+    if (requirement.jobId !== undefined && requirement.jobId !== grant.jobId) {
+      throw new AgentCapabilityTokenError(
+        'CAPABILITY_RUN_FORBIDDEN',
+        403,
+        'Capability creator job binding does not match'
+      );
+    }
+    if (requirement.projectId !== undefined && requirement.projectId !== grant.projectId) {
+      throw new AgentCapabilityTokenError(
+        'CAPABILITY_RUN_FORBIDDEN',
+        403,
+        'Capability creator project binding does not match'
+      );
+    }
+    if (
+      requirement.processGeneration !== undefined
+      && requirement.processGeneration !== grant.processGeneration
+    ) {
+      throw new AgentCapabilityTokenError(
+        'CAPABILITY_RUN_FORBIDDEN',
+        403,
+        'Capability process generation does not match'
       );
     }
     return grant;
@@ -477,6 +522,9 @@ export function createAgentCapabilityTokenStore(
     input: {
       runId: string;
       threadId: string;
+      jobId?: string;
+      projectId?: string;
+      processGeneration?: number;
       createdBy: 'api' | 'schedule';
     },
     scopes: AgentCapabilityScope[]
@@ -486,6 +534,11 @@ export function createAgentCapabilityTokenStore(
     return {
       runId: input.runId,
       threadId: input.threadId,
+      ...(input.jobId === undefined ? {} : { jobId: input.jobId }),
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      ...(input.processGeneration === undefined
+        ? {}
+        : { processGeneration: input.processGeneration }),
       createdBy: input.createdBy,
       scopes,
       issuedAt: new Date(issuedAtMs).toISOString(),
@@ -527,6 +580,11 @@ function cloneGrant(grant: ActiveCapabilityGrant): AgentCapabilityGrant {
   return {
     runId: grant.runId,
     threadId: grant.threadId,
+    ...(grant.jobId === undefined ? {} : { jobId: grant.jobId }),
+    ...(grant.projectId === undefined ? {} : { projectId: grant.projectId }),
+    ...(grant.processGeneration === undefined
+      ? {}
+      : { processGeneration: grant.processGeneration }),
     createdBy: grant.createdBy,
     scopes: [...grant.scopes],
     issuedAt: grant.issuedAt,

@@ -34,7 +34,7 @@ export type CreatorServicesConfig = {
     openai: OpenAiCompatibleConfig;
     fasterWhisper: { model: 'tiny' | 'medium' | 'large-v2' };
     whisperKit: { model: 'large-v2' };
-    whisperCpp: { model: 'large-v2' };
+    whisperCpp: { model: 'tiny' | 'medium' | 'large-v2' };
     aliyun: {
       oss: AliyunOssConfig;
       speech: AliyunSpeechConfig;
@@ -66,7 +66,33 @@ export type CreatorServicesConfig = {
 
 export type CreatorServicesConfigResponse = {
   config: CreatorServicesConfig;
+  configuredCredentials: CreatorServicesCredentialField[];
 };
+
+export type CreatorServicesCredentialField =
+  | 'llm.apiKey'
+  | 'transcription.openai.apiKey'
+  | 'transcription.aliyun.oss.accessKeyId'
+  | 'transcription.aliyun.oss.accessKeySecret'
+  | 'transcription.aliyun.speech.accessKeyId'
+  | 'transcription.aliyun.speech.accessKeySecret'
+  | 'transcription.aliyun.speech.appKey'
+  | 'tts.openai.apiKey'
+  | 'tts.minimax.apiKey'
+  | 'tts.aliyun.oss.accessKeyId'
+  | 'tts.aliyun.oss.accessKeySecret'
+  | 'tts.aliyun.speech.accessKeyId'
+  | 'tts.aliyun.speech.accessKeySecret'
+  | 'tts.aliyun.speech.appKey'
+  | 'image.openai.apiKey'
+  | 'image.jimeng.apiKey'
+  | 'image.kling.accessKey'
+  | 'image.kling.secretKey'
+  | 'image.gemini.apiKey'
+  | 'video.seedance.apiKey'
+  | 'video.kling.accessKey'
+  | 'video.kling.secretKey'
+  | 'video.veo.apiKey';
 
 export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
   return {
@@ -87,7 +113,7 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
       },
       fasterWhisper: { model: 'medium' },
       whisperKit: { model: 'large-v2' },
-      whisperCpp: { model: 'large-v2' },
+      whisperCpp: { model: 'tiny' },
       aliyun: {
         oss: { accessKeyId: '', accessKeySecret: '', bucket: '' },
         speech: { accessKeyId: '', accessKeySecret: '', appKey: '' }

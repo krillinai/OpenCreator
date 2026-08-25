@@ -23,7 +23,17 @@ describe('app routes', () => {
   it('parses every primary page route', () => {
     expect(parseRoute('#/search')).toEqual({ view: 'search' });
     expect(parseRoute('#/projects')).toEqual({ view: 'projects' });
-    expect(parseRoute('#/dashboard')).toEqual({ view: 'dashboard' });
+    expect(parseRoute('#/workbench')).toEqual({ view: 'workbench' });
+    expect(parseRoute('#/workbench?tool=video-translation')).toEqual({
+      view: 'workbench',
+      tool: 'video-translation'
+    });
+    expect(parseRoute('#/workbench?tool=video-translation&jobId=creator_job+1')).toEqual({
+      view: 'workbench',
+      tool: 'video-translation',
+      jobId: 'creator_job 1'
+    });
+    expect(parseRoute('#/workbench?tool=unknown&jobId=creator_job_1')).toEqual({ view: 'workbench' });
     expect(parseRoute('#/schedules')).toEqual({ view: 'schedules' });
     expect(parseRoute('#/tasks')).toEqual({ view: 'tasks' });
     expect(parseRoute('#/plugins')).toEqual({ view: 'plugins' });
@@ -33,6 +43,10 @@ describe('app routes', () => {
     expect(parseRoute('#/drive')).toEqual({ view: 'assets', tab: 'materials' });
     expect(parseRoute('#/account')).toEqual({ view: 'account' });
     expect(parseRoute('#/settings')).toEqual({ view: 'settings' });
+    expect(parseRoute('#/settings?tab=ai-services')).toEqual({ view: 'settings', tab: 'ai-services' });
+    expect(formatRoute({ view: 'settings', tab: 'ai-services' })).toBe('#/settings?tab=ai-services');
+    expect(parseRoute('#/settings?tab=codex-agent')).toEqual({ view: 'settings', tab: 'codex-agent' });
+    expect(formatRoute({ view: 'settings', tab: 'codex-agent' })).toBe('#/settings?tab=codex-agent');
     expect(parseRoute('#/capabilities')).toEqual({ view: 'capabilities' });
     expect(parseRoute('#/activity')).toEqual({ view: 'activity', range: '7d' });
     expect(parseRoute('#/activity?range=today')).toEqual({ view: 'activity', range: 'today' });
@@ -99,7 +113,12 @@ describe('app routes', () => {
 
   it('formats stable copyable hashes for every route', () => {
     expect(formatRoute({ view: 'home' })).toBe('#/');
-    expect(formatRoute({ view: 'dashboard' })).toBe('#/dashboard');
+    expect(formatRoute({ view: 'workbench' })).toBe('#/workbench');
+    expect(formatRoute({
+      view: 'workbench',
+      tool: 'video-translation',
+      jobId: 'creator/job 1'
+    })).toBe('#/workbench?tool=video-translation&jobId=creator%2Fjob+1');
     expect(formatRoute({ view: 'projects' })).toBe('#/projects');
     expect(formatRoute({ view: 'thread', threadId: 'thread 1' })).toBe('#/thread/thread%201');
     expect(formatRoute({ view: 'search' })).toBe('#/search');

@@ -348,6 +348,10 @@ rl.on('line', line => {
     send({ id: message.id, result: { userAgent: 'fake' } });
     return;
   }
+  if (message.method === 'thread/read') {
+    send({ id: message.id, result: { thread: { id: message.params.threadId, turns: [] } } });
+    return;
+  }
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
     currentThreadId = message.params.threadId || ('codex-thread-' + process.pid);
     send({ id: message.id, result: { thread: { id: currentThreadId } } });

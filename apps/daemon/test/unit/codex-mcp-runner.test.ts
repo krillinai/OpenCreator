@@ -116,8 +116,12 @@ process.kill(process.pid, 'SIGTERM');
     });
 
     expect(result.timedOut).toBe(false);
-    expect(result.exitCode).toBeNull();
-    expect(result.redactedStderr).toContain('[codex-mcp] termination signal: SIGTERM');
+    if (process.platform === 'win32') {
+      expect(result.exitCode).toBe(1);
+    } else {
+      expect(result.exitCode).toBeNull();
+      expect(result.redactedStderr).toContain('[codex-mcp] termination signal: SIGTERM');
+    }
     expect(result.redactedStderr).not.toContain('timed out');
   }, 15_000);
 });

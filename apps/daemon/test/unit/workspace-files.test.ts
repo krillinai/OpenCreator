@@ -164,7 +164,7 @@ describe('workspace file service', () => {
     });
   });
 
-  it('rejects symlink escapes outside canonicalCwd', async () => {
+  it.skipIf(process.platform === 'win32')('rejects symlink escapes outside canonicalCwd', async () => {
     const { service } = createFixture();
     const outside = mkdtempSync(join(tmpdir(), 'opencreator-outside-'));
     writeFileSync(join(outside, 'secret.md'), 'secret');
@@ -281,7 +281,11 @@ describe('workspace file service', () => {
     const outside = mkdtempSync(join(tmpdir(), 'opencreator-outside-tree-'));
     mkdirSync(join(tempDir, 'docs'), { recursive: true });
     writeFile('docs/inside.md', '# inside\n');
-    symlinkSync(outside, join(tempDir, 'docs', 'escape-link'));
+    symlinkSync(
+      outside,
+      join(tempDir, 'docs', 'escape-link'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
 
     const result = await service.listDirectory({ threadId: 'thread_1', path: 'docs' });
 
@@ -323,7 +327,7 @@ describe('workspace file service', () => {
     expect(() => readFileSync(join(tempDir, 'README.md'), 'utf8')).toThrow();
   });
 
-  it('rejects saving through an in-workspace symlink and keeps target content unchanged', async () => {
+  it.skipIf(process.platform === 'win32')('rejects saving through an in-workspace symlink and keeps target content unchanged', async () => {
     const { service } = createFixture({ sandbox: 'workspace-write' });
     writeFile('target.md', '# target\n');
     symlinkSync(join(tempDir, 'target.md'), join(tempDir, 'link.md'));
@@ -398,7 +402,11 @@ describe('workspace file service', () => {
     });
     mkdirSync(join(tempDir, 'real-docs'));
     writeFile('real-docs/README.md', '# hello\n');
-    symlinkSync(join(tempDir, 'real-docs'), join(tempDir, 'docs'));
+    symlinkSync(
+      join(tempDir, 'real-docs'),
+      join(tempDir, 'docs'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
     const before = await service.readContent({ threadId: 'thread_1', path: 'docs/README.md' });
 
     await service.saveContent({
@@ -464,7 +472,11 @@ describe('workspace file service', () => {
           if (!mutated && candidatePath.length > 0 && String(path) === candidatePath) {
             mutated = true;
             unlinkSync(join(tempDir, 'docs'));
-            symlinkSync(join(tempDir, 'new-docs'), join(tempDir, 'docs'));
+            symlinkSync(
+              join(tempDir, 'new-docs'),
+              join(tempDir, 'docs'),
+              process.platform === 'win32' ? 'junction' : 'dir'
+            );
             unlinkSync(join(tempDir, 'real-docs', 'README.md'));
           }
           return lstatSync(path);
@@ -479,7 +491,11 @@ describe('workspace file service', () => {
     mkdirSync(join(tempDir, 'new-docs'));
     writeFile('real-docs/README.md', '# hello\n');
     writeFile('new-docs/README.md', '# unrelated\n');
-    symlinkSync(join(tempDir, 'real-docs'), join(tempDir, 'docs'));
+    symlinkSync(
+      join(tempDir, 'real-docs'),
+      join(tempDir, 'docs'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
     const before = await service.readContent({ threadId: 'thread_1', path: 'docs/README.md' });
     candidatePath = join(realpathSync(tempDir), 'docs', 'README.md');
 

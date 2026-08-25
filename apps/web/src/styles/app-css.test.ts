@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const appCss = readFileSync('src/styles/app.css', 'utf8');
-const appControllerTsx = readFileSync('src/app/AppController.tsx', 'utf8');
-const skillMarketCss = readFileSync('src/features/plugins/skill-market.css', 'utf8');
-const schedulesCss = readFileSync('src/features/schedules/schedules-view.css', 'utf8');
-const settingsCss = readFileSync('src/features/settings/settings-management.css', 'utf8');
-const taskCenterCss = readFileSync('src/features/tasks/task-center.css', 'utf8');
-const tokensCss = readFileSync('src/styles/tokens.css', 'utf8');
+const readSource = (path: string) => readFileSync(path, 'utf8').replaceAll('\r\n', '\n');
+const appCss = readSource('src/styles/app.css');
+const appControllerTsx = readSource('src/app/AppController.tsx');
+const skillMarketCss = readSource('src/features/plugins/skill-market.css');
+const schedulesCss = readSource('src/features/schedules/schedules-view.css');
+const settingsCss = readSource('src/features/settings/settings-management.css');
+const taskCenterCss = readSource('src/features/tasks/task-center.css');
+const tokensCss = readSource('src/styles/tokens.css');
 
 function cssBlock(selector: string) {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

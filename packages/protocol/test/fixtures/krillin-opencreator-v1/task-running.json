@@ -1,0 +1,10 @@
+{
+  "id": "task_1",
+  "jobId": "job_1",
+  "stageRunId": "stage_1",
+  "stageType": "subtitle",
+  "status": "running",
+  "lastEventSeq": 2,
+  "createdAt": "2026-08-21T00:00:00.000Z",
+  "updatedAt": "2026-08-21T00:00:01.000Z"
+}

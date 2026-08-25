@@ -462,6 +462,8 @@ rl.on('line', line => {
   fs.appendFileSync(messagesPath, JSON.stringify({ invocation, ...message }) + '\\n');
   if (message.method === 'initialize') {
     send({ id: message.id, result: { userAgent: 'fake', codexHome: process.env.CODEX_HOME, platformFamily: 'unix', platformOs: 'test' } });
+  } else if (message.method === 'thread/read') {
+    send({ id: message.id, result: { thread: { id: message.params.threadId, turns: [] } } });
   } else if (message.method === 'thread/resume') {
     send({ id: message.id, error: { code: -32001, message: 'No session found for codex-thread-old' } });
   } else if (message.method === 'thread/start') {

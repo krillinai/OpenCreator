@@ -18,6 +18,7 @@ import {
 
 const MAX_APP_SERVER_FRAME_BYTES = 1024 * 1024;
 const MAX_APP_SERVER_STDERR_BYTES = 1024 * 1024;
+const DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
 
 export type AppServerApprovalDecision =
   | 'approved'
@@ -41,12 +42,16 @@ export type CodexAppServerTurnInput = {
   model?: string;
   reasoning?: ReasoningEffort;
   prompt: string;
+  developerInstructions?: string;
+  skills?: Array<{ name: string; path: string }>;
   imagePaths?: string[];
   codexThreadId?: string;
   timeoutMs?: number;
   inactivityTimeoutMs?: number;
   manifestKey?: string;
   onNotification?: (notification: Record<string, unknown>) => Promise<void> | void;
+  readThreadBeforeResume?: boolean;
+  onThreadRead?: (thread: Record<string, unknown>) => Promise<void> | void;
   onThreadStarted?: (threadId: string) => Promise<void> | void;
   onTurnStartWritten?: () => void;
   onApprovalRequest?: (
@@ -69,6 +74,7 @@ export type CodexAppServerResult = {
 
 export type CodexAppServerProcess = {
   cancel(): void;
+  steer?(input: { message: string; clientMessageId?: string }): Promise<{ turnId: string }>;
   result: Promise<CodexAppServerResult>;
 };
 
@@ -92,6 +98,8 @@ export type CodexAppServerHostInput = {
   mcpServers?: CodexMcpServerConfig[];
   builtInTools?: BuiltInToolPolicy;
   env?: Record<string, string>;
+  skillRoots?: string[];
+  requiredSkillNames?: string[];
   spawnTimeoutMs?: number;
   forceKillGraceMs?: number;
   onLifecycle?(event: CodexAppServerHostLifecycleEvent): void;
@@ -114,7 +122,9 @@ type HostState =
   | 'closed';
 
 type PendingRequest = {
+  method: string;
   generation: number;
+  timeout: NodeJS.Timeout;
   resolve(value: unknown): void;
   reject(error: Error): void;
 };
@@ -277,11 +287,27 @@ export function createCodexAppServerHost(
       version: '0.1.0'
     },
     capabilities: {
-      experimentalApi: false,
+      experimentalApi: true,
       requestAttestation: false
     }
   }, 0).then(async () => {
     await writeMessage({ method: 'initialized' });
+    if ((input.skillRoots?.length ?? 0) > 0) {
+      await request('skills/extraRoots/set', {
+        extraRoots: input.skillRoots
+      }, 0);
+    }
+    if ((input.requiredSkillNames?.length ?? 0) > 0) {
+      const response = await request('skills/list', {
+        cwds: [input.cwd],
+        forceReload: true
+      }, 0);
+      const visible = listedSkillNames(response);
+      const missing = input.requiredSkillNames!.filter(name => !visible.has(name));
+      if (missing.length > 0) {
+        throw new Error(`Required Codex skills are unavailable: ${missing.join(', ')}`);
+      }
+    }
     if (state === 'starting') state = 'ready';
     emitLifecycle({ event: 'process_initialized', pid: child.pid });
   }).catch(error => {
@@ -333,8 +359,40 @@ export function createCodexAppServerHost(
           void interruptJob(job);
         }
       },
+      steer(input) {
+        return steerJob(job, input);
+      },
       result
     };
+  }
+
+  async function steerJob(
+    job: ActiveJob,
+    input: { message: string; clientMessageId?: string }
+  ): Promise<{ turnId: string }> {
+    if (
+      job.settled
+      || activeJob !== job
+      || job.threadId === undefined
+      || job.turnId === undefined
+      || job.stage !== 'turn_active'
+    ) {
+      throw new Error('Codex app-server turn is not steerable');
+    }
+    const response = await request('turn/steer', {
+      threadId: job.threadId,
+      expectedTurnId: job.turnId,
+      ...(input.clientMessageId === undefined
+        ? {}
+        : { clientUserMessageId: input.clientMessageId }),
+      input: [{ type: 'text', text: input.message, text_elements: [] }]
+    }, job.generation);
+    assertCurrentJob(job);
+    const turnId = isRecord(response) ? stringField(response, 'turnId') : undefined;
+    if (turnId === undefined || turnId !== job.turnId) {
+      throw new Error('Codex app-server turn/steer response is invalid');
+    }
+    return { turnId };
   }
 
   async function executeJob(job: ActiveJob): Promise<void> {
@@ -346,6 +404,24 @@ export function createCodexAppServerHost(
       }
 
       job.stage = 'thread_starting';
+      if (
+        job.input.codexThreadId !== undefined
+        && job.input.readThreadBeforeResume === true
+      ) {
+        const readResponse = await request('thread/read', {
+          threadId: job.input.codexThreadId,
+          includeTurns: true
+        }, job.generation);
+        assertCurrentJob(job);
+        const readThread = isRecord(readResponse) && isRecord(readResponse.thread)
+          ? readResponse.thread
+          : undefined;
+        if (readThread === undefined) {
+          throw new Error('Codex app-server thread/read response is missing thread');
+        }
+        await job.input.onThreadRead?.(readThread);
+        assertCurrentJob(job);
+      }
       const threadResponse = await request(
         job.input.codexThreadId === undefined ? 'thread/start' : 'thread/resume',
         job.input.codexThreadId === undefined
@@ -355,7 +431,8 @@ export function createCodexAppServerHost(
               sandbox: job.input.sandbox,
               approvalPolicy: approvalPolicy(job.input.sandbox),
               approvalsReviewer: 'user',
-              serviceName: 'opencreator-agent'
+              serviceName: 'clawee-agent',
+              developerInstructions: job.input.developerInstructions ?? null
             }
           : {
               threadId: job.input.codexThreadId,
@@ -363,7 +440,9 @@ export function createCodexAppServerHost(
               model: job.input.model ?? null,
               sandbox: job.input.sandbox,
               approvalPolicy: approvalPolicy(job.input.sandbox),
-              approvalsReviewer: 'user'
+              approvalsReviewer: 'user',
+              excludeTurns: true,
+              developerInstructions: job.input.developerInstructions ?? null
             },
         job.generation
       );
@@ -403,6 +482,11 @@ export function createCodexAppServerHost(
 
       const inputItems: Array<Record<string, unknown>> = [
         { type: 'text', text: job.input.prompt, text_elements: [] },
+        ...(job.input.skills ?? []).map(skill => ({
+          type: 'skill',
+          name: skill.name,
+          path: skill.path
+        })),
         ...(job.input.imagePaths ?? []).map(path => ({
           type: 'localImage',
           path
@@ -491,10 +575,13 @@ export function createCodexAppServerHost(
       const pendingRequest = pending.get(id);
       if (pendingRequest === undefined) return;
       pending.delete(id);
+      clearTimeout(pendingRequest.timeout);
       if (isRecord(message.error)) {
         pendingRequest.reject(new Error(
-          stringField(message.error, 'message')
-          ?? 'Codex app-server request failed'
+          `Codex app-server request ${pendingRequest.method} failed: ${
+            stringField(message.error, 'message')
+            ?? 'unknown error'
+          }`
         ));
       } else {
         pendingRequest.resolve(message.result);
@@ -635,7 +722,18 @@ export function createCodexAppServerHost(
   ): Promise<unknown> {
     const id = `opencreator_${++requestSequence}`;
     const response = new Promise<unknown>((resolve, reject) => {
-      pending.set(id, { generation, resolve, reject });
+      const timeout = setTimeout(() => {
+        const pendingRequest = pending.get(id);
+        if (pendingRequest === undefined) return;
+        pending.delete(id);
+        const error = new Error(
+          `Codex app-server request ${method} timed out after ${DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS}ms`
+        );
+        pendingRequest.reject(error);
+        failHost(error);
+      }, DEFAULT_APP_SERVER_REQUEST_TIMEOUT_MS);
+      timeout.unref();
+      pending.set(id, { method, generation, timeout, resolve, reject });
     });
     void response.catch(() => undefined);
     return writeMessage({ id, method, params }).then(
@@ -643,6 +741,8 @@ export function createCodexAppServerHost(
         try {
           onWritten?.();
         } catch (error) {
+          const pendingRequest = pending.get(id);
+          if (pendingRequest !== undefined) clearTimeout(pendingRequest.timeout);
           pending.delete(id);
           const normalized = toError(error);
           failHost(normalized);
@@ -651,6 +751,8 @@ export function createCodexAppServerHost(
         return response;
       },
       error => {
+        const pendingRequest = pending.get(id);
+        if (pendingRequest !== undefined) clearTimeout(pendingRequest.timeout);
         pending.delete(id);
         const normalized = toError(error);
         failHost(normalized);
@@ -779,7 +881,10 @@ export function createCodexAppServerHost(
   }
 
   function rejectPending(error: Error): void {
-    for (const request of pending.values()) request.reject(error);
+    for (const request of pending.values()) {
+      clearTimeout(request.timeout);
+      request.reject(error);
+    }
     pending.clear();
   }
 
@@ -787,6 +892,7 @@ export function createCodexAppServerHost(
     for (const [id, request] of pending) {
       if (request.generation !== generation) continue;
       pending.delete(id);
+      clearTimeout(request.timeout);
       request.reject(error);
     }
   }
@@ -859,6 +965,19 @@ export function createCodexAppServerHost(
       void reason;
     }
   };
+}
+
+function listedSkillNames(value: unknown): Set<string> {
+  const names = new Set<string>();
+  if (!isRecord(value) || !Array.isArray(value.data)) return names;
+  for (const entry of value.data) {
+    if (!isRecord(entry) || !Array.isArray(entry.skills)) continue;
+    for (const skill of entry.skills) {
+      const name = stringField(isRecord(skill) ? skill : undefined, 'name');
+      if (name !== undefined) names.add(name);
+    }
+  }
+  return names;
 }
 
 export function buildCodexAppServerArgs(input: {
@@ -951,8 +1070,34 @@ function isApprovalRequest(
     return true;
   }
   if (method !== 'mcpServer/elicitation/request') return false;
-  const meta = isRecord(params._meta) ? params._meta : undefined;
-  return stringField(meta, 'codex_approval_kind') === 'mcp_tool_call';
+  const request = isRecord(params.request) ? params.request : undefined;
+  const meta = [params._meta, params.meta, request?._meta, request?.meta]
+    .find(isRecord);
+  if (
+    stringField(meta, 'codex_approval_kind') === 'mcp_tool_call'
+    || stringField(meta, 'codex_request_type') === 'approval_request'
+  ) {
+    return true;
+  }
+
+  const mode = stringField(params, 'mode') ?? stringField(request, 'mode');
+  const message = stringField(params, 'message') ?? stringField(request, 'message');
+  const requestedSchema = isRecord(params.requestedSchema)
+    ? params.requestedSchema
+    : isRecord(request?.requestedSchema)
+      ? request.requestedSchema
+      : undefined;
+  const properties = isRecord(requestedSchema?.properties)
+    ? requestedSchema.properties
+    : undefined;
+  const required = requestedSchema?.required;
+  return mode === 'form'
+    && stringField(params, 'serverName') !== undefined
+    && message !== undefined
+    && /^Allow .+ to run tool "[^"]+"\?$/.test(message.trim())
+    && properties !== undefined
+    && Object.keys(properties).length === 0
+    && (!Array.isArray(required) || required.length === 0);
 }
 
 function normalizeTurnStatus(

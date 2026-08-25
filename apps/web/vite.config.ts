@@ -1,6 +1,9 @@
 import react from '@vitejs/plugin-react';
+import { existsSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Readable } from 'node:stream';
 import { defineConfig } from 'vite';
 import type { Plugin } from 'vite';
@@ -20,6 +23,7 @@ type RuntimeProcess = {
 
 let runtimeProcess: RuntimeProcess | undefined;
 const MAX_RUNTIME_OUTPUT_BUFFER = 1024 * 1024;
+const webDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react(), opencreatorRuntimeDevPlugin()],
@@ -76,11 +80,19 @@ function opencreatorRuntimeDevPlugin(): Plugin {
       });
 
       server.httpServer?.once('close', () => {
-        runtimeProcess?.child.kill();
-        runtimeProcess = undefined;
+        stopRuntimeProcess();
       });
+    },
+    closeBundle() {
+      stopRuntimeProcess();
     }
   };
+}
+
+function stopRuntimeProcess(): void {
+  const activeRuntime = runtimeProcess;
+  runtimeProcess = undefined;
+  if (activeRuntime !== undefined) terminateRuntimeProcess(activeRuntime.child);
 }
 
 function getRuntimeConfig(): Promise<RuntimeConfig> {
@@ -89,9 +101,33 @@ function getRuntimeConfig(): Promise<RuntimeConfig> {
 }
 
 function startRuntimeProcess(): RuntimeProcess {
-  const child = spawn('pnpm', ['--filter', '@opencreator/daemon', 'dev'], {
+  const creatorRuntimeRoot = resolveDevCreatorRuntimeRoot();
+  const packageManager = packageManagerCommand(
+    process.env.CLAWEE_RUNTIME_DEV_PREPARED === '1'
+      ? [
+          '--filter',
+          '@opencreator/daemon',
+          'exec',
+          'node',
+          '--import',
+          'tsx',
+          'src/main.ts',
+          '--clawee-enterprise-config=.runtime/config.toml'
+        ]
+      : [
+          '--filter',
+          '@opencreator/daemon',
+          'dev'
+        ]
+  );
+  const child = spawn(packageManager.command, packageManager.args, {
     cwd: process.cwd(),
-    env: process.env,
+    env: {
+      ...process.env,
+      ...(creatorRuntimeRoot === undefined
+        ? {}
+        : { OPENCREATOR_CREATOR_RUNTIME_ROOT: creatorRuntimeRoot })
+    },
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -126,17 +162,78 @@ function startRuntimeProcess(): RuntimeProcess {
     });
 
     child.on('error', error => {
+      if (runtimeProcess?.child === child) runtimeProcess = undefined;
       rejectOnce(error);
     });
 
-    child.on('exit', code => {
+    child.on('exit', (code, signal) => {
+      const wasActiveRuntime = runtimeProcess?.child === child;
+      if (wasActiveRuntime) runtimeProcess = undefined;
       if (code !== null && code !== 0) {
         rejectOnce(new Error(`Runtime exited with code ${code}. ${stderr.trim()}`.trim()));
+      }
+      if (wasActiveRuntime) {
+        console.warn(
+          `[clawee-runtime-dev] Runtime exited (${code === null ? signal ?? 'unknown' : `code ${code}`}); it will restart on the next request.`
+        );
       }
     });
   });
 
   return { child, config };
+}
+
+function resolveDevCreatorRuntimeRoot(): string | undefined {
+  const configured = process.env.OPENCREATOR_CREATOR_RUNTIME_ROOT?.trim();
+  if (configured) return resolve(configured);
+
+  const candidate = resolve(
+    webDir,
+    '../desktop/.pack/creator-runtime/krillinai'
+  );
+  const executableSuffix = process.platform === 'win32' ? '.exe' : '';
+  const required = [
+    join(candidate, 'manifest.json'),
+    join(candidate, 'api', 'opencreator', 'v1', 'schema.json'),
+    join(candidate, 'bin', `krillinai-opencreator-server${executableSuffix}`)
+  ];
+  return required.every(path => existsSync(path)) ? candidate : undefined;
+}
+
+function terminateRuntimeProcess(child: RuntimeProcess['child']): void {
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+      stdio: 'ignore',
+      windowsHide: true,
+      timeout: 5_000
+    });
+    return;
+  }
+  child.kill('SIGTERM');
+}
+
+function packageManagerCommand(args: string[]): {
+  command: string;
+  args: string[];
+} {
+  const cli = [
+    process.env.npm_execpath,
+    process.platform === 'win32' && process.env.APPDATA !== undefined
+      ? join(process.env.APPDATA, 'npm', 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')
+      : undefined
+  ].find(candidate => (
+    typeof candidate === 'string'
+    && /\.(?:c|m)?js$/i.test(candidate)
+    && existsSync(candidate)
+  ));
+  if (typeof cli === 'string' && /\.(?:c|m)?js$/i.test(cli)) {
+    return { command: process.execPath, args: [cli, ...args] };
+  }
+  return {
+    command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    args
+  };
 }
 
 function parseRuntimeConfigFromOutput(output: string): RuntimeConfig | null {

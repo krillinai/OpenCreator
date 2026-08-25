@@ -36,7 +36,7 @@ describe('Codex process launcher', () => {
     if (process.platform !== 'win32') return;
     tempDir = mkdtempSync(join(tmpdir(), 'opencreator-codex-process-'));
     const bin = join(tempDir, 'codex.cmd');
-    writeFileSync(bin, '@echo off\r\n<nul set /p=\"%~1\"\r\n');
+    writeFileSync(bin, '@echo off\r\n<nul set /p=\"%~1\"\r\nexit /b 0\r\n');
 
     const child = spawnCodexProcess(bin, ['hello'], {
       stdio: ['ignore', 'pipe', 'pipe']

@@ -148,11 +148,18 @@ describe('codex app-server runner', () => {
     });
     expect(readAppServerRequests(tempDir)).toEqual(expect.arrayContaining([
       expect.objectContaining({
+        method: 'initialize',
+        params: expect.objectContaining({
+          capabilities: expect.objectContaining({ experimentalApi: true })
+        })
+      }),
+      expect.objectContaining({
         method: 'thread/resume',
         params: expect.objectContaining({
           threadId: 'codex-thread-existing',
           sandbox: 'danger-full-access',
-          approvalPolicy: 'never'
+          approvalPolicy: 'never',
+          excludeTurns: true
         })
       })
     ]));
@@ -212,6 +219,47 @@ describe('codex app-server runner', () => {
     expect(approvalRequested).toBe(false);
   });
 
+  it('recognizes the current MCP approval request type metadata', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeMcpElicitationAppServer(tempDir, 'accept', 'request-type');
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'workspace-write',
+      prompt: 'create a schedule',
+      inactivityTimeoutMs: 5_000,
+      async onApprovalRequest() {
+        return 'approved';
+      }
+    });
+
+    await expect(process.result).resolves.toMatchObject({ turnStatus: 'completed' });
+  });
+
+  it('recognizes the official empty-form MCP tool approval fallback shape', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeMcpElicitationAppServer(tempDir, 'accept', 'fallback');
+    let approvalRequested = false;
+    const process = startCodexAppServer({
+      codexBin: fake,
+      codexHome: join(tempDir, 'codex-home'),
+      cwd: tempDir,
+      profile: 'default',
+      sandbox: 'danger-full-access',
+      prompt: 'create a schedule without approval metadata',
+      inactivityTimeoutMs: 5_000,
+      async onApprovalRequest() {
+        approvalRequested = true;
+        return 'rejected';
+      }
+    });
+
+    await expect(process.result).resolves.toMatchObject({ turnStatus: 'completed' });
+    expect(approvalRequested).toBe(false);
+  });
+
   it('maps MCP elicitation rejection to the official decline payload', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
     const fake = createFakeMcpElicitationAppServer(tempDir, 'decline');
@@ -235,8 +283,8 @@ describe('codex app-server runner', () => {
   });
 
   it('cancels unsupported MCP form elicitation without treating it as an approval', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-app-server-'));
-    const fake = createFakeMcpElicitationAppServer(tempDir, 'cancel', false);
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-'));
+    const fake = createFakeMcpElicitationAppServer(tempDir, 'cancel', 'none');
     let approvalRequested = false;
     const process = startCodexAppServer({
       codexBin: fake,
@@ -331,6 +379,10 @@ rl.on('line', line => {
     send({ id: message.id, result: { userAgent: 'fake', codexHome: process.env.CODEX_HOME, platformFamily: 'unix', platformOs: 'test' } });
     return;
   }
+  if (message.method === 'thread/read') {
+    send({ id: message.id, result: { thread: { id: message.params.threadId, turns: [] } } });
+    return;
+  }
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
     send({ id: message.id, result: { thread: { id: 'codex-thread-1' } } });
     return;
@@ -379,7 +431,7 @@ function readAppServerRequests(dir: string): Array<Record<string, unknown>> {
 function createFakeMcpElicitationAppServer(
   dir: string,
   expectedAction: 'accept' | 'decline' | 'cancel',
-  approvalRequest = true
+  approvalMetadata: 'kind' | 'request-type' | 'fallback' | 'none' = 'kind'
 ): string {
   const bin = join(dir, 'fake-mcp-elicitation-codex.js');
   writeFileSync(bin, `#!/usr/bin/env node
@@ -409,13 +461,17 @@ rl.on('line', line => {
         serverName: 'opencreator_schedule',
         mode: 'form',
         _meta: {
-          ${approvalRequest ? "codex_approval_kind: 'mcp_tool_call'," : ''}
-          message: 'Allow the opencreator_schedule MCP server to run tool "opencreator_schedule_create"?',
-          tool_description: '创建一个 OpenCreator 定时任务。',
+          ${approvalMetadata === 'kind' ? "codex_approval_kind: 'mcp_tool_call'," : ''}
+          ${approvalMetadata === 'request-type' ? "codex_request_type: 'approval_request'," : ''}
+          message: 'Allow the clawee_schedule MCP server to run tool "clawee_schedule_create"?',
+          tool_description: '创建一个 Clawee 定时任务。',
           tool_params: {
             name: '武汉天气每5分钟简报'
           }
         },
+        ${approvalMetadata === 'fallback'
+          ? "message: 'Allow the clawee_schedule MCP server to run tool \\\"clawee_schedule_create\\\"?',"
+          : ''}
         requestedSchema: {
           type: 'object',
           properties: {}

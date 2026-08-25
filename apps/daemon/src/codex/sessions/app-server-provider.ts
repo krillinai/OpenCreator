@@ -31,6 +31,7 @@ export type CodexSessionProvider = {
     cursor?: string;
   }): Promise<CodexThreadHistoryPage>;
   search(query: ConversationSearchQuery): Promise<CodexConversationSearchPage>;
+  restart?(): Promise<void>;
   close(): Promise<void>;
 };
 
@@ -185,6 +186,11 @@ export function createCodexSessionProvider(
         hasMore: response.nextCursor !== null,
         ...(response.nextCursor === null ? {} : { nextCursor: response.nextCursor })
       };
+    },
+
+    async restart() {
+      historyCache.clear();
+      await input.client.restart?.();
     },
 
     async close() {

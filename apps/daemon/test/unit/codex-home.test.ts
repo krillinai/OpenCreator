@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { resolveCodexHome } from '../../src/codex/home.js';
 import { expandHome } from '../../src/platform/paths.js';
@@ -9,7 +10,7 @@ describe('codex home resolution', () => {
       homeDir: '/Users/tester'
     });
     expect(result.mode).toBe('global');
-    expect(result.path).toBe('/Users/tester/custom-codex');
+    expect(result.path).toBe(join('/Users/tester', 'custom-codex'));
   });
 
   it('falls back to ~/.codex', () => {
@@ -17,7 +18,7 @@ describe('codex home resolution', () => {
       env: {},
       homeDir: '/Users/tester'
     });
-    expect(result.path).toBe('/Users/tester/.codex');
+    expect(result.path).toBe(join('/Users/tester', '.codex'));
   });
 
   it('uses isolated home when explicitly provided as an empty string', () => {
@@ -36,7 +37,7 @@ describe('codex home resolution', () => {
 
   it('marks global codex homes read-only and isolated homes writable', () => {
     expect(resolveCodexHome({ env: {}, homeDir: '/Users/tester' })).toMatchObject({
-      path: '/Users/tester/.codex',
+      path: join('/Users/tester', '.codex'),
       mode: 'global',
       source: 'default',
       writable: false
@@ -48,7 +49,7 @@ describe('codex home resolution', () => {
         homeDir: '/Users/tester'
       })
     ).toMatchObject({
-      path: '/Users/tester/custom-codex',
+      path: join('/Users/tester', 'custom-codex'),
       mode: 'global',
       source: 'env',
       writable: false
@@ -61,7 +62,7 @@ describe('codex home resolution', () => {
         isolatedHome: '~/isolated-codex'
       })
     ).toMatchObject({
-      path: '/Users/tester/isolated-codex',
+      path: join('/Users/tester', 'isolated-codex'),
       mode: 'isolated',
       source: 'isolated',
       writable: true
@@ -69,7 +70,7 @@ describe('codex home resolution', () => {
   });
 
   it('expands only leading tilde', () => {
-    expect(expandHome('~/x', '/home/a')).toBe('/home/a/x');
+    expect(expandHome('~/x', '/home/a')).toBe(join('/home/a', 'x'));
     expect(expandHome('/tmp/~/x', '/home/a')).toBe('/tmp/~/x');
   });
 });

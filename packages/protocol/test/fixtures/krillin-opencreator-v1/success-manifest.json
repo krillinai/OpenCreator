@@ -1,0 +1,19 @@
+{
+  "protocolVersion": 1,
+  "id": "manifest_1",
+  "taskId": "task_1",
+  "jobId": "job_1",
+  "stageRunId": "stage_1",
+  "artifacts": [
+    {
+      "id": "subtitle_1",
+      "kind": "target_srt",
+      "relativePath": "stages/stage_1/krillin/target_language_srt.srt",
+      "mimeType": "application/x-subrip",
+      "size": 128,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "metadata": { "captionSource": "whisper" },
+  "createdAt": "2026-08-21T00:00:03.000Z"
+}

@@ -341,6 +341,186 @@ export function migrate(db: Database.Database): void {
       FOREIGN KEY(source_path) REFERENCES codex_session_sources(path) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS creator_jobs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      template_version INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0,
+      state_json TEXT NOT NULL,
+      agent_thread_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_stage_runs (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      stage_id TEXT NOT NULL,
+      executor TEXT NOT NULL,
+      status TEXT NOT NULL,
+      dispatch_status TEXT NOT NULL DEFAULT 'queued',
+      claim_owner TEXT,
+      claim_expires_at TEXT,
+      attempt INTEGER NOT NULL DEFAULT 0,
+      idempotency_key TEXT,
+      progress_json TEXT NOT NULL DEFAULT '{}',
+      error_code TEXT,
+      error_message TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_artifacts (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      path TEXT,
+      source_artifact_ids_json TEXT NOT NULL DEFAULT '[]',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
+      UNIQUE(job_id, kind, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_activities (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      actor TEXT NOT NULL,
+      action TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      details_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_agent_sessions (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL UNIQUE,
+      thread_id TEXT NOT NULL,
+      runtime_thread_id TEXT,
+      status TEXT NOT NULL,
+      host_generation INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      interrupted_at TEXT,
+      closed_at TEXT,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_agent_turns (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      client_message_id TEXT,
+      runtime_turn_id TEXT,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL,
+      audit_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY(session_id) REFERENCES creator_agent_sessions(id) ON DELETE CASCADE,
+      UNIQUE(session_id, client_message_id),
+      UNIQUE(session_id, runtime_turn_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_agent_items (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      runtime_item_id TEXT,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      role TEXT,
+      text TEXT,
+      tool_name TEXT,
+      approval_id TEXT,
+      data_json TEXT NOT NULL DEFAULT '{}',
+      sequence INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY(session_id) REFERENCES creator_agent_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY(turn_id) REFERENCES creator_agent_turns(id) ON DELETE CASCADE,
+      UNIQUE(turn_id, sequence),
+      UNIQUE(session_id, runtime_item_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_agent_events (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      turn_id TEXT,
+      item_id TEXT,
+      sequence INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      runtime_event_key TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY(session_id) REFERENCES creator_agent_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY(turn_id) REFERENCES creator_agent_turns(id) ON DELETE CASCADE,
+      FOREIGN KEY(item_id) REFERENCES creator_agent_items(id) ON DELETE CASCADE,
+      UNIQUE(session_id, sequence),
+      UNIQUE(session_id, runtime_event_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_agent_approvals (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      runtime_request_id TEXT NOT NULL,
+      process_generation INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      details_json TEXT NOT NULL DEFAULT '{}',
+      requested_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      resolved_at TEXT,
+      resolution_reason TEXT,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY(session_id) REFERENCES creator_agent_sessions(id) ON DELETE CASCADE,
+      FOREIGN KEY(turn_id) REFERENCES creator_agent_turns(id) ON DELETE CASCADE,
+      FOREIGN KEY(item_id) REFERENCES creator_agent_items(id) ON DELETE CASCADE,
+      UNIQUE(session_id, runtime_request_id, process_generation)
+    );
+
+    CREATE TABLE IF NOT EXISTS creator_command_receipts (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      command TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      expected_revision INTEGER NOT NULL,
+      committed_revision INTEGER,
+      status TEXT NOT NULL,
+      result_json TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      stage_run_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(job_id) REFERENCES creator_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY(stage_run_id) REFERENCES creator_stage_runs(id) ON DELETE SET NULL,
+      UNIQUE(job_id, idempotency_key)
+    );
+
     CREATE TABLE IF NOT EXISTS codex_session_search_state (
       id INTEGER PRIMARY KEY CHECK(id = 1),
       version INTEGER NOT NULL,
@@ -410,6 +590,24 @@ export function migrate(db: Database.Database): void {
       ON codex_sessions(kind, updated_at DESC, codex_thread_id DESC);
     CREATE INDEX IF NOT EXISTS idx_codex_session_items_source_line
       ON codex_session_items(source_path, line_number ASC);
+    CREATE INDEX IF NOT EXISTS idx_creator_jobs_project_updated
+      ON creator_jobs(project_id, updated_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_creator_stage_runs_job_created
+      ON creator_stage_runs(job_id, created_at ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_creator_artifacts_job_kind_version
+      ON creator_artifacts(job_id, kind, version DESC);
+    CREATE INDEX IF NOT EXISTS idx_creator_activities_job_revision
+      ON creator_activities(job_id, revision ASC, created_at ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_creator_agent_turns_session_created
+      ON creator_agent_turns(session_id, created_at ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_creator_agent_items_turn_sequence
+      ON creator_agent_items(turn_id, sequence ASC, id ASC);
+    CREATE INDEX IF NOT EXISTS idx_creator_agent_events_session_sequence
+      ON creator_agent_events(session_id, sequence ASC);
+    CREATE INDEX IF NOT EXISTS idx_creator_agent_approvals_pending
+      ON creator_agent_approvals(session_id, status, requested_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_creator_command_receipts_job_created
+      ON creator_command_receipts(job_id, created_at ASC, id ASC);
   `);
 
   ensureColumn(db, 'threads', 'title', 'title TEXT');
@@ -441,6 +639,16 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'schedules', 'thread_id', 'thread_id TEXT');
   ensureColumn(db, 'schedule_operations', 'actor_type', 'actor_type TEXT');
   ensureColumn(db, 'schedule_operations', 'actor_run_id', 'actor_run_id TEXT');
+  ensureColumn(
+    db,
+    'creator_stage_runs',
+    'dispatch_status',
+    "dispatch_status TEXT NOT NULL DEFAULT 'queued'"
+  );
+  ensureColumn(db, 'creator_stage_runs', 'claim_owner', 'claim_owner TEXT');
+  ensureColumn(db, 'creator_stage_runs', 'claim_expires_at', 'claim_expires_at TEXT');
+  ensureColumn(db, 'creator_stage_runs', 'attempt', 'attempt INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'creator_stage_runs', 'idempotency_key', 'idempotency_key TEXT');
   db.prepare(`
     UPDATE schedules
     SET concurrency_policy = 'queue'
@@ -455,6 +663,11 @@ export function migrate(db: Database.Database): void {
     END
   `).run();
   assertUniqueCodexThreadIds(db);
+  db.exec(`
+    UPDATE creator_stage_runs
+    SET dispatch_status = 'finished'
+    WHERE status IN ('succeeded', 'failed', 'canceled', 'interrupted');
+  `);
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_threads_project_id
       ON threads(project_id);
@@ -474,6 +687,11 @@ export function migrate(db: Database.Database): void {
       ON schedule_operations(run_id);
     CREATE INDEX IF NOT EXISTS idx_schedule_operations_actor_run_id
       ON schedule_operations(actor_run_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_creator_stage_runs_job_idempotency
+      ON creator_stage_runs(job_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_creator_stage_runs_dispatch
+      ON creator_stage_runs(dispatch_status, claim_expires_at, created_at ASC);
   `);
 }
 

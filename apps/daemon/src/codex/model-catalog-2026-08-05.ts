@@ -9,6 +9,7 @@ import type { CodexAppServerRequestClient } from './app-server-client.js';
 
 export type CodexModelCatalog = {
   listModels(): Promise<CodexModelListResponse>;
+  restart?(): Promise<void>;
   close(): Promise<void>;
 };
 
@@ -72,6 +73,10 @@ export function createCodexModelCatalog(
       } while (cursor !== undefined);
 
       return { models: selectLatestGptModelFamilies(models, 2) };
+    },
+
+    async restart(): Promise<void> {
+      await input.client.restart?.();
     },
 
     close(): Promise<void> {

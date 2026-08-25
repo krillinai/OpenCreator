@@ -3,6 +3,7 @@ import {
   type AliyunOssConfig,
   type AliyunSpeechConfig,
   type CreatorServicesConfig,
+  type CreatorServicesCredentialField,
   type KlingAiConfig,
   type OpenAiCompatibleConfig
 } from '@opencreator/protocol';
@@ -37,6 +38,7 @@ export function CreatorServicesSettingsView(props: {
   const confirm = useConfirmDialog();
   const [activeSection, setActiveSection] = useState<ServiceSection>('text');
   const [config, setConfig] = useState<CreatorServicesConfig>();
+  const [configuredCredentials, setConfiguredCredentials] = useState<ReadonlySet<CreatorServicesCredentialField>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -55,7 +57,10 @@ export function CreatorServicesSettingsView(props: {
     setError(undefined);
     void props.service.getConfig()
       .then(response => {
-        if (active) setConfig(response.config);
+        if (active) {
+          setConfig(response.config);
+          setConfiguredCredentials(new Set(response.configuredCredentials));
+        }
       })
       .catch(() => {
         if (active) setError(l('无法读取 AI 服务配置', 'Could not load AI service settings'));
@@ -97,6 +102,7 @@ export function CreatorServicesSettingsView(props: {
     try {
       const response = await props.service.saveConfig(config);
       setConfig(response.config);
+      setConfiguredCredentials(new Set(response.configuredCredentials));
       setNotice(l('配置已安全保存', 'Settings saved securely'));
     } catch {
       setError(l('保存失败，请检查字段后重试', 'Save failed. Check the fields and try again'));
@@ -123,6 +129,7 @@ export function CreatorServicesSettingsView(props: {
     try {
       const response = await props.service.resetConfig();
       setConfig(response.config);
+      setConfiguredCredentials(new Set(response.configuredCredentials));
       setNotice(l('已恢复默认配置', 'Default settings restored'));
     } catch {
       setError(l('无法恢复默认配置', 'Could not restore default settings'));
@@ -190,19 +197,19 @@ export function CreatorServicesSettingsView(props: {
           }}
         >
           {activeSection === 'text' ? (
-            <TextModelSettings config={config} update={updateConfig} />
+            <TextModelSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
           ) : null}
           {activeSection === 'transcription' ? (
-            <TranscriptionSettings config={config} update={updateConfig} />
+            <TranscriptionSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
           ) : null}
           {activeSection === 'tts' ? (
-            <TtsSettings config={config} update={updateConfig} />
+            <TtsSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
           ) : null}
           {activeSection === 'image' ? (
-            <ImageSettings config={config} update={updateConfig} />
+            <ImageSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
           ) : null}
           {activeSection === 'video' ? (
-            <VideoSettings config={config} update={updateConfig} />
+            <VideoSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
           ) : null}
 
           <footer className="creator-services-actions">
@@ -244,6 +251,8 @@ function TextModelSettings(props: SettingsGroupProps) {
       >
         <OpenAiFields
           id="llm"
+          credential="llm.apiKey"
+          configuredCredentials={props.configuredCredentials}
           value={props.config.llm}
           modelPlaceholder="gpt-4o-mini"
           onChange={value => props.update(config => {
@@ -284,11 +293,11 @@ function TranscriptionSettings(props: SettingsGroupProps) {
   return (
     <SettingsFieldset
       title={l('语音识别', 'Speech transcription')}
-      description={l('选择云端 API 或适合当前设备的本地 Whisper 模型。', 'Choose a cloud API or a local Whisper model suited to this device.')}
+      description={l('选择优先使用的转录服务。云端凭证未配置时，Runtime 会尝试使用安装包内可用的本地 Whisper。', 'Choose the preferred transcription service. When cloud credentials are absent, the Runtime tries an available local Whisper packaged with the app.')}
     >
       <SelectField
         id="transcription-provider"
-        label={l('服务商', 'Provider')}
+        label={l('优先服务', 'Preferred provider')}
         value={provider}
         options={[
           ['openai', 'OpenAI Whisper'],
@@ -304,6 +313,8 @@ function TranscriptionSettings(props: SettingsGroupProps) {
       {provider === 'openai' ? (
         <OpenAiFields
           id="transcription-openai"
+          credential="transcription.openai.apiKey"
+          configuredCredentials={props.configuredCredentials}
           value={props.config.transcription.openai}
           modelPlaceholder="whisper-1"
           onChange={value => props.update(config => {
@@ -336,11 +347,21 @@ function TranscriptionSettings(props: SettingsGroupProps) {
         <ReadonlyModelField label={l('本地模型', 'Local model')} value="large-v2" />
       ) : null}
       {provider === 'whisper.cpp' ? (
-        <ReadonlyModelField label={l('本地模型', 'Local model')} value="large-v2" />
+        <SelectField
+          id="whisper-cpp-model"
+          label={l('本地模型', 'Local model')}
+          value={props.config.transcription.whisperCpp.model}
+          options={[['tiny', 'tiny'], ['medium', 'medium'], ['large-v2', 'large-v2']]}
+          onChange={value => props.update(config => {
+            config.transcription.whisperCpp.model = value as 'tiny' | 'medium' | 'large-v2';
+          })}
+        />
       ) : null}
       {provider === 'aliyun' ? (
         <AliyunFields
           id="transcription-aliyun"
+          credentialPrefix="transcription.aliyun"
+          configuredCredentials={props.configuredCredentials}
           oss={props.config.transcription.aliyun.oss}
           speech={props.config.transcription.aliyun.speech}
           onOssChange={value => props.update(config => {
@@ -380,6 +401,8 @@ function TtsSettings(props: SettingsGroupProps) {
       {provider === 'openai' ? (
         <OpenAiFields
           id="tts-openai"
+          credential="tts.openai.apiKey"
+          configuredCredentials={props.configuredCredentials}
           value={props.config.tts.openai}
           modelPlaceholder="gpt-4o-mini-tts"
           onChange={value => props.update(config => {
@@ -390,6 +413,8 @@ function TtsSettings(props: SettingsGroupProps) {
       {provider === 'minimax' ? (
         <OpenAiFields
           id="tts-minimax"
+          credential="tts.minimax.apiKey"
+          configuredCredentials={props.configuredCredentials}
           value={props.config.tts.minimax}
           modelPlaceholder="speech-2.8-hd"
           baseUrlPlaceholder="https://api.minimax.io"
@@ -401,6 +426,8 @@ function TtsSettings(props: SettingsGroupProps) {
       {provider === 'aliyun' ? (
         <AliyunFields
           id="tts-aliyun"
+          credentialPrefix="tts.aliyun"
+          configuredCredentials={props.configuredCredentials}
           oss={props.config.tts.aliyun.oss}
           speech={props.config.tts.aliyun.speech}
           onOssChange={value => props.update(config => {
@@ -442,10 +469,10 @@ function ImageSettings(props: SettingsGroupProps) {
           config.image.provider = value as CreatorServicesConfig['image']['provider'];
         })}
       />
-      {provider === 'openai' ? <OpenAiFields id="image-openai" value={props.config.image.openai} modelPlaceholder="gpt-image-1" onChange={value => props.update(config => { config.image.openai = value; })} /> : null}
-      {provider === 'jimeng' ? <OpenAiFields id="image-jimeng" value={props.config.image.jimeng} modelPlaceholder="doubao-seedream-4-0-250828" baseUrlPlaceholder="https://ark.cn-beijing.volces.com/api/v3" onChange={value => props.update(config => { config.image.jimeng = value; })} /> : null}
-      {provider === 'kling' ? <KlingFields id="image-kling" value={props.config.image.kling} modelPlaceholder="kling-v2-1" onChange={value => props.update(config => { config.image.kling = value; })} /> : null}
-      {provider === 'gemini' ? <OpenAiFields id="image-gemini" value={props.config.image.gemini} modelPlaceholder="gemini-2.5-flash-image" baseUrlPlaceholder="https://generativelanguage.googleapis.com/v1beta" onChange={value => props.update(config => { config.image.gemini = value; })} /> : null}
+      {provider === 'openai' ? <OpenAiFields id="image-openai" credential="image.openai.apiKey" configuredCredentials={props.configuredCredentials} value={props.config.image.openai} modelPlaceholder="gpt-image-1" onChange={value => props.update(config => { config.image.openai = value; })} /> : null}
+      {provider === 'jimeng' ? <OpenAiFields id="image-jimeng" credential="image.jimeng.apiKey" configuredCredentials={props.configuredCredentials} value={props.config.image.jimeng} modelPlaceholder="doubao-seedream-4-0-250828" baseUrlPlaceholder="https://ark.cn-beijing.volces.com/api/v3" onChange={value => props.update(config => { config.image.jimeng = value; })} /> : null}
+      {provider === 'kling' ? <KlingFields id="image-kling" accessKeyCredential="image.kling.accessKey" secretKeyCredential="image.kling.secretKey" configuredCredentials={props.configuredCredentials} value={props.config.image.kling} modelPlaceholder="kling-v2-1" onChange={value => props.update(config => { config.image.kling = value; })} /> : null}
+      {provider === 'gemini' ? <OpenAiFields id="image-gemini" credential="image.gemini.apiKey" configuredCredentials={props.configuredCredentials} value={props.config.image.gemini} modelPlaceholder="gemini-2.5-flash-image" baseUrlPlaceholder="https://generativelanguage.googleapis.com/v1beta" onChange={value => props.update(config => { config.image.gemini = value; })} /> : null}
     </SettingsFieldset>
   );
 }
@@ -471,15 +498,16 @@ function VideoSettings(props: SettingsGroupProps) {
           config.video.provider = value as CreatorServicesConfig['video']['provider'];
         })}
       />
-      {provider === 'seedance' ? <OpenAiFields id="video-seedance" value={props.config.video.seedance} modelPlaceholder="doubao-seedance-1-0-pro-250528" baseUrlPlaceholder="https://ark.cn-beijing.volces.com/api/v3" onChange={value => props.update(config => { config.video.seedance = value; })} /> : null}
-      {provider === 'kling' ? <KlingFields id="video-kling" value={props.config.video.kling} modelPlaceholder="kling-v2-1-master" onChange={value => props.update(config => { config.video.kling = value; })} /> : null}
-      {provider === 'veo' ? <OpenAiFields id="video-veo" value={props.config.video.veo} modelPlaceholder="veo-3.1-generate-preview" baseUrlPlaceholder="https://generativelanguage.googleapis.com/v1beta" onChange={value => props.update(config => { config.video.veo = value; })} /> : null}
+      {provider === 'seedance' ? <OpenAiFields id="video-seedance" credential="video.seedance.apiKey" configuredCredentials={props.configuredCredentials} value={props.config.video.seedance} modelPlaceholder="doubao-seedance-1-0-pro-250528" baseUrlPlaceholder="https://ark.cn-beijing.volces.com/api/v3" onChange={value => props.update(config => { config.video.seedance = value; })} /> : null}
+      {provider === 'kling' ? <KlingFields id="video-kling" accessKeyCredential="video.kling.accessKey" secretKeyCredential="video.kling.secretKey" configuredCredentials={props.configuredCredentials} value={props.config.video.kling} modelPlaceholder="kling-v2-1-master" onChange={value => props.update(config => { config.video.kling = value; })} /> : null}
+      {provider === 'veo' ? <OpenAiFields id="video-veo" credential="video.veo.apiKey" configuredCredentials={props.configuredCredentials} value={props.config.video.veo} modelPlaceholder="veo-3.1-generate-preview" baseUrlPlaceholder="https://generativelanguage.googleapis.com/v1beta" onChange={value => props.update(config => { config.video.veo = value; })} /> : null}
     </SettingsFieldset>
   );
 }
 
 type SettingsGroupProps = {
   config: CreatorServicesConfig;
+  configuredCredentials: ReadonlySet<CreatorServicesCredentialField>;
   update(mutator: (draft: CreatorServicesConfig) => void): void;
 };
 
@@ -495,6 +523,8 @@ function SettingsFieldset(props: { title: string; description: string; children:
 
 function OpenAiFields(props: {
   id: string;
+  credential: CreatorServicesCredentialField;
+  configuredCredentials: ReadonlySet<CreatorServicesCredentialField>;
   value: OpenAiCompatibleConfig;
   modelPlaceholder: string;
   baseUrlPlaceholder?: string;
@@ -515,6 +545,7 @@ function OpenAiFields(props: {
         id={`${props.id}-api-key`}
         label="API Key"
         value={props.value.apiKey}
+        configured={props.configuredCredentials.has(props.credential)}
         onChange={apiKey => props.onChange({ ...props.value, apiKey })}
       />
       <TextField
@@ -530,6 +561,9 @@ function OpenAiFields(props: {
 
 function KlingFields(props: {
   id: string;
+  accessKeyCredential: CreatorServicesCredentialField;
+  secretKeyCredential: CreatorServicesCredentialField;
+  configuredCredentials: ReadonlySet<CreatorServicesCredentialField>;
   value: KlingAiConfig;
   modelPlaceholder: string;
   onChange(value: KlingAiConfig): void;
@@ -537,8 +571,8 @@ function KlingFields(props: {
   return (
     <>
       <TextField id={`${props.id}-base-url`} label="Base URL" value={props.value.baseUrl} placeholder="https://api-beijing.klingai.com" onChange={baseUrl => props.onChange({ ...props.value, baseUrl })} wide />
-      <PasswordField id={`${props.id}-access-key`} label="Access Key" value={props.value.accessKey} onChange={accessKey => props.onChange({ ...props.value, accessKey })} />
-      <PasswordField id={`${props.id}-secret-key`} label="Secret Key" value={props.value.secretKey} onChange={secretKey => props.onChange({ ...props.value, secretKey })} />
+      <PasswordField id={`${props.id}-access-key`} label="Access Key" value={props.value.accessKey} configured={props.configuredCredentials.has(props.accessKeyCredential)} onChange={accessKey => props.onChange({ ...props.value, accessKey })} />
+      <PasswordField id={`${props.id}-secret-key`} label="Secret Key" value={props.value.secretKey} configured={props.configuredCredentials.has(props.secretKeyCredential)} onChange={secretKey => props.onChange({ ...props.value, secretKey })} />
       <TextField id={`${props.id}-model`} label="Model" value={props.value.model} placeholder={props.modelPlaceholder} onChange={model => props.onChange({ ...props.value, model })} />
     </>
   );
@@ -546,6 +580,8 @@ function KlingFields(props: {
 
 function AliyunFields(props: {
   id: string;
+  credentialPrefix: 'transcription.aliyun' | 'tts.aliyun';
+  configuredCredentials: ReadonlySet<CreatorServicesCredentialField>;
   oss: AliyunOssConfig;
   speech: AliyunSpeechConfig;
   onOssChange(value: AliyunOssConfig): void;
@@ -555,41 +591,46 @@ function AliyunFields(props: {
   return (
     <>
       <h3 className="creator-services-subheading">{l('OSS 存储', 'OSS storage')}</h3>
-      <TextField
+      <PasswordField
         id={`${props.id}-oss-access-key-id`}
         label="Access Key ID"
         value={props.oss.accessKeyId}
+        configured={props.configuredCredentials.has(`${props.credentialPrefix}.oss.accessKeyId` as CreatorServicesCredentialField)}
         onChange={accessKeyId => props.onOssChange({ ...props.oss, accessKeyId })}
       />
       <PasswordField
         id={`${props.id}-oss-access-key-secret`}
         label="Access Key Secret"
         value={props.oss.accessKeySecret}
+        configured={props.configuredCredentials.has(`${props.credentialPrefix}.oss.accessKeySecret` as CreatorServicesCredentialField)}
         onChange={accessKeySecret => props.onOssChange({ ...props.oss, accessKeySecret })}
       />
-      <TextField
+      <PasswordField
         id={`${props.id}-oss-bucket`}
         label="Bucket"
         value={props.oss.bucket}
         onChange={bucket => props.onOssChange({ ...props.oss, bucket })}
       />
       <h3 className="creator-services-subheading">{l('语音服务', 'Speech service')}</h3>
-      <TextField
+      <PasswordField
         id={`${props.id}-speech-access-key-id`}
         label="Access Key ID"
         value={props.speech.accessKeyId}
+        configured={props.configuredCredentials.has(`${props.credentialPrefix}.speech.accessKeyId` as CreatorServicesCredentialField)}
         onChange={accessKeyId => props.onSpeechChange({ ...props.speech, accessKeyId })}
       />
       <PasswordField
         id={`${props.id}-speech-access-key-secret`}
         label="Access Key Secret"
         value={props.speech.accessKeySecret}
+        configured={props.configuredCredentials.has(`${props.credentialPrefix}.speech.accessKeySecret` as CreatorServicesCredentialField)}
         onChange={accessKeySecret => props.onSpeechChange({ ...props.speech, accessKeySecret })}
       />
       <PasswordField
         id={`${props.id}-speech-app-key`}
         label="App Key"
         value={props.speech.appKey}
+        configured={props.configuredCredentials.has(`${props.credentialPrefix}.speech.appKey` as CreatorServicesCredentialField)}
         onChange={appKey => props.onSpeechChange({ ...props.speech, appKey })}
       />
     </>
@@ -624,6 +665,7 @@ function PasswordField(props: {
   id: string;
   label: string;
   value: string;
+  configured?: boolean;
   onChange(value: string): void;
 }) {
   const l = useLocalizedCopy();
@@ -636,7 +678,9 @@ function PasswordField(props: {
           id={props.id}
           type={visible ? 'text' : 'password'}
           value={props.value}
-          placeholder={l('输入密钥', 'Enter key')}
+          placeholder={props.configured
+            ? l('已配置，留空则保持', 'Configured; leave blank to keep')
+            : l('输入密钥', 'Enter key')}
           spellCheck={false}
           autoComplete="new-password"
           onChange={event => props.onChange(event.target.value)}

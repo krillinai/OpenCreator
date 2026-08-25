@@ -1,6 +1,12 @@
+import {
+  isCreatorWorkspace,
+  type CreatorWorkspace
+} from '../features/dashboard/creator-workspace.js';
+
 export type AppRoute =
   | { view: 'home' }
   | { view: 'projects' }
+  | { view: 'workbench'; tool?: CreatorWorkspace; jobId?: string }
   | { view: 'thread'; threadId: string; runId?: string; approvalId?: string }
   | { view: 'search' }
   | { view: 'schedules'; scheduleId?: string }
@@ -16,7 +22,7 @@ export type AppRoute =
   | { view: 'assets'; tab?: 'materials' }
   | { view: 'account' }
   | { view: 'capabilities' }
-  | { view: 'settings' }
+  | { view: 'settings'; tab?: 'ai-services' | 'codex-agent' }
   | { view: 'files'; threadId?: string; path?: string };
 
 export function parseRoute(hash: string): AppRoute {
@@ -44,7 +50,17 @@ export function parseRoute(hash: string): AppRoute {
   }
   if (path === '#/search') return { view: 'search' };
   if (path === '#/projects') return { view: 'projects' };
-  if (path === '#/dashboard') return { view: 'dashboard' };
+  if (path === '#/workbench') {
+    const params = new URLSearchParams(query);
+    const tool = params.get('tool');
+    const jobId = params.get('jobId');
+    if (tool === null || !isCreatorWorkspace(tool)) return { view: 'workbench' };
+    return {
+      view: 'workbench',
+      tool,
+      ...(jobId === null || jobId.length === 0 ? {} : { jobId })
+    };
+  }
   if (path === '#/schedules') {
     const fields = parseQuery(query);
     return {
@@ -53,6 +69,7 @@ export function parseRoute(hash: string): AppRoute {
     };
   }
   if (path === '#/tasks') return { view: 'tasks' };
+  if (path === '#/dashboard') return { view: 'dashboard' };
   if (path === '#/activity') return { view: 'activity', range: parseActivityRange(query) };
   if (path === '#/plugins') {
     const fields = parseQuery(query);
@@ -74,7 +91,13 @@ export function parseRoute(hash: string): AppRoute {
   if (path === '#/drive') return { view: 'assets', tab: 'materials' };
   if (path === '#/account') return { view: 'account' };
   if (path === '#/capabilities') return { view: 'capabilities' };
-  if (path === '#/settings') return { view: 'settings' };
+  if (path === '#/settings') {
+    const tab = new URLSearchParams(query).get('tab');
+    return {
+      view: 'settings',
+      ...(tab === 'ai-services' || tab === 'codex-agent' ? { tab } : {})
+    };
+  }
   if (path === '#/files') {
     const fields = parseQuery(query);
     return {
@@ -92,6 +115,12 @@ export function formatRoute(route: AppRoute): string {
       return '#/';
     case 'projects':
       return '#/projects';
+    case 'workbench': {
+      if (route.tool === undefined) return '#/workbench';
+      const query = new URLSearchParams({ tool: route.tool });
+      if (route.jobId !== undefined) query.set('jobId', route.jobId);
+      return `#/workbench?${query.toString()}`;
+    }
     case 'thread': {
       const query = new URLSearchParams();
       if (route.runId !== undefined) query.set('runId', route.runId);
@@ -130,7 +159,9 @@ export function formatRoute(route: AppRoute): string {
     case 'capabilities':
       return '#/capabilities';
     case 'settings':
-      return '#/settings';
+      return route.tab === 'ai-services' || route.tab === 'codex-agent'
+        ? `#/settings?tab=${route.tab}`
+        : '#/settings';
     case 'files': {
       const query = new URLSearchParams();
       if (route.threadId !== undefined) query.set('threadId', route.threadId);

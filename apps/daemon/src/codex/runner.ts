@@ -163,22 +163,30 @@ export function startCodexExec(input: RunCodexExecInput): CodexExecProcess {
       if (forceKillTimeout === undefined) {
         forceKillTimeout = setTimeout(() => {
           if (settled) return;
-          void terminateCodexProcess(child, 'SIGKILL');
-          finalKillTimeout = setTimeout(() => {
+          void terminateCodexProcess(child, 'SIGKILL').finally(() => {
             if (settled) return;
-            rejectOnce(pendingError ?? new CodexExecError({
-              message: 'Codex exec did not exit after forced termination',
-              terminationReason: cancelRequested ? 'canceled' : 'timeout',
-              ...snapshots()
-            }));
-          }, input.finalKillSettleMs ?? 1_000);
+            finalKillTimeout = setTimeout(() => {
+              if (settled) return;
+              rejectOnce(pendingError ?? new CodexExecError({
+                message: 'Codex exec did not exit after forced termination',
+                terminationReason: cancelRequested ? 'canceled' : 'timeout',
+                ...snapshots()
+              }));
+            }, input.finalKillSettleMs ?? 1_000);
+          });
         }, input.forceKillGraceMs ?? 2_000);
       }
     };
 
     const killAndRejectOnClose = (error: CodexExecError) => {
-      if (settled) return;
+      if (settled || pendingError !== undefined) return;
       pendingError = error;
+      if (timeout) clearTimeout(timeout);
+      if (spawnTimeout) clearTimeout(spawnTimeout);
+      if (inactivityTimeout) clearTimeout(inactivityTimeout);
+      timeout = undefined;
+      spawnTimeout = undefined;
+      inactivityTimeout = undefined;
       kill();
     };
 

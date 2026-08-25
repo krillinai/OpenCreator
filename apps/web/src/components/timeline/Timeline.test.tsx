@@ -427,7 +427,7 @@ describe('Timeline', () => {
         title: 'Edited timeline model',
         path: 'apps/web/src/components/timeline/timeline-model.ts',
         delta: '+12 -3',
-        source: 'mock'
+        source: 'runtime'
       },
       {
         kind: 'diagnostic',
@@ -1485,7 +1485,7 @@ describe('Timeline', () => {
         title: 'Edited timeline model',
         path: 'apps/web/src/components/timeline/timeline-model.ts',
         delta: '+12 -3',
-        source: 'mock'
+        source: 'runtime'
       }
     ];
 

@@ -13,7 +13,7 @@ import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 
 type ComposerMenu = 'add' | 'permission' | 'model' | null;
-type Permission = 'approval' | 'full-access';
+export type ToolAgentPermission = 'approval' | 'full-access';
 
 const models = ['default', 'gpt-5.6-sol'] as const;
 type Model = typeof models[number];
@@ -22,7 +22,14 @@ export default function ToolAgentComposer(props: {
   value: string;
   placeholder: string;
   ariaLabel: string;
+  showAttachments?: boolean;
+  showPermission?: boolean;
+  showModel?: boolean;
+  submitting?: boolean;
+  permission?: ToolAgentPermission;
+  permissionDisabled?: boolean;
   onChange(value: string): void;
+  onPermissionChange?(permission: ToolAgentPermission): void;
   onSubmit(): void;
 }) {
   const { t } = useAppLanguage();
@@ -30,9 +37,14 @@ export default function ToolAgentComposer(props: {
   const rootRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [openMenu, setOpenMenu] = useState<ComposerMenu>(null);
-  const [permission, setPermission] = useState<Permission>('approval');
+  const [localPermission, setLocalPermission] = useState<ToolAgentPermission>('approval');
   const [model, setModel] = useState<Model>('default');
   const [attachments, setAttachments] = useState<File[]>([]);
+  const showAttachments = props.showAttachments ?? true;
+  const showPermission = props.showPermission ?? true;
+  const showModel = props.showModel ?? true;
+  const compact = !showAttachments && !showPermission && !showModel;
+  const permission = props.permission ?? localPermission;
 
   const permissionLabel = permission === 'approval'
     ? t('composer.permission.approval')
@@ -57,7 +69,7 @@ export default function ToolAgentComposer(props: {
 
   return (
     <form ref={rootRef} className="tool-agent-composer" onSubmit={submit}>
-      {attachments.length > 0 ? (
+      {showAttachments && attachments.length > 0 ? (
         <div className="tool-agent-composer-attachments" aria-label={l('已添加的文件', 'Attached files')}>
           {attachments.map((file, index) => (
             <span key={`${file.name}-${file.lastModified}-${index}`}>
@@ -90,9 +102,10 @@ export default function ToolAgentComposer(props: {
         />
       </div>
 
-      <div className="tool-agent-composer-toolbar">
-        <div className="tool-agent-composer-actions">
-          <div className="tool-agent-composer-control">
+      <div className="tool-agent-composer-toolbar" data-compact={compact ? 'true' : undefined}>
+        {showAttachments || showPermission ? (
+          <div className="tool-agent-composer-actions">
+          {showAttachments ? <div className="tool-agent-composer-control">
             <button
               className="tool-agent-composer-icon-button"
               type="button"
@@ -130,14 +143,16 @@ export default function ToolAgentComposer(props: {
                 event.currentTarget.value = '';
               }}
             />
-          </div>
+          </div> : null}
 
-          <div className="tool-agent-composer-control">
+          {showPermission ? <div className="tool-agent-composer-control">
             <button
               className="tool-agent-composer-select"
               type="button"
+              disabled={props.permissionDisabled}
               aria-label={l(`选择访问权限 ${permissionLabel}`, `Select access level: ${permissionLabel}`)}
               aria-expanded={openMenu === 'permission'}
+              title={props.permissionDisabled ? t('composer.permission.changeAfterRun') : undefined}
               onClick={() => setOpenMenu(current => current === 'permission' ? null : 'permission')}
             >
               <ShieldCheck size={15} strokeWidth={1.8} aria-hidden="true" />
@@ -156,7 +171,8 @@ export default function ToolAgentComposer(props: {
                     role="menuitemradio"
                     aria-checked={permission === option[0]}
                     onClick={() => {
-                      setPermission(option[0]);
+                      if (props.permission === undefined) setLocalPermission(option[0]);
+                      props.onPermissionChange?.(option[0]);
                       setOpenMenu(null);
                     }}
                   >
@@ -168,11 +184,12 @@ export default function ToolAgentComposer(props: {
                 ))}
               </div>
             ) : null}
-          </div>
+          </div> : null}
         </div>
+        ) : null}
 
         <div className="tool-agent-composer-actions tool-agent-composer-actions-right">
-          <div className="tool-agent-composer-control">
+          {showModel ? <div className="tool-agent-composer-control">
             <button
               className="tool-agent-composer-select"
               type="button"
@@ -207,11 +224,12 @@ export default function ToolAgentComposer(props: {
                 })}
               </div>
             ) : null}
-          </div>
+          </div> : null}
           <button
             className="tool-agent-composer-send"
             type="submit"
-            disabled={!props.value.trim()}
+            disabled={props.submitting || !props.value.trim()}
+            aria-busy={props.submitting || undefined}
             aria-label={l('发送给 Agent', 'Send to Agent')}
           >
             <ArrowUp size={17} strokeWidth={1.9} aria-hidden="true" />

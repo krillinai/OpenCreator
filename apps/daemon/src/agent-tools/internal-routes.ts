@@ -20,6 +20,7 @@ import {
   type AgentCapabilityScope,
   type AgentCapabilityTokenStore
 } from './capability-token.js';
+import type { CreatorToolOperations } from './creator-tools.js';
 
 export const AGENT_TOOL_ROUTE_PREFIX = '/internal/agent-tools';
 export const AGENT_SCHEDULE_MCP_ROUTE = `${AGENT_TOOL_ROUTE_PREFIX}/mcp`;
@@ -103,8 +104,73 @@ export async function registerAgentToolRoutes(
   input: {
     capabilities: AgentCapabilityTokenStore;
     schedules: AgentScheduleOperations;
+    creator?: CreatorToolOperations;
   }
 ): Promise<void> {
+  if (input.creator !== undefined) {
+    server.get(`${AGENT_TOOL_ROUTE_PREFIX}/creator/context`, async (request, reply) => {
+      const grant = authorizeRequest(request, reply, input.capabilities, 'creator:context');
+      if (grant === undefined) return;
+      if (grant.jobId === undefined) {
+        return reply.code(403).send(internalApiError('CAPABILITY_RUN_FORBIDDEN', 'Capability is not bound to a creator job'));
+      }
+      return input.creator!.getContext(grant.jobId);
+    });
+    server.get<{ Params: { id: string }; Querystring: { start?: string; end?: string } }>(
+      `${AGENT_TOOL_ROUTE_PREFIX}/creator/artifacts/:id`,
+      async (request, reply) => {
+        const grant = authorizeRequest(request, reply, input.capabilities, 'creator:artifact:read');
+        if (grant === undefined) return;
+        if (grant.jobId === undefined) {
+          return reply.code(403).send(internalApiError('CAPABILITY_RUN_FORBIDDEN', 'Capability is not bound to a creator job'));
+        }
+        try {
+          const start = parseOptionalNonNegativeInteger(request.query.start, 'start');
+          const end = parseOptionalNonNegativeInteger(request.query.end, 'end');
+          return await input.creator!.readArtifact(
+            grant.jobId,
+            request.params.id,
+            start === undefined && end === undefined ? undefined : {
+              start: start ?? 0,
+              end: end ?? Number.MAX_SAFE_INTEGER
+            }
+          );
+        } catch (error) {
+          return reply.code(400).send(apiError('VALIDATION_FAILED', error instanceof Error ? error.message : 'Creator artifact read failed'));
+        }
+      }
+    );
+    server.post<{ Body: unknown }>(
+      `${AGENT_TOOL_ROUTE_PREFIX}/creator/actions`,
+      async (request, reply) => {
+        const grant = authorizeRequest(request, reply, input.capabilities, 'creator:action');
+        if (grant === undefined) return;
+        if (grant.jobId === undefined) {
+          return reply.code(403).send(internalApiError('CAPABILITY_RUN_FORBIDDEN', 'Capability is not bound to a creator job'));
+        }
+        const body = parseBody(request.body, reply);
+        if (body === undefined) return;
+        if ('actor' in body || 'jobId' in body || 'projectId' in body) {
+          return reply.code(400).send(apiError('VALIDATION_FAILED', 'actor, jobId and projectId are bound by the capability token'));
+        }
+        try {
+          return input.creator!.applyAction(grant.jobId, {
+            action: readRequiredString(body.action, 'action'),
+            expectedRevision: readRequiredInteger(body.expectedRevision, 'expectedRevision'),
+            idempotencyKey: readRequiredString(body.idempotencyKey, 'idempotencyKey'),
+            input: (isPlainObject(body.input) ? body.input : {}) as never
+          });
+        } catch (error) {
+          const candidate = error as { code?: string; latestRevision?: number; message?: string };
+          const status = candidate.code === 'creator_revision_conflict' ? 409 : 400;
+          return reply.code(status).send({
+            ...internalApiError(candidate.code ?? 'VALIDATION_FAILED', candidate.message ?? 'Creator action failed'),
+            ...(candidate.latestRevision === undefined ? {} : { latestRevision: candidate.latestRevision })
+          });
+        }
+      }
+    );
+  }
   server.get<{ Params: { id: string } }>(
     `${AGENT_TOOL_ROUTE_PREFIX}/schedules/:id`,
     async (request, reply) => {
@@ -187,6 +253,23 @@ export async function registerAgentToolRoutes(
     async (id, actor) => input.schedules.runScheduleNow(id, actor),
     202
   );
+}
+
+function parseOptionalNonNegativeInteger(value: string | undefined, field: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new TypeError(`${field} must be a non-negative integer`);
+  return parsed;
+}
+
+function readRequiredString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.length === 0) throw new TypeError(`${field} must be a non-empty string`);
+  return value;
+}
+
+function readRequiredInteger(value: unknown, field: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new TypeError(`${field} must be a non-negative integer`);
+  return value as number;
 }
 
 async function registerBoundActionRoute(

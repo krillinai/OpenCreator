@@ -1077,6 +1077,20 @@ export function createRunManager(options: RunManagerOptions): RunManager {
               turnStartedAt = new Date().toISOString();
             }
             if (
+              method === 'turn/started'
+              && usePersistentAppServer
+              && !appServerLifecycle.some(event => event.event === 'process_initialized')
+            ) {
+              appServerLifecycle.push({
+                source: 'persistent_app_server',
+                event: 'process_initialized',
+                at: new Date().toISOString(),
+                runId: id,
+                pid: appServerProcessInfo?.pid,
+                profile: executionRunInput.profile
+              });
+            }
+            if (
               firstModelEventAt === undefined
               && method !== undefined
               && method.startsWith('item/')

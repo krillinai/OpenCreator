@@ -58,6 +58,27 @@ describe('Codex app-server client', () => {
       await client.close();
     }
   });
+
+  it('restarts on demand and remains usable', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-app-server-client-'));
+    const codexBin = createFakeAppServer(tempDir);
+    const client = createCodexAppServerClient({
+      codexBin,
+      codexHome: join(tempDir, 'codex-home'),
+      requestTimeoutMs: 10_000
+    });
+
+    await expect(client.request('thread/list', { limit: 50 })).resolves.toEqual({
+      data: [{ id: 'thread-1' }]
+    });
+    await client.restart();
+    await expect(client.request('thread/list', { limit: 50 })).resolves.toEqual({
+      data: [{ id: 'thread-1' }]
+    });
+
+    await client.close();
+    expect(readFileSync(join(tempDir, 'initializations.txt'), 'utf8')).toBe('2');
+  });
 });
 
 function createFakeAppServer(dir: string): string {
@@ -93,34 +114,26 @@ rl.on('line', line => {
 }
 
 function createTimeoutThenRecoverAppServer(dir: string): string {
-  const bin = join(dir, 'fake-codex-timeout.sh');
-  writeFileSync(bin, `#!/bin/sh
-init_path=${JSON.stringify(join(dir, 'initializations.txt'))}
-if [ -f "$init_path" ]; then
-  count=$(cat "$init_path")
-else
-  count=0
-fi
-count=$((count + 1))
-printf '%s' "$count" > "$init_path"
-
-if [ "$count" -eq 1 ]; then
-  while IFS= read -r _line; do :; done
-  exit 0
-fi
-
-while IFS= read -r line; do
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '%s\\n' '{"id":"opencreator_sessions_1","result":{"userAgent":"fake"}}'
-      ;;
-    *'"method":"initialized"'*)
-      ;;
-    *'"method":"thread/list"'*)
-      printf '%s\\n' '{"id":"opencreator_sessions_2","result":{"data":[{"id":"thread-recovered"}]}}'
-      ;;
-  esac
-done
+  const bin = join(dir, 'fake-codex-timeout.js');
+  writeFileSync(bin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const readline = require('node:readline');
+const initPath = ${JSON.stringify(join(dir, 'initializations.txt'))};
+const count = fs.existsSync(initPath) ? Number(fs.readFileSync(initPath, 'utf8')) + 1 : 1;
+fs.writeFileSync(initPath, String(count));
+const rl = readline.createInterface({ input: process.stdin });
+const send = value => process.stdout.write(JSON.stringify(value) + '\\n');
+rl.on('line', line => {
+  const message = JSON.parse(line);
+  if (count === 1) return;
+  if (message.method === 'initialize') {
+    send({ id: message.id, result: { userAgent: 'fake' } });
+    return;
+  }
+  if (message.method === 'thread/list') {
+    send({ id: message.id, result: { data: [{ id: 'thread-recovered' }] } });
+  }
+});
 `, 'utf8');
   chmodSync(bin, 0o755);
   return bin;

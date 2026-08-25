@@ -13,6 +13,8 @@
     "build:bootstrap": "vite build --config vite.bootstrap.config.ts",
     "build": "pnpm build:main && pnpm build:preload && pnpm build:bootstrap",
     "prepare:daemon": "node scripts/prepare-daemon.mjs",
+    "prepare:codex-runtime": "node scripts/prepare-codex-runtime.mjs",
+    "prepare:creator-runtime": "node scripts/prepare-creator-runtime.mjs",
     "package": "node scripts/package-release.mjs --dir",
     "dist": "node scripts/package-release.mjs --dist",
     "release": "node scripts/package-release.mjs --release",

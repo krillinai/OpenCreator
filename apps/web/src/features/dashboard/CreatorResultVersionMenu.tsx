@@ -40,7 +40,7 @@ export default function CreatorResultVersionMenu(props: {
         onClick={() => setHistoryOpen(open => !open)}
       >
         <CircleCheck size={15} strokeWidth={2} aria-hidden="true" />
-        <span>{l(`已完成，V${props.version}`, `Completed, V${props.version}`)}</span>
+        <span>{l(`项目 V${props.version}`, `Project V${props.version}`)}</span>
         <ChevronDown className="video-result-version-chevron" size={15} strokeWidth={1.8} aria-hidden="true" />
       </button>
       {historyOpen ? (
@@ -57,7 +57,7 @@ export default function CreatorResultVersionMenu(props: {
               }}
             >
               <span>
-                <strong>{l(`已完成，V${item.value}`, `Completed, V${item.value}`)}</strong>
+                <strong>{l(`项目 V${item.value}`, `Project V${item.value}`)}</strong>
                 <small>{item.description}{item.value === props.version ? l('，当前查看', ', currently viewing') : ''}</small>
               </span>
               {item.value === props.version ? <Check size={14} strokeWidth={2} aria-hidden="true" /> : null}

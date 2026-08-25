@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import {
   createCreatorServicesConfigStore,
-  CreatorServicesConfigStoreError
+  CreatorServicesConfigStoreError,
+  presentCreatorServicesConfig,
+  retainCreatorServicesCredentials
 } from '../../src/creator-services/config-store.js';
 
 describe('CreatorServicesConfigStore', () => {
@@ -36,6 +38,45 @@ describe('CreatorServicesConfigStore', () => {
     expect(saved).toContain('sk-private');
     await expect(store.reset()).resolves.toEqual(createDefaultCreatorServicesConfig());
     expect(saved).toBeNull();
+  });
+
+  it('redacts and retains credentials for every image and video provider', () => {
+    const current = createDefaultCreatorServicesConfig();
+    current.image.openai.apiKey = 'image-openai';
+    current.image.jimeng.apiKey = 'image-jimeng';
+    current.image.kling.accessKey = 'image-kling-access';
+    current.image.kling.secretKey = 'image-kling-secret';
+    current.image.gemini.apiKey = 'image-gemini';
+    current.video.seedance.apiKey = 'video-seedance';
+    current.video.kling.accessKey = 'video-kling-access';
+    current.video.kling.secretKey = 'video-kling-secret';
+    current.video.veo.apiKey = 'video-veo';
+
+    const presented = presentCreatorServicesConfig(current);
+    expect(presented.configuredCredentials).toEqual(expect.arrayContaining([
+      'image.openai.apiKey',
+      'image.jimeng.apiKey',
+      'image.kling.accessKey',
+      'image.kling.secretKey',
+      'image.gemini.apiKey',
+      'video.seedance.apiKey',
+      'video.kling.accessKey',
+      'video.kling.secretKey',
+      'video.veo.apiKey'
+    ]));
+    expect(presented.config.image.openai.apiKey).toBe('');
+    expect(presented.config.image.jimeng.apiKey).toBe('');
+    expect(presented.config.image.kling.accessKey).toBe('');
+    expect(presented.config.image.kling.secretKey).toBe('');
+    expect(presented.config.image.gemini.apiKey).toBe('');
+    expect(presented.config.video.seedance.apiKey).toBe('');
+    expect(presented.config.video.kling.accessKey).toBe('');
+    expect(presented.config.video.kling.secretKey).toBe('');
+    expect(presented.config.video.veo.apiKey).toBe('');
+
+    const retained = retainCreatorServicesCredentials(presented.config, current);
+    expect(retained.image).toEqual(current.image);
+    expect(retained.video).toEqual(current.video);
   });
 
   it('adds video generation defaults when reading an older saved configuration', async () => {

@@ -1,19 +1,21 @@
 import type { RuntimeThread } from '../threads/types.js';
 import type {
   AgentScheduleProcessInjector,
-  AgentToolProcessInjection,
-  AgentToolRunInjection,
   RunMcpInjector
 } from '../agent-tools/run-injection.js';
-import {
-  createCodexAppServerHost,
-  normalizeAppServerProfile,
-  type CodexAppServerHost,
-  type CodexAppServerHostInput,
-  type CodexAppServerProcess,
-  type CodexAppServerResult,
-  type CodexAppServerTurnInput
+import type {
+  CodexAppServerHost,
+  CodexAppServerHostInput,
+  CodexAppServerProcess,
+  CodexAppServerResult,
+  CodexAppServerTurnInput
 } from '../codex/app-server-host-2026-07-28.js';
+import {
+  createAppServerRuntimeManager,
+  type AppServerRuntimeExecution,
+  type AppServerRuntimeManager,
+  type AppServerRuntimeScope
+} from '../codex/app-server-runtime-manager.js';
 
 export type PersistentAppServerLifecycleEvent = {
   source: 'persistent_app_server';
@@ -63,253 +65,136 @@ export type PersistentAppServerExecutor = {
 export function createPersistentAppServerExecutor(input: {
   codexBin: string;
   codexHome: string;
+  runtimeManager?: AppServerRuntimeManager;
   processInjector?: AgentScheduleProcessInjector;
   runtimeInjector?: RunMcpInjector;
   createHost?(input: CodexAppServerHostInput): CodexAppServerHost;
   onLifecycle?(event: PersistentAppServerLifecycleEvent): void;
 }): PersistentAppServerExecutor {
-  const createHost = input.createHost ?? createCodexAppServerHost;
-  let host: CodexAppServerHost | undefined;
-  let injection: AgentToolProcessInjection | undefined;
-  let profile: string | undefined;
-  let runtimeConfigurationFingerprint: string | undefined;
-  let activeRunId: string | undefined;
-  let activeExecution: PersistentAppServerExecution | undefined;
-  let activeLifecycle:
-    | PersistentAppServerExecutionInput['onLifecycle']
-    | undefined;
+  const ownsRuntimeManager = input.runtimeManager === undefined;
+  let activeRun: PersistentAppServerExecutionInput | undefined;
+  const runtimeManager = input.runtimeManager ?? createAppServerRuntimeManager({
+    codexBin: input.codexBin,
+    codexHome: input.codexHome,
+    processInjector: input.processInjector,
+    createHost: input.createHost,
+    onHostLifecycle({ event, generation }) {
+      if (activeRun === undefined) return;
+      if (
+        event.event !== 'process_initialized'
+        && event.event !== 'mcp_refreshed'
+        && event.event !== 'process_exited'
+      ) {
+        return;
+      }
+      emit(activeRun, event.event, {
+        pid: event.pid,
+        generation: event.generation ?? generation,
+        reason: event.reason
+      });
+    }
+  });
+  let activeExecution: AppServerRuntimeExecution | undefined;
+  let activeScope: AppServerRuntimeScope | undefined;
   let busy = false;
   let closing = false;
   let closeWork: Promise<void> | undefined;
-  let idleInvalidationWork: Promise<void> | undefined;
-  let staleReason: string | undefined;
 
-  function start(
-    run: PersistentAppServerExecutionInput
-  ): PersistentAppServerExecution {
+  function start(run: PersistentAppServerExecutionInput): PersistentAppServerExecution {
     if (closing) throw new Error('Persistent app-server executor is closing');
     if (busy) throw new Error('Persistent app-server executor is busy');
     busy = true;
-    activeRunId = run.runId;
-    activeLifecycle = run.onLifecycle;
-    const lifecycleProfile = normalizeAppServerProfile(run.profile);
-    let process: CodexAppServerProcess | undefined;
+    activeRun = run;
+    const scope = projectScope(run.thread);
+    activeScope = scope;
     let cancelRequested = false;
 
-    const startedWork = prepareExecution(run).then(prepared => {
-      process = prepared.process;
-      if (cancelRequested) process.cancel();
-      return {
-        pid: prepared.pid,
-        reused: prepared.reused
-      };
-    });
-    const result = startedWork
-      .then(() => process!.result)
-      .finally(async () => {
-        injection?.deactivate(run.runId);
-        if (host !== undefined && !host.isReusable()) {
-          await clearHost('host_not_reusable', run.forceKillGraceMs);
-        }
-        if (host !== undefined && staleReason !== undefined) {
-          const reason = staleReason;
-          staleReason = undefined;
-          await clearHost(reason, run.forceKillGraceMs);
-        }
-        emitLifecycle('run_cleared', lifecycleProfile, {
-          runId: run.runId,
-          pid: host?.pid
-        });
-        activeExecution = undefined;
-        activeRunId = undefined;
-        activeLifecycle = undefined;
-        busy = false;
-      });
-    const execution: PersistentAppServerExecution = {
-      cancel() {
-        cancelRequested = true;
-        process?.cancel();
-      },
-      result,
-      started: startedWork
-    };
-    activeExecution = execution;
-    return execution;
-  }
-
-  async function prepareExecution(
-    run: PersistentAppServerExecutionInput
-  ): Promise<{
-    process: CodexAppServerProcess;
-    pid: number;
-    reused: boolean;
-  }> {
-    assertOpen();
-    if (idleInvalidationWork !== undefined) {
-      await idleInvalidationWork;
-      assertOpen();
-    }
-    const nextProfile = normalizeAppServerProfile(run.profile);
-    const runtimeInjection = await input.runtimeInjector?.prepare({
+    const executionWork = Promise.resolve(input.runtimeInjector?.prepare({
       runId: run.runId,
       thread: run.thread,
       createdBy: 'api'
-    });
-    const nextRuntimeConfigurationFingerprint =
-      runtimeInjection?.configurationFingerprint ?? '';
-    if (host !== undefined && staleReason !== undefined) {
-      const reason = staleReason;
-      staleReason = undefined;
-      await clearHost(reason, run.forceKillGraceMs);
-      assertOpen();
-    }
-    let reused = host !== undefined
-      && host.isReusable()
-      && profile === nextProfile
-      && runtimeConfigurationFingerprint
-        === nextRuntimeConfigurationFingerprint;
-    if (host !== undefined && !reused) {
-      const previousProfile = profile;
-      const reason = previousProfile !== nextProfile
-        ? 'profile_changed'
-        : 'runtime_configuration_changed';
-      await clearHost(reason, run.forceKillGraceMs);
-      assertOpen();
-      if (previousProfile !== undefined && previousProfile !== nextProfile) {
-        emitLifecycle('profile_restarted', nextProfile, {
-          runId: run.runId,
-          reason: `${previousProfile}->${nextProfile}`
-        });
-      }
-    }
-
-    if (host === undefined) {
-      assertOpen();
-      injection = input.processInjector?.create();
-      const activation = injection?.activate({
+    })).then(runtimeInjection => {
+      if (closing) throw new Error('Persistent app-server executor is closing');
+      const execution = runtimeManager.startTurn({
+        ...turnInput(run),
+        scope,
         runId: run.runId,
         thread: run.thread,
-        createdBy: 'api'
+        profile: run.profile,
+        projectId: run.thread.projectId ?? undefined,
+        runtimeInjection,
+        spawnTimeoutMs: run.spawnTimeoutMs,
+        forceKillGraceMs: run.forceKillGraceMs
       });
-      try {
-        profile = nextProfile;
-        runtimeConfigurationFingerprint =
-          nextRuntimeConfigurationFingerprint;
-        const processConfiguration = mergeInjections(
-          injection,
-          runtimeInjection
-        );
-        host = createHost({
-          codexBin: input.codexBin,
-          codexHome: input.codexHome,
-          cwd: run.cwd,
-          profile: nextProfile,
-          mcpServers: processConfiguration?.mcpServers,
-          env: processConfiguration?.env,
-          spawnTimeoutMs: run.spawnTimeoutMs,
-          forceKillGraceMs: run.forceKillGraceMs,
-          onLifecycle(event) {
-            emitLifecycle(event.event, nextProfile, {
-              runId: activeRunId,
-              pid: event.pid,
-              generation: event.generation,
-              reason: event.reason
-            });
-          }
-        });
-        const currentHost = host;
-        const pid = await currentHost.started;
-        assertOpen();
-        const process = currentHost.run({
-          ...turnInput(run),
-          manifestKey: activation?.manifestKey
-        });
-        emitLifecycle('run_assigned', nextProfile, {
-          runId: run.runId,
-          pid
-        });
-        return { process, pid, reused: false };
-      } catch (error) {
-        injection?.deactivate(run.runId);
-        await clearHost('start_failed', run.forceKillGraceMs);
+      activeExecution = execution;
+      if (cancelRequested) execution.cancel();
+      return execution;
+    });
+    const started = executionWork.then(async execution => {
+      const info = await execution.started;
+      emit(run, info.reused ? 'process_reused' : 'process_started', {
+        pid: info.pid,
+        generation: info.generation
+      });
+      emit(run, 'run_assigned', {
+        pid: info.pid,
+        generation: info.generation
+      });
+      return { pid: info.pid, reused: info.reused };
+    });
+    void started.catch(() => undefined);
+    const result = executionWork
+      .then(execution => execution.result)
+      .catch(error => {
+        if (
+          closing
+          && error instanceof Error
+          && error.message.includes('Runtime Manager is closing')
+        ) {
+          throw new Error('Persistent app-server executor is closing');
+        }
         throw error;
-      }
-    }
-
-    const activation = injection?.activate({
-      runId: run.runId,
-      thread: run.thread,
-      createdBy: 'api'
-    });
-    try {
-      const currentHost = host;
-      const pid = await currentHost.started;
-      assertOpen();
-      const process = currentHost.run({
-        ...turnInput(run),
-        manifestKey: activation?.manifestKey
+      })
+      .finally(() => {
+        emit(run, 'run_cleared', {
+          pid: runtimeManager.listScopes()
+            .find(item => sameScope(item.scope, scope))?.pid
+        });
+        activeExecution = undefined;
+        activeScope = undefined;
+        activeRun = undefined;
+        busy = false;
       });
-      emitLifecycle('process_reused', nextProfile, {
-        runId: run.runId,
-        pid
-      });
-      emitLifecycle('run_assigned', nextProfile, {
-        runId: run.runId,
-        pid
-      });
-      reused = true;
-      return { process, pid, reused };
-    } catch (error) {
-      injection?.deactivate(run.runId);
-      throw error;
-    }
+    return {
+      cancel() {
+        cancelRequested = true;
+        activeExecution?.cancel();
+      },
+      async steer(steerInput) {
+        const execution = await executionWork;
+        if (execution.steer === undefined) throw new Error('Codex app-server turn is not steerable');
+        return execution.steer(steerInput);
+      },
+      started,
+      result
+    };
   }
 
-  function assertOpen(): void {
-    if (closing) {
-      throw new Error('Persistent app-server executor is closing');
-    }
-  }
-
-  async function clearHost(
-    reason: string,
-    forceKillGraceMs?: number
-  ): Promise<void> {
-    const currentHost = host;
-    const currentInjection = injection;
-    host = undefined;
-    injection = undefined;
-    profile = undefined;
-    runtimeConfigurationFingerprint = undefined;
-    try {
-      await currentHost?.close(reason, forceKillGraceMs);
-    } finally {
-      currentInjection?.close();
-    }
-  }
-
-  function emitLifecycle(
+  function emit(
+    run: PersistentAppServerExecutionInput,
     event: PersistentAppServerLifecycleEvent['event'],
-    eventProfile: string,
-    details: Omit<
-      PersistentAppServerLifecycleEvent,
-      'source' | 'event' | 'at' | 'profile'
-    > = {}
-  ): void {
-    input.onLifecycle?.({
+    details: Partial<PersistentAppServerLifecycleEvent> = {}
+  ) {
+    const payload: PersistentAppServerLifecycleEvent = {
       source: 'persistent_app_server',
       event,
       at: new Date().toISOString(),
-      profile: eventProfile,
+      profile: run.profile,
+      runId: run.runId,
       ...details
-    });
-    activeLifecycle?.({
-      source: 'persistent_app_server',
-      event,
-      at: new Date().toISOString(),
-      profile: eventProfile,
-      ...details
-    });
+    };
+    input.onLifecycle?.(payload);
+    run.onLifecycle?.(payload);
   }
 
   return {
@@ -319,85 +204,50 @@ export function createPersistentAppServerExecutor(input: {
     },
     async invalidate(reason) {
       if (closing) return;
-      if (busy) {
-        staleReason = reason;
-        return;
-      }
-      if (idleInvalidationWork !== undefined) {
-        await idleInvalidationWork;
-        return;
-      }
-      if (host === undefined) return;
-      const work = clearHost(reason).finally(() => {
-        if (idleInvalidationWork === work) {
-          idleInvalidationWork = undefined;
-        }
-      });
-      idleInvalidationWork = work;
-      await work;
+      await runtimeManager.invalidate(reason);
     },
     async close(options = {}) {
       if (closeWork !== undefined) return closeWork;
       closing = true;
       closeWork = (async () => {
-        let firstError: unknown;
-        const execution = activeExecution;
-        if (execution !== undefined) {
-          execution.cancel();
-          await settleWithin(
-            execution.result,
-            options.interruptGraceMs ?? 1_000
+        activeExecution?.cancel();
+        if (ownsRuntimeManager) {
+          await runtimeManager.close();
+          return;
+        }
+        if (activeScope !== undefined) {
+          await runtimeManager.closeScope(
+            activeScope,
+            'executor_closed',
+            options.interruptGraceMs ?? 1_000,
+            options.terminateGraceMs ?? 2_000
           );
         }
-        if (host !== undefined) {
-          try {
-            await clearHost(
-              'executor_closed',
-              options.terminateGraceMs ?? 2_000
-            );
-          } catch (error) {
-            firstError = error;
-          }
-        }
-        if (idleInvalidationWork !== undefined) {
-          try {
-            await idleInvalidationWork;
-          } catch (error) {
-            firstError ??= error;
-          }
-        }
-        if (execution !== undefined) {
-          await execution.result.catch(() => undefined);
-        }
-        if (firstError !== undefined) throw firstError;
+        await runtimeManager.closeScopes(
+          'project',
+          'executor_closed',
+          options.interruptGraceMs ?? 1_000,
+          options.terminateGraceMs ?? 2_000
+        );
+        await activeExecution?.result.catch(() => undefined);
       })();
       await closeWork;
     }
   };
 }
 
-function mergeInjections(
-  processInjection: AgentToolProcessInjection | undefined,
-  runtimeInjection: AgentToolRunInjection | undefined
-): AgentToolRunInjection | undefined {
-  if (processInjection === undefined) return runtimeInjection;
-  if (runtimeInjection === undefined) return processInjection;
+function projectScope(thread: RuntimeThread): AppServerRuntimeScope {
   return {
-    mcpServers: [
-      ...processInjection.mcpServers,
-      ...runtimeInjection.mcpServers
-    ],
-    env: {
-      ...processInjection.env,
-      ...runtimeInjection.env
-    },
-    configurationFingerprint: runtimeInjection.configurationFingerprint
+    kind: 'project',
+    id: thread.projectId ?? thread.id
   };
 }
 
-function turnInput(
-  input: PersistentAppServerExecutionInput
-): CodexAppServerTurnInput {
+function sameScope(left: AppServerRuntimeScope, right: AppServerRuntimeScope): boolean {
+  return left.kind === right.kind && left.id === right.id;
+}
+
+function turnInput(input: PersistentAppServerExecutionInput): CodexAppServerTurnInput {
   return {
     cwd: input.cwd,
     sandbox: input.sandbox,
@@ -416,19 +266,4 @@ function turnInput(
   };
 }
 
-async function settleWithin(
-  work: Promise<unknown>,
-  timeoutMs: number
-): Promise<boolean> {
-  let timeout: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      work.then(() => true, () => true),
-      new Promise<false>(resolve => {
-        timeout = setTimeout(() => resolve(false), timeoutMs);
-      })
-    ]);
-  } finally {
-    if (timeout !== undefined) clearTimeout(timeout);
-  }
-}
+export type { CodexAppServerResult };

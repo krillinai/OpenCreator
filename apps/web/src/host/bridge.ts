@@ -38,6 +38,7 @@ export type HostBridge = {
     listener: (connection: ConnectionConfig | null) => void
   ): () => void;
   restartRuntime?(): Promise<HostBridgeResult>;
+  selectCodexPath?(): Promise<HostBridgeResult>;
   readDesktopPreferences?(): Promise<DesktopPreferences>;
   updateDesktopPreferences?(
     preferences: Partial<DesktopPreferences>

@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { resolve } from 'node:path';
 import type {
   DesktopBootstrapState,
   DesktopConnectionConfig
 } from '../shared/types.js';
 import {
+  CodexResolutionError,
   resolveCodexEnvironment,
   validateManualCodexPath,
   type CodexResolutionDiagnostics,
@@ -39,6 +41,8 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
     logger: DesktopLogger;
     daemonEntryPath: string;
     dataDir: string;
+    codexRuntimeRoot: string;
+    creatorRuntimeRoot: string;
     defaultProjectRoot: string;
     development: boolean;
     enterpriseConfigPath: string;
@@ -110,7 +114,10 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       });
       return;
     }
-    this.input.settings.update({ codexBin: validated });
+    this.input.settings.update({
+      codexRuntimeMode: 'external',
+      externalCodexBin: validated
+    });
     await this.input.daemon.stop();
     await this.start(validated);
   }
@@ -178,15 +185,36 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
     this.emit('state', this.currentState);
     const settings = this.input.settings.read();
     let resolutionDiagnostics: CodexResolutionDiagnostics | undefined;
-    const resolvedEnvironment = await resolveCodexEnvironment({
-      selectedCodexBin,
-      successfulCodexBin: settings.successfulCodexBin,
-      savedCodexBin: settings.codexBin,
-      loginShellTask,
-      onDiagnostics: diagnostics => {
-        resolutionDiagnostics = diagnostics;
-      }
-    });
+    let resolvedEnvironment: ResolvedCodexEnvironment | undefined;
+    try {
+      resolvedEnvironment = await resolveCodexEnvironment({
+        mode: selectedCodexBin === undefined
+          ? settings.codexRuntimeMode ?? 'bundled'
+          : 'external',
+        runtimeRoot: this.input.codexRuntimeRoot,
+        userDataDir: resolve(this.input.dataDir, '..'),
+        externalCodexBin: selectedCodexBin ?? settings.externalCodexBin,
+        loginShellTask,
+        onDiagnostics: diagnostics => {
+          resolutionDiagnostics = diagnostics;
+        }
+      });
+    } catch (error) {
+      const resolutionError = error instanceof CodexResolutionError ? error : undefined;
+      this.input.logger.error('Codex Runtime resolution failed', {
+        message: error instanceof Error ? error.message : String(error),
+        ...(resolutionDiagnostics ?? {})
+      });
+      this.updateState({
+        phase: 'failed',
+        error: {
+          code: resolutionError?.code ?? 'codex_runtime_missing',
+          message: error instanceof Error ? error.message : String(error),
+          ...(resolutionDiagnostics === undefined ? {} : { details: { ...resolutionDiagnostics } })
+        }
+      });
+      return;
+    }
     if (resolvedEnvironment === undefined) {
       this.input.logger.warn('Codex CLI executable was not found', {
         ...(resolutionDiagnostics ?? {
@@ -227,10 +255,12 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       ));
       this.verifiedFingerprint = fingerprint;
       this.automaticRestarts = 0;
-      this.input.settings.update({
-        codexBin: resolvedEnvironment.codexBin,
-        successfulCodexBin: resolvedEnvironment.codexBin
-      });
+      if (resolvedEnvironment.source === 'external') {
+        this.input.settings.update({
+          codexRuntimeMode: 'external',
+          externalCodexBin: resolvedEnvironment.codexBin
+        });
+      }
       this.updateState({ phase: 'starting_runtime', error: undefined });
       this.emit('ready');
       this.armStableTimer();
@@ -288,6 +318,9 @@ export class BootstrapController extends EventEmitter<BootstrapControllerEvents>
       codexBin: environment.codexBin,
       codexHome: environment.codexHome,
       dataDir: this.input.dataDir,
+      creatorRuntimeRoot: this.input.creatorRuntimeRoot,
+      codexRuntimeRoot: this.input.codexRuntimeRoot,
+      codexRuntimeMode: environment.source,
       defaultCwd: environment.defaultCwd,
       defaultProjectRoot: this.input.defaultProjectRoot,
       requireProbe,

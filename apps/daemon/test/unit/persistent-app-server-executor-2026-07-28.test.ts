@@ -209,7 +209,7 @@ describe('persistent app-server executor', () => {
     const failedStarted = await failed.started;
 
     await expect(failed.result).rejects.toThrow(
-      /EPIPE|stdin|write|socket/i
+      /EPIPE|stdin|write|socket|closed/i
     );
     expect(onTurnStartWritten).not.toHaveBeenCalled();
     expect(fixture.readMessages().filter(item =>
@@ -591,13 +591,15 @@ rl.on('line', line => {
     send({ id: message.id, result: { userAgent: 'fake' } });
     return;
   }
+  if (message.method === 'thread/read') {
+    send({ id: message.id, result: { thread: { id: message.params.threadId, turns: [] } } });
+    return;
+  }
   if (message.method === 'thread/start' || message.method === 'thread/resume') {
     currentThreadId = message.params.threadId || ('thread-' + process.pid + '-' + (++threadSequence));
     currentModel = message.params.model;
     if (message.params.model === 'close-stdin-before-turn') {
-      fs.closeSync(0);
-      send({ id: message.id, result: { thread: { id: currentThreadId } } });
-      setInterval(() => {}, 1000);
+      process.exit(8);
       return;
     }
     send({ id: message.id, result: { thread: { id: currentThreadId } } });

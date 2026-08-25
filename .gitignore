@@ -13,4 +13,9 @@ codex-main/
 open-design-main/
 .gstack/
 .worktrees/
+/.tmp/
+/KrillinAI/
+/codex/
+/apps/daemon/.runtime-test-*/
+/apps/web/.cache/
 **/.DS_Store

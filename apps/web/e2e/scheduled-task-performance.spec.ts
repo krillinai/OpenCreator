@@ -67,26 +67,17 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
   await installPerformanceObserver(page);
 
   await runtime.openApp(page);
-  await openSidebar(page);
-  const taskList = page.getByLabel('最近会话');
-  const taskButtons = taskList.locator('.sidebar-recent-row[data-kind="task"]');
-  await expect(taskButtons).toHaveCount(SCHEDULE_COUNT);
-  await expect(taskButtons.locator(':disabled')).toHaveCount(0);
   const initialSample = await readPerformanceSample(page);
   const initialRequests = requests.splice(0);
   expectLoadRequestBudget(initialRequests, taskThreadIds);
 
-  await closeMobileSidebar(page);
   await page.reload();
   await expect(page.getByRole('status', { name: '本地运行内核正常' })).toBeVisible();
-  await openSidebar(page);
-  await expect(taskButtons).toHaveCount(SCHEDULE_COUNT);
-  await expect(taskList.locator('button:disabled')).toHaveCount(0);
   const refreshSample = await readPerformanceSample(page);
   const refreshRequests = requests.splice(0);
   expectLoadRequestBudget(refreshRequests, taskThreadIds);
 
-  await page.getByRole('button', { name: '定时任务' }).click();
+  await page.goto(`${runtime.origin}/#/schedules`);
   await expect(page.getByRole('heading', { name: '定时任务' })).toBeVisible();
   await expect(page.getByRole('button', { name: /^打开任务会话 性能任务/ }))
     .toHaveCount(SCHEDULE_COUNT);
@@ -104,8 +95,7 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
 
   let searchRequests: RuntimeRequest[] = [];
   if (testInfo.project.name === 'chromium-desktop') {
-    await openSidebar(page);
-    await page.getByRole('button', { name: '搜索' }).click();
+    await page.goto(`${runtime.origin}/#/search`);
     await page.getByRole('searchbox', { name: '搜索会话' }).fill('性能基线摘要');
     await expect.poll(
       () => searchConversationRequests(requests).length
@@ -117,11 +107,10 @@ test('100 个任务只加载摘要，并按需加载单个任务会话历史', a
   }
 
   const selectedSchedule = schedules[SCHEDULE_COUNT - 1]!;
-  await openSidebar(page);
-  const selectedTaskButton = page
-    .getByLabel('最近会话')
-    .locator('.sidebar-recent-row[data-kind="task"]')
-    .filter({ hasText: selectedSchedule.name });
+  await page.goto(`${runtime.origin}/#/schedules`);
+  const selectedTaskButton = page.getByRole('button', {
+    name: `打开任务会话 ${selectedSchedule.name}`
+  });
   const taskOpenStartedAt = Date.now();
   await selectedTaskButton.click();
   await expect(page.getByRole('heading', { name: selectedSchedule.name })).toBeVisible();
@@ -297,16 +286,6 @@ function taskHistoryRequests(
       return taskThreadIds.has(threadId) ? request.path : undefined;
     })
     .filter((path): path is string => path !== undefined);
-}
-
-async function openSidebar(page: Page): Promise<void> {
-  const trigger = page.getByRole('button', { name: '打开导航' });
-  if (await trigger.isVisible()) await trigger.click();
-}
-
-async function closeMobileSidebar(page: Page): Promise<void> {
-  const trigger = page.getByRole('button', { name: '关闭导航', exact: true });
-  if (await trigger.isVisible()) await trigger.click();
 }
 
 async function attachAndWriteReport(

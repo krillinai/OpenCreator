@@ -105,7 +105,12 @@ describe('codex skills installer', () => {
     const backup = createSourceSkill('writer-backup', 'backup');
     const codexHome = join(tempDir, 'codex-home');
     const installer = createSkillInstaller({ codexHome });
-    symlinkSync(join(backup, 'SKILL.md'), join(backup, 'linked.md'));
+    const linkedDirectory = join(backup, 'linked');
+    symlinkSync(
+      backup,
+      linkedDirectory,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
 
     await installer.install({ sourcePath: current, id: 'writer' });
     await expect(installer.rollback({
@@ -163,7 +168,11 @@ describe('codex skills installer', () => {
     const linkedSource = join(tempDir, 'linked-writer');
     const codexHome = join(tempDir, 'codex-home');
     const installer = createSkillInstaller({ codexHome });
-    symlinkSync(source, linkedSource);
+    symlinkSync(
+      source,
+      linkedSource,
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
 
     await expect(installer.install({ sourcePath: linkedSource, id: 'writer' })).rejects.toThrow(/CODEX_SKILL_INVALID/);
   });

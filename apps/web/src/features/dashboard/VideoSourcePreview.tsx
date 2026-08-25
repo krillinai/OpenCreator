@@ -5,8 +5,8 @@ import type { VideoMetadataResponse } from '@opencreator/protocol';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 
 type VideoSource =
-  | { kind: 'youtube'; embedUrl: string; thumbnailUrl: string; label: string }
-  | { kind: 'bilibili'; embedUrl: string; label: string }
+  | { kind: 'youtube'; embedUrl: string; thumbnailUrl: string; url: string; label: string }
+  | { kind: 'bilibili'; embedUrl: string; url: string; label: string }
   | { kind: 'direct'; url: string; label: string }
   | { kind: 'link'; url: string; hostname: string; label: string }
   | { kind: 'invalid'; label: string };
@@ -37,6 +37,7 @@ function parseVideoSource(value: string): VideoSource {
         kind: 'youtube',
         embedUrl: `https://www.youtube-nocookie.com/embed/${encodedId}`,
         thumbnailUrl: `https://i.ytimg.com/vi/${encodedId}/hqdefault.jpg`,
+        url: url.toString(),
         label: 'YouTube 视频'
       };
     }
@@ -50,6 +51,7 @@ function parseVideoSource(value: string): VideoSource {
         return {
           kind: 'bilibili',
           embedUrl: `https://player.bilibili.com/player.html?${idParam}&page=1&high_quality=1&danmaku=0`,
+          url: url.toString(),
           label: 'Bilibili 视频'
         };
       }
@@ -219,6 +221,17 @@ export default function VideoSourcePreview(props: {
         </span>
         {!props.readOnly ? (
           <div className="video-source-preview-actions">
+            {!isLocal && (source.kind === 'youtube' || source.kind === 'bilibili') ? (
+              <a
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={l('在浏览器中打开原视频', 'Open the original video in a browser')}
+                title={l('预览无法播放时打开原视频', 'Open the original video if the preview cannot play')}
+              >
+                <ExternalLink size={14} strokeWidth={1.8} aria-hidden="true" />
+              </a>
+            ) : null}
             {isLocal ? (
               <button type="button" onClick={props.onChooseFile}>
                 <RotateCcw size={14} strokeWidth={1.8} aria-hidden="true" />

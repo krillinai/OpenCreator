@@ -15,13 +15,16 @@ export type SkillMarketManager = {
   updateSkill(id: string): Promise<CodexSkillMarketMutationResponse>;
 };
 
-export function createSkillMarketManager(input: {
+type SkillMarketManagerInput = {
   dataDir: string;
   skillManager: SkillManager;
   records: SkillMarketRecordRepository;
   sourceInstaller: CodexSkillSourceInstaller;
   cleanupWorkDir?: (workDir: string) => void | Promise<void>;
-}): SkillMarketManager {
+  resolveMarketEntry?: typeof getSkillMarketEntry;
+};
+
+export function createSkillMarketManager(input: SkillMarketManagerInput): SkillMarketManager {
   return {
     listInstallRecords() {
       return input.records.listRecords();
@@ -36,17 +39,11 @@ export function createSkillMarketManager(input: {
 }
 
 async function mutateSkill(
-  input: {
-    dataDir: string;
-    skillManager: SkillManager;
-    records: SkillMarketRecordRepository;
-    sourceInstaller: CodexSkillSourceInstaller;
-    cleanupWorkDir?: (workDir: string) => void | Promise<void>;
-  },
+  input: SkillMarketManagerInput,
   id: string,
   overwrite: boolean
 ): Promise<CodexSkillMarketMutationResponse> {
-  const entry = getSkillMarketEntry(id);
+  const entry = (input.resolveMarketEntry ?? getSkillMarketEntry)(id);
   if (entry === undefined) {
     throw new Error(`CODEX_SKILL_MARKET_ENTRY_NOT_FOUND: ${id}`);
   }

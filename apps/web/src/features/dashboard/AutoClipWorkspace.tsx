@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Captions, Check, Download, FileVideo, LayoutGrid, List, ListVideo, Play, Scissors, Settings2, SlidersHorizontal, Sparkles } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { useOptionalCreatorSession } from './creator-session-store.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import VideoSourceInput from './VideoSourceInput.js';
 
@@ -75,12 +76,13 @@ export default function AutoClipWorkspace(props: {
   videoMetadataService?: VideoMetadataService;
 }) {
   const l = useLocalizedCopy();
-  const [videoUrl, setVideoUrl] = useState('');
+  const session = useOptionalCreatorSession();
+  const [videoUrl, setVideoUrl] = useState(() => typeof session?.state.sourceUrl === 'string' ? session.state.sourceUrl : '');
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [focus, setFocus] = useState<AnalysisFocus>('balanced');
-  const [duration, setDuration] = useState<ClipDuration>('30-60');
-  const [clipCount, setClipCount] = useState(10);
-  const [sourceOrientation, setSourceOrientation] = useState<VideoOrientation>('landscape');
+  const [focus, setFocus] = useState<AnalysisFocus>(() => session?.state.focus === 'viral' || session?.state.focus === 'knowledge' ? session.state.focus : 'balanced');
+  const [duration, setDuration] = useState<ClipDuration>(() => session?.state.duration === '15-30' || session?.state.duration === '60-90' ? session.state.duration : '30-60');
+  const [clipCount, setClipCount] = useState(() => typeof session?.state.clipCount === 'number' ? session.state.clipCount : 10);
+  const [sourceOrientation, setSourceOrientation] = useState<VideoOrientation>(() => session?.state.sourceOrientation === 'portrait' ? 'portrait' : 'landscape');
   const [activeClip, setActiveClip] = useState(1);
   const [selected, setSelected] = useState<number[]>([1, 2, 3]);
   const [sort, setSort] = useState<'score' | 'time'>('score');
@@ -102,6 +104,18 @@ export default function AutoClipWorkspace(props: {
   const signature = createAnalysisSignature({ videoUrl, videoFile, focus, duration, clipCount, sourceOrientation });
   const hasPendingChanges = selectedResult !== undefined && selectedResult.signature !== signature;
   const nextVersion = resultVersions.reduce((highest, version) => Math.max(highest, version.value), 0) + 1;
+
+  useEffect(() => {
+    session?.updateDraft({
+      sourceUrl: videoUrl,
+      focus,
+      duration,
+      clipCount,
+      sourceOrientation,
+      selectedCandidateIds: selected.map(String)
+    });
+  }, [clipCount, duration, focus, selected, session?.updateDraft, sourceOrientation, videoUrl]);
+
   const steps = [l('添加视频', 'Add video'), l('分析设置', 'Analysis settings'), l('选择与导出', 'Select and export')];
 
   function continueToSettings() {
@@ -141,6 +155,9 @@ export default function AutoClipWorkspace(props: {
       return false;
     }
     const nextSignature = createAnalysisSignature({ videoUrl: nextUrl, videoFile: nextFile, focus, duration, clipCount, sourceOrientation });
+    if (session !== null) {
+      void session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'analyze' } });
+    }
     if (selectedResult?.signature === nextSignature) {
       setCurrentStep(2);
       setFurthestStep(2);
@@ -206,6 +223,9 @@ export default function AutoClipWorkspace(props: {
       return false;
     }
     setResultTab('export');
+    if (session !== null) {
+      void session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'render' } });
+    }
     setNotice(l(`${selected.length} 个片段已加入导出队列`, `${selected.length} clips were added to the export queue`));
     return true;
   }

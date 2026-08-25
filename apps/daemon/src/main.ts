@@ -58,6 +58,9 @@ async function main(): Promise<void> {
     ? resolveCodexHome().path
     : resolveCodexHome({ isolatedHome: environment.codexHome }).path;
   mkdirSync(dataDir, { recursive: true });
+  if (environment.codexHome !== undefined) {
+    mkdirSync(codexHome, { recursive: true });
+  }
   releaseRuntimeLock = acquireRuntimeLock(dataDir);
   process.once('exit', () => releaseRuntimeLock?.());
 

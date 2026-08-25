@@ -1,155 +1,216 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { CreatorJob } from '@opencreator/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import ProjectsPage from './ProjectsPage.js';
+import ProjectsPage, { youtubeThumbnailUrls } from './ProjectsPage.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 
-const projects = [
-  {
-    id: 'cover',
-    name: '夏季新品封面',
-    cwd: '/projects/cover',
-    sandbox: 'follow-global' as const,
-    profile: 'default',
-    model: null,
-    reasoning: null,
+const workspaces = [{
+  id: 'workspace_1',
+  name: '默认工作目录',
+  cwd: '/projects/default',
+  sandbox: 'follow-global' as const,
+  profile: 'default',
+  model: null,
+  reasoning: null
+}];
+
+const jobs = [
+  creatorJob({
+    id: 'job_cover',
+    templateId: 'cover',
+    state: { prompt: '夏季新品封面' },
     updatedAt: '2026-08-18T10:00:00.000Z'
-  },
-  {
-    id: 'translation',
-    name: '发布会视频翻译',
-    cwd: '/projects/translation',
-    sandbox: 'follow-global' as const,
-    profile: 'default',
-    model: null,
-    reasoning: null,
-    updatedAt: '2026-08-17T10:00:00.000Z'
-  },
-  {
-    id: 'avatar',
-    name: '课程数字人口播',
-    cwd: '/projects/avatar',
-    sandbox: 'follow-global' as const,
-    profile: 'default',
-    model: null,
-    reasoning: null,
+  }),
+  creatorJob({
+    id: 'job_translation',
+    templateId: 'video-translation',
+    state: { sourceUrl: 'https://www.youtube.com/watch?v=launch-talk' },
+    updatedAt: '2026-08-17T10:00:00.000Z',
+    artifacts: [
+      artifact('job_translation', 'target_subtitle', 'target.srt'),
+      artifact('job_translation', 'horizontal_video', 'translated.mp4')
+    ]
+  }),
+  creatorJob({
+    id: 'job_stickman',
+    templateId: 'stickman-video',
+    state: { topic: '如何建立内容创作流程' },
     updatedAt: '2026-08-19T10:00:00.000Z'
-  },
-  {
-    id: 'campaign',
-    name: '秋季新品推广',
-    cwd: '/projects/campaign',
-    sandbox: 'follow-global' as const,
-    profile: 'default',
-    model: null,
-    reasoning: null,
-    updatedAt: '2026-08-16T10:00:00.000Z'
-  }
+  })
 ];
 
 describe('ProjectsPage', () => {
-  it('localizes project chrome while preserving project names', () => {
+  it('shows real Creator jobs as recent projects in the selected language', () => {
     render(
       <LanguageProvider initialPreference="en-US">
-        <ProjectsPage projects={projects} currentProjectId="cover" onOpenProject={vi.fn()} />
+        <ProjectsPage jobs={jobs} workspaces={workspaces} onOpenJob={vi.fn()} />
       </LanguageProvider>
     );
 
     expect(screen.getByRole('heading', { name: 'My Projects' })).toBeInTheDocument();
-    const search = screen.getByRole('searchbox', { name: 'Search projects' });
-    expect(search.closest('label')?.parentElement).toHaveClass('projects-page-header');
-    expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Output Center' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'Content Marketing' })).toBeInTheDocument();
-    expect(screen.getByText('Current project')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Recent projects' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open project 夏季新品封面' })).toBeInTheDocument();
+    expect(screen.getByText('Thumbnail generation')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open project 夏季新品封面' }))
+      .toHaveTextContent('默认工作目录');
+    expect(screen.getByRole('button', { name: 'Open project youtube.com · launch-talk' }).querySelector('img'))
+      .toHaveAttribute('src', 'https://i.ytimg.com/vi/launch-talk/maxresdefault.jpg');
   });
 
-  it('lists projects as visual cards without rendering conversation rows', () => {
-    render(<ProjectsPage projects={projects} currentProjectId="cover" onOpenProject={vi.fn()} />);
-
-    expect(screen.getByRole('heading', { name: '我的项目' })).toBeInTheDocument();
-    expect(screen.getByRole('list', { name: '项目列表' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '打开项目 夏季新品封面' })).toBeInTheDocument();
-    expect(screen.getByText('当前项目')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '新建项目' })).not.toBeInTheDocument();
-    expect(screen.queryByText('对话')).not.toBeInTheDocument();
+  it('derives platform thumbnails from supported YouTube URL forms', () => {
+    expect(youtubeThumbnailUrls('https://www.youtube.com/watch?v=dCwXjBa_jNs')[0])
+      .toBe('https://i.ytimg.com/vi/dCwXjBa_jNs/maxresdefault.jpg');
+    expect(youtubeThumbnailUrls('https://youtu.be/dCwXjBa_jNs')[1])
+      .toBe('https://i.ytimg.com/vi/dCwXjBa_jNs/hqdefault.jpg');
+    expect(youtubeThumbnailUrls('https://youtube.com/shorts/dCwXjBa_jNs')).toHaveLength(2);
+    expect(youtubeThumbnailUrls('https://www.bilibili.com/video/BV1test')).toEqual([]);
   });
 
-  it('keeps the empty state focused on projects created from Dashboard', () => {
-    render(<ProjectsPage projects={[]} onOpenProject={vi.fn()} />);
-
-    expect(screen.getByRole('status')).toHaveTextContent('从工作台开始创作后，项目会自动显示在这里。');
-    expect(screen.queryByRole('button', { name: '新建项目' })).not.toBeInTheDocument();
-  });
-
-  it('filters by category, searches, opens, and manages projects', () => {
-    const onOpenProject = vi.fn();
-    const onManageProject = vi.fn();
-    render(
+  it('falls back from unavailable platform thumbnails to the authenticated runtime cover', async () => {
+    const createObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+    const revokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:project-cover')
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn()
+    });
+    const service = {
+      openProjectCover: vi.fn(async () => new Response(new Blob(['jpeg'], { type: 'image/jpeg' })))
+    };
+    const rendered = render(
       <ProjectsPage
-        projects={projects}
-        onOpenProject={onOpenProject}
-        onManageProject={onManageProject}
+        jobs={[jobs[1]!]}
+        workspaces={workspaces}
+        service={service}
+        onOpenJob={vi.fn()}
       />
     );
+    try {
+      const image = screen.getByRole('button', { name: '打开项目 youtube.com · launch-talk' }).querySelector('img')!;
+      fireEvent.error(image);
+      expect(image).toHaveAttribute('src', 'https://i.ytimg.com/vi/launch-talk/hqdefault.jpg');
+      fireEvent.error(image);
+      await waitFor(() => expect(service.openProjectCover).toHaveBeenCalledWith('job_translation'));
+      await waitFor(() => expect(image).toHaveAttribute('src', 'blob:project-cover'));
+    } finally {
+      rendered.unmount();
+      restoreUrlMethod('createObjectURL', createObjectUrlDescriptor);
+      restoreUrlMethod('revokeObjectURL', revokeObjectUrlDescriptor);
+    }
+  });
 
-    fireEvent.change(screen.getByRole('searchbox', { name: '搜索项目' }), {
-      target: { value: '翻译' }
-    });
-    expect(screen.queryByRole('button', { name: '打开项目 夏季新品封面' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '打开项目 发布会视频翻译' }));
-    expect(onOpenProject).toHaveBeenCalledWith('translation');
-    fireEvent.click(screen.getByRole('button', { name: '项目设置 发布会视频翻译' }));
-    expect(onManageProject).toHaveBeenCalledWith('translation');
+  it('orders recent projects by their actual update time and opens the exact job', () => {
+    const onOpenJob = vi.fn();
+    render(<ProjectsPage jobs={jobs} workspaces={workspaces} onOpenJob={onOpenJob} />);
 
-    fireEvent.change(screen.getByRole('searchbox', { name: '搜索项目' }), { target: { value: '' } });
+    const buttons = within(screen.getByRole('list', { name: '项目列表' }))
+      .getAllByRole('button', { name: /^打开项目/ });
+    expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
+      '打开项目 如何建立内容创作流程',
+      '打开项目 夏季新品封面',
+      '打开项目 youtube.com · launch-talk'
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: '打开项目 youtube.com · launch-talk' }));
+    expect(onOpenJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'job_translation' }));
+  });
+
+  it('explains that Workbench templates create new projects when the history is empty', () => {
+    render(<ProjectsPage jobs={[]} workspaces={workspaces} onOpenJob={vi.fn()} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('从工作台选择模板后会新建项目');
+  });
+
+  it('filters real Creator jobs by category and search text', () => {
+    render(<ProjectsPage jobs={jobs} workspaces={workspaces} onOpenJob={vi.fn()} />);
+
     fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
     expect(screen.getByRole('button', { name: '打开项目 夏季新品封面' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '打开项目 发布会视频翻译' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: '内容营销' }));
-    expect(screen.getByRole('button', { name: '打开项目 秋季新品推广' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '打开项目 如何建立内容创作流程' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: '全部' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索项目' }), {
+      target: { value: 'launch-talk' }
+    });
+    expect(screen.getByRole('button', { name: '打开项目 youtube.com · launch-talk' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '打开项目 夏季新品封面' })).not.toBeInTheDocument();
   });
 
-  it('shows all projects by default in reverse update order', () => {
-    render(<ProjectsPage projects={projects} onOpenProject={vi.fn()} />);
+  it('builds the output center from persisted artifacts without synthetic files', () => {
+    const onOpenJob = vi.fn();
+    render(<ProjectsPage jobs={jobs} workspaces={workspaces} onOpenJob={onOpenJob} />);
 
-    expect(screen.getByRole('tab', { name: '全部' })).toHaveAttribute('aria-selected', 'true');
-    const projectButtons = within(screen.getByRole('list', { name: '项目列表' }))
-      .getAllByRole('button', { name: /^打开项目/ });
-    expect(projectButtons.map(button => button.getAttribute('aria-label'))).toEqual([
-      '打开项目 课程数字人口播',
-      '打开项目 夏季新品封面',
-      '打开项目 发布会视频翻译',
-      '打开项目 秋季新品推广'
-    ]);
+    fireEvent.click(within(screen.getByRole('tablist', { name: '内容维度' }))
+      .getByRole('tab', { name: '产出中心' }));
+
+    const outputList = screen.getByRole('list', { name: '产出列表' });
+    expect(within(outputList).getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByText('target.srt')).toBeInTheDocument();
+    expect(screen.getByText('translated.mp4')).toBeInTheDocument();
+    expect(screen.queryByText(/最终成片|方案 01|配音音轨/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '在项目中打开产出 translated.mp4' }));
+    expect(onOpenJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'job_translation' }));
   });
 
-  it('switches to an output center and filters outputs independently', () => {
-    const onOpenProject = vi.fn();
-    render(<ProjectsPage projects={projects} onOpenProject={onOpenProject} />);
+  it('shows loading and runtime errors explicitly', () => {
+    const { rerender } = render(
+      <ProjectsPage jobs={[]} workspaces={workspaces} loading onOpenJob={vi.fn()} />
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载最近项目');
 
-    const dimensions = screen.getByRole('tablist', { name: '内容维度' });
-    expect(within(dimensions).getByRole('tab', { name: '项目' })).toHaveAttribute('aria-selected', 'true');
-    fireEvent.click(within(dimensions).getByRole('tab', { name: '产出中心' }));
-
-    expect(screen.getByRole('searchbox', { name: '搜索产出' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '全部产出' })).toBeInTheDocument();
-    expect(within(screen.getByRole('list', { name: '产出列表' })).getAllByRole('listitem')).toHaveLength(9);
-
-    fireEvent.click(screen.getByRole('button', { name: '在项目中打开产出 发布会视频翻译-翻译成片' }));
-    expect(onOpenProject).toHaveBeenCalledWith('translation');
-
-    const outputCategories = screen.getByRole('tablist', { name: '产出分类' });
-    fireEvent.click(within(outputCategories).getByRole('tab', { name: '字幕' }));
-    expect(screen.getByRole('heading', { name: '字幕' })).toBeInTheDocument();
-    expect(screen.getByText('发布会视频翻译-双语字幕')).toBeInTheDocument();
-    expect(within(screen.getByRole('list', { name: '产出列表' })).getAllByRole('listitem')).toHaveLength(1);
-
-    fireEvent.change(screen.getByRole('searchbox', { name: '搜索产出' }), {
-      target: { value: '没有这个文件' }
-    });
-    expect(screen.getByRole('status')).toHaveTextContent('没有找到匹配的产出');
+    rerender(
+      <ProjectsPage jobs={[]} workspaces={workspaces} error="Creator Runtime unavailable" onOpenJob={vi.fn()} />
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Creator Runtime unavailable');
   });
 });
+
+function creatorJob(input: {
+  id: string;
+  templateId: string;
+  state: CreatorJob['state'];
+  updatedAt: string;
+  artifacts?: CreatorJob['artifacts'];
+}): CreatorJob {
+  return {
+    id: input.id,
+    projectId: 'workspace_1',
+    templateId: input.templateId,
+    templateVersion: 1,
+    status: input.artifacts === undefined ? 'draft' : 'completed',
+    revision: 0,
+    state: input.state,
+    agentThreadId: null,
+    stages: [],
+    artifacts: input.artifacts ?? [],
+    activities: [],
+    createdAt: input.updatedAt,
+    updatedAt: input.updatedAt
+  };
+}
+
+function artifact(jobId: string, kind: string, fileName: string): CreatorJob['artifacts'][number] {
+  return {
+    id: `artifact_${kind}`,
+    jobId,
+    kind,
+    version: 1,
+    status: 'completed',
+    path: `/outputs/${fileName}`,
+    sourceArtifactIds: [],
+    metadata: { fileName },
+    createdAt: '2026-08-17T10:00:00.000Z'
+  };
+}
+
+function restoreUrlMethod(
+  key: 'createObjectURL' | 'revokeObjectURL',
+  descriptor: PropertyDescriptor | undefined
+) {
+  if (descriptor === undefined) delete (URL as unknown as Record<string, unknown>)[key];
+  else Object.defineProperty(URL, key, descriptor);
+}

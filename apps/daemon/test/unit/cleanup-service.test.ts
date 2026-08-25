@@ -186,7 +186,7 @@ describe('cleanup service', () => {
     const realRunDir = join(tempDir, 'real-run');
     mkdirSync(join(tempDir, 'runs'), { recursive: true });
     mkdirSync(realRunDir, { recursive: true });
-    symlinkSync(realRunDir, join(tempDir, 'runs', 'run_link'));
+    symlinkSync(realRunDir, join(tempDir, 'runs', 'run_link'), process.platform === 'win32' ? 'junction' : 'dir');
 
     const service = createCleanupService({
       dataDir: tempDir,
@@ -207,7 +207,7 @@ describe('cleanup service', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'opencreator-cleanup-service-'));
     const realRunsDir = join(tempDir, 'real-runs');
     mkdirSync(realRunsDir, { recursive: true });
-    symlinkSync(realRunsDir, join(tempDir, 'runs'));
+    symlinkSync(realRunsDir, join(tempDir, 'runs'), process.platform === 'win32' ? 'junction' : 'dir');
 
     const service = createCleanupService({
       dataDir: tempDir,

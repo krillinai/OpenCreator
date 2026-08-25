@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "DesktopOnboardingEntrypoint": {
+      "enum": [
+        "life_sciences"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "loginId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "onboardingEntrypoint": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DesktopOnboardingEntrypoint"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success"
+  ],
+  "title": "AccountLoginCompletedNotification",
+  "type": "object"
+}

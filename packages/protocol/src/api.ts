@@ -1,4 +1,5 @@
 import type { PublicRunStatus } from './events.js';
+import type { RuntimeErrorCode } from './errors.js';
 
 export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 export type WorkspaceMode = 'managed' | 'external';
@@ -30,6 +31,130 @@ export type CodexMcpOperationType =
   | 'get'
   | 'list';
 export type CodexMcpOperationStatus = 'succeeded' | 'failed';
+
+export const codexRuntimeModes = ['bundled', 'external'] as const;
+export const codexRuntimeReadinessStates = ['ready', 'degraded', 'blocked'] as const;
+export const codexRuntimeComponentStatuses = [
+  'ready',
+  'missing',
+  'invalid',
+  'unavailable',
+  'not_authenticated',
+  'not_checked'
+] as const;
+export const codexAccountStatuses = [
+  'signed_out',
+  'authenticating',
+  'signed_in',
+  'expired',
+  'unavailable'
+] as const;
+
+export type CodexRuntimeMode = typeof codexRuntimeModes[number];
+export type CodexRuntimeReadinessState = typeof codexRuntimeReadinessStates[number];
+export type CodexRuntimeComponentStatus = typeof codexRuntimeComponentStatuses[number];
+export type CodexAccountStatus = typeof codexAccountStatuses[number];
+
+export type BundledCodexManifest = {
+  schemaVersion: 1;
+  runtime: 'codex';
+  version: string;
+  tag: string;
+  commit: string;
+  platform: string;
+  arch: string;
+  binary: {
+    relativePath: string;
+    sha256: string;
+    source: string;
+  };
+  appServerProtocol: {
+    sourceVersion: string;
+    schemaSha256: string;
+  };
+  builtAt: string;
+};
+
+export type CodexRuntimeComponentReadiness = {
+  status: CodexRuntimeComponentStatus;
+  errorCode?: RuntimeErrorCode;
+  message?: string;
+  details?: Record<string, unknown>;
+};
+
+export type CodexAccountSummary = {
+  id?: string;
+  email?: string;
+  plan?: string;
+};
+
+export type CodexAccountState = CodexRuntimeComponentReadiness & {
+  accountStatus: CodexAccountStatus;
+  account?: CodexAccountSummary;
+};
+
+export type CodexRuntimeReadiness = {
+  state: CodexRuntimeReadinessState;
+  mode: CodexRuntimeMode;
+  version: string | null;
+  commit: string | null;
+  binaryPath: string | null;
+  codexHome: string;
+  checkedAt: string;
+  binary: CodexRuntimeComponentReadiness;
+  protocol: CodexRuntimeComponentReadiness;
+  account: CodexAccountState;
+  models: CodexRuntimeComponentReadiness;
+  skills: CodexRuntimeComponentReadiness;
+  toolServer: CodexRuntimeComponentReadiness;
+  diagnostics: string[];
+};
+
+export type CodexAccountReadResponse = {
+  account: CodexAccountState;
+};
+
+export type CodexLoginStartRequest =
+  | { loginType?: 'chatgpt' }
+  | { loginType: 'device_code' }
+  | { loginType: 'api_key'; apiKey: string };
+
+export type CodexLoginStartResponse = {
+  loginId: string;
+  status: 'pending';
+  authUrl?: string;
+  userCode?: string;
+  expiresAt?: string;
+};
+
+export type CodexLoginCancelRequest = {
+  loginId: string;
+};
+
+export type CodexLoginCancelResponse = {
+  loginId: string;
+  canceled: boolean;
+};
+
+export type CodexLogoutResponse = {
+  signedOut: boolean;
+};
+
+export type CodexProviderAuthentication = 'none' | 'chatgpt' | 'api_key';
+
+export type CodexProviderConfig = {
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  authentication: CodexProviderAuthentication;
+  configVersion?: string;
+};
+
+export type CodexProviderConfigUpdateRequest = {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+};
 
 export type CodexAvailabilityProbe = {
   status: 'pending' | 'succeeded' | 'failed' | 'skipped';
@@ -498,7 +623,8 @@ export type ThreadPurpose =
   | 'conversation'
   | 'knowledge_conversation'
   | 'schedule_draft'
-  | 'schedule_task';
+  | 'schedule_task'
+  | 'creator_agent';
 
 export type ProjectResponse = {
   id: string;

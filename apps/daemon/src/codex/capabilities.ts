@@ -155,7 +155,7 @@ export function parseCodexCapabilityMatrix(input: {
   );
 
   return {
-    codexVersion: input.versionOutput.trim(),
+    codexVersion: normalizeCodexVersionOutput(input.versionOutput),
     checkedAt: input.checkedAt ?? new Date().toISOString(),
     execJson: exec.supportsJson,
     execStdinPrompt: input.execHelp.includes('[PROMPT]') || input.execHelp.includes('PROMPT'),
@@ -205,6 +205,14 @@ export function parseCodexCapabilityMatrix(input: {
     skillsRuntimeBehaviorVerified: false,
     warnings: []
   };
+}
+
+export function normalizeCodexVersionOutput(output: string): string {
+  const versionLine = output
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(line => /^codex-cli\s+\S+$/.test(line));
+  return versionLine ?? output.trim();
 }
 
 export function collectCodexCapabilityMatrix(

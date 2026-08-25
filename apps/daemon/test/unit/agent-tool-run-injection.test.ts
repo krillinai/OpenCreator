@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createAgentCapabilityTokenStore } from '../../src/agent-tools/capability-token.js';
 import {
+  AGENT_CREATOR_MCP_SERVER_NAME,
   AGENT_SCHEDULE_MCP_SERVER_NAME,
   createAgentScheduleProcessInjector,
   createAgentScheduleRunInjector
@@ -116,6 +117,11 @@ describe('agent tool run injection', () => {
         name: AGENT_SCHEDULE_MCP_SERVER_NAME,
         url: 'http://127.0.0.1:43123/internal/agent-tools/mcp',
         bearerTokenEnvVar: 'OPENCREATOR_AGENT_CAPABILITY_TOKEN'
+      }),
+      expect.objectContaining({
+        name: AGENT_CREATOR_MCP_SERVER_NAME,
+        url: 'http://127.0.0.1:43123/internal/agent-tools/mcp/creator',
+        bearerTokenEnvVar: 'OPENCREATOR_AGENT_CAPABILITY_TOKEN'
       })
     ]);
     expect(injection?.mcpServers[0]).not.toHaveProperty('enabledTools');
@@ -130,7 +136,7 @@ describe('agent tool run injection', () => {
       thread: thread({ purpose: 'conversation' }),
       createdBy: 'api'
     });
-    expect(conversation?.manifestKey).toContain('opencreator_schedule_create');
+    expect(conversation?.manifestKey).toContain('schedule:create');
     expect(tokens.authorize(token, { scope: 'schedule:create' })).toMatchObject({
       runId: 'run-conversation',
       threadId: 'thread-1'
@@ -143,7 +149,7 @@ describe('agent tool run injection', () => {
       createdBy: 'api'
     });
     expect(task?.manifestKey).not.toBe(conversation?.manifestKey);
-    expect(task?.manifestKey).not.toContain('opencreator_schedule_create');
+    expect(task?.manifestKey).not.toContain('schedule:create');
     expect(tokens.authorize(token, { scope: 'schedule:update' })).toMatchObject({
       runId: 'run-task',
       threadId: 'thread-2'
@@ -152,12 +158,86 @@ describe('agent tool run injection', () => {
       () => tokens.authorize(token, { scope: 'schedule:create' }),
       'CAPABILITY_SCOPE_FORBIDDEN'
     );
+    injection?.deactivate('run-task');
+
+    const creator = injection?.activate({
+      runId: 'run-creator',
+      thread: thread({ id: 'thread-creator', purpose: 'creator_agent' }),
+      createdBy: 'api',
+      processGeneration: 9,
+      jobId: 'job-1',
+      projectId: 'project-1',
+      scopes: ['creator:context', 'creator:artifact:read', 'creator:action']
+    });
+    expect(creator?.manifestKey).toContain('creator:action');
+    expect(tokens.authorize(token, {
+      scope: 'creator:action',
+      jobId: 'job-1',
+      projectId: 'project-1',
+      processGeneration: 9
+    })).toMatchObject({ runId: 'run-creator', jobId: 'job-1' });
 
     injection?.close();
     expectCapabilityCode(
       () => tokens.inspect(token),
       'CAPABILITY_TOKEN_INVALID'
     );
+    tokens.close();
+  });
+
+  it('creates server-specific process injections for Agent and Creator runtimes', () => {
+    const tokens = createAgentCapabilityTokenStore();
+    const schedule = createAgentScheduleProcessInjector({
+      capabilities: tokens,
+      getBaseUrl: () => 'http://127.0.0.1:43123',
+      includeCreator: false
+    }).create();
+    const creator = createAgentScheduleProcessInjector({
+      capabilities: tokens,
+      getBaseUrl: () => 'http://127.0.0.1:43123',
+      includeSchedule: false
+    }).create();
+
+    expect(schedule?.mcpServers.map(server => server.name)).toEqual([
+      AGENT_SCHEDULE_MCP_SERVER_NAME
+    ]);
+    expect(creator?.mcpServers.map(server => server.name)).toEqual([
+      AGENT_CREATOR_MCP_SERVER_NAME
+    ]);
+
+    const scheduleToken = schedule?.env.OPENCREATOR_AGENT_CAPABILITY_TOKEN;
+    schedule?.activate({
+      runId: 'run-schedule-only',
+      thread: thread({ purpose: 'conversation' }),
+      createdBy: 'api'
+    });
+    expect(tokens.authorize(scheduleToken, { scope: 'schedule:get' })).toMatchObject({
+      runId: 'run-schedule-only'
+    });
+    expectCapabilityCode(
+      () => tokens.authorize(scheduleToken, { scope: 'creator:context' }),
+      'CAPABILITY_SCOPE_FORBIDDEN'
+    );
+
+    const creatorToken = creator?.env.OPENCREATOR_AGENT_CAPABILITY_TOKEN;
+    creator?.activate({
+      runId: 'run-creator-only',
+      thread: thread({ purpose: 'creator_agent' }),
+      createdBy: 'api',
+      jobId: 'job-1',
+      scopes: ['creator:context']
+    });
+    expect(tokens.authorize(creatorToken, {
+      scope: 'creator:context',
+      jobId: 'job-1'
+    })).toMatchObject({ runId: 'run-creator-only' });
+    expectCapabilityCode(
+      () => tokens.authorize(creatorToken, { scope: 'schedule:get' }),
+      'CAPABILITY_SCOPE_FORBIDDEN'
+    );
+
+    schedule?.close();
+    creator?.close();
     tokens.close();
   });
 });

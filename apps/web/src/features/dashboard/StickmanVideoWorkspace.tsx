@@ -25,6 +25,7 @@ import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
+import { useOptionalCreatorSession } from './creator-session-store.js';
 
 const storyboardShots = [
   {
@@ -167,16 +168,17 @@ type StickmanResultVersion = {
 export default function StickmanVideoWorkspace(props: { onBack(): void; promptHint?: string }) {
   const l = useLocalizedCopy();
   const { language } = useAppLanguage();
+  const session = useOptionalCreatorSession();
   const [characterMode, setCharacterMode] = useState<CharacterSource>('preset');
   const [characterSource, setCharacterSource] = useState<CharacterSource>('preset');
   const [selectedPresetId, setSelectedPresetId] = useState<CharacterPresetId | null>('default');
-  const [characterPrompt, setCharacterPrompt] = useState(() => l(characterPromptZh, characterPromptEn));
+  const [characterPrompt, setCharacterPrompt] = useState(() => typeof session?.state.characterPrompt === 'string' ? session.state.characterPrompt : l(characterPromptZh, characterPromptEn));
   const [characterFile, setCharacterFile] = useState<File | null>(null);
   const [characterPreview, setCharacterPreview] = useState('');
   const [characterGenerated, setCharacterGenerated] = useState(false);
-  const [story, setStory] = useState(() => l(storyZh, storyEn));
-  const [ratio, setRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
-  const [style, setStyle] = useState('手绘线稿');
+  const [story, setStory] = useState(() => typeof session?.state.topic === 'string' ? session.state.topic : l(storyZh, storyEn));
+  const [ratio, setRatio] = useState<'16:9' | '9:16' | '1:1'>(() => session?.state.ratio === '9:16' || session?.state.ratio === '1:1' ? session.state.ratio : '16:9');
+  const [style, setStyle] = useState(() => typeof session?.state.style === 'string' ? session.state.style : '手绘线稿');
   const [storyboardSubtitles, setStoryboardSubtitles] = useState(() => storyboardShots.map(shot => l(shot.subtitleZh, shot.subtitleEn)));
   const [storyboardImageVersions, setStoryboardImageVersions] = useState(() => storyboardShots.map(() => 0));
   const [storyboardPromptOverrides, setStoryboardPromptOverrides] = useState<Array<string | null>>(() => storyboardShots.map(() => null));
@@ -274,6 +276,16 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   }, [l, language]);
 
   useEffect(() => {
+    session?.updateDraft({
+      topic: story,
+      characterPrompt,
+      ratio,
+      style,
+      targetDurationSeconds: 30
+    });
+  }, [characterPrompt, ratio, session?.updateDraft, story, style]);
+
+  useEffect(() => {
     if (!characterFile || typeof URL.createObjectURL !== 'function') {
       setCharacterPreview('');
       return undefined;
@@ -350,6 +362,9 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
       setNotice(l('请先填写故事创意', 'Enter a story idea first'));
       return false;
     }
+    if (session !== null) {
+      void session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'storyboard' } });
+    }
     setCurrentStep(2);
     setFurthestStep(2);
     setStoryboardSubtitles(storyboardShots.map(shot => l(shot.subtitleZh, shot.subtitleEn)));
@@ -367,6 +382,9 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
       setFurthestStep(hasSavedResults ? 3 : characterReady ? 1 : 0);
       setNotice(l('请先生成并确认分镜图', 'Generate and review the storyboard first'));
       return false;
+    }
+    if (session !== null) {
+      void session.applyAction({ actor: 'user', action: 'run-stage', input: { stageId: 'render' } });
     }
     if (selectedResult?.signature === currentSignature) {
       setCurrentStep(3);

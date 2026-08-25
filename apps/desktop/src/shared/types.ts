@@ -51,6 +51,8 @@ export type DesktopConnectionConfig = {
 export type DesktopSettings = {
   codexBin?: string;
   successfulCodexBin?: string;
+  codexRuntimeMode?: 'bundled' | 'external';
+  externalCodexBin?: string;
   closeBehavior: 'hide' | 'quit';
   notificationsEnabled: boolean;
   window?: {

@@ -192,7 +192,7 @@ describe('diagnostics collector', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
     const realRunsDir = join(tempDir, 'real-runs');
     mkdirSync(realRunsDir, { recursive: true });
-    symlinkSync(realRunsDir, join(tempDir, 'runs'));
+    symlinkSync(realRunsDir, join(tempDir, 'runs'), process.platform === 'win32' ? 'junction' : 'dir');
 
     const result = collectRunDiagnostics({
       dataDir: tempDir,
@@ -209,7 +209,7 @@ describe('diagnostics collector', () => {
     const realRunDir = join(tempDir, 'real-run');
     mkdirSync(join(tempDir, 'runs'), { recursive: true });
     mkdirSync(realRunDir, { recursive: true });
-    symlinkSync(realRunDir, join(tempDir, 'runs', 'run_1'));
+    symlinkSync(realRunDir, join(tempDir, 'runs', 'run_1'), process.platform === 'win32' ? 'junction' : 'dir');
 
     const result = collectRunDiagnostics({
       dataDir: tempDir,
@@ -223,8 +223,8 @@ describe('diagnostics collector', () => {
     );
   });
 
-  it('skips symlinked diagnostic files', () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'opencreator-diagnostics-collector-'));
+  it.skipIf(process.platform === 'win32')('skips symlinked diagnostic files', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'clawee-diagnostics-collector-'));
     const runDir = join(tempDir, 'runs', 'run_1');
     const outsideDir = join(tempDir, 'outside');
     mkdirSync(runDir, { recursive: true });

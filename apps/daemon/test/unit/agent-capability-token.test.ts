@@ -57,6 +57,82 @@ describe('agent capability token store', () => {
     store.close();
   });
 
+  it('binds creator capabilities to one job and project', () => {
+    const store = createAgentCapabilityTokenStore();
+    const issued = store.issue({
+      runId: 'run-creator',
+      threadId: 'thread-creator',
+      jobId: 'job-1',
+      projectId: 'project-1',
+      createdBy: 'api',
+      scopes: ['creator:context', 'creator:artifact:read', 'creator:action']
+    });
+
+    expect(store.authorize(issued.token, {
+      scope: 'creator:action',
+      jobId: 'job-1',
+      projectId: 'project-1'
+    })).toMatchObject({ jobId: 'job-1', projectId: 'project-1' });
+    expectCapabilityError(
+      () => store.authorize(issued.token, { scope: 'creator:action', jobId: 'job-2' }),
+      'CAPABILITY_RUN_FORBIDDEN',
+      403
+    );
+    expectCapabilityError(
+      () => store.authorize(issued.token, { scope: 'creator:action', projectId: 'project-2' }),
+      'CAPABILITY_RUN_FORBIDDEN',
+      403
+    );
+    expectCapabilityError(
+      () => store.issue({
+        runId: 'scheduled', threadId: 'scheduled-thread', createdBy: 'schedule',
+        scopes: ['creator:action']
+      }),
+      'CAPABILITY_SCOPE_FORBIDDEN',
+      403
+    );
+    store.close();
+  });
+
+  it('binds process capabilities to one runtime generation', () => {
+    const store = createAgentCapabilityTokenStore();
+    const lease = store.issueProcess({
+      createdBy: 'api',
+      maxScopes: ['creator:context', 'creator:action']
+    });
+
+    lease.activate({
+      runId: 'run-generation-1',
+      threadId: 'thread-generation-1',
+      jobId: 'job-1',
+      projectId: 'project-1',
+      processGeneration: 7,
+      createdBy: 'api',
+      scopes: ['creator:context', 'creator:action']
+    });
+
+    expect(store.authorize(lease.token, {
+      scope: 'creator:action',
+      jobId: 'job-1',
+      projectId: 'project-1',
+      processGeneration: 7
+    })).toMatchObject({
+      processGeneration: 7,
+      jobId: 'job-1',
+      projectId: 'project-1'
+    });
+    expectCapabilityError(
+      () => store.authorize(lease.token, {
+        scope: 'creator:action',
+        processGeneration: 8
+      }),
+      'CAPABILITY_RUN_FORBIDDEN',
+      403
+    );
+
+    store.close();
+  });
+
   it('rejects missing, malformed, expired, revoked, and closed tokens', () => {
     let now = 1_000;
     const store = createAgentCapabilityTokenStore({

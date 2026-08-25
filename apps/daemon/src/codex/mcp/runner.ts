@@ -1,4 +1,5 @@
-import { spawnSync } from 'node:child_process';
+import type { spawnSync } from 'node:child_process';
+import { spawnCodexProcessSync } from '../process.js';
 import { redactMcpArgv, redactMcpText } from './redaction.js';
 
 export type McpCommandResult = {
@@ -23,7 +24,7 @@ export type RunMcpCommandInput = {
 
 export function runMcpCommand(input: RunMcpCommandInput): McpCommandResult {
   const timeoutMs = input.timeoutMs ?? 30_000;
-  const result = spawnSync(input.codexBin, input.args, {
+  const result = spawnCodexProcessSync(input.codexBin, input.args, {
     encoding: 'utf8',
     timeout: timeoutMs,
     // Codex CLI expects the daemon environment (PATH/HOME/SHELL); env is not recorded, and argv/output are redacted.
@@ -68,8 +69,8 @@ function isTimedOut(result: ReturnType<typeof spawnSync>, errorMessage: string |
   );
 }
 
-function getErrorCode(error: Error | undefined): string | undefined {
-  if (error === undefined || !('code' in error) || typeof error.code !== 'string') {
+function getErrorCode(error: Error | null | undefined): string | undefined {
+  if (error == null || !('code' in error) || typeof error.code !== 'string') {
     return undefined;
   }
   return error.code;

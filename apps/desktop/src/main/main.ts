@@ -141,6 +141,14 @@ async function launchDesktop(): Promise<void> {
   const resourceRoot = development
     ? join(appRoot, 'resources')
     : join(process.resourcesPath, 'desktop-resources');
+  const creatorRuntimeRoot = process.env.OPENCREATOR_CREATOR_RUNTIME_ROOT
+    ?? (development
+      ? join(appRoot, '.pack', 'creator-runtime', 'krillinai')
+      : join(process.resourcesPath, 'creator-runtime', 'krillinai'));
+  const codexRuntimeRoot = process.env.OPENCREATOR_CODEX_RUNTIME_ROOT
+    ?? (development
+      ? join(appRoot, '.pack', 'codex-runtime')
+      : join(process.resourcesPath, 'codex-runtime'));
 
   logger.info('OpenCreator Desktop starting', {
     development,
@@ -155,6 +163,8 @@ async function launchDesktop(): Promise<void> {
     logger,
     daemonEntryPath,
     dataDir,
+    codexRuntimeRoot,
+    creatorRuntimeRoot,
     defaultProjectRoot,
     development,
     enterpriseConfigPath: enterpriseUserConfig.path,

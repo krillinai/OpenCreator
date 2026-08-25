@@ -6,6 +6,7 @@ import {
   createUnknownCapabilityMatrix,
   isResumeExecutionSupported,
   isReusableCapabilityMatrix,
+  normalizeCodexVersionOutput,
   parseCodexCapabilityMatrix,
   parseCodexExecHelp,
   probeCodexVersionAsync
@@ -64,6 +65,13 @@ Commands:
 `;
 
 describe('codex capability parsing', () => {
+  it('extracts the Codex version line when startup warnings are present', () => {
+    expect(normalizeCodexVersionOutput([
+      'WARNING: CODEX_HOME does not exist',
+      'codex-cli 0.149.0'
+    ].join('\n'))).toBe('codex-cli 0.149.0');
+  });
+
   it('rejects capability caches created before knowledge isolation was recorded', () => {
     const legacy = {
       ...createUnknownCapabilityMatrix(),

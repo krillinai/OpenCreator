@@ -1,4 +1,8 @@
-import type { CreatorServicesConfig } from '@opencreator/protocol';
+import type {
+  CreatorServicesConfig,
+  CreatorServicesConfigResponse,
+  CreatorServicesCredentialField
+} from '@opencreator/protocol';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { AsyncEntry } from '@napi-rs/keyring';
 import { z } from 'zod';
@@ -73,7 +77,7 @@ export const creatorServicesConfigSchema = z.object({
     openai: openAiCompatibleSchema,
     fasterWhisper: z.object({ model: z.enum(['tiny', 'medium', 'large-v2']) }).strict(),
     whisperKit: z.object({ model: z.literal('large-v2') }).strict(),
-    whisperCpp: z.object({ model: z.literal('large-v2') }).strict(),
+    whisperCpp: z.object({ model: z.enum(['tiny', 'medium', 'large-v2']) }).strict(),
     aliyun: aliyunSchema
   }).strict(),
   tts: z.object({
@@ -153,4 +157,109 @@ export function createSystemCreatorServicesConfigStore(): CreatorServicesConfigS
 
 export function parseCreatorServicesConfig(value: unknown): CreatorServicesConfig {
   return creatorServicesConfigSchema.parse(value) as CreatorServicesConfig;
+}
+
+export function presentCreatorServicesConfig(
+  config: CreatorServicesConfig
+): CreatorServicesConfigResponse {
+  const redacted = structuredClone(config);
+  const configuredCredentials: CreatorServicesCredentialField[] = [];
+  const redact = (field: CreatorServicesCredentialField, value: string, clear: () => void) => {
+    if (value.length > 0) configuredCredentials.push(field);
+    clear();
+  };
+
+  redact('llm.apiKey', redacted.llm.apiKey, () => { redacted.llm.apiKey = ''; });
+  redact('transcription.openai.apiKey', redacted.transcription.openai.apiKey, () => {
+    redacted.transcription.openai.apiKey = '';
+  });
+  redactAliyunCredentials('transcription.aliyun', redacted.transcription.aliyun, configuredCredentials);
+  redact('tts.openai.apiKey', redacted.tts.openai.apiKey, () => { redacted.tts.openai.apiKey = ''; });
+  redact('tts.minimax.apiKey', redacted.tts.minimax.apiKey, () => { redacted.tts.minimax.apiKey = ''; });
+  redactAliyunCredentials('tts.aliyun', redacted.tts.aliyun, configuredCredentials);
+  redact('image.openai.apiKey', redacted.image.openai.apiKey, () => { redacted.image.openai.apiKey = ''; });
+  redact('image.jimeng.apiKey', redacted.image.jimeng.apiKey, () => { redacted.image.jimeng.apiKey = ''; });
+  redact('image.kling.accessKey', redacted.image.kling.accessKey, () => { redacted.image.kling.accessKey = ''; });
+  redact('image.kling.secretKey', redacted.image.kling.secretKey, () => { redacted.image.kling.secretKey = ''; });
+  redact('image.gemini.apiKey', redacted.image.gemini.apiKey, () => { redacted.image.gemini.apiKey = ''; });
+  redact('video.seedance.apiKey', redacted.video.seedance.apiKey, () => { redacted.video.seedance.apiKey = ''; });
+  redact('video.kling.accessKey', redacted.video.kling.accessKey, () => { redacted.video.kling.accessKey = ''; });
+  redact('video.kling.secretKey', redacted.video.kling.secretKey, () => { redacted.video.kling.secretKey = ''; });
+  redact('video.veo.apiKey', redacted.video.veo.apiKey, () => { redacted.video.veo.apiKey = ''; });
+
+  return { config: redacted, configuredCredentials };
+}
+
+export function retainCreatorServicesCredentials(
+  next: CreatorServicesConfig,
+  current: CreatorServicesConfig
+): CreatorServicesConfig {
+  const merged = structuredClone(next);
+  retainBlank(() => merged.llm.apiKey, value => { merged.llm.apiKey = value; }, current.llm.apiKey);
+  retainBlank(
+    () => merged.transcription.openai.apiKey,
+    value => { merged.transcription.openai.apiKey = value; },
+    current.transcription.openai.apiKey
+  );
+  retainAliyunCredentials(merged.transcription.aliyun, current.transcription.aliyun);
+  retainBlank(() => merged.tts.openai.apiKey, value => { merged.tts.openai.apiKey = value; }, current.tts.openai.apiKey);
+  retainBlank(() => merged.tts.minimax.apiKey, value => { merged.tts.minimax.apiKey = value; }, current.tts.minimax.apiKey);
+  retainAliyunCredentials(merged.tts.aliyun, current.tts.aliyun);
+  retainBlank(() => merged.image.openai.apiKey, value => { merged.image.openai.apiKey = value; }, current.image.openai.apiKey);
+  retainBlank(() => merged.image.jimeng.apiKey, value => { merged.image.jimeng.apiKey = value; }, current.image.jimeng.apiKey);
+  retainBlank(() => merged.image.kling.accessKey, value => { merged.image.kling.accessKey = value; }, current.image.kling.accessKey);
+  retainBlank(() => merged.image.kling.secretKey, value => { merged.image.kling.secretKey = value; }, current.image.kling.secretKey);
+  retainBlank(() => merged.image.gemini.apiKey, value => { merged.image.gemini.apiKey = value; }, current.image.gemini.apiKey);
+  retainBlank(() => merged.video.seedance.apiKey, value => { merged.video.seedance.apiKey = value; }, current.video.seedance.apiKey);
+  retainBlank(() => merged.video.kling.accessKey, value => { merged.video.kling.accessKey = value; }, current.video.kling.accessKey);
+  retainBlank(() => merged.video.kling.secretKey, value => { merged.video.kling.secretKey = value; }, current.video.kling.secretKey);
+  retainBlank(() => merged.video.veo.apiKey, value => { merged.video.veo.apiKey = value; }, current.video.veo.apiKey);
+  return merged;
+}
+
+type AliyunCredentials = CreatorServicesConfig['transcription']['aliyun'];
+
+function redactAliyunCredentials(
+  prefix: 'transcription.aliyun' | 'tts.aliyun',
+  config: AliyunCredentials,
+  configured: CreatorServicesCredentialField[]
+): void {
+  redactAliyunField(prefix, 'oss.accessKeyId', config.oss.accessKeyId, value => {
+    config.oss.accessKeyId = value;
+  }, configured);
+  redactAliyunField(prefix, 'oss.accessKeySecret', config.oss.accessKeySecret, value => {
+    config.oss.accessKeySecret = value;
+  }, configured);
+  redactAliyunField(prefix, 'speech.accessKeyId', config.speech.accessKeyId, value => {
+    config.speech.accessKeyId = value;
+  }, configured);
+  redactAliyunField(prefix, 'speech.accessKeySecret', config.speech.accessKeySecret, value => {
+    config.speech.accessKeySecret = value;
+  }, configured);
+  redactAliyunField(prefix, 'speech.appKey', config.speech.appKey, value => {
+    config.speech.appKey = value;
+  }, configured);
+}
+
+function redactAliyunField(
+  prefix: 'transcription.aliyun' | 'tts.aliyun',
+  suffix: 'oss.accessKeyId' | 'oss.accessKeySecret' | 'speech.accessKeyId' | 'speech.accessKeySecret' | 'speech.appKey',
+  value: string,
+  write: (value: string) => void,
+  configured: CreatorServicesCredentialField[]
+): void {
+  if (value.length > 0) configured.push(`${prefix}.${suffix}` as CreatorServicesCredentialField);
+  write('');
+}
+
+function retainAliyunCredentials(next: AliyunCredentials, current: AliyunCredentials): void {
+  retainBlank(() => next.oss.accessKeyId, value => { next.oss.accessKeyId = value; }, current.oss.accessKeyId);
+  retainBlank(() => next.oss.accessKeySecret, value => { next.oss.accessKeySecret = value; }, current.oss.accessKeySecret);
+  retainBlank(() => next.speech.accessKeyId, value => { next.speech.accessKeyId = value; }, current.speech.accessKeyId);
+  retainBlank(() => next.speech.accessKeySecret, value => { next.speech.accessKeySecret = value; }, current.speech.accessKeySecret);
+  retainBlank(() => next.speech.appKey, value => { next.speech.appKey = value; }, current.speech.appKey);
+}
+
+function retainBlank(read: () => string, write: (value: string) => void, current: string): void {
+  if (read().length === 0) write(current);
 }

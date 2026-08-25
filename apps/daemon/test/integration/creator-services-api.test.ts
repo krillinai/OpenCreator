@@ -10,6 +10,7 @@ describe('creator services API', () => {
 
   beforeEach(async () => {
     const initial = createDefaultCreatorServicesConfig();
+    initial.llm.apiKey = 'initial-secret';
     store = {
       read: vi.fn(async () => initial),
       write: vi.fn(async config => config),
@@ -26,7 +27,10 @@ describe('creator services API', () => {
   it('reads, validates, saves, and resets the KrillinAI-compatible configuration', async () => {
     const read = await server.inject({ method: 'GET', url: '/creator-services/config' });
     expect(read.statusCode).toBe(200);
+    expect(read.body).not.toContain('initial-secret');
     const config = read.json().config;
+    expect(config.llm.apiKey).toBe('');
+    expect(read.json().configuredCredentials).toContain('llm.apiKey');
     config.llm.apiKey = 'sk-local';
     config.transcription.provider = 'faster-whisper';
 
@@ -36,11 +40,33 @@ describe('creator services API', () => {
       payload: config
     });
     expect(saved.statusCode).toBe(200);
-    expect(store.write).toHaveBeenCalledWith(config);
+    expect(saved.body).not.toContain('sk-local');
+    expect(store.write).toHaveBeenCalledWith(expect.objectContaining({
+      llm: expect.objectContaining({ apiKey: 'sk-local' })
+    }));
 
     const reset = await server.inject({ method: 'DELETE', url: '/creator-services/config' });
     expect(reset.statusCode).toBe(200);
     expect(store.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains configured credentials when a settings form submits blank secret fields', async () => {
+    const read = await server.inject({ method: 'GET', url: '/creator-services/config' });
+    const config = read.json().config;
+    config.proxy = 'http://127.0.0.1:7897';
+
+    const saved = await server.inject({
+      method: 'PATCH',
+      url: '/creator-services/config',
+      payload: config
+    });
+
+    expect(saved.statusCode).toBe(200);
+    expect(saved.body).not.toContain('initial-secret');
+    expect(store.write).toHaveBeenCalledWith(expect.objectContaining({
+      proxy: 'http://127.0.0.1:7897',
+      llm: expect.objectContaining({ apiKey: 'initial-secret' })
+    }));
   });
 
   it('rejects unsupported providers without persisting the request', async () => {

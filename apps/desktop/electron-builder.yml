@@ -42,6 +42,10 @@ extraResources:
     to: daemon/package.json
   - from: .pack/deployment
     to: deployment
+  - from: .pack/creator-runtime
+    to: creator-runtime
+  - from: .pack/codex-runtime
+    to: codex-runtime
   - from: ../web/dist
     to: web
   - from: resources

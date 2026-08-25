@@ -94,9 +94,15 @@ describe('codex skill validator', () => {
   it('rejects symlinks anywhere in a skill directory', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'opencreator-skill-validator-'));
     const skillDir = join(tempDir, 'skill');
+    const linkedTarget = join(tempDir, 'linked-target');
     mkdirSync(skillDir, { recursive: true });
+    mkdirSync(linkedTarget);
     writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: test\ndescription: test\n---\n');
-    symlinkSync(join(skillDir, 'SKILL.md'), join(skillDir, 'linked.md'));
+    symlinkSync(
+      linkedTarget,
+      join(skillDir, 'linked'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
 
     expect(() => assertNoSymlinks(skillDir)).toThrow(/CODEX_SKILL_INVALID/);
   });

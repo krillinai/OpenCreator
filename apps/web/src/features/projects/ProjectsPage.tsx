@@ -1,53 +1,75 @@
+import type { CreatorArtifact, CreatorJob } from '@opencreator/protocol';
 import {
   Captions,
   CirclePlay,
   FileText,
   FolderKanban,
   Image as ImageIcon,
-  MoreHorizontal,
   Music2,
   PackageOpen,
   Search,
   Video
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
+import type { CreatorWebService } from '../../services/creator-service.js';
 import type { OpenCreatorProject } from './project-model.js';
 import './projects-page.css';
 
-const projectCategories = ['全部', '视频创作', '数字人', '图像设计', '内容营销'] as const;
+const projectCategories = ['全部', '视频创作', '图像设计'] as const;
 type ProjectCategory = typeof projectCategories[number];
 const outputCategories = ['全部', '视频', '图片', '音频', '字幕', '文档'] as const;
 type OutputCategory = typeof outputCategories[number];
 type ProjectsView = 'projects' | 'outputs';
 type ProjectOutputKind = Exclude<OutputCategory, '全部'>;
 
+const projectArtifactKinds = new Set([
+  'source_video',
+  'source_subtitle',
+  'target_subtitle',
+  'bilingual_subtitle',
+  'dubbed_audio',
+  'horizontal_video',
+  'vertical_video',
+  'auto_clip_video',
+  'cover_image',
+  'stickman_video',
+  'script_manifest',
+  'storyboard_image',
+  'clip_candidates'
+]);
+
+type CreatorProject = {
+  job: CreatorJob;
+  title: string;
+  type: string;
+  category: Exclude<ProjectCategory, '全部'>;
+  workspaceName: string;
+  cover: string;
+  youtubeCovers: string[];
+};
+
 type ProjectOutput = {
   id: string;
-  projectId: string;
+  job: CreatorJob;
   projectName: string;
   name: string;
   kind: ProjectOutputKind;
   format: string;
   detail: string;
   cover: string;
-  updatedAt?: string;
+  youtubeCovers: string[];
+  updatedAt: string;
 };
 
-const projectCovers = [
-  '/dashboard/templates/video-translation-example.png',
-  '/dashboard/templates/ai-video-insane.jpg',
-  '/dashboard/templates/video-localization.jpg',
-  '/dashboard/templates/digital-presenter.jpg',
-  '/dashboard/templates/animated-story.jpg'
-];
-
 export default function ProjectsPage(props: {
-  projects: OpenCreatorProject[];
-  currentProjectId?: string;
-  onOpenProject(projectId: string): void;
-  onManageProject?(projectId?: string): void;
+  jobs: CreatorJob[];
+  workspaces: OpenCreatorProject[];
+  loading?: boolean;
+  error?: string;
+  service?: Pick<CreatorWebService, 'openProjectCover'> | null;
+  onOpenJob(job: CreatorJob): void;
 }) {
   const { language } = useAppLanguage();
   const l = useLocalizedCopy();
@@ -56,20 +78,32 @@ export default function ProjectsPage(props: {
   const [category, setCategory] = useState<ProjectCategory>('全部');
   const [outputCategory, setOutputCategory] = useState<OutputCategory>('全部');
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleProjects = useMemo(() => props.projects
-    .filter(project => category === '全部' || inferProjectCategory(project.name) === category)
-    .filter(project => normalizedQuery.length === 0 || `${project.name} ${project.cwd}`
-      .toLocaleLowerCase()
-      .includes(normalizedQuery))
-    .sort((left, right) => (right.updatedAt ?? right.createdAt ?? '')
-      .localeCompare(left.updatedAt ?? left.createdAt ?? '')), [category, normalizedQuery, props.projects]);
-  const outputs = useMemo(() => createProjectOutputs(props.projects, l), [l, props.projects]);
+  const projects = useMemo(
+    () => props.jobs
+      .map(job => createCreatorProject(job, props.workspaces, l))
+      .filter((project): project is CreatorProject => project !== undefined),
+    [l, props.jobs, props.workspaces]
+  );
+  const visibleProjects = useMemo(() => projects
+    .filter(project => category === '全部' || project.category === category)
+    .filter(project => normalizedQuery.length === 0 || [
+      project.title,
+      project.type,
+      project.workspaceName,
+      readString(project.job.state.sourceUrl)
+    ].join(' ').toLocaleLowerCase().includes(normalizedQuery))
+    .sort((left, right) => right.job.updatedAt.localeCompare(left.job.updatedAt)),
+  [category, normalizedQuery, projects]);
+  const outputs = useMemo(
+    () => projects.flatMap(project => createProjectOutputs(project, l)),
+    [l, projects]
+  );
   const visibleOutputs = useMemo(() => outputs
     .filter(output => outputCategory === '全部' || output.kind === outputCategory)
     .filter(output => normalizedQuery.length === 0 || `${output.name} ${output.projectName} ${output.format}`
       .toLocaleLowerCase()
       .includes(normalizedQuery))
-    .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '')),
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
   [normalizedQuery, outputCategory, outputs]);
 
   function selectView(nextView: ProjectsView) {
@@ -84,8 +118,8 @@ export default function ProjectsPage(props: {
           <div>
             <h1>{l('我的项目', 'My Projects')}</h1>
             <p>{view === 'projects'
-              ? l('继续创作、整理素材和查看已有成果', 'Continue creating, organize assets, and review your work')
-              : l('集中查看所有项目生成的视频、图片和文件', 'Review videos, images, and files generated across your projects')}</p>
+              ? l('继续最近的创作项目，保留完整设置、进度和历史', 'Continue recent creator projects with their settings, progress, and history')
+              : l('集中查看所有创作项目产生的真实文件', 'Review real files generated across creator projects')}</p>
           </div>
           <label className="projects-search">
             <Search size={17} strokeWidth={1.8} aria-hidden="true" />
@@ -132,7 +166,7 @@ export default function ProjectsPage(props: {
           <div className="projects-library-heading">
             <h2 id="projects-library-title">
               {view === 'projects'
-                ? category === '全部' ? l('全部项目', 'All projects') : localizeProjectCategory(category, l)
+                ? category === '全部' ? l('最近项目', 'Recent projects') : localizeProjectCategory(category, l)
                 : outputCategory === '全部' ? l('全部产出', 'All outputs') : localizeOutputCategory(outputCategory, l)}
             </h2>
             <span>{view === 'projects'
@@ -140,60 +174,58 @@ export default function ProjectsPage(props: {
               : `${visibleOutputs.length} ${l('个产出', 'outputs')}`}</span>
           </div>
 
-          {view === 'projects' ? visibleProjects.length > 0 ? (
+          {props.error !== undefined ? (
+            <div className="projects-empty" role="alert">
+              <FolderKanban size={28} strokeWidth={1.5} aria-hidden="true" />
+              <strong>{l('无法加载最近项目', 'Unable to load recent projects')}</strong>
+              <p>{props.error}</p>
+            </div>
+          ) : props.loading && projects.length === 0 ? (
+            <div className="projects-empty" role="status" aria-busy="true">
+              <FolderKanban size={28} strokeWidth={1.5} aria-hidden="true" />
+              <strong>{l('正在加载最近项目', 'Loading recent projects')}</strong>
+            </div>
+          ) : view === 'projects' ? visibleProjects.length > 0 ? (
             <div className="projects-card-grid" role="list" aria-label={l('项目列表', 'Project list')}>
-              {visibleProjects.map((project) => {
-                const isCurrent = project.id === props.currentProjectId;
-                return (
-                  <article className="project-card" role="listitem" key={project.id} data-current={isCurrent || undefined}>
-                    <button
-                      type="button"
-                      className="project-card-open"
-                      aria-label={`${l('打开项目', 'Open project')} ${project.name}`}
-                      onClick={() => props.onOpenProject(project.id)}
-                    >
-                      <span className="project-card-cover">
-                        <img src={projectCover(project.id)} alt="" />
-                        {isCurrent ? <small>{l('当前项目', 'Current project')}</small> : null}
-                      </span>
-                      <span className="project-card-copy">
-                        <small>{inferProjectType(project.name, l)}</small>
-                        <strong>{project.name}</strong>
-                        <span>{formatProjectTime(project.updatedAt ?? project.createdAt, language)}</span>
-                      </span>
-                    </button>
-                    {props.onManageProject ? (
-                      <button
-                        type="button"
-                        className="project-card-menu"
-                        aria-label={`${l('项目设置', 'Project settings')} ${project.name}`}
-                        title={l('项目设置', 'Project settings')}
-                        onClick={() => props.onManageProject?.(project.id)}
-                      >
-                        <MoreHorizontal size={17} strokeWidth={1.9} aria-hidden="true" />
-                      </button>
-                    ) : null}
-                  </article>
-                );
-              })}
+              {visibleProjects.map(project => (
+                <article className="project-card" role="listitem" key={project.job.id}>
+                  <button
+                    type="button"
+                    className="project-card-open"
+                    aria-label={`${l('打开项目', 'Open project')} ${project.title}`}
+                    onClick={() => props.onOpenJob(project.job)}
+                  >
+                    <span className="project-card-cover">
+                      <ProjectCoverImage
+                        job={project.job}
+                        youtubeCovers={project.youtubeCovers}
+                        fallback={project.cover}
+                        service={props.service}
+                      />
+                      <small>{localizeJobStatus(project.job.status, l)}</small>
+                    </span>
+                    <span className="project-card-copy">
+                      <small>{project.type}</small>
+                      <strong>{project.title}</strong>
+                      <span>{project.workspaceName} · {formatProjectTime(project.job.updatedAt, language)}</span>
+                    </span>
+                  </button>
+                </article>
+              ))}
             </div>
           ) : (
             <div className="projects-empty" role="status">
               <FolderKanban size={28} strokeWidth={1.5} aria-hidden="true" />
-              <strong>
-                {props.projects.length === 0
-                  ? l('还没有项目', 'No projects yet')
-                  : normalizedQuery.length > 0
-                    ? l('没有找到匹配的项目', 'No matching projects')
-                    : l('这个分类还没有项目', 'No projects in this category')}
-              </strong>
-              <p>
-                {props.projects.length === 0
-                  ? l('从工作台开始创作后，项目会自动显示在这里。', 'Projects appear here automatically after you start creating from Dashboard.')
-                  : normalizedQuery.length > 0
-                    ? l('换个名称重新搜索。', 'Try searching with another name.')
-                    : l('完成对应类型的创作后，项目会显示在这里。', 'Projects of this type will appear here after you create them.')}
-              </p>
+              <strong>{projects.length === 0
+                ? l('还没有创作项目', 'No creator projects yet')
+                : normalizedQuery.length > 0
+                  ? l('没有找到匹配的项目', 'No matching projects')
+                  : l('这个分类还没有项目', 'No projects in this category')}</strong>
+              <p>{projects.length === 0
+                ? l('从工作台选择模板后会新建项目，并自动显示在这里。', 'Choose a template in Workbench to create a project. It will appear here automatically.')
+                : normalizedQuery.length > 0
+                  ? l('换个名称重新搜索。', 'Try searching with another name.')
+                  : l('完成对应类型的创作后，项目会显示在这里。', 'Projects of this type will appear here after you create them.')}</p>
             </div>
           ) : visibleOutputs.length > 0 ? (
             <div className="project-output-grid" role="list" aria-label={l('产出列表', 'Output list')}>
@@ -203,11 +235,16 @@ export default function ProjectsPage(props: {
                     type="button"
                     className="project-output-open"
                     aria-label={`${l('在项目中打开产出', 'Open output in project')} ${output.name}`}
-                    onClick={() => props.onOpenProject(output.projectId)}
+                    onClick={() => props.onOpenJob(output.job)}
                   >
                     <span className="project-output-preview" data-kind={output.kind}>
                       {output.kind === '视频' || output.kind === '图片' ? (
-                        <img src={output.cover} alt="" />
+                        <ProjectCoverImage
+                          job={output.job}
+                          youtubeCovers={output.youtubeCovers}
+                          fallback={output.cover}
+                          service={props.service}
+                        />
                       ) : (
                         <span className="project-output-file-icon" aria-hidden="true">
                           {outputKindIcon(output.kind, 28)}
@@ -238,7 +275,7 @@ export default function ProjectsPage(props: {
                   : l('这个分类还没有产出', 'No outputs in this category')}</strong>
               <p>{normalizedQuery.length > 0
                 ? l('换个名称重新搜索。', 'Try searching with another name.')
-                : l('完成工作台任务后，生成的文件会集中显示在这里。', 'Generated files will appear here after you complete a Dashboard task.')}</p>
+                : l('创作项目生成真实文件后，会集中显示在这里。', 'Files generated by creator projects will appear here.')}</p>
             </div>
           )}
         </section>
@@ -247,19 +284,77 @@ export default function ProjectsPage(props: {
   );
 }
 
-function inferProjectCategory(name: string): Exclude<ProjectCategory, '全部'> {
-  if (/数字人|口播|avatar|presenter/i.test(name)) return '数字人';
-  if (/营销|推广|品牌|活动|种草|周报|社媒|文案|marketing|campaign|brand|social|copywriting/i.test(name)) return '内容营销';
-  if (/封面|海报|配图|图像|图片|写真|thumbnail|cover|poster|image|photo/i.test(name)) return '图像设计';
-  return '视频创作';
+function createCreatorProject(
+  job: CreatorJob,
+  workspaces: OpenCreatorProject[],
+  l: LocalizeCopy
+): CreatorProject | undefined {
+  const type = templateLabel(job.templateId, l);
+  if (type === undefined) return undefined;
+  return {
+    job,
+    type,
+    title: creatorProjectTitle(job, type),
+    category: job.templateId === 'cover' ? '图像设计' : '视频创作',
+    workspaceName: workspaces.find(workspace => workspace.id === job.projectId)?.name
+      ?? l('未知工作目录', 'Unknown workspace'),
+    cover: projectCover(job.templateId),
+    youtubeCovers: youtubeThumbnailUrls(readString(job.state.sourceUrl))
+  };
+}
+
+function creatorProjectTitle(job: CreatorJob, type: string): string {
+  const probeTitle = job.artifacts
+    .find(artifact => artifact.kind === 'download_probe' && artifact.status !== 'stale')
+    ?.metadata.title;
+  if (typeof probeTitle === 'string' && probeTitle.trim().length > 0) return probeTitle.trim();
+  for (const key of ['projectName', 'title', 'topic', 'sourceFileName', 'prompt']) {
+    const value = readString(job.state[key]);
+    if (value.length > 0) return shorten(value, 54);
+  }
+  const sourceUrl = readString(job.state.sourceUrl);
+  if (sourceUrl.length > 0) return sourceLabel(sourceUrl);
+  const timestamp = Date.parse(job.createdAt);
+  const created = Number.isFinite(timestamp)
+    ? new Intl.DateTimeFormat('zh-CN', {
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(timestamp)
+    : job.id.slice(-8);
+  return `${type} · ${created}`;
+}
+
+function sourceLabel(value: string): string {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.replace(/^www\./, '');
+    const videoId = url.searchParams.get('v') ?? url.pathname.split('/').filter(Boolean).at(-1);
+    return shorten(videoId === undefined ? host : `${host} · ${videoId}`, 54);
+  } catch {
+    return shorten(value.split(/[\\/]/).at(-1) ?? value, 54);
+  }
+}
+
+function shorten(value: string, limit: number): string {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized.length <= limit ? normalized : `${normalized.slice(0, limit - 1)}…`;
+}
+
+function templateLabel(templateId: string, l: LocalizeCopy): string | undefined {
+  if (templateId === 'video-translation') return l('视频翻译', 'Video translation');
+  if (templateId === 'video-download') return l('视频下载', 'Video download');
+  if (templateId === 'auto-clip') return l('自动剪辑', 'Auto clips');
+  if (templateId === 'cover') return l('封面生成', 'Thumbnail generation');
+  if (templateId === 'stickman-video') return l('火柴人视频', 'Stick figure video');
+  return undefined;
 }
 
 function localizeProjectCategory(category: ProjectCategory, l: LocalizeCopy): string {
   if (category === '全部') return l(category, 'All');
-  if (category === '视频创作') return l(category, 'Video Creation');
-  if (category === '数字人') return l(category, 'Avatars');
   if (category === '图像设计') return l(category, 'Image Design');
-  return l(category, 'Content Marketing');
+  return l(category, 'Video Creation');
 }
 
 function localizeOutputCategory(category: OutputCategory, l: LocalizeCopy): string {
@@ -271,6 +366,14 @@ function localizeOutputCategory(category: OutputCategory, l: LocalizeCopy): stri
   return l(category, 'Documents');
 }
 
+function localizeJobStatus(status: CreatorJob['status'], l: LocalizeCopy): string {
+  if (status === 'completed') return l('已完成', 'Completed');
+  if (status === 'running') return l('进行中', 'Running');
+  if (status === 'failed') return l('失败', 'Failed');
+  if (status === 'needs_input') return l('等待输入', 'Needs input');
+  return l('草稿', 'Draft');
+}
+
 function outputKindIcon(kind: ProjectOutputKind, size: number) {
   if (kind === '视频') return <Video size={size} strokeWidth={1.8} aria-hidden="true" />;
   if (kind === '图片') return <ImageIcon size={size} strokeWidth={1.8} aria-hidden="true" />;
@@ -279,79 +382,155 @@ function outputKindIcon(kind: ProjectOutputKind, size: number) {
   return <FileText size={size} strokeWidth={1.8} aria-hidden="true" />;
 }
 
-function createProjectOutputs(projects: OpenCreatorProject[], l: LocalizeCopy): ProjectOutput[] {
-  return projects.flatMap(project => {
-    const updatedAt = project.updatedAt ?? project.createdAt;
-    const base = {
-      projectId: project.id,
-      projectName: project.name,
-      cover: projectCover(project.id),
-      updatedAt
+function createProjectOutputs(project: CreatorProject, l: LocalizeCopy): ProjectOutput[] {
+  return project.job.artifacts
+    .filter(artifact => (
+      artifact.path !== null
+      && artifact.status !== 'stale'
+      && projectArtifactKinds.has(artifact.kind)
+    ))
+    .map(artifact => ({
+      id: artifact.id,
+      job: project.job,
+      projectName: project.title,
+      name: artifactName(artifact, l),
+      kind: artifactKind(artifact.kind),
+      format: artifactFormat(artifact),
+      detail: artifact.status === 'technical_preview'
+        ? l(`技术预览 · V${artifact.version}`, `Technical preview · V${artifact.version}`)
+        : `V${artifact.version}`,
+      cover: project.cover,
+      youtubeCovers: project.youtubeCovers,
+      updatedAt: artifact.createdAt
+    }));
+}
+
+function artifactName(artifact: CreatorArtifact, l: LocalizeCopy): string {
+  const fileName = artifact.metadata.fileName;
+  if (typeof fileName === 'string' && fileName.trim().length > 0) return fileName;
+  const pathName = artifact.path?.split(/[\\/]/).at(-1);
+  if (pathName !== undefined && pathName.length > 0) return pathName;
+  const labels: Record<string, string> = {
+    source_video: l('原始视频', 'Source video'),
+    target_subtitle: l('目标语言字幕', 'Translated subtitles'),
+    source_subtitle: l('原文字幕', 'Source subtitles'),
+    bilingual_subtitle: l('双语字幕', 'Bilingual subtitles'),
+    dubbed_audio: l('配音音轨', 'Dubbed audio'),
+    horizontal_video: l('横屏成片', 'Landscape video'),
+    vertical_video: l('竖屏成片', 'Portrait video'),
+    auto_clip_video: l('剪辑成片', 'Edited video'),
+    cover_image: l('封面图片', 'Thumbnail'),
+    stickman_video: l('火柴人成片', 'Stick figure video')
+  };
+  return labels[artifact.kind] ?? artifact.kind;
+}
+
+function artifactKind(kind: string): ProjectOutputKind {
+  if (/video/i.test(kind)) return '视频';
+  if (/image|cover|storyboard/i.test(kind)) return '图片';
+  if (/audio|narration|voice/i.test(kind)) return '音频';
+  if (/subtitle|caption/i.test(kind)) return '字幕';
+  return '文档';
+}
+
+function artifactFormat(artifact: CreatorArtifact): string {
+  const fileName = typeof artifact.metadata.fileName === 'string'
+    ? artifact.metadata.fileName
+    : artifact.path?.split(/[\\/]/).at(-1);
+  const extension = fileName?.split('.').at(-1);
+  return extension === undefined || extension === fileName ? 'FILE' : extension.toUpperCase();
+}
+
+function projectCover(templateId: string): string {
+  if (templateId === 'video-translation') return '/workbench/templates/video-translation-example.png';
+  if (templateId === 'cover') return '/workbench/templates/video-localization.jpg';
+  if (templateId === 'stickman-video') return '/workbench/templates/ai-video-insane.jpg';
+  if (templateId === 'auto-clip') return '/workbench/templates/animated-story.jpg';
+  return '/workbench/templates/digital-presenter.jpg';
+}
+
+function ProjectCoverImage(props: {
+  job: CreatorJob;
+  youtubeCovers: string[];
+  fallback: string;
+  service?: Pick<CreatorWebService, 'openProjectCover'> | null;
+}) {
+  const requestedRuntimeCover = useRef(false);
+  const [youtubeIndex, setYoutubeIndex] = useState(0);
+  const [runtimeCover, setRuntimeCover] = useState<string>();
+
+  useEffect(() => {
+    if (
+      youtubeIndex < props.youtubeCovers.length
+      || requestedRuntimeCover.current
+      || props.service === null
+      || props.service === undefined
+    ) return;
+    requestedRuntimeCover.current = true;
+    let active = true;
+    let objectUrl: string | undefined;
+    void props.service.openProjectCover(props.job.id)
+      .then(response => response.blob())
+      .then(blob => {
+        if (!active || blob.size === 0) return;
+        objectUrl = URL.createObjectURL(blob);
+        setRuntimeCover(objectUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
     };
-    const output = (
-      suffix: string,
-      kind: ProjectOutputKind,
-      format: string,
-      detail: string,
-      index: number
-    ): ProjectOutput => ({
-      ...base,
-      id: `${project.id}-${kind}-${index}`,
-      name: `${project.name}-${suffix}`,
-      kind,
-      format,
-      detail
-    });
+  }, [props.job.id, props.service, props.youtubeCovers.length, youtubeIndex]);
 
-    if (/翻译|translation|localization/i.test(project.name)) {
-      return [
-        output(l('翻译成片', 'translated-video'), '视频', 'MP4', '1920 × 1080', 1),
-        output(l('双语字幕', 'bilingual-subtitles'), '字幕', 'SRT', 'UTF-8', 2),
-        output(l('配音音轨', 'dubbed-audio'), '音频', 'MP3', '48 kHz', 3)
-      ];
+  const youtubeCover = props.youtubeCovers[youtubeIndex];
+  const source = youtubeCover ?? runtimeCover ?? props.fallback;
+  return (
+    <img
+      src={source}
+      alt=""
+      onError={() => {
+        if (youtubeCover !== undefined) {
+          setYoutubeIndex(index => index + 1);
+          return;
+        }
+        if (runtimeCover !== undefined) setRuntimeCover(undefined);
+      }}
+    />
+  );
+}
+
+export function youtubeThumbnailUrls(value: string): string[] {
+  if (value.length === 0) return [];
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^(?:www\.|m\.)/, '');
+    let videoId: string | undefined;
+    if (host === 'youtu.be') {
+      videoId = url.pathname.split('/').filter(Boolean)[0];
+    } else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+      videoId = url.searchParams.get('v') ?? undefined;
+      if (videoId === undefined) {
+        const parts = url.pathname.split('/').filter(Boolean);
+        if (['shorts', 'embed', 'live'].includes(parts[0] ?? '')) videoId = parts[1];
+      }
     }
-    if (/封面|海报|配图|图像|图片|写真|thumbnail|cover|poster|image|photo/i.test(project.name)) {
-      return [
-        output(l('方案 01', 'option-01'), '图片', 'PNG', '1920 × 1080', 1),
-        output(l('方案 02', 'option-02'), '图片', 'PNG', '1920 × 1080', 2)
-      ];
-    }
-    if (/数字人|口播|avatar|presenter/i.test(project.name)) {
-      return [
-        output(l('数字人成片', 'avatar-video'), '视频', 'MP4', '1920 × 1080', 1),
-        output(l('配音音轨', 'voice-track'), '音频', 'WAV', '48 kHz', 2)
-      ];
-    }
-    if (/营销|推广|品牌|活动|种草|周报|社媒|文案|marketing|campaign|brand|social|copywriting/i.test(project.name)) {
-      return [
-        output(l('社媒配图', 'social-visual'), '图片', 'PNG', '1080 × 1350', 1),
-        output(l('发布文案', 'campaign-copy'), '文档', 'DOCX', l('可编辑文档', 'Editable document'), 2)
-      ];
-    }
+    if (videoId === undefined || !/^[A-Za-z0-9_-]{6,}$/.test(videoId)) return [];
+    const encoded = encodeURIComponent(videoId);
     return [
-      output(l('最终成片', 'final-video'), '视频', 'MP4', '1920 × 1080', 1)
+      `https://i.ytimg.com/vi/${encoded}/maxresdefault.jpg`,
+      `https://i.ytimg.com/vi/${encoded}/hqdefault.jpg`
     ];
-  });
+  } catch {
+    return [];
+  }
 }
 
-function inferProjectType(name: string, l: LocalizeCopy): string {
-  if (/翻译|translation|localization/i.test(name)) return l('视频翻译', 'Video translation');
-  if (/剪辑|clip|cut/i.test(name)) return l('自动剪辑', 'Auto clips');
-  if (/封面|cover|thumbnail/i.test(name)) return l('封面生成', 'Thumbnail generation');
-  if (/动画|火柴人|animation|stickman/i.test(name)) return l('动画生成', 'Animation');
-  if (/数字人|avatar|presenter/i.test(name)) return l('数字人', 'Avatar');
-  if (/营销|推广|品牌|活动|种草|周报|社媒|文案|marketing|campaign|brand|social|copywriting/i.test(name)) return l('内容营销', 'Content marketing');
-  if (/海报|配图|图像|图片|写真|poster|image|photo/i.test(name)) return l('图像设计', 'Image design');
-  return l('视频创作', 'Video creation');
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
-function projectCover(projectId: string): string {
-  const hash = [...projectId].reduce((total, character) => total + character.charCodeAt(0), 0);
-  return projectCovers[hash % projectCovers.length] ?? projectCovers[0]!;
-}
-
-function formatProjectTime(value: string | undefined, language: 'zh-CN' | 'en-US'): string {
-  if (value === undefined) return language === 'en-US' ? 'Updated just now' : '刚刚更新';
+function formatProjectTime(value: string, language: 'zh-CN' | 'en-US'): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) return language === 'en-US' ? 'Recently updated' : '最近更新';
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
