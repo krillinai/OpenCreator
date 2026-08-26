@@ -1,70 +1,80 @@
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  closeSync,
+  constants,
   cpSync,
   copyFileSync,
   existsSync,
+  mkdtempSync,
   mkdirSync,
+  openSync,
   readdirSync,
+  readSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(scriptDir, '..');
 const rootDir = resolve(desktopDir, '../..');
-const sourceRoot = resolve(process.env.OPENCREATOR_KRILLINAI_SOURCE ?? join(rootDir, 'KrillinAI'));
 const outputRoot = resolve(process.env.OPENCREATOR_CREATOR_RUNTIME_OUTPUT ?? join(desktopDir, '.pack', 'creator-runtime', 'krillinai'));
+const vendorRoot = resolve(
+  process.env.OPENCREATOR_CREATOR_RUNTIME_VENDOR
+    ?? join(rootDir, '.runtime', 'vendor', 'creator-runtime', `${process.platform}-${process.arch}`)
+);
 const binDir = join(outputRoot, 'bin');
 const executableSuffix = process.platform === 'win32' ? '.exe' : '';
-const serviceVersion = '0.1.0';
+const cliVersion = '2.1.0';
 const protocolVersion = 1;
 const protocolSchemaSource = join(rootDir, 'packages', 'protocol', 'contracts', 'krillin-opencreator-v1.schema.json');
+const runtimeMode = 'cli';
 
-if (!existsSync(join(sourceRoot, 'go.mod'))) throw new Error(`KrillinAI source is unavailable: ${sourceRoot}`);
+ensureCliDependencies();
+const vendorVersions = readVendorVersions();
+const vendoredKrillin = process.env.OPENCREATOR_KRILLINAI_CLI_PATH
+  ? undefined
+  : vendorVersions?.dependencies?.krillinai;
+const serviceVersion = vendoredKrillin?.version ?? cliVersion;
 rmSync(outputRoot, { recursive: true, force: true });
 mkdirSync(binDir, { recursive: true });
 
-const servicePath = join(binDir, `krillinai-opencreator-server${executableSuffix}`);
-execFileSync('go', [
-  'build',
-  '-trimpath',
-  '-ldflags', `-s -w -X main.serviceVersion=${serviceVersion}`,
-  '-o', servicePath,
-  './cmd/opencreator-server'
-], {
-  cwd: sourceRoot,
-  env: { ...process.env, CGO_ENABLED: process.env.CGO_ENABLED ?? '0' },
-  stdio: 'inherit'
-});
+const primaryExecutablePath = join(binDir, `krillinai-cli${executableSuffix}`);
+copyExecutable(
+  resolveExecutable(
+    'krillinai-cli',
+    process.env.OPENCREATOR_KRILLINAI_CLI_PATH,
+    join(vendorRoot, `krillinai-cli${executableSuffix}`)
+  ),
+  primaryExecutablePath
+);
+verifyStandaloneKrillinCli(primaryExecutablePath);
 
 const externalInputs = [
-  ['ffmpeg', process.env.OPENCREATOR_FFMPEG_PATH],
-  ['ffprobe', process.env.OPENCREATOR_FFPROBE_PATH],
-  ['yt-dlp', process.env.OPENCREATOR_YT_DLP_PATH]
+  ['ffmpeg', process.env.OPENCREATOR_FFMPEG_PATH, join(vendorRoot, `ffmpeg${executableSuffix}`)],
+  ['ffprobe', process.env.OPENCREATOR_FFPROBE_PATH, join(vendorRoot, `ffprobe${executableSuffix}`)],
+  ['yt-dlp', process.env.OPENCREATOR_YT_DLP_PATH, join(vendorRoot, `yt-dlp${executableSuffix}`)]
 ];
-for (const [name, configured] of externalInputs) {
-  const source = resolveExecutable(name, configured);
+for (const [name, configured, vendored] of externalInputs) {
+  const source = resolveExecutable(name, configured, vendored);
   const target = join(binDir, `${name}${executableSuffix}`);
-  copyFileSync(source, target);
-  if (process.platform !== 'win32') chmodSync(target, 0o755);
+  copyExecutable(source, target);
   if (name === 'yt-dlp') verifyStandaloneYtDlp(target);
 }
-if (process.platform !== 'win32') chmodSync(servicePath, 0o755);
 
 const packagedLocalAsrResources = [
   ...prepareFasterWhisper(),
-  ...prepareWhisperCpp()
+  ...prepareWhisperCpp(),
+  ...prepareWhisperKit()
 ];
 if (packagedLocalAsrResources.length === 0) {
-  throw new Error(
-    'Package at least one local transcription runtime so cloud credentials remain optional'
-  );
+  throw new Error('Package at least one local transcription runtime so cloud credentials remain optional');
 }
 
 const subtitleStylePath = join(outputRoot, 'subtitle-style.json');
@@ -75,12 +85,20 @@ copyFileSync(protocolSchemaSource, protocolSchemaPath);
 const protocolSha256 = hashFile(protocolSchemaPath);
 const buildRecord = {
   version: 1,
+  runtimeMode,
   serviceVersion,
+  cliVersion,
   protocolVersion,
   protocolSha256,
-  upstreamCommit: commandOutput('git', ['rev-parse', 'HEAD'], sourceRoot),
-  integrationPatchSha256: hashIntegrationSources(sourceRoot),
-  goVersion: commandOutput('go', ['version'], sourceRoot),
+  upstreamCommit: vendoredKrillin?.upstreamCommit ?? `v${cliVersion}`,
+  integrationPatchSha256: hashFiles([
+    join(scriptDir, 'install-creator-runtime-dependencies.mjs'),
+    join(scriptDir, 'prepare-creator-runtime.mjs'),
+    join(rootDir, 'apps', 'daemon', 'src', 'creator', 'krillin', 'adapter.ts'),
+    join(rootDir, 'apps', 'daemon', 'src', 'creator', 'krillin', 'cli-runner.ts'),
+    join(rootDir, 'apps', 'daemon', 'src', 'creator', 'krillin', 'config-bridge.ts'),
+    join(rootDir, 'apps', 'daemon', 'src', 'creator', 'templates', 'video-translation.ts')
+  ]),
   platform: process.platform,
   arch: process.arch
 };
@@ -88,7 +106,7 @@ const buildRecordPath = join(outputRoot, 'build-record.json');
 writeFileSync(buildRecordPath, `${JSON.stringify(buildRecord, null, 2)}\n`);
 
 const resourcePaths = [
-  servicePath,
+  primaryExecutablePath,
   ...externalInputs.map(([name]) => join(binDir, `${name}${executableSuffix}`)),
   subtitleStylePath,
   protocolSchemaPath,
@@ -96,7 +114,9 @@ const resourcePaths = [
 ];
 const manifest = {
   version: 1,
+  runtimeMode,
   serviceVersion,
+  cliVersion,
   protocolVersion,
   protocolSha256,
   integrationPatchSha256: buildRecord.integrationPatchSha256,
@@ -112,18 +132,89 @@ const manifest = {
 writeFileSync(join(outputRoot, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(JSON.stringify({ ok: true, outputRoot, resources: manifest.resources.length }));
 
-function resolveExecutable(name, configured) {
+function ensureCliDependencies() {
+  const required = [
+    [process.env.OPENCREATOR_KRILLINAI_CLI_PATH, join(vendorRoot, `krillinai-cli${executableSuffix}`)],
+    [process.env.OPENCREATOR_FFMPEG_PATH, join(vendorRoot, `ffmpeg${executableSuffix}`)],
+    [process.env.OPENCREATOR_FFPROBE_PATH, join(vendorRoot, `ffprobe${executableSuffix}`)],
+    [process.env.OPENCREATOR_YT_DLP_PATH, join(vendorRoot, `yt-dlp${executableSuffix}`)]
+  ];
+  if (process.platform === 'darwin' && process.arch === 'arm64') {
+    required.push(
+      [process.env.OPENCREATOR_WHISPERKIT_PATH, join(vendorRoot, 'whisperkit-cli')],
+      [
+        process.env.OPENCREATOR_WHISPERKIT_MODEL_PATH,
+        join(vendorRoot, 'models', 'whisperkit', 'openai_whisper-large-v2')
+      ]
+    );
+  }
+  if (required.every(([configured, vendored]) => configured || existsSync(vendored))) return;
+  execFileSync(process.execPath, [join(scriptDir, 'install-creator-runtime-dependencies.mjs')], {
+    cwd: rootDir,
+    env: {
+      ...process.env,
+      OPENCREATOR_CREATOR_RUNTIME_PLATFORM: process.platform,
+      OPENCREATOR_CREATOR_RUNTIME_ARCH: process.arch,
+      OPENCREATOR_CREATOR_RUNTIME_VENDOR: vendorRoot
+    },
+    stdio: 'inherit'
+  });
+}
+
+function readVendorVersions() {
+  const path = join(vendorRoot, 'versions.json');
+  if (!existsSync(path)) return undefined;
+  try {
+    const value = JSON.parse(readFileSync(path, 'utf8'));
+    return value?.version === 1 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveExecutable(name, configured, vendored) {
   if (configured) {
     const value = resolve(configured);
     if (!existsSync(value)) throw new Error(`${name} input is missing: ${value}`);
     return value;
   }
+  if (vendored && existsSync(vendored)) return resolve(vendored);
   const locator = process.platform === 'win32' ? 'where.exe' : 'which';
   const located = commandOutput(locator, [name], rootDir).split(/\r?\n/).find(Boolean);
   if (!located || !existsSync(located)) {
     throw new Error(`Set OPENCREATOR_${name.replace('-', '_').toUpperCase()}_PATH to a pinned ${name} binary`);
   }
   return resolve(located);
+}
+
+function copyExecutable(source, target) {
+  copyFileSync(source, target);
+  if (process.platform !== 'win32') chmodSync(target, 0o755);
+}
+
+function verifyStandaloneKrillinCli(path) {
+  const verificationRoot = mkdtempSync(join(tmpdir(), 'opencreator-krillin-cli-'));
+  let help;
+  try {
+    help = execFileSync(path, ['--help'], {
+      cwd: verificationRoot,
+      env: minimalRuntimeEnvironment(process.env),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15_000,
+      windowsHide: true
+    });
+  } catch (error) {
+    const detail = error instanceof Error
+      ? `${error.message}\n${String(error.stderr ?? '')}`.trim().slice(-2_000)
+      : String(error);
+    throw new Error(`KrillinAI CLI must run in the packaged minimal environment: ${detail}`);
+  } finally {
+    rmSync(verificationRoot, { recursive: true, force: true });
+  }
+  if (!/krillinai-cli <command>/i.test(help)) {
+    throw new Error('KrillinAI CLI emitted an unexpected help response');
+  }
 }
 
 function prepareFasterWhisper() {
@@ -203,6 +294,48 @@ function prepareWhisperCpp() {
   ];
 }
 
+function prepareWhisperKit() {
+  const defaultExecutable = process.platform === 'darwin' && process.arch === 'arm64'
+    ? join(vendorRoot, 'whisperkit-cli')
+    : undefined;
+  const defaultModel = process.platform === 'darwin' && process.arch === 'arm64'
+    ? join(vendorRoot, 'models', 'whisperkit', 'openai_whisper-large-v2')
+    : undefined;
+  const executableInput = process.env.OPENCREATOR_WHISPERKIT_PATH ?? defaultExecutable;
+  const modelInput = process.env.OPENCREATOR_WHISPERKIT_MODEL_PATH ?? defaultModel;
+  if (!executableInput && !modelInput) return [];
+  if (!executableInput || !modelInput) {
+    throw new Error('Set both OPENCREATOR_WHISPERKIT_PATH and OPENCREATOR_WHISPERKIT_MODEL_PATH');
+  }
+  if (process.platform !== 'darwin' || process.arch !== 'arm64') {
+    throw new Error('The packaged WhisperKit fallback requires macOS Apple Silicon');
+  }
+
+  const executableSource = resolve(executableInput);
+  const modelSource = resolve(modelInput);
+  if (!existsSync(executableSource) || !statSync(executableSource).isFile()) {
+    throw new Error(`WhisperKit executable is unavailable: ${executableSource}`);
+  }
+  if (!existsSync(modelSource) || !statSync(modelSource).isDirectory()) {
+    throw new Error(`WhisperKit model directory is unavailable: ${modelSource}`);
+  }
+
+  const executable = join(binDir, 'whisperkit-cli');
+  copyExecutable(executableSource, executable);
+  verifyStandaloneWhisperKit(executable);
+  const model = 'large-v2';
+  const modelDir = join(outputRoot, 'models', 'whisperkit', 'openai_whisper-large-v2');
+  cpSync(modelSource, modelDir, {
+    recursive: true,
+    force: true,
+    mode: constants.COPYFILE_FICLONE
+  });
+  return [
+    packagedResource(executable, 'executable', 'whisperkit', model),
+    ...listFiles(modelDir).map(path => packagedResource(path, 'model', 'whisperkit', model))
+  ];
+}
+
 function verifyStandaloneYtDlp(path) {
   let version;
   try {
@@ -222,10 +355,32 @@ function verifyStandaloneYtDlp(path) {
       `yt-dlp must be a standalone binary that runs in the packaged minimal environment: ${detail}`
     );
   }
-  if (!/^\d{4}\.\d{2}\.\d{2}\.\d{6}$/.test(version)) {
+  if (!/^\d{4}\.\d{2}\.\d{2}(?:\.\d{6})?$/.test(version)) {
     throw new Error(
-      `yt-dlp must be an official nightly build with version YYYY.MM.DD.HHMMSS: ${version}`
+      `yt-dlp must be an official stable or nightly build: ${version}`
     );
+  }
+}
+
+function verifyStandaloneWhisperKit(path) {
+  let version;
+  try {
+    version = execFileSync(path, ['--version'], {
+      cwd: outputRoot,
+      env: minimalRuntimeEnvironment(process.env),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 15_000,
+      windowsHide: true
+    }).trim();
+  } catch (error) {
+    const detail = error instanceof Error
+      ? `${error.message}\n${String(error.stderr ?? '')}`.trim().slice(-2_000)
+      : String(error);
+    throw new Error(`WhisperKit must run in the packaged minimal environment: ${detail}`);
+  }
+  if (!/^v1\.1\.0$/i.test(version)) {
+    throw new Error(`WhisperKit emitted an unexpected version: ${version}`);
   }
 }
 
@@ -279,28 +434,26 @@ function commandOutput(command, args, cwd) {
 }
 
 function hashFile(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+  const digest = createHash('sha256');
+  const descriptor = openSync(path, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) digest.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    closeSync(descriptor);
+  }
+  return digest.digest('hex');
 }
 
-function hashIntegrationSources(root) {
+function hashFiles(paths) {
   const digest = createHash('sha256');
-  const trackedDiff = execFileSync('git', ['diff', '--binary', 'HEAD', '--'], {
-    cwd: root,
-    encoding: 'buffer'
-  });
-  updateDigestEntry(digest, 'tracked-diff', trackedDiff);
-
-  const untrackedFiles = execFileSync(
-    'git',
-    ['ls-files', '--others', '--exclude-standard', '-z'],
-    { cwd: root, encoding: 'utf8' }
-  )
-    .split('\0')
-    .filter(Boolean)
-    .map(path => path.replaceAll('\\', '/'))
-    .sort();
-  for (const path of untrackedFiles) {
-    updateDigestEntry(digest, `untracked:${path}`, readFileSync(join(root, path)));
+  for (const path of [...paths].sort()) {
+    if (!existsSync(path)) throw new Error(`Creator Runtime integration source is missing: ${path}`);
+    updateDigestEntry(digest, relative(rootDir, path).replaceAll('\\', '/'), readFileSync(path));
   }
   return digest.digest('hex');
 }

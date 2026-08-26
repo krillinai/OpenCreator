@@ -46,6 +46,22 @@ describe('creator template registry', () => {
     });
   });
 
+  it('keeps the source video through TTS and passes the dubbed video into render stages', () => {
+    const template = createVideoTranslationTemplate();
+    expect(template.stages.find(stage => stage.id === 'tts')?.inputArtifacts).toContainEqual({
+      kind: 'source_video',
+      selector: 'latest-completed',
+      optional: true
+    });
+    for (const stageId of ['render-horizontal', 'render-vertical']) {
+      expect(template.stages.find(stage => stage.id === stageId)?.inputArtifacts).toContainEqual({
+        kind: 'dubbed_video',
+        selector: 'latest-completed',
+        optional: true
+      });
+    }
+  });
+
   it('rejects duplicate template versions and cyclic stage graphs', () => {
     const template = createVideoTranslationTemplate();
     expect(() => createCreatorTemplateRegistry([template, template])).toThrow(

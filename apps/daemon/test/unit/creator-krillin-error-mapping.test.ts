@@ -61,6 +61,14 @@ describe('KrillinAI transcription provider resolution', () => {
     expect(resolved.transcription.provider).toBe('whisper.cpp');
     expect(resolved.transcription.whisperCpp.model).toBe('tiny');
   });
+
+  it('uses packaged WhisperKit on macOS when cloud transcription is not configured', () => {
+    const config = createDefaultCreatorServicesConfig();
+    const resolved = resolveKrillinTranscriptionConfig(config, manifestWithLocal('whisperkit', 'large-v2'));
+
+    expect(resolved.transcription.provider).toBe('whisperkit');
+    expect(resolved.transcription.whisperKit.model).toBe('large-v2');
+  });
 });
 
 function manifestWithLocal(provider?: string, model?: string) {

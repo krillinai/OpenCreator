@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync
+} from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 
 export function verifyCreatorRuntime(root, platform, arch) {
@@ -8,7 +16,9 @@ export function verifyCreatorRuntime(root, platform, arch) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   if (
     manifest?.version !== 1
+    || manifest.runtimeMode !== 'cli'
     || typeof manifest.serviceVersion !== 'string'
+    || typeof manifest.cliVersion !== 'string'
     || manifest.protocolVersion !== 1
     || !/^[a-f0-9]{64}$/i.test(manifest.protocolSha256 ?? '')
     || !/^[a-f0-9]{64}$/i.test(manifest.integrationPatchSha256 ?? '')
@@ -45,7 +55,10 @@ export function verifyCreatorRuntime(root, platform, arch) {
   const executableNames = new Set(manifest.resources
     .filter(resource => resource.kind === 'executable')
     .map(resource => basename(resource.path).toLowerCase()));
-  for (const name of [`krillinai-opencreator-server${suffix}`, `ffmpeg${suffix}`, `ffprobe${suffix}`, `yt-dlp${suffix}`]) {
+  if (!executableNames.has(`krillinai-cli${suffix}`)) {
+    throw new Error('Creator Runtime requires the precompiled KrillinAI CLI');
+  }
+  for (const name of [`ffmpeg${suffix}`, `ffprobe${suffix}`, `yt-dlp${suffix}`]) {
     if (!executableNames.has(name)) throw new Error(`Creator Runtime executable is missing: ${name}`);
   }
   const schema = manifest.resources.find(resource => resource.path === 'api/opencreator/v1/schema.json');
@@ -84,5 +97,17 @@ function listFiles(root) {
 }
 
 function hashFile(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+  const digest = createHash('sha256');
+  const descriptor = openSync(path, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) digest.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    closeSync(descriptor);
+  }
+  return digest.digest('hex');
 }

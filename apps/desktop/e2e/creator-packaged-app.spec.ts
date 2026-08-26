@@ -59,7 +59,7 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     });
     expect(runtimeManifest.resources.map(resource => resource.path)).toEqual(
       expect.arrayContaining([
-        executableResource('bin/krillinai-opencreator-server'),
+        executableResource('bin/krillinai-cli'),
         executableResource('bin/ffmpeg'),
         executableResource('bin/ffprobe'),
         executableResource('bin/yt-dlp')

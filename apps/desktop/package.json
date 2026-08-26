@@ -14,6 +14,7 @@
     "build": "pnpm build:main && pnpm build:preload && pnpm build:bootstrap",
     "prepare:daemon": "node scripts/prepare-daemon.mjs",
     "prepare:codex-runtime": "node scripts/prepare-codex-runtime.mjs",
+    "install:creator-runtime-dependencies": "node scripts/install-creator-runtime-dependencies.mjs",
     "prepare:creator-runtime": "node scripts/prepare-creator-runtime.mjs",
     "package": "node scripts/package-release.mjs --dir",
     "dist": "node scripts/package-release.mjs --dist",

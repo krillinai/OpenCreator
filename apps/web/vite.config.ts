@@ -192,12 +192,12 @@ function resolveDevCreatorRuntimeRoot(): string | undefined {
     '../desktop/.pack/creator-runtime/krillinai'
   );
   const executableSuffix = process.platform === 'win32' ? '.exe' : '';
-  const required = [
+  const requiredAssets = [
     join(candidate, 'manifest.json'),
     join(candidate, 'api', 'opencreator', 'v1', 'schema.json'),
-    join(candidate, 'bin', `krillinai-opencreator-server${executableSuffix}`)
+    join(candidate, 'bin', `krillinai-cli${executableSuffix}`)
   ];
-  return required.every(path => existsSync(path)) ? candidate : undefined;
+  return requiredAssets.every(path => existsSync(path)) ? candidate : undefined;
 }
 
 function terminateRuntimeProcess(child: RuntimeProcess['child']): void {

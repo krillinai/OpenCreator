@@ -56,6 +56,10 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
         inputArtifacts: [{
           kind: 'target_subtitle',
           selector: 'latest-completed'
+        }, {
+          kind: 'source_video',
+          selector: 'latest-completed',
+          optional: true
         }],
         outputArtifacts: [
           { kind: 'dubbed_audio', status: 'completed' },
@@ -72,7 +76,8 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
           { kind: 'source_video', selector: 'latest-completed' },
           { kind: 'target_subtitle', selector: 'latest-completed' },
           { kind: 'bilingual_subtitle', selector: 'latest-completed', optional: true },
-          { kind: 'dubbed_audio', selector: 'latest-completed', optional: true }
+          { kind: 'dubbed_audio', selector: 'latest-completed', optional: true },
+          { kind: 'dubbed_video', selector: 'latest-completed', optional: true }
         ],
         outputArtifacts: [{ kind: 'horizontal_video', status: 'completed' }]
       },
@@ -87,7 +92,8 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
           { kind: 'vertical_subtitle', selector: 'latest-completed', optional: true },
           { kind: 'target_subtitle', selector: 'latest-completed' },
           { kind: 'bilingual_subtitle', selector: 'latest-completed', optional: true },
-          { kind: 'dubbed_audio', selector: 'latest-completed', optional: true }
+          { kind: 'dubbed_audio', selector: 'latest-completed', optional: true },
+          { kind: 'dubbed_video', selector: 'latest-completed', optional: true }
         ],
         outputArtifacts: [{ kind: 'vertical_video', status: 'completed' }]
       }

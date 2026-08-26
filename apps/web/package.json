@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build",
+    "predev": "pnpm --filter @opencreator/desktop prepare:creator-runtime && pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build",
     "dev": "vite --host 127.0.0.1",
     "prebuild": "pnpm --filter @opencreator/protocol build && pnpm --filter @opencreator/skill-market build",
     "build": "tsc -p tsconfig.json && vite build",

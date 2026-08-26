@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync
+} from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 
@@ -13,7 +19,9 @@ const resourceSchema = z.object({
 
 const manifestSchema = z.object({
   version: z.number().int().positive(),
+  runtimeMode: z.enum(['cli', 'service']).optional(),
   serviceVersion: z.string().min(1).optional(),
+  cliVersion: z.string().min(1).optional(),
   protocolVersion: z.literal(1).optional(),
   protocolSha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
   integrationPatchSha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
@@ -37,7 +45,7 @@ export function verifyKrillinRuntimeManifest(resourceRoot: string, manifest: Kri
   for (const resource of manifest.resources) {
     const path = resolveInside(resourceRoot, resource.path);
     if (!statSync(path).isFile()) throw new Error(`dependency_not_packaged: ${resource.path}`);
-    const actual = createHash('sha256').update(readFileSync(path)).digest('hex');
+    const actual = hashFile(path);
     if (actual !== resource.sha256.toLowerCase()) throw new Error(`dependency_hash_mismatch: ${resource.path}`);
   }
 }
@@ -61,4 +69,20 @@ export function resolveInside(root: string, relative: string): string {
     throw new Error('resource_path_escape');
   }
   return result;
+}
+
+function hashFile(path: string): string {
+  const digest = createHash('sha256');
+  const descriptor = openSync(path, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead: number;
+    do {
+      bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) digest.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    closeSync(descriptor);
+  }
+  return digest.digest('hex');
 }

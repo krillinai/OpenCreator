@@ -20,6 +20,7 @@ import type {
 import { CreatorExecutorError } from '../executor.js';
 import { validateMediaFile } from '../validators/media.js';
 import { validateSrtFile } from '../validators/srt.js';
+import { KrillinCliError, runKrillinCli } from './cli-runner.js';
 import { preflightKrillinDependencies } from './dependency-preflight.js';
 import { readKrillinRuntimeManifest, resolveInside } from './manifest.js';
 import type { KrillinRuntimeHost } from './runtime-host.js';
@@ -37,7 +38,46 @@ export function createKrillinExecutor(input: {
       const configured = await input.configStore.read();
       const preflight = preflightKrillinDependencies(input.resourceRoot, configured);
       const ffprobe = executablePath(input.resourceRoot, /(?:^|\/)ffprobe(?:\.exe)?$/i);
-      const inputArtifactIds = await writeArtifactIndex(input.jobsRoot, stage);
+      const materializedArtifacts = await writeArtifactIndex(input.jobsRoot, stage);
+      const inputArtifactIds = materializedArtifacts.map(artifact => artifact.id);
+      const options = stageOptions(stage);
+      if (hasPackagedCli(preflight.manifest)) {
+        let artifacts: KrillinResultArtifact[];
+        try {
+          artifacts = await runKrillinCli({
+            resourceRoot: input.resourceRoot,
+            jobsRoot: input.jobsRoot,
+            manifest: preflight.manifest,
+            stage,
+            config: preflight.config,
+            artifacts: materializedArtifacts,
+            options
+          });
+        } catch (error) {
+          if (!(error instanceof KrillinCliError)) throw error;
+          const normalized = normalizeKrillinFailure({
+            code: error.kind === 'usage' ? 'usage' : error.code,
+            message: error.message
+          });
+          throw new CreatorExecutorError(normalized.code, normalized.message);
+        }
+        const outputs = await validateResultArtifacts({
+          stage,
+          jobsRoot: input.jobsRoot,
+          artifacts,
+          ffprobe
+        });
+        return {
+          outputs,
+          progress: {
+            ...stage.stageRun.progress,
+            krillinMode: 'cli',
+            providerStatus: 'succeeded',
+            percent: 100,
+            completedOutputKinds: outputs.map(output => output.kind)
+          }
+        };
+      }
       const request = createTaskRequest(stage, inputArtifactIds, preflight.config);
       let client = await input.runtimeHost.client();
       let restarted = false;
@@ -166,7 +206,7 @@ function stageOptions(input: CreatorExecutorInput): Record<string, unknown> {
     voiceCode: typeof state.voiceCode === 'string' ? state.voiceCode : undefined,
     verticalTitle: typeof state.verticalTitle === 'string' ? state.verticalTitle : undefined,
     verticalSubtitle: typeof state.verticalSubtitle === 'string' ? state.verticalSubtitle : undefined,
-    dubbed: state.dubbed === true,
+    dubbed: state.dubbing === true || state.dubbed === true,
     subtitleStyle: buildKrillinSubtitleStyle(state.subtitleStyle)
   });
 }
@@ -203,24 +243,30 @@ function krillinStageType(stageId: string): CreateKrillinTaskRequest['stageType'
   throw new CreatorExecutorError('creator_stage_not_supported', `Unsupported KrillinAI stage ${stageId}`);
 }
 
-async function writeArtifactIndex(jobsRoot: string, input: CreatorExecutorInput): Promise<string[]> {
+async function writeArtifactIndex(
+  jobsRoot: string,
+  input: CreatorExecutorInput
+): Promise<Array<{ id: string; kind: string; path: string }>> {
   const jobRoot = resolve(jobsRoot, input.job.id);
   await mkdir(jobRoot, { recursive: true });
-  const entries: Array<{ id: string; kind: string; relativePath: string }> = [];
+  const entries: Array<{ id: string; kind: string; relativePath: string; path: string }> = [];
   for (const artifact of input.inputArtifacts) {
     if (artifact.path === null) continue;
     const path = await materializeArtifact(jobRoot, artifact);
     entries.push({
       id: artifact.id,
       kind: artifact.kind,
-      relativePath: relative(jobRoot, path).replaceAll('\\', '/')
+      relativePath: relative(jobRoot, path).replaceAll('\\', '/'),
+      path
     });
   }
   const target = join(jobRoot, 'artifact-index.json');
   const temporary = `${target}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(temporary, `${JSON.stringify({ artifacts: entries }, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(temporary, `${JSON.stringify({
+    artifacts: entries.map(({ path: _path, ...entry }) => entry)
+  }, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, target);
-  return entries.map(entry => entry.id);
+  return entries.map(({ id, kind, path }) => ({ id, kind, path }));
 }
 
 async function materializeArtifact(jobRoot: string, artifact: CreatorArtifact): Promise<string> {
@@ -375,6 +421,13 @@ function readCursor(progress: Record<string, CreatorJson>): number {
 
 function isTransportFailure(error: unknown): boolean {
   return error instanceof KrillinServiceError && error.code === 'krillin_service_unavailable';
+}
+
+function hasPackagedCli(manifest: ReturnType<typeof readKrillinRuntimeManifest>): boolean {
+  return manifest.resources.some(resource => (
+    resource.kind === 'executable'
+    && /(?:^|\/)krillinai-cli(?:\.exe)?$/i.test(resource.path)
+  ));
 }
 
 function waitForPoll(signal: AbortSignal): Promise<void> {
