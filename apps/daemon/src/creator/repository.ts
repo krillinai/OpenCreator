@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
+import { existsSync, readFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import type {
   CreatorActivity,
   CreatorActor,
@@ -12,6 +14,7 @@ import type {
   CreatorStageDispatchStatus,
   CreatorStageRunStatus
 } from '@opencreator/protocol';
+import { parseSrt } from './validators/srt.js';
 
 type RepositoryOptions = {
   idFactory?(prefix: string): string;
@@ -106,6 +109,7 @@ export function createCreatorRepository(
   const idFactory = options.idFactory ?? (prefix => `${prefix}_${nanoid()}`);
   const now = options.now ?? (() => new Date().toISOString());
   repairLeadingResultSnapshotGaps(db);
+  repairLegacyVerticalSubtitleArtifacts(db);
   recoverInterruptedStageRuns(db, now());
 
   const getJob = (id: string): CreatorJob | undefined => {
@@ -458,6 +462,117 @@ export function createCreatorRepository(
   };
 }
 
+function repairLegacyVerticalSubtitleArtifacts(db: Database.Database): void {
+  const jobs = db.prepare(`
+    SELECT id, state_json
+    FROM creator_jobs
+    WHERE template_id = 'video-translation'
+  `).all() as Array<{ id: string; state_json: string }>;
+  if (jobs.length === 0) return;
+
+  const targetRows = db.prepare(`
+    SELECT id, job_id, status, path, source_artifact_ids_json, metadata_json, created_at
+    FROM creator_artifacts
+    WHERE job_id = ? AND kind = 'target_subtitle' AND path IS NOT NULL
+    ORDER BY version ASC, id ASC
+  `);
+  const existingVerticalPath = db.prepare(`
+    SELECT id
+    FROM creator_artifacts
+    WHERE job_id = ? AND kind = 'vertical_subtitle' AND path = ?
+  `);
+  const nextVerticalVersion = db.prepare(`
+    SELECT COALESCE(MAX(version), 0) + 1 AS version
+    FROM creator_artifacts
+    WHERE job_id = ? AND kind = 'vertical_subtitle'
+  `);
+  const insertVertical = db.prepare(`
+    INSERT INTO creator_artifacts (
+      id, job_id, kind, version, status, path,
+      source_artifact_ids_json, metadata_json, created_at
+    ) VALUES (?, ?, 'vertical_subtitle', ?, ?, ?, ?, ?, ?)
+  `);
+  const updateJobState = db.prepare('UPDATE creator_jobs SET state_json = ? WHERE id = ?');
+
+  db.transaction(() => {
+    for (const job of jobs) {
+      const state = JSON.parse(job.state_json) as Record<string, unknown>;
+      let stateChanged = false;
+      for (const target of targetRows.all(job.id) as LegacyTargetSubtitleRow[]) {
+        const shortPath = join(dirname(target.path), 'short_origin_mixed_srt.srt');
+        if (!existsSync(shortPath)) continue;
+        const existing = existingVerticalPath.get(job.id, shortPath) as { id: string } | undefined;
+        if (existing !== undefined) {
+          stateChanged = patchLegacyVerticalSubtitleRefs(state, target.id, existing.id) || stateChanged;
+          continue;
+        }
+        let cues;
+        try {
+          cues = parseSrt(readFileSync(shortPath, 'utf8'), { allowOverlaps: true });
+        } catch {
+          continue;
+        }
+        const metadata = JSON.parse(target.metadata_json) as Record<string, unknown>;
+        const artifactId = `creator_artifact_legacy_vertical_${target.id}`;
+        const version = (nextVerticalVersion.get(job.id) as { version: number }).version;
+        insertVertical.run(
+          artifactId,
+          job.id,
+          version,
+          target.status,
+          shortPath,
+          JSON.stringify([target.id]),
+          JSON.stringify({
+            ...metadata,
+            fileName: basename(shortPath),
+            cueCount: cues.length,
+            cues: cues.map(cue => ({
+              id: cue.index,
+              start: formatSrtTimestamp(cue.startMs),
+              end: formatSrtTimestamp(cue.endMs),
+              text: cue.text
+            })),
+            legacyBackfillFromArtifactId: target.id
+          }),
+          target.created_at
+        );
+        stateChanged = patchLegacyVerticalSubtitleRefs(state, target.id, artifactId) || stateChanged;
+      }
+      if (stateChanged) updateJobState.run(JSON.stringify(state), job.id);
+    }
+  })();
+}
+
+function patchLegacyVerticalSubtitleRefs(
+  state: Record<string, unknown>,
+  targetArtifactId: string,
+  verticalArtifactId: string
+): boolean {
+  let changed = false;
+  for (const collectionName of ['resultSnapshots', 'resultVersions']) {
+    const collection = state[collectionName];
+    if (!Array.isArray(collection)) continue;
+    for (const item of collection) {
+      if (!isUnknownRecord(item) || !isUnknownRecord(item.artifactRefs)) continue;
+      const targetRefs = item.artifactRefs.target_subtitle;
+      if (!Array.isArray(targetRefs) || !targetRefs.includes(targetArtifactId)) continue;
+      if (Array.isArray(item.artifactRefs.vertical_subtitle)
+        && item.artifactRefs.vertical_subtitle.includes(verticalArtifactId)) continue;
+      item.artifactRefs.vertical_subtitle = [verticalArtifactId];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function formatSrtTimestamp(value: number): string {
+  const hours = Math.floor(value / 3_600_000);
+  const minutes = Math.floor((value % 3_600_000) / 60_000);
+  const seconds = Math.floor((value % 60_000) / 1_000);
+  const milliseconds = value % 1_000;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
+}
+
 function repairLeadingResultSnapshotGaps(db: Database.Database): void {
   const jobs = db.prepare(`
     SELECT id, state_json
@@ -625,6 +740,16 @@ type ArtifactRow = {
   version: number;
   status: CreatorArtifactStatus;
   path: string | null;
+  source_artifact_ids_json: string;
+  metadata_json: string;
+  created_at: string;
+};
+
+type LegacyTargetSubtitleRow = {
+  id: string;
+  job_id: string;
+  status: CreatorArtifactStatus;
+  path: string;
   source_artifact_ids_json: string;
   metadata_json: string;
   created_at: string;

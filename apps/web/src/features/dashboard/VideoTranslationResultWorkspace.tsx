@@ -11,6 +11,8 @@ import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
 
 export type VideoTranslationResultTab = 'video' | 'subtitles' | 'voice' | 'settings';
+export type VideoResultVariant = 'horizontal' | 'vertical' | 'dubbed';
+export type SubtitleResultVariant = 'horizontal' | 'vertical';
 
 export type SubtitleCue = {
   id: number;
@@ -22,6 +24,25 @@ export type SubtitleCue = {
 type VersionItem = {
   value: number;
   description: string;
+};
+
+export type VideoResultOutput = {
+  artifactId: string;
+  variant: VideoResultVariant;
+  artifactVersion: number;
+  fileName?: string;
+  src?: string;
+  previewLoading?: boolean;
+  previewError?: string;
+};
+
+export type SubtitleResultOutput = {
+  artifactId: string;
+  variant: SubtitleResultVariant;
+  artifactVersion: number;
+  fileName?: string;
+  cues: SubtitleCue[];
+  readOnly: boolean;
 };
 
 const resultTabs: Array<{
@@ -45,15 +66,10 @@ export default function VideoTranslationResultWorkspace(props: {
   dubbing: boolean;
   hasVideoArtifact: boolean;
   hasVoiceArtifact: boolean;
-  videoSrc?: string;
-  videoPreviewLoading?: boolean;
-  videoPreviewError?: string;
-  videoFileName?: string;
+  videoOutputs: VideoResultOutput[];
+  subtitleOutputs: SubtitleResultOutput[];
   voiceFileName?: string;
-  videoArtifactVersion?: number;
   voiceArtifactVersion?: number;
-  subtitleArtifactVersion?: number;
-  subtitleCues: SubtitleCue[];
   subtitleDirty: boolean;
   nextVersion: number;
   affectedArtifacts: string[];
@@ -65,13 +81,13 @@ export default function VideoTranslationResultWorkspace(props: {
   onSubtitleChange(id: number, text: string): void;
   onSaveSubtitles(): void;
   onAdjustSettings(): void;
-  onExport(type: 'video' | 'subtitles' | 'voice'): void;
+  onExport(type: 'video' | 'subtitles' | 'voice', artifactId?: string): void;
   onRequestRegenerate(): void;
   onCancelRegenerate(): void;
   onConfirmRegenerate(): void;
 }) {
   const l = useLocalizedCopy();
-  const outputName = props.videoFileName ?? `视频翻译-${props.targetLanguage}-V${props.version}.mp4`;
+  const horizontalSubtitle = props.subtitleOutputs.find(output => output.variant === 'horizontal');
   const visibleTabs = resultTabs.filter(tab => (
     tab.value !== 'video' || props.hasVideoArtifact
   ));
@@ -114,45 +130,69 @@ export default function VideoTranslationResultWorkspace(props: {
           <header className="video-result-pane-heading">
             <div>
               <h2>{l('翻译成片', 'Translated video')}</h2>
-              <p>{l(`${props.targetLanguage}，${props.outputLabel}`, `${props.targetLanguage}, ${props.outputLabel}`)}</p>
+              <p>{l(
+                `${props.targetLanguage}，当前项目版本包含 ${props.videoOutputs.length} 个成片文件`,
+                `${props.targetLanguage}, ${props.videoOutputs.length} video file(s) in this project version`
+              )}</p>
             </div>
-            <button type="button" onClick={() => props.onExport('video')} disabled={!props.hasVideoArtifact}>
-              <Download size={15} strokeWidth={1.8} aria-hidden="true" />
-              {l('导出成片', 'Export video')}
-            </button>
           </header>
           {props.hasVideoArtifact ? (
-            <div className="video-result-video-output">
-              {props.videoSrc !== undefined ? (
-                <video
-                  className="video-result-player"
-                  src={props.videoSrc}
-                  controls
-                  preload="metadata"
-                  aria-label={l('翻译成片预览', 'Translated video preview')}
-                />
-              ) : (
-                <div className="video-result-player-status" role="status">
-                  {props.videoPreviewLoading
-                    ? l('正在加载成片...', 'Loading video...')
-                    : props.videoPreviewError ?? l('成片预览暂时不可用，可直接下载文件。', 'Video preview is unavailable. You can still download the file.')}
-                </div>
-              )}
-              <div className="video-result-file-row">
-                <span aria-hidden="true"><FileVideo size={19} strokeWidth={1.7} /></span>
-                <div>
-                  <strong>{outputName}</strong>
-                  <small>
-                    {l('成片', 'Video')} V{props.videoArtifactVersion ?? 1}
-                    {' · '}{l('项目', 'Project')} V{props.version}
-                  </small>
-                </div>
-                <button type="button" onClick={() => props.onExport('video')} aria-label={l('下载成片', 'Download video')} title={l('下载成片', 'Download video')}>
-                  <Download size={16} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-              </div>
+            <div className="video-result-video-grid">
+              {props.videoOutputs.map(output => {
+                const artifactLabel = videoVariantArtifactLabel(output.variant, l);
+                return (
+                  <section className="video-result-output-column" data-variant={output.variant} key={output.artifactId}>
+                    <div className="video-result-output-heading">
+                      <div>
+                        <h3>{artifactLabel}</h3>
+                        <small>{videoVariantFormatLabel(output.variant, l)} · {l('子项', 'Item')} V{output.artifactVersion}</small>
+                      </div>
+                    </div>
+                    <div className="video-result-player-frame" data-ratio={output.variant === 'vertical' ? '9:16' : '16:9'}>
+                      {output.src !== undefined ? (
+                        <video
+                          className="video-result-player"
+                          src={output.src}
+                          controls
+                          preload="metadata"
+                          aria-label={l(`${artifactLabel}预览`, `${artifactLabel} preview`)}
+                        />
+                      ) : (
+                        <div className="video-result-player-status" role="status">
+                          {output.previewLoading
+                            ? l(`正在加载${artifactLabel}...`, `Loading ${artifactLabel}...`)
+                            : output.previewError ?? l('成片预览暂时不可用，可直接下载文件。', 'Video preview is unavailable. You can still download the file.')}
+                        </div>
+                      )}
+                    </div>
+                    <div className="video-result-file-row">
+                      <span aria-hidden="true"><FileVideo size={19} strokeWidth={1.7} /></span>
+                      <div>
+                        <strong>{output.fileName ?? `${artifactLabel}-${props.targetLanguage}-V${props.version}.mp4`}</strong>
+                        <small>
+                          {l('子项', 'Item')} V{output.artifactVersion}
+                          {' · '}{l('项目', 'Project')} V{props.version}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => props.onExport('video', output.artifactId)}
+                        aria-label={l(`下载${artifactLabel}`, `Download ${artifactLabel}`)}
+                        title={l(`下载${artifactLabel}`, `Download ${artifactLabel}`)}
+                      >
+                        <Download size={16} strokeWidth={1.8} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </section>
+                );
+              })}
             </div>
-          ) : null}
+          ) : (
+            <div className="video-result-empty">
+              <FileVideo size={26} strokeWidth={1.5} aria-hidden="true" />
+              <strong>{l('当前项目版本没有成片文件', 'This project version has no video files')}</strong>
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -160,37 +200,81 @@ export default function VideoTranslationResultWorkspace(props: {
         <div className="video-result-pane">
           <header className="video-result-pane-heading">
             <div>
-              <h2>{l('字幕编辑', 'Subtitle editor')}</h2>
+              <h2>{l('字幕文件', 'Subtitle files')}</h2>
               <p>
-                {l('字幕', 'Subtitle')} V{props.subtitleArtifactVersion ?? 1}
+                {l(`${props.subtitleOutputs.length} 个字幕文件`, `${props.subtitleOutputs.length} subtitle file(s)`)}
                 {' · '}{l('项目', 'Project')} V{props.version}
-                {' · '}{props.subtitleDirty ? l('有未保存修改', 'Unsaved changes') : l('所有修改已保存', 'All changes saved')}
+                {horizontalSubtitle !== undefined
+                  ? ` · ${props.subtitleDirty ? l('横屏字幕有未保存修改', 'Unsaved horizontal subtitle changes') : l('横屏字幕已保存', 'Horizontal subtitles saved')}`
+                  : ''}
               </p>
             </div>
-            <div className="video-result-pane-actions">
-              <button type="button" onClick={() => props.onExport('subtitles')}>
-                <Download size={15} strokeWidth={1.8} aria-hidden="true" />
-                {l('下载 SRT', 'Download SRT')}
-              </button>
-              <button type="button" disabled={!props.subtitleDirty} onClick={props.onSaveSubtitles}>
-                <Save size={15} strokeWidth={1.8} aria-hidden="true" />
-                {l('保存字幕', 'Save subtitles')}
-              </button>
-            </div>
+            {horizontalSubtitle !== undefined && !horizontalSubtitle.readOnly ? (
+              <div className="video-result-pane-actions">
+                <button type="button" disabled={!props.subtitleDirty} onClick={props.onSaveSubtitles}>
+                  <Save size={15} strokeWidth={1.8} aria-hidden="true" />
+                  {l('保存横屏字幕', 'Save horizontal subtitles')}
+                </button>
+              </div>
+            ) : null}
           </header>
-          <div className="video-subtitle-editor" aria-label={l('字幕文件编辑器', 'Subtitle file editor')}>
-            {props.subtitleCues.map((cue, index) => (
-              <label key={cue.id}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <small>{cue.start} - {cue.end}</small>
-                <textarea
-                  rows={2}
-                  value={cue.text}
-                  onChange={event => props.onSubtitleChange(cue.id, event.target.value)}
-                  aria-label={`${l('字幕', 'Subtitle')} ${index + 1}`}
-                />
-              </label>
-            ))}
+          <div className="video-result-subtitle-grid">
+            {props.subtitleOutputs.map(output => {
+              const variantLabel = subtitleVariantLabel(output.variant, l);
+              return (
+                <section className="video-result-output-column" data-variant={output.variant} key={output.artifactId}>
+                  <div className="video-result-output-heading">
+                    <div>
+                      <h3>{variantLabel}</h3>
+                      <small>
+                        {l('子项', 'Item')} V{output.artifactVersion}
+                        {' · '}{output.cues.length} {l('条字幕', 'subtitles')}
+                        {output.readOnly ? ` · ${l('只读', 'Read only')}` : ''}
+                      </small>
+                    </div>
+                  </div>
+                  <div className="video-result-file-row">
+                    <span aria-hidden="true"><Captions size={19} strokeWidth={1.7} /></span>
+                    <div>
+                      <strong>{output.fileName ?? `${variantLabel}-V${props.version}.srt`}</strong>
+                      <small>
+                        {l('子项', 'Item')} V{output.artifactVersion}
+                        {' · '}{l('项目', 'Project')} V{props.version}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => props.onExport('subtitles', output.artifactId)}
+                      aria-label={l(`下载${variantLabel}`, `Download ${variantLabel}`)}
+                      title={l(`下载${variantLabel}`, `Download ${variantLabel}`)}
+                    >
+                      <Download size={16} strokeWidth={1.8} aria-hidden="true" />
+                    </button>
+                  </div>
+                  {output.cues.length > 0 ? (
+                    <div className="video-subtitle-editor" aria-label={l(`${variantLabel}文件`, `${variantLabel} file`)}>
+                      {output.cues.map((cue, index) => (
+                        <label key={cue.id}>
+                          <span>{String(index + 1).padStart(2, '0')}</span>
+                          <small>{cue.start} - {cue.end}</small>
+                          <textarea
+                            rows={2}
+                            value={cue.text}
+                            readOnly={output.readOnly}
+                            onChange={output.readOnly
+                              ? undefined
+                              : event => props.onSubtitleChange(cue.id, event.target.value)}
+                            aria-label={`${variantLabel} ${index + 1}`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="video-result-subtitle-empty">{l('字幕文件中没有可展示的条目', 'No subtitle cues to display')}</div>
+                  )}
+                </section>
+              );
+            })}
           </div>
         </div>
       ) : null}
@@ -244,7 +328,10 @@ export default function VideoTranslationResultWorkspace(props: {
             <div><dt>{l('字幕样式', 'Subtitle style')}</dt><dd>{props.subtitleStyleLabel}</dd></div>
             <div><dt>{l('配音', 'Dubbing')}</dt><dd>{props.dubbing ? l('已开启', 'Enabled') : l('未开启', 'Disabled')}</dd></div>
             <div><dt>{l('输出内容', 'Output')}</dt><dd>{props.outputLabel}</dd></div>
-            <div><dt>{l('字幕文件', 'Subtitle file')}</dt><dd>{props.subtitleCues.length} {l('条字幕', 'subtitles')}</dd></div>
+            <div>
+              <dt>{l('字幕文件', 'Subtitle files')}</dt>
+              <dd>{props.subtitleOutputs.length} {l('个文件', 'files')} · {props.subtitleOutputs.reduce((total, output) => total + output.cues.length, 0)} {l('条字幕', 'subtitles')}</dd>
+            </div>
           </dl>
         </div>
       ) : null}
@@ -278,6 +365,28 @@ export default function VideoTranslationResultWorkspace(props: {
       ) : null}
     </section>
   );
+}
+
+function videoVariantFormatLabel(variant: VideoResultVariant, l: LocalizeCopy): string {
+  return ({
+    horizontal: l('横屏 16:9', 'Horizontal 16:9'),
+    vertical: l('竖屏 9:16', 'Vertical 9:16'),
+    dubbed: l('配音视频', 'Dubbed video')
+  } as const)[variant];
+}
+
+function videoVariantArtifactLabel(variant: VideoResultVariant, l: LocalizeCopy): string {
+  return ({
+    horizontal: l('横屏成片', 'Horizontal video'),
+    vertical: l('竖屏成片', 'Vertical video'),
+    dubbed: l('配音视频', 'Dubbed video')
+  } as const)[variant];
+}
+
+function subtitleVariantLabel(variant: SubtitleResultVariant, l: LocalizeCopy): string {
+  return variant === 'horizontal'
+    ? l('横屏字幕', 'Horizontal subtitles')
+    : l('竖屏字幕', 'Vertical subtitles');
 }
 
 function localizeResultTab(label: string, l: LocalizeCopy): string {

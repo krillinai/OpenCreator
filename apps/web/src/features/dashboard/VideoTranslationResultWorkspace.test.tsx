@@ -10,7 +10,15 @@ const baseProps = {
   subtitleStyleLabel: '系统默认 · 中 · #FFFFFF',
   dubbing: false,
   hasVoiceArtifact: false,
-  subtitleCues: [{ id: 1, start: '00:00:00,000', end: '00:00:01,000', text: '真实字幕' }],
+  videoOutputs: [],
+  subtitleOutputs: [{
+    artifactId: 'subtitle-horizontal-v1',
+    variant: 'horizontal' as const,
+    artifactVersion: 1,
+    fileName: 'horizontal.srt',
+    cues: [{ id: 1, start: '00:00:00,000', end: '00:00:01,000', text: '真实字幕' }],
+    readOnly: false
+  }],
   subtitleDirty: false,
   nextVersion: 2,
   affectedArtifacts: [],
@@ -39,7 +47,7 @@ describe('VideoTranslationResultWorkspace', () => {
 
     expect(screen.queryByRole('tab', { name: '成片' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '字幕' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('textbox', { name: '字幕 1' })).toHaveValue('真实字幕');
+    expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toHaveValue('真实字幕');
   });
 
   it('shows a registered video artifact instead of previewing the source URL', () => {
@@ -49,22 +57,113 @@ describe('VideoTranslationResultWorkspace', () => {
         {...baseProps}
         activeTab="video"
         hasVideoArtifact
-        videoSrc="blob:http://localhost/translated-video"
-        videoFileName="translated-horizontal.mp4"
+        videoOutputs={[{
+          artifactId: 'horizontal-video-v1',
+          variant: 'horizontal',
+          artifactVersion: 1,
+          fileName: 'translated-horizontal.mp4',
+          src: 'blob:http://localhost/translated-video'
+        }]}
         outputLabel="横屏视频 16:9"
         onExport={onExport}
       />
     );
 
     expect(screen.getByText('translated-horizontal.mp4')).toBeInTheDocument();
-    expect(screen.getByText('成片 V1 · 项目 V1')).toBeInTheDocument();
-    expect(screen.getByLabelText('翻译成片预览')).toHaveAttribute(
+    expect(screen.getByText('子项 V1 · 项目 V1')).toBeInTheDocument();
+    expect(screen.getByLabelText('横屏成片预览')).toHaveAttribute(
       'src',
       'blob:http://localhost/translated-video'
     );
     expect(screen.queryByTitle('YouTube 视频预览')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '下载成片' }));
-    expect(onExport).toHaveBeenCalledWith('video');
+    fireEvent.click(screen.getByRole('button', { name: '下载横屏成片' }));
+    expect(onExport).toHaveBeenCalledWith('video', 'horizontal-video-v1');
+  });
+
+  it('shows horizontal and vertical videos together in one project version', () => {
+    const onExport = vi.fn();
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="video"
+        version={5}
+        hasVideoArtifact
+        videoOutputs={[
+          {
+            artifactId: 'horizontal-video-v2',
+            variant: 'horizontal',
+            artifactVersion: 2,
+            fileName: 'translated-horizontal.mp4',
+            src: 'blob:http://localhost/translated-horizontal-video'
+          },
+          {
+            artifactId: 'vertical-video-v2',
+            variant: 'vertical',
+            artifactVersion: 2,
+            fileName: 'translated-vertical.mp4',
+            src: 'blob:http://localhost/translated-vertical-video'
+          }
+        ]}
+        onExport={onExport}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: '横屏成片' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '竖屏成片' })).toBeInTheDocument();
+    expect(screen.getByLabelText('横屏成片预览').parentElement).toHaveAttribute('data-ratio', '16:9');
+    expect(screen.getByLabelText('竖屏成片预览').parentElement).toHaveAttribute('data-ratio', '9:16');
+    expect(screen.queryByRole('radiogroup', { name: '成片画幅' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '下载横屏成片' }));
+    fireEvent.click(screen.getByRole('button', { name: '下载竖屏成片' }));
+    expect(onExport).toHaveBeenNthCalledWith(1, 'video', 'horizontal-video-v2');
+    expect(onExport).toHaveBeenNthCalledWith(2, 'video', 'vertical-video-v2');
+  });
+
+  it('shows editable horizontal and read-only vertical subtitles together', () => {
+    const onExport = vi.fn();
+    const onSubtitleChange = vi.fn();
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="subtitles"
+        version={5}
+        hasVideoArtifact={false}
+        subtitleOutputs={[
+          {
+            artifactId: 'horizontal-subtitle-v1',
+            variant: 'horizontal',
+            artifactVersion: 1,
+            fileName: 'target_language_srt.srt',
+            cues: [{ id: 1, start: '00:00:00,000', end: '00:00:01,000', text: '横屏字幕内容' }],
+            readOnly: false
+          },
+          {
+            artifactId: 'vertical-subtitle-v1',
+            variant: 'vertical',
+            artifactVersion: 1,
+            fileName: 'short_origin_mixed_srt.srt',
+            cues: [{ id: 1, start: '00:00:00,000', end: '00:00:01,000', text: '竖屏短字幕' }],
+            readOnly: true
+          }
+        ]}
+        onExport={onExport}
+        onSubtitleChange={onSubtitleChange}
+      />
+    );
+
+    const horizontal = screen.getByRole('textbox', { name: '横屏字幕 1' });
+    const vertical = screen.getByRole('textbox', { name: '竖屏字幕 1' });
+    expect(horizontal).not.toHaveAttribute('readonly');
+    expect(vertical).toHaveAttribute('readonly');
+    expect(vertical).toHaveValue('竖屏短字幕');
+    fireEvent.change(horizontal, { target: { value: '修改后的横屏字幕' } });
+    expect(onSubtitleChange).toHaveBeenCalledWith(1, '修改后的横屏字幕');
+
+    fireEvent.click(screen.getByRole('button', { name: '下载横屏字幕' }));
+    fireEvent.click(screen.getByRole('button', { name: '下载竖屏字幕' }));
+    expect(onExport).toHaveBeenNthCalledWith(1, 'subtitles', 'horizontal-subtitle-v1');
+    expect(onExport).toHaveBeenNthCalledWith(2, 'subtitles', 'vertical-subtitle-v1');
   });
 
   it('switches result tabs and selects a project version from history', () => {

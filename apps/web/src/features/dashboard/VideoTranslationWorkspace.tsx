@@ -30,6 +30,10 @@ import VideoSourceInput from './VideoSourceInput.js';
 import VideoSourcePreview from './VideoSourcePreview.js';
 import VideoTranslationResultWorkspace, {
   type SubtitleCue,
+  type SubtitleResultOutput,
+  type SubtitleResultVariant,
+  type VideoResultOutput,
+  type VideoResultVariant,
   type VideoTranslationResultTab
 } from './VideoTranslationResultWorkspace.js';
 import { useOptionalCreatorSession } from './creator-session-store.js';
@@ -348,6 +352,66 @@ function readStringArray(value: CreatorJson | undefined): string[] {
 }
 
 const videoArtifactKinds = ['horizontal_video', 'vertical_video', 'dubbed_video'] as const;
+const videoResultVariantOrder = ['horizontal', 'vertical', 'dubbed'] as const satisfies readonly VideoResultVariant[];
+const videoArtifactKindByVariant: Record<VideoResultVariant, typeof videoArtifactKinds[number]> = {
+  horizontal: 'horizontal_video',
+  vertical: 'vertical_video',
+  dubbed: 'dubbed_video'
+};
+
+export function videoArtifactsForResultVersion(
+  artifacts: CreatorArtifact[],
+  resultVersion: number,
+  resultSnapshots?: CreatorJson
+): Partial<Record<VideoResultVariant, CreatorArtifact>> {
+  return Object.fromEntries(videoResultVariantOrder.flatMap(variant => {
+    const artifact = latestArtifactForResultVersion(
+      artifacts,
+      resultVersion,
+      [videoArtifactKindByVariant[variant]],
+      resultSnapshots
+    );
+    return artifact === undefined ? [] : [[variant, artifact]];
+  })) as Partial<Record<VideoResultVariant, CreatorArtifact>>;
+}
+
+const subtitleResultVariantOrder = ['horizontal', 'vertical'] as const satisfies readonly SubtitleResultVariant[];
+const subtitleArtifactKindByVariant: Record<SubtitleResultVariant, 'target_subtitle' | 'vertical_subtitle'> = {
+  horizontal: 'target_subtitle',
+  vertical: 'vertical_subtitle'
+};
+
+export function subtitleArtifactsForResultVersion(
+  artifacts: CreatorArtifact[],
+  resultVersion: number,
+  resultSnapshots?: CreatorJson
+): Partial<Record<SubtitleResultVariant, CreatorArtifact>> {
+  return Object.fromEntries(subtitleResultVariantOrder.flatMap(variant => {
+    const artifact = latestArtifactForResultVersion(
+      artifacts,
+      resultVersion,
+      [subtitleArtifactKindByVariant[variant]],
+      resultSnapshots
+    );
+    return artifact === undefined ? [] : [[variant, artifact]];
+  })) as Partial<Record<SubtitleResultVariant, CreatorArtifact>>;
+}
+
+export function subtitleCuesFromArtifact(artifact: CreatorArtifact | undefined): SubtitleCue[] {
+  const cues = artifact?.metadata.cues;
+  if (!Array.isArray(cues)) return [];
+  return cues.flatMap(cue => {
+    if (cue === null || Array.isArray(cue) || typeof cue !== 'object') return [];
+    const record = cue as Record<string, CreatorJson>;
+    if (
+      typeof record.id !== 'number'
+      || typeof record.start !== 'string'
+      || typeof record.end !== 'string'
+      || typeof record.text !== 'string'
+    ) return [];
+    return [{ id: record.id, start: record.start, end: record.end, text: record.text }];
+  });
+}
 
 export function resultVersionsFromArtifacts(
   artifacts: CreatorArtifact[],
@@ -972,72 +1036,112 @@ export default function VideoTranslationWorkspace(props: {
   ], [bilingual, dubbing, l, outputLabel, sourceLanguage, subtitlePosition, subtitleStyleLabel, targetLanguage, voiceCode]);
   const targetLanguageLabel = languageLabel(targetLanguages, targetLanguage);
   const selectedResult = resultVersions.find(version => version.value === resultVersion);
+  const selectedResultSettings = selectedResult?.settings;
   const jobArtifacts = creatorSession?.job.artifacts ?? [];
-  const selectedVideoArtifact = latestArtifactForResultVersion(
+  const selectedVideoArtifacts = videoArtifactsForResultVersion(
     jobArtifacts,
     resultVersion,
-    videoArtifactKinds,
     creatorSession?.state.resultSnapshots
   );
+  const finalVideoEntries = (['horizontal', 'vertical'] as const).flatMap(variant => {
+    const artifact = selectedVideoArtifacts[variant];
+    return artifact === undefined ? [] : [{ variant, artifact }];
+  });
+  const selectedVideoEntries = finalVideoEntries.length > 0
+    ? finalVideoEntries
+    : selectedVideoArtifacts.dubbed === undefined
+      ? []
+      : [{ variant: 'dubbed' as const, artifact: selectedVideoArtifacts.dubbed }];
   const selectedVoiceArtifact = latestArtifactForResultVersion(
     jobArtifacts,
     resultVersion,
     ['dubbed_audio'],
     creatorSession?.state.resultSnapshots
   );
-  const selectedSubtitleArtifact = latestArtifactForResultVersion(
+  const selectedSubtitleArtifacts = subtitleArtifactsForResultVersion(
     jobArtifacts,
     resultVersion,
-    ['target_subtitle'],
     creatorSession?.state.resultSnapshots
   );
-  const hasVideoArtifact = selectedVideoArtifact !== undefined;
+  const selectedSubtitleArtifact = selectedSubtitleArtifacts.horizontal;
+  const hasVideoArtifact = selectedVideoEntries.length > 0;
   const hasVoiceArtifact = selectedVoiceArtifact !== undefined;
-  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string>();
-  const [videoPreviewLoading, setVideoPreviewLoading] = useState(false);
-  const [videoPreviewError, setVideoPreviewError] = useState<string>();
+  const [videoPreviews, setVideoPreviews] = useState<Record<string, {
+    src?: string;
+    loading: boolean;
+    error?: string;
+  }>>({});
   const openArtifact = creatorSession?.openArtifact;
+  const selectedVideoArtifactIds = selectedVideoEntries.map(({ artifact }) => artifact.id).join('|');
   useEffect(() => {
-    const artifactId = selectedVideoArtifact?.id;
-    if (artifactId === undefined || openArtifact === undefined) {
-      setVideoPreviewUrl(undefined);
-      setVideoPreviewLoading(false);
-      setVideoPreviewError(undefined);
+    const entries = selectedVideoEntries;
+    if (entries.length === 0 || openArtifact === undefined) {
+      setVideoPreviews({});
       return;
     }
     let canceled = false;
-    let objectUrl: string | undefined;
-    setVideoPreviewUrl(undefined);
-    setVideoPreviewLoading(true);
-    setVideoPreviewError(undefined);
-    void openArtifact(artifactId)
-      .then(response => {
-        if (!response.ok) throw new Error(`Creator artifact HTTP ${response.status}`);
-        return response.blob();
-      })
-      .then(blob => {
-        objectUrl = URL.createObjectURL(blob);
-        if (canceled) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = undefined;
-          return;
-        }
-        setVideoPreviewUrl(objectUrl);
-        setVideoPreviewLoading(false);
-      })
-      .catch(cause => {
-        if (canceled) return;
-        setVideoPreviewLoading(false);
-        setVideoPreviewError(creatorErrorMessage(cause, l));
-      });
+    const objectUrls: string[] = [];
+    setVideoPreviews(Object.fromEntries(entries.map(({ artifact }) => [
+      artifact.id,
+      { loading: true }
+    ])));
+    for (const { artifact } of entries) {
+      void openArtifact(artifact.id)
+        .then(response => {
+          if (!response.ok) throw new Error(`Creator artifact HTTP ${response.status}`);
+          return response.blob();
+        })
+        .then(blob => {
+          const objectUrl = URL.createObjectURL(blob);
+          if (canceled) {
+            URL.revokeObjectURL(objectUrl);
+            return;
+          }
+          objectUrls.push(objectUrl);
+          setVideoPreviews(current => ({
+            ...current,
+            [artifact.id]: { src: objectUrl, loading: false }
+          }));
+        })
+        .catch(cause => {
+          if (canceled) return;
+          setVideoPreviews(current => ({
+            ...current,
+            [artifact.id]: { loading: false, error: creatorErrorMessage(cause, l) }
+          }));
+        });
+    }
     return () => {
       canceled = true;
-      if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
+      for (const objectUrl of objectUrls) URL.revokeObjectURL(objectUrl);
     };
-  }, [l, openArtifact, selectedVideoArtifact?.id]);
+  }, [l, openArtifact, selectedVideoArtifactIds]);
   const selectedResultSource = selectedResult?.source;
-  const selectedResultSettings = selectedResult?.settings;
   const selectedSubtitleCues = selectedResult?.subtitleCues ?? [];
+  const videoOutputs: VideoResultOutput[] = selectedVideoEntries.map(({ variant, artifact }) => {
+    const preview = videoPreviews[artifact.id];
+    return {
+      artifactId: artifact.id,
+      variant,
+      artifactVersion: artifact.version,
+      fileName: artifactFileName(artifact),
+      src: preview?.src,
+      previewLoading: preview?.loading ?? openArtifact !== undefined,
+      previewError: preview?.error
+    };
+  });
+  const subtitleOutputs: SubtitleResultOutput[] = subtitleResultVariantOrder.flatMap(variant => {
+    const artifact = selectedSubtitleArtifacts[variant];
+    if (artifact === undefined) return [];
+    return [{
+      artifactId: artifact.id,
+      variant,
+      artifactVersion: artifact.version,
+      fileName: artifactFileName(artifact),
+      cues: variant === 'horizontal' ? selectedSubtitleCues : subtitleCuesFromArtifact(artifact),
+      readOnly: variant === 'vertical'
+    }];
+  });
   const selectedTargetLanguageLabel = selectedResultSettings
     ? languageLabel(targetLanguages, selectedResultSettings.targetLanguage)
     : targetLanguageLabel;
@@ -1064,8 +1168,24 @@ export default function VideoTranslationWorkspace(props: {
       )
     : '');
   const nextVersion = resultVersions.reduce((highest, version) => Math.max(highest, version.value), 0) + 1;
+  const selectedVideoContextLabel = videoOutputs.length > 1
+    ? l('横屏与竖屏成片', 'Horizontal and vertical videos')
+    : videoOutputs[0]?.variant === 'vertical'
+      ? l('竖屏成片', 'Vertical video')
+      : videoOutputs[0]?.variant === 'horizontal'
+        ? l('横屏成片', 'Horizontal video')
+        : l('配音视频', 'Dubbed video');
+  const selectedSubtitleContextLabel = subtitleOutputs.length > 1
+    ? l('横屏与竖屏字幕', 'Horizontal and vertical subtitles')
+    : subtitleOutputs[0]?.variant === 'vertical'
+      ? l('竖屏字幕', 'Vertical subtitles')
+      : l('横屏字幕', 'Horizontal subtitles');
   const agentContextSummary = workspacePhase === 'result'
-    ? `${({ video: l('成片', 'Final video'), subtitles: l('字幕', 'Subtitles'), voice: l('配音', 'Dubbing'), settings: l('任务设置', 'Task settings') } as const)[resultTab]} V${resultVersion}`
+    ? `${resultTab === 'video'
+      ? selectedVideoContextLabel
+      : resultTab === 'subtitles'
+        ? selectedSubtitleContextLabel
+        : ({ voice: l('配音', 'Dubbing'), settings: l('任务设置', 'Task settings') } as const)[resultTab]} V${resultVersion}`
     : currentStep === 0
       ? sourceName
       : currentStep === 1
@@ -1245,19 +1365,22 @@ export default function VideoTranslationWorkspace(props: {
     }
   }
 
-  async function exportResult(type: 'video' | 'subtitles' | 'voice') {
+  async function exportResult(type: 'video' | 'subtitles' | 'voice', artifactId?: string) {
     if (creatorSession !== null) {
-      const artifact = type === 'video'
-        ? selectedVideoArtifact
-        : type === 'voice'
-          ? selectedVoiceArtifact
-          : selectedSubtitleArtifact;
+      const artifact = artifactId === undefined
+        ? type === 'video'
+          ? selectedVideoEntries[0]?.artifact
+          : type === 'voice'
+            ? selectedVoiceArtifact
+            : selectedSubtitleArtifact
+        : jobArtifacts.find(candidate => candidate.id === artifactId && candidate.status === 'completed');
       if (artifact === undefined) {
         setResultNotice(l('当前版本没有对应的真实产物。', 'This version has no matching generated artifact.'));
         return;
       }
       try {
         const response = await creatorSession.openArtifact(artifact.id);
+        if (!response.ok) throw new Error(`Creator artifact HTTP ${response.status}`);
         const url = URL.createObjectURL(await response.blob());
         const link = document.createElement('a');
         link.href = url;
@@ -1469,15 +1592,10 @@ export default function VideoTranslationWorkspace(props: {
               dubbing={selectedResultSettings?.dubbing ?? false}
               hasVideoArtifact={hasVideoArtifact}
               hasVoiceArtifact={hasVoiceArtifact}
-              videoSrc={videoPreviewUrl}
-              videoPreviewLoading={videoPreviewLoading}
-              videoPreviewError={videoPreviewError}
-              videoFileName={artifactFileName(selectedVideoArtifact)}
+              videoOutputs={videoOutputs}
+              subtitleOutputs={subtitleOutputs}
               voiceFileName={artifactFileName(selectedVoiceArtifact)}
-              videoArtifactVersion={selectedVideoArtifact?.version}
               voiceArtifactVersion={selectedVoiceArtifact?.version}
-              subtitleArtifactVersion={selectedSubtitleArtifact?.version}
-              subtitleCues={selectedSubtitleCues}
               subtitleDirty={subtitleDirty}
               nextVersion={nextVersion}
               affectedArtifacts={regenerationArtifacts}

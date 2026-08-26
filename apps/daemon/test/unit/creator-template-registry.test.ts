@@ -33,6 +33,19 @@ describe('creator template registry', () => {
     }
   });
 
+  it('passes the dedicated short subtitle into vertical rendering when available', () => {
+    const template = createVideoTranslationTemplate();
+    expect(template.stages.find(stage => stage.id === 'subtitle')?.outputArtifacts).toContainEqual({
+      kind: 'vertical_subtitle',
+      status: 'completed'
+    });
+    expect(template.stages.find(stage => stage.id === 'render-vertical')?.inputArtifacts).toContainEqual({
+      kind: 'vertical_subtitle',
+      selector: 'latest-completed',
+      optional: true
+    });
+  });
+
   it('rejects duplicate template versions and cyclic stage graphs', () => {
     const template = createVideoTranslationTemplate();
     expect(() => createCreatorTemplateRegistry([template, template])).toThrow(

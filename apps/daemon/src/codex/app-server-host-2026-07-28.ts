@@ -428,7 +428,7 @@ export function createCodexAppServerHost(
           ? {
               cwd: job.input.cwd,
               model: job.input.model ?? null,
-              sandbox: job.input.sandbox,
+              permissions: permissionProfile(job.input.sandbox),
               approvalPolicy: approvalPolicy(job.input.sandbox),
               approvalsReviewer: 'user',
               serviceName: 'clawee-agent',
@@ -438,7 +438,7 @@ export function createCodexAppServerHost(
               threadId: job.input.codexThreadId,
               cwd: job.input.cwd,
               model: job.input.model ?? null,
-              sandbox: job.input.sandbox,
+              permissions: permissionProfile(job.input.sandbox),
               approvalPolicy: approvalPolicy(job.input.sandbox),
               approvalsReviewer: 'user',
               excludeTurns: true,
@@ -499,6 +499,7 @@ export function createCodexAppServerHost(
         cwd: job.input.cwd,
         model: job.input.model ?? null,
         effort: normalizeReasoning(job.input.reasoning),
+        permissions: permissionProfile(job.input.sandbox),
         approvalPolicy: approvalPolicy(job.input.sandbox),
         approvalsReviewer: 'user'
       }, job.generation, () => {
@@ -1027,6 +1028,12 @@ function messageBelongsToJob(
 
 function approvalPolicy(sandbox: SandboxMode): 'never' | 'on-request' {
   return sandbox === 'danger-full-access' ? 'never' : 'on-request';
+}
+
+function permissionProfile(sandbox: SandboxMode): string {
+  if (sandbox === 'read-only') return ':read-only';
+  if (sandbox === 'danger-full-access') return ':danger-full-access';
+  return ':workspace';
 }
 
 function approvalResponse(

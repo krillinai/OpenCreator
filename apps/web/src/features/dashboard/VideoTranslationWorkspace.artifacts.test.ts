@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { CreatorArtifact } from '@opencreator/protocol';
 import {
   latestArtifactForResultVersion,
-  resultVersionsFromArtifacts
+  resultVersionsFromArtifacts,
+  subtitleArtifactsForResultVersion,
+  subtitleCuesFromArtifact,
+  videoArtifactsForResultVersion
 } from './VideoTranslationWorkspace.js';
 
 describe('video translation result artifact selection', () => {
@@ -141,6 +144,70 @@ describe('video translation result artifact selection', () => {
       ['target_subtitle'],
       state.resultSnapshots
     )?.id).toBe(subtitle.id);
+  });
+
+  it('selects horizontal and vertical videos from the same project snapshot', () => {
+    const horizontal = artifact({
+      id: 'horizontal-v2',
+      kind: 'horizontal_video',
+      version: 2
+    });
+    const vertical = artifact({
+      id: 'vertical-v2',
+      kind: 'vertical_video',
+      version: 2
+    });
+    const resultSnapshots = [snapshot(5, {
+      horizontal_video: [horizontal.id],
+      vertical_video: [vertical.id]
+    }, [vertical.id])];
+
+    const variants = videoArtifactsForResultVersion(
+      [horizontal, vertical],
+      5,
+      resultSnapshots
+    );
+
+    expect(variants.horizontal?.id).toBe(horizontal.id);
+    expect(variants.vertical?.id).toBe(vertical.id);
+  });
+
+  it('selects horizontal and vertical subtitle artifacts from one project snapshot', () => {
+    const horizontal = artifact({
+      id: 'horizontal-subtitle-v1',
+      kind: 'target_subtitle',
+      version: 1,
+      metadata: {
+        cues: [{ id: 1, start: '00:00:00,000', end: '00:00:01,000', text: '横屏字幕' }]
+      }
+    });
+    const vertical = artifact({
+      id: 'vertical-subtitle-v1',
+      kind: 'vertical_subtitle',
+      version: 1,
+      metadata: {
+        cues: [{ id: 1, start: '00:00:00,000', end: '00:00:01,000', text: '竖屏短字幕' }]
+      }
+    });
+    const resultSnapshots = [snapshot(5, {
+      target_subtitle: [horizontal.id],
+      vertical_subtitle: [vertical.id]
+    }, [horizontal.id, vertical.id])];
+
+    const variants = subtitleArtifactsForResultVersion(
+      [horizontal, vertical],
+      5,
+      resultSnapshots
+    );
+
+    expect(variants.horizontal?.id).toBe(horizontal.id);
+    expect(variants.vertical?.id).toBe(vertical.id);
+    expect(subtitleCuesFromArtifact(variants.vertical)).toEqual([{
+      id: 1,
+      start: '00:00:00,000',
+      end: '00:00:01,000',
+      text: '竖屏短字幕'
+    }]);
   });
 });
 

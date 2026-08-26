@@ -268,7 +268,9 @@ async function validateResultArtifacts(input: {
       bytes: artifact.size ?? null
     };
     if (artifact.kind.includes('subtitle')) {
-      const cues = await validateSrtFile(path);
+      const cues = await validateSrtFile(path, {
+        allowOverlaps: artifact.kind === 'vertical_subtitle'
+      });
       metadata = {
         ...metadata,
         cueCount: cues.length,
@@ -339,7 +341,13 @@ function executablePath(resourceRoot: string, pattern: RegExp): string {
 }
 
 function expectedOutputKinds(stageId: string): Set<string> {
-  if (stageId === 'subtitle') return new Set(['source_video', 'source_subtitle', 'target_subtitle', 'bilingual_subtitle']);
+  if (stageId === 'subtitle') return new Set([
+    'source_video',
+    'source_subtitle',
+    'target_subtitle',
+    'bilingual_subtitle',
+    'vertical_subtitle'
+  ]);
   if (stageId === 'tts') return new Set(['dubbed_audio', 'dubbed_video']);
   if (stageId === 'render-horizontal') return new Set(['horizontal_video']);
   if (stageId === 'render-vertical') return new Set(['vertical_video']);
@@ -347,7 +355,9 @@ function expectedOutputKinds(stageId: string): Set<string> {
 }
 
 function requiredOutputKinds(stageId: string): string[] {
-  if (stageId === 'subtitle') return ['source_video', 'source_subtitle', 'target_subtitle'];
+  if (stageId === 'subtitle') {
+    return ['source_video', 'source_subtitle', 'target_subtitle', 'vertical_subtitle'];
+  }
   if (stageId === 'tts') return ['dubbed_audio'];
   if (stageId === 'render-horizontal') return ['horizontal_video'];
   if (stageId === 'render-vertical') return ['vertical_video'];

@@ -22,6 +22,7 @@ const snapshotStateExcludedKeys = new Set([
 
 const legacyResultArtifactKinds = new Set([
   'target_subtitle',
+  'vertical_subtitle',
   'dubbed_audio',
   'dubbed_video',
   'horizontal_video',

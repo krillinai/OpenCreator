@@ -6993,18 +6993,74 @@
   gap: 5px;
 }
 
-.video-result-video-output {
+.video-result-video-grid,
+.video-result-subtitle-grid {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  align-items: start;
+  gap: 20px;
+}
+
+.video-result-output-column {
+  min-width: 0;
+  display: grid;
+  align-content: start;
   gap: 12px;
+}
+
+.video-result-output-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.video-result-output-heading > div {
+  min-width: 0;
+}
+
+.video-result-output-heading h3,
+.video-result-output-heading small {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.video-result-output-heading h3 {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.video-result-output-heading small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.video-result-player-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #050607;
+}
+
+.video-result-player-frame[data-ratio="9:16"] {
+  width: min(230px, 100%);
+  height: auto;
+  aspect-ratio: 9 / 16;
+  justify-self: center;
 }
 
 .video-result-player,
 .video-result-player-status {
   width: 100%;
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #050607;
+  height: 100%;
 }
 
 .video-result-player {
@@ -7017,6 +7073,52 @@
   place-items: center;
   padding: 20px;
   box-sizing: border-box;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.video-result-subtitle-grid .video-subtitle-editor {
+  max-height: 480px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.video-result-subtitle-grid .video-subtitle-editor label {
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 4px 9px;
+}
+
+.video-result-subtitle-grid .video-subtitle-editor label > span {
+  grid-row: 1 / 3;
+}
+
+.video-result-subtitle-grid .video-subtitle-editor label > small {
+  grid-column: 2;
+}
+
+.video-result-subtitle-grid .video-subtitle-editor textarea {
+  grid-column: 2;
+}
+
+.video-result-subtitle-grid .video-subtitle-editor textarea[readonly],
+.video-result-subtitle-grid .video-subtitle-editor textarea[readonly]:hover,
+.video-result-subtitle-grid .video-subtitle-editor textarea[readonly]:focus {
+  resize: none;
+  border-color: transparent;
+  background: var(--surface-2);
+  color: var(--muted);
+  box-shadow: none;
+  cursor: default;
+}
+
+.video-result-subtitle-empty {
+  min-height: 96px;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
   color: var(--muted);
   font-size: 12px;
   text-align: center;

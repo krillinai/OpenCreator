@@ -43,7 +43,8 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
           { kind: 'source_video', status: 'completed' },
           { kind: 'source_subtitle', status: 'completed' },
           { kind: 'target_subtitle', status: 'completed' },
-          { kind: 'bilingual_subtitle', status: 'completed' }
+          { kind: 'bilingual_subtitle', status: 'completed' },
+          { kind: 'vertical_subtitle', status: 'completed' }
         ]
       },
       {
@@ -83,6 +84,7 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
         allowedJobStatuses: ['draft', 'running', 'needs_input', 'failed'],
         inputArtifacts: [
           { kind: 'source_video', selector: 'latest-completed' },
+          { kind: 'vertical_subtitle', selector: 'latest-completed', optional: true },
           { kind: 'target_subtitle', selector: 'latest-completed' },
           { kind: 'bilingual_subtitle', selector: 'latest-completed', optional: true },
           { kind: 'dubbed_audio', selector: 'latest-completed', optional: true }

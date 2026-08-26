@@ -93,22 +93,69 @@ describe('persistent app-server executor', () => {
           cwd: join(tempDir, 'project-a'),
           model: 'model-a',
           effort: 'low',
+          permissions: ':read-only',
           approvalPolicy: 'on-request'
         }),
         expect.objectContaining({
           cwd: join(tempDir, 'project-b'),
           model: 'model-b',
           effort: 'high',
+          permissions: ':danger-full-access',
           approvalPolicy: 'never'
         }),
         expect.objectContaining({
-          cwd: join(tempDir, 'project-c')
+          cwd: join(tempDir, 'project-c'),
+          permissions: ':workspace',
+          approvalPolicy: 'on-request'
         })
       ]);
     expect(fixture.injection.activate).toHaveBeenCalledTimes(3);
     expect(fixture.injection.deactivate).toHaveBeenCalledWith('run-1');
     expect(fixture.injection.deactivate).toHaveBeenCalledWith('run-2');
     expect(fixture.injection.deactivate).toHaveBeenCalledWith('run-3');
+  });
+
+  it('applies a changed permission profile to the next turn of a resumed thread', async () => {
+    const fixture = createFixture();
+    const first = fixture.executor.start(runInput({
+      runId: 'run-before-permission-change',
+      sandbox: 'workspace-write'
+    }));
+    const firstResult = await first.result;
+
+    const second = fixture.executor.start(runInput({
+      runId: 'run-after-permission-change',
+      codexThreadId: firstResult.threadId,
+      sandbox: 'danger-full-access'
+    }));
+    await second.result;
+
+    const messages = fixture.readMessages();
+    const threadStart = messages.find(item => item.method === 'thread/start');
+    const threadResume = messages.find(item => item.method === 'thread/resume');
+    const turnStarts = messages.filter(item => item.method === 'turn/start');
+
+    expect(threadStart?.params).toEqual(expect.objectContaining({
+      permissions: ':workspace',
+      approvalPolicy: 'on-request'
+    }));
+    expect(threadResume?.params).toEqual(expect.objectContaining({
+      threadId: firstResult.threadId,
+      permissions: ':danger-full-access',
+      approvalPolicy: 'never'
+    }));
+    expect(turnStarts.map(item => item.params)).toEqual([
+      expect.objectContaining({
+        permissions: ':workspace',
+        approvalPolicy: 'on-request'
+      }),
+      expect.objectContaining({
+        permissions: ':danger-full-access',
+        approvalPolicy: 'never'
+      })
+    ]);
+    expect(threadStart?.params).not.toHaveProperty('sandbox');
+    expect(threadResume?.params).not.toHaveProperty('sandbox');
   });
 
   it('restarts once for every normalized profile change', async () => {
