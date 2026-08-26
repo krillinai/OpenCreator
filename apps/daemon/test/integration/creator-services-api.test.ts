@@ -11,6 +11,7 @@ describe('creator services API', () => {
   beforeEach(async () => {
     const initial = createDefaultCreatorServicesConfig();
     initial.llm.apiKey = 'initial-secret';
+    initial.llm.source = 'custom';
     store = {
       read: vi.fn(async () => initial),
       write: vi.fn(async config => config),
@@ -24,7 +25,7 @@ describe('creator services API', () => {
     await server.close();
   });
 
-  it('reads, validates, saves, and resets without replacing the shared text model', async () => {
+  it('reads, validates, saves, and resets the independent text model', async () => {
     const read = await server.inject({ method: 'GET', url: '/creator-services/config' });
     expect(read.statusCode).toBe(200);
     expect(read.body).not.toContain('initial-secret');
@@ -42,15 +43,16 @@ describe('creator services API', () => {
     expect(saved.statusCode).toBe(200);
     expect(saved.body).not.toContain('sk-local');
     expect(store.write).toHaveBeenCalledWith(expect.objectContaining({
-      llm: expect.objectContaining({ apiKey: 'initial-secret' })
+      llm: expect.objectContaining({
+        apiKey: 'sk-local',
+        source: 'custom'
+      })
     }));
 
     const reset = await server.inject({ method: 'DELETE', url: '/creator-services/config' });
     expect(reset.statusCode).toBe(200);
     expect(store.reset).toHaveBeenCalledTimes(1);
-    expect(store.write).toHaveBeenLastCalledWith(expect.objectContaining({
-      llm: expect.objectContaining({ apiKey: 'initial-secret' })
-    }));
+    expect(reset.json().config.llm.source).toBe('codex');
   });
 
   it('retains configured credentials when a settings form submits blank secret fields', async () => {

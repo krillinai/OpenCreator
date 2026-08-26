@@ -75,6 +75,11 @@ import {
 } from '../codex/app-server-runtime-manager.js';
 import { createCodexRuntimeReadiness } from '../codex/runtime-readiness.js';
 import { createCodexProviderConfigService } from '../codex/provider-config.js';
+import {
+  createSystemCodexProviderCredentialStore,
+  readCodexProviderApiKey,
+  type CodexProviderCredentialStore
+} from '../codex/provider-credential-store.js';
 import { resolveCodexHome } from '../codex/home.js';
 import { isEnterpriseKnowledgeThread } from '../threads/types.js';
 import {
@@ -103,8 +108,8 @@ import {
 import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
 import {
+  createCreatorServicesConfigStoreWithTextModelFallback,
   createSystemCreatorServicesConfigStore,
-  syncSharedTextModelConfig,
   type CreatorServicesConfigStore
 } from '../creator-services/config-store.js';
 import {
@@ -245,6 +250,7 @@ export type BuildServerInput = {
   getCodexAvailabilityProbe?(): CodexAvailabilityProbe | undefined;
   memoryHistoryReader?(threadId: string): { items: import('@opencreator/protocol').ThreadHistoryItem[] } | undefined;
   creatorServicesConfigStore?: CreatorServicesConfigStore;
+  codexProviderCredentialStore?: CodexProviderCredentialStore;
   creatorService?: CreatorService;
   creatorAgentRuntime?: AgentRuntimeAdapter;
   allowedWebOrigins?: string[];
@@ -461,8 +467,20 @@ export async function buildServer(input: BuildServerInput) {
     }
   });
   const memoryService = createMemoryService({ db });
-  const creatorServicesConfigStore =
+  const storedCreatorServicesConfigStore =
     input.creatorServicesConfigStore ?? createSystemCreatorServicesConfigStore();
+  const codexProviderCredentialStore =
+    input.codexProviderCredentialStore ?? createSystemCodexProviderCredentialStore();
+  const resolveCodexProviderApiKey = async (provider: {
+    baseUrl: string;
+    model: string;
+  }): Promise<string | undefined> => readCodexProviderApiKey({
+    store: codexProviderCredentialStore,
+    provider,
+    async readLegacy() {
+      return (await storedCreatorServicesConfigStore.read()).llm;
+    }
+  });
   const creatorEvents = createCreatorEventHub();
   const creatorRepository = createCreatorRepository(db);
   const creatorAgentRepository = createCreatorAgentRepository(db);
@@ -518,12 +536,13 @@ export async function buildServer(input: BuildServerInput) {
   const codexProviderConfig = createCodexProviderConfigService({
     client: codexControlClient,
     readiness: codexRuntimeReadiness,
-    async readSharedApiKey() {
-      const apiKey = (await creatorServicesConfigStore.read()).llm.apiKey.trim();
-      return apiKey.length === 0 ? undefined : apiKey;
+    async readStoredApiKey(provider) {
+      return resolveCodexProviderApiKey(provider);
     },
     async onProviderUpdated(provider) {
-      await syncSharedTextModelConfig(creatorServicesConfigStore, provider);
+      if (provider.apiKey !== undefined) {
+        await codexProviderCredentialStore.writeApiKey(provider.apiKey);
+      }
     },
     async onConfigurationChanged() {
       await Promise.all([
@@ -533,6 +552,21 @@ export async function buildServer(input: BuildServerInput) {
       ]);
     }
   });
+  const creatorServicesConfigStore =
+    createCreatorServicesConfigStoreWithTextModelFallback(
+      storedCreatorServicesConfigStore,
+      {
+        async read() {
+          const provider = await codexProviderConfig.read();
+          const apiKey = await resolveCodexProviderApiKey(provider);
+          return {
+            baseUrl: provider.baseUrl,
+            model: provider.model,
+            ...(apiKey === undefined ? {} : { apiKey })
+          };
+        }
+      }
+    );
   const creatorRuntimeRoot = process.env.OPENCREATOR_CREATOR_RUNTIME_ROOT
     ?? join(dataDir, 'creator-runtime', 'krillinai');
   const creatorJobsRoot = join(dataDir, 'creator', 'jobs');

@@ -327,7 +327,10 @@ async function setupServer(options: {
 } = {}): Promise<void> {
   tempDir = mkdtempSync(join(tmpdir(), 'creator-api-'));
   const config = createDefaultCreatorServicesConfig();
-  if (options.llmConfigured !== false) config.llm.apiKey = 'test-llm-key';
+  if (options.llmConfigured !== false) {
+    config.llm.apiKey = 'test-llm-key';
+    config.llm.source = 'custom';
+  }
   server = await buildServer({
     token: 'secret',
     dataDir: tempDir,
@@ -337,6 +340,10 @@ async function setupServer(options: {
       async read() { return structuredClone(config); },
       async write(next) { return structuredClone(next); },
       async reset() { return structuredClone(config); }
+    },
+    codexProviderCredentialStore: {
+      async readApiKey() { return undefined; },
+      async writeApiKey() {}
     }
   });
 }

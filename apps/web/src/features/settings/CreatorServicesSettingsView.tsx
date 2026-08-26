@@ -116,8 +116,8 @@ export function CreatorServicesSettingsView(props: {
     const confirmed = await confirm({
       title: l('恢复默认配置', 'Restore default settings'),
       description: l(
-        '这会清除语音、图像和视频服务的 Key 与设置；文本模型继续使用 Codex Agent 配置。',
-        'This clears voice, image, and video keys and settings. The text model continues to use the Codex Agent configuration.'
+        '这会清除已保存的 AI 服务 Key 与设置；文本模型将重新使用 Codex Agent 配置。',
+        'This clears saved AI service keys and settings. The text model will use the Codex Agent configuration again.'
       ),
       confirmLabel: l('恢复默认', 'Restore defaults'),
       destructive: true
@@ -248,31 +248,24 @@ function TextModelSettings(props: SettingsGroupProps) {
       <SettingsFieldset
         title={l('文本模型', 'Text model')}
         description={l(
-          '用于翻译、脚本处理和其他文本任务，默认使用 Codex Agent 的模型服务配置。',
-          'Used for translation, script processing, and other text tasks through the Codex Agent model provider.'
+          '用于翻译、脚本处理和其他文本任务，支持 OpenAI API 兼容服务。',
+          'Used for translation, script processing, and other text tasks through OpenAI-compatible services.'
         )}
       >
-        <ReadonlyModelField
-          label="Base URL"
-          value={props.config.llm.baseUrl || 'https://api.openai.com/v1'}
-          wide
+        <OpenAiFields
+          id="llm"
+          credential="llm.apiKey"
+          configuredCredentials={props.configuredCredentials}
+          value={props.config.llm}
+          modelPlaceholder="gpt-4o-mini"
+          onChange={value => props.update(config => {
+            config.llm = {
+              ...config.llm,
+              ...value,
+              source: 'custom'
+            };
+          })}
         />
-        <ReadonlyModelField
-          label="API Key"
-          value={props.configuredCredentials.has('llm.apiKey')
-            ? l('已配置', 'Configured')
-            : l('未配置', 'Not configured')}
-        />
-        <ReadonlyModelField
-          label={l('模型', 'Model')}
-          value={props.config.llm.model}
-        />
-        <p className="creator-services-inline-note">
-          {l(
-            'Base URL、Model 和 API Key 请在“Codex Agent”中修改，保存后会自动同步到这里。',
-            'Change Base URL, Model, and API Key under Codex Agent. Saved values are synchronized here automatically.'
-          )}
-        </p>
         <ToggleField
           label={l('JSON 输出模式', 'JSON response mode')}
           description={l('仅在当前模型明确支持 JSON 格式时开启。', 'Enable only when the selected model explicitly supports JSON responses.')}
@@ -829,9 +822,9 @@ function SelectField(props: {
   );
 }
 
-function ReadonlyModelField(props: { label: string; value: string; wide?: boolean }) {
+function ReadonlyModelField(props: { label: string; value: string }) {
   return (
-    <div className={props.wide ? 'creator-services-field is-wide' : 'creator-services-field'}>
+    <div className="creator-services-field">
       <span>{props.label}</span>
       <output>{props.value}</output>
     </div>

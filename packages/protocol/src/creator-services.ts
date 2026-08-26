@@ -27,6 +27,7 @@ export type CreatorServicesConfig = {
   proxy: string;
   llm: OpenAiCompatibleConfig & {
     jsonMode: boolean;
+    source: 'codex' | 'custom';
   };
   transcription: {
     provider: 'openai' | 'faster-whisper' | 'whisperkit' | 'whisper.cpp' | 'aliyun';
@@ -101,7 +102,8 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
       baseUrl: '',
       apiKey: '',
       model: 'gpt-4o-mini',
-      jsonMode: false
+      jsonMode: false,
+      source: 'codex'
     },
     transcription: {
       provider: 'openai',

@@ -7,26 +7,29 @@ import type { CreatorServicesSettingsService } from '../../services/creator-serv
 import { CreatorServicesSettingsView } from './CreatorServicesSettingsView.js';
 
 describe('CreatorServicesSettingsView', () => {
-  it('shows the shared Codex Agent text model and saves Creator-specific options', async () => {
+  it('prefills the Codex fallback and allows an independent text model', async () => {
     const user = userEvent.setup();
     const service = createService(['llm.apiKey']);
     render(<CreatorServicesSettingsView connected service={service} />);
 
     expect(await screen.findByRole('heading', { name: 'AI 服务' })).toBeInTheDocument();
-    expect(screen.getByText('https://gateway.example.test/v1')).toBeInTheDocument();
-    expect(screen.getByText('gpt-shared')).toBeInTheDocument();
-    expect(screen.getByText('API Key')).toBeInTheDocument();
-    expect(screen.getByText('已配置')).toBeInTheDocument();
-    expect(screen.getByText(/请在“Codex Agent”中修改/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('switch', { name: /JSON 输出模式/ }));
+    expect(screen.getByLabelText('Base URL')).toHaveValue('https://gateway.example.test/v1');
+    expect(screen.getByLabelText('模型')).toHaveValue('gpt-shared');
+    expect(screen.getByLabelText('API Key')).toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText('API Key')).toHaveAttribute('placeholder', '已配置，留空则保持');
+    expect(screen.queryByText(/请在“Codex Agent”中修改/)).not.toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('模型'));
+    await user.type(screen.getByLabelText('模型'), 'gpt-independent');
+    await user.type(screen.getByLabelText('API Key'), 'sk-independent');
     await user.click(screen.getByRole('button', { name: '保存配置' }));
 
     await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
     expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].llm).toMatchObject({
       baseUrl: 'https://gateway.example.test/v1',
-      model: 'gpt-shared',
-      jsonMode: true
+      apiKey: 'sk-independent',
+      model: 'gpt-independent',
+      source: 'custom'
     });
     expect(screen.getByText('配置已安全保存')).toBeInTheDocument();
   });
@@ -34,9 +37,22 @@ describe('CreatorServicesSettingsView', () => {
   it('shows configured credentials without loading their secret values', async () => {
     render(<CreatorServicesSettingsView connected service={createService(['llm.apiKey'])} />);
 
-    expect(await screen.findByText('API Key')).toBeInTheDocument();
-    expect(screen.getByText('已配置')).toBeInTheDocument();
+    const apiKey = await screen.findByLabelText('API Key');
+    expect(apiKey).toHaveValue('');
+    expect(apiKey).toHaveAttribute('placeholder', '已配置，留空则保持');
     expect(screen.queryByDisplayValue(/secret/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the Codex fallback when only JSON mode changes', async () => {
+    const user = userEvent.setup();
+    const service = createService(['llm.apiKey']);
+    render(<CreatorServicesSettingsView connected service={service} />);
+
+    await user.click(await screen.findByRole('switch', { name: /JSON 输出模式/ }));
+    await user.click(screen.getByRole('button', { name: '保存配置' }));
+
+    await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
+    expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].llm.source).toBe('codex');
   });
 
   it('shows only the fields required by the selected transcription and voice providers', async () => {

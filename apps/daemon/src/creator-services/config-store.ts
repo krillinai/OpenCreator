@@ -39,6 +39,13 @@ const aliyunSchema = z.object({
 const creatorServicesDefaults = createDefaultCreatorServicesConfig();
 const imageConfigDefault = creatorServicesDefaults.image;
 const videoConfigDefault = creatorServicesDefaults.video;
+const llmConfigSchema = openAiCompatibleSchema.extend({
+  jsonMode: z.boolean(),
+  source: z.enum(['codex', 'custom']).optional()
+}).strict().transform(value => ({
+  ...value,
+  source: value.source ?? inferLegacyTextModelSource(value)
+}));
 const imageConfigSchema = z.object({
   provider: z.enum(['openai', 'jimeng', 'kling', 'gemini']),
   openai: openAiCompatibleSchema,
@@ -70,7 +77,7 @@ const legacyVideoConfigSchema = z.object({
 
 export const creatorServicesConfigSchema = z.object({
   proxy: boundedString(2048),
-  llm: openAiCompatibleSchema.extend({ jsonMode: z.boolean() }).strict(),
+  llm: llmConfigSchema,
   transcription: z.object({
     provider: z.enum(['openai', 'faster-whisper', 'whisperkit', 'whisper.cpp', 'aliyun']),
     enableGpuAcceleration: z.boolean(),
@@ -96,10 +103,14 @@ export type CreatorServicesConfigStore = {
   reset(): Promise<CreatorServicesConfig>;
 };
 
-export type SharedTextModelConfig = {
+export type TextModelFallbackConfig = {
   baseUrl: string;
   model: string;
   apiKey?: string;
+};
+
+export type CreatorTextModelFallbackProvider = {
+  read(): Promise<TextModelFallbackConfig>;
 };
 
 type CredentialEntry = {
@@ -159,6 +170,26 @@ export function createCreatorServicesConfigStore(
 
 export function createSystemCreatorServicesConfigStore(): CreatorServicesConfigStore {
   return createCreatorServicesConfigStore(new AsyncEntry(SERVICE, ACCOUNT));
+}
+
+export function createCreatorServicesConfigStoreWithTextModelFallback(
+  store: CreatorServicesConfigStore,
+  fallback: CreatorTextModelFallbackProvider
+): CreatorServicesConfigStore {
+  return {
+    async read() {
+      return resolveTextModelFallback(await store.read(), fallback);
+    },
+    async write(config) {
+      const persisted = structuredClone(config);
+      if (persisted.llm.source === 'codex') persisted.llm.apiKey = '';
+      const saved = await store.write(persisted);
+      return resolveTextModelFallback(saved, fallback);
+    },
+    async reset() {
+      return resolveTextModelFallback(await store.reset(), fallback);
+    }
+  };
 }
 
 export function parseCreatorServicesConfig(value: unknown): CreatorServicesConfig {
@@ -223,31 +254,39 @@ export function retainCreatorServicesCredentials(
   return merged;
 }
 
-export function retainSharedTextModelConfig(
-  next: CreatorServicesConfig,
-  current: CreatorServicesConfig
-): CreatorServicesConfig {
-  const merged = structuredClone(next);
-  merged.llm = {
-    ...current.llm,
-    jsonMode: next.llm.jsonMode
-  };
-  return merged;
-}
-
-export async function syncSharedTextModelConfig(
-  store: CreatorServicesConfigStore,
-  provider: SharedTextModelConfig
-): Promise<CreatorServicesConfig> {
-  const current = await store.read();
-  const next = structuredClone(current);
-  next.llm.baseUrl = provider.baseUrl;
-  next.llm.model = provider.model;
-  if (provider.apiKey !== undefined) next.llm.apiKey = provider.apiKey;
-  return store.write(next);
-}
-
 type AliyunCredentials = CreatorServicesConfig['transcription']['aliyun'];
+
+async function resolveTextModelFallback(
+  config: CreatorServicesConfig,
+  fallback: CreatorTextModelFallbackProvider
+): Promise<CreatorServicesConfig> {
+  if (config.llm.source === 'custom') return config;
+  let resolved: TextModelFallbackConfig;
+  try {
+    resolved = await fallback.read();
+  } catch {
+    return config;
+  }
+  const next = structuredClone(config);
+  next.llm.baseUrl = resolved.baseUrl;
+  next.llm.model = resolved.model || next.llm.model;
+  next.llm.apiKey = resolved.apiKey ?? '';
+  return next;
+}
+
+function inferLegacyTextModelSource(value: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}): 'codex' | 'custom' {
+  return (
+    value.baseUrl.length > 0
+    || value.apiKey.length > 0
+    || value.model !== creatorServicesDefaults.llm.model
+  )
+    ? 'custom'
+    : 'codex';
+}
 
 function redactAliyunCredentials(
   prefix: 'transcription.aliyun' | 'tts.aliyun',

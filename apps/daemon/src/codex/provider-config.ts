@@ -34,7 +34,10 @@ export class CodexProviderConfigValidationError extends Error {
 export function createCodexProviderConfigService(input: {
   client: RestartableCodexAppServerRequestClient;
   readiness: Pick<CodexRuntimeReadinessService, 'refresh'>;
-  readSharedApiKey?(): Promise<string | undefined> | string | undefined;
+  readStoredApiKey?(provider: {
+    baseUrl: string;
+    model: string;
+  }): Promise<string | undefined> | string | undefined;
   onConfigurationChanged?(): Promise<void> | void;
   onProviderUpdated?(provider: {
     baseUrl: string;
@@ -45,11 +48,9 @@ export function createCodexProviderConfigService(input: {
   let updateQueue = Promise.resolve();
 
   async function read(): Promise<CodexProviderConfig> {
-    const [state, sharedApiKey] = await Promise.all([
-      readProviderState(input.client),
-      readSharedApiKey(input.readSharedApiKey)
-    ]);
-    return presentProviderConfig(state, sharedApiKey !== undefined);
+    const state = await readProviderState(input.client);
+    const storedApiKey = await readStoredApiKey(input.readStoredApiKey, state);
+    return presentProviderConfig(state, storedApiKey !== undefined);
   }
 
   function update(request: CodexProviderConfigUpdateRequest): Promise<CodexProviderConfig> {
@@ -62,17 +63,15 @@ export function createCodexProviderConfigService(input: {
     request: CodexProviderConfigUpdateRequest
   ): Promise<CodexProviderConfig> {
     const normalized = normalizeUpdateRequest(request);
-    const [current, sharedApiKey] = await Promise.all([
-      readProviderState(input.client),
-      readSharedApiKey(input.readSharedApiKey)
-    ]);
+    const current = await readProviderState(input.client);
+    const storedApiKey = await readStoredApiKey(input.readStoredApiKey, current);
     const loginApiKey = normalized.apiKey ?? (
       current.authentication === 'none'
       || (
         normalized.baseUrl.length > 0
         && current.authentication !== 'api_key'
       )
-        ? sharedApiKey
+        ? storedApiKey
         : undefined
     );
 
@@ -119,7 +118,10 @@ export function createCodexProviderConfigService(input: {
         { type: 'apiKey', apiKey: loginApiKey } satisfies LoginAccountParams
       );
     }
-    await input.onProviderUpdated?.(normalized);
+    await input.onProviderUpdated?.({
+      ...normalized,
+      ...(loginApiKey === undefined ? {} : { apiKey: loginApiKey })
+    });
     await input.onConfigurationChanged?.();
     await input.readiness.refresh();
 
@@ -127,7 +129,7 @@ export function createCodexProviderConfigService(input: {
     return {
       ...presentProviderConfig(
         next,
-        loginApiKey !== undefined || sharedApiKey !== undefined
+        loginApiKey !== undefined || storedApiKey !== undefined
       ),
       configVersion: write.version
     };
@@ -138,23 +140,26 @@ export function createCodexProviderConfigService(input: {
 
 function presentProviderConfig(
   state: Awaited<ReturnType<typeof readProviderState>>,
-  sharedApiKeyConfigured: boolean
+  storedApiKeyConfigured: boolean
 ): CodexProviderConfig {
   return {
     baseUrl: state.baseUrl,
     model: state.model,
-    apiKeyConfigured: state.authentication === 'api_key' || sharedApiKeyConfigured,
+    apiKeyConfigured: state.authentication === 'api_key' || storedApiKeyConfigured,
     authentication: state.authentication,
     ...(state.configVersion === undefined ? {} : { configVersion: state.configVersion })
   };
 }
 
-async function readSharedApiKey(
-  reader: (() => Promise<string | undefined> | string | undefined) | undefined
+async function readStoredApiKey(
+  reader: ((
+    provider: { baseUrl: string; model: string }
+  ) => Promise<string | undefined> | string | undefined) | undefined,
+  provider: { baseUrl: string; model: string }
 ): Promise<string | undefined> {
   if (reader === undefined) return undefined;
   try {
-    const apiKey = (await reader())?.trim();
+    const apiKey = (await reader(provider))?.trim();
     return apiKey === undefined || apiKey.length === 0 ? undefined : apiKey;
   } catch {
     return undefined;

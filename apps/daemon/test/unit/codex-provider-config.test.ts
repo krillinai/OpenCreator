@@ -131,8 +131,9 @@ describe('Codex provider configuration', () => {
       .rejects.toBeInstanceOf(CodexProviderConfigValidationError);
   });
 
-  it('reports and reuses the shared Creator API key', async () => {
+  it('reports and reuses the stored Codex API key', async () => {
     const calls: Array<{ method: string; params: unknown }> = [];
+    const onProviderUpdated = vi.fn(async () => undefined);
     let account: null | { type: 'apiKey' } = null;
     const client: RestartableCodexAppServerRequestClient = {
       async request<Result>(method: string, params: unknown): Promise<Result> {
@@ -164,7 +165,8 @@ describe('Codex provider configuration', () => {
     const service = createCodexProviderConfigService({
       client,
       readiness: { refresh: vi.fn() } as never,
-      readSharedApiKey: async () => 'sk-shared'
+      readStoredApiKey: async () => 'sk-shared',
+      onProviderUpdated
     });
 
     expect(await service.read()).toMatchObject({
@@ -184,6 +186,11 @@ describe('Codex provider configuration', () => {
     expect(calls.find(call => call.method === 'account/login/start')?.params).toEqual({
       type: 'apiKey',
       apiKey: 'sk-shared'
+    });
+    expect(onProviderUpdated).toHaveBeenCalledWith({
+      baseUrl: 'https://gateway.example.test/v1',
+      apiKey: 'sk-shared',
+      model: 'gpt-shared'
     });
   });
 });

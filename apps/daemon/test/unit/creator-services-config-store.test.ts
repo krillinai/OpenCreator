@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import {
+  createCreatorServicesConfigStoreWithTextModelFallback,
   createCreatorServicesConfigStore,
   CreatorServicesConfigStoreError,
   presentCreatorServicesConfig,
   retainCreatorServicesCredentials,
-  retainSharedTextModelConfig,
-  syncSharedTextModelConfig,
   type CreatorServicesConfigStore
 } from '../../src/creator-services/config-store.js';
 
@@ -82,47 +81,68 @@ describe('CreatorServicesConfigStore', () => {
     expect(retained.video).toEqual(current.video);
   });
 
-  it('keeps Codex Agent as the shared text model source of truth', async () => {
-    const current = createDefaultCreatorServicesConfig();
-    current.llm = {
-      baseUrl: 'https://old.example.test/v1',
-      apiKey: 'sk-old',
-      model: 'gpt-old',
-      jsonMode: false
+  it('uses Codex as fallback until a custom text model is configured', async () => {
+    let persisted = createDefaultCreatorServicesConfig();
+    const rawStore: CreatorServicesConfigStore = {
+      read: vi.fn(async () => structuredClone(persisted)),
+      write: vi.fn(async config => {
+        persisted = structuredClone(config);
+        return structuredClone(config);
+      }),
+      reset: vi.fn(async () => {
+        persisted = createDefaultCreatorServicesConfig();
+        return structuredClone(persisted);
+      })
     };
-    const next = structuredClone(current);
-    next.llm = {
-      baseUrl: 'https://ignored.example.test/v1',
-      apiKey: 'sk-ignored',
-      model: 'gpt-ignored',
-      jsonMode: true
+    const fallback = {
+      read: vi.fn(async () => ({
+        baseUrl: 'https://codex.example.test/v1',
+        apiKey: 'sk-codex',
+        model: 'gpt-codex'
+      }))
     };
+    const store = createCreatorServicesConfigStoreWithTextModelFallback(rawStore, fallback);
 
-    expect(retainSharedTextModelConfig(next, current).llm).toEqual({
-      baseUrl: 'https://old.example.test/v1',
-      apiKey: 'sk-old',
-      model: 'gpt-old',
-      jsonMode: true
-    });
-
-    const store: CreatorServicesConfigStore = {
-      read: vi.fn(async () => current),
-      write: vi.fn(async config => config),
-      reset: vi.fn(async () => createDefaultCreatorServicesConfig())
-    };
-    await syncSharedTextModelConfig(store, {
-      baseUrl: 'https://gateway.example.test/v1',
-      apiKey: 'sk-shared',
-      model: 'gpt-shared'
-    });
-    expect(store.write).toHaveBeenCalledWith(expect.objectContaining({
+    await expect(store.read()).resolves.toMatchObject({
       llm: {
-        baseUrl: 'https://gateway.example.test/v1',
-        apiKey: 'sk-shared',
-        model: 'gpt-shared',
-        jsonMode: false
+        baseUrl: 'https://codex.example.test/v1',
+        apiKey: 'sk-codex',
+        model: 'gpt-codex',
+        source: 'codex'
       }
-    }));
+    });
+
+    const codexConfig = await store.read();
+    codexConfig.proxy = 'http://127.0.0.1:7897';
+    await store.write(codexConfig);
+    expect(persisted.llm.apiKey).toBe('');
+    expect(persisted.llm.source).toBe('codex');
+
+    const custom = await store.read();
+    custom.llm = {
+      baseUrl: 'https://custom.example.test/v1',
+      apiKey: 'sk-custom',
+      model: 'gpt-custom',
+      jsonMode: true,
+      source: 'custom'
+    };
+    await expect(store.write(custom)).resolves.toMatchObject({
+      llm: {
+        baseUrl: 'https://custom.example.test/v1',
+        apiKey: 'sk-custom',
+        model: 'gpt-custom',
+        source: 'custom'
+      }
+    });
+
+    await expect(store.reset()).resolves.toMatchObject({
+      llm: {
+        baseUrl: 'https://codex.example.test/v1',
+        apiKey: 'sk-codex',
+        model: 'gpt-codex',
+        source: 'codex'
+      }
+    });
   });
 
   it('adds video generation defaults when reading an older saved configuration', async () => {
@@ -138,6 +158,25 @@ describe('CreatorServicesConfigStore', () => {
 
     await expect(store.read()).resolves.toMatchObject({
       video: createDefaultCreatorServicesConfig().video
+    });
+  });
+
+  it('preserves older explicitly configured text models as custom', async () => {
+    const legacy = createDefaultCreatorServicesConfig() as unknown as {
+      llm: Record<string, unknown>;
+    };
+    delete legacy.llm.source;
+    legacy.llm.baseUrl = 'https://legacy.example.test/v1';
+    legacy.llm.apiKey = 'sk-legacy';
+    legacy.llm.model = 'gpt-legacy';
+    const store = createCreatorServicesConfigStore({
+      getPassword: vi.fn(async () => JSON.stringify(legacy)),
+      setPassword: vi.fn(async () => undefined),
+      deletePassword: vi.fn(async () => undefined)
+    });
+
+    await expect(store.read()).resolves.toMatchObject({
+      llm: { source: 'custom' }
     });
   });
 
