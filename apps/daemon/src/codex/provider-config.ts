@@ -34,12 +34,22 @@ export class CodexProviderConfigValidationError extends Error {
 export function createCodexProviderConfigService(input: {
   client: RestartableCodexAppServerRequestClient;
   readiness: Pick<CodexRuntimeReadinessService, 'refresh'>;
+  readSharedApiKey?(): Promise<string | undefined> | string | undefined;
   onConfigurationChanged?(): Promise<void> | void;
+  onProviderUpdated?(provider: {
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+  }): Promise<void> | void;
 }) {
   let updateQueue = Promise.resolve();
 
-  function read(): Promise<CodexProviderConfig> {
-    return readProviderConfig(input.client);
+  async function read(): Promise<CodexProviderConfig> {
+    const [state, sharedApiKey] = await Promise.all([
+      readProviderState(input.client),
+      readSharedApiKey(input.readSharedApiKey)
+    ]);
+    return presentProviderConfig(state, sharedApiKey !== undefined);
   }
 
   function update(request: CodexProviderConfigUpdateRequest): Promise<CodexProviderConfig> {
@@ -52,17 +62,28 @@ export function createCodexProviderConfigService(input: {
     request: CodexProviderConfigUpdateRequest
   ): Promise<CodexProviderConfig> {
     const normalized = normalizeUpdateRequest(request);
-    const current = await readProviderState(input.client);
-    const hasNewApiKey = normalized.apiKey !== undefined;
+    const [current, sharedApiKey] = await Promise.all([
+      readProviderState(input.client),
+      readSharedApiKey(input.readSharedApiKey)
+    ]);
+    const loginApiKey = normalized.apiKey ?? (
+      current.authentication === 'none'
+      || (
+        normalized.baseUrl.length > 0
+        && current.authentication !== 'api_key'
+      )
+        ? sharedApiKey
+        : undefined
+    );
 
-    if (!hasNewApiKey && current.authentication === 'none') {
+    if (loginApiKey === undefined && current.authentication === 'none') {
       throw new CodexProviderConfigValidationError(
-        '请填写 API Key，或先使用 ChatGPT 登录 Codex Agent'
+        '请填写 API Key'
       );
     }
     if (
       normalized.baseUrl.length > 0
-      && !hasNewApiKey
+      && loginApiKey === undefined
       && current.authentication !== 'api_key'
     ) {
       throw new CodexProviderConfigValidationError(
@@ -78,7 +99,7 @@ export function createCodexProviderConfigService(input: {
           value: normalized.baseUrl.length === 0 ? null : normalized.baseUrl,
           mergeStrategy: 'replace'
         },
-        ...(hasNewApiKey
+        ...(loginApiKey !== undefined
           ? [{
               keyPath: 'cli_auth_credentials_store',
               value: 'auto',
@@ -92,33 +113,52 @@ export function createCodexProviderConfigService(input: {
     });
 
     await input.client.restart();
-    if (normalized.apiKey !== undefined) {
+    if (loginApiKey !== undefined) {
       await input.client.request<LoginAccountResponse>(
         'account/login/start',
-        { type: 'apiKey', apiKey: normalized.apiKey } satisfies LoginAccountParams
+        { type: 'apiKey', apiKey: loginApiKey } satisfies LoginAccountParams
       );
     }
+    await input.onProviderUpdated?.(normalized);
     await input.onConfigurationChanged?.();
     await input.readiness.refresh();
 
-    const next = await readProviderConfig(input.client);
-    return { ...next, configVersion: write.version };
+    const next = await readProviderState(input.client);
+    return {
+      ...presentProviderConfig(
+        next,
+        loginApiKey !== undefined || sharedApiKey !== undefined
+      ),
+      configVersion: write.version
+    };
   }
 
   return { read, update };
 }
 
-async function readProviderConfig(
-  client: RestartableCodexAppServerRequestClient
-): Promise<CodexProviderConfig> {
-  const state = await readProviderState(client);
+function presentProviderConfig(
+  state: Awaited<ReturnType<typeof readProviderState>>,
+  sharedApiKeyConfigured: boolean
+): CodexProviderConfig {
   return {
     baseUrl: state.baseUrl,
     model: state.model,
-    apiKeyConfigured: state.authentication === 'api_key',
+    apiKeyConfigured: state.authentication === 'api_key' || sharedApiKeyConfigured,
     authentication: state.authentication,
     ...(state.configVersion === undefined ? {} : { configVersion: state.configVersion })
   };
+}
+
+async function readSharedApiKey(
+  reader: (() => Promise<string | undefined> | string | undefined) | undefined
+): Promise<string | undefined> {
+  if (reader === undefined) return undefined;
+  try {
+    const apiKey = (await reader())?.trim();
+    return apiKey === undefined || apiKey.length === 0 ? undefined : apiKey;
+  } catch {
+    return undefined;
+  }
 }
 
 async function readProviderState(client: RestartableCodexAppServerRequestClient): Promise<{

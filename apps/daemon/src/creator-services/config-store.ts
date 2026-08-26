@@ -96,6 +96,12 @@ export type CreatorServicesConfigStore = {
   reset(): Promise<CreatorServicesConfig>;
 };
 
+export type SharedTextModelConfig = {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+};
+
 type CredentialEntry = {
   getPassword(): Promise<string | null | undefined>;
   setPassword(value: string): Promise<void>;
@@ -215,6 +221,30 @@ export function retainCreatorServicesCredentials(
   retainBlank(() => merged.video.kling.secretKey, value => { merged.video.kling.secretKey = value; }, current.video.kling.secretKey);
   retainBlank(() => merged.video.veo.apiKey, value => { merged.video.veo.apiKey = value; }, current.video.veo.apiKey);
   return merged;
+}
+
+export function retainSharedTextModelConfig(
+  next: CreatorServicesConfig,
+  current: CreatorServicesConfig
+): CreatorServicesConfig {
+  const merged = structuredClone(next);
+  merged.llm = {
+    ...current.llm,
+    jsonMode: next.llm.jsonMode
+  };
+  return merged;
+}
+
+export async function syncSharedTextModelConfig(
+  store: CreatorServicesConfigStore,
+  provider: SharedTextModelConfig
+): Promise<CreatorServicesConfig> {
+  const current = await store.read();
+  const next = structuredClone(current);
+  next.llm.baseUrl = provider.baseUrl;
+  next.llm.model = provider.model;
+  if (provider.apiKey !== undefined) next.llm.apiKey = provider.apiKey;
+  return store.write(next);
 }
 
 type AliyunCredentials = CreatorServicesConfig['transcription']['aliyun'];

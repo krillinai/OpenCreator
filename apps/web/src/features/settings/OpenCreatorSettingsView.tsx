@@ -23,7 +23,6 @@ import {
   CodexRuntimeSettingsView,
   type CodexRuntimeSettingsService
 } from './CodexRuntimeSettingsView.js';
-import type { HostBridgeResult } from '../../host/bridge.js';
 import {
   MemorySettingsView,
   type MemoryScopeOption,
@@ -61,8 +60,6 @@ export type OpenCreatorSettingsViewProps = {
   cleanupService?: CleanupSettingsService | null;
   creatorServicesService?: CreatorServicesSettingsService | null;
   codexRuntimeService?: CodexRuntimeSettingsService | null;
-  onOpenExternal?(url: string): Promise<void>;
-  onSelectExternalCodex?(): Promise<HostBridgeResult>;
   memoryService?: MemorySettingsService | null;
   memoryProjects?: MemoryScopeOption[];
   memoryThreads?: MemoryScopeOption[];
@@ -143,8 +140,6 @@ export function OpenCreatorSettingsView(props: OpenCreatorSettingsViewProps) {
           <CodexRuntimeSettingsView
             connected={props.runtimeStatus.connected}
             service={props.codexRuntimeService ?? null}
-            onOpenExternal={props.onOpenExternal}
-            onSelectExternalCodex={props.onSelectExternalCodex}
           />
         ) : null}
         {activeTab === 'plugins' ? <PluginSettings runtimeStatus={props.runtimeStatus} /> : null}

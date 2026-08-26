@@ -5,6 +5,7 @@ import {
   parseCreatorServicesConfig,
   presentCreatorServicesConfig,
   retainCreatorServicesCredentials,
+  retainSharedTextModelConfig,
   type CreatorServicesConfigStore
 } from '../creator-services/config-store.js';
 import { apiError } from './errors.js';
@@ -25,7 +26,8 @@ export async function registerCreatorServicesRoutes(
     try {
       const config = parseCreatorServicesConfig(request.body);
       const current = await store.read();
-      const saved = await store.write(retainCreatorServicesCredentials(config, current));
+      const retained = retainCreatorServicesCredentials(config, current);
+      const saved = await store.write(retainSharedTextModelConfig(retained, current));
       return presentCreatorServicesConfig(saved);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -40,7 +42,13 @@ export async function registerCreatorServicesRoutes(
 
   server.delete('/creator-services/config', async (_request, reply) => {
     try {
-      return presentCreatorServicesConfig(await store.reset());
+      const current = await store.read();
+      const reset = await store.reset();
+      reset.llm = {
+        ...current.llm,
+        jsonMode: reset.llm.jsonMode
+      };
+      return presentCreatorServicesConfig(await store.write(reset));
     } catch (error) {
       return sendStoreError(reply, error);
     }

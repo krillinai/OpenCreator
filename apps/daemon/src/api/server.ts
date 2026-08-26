@@ -104,6 +104,7 @@ import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
 import {
   createSystemCreatorServicesConfigStore,
+  syncSharedTextModelConfig,
   type CreatorServicesConfigStore
 } from '../creator-services/config-store.js';
 import {
@@ -517,6 +518,13 @@ export async function buildServer(input: BuildServerInput) {
   const codexProviderConfig = createCodexProviderConfigService({
     client: codexControlClient,
     readiness: codexRuntimeReadiness,
+    async readSharedApiKey() {
+      const apiKey = (await creatorServicesConfigStore.read()).llm.apiKey.trim();
+      return apiKey.length === 0 ? undefined : apiKey;
+    },
+    async onProviderUpdated(provider) {
+      await syncSharedTextModelConfig(creatorServicesConfigStore, provider);
+    },
     async onConfigurationChanged() {
       await Promise.all([
         codexModelCatalog.restart?.(),

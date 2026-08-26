@@ -51,10 +51,12 @@ describe('Codex provider configuration', () => {
     };
     const refresh = vi.fn(async () => ({ state: 'ready' }));
     const onConfigurationChanged = vi.fn(async () => undefined);
+    const onProviderUpdated = vi.fn(async () => undefined);
     const service = createCodexProviderConfigService({
       client,
       readiness: { refresh } as never,
-      onConfigurationChanged
+      onConfigurationChanged,
+      onProviderUpdated
     });
 
     const result = await service.update({
@@ -71,6 +73,11 @@ describe('Codex provider configuration', () => {
       configVersion: 'v2'
     });
     expect(restart).toHaveBeenCalledTimes(1);
+    expect(onProviderUpdated).toHaveBeenCalledWith({
+      baseUrl: 'https://gateway.example.test/v1',
+      apiKey: 'sk-secret',
+      model: 'gpt-custom'
+    });
     expect(onConfigurationChanged).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(calls.find(call => call.method === 'config/batchWrite')?.params).toEqual({
@@ -122,5 +129,61 @@ describe('Codex provider configuration', () => {
 
     await expect(service.update({ baseUrl: '', model: 'gpt-custom' }))
       .rejects.toBeInstanceOf(CodexProviderConfigValidationError);
+  });
+
+  it('reports and reuses the shared Creator API key', async () => {
+    const calls: Array<{ method: string; params: unknown }> = [];
+    let account: null | { type: 'apiKey' } = null;
+    const client: RestartableCodexAppServerRequestClient = {
+      async request<Result>(method: string, params: unknown): Promise<Result> {
+        calls.push({ method, params });
+        if (method === 'config/read') {
+          return {
+            config: {
+              model: 'gpt-shared',
+              openai_base_url: 'https://gateway.example.test/v1'
+            },
+            layers: [{ name: { type: 'user', profile: null }, version: 'v1' }]
+          } as Result;
+        }
+        if (method === 'account/read') {
+          return { account, requiresOpenaiAuth: true } as Result;
+        }
+        if (method === 'config/batchWrite') {
+          return { status: 'ok', version: 'v2' } as Result;
+        }
+        if (method === 'account/login/start') {
+          account = { type: 'apiKey' };
+          return { type: 'apiKey' } as Result;
+        }
+        throw new Error(`Unexpected method: ${method}`);
+      },
+      restart: vi.fn(async () => undefined),
+      close: async () => undefined
+    };
+    const service = createCodexProviderConfigService({
+      client,
+      readiness: { refresh: vi.fn() } as never,
+      readSharedApiKey: async () => 'sk-shared'
+    });
+
+    expect(await service.read()).toMatchObject({
+      apiKeyConfigured: true,
+      authentication: 'none'
+    });
+
+    const result = await service.update({
+      baseUrl: 'https://gateway.example.test/v1',
+      model: 'gpt-shared'
+    });
+
+    expect(result).toMatchObject({
+      apiKeyConfigured: true,
+      authentication: 'api_key'
+    });
+    expect(calls.find(call => call.method === 'account/login/start')?.params).toEqual({
+      type: 'apiKey',
+      apiKey: 'sk-shared'
+    });
   });
 });

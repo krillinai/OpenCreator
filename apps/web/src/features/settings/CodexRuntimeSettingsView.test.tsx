@@ -1,58 +1,38 @@
-import type { CodexProviderConfig, CodexRuntimeReadiness } from '@opencreator/protocol';
+import type { CodexProviderConfig } from '@opencreator/protocol';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import { CodexRuntimeSettingsView } from './CodexRuntimeSettingsView.js';
 
 describe('CodexRuntimeSettingsView', () => {
-  it('keeps Codex Agent login separate from Creator provider configuration', async () => {
-    const service = createService(readiness());
-    const onOpenExternal = vi.fn(async () => undefined);
+  it('only renders Base URL, Model and API Key configuration', async () => {
     render(
       <LanguageProvider initialPreference="zh-CN">
-        <CodexRuntimeSettingsView
-          connected
-          service={service}
-          onOpenExternal={onOpenExternal}
-        />
+        <CodexRuntimeSettingsView connected service={createService()} />
       </LanguageProvider>
     );
 
-    expect(await screen.findByText('内置 Codex')).toBeInTheDocument();
-    expect(screen.getByText('0.149.0')).toBeInTheDocument();
-    expect(screen.getByText('758ef40f50c1a458425c7cfbf1eb12cbc07af0b0')).toBeInTheDocument();
-    expect(screen.getByText('binary-sha')).toBeInTheDocument();
-    expect(screen.getByText(/翻译、转录、配音和生图密钥仍在“AI 服务”中配置/)).toBeInTheDocument();
-    expect(screen.queryByText(/OpenAI 转录 API Key/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Base URL')).toHaveValue('https://api.example.test/v1');
+    expect(await screen.findByLabelText('Base URL')).toHaveValue('https://api.example.test/v1');
     expect(screen.getByLabelText('Model')).toHaveValue('gpt-test');
+    expect(screen.getByLabelText('API Key')).toBeInTheDocument();
+    expect(screen.getByText('API Key 已配置')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '使用 ChatGPT 登录' }));
-    await waitFor(() => expect(service.startCodexLogin).toHaveBeenCalledWith({ loginType: 'chatgpt' }));
-    expect(onOpenExternal).toHaveBeenCalledWith('https://auth.example.test');
-    expect(await screen.findByText('等待完成登录')).toBeInTheDocument();
-  });
-
-  it('only switches to an explicitly selected external Codex path', async () => {
-    const onSelectExternalCodex = vi.fn(async () => ({ ok: true as const }));
-    render(
-      <LanguageProvider initialPreference="zh-CN">
-        <CodexRuntimeSettingsView
-          connected
-          service={createService(readiness())}
-          onSelectExternalCodex={onSelectExternalCodex}
-        />
-      </LanguageProvider>
-    );
-
-    fireEvent.click(await screen.findByRole('button', { name: '选择外部 Codex…' }));
-    await waitFor(() => expect(onSelectExternalCodex).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('status')).toHaveTextContent('Runtime 已重启');
-    expect(screen.getByText(/失败时不会搜索 PATH 兜底/)).toBeInTheDocument();
+    for (const removed of [
+      'Agent 登录',
+      'Runtime 版本与隔离',
+      '运行就绪状态',
+      '外部 Codex（高级）'
+    ]) {
+      expect(screen.queryByText(removed)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: '刷新' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '使用 ChatGPT 登录' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '选择外部 Codex…' })).not.toBeInTheDocument();
   });
 
   it('saves base URL, API key and model without reading the secret back', async () => {
-    const service = createService(readiness());
+    const service = createService();
     render(
       <LanguageProvider initialPreference="zh-CN">
         <CodexRuntimeSettingsView connected service={service} />
@@ -68,7 +48,7 @@ describe('CodexRuntimeSettingsView', () => {
     fireEvent.change(screen.getByLabelText('API Key'), {
       target: { value: 'sk-secret' }
     });
-    fireEvent.click(screen.getByRole('button', { name: '保存并刷新 Agent' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(service.updateCodexProvider).toHaveBeenCalledWith({
       baseUrl: 'https://gateway.example.test/v1',
@@ -77,28 +57,31 @@ describe('CodexRuntimeSettingsView', () => {
     }));
     expect(await screen.findByText('API Key 已配置')).toBeInTheDocument();
     expect(screen.getByLabelText('API Key')).toHaveValue('');
-    expect(screen.getByRole('status')).toHaveTextContent('Agent Runtime 已刷新');
+    expect(screen.getByRole('status')).toHaveTextContent('Codex Agent 配置已保存');
+  });
+
+  it('shows only the unavailable configuration state when Runtime is disconnected', () => {
+    render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CodexRuntimeSettingsView connected={false} service={null} />
+      </LanguageProvider>
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('无法读取 Codex Agent 配置');
+    expect(screen.queryByLabelText('Base URL')).not.toBeInTheDocument();
   });
 });
 
-function createService(value: CodexRuntimeReadiness) {
+function createService() {
   return {
-    getCodexReadiness: vi.fn(async () => value),
     getCodexProvider: vi.fn(async () => provider()),
     updateCodexProvider: vi.fn(async input => ({
       baseUrl: input.baseUrl,
       model: input.model,
       apiKeyConfigured: input.apiKey !== undefined,
-      authentication: input.apiKey === undefined ? 'chatgpt' as const : 'api_key' as const,
+      authentication: input.apiKey === undefined ? 'none' as const : 'api_key' as const,
       configVersion: 'v2'
-    })),
-    startCodexLogin: vi.fn(async () => ({
-      loginId: 'login_1',
-      status: 'pending' as const,
-      authUrl: 'https://auth.example.test'
-    })),
-    cancelCodexLogin: vi.fn(async () => ({ loginId: 'login_1', canceled: true })),
-    logoutCodex: vi.fn(async () => ({ signedOut: true }))
+    }))
   };
 }
 
@@ -106,28 +89,8 @@ function provider(): CodexProviderConfig {
   return {
     baseUrl: 'https://api.example.test/v1',
     model: 'gpt-test',
-    apiKeyConfigured: false,
+    apiKeyConfigured: true,
     authentication: 'none',
     configVersion: 'v1'
-  };
-}
-
-function readiness(): CodexRuntimeReadiness {
-  const ready = { status: 'ready' as const };
-  return {
-    state: 'degraded',
-    mode: 'bundled',
-    version: '0.149.0',
-    commit: '758ef40f50c1a458425c7cfbf1eb12cbc07af0b0',
-    binaryPath: 'C:\\OpenCreator\\resources\\codex-runtime\\bin\\codex.exe',
-    codexHome: 'C:\\Users\\test\\OpenCreator\\runtime\\codex\\home',
-    checkedAt: '2026-08-21T00:00:00.000Z',
-    binary: { status: 'ready', details: { sha256: 'binary-sha' } },
-    protocol: ready,
-    account: { status: 'not_authenticated', accountStatus: 'signed_out' },
-    models: ready,
-    skills: ready,
-    toolServer: ready,
-    diagnostics: []
   };
 }

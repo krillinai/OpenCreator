@@ -4,7 +4,10 @@ import {
   createCreatorServicesConfigStore,
   CreatorServicesConfigStoreError,
   presentCreatorServicesConfig,
-  retainCreatorServicesCredentials
+  retainCreatorServicesCredentials,
+  retainSharedTextModelConfig,
+  syncSharedTextModelConfig,
+  type CreatorServicesConfigStore
 } from '../../src/creator-services/config-store.js';
 
 describe('CreatorServicesConfigStore', () => {
@@ -77,6 +80,49 @@ describe('CreatorServicesConfigStore', () => {
     const retained = retainCreatorServicesCredentials(presented.config, current);
     expect(retained.image).toEqual(current.image);
     expect(retained.video).toEqual(current.video);
+  });
+
+  it('keeps Codex Agent as the shared text model source of truth', async () => {
+    const current = createDefaultCreatorServicesConfig();
+    current.llm = {
+      baseUrl: 'https://old.example.test/v1',
+      apiKey: 'sk-old',
+      model: 'gpt-old',
+      jsonMode: false
+    };
+    const next = structuredClone(current);
+    next.llm = {
+      baseUrl: 'https://ignored.example.test/v1',
+      apiKey: 'sk-ignored',
+      model: 'gpt-ignored',
+      jsonMode: true
+    };
+
+    expect(retainSharedTextModelConfig(next, current).llm).toEqual({
+      baseUrl: 'https://old.example.test/v1',
+      apiKey: 'sk-old',
+      model: 'gpt-old',
+      jsonMode: true
+    });
+
+    const store: CreatorServicesConfigStore = {
+      read: vi.fn(async () => current),
+      write: vi.fn(async config => config),
+      reset: vi.fn(async () => createDefaultCreatorServicesConfig())
+    };
+    await syncSharedTextModelConfig(store, {
+      baseUrl: 'https://gateway.example.test/v1',
+      apiKey: 'sk-shared',
+      model: 'gpt-shared'
+    });
+    expect(store.write).toHaveBeenCalledWith(expect.objectContaining({
+      llm: {
+        baseUrl: 'https://gateway.example.test/v1',
+        apiKey: 'sk-shared',
+        model: 'gpt-shared',
+        jsonMode: false
+      }
+    }));
   });
 
   it('adds video generation defaults when reading an older saved configuration', async () => {

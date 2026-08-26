@@ -5227,10 +5227,6 @@ export function AppController(props: AppControllerProps) {
       cleanupService={cleanupService}
       creatorServicesService={creatorServicesService}
       codexRuntimeService={connectionService}
-      onOpenExternal={(url: string) => hostBridge.openExternal(url)}
-      onSelectExternalCodex={hostBridge.selectCodexPath === undefined
-        ? undefined
-        : () => hostBridge.selectCodexPath!()}
       memoryService={memoryService}
       memoryProjects={memoryProjectOptions}
       memoryThreads={memoryThreadOptions}
