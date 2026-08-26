@@ -70,12 +70,8 @@ describe('DashboardPage', () => {
     const translationInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
     expect(translationInput.closest('form')).toHaveClass('tool-agent-composer');
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '选择访问权限 请求批准' }));
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
     expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-5.6 Sol' }));

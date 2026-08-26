@@ -5656,9 +5656,9 @@ function readDefaultPermissionPreference(): DefaultPermissionPreference {
   try {
     const value = window.localStorage.getItem(DEFAULT_PERMISSION_STORAGE_KEY);
     if (value === 'follow-global') return 'workspace-write';
-    return isDefaultPermissionPreference(value) ? value : 'follow-project';
+    return isDefaultPermissionPreference(value) ? value : 'danger-full-access';
   } catch {
-    return 'follow-project';
+    return 'danger-full-access';
   }
 }
 
@@ -6030,7 +6030,7 @@ function resolveDefaultPermission(
   ) {
     return project.sandbox;
   }
-  return 'workspace-write';
+  return 'danger-full-access';
 }
 
 function isDefaultPermissionPreference(value: string | null): value is DefaultPermissionPreference {

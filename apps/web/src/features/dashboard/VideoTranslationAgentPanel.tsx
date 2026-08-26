@@ -82,7 +82,7 @@ export default function VideoTranslationAgentPanel(props: {
   const session = useOptionalCreatorSession();
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [permission, setPermission] = useState<ToolAgentPermission>('approval');
+  const [permission, setPermission] = useState<ToolAgentPermission>('full-access');
   const sendingRef = useRef(false);
   const permissionSessionRef = useRef<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);

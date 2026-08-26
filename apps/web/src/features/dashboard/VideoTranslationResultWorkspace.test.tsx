@@ -66,4 +66,30 @@ describe('VideoTranslationResultWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '下载成片' }));
     expect(onExport).toHaveBeenCalledWith('video');
   });
+
+  it('switches result tabs and selects a project version from history', () => {
+    const onTabChange = vi.fn();
+    const onVersionChange = vi.fn();
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="subtitles"
+        hasVideoArtifact={false}
+        versions={[
+          { value: 1, description: '初次生成' },
+          { value: 2, description: '更新字幕' }
+        ]}
+        onTabChange={onTabChange}
+        onVersionChange={onVersionChange}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
+    expect(onTabChange).toHaveBeenCalledWith('settings');
+
+    fireEvent.click(screen.getByRole('button', { name: /项目 V1/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /项目 V2/ }));
+    expect(onVersionChange).toHaveBeenCalledWith(2);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
 });

@@ -914,7 +914,7 @@ describe('App', () => {
     })).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-lightfall-background')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
     expect(screen.queryByText('跟随全局模型')).not.toBeInTheDocument();
     expect(screen.queryByText('跟随全局配置')).not.toBeInTheDocument();
@@ -7620,33 +7620,32 @@ describe('App', () => {
 
     expect(await screen.findByRole('status', { name: '本地运行内核正常' })).toBeInTheDocument();
     await user.click(await screen.findByRole('button', { name: 'secondary' }));
-    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置' }));
     await user.selectOptions(
       await screen.findByRole('combobox', { name: '默认权限' }),
-      'danger-full-access'
+      'workspace-write'
     );
-    await user.click(await screen.findByRole('button', { name: '开启' }));
 
     expect(window.localStorage.getItem('opencreator.preferences.defaultPermission'))
-      .toBe('danger-full-access');
+      .toBe('workspace-write');
 
     await user.click(screen.getByRole('button', { name: '返回应用' }));
     expect(await screen.findByRole('button', { name: 'secondary' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
 
     firstRender.unmount();
     render(<App {...appProps} />);
 
     expect(await screen.findByRole('button', { name: 'secondary' }))
       .toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '选择访问权限 请求批准' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '设置' }));
     expect(await screen.findByRole('combobox', { name: '默认权限' }))
-      .toHaveValue('danger-full-access');
+      .toHaveValue('workspace-write');
   });
 
   it('syncs a global permission to ordinary conversations without changing scheduled threads', async () => {

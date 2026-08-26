@@ -37,7 +37,7 @@ export default function ToolAgentComposer(props: {
   const rootRef = useRef<HTMLFormElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [openMenu, setOpenMenu] = useState<ComposerMenu>(null);
-  const [localPermission, setLocalPermission] = useState<ToolAgentPermission>('approval');
+  const [localPermission, setLocalPermission] = useState<ToolAgentPermission>('full-access');
   const [model, setModel] = useState<Model>('default');
   const [attachments, setAttachments] = useState<File[]>([]);
   const showAttachments = props.showAttachments ?? true;

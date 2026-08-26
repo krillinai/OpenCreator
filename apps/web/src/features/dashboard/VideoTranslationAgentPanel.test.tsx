@@ -59,20 +59,18 @@ describe('VideoTranslationAgentPanel', () => {
       expect.objectContaining({
         message: '检查设置',
         clientMessageId: expect.any(String),
-        sandbox: 'workspace-write'
+        sandbox: 'danger-full-access'
       })
     ));
   });
 
-  it('在输入框切换完全访问，并把权限真实传给 Creator Agent', async () => {
+  it('默认使用完全访问权限，并把权限真实传给 Creator Agent', async () => {
     const runAgentTurn = vi.fn(async () => ({ turn: {} }));
     renderPanel({
       runAgentTurn,
       getAgentTimeline: vi.fn(async () => emptyTimeline())
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /选择访问权限 请求批准/ }));
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /完全访问权限/ }));
     expect(screen.getByRole('button', { name: /选择访问权限 完全访问权限/ })).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('textbox', { name: '告诉 Agent 你的要求' }), {
