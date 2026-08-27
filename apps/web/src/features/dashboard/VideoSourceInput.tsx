@@ -6,6 +6,7 @@ import VideoSourcePreview from './VideoSourcePreview.js';
 
 export default function VideoSourceInput(props: {
   file: File | null;
+  registeredFile?: { name: string; size: number; mime: string };
   sourceType: 'url' | 'file';
   url: string;
   hasSource: boolean;
@@ -58,6 +59,7 @@ export default function VideoSourceInput(props: {
         {props.hasSource ? (
           <VideoSourcePreview
             file={props.file}
+            registeredFile={props.registeredFile}
             sourceType={props.sourceType}
             url={props.url}
             metadataService={props.metadataService}

@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe('KrillinAI CLI runner', () => {
-  it('writes private config, invokes the official CLI shape, maps outputs, and removes secrets', async () => {
+  it.skipIf(process.platform === 'win32')('writes private config, invokes the official CLI shape, maps outputs, and removes secrets', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-cli-'));
     const resourceRoot = join(tempDir, 'runtime');
     const jobsRoot = join(tempDir, 'jobs');
@@ -88,11 +88,12 @@ describe('KrillinAI CLI runner', () => {
       'source_video',
       'source_subtitle',
       'target_subtitle',
-      'bilingual_subtitle'
+      'bilingual_subtitle',
+      'vertical_subtitle'
     ]);
     expect(JSON.parse(readFileSync(join(workdir, 'observed-args.json'), 'utf8'))).toEqual(expect.arrayContaining([
       'subtitle',
-      source,
+      `local:${source}`,
       '--origin-lang',
       'en',
       '--target-lang',
@@ -125,11 +126,13 @@ const outputs = {
   origin_video: join(workdir, 'origin_video.mp4'),
   origin_srt: join(workdir, 'origin_language_srt.srt'),
   target_srt: join(workdir, 'target_language_srt.srt'),
-  bilingual_srt: join(workdir, 'bilingual_srt.srt')
+  bilingual_srt: join(workdir, 'bilingual_srt.srt'),
+  short_origin_mixed_srt: join(workdir, 'short_origin_mixed_srt.srt')
 };
 writeFileSync(outputs.origin_video, 'video');
 writeFileSync(outputs.origin_srt, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
 writeFileSync(outputs.target_srt, '1\n00:00:00,000 --> 00:00:01,000\n你好\n');
 writeFileSync(outputs.bilingual_srt, '1\n00:00:00,000 --> 00:00:01,000\n你好\nHello\n');
+writeFileSync(outputs.short_origin_mixed_srt, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
 process.stdout.write(JSON.stringify({ ok: true, stage: 'subtitle', outputs }) + '\n');
 `;

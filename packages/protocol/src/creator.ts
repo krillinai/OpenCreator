@@ -208,11 +208,18 @@ export type CreatorActionResponse = {
   receipt: CreatorActionReceipt;
 };
 
+export type CreatorSourceUploadResponse = {
+  job: CreatorJob;
+  artifact: CreatorArtifact;
+  deduplicated: boolean;
+};
+
 export type CreateCreatorJobRequest = {
   projectId: string;
   templateId: string;
   templateVersion?: number;
   state?: Record<string, CreatorJson>;
+  creationKey?: string;
 };
 
 export type CreatorJobListResponse = { jobs: CreatorJob[] };

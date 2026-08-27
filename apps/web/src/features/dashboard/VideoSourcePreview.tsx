@@ -113,6 +113,7 @@ function PreviewVideo(props: { src: string; label: string; onDimensions?(width: 
 
 export default function VideoSourcePreview(props: {
   file: File | null;
+  registeredFile?: { name: string; size: number; mime: string };
   sourceType: 'url' | 'file';
   url: string;
   onChooseFile(): void;
@@ -128,7 +129,8 @@ export default function VideoSourcePreview(props: {
   const [metadata, setMetadata] = useState<VideoMetadataResponse>();
   const source = useMemo(() => parseVideoSource(props.url), [props.url]);
   const localFile = props.sourceType === 'file' ? props.file : null;
-  const isLocal = localFile !== null;
+  const registeredFile = props.sourceType === 'file' ? props.registeredFile : undefined;
+  const isLocal = localFile !== null || registeredFile !== undefined;
   const localizedLabel = source.kind === 'youtube'
     ? l('YouTube 视频', 'YouTube video')
     : source.kind === 'bilibili'
@@ -138,9 +140,13 @@ export default function VideoSourcePreview(props: {
         : source.kind === 'link'
           ? l('视频链接', 'Video link')
           : source.label;
-  const sourceLabel = props.displayLabel ?? (localFile ? localFile.name : metadata?.title ?? localizedLabel);
+  const sourceLabel = props.displayLabel ?? (
+    localFile?.name ?? registeredFile?.name ?? metadata?.title ?? localizedLabel
+  );
   const sourceDetail = props.displayDetail ?? (localFile
     ? `${localFile.type.startsWith('audio/') ? l('本地音频', 'Local audio') : l('本地视频', 'Local video')} · ${formatFileSize(localFile.size)}`
+    : registeredFile
+      ? `${registeredFile.mime.startsWith('audio/') ? l('本地音频', 'Local audio') : l('本地视频', 'Local video')} · ${formatFileSize(registeredFile.size)}`
     : metadata
       ? `${localizedLabel}${metadata.authorName ? ` · ${metadata.authorName}` : ''}`
     : source.kind === 'link'
@@ -173,6 +179,13 @@ export default function VideoSourcePreview(props: {
     <div className="video-source-preview">
       <div className="video-source-preview-media">
         {localFile ? <LocalVideoPreview file={localFile} onDimensions={props.onDimensions} /> : null}
+        {!localFile && registeredFile ? (
+          <div className="video-source-link-preview">
+            <span><FileVideo size={34} strokeWidth={1.5} aria-hidden="true" /></span>
+            <strong>{l('本地视频已上传', 'Local video uploaded')}</strong>
+            <p>{sourceDetail}</p>
+          </div>
+        ) : null}
         {!isLocal && source.kind === 'youtube' && !showYouTubePlayer ? (
           <button
             className="video-source-youtube-poster"

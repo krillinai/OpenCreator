@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { CreatorJob } from '@opencreator/protocol';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { CreatorJob, CreatorJson } from '@opencreator/protocol';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import {
@@ -162,6 +162,9 @@ const categories = ['全部', '视频创作', '图像创作', '音频处理', '�
 type CategoryFilter = typeof categories[number];
 
 const CREATOR_JOB_LOAD_TIMEOUT_MS = 15_000;
+const CREATOR_JOB_CREATE_ATTEMPT_TIMEOUT_MS = 4_000;
+const CREATOR_JOB_CREATE_ATTEMPTS = 3;
+const CREATOR_JOB_CREATION_STORAGE_PREFIX = 'opencreator.creator.pending-job:';
 
 export default function DashboardPage(props: {
   onSelectPrompt(prompt: string): void;
@@ -187,7 +190,6 @@ export default function DashboardPage(props: {
   const [activeWorkspace, setActiveWorkspace] = useState<CreatorWorkspace | null>(
     () => props.skillLaunch?.workspace ?? props.workspace ?? null
   );
-  const [activeJobId, setActiveJobId] = useState<string | undefined>(() => props.jobId);
   const [activePromptHint, setActivePromptHint] = useState(
     () => props.skillLaunch?.promptHint
   );
@@ -218,18 +220,15 @@ export default function DashboardPage(props: {
     if (props.skillLaunch?.workspace !== undefined) {
       setWorkspaceOrigin('home');
       setActiveWorkspace(props.skillLaunch.workspace);
-      setActiveJobId(undefined);
       setActivePromptHint(props.skillLaunch.promptHint);
       return;
     }
     setWorkspaceOrigin('dashboard');
     setActiveWorkspace(props.workspace ?? null);
-    setActiveJobId(props.jobId);
-  }, [props.jobId, props.skillLaunch?.promptHint, props.skillLaunch?.workspace, props.workspace]);
+  }, [props.skillLaunch?.promptHint, props.skillLaunch?.workspace, props.workspace]);
 
   const closeWorkspace = () => {
     setActiveWorkspace(null);
-    setActiveJobId(undefined);
     setActivePromptHint(undefined);
     if (workspaceOrigin === 'home') {
       props.onBackToHome?.();
@@ -240,14 +239,12 @@ export default function DashboardPage(props: {
 
   const openWorkspace = (workspace: CreatorWorkspace) => {
     setWorkspaceOrigin('dashboard');
-    setActiveJobId(undefined);
     setActivePromptHint(undefined);
     setActiveWorkspace(workspace);
     props.onWorkspaceNavigate?.(workspace);
   };
 
   const handleJobCreated = (workspace: CreatorRuntimeWorkspace, job: CreatorJob) => {
-    setActiveJobId(job.id);
     props.onJobCreated?.(job);
     props.onWorkspaceNavigate?.(workspace, job.id, { replace: true });
   };
@@ -266,7 +263,7 @@ export default function DashboardPage(props: {
         projectId={props.projectId}
         service={props.creatorService}
         templateId={creatorTemplateForWorkspace(workspace)}
-        jobId={activeJobId}
+        jobId={props.jobId}
         onJobCreated={job => handleJobCreated(workspace, job)}
         onBack={closeWorkspace}
       >
@@ -491,50 +488,106 @@ function CreatorWorkspaceSession(props: {
   onBack(): void;
 }) {
   const l = useLocalizedCopy();
-  const [job, setJob] = useState<CreatorJob>();
+  const [job, setJob] = useState<CreatorJob | undefined>(() => props.jobId === undefined
+    ? createPendingCreatorJob(props.projectId, props.templateId)
+    : undefined);
   const [error, setError] = useState<string>();
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const jobRef = useRef(job);
+  const mountedRef = useRef(false);
+  const onJobCreatedRef = useRef(props.onJobCreated);
   const creationRequestsRef = useRef(new Map<string, Promise<CreatorJob>>());
+  const announcedCreatedJobIdsRef = useRef(new Set<string>());
+  const creationIdentityRef = useRef<{ scope: string; key: string }>();
+  const createdJobIdRef = useRef<string>();
+  const previousRouteJobIdRef = useRef(props.jobId);
+  jobRef.current = job;
+  onJobCreatedRef.current = props.onJobCreated;
+
+  const creationScope = `${props.projectId}:${props.templateId}`;
+  const startedAnotherNewSession = props.jobId === undefined
+    && previousRouteJobIdRef.current !== undefined;
+  if (
+    props.jobId === undefined
+    && (creationIdentityRef.current?.scope !== creationScope || startedAnotherNewSession)
+  ) {
+    creationIdentityRef.current = {
+      scope: creationScope,
+      key: readOrCreateCreatorJobCreationKey(props.projectId, props.templateId)
+    };
+    createdJobIdRef.current = undefined;
+  }
+  previousRouteJobIdRef.current = props.jobId;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const ensureJob = useCallback(async (state: Record<string, CreatorJson>): Promise<CreatorJob> => {
+    const currentJob = jobRef.current;
+    if (currentJob !== undefined && !isPendingCreatorJob(currentJob)) return currentJob;
+
+    const creationKey = creationIdentityRef.current?.key
+      ?? readOrCreateCreatorJobCreationKey(props.projectId, props.templateId);
+    const requestKey = `create:${creationKey}`;
+    let request = creationRequestsRef.current.get(requestKey);
+    if (request === undefined) {
+      request = createCreatorJobWithRecovery(props.service, {
+        projectId: props.projectId,
+        templateId: props.templateId,
+        creationKey,
+        state
+      });
+      creationRequestsRef.current.set(requestKey, request);
+      void request.catch(() => {
+        if (creationRequestsRef.current.get(requestKey) === request) {
+          creationRequestsRef.current.delete(requestKey);
+        }
+      });
+    }
+
+    const next = await request;
+    if (next.projectId !== props.projectId) {
+      throw new Error('Creator job does not belong to the active project');
+    }
+    if (next.templateId !== props.templateId) {
+      throw new Error('Creator job does not match the active template');
+    }
+    if (!mountedRef.current) return next;
+    createdJobIdRef.current = next.id;
+    jobRef.current = next;
+    setJob(next);
+    if (!announcedCreatedJobIdsRef.current.has(next.id)) {
+      announcedCreatedJobIdsRef.current.add(next.id);
+      clearCreatorJobCreationKey(props.projectId, props.templateId, creationKey);
+      onJobCreatedRef.current(next);
+    }
+    return next;
+  }, [props.projectId, props.service, props.templateId]);
 
   useEffect(() => {
     let canceled = false;
-    const creating = props.jobId === undefined;
-    let creationRequestKey: string | undefined;
-    let request: Promise<CreatorJob>;
-    if (creating) {
-      const requestKey = `create:${props.projectId}:${props.templateId}`;
-      creationRequestKey = requestKey;
-      const cached = creationRequestsRef.current.get(requestKey);
-      if (cached !== undefined) {
-        request = cached;
-      } else {
-        request = props.service.createJob({
-          projectId: props.projectId,
-          templateId: props.templateId
-        }).then(response => response.job);
-        creationRequestsRef.current.set(requestKey, request);
-        void request.catch(() => {
-          if (creationRequestsRef.current.get(requestKey) === request) {
-            creationRequestsRef.current.delete(requestKey);
-          }
-        });
-      }
-    } else {
-      request = props.service.getJob(props.jobId!).then(response => response.job);
+    if (props.jobId === undefined) {
+      setError(undefined);
+      setJob(current => (
+        current !== undefined
+        && isPendingCreatorJob(current)
+        && current.projectId === props.projectId
+        && current.templateId === props.templateId
+          ? current
+          : createPendingCreatorJob(props.projectId, props.templateId)
+      ));
+      return () => { canceled = true; };
     }
+
+    if (props.jobId !== createdJobIdRef.current) createdJobIdRef.current = undefined;
+    const request = props.service.getJob(props.jobId).then(response => response.job);
     setError(undefined);
     setJob(current => current?.id === props.jobId ? current : undefined);
     const timeout = window.setTimeout(() => {
       if (canceled) return;
-      if (
-        creationRequestKey !== undefined
-        && creationRequestsRef.current.get(creationRequestKey) === request
-      ) {
-        creationRequestsRef.current.delete(creationRequestKey);
-      }
-      setError(creating
-        ? l('创建创作项目超时，请重试', 'Creating the creator project timed out. Try again.')
-        : l('恢复创作项目超时，请重试', 'Restoring the creator project timed out. Try again.'));
+      setError(l('恢复创作项目超时，请重试', 'Restoring the creator project timed out. Try again.'));
     }, CREATOR_JOB_LOAD_TIMEOUT_MS);
     void request.then(next => {
       if (next.projectId !== props.projectId) {
@@ -547,7 +600,6 @@ function CreatorWorkspaceSession(props: {
       window.clearTimeout(timeout);
       setError(undefined);
       setJob(next);
-      if (creating) props.onJobCreated(next);
     }).catch(reason => {
       if (canceled) return;
       window.clearTimeout(timeout);
@@ -575,17 +627,137 @@ function CreatorWorkspaceSession(props: {
   if (!job) {
     return (
       <main className="creator-workspace-loading" aria-busy="true">
-        {props.jobId === undefined
-          ? l('正在创建创作项目', 'Creating creator project')
-          : l('正在恢复创作项目', 'Restoring creator project')}
+        {l('正在恢复创作项目', 'Restoring creator project')}
       </main>
     );
   }
+  const creationKey = creationIdentityRef.current?.key;
+  const providerKey = isPendingCreatorJob(job) || createdJobIdRef.current === job.id
+    ? `create:${creationKey ?? creationScope}`
+    : `job:${job.id}`;
   return (
-    <CreatorSessionProvider key={job.id} initialJob={job} service={props.service}>
+    <CreatorSessionProvider
+      key={providerKey}
+      initialJob={job}
+      service={props.service}
+      ensureJob={ensureJob}
+    >
       {props.children}
     </CreatorSessionProvider>
   );
+}
+
+function createPendingCreatorJob(projectId: string, templateId: string): CreatorJob {
+  const now = new Date().toISOString();
+  return {
+    id: `pending:${projectId}:${templateId}`,
+    projectId,
+    templateId,
+    templateVersion: 1,
+    status: 'draft',
+    revision: 0,
+    state: {},
+    agentThreadId: null,
+    stages: [],
+    artifacts: [],
+    activities: [],
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function isPendingCreatorJob(job: CreatorJob): boolean {
+  return job.id.startsWith('pending:');
+}
+
+async function createCreatorJobWithRecovery(
+  service: CreatorWebService,
+  request: Parameters<CreatorWebService['createJob']>[0]
+): Promise<CreatorJob> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < CREATOR_JOB_CREATE_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await withTimeout(
+        service.createJob(request),
+        CREATOR_JOB_CREATE_ATTEMPT_TIMEOUT_MS
+      );
+      return response.job;
+    } catch (error) {
+      lastError = error;
+      if (attempt + 1 < CREATOR_JOB_CREATE_ATTEMPTS) {
+        await waitForRetry(250 * (attempt + 1));
+      }
+    }
+  }
+  throw lastError;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(
+      () => reject(new Error('Creator job creation request timed out')),
+      timeoutMs
+    );
+    promise.then(
+      value => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      error => {
+        window.clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
+function waitForRetry(delayMs: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, delayMs));
+}
+
+function readOrCreateCreatorJobCreationKey(projectId: string, templateId: string): string {
+  const storageKey = creatorJobCreationStorageKey(projectId, templateId);
+  try {
+    const existing = window.sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+  } catch {
+    // Continue with an in-memory key when session storage is unavailable.
+  }
+  const key = `creator_create_${createCreationKeySuffix()}`;
+  try {
+    window.sessionStorage.setItem(storageKey, key);
+  } catch {
+    // The caller still keeps the generated key in component memory.
+  }
+  return key;
+}
+
+function clearCreatorJobCreationKey(
+  projectId: string,
+  templateId: string,
+  expectedKey?: string
+): void {
+  const storageKey = creatorJobCreationStorageKey(projectId, templateId);
+  try {
+    if (
+      expectedKey === undefined
+      || window.sessionStorage.getItem(storageKey) === expectedKey
+    ) {
+      window.sessionStorage.removeItem(storageKey);
+    }
+  } catch {
+    // Session storage is only a recovery aid.
+  }
+}
+
+function creatorJobCreationStorageKey(projectId: string, templateId: string): string {
+  return `${CREATOR_JOB_CREATION_STORAGE_PREFIX}${encodeURIComponent(projectId)}:${encodeURIComponent(templateId)}`;
+}
+
+function createCreationKeySuffix(): string {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  if (randomUuid) return randomUuid;
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
 }
 
 const englishDashboardLabels: Record<string, string> = {

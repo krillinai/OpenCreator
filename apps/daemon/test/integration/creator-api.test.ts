@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -19,6 +19,36 @@ afterEach(async () => {
 });
 
 describe('creator api', () => {
+  it('replays creator job creation after the response is lost', async () => {
+    await setupServer();
+    const requestBody = {
+      projectId: 'project_creation_recovery',
+      templateId: 'cover',
+      creationKey: 'creator-create-recovery-1'
+    };
+
+    const first = await request('POST', '/creator/jobs', requestBody);
+    const replayed = await request('POST', '/creator/jobs', requestBody);
+
+    expect(first.statusCode).toBe(201);
+    expect(replayed.statusCode).toBe(201);
+    expect(replayed.json().job.id).toBe(first.json().job.id);
+    const listed = await request(
+      'GET',
+      '/creator/jobs?projectId=project_creation_recovery'
+    );
+    expect(listed.json().jobs).toHaveLength(1);
+
+    const conflicting = await request('POST', '/creator/jobs', {
+      ...requestBody,
+      templateId: 'video-translation'
+    });
+    expect(conflicting.statusCode).toBe(409);
+    expect(conflicting.json()).toMatchObject({
+      error: { code: 'creator_idempotency_key_reused' }
+    });
+  });
+
   it('creates, lists, reads and mutates creator jobs', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-api-'));
     server = await buildServer({
@@ -100,6 +130,91 @@ describe('creator api', () => {
 
     const restored = await request('GET', `/creator/jobs/${job.id}`);
     expect(restored.json().job).toMatchObject({ revision: 0, status: 'draft', stages: [] });
+  });
+
+  it('streams a local source into the job before starting subtitles', async () => {
+    const sourceBytes = Buffer.from('test-video-content');
+    await setupServer({
+      creatorSourceMediaProbe: async path => {
+        expect(readFileSync(path)).toEqual(sourceBytes);
+        return {
+          duration: 12.5,
+          width: 1280,
+          height: 720,
+          hasVideo: true,
+          hasAudio: true
+        };
+      }
+    });
+    const created = await request('POST', '/creator/jobs', {
+      projectId: 'project_local_source',
+      templateId: 'video-translation',
+      state: {
+        sourceType: 'file',
+        targetLanguage: 'en'
+      }
+    });
+    const job = created.json().job;
+    const uploadUrl = `/creator/jobs/${job.id}/source-video?${new URLSearchParams({
+      expectedRevision: '0',
+      fileName: 'sample.webm',
+      mime: 'video/webm',
+      lastModified: '123'
+    })}`;
+    const uploaded = await server!.inject({
+      method: 'POST',
+      url: uploadUrl,
+      headers: {
+        authorization: 'Bearer secret',
+        'content-type': 'application/vnd.opencreator.creator-source'
+      },
+      payload: sourceBytes
+    });
+
+    expect(uploaded.statusCode).toBe(201);
+    expect(uploaded.json()).toMatchObject({
+      deduplicated: false,
+      job: {
+        revision: 1,
+        state: {
+          sourceType: 'file',
+          sourceFileName: 'sample.webm'
+        }
+      },
+      artifact: {
+        kind: 'source_video',
+        status: 'completed',
+        metadata: {
+          fileName: 'sample.webm',
+          mimeType: 'video/webm',
+          size: sourceBytes.length,
+          source: 'local-upload'
+        }
+      }
+    });
+
+    const duplicate = await server!.inject({
+      method: 'POST',
+      url: uploadUrl.replace('expectedRevision=0', 'expectedRevision=1'),
+      headers: {
+        authorization: 'Bearer secret',
+        'content-type': 'application/vnd.opencreator.creator-source'
+      },
+      payload: sourceBytes
+    });
+    expect(duplicate.statusCode).toBe(200);
+    expect(duplicate.json()).toMatchObject({ deduplicated: true, job: { revision: 1 } });
+
+    const started = await request('POST', `/creator/jobs/${job.id}/actions`, {
+      action: 'run-stage',
+      expectedRevision: 1,
+      input: { stageId: 'subtitle' }
+    });
+    expect(started.statusCode).toBe(200);
+    expect(started.json().job.artifacts).toContainEqual(expect.objectContaining({
+      kind: 'source_video',
+      status: 'completed'
+    }));
   });
 
   it('requires TTS configuration before creating a dubbing stage run', async () => {
@@ -324,6 +439,13 @@ describe('creator api', () => {
 async function setupServer(options: {
   llmConfigured?: boolean;
   agentRuntime?: AgentRuntimeAdapter;
+  creatorSourceMediaProbe?(path: string): Promise<{
+    duration: number;
+    width?: number;
+    height?: number;
+    hasVideo: boolean;
+    hasAudio: boolean;
+  }>;
 } = {}): Promise<void> {
   tempDir = mkdtempSync(join(tmpdir(), 'creator-api-'));
   const config = createDefaultCreatorServicesConfig();
@@ -336,6 +458,9 @@ async function setupServer(options: {
     dataDir: tempDir,
     codexHome: join(tempDir, 'codex-home'),
     creatorAgentRuntime: options.agentRuntime,
+    ...(options.creatorSourceMediaProbe === undefined
+      ? {}
+      : { creatorSourceMediaProbe: options.creatorSourceMediaProbe }),
     creatorServicesConfigStore: {
       async read() { return structuredClone(config); },
       async write(next) { return structuredClone(next); },

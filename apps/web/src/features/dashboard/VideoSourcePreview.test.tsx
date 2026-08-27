@@ -59,6 +59,32 @@ describe('VideoSourcePreview', () => {
     expect(screen.queryByText('Choose another')).not.toBeInTheDocument();
   });
 
+  it('restores an uploaded local source after the browser file is no longer available', () => {
+    const onChooseFile = vi.fn();
+    render(
+      <LanguageProvider initialPreference="en-US">
+        <VideoSourcePreview
+          file={null}
+          registeredFile={{
+            name: 'restored.webm',
+            size: 2 * 1024 * 1024,
+            mime: 'video/webm'
+          }}
+          sourceType="file"
+          url=""
+          onChooseFile={onChooseFile}
+          onClear={vi.fn()}
+        />
+      </LanguageProvider>
+    );
+
+    expect(screen.getByText('Local video uploaded')).toBeInTheDocument();
+    expect(screen.getByText('restored.webm')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    expect(onChooseFile).toHaveBeenCalledOnce();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
   it('shows YouTube title information before loading the embedded player', async () => {
     const getVideoMetadata = vi.fn(async (url: string) => ({
       platform: 'youtube' as const,

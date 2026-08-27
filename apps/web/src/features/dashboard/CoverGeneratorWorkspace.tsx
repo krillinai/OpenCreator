@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Download, ImagePlus, Images, Link2, Settings2, Sparkles, UploadCloud } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
@@ -35,6 +35,7 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
   const l = useLocalizedCopy();
   const { language } = useAppLanguage();
   const session = useOptionalCreatorSession();
+  const draftInitializedRef = useRef(false);
   const [ratio, setRatio] = useState<CoverRatio>(() => session?.state.ratio === '1:1' || session?.state.ratio === '9:16' ? session.state.ratio : '16:9');
   const [prompt, setPrompt] = useState(() => typeof session?.state.prompt === 'string' && session.state.prompt ? session.state.prompt : l(defaultPromptZh, defaultPromptEn));
   const [youtubeUrl, setYoutubeUrl] = useState(() => typeof session?.state.sourceUrl === 'string' ? session.state.sourceUrl : '');
@@ -57,7 +58,12 @@ export default function CoverGeneratorWorkspace(props: { onBack(): void; promptH
   }, [l, language]);
 
   useEffect(() => {
-    session?.updateDraft({ prompt, ratio, sourceUrl: youtubeUrl, candidateCount: 4 });
+    if (session === null) return;
+    session.updateDraft(
+      { prompt, ratio, sourceUrl: youtubeUrl, candidateCount: 4 },
+      { persist: draftInitializedRef.current }
+    );
+    draftInitializedRef.current = true;
   }, [prompt, ratio, session?.updateDraft, youtubeUrl]);
 
   useEffect(() => {

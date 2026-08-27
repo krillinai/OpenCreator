@@ -43,7 +43,24 @@ export function createCreatorService(input: {
       const template = templates.get(request.templateId, request.templateVersion);
       const state = template.inputSchema.parse(request.state ?? {}) as Record<string, CreatorJson>;
       return repository.transaction(() => {
+        if (request.creationKey !== undefined) {
+          const existing = repository.getJobByCreationKey(request.creationKey);
+          if (existing !== undefined) {
+            if (
+              existing.projectId !== request.projectId
+              || existing.templateId !== template.id
+              || existing.templateVersion !== template.version
+            ) {
+              throw new CreatorServiceError(
+                'creator_idempotency_key_reused',
+                'Creator creation key was already used with a different request'
+              );
+            }
+            return existing;
+          }
+        }
         const job = repository.createJob({
+          ...(request.creationKey === undefined ? {} : { creationKey: request.creationKey }),
           projectId: request.projectId,
           templateId: template.id,
           templateVersion: template.version,
@@ -64,6 +81,105 @@ export function createCreatorService(input: {
     getJob,
     listJobs(projectId?: string): CreatorJob[] {
       return repository.listJobs(projectId);
+    },
+    registerSourceVideo(jobId: string, input: {
+      expectedRevision: number;
+      path: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+      sha256: string;
+      lastModified: number | null;
+      media: {
+        duration: number;
+        width?: number;
+        height?: number;
+        hasVideo: boolean;
+        hasAudio: boolean;
+      };
+    }): { job: CreatorJob; artifact: CreatorArtifact; deduplicated: boolean } {
+      return repository.transaction(() => {
+        const current = repository.getJob(jobId);
+        if (current === undefined) {
+          throw new CreatorServiceError('creator_job_not_found', 'Creator job not found');
+        }
+        if (current.revision !== input.expectedRevision) {
+          throw new CreatorServiceError(
+            'creator_revision_conflict',
+            'Creator job revision changed',
+            current.revision
+          );
+        }
+        if (current.templateId !== 'video-translation') {
+          throw new CreatorServiceError(
+            'creator_source_upload_unsupported',
+            'Local source upload is only supported for video translation jobs'
+          );
+        }
+        const duplicate = [...current.artifacts].reverse().find(artifact => (
+          artifact.kind === 'source_video'
+          && artifact.status === 'completed'
+          && artifact.metadata.sha256 === input.sha256
+        ));
+        if (duplicate !== undefined) {
+          return { job: current, artifact: duplicate, deduplicated: true };
+        }
+
+        const artifact = repository.insertArtifact({
+          jobId,
+          kind: 'source_video',
+          status: 'completed',
+          path: input.path,
+          sourceArtifactIds: [],
+          metadata: {
+            fileName: input.fileName,
+            mimeType: input.mimeType,
+            size: input.size,
+            sha256: input.sha256,
+            lastModified: input.lastModified,
+            duration: input.media.duration,
+            width: input.media.width ?? null,
+            height: input.media.height ?? null,
+            hasVideo: input.media.hasVideo,
+            hasAudio: input.media.hasAudio,
+            source: 'local-upload'
+          }
+        });
+        const revision = current.revision + 1;
+        const template = templates.get(current.templateId, current.templateVersion);
+        const nextState = {
+          ...current.state,
+          sourceType: 'file',
+          sourceUrl: '',
+          sourceFileName: input.fileName,
+          sourceFileSize: input.size,
+          sourceFileLastModified: input.lastModified,
+          sourceFileSha256: input.sha256,
+          currentStage: null
+        };
+        repository.updateJob({
+          id: jobId,
+          status: 'draft',
+          revision,
+          state: template.inputSchema.parse(nextState) as Record<string, CreatorJson>
+        });
+        repository.insertActivity({
+          jobId,
+          revision,
+          actor: 'user',
+          action: 'register-source-video',
+          summary: '上传本地视频',
+          details: {
+            objectId: input.fileName,
+            affectedArtifactIds: [artifact.id]
+          }
+        });
+        return {
+          job: repository.getJob(jobId)!,
+          artifact,
+          deduplicated: false
+        };
+      });
     },
     bindAgentThread(jobId: string, threadId: string): CreatorJob {
       return repository.transaction(() => {

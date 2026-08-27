@@ -60,6 +60,7 @@ vi.mock('@opencreator/skill-market', async importOriginal => {
 
 let testRuntimeProjects: ProjectResponse[] | undefined;
 let testCreatorJobs: CreatorJob[] = [];
+let testCreatorJobsByCreationKey = new Map<string, string>();
 
 function App(props: AppProps = {}) {
   return <ProductionApp projectNavigationMode="tree" {...props} />;
@@ -181,6 +182,149 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: '工作台' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '工作台' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByText('数据看板')).not.toBeInTheDocument();
+  });
+
+  it('opens a creator workbench after the app has already rendered', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.querySelector('.conversation-page')).toBeInTheDocument();
+    });
+
+    window.history.pushState(null, '', '#/workbench?tool=video-translation');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+
+    await waitFor(() => {
+      expect(document.querySelector('.creator-workspace-page')).toBeInTheDocument();
+    });
+    expect(document.querySelector('.conversation-page')).not.toBeInTheDocument();
+
+    window.history.pushState(null, '', '#/');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+
+    await waitFor(() => {
+      expect(document.querySelector('.conversation-page')).toBeInTheDocument();
+    });
+    expect(document.querySelector('.creator-workspace-page')).not.toBeInTheDocument();
+  });
+
+  it('opens a new cover workspace without creating a job until the first edit', async () => {
+    window.location.hash = '#/workbench?tool=cover-generator';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    let createRequests = 0;
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsedUrl = new URL(url);
+      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
+        createRequests += 1;
+        await new Promise(resolve => window.setTimeout(resolve, 20));
+      }
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <StrictMode>
+        <App
+          fileService={createFileService()}
+          hostBridge={hostBridge}
+          runtimeFetch={runtimeFetch}
+          subscribeRunEvents={async () => undefined}
+        />
+      </StrictMode>
+    );
+
+    expect(await screen.findByRole('heading', { name: '封面生成' })).toBeInTheDocument();
+    await new Promise(resolve => window.setTimeout(resolve, 50));
+    expect(window.location.hash).toBe('#/workbench?tool=cover-generator');
+    expect(createRequests).toBe(0);
+    expect(testCreatorJobs).toHaveLength(0);
+
+    fireEvent.change(screen.getByRole('textbox', { name: '封面提示词' }), {
+      target: { value: '为新视频生成一张蓝色科技感封面' }
+    });
+    await waitFor(() => {
+      expect(window.location.hash).toBe(
+        '#/workbench?tool=cover-generator&jobId=creator-job-1'
+      );
+    });
+    expect(createRequests).toBe(1);
+    expect(testCreatorJobs).toHaveLength(1);
+  });
+
+  it('recovers the same creator job when creation succeeds but its response is lost', async () => {
+    window.location.hash = '#/workbench?tool=cover-generator';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const creationKeys: string[] = [];
+    let rejectFirstResponse: ((reason: Error) => void) | undefined;
+    const firstResponse = new Promise<Response>((_resolve, reject) => {
+      rejectFirstResponse = reject;
+    });
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsedUrl = new URL(url);
+      if (parsedUrl.pathname === '/creator/jobs' && init?.method === 'POST') {
+        const body = readRequestBody(init);
+        creationKeys.push(String(body.creationKey));
+        const response = handleDefaultProjectApiRequest(url, init);
+        if (creationKeys.length === 1) return firstResponse;
+        return response!;
+      }
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    const firstRender = render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+    expect(await screen.findByRole('heading', { name: '封面生成' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '封面提示词' }), {
+      target: { value: '第一次编辑后连接中断' }
+    });
+    await waitFor(() => expect(testCreatorJobs).toHaveLength(1));
+    firstRender.unmount();
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('heading', { name: '封面生成' })).toBeInTheDocument();
+    rejectFirstResponse?.(new TypeError('connection closed after commit'));
+    fireEvent.change(screen.getByRole('textbox', { name: '封面提示词' }), {
+      target: { value: '恢复同一个创建请求' }
+    });
+    await waitFor(() => expect(creationKeys.length).toBeGreaterThanOrEqual(3));
+    expect(new Set(creationKeys).size).toBe(1);
+    expect(testCreatorJobs).toHaveLength(1);
+    expect(window.location.hash).toBe(
+      '#/workbench?tool=cover-generator&jobId=creator-job-1'
+    );
   });
 
   it('restores the project library directly from its URL', async () => {
@@ -899,7 +1043,9 @@ describe('App', () => {
     vi.unstubAllGlobals();
     testRuntimeProjects = undefined;
     testCreatorJobs = [];
+    testCreatorJobsByCreationKey = new Map();
     window.localStorage.clear();
+    window.sessionStorage.clear();
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   });
 
@@ -1149,6 +1295,60 @@ describe('App', () => {
     expect(screen.queryByRole('tab', { name: '成片' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '字幕' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('textbox', { name: '输入任务' })).not.toBeInTheDocument();
+  });
+
+  it('uploads a selected local video before starting the translation stage', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem('opencreator.preferences.language', 'en-US');
+    window.location.hash = '#/workbench?tool=video-translation';
+    const hostBridge = createHostBridge();
+    hostBridge.readConnectionConfig = async () => ({
+      baseUrl: 'http://127.0.0.1:60764',
+      token: 'runtime-token'
+    });
+    const workflowRequests: string[] = [];
+    const runtimeFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const parsedUrl = new URL(url);
+      if (/^\/creator\/jobs\/[^/]+\/source-video$/.test(parsedUrl.pathname)) {
+        workflowRequests.push('upload-source');
+      }
+      if (/^\/creator\/jobs\/[^/]+\/actions$/.test(parsedUrl.pathname)) {
+        const body = readRequestBody(init ?? {});
+        if (body.action === 'run-stage') workflowRequests.push('run-stage');
+      }
+      const projectApiResponse = handleDefaultProjectApiRequest(url, init);
+      if (projectApiResponse !== undefined) return projectApiResponse;
+      if (url.endsWith('/healthz')) return jsonResponse({ ok: true });
+      if (url.endsWith('/codex/status')) return jsonResponse(createCodexStatusResponse());
+      if (url.includes('/threads?')) return jsonResponse({ threads: [] });
+      throw new Error(`Unexpected request ${url}`);
+    };
+
+    render(
+      <App
+        fileService={createFileService()}
+        hostBridge={hostBridge}
+        runtimeFetch={runtimeFetch}
+        subscribeRunEvents={async () => undefined}
+      />
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Translate & Dub Video' }))
+      .toBeInTheDocument();
+    const file = new File(['local-video'], 'local.webm', {
+      type: 'video/webm',
+      lastModified: 123
+    });
+    await user.upload(screen.getByLabelText('Upload a local video'), file);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.click(within(
+      screen.getByRole('region', { name: 'Video translation workspace' })
+    ).getByRole('button', { name: 'Start translation' }));
+
+    await waitFor(() => expect(workflowRequests).toEqual(['upload-source', 'run-stage']));
   });
 
   it('keeps a browser conversation title inside the conversation page', async () => {
@@ -8229,6 +8429,14 @@ function handleDefaultCreatorApiRequest(
   }
   if (parsedUrl.pathname === '/creator/jobs' && method === 'POST') {
     const body = readRequestBody(init ?? {});
+    const creationKey = typeof body.creationKey === 'string' ? body.creationKey : undefined;
+    const existingJobId = creationKey === undefined
+      ? undefined
+      : testCreatorJobsByCreationKey.get(creationKey);
+    const existingJob = existingJobId === undefined
+      ? undefined
+      : testCreatorJobs.find(job => job.id === existingJobId);
+    if (existingJob !== undefined) return jsonResponse({ job: existingJob }, { status: 201 });
     const now = new Date(0).toISOString();
     const job: CreatorJob = {
       id: `creator-job-${testCreatorJobs.length + 1}`,
@@ -8237,20 +8445,22 @@ function handleDefaultCreatorApiRequest(
       templateVersion: typeof body.templateVersion === 'number' ? body.templateVersion : 1,
       status: 'draft',
       revision: 0,
-      state: {
-        sourceType: 'url',
-        sourceUrl: '',
-        sourceLanguage: 'zh_cn',
-        targetLanguage: 'en',
-        preferPlatformCaptions: true,
-        bilingual: true,
-        subtitlePosition: 'top',
-        dubbing: false,
-        voiceCode: '',
-        composeVideo: false,
-        videoFormat: 'horizontal',
-        currentStage: null
-      },
+      state: body.state !== null && typeof body.state === 'object' && !Array.isArray(body.state)
+        ? body.state as Record<string, CreatorJson>
+        : {
+            sourceType: 'url',
+            sourceUrl: '',
+            sourceLanguage: 'zh_cn',
+            targetLanguage: 'en',
+            preferPlatformCaptions: true,
+            bilingual: true,
+            subtitlePosition: 'top',
+            dubbing: false,
+            voiceCode: '',
+            composeVideo: false,
+            videoFormat: 'horizontal',
+            currentStage: null
+          },
       agentThreadId: null,
       stages: [],
       artifacts: [],
@@ -8259,6 +8469,7 @@ function handleDefaultCreatorApiRequest(
       updatedAt: now
     };
     testCreatorJobs.push(job);
+    if (creationKey !== undefined) testCreatorJobsByCreationKey.set(creationKey, job.id);
     return jsonResponse({ job }, { status: 201 });
   }
 
@@ -8272,6 +8483,54 @@ function handleDefaultCreatorApiRequest(
   const eventsRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/events$/);
   if (eventsRoute !== null && method === 'GET') {
     return new Response('', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  }
+  const sourceUploadRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/source-video$/);
+  if (sourceUploadRoute !== null && method === 'POST') {
+    const jobIndex = testCreatorJobs.findIndex(
+      candidate => candidate.id === decodeURIComponent(sourceUploadRoute[1]!)
+    );
+    if (jobIndex < 0) return jsonResponse({}, { status: 404 });
+    const previous = testCreatorJobs[jobIndex]!;
+    const revision = previous.revision + 1;
+    const now = new Date(revision * 1000).toISOString();
+    const fileName = parsedUrl.searchParams.get('fileName') ?? 'local-video';
+    const mimeType = parsedUrl.searchParams.get('mime') ?? 'application/octet-stream';
+    const file = init?.body instanceof File ? init.body : undefined;
+    const artifact = {
+      id: `source-artifact-${revision}`,
+      jobId: previous.id,
+      kind: 'source_video' as const,
+      version: 1,
+      status: 'completed' as const,
+      path: `/tmp/${fileName}`,
+      sourceArtifactIds: [],
+      metadata: {
+        fileName,
+        mimeType,
+        size: file?.size ?? 0,
+        lastModified: file?.lastModified ?? null,
+        sha256: 'test-source-sha256',
+        source: 'local-upload'
+      },
+      createdAt: now
+    };
+    const job: CreatorJob = {
+      ...previous,
+      revision,
+      state: {
+        ...previous.state,
+        sourceType: 'file',
+        sourceUrl: '',
+        sourceFileName: fileName,
+        sourceFileSize: file?.size ?? 0,
+        sourceFileLastModified: file?.lastModified ?? null,
+        sourceFileSha256: 'test-source-sha256'
+      },
+      artifacts: [...previous.artifacts, artifact],
+      updatedAt: now
+    };
+    testCreatorJobs[jobIndex] = job;
+    return jsonResponse({ job, artifact, deduplicated: false }, { status: 201 });
   }
   const actionRoute = parsedUrl.pathname.match(/^\/creator\/jobs\/([^/]+)\/actions$/);
   if (actionRoute !== null && method === 'POST') {

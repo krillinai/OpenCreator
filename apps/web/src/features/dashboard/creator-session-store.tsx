@@ -30,11 +30,15 @@ type CreatorSessionContextValue = {
   state: Record<string, CreatorJson>;
   conflictedFields: string[];
   error: CreatorSessionError | null;
-  updateDraft(patch: Record<string, CreatorJson>, options?: { semantic?: boolean }): void;
+  updateDraft(
+    patch: Record<string, CreatorJson>,
+    options?: { semantic?: boolean; persist?: boolean }
+  ): void;
   flush(): Promise<void>;
   clearError(): void;
   applyRemoteSnapshot(job: CreatorJob): void;
   applyAction(request: Omit<CreatorActionRequest, 'expectedRevision'>): Promise<void>;
+  uploadSourceVideo(file: File): Promise<void>;
   openArtifact(artifactId: string): Promise<Response>;
   agentSession: CreatorAgentSession | null;
   turns: CreatorAgentTurn[];
@@ -60,6 +64,7 @@ const CreatorSessionContext = createContext<CreatorSessionContextValue | null>(n
 
 export function CreatorSessionProvider(props: {
   initialJob: CreatorJob;
+  ensureJob?: (state: Record<string, CreatorJson>) => Promise<CreatorJob>;
   service: Pick<CreatorWebService, 'applyAction' | 'runAgentTurn'> & Partial<Pick<CreatorWebService,
     | 'startAgentTurn'
     | 'steerAgentTurn'
@@ -69,6 +74,7 @@ export function CreatorSessionProvider(props: {
     | 'getAgentTimeline'
     | 'getJob'
     | 'openArtifact'
+    | 'uploadSourceVideo'
     | 'subscribeJobEvents'>>;
   children: ReactNode;
 }) {
@@ -82,6 +88,8 @@ export function CreatorSessionProvider(props: {
   const [items, setItems] = useState<CreatorAgentItem[]>([]);
   const [approvals, setApprovals] = useState<CreatorAgentApproval[]>([]);
   const timerRef = useRef<number>();
+  const ensureJobWorkRef = useRef<Promise<CreatorJob> | null>(null);
+  const flushWorkRef = useRef<Promise<void> | null>(null);
   const confirmedRef = useRef(confirmedJob);
   const draftRef = useRef(draft);
   const dirtyRef = useRef(dirtyFields);
@@ -91,37 +99,100 @@ export function CreatorSessionProvider(props: {
   draftRef.current = draft;
   dirtyRef.current = dirtyFields;
 
-  const flush = useCallback(async () => {
+  const ensurePersistedJob = useCallback((): Promise<CreatorJob> => {
+    if (!isPendingCreatorJob(confirmedRef.current)) {
+      return Promise.resolve(confirmedRef.current);
+    }
+    if (ensureJobWorkRef.current !== null) return ensureJobWorkRef.current;
+    if (props.ensureJob === undefined) {
+      return Promise.reject(new Error('Creator job persistence is unavailable'));
+    }
+
+    const capturedDraft = { ...draftRef.current };
+    const creationState = { ...confirmedRef.current.state, ...capturedDraft };
+    const work = props.ensureJob(creationState).then(next => {
+      confirmedRef.current = next;
+      setConfirmedJob(next);
+
+      const currentDraft = draftRef.current;
+      const remainingDraft = Object.fromEntries(Object.entries(currentDraft).filter(([field, value]) => (
+        !(field in capturedDraft) || !sameCreatorJson(value, capturedDraft[field])
+      ))) as Record<string, CreatorJson>;
+      const remainingDirty = new Set([...dirtyRef.current].filter(field => (
+        !(field in capturedDraft)
+        || !sameCreatorJson(currentDraft[field], capturedDraft[field])
+      )));
+      draftRef.current = remainingDraft;
+      dirtyRef.current = remainingDirty;
+      setDraft(remainingDraft);
+      setDirtyFields(remainingDirty);
+      setConflictedFields([]);
+      setError(null);
+      return next;
+    }).finally(() => {
+      if (ensureJobWorkRef.current === work) ensureJobWorkRef.current = null;
+    });
+    ensureJobWorkRef.current = work;
+    return work;
+  }, [props.ensureJob]);
+
+  const flush = useCallback((): Promise<void> => {
     if (timerRef.current !== undefined) {
       window.clearTimeout(timerRef.current);
       timerRef.current = undefined;
     }
-    const fields = [...dirtyRef.current];
-    if (fields.length === 0 || typeof props.service.applyAction !== 'function') return;
-    const patch = Object.fromEntries(fields.map(field => [field, draftRef.current[field]])) as Record<string, CreatorJson>;
-    try {
-      const response = await props.service.applyAction(confirmedRef.current.id, {
-        action: 'update-settings',
-        expectedRevision: confirmedRef.current.revision,
-        input: {
-          patch,
-          activityMode: 'draft',
-          objectId: fields.sort().join(',')
+    if (flushWorkRef.current !== null) return flushWorkRef.current;
+
+    const work = (async () => {
+      try {
+        while (dirtyRef.current.size > 0) {
+          if (isPendingCreatorJob(confirmedRef.current)) {
+            await ensurePersistedJob();
+            continue;
+          }
+          if (typeof props.service.applyAction !== 'function') return;
+
+          const fields = [...dirtyRef.current];
+          const capturedDraft = Object.fromEntries(
+            fields.map(field => [field, draftRef.current[field]])
+          ) as Record<string, CreatorJson>;
+          const response = await props.service.applyAction(confirmedRef.current.id, {
+            action: 'update-settings',
+            expectedRevision: confirmedRef.current.revision,
+            input: {
+              patch: capturedDraft,
+              activityMode: 'draft',
+              objectId: [...fields].sort().join(',')
+            }
+          });
+          confirmedRef.current = response.job;
+          setConfirmedJob(response.job);
+
+          const currentDraft = draftRef.current;
+          const remainingDraft = Object.fromEntries(Object.entries(currentDraft).filter(([field, value]) => (
+            !(field in capturedDraft) || !sameCreatorJson(value, capturedDraft[field])
+          ))) as Record<string, CreatorJson>;
+          const remainingDirty = new Set([...dirtyRef.current].filter(field => (
+            !(field in capturedDraft)
+            || !sameCreatorJson(currentDraft[field], capturedDraft[field])
+          )));
+          draftRef.current = remainingDraft;
+          dirtyRef.current = remainingDirty;
+          setDraft(remainingDraft);
+          setDirtyFields(remainingDirty);
+          setConflictedFields(current => current.filter(field => remainingDirty.has(field)));
         }
-      });
-      confirmedRef.current = response.job;
-      setConfirmedJob(response.job);
-      setDraft(current => Object.fromEntries(
-        Object.entries(current).filter(([field]) => !fields.includes(field))
-      ) as Record<string, CreatorJson>);
-      setDirtyFields(current => new Set([...current].filter(field => !fields.includes(field))));
-      setConflictedFields(current => current.filter(field => !fields.includes(field)));
-      setError(null);
-    } catch (cause) {
-      setError(toSessionError(cause));
-      throw cause;
-    }
-  }, [props.service]);
+        setError(null);
+      } catch (cause) {
+        setError(toSessionError(cause));
+        throw cause;
+      }
+    })().finally(() => {
+      if (flushWorkRef.current === work) flushWorkRef.current = null;
+    });
+    flushWorkRef.current = work;
+    return work;
+  }, [ensurePersistedJob, props.service]);
 
   useEffect(() => () => {
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
@@ -129,10 +200,23 @@ export function CreatorSessionProvider(props: {
 
   const updateDraft = useCallback((
     patch: Record<string, CreatorJson>,
-    options: { semantic?: boolean } = {}
+    options: { semantic?: boolean; persist?: boolean } = {}
   ) => {
-    setDraft(current => ({ ...current, ...patch }));
-    setDirtyFields(current => new Set([...current, ...Object.keys(patch)]));
+    const currentState = { ...confirmedRef.current.state, ...draftRef.current };
+    const changedPatch = Object.fromEntries(Object.entries(patch).filter(([field, value]) => (
+      !sameCreatorJson(currentState[field], value)
+    ))) as Record<string, CreatorJson>;
+    const changedFields = Object.keys(changedPatch);
+    if (changedFields.length === 0) return;
+
+    const nextDraft = { ...draftRef.current, ...changedPatch };
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    if (options.persist === false) return;
+
+    const nextDirty = new Set([...dirtyRef.current, ...changedFields]);
+    dirtyRef.current = nextDirty;
+    setDirtyFields(nextDirty);
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => {
       void flush().catch(() => undefined);
@@ -153,6 +237,7 @@ export function CreatorSessionProvider(props: {
 
   const loadAgentTimeline = useCallback(async () => {
     const jobId = confirmedRef.current.id;
+    if (isPendingCreatorJob(confirmedRef.current)) return;
     const response = props.service.getAgentTimeline !== undefined
       ? await props.service.getAgentTimeline(jobId)
       : props.service.getAgentHistory !== undefined
@@ -191,7 +276,8 @@ export function CreatorSessionProvider(props: {
 
   useEffect(() => {
     if (props.service.getJob === undefined || props.service.subscribeJobEvents === undefined) return;
-    const jobId = confirmedRef.current.id;
+    if (isPendingCreatorJob(confirmedJob)) return;
+    const jobId = confirmedJob.id;
     const subscription = createCreatorSnapshotSubscription<CreatorJob, CreatorEventEnvelope>({
       loadSnapshot: async () => (await props.service.getJob!(jobId)).job,
       subscribe: (onEvent, onDisconnect) => (
@@ -212,23 +298,23 @@ export function CreatorSessionProvider(props: {
     return () => {
       subscription.close();
     };
-  }, [applyLiveEvent, applyRemoteSnapshot, props.service, reloadAgentTimeline]);
+  }, [applyLiveEvent, applyRemoteSnapshot, confirmedJob.id, props.service, reloadAgentTimeline]);
 
   useEffect(() => {
     if (
       props.service.getAgentTimeline === undefined
       && props.service.getAgentHistory === undefined
     ) return;
-    let closed = false;
+    if (isPendingCreatorJob(confirmedJob)) return;
     void reloadAgentTimeline().catch(() => undefined);
-    return () => { closed = true; };
-  }, [props.service, reloadAgentTimeline]);
+  }, [confirmedJob.id, props.service, reloadAgentTimeline]);
 
   const applyAction = useCallback(async (
     request: Omit<CreatorActionRequest, 'expectedRevision'>
   ) => {
     try {
       await flush();
+      await ensurePersistedJob();
       const response = await props.service.applyAction(confirmedRef.current.id, {
         ...request,
         expectedRevision: confirmedRef.current.revision
@@ -240,7 +326,27 @@ export function CreatorSessionProvider(props: {
       setError(toSessionError(cause));
       throw cause;
     }
-  }, [flush, props.service]);
+  }, [ensurePersistedJob, flush, props.service]);
+
+  const uploadSourceVideo = useCallback(async (file: File) => {
+    if (props.service.uploadSourceVideo === undefined) {
+      throw new Error('Creator source upload transport is unavailable');
+    }
+    try {
+      await flush();
+      await ensurePersistedJob();
+      const response = await props.service.uploadSourceVideo(confirmedRef.current.id, {
+        file,
+        expectedRevision: confirmedRef.current.revision
+      });
+      confirmedRef.current = response.job;
+      setConfirmedJob(response.job);
+      setError(null);
+    } catch (cause) {
+      setError(toSessionError(cause));
+      throw cause;
+    }
+  }, [ensurePersistedJob, flush, props.service]);
 
   const openArtifact = useCallback((artifactId: string) => {
     if (props.service.openArtifact === undefined) {
@@ -257,6 +363,7 @@ export function CreatorSessionProvider(props: {
     if (!content) return;
     try {
       await flush();
+      await ensurePersistedJob();
       const clientMessageId = createClientMessageId();
       const start = props.service.startAgentTurn ?? props.service.runAgentTurn;
       const response = await start(confirmedRef.current.id, {
@@ -275,7 +382,7 @@ export function CreatorSessionProvider(props: {
     } finally {
       await reloadAgentTimeline().catch(() => undefined);
     }
-  }, [flush, props.service, reloadAgentTimeline]);
+  }, [ensurePersistedJob, flush, props.service, reloadAgentTimeline]);
 
   const steerAgentTurn = useCallback(async (message: string) => {
     const content = message.trim();
@@ -347,6 +454,7 @@ export function CreatorSessionProvider(props: {
     clearError,
     applyRemoteSnapshot,
     applyAction,
+    uploadSourceVideo,
     openArtifact,
     agentSession,
     turns,
@@ -357,7 +465,7 @@ export function CreatorSessionProvider(props: {
     steerAgentTurn,
     interruptAgentTurn,
     respondAgentApproval
-  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, respondAgentApproval, runAgentTurn, steerAgentTurn, turns, updateDraft]);
+  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, respondAgentApproval, runAgentTurn, steerAgentTurn, turns, updateDraft, uploadSourceVideo]);
 
   return (
     <CreatorSessionContext.Provider value={value}>
@@ -420,6 +528,14 @@ function laterTimestamp(left: string, right: string): string {
 
 function isRecord(value: CreatorJson | undefined): value is Record<string, CreatorJson> {
   return value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPendingCreatorJob(job: CreatorJob): boolean {
+  return job.id.startsWith('pending:');
+}
+
+function sameCreatorJson(left: CreatorJson | undefined, right: CreatorJson | undefined): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export function useCreatorSession(): CreatorSessionContextValue {

@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
+import type { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
 import type { CreatorEventHub } from '../creator/events.js';
@@ -38,6 +39,11 @@ import {
   type VideoTranslationWorkflow
 } from '../creator/templates/video-translation-actions.js';
 import type { CreatorProjectCoverService } from '../creator/project-cover.js';
+import {
+  CREATOR_SOURCE_UPLOAD_CONTENT_TYPE,
+  CreatorSourceUploadError,
+  type CreatorSourceUploadService
+} from '../creator/source-upload.js';
 
 export async function registerCreatorRoutes(
   server: FastifyInstance,
@@ -48,9 +54,46 @@ export async function registerCreatorRoutes(
     agentService?: CreatorAgentService;
     videoTranslationWorkflow?: VideoTranslationWorkflow;
     projectCoverService?: CreatorProjectCoverService;
+    sourceUploadService?: CreatorSourceUploadService;
     dispatcher: CreatorCommandDispatcher;
   }
 ): Promise<void> {
+  if (options.sourceUploadService !== undefined) {
+    server.addContentTypeParser(
+      CREATOR_SOURCE_UPLOAD_CONTENT_TYPE,
+      (_request, payload, done) => done(null, payload)
+    );
+    server.post<{ Body: Readable }>('/creator/jobs/:id/source-video', async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const query = readObject(request.query);
+        if (!isReadable(request.body)) {
+          throw new TypeError('body must be a media stream');
+        }
+        const response = await options.sourceUploadService!.upload({
+          jobId: id,
+          expectedRevision: readQueryInteger(query.expectedRevision, 'expectedRevision'),
+          fileName: readString(query.fileName, 'fileName'),
+          mimeType: readString(query.mime, 'mime'),
+          lastModified: query.lastModified === undefined
+            ? null
+            : readQueryInteger(query.lastModified, 'lastModified'),
+          source: request.body
+        });
+        events.publish({
+          id: `snapshot:${response.job.revision}`,
+          jobId: response.job.id,
+          revision: response.job.revision,
+          kind: 'snapshot_changed',
+          payload: { revision: response.job.revision }
+        });
+        return reply.code(response.deduplicated ? 200 : 201).send(response);
+      } catch (error) {
+        return sendCreatorError(reply, error);
+      }
+    });
+  }
+
   server.get('/creator/templates', async () => ({
     templates: service.templates.list().map(template => ({
       id: template.id,
@@ -69,7 +112,10 @@ export async function registerCreatorRoutes(
         ...(body.templateVersion === undefined
           ? {}
           : { templateVersion: readInteger(body.templateVersion, 'templateVersion') }),
-        ...(body.state === undefined ? {} : { state: readObject(body.state) as CreateCreatorJobRequest['state'] })
+        ...(body.state === undefined ? {} : { state: readObject(body.state) as CreateCreatorJobRequest['state'] }),
+        ...(body.creationKey === undefined
+          ? {}
+          : { creationKey: readString(body.creationKey, 'creationKey') })
       });
       events.publish({
         id: `snapshot:${job.revision}`,
@@ -481,6 +527,10 @@ function readCreatorAgentSandbox(
 }
 
 function sendCreatorError(reply: FastifyReply, error: unknown) {
+  if (error instanceof CreatorSourceUploadError) {
+    return reply.code(error.statusCode)
+      .send(apiError(error.code as RuntimeErrorCode, error.message));
+  }
   if (error instanceof CreatorCommandError) {
     const status = error.code === 'creator_job_not_found'
       ? 404
@@ -503,6 +553,7 @@ function sendCreatorError(reply: FastifyReply, error: unknown) {
       : error.code === 'creator_approval_not_found'
         ? 404
       : error.code === 'creator_revision_conflict'
+        || error.code === 'creator_idempotency_key_reused'
         ? 409
         : 400;
     return reply.code(status).send(apiError(error.code as RuntimeErrorCode, error.message, {
@@ -549,6 +600,17 @@ function readInteger(value: unknown, field: string): number {
     throw new TypeError(`${field} must be a non-negative integer`);
   }
   return value as number;
+}
+
+function readQueryInteger(value: unknown, field: string): number {
+  const parsed = typeof value === 'string' && /^\d+$/.test(value)
+    ? Number(value)
+    : value;
+  return readInteger(parsed, field);
+}
+
+function isReadable(value: unknown): value is Readable {
+  return typeof (value as { pipe?: unknown } | null)?.pipe === 'function';
 }
 
 function creatorArtifactContentType(fileName: string): string {

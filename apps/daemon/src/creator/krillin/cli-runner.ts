@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
+  CreatorJson,
   CreatorServicesConfig,
   KrillinResultArtifact
 } from '@opencreator/protocol';
@@ -32,6 +33,13 @@ type KrillinCliResponse = {
     message?: string;
     retryable?: boolean;
   };
+};
+
+export type KrillinCliProgressFrame = {
+  type: 'progress';
+  phase?: string;
+  percent: number;
+  message?: string;
 };
 
 export class KrillinCliError extends Error {
@@ -99,6 +107,8 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
       args,
       cwd: launcherRoot,
       runtimeBin,
+      resourceRoot: input.resourceRoot,
+      reportProgress: progress => input.stage.reportProgress(progress),
       signal: input.stage.signal
     });
     const artifacts = await collectArtifacts(input, response);
@@ -123,7 +133,7 @@ function commandArguments(
   const command = stage.stageRun.stageId;
   const common = ['--workdir', stage.workdir, '--task-id', stage.stageRun.id];
   if (command === 'subtitle') {
-    const source = artifactPath(artifacts, 'source_video') ?? stringOption(options, 'sourceUrl');
+    const source = resolveKrillinCliSource(artifacts, options);
     if (!source) throw new CreatorExecutorError('creator_stage_input_missing', 'Subtitle input video or URL is required');
     return [
       'subtitle',
@@ -214,17 +224,27 @@ function executeCli(input: {
   args: string[];
   cwd: string;
   runtimeBin: string;
+  resourceRoot: string;
+  reportProgress(progress: Record<string, CreatorJson>): void;
   signal: AbortSignal;
 }): Promise<KrillinCliResponse> {
   return new Promise((resolvePromise, reject) => {
     const child = spawnCreatorProcess(input.executable, input.args, {
       cwd: input.cwd,
-      env: cliEnvironment(process.env, input.runtimeBin),
+      env: createKrillinCliEnvironment(process.env, input.runtimeBin, input.resourceRoot),
       stdio: ['ignore', 'pipe', 'pipe']
     }, input.signal);
     let stdout = '';
     let stderr = '';
-    child.stdout?.on('data', chunk => { stdout = boundedAppend(stdout, String(chunk)); });
+    let pendingStdoutLine = '';
+    child.stdout?.on('data', chunk => {
+      const value = String(chunk);
+      stdout = boundedAppend(stdout, value);
+      pendingStdoutLine = consumeProgressLines(
+        pendingStdoutLine + value,
+        input.reportProgress
+      );
+    });
     child.stderr?.on('data', chunk => { stderr = boundedAppend(stderr, String(chunk)); });
     child.once('error', reject);
     child.once('exit', code => {
@@ -232,6 +252,7 @@ function executeCli(input: {
         reject(new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled'));
         return;
       }
+      reportProgressLine(pendingStdoutLine, input.reportProgress);
       const response = parseResponse(stdout);
       if (response === undefined) {
         reject(new KrillinCliError(
@@ -288,13 +309,14 @@ async function collectArtifacts(
   return result;
 }
 
-function outputMappings(stageId: string): Array<[string, string]> {
+export function outputMappings(stageId: string): Array<[string, string]> {
   if (stageId === 'subtitle') {
     return [
       ['origin_video', 'source_video'],
       ['origin_srt', 'source_subtitle'],
       ['target_srt', 'target_subtitle'],
-      ['bilingual_srt', 'bilingual_subtitle']
+      ['bilingual_srt', 'bilingual_subtitle'],
+      ['short_origin_mixed_srt', 'vertical_subtitle']
     ];
   }
   if (stageId === 'tts') return [['tts_audio', 'dubbed_audio'], ['video_with_tts', 'dubbed_video']];
@@ -303,7 +325,11 @@ function outputMappings(stageId: string): Array<[string, string]> {
   return [];
 }
 
-function cliEnvironment(env: NodeJS.ProcessEnv, runtimeBin: string): NodeJS.ProcessEnv {
+export function createKrillinCliEnvironment(
+  env: NodeJS.ProcessEnv,
+  runtimeBin: string,
+  resourceRoot: string
+): NodeJS.ProcessEnv {
   const names = process.platform === 'win32'
     ? ['SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA']
     : ['HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'SSL_CERT_FILE', 'SSL_CERT_DIR'];
@@ -313,8 +339,63 @@ function cliEnvironment(env: NodeJS.ProcessEnv, runtimeBin: string): NodeJS.Proc
       ? runtimeBin
       : [runtimeBin, '/usr/bin', '/bin'].join(':'),
     Path: runtimeBin,
+    KRILLINAI_RESOURCE_ROOT: resourceRoot,
+    KRILLINAI_OFFLINE_DEPENDENCIES: '1',
     OPENCREATOR_KRILLINAI_CLI: '1'
   };
+}
+
+function consumeProgressLines(
+  value: string,
+  reportProgress: (progress: Record<string, CreatorJson>) => void
+): string {
+  const lines = value.split(/\r?\n/);
+  const pending = lines.pop() ?? '';
+  for (const line of lines) reportProgressLine(line, reportProgress);
+  return pending.length <= 1024 * 1024 ? pending : pending.slice(-1024 * 1024);
+}
+
+function reportProgressLine(
+  line: string,
+  reportProgress: (progress: Record<string, CreatorJson>) => void
+): void {
+  const frame = parseKrillinCliProgressFrame(line);
+  if (frame === undefined) return;
+  const payload: Record<string, CreatorJson> = { percent: frame.percent };
+  if (frame.phase !== undefined) payload.phase = frame.phase;
+  if (frame.message !== undefined) payload.message = frame.message;
+  reportProgress({
+    krillinMode: 'cli',
+    providerStatus: 'running',
+    percent: frame.percent,
+    ...(frame.phase === undefined ? {} : { phase: frame.phase }),
+    krillinEventPayload: payload
+  });
+}
+
+export function parseKrillinCliProgressFrame(line: string): KrillinCliProgressFrame | undefined {
+  const value = line.trim();
+  if (!value.startsWith('{') || !value.endsWith('}')) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (parsed.type !== 'progress' || typeof parsed.percent !== 'number' || !Number.isFinite(parsed.percent)) {
+      return undefined;
+    }
+    const phase = typeof parsed.phase === 'string' && parsed.phase.trim()
+      ? parsed.phase.trim()
+      : undefined;
+    const message = typeof parsed.message === 'string' && parsed.message.trim()
+      ? parsed.message.trim()
+      : undefined;
+    return {
+      type: 'progress',
+      percent: Math.max(0, Math.min(99, Math.round(parsed.percent))),
+      ...(phase === undefined ? {} : { phase }),
+      ...(message === undefined ? {} : { message })
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 async function linkRuntimeModels(resourceRoot: string, launcherRoot: string): Promise<void> {
@@ -347,6 +428,14 @@ function parseResponse(stdout: string): KrillinCliResponse | undefined {
 
 function artifactPath(artifacts: MaterializedKrillinArtifact[], kind: string): string | undefined {
   return artifacts.find(artifact => artifact.kind === kind)?.path;
+}
+
+export function resolveKrillinCliSource(
+  artifacts: MaterializedKrillinArtifact[],
+  options: Record<string, unknown>
+): string | undefined {
+  const localSource = artifactPath(artifacts, 'source_video');
+  return localSource === undefined ? stringOption(options, 'sourceUrl') : `local:${localSource}`;
 }
 
 function requiredOption(options: Record<string, unknown>, name: string): string {

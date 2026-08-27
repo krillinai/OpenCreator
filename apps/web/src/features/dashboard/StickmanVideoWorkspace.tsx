@@ -169,6 +169,7 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   const l = useLocalizedCopy();
   const { language } = useAppLanguage();
   const session = useOptionalCreatorSession();
+  const draftInitializedRef = useRef(false);
   const [characterMode, setCharacterMode] = useState<CharacterSource>('preset');
   const [characterSource, setCharacterSource] = useState<CharacterSource>('preset');
   const [selectedPresetId, setSelectedPresetId] = useState<CharacterPresetId | null>('default');
@@ -276,13 +277,15 @@ export default function StickmanVideoWorkspace(props: { onBack(): void; promptHi
   }, [l, language]);
 
   useEffect(() => {
-    session?.updateDraft({
+    if (session === null) return;
+    session.updateDraft({
       topic: story,
       characterPrompt,
       ratio,
       style,
       targetDurationSeconds: 30
-    });
+    }, { persist: draftInitializedRef.current });
+    draftInitializedRef.current = true;
   }, [characterPrompt, ratio, session?.updateDraft, story, style]);
 
   useEffect(() => {

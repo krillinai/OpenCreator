@@ -273,20 +273,33 @@ function proxyRuntimeRequest(
   }
   headers.authorization = `Bearer ${config.token}`;
 
+  let proxyResponse: import('node:http').IncomingMessage | undefined;
+
   const proxyRequest = httpRequest(
     target,
     {
       method: incoming.method,
       headers
     },
-    proxyResponse => {
-      outgoing.statusCode = proxyResponse.statusCode ?? 502;
-      for (const [name, value] of Object.entries(proxyResponse.headers)) {
+    response => {
+      proxyResponse = response;
+      outgoing.statusCode = response.statusCode ?? 502;
+      for (const [name, value] of Object.entries(response.headers)) {
         if (value !== undefined) outgoing.setHeader(name, value);
       }
-      proxyResponse.pipe(outgoing);
+      response.pipe(outgoing);
     }
   );
+
+  const destroyUpstream = () => {
+    proxyResponse?.destroy();
+    proxyRequest.destroy();
+  };
+
+  incoming.on('aborted', destroyUpstream);
+  outgoing.on('close', () => {
+    if (!outgoing.writableEnded) destroyUpstream();
+  });
 
   proxyRequest.on('error', error => {
     if (outgoing.headersSent) {

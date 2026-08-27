@@ -80,6 +80,7 @@ export default function ProjectsPage(props: {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const projects = useMemo(
     () => props.jobs
+      .filter(isMeaningfulCreatorJob)
       .map(job => createCreatorProject(job, props.workspaces, l))
       .filter((project): project is CreatorProject => project !== undefined),
     [l, props.jobs, props.workspaces]
@@ -222,7 +223,7 @@ export default function ProjectsPage(props: {
                   ? l('没有找到匹配的项目', 'No matching projects')
                   : l('这个分类还没有项目', 'No projects in this category')}</strong>
               <p>{projects.length === 0
-                ? l('从工作台选择模板后会新建项目，并自动显示在这里。', 'Choose a template in Workbench to create a project. It will appear here automatically.')
+                ? l('开始编辑或执行创作后，项目会显示在这里。', 'Projects appear here after you start editing or run a creator action.')
                 : normalizedQuery.length > 0
                   ? l('换个名称重新搜索。', 'Try searching with another name.')
                   : l('完成对应类型的创作后，项目会显示在这里。', 'Projects of this type will appear here after you create them.')}</p>
@@ -301,6 +302,122 @@ function createCreatorProject(
     cover: projectCover(job.templateId),
     youtubeCovers: youtubeThumbnailUrls(readString(job.state.sourceUrl))
   };
+}
+
+export function isMeaningfulCreatorJob(job: CreatorJob): boolean {
+  if (job.status !== 'draft') return true;
+  if (job.agentThreadId !== null) return true;
+  if (job.stages.length > 0 || job.artifacts.length > 0) return true;
+  if (job.activities.some(activity => (
+    activity.action !== 'create-job'
+    && !activity.action.startsWith('update-settings')
+  ))) {
+    return true;
+  }
+  return hasMeaningfulDraftState(job.templateId, job.state);
+}
+
+function hasMeaningfulDraftState(templateId: string, state: CreatorJob['state']): boolean {
+  if (templateId === 'video-translation') {
+    const sourceLanguage = typeof state.sourceLanguage === 'string' ? state.sourceLanguage : 'en';
+    const targetLanguage = typeof state.targetLanguage === 'string' ? state.targetLanguage : 'zh_cn';
+    const usesDefaultLanguagePair = (
+      (sourceLanguage === 'en' && targetLanguage === 'zh_cn')
+      || (sourceLanguage === 'zh_cn' && targetLanguage === 'en')
+    );
+    if (!usesDefaultLanguagePair) return true;
+  }
+  const defaults = creatorDraftDefaults(templateId);
+  return Object.entries(state).some(([field, value]) => {
+    const alternatives = defaults[field];
+    if (alternatives !== undefined) {
+      return !alternatives.some(candidate => sameJson(candidate, value));
+    }
+    return hasJsonContent(value);
+  });
+}
+
+function creatorDraftDefaults(templateId: string): Record<string, unknown[]> {
+  if (templateId === 'cover') {
+    return {
+      prompt: [
+        '面向创作者的 AI 视频工作流，主体清晰，高对比标题，专业但有冲击力',
+        'An AI video workflow for creators, with a clear subject, high-contrast title, and a professional, bold look'
+      ],
+      ratio: ['16:9'],
+      sourceUrl: [''],
+      candidateCount: [4]
+    };
+  }
+  if (templateId === 'video-download') {
+    return {
+      sourceUrl: [''],
+      downloadFormat: ['mp4'],
+      selectedQuality: ['1080p']
+    };
+  }
+  if (templateId === 'auto-clip') {
+    return {
+      sourceUrl: [''],
+      focus: ['balanced'],
+      duration: ['30-60'],
+      clipCount: [10],
+      sourceOrientation: ['landscape'],
+      selectedCandidateIds: [['1', '2', '3']]
+    };
+  }
+  if (templateId === 'stickman-video') {
+    return {
+      topic: [
+        '一个火柴人在城市天台追逐被风吹起的创意手稿，最后成功抓住。',
+        'A stick figure chases a creative manuscript blown across a city rooftop and catches it at the last moment.'
+      ],
+      characterPrompt: [
+        '黑色线条、白色圆形头部、红色围巾，动作灵活',
+        'Black lines, a round white head, a red scarf, and agile movement'
+      ],
+      ratio: ['16:9'],
+      style: ['手绘线稿'],
+      targetDurationSeconds: [30]
+    };
+  }
+  if (templateId === 'video-translation') {
+    return {
+      sourceType: ['url'],
+      sourceUrl: [''],
+      sourceLanguage: ['en', 'zh_cn'],
+      targetLanguage: ['zh_cn', 'en'],
+      bilingual: [true],
+      subtitlePosition: ['top'],
+      preferPlatformCaptions: [true],
+      dubbing: [false],
+      voiceCode: [''],
+      composeVideo: [false],
+      videoFormat: ['horizontal'],
+      verticalTitle: [''],
+      verticalSubtitle: [''],
+      currentStep: [0],
+      furthestStep: [0],
+      workspacePhase: ['configure'],
+      resultVersion: [null],
+      latestResultVersion: [null],
+      resultTab: ['video'],
+      resultVersions: [[]],
+      draftBaseVersion: [null]
+    };
+  }
+  return {};
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function hasJsonContent(value: unknown): boolean {
+  if (value === null || value === undefined || value === '' || value === false) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
 }
 
 function creatorProjectTitle(job: CreatorJob, type: string): string {

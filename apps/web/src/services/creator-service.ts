@@ -12,14 +12,19 @@ import type {
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJobListResponse,
+  CreatorSourceUploadResponse,
   CreatorTemplateListResponse
 } from '@opencreator/protocol';
 
 type ClientLike = {
   get(path: string): Promise<unknown>;
   post(path: string, body?: unknown): Promise<unknown>;
+  postBinary?(path: string, body: BodyInit, contentType?: string): Promise<unknown>;
   rawGet?(path: string): Promise<Response>;
 };
+
+const CREATOR_SOURCE_UPLOAD_CONTENT_TYPE =
+  'application/vnd.opencreator.creator-source';
 
 export function createCreatorService(client: ClientLike) {
   const lastEventIdByJob = new Map<string, string>();
@@ -38,6 +43,25 @@ export function createCreatorService(client: ClientLike) {
     },
     getJob(jobId: string): Promise<{ job: CreatorJob }> {
       return client.get(`/creator/jobs/${encodeURIComponent(jobId)}`) as Promise<{ job: CreatorJob }>;
+    },
+    uploadSourceVideo(jobId: string, input: {
+      file: File;
+      expectedRevision: number;
+    }): Promise<CreatorSourceUploadResponse> {
+      if (client.postBinary === undefined) {
+        return Promise.reject(new Error('Creator source upload transport is unavailable'));
+      }
+      const query = new URLSearchParams({
+        expectedRevision: String(input.expectedRevision),
+        fileName: input.file.name,
+        mime: input.file.type || 'application/octet-stream',
+        lastModified: String(input.file.lastModified)
+      });
+      return client.postBinary(
+        `/creator/jobs/${encodeURIComponent(jobId)}/source-video?${query.toString()}`,
+        input.file,
+        CREATOR_SOURCE_UPLOAD_CONTENT_TYPE
+      ) as Promise<CreatorSourceUploadResponse>;
     },
     openProjectCover(jobId: string): Promise<Response> {
       if (client.rawGet === undefined) throw new Error('Creator project cover transport is unavailable');

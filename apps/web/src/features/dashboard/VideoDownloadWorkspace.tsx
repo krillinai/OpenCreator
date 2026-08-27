@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, CheckCircle2, Download, Link2, Music2, Video } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
@@ -35,6 +35,7 @@ function platformFor(value: string, l: ReturnType<typeof useLocalizedCopy>) {
 export default function VideoDownloadWorkspace(props: { onBack(): void; promptHint?: string }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
+  const draftInitializedRef = useRef(false);
   const [url, setUrl] = useState(() => typeof session?.state.sourceUrl === 'string' ? session.state.sourceUrl : '');
   const [format, setFormat] = useState<DownloadFormat>(() => session?.state.downloadFormat === 'mp3' ? 'mp3' : 'mp4');
   const [quality, setQuality] = useState(() => typeof session?.state.selectedQuality === 'string' ? session.state.selectedQuality : '1080p');
@@ -64,7 +65,12 @@ export default function VideoDownloadWorkspace(props: { onBack(): void; promptHi
       ], [format]);
 
   useEffect(() => {
-    session?.updateDraft({ sourceUrl: url, downloadFormat: format, selectedQuality: quality });
+    if (session === null) return;
+    session.updateDraft(
+      { sourceUrl: url, downloadFormat: format, selectedQuality: quality },
+      { persist: draftInitializedRef.current }
+    );
+    draftInitializedRef.current = true;
   }, [format, quality, session?.updateDraft, url]);
 
   function selectFormat(nextFormat: DownloadFormat) {

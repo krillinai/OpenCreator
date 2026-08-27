@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useEffect } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { CreatorEventEnvelope, CreatorJob } from '@opencreator/protocol';
 import {
@@ -21,6 +22,13 @@ function job(revision: number, state: Record<string, any>): CreatorJob {
     activities: [],
     createdAt: '2026-08-20T00:00:00.000Z',
     updatedAt: '2026-08-20T00:00:00.000Z'
+  };
+}
+
+function pendingJob(state: Record<string, any> = {}): CreatorJob {
+  return {
+    ...job(0, state),
+    id: 'pending:project_1:video-translation'
   };
 }
 
@@ -54,7 +62,137 @@ function Harness() {
   );
 }
 
+function PendingHarness() {
+  const session = useCreatorSession();
+  useEffect(() => {
+    session.updateDraft({ targetLanguage: 'en', dubbing: false }, { persist: false });
+  }, [session.updateDraft]);
+  return (
+    <div>
+      <output aria-label="pending-language">{String(session.state.targetLanguage)}</output>
+      <button type="button" onClick={() => session.updateDraft({ targetLanguage: 'ja' })}>
+        persist-change
+      </button>
+      <button type="button" onClick={() => void session.runAgentTurn('start from agent')}>
+        pending-agent
+      </button>
+    </div>
+  );
+}
+
 describe('CreatorSessionStore', () => {
+  it('keeps initial workspace defaults in memory without creating a job', async () => {
+    vi.useFakeTimers();
+    const ensureJob = vi.fn();
+    const applyAction = vi.fn();
+    render(
+      <CreatorSessionProvider
+        initialJob={pendingJob()}
+        ensureJob={ensureJob}
+        service={{ applyAction, runAgentTurn: vi.fn() } as never}
+      >
+        <PendingHarness />
+      </CreatorSessionProvider>
+    );
+
+    expect(screen.getByLabelText('pending-language')).toHaveTextContent('en');
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(ensureJob).not.toHaveBeenCalled();
+    expect(applyAction).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('creates a pending job once on the first user setting change with the complete state', async () => {
+    vi.useFakeTimers();
+    const ensureJob = vi.fn(async (state: CreatorJob['state']) => job(0, state));
+    const applyAction = vi.fn();
+    render(
+      <CreatorSessionProvider
+        initialJob={pendingJob()}
+        ensureJob={ensureJob}
+        service={{ applyAction, runAgentTurn: vi.fn() } as never}
+      >
+        <PendingHarness />
+      </CreatorSessionProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'persist-change' }));
+    await act(async () => vi.advanceTimersByTimeAsync(350));
+
+    expect(ensureJob).toHaveBeenCalledTimes(1);
+    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'ja', dubbing: false });
+    expect(applyAction).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('creates a pending job before sending the first Agent message', async () => {
+    const ensureJob = vi.fn(async (state: CreatorJob['state']) => job(0, state));
+    const startAgentTurn = vi.fn(async () => ({ turn: undefined as never }));
+    render(
+      <CreatorSessionProvider
+        initialJob={pendingJob()}
+        ensureJob={ensureJob}
+        service={{
+          applyAction: vi.fn(),
+          runAgentTurn: startAgentTurn,
+          startAgentTurn
+        } as never}
+      >
+        <PendingHarness />
+      </CreatorSessionProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'pending-agent' }));
+    await waitFor(() => expect(startAgentTurn).toHaveBeenCalledTimes(1));
+    expect(ensureJob).toHaveBeenCalledTimes(1);
+    expect(ensureJob).toHaveBeenCalledWith({ targetLanguage: 'en', dubbing: false });
+    expect(startAgentTurn).toHaveBeenCalledWith('job_1', expect.objectContaining({
+      message: 'start from agent'
+    }));
+  });
+
+  it('shares one creation request between a draft flush and an Agent turn', async () => {
+    let resolveCreation!: (created: CreatorJob) => void;
+    const ensureJob = vi.fn(() => new Promise<CreatorJob>(resolve => {
+      resolveCreation = resolve;
+    }));
+    const startAgentTurn = vi.fn(async () => ({ turn: undefined as never }));
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    function ConcurrentHarness() {
+      session = useCreatorSession();
+      return null;
+    }
+    render(
+      <CreatorSessionProvider
+        initialJob={pendingJob({ targetLanguage: 'en' })}
+        ensureJob={ensureJob}
+        service={{
+          applyAction: vi.fn(),
+          runAgentTurn: startAgentTurn,
+          startAgentTurn
+        } as never}
+      >
+        <ConcurrentHarness />
+      </CreatorSessionProvider>
+    );
+
+    act(() => session!.updateDraft({ targetLanguage: 'ja' }));
+    let flushPromise!: Promise<void>;
+    let agentPromise!: Promise<void>;
+    act(() => {
+      flushPromise = session!.flush();
+      agentPromise = session!.runAgentTurn('continue');
+    });
+    expect(ensureJob).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCreation(job(0, { targetLanguage: 'ja' }));
+      await Promise.all([flushPromise, agentPromise]);
+    });
+    expect(ensureJob).toHaveBeenCalledTimes(1);
+    expect(startAgentTurn).toHaveBeenCalledWith('job_1', expect.any(Object));
+  });
+
   it('updates shared draft immediately without creating an agent turn', async () => {
     vi.useFakeTimers();
     const applyAction = vi.fn(async () => ({
@@ -180,6 +318,66 @@ describe('CreatorSessionStore', () => {
 
     expect(revisions).toEqual([0, 1]);
     expect(screen.getByLabelText('error')).toBeEmptyDOMElement();
+  });
+
+  it('uses the uploaded source revision when starting the next action', async () => {
+    const applyAction = vi.fn(async (_jobId: string, request: { expectedRevision: number }) => ({
+      job: job(3, { sourceType: 'file', targetLanguage: 'en' }),
+      receipt: {
+        actor: 'user' as const,
+        action: 'run-stage',
+        summary: 'started',
+        affectedArtifacts: [],
+        newRevision: 3,
+        createdAt: '2026-08-20T00:00:03.000Z'
+      }
+    }));
+    const uploadSourceVideo = vi.fn(async (
+      _jobId: string,
+      request: { expectedRevision: number }
+    ) => ({
+      job: job(2, { sourceType: 'file', targetLanguage: 'en' }),
+      artifact: {
+        id: 'source_1',
+        jobId: 'job_1',
+        kind: 'source_video',
+        version: 1,
+        status: 'completed' as const,
+        path: '/tmp/source.webm',
+        sourceArtifactIds: [],
+        metadata: { source: 'local-upload' },
+        createdAt: '2026-08-20T00:00:02.000Z'
+      },
+      deduplicated: false
+    }));
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    function UploadHarness() {
+      session = useCreatorSession();
+      return <Harness />;
+    }
+    render(
+      <CreatorSessionProvider
+        initialJob={job(1, { sourceType: 'file', targetLanguage: 'en' })}
+        service={{ applyAction, uploadSourceVideo, runAgentTurn: vi.fn() } as never}
+      >
+        <UploadHarness />
+      </CreatorSessionProvider>
+    );
+
+    const file = new File(['video'], 'sample.webm', { type: 'video/webm' });
+    await act(async () => {
+      await session!.uploadSourceVideo(file);
+      await session!.applyAction({ action: 'run-stage', input: { stageId: 'subtitle' } });
+    });
+
+    expect(uploadSourceVideo).toHaveBeenCalledWith(
+      'job_1',
+      expect.objectContaining({ file, expectedRevision: 1 })
+    );
+    expect(applyAction).toHaveBeenCalledWith(
+      'job_1',
+      expect.objectContaining({ expectedRevision: 2 })
+    );
   });
 
   it('applies live stage events immediately and reloads only the affected state surface', async () => {

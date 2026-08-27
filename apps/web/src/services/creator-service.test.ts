@@ -6,13 +6,22 @@ describe('creator web service', () => {
     const client = {
       get: vi.fn(async () => ({ jobs: [] })),
       post: vi.fn(async () => ({ job: { id: 'job_1' } })),
+      postBinary: vi.fn(async () => ({
+        job: { id: 'job_1' },
+        artifact: { id: 'artifact_source_1' },
+        deduplicated: false
+      })),
       rawGet: vi.fn(async () => new Response('artifact'))
     };
     const service = createCreatorService(client);
 
     await service.listJobs('project 1');
     await service.listJobs();
-    await service.createJob({ projectId: 'project 1', templateId: 'video-translation' });
+    await service.createJob({
+      projectId: 'project 1',
+      templateId: 'video-translation',
+      creationKey: 'create-key-1'
+    });
     await service.applyAction('job_1', {
       action: 'update-settings',
       expectedRevision: 0,
@@ -26,12 +35,23 @@ describe('creator web service', () => {
       processGeneration: 3
     });
     await service.getAgentTimeline('job_1');
+    await service.uploadSourceVideo('job_1', {
+      file: new File(['video'], 'sample.webm', {
+        type: 'video/webm',
+        lastModified: 123
+      }),
+      expectedRevision: 7
+    });
     await service.openProjectCover('job_1');
     await service.openArtifact('job_1', 'artifact 1');
 
     expect(client.get).toHaveBeenCalledWith('/creator/jobs?projectId=project%201');
     expect(client.get).toHaveBeenCalledWith('/creator/jobs');
-    expect(client.post).toHaveBeenNthCalledWith(1, '/creator/jobs', expect.any(Object));
+    expect(client.post).toHaveBeenNthCalledWith(1, '/creator/jobs', {
+      projectId: 'project 1',
+      templateId: 'video-translation',
+      creationKey: 'create-key-1'
+    });
     expect(client.post).toHaveBeenNthCalledWith(2, '/creator/jobs/job_1/actions', expect.any(Object));
     expect(client.post).toHaveBeenNthCalledWith(3, '/creator/jobs/job_1/agent-turns', expect.any(Object));
     expect(client.post).toHaveBeenNthCalledWith(4, '/creator/jobs/job_1/agent-steer', expect.any(Object));
@@ -42,6 +62,11 @@ describe('creator web service', () => {
       expect.any(Object)
     );
     expect(client.get).toHaveBeenCalledWith('/creator/jobs/job_1/agent-timeline');
+    expect(client.postBinary).toHaveBeenCalledWith(
+      '/creator/jobs/job_1/source-video?expectedRevision=7&fileName=sample.webm&mime=video%2Fwebm&lastModified=123',
+      expect.any(File),
+      'application/vnd.opencreator.creator-source'
+    );
     expect(client.rawGet).toHaveBeenCalledWith('/creator/jobs/job_1/cover');
     expect(client.rawGet).toHaveBeenCalledWith('/creator/jobs/job_1/artifacts/artifact%201/content');
   });

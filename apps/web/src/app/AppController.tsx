@@ -3084,6 +3084,10 @@ export function AppController(props: AppControllerProps) {
           approvalId: route.approvalId
         });
         return;
+      case 'workbench':
+        closeMobileSidebar();
+        dispatch({ type: 'set_active_view', activeView: 'dashboard' });
+        return;
       case 'search':
       case 'projects':
       case 'schedules':

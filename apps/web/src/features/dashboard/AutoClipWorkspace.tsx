@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Captions, Check, Download, FileVideo, LayoutGrid, List, ListVideo, Play, Scissors, Settings2, SlidersHorizontal, Sparkles } from 'lucide-react';
 import CreatorToolShell from './CreatorToolShell.js';
 import CreatorResultVersionMenu from './CreatorResultVersionMenu.js';
@@ -77,6 +77,7 @@ export default function AutoClipWorkspace(props: {
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
+  const draftInitializedRef = useRef(false);
   const [videoUrl, setVideoUrl] = useState(() => typeof session?.state.sourceUrl === 'string' ? session.state.sourceUrl : '');
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [focus, setFocus] = useState<AnalysisFocus>(() => session?.state.focus === 'viral' || session?.state.focus === 'knowledge' ? session.state.focus : 'balanced');
@@ -106,14 +107,16 @@ export default function AutoClipWorkspace(props: {
   const nextVersion = resultVersions.reduce((highest, version) => Math.max(highest, version.value), 0) + 1;
 
   useEffect(() => {
-    session?.updateDraft({
+    if (session === null) return;
+    session.updateDraft({
       sourceUrl: videoUrl,
       focus,
       duration,
       clipCount,
       sourceOrientation,
       selectedCandidateIds: selected.map(String)
-    });
+    }, { persist: draftInitializedRef.current });
+    draftInitializedRef.current = true;
   }, [clipCount, duration, focus, selected, session?.updateDraft, sourceOrientation, videoUrl]);
 
   const steps = [l('添加视频', 'Add video'), l('分析设置', 'Analysis settings'), l('选择与导出', 'Select and export')];

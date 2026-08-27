@@ -22,6 +22,7 @@ type RepositoryOptions = {
 };
 
 type CreateJobInput = {
+  creationKey?: string;
   projectId: string;
   templateId: string;
   templateVersion: number;
@@ -62,6 +63,7 @@ export type CreatorRepository = {
   transaction<T>(operation: () => T): T;
   createJob(input: CreateJobInput): CreatorJob;
   getJob(id: string): CreatorJob | undefined;
+  getJobByCreationKey(creationKey: string): CreatorJob | undefined;
   listJobs(projectId?: string): CreatorJob[];
   updateJob(input: {
     id: string;
@@ -259,11 +261,12 @@ export function createCreatorRepository(
       const timestamp = now();
       db.prepare(`
         INSERT INTO creator_jobs (
-          id, project_id, template_id, template_version, status, revision,
+          id, creation_key, project_id, template_id, template_version, status, revision,
           state_json, agent_thread_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
       `).run(
         id,
+        input.creationKey ?? null,
         input.projectId,
         input.templateId,
         input.templateVersion,
@@ -276,6 +279,14 @@ export function createCreatorRepository(
       return getJob(id)!;
     },
     getJob,
+    getJobByCreationKey(creationKey: string): CreatorJob | undefined {
+      const row = db.prepare(`
+        SELECT id
+        FROM creator_jobs
+        WHERE creation_key = ?
+      `).get(creationKey) as { id: string } | undefined;
+      return row === undefined ? undefined : getJob(row.id);
+    },
     listJobs(projectId?: string): CreatorJob[] {
       const rows = projectId === undefined
         ? db.prepare(`

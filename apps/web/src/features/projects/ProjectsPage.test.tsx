@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CreatorJob } from '@opencreator/protocol';
 import { describe, expect, it, vi } from 'vitest';
-import ProjectsPage, { youtubeThumbnailUrls } from './ProjectsPage.js';
+import ProjectsPage, { isMeaningfulCreatorJob, youtubeThumbnailUrls } from './ProjectsPage.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 
 const workspaces = [{
@@ -118,10 +118,72 @@ describe('ProjectsPage', () => {
     expect(onOpenJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'job_translation' }));
   });
 
-  it('explains that Workbench templates create new projects when the history is empty', () => {
+  it('explains that projects appear after the user starts creating', () => {
     render(<ProjectsPage jobs={[]} workspaces={workspaces} onOpenJob={vi.fn()} />);
 
-    expect(screen.getByRole('status')).toHaveTextContent('从工作台选择模板后会新建项目');
+    expect(screen.getByRole('status')).toHaveTextContent('开始编辑或执行创作后，项目会显示在这里');
+  });
+
+  it('hides historical drafts that only contain template defaults', () => {
+    const emptyDraftBase = creatorJob({
+      id: 'job_empty',
+      templateId: 'cover',
+      state: {
+        prompt: '面向创作者的 AI 视频工作流，主体清晰，高对比标题，专业但有冲击力',
+        ratio: '16:9',
+        sourceUrl: '',
+        candidateCount: 4
+      },
+      updatedAt: '2026-08-20T10:00:00.000Z'
+    });
+    const emptyDraft = {
+      ...emptyDraftBase,
+      activities: [{
+        id: 'activity_defaults',
+        jobId: emptyDraftBase.id,
+        revision: 1,
+        actor: 'user' as const,
+        action: 'update-settings:draft',
+        summary: '同步模板默认设置',
+        details: {},
+        createdAt: emptyDraftBase.updatedAt
+      }]
+    };
+    const editedDraft = creatorJob({
+      id: 'job_edited',
+      templateId: 'cover',
+      state: { prompt: '用户修改过的封面需求', ratio: '16:9', sourceUrl: '', candidateCount: 4 },
+      updatedAt: '2026-08-20T11:00:00.000Z'
+    });
+    const failedDraft = { ...emptyDraft, id: 'job_failed', status: 'failed' as const };
+    const legacyTranslationDraft = creatorJob({
+      id: 'job_legacy_translation',
+      templateId: 'video-translation',
+      state: { sourceLanguage: 'zh_cn', targetLanguage: 'en' },
+      updatedAt: '2026-08-20T09:00:00.000Z'
+    });
+    const editedTranslationDraft = creatorJob({
+      id: 'job_edited_translation',
+      templateId: 'video-translation',
+      state: { sourceLanguage: 'en', targetLanguage: 'en' },
+      updatedAt: '2026-08-20T09:30:00.000Z'
+    });
+
+    expect(isMeaningfulCreatorJob(emptyDraft)).toBe(false);
+    expect(isMeaningfulCreatorJob(editedDraft)).toBe(true);
+    expect(isMeaningfulCreatorJob(failedDraft)).toBe(true);
+    expect(isMeaningfulCreatorJob(legacyTranslationDraft)).toBe(false);
+    expect(isMeaningfulCreatorJob(editedTranslationDraft)).toBe(true);
+
+    render(
+      <ProjectsPage
+        jobs={[emptyDraft, editedDraft]}
+        workspaces={workspaces}
+        onOpenJob={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('list', { name: '项目列表' })).toHaveTextContent('用户修改过的封面需求');
+    expect(within(screen.getByRole('list', { name: '项目列表' })).getAllByRole('listitem')).toHaveLength(1);
   });
 
   it('filters real Creator jobs by category and search text', () => {

@@ -864,6 +864,7 @@ export default function VideoTranslationWorkspace(props: {
   const [resultProposal, setResultProposal] = useState<ResultProposal>();
   const [resultNotice, setResultNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submissionPhase, setSubmissionPhase] = useState<'uploading' | 'starting'>();
   const [agentFocus, setAgentFocus] = useState<AgentFocus>();
 
   useEffect(() => {
@@ -940,10 +941,8 @@ export default function VideoTranslationWorkspace(props: {
 
   useEffect(() => {
     if (creatorSession === null) return;
-    if (skipPersistRef.current) {
-      skipPersistRef.current = false;
-      return;
-    }
+    const skipPersist = skipPersistRef.current;
+    if (skipPersist) skipPersistRef.current = false;
     const next = {
       sourceType,
       sourceUrl: videoUrl,
@@ -970,7 +969,14 @@ export default function VideoTranslationWorkspace(props: {
     const patch = Object.fromEntries(Object.entries(next).filter(([key, value]) => (
       JSON.stringify(creatorSession.state[key]) !== JSON.stringify(value)
     )));
-    if (Object.keys(patch).length > 0) creatorSession.updateDraft(patch);
+    if (Object.keys(patch).length === 0) return;
+    if (skipPersist) {
+      if (creatorSession.job.id.startsWith('pending:')) {
+        creatorSession.updateDraft(patch, { persist: false });
+      }
+      return;
+    }
+    creatorSession.updateDraft(patch);
   }, [
     bilingual,
     composeVideo,
@@ -1001,7 +1007,25 @@ export default function VideoTranslationWorkspace(props: {
     }
   }, []);
 
-  const hasSource = sourceType === 'url' ? isValidVideoUrl(videoUrl) : videoFile !== null;
+  const jobArtifacts = creatorSession?.job.artifacts ?? [];
+  const registeredSourceArtifact = [...jobArtifacts].reverse().find(artifact => (
+    artifact.kind === 'source_video'
+    && artifact.status === 'completed'
+    && artifact.metadata.source === 'local-upload'
+  ));
+  const registeredSourceFile = registeredSourceArtifact === undefined
+    ? undefined
+    : {
+        name: readArtifactString(registeredSourceArtifact, 'fileName') ?? 'local-video',
+        size: readArtifactNumber(registeredSourceArtifact, 'size') ?? 0,
+        mime: readArtifactString(registeredSourceArtifact, 'mimeType') ?? 'application/octet-stream'
+      };
+  const selectedFileRegistered = videoFile !== null
+    && registeredSourceArtifact !== undefined
+    && sourceArtifactMatchesFile(registeredSourceArtifact, videoFile);
+  const hasSource = sourceType === 'url'
+    ? isValidVideoUrl(videoUrl)
+    : videoFile !== null || registeredSourceArtifact !== undefined;
   const latestStage = creatorSession === null
     ? undefined
     : [...creatorSession.job.stages].reverse().find(stage => stage.stageId === 'subtitle')
@@ -1024,7 +1048,7 @@ export default function VideoTranslationWorkspace(props: {
         : '';
   const sourceName = sourceType === 'url'
     ? (videoUrl.trim() || l('等待填写链接', 'Waiting for a link'))
-    : (videoFile?.name ?? l('等待上传视频', 'Waiting for an upload'));
+    : (videoFile?.name ?? registeredSourceFile?.name ?? l('等待上传视频', 'Waiting for an upload'));
   const outputLabel = outputLabelFor({ composeVideo, videoFormat }, l);
   const subtitleStyleLabel = `${subtitleFontLabel(subtitleFont, l)} · ${subtitleSizeLabel(subtitleSize, l)} · ${subtitleColor.toUpperCase()}`;
   const summaryItems = useMemo(() => [
@@ -1037,7 +1061,6 @@ export default function VideoTranslationWorkspace(props: {
   const targetLanguageLabel = languageLabel(targetLanguages, targetLanguage);
   const selectedResult = resultVersions.find(version => version.value === resultVersion);
   const selectedResultSettings = selectedResult?.settings;
-  const jobArtifacts = creatorSession?.job.artifacts ?? [];
   const selectedVideoArtifacts = videoArtifactsForResultVersion(
     jobArtifacts,
     resultVersion,
@@ -1329,8 +1352,17 @@ export default function VideoTranslationWorkspace(props: {
     }
     creatorSession.clearError();
     setSubmitting(true);
+    setSubmissionPhase(sourceType === 'file' && videoFile !== null && !selectedFileRegistered
+      ? 'uploading'
+      : 'starting');
     setResultNotice('');
     try {
+      if (sourceType === 'file' && videoFile !== null && !selectedFileRegistered) {
+        setResultNotice(l('正在上传本地视频...', 'Uploading the local video...'));
+        await creatorSession.uploadSourceVideo(videoFile);
+        setSubmissionPhase('starting');
+        setResultNotice(l('本地视频已上传，正在启动翻译...', 'The local video is uploaded. Starting translation...'));
+      }
       await creatorSession.applyAction({
         action: 'run-stage',
         input: { stageId: 'subtitle', workflow: true }
@@ -1340,6 +1372,7 @@ export default function VideoTranslationWorkspace(props: {
       setResultNotice(creatorErrorMessage(cause, l));
     } finally {
       setSubmitting(false);
+      setSubmissionPhase(undefined);
     }
   }
 
@@ -1631,6 +1664,7 @@ export default function VideoTranslationWorkspace(props: {
           {workspacePhase === 'configure' && currentStep === 0 ? (
             <VideoSourceInput
               file={videoFile}
+              registeredFile={registeredSourceFile}
               sourceType={sourceType}
               url={videoUrl}
               hasSource={hasSource}
@@ -1937,7 +1971,9 @@ export default function VideoTranslationWorkspace(props: {
           ) : (
             <button className="video-translation-primary-action" type="button" disabled={submitting} onClick={() => void submit()}>
               {submitting
-                ? l('正在启动...', 'Starting...')
+                ? submissionPhase === 'uploading'
+                  ? l('正在上传...', 'Uploading...')
+                  : l('正在启动...', 'Starting...')
                 : draftBaseVersion === undefined
                   ? l('开始翻译', 'Start translation')
                   : `${l('生成', 'Generate')} V${nextVersion}`}
@@ -2015,6 +2051,22 @@ export default function VideoTranslationWorkspace(props: {
   );
 }
 
+function readArtifactString(artifact: CreatorArtifact, key: string): string | undefined {
+  const value = artifact.metadata[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readArtifactNumber(artifact: CreatorArtifact, key: string): number | undefined {
+  const value = artifact.metadata[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function sourceArtifactMatchesFile(artifact: CreatorArtifact, file: File): boolean {
+  return readArtifactString(artifact, 'fileName') === file.name
+    && readArtifactNumber(artifact, 'size') === file.size
+    && readArtifactNumber(artifact, 'lastModified') === file.lastModified;
+}
+
 function clampPaneWidth(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
@@ -2024,6 +2076,18 @@ function creatorErrorMessage(cause: unknown, l: LocalizeCopy): string {
   const code = typeof candidate?.code === 'string' ? candidate.code : '';
   if (code === 'creator_revision_conflict') {
     return l('任务状态刚刚发生变化，请重试一次。你的设置没有丢失。', 'The task changed just now. Retry once; your settings are preserved.');
+  }
+  if (code === 'creator_source_missing') {
+    return l('本地视频尚未上传，请重新选择视频后再试。', 'The local video has not been uploaded. Select it again and retry.');
+  }
+  if (code === 'creator_source_too_large') {
+    return l('本地视频文件过大，无法上传到当前创作项目。', 'The local video is too large to upload to this creator project.');
+  }
+  if (code === 'creator_source_invalid' || code === 'creator_source_type_unsupported') {
+    return l('无法读取该本地媒体文件，请选择有效的视频或音频文件。', 'The local media file could not be read. Choose a valid video or audio file.');
+  }
+  if (code === 'creator_source_upload_failed') {
+    return l('本地视频上传失败，请检查服务状态后重试。', 'The local video upload failed. Check the service and retry.');
   }
   if (code === 'creator_llm_config_missing') {
     return l('开始翻译前需要配置文本翻译模型 API。', 'Configure the text translation model API before starting.');

@@ -48,6 +48,11 @@ import { createClipExecutor } from '../creator/clip/executor.js';
 import { createStickmanExecutor } from '../creator/stickman/executor.js';
 import { createCreatorProjectCoverService } from '../creator/project-cover.js';
 import {
+  createCreatorSourceUploadService,
+  type CreatorSourceUploadService
+} from '../creator/source-upload.js';
+import { validateMediaFile, type MediaProbe } from '../creator/validators/media.js';
+import {
   createVideoTranslationWorkflow,
   type VideoTranslationWorkflow
 } from '../creator/templates/video-translation-actions.js';
@@ -252,6 +257,9 @@ export type BuildServerInput = {
   creatorServicesConfigStore?: CreatorServicesConfigStore;
   codexProviderCredentialStore?: CodexProviderCredentialStore;
   creatorService?: CreatorService;
+  creatorSourceUploadService?: CreatorSourceUploadService;
+  creatorSourceMediaProbe?(path: string): Promise<MediaProbe>;
+  creatorSourceMaxSizeBytes?: number;
   creatorAgentRuntime?: AgentRuntimeAdapter;
   allowedWebOrigins?: string[];
   enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
@@ -584,6 +592,7 @@ export async function buildServer(input: BuildServerInput) {
     createImageExecutor({ configStore: creatorServicesConfigStore })
   ];
   let creatorFfmpegPath: string | undefined;
+  let creatorFfprobePath: string | undefined;
   try {
     const runtimeManifest = readKrillinRuntimeManifest(creatorRuntimeRoot);
     verifyKrillinRuntimeManifest(creatorRuntimeRoot, runtimeManifest);
@@ -594,13 +603,15 @@ export async function buildServer(input: BuildServerInput) {
       return resource === undefined ? undefined : resolveInside(creatorRuntimeRoot, resource.path);
     };
     creatorFfmpegPath = executable(/(?:^|\/)ffmpeg(?:\.exe)?$/i);
-    const ffprobePath = executable(/(?:^|\/)ffprobe(?:\.exe)?$/i);
+    creatorFfprobePath = executable(/(?:^|\/)ffprobe(?:\.exe)?$/i);
     const ytDlpPath = executable(/(?:^|\/)yt-dlp(?:\.exe)?$/i);
-    if (ytDlpPath && ffprobePath) creatorExecutors.push(createDownloadExecutor({ ytDlpPath, ffprobePath }));
-    if (creatorFfmpegPath && ffprobePath) {
+    if (ytDlpPath && creatorFfprobePath) {
+      creatorExecutors.push(createDownloadExecutor({ ytDlpPath, ffprobePath: creatorFfprobePath }));
+    }
+    if (creatorFfmpegPath && creatorFfprobePath) {
       creatorExecutors.push(
-        createClipExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath }),
-        createStickmanExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath })
+        createClipExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath: creatorFfprobePath }),
+        createStickmanExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath: creatorFfprobePath })
       );
     }
   } catch (error) {
@@ -610,6 +621,19 @@ export async function buildServer(input: BuildServerInput) {
     jobsRoot: creatorJobsRoot,
     ...(creatorFfmpegPath === undefined ? {} : { ffmpegPath: creatorFfmpegPath })
   });
+  const creatorSourceMediaProbe = input.creatorSourceMediaProbe
+    ?? (creatorFfprobePath === undefined
+      ? undefined
+      : (path: string) => validateMediaFile(path, creatorFfprobePath!));
+  const creatorSourceUploadService = input.creatorSourceUploadService
+    ?? (creatorSourceMediaProbe === undefined
+      ? undefined
+      : createCreatorSourceUploadService({
+          jobsRoot: creatorJobsRoot,
+          creator: creatorService,
+          probeMedia: creatorSourceMediaProbe,
+          maxSizeBytes: input.creatorSourceMaxSizeBytes
+        }));
   let videoTranslationWorkflow: VideoTranslationWorkflow | undefined;
   const creatorStageRunner = input.creatorService === undefined
     ? createCreatorStageRunner({
@@ -1016,6 +1040,7 @@ export async function buildServer(input: BuildServerInput) {
     agentService: creatorAgentService,
     videoTranslationWorkflow,
     projectCoverService: creatorProjectCoverService,
+    sourceUploadService: creatorSourceUploadService,
     dispatcher: creatorCommandDispatcher
   });
   await registerAttachmentRoutes(server, attachmentService, {

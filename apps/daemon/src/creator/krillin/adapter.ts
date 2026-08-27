@@ -31,7 +31,15 @@ export function createKrillinExecutor(input: {
   jobsRoot: string;
   runtimeHost: KrillinRuntimeHost;
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
+  now?: () => number;
+  inactivityTimeoutMs?: number;
+  stageTimeoutMs?: number;
+  pollIntervalMs?: number;
 }): CreatorExecutor {
+  const now = input.now ?? Date.now;
+  const inactivityTimeoutMs = input.inactivityTimeoutMs ?? 3 * 60_000;
+  const stageTimeoutMs = input.stageTimeoutMs ?? 60 * 60_000;
+  const pollIntervalMs = input.pollIntervalMs ?? 250;
   return {
     id: 'krillinai',
     async run(stage): Promise<CreatorExecutorResult> {
@@ -93,6 +101,8 @@ export function createKrillinExecutor(input: {
       };
       let task = await call(active => active.createTask(request));
       let cursor = readCursor(stage.stageRun.progress);
+      const startedAt = now();
+      let lastActivityAt = startedAt;
       let accumulatedProgress: Record<string, CreatorJson> = { ...stage.stageRun.progress };
       const reportProgress = (progress: Record<string, CreatorJson>) => {
         accumulatedProgress = mergeKrillinProgress(accumulatedProgress, progress);
@@ -114,10 +124,12 @@ export function createKrillinExecutor(input: {
             throw new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled');
           }
           const events = await call(active => active.events(task.id, cursor));
+          const previousCursor = cursor;
           for (const event of events.events) {
             cursor = Math.max(cursor, event.seq);
             reportProgress(krillinEventProgress(task, event, cursor));
           }
+          if (cursor > previousCursor) lastActivityAt = now();
           task = await call(active => active.getTask(task.id));
           reportProgress({
             krillinTaskId: task.id,
@@ -125,7 +137,18 @@ export function createKrillinExecutor(input: {
             krillinStatus: task.status,
             providerStatus: task.status
           });
-          if (!isTerminal(task.status)) await waitForPoll(stage.signal);
+          if (!isTerminal(task.status)) {
+            await enforceKrillinDeadlines({
+              client,
+              taskId: task.id,
+              startedAt,
+              lastActivityAt,
+              now,
+              inactivityTimeoutMs,
+              stageTimeoutMs
+            });
+            await waitForPoll(stage.signal, pollIntervalMs);
+          }
         }
       } finally {
         stage.signal.removeEventListener('abort', abort);
@@ -151,6 +174,39 @@ export function createKrillinExecutor(input: {
       };
     }
   };
+}
+
+export async function enforceKrillinDeadlines(input: {
+  client: Pick<KrillinServiceClient, 'health' | 'cancelTask'>;
+  taskId: string;
+  startedAt: number;
+  lastActivityAt: number;
+  now: () => number;
+  inactivityTimeoutMs: number;
+  stageTimeoutMs: number;
+}): Promise<void> {
+  const currentTime = input.now();
+  if (currentTime - input.startedAt >= input.stageTimeoutMs) {
+    await input.client.cancelTask(input.taskId).catch(() => undefined);
+    throw new CreatorExecutorError(
+      'creator_stage_timeout',
+      `Creator stage exceeded ${Math.round(input.stageTimeoutMs / 60_000)} minutes`
+    );
+  }
+  if (currentTime - input.lastActivityAt < input.inactivityTimeoutMs) return;
+
+  let healthDetail = '';
+  try {
+    const health = await input.client.health();
+    if (!health.ok) healthDetail = '; KrillinAI health check reported unavailable';
+  } catch (error) {
+    healthDetail = `; KrillinAI health check failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  await input.client.cancelTask(input.taskId).catch(() => undefined);
+  throw new CreatorExecutorError(
+    'creator_stage_inactivity_timeout',
+    `Creator stage produced no new events for ${Math.round(input.inactivityTimeoutMs / 60_000)} minutes${healthDetail}`
+  );
 }
 
 export function normalizeKrillinFailure(error: { code?: string; message?: string } | undefined): {
@@ -430,12 +486,12 @@ function hasPackagedCli(manifest: ReturnType<typeof readKrillinRuntimeManifest>)
   ));
 }
 
-function waitForPoll(signal: AbortSignal): Promise<void> {
+function waitForPoll(signal: AbortSignal, intervalMs: number): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener('abort', abort);
       resolvePromise();
-    }, 250);
+    }, intervalMs);
     const abort = () => {
       clearTimeout(timer);
       reject(new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled'));

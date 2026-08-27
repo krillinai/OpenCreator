@@ -343,6 +343,7 @@ export function migrate(db: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS creator_jobs (
       id TEXT PRIMARY KEY,
+      creation_key TEXT,
       project_id TEXT NOT NULL,
       template_id TEXT NOT NULL,
       template_version INTEGER NOT NULL,
@@ -649,6 +650,7 @@ export function migrate(db: Database.Database): void {
   ensureColumn(db, 'creator_stage_runs', 'claim_expires_at', 'claim_expires_at TEXT');
   ensureColumn(db, 'creator_stage_runs', 'attempt', 'attempt INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'creator_stage_runs', 'idempotency_key', 'idempotency_key TEXT');
+  ensureColumn(db, 'creator_jobs', 'creation_key', 'creation_key TEXT');
   db.prepare(`
     UPDATE schedules
     SET concurrency_policy = 'queue'
@@ -690,6 +692,9 @@ export function migrate(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_creator_stage_runs_job_idempotency
       ON creator_stage_runs(job_id, idempotency_key)
       WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_creator_jobs_creation_key
+      ON creator_jobs(creation_key)
+      WHERE creation_key IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_creator_stage_runs_dispatch
       ON creator_stage_runs(dispatch_status, claim_expires_at, created_at ASC);
   `);
