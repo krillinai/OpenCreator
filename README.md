@@ -130,7 +130,7 @@ Turn long interviews, podcasts, lessons, and other source videos into standalone
 
 ### Stick Figure Animation
 
-OpenCreator developed this original character collection in collaboration with artists. The preset cast gives creators consistent, production-ready identities for stories and animation, while the workspace also supports uploaded references and generated characters.
+OpenCreator developed this original character collection in collaboration with artist [Harbor Hsia](https://www.behance.net/xiaheyuan1), creator of [Stickman on Behance](https://www.behance.net/gallery/254715463/Stickman). The preset cast gives creators consistent, production-ready identities for stories and animation, while the workspace also supports uploaded references and generated characters.
 
 ![OpenCreator stick figure characters developed with artists](./docs/images/examples/stick-figure-characters.webp)
 
