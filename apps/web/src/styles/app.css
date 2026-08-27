@@ -6864,6 +6864,21 @@ html.is-pane-resizing * {
   grid-template-columns: minmax(160px, 1fr) auto;
 }
 
+.settings-row .settings-row-description {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.settings-switch {
+  width: 36px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+
 .settings-select {
   width: min(240px, 100%);
   min-width: 180px;

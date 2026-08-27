@@ -40,6 +40,7 @@ import {
   registerPrivilegedSchemes
 } from './protocol-handler.js';
 import { createSettingsStore } from './settings-store.js';
+import { startDesktopTelemetry, type DesktopTelemetryController } from './telemetry.js';
 import { TrayManager } from './tray-manager.js';
 import { startUpdater } from './updater.js';
 import { WindowManager } from './window-manager.js';
@@ -184,6 +185,15 @@ async function launchDesktop(): Promise<void> {
     ),
     requestQuit: () => app.quit()
   });
+  const telemetry = startDesktopTelemetry({
+    path: join(userData, 'desktop-telemetry.json'),
+    settings,
+    logger,
+    appVersion: app.getVersion(),
+    isPackaged: app.isPackaged,
+    isWindowActive: () => windowManager?.isActive() === true,
+    endpointOverride: process.env.OPENCREATOR_TELEMETRY_URL
+  });
 
   const navigate = (route: string) => {
     if (!workspaceLoaded) {
@@ -238,6 +248,7 @@ async function launchDesktop(): Promise<void> {
     notifications,
     windowManager,
     settings,
+    telemetry,
     dataDir,
     logDir,
     quit: () => app.quit(),
@@ -333,6 +344,7 @@ async function launchDesktop(): Promise<void> {
     windowManager?.beginQuit();
     notifications.stop();
     updater.dispose();
+    telemetry.dispose();
     tray.destroy();
     void Promise.all([
       bootstrap?.stop() ?? Promise.resolve(),
@@ -360,6 +372,7 @@ function registerIpcHandlers(input: {
   notifications: NotificationManager;
   windowManager: WindowManager;
   settings: ReturnType<typeof createSettingsStore>;
+  telemetry: DesktopTelemetryController;
   dataDir: string;
   logDir: string;
   quit(): void;
@@ -410,7 +423,8 @@ function registerIpcHandlers(input: {
       : failed(input.bootstrap.currentState.error?.message ?? 'Dashboard 加载失败');
   });
   handle(desktopIpc.readPreferences, input.development, () => ({
-    closeBehavior: input.settings.read().closeBehavior
+    closeBehavior: input.settings.read().closeBehavior,
+    telemetryEnabled: input.settings.read().telemetryEnabled
   }));
   handle(desktopIpc.updatePreferences, input.development, (_event, value: unknown) => {
     if (
@@ -420,15 +434,23 @@ function registerIpcHandlers(input: {
         && value.closeBehavior !== 'hide'
         && value.closeBehavior !== 'quit'
       )
+      || (value.telemetryEnabled !== undefined && typeof value.telemetryEnabled !== 'boolean')
     ) {
       throw new Error('Desktop preferences are invalid');
     }
     const updated = input.settings.update({
       ...(value.closeBehavior === undefined
         ? {}
-        : { closeBehavior: value.closeBehavior })
+        : { closeBehavior: value.closeBehavior }),
+      ...(value.telemetryEnabled === undefined
+        ? {}
+        : { telemetryEnabled: value.telemetryEnabled })
     });
-    return { closeBehavior: updated.closeBehavior };
+    if (value.telemetryEnabled === true) void input.telemetry.reportNow();
+    return {
+      closeBehavior: updated.closeBehavior,
+      telemetryEnabled: updated.telemetryEnabled
+    };
   });
   handle(desktopIpc.openExternal, input.development, async (_event, url: unknown) => {
     if (typeof url !== 'string') throw new Error('URL must be a string');

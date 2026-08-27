@@ -22,11 +22,14 @@ type DesktopApi = {
   workspaceReady(): void;
   readDesktopPreferences(): Promise<{
     closeBehavior: 'hide' | 'quit';
+    telemetryEnabled: boolean;
   }>;
   updateDesktopPreferences(preferences: {
     closeBehavior?: 'hide' | 'quit';
+    telemetryEnabled?: boolean;
   }): Promise<{
     closeBehavior: 'hide' | 'quit';
+    telemetryEnabled: boolean;
   }>;
   selectProjectDirectory(): Promise<string | null>;
   resolveDroppedFilePath(file: File): string | null;

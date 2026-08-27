@@ -55,6 +55,8 @@ export type DesktopSettings = {
   externalCodexBin?: string;
   closeBehavior: 'hide' | 'quit';
   notificationsEnabled: boolean;
+  telemetryEnabled: boolean;
+  telemetryInstallId?: string;
   window?: {
     x?: number;
     y?: number;
@@ -67,6 +69,7 @@ export type DesktopSettings = {
 
 export type DesktopPreferences = {
   closeBehavior: DesktopSettings['closeBehavior'];
+  telemetryEnabled: boolean;
 };
 
 export const DESKTOP_TITLE_BAR_HEIGHT = 38;

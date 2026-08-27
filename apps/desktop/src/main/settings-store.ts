@@ -9,7 +9,8 @@ import type { DesktopSettings } from '../shared/types.js';
 
 const defaultSettings: DesktopSettings = {
   closeBehavior: 'hide',
-  notificationsEnabled: true
+  notificationsEnabled: true,
+  telemetryEnabled: true
 };
 
 export type SettingsStore = {
@@ -57,8 +58,12 @@ function normalizeSettings(value: unknown): DesktopSettings {
   const closeBehavior = value.closeBehavior === 'quit' ? 'quit' : 'hide';
   const settings: DesktopSettings = {
     closeBehavior,
-    notificationsEnabled: value.notificationsEnabled !== false
+    notificationsEnabled: value.notificationsEnabled !== false,
+    telemetryEnabled: value.telemetryEnabled !== false
   };
+  if (typeof value.telemetryInstallId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.telemetryInstallId)) {
+    settings.telemetryInstallId = value.telemetryInstallId;
+  }
   if (typeof value.codexBin === 'string' && value.codexBin.length > 0) {
     settings.codexBin = value.codexBin;
   }

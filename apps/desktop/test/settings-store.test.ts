@@ -14,7 +14,8 @@ describe('SettingsStore', () => {
 
     expect(store.read()).toMatchObject({
       closeBehavior: 'hide',
-      notificationsEnabled: true
+      notificationsEnabled: true,
+      telemetryEnabled: true
     });
   });
 
@@ -29,11 +30,12 @@ describe('SettingsStore', () => {
     };
     const store = createSettingsStore('/virtual/settings.json', persistence);
 
-    store.update({ closeBehavior: 'quit' });
+    store.update({ closeBehavior: 'quit', telemetryEnabled: false });
 
     expect(writeAtomic).toHaveBeenCalledWith(
       '/virtual/settings.json',
       expect.stringContaining('"closeBehavior": "quit"')
     );
+    expect(store.read().telemetryEnabled).toBe(false);
   });
 });

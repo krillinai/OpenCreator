@@ -16,6 +16,7 @@ export type BackgroundNotificationConfiguration =
 
 export type DesktopPreferences = {
   closeBehavior: 'hide' | 'quit';
+  telemetryEnabled: boolean;
 };
 
 export type HostWindowChrome = {

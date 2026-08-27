@@ -690,6 +690,7 @@ export function AppController(props: AppControllerProps) {
   const [desktopCloseBehavior, setDesktopCloseBehavior] = useState<
     'hide' | 'quit' | undefined
   >(undefined);
+  const [desktopTelemetryEnabled, setDesktopTelemetryEnabled] = useState<boolean | undefined>(undefined);
   const [unreadTaskIds, setUnreadTaskIds] = useState<Set<string>>(
     () => notificationService.getUnreadIds()
   );
@@ -908,13 +909,17 @@ export function AppController(props: AppControllerProps) {
       || hostBridge.readDesktopPreferences === undefined
     ) {
       setDesktopCloseBehavior(undefined);
+      setDesktopTelemetryEnabled(undefined);
       return () => {
         active = false;
       };
     }
     void hostBridge.readDesktopPreferences()
       .then(preferences => {
-        if (active) setDesktopCloseBehavior(preferences.closeBehavior);
+        if (active) {
+          setDesktopCloseBehavior(preferences.closeBehavior);
+          setDesktopTelemetryEnabled(preferences.telemetryEnabled);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -5214,6 +5219,7 @@ export function AppController(props: AppControllerProps) {
       customAccentColor={customAccentColor}
       onCustomAccentColorChange={handleCustomAccentColorChange}
       desktopCloseBehavior={desktopCloseBehavior}
+      desktopTelemetryEnabled={desktopTelemetryEnabled}
       onDesktopCloseBehaviorChange={(behavior: 'hide' | 'quit') => {
         const update = hostBridge.updateDesktopPreferences;
         if (update === undefined) return;
@@ -5222,6 +5228,15 @@ export function AppController(props: AppControllerProps) {
         void update({ closeBehavior: behavior })
           .then(preferences => setDesktopCloseBehavior(preferences.closeBehavior))
           .catch(() => setDesktopCloseBehavior(previous));
+      }}
+      onDesktopTelemetryEnabledChange={(enabled: boolean) => {
+        const update = hostBridge.updateDesktopPreferences;
+        if (update === undefined) return;
+        const previous = desktopTelemetryEnabled;
+        setDesktopTelemetryEnabled(enabled);
+        void update({ telemetryEnabled: enabled })
+          .then(preferences => setDesktopTelemetryEnabled(preferences.telemetryEnabled))
+          .catch(() => setDesktopTelemetryEnabled(previous));
       }}
       profileService={profileService}
       profileData={codexProfiles}

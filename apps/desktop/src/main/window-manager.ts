@@ -255,6 +255,13 @@ export class WindowManager {
     window.focus();
   }
 
+  isActive(): boolean {
+    return this.window !== undefined
+      && !this.window.isDestroyed()
+      && this.window.isVisible()
+      && this.window.isFocused();
+  }
+
   send(channel: string, payload: unknown): void {
     if (this.window === undefined || this.window.isDestroyed()) return;
     this.window.webContents.send(channel, payload);
