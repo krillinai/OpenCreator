@@ -49,6 +49,7 @@ type SubtitlePosition = 'top' | 'bottom';
 type SubtitleFont = 'system' | 'sans' | 'serif' | 'rounded';
 type SubtitleSize = 'small' | 'medium' | 'large';
 type VideoFormat = 'horizontal' | 'vertical' | 'all';
+type VideoOrientation = 'landscape' | 'portrait';
 type WizardStep = 0 | 1 | 2 | 3;
 type WorkspacePhase = 'configure' | 'result';
 type ResultProposal = 'regenerate';
@@ -862,6 +863,11 @@ function isValidVideoUrl(value: string) {
   }
 }
 
+function videoOrientationFromDimensions(width: unknown, height: unknown): VideoOrientation | undefined {
+  if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) return undefined;
+  return height > width ? 'portrait' : 'landscape';
+}
+
 export default function VideoTranslationWorkspace(props: {
   onBack(): void;
   promptHint?: string;
@@ -893,6 +899,9 @@ export default function VideoTranslationWorkspace(props: {
   const [voiceSample, setVoiceSample] = useState<File | null>(null);
   const [composeVideo, setComposeVideo] = useState(false);
   const [videoFormat, setVideoFormat] = useState<VideoFormat>('horizontal');
+  const [sourceOrientation, setSourceOrientation] = useState<VideoOrientation>(() => (
+    creatorSession?.state.sourceOrientation === 'portrait' ? 'portrait' : 'landscape'
+  ));
   const [verticalTitle, setVerticalTitle] = useState('');
   const [verticalSubtitle, setVerticalSubtitle] = useState('');
   const [attemptedContinue, setAttemptedContinue] = useState(false);
@@ -940,6 +949,16 @@ export default function VideoTranslationWorkspace(props: {
     if (persisted.videoFormat === 'horizontal' || persisted.videoFormat === 'vertical' || persisted.videoFormat === 'all') {
       setVideoFormat(persisted.videoFormat);
     }
+    const persistedOrientation = persisted.sourceOrientation === 'portrait' || persisted.sourceOrientation === 'landscape'
+      ? persisted.sourceOrientation
+      : undefined;
+    const persistedSourceArtifact = [...creatorSession.job.artifacts].reverse().find(artifact => (
+      artifact.kind === 'source_video' && artifact.status === 'completed'
+    ));
+    setSourceOrientation(videoOrientationFromDimensions(
+      persistedSourceArtifact?.metadata.width,
+      persistedSourceArtifact?.metadata.height
+    ) ?? persistedOrientation ?? 'landscape');
     if (typeof persisted.verticalTitle === 'string') setVerticalTitle(persisted.verticalTitle);
     if (typeof persisted.verticalSubtitle === 'string') setVerticalSubtitle(persisted.verticalSubtitle);
     if (persisted.currentStep === 0 || persisted.currentStep === 1 || persisted.currentStep === 2) {
@@ -1014,6 +1033,7 @@ export default function VideoTranslationWorkspace(props: {
       voiceCode,
       composeVideo,
       videoFormat,
+      sourceOrientation,
       verticalTitle,
       verticalSubtitle,
       currentStep,
@@ -1048,6 +1068,7 @@ export default function VideoTranslationWorkspace(props: {
     resultVersion,
     resultVersions,
     sourceLanguage,
+    sourceOrientation,
     sourceType,
     subtitleColor,
     subtitleFont,
@@ -1068,6 +1089,12 @@ export default function VideoTranslationWorkspace(props: {
       window.clearTimeout(agentFocusTimeoutRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (sourceOrientation === 'portrait' && videoFormat !== 'vertical') {
+      setVideoFormat('vertical');
+    }
+  }, [sourceOrientation, videoFormat]);
 
   const jobArtifacts = creatorSession?.job.artifacts ?? [];
   const registeredSourceArtifact = [...jobArtifacts].reverse().find(artifact => (
@@ -1377,6 +1404,7 @@ export default function VideoTranslationWorkspace(props: {
 
   function chooseVideo(file: File | null) {
     setVideoFile(file);
+    setSourceOrientation('landscape');
     if (file) {
       setVideoUrl('');
       setSourceType('file');
@@ -1394,6 +1422,13 @@ export default function VideoTranslationWorkspace(props: {
     setVideoUrl('');
     setSourceType('url');
     setAttemptedContinue(false);
+  }
+
+  function updateSourceOrientation(width: number, height: number) {
+    const orientation = videoOrientationFromDimensions(width, height);
+    if (orientation === undefined) return;
+    setSourceOrientation(orientation);
+    if (orientation === 'portrait') setVideoFormat('vertical');
   }
 
   function continueToSettings() {
@@ -1739,9 +1774,11 @@ export default function VideoTranslationWorkspace(props: {
                 setVideoUrl(url);
                 setSourceType('url');
                 setVideoFile(null);
+                setSourceOrientation('landscape');
                 setAttemptedContinue(false);
               }}
               onClear={clearCurrentSource}
+              onDimensions={updateSourceOrientation}
             />
           ) : null}
 
@@ -1968,6 +2005,10 @@ export default function VideoTranslationWorkspace(props: {
                             type="button"
                             role="radio"
                             aria-checked={videoFormat === value}
+                            disabled={sourceOrientation === 'portrait' && value !== 'vertical'}
+                            title={sourceOrientation === 'portrait' && value !== 'vertical'
+                              ? l('竖屏源视频仅支持竖屏输出', 'Portrait source videos only support portrait output')
+                              : undefined}
                             key={value}
                             onClick={() => {
                               setVideoFormat(value);

@@ -1180,11 +1180,45 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('switch', { name: '生成目标语言配音' }));
     fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    expect(screen.getByRole('radio', { name: /16:9/ })).toBeEnabled();
+    expect(screen.getByRole('radio', { name: /双画幅/ })).toBeEnabled();
     fireEvent.click(screen.getByRole('radio', { name: /9:16/ }));
 
     expect(screen.getByText('demo.mp4')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /声音代码/ })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /竖屏主标题/ })).toBeInTheDocument();
+  });
+
+  it('only allows portrait output after detecting a portrait source video', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:portrait-translation-preview')
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn()
+    });
+    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: '打开视频翻译配音' }));
+
+    const video = new File(['video'], 'portrait.mp4', { type: 'video/mp4' });
+    fireEvent.change(screen.getByLabelText('上传本地视频'), { target: { files: [video] } });
+    const preview = await screen.findByLabelText('本地视频预览');
+    Object.defineProperties(preview, {
+      videoWidth: { configurable: true, value: 1080 },
+      videoHeight: { configurable: true, value: 1920 }
+    });
+    fireEvent.loadedMetadata(preview);
+
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+
+    expect(screen.getByRole('radio', { name: /16:9/ })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /双画幅/ })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /9:16/ })).toBeEnabled();
+    expect(screen.getByRole('radio', { name: /9:16/ })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('requires a video before advancing to translation settings', () => {

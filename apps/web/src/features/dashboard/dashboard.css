@@ -903,6 +903,12 @@
   color: var(--text);
 }
 
+.video-translation-format button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  background: var(--surface-2);
+}
+
 .video-translation-format button > span {
   font-size: 13px;
   font-weight: 650;
@@ -5064,6 +5070,11 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-2);
+}
+
+.video-source-preview[data-orientation="portrait"] {
+  width: min(360px, 100%);
+  margin-inline: auto;
 }
 
 .video-source-preview-media {

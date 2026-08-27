@@ -15,6 +15,22 @@ function cssBlocks(selector: string): string[] {
 }
 
 describe('dashboard CSS contracts', () => {
+  it('constrains portrait source previews without forcing a landscape frame', () => {
+    const portraitPreview = cssBlocks('.video-source-preview[data-orientation="portrait"]');
+
+    expect(portraitPreview).toHaveLength(1);
+    expect(portraitPreview[0]).toContain('width: min(360px, 100%);');
+    expect(portraitPreview[0]).toContain('margin-inline: auto;');
+  });
+
+  it('visually distinguishes output formats disabled for portrait sources', () => {
+    const disabledFormat = cssBlocks('.video-translation-format button:disabled');
+
+    expect(disabledFormat).toHaveLength(1);
+    expect(disabledFormat[0]).toContain('cursor: not-allowed;');
+    expect(disabledFormat[0]).toContain('opacity: 0.45;');
+  });
+
   it('keeps video result controls separate from the Agent panel layout', () => {
     const resultVersionButton = cssBlocks('.video-result-version > button');
     const resultVersionItem = cssBlocks('.video-result-version > div button');

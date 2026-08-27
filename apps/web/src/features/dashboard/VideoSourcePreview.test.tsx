@@ -183,20 +183,20 @@ describe('VideoSourcePreview', () => {
     );
   });
 
-  it('uses the source video dimensions as the preview aspect ratio', () => {
+  it('uses uploaded portrait video dimensions for the preview frame', () => {
     const onDimensions = vi.fn();
     render(
       <VideoSourcePreview
-        file={null}
-        sourceType="url"
-        url="https://cdn.example.com/portrait.mp4"
+        file={new File(['video'], 'portrait.mp4', { type: 'video/mp4' })}
+        sourceType="file"
+        url=""
         onChooseFile={vi.fn()}
         onClear={vi.fn()}
         onDimensions={onDimensions}
       />
     );
 
-    const video = screen.getByLabelText('视频链接预览');
+    const video = screen.getByLabelText('本地视频预览');
     Object.defineProperties(video, {
       videoWidth: { configurable: true, value: 1080 },
       videoHeight: { configurable: true, value: 1920 }
@@ -204,6 +204,8 @@ describe('VideoSourcePreview', () => {
     fireEvent.loadedMetadata(video);
 
     expect(video).toHaveStyle({ aspectRatio: '1080 / 1920' });
+    expect(video.closest('.video-source-preview-media')).toHaveStyle({ aspectRatio: '1080 / 1920' });
+    expect(video.closest('.video-source-preview')).toHaveAttribute('data-orientation', 'portrait');
     expect(onDimensions).toHaveBeenCalledWith(1080, 1920);
   });
 

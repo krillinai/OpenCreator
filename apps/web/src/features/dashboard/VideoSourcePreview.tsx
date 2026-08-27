@@ -127,6 +127,7 @@ export default function VideoSourcePreview(props: {
   const l = useLocalizedCopy();
   const [showYouTubePlayer, setShowYouTubePlayer] = useState(false);
   const [metadata, setMetadata] = useState<VideoMetadataResponse>();
+  const [mediaDimensions, setMediaDimensions] = useState<{ width: number; height: number }>();
   const source = useMemo(() => parseVideoSource(props.url), [props.url]);
   const localFile = props.sourceType === 'file' ? props.file : null;
   const registeredFile = props.sourceType === 'file' ? props.registeredFile : undefined;
@@ -157,7 +158,17 @@ export default function VideoSourcePreview(props: {
 
   useEffect(() => {
     setShowYouTubePlayer(false);
+    setMediaDimensions(undefined);
   }, [props.sourceType, props.url]);
+
+  useEffect(() => {
+    setMediaDimensions(undefined);
+  }, [localFile]);
+
+  function updateMediaDimensions(width: number, height: number) {
+    setMediaDimensions({ width, height });
+    props.onDimensions?.(width, height);
+  }
 
   useEffect(() => {
     let active = true;
@@ -167,7 +178,7 @@ export default function VideoSourcePreview(props: {
       if (!active) return;
       setMetadata(result);
       if (result.width !== undefined && result.height !== undefined) {
-        props.onDimensions?.(result.width, result.height);
+        updateMediaDimensions(result.width, result.height);
       }
     }).catch(() => undefined);
     return () => {
@@ -176,9 +187,17 @@ export default function VideoSourcePreview(props: {
   }, [props.metadataService, props.url, source.kind]);
 
   return (
-    <div className="video-source-preview">
-      <div className="video-source-preview-media">
-        {localFile ? <LocalVideoPreview file={localFile} onDimensions={props.onDimensions} /> : null}
+    <div
+      className="video-source-preview"
+      data-orientation={mediaDimensions === undefined
+        ? undefined
+        : mediaDimensions.height > mediaDimensions.width ? 'portrait' : 'landscape'}
+    >
+      <div
+        className="video-source-preview-media"
+        style={mediaDimensions ? { aspectRatio: `${mediaDimensions.width} / ${mediaDimensions.height}` } : undefined}
+      >
+        {localFile ? <LocalVideoPreview file={localFile} onDimensions={updateMediaDimensions} /> : null}
         {!localFile && registeredFile ? (
           <div className="video-source-link-preview">
             <span><FileVideo size={34} strokeWidth={1.5} aria-hidden="true" /></span>
@@ -207,7 +226,7 @@ export default function VideoSourcePreview(props: {
           />
         ) : null}
         {!isLocal && source.kind === 'direct' ? (
-          <PreviewVideo key={source.url} src={source.url} label={l('视频链接预览', 'Video link preview')} onDimensions={props.onDimensions} />
+          <PreviewVideo key={source.url} src={source.url} label={l('视频链接预览', 'Video link preview')} onDimensions={updateMediaDimensions} />
         ) : null}
         {!isLocal && (source.kind === 'link' || source.kind === 'invalid') ? (
           <div className="video-source-link-preview">
