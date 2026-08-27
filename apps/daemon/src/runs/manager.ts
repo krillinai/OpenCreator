@@ -2540,6 +2540,7 @@ function isShutdownTimeoutAfterCompletedTurn(input: {
 
 function errorToTerminationReason(error: unknown): TerminationReason {
   if (error instanceof CodexExecError) {
+    if (error.terminationReason === 'canceled') return 'user_canceled';
     if (error.terminationReason === 'timeout') return 'timeout';
     if (error.terminationReason === 'spawn_timeout') return 'spawn_timeout';
     if (error.terminationReason === 'inactivity_timeout') return 'inactivity_timeout';

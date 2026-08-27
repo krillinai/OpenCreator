@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -51,6 +53,50 @@ describe('Codex Runtime package contract', () => {
     writeFileSync(join(result.outputRoot, 'download-at-runtime.js'), 'fetch("https://example.com")');
     expect(() => verifyCodexRuntime(result.outputRoot, process.platform, process.arch)).toThrow(/file list differs/i);
   });
+
+  it('extracts an integrity-pinned npm archive and rejects tampering', () => {
+    const fixture = createFixture();
+    const archiveRoot = join(tempRoot, 'archive');
+    const vendorRoot = join(archiveRoot, 'package', 'vendor', 'fixture');
+    const archivePath = join(tempRoot, 'codex.tgz');
+    mkdirSync(dirname(vendorRoot), { recursive: true });
+    cpSync(fixture.sourceRoot, vendorRoot, { recursive: true });
+    execFileSync('tar', ['-czf', archivePath, '-C', archiveRoot, 'package']);
+
+    const manifest = JSON.parse(readFileSync(fixture.manifestPath, 'utf8'));
+    manifest.sourceArchive.integrity = `sha512-${createHash('sha512')
+      .update(readFileSync(archivePath))
+      .digest('base64')}`;
+    writeFileSync(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    const result = stageCodexRuntime({
+      archivePath,
+      manifestPath: fixture.manifestPath,
+      outputRoot: fixture.outputRoot,
+      protocolRoot: fixture.protocolRoot
+    });
+    expect(verifyCodexRuntime(result.outputRoot, process.platform, process.arch))
+      .toMatchObject({ version: '0.149.0' });
+
+    writeFileSync(archivePath, 'tampered');
+    expect(() => stageCodexRuntime({
+      archivePath,
+      manifestPath: fixture.manifestPath,
+      outputRoot: fixture.outputRoot,
+      protocolRoot: fixture.protocolRoot
+    })).toThrow(/integrity mismatch/i);
+  });
+
+  it('does not download a missing archive in offline mode', () => {
+    const fixture = createFixture();
+    expect(() => stageCodexRuntime({
+      cacheRoot: join(tempRoot, 'empty-cache'),
+      manifestPath: fixture.manifestPath,
+      offline: true,
+      outputRoot: fixture.outputRoot,
+      protocolRoot: fixture.protocolRoot
+    })).toThrow(/cache is missing in offline mode/i);
+  });
 });
 
 function createFixture() {
@@ -86,6 +132,11 @@ function createFixture() {
     arch: process.arch,
     officialAsset: 'https://example.test/codex.zip',
     sourcePackage: 'npm:@openai/codex@0.149.0-fixture',
+    sourceArchive: {
+      url: 'https://example.test/codex.tgz',
+      integrity: `sha512-${Buffer.alloc(64).toString('base64')}`,
+      vendorPath: 'package/vendor/fixture'
+    },
     binary: { relativePath: `bin/${executableName()}`, sha256: sha256(readFileSync(binaryPath)) },
     appServerProtocol: {
       sourceVersion: 'v0_149_0',

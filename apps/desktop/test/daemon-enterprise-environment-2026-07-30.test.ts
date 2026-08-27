@@ -15,10 +15,7 @@ describe('Daemon enterprise environment', () => {
         OPENCREATOR_ENTERPRISE_ORIGIN: 'https://untrusted.example',
         OPENCREATOR_ENTERPRISE_E2E_RUN_ID:
           '223e4567-e89b-42d3-a456-426614174000',
-        OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED: 'untrusted',
-        OPENCREATOR_ENTERPRISE_KEYRING_SERVICE: 'attacker-service',
-        OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT: 'attacker-account',
-        opencreator_enterprise_keyring_account: 'lowercase-attacker-account'
+        OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED: 'untrusted'
       }
     }));
 
@@ -28,9 +25,15 @@ describe('Daemon enterprise environment', () => {
     expect(environment.OPENCREATOR_ENTERPRISE_ORIGIN).toBeUndefined();
     expect(environment.OPENCREATOR_ENTERPRISE_E2E_RUN_ID).toBeUndefined();
     expect(environment.OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED).toBeUndefined();
-    expect(environment.OPENCREATOR_ENTERPRISE_KEYRING_SERVICE).toBeUndefined();
-    expect(environment.OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT).toBeUndefined();
-    expect(environment.opencreator_enterprise_keyring_account).toBeUndefined();
+    expect(environment).toMatchObject({
+      OPENCREATOR_CODEX_BIN: '/usr/bin/codex',
+      CODEX_HOME: '/tmp/codex-home',
+      OPENCREATOR_DATA_DIR: '/tmp/data',
+      OPENCREATOR_DEFAULT_CWD: '/tmp',
+      OPENCREATOR_DEFAULT_PROJECT_ROOT: '/tmp/project',
+      OPENCREATOR_REQUIRE_CODEX_PROBE: '0',
+      OPENCREATOR_CODEX_PROBE_VERIFIED: '1'
+    });
   });
 
   it('passes the gateway config path and E2E identity as typed arguments', () => {
@@ -51,17 +54,13 @@ describe('Daemon enterprise environment', () => {
       env: {
         OPENCREATOR_ENTERPRISE_ORIGIN: 'http://127.0.0.1:1904',
         OPENCREATOR_ENTERPRISE_E2E_RUN_ID: runId,
-        OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED: 'packaged-app',
-        OPENCREATOR_ENTERPRISE_KEYRING_SERVICE: 'service',
-        OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT: 'account'
+        OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED: 'packaged-app'
       }
     }));
 
     expect(environment.OPENCREATOR_ENTERPRISE_ORIGIN).toBeUndefined();
     expect(environment.OPENCREATOR_ENTERPRISE_E2E_RUN_ID).toBeUndefined();
     expect(environment.OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED).toBeUndefined();
-    expect(environment.OPENCREATOR_ENTERPRISE_KEYRING_SERVICE).toBeUndefined();
-    expect(environment.OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT).toBeUndefined();
   });
 });
 

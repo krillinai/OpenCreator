@@ -357,7 +357,10 @@ export function createCodexAppServerHost(
         job.cancelRequested = true;
         if (job.threadId !== undefined && job.turnId !== undefined) {
           void interruptJob(job);
+          return;
         }
+        if (job.stage === 'mcp_refreshing') return;
+        failHost(new Error('Codex app-server run canceled before turn start'));
       },
       steer(input) {
         return steerJob(job, input);

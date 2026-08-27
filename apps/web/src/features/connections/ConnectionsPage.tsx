@@ -666,8 +666,8 @@ function formatConnectionError(
     if (code === 'ENTERPRISE_AGENT_FORBIDDEN') {
       return l('当前设备连接已停用', 'Connections are disabled on this device');
     }
-    if (code === 'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE') {
-      return l('系统安全凭据存储不可用，无法保存 MCP Token', 'Secure credential storage is unavailable, so the MCP token cannot be saved');
+    if (code === 'ENTERPRISE_CONFIG_FILE_UNAVAILABLE') {
+      return l('本地配置文件不可用，无法保存 MCP Token', 'The local configuration file is unavailable, so the MCP token cannot be saved');
     }
     if (code === 'ENTERPRISE_SERVICE_UNAVAILABLE') {
       return l('连接服务暂时不可用', 'The connector service is temporarily unavailable');

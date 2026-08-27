@@ -28,12 +28,12 @@ func main() {
 }
 
 func runProbe(args []string, outputIndex int) {
-	stateDir := requireEnv("CLAWEE_E2E_FAKE_CODEX_STATE_DIR")
+	stateDir := requireEnv("OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR")
 	must(os.MkdirAll(stateDir, 0o755))
 	increment(filepath.Join(stateDir, "probe-count.txt"))
 	must(os.WriteFile(filepath.Join(stateDir, "probe-pid.txt"), []byte(strconv.Itoa(os.Getpid())), 0o644))
 
-	mode := os.Getenv("CLAWEE_E2E_FAKE_CODEX_MODE")
+	mode := os.Getenv("OPENCREATOR_E2E_FAKE_CODEX_MODE")
 	switch mode {
 	case "probe-failure":
 		fmt.Fprintln(os.Stderr, "fake Codex probe failed by request")
@@ -58,7 +58,7 @@ func runProbe(args []string, outputIndex int) {
 
 	prompt, err := io.ReadAll(bufio.NewReader(os.Stdin))
 	must(err)
-	marker := regexp.MustCompile(`CLAWEE_READY_[a-f0-9]+`).FindString(string(prompt))
+	marker := regexp.MustCompile(`OPENCREATOR_READY_[a-f0-9]+`).FindString(string(prompt))
 	response := "hello from fake Codex"
 	if marker != "" {
 		response += " " + marker
@@ -74,8 +74,8 @@ func runProbe(args []string, outputIndex int) {
 
 func runJavaScriptFixture(args []string) {
 	recordCurrentProcess()
-	nodeBinary := requireEnv("CLAWEE_E2E_NODE_BINARY")
-	script := requireEnv("CLAWEE_E2E_FAKE_CODEX_SCRIPT")
+	nodeBinary := requireEnv("OPENCREATOR_E2E_NODE_BINARY")
+	script := requireEnv("OPENCREATOR_E2E_FAKE_CODEX_SCRIPT")
 	command := exec.Command(nodeBinary, append([]string{script}, args...)...)
 	command.Env = os.Environ()
 	command.Stdin = os.Stdin
@@ -91,7 +91,7 @@ func runJavaScriptFixture(args []string) {
 }
 
 func recordCurrentProcess() {
-	stateDir := requireEnv("CLAWEE_E2E_FAKE_CODEX_STATE_DIR")
+	stateDir := requireEnv("OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR")
 	must(os.MkdirAll(stateDir, 0o755))
 	file, err := os.OpenFile(
 		filepath.Join(stateDir, "app-server-pids.txt"),

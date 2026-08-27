@@ -4,11 +4,9 @@ import type {
   CreatorServicesCredentialField
 } from '@opencreator/protocol';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
-import { AsyncEntry } from '@napi-rs/keyring';
 import { z } from 'zod';
+import { createPrivateJsonDocumentEntry } from '../config/private-json-file.js';
 
-const SERVICE = 'com.opencreator.ai-services';
-const ACCOUNT = 'default';
 
 const boundedString = (maximum: number) => z.string().max(maximum);
 const openAiCompatibleSchema = z.object({
@@ -120,10 +118,10 @@ type CredentialEntry = {
 };
 
 export class CreatorServicesConfigStoreError extends Error {
-  readonly code = 'CREATOR_SERVICES_SECURE_STORAGE_UNAVAILABLE';
+  readonly code = 'CREATOR_SERVICES_CONFIG_FILE_UNAVAILABLE';
 
   constructor(stage: 'read' | 'write' | 'reset' | 'decode') {
-    super(`CREATOR_SERVICES_SECURE_STORAGE_UNAVAILABLE: creator services ${stage} failed`);
+    super(`CREATOR_SERVICES_CONFIG_FILE_UNAVAILABLE: creator services ${stage} failed`);
     this.name = 'CreatorServicesConfigStoreError';
   }
 }
@@ -168,8 +166,10 @@ export function createCreatorServicesConfigStore(
   };
 }
 
-export function createSystemCreatorServicesConfigStore(): CreatorServicesConfigStore {
-  return createCreatorServicesConfigStore(new AsyncEntry(SERVICE, ACCOUNT));
+export function createFileCreatorServicesConfigStore(
+  path: string
+): CreatorServicesConfigStore {
+  return createCreatorServicesConfigStore(createPrivateJsonDocumentEntry(path));
 }
 
 export function createCreatorServicesConfigStoreWithTextModelFallback(

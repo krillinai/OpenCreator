@@ -272,8 +272,8 @@ function enterpriseErrorMessage(code: RuntimeErrorCode): string {
       return 'Enterprise agent access is unavailable';
     case 'ENTERPRISE_AGENT_ID_CONFLICT':
       return 'Enterprise agent identity belongs to another account';
-    case 'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE':
-      return 'Secure credential storage is unavailable';
+    case 'ENTERPRISE_CONFIG_FILE_UNAVAILABLE':
+      return 'Enterprise configuration file is unavailable';
     case 'ENTERPRISE_SERVICE_UNAVAILABLE':
       return 'Enterprise service is unavailable';
     case 'ENTERPRISE_FORBIDDEN':

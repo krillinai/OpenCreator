@@ -160,7 +160,6 @@ import { createRunService } from '../services/run-service.js';
 import { createScheduleService } from '../services/schedule-service.js';
 import { createSearchService } from '../services/search-service.js';
 import { createSmartDubbingService } from '../services/smart-dubbing-service.js';
-import { createImageGenerationService } from '../services/image-generation-service.js';
 import { createVideoGenerationService } from '../services/video-generation-service.js';
 import { createSkillMarketService } from '../services/skill-market-service.js';
 import { createTaskService } from '../services/task-service.js';
@@ -584,10 +583,6 @@ export function AppController(props: AppControllerProps) {
   );
   const smartDubbingService = useMemo(
     () => runtimeClient === null ? undefined : createSmartDubbingService(runtimeClient),
-    [runtimeClient]
-  );
-  const imageGenerationService = useMemo(
-    () => runtimeClient === null ? undefined : createImageGenerationService(runtimeClient),
     [runtimeClient]
   );
   const videoGenerationService = useMemo(
@@ -3086,7 +3081,10 @@ export function AppController(props: AppControllerProps) {
         return;
       case 'workbench':
         closeMobileSidebar();
-        dispatch({ type: 'set_active_view', activeView: 'dashboard' });
+        dispatch({
+          type: 'set_active_view',
+          activeView: 'dashboard'
+        });
         return;
       case 'search':
       case 'projects':

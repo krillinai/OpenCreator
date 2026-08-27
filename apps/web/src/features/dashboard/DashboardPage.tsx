@@ -37,7 +37,6 @@ import type {
 import { creatorTemplateForWorkspace } from './creator-workspace.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import type { SmartDubbingService } from '../../services/smart-dubbing-service.js';
-import type { ImageGenerationService } from '../../services/image-generation-service.js';
 import type { VideoGenerationService } from '../../services/video-generation-service.js';
 
 type DashboardCategory = '视频创作' | '图像创作' | '音频处理' | '视频编辑' | '数字人';
@@ -172,7 +171,6 @@ export default function DashboardPage(props: {
   onWorkspaceModeChange?(active: boolean): void;
   skillLaunch?: CreatorSkillLaunch;
   smartDubbingService?: SmartDubbingService;
-  imageGenerationService?: ImageGenerationService;
   videoGenerationService?: VideoGenerationService;
   videoMetadataService?: VideoMetadataService;
   workspace?: CreatorWorkspace;
@@ -302,13 +300,12 @@ export default function DashboardPage(props: {
   }
 
   if (activeWorkspace === 'image-generation') {
-    return (
+    return renderCreatorWorkspace('image-generation', (
       <ImageGenerationWorkspace
         promptHint={activePromptHint}
-        service={props.imageGenerationService}
         onBack={closeWorkspace}
       />
-    );
+    ));
   }
 
   if (activeWorkspace === 'video-generation') {

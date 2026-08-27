@@ -1,7 +1,342 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  readCreatorResultSnapshots,
+  type CreatorArtifact,
+  type CreatorJob,
+  type CreatorJson,
+  type CreatorResultSnapshot
+} from '@opencreator/protocol';
+import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
-import DashboardPage from './DashboardPage.js';
+import type { CreatorWebService } from '../../services/creator-service.js';
+import DashboardPageView from './DashboardPage.js';
+
+function DashboardPage(props: ComponentProps<typeof DashboardPageView>) {
+  return (
+    <DashboardPageView
+      projectId="project_1"
+      creatorService={createInMemoryCreatorService()}
+      {...props}
+    />
+  );
+}
+
+function createInMemoryCreatorService(): CreatorWebService {
+  const jobs = new Map<string, CreatorJob>();
+  let sequence = 0;
+  const createJob = async (request: Parameters<CreatorWebService['createJob']>[0]) => {
+    const now = new Date().toISOString();
+    const job: CreatorJob = {
+      id: `creator_test_job_${++sequence}`,
+      projectId: request.projectId,
+      templateId: request.templateId,
+      templateVersion: 1,
+      status: 'draft',
+      revision: 0,
+      state: request.state ?? {},
+      agentThreadId: null,
+      stages: [],
+      artifacts: [],
+      activities: [],
+      createdAt: now,
+      updatedAt: now
+    };
+    jobs.set(job.id, job);
+    return { job };
+  };
+  const applyAction = async (
+    jobId: string,
+    request: Parameters<CreatorWebService['applyAction']>[1]
+  ) => {
+    const current = jobs.get(jobId);
+    if (current === undefined) throw new Error(`Creator job not found: ${jobId}`);
+    const updatesSettings = request.action === 'update-settings';
+    const patch = updatesSettings
+      && typeof request.input.patch === 'object'
+      && request.input.patch !== null
+      && !Array.isArray(request.input.patch)
+        ? request.input.patch
+        : {};
+    let job: CreatorJob;
+    if (updatesSettings) {
+      job = {
+        ...current,
+        revision: current.revision + 1,
+        state: { ...current.state, ...patch },
+        updatedAt: new Date().toISOString()
+      };
+    } else if (current.templateId === 'video-translation' && request.action === 'edit-subtitle') {
+      job = editTranslationSubtitles(current, request.input);
+    } else if (
+      current.templateId === 'video-translation'
+      && request.action === 'run-stage'
+      && request.input.stageId === 'subtitle'
+    ) {
+      job = completeTranslationStage(current);
+    } else {
+      job = current;
+    }
+    jobs.set(job.id, job);
+    return {
+      job,
+      receipt: {
+        actor: request.actor ?? 'user',
+        action: request.action,
+        summary: request.action,
+        affectedArtifacts: [],
+        newRevision: job.revision,
+        createdAt: job.updatedAt
+      }
+    };
+  };
+  return {
+    createJob,
+    getJob: async (jobId: string) => {
+      const job = jobs.get(jobId);
+      if (job === undefined) throw new Error(`Creator job not found: ${jobId}`);
+      return { job };
+    },
+    applyAction,
+    openArtifact: vi.fn(async (_jobId: string) => new Response(new Blob(['artifact']))),
+    runAgentTurn: vi.fn(async () => {
+      throw new Error('Agent turns require an explicit test fixture');
+    })
+  } as unknown as CreatorWebService;
+}
+
+const defaultTranslationCues: CreatorJson[] = [
+  { id: 1, start: '00:00:00,000', end: '00:00:02,000', text: 'Welcome to OpenCreator.' },
+  { id: 2, start: '00:00:02,000', end: '00:00:04,000', text: 'Create once, publish everywhere.' },
+  { id: 3, start: '00:00:04,000', end: '00:00:06,000', text: 'Your translated video is ready.' }
+];
+
+function editTranslationSubtitles(
+  current: CreatorJob,
+  input: Record<string, CreatorJson>
+): CreatorJob {
+  const now = new Date().toISOString();
+  const version = latestResultVersion(current) + 1;
+  const sourceArtifactId = typeof input.artifactId === 'string' ? input.artifactId : '';
+  const source = current.artifacts.find(artifact => artifact.id === sourceArtifactId);
+  const artifact = translationArtifact(current, {
+    kind: 'target_subtitle',
+    version,
+    fileName: `目标字幕-V${version}.srt`,
+    metadata: {
+      cues: Array.isArray(input.cues) ? input.cues : defaultTranslationCues,
+      editedFromArtifactId: source?.id ?? null
+    }
+  });
+  const snapshot = translationSnapshot(current, {
+    version,
+    action: 'edit-subtitle',
+    description: '保存字幕修改',
+    changedArtifacts: [artifact],
+    state: current.state,
+    createdAt: now
+  });
+  return {
+    ...current,
+    status: 'completed',
+    revision: current.revision + 1,
+    state: {
+      ...current.state,
+      resultVersion: version,
+      latestResultVersion: version,
+      resultSnapshots: [
+        ...translationSnapshots(current),
+        snapshot
+      ]
+    },
+    artifacts: [...current.artifacts, artifact],
+    updatedAt: now
+  };
+}
+
+function completeTranslationStage(current: CreatorJob): CreatorJob {
+  const now = new Date().toISOString();
+  const previousSnapshot = translationSnapshots(current).at(-1);
+  const completesEditedVersion = previousSnapshot?.action === 'edit-subtitle';
+  const version = completesEditedVersion
+    ? previousSnapshot.version
+    : latestResultVersion(current) + 1;
+  const existingSubtitle = completesEditedVersion
+    ? latestTranslationArtifact(current, 'target_subtitle')
+    : undefined;
+  const subtitle = existingSubtitle ?? translationArtifact(current, {
+    kind: 'target_subtitle',
+    version,
+    fileName: `目标字幕-V${version}.srt`,
+    metadata: { cues: defaultTranslationCues }
+  });
+  const generatedArtifacts: CreatorArtifact[] = existingSubtitle === undefined ? [subtitle] : [];
+  if (current.state.dubbing === true) {
+    generatedArtifacts.push(translationArtifact(current, {
+      kind: 'dubbed_audio',
+      version,
+      fileName: `目标语言配音-V${version}.wav`
+    }));
+  }
+  if (current.state.composeVideo === true) {
+    const videoFormat = current.state.videoFormat;
+    if (videoFormat !== 'vertical') {
+      generatedArtifacts.push(translationArtifact(current, {
+        kind: 'horizontal_video',
+        version,
+        fileName: `翻译成片-V${version}.mp4`
+      }));
+    }
+    if (videoFormat === 'vertical' || videoFormat === 'all') {
+      generatedArtifacts.push(translationArtifact(current, {
+        kind: 'vertical_video',
+        version,
+        fileName: `竖屏翻译成片-V${version}.mp4`
+      }));
+    }
+  }
+  const snapshot = translationSnapshot(current, {
+    version,
+    action: 'stage-succeeded',
+    description: version === 1 ? '初次生成' : `生成项目 V${version}`,
+    changedArtifacts: generatedArtifacts,
+    state: current.state,
+    createdAt: now
+  });
+  const snapshots = completesEditedVersion
+    ? [...translationSnapshots(current).slice(0, -1), snapshot]
+    : [...translationSnapshots(current), snapshot];
+  return {
+    ...current,
+    status: 'completed',
+    revision: current.revision + 1,
+    state: {
+      ...current.state,
+      currentStage: 'subtitle',
+      resultVersion: version,
+      latestResultVersion: version,
+      resultSnapshots: snapshots
+    },
+    stages: [
+      ...current.stages,
+      {
+        id: `translation_stage_${version}`,
+        jobId: current.id,
+        stageId: 'subtitle',
+        executor: 'krillinai',
+        status: 'succeeded',
+        dispatchStatus: 'finished',
+        claimOwner: null,
+        claimExpiresAt: null,
+        attempt: 1,
+        idempotencyKey: null,
+        progress: { workflow: true },
+        errorCode: null,
+        errorMessage: null,
+        startedAt: now,
+        finishedAt: now
+      }
+    ],
+    artifacts: [...current.artifacts, ...generatedArtifacts],
+    updatedAt: now
+  };
+}
+
+function translationArtifact(
+  current: CreatorJob,
+  input: {
+    kind: string;
+    version: number;
+    fileName: string;
+    metadata?: Record<string, CreatorJson>;
+  }
+): CreatorArtifact {
+  return {
+    id: `${input.kind}_v${input.version}_${current.artifacts.length + 1}`,
+    jobId: current.id,
+    kind: input.kind,
+    version: input.version,
+    status: 'completed',
+    path: `/tmp/${input.fileName}`,
+    sourceArtifactIds: [],
+    metadata: {
+      resultVersion: input.version,
+      fileName: input.fileName,
+      settingsSnapshot: current.state,
+      ...(input.metadata ?? {})
+    },
+    createdAt: new Date().toISOString()
+  };
+}
+
+function translationSnapshot(
+  current: CreatorJob,
+  input: {
+    version: number;
+    action: string;
+    description: string;
+    changedArtifacts: CreatorArtifact[];
+    state: Record<string, CreatorJson>;
+    createdAt: string;
+  }
+): CreatorResultSnapshot {
+  const previousRefs = translationSnapshots(current).at(-1)?.artifactRefs ?? {};
+  const artifactRefs: Record<string, string[]> = Object.fromEntries(
+    Object.entries(previousRefs).map(([kind, ids]) => [kind, [...ids]])
+  );
+  for (const artifact of input.changedArtifacts) artifactRefs[artifact.kind] = [artifact.id];
+  return {
+    version: input.version,
+    createdAt: input.createdAt,
+    action: input.action,
+    stageId: input.action === 'stage-succeeded' ? 'subtitle' : null,
+    description: input.description,
+    artifactRefs,
+    changedArtifactIds: input.changedArtifacts.map(artifact => artifact.id),
+    staleArtifactIds: [],
+    state: { ...input.state }
+  };
+}
+
+function translationSnapshots(job: CreatorJob): CreatorResultSnapshot[] {
+  return readCreatorResultSnapshots(job.state.resultSnapshots);
+}
+
+function latestResultVersion(job: CreatorJob): number {
+  return translationSnapshots(job).reduce(
+    (highest, snapshot) => Math.max(highest, snapshot.version),
+    0
+  );
+}
+
+function latestTranslationArtifact(job: CreatorJob, kind: string) {
+  return [...job.artifacts].reverse().find(artifact => (
+    artifact.kind === kind && artifact.status === 'completed'
+  ));
+}
+
+async function startVideoTranslation() {
+  const workspace = screen.getByRole('region', { name: '视频翻译操作区' });
+  fireEvent.click(within(workspace).getByRole('button', { name: '开始翻译' }));
+  await screen.findByRole('heading', { name: '视频翻译项目' });
+}
+
+function completedAgentTurn(jobId: string, content: string) {
+  const createdAt = new Date().toISOString();
+  return {
+    turn: {
+      id: `agent_turn_${Date.now()}`,
+      jobId,
+      role: 'assistant' as const,
+      content,
+      status: 'completed' as const,
+      audit: [],
+      createdAt,
+      startedAt: createdAt,
+      completedAt: createdAt
+    }
+  };
+}
 
 describe('DashboardPage', () => {
   it('opens a Skill workspace directly and keeps its prompt as an inactive hint', () => {
@@ -58,8 +393,8 @@ describe('DashboardPage', () => {
       'placeholder',
       'Paste a YouTube, Bilibili, or other video link'
     );
-    expect(screen.getByText(/Add a video on the left/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Which platforms are supported?' })).toBeInTheDocument();
+    expect(screen.getByText('No collaboration activity yet')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ask Agent to review settings' })).toBeInTheDocument();
     expect(screen.queryByText('拖放视频到这里')).not.toBeInTheDocument();
   });
 
@@ -69,19 +404,9 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     const translationInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
     expect(translationInput.closest('form')).toHaveClass('tool-agent-composer');
-    expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '添加上下文' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择访问权限 完全访问权限' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '选择模型 默认模型' }));
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-5.6 Sol' }));
-    expect(screen.getByRole('button', { name: '选择模型 GPT-5.6 Sol' })).toBeInTheDocument();
-
-    const contextFile = new File(['notes'], 'translation-notes.txt', { type: 'text/plain' });
-    fireEvent.change(screen.getByLabelText('添加文件'), { target: { files: [contextFile] } });
-    expect(screen.getByText('translation-notes.txt')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '移除 translation-notes.txt' }));
-    expect(screen.queryByText('translation-notes.txt')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '选择模型 默认模型' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '返回' }));
     fireEvent.click(screen.getByRole('button', { name: /^视频下载/ }));
@@ -89,6 +414,12 @@ describe('DashboardPage', () => {
     expect(downloadInput.closest('form')).toHaveClass('tool-agent-composer');
     expect(screen.getByRole('button', { name: '添加上下文' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '选择模型 默认模型' })).toBeInTheDocument();
+
+    const contextFile = new File(['notes'], 'download-notes.txt', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('添加文件'), { target: { files: [contextFile] } });
+    expect(screen.getByText('download-notes.txt')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '移除 download-notes.txt' }));
+    expect(screen.queryByText('download-notes.txt')).not.toBeInTheDocument();
   });
 
   it('renders featured apps and the searchable creator app directory', () => {
@@ -187,13 +518,13 @@ describe('DashboardPage', () => {
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('圆体 · 大 · #FFE45C');
     expect(screen.getByLabelText('任务摘要')).toHaveClass('video-translation-summary', 'creator-task-summary');
     expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('video-translation-final-grid');
-    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    await startVideoTranslation();
 
     expect(onSelectPrompt).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: '视频翻译项目' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '成片' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('已完成，V1')).toBeInTheDocument();
-    expect(screen.getByText('V1 已生成完成')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '字幕' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('项目 V1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存横屏字幕' })).toBeDisabled();
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     expect(screen.getByText('圆体 · 大 · #FFE45C')).toBeInTheDocument();
     expect(screen.queryByText(/之前的版本仍可查看/)).not.toBeInTheDocument();
@@ -242,7 +573,7 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('heading', { name: '选择输出内容' })).toBeInTheDocument();
   });
 
-  it('parses a public video link and exposes video and audio download variants', () => {
+  it('parses a public video link and exposes video and audio download variants', async () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^视频下载/ }));
 
@@ -252,23 +583,28 @@ describe('DashboardPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '解析链接' }));
 
-    expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: '下载规格' })).toHaveAttribute('aria-selected', 'true');
+    });
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('来源平台YouTube');
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('当前规格1080p');
     expect(screen.getByLabelText('任务摘要')).toHaveClass('video-translation-summary', 'creator-task-summary');
     expect(screen.getByLabelText('任务摘要')).not.toHaveClass('is-compact');
     expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-result-layout');
-    expect(screen.queryByRole('button', { name: /已完成，V/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /项目 V/ })).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /1080p/ })).toBeChecked();
     fireEvent.click(screen.getByRole('tab', { name: /MP3 音频/ }));
     expect(screen.getByRole('radio', { name: /320kbps/ })).toBeChecked();
     fireEvent.click(screen.getByRole('tab', { name: '视频信息' }));
     expect(screen.getByRole('region', { name: '视频下载结果' })).toHaveTextContent('YouTube');
 
-    fireEvent.click(screen.getByRole('button', { name: '下载 1080p 视频' }));
+    fireEvent.click(screen.getByRole('tab', { name: '下载规格' }));
+    fireEvent.click(screen.getByRole('tab', { name: /MP4 视频/ }));
+    fireEvent.click(screen.getByRole('button', { name: '下载 1080p' }));
     expect(screen.getByRole('tab', { name: '下载记录' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('status')).toHaveTextContent('YouTube MP4 1080p 已加入下载队列');
-    expect(screen.getByText('已创建 MP4 1080p 下载任务。')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '视频下载结果' })).toHaveTextContent('YouTube MP4 1080p');
+    expect(screen.getByRole('region', { name: '视频下载结果' })).toHaveTextContent('已加入下载队列');
   });
 
   it('generates a stickman character before storyboard and video', () => {
@@ -378,7 +714,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText('火柴人动画-V1.mp4')).toBeInTheDocument();
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('当前版本V1');
     expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-result-layout');
-    expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '成片' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '分镜' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '角色' })).toBeInTheDocument();
@@ -401,10 +737,6 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: '调整配音与音乐' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: '火柴人项目产出' })).toHaveTextContent('city-theme.mp3 · 35%');
 
-    fireEvent.click(screen.getByRole('button', { name: '让 Agent 重新生成视频' }));
-    expect(screen.getByText('设置没有变化，继续查看 V1，未创建新版本。')).toBeInTheDocument();
-    expect(screen.queryByText('火柴人动画-V2.mp4')).not.toBeInTheDocument();
-
     fireEvent.click(within(stickmanSteps).getByRole('button', { name: /故事与分镜$/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '故事创意' }), {
       target: { value: '一个商务角色在会议中用图表解释新产品。' }
@@ -417,11 +749,11 @@ describe('DashboardPage', () => {
 
     expect(screen.getByText('火柴人动画-V2.mp4')).toBeInTheDocument();
     expect(screen.getByText('V2 已生成完成，之前的版本仍可查看')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
+    fireEvent.click(screen.getByRole('button', { name: '项目 V2' }));
     const stickmanVersionMenu = screen.getByRole('menu');
-    expect(within(stickmanVersionMenu).getByText('已完成，V1')).toBeInTheDocument();
-    expect(within(stickmanVersionMenu).getByText('已完成，V2')).toBeInTheDocument();
-    fireEvent.click(within(stickmanVersionMenu).getByText('已完成，V1').closest('button') as HTMLButtonElement);
+    expect(within(stickmanVersionMenu).getByText('项目 V1')).toBeInTheDocument();
+    expect(within(stickmanVersionMenu).getByText('项目 V2')).toBeInTheDocument();
+    fireEvent.click(within(stickmanVersionMenu).getByText('项目 V1').closest('button') as HTMLButtonElement);
     expect(screen.getByText('火柴人动画-V1.mp4')).toBeInTheDocument();
 
     fireEvent.click(within(screen.getByRole('navigation', { name: '火柴人生成流程' })).getByRole('button', { name: /故事与分镜$/ }));
@@ -432,7 +764,7 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步：配音与音乐' }));
     fireEvent.click(screen.getByRole('button', { name: '生成 V3' }));
     expect(screen.getByText('火柴人动画-V3.mp4')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '已完成，V3' }));
+    fireEvent.click(screen.getByRole('button', { name: '项目 V3' }));
     expect(screen.getByRole('menu')).toHaveTextContent('基于 V1 调整，当前查看');
   });
 
@@ -540,7 +872,7 @@ describe('DashboardPage', () => {
 
     expect(screen.getByText('已找到 10 个候选片段')).toBeInTheDocument();
     expect(screen.queryByLabelText('任务摘要')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '候选片段' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '字幕与评分' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '导出内容' })).toBeInTheDocument();
@@ -564,7 +896,7 @@ describe('DashboardPage', () => {
     fireEvent.click(within(clipSteps).getByRole('button', { name: /分析设置$/ }));
     fireEvent.click(screen.getByRole('button', { name: '识别语义并提取片段' }));
     expect(screen.getByRole('status')).toHaveTextContent('设置没有变化，继续查看 V1，未创建新版本');
-    expect(screen.queryByRole('button', { name: '已完成，V2' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '项目 V2' })).not.toBeInTheDocument();
 
     fireEvent.click(within(clipSteps).getByRole('button', { name: /分析设置$/ }));
     fireEvent.change(screen.getByRole('combobox', { name: '内容偏好' }), { target: { value: 'viral' } });
@@ -572,12 +904,12 @@ describe('DashboardPage', () => {
     expect(screen.getByText('将生成 5 个候选片段')).toBeInTheDocument();
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('候选片段5');
     fireEvent.click(screen.getByRole('button', { name: '重新分析并生成 V2' }));
-    expect(screen.getByRole('button', { name: '已完成，V2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '项目 V2' })).toBeInTheDocument();
     expect(screen.getByText('已找到 5 个候选片段')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /^查看片段/ })).toHaveLength(5);
     expect(screen.queryByLabelText('任务摘要')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
-    expect(screen.getByRole('menu')).toHaveTextContent('已完成，V1');
+    fireEvent.click(screen.getByRole('button', { name: '项目 V2' }));
+    expect(screen.getByRole('menu')).toHaveTextContent('项目 V1');
   });
 
   it('generates four cover variants from prompt and supports ratio changes', () => {
@@ -596,7 +928,7 @@ describe('DashboardPage', () => {
     expect(screen.getByLabelText('任务摘要')).toHaveTextContent('生成数量2');
     expect(screen.getByLabelText('任务摘要')).not.toHaveClass('is-compact');
     expect(screen.getByLabelText('任务摘要').parentElement).toHaveClass('creator-result-layout');
-    expect(screen.getByRole('button', { name: '已完成，V1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '项目 V1' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '封面方案' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '参考素材' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '任务设置' })).toBeInTheDocument();
@@ -611,14 +943,14 @@ describe('DashboardPage', () => {
     fireEvent.click(within(coverSteps).getByRole('button', { name: /设置封面$/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '封面提示词' }), { target: { value: '蓝色科技感，人物主体更大，标题更醒目' } });
     fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
-    expect(screen.getByRole('button', { name: '已完成，V2' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
+    expect(screen.getByRole('button', { name: '项目 V2' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '项目 V2' }));
     const versionMenu = screen.getByRole('menu');
-    expect(versionMenu).toHaveTextContent('已完成，V1');
-    expect(versionMenu).toHaveTextContent('已完成，V2');
+    expect(versionMenu).toHaveTextContent('项目 V1');
+    expect(versionMenu).toHaveTextContent('项目 V2');
   });
 
-  it('edits and saves generated subtitles without leaving the result workspace', () => {
+  it('edits and saves generated subtitles without leaving the result workspace', async () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
@@ -627,24 +959,24 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    await startVideoTranslation();
 
     fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
-    const firstSubtitle = screen.getByRole('textbox', { name: '字幕 1' });
+    const firstSubtitle = screen.getByRole('textbox', { name: '横屏字幕 1' });
     fireEvent.change(firstSubtitle, { target: { value: 'A manually edited subtitle.' } });
-    expect(screen.getByText('有未保存修改')).toBeInTheDocument();
+    expect(screen.getByLabelText('有未保存的字幕修改')).toBeInTheDocument();
     const subtitleEditor = screen.getByRole('region', { name: '生成新版本' })
       .previousElementSibling as HTMLElement;
     expect(subtitleEditor).toContainElement(firstSubtitle);
-    fireEvent.click(screen.getByRole('button', { name: '保存字幕' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存横屏字幕' }));
 
-    expect(screen.getByText('所有修改已保存')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('字幕修改已保存');
-    expect(screen.getByRole('region', { name: '生成新版本' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '生成 V2' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '项目 V2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存横屏字幕' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('字幕已保存为项目 V2');
+    expect(screen.queryByRole('region', { name: '生成新版本' })).not.toBeInTheDocument();
   });
 
-  it('requires confirmation before the Agent changes output files or creates a version', () => {
+  it('requires confirmation before subtitle changes create a new output version', async () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
@@ -653,30 +985,28 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    await startVideoTranslation();
 
-    fireEvent.click(screen.getByRole('button', { name: '修改字幕' }));
-    const composer = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
-    fireEvent.change(composer, { target: { value: '把第2条字幕改为 Welcome back to OpenCreator.' } });
-    fireEvent.keyDown(composer, { key: 'Enter' });
-    expect(screen.getByRole('textbox', { name: '字幕 2' })).toHaveValue('Welcome back to OpenCreator.');
-    expect(screen.getByText('有未保存修改')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: '横屏字幕 2' }), {
+      target: { value: 'Welcome back to OpenCreator.' }
+    });
+    expect(screen.getByRole('textbox', { name: '横屏字幕 2' })).toHaveValue('Welcome back to OpenCreator.');
+    expect(screen.getByLabelText('有未保存的字幕修改')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '生成新版本' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存并生成 V2' }));
     const regenerateConfirmation = screen.getByRole('group', { name: '确认生成新版本' });
     expect(regenerateConfirmation).toHaveTextContent('确认生成 V2');
     expect(regenerateConfirmation).toHaveTextContent('更新字幕、成片');
     fireEvent.click(within(regenerateConfirmation).getByRole('button', { name: '确认生成 V2' }));
 
-    expect(screen.getByText('已完成，V2')).toBeInTheDocument();
-    const versionTrigger = screen.getByRole('button', { name: '已完成，V2' });
+    const versionTrigger = await screen.findByRole('button', { name: '项目 V2' });
     expect(versionTrigger).toHaveAttribute('aria-haspopup', 'menu');
     expect(versionTrigger.querySelector('.video-result-version-chevron')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
-    expect(screen.getByRole('textbox', { name: '字幕 2' })).toHaveValue('Welcome back to OpenCreator.');
+    expect(screen.getByRole('textbox', { name: '横屏字幕 2' })).toHaveValue('Welcome back to OpenCreator.');
   });
 
-  it('saves manual subtitle edits while generating a new version', () => {
+  it('saves manual subtitle edits while generating a new version', async () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
@@ -685,10 +1015,10 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    await startVideoTranslation();
 
     fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '字幕 1' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: '横屏字幕 1' }), {
       target: { value: 'The manually revised opening.' }
     });
     fireEvent.click(screen.getByRole('button', { name: '保存并生成 V2' }));
@@ -698,12 +1028,12 @@ describe('DashboardPage', () => {
     expect(confirmation).toHaveTextContent('V1 的全部产出会保留');
     fireEvent.click(within(confirmation).getByRole('button', { name: '确认生成 V2' }));
 
-    expect(screen.getByText('已完成，V2')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '项目 V2' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
-    expect(screen.getByRole('textbox', { name: '字幕 1' })).toHaveValue('The manually revised opening.');
+    expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toHaveValue('The manually revised opening.');
   });
 
-  it('adds dubbing through settings and generates it in the next version', () => {
+  it('adds dubbing through settings and generates it in the next version', async () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
@@ -712,7 +1042,7 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    await startVideoTranslation();
 
     fireEvent.click(screen.getByRole('tab', { name: '配音' }));
     fireEvent.click(screen.getByRole('button', { name: '开启配音并生成新版本' }));
@@ -726,13 +1056,13 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
     fireEvent.click(screen.getByRole('button', { name: '确认生成 V2' }));
 
-    expect(screen.getByText('已完成，V2')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '项目 V2' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '配音' }));
     expect(screen.getByText('配音文件已生成')).toBeInTheDocument();
     expect(screen.getByText('目标语言配音-V2.wav')).toBeInTheDocument();
   });
 
-  it('returns to settings and creates a new version without replacing the old one', () => {
+  it('returns to settings and creates a new version without replacing the old one', async () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
@@ -741,13 +1071,8 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
+    await startVideoTranslation();
 
-    fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '字幕 1' }), {
-      target: { value: 'Saved in the V1 artifact.' }
-    });
-    fireEvent.click(screen.getByRole('button', { name: '保存字幕' }));
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     fireEvent.click(screen.getByRole('button', { name: '调整设置' }));
     fireEvent.change(screen.getByRole('combobox', { name: '翻译为' }), {
@@ -762,12 +1087,8 @@ describe('DashboardPage', () => {
     expect(screen.getByText('正在基于 V1 调整')).toBeInTheDocument();
     expect(screen.getByText('原成品已保留，当前修改为配置草稿')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '返回 V1 成品' }));
-    expect(screen.getByText('已完成，V1')).toBeInTheDocument();
-    expect(screen.getByText('简体中文，字幕文件')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'YouTube 视频缩略图' })).toHaveAttribute(
-      'src',
-      'https://i.ytimg.com/vi/test/hqdefault.jpg'
-    );
+    expect(screen.getByText('项目 V1')).toBeInTheDocument();
+    expect(screen.getByText('https://www.youtube.com/watch?v=test')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     fireEvent.click(screen.getByRole('button', { name: '调整设置' }));
@@ -783,25 +1104,25 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('button', { name: '生成 V2' }));
 
-    expect(screen.getByText('已完成，V2')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
+    expect(await screen.findByRole('button', { name: '项目 V2' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '项目 V2' }));
     const versionMenu = screen.getByRole('menu');
-    expect(within(versionMenu).getByText('已完成，V1')).toBeInTheDocument();
-    expect(within(versionMenu).getByText('已完成，V2')).toBeInTheDocument();
-    expect(versionMenu).toHaveTextContent('基于 V1 调整，当前查看');
+    expect(within(versionMenu).getByText('项目 V1')).toBeInTheDocument();
+    expect(within(versionMenu).getByText('项目 V2')).toBeInTheDocument();
+    expect(versionMenu).toHaveTextContent('生成项目 V2，当前查看');
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '已完成，V2' }));
+    fireEvent.click(screen.getByRole('button', { name: '项目 V2' }));
     const reopenedVersionMenu = screen.getByRole('menu');
-    fireEvent.click(within(reopenedVersionMenu).getByText('已完成，V1').closest('button') as HTMLButtonElement);
+    fireEvent.click(within(reopenedVersionMenu).getByText('项目 V1').closest('button') as HTMLButtonElement);
 
-    expect(screen.getByText('已完成，V1')).toBeInTheDocument();
+    expect(screen.getByText('项目 V1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '任务设置' }));
     const settings = screen.getByText('目标语言').closest('dl');
     expect(settings).not.toBeNull();
     expect(within(settings as HTMLElement).getByText('简体中文')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '字幕' }));
-    expect(screen.getByRole('textbox', { name: '字幕 1' })).toHaveValue('Saved in the V1 artifact.');
+    expect(screen.getByRole('textbox', { name: '横屏字幕 1' })).toHaveValue('Welcome to OpenCreator.');
   });
 
   it('resizes the immersive operation and Agent panes', () => {
@@ -876,86 +1197,86 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('heading', { name: '拖放视频到这里' })).toBeInTheDocument();
   });
 
-  it('lets the Agent update and undo the shared translation draft', () => {
-    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+  it('delegates translation changes to the Creator Agent without local command parsing', async () => {
+    const creatorService = createInMemoryCreatorService();
+    vi.mocked(creatorService.runAgentTurn).mockImplementation(async (jobId, request) => (
+      completedAgentTurn(jobId, `已收到：${request.message}`)
+    ));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        projectId="project_1"
+        creatorService={creatorService}
+      />
+    );
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
       target: { value: 'https://www.youtube.com/watch?v=test' }
     });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-
-    fireEvent.click(screen.getByRole('button', { name: '翻译成日语' }));
-    expect(screen.getByRole('combobox', { name: '翻译为' })).toHaveValue('ja');
-    expect(screen.getByRole('status')).toHaveTextContent('目标语言已改为日本語');
-
-    fireEvent.click(screen.getByRole('button', { name: '撤销 Agent 修改' }));
-    expect(screen.getByRole('combobox', { name: '翻译为' })).toHaveValue('zh_cn');
-  });
-
-  it('opens and highlights the matching left controls for Agent changes after generation', () => {
-    render(<DashboardPage onSelectPrompt={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
-    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
-      target: { value: 'https://www.youtube.com/watch?v=test' }
-    });
-    fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '开始翻译' }));
 
     const composer = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
     fireEvent.change(composer, { target: { value: '目标语言改成日语' } });
     fireEvent.keyDown(composer, { key: 'Enter' });
 
-    expect(screen.getByRole('heading', { name: '设置翻译语言' })).toBeInTheDocument();
-    const targetLanguageSelect = screen.getByRole('combobox', { name: '翻译为' });
-    expect(targetLanguageSelect).toHaveValue('ja');
-    expect(targetLanguageSelect.closest('.video-translation-field')).toHaveAttribute('data-agent-focus', 'true');
-
-    fireEvent.change(composer, { target: { value: '开启配音' } });
-    fireEvent.keyDown(composer, { key: 'Enter' });
-
-    expect(screen.getByRole('heading', { name: '选择输出内容' })).toBeInTheDocument();
-    const dubbingSwitch = screen.getByRole('switch', { name: '生成目标语言配音' });
-    expect(dubbingSwitch).toBeChecked();
-    expect(dubbingSwitch.closest('.video-translation-option-block')).toHaveAttribute('data-agent-focus', 'true');
-    expect(screen.getByText('正在基于 V1 调整')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '生成 V2' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(creatorService.runAgentTurn).toHaveBeenCalledWith(
+        expect.stringMatching(/^creator_test_job_/),
+        expect.objectContaining({
+          message: '目标语言改成日语',
+          sandbox: 'danger-full-access'
+        })
+      );
+    });
+    expect(screen.getByRole('combobox', { name: '翻译为' })).toHaveValue('zh_cn');
   });
 
-  it('drives the translation task and version regeneration entirely from the conversation', () => {
-    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+  it('sends the translation review quick action through the Creator Agent', async () => {
+    const creatorService = createInMemoryCreatorService();
+    vi.mocked(creatorService.runAgentTurn).mockImplementation(async (jobId, request) => (
+      completedAgentTurn(jobId, `已检查：${request.message}`)
+    ));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        projectId="project_1"
+        creatorService={creatorService}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    fireEvent.click(screen.getByRole('button', { name: '让 Agent 检查设置' }));
+
+    await waitFor(() => {
+      expect(creatorService.runAgentTurn).toHaveBeenCalledWith(
+        expect.stringMatching(/^creator_test_job_/),
+        expect.objectContaining({
+          message: '检查当前视频翻译设置，指出缺失项，并给出下一步建议。',
+          sandbox: 'danger-full-access'
+        })
+      );
+    });
+  });
+
+  it('keeps a failed Creator Agent request in the composer for retry', async () => {
+    const creatorService = createInMemoryCreatorService();
+    vi.mocked(creatorService.runAgentTurn).mockRejectedValue(new Error('Creator Agent unavailable'));
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        projectId="project_1"
+        creatorService={creatorService}
+      />
+    );
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
 
     const composer = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
-    fireEvent.change(composer, { target: { value: '开始翻译' } });
+    fireEvent.change(composer, { target: { value: '检查当前翻译设置' } });
     fireEvent.keyDown(composer, { key: 'Enter' });
-    expect(screen.getByText('还缺少视频。请在对话中发送公开视频链接，或从左侧上传本地文件。'))
-      .toBeInTheDocument();
 
-    fireEvent.change(composer, {
-      target: {
-        value: '帮我翻译这个视频 https://www.youtube.com/watch?v=agent-test，目标语言日语，开启配音，输出竖屏'
-      }
+    await waitFor(() => {
+      expect(composer).toHaveValue('检查当前翻译设置');
     });
-    fireEvent.keyDown(composer, { key: 'Enter' });
-
-    expect(screen.getByText('已完成，V1')).toBeInTheDocument();
-    expect(screen.getByText('日本語，竖屏视频 9:16')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('tab', { name: '配音' }));
-    expect(screen.getByText('配音文件已生成')).toBeInTheDocument();
-
-    fireEvent.change(composer, { target: { value: '把第1条字幕改为 OpenCreatorへようこそ。' } });
-    fireEvent.keyDown(composer, { key: 'Enter' });
-    expect(screen.getByRole('textbox', { name: '字幕 1' })).toHaveValue('OpenCreatorへようこそ。');
-
-    fireEvent.change(composer, { target: { value: '生成新版本' } });
-    fireEvent.keyDown(composer, { key: 'Enter' });
-    expect(screen.getByRole('group', { name: '确认生成新版本' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '确认并执行 V2' }));
-
-    expect(screen.getByText('已完成，V2')).toBeInTheDocument();
-    expect(screen.getByText('V2 已生成完成，之前的版本仍可在版本历史中查看。')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Creator Agent unavailable');
   });
 
   it('returns from the video translation workspace to the app directory', () => {
@@ -1064,7 +1385,7 @@ describe('DashboardPage', () => {
     expect(openContent).toHaveBeenCalledWith(result.id);
   });
 
-  it('generates image assets through the shared Runtime service', async () => {
+  it('generates image assets through the Creator Runtime', async () => {
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
       value: vi.fn((blob: Blob) => `blob:image-${blob.size}`)
@@ -1073,32 +1394,149 @@ describe('DashboardPage', () => {
       configurable: true,
       value: vi.fn()
     });
-    const result = {
-      id: 'image_result_1234',
-      prompt: '一间清晨的现代创意工作室',
-      provider: 'openai' as const,
-      model: 'gpt-image-1',
-      imageSize: '1536x1024' as const,
-      quality: 'high' as const,
-      count: 2,
-      images: [
-        { index: 0, fileName: 'image-1.png', mime: 'image/png' as const, size: 1024 },
-        { index: 1, fileName: 'image-2.png', mime: 'image/png' as const, size: 2048 }
-      ],
-      createdAt: '2026-08-20T00:00:00.000Z'
+    const prompt = '一间清晨的现代创意工作室';
+    const createdAt = '2026-08-26T00:00:00.000Z';
+    let job: CreatorJob = {
+      id: 'creator_image_job',
+      projectId: 'project_1',
+      templateId: 'image-generation',
+      templateVersion: 1,
+      status: 'draft',
+      revision: 0,
+      state: {
+        prompt: '',
+        provider: 'openai',
+        size: '1024x1024',
+        quality: 'medium',
+        candidateCount: 2,
+        currentStage: null
+      },
+      agentThreadId: null,
+      stages: [],
+      artifacts: [],
+      activities: [],
+      createdAt,
+      updatedAt: createdAt
     };
-    const generate = vi.fn(async () => ({ result }));
-    const openContent = vi.fn(async () => new Response(new Blob(['image'], { type: 'image/png' })));
+    const applyAction = vi.fn(async (_jobId: string, request: {
+      action: string;
+      input: Record<string, unknown>;
+    }) => {
+      if (request.action === 'update-settings') {
+        job = {
+          ...job,
+          revision: job.revision + 1,
+          state: {
+            ...job.state,
+            ...(request.input.patch as Record<string, string | number>)
+          }
+        };
+      } else {
+        const version = typeof job.state.latestResultVersion === 'number'
+          ? job.state.latestResultVersion + 1
+          : 1;
+        const artifacts: CreatorArtifact[] = [1, 2].map(candidate => ({
+          id: `image_artifact_v${version}_${candidate}`,
+          jobId: job.id,
+          kind: 'generated_image',
+          version,
+          status: 'completed',
+          path: `/tmp/image-${candidate}.png`,
+          sourceArtifactIds: [],
+          metadata: {
+            provider: 'openai',
+            model: 'gpt-image-1',
+            candidate,
+            imageSize: '1536x1024',
+            quality: 'high',
+            mimeType: 'image/png',
+            bytes: candidate * 1024,
+            fileName: `image-${candidate}.png`,
+            resultVersion: version
+          },
+          createdAt
+        }));
+        job = {
+          ...job,
+          status: 'completed',
+          revision: job.revision + 2,
+          state: {
+            ...job.state,
+            currentStage: 'generate',
+            resultVersion: version,
+            latestResultVersion: version,
+            resultSnapshots: [
+              ...(Array.isArray(job.state.resultSnapshots) ? job.state.resultSnapshots : []),
+              {
+              version,
+              createdAt,
+              action: 'stage-succeeded',
+              stageId: 'generate',
+              description: '生成图片',
+              artifactRefs: { generated_image: artifacts.map(artifact => artifact.id) },
+              changedArtifactIds: artifacts.map(artifact => artifact.id),
+              staleArtifactIds: [],
+              state: {
+                prompt,
+                provider: 'openai',
+                size: '1536x1024',
+                quality: 'high',
+                candidateCount: 2
+              }
+            }]
+          },
+          stages: [{
+            id: 'stage_generate_1',
+            jobId: job.id,
+            stageId: 'generate',
+            executor: 'image',
+            status: 'succeeded',
+            dispatchStatus: 'finished',
+            claimOwner: null,
+            claimExpiresAt: null,
+            attempt: 1,
+            idempotencyKey: null,
+            progress: { status: 'succeeded' },
+            errorCode: null,
+            errorMessage: null,
+            startedAt: createdAt,
+            finishedAt: createdAt
+          }],
+          artifacts: [...job.artifacts, ...artifacts]
+        };
+      }
+      return {
+        job,
+        receipt: {
+          actor: 'user' as const,
+          action: request.action,
+          summary: request.action,
+          affectedArtifacts: [],
+          newRevision: job.revision,
+          createdAt
+        }
+      };
+    });
+    const openArtifact = vi.fn(async () => new Response(new Blob(['image'], { type: 'image/png' })));
+    const creatorService = {
+      createJob: vi.fn(async () => ({ job })),
+      getJob: vi.fn(async () => ({ job })),
+      applyAction,
+      openArtifact,
+      runAgentTurn: vi.fn()
+    } as unknown as CreatorWebService;
     render(
       <DashboardPage
         onSelectPrompt={vi.fn()}
-        imageGenerationService={{ generate, openContent }}
+        projectId="project_1"
+        creatorService={creatorService}
       />
     );
 
     fireEvent.click(screen.getByRole('button', { name: /^图像生成/ }));
+    expect(await screen.findByRole('heading', { name: '图像生成' })).toBeInTheDocument();
     fireEvent.change(screen.getByRole('textbox', { name: '提示词' }), {
-      target: { value: result.prompt }
+      target: { value: prompt }
     });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
     fireEvent.click(screen.getByRole('radio', { name: /横向/ }));
@@ -1111,14 +1549,20 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByRole('img', { name: '生成图片 1' })).toHaveAttribute('src', 'blob:image-13');
     expect(screen.getByRole('img', { name: '生成图片 2' })).toBeInTheDocument();
-    expect(generate).toHaveBeenCalledWith({
-      prompt: result.prompt,
-      provider: 'openai',
-      size: '1536x1024',
-      quality: 'high',
-      count: 2
-    });
-    expect(openContent).toHaveBeenCalledTimes(2);
+    expect(applyAction).toHaveBeenCalledWith(
+      job.id,
+      expect.objectContaining({
+        action: 'run-stage',
+        input: { stageId: 'generate' }
+      })
+    );
+    expect(openArtifact).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: '重新生成' }));
+    expect(await screen.findByRole('button', { name: /项目 V2/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /项目 V2/ }));
+    expect(screen.getByRole('menu')).toHaveTextContent('项目 V1');
+    expect(openArtifact).toHaveBeenCalledWith(job.id, 'image_artifact_v2_1');
+    expect(openArtifact).toHaveBeenCalledWith(job.id, 'image_artifact_v2_2');
   });
 
   it('submits and previews a video generation result', async () => {

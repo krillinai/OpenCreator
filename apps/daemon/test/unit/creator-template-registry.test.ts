@@ -1,10 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createImageGenerationTemplate,
   createCreatorTemplateRegistry,
   createVideoTranslationTemplate
 } from '../../src/creator/templates/registry.js';
 
 describe('creator template registry', () => {
+  it('registers image generation as a persisted Creator Runtime template', () => {
+    const template = createImageGenerationTemplate();
+
+    expect(template).toMatchObject({
+      id: 'image-generation',
+      renderer: 'image-generation',
+      stages: [{
+        id: 'generate',
+        executor: 'image',
+        outputArtifacts: [{ kind: 'generated_image', status: 'completed' }]
+      }],
+      outputs: [{ kind: 'generated_image', required: true }]
+    });
+    expect(template.inputSchema.parse({})).toMatchObject({
+      provider: 'openai',
+      size: '1024x1024',
+      quality: 'medium',
+      candidateCount: 2
+    });
+  });
+
   it('resolves the video translation stale graph from target subtitles only', () => {
     const registry = createCreatorTemplateRegistry([
       createVideoTranslationTemplate()

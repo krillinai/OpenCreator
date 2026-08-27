@@ -21,6 +21,7 @@ import { CreatorExecutorError } from '../executor.js';
 import { validateMediaFile } from '../validators/media.js';
 import { validateSrtFile } from '../validators/srt.js';
 import { KrillinCliError, runKrillinCli } from './cli-runner.js';
+import type { KrillinDependencyLoader } from './dependency-loader.js';
 import { preflightKrillinDependencies } from './dependency-preflight.js';
 import { readKrillinRuntimeManifest, resolveInside } from './manifest.js';
 import type { KrillinRuntimeHost } from './runtime-host.js';
@@ -29,6 +30,7 @@ import { KrillinServiceError, type KrillinServiceClient } from './service-client
 export function createKrillinExecutor(input: {
   resourceRoot: string;
   jobsRoot: string;
+  dependencyLoader: KrillinDependencyLoader;
   runtimeHost: KrillinRuntimeHost;
   configStore: Pick<CreatorServicesConfigStore, 'read'>;
   now?: () => number;
@@ -45,6 +47,13 @@ export function createKrillinExecutor(input: {
     async run(stage): Promise<CreatorExecutorResult> {
       const configured = await input.configStore.read();
       const preflight = preflightKrillinDependencies(input.resourceRoot, configured);
+      await input.dependencyLoader.ensure({
+        config: preflight.config,
+        signal: stage.signal,
+        reportProgress(progress) {
+          stage.reportProgress({ ...stage.stageRun.progress, ...progress });
+        }
+      });
       const ffprobe = executablePath(input.resourceRoot, /(?:^|\/)ffprobe(?:\.exe)?$/i);
       const materializedArtifacts = await writeArtifactIndex(input.jobsRoot, stage);
       const inputArtifactIds = materializedArtifacts.map(artifact => artifact.id);
@@ -55,6 +64,7 @@ export function createKrillinExecutor(input: {
           artifacts = await runKrillinCli({
             resourceRoot: input.resourceRoot,
             jobsRoot: input.jobsRoot,
+            dependencyRoot: input.dependencyLoader.root,
             manifest: preflight.manifest,
             stage,
             config: preflight.config,

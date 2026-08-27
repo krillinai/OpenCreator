@@ -40,7 +40,7 @@ export function createCreatorProjectCoverService(input: {
 
   return {
     async resolve(job) {
-      const explicitCover = latestArtifact(job.artifacts, ['cover_image']);
+      const explicitCover = latestArtifact(job.artifacts, ['cover_image', 'generated_image']);
       if (explicitCover?.path !== null && explicitCover !== undefined && await isNonEmptyFile(explicitCover.path)) {
         return {
           path: explicitCover.path,

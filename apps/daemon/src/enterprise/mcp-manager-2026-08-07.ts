@@ -305,7 +305,7 @@ export function createEnterpriseMcpManager(input: {
     } catch (error) {
       if (error instanceof EnterpriseMcpTokenStoreError) {
         throw new EnterpriseMcpManagerError(
-          'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE',
+          'ENTERPRISE_CONFIG_FILE_UNAVAILABLE',
           503
         );
       }
@@ -623,7 +623,7 @@ function mapManagerError(error: unknown): EnterpriseMcpManagerError {
   if (error instanceof EnterpriseMcpManagerError) return error;
   if (error instanceof EnterpriseMcpTokenStoreError) {
     return new EnterpriseMcpManagerError(
-      'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE',
+      'ENTERPRISE_CONFIG_FILE_UNAVAILABLE',
       503
     );
   }

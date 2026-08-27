@@ -1,6 +1,7 @@
 import { createVideoTranslationTemplate } from './video-translation.js';
 import { createVideoDownloadTemplate } from './video-download.js';
 import { createCoverTemplate } from './cover.js';
+import { createImageGenerationTemplate } from './image-generation.js';
 import { createAutoClipTemplate } from './auto-clip.js';
 import { createStickmanVideoTemplate } from './stickman-video.js';
 import type {
@@ -11,6 +12,7 @@ import type {
 export {
   createAutoClipTemplate,
   createCoverTemplate,
+  createImageGenerationTemplate,
   createStickmanVideoTemplate,
   createVideoDownloadTemplate,
   createVideoTranslationTemplate
@@ -21,6 +23,7 @@ export function createDefaultCreatorTemplateRegistry(): CreatorTemplateRegistry 
     createVideoTranslationTemplate(),
     createVideoDownloadTemplate(),
     createCoverTemplate(),
+    createImageGenerationTemplate(),
     createAutoClipTemplate(),
     createStickmanVideoTemplate()
   ]);

@@ -90,7 +90,7 @@ describe('Codex provider configuration', () => {
         },
         {
           keyPath: 'cli_auth_credentials_store',
-          value: 'auto',
+          value: 'file',
           mergeStrategy: 'replace'
         }
       ],

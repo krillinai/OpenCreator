@@ -66,18 +66,12 @@ export function verifyCreatorRuntime(root, platform, arch) {
     throw new Error('Creator Runtime protocol schema hash does not match its manifest');
   }
   const localProviders = new Set(['fasterwhisper', 'whispercpp', 'whisperkit']);
-  const hasLocalTranscriptionFallback = manifest.resources.some(executable => (
-    executable.kind === 'executable'
-    && localProviders.has(executable.provider)
-    && typeof executable.model === 'string'
-    && manifest.resources.some(model => (
-      model.kind === 'model'
-      && model.provider === executable.provider
-      && model.model === executable.model
-    ))
-  ));
-  if (!hasLocalTranscriptionFallback) {
-    throw new Error('Creator Runtime local transcription fallback is missing');
+  if (manifest.resources.some(resource => (
+    resource.kind === 'model'
+    || localProviders.has(resource.provider)
+    || /(?:faster[-_]?whisper|whisper(?:kit|cpp)?)/i.test(resource.path)
+  ))) {
+    throw new Error('Creator Runtime must load local transcription dependencies on demand');
   }
   return manifest;
 }

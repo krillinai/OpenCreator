@@ -40,6 +40,7 @@ import { createCreatorStageScheduler } from '../creator/stage-scheduler.js';
 import { createCreatorCommandDispatcher } from '../creator/command-dispatcher.js';
 import type { CreatorExecutor } from '../creator/executor.js';
 import { createKrillinExecutor } from '../creator/krillin/adapter.js';
+import { createKrillinDependencyLoader } from '../creator/krillin/dependency-loader.js';
 import { readKrillinRuntimeManifest, resolveInside, verifyKrillinRuntimeManifest } from '../creator/krillin/manifest.js';
 import { createKrillinRuntimeHost } from '../creator/krillin/runtime-host.js';
 import { createDownloadExecutor } from '../creator/download/executor.js';
@@ -81,10 +82,14 @@ import {
 import { createCodexRuntimeReadiness } from '../codex/runtime-readiness.js';
 import { createCodexProviderConfigService } from '../codex/provider-config.js';
 import {
-  createSystemCodexProviderCredentialStore,
+  createFileCodexProviderCredentialStore,
   readCodexProviderApiKey,
   type CodexProviderCredentialStore
 } from '../codex/provider-credential-store.js';
+import {
+  ensureCodexFileCredentialStore,
+  isCodexCredentialStoreConfigurationDiagnostic
+} from '../codex/credential-storage.js';
 import { resolveCodexHome } from '../codex/home.js';
 import { isEnterpriseKnowledgeThread } from '../threads/types.js';
 import {
@@ -114,7 +119,7 @@ import { buildCodexStatusResponse } from '../codex/status.js';
 import { createCleanupService } from '../cleanup/service.js';
 import {
   createCreatorServicesConfigStoreWithTextModelFallback,
-  createSystemCreatorServicesConfigStore,
+  createFileCreatorServicesConfigStore,
   type CreatorServicesConfigStore
 } from '../creator-services/config-store.js';
 import {
@@ -209,7 +214,6 @@ import { registerScheduleRoutes } from './routes.schedules.js';
 import { registerSkillMarketRoutes } from './routes.skill-market.js';
 import { registerSkillRoutes } from './routes.skills.js';
 import { registerSmartDubbingRoutes } from './routes.smart-dubbing.js';
-import { registerImageGenerationRoutes } from './routes.image-generation.js';
 import { registerVideoGenerationRoutes } from './routes.video-generation.js';
 import { registerTaskRoutes } from './routes.tasks.js';
 import { registerThreadRoutes } from './routes.threads.js';
@@ -336,6 +340,11 @@ export async function buildServer(input: BuildServerInput) {
       ? resolveCodexHome()
       : resolveCodexHome({ isolatedHome: input.codexHome });
   const codexHome = resolvedCodexHome.path;
+  try {
+    await ensureCodexFileCredentialStore(codexHome);
+  } catch (error) {
+    if (!isCodexCredentialStoreConfigurationDiagnostic(error)) throw error;
+  }
   const resumeCapabilityVerified =
     input.resumeCapabilityVerified ?? (
       input.capabilities === undefined ? undefined : isResumeExecutionSupported(input.capabilities)
@@ -476,9 +485,13 @@ export async function buildServer(input: BuildServerInput) {
   });
   const memoryService = createMemoryService({ db });
   const storedCreatorServicesConfigStore =
-    input.creatorServicesConfigStore ?? createSystemCreatorServicesConfigStore();
+    input.creatorServicesConfigStore ?? createFileCreatorServicesConfigStore(
+      join(dataDir, 'config', 'creator-services.json')
+    );
   const codexProviderCredentialStore =
-    input.codexProviderCredentialStore ?? createSystemCodexProviderCredentialStore();
+    input.codexProviderCredentialStore ?? createFileCodexProviderCredentialStore(
+      join(dataDir, 'config', 'codex-provider.json')
+    );
   const resolveCodexProviderApiKey = async (provider: {
     baseUrl: string;
     model: string;
@@ -578,6 +591,9 @@ export async function buildServer(input: BuildServerInput) {
   const creatorRuntimeRoot = process.env.OPENCREATOR_CREATOR_RUNTIME_ROOT
     ?? join(dataDir, 'creator-runtime', 'krillinai');
   const creatorJobsRoot = join(dataDir, 'creator', 'jobs');
+  const krillinDependencyLoader = createKrillinDependencyLoader({
+    root: join(dataDir, 'creator-runtime', 'dependencies', 'krillinai')
+  });
   const krillinRuntimeHost = createKrillinRuntimeHost({
     resourceRoot: creatorRuntimeRoot,
     jobsRoot: creatorJobsRoot
@@ -586,6 +602,7 @@ export async function buildServer(input: BuildServerInput) {
     createKrillinExecutor({
       resourceRoot: creatorRuntimeRoot,
       jobsRoot: creatorJobsRoot,
+      dependencyLoader: krillinDependencyLoader,
       runtimeHost: krillinRuntimeHost,
       configStore: creatorServicesConfigStore
     }),

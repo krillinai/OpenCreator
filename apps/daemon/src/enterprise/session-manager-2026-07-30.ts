@@ -130,10 +130,10 @@ export function createEnterpriseSessionManager(input: {
       if (error instanceof EnterpriseCredentialStoreError) {
         publish(
           operationGeneration,
-          signedOutSnapshot('secure_storage_unavailable')
+          signedOutSnapshot('config_file_unavailable')
         );
         throw new EnterpriseSessionError(
-          'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE',
+          'ENTERPRISE_CONFIG_FILE_UNAVAILABLE',
           503
         );
       }
@@ -160,10 +160,10 @@ export function createEnterpriseSessionManager(input: {
       if (error instanceof EnterpriseCredentialStoreError) {
         publish(
           operationGeneration,
-          signedOutSnapshot('secure_storage_unavailable')
+          signedOutSnapshot('config_file_unavailable')
         );
         throw new EnterpriseSessionError(
-          'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE',
+          'ENTERPRISE_CONFIG_FILE_UNAVAILABLE',
           503
         );
       }
@@ -308,10 +308,10 @@ export function createEnterpriseSessionManager(input: {
         if (error instanceof EnterpriseCredentialStoreError) {
           publish(
             request.operationGeneration,
-            signedOutSnapshot('secure_storage_unavailable')
+            signedOutSnapshot('config_file_unavailable')
           );
           throw new EnterpriseSessionError(
-            'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE',
+            'ENTERPRISE_CONFIG_FILE_UNAVAILABLE',
             503
           );
         }

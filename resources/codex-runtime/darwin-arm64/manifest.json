@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "runtime": "codex",
+  "version": "0.149.0",
+  "tag": "rust-v0.149.0",
+  "commit": "758ef40f50c1a458425c7cfbf1eb12cbc07af0b0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "officialAsset": "https://github.com/openai/codex/releases/download/rust-v0.149.0/codex-package-aarch64-apple-darwin.tar.gz",
+  "sourcePackage": "npm:@openai/codex@0.149.0-darwin-arm64",
+  "sourceArchive": {
+    "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.149.0-darwin-arm64.tgz",
+    "integrity": "sha512-GsZJbzBWiD48RETrO8VHGAQNgfSrUVxItXZFeD87wswatPi0+lKuQo8Dx4nMYmOZhZrVtwr3al/feRrZxnDV8Q==",
+    "vendorPath": "package/vendor/aarch64-apple-darwin"
+  },
+  "binary": {
+    "relativePath": "bin/codex",
+    "sha256": "f4a74117b8142cda581c95ff753abf4508b5636d89682c1ed77e4a9249af8963"
+  },
+  "appServerProtocol": {
+    "sourceVersion": "v0_149_0",
+    "relativePath": "protocol/v0_149_0",
+    "schemaSha256": "6670c9dc6595e01472c7b7ec35e604bc132b9fb7fab4894ea78ebee50f36e1ac"
+  },
+  "resources": [
+    {
+      "path": "codex-package.json",
+      "sha256": "46abc0b34dcee2500c44000187869375c4bc21b7752bb9d04ce50ebef62a5d7e",
+      "kind": "metadata"
+    },
+    {
+      "path": "bin/codex",
+      "sha256": "f4a74117b8142cda581c95ff753abf4508b5636d89682c1ed77e4a9249af8963",
+      "kind": "executable"
+    },
+    {
+      "path": "bin/codex-code-mode-host",
+      "sha256": "3eca39bb7f93315fab6b0dec2334381c0f50a2ccda113ec482fb815f16072a5c",
+      "kind": "executable"
+    },
+    {
+      "path": "codex-path/rg",
+      "sha256": "b4a0ff402c26bf623ce5ddc8a806c65a29397ecca0d7210147b0f9224c70558c",
+      "kind": "executable"
+    },
+    {
+      "path": "codex-resources/zsh/bin/zsh",
+      "sha256": "4707e28b5f2fc75ce07c5fa3ff32d76a0fc43812c7880f9a98005dbc65a77e32",
+      "kind": "executable"
+    }
+  ],
+  "builtAt": "2026-08-21T00:00:00.000Z"
+}

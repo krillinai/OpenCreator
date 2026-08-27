@@ -26,7 +26,8 @@ export const creatorRuntimeWorkspaces = [
   'video-download',
   'stickman-video',
   'auto-clips',
-  'cover-generator'
+  'cover-generator',
+  'image-generation'
 ] as const satisfies readonly CreatorWorkspace[];
 
 export type CreatorRuntimeWorkspace = typeof creatorRuntimeWorkspaces[number];
@@ -36,7 +37,8 @@ const templateByWorkspace: Record<CreatorRuntimeWorkspace, string> = {
   'video-download': 'video-download',
   'stickman-video': 'stickman-video',
   'auto-clips': 'auto-clip',
-  'cover-generator': 'cover'
+  'cover-generator': 'cover',
+  'image-generation': 'image-generation'
 };
 
 export function isCreatorWorkspace(value: string): value is CreatorWorkspace {

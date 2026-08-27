@@ -106,6 +106,47 @@ describe('creator runtime advanced contracts', () => {
     db.close();
   });
 
+  it('links missing image credentials to the image service settings', async () => {
+    const { db, repository, service, templates } = setup();
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{
+        id: 'image',
+        async run() {
+          throw new CreatorExecutorError(
+            'creator_image_config_missing',
+            'OpenAI image API key is required'
+          );
+        }
+      }],
+      workRoot: join(tempDir, 'work')
+    });
+    const job = service.createJob({
+      projectId: 'p1',
+      templateId: 'image-generation',
+      state: { prompt: 'A bright creative studio' }
+    });
+
+    const stage = await runner.run(job.id, 'generate');
+
+    expect(stage).toMatchObject({
+      status: 'failed',
+      errorCode: 'creator_image_config_missing'
+    });
+    expect(service.getJob(job.id)).toMatchObject({
+      status: 'needs_input',
+      state: {
+        needsInput: {
+          code: 'creator_image_config_missing',
+          deepLink: '/settings/ai-services?section=image'
+        }
+      }
+    });
+    await runner.close();
+    db.close();
+  });
+
   it('creates project snapshots that reuse unchanged artifact files across child outputs', async () => {
     const { db, repository, service, templates } = setup();
     const runner = createCreatorStageRunner({

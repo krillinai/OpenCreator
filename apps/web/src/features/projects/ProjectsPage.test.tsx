@@ -102,6 +102,23 @@ describe('ProjectsPage', () => {
     }
   });
 
+  it('does not request a runtime cover before a project has a cover-capable artifact', async () => {
+    const service = {
+      openProjectCover: vi.fn(async () => new Response())
+    };
+    render(
+      <ProjectsPage
+        jobs={[jobs[0]!]}
+        workspaces={workspaces}
+        service={service}
+        onOpenJob={vi.fn()}
+      />
+    );
+
+    await Promise.resolve();
+    expect(service.openProjectCover).not.toHaveBeenCalled();
+  });
+
   it('orders recent projects by their actual update time and opens the exact job', () => {
     const onOpenJob = vi.fn();
     render(<ProjectsPage jobs={jobs} workspaces={workspaces} onOpenJob={onOpenJob} />);
@@ -216,6 +233,33 @@ describe('ProjectsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '在项目中打开产出 translated.mp4' }));
     expect(onOpenJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'job_translation' }));
+  });
+
+  it('classifies generated image projects and exposes their persisted image artifacts', () => {
+    const imageJob = creatorJob({
+      id: 'job_image_generation',
+      templateId: 'image-generation',
+      state: { prompt: '清晨海边的产品摄影' },
+      updatedAt: '2026-08-20T10:00:00.000Z',
+      artifacts: [artifact('job_image_generation', 'generated_image', 'generated-image.png')]
+    });
+    render(
+      <ProjectsPage
+        jobs={[imageJob, ...jobs]}
+        workspaces={workspaces}
+        onOpenJob={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: '图像设计' }));
+    expect(screen.getByRole('button', { name: '打开项目 清晨海边的产品摄影' }))
+      .toHaveTextContent('图像生成');
+
+    fireEvent.click(within(screen.getByRole('tablist', { name: '内容维度' }))
+      .getByRole('tab', { name: '产出中心' }));
+    expect(screen.getByRole('button', { name: '在项目中打开产出 generated-image.png' }))
+      .toBeInTheDocument();
+    expect(screen.getByText('PNG')).toBeInTheDocument();
   });
 
   it('shows loading and runtime errors explicitly', () => {

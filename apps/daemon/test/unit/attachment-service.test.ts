@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync
 } from 'node:fs';
@@ -199,7 +200,7 @@ describe('attachment service', () => {
     })).toEqual([
       expect.objectContaining({
         attachment: expect.objectContaining({ id: committed.attachment.id }),
-        path: resolve(tempDir, 'attachments', committed.attachment.storageKey)
+        path: realpathSync(resolve(tempDir, 'attachments', committed.attachment.storageKey))
       })
     ]);
     await expect(

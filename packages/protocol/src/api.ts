@@ -899,7 +899,7 @@ export type EnterpriseSessionReason =
   | 'session_expired'
   | 'account_inactive'
   | 'frontend_forbidden'
-  | 'secure_storage_unavailable'
+  | 'config_file_unavailable'
   | 'service_unavailable';
 
 export type EnterpriseTransportSecurity =

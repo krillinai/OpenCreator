@@ -19,6 +19,7 @@
     "package": "node scripts/package-release.mjs --dir",
     "dist": "node scripts/package-release.mjs --dist",
     "release": "node scripts/package-release.mjs --release",
+    "verify:release-tag": "node scripts/verify-desktop-release-tag.mjs",
     "verify:package": "node scripts/verify-package.mjs",
     "e2e": "playwright test --config playwright.config.ts",
     "e2e:package": "playwright test --config playwright.config.ts",

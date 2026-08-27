@@ -98,6 +98,7 @@ describe('image generation API', () => {
     expect(generated.statusCode).toBe(201);
     expect(generated.json().result).toMatchObject({ provider: 'jimeng', model: 'doubao-seedream-4-0-250828' });
     expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('https://ark.example.test/api/v3/images/generations');
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).not.toHaveProperty('quality');
   });
 
   it('extracts inline image data from Gemini', async () => {

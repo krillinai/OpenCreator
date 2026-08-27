@@ -1,7 +1,6 @@
 import type { CreatorServicesConfig } from '@opencreator/protocol';
 import {
   readKrillinRuntimeManifest,
-  requirePackagedProvider,
   verifyKrillinRuntimeManifest
 } from './manifest.js';
 
@@ -12,23 +11,23 @@ export function preflightKrillinDependencies(
   const manifest = readKrillinRuntimeManifest(resourceRoot);
   verifyKrillinRuntimeManifest(resourceRoot, manifest);
   const effectiveConfig = resolveKrillinTranscriptionConfig(config, manifest);
-  const { provider, model } = normalizedProvider(effectiveConfig);
-  requirePackagedProvider(manifest, provider, model);
   return { manifest, config: effectiveConfig };
 }
 
 export function resolveKrillinTranscriptionConfig(
   config: CreatorServicesConfig,
-  manifest: ReturnType<typeof readKrillinRuntimeManifest>
+  manifest: ReturnType<typeof readKrillinRuntimeManifest>,
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch
 ): CreatorServicesConfig {
   const selected = normalizedProvider(config);
   if (isLocalProvider(selected.provider)) {
-    requirePackagedProvider(manifest, selected.provider, selected.model);
     return config;
   }
   if (hasSelectedCloudCredentials(config)) return config;
 
-  const local = findPackagedLocalProvider(manifest, config);
+  const local = findPackagedLocalProvider(manifest, config)
+    ?? findOnDemandLocalProvider(config, platform, arch);
   if (local === undefined) return config;
   const effective = structuredClone(config);
   if (local.provider === 'fasterwhisper') {
@@ -41,6 +40,18 @@ export function resolveKrillinTranscriptionConfig(
     effective.transcription.provider = 'whisperkit';
   }
   return effective;
+}
+
+function findOnDemandLocalProvider(
+  config: CreatorServicesConfig,
+  platform: NodeJS.Platform,
+  arch: string
+): { provider: 'whisperkit'; model: string } | undefined {
+  if (platform !== 'darwin' || arch !== 'arm64') return undefined;
+  return {
+    provider: 'whisperkit',
+    model: config.transcription.whisperKit.model
+  };
 }
 
 function normalizedProvider(config: CreatorServicesConfig): { provider: string; model?: string } {

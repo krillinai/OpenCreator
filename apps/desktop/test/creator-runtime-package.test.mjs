@@ -13,21 +13,21 @@ afterEach(() => {
 
 describe('Creator Runtime package contract', () => {
   it('accepts only manifest-pinned executables and assets', () => {
-    createFixture();
-    expect(verifyCreatorRuntime(root, process.platform, process.arch).resources).toHaveLength(8);
+    createFixture({ legacyService: false, localAsr: false });
+    expect(verifyCreatorRuntime(root, process.platform, process.arch).resources).toHaveLength(6);
   });
 
   it('rejects the legacy source-built OpenCreator service runtime', () => {
-    createFixture({ legacyService: true, localAsr: true });
+    createFixture({ legacyService: true, localAsr: false });
     expect(() => verifyCreatorRuntime(root, process.platform, process.arch)).toThrow(
       /manifest is invalid|precompiled KrillinAI CLI/i
     );
   });
 
-  it('rejects the official KrillinAI CLI without a bundled local transcription model', () => {
-    createFixture({ legacyService: false, localAsr: false });
+  it('rejects bundled local transcription dependencies', () => {
+    createFixture({ legacyService: false, localAsr: true });
     expect(() => verifyCreatorRuntime(root, process.platform, process.arch)).toThrow(
-      /local transcription fallback is missing/i
+      /load local transcription dependencies on demand/i
     );
   });
 
@@ -46,7 +46,7 @@ describe('Creator Runtime package contract', () => {
   });
 });
 
-function createFixture(options = { legacyService: false, localAsr: true }) {
+function createFixture(options = { legacyService: false, localAsr: false }) {
   if (root) rmSync(root, { recursive: true, force: true });
   root = mkdtempSync(join(tmpdir(), 'creator-runtime-contract-'));
   const bin = join(root, 'bin');

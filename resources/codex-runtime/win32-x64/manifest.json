@@ -8,6 +8,11 @@
   "arch": "x64",
   "officialAsset": "https://github.com/openai/codex/releases/download/rust-v0.149.0/codex-x86_64-pc-windows-msvc.exe.zip",
   "sourcePackage": "npm:@openai/codex@0.149.0-win32-x64",
+  "sourceArchive": {
+    "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.149.0-win32-x64.tgz",
+    "integrity": "sha512-qKbwSOOO/fdhQ5MlXE2fts6taPxRPZ/zqeC+eqHD72hLRymV9rFCUbUxOCquognUPRPvS/2/kRCV0UVhoDd3yQ==",
+    "vendorPath": "package/vendor/x86_64-pc-windows-msvc"
+  },
   "binary": {
     "relativePath": "bin/codex.exe",
     "sha256": "14b7e6b2356e82d1d9275579eaa588757b4e0a501b65dcc19fccdf77bd83dc00"

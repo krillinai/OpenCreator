@@ -34,10 +34,22 @@ const projectArtifactKinds = new Set([
   'vertical_video',
   'auto_clip_video',
   'cover_image',
+  'generated_image',
   'stickman_video',
   'script_manifest',
   'storyboard_image',
   'clip_candidates'
+]);
+const projectCoverArtifactKinds = new Set([
+  'cover_image',
+  'generated_image',
+  'source_video',
+  'horizontal_video',
+  'vertical_video',
+  'dubbed_video',
+  'auto_clip_video',
+  'stickman_video',
+  'clip_video'
 ]);
 
 type CreatorProject = {
@@ -296,7 +308,9 @@ function createCreatorProject(
     job,
     type,
     title: creatorProjectTitle(job, type),
-    category: job.templateId === 'cover' ? '图像设计' : '视频创作',
+    category: job.templateId === 'cover' || job.templateId === 'image-generation'
+      ? '图像设计'
+      : '视频创作',
     workspaceName: workspaces.find(workspace => workspace.id === job.projectId)?.name
       ?? l('未知工作目录', 'Unknown workspace'),
     cover: projectCover(job.templateId),
@@ -464,6 +478,7 @@ function templateLabel(templateId: string, l: LocalizeCopy): string | undefined 
   if (templateId === 'video-download') return l('视频下载', 'Video download');
   if (templateId === 'auto-clip') return l('自动剪辑', 'Auto clips');
   if (templateId === 'cover') return l('封面生成', 'Thumbnail generation');
+  if (templateId === 'image-generation') return l('图像生成', 'Image generation');
   if (templateId === 'stickman-video') return l('火柴人视频', 'Stick figure video');
   return undefined;
 }
@@ -537,6 +552,7 @@ function artifactName(artifact: CreatorArtifact, l: LocalizeCopy): string {
     vertical_video: l('竖屏成片', 'Portrait video'),
     auto_clip_video: l('剪辑成片', 'Edited video'),
     cover_image: l('封面图片', 'Thumbnail'),
+    generated_image: l('生成图片', 'Generated image'),
     stickman_video: l('火柴人成片', 'Stick figure video')
   };
   return labels[artifact.kind] ?? artifact.kind;
@@ -561,6 +577,7 @@ function artifactFormat(artifact: CreatorArtifact): string {
 function projectCover(templateId: string): string {
   if (templateId === 'video-translation') return '/workbench/templates/video-translation-example.png';
   if (templateId === 'cover') return '/workbench/templates/video-localization.jpg';
+  if (templateId === 'image-generation') return '/workbench/templates/animated-story.jpg';
   if (templateId === 'stickman-video') return '/workbench/templates/ai-video-insane.jpg';
   if (templateId === 'auto-clip') return '/workbench/templates/animated-story.jpg';
   return '/workbench/templates/digital-presenter.jpg';
@@ -575,10 +592,16 @@ function ProjectCoverImage(props: {
   const requestedRuntimeCover = useRef(false);
   const [youtubeIndex, setYoutubeIndex] = useState(0);
   const [runtimeCover, setRuntimeCover] = useState<string>();
+  const hasRuntimeCoverCandidate = props.job.artifacts.some(artifact => (
+    projectCoverArtifactKinds.has(artifact.kind)
+    && artifact.path !== null
+    && artifact.status !== 'stale'
+  ));
 
   useEffect(() => {
     if (
       youtubeIndex < props.youtubeCovers.length
+      || !hasRuntimeCoverCandidate
       || requestedRuntimeCover.current
       || props.service === null
       || props.service === undefined
@@ -598,7 +621,13 @@ function ProjectCoverImage(props: {
       active = false;
       if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
     };
-  }, [props.job.id, props.service, props.youtubeCovers.length, youtubeIndex]);
+  }, [
+    hasRuntimeCoverCandidate,
+    props.job.id,
+    props.service,
+    props.youtubeCovers.length,
+    youtubeIndex
+  ]);
 
   const youtubeCover = props.youtubeCovers[youtubeIndex];
   const source = youtubeCover ?? runtimeCover ?? props.fallback;

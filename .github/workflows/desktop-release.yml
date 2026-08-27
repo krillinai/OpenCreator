@@ -4,10 +4,14 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - 'desktop-v*'
+      - 'v*'
 
 permissions:
   contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   osv:
@@ -31,6 +35,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: 校验 Desktop 发布标签
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node apps/desktop/scripts/verify-desktop-release-tag.mjs "${{ github.ref_name }}"
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm typecheck
@@ -46,20 +53,17 @@ jobs:
       matrix:
         include:
           - name: macos-x64
-            os: macos-14
-            platform: mac
+            os: macos-15-intel
+            platform: darwin
             arch: x64
-            native: true
           - name: macos-arm64
-            os: macos-14
-            platform: mac
+            os: macos-15
+            platform: darwin
             arch: arm64
-            native: false
           - name: windows-x64
             os: windows-latest
-            platform: win
+            platform: win32
             arch: x64
-            native: true
     runs-on: ${{ matrix.os }}
     env:
       OPENCREATOR_DESKTOP_CACHE_DIR: ${{ github.workspace }}/apps/desktop/.cache
@@ -76,14 +80,16 @@ jobs:
           path: |
             apps/desktop/.cache/electron
             apps/desktop/.cache/electron-builder
+            apps/desktop/.cache/codex-runtime
             apps/desktop/.cache/node-gyp
             apps/desktop/.cache/npm
-          key: desktop-build-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/desktop/package.json') }}
+            .runtime/vendor/creator-runtime/${{ matrix.platform }}-${{ matrix.arch }}
+          key: desktop-build-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/desktop/package.json', 'apps/desktop/scripts/install-creator-runtime-dependencies.mjs', 'resources/codex-runtime/**/manifest.json') }}
       - name: Windows 全量测试
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win32'
         run: pnpm test
       - name: Windows 类型检查
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win32'
         run: pnpm typecheck
       - run: pnpm desktop:release
         env:
@@ -96,8 +102,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-      - run: pnpm --filter @opencreator/desktop e2e:package
-        if: matrix.native
+      - name: 验证实际打包应用
+        run: pnpm --filter @opencreator/desktop e2e:package
       - uses: actions/upload-artifact@v4
         with:
           name: opencreator-desktop-${{ matrix.name }}
@@ -111,14 +117,20 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
+      - name: 整理发布资产
+        shell: bash
+        run: |
+          while IFS= read -r -d '' manifest; do
+            artifact_name="$(basename "$(dirname "$manifest")")"
+            mv "$manifest" "$(dirname "$manifest")/${artifact_name}-build-manifest.json"
+          done < <(find artifacts -type f -name opencreator-desktop-build-manifest.json -print0)
       - name: 发布 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -160,15 +160,15 @@ export const test = base.extend<TestFixtures>({
         detached: process.platform !== 'win32',
         env: {
           ...process.env,
-          CLAWEE_DATA_DIR: dataDir,
-          CLAWEE_CODEX_BIN: wrapperPath,
-          CLAWEE_CODEX_HOME: codexHome,
-          CLAWEE_CODEX_THREAD_ROTATION_RUN_THRESHOLD: '0',
-          CLAWEE_RUNTIME_DEV_PREPARED: '1',
-          CLAWEE_E2E_FAKE_CODEX_CONFIG: configPath,
-          CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
-          CLAWEE_E2E_NODE_BINARY: process.execPath,
-          CLAWEE_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript
+          OPENCREATOR_DATA_DIR: dataDir,
+          OPENCREATOR_CODEX_BIN: wrapperPath,
+          CODEX_HOME: codexHome,
+          OPENCREATOR_CODEX_THREAD_ROTATION_RUN_THRESHOLD: '0',
+          OPENCREATOR_RUNTIME_DEV_PREPARED: '1',
+          OPENCREATOR_E2E_FAKE_CODEX_CONFIG: configPath,
+          OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
+          OPENCREATOR_E2E_NODE_BINARY: process.execPath,
+          OPENCREATOR_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript
         },
         stdio: ['ignore', 'pipe', 'pipe']
       }
@@ -373,7 +373,7 @@ export const test = base.extend<TestFixtures>({
       }
       await stopProcessTree(child);
       terminateRecordedFakeCodexProcesses(stateDir);
-      if (process.env.CLAWEE_E2E_KEEP_TEMP !== '1') {
+      if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
         rmSync(rootDir, {
           recursive: true,
           force: true,
@@ -403,7 +403,7 @@ export const test = base.extend<TestFixtures>({
       }
       if (
         message.text().includes('Failed to load resource')
-        && location.includes('/.clawee/runtime/enterprise/mcp')
+        && location.includes('/.opencreator/runtime/enterprise/mcp')
       ) {
         return;
       }

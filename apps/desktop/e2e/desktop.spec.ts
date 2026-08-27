@@ -35,7 +35,6 @@ import {
 } from './packaged-app.js';
 import {
   FakeEnterpriseAuthServer,
-  deleteEnterpriseE2ECredential,
   writeEnterpriseE2EConfig
 } from './fake-enterprise-auth-2026-08-06.js';
 
@@ -707,7 +706,7 @@ test('打包 App 首页 Skills 菜单保持在内容区内', async ({}, testInfo
   try {
     await waitForWorkspace(fixture.page);
     const codexHome = await fixture.page.evaluate(async () => (
-      await window.claweeDesktop?.readBootstrapState()
+      await window.opencreatorDesktop?.readBootstrapState()
     )?.codexHome);
     if (codexHome === undefined) throw new Error('桌面启动状态未返回隔离 Codex Home');
     const skillsDir = join(codexHome, 'skills');
@@ -920,7 +919,6 @@ test('退出期间会回收仍在 Probe 中的 Codex 子进程', async () => {
 });
 
 type DesktopFixture = PackagedApp & {
-  enterpriseRunId: string;
   root: string;
   stateDir: string;
 };
@@ -980,12 +978,12 @@ async function launchPackagedDesktop(
         : {}),
       OPENCREATOR_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
       CODEX_HOME: codexHome,
-      CLAWEE_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
-      CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
-      CLAWEE_E2E_FAKE_CODEX_MODE: mode,
-      CLAWEE_E2E_NODE_BINARY: process.execPath,
-      CLAWEE_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript,
-      CLAWEE_ENTERPRISE_E2E_RUN_ID: enterpriseRunId,
+      OPENCREATOR_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
+      OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
+      OPENCREATOR_E2E_FAKE_CODEX_MODE: mode,
+      OPENCREATOR_E2E_NODE_BINARY: process.execPath,
+      OPENCREATOR_E2E_FAKE_CODEX_SCRIPT: fakeCodexScript,
+      OPENCREATOR_ENTERPRISE_E2E_RUN_ID: enterpriseRunId,
       ...(mode === 'workspace-failure'
         ? {
             OPENCREATOR_E2E_IGNORE_FIRST_WORKSPACE_READY: '1',
@@ -995,7 +993,7 @@ async function launchPackagedDesktop(
     },
     timeoutMs: 30_000
   });
-  return { ...app, enterpriseRunId, root, stateDir };
+  return { ...app, root, stateDir };
 }
 
 function minimalSystemPath(): string {
@@ -1055,24 +1053,13 @@ async function runtimeRequest<T>(
 }
 
 async function closeFixture(fixture: DesktopFixture): Promise<void> {
-  const logoutCompleted = await fixture.page.evaluate(async () => {
-    const response = await fetch('/.opencreator/runtime/enterprise/logout', {
+  await fixture.page.evaluate(async () => {
+    await fetch('/.opencreator/runtime/enterprise/logout', {
       method: 'POST',
       signal: AbortSignal.timeout(2_000)
     }).catch(() => undefined);
-    return response !== undefined && (
-      response.ok || response.status === 401
-    );
-  }).catch(() => false);
+  }).catch(() => undefined);
   await closePackagedApp(fixture);
-  if (!logoutCompleted) {
-    await deleteEnterpriseE2ECredential(fixture.enterpriseRunId).catch(() => {
-      console.error(
-        `Desktop E2E Keyring 最佳努力清理失败：`
-        + `runId=${fixture.enterpriseRunId}`
-      );
-    });
-  }
   if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
     rmSync(fixture.root, { recursive: true, force: true });
   }
@@ -1294,7 +1281,5 @@ function withoutElectronRunAsNode(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   delete next.OPENCREATOR_ENTERPRISE_ORIGIN;
   delete next.OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED;
   delete next.OPENCREATOR_ENTERPRISE_E2E_RUN_ID;
-  delete next.OPENCREATOR_ENTERPRISE_KEYRING_SERVICE;
-  delete next.OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT;
   return next;
 }

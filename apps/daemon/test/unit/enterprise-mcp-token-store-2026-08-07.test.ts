@@ -1,11 +1,21 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createEnterpriseMcpTokenStore,
-  resolveEnterpriseMcpTokenIdentity
+  createFileEnterpriseMcpTokenStore
 } from '../../src/enterprise/mcp-token-store-2026-08-07.js';
 
 describe('enterprise MCP token store', () => {
-  it('stores only validated MCP credentials in the dedicated keyring entry', async () => {
+  let root: string | undefined;
+
+  afterEach(() => {
+    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+    root = undefined;
+  });
+
+  it('stores only validated MCP credentials', async () => {
     let stored: string | null = null;
     const store = createEnterpriseMcpTokenStore({
       entry: {
@@ -59,16 +69,24 @@ describe('enterprise MCP token store', () => {
     })).rejects.not.toThrow(secret);
   });
 
-  it('uses a keyring namespace separate from the enterprise app session', () => {
-    expect(resolveEnterpriseMcpTokenIdentity()).toEqual({
-      service: 'com.opencreator.enterprise.mcp',
-      account: 'opencreator-agent-mcp'
-    });
-    expect(resolveEnterpriseMcpTokenIdentity(
-      '123e4567-e89b-42d3-a456-426614174000'
-    )).toEqual({
-      service: 'com.opencreator.enterprise.mcp.e2e',
-      account: 'opencreator-agent-mcp:123e4567-e89b-42d3-a456-426614174000'
-    });
+  it('persists the enterprise MCP token in a local JSON file', async () => {
+    root = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-mcp-'));
+    const path = join(root, 'config', 'enterprise-mcp-token.json');
+    const store = createFileEnterpriseMcpTokenStore({ path });
+    const credential = {
+      tokenId: 'token_file',
+      agentId: 'opencreator_550e8400-e29b-41d4-a716-446655440000',
+      token: 'file-mcp-token',
+      tokenType: 'Bearer' as const,
+      fingerprint: 'file-fingerprint',
+      expiresAt: null,
+      scopes: ['mcp:call'],
+      createdAt: '2026-08-26T12:00:00Z'
+    };
+
+    await store.write(credential);
+
+    await expect(store.read()).resolves.toEqual(credential);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(credential);
   });
 });

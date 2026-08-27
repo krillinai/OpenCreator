@@ -29,8 +29,8 @@ import {
   resolveProductionServerEnvironment
 } from './startup.js';
 import { acquireRuntimeLock } from './runtime-lock.js';
-import { createSystemEnterpriseCredentialStore } from './enterprise/credential-store-2026-07-30.js';
-import { createSystemEnterpriseMcpTokenStore } from './enterprise/mcp-token-store-2026-08-07.js';
+import { createFileEnterpriseCredentialStore } from './enterprise/credential-store-2026-07-30.js';
+import { createFileEnterpriseMcpTokenStore } from './enterprise/mcp-token-store-2026-08-07.js';
 
 type BootstrapPhase = 'starting_runtime';
 
@@ -102,11 +102,11 @@ async function main(): Promise<void> {
   server = await buildServer(createProductionServerInput({
     token,
     capabilities,
-    enterpriseCredentialStore: createSystemEnterpriseCredentialStore({
-      e2eRunId: enterprise.enterpriseE2ERunId
+    enterpriseCredentialStore: createFileEnterpriseCredentialStore({
+      path: join(dataDir, 'config', 'enterprise-session.json')
     }),
-    enterpriseMcpTokenStore: createSystemEnterpriseMcpTokenStore({
-      e2eRunId: enterprise.enterpriseE2ERunId
+    enterpriseMcpTokenStore: createFileEnterpriseMcpTokenStore({
+      path: join(dataDir, 'config', 'enterprise-mcp-token.json')
     }),
     getCodexAvailabilityProbe: () => availabilityProbe,
     persistentAppServerEnabled:

@@ -510,6 +510,15 @@ function legacyResultVersionsFromArtifacts(
           preferPlatformCaptions: typeof sourceState.preferPlatformCaptions === 'boolean'
             ? sourceState.preferPlatformCaptions
             : persisted?.settings.preferPlatformCaptions ?? true,
+          subtitleFont: readSubtitleFontSetting(sourceState, fallbackState, persisted),
+          subtitleSize: readSubtitleSizeSetting(sourceState, fallbackState, persisted),
+          subtitleColor: readStringSetting(
+            sourceState,
+            fallbackState,
+            persisted,
+            'subtitleColor',
+            '#FFFFFF'
+          ),
           dubbing: typeof sourceState.dubbing === 'boolean'
             ? sourceState.dubbing
             : persisted?.settings.dubbing ?? false,
@@ -594,6 +603,15 @@ function resultVersionFromSnapshot(
         'preferPlatformCaptions',
         true
       ),
+      subtitleFont: readSubtitleFontSetting(sourceState, fallbackState, persisted),
+      subtitleSize: readSubtitleSizeSetting(sourceState, fallbackState, persisted),
+      subtitleColor: readStringSetting(
+        sourceState,
+        fallbackState,
+        persisted,
+        'subtitleColor',
+        '#FFFFFF'
+      ),
       dubbing: readBooleanSetting(sourceState, fallbackState, persisted, 'dubbing', false),
       voiceCode: readStringSetting(sourceState, fallbackState, persisted, 'voiceCode', ''),
       voiceSampleName: null,
@@ -639,11 +657,33 @@ function readStringSetting(
   state: Record<string, CreatorJson>,
   fallback: Record<string, CreatorJson>,
   persisted: TranslationResultVersion | undefined,
-  key: 'sourceLanguage' | 'targetLanguage' | 'voiceCode' | 'verticalTitle' | 'verticalSubtitle',
+  key: 'sourceLanguage' | 'targetLanguage' | 'subtitleColor' | 'voiceCode' | 'verticalTitle' | 'verticalSubtitle',
   defaultValue: string
 ): string {
   const value = state[key] ?? fallback[key];
   return typeof value === 'string' ? value : persisted?.settings[key] ?? defaultValue;
+}
+
+function readSubtitleFontSetting(
+  state: Record<string, CreatorJson>,
+  fallback: Record<string, CreatorJson>,
+  persisted: TranslationResultVersion | undefined
+): SubtitleFont {
+  const value = state.subtitleFont ?? fallback.subtitleFont;
+  return value === 'sans' || value === 'serif' || value === 'rounded'
+    ? value
+    : persisted?.settings.subtitleFont ?? 'system';
+}
+
+function readSubtitleSizeSetting(
+  state: Record<string, CreatorJson>,
+  fallback: Record<string, CreatorJson>,
+  persisted: TranslationResultVersion | undefined
+): SubtitleSize {
+  const value = state.subtitleSize ?? fallback.subtitleSize;
+  return value === 'small' || value === 'large'
+    ? value
+    : persisted?.settings.subtitleSize ?? 'medium';
 }
 
 function readBooleanSetting(
@@ -878,6 +918,22 @@ export default function VideoTranslationWorkspace(props: {
     if (typeof persisted.bilingual === 'boolean') setBilingual(persisted.bilingual);
     if (persisted.subtitlePosition === 'top' || persisted.subtitlePosition === 'bottom') setSubtitlePosition(persisted.subtitlePosition);
     if (typeof persisted.preferPlatformCaptions === 'boolean') setPreferPlatformCaptions(persisted.preferPlatformCaptions);
+    if (
+      persisted.subtitleFont === 'system'
+      || persisted.subtitleFont === 'sans'
+      || persisted.subtitleFont === 'serif'
+      || persisted.subtitleFont === 'rounded'
+    ) {
+      setSubtitleFont(persisted.subtitleFont);
+    }
+    if (
+      persisted.subtitleSize === 'small'
+      || persisted.subtitleSize === 'medium'
+      || persisted.subtitleSize === 'large'
+    ) {
+      setSubtitleSize(persisted.subtitleSize);
+    }
+    if (typeof persisted.subtitleColor === 'string') setSubtitleColor(persisted.subtitleColor);
     if (typeof persisted.dubbing === 'boolean') setDubbing(persisted.dubbing);
     if (typeof persisted.voiceCode === 'string') setVoiceCode(persisted.voiceCode);
     if (typeof persisted.composeVideo === 'boolean') setComposeVideo(persisted.composeVideo);
@@ -951,6 +1007,9 @@ export default function VideoTranslationWorkspace(props: {
       bilingual,
       subtitlePosition,
       preferPlatformCaptions,
+      subtitleFont,
+      subtitleSize,
+      subtitleColor,
       dubbing,
       voiceCode,
       composeVideo,
@@ -990,6 +1049,9 @@ export default function VideoTranslationWorkspace(props: {
     resultVersions,
     sourceLanguage,
     sourceType,
+    subtitleColor,
+    subtitleFont,
+    subtitleSize,
     subtitlePosition,
     targetLanguage,
     verticalSubtitle,
@@ -1367,6 +1429,8 @@ export default function VideoTranslationWorkspace(props: {
         action: 'run-stage',
         input: { stageId: 'subtitle', workflow: true }
       });
+      setWorkspacePhase('result');
+      setDraftBaseVersion(undefined);
       setResultNotice(l('翻译任务已开始，进度会实时同步到创作动态', 'Translation started. Progress will appear in creation activity.'));
     } catch (cause) {
       setResultNotice(creatorErrorMessage(cause, l));

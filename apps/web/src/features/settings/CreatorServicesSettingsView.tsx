@@ -14,13 +14,13 @@ import {
   Clapperboard,
   Eye,
   EyeOff,
+  FileKey2,
   Image,
   Languages,
   LoaderCircle,
   Mic2,
   RotateCcw,
-  Save,
-  ShieldCheck
+  Save
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
@@ -149,8 +149,8 @@ export function CreatorServicesSettingsView(props: {
           )}</p>
         </div>
         <span className="creator-services-security">
-          <ShieldCheck size={16} aria-hidden="true" />
-          {l('系统凭据存储', 'System credential storage')}
+          <FileKey2 size={16} aria-hidden="true" />
+          {l('本地配置文件', 'Local configuration file')}
         </span>
       </header>
 

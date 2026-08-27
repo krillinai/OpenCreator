@@ -14,7 +14,6 @@ import {
   type Server,
   type ServerResponse
 } from 'node:http';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import {
   delimiter,
@@ -46,8 +45,6 @@ const enterprisePassword = 'packaged-e2e-password';
 const enterpriseAccountId = 'acct_packaged_e2e';
 const enterpriseSkillName = 'enterprise-review';
 const enterpriseKnowledgeBaseId = 'kb_packaged_e2e';
-const enterpriseKeyringService = 'com.opencreator.enterprise.e2e';
-const enterpriseMcpKeyringService = 'com.opencreator.enterprise.mcp.e2e';
 const agentIdPattern =
   /^opencreator_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -401,18 +398,6 @@ test.skip('legacy enterprise packaged workflow', async () => {
         cleanupError ??= error;
       });
     }
-    await deleteE2ECredential(runId, enterpriseKeyringService).catch(() => {
-      console.error(
-        `企业 E2E Keyring 最佳努力清理失败：runId=${runId} `
-        + `service=${enterpriseKeyringService} account=opencreator-agent:${runId}`
-      );
-    });
-    await deleteE2ECredential(runId, enterpriseMcpKeyringService).catch(() => {
-      console.error(
-        `企业 MCP E2E Keyring 最佳努力清理失败：runId=${runId} `
-        + `service=${enterpriseMcpKeyringService} account=opencreator-agent-mcp:${runId}`
-      );
-    });
     await server.close().catch(error => {
       cleanupError ??= error;
     });
@@ -420,10 +405,7 @@ test.skip('legacy enterprise packaged workflow', async () => {
       rmSync(root, { force: true, recursive: true });
     }
     if (cleanupError !== undefined) {
-      console.error(
-        `企业 E2E 清理失败：runId=${runId} `
-        + `service=${enterpriseKeyringService} account=opencreator-agent:${runId}`
-      );
+      console.error(`企业 E2E 清理失败：runId=${runId}`);
       throw cleanupError;
     }
   }
@@ -862,8 +844,6 @@ function withoutElectronRunAsNode(
   delete next.ELECTRON_RUN_AS_NODE;
   delete next.OPENCREATOR_UPDATE_URL;
   delete next.OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED;
-  delete next.OPENCREATOR_ENTERPRISE_KEYRING_SERVICE;
-  delete next.OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT;
   return next;
 }
 
@@ -876,44 +856,6 @@ function writeEnterpriseClientConfig(
   writeFileSync(
     join(opencreatorHome, 'config.toml'),
     `gateway = ${JSON.stringify(gateway)}\n`
-  );
-}
-
-async function deleteE2ECredential(
-  runId: string,
-  service: string
-): Promise<void> {
-  const entry = createKeyringEntry(runId, service);
-  await Promise.race([
-    entry.deletePassword().catch(() => undefined),
-    new Promise<never>((_resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Keyring cleanup timed out'));
-      }, 3_000);
-      timeout.unref();
-    })
-  ]);
-}
-
-function createKeyringEntry(runId: string, service: string): {
-  deletePassword(): Promise<unknown>;
-} {
-  const requireFromDaemon = createRequire(
-    join(rootDir, 'apps', 'daemon', 'package.json')
-  );
-  const keyring = requireFromDaemon('@napi-rs/keyring') as {
-    AsyncEntry: new (
-      service: string,
-      account: string
-    ) => {
-      deletePassword(): Promise<unknown>;
-    };
-  };
-  return new keyring.AsyncEntry(
-    service,
-    service === enterpriseMcpKeyringService
-      ? `opencreator-agent-mcp:${runId}`
-      : `opencreator-agent:${runId}`
   );
 }
 

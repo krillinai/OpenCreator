@@ -21,7 +21,6 @@ import {
 } from './packaged-app.js';
 import {
   FakeEnterpriseAuthServer,
-  deleteEnterpriseE2ECredential,
   writeEnterpriseE2EConfig
 } from './fake-enterprise-auth-2026-08-06.js';
 
@@ -47,12 +46,16 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
 
   try {
     await waitForWorkspace(currentApp.page);
-    expect(currentApp.page.url()).toContain('clawee-app://app/');
+    expect(currentApp.page.url()).toContain('opencreator-app://app/');
 
     const runtimeRoot = packagedRuntimeRoot();
     const runtimeManifest = JSON.parse(
       readFileSync(join(runtimeRoot, 'manifest.json'), 'utf8')
-    ) as { platform: string; arch: string; resources: Array<{ path: string }> };
+    ) as {
+      platform: string;
+      arch: string;
+      resources: Array<{ path: string; kind: string }>;
+    };
     expect(runtimeManifest).toMatchObject({
       platform: process.platform,
       arch: process.arch
@@ -65,6 +68,9 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         executableResource('bin/yt-dlp')
       ])
     );
+    expect(runtimeManifest.resources.some(resource => resource.kind === 'model')).toBe(false);
+    expect(runtimeManifest.resources.some(resource => /whisper/i.test(resource.path))).toBe(false);
+    expect(hasWhisperKitDependency(fixture.root)).toBe(false);
 
     const projectDir = join(fixture.root, 'creator-workspace');
     mkdirSync(projectDir, { recursive: true });
@@ -86,10 +92,17 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
         'video-translation',
         'video-download',
         'cover',
+        'image-generation',
         'auto-clip',
         'stickman-video'
       ])
     );
+
+    await currentApp.page.getByRole('button', { name: '工作台' }).click();
+    await expect(currentApp.page.getByRole('heading', { name: '工作台' })).toBeVisible();
+    await currentApp.page.getByRole('button', { name: /^图像生成/ }).click();
+    await expect(currentApp.page.getByRole('heading', { name: '图像生成' })).toBeVisible();
+    await expect(currentApp.page.getByRole('textbox', { name: '提示词' })).toBeVisible();
 
     const createdJob = await runtimeRequest<{
       job: { id: string; revision: number; state: Record<string, unknown> };
@@ -120,6 +133,30 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       revision: 1,
       state: { targetLanguage: 'ja', dubbing: true }
     });
+    const imageJob = await runtimeRequest<{
+      job: { id: string; revision: number; state: Record<string, unknown> };
+    }>(currentApp.page, 'POST', '/creator/jobs', {
+      projectId: createdProject.body.project.id,
+      templateId: 'image-generation',
+      state: {
+        prompt: 'Packaged image generation smoke',
+        provider: 'gemini',
+        size: '1024x1536',
+        quality: 'high',
+        candidateCount: 4
+      }
+    });
+    expect(imageJob.status).toBe(201);
+    expect(imageJob.body.job).toMatchObject({
+      revision: 0,
+      state: {
+        prompt: 'Packaged image generation smoke',
+        provider: 'gemini',
+        size: '1024x1536',
+        quality: 'high',
+        candidateCount: 4
+      }
+    });
 
     const relaunchInput = {
       executablePath: currentApp.executablePath,
@@ -139,24 +176,55 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       revision: 1,
       state: { targetLanguage: 'ja', dubbing: true }
     });
+    const restoredImageJob = await runtimeRequest<{
+      job: { id: string; revision: number; state: Record<string, unknown> };
+    }>(currentApp.page, 'GET', `/creator/jobs/${imageJob.body.job.id}`);
+    expect(restoredImageJob.status).toBe(200);
+    expect(restoredImageJob.body.job).toMatchObject({
+      id: imageJob.body.job.id,
+      state: {
+        prompt: 'Packaged image generation smoke',
+        provider: 'gemini',
+        size: '1024x1536',
+        quality: 'high',
+        candidateCount: 4
+      }
+    });
+    expect(hasWhisperKitDependency(fixture.root)).toBe(false);
   } finally {
     await currentApp.page.evaluate(async () => {
-      await fetch('/.clawee/runtime/enterprise/logout', {
+      await fetch('/.opencreator/runtime/enterprise/logout', {
         method: 'POST',
         signal: AbortSignal.timeout(2_000)
       }).catch(() => undefined);
     }).catch(() => undefined);
     await closePackagedApp(currentApp).catch(() => undefined);
-    await deleteEnterpriseE2ECredential(fixture.enterpriseRunId).catch(() => undefined);
-    if (process.env.CLAWEE_E2E_KEEP_TEMP !== '1') {
+    if (process.env.OPENCREATOR_E2E_KEEP_TEMP !== '1') {
       rmSync(fixture.root, { recursive: true, force: true });
     }
   }
 });
 
+function hasWhisperKitDependency(root: string): boolean {
+  const dependencyRoot = join(
+    root,
+    'user-data',
+    'daemon',
+    'creator-runtime',
+    'dependencies',
+    'krillinai'
+  );
+  return existsSync(join(dependencyRoot, 'bin', 'whisperkit-cli'))
+    || existsSync(join(
+      dependencyRoot,
+      'models',
+      'whisperkit',
+      'openai_whisper-large-v2'
+    ));
+}
+
 async function launchCreatorDesktop(): Promise<{
   app: PackagedApp;
-  enterpriseRunId: string;
   root: string;
 }> {
   const root = mkdtempSync(join(tmpdir(), 'opencreator-packaged-e2e-'));
@@ -164,7 +232,7 @@ async function launchCreatorDesktop(): Promise<{
   const stateDir = join(root, 'fake-codex-state');
   const codexHome = join(root, 'codex-home');
   const enterpriseRunId = randomUUID();
-  const enterpriseConfigPath = join(root, '.clawee', 'config.toml');
+  const enterpriseConfigPath = join(root, '.opencreator', 'config.toml');
   writeCodexShim(binDir);
   writeEnterpriseE2EConfig(enterpriseConfigPath, enterpriseOrigin);
 
@@ -173,8 +241,8 @@ async function launchCreatorDesktop(): Promise<{
     args: [
       `--user-data-dir=${join(root, 'user-data')}`,
       '--disable-gpu',
-      `--clawee-enterprise-e2e=${enterpriseRunId}`,
-      `--clawee-enterprise-e2e-config=${enterpriseConfigPath}`
+      `--opencreator-enterprise-e2e=${enterpriseRunId}`,
+      `--opencreator-enterprise-e2e-config=${enterpriseConfigPath}`
     ],
     env: {
       ...withoutDesktopTestEnvironment(process.env),
@@ -182,21 +250,21 @@ async function launchCreatorDesktop(): Promise<{
       SHELL: process.platform === 'win32' ? process.env.ComSpec : '/bin/false',
       HOME: root,
       USERPROFILE: root,
-      CLAWEE_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
+      OPENCREATOR_DEFAULT_PROJECT_ROOT: join(root, 'Documents'),
       CODEX_HOME: codexHome,
-      CLAWEE_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
-      CLAWEE_E2E_FAKE_CODEX_STATE_DIR: stateDir,
-      CLAWEE_E2E_FAKE_CODEX_MODE: 'success',
-      CLAWEE_ENTERPRISE_E2E_RUN_ID: enterpriseRunId
+      OPENCREATOR_CODEX_APPLICATION_ROOTS: join(root, 'Applications'),
+      OPENCREATOR_E2E_FAKE_CODEX_STATE_DIR: stateDir,
+      OPENCREATOR_E2E_FAKE_CODEX_MODE: 'success',
+      OPENCREATOR_ENTERPRISE_E2E_RUN_ID: enterpriseRunId
     },
     timeoutMs: 45_000
   });
-  return { app, enterpriseRunId, root };
+  return { app, root };
 }
 
 async function waitForWorkspace(page: Page): Promise<void> {
   await expect.poll(async () => {
-    const state = await page.evaluate(() => window.claweeDesktop?.readBootstrapState())
+    const state = await page.evaluate(() => window.opencreatorDesktop?.readBootstrapState())
       .catch(() => undefined);
     if (state?.phase === 'failed' || state?.phase === 'workspace_failed') {
       throw new Error(
@@ -207,9 +275,9 @@ async function waitForWorkspace(page: Page): Promise<void> {
     return new URL(page.url()).hostname;
   }, { timeout: 45_000 }).toBe('app');
   await expect.poll(async () => (
-    await page.evaluate(() => window.claweeDesktop?.readBootstrapState())
+    await page.evaluate(() => window.opencreatorDesktop?.readBootstrapState())
   )?.phase).toBe('ready');
-  await expect(page.locator('.clawee-shell')).toBeVisible();
+  await expect(page.locator('.opencreator-shell')).toBeVisible();
 }
 
 async function runtimeRequest<T>(
@@ -219,7 +287,7 @@ async function runtimeRequest<T>(
   body?: unknown
 ): Promise<{ status: number; body: T }> {
   return await page.evaluate(async ({ method, path, body }) => {
-    const response = await fetch(`/.clawee/runtime${path}`, {
+    const response = await fetch(`/.opencreator/runtime${path}`, {
       method,
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
@@ -257,12 +325,10 @@ function withoutDesktopTestEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEn
   const next = { ...env };
   for (const name of [
     'ELECTRON_RUN_AS_NODE',
-    'CLAWEE_UPDATE_URL',
-    'CLAWEE_ENTERPRISE_ORIGIN',
-    'CLAWEE_ENTERPRISE_E2E_AUTHORIZED',
-    'CLAWEE_ENTERPRISE_E2E_RUN_ID',
-    'CLAWEE_ENTERPRISE_KEYRING_SERVICE',
-    'CLAWEE_ENTERPRISE_KEYRING_ACCOUNT',
+    'OPENCREATOR_UPDATE_URL',
+    'OPENCREATOR_ENTERPRISE_ORIGIN',
+    'OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED',
+    'OPENCREATOR_ENTERPRISE_E2E_RUN_ID',
     'OPENCREATOR_CREATOR_RUNTIME_ROOT'
   ]) {
     delete next[name];

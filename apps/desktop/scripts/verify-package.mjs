@@ -23,7 +23,6 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  assertKeyringArtifacts,
   readEnterpriseGatewayPackageConfig
 } from './enterprise-package-contract-2026-07-30.mjs';
 import { verifyCreatorRuntime } from './creator-runtime-contract.mjs';
@@ -42,7 +41,6 @@ const targetArch = process.env.OPENCREATOR_DESKTOP_TARGET_ARCH
 const targetPlatform = process.env.OPENCREATOR_DESKTOP_TARGET_PLATFORM
   ?? manifest.platform
   ?? process.platform;
-const targetLibc = process.env.OPENCREATOR_DESKTOP_TARGET_LIBC;
 const packageRoot = process.env.OPENCREATOR_DESKTOP_PACKAGE_ROOT
   ? resolve(process.env.OPENCREATOR_DESKTOP_PACKAGE_ROOT)
   : resolve(manifest.packageRoot);
@@ -75,11 +73,6 @@ assertExists(join(
 ));
 assertExists(join(webDir, 'index.html'));
 assertExists(enterpriseGatewayConfigPath);
-const keyring = assertKeyringArtifacts(daemonDir, {
-  platform: targetPlatform,
-  arch: targetArch,
-  ...(targetLibc === undefined ? {} : { linuxLibc: targetLibc })
-});
 
 assertAsarContents();
 assertBrandingContents();
@@ -100,8 +93,6 @@ console.log(JSON.stringify({
   packageRoot,
   packageBytes: treeSize(packageRoot),
   daemonBytes: treeSize(daemonDir),
-  keyringPackage: keyring.packageName,
-  keyringNativeFile: keyring.nativeFile,
   fuses: 'verified',
   privacy: 'verified'
 }));

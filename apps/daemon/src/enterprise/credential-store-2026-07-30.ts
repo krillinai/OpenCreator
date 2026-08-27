@@ -1,10 +1,5 @@
-import { AsyncEntry } from '@napi-rs/keyring';
+import { createPrivateJsonDocumentEntry } from '../config/private-json-file.js';
 
-const DEFAULT_SERVICE = 'com.opencreator.enterprise';
-const DEFAULT_ACCOUNT = 'opencreator-agent';
-const E2E_SERVICE = 'com.opencreator.enterprise.e2e';
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RFC_3339_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -25,38 +20,13 @@ type EnterpriseCredentialEntry = {
   deletePassword(): Promise<unknown>;
 };
 
-type EnterpriseCredentialIdentity = {
-  service: string;
-  account: string;
-};
-
 export class EnterpriseCredentialStoreError extends Error {
-  readonly code = 'ENTERPRISE_SECURE_STORAGE_UNAVAILABLE';
+  readonly code = 'ENTERPRISE_CONFIG_FILE_UNAVAILABLE';
 
   constructor(stage: 'read' | 'write' | 'delete' | 'decode') {
-    super(`ENTERPRISE_SECURE_STORAGE_UNAVAILABLE: enterprise credential ${stage} failed`);
+    super(`ENTERPRISE_CONFIG_FILE_UNAVAILABLE: enterprise credential ${stage} failed`);
     this.name = 'EnterpriseCredentialStoreError';
   }
-}
-
-export function resolveEnterpriseCredentialIdentity(
-  e2eRunId?: string
-): EnterpriseCredentialIdentity {
-  if (e2eRunId === undefined) {
-    return {
-      service: DEFAULT_SERVICE,
-      account: DEFAULT_ACCOUNT
-    };
-  }
-
-  if (!UUID_PATTERN.test(e2eRunId)) {
-    throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
-  }
-
-  return {
-    service: E2E_SERVICE,
-    account: `${DEFAULT_ACCOUNT}:${e2eRunId}`
-  };
 }
 
 export function createEnterpriseCredentialStore(input: {
@@ -112,12 +82,11 @@ export function createEnterpriseCredentialStore(input: {
   };
 }
 
-export function createSystemEnterpriseCredentialStore(input?: {
-  e2eRunId?: string;
+export function createFileEnterpriseCredentialStore(input: {
+  path: string;
 }): EnterpriseCredentialStore {
-  const identity = resolveEnterpriseCredentialIdentity(input?.e2eRunId);
   return createEnterpriseCredentialStore({
-    entry: new AsyncEntry(identity.service, identity.account)
+    entry: createPrivateJsonDocumentEntry(input.path)
   });
 }
 

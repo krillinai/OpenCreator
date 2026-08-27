@@ -12,6 +12,7 @@ export default function CreatorToolShell(props: {
   initialMessage?: string;
   suggestions: string[];
   placeholder: string;
+  pageClassName?: string;
   contentClassName?: string;
   children: ReactNode;
   onBack(): void;
@@ -39,7 +40,7 @@ export default function CreatorToolShell(props: {
   }
 
   return (
-    <main className="creator-workspace-page">
+    <main className={`creator-workspace-page${props.pageClassName ? ` ${props.pageClassName}` : ''}`}>
       <div className="creator-workspace-layout">
         <section className="creator-workspace-main" aria-label={`${props.title} ${l('操作区', 'workspace')}`}>
           <header className="creator-workspace-header">

@@ -1,10 +1,21 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createCodexProviderCredentialStore,
+  createFileCodexProviderCredentialStore,
   readCodexProviderApiKey
 } from '../../src/codex/provider-credential-store.js';
 
 describe('CodexProviderCredentialStore', () => {
+  let root: string | undefined;
+
+  afterEach(() => {
+    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+    root = undefined;
+  });
+
   it('stores the fallback API key without exposing another configuration', async () => {
     let saved: string | undefined;
     const store = createCodexProviderCredentialStore({
@@ -38,5 +49,19 @@ describe('CodexProviderCredentialStore', () => {
       })
     })).resolves.toBe('sk-legacy');
     expect(store.writeApiKey).toHaveBeenCalledWith('sk-legacy');
+  });
+
+  it('persists the Codex API key in a local JSON configuration file', async () => {
+    root = mkdtempSync(join(tmpdir(), 'opencreator-codex-provider-'));
+    const path = join(root, 'config', 'codex-provider.json');
+    const store = createFileCodexProviderCredentialStore(path);
+
+    await store.writeApiKey('sk-file');
+
+    await expect(store.readApiKey()).resolves.toBe('sk-file');
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
+      version: 1,
+      apiKey: 'sk-file'
+    });
   });
 });

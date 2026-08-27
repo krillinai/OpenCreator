@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   rmSync,
   writeFileSync
@@ -27,14 +28,24 @@ describe('KrillinAI CLI runner', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-cli-'));
     const resourceRoot = join(tempDir, 'runtime');
     const jobsRoot = join(tempDir, 'jobs');
+    const dependencyRoot = join(tempDir, 'dependencies');
     const workdir = join(jobsRoot, 'job-1', 'stage-run-1');
     const source = join(jobsRoot, 'job-1', 'imports', 'source.mp4');
     const cli = join(resourceRoot, 'bin', process.platform === 'win32' ? 'krillinai-cli.exe' : 'krillinai-cli');
+    const ffmpeg = join(resourceRoot, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    const whisperKit = join(
+      dependencyRoot,
+      'bin',
+      process.platform === 'win32' ? 'whisperkit-cli.exe' : 'whisperkit-cli'
+    );
     mkdirSync(dirname(cli), { recursive: true });
+    mkdirSync(dirname(whisperKit), { recursive: true });
     mkdirSync(dirname(source), { recursive: true });
     mkdirSync(workdir, { recursive: true });
     writeFileSync(source, 'fixture-video');
     writeFileSync(cli, `#!${process.execPath}\n${FAKE_CLI}`);
+    writeFileSync(ffmpeg, 'fixture-ffmpeg');
+    writeFileSync(whisperKit, 'fixture-whisperkit');
     if (process.platform !== 'win32') chmodSync(cli, 0o755);
 
     const manifest: KrillinRuntimeManifest = {
@@ -49,6 +60,7 @@ describe('KrillinAI CLI runner', () => {
     };
     const config = createDefaultCreatorServicesConfig();
     config.llm.apiKey = 'llm-test-secret';
+    config.transcription.provider = 'whisperkit';
     config.transcription.openai.apiKey = 'transcription-test-secret';
     const progress: Array<Record<string, unknown>> = [];
     const stage = {
@@ -72,6 +84,7 @@ describe('KrillinAI CLI runner', () => {
     const artifacts = await runKrillinCli({
       resourceRoot,
       jobsRoot,
+      dependencyRoot,
       manifest,
       stage,
       config,
@@ -101,7 +114,17 @@ describe('KrillinAI CLI runner', () => {
       '--bilingual-top=false'
     ]));
     expect(readFileSync(join(workdir, 'observed-config.toml'), 'utf8')).toContain('transcription-test-secret');
+    expect(JSON.parse(readFileSync(join(workdir, 'observed-dependencies.json'), 'utf8'))).toEqual({
+      resourceRoot: join(workdir, '.krillin-cli'),
+      offline: '1',
+      bin: join(realpathSync(workdir), '.krillin-cli', 'bin'),
+      models: realpathSync(join(dependencyRoot, 'models')),
+      ffmpeg: realpathSync(ffmpeg),
+      whisperKit: realpathSync(whisperKit)
+    });
     expect(existsSync(join(workdir, '.krillin-cli'))).toBe(false);
+    expect(existsSync(join(dependencyRoot, 'bin', '.yt-dlp-last-check'))).toBe(true);
+    expect(existsSync(join(dependencyRoot, 'models'))).toBe(true);
     expect(progress.at(-1)).toMatchObject({
       krillinMode: 'cli',
       providerStatus: 'succeeded',
@@ -111,7 +134,7 @@ describe('KrillinAI CLI runner', () => {
 });
 
 const FAKE_CLI = String.raw`
-const { mkdirSync, readFileSync, writeFileSync } = require('node:fs');
+const { mkdirSync, readFileSync, realpathSync, writeFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const args = process.argv.slice(2);
@@ -122,6 +145,14 @@ writeFileSync(
   join(workdir, 'observed-config.toml'),
   readFileSync(join(process.cwd(), 'config', 'config.toml'))
 );
+writeFileSync(join(workdir, 'observed-dependencies.json'), JSON.stringify({
+  resourceRoot: process.env.KRILLINAI_RESOURCE_ROOT,
+  offline: process.env.KRILLINAI_OFFLINE_DEPENDENCIES,
+  bin: realpathSync(join(process.cwd(), 'bin')),
+  models: realpathSync(join(process.cwd(), 'models')),
+  ffmpeg: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'ffmpeg')),
+  whisperKit: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'whisperkit-cli'))
+}));
 const outputs = {
   origin_video: join(workdir, 'origin_video.mp4'),
   origin_srt: join(workdir, 'origin_language_srt.srt'),

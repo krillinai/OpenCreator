@@ -1,11 +1,21 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createEnterpriseCredentialStore,
-  resolveEnterpriseCredentialIdentity
+  createFileEnterpriseCredentialStore
 } from '../../src/enterprise/credential-store-2026-07-30.js';
 
 describe('enterprise credential store', () => {
-  it('never falls back to plaintext when the keyring backend fails', async () => {
+  let root: string | undefined;
+
+  afterEach(() => {
+    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+    root = undefined;
+  });
+
+  it('does not leak credentials when the persistence backend fails', async () => {
     const token = 'enterprise-test-token';
     const plaintextFallback = vi.fn();
     const store = createEnterpriseCredentialStore({
@@ -21,7 +31,7 @@ describe('enterprise credential store', () => {
     await expect(store.write({
       accessToken: token,
       expiresAt: '2026-07-30T12:00:00.000Z'
-    })).rejects.toThrow('ENTERPRISE_SECURE_STORAGE_UNAVAILABLE');
+    })).rejects.toThrow('ENTERPRISE_CONFIG_FILE_UNAVAILABLE');
     expect(plaintextFallback).not.toHaveBeenCalled();
 
     try {
@@ -60,7 +70,22 @@ describe('enterprise credential store', () => {
     expect(await store.read()).toBeUndefined();
   });
 
-  it('deletes malformed keyring content without exposing it', async () => {
+  it('persists the enterprise session in a local JSON file', async () => {
+    root = mkdtempSync(join(tmpdir(), 'opencreator-enterprise-session-'));
+    const path = join(root, 'config', 'enterprise-session.json');
+    const store = createFileEnterpriseCredentialStore({ path });
+    const credential = {
+      accessToken: 'file-token',
+      expiresAt: '2026-08-26T12:00:00.000Z'
+    };
+
+    await store.write(credential);
+
+    await expect(store.read()).resolves.toEqual(credential);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(credential);
+  });
+
+  it('deletes malformed persisted content without exposing it', async () => {
     const deletePassword = vi.fn(async () => true);
     const store = createEnterpriseCredentialStore({
       entry: {
@@ -70,21 +95,7 @@ describe('enterprise credential store', () => {
       }
     });
 
-    await expect(store.read()).rejects.toThrow('ENTERPRISE_SECURE_STORAGE_UNAVAILABLE');
+    await expect(store.read()).rejects.toThrow('ENTERPRISE_CONFIG_FILE_UNAVAILABLE');
     expect(deletePassword).toHaveBeenCalledOnce();
-  });
-
-  it('derives a constrained packaged-e2e keyring identity without arbitrary overrides', () => {
-    expect(resolveEnterpriseCredentialIdentity()).toEqual({
-      service: 'com.opencreator.enterprise',
-      account: 'opencreator-agent'
-    });
-    expect(resolveEnterpriseCredentialIdentity('123e4567-e89b-42d3-a456-426614174000')).toEqual({
-      service: 'com.opencreator.enterprise.e2e',
-      account: 'opencreator-agent:123e4567-e89b-42d3-a456-426614174000'
-    });
-    expect(() => resolveEnterpriseCredentialIdentity('not-a-uuid')).toThrow(
-      'ENTERPRISE_E2E_CONFIG_FORBIDDEN'
-    );
   });
 });

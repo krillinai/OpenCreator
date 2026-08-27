@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import {
   type IncomingMessage,
   type Server,
@@ -7,19 +6,13 @@ import {
   createServer
 } from 'node:http';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 
 export const desktopE2EEnterpriseEmail = 'desktop-e2e@example.com';
 export const desktopE2EEnterprisePassword = 'desktop-e2e-password';
 
-const keyringService = 'com.opencreator.enterprise.e2e';
 const agentIdPattern =
   /^opencreator_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const rootDir = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../..'
-);
 
 export class FakeEnterpriseAuthServer {
   private server: Server | undefined;
@@ -139,50 +132,6 @@ export function writeEnterpriseE2EConfig(
 ): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `gateway = ${JSON.stringify(gateway)}\n`);
-}
-
-export async function deleteEnterpriseE2ECredential(
-  runId: string
-): Promise<void> {
-  const cleanupScript = `
-    const { createRequire } = require('node:module');
-    const requireFromDaemon = createRequire(process.argv[1]);
-    const { AsyncEntry } = requireFromDaemon('@napi-rs/keyring');
-    const entry = new AsyncEntry(
-      ${JSON.stringify(keyringService)},
-      'opencreator-agent:' + process.argv[2]
-    );
-    entry.deletePassword().then(
-      () => process.exit(0),
-      () => process.exit(1)
-    );
-  `;
-  const child = spawn(process.execPath, [
-    '-e',
-    cleanupScript,
-    join(rootDir, 'apps', 'daemon', 'package.json'),
-    runId
-  ], {
-    stdio: 'ignore',
-    windowsHide: true
-  });
-  await new Promise<void>((resolveCleanup, reject) => {
-    const timeout = setTimeout(() => {
-      child.kill();
-      child.unref();
-      reject(new Error('Enterprise E2E keyring cleanup timed out'));
-    }, 3_000);
-    timeout.unref();
-    child.once('error', error => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.once('exit', code => {
-      clearTimeout(timeout);
-      if (code === 0) resolveCleanup();
-      else reject(new Error('Enterprise E2E keyring cleanup failed'));
-    });
-  });
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {

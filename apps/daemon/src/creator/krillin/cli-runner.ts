@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { basename, delimiter, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type {
   CreatorJson,
   CreatorServicesConfig,
@@ -57,6 +57,7 @@ export class KrillinCliError extends Error {
 type RunKrillinCliInput = {
   resourceRoot: string;
   jobsRoot: string;
+  dependencyRoot: string;
   manifest: KrillinRuntimeManifest;
   stage: CreatorExecutorInput;
   config: CreatorServicesConfig;
@@ -74,17 +75,21 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
   const runtimeBin = resolve(input.resourceRoot, 'bin');
   const launcherRoot = join(input.stage.workdir, '.krillin-cli');
   const configDir = join(launcherRoot, 'config');
-  const launcherBin = join(launcherRoot, 'bin');
+  const dependencyBin = join(input.dependencyRoot, 'bin');
   await rm(launcherRoot, { recursive: true, force: true });
   await mkdir(configDir, { recursive: true });
-  await mkdir(launcherBin, { recursive: true });
-  await linkRuntimeModels(input.resourceRoot, launcherRoot);
+  const cliResourceRoot = await prepareCliResourceRoot({
+    resourceRoot: input.resourceRoot,
+    dependencyRoot: input.dependencyRoot,
+    launcherRoot,
+    useOnDemandTranscription: input.config.transcription.provider === 'whisperkit'
+  });
   await writeFile(
     join(configDir, 'config.toml'),
     createKrillinConfigToml(input.config),
     { mode: 0o600 }
   );
-  await writeFile(join(launcherBin, '.yt-dlp-last-check'), new Date().toISOString(), { mode: 0o600 });
+  await writeFile(join(dependencyBin, '.yt-dlp-last-check'), new Date().toISOString(), { mode: 0o600 });
 
   const style = input.options.subtitleStyle;
   const stylePath = style === undefined ? undefined : join(configDir, 'subtitle-style.json');
@@ -107,7 +112,8 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
       args,
       cwd: launcherRoot,
       runtimeBin,
-      resourceRoot: input.resourceRoot,
+      resourceRoot: cliResourceRoot,
+      dependencyBin,
       reportProgress: progress => input.stage.reportProgress(progress),
       signal: input.stage.signal
     });
@@ -225,13 +231,19 @@ function executeCli(input: {
   cwd: string;
   runtimeBin: string;
   resourceRoot: string;
+  dependencyBin: string;
   reportProgress(progress: Record<string, CreatorJson>): void;
   signal: AbortSignal;
 }): Promise<KrillinCliResponse> {
   return new Promise((resolvePromise, reject) => {
     const child = spawnCreatorProcess(input.executable, input.args, {
       cwd: input.cwd,
-      env: createKrillinCliEnvironment(process.env, input.runtimeBin, input.resourceRoot),
+      env: createKrillinCliEnvironment(
+        process.env,
+        input.runtimeBin,
+        input.resourceRoot,
+        input.dependencyBin
+      ),
       stdio: ['ignore', 'pipe', 'pipe']
     }, input.signal);
     let stdout = '';
@@ -328,17 +340,19 @@ export function outputMappings(stageId: string): Array<[string, string]> {
 export function createKrillinCliEnvironment(
   env: NodeJS.ProcessEnv,
   runtimeBin: string,
-  resourceRoot: string
+  resourceRoot: string,
+  dependencyBin: string
 ): NodeJS.ProcessEnv {
   const names = process.platform === 'win32'
     ? ['SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA']
     : ['HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'SSL_CERT_FILE', 'SSL_CERT_DIR'];
+  const executablePath = process.platform === 'win32'
+    ? [dependencyBin, runtimeBin].join(delimiter)
+    : [dependencyBin, runtimeBin, '/usr/bin', '/bin'].join(delimiter);
   return {
     ...Object.fromEntries(names.flatMap(name => env[name] === undefined ? [] : [[name, env[name]]])),
-    PATH: process.platform === 'win32'
-      ? runtimeBin
-      : [runtimeBin, '/usr/bin', '/bin'].join(':'),
-    Path: runtimeBin,
+    PATH: executablePath,
+    Path: executablePath,
     KRILLINAI_RESOURCE_ROOT: resourceRoot,
     KRILLINAI_OFFLINE_DEPENDENCIES: '1',
     OPENCREATOR_KRILLINAI_CLI: '1'
@@ -398,18 +412,44 @@ export function parseKrillinCliProgressFrame(line: string): KrillinCliProgressFr
   }
 }
 
-async function linkRuntimeModels(resourceRoot: string, launcherRoot: string): Promise<void> {
-  const source = join(resourceRoot, 'models');
-  try {
-    if (!(await stat(source)).isDirectory()) return;
-  } catch {
-    return;
+async function prepareCliResourceRoot(input: {
+  resourceRoot: string;
+  dependencyRoot: string;
+  launcherRoot: string;
+  useOnDemandTranscription: boolean;
+}): Promise<string> {
+  const dependencyBin = join(input.dependencyRoot, 'bin');
+  const dependencyModels = join(input.dependencyRoot, 'models');
+  await mkdir(dependencyBin, { recursive: true });
+  await mkdir(dependencyModels, { recursive: true });
+  const type = process.platform === 'win32' ? 'junction' : 'dir';
+  await symlink(dependencyModels, join(input.launcherRoot, 'models'), type);
+  if (!input.useOnDemandTranscription) {
+    await symlink(dependencyBin, join(input.launcherRoot, 'bin'), type);
+    return input.resourceRoot;
   }
-  await symlink(
-    source,
-    join(launcherRoot, 'models'),
-    process.platform === 'win32' ? 'junction' : 'dir'
+
+  const overlayBin = join(input.launcherRoot, 'bin');
+  await mkdir(overlayBin, { recursive: true });
+  await linkDirectoryEntries(join(input.resourceRoot, 'bin'), overlayBin);
+  const whisperKitName = process.platform === 'win32' ? 'whisperkit-cli.exe' : 'whisperkit-cli';
+  await linkFile(
+    join(dependencyBin, whisperKitName),
+    join(overlayBin, whisperKitName)
   );
+  return input.launcherRoot;
+}
+
+async function linkDirectoryEntries(source: string, destination: string): Promise<void> {
+  for (const entry of await readdir(source, { withFileTypes: true })) {
+    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+    await linkFile(join(source, entry.name), join(destination, entry.name));
+  }
+}
+
+async function linkFile(source: string, target: string): Promise<void> {
+  await rm(target, { force: true });
+  await symlink(source, target, process.platform === 'win32' ? 'file' : undefined);
 }
 
 function parseResponse(stdout: string): KrillinCliResponse | undefined {

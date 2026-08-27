@@ -17,17 +17,23 @@ describe('KrillinAI CLI protocol', () => {
   });
 
   it('enables packaged offline dependencies in the minimal environment', () => {
+    const inherited = process.platform === 'win32'
+      ? { SystemRoot: 'C:\\Windows' }
+      : { HOME: '/Users/opencreator' };
     const env = createKrillinCliEnvironment(
-      { SystemRoot: 'C:\\Windows', SECRET_VALUE: 'hidden' },
+      { ...inherited, SECRET_VALUE: 'hidden' },
       'D:\\runtime\\bin',
-      'D:\\runtime'
+      'D:\\resources',
+      'D:\\dependencies\\bin'
     );
     expect(env).toMatchObject({
-      SystemRoot: 'C:\\Windows',
-      KRILLINAI_RESOURCE_ROOT: 'D:\\runtime',
+      ...inherited,
+      KRILLINAI_RESOURCE_ROOT: 'D:\\resources',
       KRILLINAI_OFFLINE_DEPENDENCIES: '1',
       OPENCREATOR_KRILLINAI_CLI: '1'
     });
+    expect(String(env.PATH)).toContain('D:\\dependencies\\bin');
+    expect(String(env.PATH)).toContain('D:\\runtime\\bin');
     expect(env.SECRET_VALUE).toBeUndefined();
   });
 

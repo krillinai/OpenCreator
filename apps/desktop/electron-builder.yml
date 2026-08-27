@@ -56,8 +56,8 @@ protocols:
       - opencreator
 publish:
   provider: github
-  owner: wulien
-  repo: opencreator-agent
+  owner: krillinai
+  repo: OpenCreator
 mac:
   category: public.app-category.developer-tools
   extendInfo:

@@ -4,6 +4,21 @@ import { startUpdater } from '../src/main/updater.js';
 import type { DesktopLogger } from '../src/main/logger.js';
 
 describe('Desktop updater', () => {
+  it('uses a separate update channel for Intel macOS releases', () => {
+    const updater = new FakeUpdater();
+    const controller = startUpdater({
+      logger: fakeLogger(),
+      isPackaged: true,
+      updater,
+      platform: 'darwin',
+      arch: 'x64'
+    });
+
+    expect(updater.channel).toBe('latest-x64');
+    expect(updater.allowDowngrade).toBe(false);
+    controller.dispose();
+  });
+
   it('captures download failures without an unhandled rejection', async () => {
     const updater = new FakeUpdater();
     updater.downloadUpdate = vi.fn(async () => {
@@ -142,6 +157,8 @@ describe('Desktop updater', () => {
 class FakeUpdater extends EventEmitter {
   autoDownload = true;
   autoInstallOnAppQuit = true;
+  allowDowngrade = true;
+  channel: string | null = null;
   checkForUpdates = vi.fn(async () => undefined);
   downloadUpdate = vi.fn(async () => undefined);
   quitAndInstall = vi.fn();

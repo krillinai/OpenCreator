@@ -2,15 +2,13 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
-  copyFileSync,
-  cpSync,
   closeSync,
+  copyFileSync,
   existsSync,
   openSync,
   mkdtempSync,
   mkdirSync,
   readSync,
-  readFileSync,
   renameSync,
   rmSync,
   statSync,
@@ -30,28 +28,7 @@ const outputRoot = resolve(
     ?? join(rootDir, '.runtime', 'vendor', 'creator-runtime', target)
 );
 const proxy = process.env.OPENCREATOR_DOWNLOAD_PROXY?.trim();
-const whisperKitRelease = target === 'darwin-arm64'
-  ? {
-      executable: {
-        version: '1.1.0',
-        fileName: 'whisperkit-cli',
-        url: 'https://ghcr.io/v2/homebrew/core/whisperkit-cli/blobs/sha256:54cf5a0ae768aafe4dcbe9dad276801b67cfd5549dcde6cdf2f9435106104168',
-        sha256: '54cf5a0ae768aafe4dcbe9dad276801b67cfd5549dcde6cdf2f9435106104168',
-        binarySha256: 'c999d375a23d5c5c07f96a2fbee9627c60a0de77bc3ca6689ed88878c9743d58',
-        archivePath: 'whisperkit-cli/1.1.0/bin/whisperkit-cli',
-        ghcrScope: 'repository:homebrew/core/whisperkit-cli:pull',
-        verify: ['--version'],
-        expected: /^v1\.1\.0$/m
-      },
-      model: {
-        version: 'large-v2',
-        path: 'models/whisperkit/openai_whisper-large-v2',
-        url: 'https://modelscope.cn/models/Maranello/KrillinAI_dependency_cn/resolve/master/whisperkit-large-v2.zip',
-        sha256: '033c24fc20a432886a26aa8bc90de42bd5948654f131cecb60d5668b20dbb1cb',
-        archiveRoot: 'openai_whisper-large-v2'
-      }
-    }
-  : undefined;
+const offline = process.env.OPENCREATOR_DESKTOP_OFFLINE === '1';
 
 const releases = {
   'darwin-arm64': creatorRuntimeRelease({
@@ -123,11 +100,6 @@ for (const [name, asset] of Object.entries(release)) {
     source: asset.url
   };
 }
-if (whisperKitRelease !== undefined) {
-  const whisperKit = installWhisperKit(whisperKitRelease);
-  installed.whisperkit = whisperKit.executable;
-  installed.whisperkitModel = whisperKit.model;
-}
 writeFileSync(join(outputRoot, 'versions.json'), `${JSON.stringify({
   version: 1,
   platform,
@@ -143,6 +115,11 @@ function installAsset(name, asset, path) {
     console.log(`[creator-runtime] Reusing ${name} ${asset.version}`);
     return;
   }
+  if (offline) {
+    throw new Error(
+      `${name} ${asset.version} is unavailable in the Creator Runtime offline cache: ${path}`
+    );
+  }
 
   const temporary = `${path}.${process.pid}.partial`;
   rmSync(temporary, { force: true });
@@ -156,131 +133,6 @@ function installAsset(name, asset, path) {
   } finally {
     rmSync(temporary, { force: true });
   }
-}
-
-function installWhisperKit(input) {
-  const executablePath = join(outputRoot, input.executable.fileName);
-  installWhisperKitExecutable(input.executable, executablePath);
-  const modelPath = join(outputRoot, input.model.path);
-  installWhisperKitModel(input.model, modelPath);
-  return {
-    executable: {
-      version: input.executable.version,
-      path: input.executable.fileName,
-      sha256: input.executable.binarySha256,
-      source: input.executable.url
-    },
-    model: {
-      version: input.model.version,
-      path: input.model.path,
-      sha256: input.model.sha256,
-      source: input.model.url
-    }
-  };
-}
-
-function installWhisperKitExecutable(asset, path) {
-  if (existsSync(path)
-    && statSync(path).isFile()
-    && hashFile(path) === asset.binarySha256) {
-    chmodExecutable(path);
-    verifyExecutable('whisperkit', asset, path);
-    console.log(`[creator-runtime] Reusing whisperkit ${asset.version}`);
-    return;
-  }
-
-  const staging = mkdtempSync(join(tmpdir(), 'opencreator-whisperkit-cli-'));
-  const configuredArchive = process.env.OPENCREATOR_WHISPERKIT_CLI_ARCHIVE;
-  try {
-    const archive = configuredArchive
-      ? verifyConfiguredArchive('whisperkit', asset, configuredArchive)
-      : downloadAsset('whisperkit', asset, join(staging, 'whisperkit-cli.tar.gz'));
-    execFileSync('tar', ['-xzf', archive, '-C', staging], { cwd: rootDir, stdio: 'inherit' });
-    const source = join(staging, asset.archivePath);
-    if (!existsSync(source) || hashFile(source) !== asset.binarySha256) {
-      throw new Error('whisperkit extracted executable hash does not match the pinned release');
-    }
-    const temporary = `${path}.${process.pid}.partial`;
-    copyFileSync(source, temporary);
-    chmodExecutable(temporary);
-    verifyExecutable('whisperkit', asset, temporary);
-    rmSync(path, { recursive: true, force: true });
-    renameSync(temporary, path);
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
-  }
-}
-
-function installWhisperKitModel(asset, path) {
-  const marker = join(dirname(path), '.opencreator-large-v2.json');
-  if (isWhisperKitModelInstalled(path, marker, asset.sha256)) {
-    console.log(`[creator-runtime] Reusing whisperkit-model ${asset.version}`);
-    return;
-  }
-
-  const staging = mkdtempSync(join(tmpdir(), 'opencreator-whisperkit-model-'));
-  const configuredArchive = process.env.OPENCREATOR_WHISPERKIT_MODEL_ARCHIVE;
-  try {
-    const archive = configuredArchive
-      ? verifyConfiguredArchive('whisperkit-model', asset, configuredArchive)
-      : downloadAsset('whisperkit-model', asset, join(staging, 'whisperkit-model.zip'));
-    const extracted = join(staging, 'extracted');
-    mkdirSync(extracted, { recursive: true });
-    execFileSync('ditto', ['-x', '-k', archive, extracted], { cwd: rootDir, stdio: 'inherit' });
-    const source = join(extracted, asset.archiveRoot);
-    verifyWhisperKitModel(source);
-    rmSync(join(source, '.DS_Store'), { force: true });
-    rmSync(join(source, 'AudioEncoder.mlmodelc', '.DS_Store'), { force: true });
-    rmSync(path, { recursive: true, force: true });
-    mkdirSync(dirname(path), { recursive: true });
-    cpSync(source, path, { recursive: true, force: true });
-    verifyWhisperKitModel(path);
-    writeFileSync(marker, `${JSON.stringify({
-      version: 1,
-      archiveSha256: asset.sha256
-    }, null, 2)}\n`);
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
-  }
-}
-
-function isWhisperKitModelInstalled(path, marker, archiveSha256) {
-  if (!existsSync(path) || !existsSync(marker)) return false;
-  try {
-    const record = JSON.parse(readFileSync(marker, 'utf8'));
-    if (record?.archiveSha256 !== archiveSha256) return false;
-    verifyWhisperKitModel(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function verifyWhisperKitModel(path) {
-  const required = [
-    ['config.json', undefined],
-    ['AudioEncoder.mlmodelc/weights/weight.bin', 1_273_605_760],
-    ['MelSpectrogram.mlmodelc/weights/weight.bin', 354_080],
-    ['TextDecoder.mlmodelc/weights/weight.bin', 1_813_199_154]
-  ];
-  for (const [relativePath, expectedSize] of required) {
-    const candidate = join(path, relativePath);
-    if (!existsSync(candidate) || !statSync(candidate).isFile()) {
-      throw new Error(`whisperkit model file is missing: ${relativePath}`);
-    }
-    if (expectedSize !== undefined && statSync(candidate).size !== expectedSize) {
-      throw new Error(`whisperkit model file size is invalid: ${relativePath}`);
-    }
-  }
-}
-
-function verifyConfiguredArchive(name, asset, configured) {
-  const path = resolve(configured);
-  if (!existsSync(path) || !statSync(path).isFile()) {
-    throw new Error(`${name} archive is unavailable: ${path}`);
-  }
-  verifyAssetHash(name, asset, path);
-  return path;
 }
 
 function downloadAsset(name, asset, path) {

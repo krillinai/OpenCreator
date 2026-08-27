@@ -29,6 +29,21 @@ describe('creator project cover', () => {
     expect(extractFrame).not.toHaveBeenCalled();
   });
 
+  it('uses a generated image as the project cover', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-project-generated-image-'));
+    const imagePath = join(tempDir, 'generated-image.webp');
+    writeFileSync(imagePath, 'generated-image');
+    const extractFrame = vi.fn();
+    const service = createCreatorProjectCoverService({ jobsRoot: tempDir, extractFrame });
+
+    const cover = await service.resolve(creatorJob([
+      artifact('generated_image', imagePath, { fileName: 'generated-image.webp' })
+    ]));
+
+    expect(cover).toEqual({ path: imagePath, fileName: 'generated-image.webp' });
+    expect(extractFrame).not.toHaveBeenCalled();
+  });
+
   it('extracts and caches the fifth-second frame from the source video', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'creator-project-cover-'));
     const sourcePath = join(tempDir, 'source.mp4');

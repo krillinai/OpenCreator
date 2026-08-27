@@ -101,7 +101,7 @@ export function createCodexProviderConfigService(input: {
         ...(loginApiKey !== undefined
           ? [{
               keyPath: 'cli_auth_credentials_store',
-              value: 'auto',
+              value: 'file',
               mergeStrategy: 'replace'
             }]
           : [])

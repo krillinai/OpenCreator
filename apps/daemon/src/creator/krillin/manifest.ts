@@ -50,18 +50,6 @@ export function verifyKrillinRuntimeManifest(resourceRoot: string, manifest: Kri
   }
 }
 
-export function requirePackagedProvider(
-  manifest: KrillinRuntimeManifest,
-  provider: string,
-  model?: string
-): void {
-  if (['openai', 'aliyun', 'edge-tts', 'minimax', 'openai-compatible'].includes(provider)) return;
-  const found = manifest.resources.some(resource => (
-    resource.provider === provider && (model === undefined || resource.model === model)
-  ));
-  if (!found) throw new Error(`dependency_not_packaged: ${provider}${model ? `/${model}` : ''}`);
-}
-
 export function resolveInside(root: string, relative: string): string {
   const absoluteRoot = resolve(root);
   const result = resolve(absoluteRoot, relative);

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1040,6 +1040,8 @@ describe('App', () => {
   });
 
   afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     testRuntimeProjects = undefined;
     testCreatorJobs = [];
@@ -1106,7 +1108,7 @@ describe('App', () => {
     const agentInput = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
     expect(agentInput).toHaveAttribute('placeholder', '上传视频，或者输入有效的视频链接');
     expect(agentInput).toHaveValue('');
-    await user.click(screen.getByRole('button', { name: '返回工作台' }));
+    await user.click(screen.getByRole('button', { name: '返回' }));
     expect(await screen.findByLabelText('OpenCreator 导航')).toBeInTheDocument();
     await waitFor(() => expect(window.location.hash).toBe('#/workbench'));
   });
@@ -1286,6 +1288,7 @@ describe('App', () => {
       screen.getByRole('textbox', { name: '视频链接' }),
       'https://www.youtube.com/watch?v=test'
     );
+    await user.click(screen.getByRole('button', { name: '继续' }));
     await user.click(screen.getByRole('button', { name: '继续' }));
     await user.click(screen.getByRole('button', { name: '继续' }));
     await user.click(within(

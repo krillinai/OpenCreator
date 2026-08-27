@@ -2,7 +2,7 @@
 
 ## 1. 适用范围
 
-本文用于发布 OpenCreator Desktop 的 macOS x64、macOS arm64 和 Windows x64 安装包。Desktop 依赖用户本机已有且可调用的 Codex CLI，不打包 Codex，也不提供 Codex 登录。
+本文用于发布 OpenCreator Desktop 的 macOS x64、macOS arm64 和 Windows x64 安装包，暂不发布 Linux。Desktop 安装包包含固定版本的 Codex CLI、KrillinAI CLI、ffmpeg、ffprobe 和 yt-dlp；Whisper CLI 与模型不进入安装包，由 KrillinAI 在功能实际需要时下载到用户数据目录。
 
 发布入口：
 
@@ -18,7 +18,7 @@ CSC_IDENTITY_AUTO_DISCOVERY=false \
 pnpm desktop:package
 ```
 
-`OPENCREATOR_DESKTOP_OFFLINE=1` 要求 pnpm、Electron headers 和原生模块构建缓存已经完整。缓存缺失时必须明确失败，不能静默切换为在线下载。
+`OPENCREATOR_DESKTOP_OFFLINE=1` 要求 pnpm、Electron headers、原生模块、Codex Runtime 和 Creator Runtime 构建缓存已经完整。缓存缺失时必须明确失败，不能静默切换为在线下载。
 
 ## 2. 发布前条件
 
@@ -28,17 +28,25 @@ pnpm desktop:package
 4. Windows 构建机允许执行 PowerShell 和 NSIS 打包工具。
 5. 仓库全量测试、类型检查和构建通过。
 6. 打包脚本会删除目标架构旧目录，并要求构建后只找到一个 fresh package root。
-7. 目标机器已安装 Codex CLI，并能在终端执行一次 `codex exec`。
-8. OSV Scanner 2.3.8 扫描发布源码无未解释漏洞。
-9. `.github/workflows/desktop-release.yml` 通过 actionlint。
+7. Codex Runtime 三个平台清单中的 npm tarball integrity 和逐文件 SHA-256 已固定。
+8. Creator Runtime 的 KrillinAI、ffmpeg、ffprobe、yt-dlp 下载地址和 SHA-256 已固定。
+9. OSV Scanner 2.3.8 扫描发布源码无未解释漏洞。
+10. `.github/workflows/desktop-release.yml` 通过 actionlint。
 
 ## 3. 版本与标签
 
 1. 更新 `apps/desktop/package.json` 的版本。
 2. 确认 GitHub Release 发布权限、签名凭据和目标版本更新元数据流程可用。
-3. 创建 `desktop-v<version>` 标签触发 `.github/workflows/desktop-release.yml`。
-4. CI 先运行全仓验证，再并行构建三个目标平台。
+3. 创建并推送 `v<version>` Git tag 触发 `.github/workflows/desktop-release.yml`。标签版本必须与 `apps/desktop/package.json` 完全一致。
+4. CI 先运行全仓验证，再使用 `macos-15-intel`、`macos-15` 和 `windows-latest` 并行构建三个原生目标平台。
 5. 标签构建成功后，CI 将安装包和更新元数据上传到 GitHub Release。
+
+示例：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 ## 4. macOS 签名与公证
 
@@ -91,17 +99,19 @@ CI secrets：
 
 ```text
 provider: github
-owner: wulien
-repo: opencreator-agent
+owner: krillinai
+repo: OpenCreator
 ```
 
 生产运行时不依赖 `OPENCREATOR_UPDATE_URL`。测试通过注入 fake updater 隔离，不允许把开发覆盖写入正式包。
 
 GitHub Release 至少包含：
 
-1. macOS 的 `latest-mac.yml`、DMG/ZIP 和 blockmap。
-2. Windows 的 `latest.yml`、NSIS EXE 和 blockmap。
-3. 文件名、版本和 SHA512 与 Electron Builder 产物一致。
+1. macOS arm64 的 `latest-mac.yml`、DMG/ZIP 和 blockmap。
+2. macOS x64 的 `latest-x64-mac.yml`、DMG/ZIP 和 blockmap。
+3. Windows x64 的 `latest.yml`、NSIS EXE 和 blockmap。
+4. 每个平台独立命名的 Desktop 构建清单。
+5. 文件名、版本和 SHA512 与 Electron Builder 产物一致。
 
 客户端行为：
 
@@ -137,6 +147,8 @@ OPENCREATOR_RUN_REAL_CODEX_SMOKE=1 pnpm --filter @opencreator/desktop e2e:real-c
 6. RunAsNode、NODE_OPTIONS 和 Node CLI Inspector 已关闭。
 7. Cookie 加密、ASAR 完整性和 OnlyLoadAppFromAsar 已启用。
 8. macOS 代码签名结构和 `ElectronAsarIntegrity` 元数据有效。
+9. Codex Runtime 与 Creator Runtime 的平台、架构、文件列表和 SHA-256 与固定清单一致。
+10. Creator Runtime 不包含 Whisper 可执行文件或模型。
 
 原生 SQLite 的真实加载、Runtime JSON/二进制/SSE、Daemon 恢复和进程回收由 packaged E2E 验证。启用 RunAsNode Fuse 后，不再使用正式可执行文件的 `-e` 模式执行 Node 烟测。
 

@@ -206,6 +206,9 @@ function electronBuilderArguments(packageMode, targetPlatform, targetArch, baseE
     args.push('--dir', platformFlag(targetPlatform), `--${targetArch}`);
   } else if (targetPlatform === 'darwin') {
     args.push('--mac', 'dmg', 'zip', `--${targetArch}`);
+    if (targetArch === 'x64') {
+      args.push('--config.publish.channel=latest-x64');
+    }
     const signingConfigured = hasValue(nextEnv.CSC_LINK);
     const notarizationConfigured = [
       nextEnv.APPLE_ID,

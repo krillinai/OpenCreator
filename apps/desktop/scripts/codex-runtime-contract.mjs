@@ -66,6 +66,9 @@ function validateManifest(manifest) {
     || typeof manifest.arch !== 'string'
     || typeof manifest.officialAsset !== 'string'
     || typeof manifest.sourcePackage !== 'string'
+    || typeof manifest.sourceArchive?.url !== 'string'
+    || !isSha512Integrity(manifest.sourceArchive?.integrity)
+    || !isSafeRelativePath(manifest.sourceArchive?.vendorPath)
     || typeof manifest.builtAt !== 'string'
     || !Array.isArray(manifest.resources)
     || !isSha256(manifest.binary?.sha256)
@@ -159,4 +162,21 @@ function hashFile(path) {
 
 function isSha256(value) {
   return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+}
+
+function isSha512Integrity(value) {
+  if (typeof value !== 'string' || !value.startsWith('sha512-')) return false;
+  try {
+    return Buffer.from(value.slice('sha512-'.length), 'base64').length === 64;
+  } catch {
+    return false;
+  }
+}
+
+function isSafeRelativePath(value) {
+  return typeof value === 'string'
+    && value.length > 0
+    && !value.startsWith('/')
+    && !value.startsWith('\\')
+    && !value.split(/[\\/]/).includes('..');
 }

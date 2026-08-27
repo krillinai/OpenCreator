@@ -49,7 +49,7 @@ export async function registerCreatorServicesRoutes(
 
 function sendStoreError(reply: FastifyReply, error: unknown) {
   if (error instanceof CreatorServicesConfigStoreError) {
-    return reply.code(503).send(apiError(error.code, 'Secure credential storage is unavailable'));
+    return reply.code(503).send(apiError(error.code, 'Local configuration file is unavailable'));
   }
   throw error;
 }

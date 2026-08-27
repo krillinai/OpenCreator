@@ -103,7 +103,7 @@ function getRuntimeConfig(): Promise<RuntimeConfig> {
 function startRuntimeProcess(): RuntimeProcess {
   const creatorRuntimeRoot = resolveDevCreatorRuntimeRoot();
   const packageManager = packageManagerCommand(
-    process.env.CLAWEE_RUNTIME_DEV_PREPARED === '1'
+    process.env.OPENCREATOR_RUNTIME_DEV_PREPARED === '1'
       ? [
           '--filter',
           '@opencreator/daemon',
@@ -112,7 +112,7 @@ function startRuntimeProcess(): RuntimeProcess {
           '--import',
           'tsx',
           'src/main.ts',
-          '--clawee-enterprise-config=.runtime/config.toml'
+          '--opencreator-enterprise-config=.runtime/config.toml'
         ]
       : [
           '--filter',

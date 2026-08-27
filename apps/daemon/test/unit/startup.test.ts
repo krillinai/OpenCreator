@@ -131,8 +131,7 @@ describe('daemon production startup', () => {
       {
         OPENCREATOR_ENTERPRISE_E2E_RUN_ID:
           '123e4567-e89b-42d3-a456-426614174000'
-      },
-      { OPENCREATOR_ENTERPRISE_KEYRING_SERVICE: 'arbitrary-service' }
+      }
     ]) {
       expect(() => resolveProductionServerEnvironment(env)).toThrow(
         'ENTERPRISE_ENV_CONFIG_FORBIDDEN'

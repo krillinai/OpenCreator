@@ -15,6 +15,8 @@ export type DesktopUpdaterState =
 type UpdaterLike = {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  allowDowngrade?: boolean;
+  channel?: string | null;
   on(event: string, listener: (...args: any[]) => void): unknown;
   removeListener(event: string, listener: (...args: any[]) => void): unknown;
   checkForUpdates(): Promise<unknown>;
@@ -36,6 +38,8 @@ export function startUpdater(input: {
   prepareInstall?(): Promise<void>;
   recoverAfterInstallFailure?(): Promise<void>;
   setAllowQuit?(allowed: boolean): void;
+  platform?: NodeJS.Platform;
+  arch?: string;
 }): DesktopUpdaterController {
   const updater = input.updater ?? electronUpdater.autoUpdater;
   const isPackaged = input.isPackaged ?? app.isPackaged;
@@ -56,6 +60,13 @@ export function startUpdater(input: {
 
   updater.autoDownload = false;
   updater.autoInstallOnAppQuit = false;
+  if (
+    (input.platform ?? process.platform) === 'darwin'
+    && (input.arch ?? process.arch) === 'x64'
+  ) {
+    updater.channel = 'latest-x64';
+    updater.allowDowngrade = false;
+  }
 
   const fail = async (
     context: string,

@@ -28,6 +28,7 @@ const legacyResultArtifactKinds = new Set([
   'horizontal_video',
   'vertical_video',
   'cover_image',
+  'generated_image',
   'clip_video',
   'stickman_video'
 ]);

@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import {
   createCreatorServicesConfigStoreWithTextModelFallback,
   createCreatorServicesConfigStore,
+  createFileCreatorServicesConfigStore,
   CreatorServicesConfigStoreError,
   presentCreatorServicesConfig,
   retainCreatorServicesCredentials,
@@ -10,6 +14,13 @@ import {
 } from '../../src/creator-services/config-store.js';
 
 describe('CreatorServicesConfigStore', () => {
+  let root: string | undefined;
+
+  afterEach(() => {
+    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+    root = undefined;
+  });
+
   it('returns KrillinAI-compatible defaults when no credential is saved', async () => {
     const store = createCreatorServicesConfigStore({
       getPassword: vi.fn(async () => null),
@@ -20,7 +31,7 @@ describe('CreatorServicesConfigStore', () => {
     await expect(store.read()).resolves.toEqual(createDefaultCreatorServicesConfig());
   });
 
-  it('writes and reads the full configuration through secure storage', async () => {
+  it('writes and reads the full configuration through its persistence entry', async () => {
     let saved: string | null = null;
     const store = createCreatorServicesConfigStore({
       getPassword: vi.fn(async () => saved),
@@ -40,6 +51,25 @@ describe('CreatorServicesConfigStore', () => {
     expect(saved).toContain('sk-private');
     await expect(store.reset()).resolves.toEqual(createDefaultCreatorServicesConfig());
     expect(saved).toBeNull();
+  });
+
+  it('persists all provider settings in a local JSON configuration file', async () => {
+    root = mkdtempSync(join(tmpdir(), 'opencreator-creator-services-'));
+    const path = join(root, 'config', 'creator-services.json');
+    const store = createFileCreatorServicesConfigStore(path);
+    const config = createDefaultCreatorServicesConfig();
+    config.image.provider = 'gemini';
+    config.image.gemini.apiKey = 'gemini-file-key';
+
+    await store.write(config);
+
+    await expect(store.read()).resolves.toEqual(config);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
+      image: {
+        provider: 'gemini',
+        gemini: { apiKey: 'gemini-file-key' }
+      }
+    });
   });
 
   it('redacts and retains credentials for every image and video provider', () => {
@@ -208,7 +238,7 @@ describe('CreatorServicesConfigStore', () => {
     });
   });
 
-  it('does not expose malformed secure-storage values', async () => {
+  it('does not expose malformed stored values', async () => {
     const store = createCreatorServicesConfigStore({
       getPassword: vi.fn(async () => '{"llm":true}'),
       setPassword: vi.fn(async () => undefined),

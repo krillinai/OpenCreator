@@ -47,10 +47,29 @@ describe('KrillinAI transcription provider resolution', () => {
 
   it('does not claim a local fallback when the runtime did not package one', () => {
     const config = createDefaultCreatorServicesConfig();
-    const resolved = resolveKrillinTranscriptionConfig(config, manifestWithLocal());
+    const resolved = resolveKrillinTranscriptionConfig(
+      config,
+      manifestWithLocal(),
+      'linux',
+      'x64'
+    );
 
     expect(resolved).toBe(config);
     expect(resolved.transcription.provider).toBe('openai');
+  });
+
+  it('selects on-demand WhisperKit on Apple Silicon without packaging the model', () => {
+    const config = createDefaultCreatorServicesConfig();
+    const resolved = resolveKrillinTranscriptionConfig(
+      config,
+      manifestWithLocal(),
+      'darwin',
+      'arm64'
+    );
+
+    expect(resolved).not.toBe(config);
+    expect(resolved.transcription.provider).toBe('whisperkit');
+    expect(resolved.transcription.whisperKit.model).toBe('large-v2');
   });
 
   it('uses the packaged whisper.cpp model in the effective KrillinAI config', () => {

@@ -117,7 +117,7 @@ describe('codex app-server runner', () => {
       expect.objectContaining({
         method: 'thread/start',
         params: expect.objectContaining({
-          sandbox: 'danger-full-access',
+          permissions: ':danger-full-access',
           approvalPolicy: 'never'
         })
       }),
@@ -157,7 +157,7 @@ describe('codex app-server runner', () => {
         method: 'thread/resume',
         params: expect.objectContaining({
           threadId: 'codex-thread-existing',
-          sandbox: 'danger-full-access',
+          permissions: ':danger-full-access',
           approvalPolicy: 'never',
           excludeTurns: true
         })

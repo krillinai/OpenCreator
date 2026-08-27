@@ -1382,6 +1382,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.video-translation-steps.image-generation-steps ol {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .stickman-tool-stack .creator-tool-steps ol {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -2044,11 +2048,24 @@
   background: var(--surface-2);
 }
 
+.image-generation-result-grid article > .video-result-player-status {
+  width: 100%;
+  aspect-ratio: 1;
+}
+
 .image-generation-result-grid[data-ratio="3:2"] img {
   aspect-ratio: 3 / 2;
 }
 
+.image-generation-result-grid[data-ratio="3:2"] article > .video-result-player-status {
+  aspect-ratio: 3 / 2;
+}
+
 .image-generation-result-grid[data-ratio="2:3"] img {
+  aspect-ratio: 2 / 3;
+}
+
+.image-generation-result-grid[data-ratio="2:3"] article > .video-result-player-status {
   aspect-ratio: 2 / 3;
 }
 
@@ -2122,6 +2139,68 @@
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .image-generation-workspace-page {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+  }
+
+  .image-generation-workspace-page .creator-workspace-layout {
+    min-width: 0;
+    height: auto;
+    min-height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .image-generation-workspace-page .creator-workspace-main {
+    overflow: visible;
+    border-right: 0;
+  }
+
+  .image-generation-workspace-page .creator-workspace-header {
+    padding: 0 16px;
+  }
+
+  .image-generation-workspace-page .creator-workspace-content {
+    overflow: visible;
+    padding: 16px;
+    scrollbar-gutter: auto;
+  }
+
+  .image-generation-workspace-page .creator-tool-panel {
+    padding: 16px;
+  }
+
+  .image-generation-workspace-page .creator-task-final-grid,
+  .image-generation-workspace-page .media-generation-option-grid,
+  .image-generation-workspace-page .image-generation-result-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .image-generation-workspace-page .media-generation-provider-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .image-generation-workspace-page .media-generation-output-panel .creator-tool-panel-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .image-generation-workspace-page .media-generation-output-panel .video-result-version {
+    align-self: flex-start;
+  }
+
+  .image-generation-workspace-page .creator-agent-panel {
+    min-width: 0;
+    height: auto;
+    min-height: 640px;
+    border-top: 1px solid var(--border-hairline);
+    border-left: 0;
+  }
 }
 
 .video-generation-result {

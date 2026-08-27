@@ -1,7 +1,7 @@
-import { AsyncEntry } from '@napi-rs/keyring';
-
-const SERVICE = 'com.opencreator.codex-provider';
-const ACCOUNT = 'default';
+import {
+  readPrivateJsonFile,
+  writePrivateJsonFile
+} from '../config/private-json-file.js';
 
 type CredentialEntry = {
   getPassword(): Promise<string | null | undefined>;
@@ -32,8 +32,30 @@ export function createCodexProviderCredentialStore(
   };
 }
 
-export function createSystemCodexProviderCredentialStore(): CodexProviderCredentialStore {
-  return createCodexProviderCredentialStore(new AsyncEntry(SERVICE, ACCOUNT));
+export function createFileCodexProviderCredentialStore(
+  path: string
+): CodexProviderCredentialStore {
+  return {
+    async readApiKey() {
+      const value = await readPrivateJsonFile(path);
+      if (value === undefined) return undefined;
+      if (
+        !isRecord(value)
+        || value.version !== 1
+        || typeof value.apiKey !== 'string'
+      ) {
+        throw new Error('CODEX_PROVIDER_CONFIG_INVALID');
+      }
+      const apiKey = value.apiKey.trim();
+      return apiKey.length === 0 ? undefined : apiKey;
+    },
+    async writeApiKey(apiKey) {
+      await writePrivateJsonFile(path, {
+        version: 1,
+        apiKey
+      });
+    }
+  };
 }
 
 export async function readCodexProviderApiKey(input: {
@@ -65,8 +87,12 @@ export async function readCodexProviderApiKey(input: {
     try {
       await input.store.writeApiKey(legacyApiKey);
     } catch {
-      // Keep using the legacy value until secure migration succeeds.
+      // Keep using the legacy value until file migration succeeds.
     }
   }
   return legacyApiKey;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -3,7 +3,6 @@ import type {
   ScheduleBindingRepairResult,
   ScheduleCoordinator
 } from './scheduler/coordinator.js';
-import { resolveEnterpriseCredentialIdentity } from './enterprise/credential-store-2026-07-30.js';
 import { readEnterpriseClientConfig } from './enterprise/client-config-2026-08-06.js';
 
 const ENTERPRISE_CONFIG_ARGUMENT = '--opencreator-enterprise-config';
@@ -72,11 +71,6 @@ export function resolveEnterpriseStartupArguments(
   ) {
     throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
   }
-  try {
-    resolveEnterpriseCredentialIdentity(runId);
-  } catch {
-    throw new Error('ENTERPRISE_E2E_CONFIG_FORBIDDEN');
-  }
   return {
     enterpriseConfigPath: configPath,
     enterpriseOrigin,
@@ -118,9 +112,7 @@ function assertEnterpriseEnvironmentUnused(env: NodeJS.ProcessEnv): void {
   const forbiddenKeys = [
     'OPENCREATOR_ENTERPRISE_ORIGIN',
     'OPENCREATOR_ENTERPRISE_E2E_AUTHORIZED',
-    'OPENCREATOR_ENTERPRISE_E2E_RUN_ID',
-    'OPENCREATOR_ENTERPRISE_KEYRING_SERVICE',
-    'OPENCREATOR_ENTERPRISE_KEYRING_ACCOUNT'
+    'OPENCREATOR_ENTERPRISE_E2E_RUN_ID'
   ];
   if (forbiddenKeys.some(key => hasValue(env[key]))) {
     throw new Error('ENTERPRISE_ENV_CONFIG_FORBIDDEN');
