@@ -87,6 +87,23 @@ describe('VideoTranslationAgentPanel', () => {
     ));
   });
 
+  it('Agent 提交失败时保留输入，并在发送框旁显示真实错误', async () => {
+    const runAgentTurn = vi.fn(async () => {
+      throw new Error('Creator Agent is not ready');
+    });
+    renderPanel({
+      runAgentTurn,
+      getAgentTimeline: vi.fn(async () => emptyTimeline())
+    });
+
+    const composer = screen.getByRole('textbox', { name: '告诉 Agent 你的要求' });
+    fireEvent.change(composer, { target: { value: '合成横屏视频' } });
+    fireEvent.click(screen.getByRole('button', { name: '发送给 Agent' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Creator Agent is not ready');
+    expect(composer).toHaveValue('合成横屏视频');
+  });
+
   it('从真实 Creator Thread 状态恢复完全访问权限', async () => {
     const currentTimeline = timeline();
     currentTimeline.session!.sandbox = 'danger-full-access';
@@ -340,6 +357,87 @@ describe('VideoTranslationAgentPanel', () => {
     expect(screen.queryByText('开始生成字幕')).not.toBeInTheDocument();
     expect(screen.queryByText('我已从工作台开始视频字幕翻译。')).not.toBeInTheDocument();
     await waitFor(() => expect(getAgentTimeline).toHaveBeenCalledTimes(1));
+  });
+
+  it('在阶段卡上提供终止和继续操作', async () => {
+    const runningJob = job();
+    runningJob.status = 'running';
+    runningJob.stages.push({
+      id: 'stage_control',
+      jobId: runningJob.id,
+      stageId: 'subtitle',
+      executor: 'krillinai',
+      status: 'running',
+      dispatchStatus: 'claimed',
+      claimOwner: 'scheduler_1',
+      claimExpiresAt: '2026-08-28T06:01:00.000Z',
+      attempt: 1,
+      idempotencyKey: 'stage-control',
+      progress: { percent: 25 },
+      errorCode: null,
+      errorMessage: null,
+      startedAt: '2026-08-28T06:00:00.000Z',
+      finishedAt: null
+    });
+    const onCancelTask = vi.fn();
+    const view = render(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          key="running-control"
+          initialJob={runningJob}
+          service={{
+            applyAction: vi.fn(),
+            runAgentTurn: vi.fn(),
+            getAgentTimeline: vi.fn(async () => emptyTimeline())
+          } as never}
+        >
+          <VideoTranslationAgentPanel
+            stepLabel="翻译设置"
+            contextSummary="英文到中文"
+            onCancelTask={onCancelTask}
+          />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '终止字幕翻译' }));
+    expect(onCancelTask).toHaveBeenCalledTimes(1);
+
+    const canceledJob = {
+      ...runningJob,
+      status: 'canceled' as const,
+      revision: runningJob.revision + 1,
+      stages: [{
+        ...runningJob.stages[0]!,
+        status: 'canceled' as const,
+        dispatchStatus: 'finished' as const,
+        finishedAt: '2026-08-28T06:00:10.000Z'
+      }]
+    };
+    const onResumeTask = vi.fn();
+    view.rerender(
+      <LanguageProvider initialPreference="zh-CN">
+        <CreatorSessionProvider
+          key="canceled-control"
+          initialJob={canceledJob}
+          service={{
+            applyAction: vi.fn(),
+            runAgentTurn: vi.fn(),
+            getAgentTimeline: vi.fn(async () => emptyTimeline())
+          } as never}
+        >
+          <VideoTranslationAgentPanel
+            stepLabel="翻译设置"
+            contextSummary="英文到中文"
+            onResumeTask={onResumeTask}
+          />
+        </CreatorSessionProvider>
+      </LanguageProvider>
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '继续字幕翻译' }));
+    expect(onResumeTask).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('已终止，可继续')).toBeInTheDocument();
   });
 
   it('任务失败后保留 Runtime 提供的最后进度', async () => {

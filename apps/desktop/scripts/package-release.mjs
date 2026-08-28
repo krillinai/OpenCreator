@@ -127,6 +127,13 @@ await runStage(
 
 const packageRoot = findFreshPackageRoot(candidates);
 const webBuild = hashDirectory(resolve(rootDir, 'apps/web/dist'));
+const creatorAgentRuntime = hashDirectory(resolve(
+  desktopDir,
+  '.pack',
+  'daemon',
+  'runtime',
+  'opencreator-runtime'
+));
 const codexRuntimeManifest = JSON.parse(readFileSync(
   resolve(desktopDir, '.pack', 'codex-runtime', 'manifest.json'),
   'utf8'
@@ -152,6 +159,8 @@ const manifest = {
   packageRootRelative: relative(rootDir, packageRoot),
   webBuildHash: webBuild.hash,
   webFileCount: webBuild.fileCount,
+  creatorAgentRuntimeHash: creatorAgentRuntime.hash,
+  creatorAgentRuntimeFileCount: creatorAgentRuntime.fileCount,
   codexRuntimeVersion: codexRuntimeManifest.version,
   codexRuntimeCommit: codexRuntimeManifest.commit,
   codexRuntimeBinarySha256: codexRuntimeManifest.binary.sha256,
@@ -204,6 +213,10 @@ function electronBuilderArguments(packageMode, targetPlatform, targetArch, baseE
   const nextEnv = { ...baseEnv };
   if (packageMode === 'dir') {
     args.push('--dir', platformFlag(targetPlatform), `--${targetArch}`);
+    if (targetPlatform === 'darwin') {
+      args.push('--config.mac.identity=null', '--config.mac.notarize=false');
+      nextEnv.CSC_IDENTITY_AUTO_DISCOVERY = 'false';
+    }
   } else if (targetPlatform === 'darwin') {
     args.push('--mac', 'dmg', 'zip', `--${targetArch}`);
     if (targetArch === 'x64') {

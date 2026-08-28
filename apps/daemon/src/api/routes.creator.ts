@@ -9,6 +9,7 @@ import type {
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJson,
+  CreatorStageRun,
   RuntimeErrorCode
 } from '@opencreator/protocol';
 import { createHash } from 'node:crypto';
@@ -39,6 +40,7 @@ import {
   type VideoTranslationWorkflow
 } from '../creator/templates/video-translation-actions.js';
 import type { CreatorProjectCoverService } from '../creator/project-cover.js';
+import type { CreatorStageRunner } from '../creator/stage-runner.js';
 import {
   CREATOR_SOURCE_UPLOAD_CONTENT_TYPE,
   CreatorSourceUploadError,
@@ -56,6 +58,7 @@ export async function registerCreatorRoutes(
     projectCoverService?: CreatorProjectCoverService;
     sourceUploadService?: CreatorSourceUploadService;
     dispatcher: CreatorCommandDispatcher;
+    stageRunner?: Pick<CreatorStageRunner, 'cancel'>;
   }
 ): Promise<void> {
   if (options.sourceUploadService !== undefined) {
@@ -150,6 +153,125 @@ export async function registerCreatorRoutes(
       return reply.code(404).send(apiError('creator_job_not_found', 'Creator job not found'));
     }
     return { job };
+  });
+
+  server.post('/creator/jobs/:id/cancel', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      if (options.stageRunner === undefined) {
+        throw new CreatorServiceError(
+          'creator_job_control_unavailable',
+          'Creator job control is unavailable'
+        );
+      }
+      const job = requireCreatorJob(service, id);
+      const activeStage = latestStageMatching(job, stage => (
+        stage.status === 'queued' || stage.status === 'running'
+      ));
+      if (activeStage === undefined) {
+        const latest = job.stages.at(-1);
+        if (latest?.status === 'canceled') {
+          return {
+            job,
+            stage: latest,
+            control: 'canceled'
+          };
+        }
+        throw new CreatorServiceError(
+          'creator_job_not_running',
+          'Creator job has no active stage'
+        );
+      }
+      const stage = options.stageRunner.cancel(activeStage.id);
+      if (stage === undefined) {
+        throw new CreatorServiceError(
+          'creator_job_not_running',
+          'Creator job has no active stage'
+        );
+      }
+      const latestJob = requireCreatorJob(service, id);
+      const canceling = stage.status === 'queued' || stage.status === 'running';
+      return reply.code(canceling ? 202 : 200).send({
+        job: latestJob,
+        stage,
+        control: canceling ? 'canceling' : 'canceled'
+      });
+    } catch (error) {
+      return sendCreatorError(reply, error);
+    }
+  });
+
+  server.post('/creator/jobs/:id/resume', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      if (options.stageRunner === undefined) {
+        throw new CreatorServiceError(
+          'creator_job_control_unavailable',
+          'Creator job control is unavailable'
+        );
+      }
+      let job = requireCreatorJob(service, id);
+      const latest = job.stages.at(-1);
+      if (latest !== undefined && isAlreadyResumed(job, latest)) {
+        return {
+          job,
+          stage: latest,
+          control: 'resumed'
+        };
+      }
+      if (latest === undefined || (latest.status !== 'canceled' && latest.status !== 'interrupted')) {
+        throw new CreatorServiceError(
+          'creator_job_not_resumable',
+          'Creator job has no canceled or interrupted stage to resume'
+        );
+      }
+      if (job.templateId === 'video-translation' && options.videoTranslationWorkflow !== undefined) {
+        try {
+          await options.videoTranslationWorkflow.validate(job);
+        } catch (error) {
+          publishSnapshotIfChanged(events, service, job);
+          throw error;
+        }
+        job = requireCreatorJob(service, id);
+      }
+      const target = job.stages.at(-1);
+      if (target?.id !== latest.id || (target.status !== 'canceled' && target.status !== 'interrupted')) {
+        throw new CreatorServiceError(
+          'creator_job_not_resumable',
+          'Creator job state changed before it could be resumed'
+        );
+      }
+      const result = options.dispatcher.dispatch(id, {
+        action: 'run-stage',
+        expectedRevision: job.revision,
+        idempotencyKey: `resume:${target.id}`,
+        input: {
+          stageId: target.stageId,
+          ...(target.progress.workflow === true ? { workflow: true } : {}),
+          ...(typeof target.progress.workflowParentStageRunId === 'string'
+            ? { workflowParentStageRunId: target.progress.workflowParentStageRunId }
+            : {}),
+          resumedFromStageRunId: target.id
+        }
+      }, 'user');
+      const resumedJob = requireCreatorJob(service, id);
+      const resumedStage = result.commandReceipt.stageRunId === null
+        ? undefined
+        : resumedJob.stages.find(stage => stage.id === result.commandReceipt.stageRunId);
+      if (resumedStage === undefined) {
+        throw new CreatorServiceError(
+          'creator_job_not_resumable',
+          'Creator job resume did not create a stage run'
+        );
+      }
+      return reply.code(202).send({
+        job: resumedJob,
+        stage: resumedStage,
+        control: 'resumed'
+      });
+    } catch (error) {
+      return sendCreatorError(reply, error);
+    }
   });
 
   server.get('/creator/jobs/:id/cover', async (request, reply) => {
@@ -545,10 +667,14 @@ function sendCreatorError(reply: FastifyReply, error: unknown) {
   if (error instanceof CreatorServiceError) {
     const status = error.code === 'creator_job_not_found'
       ? 404
+      : error.code === 'creator_job_control_unavailable'
+        ? 503
       : error.code === 'creator_agent_unavailable'
         ? 503
       : error.code === 'creator_agent_steer_unavailable'
         || error.code === 'creator_agent_not_running'
+        || error.code === 'creator_job_not_running'
+        || error.code === 'creator_job_not_resumable'
         ? 409
       : error.code === 'creator_approval_not_found'
         ? 404
@@ -568,6 +694,47 @@ function sendCreatorError(reply: FastifyReply, error: unknown) {
       .send(apiError(error.code as RuntimeErrorCode, error.message));
   }
   throw error;
+}
+
+function requireCreatorJob(service: CreatorService, jobId: string): CreatorJob {
+  const job = service.getJob(jobId);
+  if (job === undefined) {
+    throw new CreatorServiceError('creator_job_not_found', 'Creator job not found');
+  }
+  return job;
+}
+
+function latestStageMatching(
+  job: CreatorJob,
+  predicate: (stage: CreatorStageRun) => boolean
+): CreatorStageRun | undefined {
+  return [...job.stages].reverse().find(predicate);
+}
+
+function isAlreadyResumed(job: CreatorJob, latest: CreatorStageRun): boolean {
+  if (
+    latest.status === 'canceled'
+    || latest.status === 'interrupted'
+    || latest.status === 'failed'
+  ) return false;
+  return typeof latest.progress.resumedFromStageRunId === 'string'
+    && job.stages.some(stage => stage.id === latest.progress.resumedFromStageRunId);
+}
+
+function publishSnapshotIfChanged(
+  events: CreatorEventHub,
+  service: CreatorService,
+  before: CreatorJob
+): void {
+  const latest = service.getJob(before.id);
+  if (latest === undefined || latest.revision === before.revision) return;
+  events.publish({
+    id: `snapshot:${latest.revision}`,
+    jobId: latest.id,
+    revision: latest.revision,
+    kind: 'snapshot_changed',
+    payload: { revision: latest.revision }
+  });
 }
 
 function fallbackIdempotencyKey(

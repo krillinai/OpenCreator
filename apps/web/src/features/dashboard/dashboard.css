@@ -5410,6 +5410,26 @@
   opacity: 0.62;
 }
 
+.video-translation-primary-action[data-intent="danger"] {
+  border-color: color-mix(in srgb, var(--destructive) 72%, var(--border));
+  background: var(--destructive-soft);
+  color: var(--destructive);
+}
+
+.video-translation-primary-action[data-intent="danger"]:hover:not(:disabled) {
+  border-color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 18%, var(--surface));
+  color: color-mix(in srgb, var(--destructive) 88%, #fff);
+}
+
+.video-translation-primary-action[data-intent="danger"]:focus-visible {
+  outline-color: color-mix(in srgb, var(--destructive) 72%, transparent);
+}
+
+.video-translation-task-controls {
+  padding: 0 22px 20px;
+}
+
 .video-translation-run-notice {
   width: min(720px, 100%);
   min-height: 40px;
@@ -6006,11 +6026,40 @@
   color: var(--text);
 }
 
+.video-translation-agent-suggestions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .video-translation-agent-change button:focus-visible,
 .video-translation-agent-proposal button:focus-visible,
 .video-translation-agent-suggestions button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.video-translation-agent-submit-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 12px 10px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.video-translation-agent-submit-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.video-translation-agent-submit-error span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .video-translation-wizard-main[data-phase="result"] {
@@ -6454,7 +6503,7 @@
   color: var(--success);
 }
 
-.video-translation-agent-stage > header > div {
+.video-translation-agent-stage-copy {
   min-width: 0;
   display: grid;
   gap: 3px;
@@ -6474,17 +6523,58 @@
   overflow-wrap: anywhere;
 }
 
-.video-translation-agent-stage > header b {
+.video-translation-agent-stage-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.video-translation-agent-stage-controls b {
   color: var(--accent);
   font-size: 12px;
   font-weight: 650;
 }
 
-.video-translation-agent-stage[data-status="failed"] > header b {
+.video-translation-agent-stage-controls button {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.video-translation-agent-stage-controls button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.video-translation-agent-stage-controls button[data-intent="danger"] {
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
+  background: var(--destructive-soft);
+  color: var(--destructive);
+}
+
+.video-translation-agent-stage-controls button[data-intent="danger"]:hover:not(:disabled) {
+  border-color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 18%, var(--surface));
+  color: color-mix(in srgb, var(--destructive) 88%, #fff);
+}
+
+.video-translation-agent-stage-controls button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.video-translation-agent-stage[data-status="failed"] .video-translation-agent-stage-controls b {
   color: var(--danger);
 }
 
-.video-translation-agent-stage[data-status="succeeded"] > header b {
+.video-translation-agent-stage[data-status="succeeded"] .video-translation-agent-stage-controls b {
   color: var(--success);
 }
 
@@ -6500,7 +6590,7 @@
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
-  transition: width 220ms ease;
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .video-translation-agent-stage[data-status="failed"] .video-translation-agent-stage-progress > span {
@@ -6509,6 +6599,116 @@
 
 .video-translation-agent-stage[data-status="succeeded"] .video-translation-agent-stage-progress > span {
   background: var(--success);
+}
+
+.video-translation-confirm-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, #000 48%, transparent);
+}
+
+.video-translation-confirm-dialog {
+  width: min(460px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 18px 60px color-mix(in srgb, #000 28%, transparent);
+}
+
+.video-translation-confirm-dialog > header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  padding: 20px 20px 14px;
+}
+
+.video-translation-confirm-dialog > header > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--destructive-soft);
+  color: var(--destructive);
+}
+
+.video-translation-confirm-dialog h2,
+.video-translation-confirm-dialog p {
+  margin: 0;
+}
+
+.video-translation-confirm-dialog h2 {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.video-translation-confirm-dialog p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.video-translation-confirm-note {
+  display: grid;
+  gap: 4px;
+  margin: 0 20px 18px 66px;
+  padding: 10px 12px;
+  border-left: 3px solid color-mix(in srgb, var(--destructive) 74%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 6%, var(--surface-2));
+}
+
+.video-translation-confirm-note strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.video-translation-confirm-note span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.video-translation-confirm-dialog > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 13px 20px;
+  border-top: 1px solid var(--border-hairline);
+  background: var(--surface-2);
+}
+
+.video-translation-confirm-dialog > footer button {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+}
+
+.video-translation-confirm-dialog > footer button[data-intent="danger"] {
+  border-color: var(--destructive);
+  background: var(--destructive);
+  color: #fff;
+}
+
+.video-translation-confirm-dialog > footer button[data-intent="danger"]:hover {
+  border-color: var(--destructive-hover);
+  background: var(--destructive-hover);
+}
+
+.video-translation-confirm-dialog > footer button[data-intent="danger"]:focus-visible {
+  outline-color: color-mix(in srgb, var(--destructive) 72%, transparent);
 }
 
 .creator-workspace-loading-actions {

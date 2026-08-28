@@ -1,4 +1,5 @@
 import type {
+  CreatorServicesCapabilitiesResponse,
   CreatorServicesConfig,
   CreatorServicesConfigResponse
 } from '@opencreator/protocol';
@@ -10,6 +11,9 @@ export type CreatorServicesSettingsService = ReturnType<typeof createCreatorServ
 
 export function createCreatorServicesService(client: ClientLike) {
   return {
+    getCapabilities(): Promise<CreatorServicesCapabilitiesResponse> {
+      return client.get('/creator-services/capabilities');
+    },
     getConfig(): Promise<CreatorServicesConfigResponse> {
       return client.get('/creator-services/config');
     },

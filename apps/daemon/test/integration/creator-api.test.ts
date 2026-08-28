@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { buildServer } from '../../src/api/server.js';
 import type { AgentRuntimeAdapter } from '../../src/creator/agent/runtime-adapter.js';
+import type { CreatorExecutor } from '../../src/creator/executor.js';
 
 let server: FastifyInstance | undefined;
 let tempDir = '';
@@ -19,6 +20,116 @@ afterEach(async () => {
 });
 
 describe('creator api', () => {
+  it('stops an active translation stage and resumes the workflow from that stage', async () => {
+    let subtitleRuns = 0;
+    const executor: CreatorExecutor = {
+      id: 'krillinai',
+      async run({ stageRun, signal }) {
+        if (stageRun.stageId === 'subtitle') {
+          subtitleRuns += 1;
+          if (subtitleRuns === 1) {
+            await new Promise<void>(resolve => {
+              if (signal.aborted) resolve();
+              else signal.addEventListener('abort', () => resolve(), { once: true });
+            });
+            return { outputs: [] };
+          }
+          return {
+            outputs: [
+              { kind: 'source_video', status: 'completed', path: null },
+              { kind: 'target_subtitle', status: 'completed', path: null }
+            ]
+          };
+        }
+        return {
+          outputs: [{
+            kind: 'horizontal_video',
+            status: 'completed',
+            path: null
+          }]
+        };
+      }
+    };
+    await setupServer({ creatorExecutors: [executor] });
+    const created = await request('POST', '/creator/jobs', {
+      projectId: 'project_job_control',
+      templateId: 'video-translation',
+      state: {
+        sourceType: 'url',
+        sourceUrl: 'https://www.youtube.com/watch?v=job-control',
+        targetLanguage: 'zh_cn',
+        composeVideo: true,
+        videoFormat: 'horizontal'
+      }
+    });
+    const job = created.json().job;
+    const started = await request('POST', `/creator/jobs/${job.id}/actions`, {
+      action: 'run-stage',
+      expectedRevision: job.revision,
+      idempotencyKey: 'start-job-control-workflow',
+      input: { stageId: 'subtitle', workflow: true }
+    });
+    expect(started.statusCode).toBe(200);
+
+    const running = await waitForCreatorJob(job.id, candidate => (
+      candidate.stages.at(-1)?.status === 'running'
+    ));
+    const canceledStageId = running.stages.at(-1).id;
+    const canceled = await request('POST', `/creator/jobs/${job.id}/cancel`);
+    expect(canceled.statusCode).toBe(202);
+    expect(canceled.json()).toMatchObject({
+      control: 'canceling',
+      stage: {
+        id: canceledStageId,
+        progress: { workflow: true, cancelRequested: true }
+      }
+    });
+
+    const stopped = await waitForCreatorJob(job.id, candidate => (
+      candidate.status === 'canceled'
+      && candidate.stages.at(-1)?.status === 'canceled'
+    ));
+    expect(stopped.artifacts).toEqual([]);
+    const repeatedCancel = await request('POST', `/creator/jobs/${job.id}/cancel`);
+    expect(repeatedCancel.statusCode).toBe(200);
+    expect(repeatedCancel.json()).toMatchObject({
+      control: 'canceled',
+      stage: { id: canceledStageId, status: 'canceled' }
+    });
+
+    const resumed = await request('POST', `/creator/jobs/${job.id}/resume`);
+    expect(resumed.statusCode).toBe(202);
+    expect(resumed.json()).toMatchObject({
+      control: 'resumed',
+      stage: {
+        stageId: 'subtitle',
+        progress: {
+          workflow: true,
+          resumedFromStageRunId: canceledStageId
+        }
+      }
+    });
+
+    const completed = await waitForCreatorJob(job.id, candidate => (
+      candidate.status === 'completed'
+      && candidate.stages.at(-1)?.stageId === 'render-horizontal'
+      && candidate.stages.at(-1)?.status === 'succeeded'
+    ));
+    expect(completed.stages.map((stage: { stageId: string; status: string }) => (
+      `${stage.stageId}:${stage.status}`
+    ))).toEqual([
+      'subtitle:canceled',
+      'subtitle:succeeded',
+      'render-horizontal:succeeded'
+    ]);
+    expect(completed.stages[1]).toMatchObject({
+      progress: {
+        workflow: true,
+        resumedFromStageRunId: canceledStageId
+      }
+    });
+  });
+
   it('replays creator job creation after the response is lost', async () => {
     await setupServer();
     const requestBody = {
@@ -446,6 +557,7 @@ async function setupServer(options: {
     hasVideo: boolean;
     hasAudio: boolean;
   }>;
+  creatorExecutors?: CreatorExecutor[];
 } = {}): Promise<void> {
   tempDir = mkdtempSync(join(tmpdir(), 'creator-api-'));
   const config = createDefaultCreatorServicesConfig();
@@ -458,6 +570,9 @@ async function setupServer(options: {
     dataDir: tempDir,
     codexHome: join(tempDir, 'codex-home'),
     creatorAgentRuntime: options.agentRuntime,
+    ...(options.creatorExecutors === undefined
+      ? {}
+      : { creatorExecutors: options.creatorExecutors }),
     ...(options.creatorSourceMediaProbe === undefined
       ? {}
       : { creatorSourceMediaProbe: options.creatorSourceMediaProbe }),
@@ -471,6 +586,19 @@ async function setupServer(options: {
       async writeApiKey() {}
     }
   });
+}
+
+async function waitForCreatorJob(
+  jobId: string,
+  predicate: (job: any) => boolean
+): Promise<any> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const response = await request('GET', `/creator/jobs/${jobId}`);
+    const job = response.json().job;
+    if (predicate(job)) return job;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for Creator job ${jobId}`);
 }
 
 async function waitForApiApproval(jobId: string) {

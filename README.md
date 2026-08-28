@@ -165,7 +165,7 @@ pnpm install
 pnpm web:dev
 ```
 
-Open `http://127.0.0.1:9000/`. The development server starts the local daemon on demand and injects a temporary Runtime token through a same-origin proxy, so no connection token needs to be copied manually.
+Open `http://127.0.0.1:19861/`. The development server starts the local daemon on demand and injects a temporary Runtime token through a same-origin proxy, so no connection token needs to be copied manually.
 
 On first launch, the Runtime prepares a default project. The composer is ready as soon as the connection completes. To work on the daemon only:
 
@@ -367,7 +367,7 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 <details>
 <summary><strong>The page remains stuck on "Connecting to the local runtime"</strong></summary>
 
-Confirm that `pnpm web:dev` is still running, then open `http://127.0.0.1:9000/.opencreator/runtime/healthz`. A healthy response is `{"ok":true}`. If port 9000 is occupied, stop the old process and try again.
+Confirm that `pnpm web:dev` is still running, then open `http://127.0.0.1:19861/.opencreator/runtime/healthz`. A healthy response is `{"ok":true}`. If port 19861 is occupied, stop the old process and try again.
 
 </details>
 

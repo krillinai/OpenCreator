@@ -109,6 +109,9 @@ export function createCreatorStageRunner(input: {
       active.set(stageRun.id, controller);
       const workdir = join(input.workRoot, jobId, stageRun.id);
       await mkdir(workdir, { recursive: true });
+      if (controller.signal.aborted) {
+        throw new CreatorExecutorError('creator_stage_canceled', 'Creator stage was canceled');
+      }
       updateStageRun({ id: stageRun.id, status: 'running' });
       updateJob(input.repository, job, 'running', { currentStage: stageId }, input.onJobChanged);
       const result = await executor.run({
@@ -183,7 +186,11 @@ export function createCreatorStageRunner(input: {
       if (stageRun !== undefined) {
         const canceled = active.get(stageRun.id)?.signal.aborted === true;
         const failureCode = canceled ? 'creator_stage_canceled' : errorCode(error);
-        const failureMessage = error instanceof Error ? error.message : 'Creator stage failed';
+        const failureMessage = canceled
+          ? 'Creator stage was canceled'
+          : error instanceof Error
+            ? error.message
+            : 'Creator stage failed';
         const configurationInput = creatorConfigurationInput(failureCode, failureMessage);
         updateStageRun({
           id: stageRun.id,
@@ -234,11 +241,49 @@ export function createCreatorStageRunner(input: {
   return {
     run,
     runStageRun,
-    cancel(stageRunId: string): boolean {
+    cancel(stageRunId: string): CreatorStageRun | undefined {
+      const stage = input.repository.getStageRun(stageRunId);
+      if (stage === undefined) return undefined;
+      if (['succeeded', 'failed', 'canceled', 'interrupted'].includes(stage.status)) {
+        return stage;
+      }
       const controller = active.get(stageRunId);
-      if (controller === undefined) return false;
-      controller.abort();
-      return true;
+      if (controller !== undefined) {
+        const canceling = updateStageRun({
+          id: stageRunId,
+          status: stage.status,
+          progress: { cancelRequested: true }
+        });
+        controller.abort();
+        return canceling;
+      }
+      let canceled: CreatorStageRun | undefined;
+      input.repository.transaction(() => {
+        const current = input.repository.getStageRun(stageRunId);
+        if (current === undefined) return;
+        if (['succeeded', 'failed', 'canceled', 'interrupted'].includes(current.status)) {
+          canceled = current;
+          return;
+        }
+        canceled = updateStageRun({
+          id: stageRunId,
+          status: 'canceled',
+          progress: { cancelRequested: true },
+          errorCode: 'creator_stage_canceled',
+          errorMessage: 'Creator stage was canceled'
+        });
+        const job = input.repository.getJob(current.jobId);
+        if (job !== undefined) {
+          updateJob(
+            input.repository,
+            job,
+            'canceled',
+            { currentStage: current.stageId },
+            input.onJobChanged
+          );
+        }
+      });
+      return canceled;
     },
     retry(stageRunId: string): Promise<CreatorStageRun> {
       const stage = input.repository.getStageRun(stageRunId);

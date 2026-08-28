@@ -38,6 +38,8 @@ type CreatorSessionContextValue = {
   clearError(): void;
   applyRemoteSnapshot(job: CreatorJob): void;
   applyAction(request: Omit<CreatorActionRequest, 'expectedRevision'>): Promise<void>;
+  cancelJob(): Promise<void>;
+  resumeJob(): Promise<void>;
   uploadSourceVideo(file: File): Promise<void>;
   openArtifact(artifactId: string): Promise<Response>;
   agentSession: CreatorAgentSession | null;
@@ -75,6 +77,8 @@ export function CreatorSessionProvider(props: {
     | 'getJob'
     | 'openArtifact'
     | 'uploadSourceVideo'
+    | 'cancelJob'
+    | 'resumeJob'
     | 'subscribeJobEvents'>>;
   children: ReactNode;
 }) {
@@ -348,6 +352,39 @@ export function CreatorSessionProvider(props: {
     }
   }, [ensurePersistedJob, flush, props.service]);
 
+  const cancelJob = useCallback(async () => {
+    if (props.service.cancelJob === undefined) {
+      throw new Error('Creator job cancellation is unavailable');
+    }
+    try {
+      await ensurePersistedJob();
+      const response = await props.service.cancelJob(confirmedRef.current.id);
+      confirmedRef.current = response.job;
+      setConfirmedJob(response.job);
+      setError(null);
+    } catch (cause) {
+      setError(toSessionError(cause));
+      throw cause;
+    }
+  }, [ensurePersistedJob, props.service]);
+
+  const resumeJob = useCallback(async () => {
+    if (props.service.resumeJob === undefined) {
+      throw new Error('Creator job resume is unavailable');
+    }
+    try {
+      await flush();
+      await ensurePersistedJob();
+      const response = await props.service.resumeJob(confirmedRef.current.id);
+      confirmedRef.current = response.job;
+      setConfirmedJob(response.job);
+      setError(null);
+    } catch (cause) {
+      setError(toSessionError(cause));
+      throw cause;
+    }
+  }, [ensurePersistedJob, flush, props.service]);
+
   const openArtifact = useCallback((artifactId: string) => {
     if (props.service.openArtifact === undefined) {
       return Promise.reject(new Error('Creator artifact transport is unavailable'));
@@ -454,6 +491,8 @@ export function CreatorSessionProvider(props: {
     clearError,
     applyRemoteSnapshot,
     applyAction,
+    cancelJob,
+    resumeJob,
     uploadSourceVideo,
     openArtifact,
     agentSession,
@@ -465,7 +504,7 @@ export function CreatorSessionProvider(props: {
     steerAgentTurn,
     interruptAgentTurn,
     respondAgentApproval
-  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, respondAgentApproval, runAgentTurn, steerAgentTurn, turns, updateDraft, uploadSourceVideo]);
+  }), [agentBusy, agentSession, applyAction, applyRemoteSnapshot, approvals, cancelJob, clearError, confirmedJob, conflictedFields, draft, error, flush, interruptAgentTurn, items, openArtifact, respondAgentApproval, resumeJob, runAgentTurn, steerAgentTurn, turns, updateDraft, uploadSourceVideo]);
 
   return (
     <CreatorSessionContext.Provider value={value}>

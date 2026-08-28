@@ -57,6 +57,10 @@ const enterpriseGatewayConfigPath = join(
   enterpriseGatewayConfigFilename
 );
 const sourceWebDir = resolve(desktopDir, '../web/dist');
+const sourceCreatorAgentRuntimeDir = resolve(
+  desktopDir,
+  '../daemon/runtime/opencreator-runtime'
+);
 const executable = packagedExecutable(packageRoot);
 
 assertExists(packageRoot);
@@ -72,6 +76,8 @@ assertExists(join(
   'better_sqlite3.node'
 ));
 assertExists(join(webDir, 'index.html'));
+assertExists(join(daemonDir, 'runtime', 'opencreator-runtime', 'SKILL.md'));
+assertExists(join(daemonDir, 'runtime', 'opencreator-runtime', 'manifest.json'));
 assertExists(enterpriseGatewayConfigPath);
 
 assertAsarContents();
@@ -212,6 +218,36 @@ function assertDaemonContents() {
   assertExists(join(protocolDir, 'dist', 'index.js'));
   if (existsSync(join(protocolDir, 'src'))) {
     throw new Error('Packaged Daemon Protocol contains TypeScript runtime sources');
+  }
+
+  const packagedCreatorAgentRuntime = hashDirectory(
+    join(daemonDir, 'runtime', 'opencreator-runtime')
+  );
+  const sourceCreatorAgentRuntime = hashDirectory(sourceCreatorAgentRuntimeDir);
+  const firstDifferentPath = findFirstDifferentPath(
+    sourceCreatorAgentRuntime.files,
+    packagedCreatorAgentRuntime.files
+  );
+  if (firstDifferentPath !== undefined) {
+    throw new Error(
+      `Packaged Creator Agent Runtime file list differs from source at: ${firstDifferentPath}`
+    );
+  }
+  if (sourceCreatorAgentRuntime.hash !== packagedCreatorAgentRuntime.hash) {
+    throw new Error(
+      'Packaged Creator Agent Runtime contents differ from apps/daemon/runtime/opencreator-runtime'
+    );
+  }
+  if (
+    typeof manifest.packageRoot === 'string'
+    && (
+      manifest.creatorAgentRuntimeHash !== sourceCreatorAgentRuntime.hash
+      || manifest.creatorAgentRuntimeFileCount !== sourceCreatorAgentRuntime.fileCount
+    )
+  ) {
+    throw new Error(
+      'Desktop build manifest Creator Agent Runtime hash does not match the source runtime'
+    );
   }
 }
 

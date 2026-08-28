@@ -9,11 +9,12 @@ import {
   Bot,
   CheckCircle2,
   CircleDot,
+  CircleStop,
   LoaderCircle,
   MessageSquareText,
+  Play,
   ServerOff,
   Sparkles,
-  Square,
   XCircle
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -28,6 +29,7 @@ export type VideoTranslationAgentQuickAction = {
   kind: 'action' | 'agent';
   prompt?: string;
   onAction?(): void;
+  disabled?: boolean;
 };
 
 type SyncEvent = {
@@ -77,11 +79,15 @@ export default function VideoTranslationAgentPanel(props: {
   promptHint?: string;
   currentIssue?: string;
   quickActions?: VideoTranslationAgentQuickAction[];
+  onCancelTask?(): void;
+  onResumeTask?(): void;
+  taskControlPending?: 'canceling' | 'resuming';
 }) {
   const l = useLocalizedCopy();
   const session = useOptionalCreatorSession();
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [permission, setPermission] = useState<ToolAgentPermission>('full-access');
   const sendingRef = useRef(false);
   const permissionSessionRef = useRef<string | null>(null);
@@ -112,6 +118,17 @@ export default function VideoTranslationAgentPanel(props: {
     )),
     [session?.job.stages]
   );
+  const activeTaskStage = useMemo(
+    () => [...(session?.job.stages ?? [])].reverse().find(stage => (
+      stage.status === 'queued' || stage.status === 'running'
+    )),
+    [session?.job.stages]
+  );
+  const latestTaskStage = session?.job.stages.at(-1);
+  const resumableTaskStage = activeTaskStage === undefined
+    && (latestTaskStage?.status === 'canceled' || latestTaskStage?.status === 'interrupted')
+    ? latestTaskStage
+    : undefined;
   const showAgentWorking = (sending || session?.agentBusy === true)
     && !hasActiveStage
     && pendingApprovals.length === 0;
@@ -142,6 +159,8 @@ export default function VideoTranslationAgentPanel(props: {
     const content = message.trim();
     if (!content || session === null || sendingRef.current) return;
     sendingRef.current = true;
+    session.clearError();
+    setSubmitError('');
     setInput('');
     setSending(true);
     try {
@@ -151,6 +170,8 @@ export default function VideoTranslationAgentPanel(props: {
         permission === 'full-access' ? 'danger-full-access' : 'workspace-write'
       );
     } catch (cause) {
+      setSubmitError(cause instanceof Error ? cause.message : String(cause));
+      session.clearError();
       setInput(current => current.trim().length > 0 ? current : content);
       throw cause;
     } finally {
@@ -179,9 +200,10 @@ export default function VideoTranslationAgentPanel(props: {
           <button
             type="button"
             onClick={() => void session.interruptAgentTurn().catch(() => undefined)}
-            aria-label={l('停止 Agent', 'Stop Agent')}
+            aria-label={l('停止 Agent 对话', 'Stop Agent conversation')}
+            title={l('停止 Agent 对话', 'Stop Agent conversation')}
           >
-            <Square size={14} aria-hidden="true" />
+            <CircleStop size={15} strokeWidth={1.9} aria-hidden="true" />
           </button>
         ) : null}
       </header>
@@ -225,6 +247,13 @@ export default function VideoTranslationAgentPanel(props: {
                   key={item.id}
                   stage={item.stage}
                   actor={item.actor}
+                  onCancel={item.stage.id === activeTaskStage?.id
+                    ? props.onCancelTask
+                    : undefined}
+                  onResume={item.stage.id === resumableTaskStage?.id
+                    ? props.onResumeTask
+                    : undefined}
+                  controlPending={props.taskControlPending}
                 />
               );
             })}
@@ -264,10 +293,23 @@ export default function VideoTranslationAgentPanel(props: {
           {(props.quickActions?.length ?? 0) > 0 ? (
             <div className="video-translation-agent-suggestions" aria-label={l('快捷操作', 'Quick actions')}>
               {props.quickActions!.map(action => (
-                <button type="button" data-kind={action.kind} key={action.id} onClick={() => runQuickAction(action)}>
+                <button
+                  type="button"
+                  data-kind={action.kind}
+                  key={action.id}
+                  disabled={action.disabled}
+                  onClick={() => runQuickAction(action)}
+                >
                   {action.label}
                 </button>
               ))}
+            </div>
+          ) : null}
+
+          {submitError ? (
+            <div className="video-translation-agent-submit-error" role="alert">
+              <XCircle size={15} strokeWidth={1.8} aria-hidden="true" />
+              <span>{submitError}</span>
             </div>
           ) : null}
 
@@ -341,22 +383,48 @@ function CollaborationActivityView(props: { event: SyncEvent }) {
 function CollaborationStageView(props: {
   stage: CreatorStageRun;
   actor: CreatorActivity['actor'];
+  onCancel?(): void;
+  onResume?(): void;
+  controlPending?: 'canceling' | 'resuming';
 }) {
   const l = useLocalizedCopy();
   const { stage, actor } = props;
   const label = stageLabel(stage.stageId, l);
   const percent = stageProgressPercent(stage);
-  const active = stage.status === 'queued' || stage.status === 'running';
   const hasProgress = percent !== null;
   return (
     <article className="video-translation-agent-stage" data-status={stage.status}>
       <header>
         <span aria-hidden="true">{stageStatusIcon(stage)}</span>
-        <div>
+        <div className="video-translation-agent-stage-copy">
           <small>{actorLabel(actor, l)} · {label}</small>
           <strong>{stageProgressText(stage, l)}</strong>
         </div>
-        {hasProgress ? <b>{percent}%</b> : null}
+        <div className="video-translation-agent-stage-controls">
+          {hasProgress ? <b>{percent}%</b> : null}
+          {props.onCancel !== undefined ? (
+            <button
+              type="button"
+              data-intent="danger"
+              disabled={props.controlPending !== undefined || stage.progress.cancelRequested === true}
+              onClick={props.onCancel}
+              aria-label={l(`终止${label}`, `Stop ${label}`)}
+              title={l('终止当前阶段', 'Stop current stage')}
+            >
+              <CircleStop size={14} strokeWidth={1.9} aria-hidden="true" />
+            </button>
+          ) : props.onResume !== undefined ? (
+            <button
+              type="button"
+              disabled={props.controlPending !== undefined}
+              onClick={props.onResume}
+              aria-label={l(`继续${label}`, `Resume ${label}`)}
+              title={l('从当前阶段重新开始', 'Restart from current stage')}
+            >
+              <Play size={14} strokeWidth={1.9} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
       </header>
       {hasProgress ? (
         <div
@@ -603,12 +671,7 @@ function stageIdFromActivity(activity: CreatorActivity): string | null {
 function latestStageRuns(stages: CreatorStageRun[]): CreatorStageRun[] {
   const latestByStage = new Map<string, CreatorStageRun>();
   for (const stage of stages) {
-    const previous = latestByStage.get(stage.stageId);
-    if (
-      previous === undefined
-      || stage.attempt > previous.attempt
-      || (stage.startedAt ?? '').localeCompare(previous.startedAt ?? '') > 0
-    ) latestByStage.set(stage.stageId, stage);
+    latestByStage.set(stage.stageId, stage);
   }
   return [...latestByStage.values()].sort((left, right) => (
     (left.startedAt ?? '').localeCompare(right.startedAt ?? '')
@@ -646,11 +709,14 @@ function stageProgressText(
   stage: CreatorStageRun,
   l: ReturnType<typeof useLocalizedCopy>
 ): string {
+  if (stage.progress.cancelRequested === true && (
+    stage.status === 'queued' || stage.status === 'running'
+  )) return l('正在终止当前阶段', 'Stopping current stage');
   if (stage.status === 'queued') return l('等待执行', 'Queued');
   if (stage.status === 'succeeded') return l('已完成，结果已同步到工作台', 'Completed and synced to Workbench');
   if (stage.status === 'failed') return stage.errorMessage ?? l('执行失败', 'Failed');
-  if (stage.status === 'interrupted') return l('已中断', 'Interrupted');
-  if (stage.status === 'canceled') return l('已取消', 'Canceled');
+  if (stage.status === 'interrupted') return l('已中断，可继续', 'Interrupted. Ready to resume');
+  if (stage.status === 'canceled') return l('已终止，可继续', 'Stopped. Ready to resume');
   const payload = stageProgressPayload(stage);
   if (typeof payload?.message === 'string' && payload.message.trim().length > 0) {
     return payload.message.trim();
@@ -698,6 +764,9 @@ function stageProgressAriaText(
 ): string {
   if (stage.status === 'failed') return l(`失败前进度 ${percent}%`, `Progress before failure: ${percent}%`);
   if (stage.status === 'succeeded') return l(`已完成 ${percent}%`, `Completed: ${percent}%`);
+  if (stage.status === 'canceled' || stage.status === 'interrupted') {
+    return l(`终止前进度 ${percent}%`, `Progress before stopping: ${percent}%`);
+  }
   return `${percent}%`;
 }
 
@@ -714,7 +783,7 @@ function stageStatusIcon(stage: CreatorStageRun) {
     return <LoaderCircle className="video-translation-agent-spin" size={15} strokeWidth={1.8} />;
   }
   if (stage.status === 'canceled' || stage.status === 'interrupted') {
-    return <Square size={13} strokeWidth={1.8} />;
+    return <CircleStop size={14} strokeWidth={1.8} />;
   }
   return <CheckCircle2 size={15} strokeWidth={1.8} />;
 }

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createKrillinDependencyLoader } from '../../src/creator/krillin/dependency-loader.js';
 
 describe('KrillinAI on-demand dependency loader', () => {
-  it('does not prepare WhisperKit when configured cloud transcription is available', async () => {
+  it('does not prepare WhisperKit when OpenAI is selected without an API key', async () => {
     let installs = 0;
     const loader = createKrillinDependencyLoader({
       root: '/tmp/opencreator-test-dependencies',
@@ -19,7 +19,6 @@ describe('KrillinAI on-demand dependency loader', () => {
       }
     });
     const config = createDefaultCreatorServicesConfig();
-    config.transcription.openai.apiKey = 'configured';
 
     await loader.ensure({
       config,
@@ -28,6 +27,25 @@ describe('KrillinAI on-demand dependency loader', () => {
     });
 
     expect(installs).toBe(0);
+  });
+
+  it('reports capabilities for the loader Runtime', () => {
+    const loader = createKrillinDependencyLoader({
+      root: '/tmp/opencreator-test-dependencies',
+      platform: 'darwin',
+      arch: 'arm64'
+    });
+
+    expect(loader.capabilities()).toMatchObject({
+      platform: 'darwin',
+      arch: 'arm64',
+      transcription: {
+        providers: expect.arrayContaining([
+          expect.objectContaining({ provider: 'whisperkit', available: true }),
+          expect.objectContaining({ provider: 'faster-whisper', available: false })
+        ])
+      }
+    });
   });
 
   it('prepares WhisperKit once and reuses it for later stages', async () => {

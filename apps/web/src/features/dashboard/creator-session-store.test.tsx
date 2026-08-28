@@ -81,6 +81,58 @@ function PendingHarness() {
 }
 
 describe('CreatorSessionStore', () => {
+  it('updates the confirmed job after canceling and resuming a task', async () => {
+    let session: ReturnType<typeof useCreatorSession> | undefined;
+    function ControlHarness() {
+      session = useCreatorSession();
+      return <Harness />;
+    }
+    const runningJob = {
+      ...job(2, { targetLanguage: 'en' }),
+      status: 'running' as const
+    };
+    const canceledJob = {
+      ...runningJob,
+      status: 'canceled' as const,
+      revision: 3
+    };
+    const resumedJob = {
+      ...runningJob,
+      revision: 4
+    };
+    const cancelJob = vi.fn(async () => ({
+      job: canceledJob,
+      stage: undefined as never,
+      control: 'canceled' as const
+    }));
+    const resumeJob = vi.fn(async () => ({
+      job: resumedJob,
+      stage: undefined as never,
+      control: 'resumed' as const
+    }));
+    render(
+      <CreatorSessionProvider
+        initialJob={runningJob}
+        service={{
+          applyAction: vi.fn(),
+          cancelJob,
+          resumeJob,
+          runAgentTurn: vi.fn()
+        } as never}
+      >
+        <ControlHarness />
+      </CreatorSessionProvider>
+    );
+
+    await act(async () => session!.cancelJob());
+    expect(cancelJob).toHaveBeenCalledWith('job_1');
+    expect(session!.job).toMatchObject({ status: 'canceled', revision: 3 });
+
+    await act(async () => session!.resumeJob());
+    expect(resumeJob).toHaveBeenCalledWith('job_1');
+    expect(session!.job).toMatchObject({ status: 'running', revision: 4 });
+  });
+
   it('keeps initial workspace defaults in memory without creating a job', async () => {
     vi.useFakeTimers();
     const ensureJob = vi.fn();

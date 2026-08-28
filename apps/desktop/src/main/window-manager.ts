@@ -279,7 +279,7 @@ export class WindowManager {
 
   private workspaceUrl(): string {
     return this.input.development
-      ? 'http://127.0.0.1:9000'
+      ? 'http://127.0.0.1:19861'
       : 'opencreator-app://app/index.html';
   }
 
@@ -345,7 +345,7 @@ function isInternalWindowUrl(value: string, development: boolean): boolean {
     return development
       && url.protocol === 'http:'
       && url.hostname === '127.0.0.1'
-      && url.port === '9000';
+      && url.port === '19861';
   } catch {
     return false;
   }
@@ -358,7 +358,7 @@ export function isWorkspaceUrl(value: string, development: boolean): boolean {
     return development
       && url.protocol === 'http:'
       && url.hostname === '127.0.0.1'
-      && url.port === '9000';
+      && url.port === '19861';
   } catch {
     return false;
   }

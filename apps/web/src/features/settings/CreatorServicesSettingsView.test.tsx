@@ -1,7 +1,12 @@
-import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
+import {
+  createDefaultCreatorServicesConfig,
+  type CreatorServicesCapabilitiesResponse,
+  type CreatorServicesCredentialField
+} from '@opencreator/protocol';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { ConfirmDialogProvider } from '../../components/dialogs/ConfirmDialogProvider.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import { CreatorServicesSettingsView } from './CreatorServicesSettingsView.js';
@@ -61,11 +66,19 @@ describe('CreatorServicesSettingsView', () => {
     await screen.findByRole('tabpanel');
 
     await user.click(screen.getByRole('tab', { name: '语音识别' }));
-    await user.click(screen.getByRole('combobox', { name: '优先服务' }));
-    await user.click(screen.getByRole('option', { name: 'Whisper.cpp' }));
-    expect(screen.getByRole('combobox', { name: '本地模型' })).toHaveTextContent('tiny');
+    expect(screen.getByText('macOS · Apple Silicon')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '云端 API' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/API Key 可以暂不填写/)).toBeInTheDocument();
+    expect(screen.getByText('whisper-1')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('combobox', { name: '优先服务' }));
+    await user.click(screen.getByRole('button', { name: '本地 Whisper' }));
+    expect(screen.getByRole('combobox', { name: '语音识别服务' })).toHaveTextContent('WhisperKit');
+    expect(screen.getByText('large-v2')).toBeInTheDocument();
+    expect(screen.queryByText('FasterWhisper')).not.toBeInTheDocument();
+    expect(screen.queryByText('Whisper.cpp')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '云端 API' }));
+    await user.click(screen.getByRole('combobox', { name: '语音识别服务' }));
     await user.click(screen.getByRole('option', { name: '阿里云语音' }));
     expect(screen.getByText('OSS 存储')).toBeInTheDocument();
     expect(screen.getByText('语音服务')).toBeInTheDocument();
@@ -77,6 +90,70 @@ describe('CreatorServicesSettingsView', () => {
     expect(screen.getByText('无需填写凭据。运行时会使用本地 Edge TTS 服务。'))
       .toBeInTheDocument();
     expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+  });
+
+  it('confirms before saving a newly selected local Whisper provider', async () => {
+    const user = userEvent.setup();
+    const service = createService();
+    render(
+      <ConfirmDialogProvider>
+        <CreatorServicesSettingsView connected service={service} />
+      </ConfirmDialogProvider>
+    );
+
+    await user.click(await screen.findByRole('tab', { name: '语音识别' }));
+    await user.click(screen.getByRole('button', { name: '本地 Whisper' }));
+    await user.click(screen.getByRole('button', { name: '保存配置' }));
+
+    expect(await screen.findByRole('heading', { name: '启用本地语音识别' })).toBeInTheDocument();
+    expect(screen.getByText(/KrillinAI 下次启动时会检查并按需下载 WhisperKit large-v2/))
+      .toBeInTheDocument();
+    expect(service.saveConfig).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '保存并启用' }));
+    await waitFor(() => expect(service.saveConfig).toHaveBeenCalled());
+    expect(vi.mocked(service.saveConfig).mock.calls[0]?.[0].transcription.provider)
+      .toBe('whisperkit');
+  });
+
+  it('disables local Whisper when the Runtime has no controlled installer', async () => {
+    render(
+      <CreatorServicesSettingsView
+        connected
+        service={createService([], runtimeCapabilities('win32', 'x64'))}
+      />
+    );
+
+    await userEvent.setup().click(await screen.findByRole('tab', { name: '语音识别' }));
+    expect(screen.getByText('Windows · x64')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '本地 Whisper' })).toBeDisabled();
+    expect(screen.queryByText('WhisperKit')).not.toBeInTheDocument();
+    expect(screen.queryByText('FasterWhisper')).not.toBeInTheDocument();
+    expect(screen.queryByText('Whisper.cpp')).not.toBeInTheDocument();
+  });
+
+  it('requires reselecting a local provider saved on another Runtime', async () => {
+    const user = userEvent.setup();
+    const service = createService([], runtimeCapabilities('win32', 'x64'));
+    const staleConfig = createDefaultCreatorServicesConfig();
+    staleConfig.transcription.provider = 'whisperkit';
+    vi.mocked(service.getConfig).mockResolvedValue({
+      config: staleConfig,
+      configuredCredentials: []
+    });
+    render(<CreatorServicesSettingsView connected service={service} />);
+
+    await user.click(await screen.findByRole('tab', { name: '语音识别' }));
+    expect(screen.getByRole('button', { name: '本地 Whisper' }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '当前 Windows · x64 不支持 WhisperKit 的受控安装'
+    );
+
+    await user.click(screen.getByRole('button', { name: '保存配置' }));
+    expect(service.saveConfig).not.toHaveBeenCalled();
+    expect(screen.getByText('当前 Runtime 不支持已选语音识别服务，请重新选择后保存。'))
+      .toBeInTheDocument();
   });
 
   it('localizes the service navigation in English', async () => {
@@ -124,13 +201,74 @@ describe('CreatorServicesSettingsView', () => {
   });
 });
 
-function createService(configuredCredentials: Array<'llm.apiKey'> = []): CreatorServicesSettingsService {
+function createService(
+  configuredCredentials: CreatorServicesCredentialField[] = [],
+  capabilities: CreatorServicesCapabilitiesResponse = runtimeCapabilities('darwin', 'arm64')
+): CreatorServicesSettingsService {
   const config = createDefaultCreatorServicesConfig();
   config.llm.baseUrl = 'https://gateway.example.test/v1';
   config.llm.model = 'gpt-shared';
   return {
+    getCapabilities: vi.fn(async () => structuredClone(capabilities)),
     getConfig: vi.fn(async () => ({ config: structuredClone(config), configuredCredentials })),
     saveConfig: vi.fn(async next => ({ config: structuredClone(next), configuredCredentials })),
     resetConfig: vi.fn(async () => ({ config: createDefaultCreatorServicesConfig(), configuredCredentials: [] }))
+  };
+}
+
+function runtimeCapabilities(
+  platform: string,
+  arch: string
+): CreatorServicesCapabilitiesResponse {
+  const whisperKitAvailable = platform === 'darwin' && arch === 'arm64';
+  return {
+    platform,
+    arch,
+    transcription: {
+      providers: [
+        {
+          provider: 'openai',
+          kind: 'cloud',
+          available: true,
+          models: ['whisper-1'],
+          gpuAcceleration: false
+        },
+        {
+          provider: 'faster-whisper',
+          kind: 'local',
+          available: false,
+          models: ['tiny', 'medium', 'large-v2'],
+          gpuAcceleration: true,
+          unavailableReason: platform === 'win32' || platform === 'linux'
+            ? 'installer_unavailable'
+            : 'unsupported_platform'
+        },
+        {
+          provider: 'whisperkit',
+          kind: 'local',
+          available: whisperKitAvailable,
+          models: ['large-v2'],
+          gpuAcceleration: false,
+          ...(whisperKitAvailable ? {} : { unavailableReason: 'unsupported_platform' as const })
+        },
+        {
+          provider: 'whisper.cpp',
+          kind: 'local',
+          available: false,
+          models: ['tiny', 'medium', 'large-v2'],
+          gpuAcceleration: false,
+          unavailableReason: platform === 'win32'
+            ? 'installer_unavailable'
+            : 'unsupported_platform'
+        },
+        {
+          provider: 'aliyun',
+          kind: 'cloud',
+          available: true,
+          models: [],
+          gpuAcceleration: false
+        }
+      ]
+    }
   };
 }

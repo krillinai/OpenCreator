@@ -40,6 +40,84 @@ function setup() {
 }
 
 describe('creator runtime advanced contracts', () => {
+  it('cancels queued and running stage runs without committing partial outputs', async () => {
+    const { db, repository, dispatcher, service, templates } = setup();
+    const queuedJob = service.createJob({
+      projectId: 'p1',
+      templateId: 'image-generation',
+      state: { prompt: 'queued cancellation' }
+    });
+    const queuedStage = repository.createStageRun({
+      jobId: queuedJob.id,
+      stageId: 'generate',
+      executor: 'image',
+      status: 'queued',
+      dispatchStatus: 'queued'
+    });
+    let executorStarted!: () => void;
+    const started = new Promise<void>(resolve => {
+      executorStarted = resolve;
+    });
+    const runner = createCreatorStageRunner({
+      repository,
+      templates,
+      executors: [{
+        id: 'image',
+        async run({ signal }) {
+          executorStarted();
+          await new Promise<void>(resolve => {
+            if (signal.aborted) resolve();
+            else signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+          return {
+            outputs: [{
+              kind: 'generated_image',
+              status: 'completed' as const,
+              path: join(tempDir, 'partial.png')
+            }]
+          };
+        }
+      }],
+      workRoot: join(tempDir, 'work')
+    });
+
+    expect(runner.cancel(queuedStage.id)).toMatchObject({ status: 'canceled' });
+    expect(service.getJob(queuedJob.id)).toMatchObject({
+      status: 'canceled',
+      stages: [expect.objectContaining({ status: 'canceled', dispatchStatus: 'finished' })]
+    });
+
+    const runningJob = service.createJob({
+      projectId: 'p1',
+      templateId: 'image-generation',
+      state: { prompt: 'running cancellation' }
+    });
+    const runningStageId = dispatcher.dispatch(runningJob.id, {
+      action: 'run-stage',
+      expectedRevision: runningJob.revision,
+      idempotencyKey: 'run-image-for-cancel',
+      input: { stageId: 'generate' }
+    }, 'user').commandReceipt.stageRunId!;
+    const execution = runner.runStageRun(runningStageId);
+    await started;
+
+    expect(runner.cancel(runningStageId)).toMatchObject({
+      status: 'running',
+      progress: { cancelRequested: true }
+    });
+    const canceled = await execution;
+    expect(canceled).toMatchObject({
+      status: 'canceled',
+      errorCode: 'creator_stage_canceled'
+    });
+    expect(service.getJob(runningJob.id)).toMatchObject({
+      status: 'canceled',
+      artifacts: []
+    });
+    await runner.close();
+    db.close();
+  });
+
   it('does not start an executor when required inputs are missing and retry creates a new run', async () => {
     const { db, repository, service, templates } = setup();
     const run = vi.fn<CreatorExecutor['run']>().mockResolvedValue({ outputs: [] });

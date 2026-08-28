@@ -7,6 +7,7 @@ import {
   RuntimeProxyError,
   createRuntimeProxyHeaders,
   createRuntimeProxyTarget,
+  isStreamingRuntimeUploadRequest,
   isRuntimeRequestUrl,
   readBoundedRequestBody
 } from './runtime-proxy.js';
@@ -60,16 +61,21 @@ async function proxyRuntimeRequest(
   try {
     const target = createRuntimeProxyTarget(url, connection.address);
     const headers = createRuntimeProxyHeaders(request.headers, connection.token);
+    const streamsUpload = isStreamingRuntimeUploadRequest(target, request);
     const body = request.method === 'GET' || request.method === 'HEAD'
       ? undefined
-      : await readBoundedRequestBody(request);
-    const upstream = await fetch(target.toString(), {
+      : streamsUpload
+        ? request.body ?? undefined
+        : await readBoundedRequestBody(request);
+    const upstreamRequest: RequestInit & { duplex?: 'half' } = {
       method: request.method,
       headers,
       body,
       redirect: 'manual',
       signal: request.signal
-    });
+    };
+    if (streamsUpload && body !== undefined) upstreamRequest.duplex = 'half';
+    const upstream = await fetch(target.toString(), upstreamRequest);
     return relayRuntimeResponse(upstream, logger);
   } catch (error) {
     if (error instanceof RuntimeProxyError) {

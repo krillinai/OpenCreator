@@ -220,14 +220,14 @@ describe('runtime api', () => {
       method: 'OPTIONS',
       url: '/runs',
       headers: {
-        origin: 'http://127.0.0.1:9000',
+        origin: 'http://127.0.0.1:19861',
         'access-control-request-method': 'POST',
         'access-control-request-headers': 'authorization,content-type,last-event-id'
       }
     });
 
     expect(response.statusCode).toBe(204);
-    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:9000');
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:19861');
     expect(String(response.headers['access-control-allow-headers']).toLowerCase()).toContain(
       'authorization'
     );
@@ -256,7 +256,7 @@ describe('runtime api', () => {
       method: 'OPTIONS',
       url: '/runs',
       headers: {
-        origin: 'http://localhost:9000',
+        origin: 'http://localhost:19861',
         'access-control-request-method': 'POST'
       }
     });
@@ -339,13 +339,13 @@ describe('runtime api', () => {
       method: 'OPTIONS',
       url: '/workspace/files/content',
       headers: {
-        origin: 'http://127.0.0.1:9000',
+        origin: 'http://127.0.0.1:19861',
         'access-control-request-method': 'POST',
         'access-control-request-headers': 'authorization,content-type'
       }
     });
     expect(preflight.statusCode).toBe(204);
-    expect(preflight.headers['access-control-allow-origin']).toBe('http://127.0.0.1:9000');
+    expect(preflight.headers['access-control-allow-origin']).toBe('http://127.0.0.1:19861');
     expect(String(preflight.headers['access-control-allow-methods'])).toContain('POST');
 
     const traversal = await authGet(
@@ -3498,14 +3498,14 @@ describe('runtime api', () => {
       url: `/runs/${run.id}/events`,
       headers: {
         authorization: 'Bearer secret',
-        origin: 'http://127.0.0.1:9000'
+        origin: 'http://127.0.0.1:19861'
       }
     });
 
     expect(events.statusCode).toBe(200);
     expect(events.headers['content-type']).toContain('text/event-stream');
     expect(events.headers.vary).toBe('Origin');
-    expect(events.headers['access-control-allow-origin']).toBe('http://127.0.0.1:9000');
+    expect(events.headers['access-control-allow-origin']).toBe('http://127.0.0.1:19861');
     expect(events.body).toContain('event: done');
   });
 

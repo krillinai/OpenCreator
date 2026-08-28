@@ -23,6 +23,13 @@ export type AliyunSpeechConfig = {
   appKey: string;
 };
 
+export type CreatorTranscriptionProvider =
+  | 'openai'
+  | 'faster-whisper'
+  | 'whisperkit'
+  | 'whisper.cpp'
+  | 'aliyun';
+
 export type CreatorServicesConfig = {
   proxy: string;
   llm: OpenAiCompatibleConfig & {
@@ -30,7 +37,7 @@ export type CreatorServicesConfig = {
     source: 'codex' | 'custom';
   };
   transcription: {
-    provider: 'openai' | 'faster-whisper' | 'whisperkit' | 'whisper.cpp' | 'aliyun';
+    provider: CreatorTranscriptionProvider;
     enableGpuAcceleration: boolean;
     openai: OpenAiCompatibleConfig;
     fasterWhisper: { model: 'tiny' | 'medium' | 'large-v2' };
@@ -68,6 +75,23 @@ export type CreatorServicesConfig = {
 export type CreatorServicesConfigResponse = {
   config: CreatorServicesConfig;
   configuredCredentials: CreatorServicesCredentialField[];
+};
+
+export type CreatorTranscriptionProviderCapability = {
+  provider: CreatorTranscriptionProvider;
+  kind: 'cloud' | 'local';
+  available: boolean;
+  models: string[];
+  gpuAcceleration: boolean;
+  unavailableReason?: 'unsupported_platform' | 'installer_unavailable';
+};
+
+export type CreatorServicesCapabilitiesResponse = {
+  platform: string;
+  arch: string;
+  transcription: {
+    providers: CreatorTranscriptionProviderCapability[];
+  };
 };
 
 export type CreatorServicesCredentialField =

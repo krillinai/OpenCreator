@@ -26,6 +26,9 @@
   --on-accent: #171719;
   --danger: #d4d4d7;
   --danger-soft: rgba(244, 244, 245, 0.08);
+  --destructive: #ef4444;
+  --destructive-hover: #dc2626;
+  --destructive-soft: rgba(239, 68, 68, 0.13);
   --warning: #bcbcc1;
   --warning-soft: rgba(244, 244, 245, 0.07);
   --success: #ededee;
@@ -91,6 +94,9 @@
   --on-accent: #f7f7f8;
   --danger: #3f3f46;
   --danger-soft: rgba(24, 24, 27, 0.06);
+  --destructive: #dc2626;
+  --destructive-hover: #b91c1c;
+  --destructive-soft: rgba(220, 38, 38, 0.09);
   --warning: #525256;
   --warning-soft: rgba(24, 24, 27, 0.055);
   --success: #27272a;

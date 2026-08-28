@@ -9,9 +9,15 @@ describe('creator services service', () => {
     const patch = vi.fn();
     const remove = vi.fn();
     const client = {
-      get<T>(): Promise<T> {
-        get();
-        return Promise.resolve({ config } as T);
+      get<T>(_path: string): Promise<T> {
+        get(_path);
+        return Promise.resolve((_path === '/creator-services/capabilities'
+          ? {
+              platform: 'darwin',
+              arch: 'arm64',
+              transcription: { providers: [] }
+            }
+          : { config }) as T);
       },
       patch<T>(_path: string, _body: unknown): Promise<T> {
         patch(_path, _body);
@@ -24,11 +30,13 @@ describe('creator services service', () => {
     };
     const service = createCreatorServicesService(client);
 
+    await service.getCapabilities();
     await service.getConfig();
     await service.saveConfig(config);
     await service.resetConfig();
 
-    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenNthCalledWith(1, '/creator-services/capabilities');
+    expect(get).toHaveBeenNthCalledWith(2, '/creator-services/config');
     expect(patch).toHaveBeenCalledWith('/creator-services/config', config);
     expect(remove).toHaveBeenCalledWith('/creator-services/config');
   });

@@ -2,8 +2,11 @@ import {
   createDefaultCreatorServicesConfig,
   type AliyunOssConfig,
   type AliyunSpeechConfig,
+  type CreatorServicesCapabilitiesResponse,
   type CreatorServicesConfig,
   type CreatorServicesCredentialField,
+  type CreatorTranscriptionProvider,
+  type CreatorTranscriptionProviderCapability,
   type KlingAiConfig,
   type OpenAiCompatibleConfig
 } from '@opencreator/protocol';
@@ -12,9 +15,11 @@ import {
   Check,
   ChevronDown,
   Clapperboard,
+  Cloud,
   Eye,
   EyeOff,
   FileKey2,
+  HardDriveDownload,
   Image,
   Languages,
   LoaderCircle,
@@ -38,7 +43,9 @@ export function CreatorServicesSettingsView(props: {
   const confirm = useConfirmDialog();
   const [activeSection, setActiveSection] = useState<ServiceSection>('text');
   const [config, setConfig] = useState<CreatorServicesConfig>();
+  const [capabilities, setCapabilities] = useState<CreatorServicesCapabilitiesResponse>();
   const [configuredCredentials, setConfiguredCredentials] = useState<ReadonlySet<CreatorServicesCredentialField>>(new Set());
+  const [savedTranscriptionSelection, setSavedTranscriptionSelection] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -49,17 +56,23 @@ export function CreatorServicesSettingsView(props: {
     if (!props.connected || props.service === null) {
       setLoading(false);
       setConfig(undefined);
+      setCapabilities(undefined);
       return () => {
         active = false;
       };
     }
     setLoading(true);
     setError(undefined);
-    void props.service.getConfig()
-      .then(response => {
+    void Promise.all([
+      props.service.getConfig(),
+      props.service.getCapabilities()
+    ])
+      .then(([response, nextCapabilities]) => {
         if (active) {
           setConfig(response.config);
+          setCapabilities(nextCapabilities);
           setConfiguredCredentials(new Set(response.configuredCredentials));
+          setSavedTranscriptionSelection(transcriptionSelection(response.config));
         }
       })
       .catch(() => {
@@ -95,7 +108,32 @@ export function CreatorServicesSettingsView(props: {
   }
 
   async function save() {
-    if (config === undefined || props.service === null) return;
+    if (config === undefined || capabilities === undefined || props.service === null) return;
+    const selectedCapability = transcriptionCapability(
+      capabilities,
+      config.transcription.provider
+    );
+    if (selectedCapability?.available !== true) {
+      setError(l(
+        '当前 Runtime 不支持已选语音识别服务，请重新选择后保存。',
+        'The selected transcription provider is unavailable on this Runtime. Choose another provider before saving.'
+      ));
+      return;
+    }
+    if (
+      selectedCapability?.kind === 'local'
+      && transcriptionSelection(config) !== savedTranscriptionSelection
+    ) {
+      const confirmed = await confirm({
+        title: l('启用本地语音识别', 'Enable local transcription'),
+        description: l(
+          `保存后，KrillinAI 下次启动时会检查并按需下载 ${transcriptionProviderLabel(config.transcription.provider, l)} ${selectedTranscriptionModel(config)}。首次准备可能需要较长时间。`,
+          `After saving, KrillinAI will check and download ${transcriptionProviderLabel(config.transcription.provider, l)} ${selectedTranscriptionModel(config)} when it next starts. Initial preparation may take a while.`
+        ),
+        confirmLabel: l('保存并启用', 'Save and enable')
+      });
+      if (!confirmed) return;
+    }
     setSaving(true);
     setError(undefined);
     setNotice(undefined);
@@ -103,6 +141,7 @@ export function CreatorServicesSettingsView(props: {
       const response = await props.service.saveConfig(config);
       setConfig(response.config);
       setConfiguredCredentials(new Set(response.configuredCredentials));
+      setSavedTranscriptionSelection(transcriptionSelection(response.config));
       setNotice(l('配置已安全保存', 'Settings saved securely'));
     } catch {
       setError(l('保存失败，请检查字段后重试', 'Save failed. Check the fields and try again'));
@@ -130,6 +169,7 @@ export function CreatorServicesSettingsView(props: {
       const response = await props.service.resetConfig();
       setConfig(response.config);
       setConfiguredCredentials(new Set(response.configuredCredentials));
+      setSavedTranscriptionSelection(transcriptionSelection(response.config));
       setNotice(l('已恢复默认配置', 'Default settings restored'));
     } catch {
       setError(l('无法恢复默认配置', 'Could not restore default settings'));
@@ -182,7 +222,7 @@ export function CreatorServicesSettingsView(props: {
         <div className="creator-services-state">
           {l('连接本地 Runtime 后即可管理 AI 服务配置。', 'Connect the local Runtime to manage AI service settings.')}
         </div>
-      ) : config === undefined ? (
+      ) : config === undefined || capabilities === undefined ? (
         <div className="creator-services-state" role="alert">
           {error ?? l('配置暂不可用', 'Settings are unavailable')}
         </div>
@@ -200,7 +240,12 @@ export function CreatorServicesSettingsView(props: {
             <TextModelSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
           ) : null}
           {activeSection === 'transcription' ? (
-            <TranscriptionSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
+            <TranscriptionSettings
+              config={config}
+              update={updateConfig}
+              configuredCredentials={configuredCredentials}
+              capabilities={capabilities}
+            />
           ) : null}
           {activeSection === 'tts' ? (
             <TtsSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
@@ -294,40 +339,101 @@ function TextModelSettings(props: SettingsGroupProps) {
   );
 }
 
-function TranscriptionSettings(props: SettingsGroupProps) {
+function TranscriptionSettings(props: SettingsGroupProps & {
+  capabilities: CreatorServicesCapabilitiesResponse;
+}) {
   const l = useLocalizedCopy();
   const provider = props.config.transcription.provider;
+  const selectedCapability = transcriptionCapability(props.capabilities, provider);
+  const mode = selectedCapability?.kind
+    ?? (isLocalTranscriptionProvider(provider) ? 'local' : 'cloud');
+  const availableCloudProviders = props.capabilities.transcription.providers.filter(
+    candidate => candidate.kind === 'cloud' && candidate.available
+  );
+  const availableLocalProviders = props.capabilities.transcription.providers.filter(
+    candidate => candidate.kind === 'local' && candidate.available
+  );
+  const visibleProviders = mode === 'cloud'
+    ? availableCloudProviders
+    : selectedCapability?.kind === 'local' && !selectedCapability.available
+      ? [selectedCapability, ...availableLocalProviders]
+      : availableLocalProviders;
+
+  function selectMode(nextMode: 'cloud' | 'local') {
+    const nextProvider = (nextMode === 'cloud'
+      ? availableCloudProviders
+      : availableLocalProviders)[0];
+    if (nextProvider === undefined) return;
+    props.update(config => {
+      config.transcription.provider = nextProvider.provider;
+    });
+  }
+
   return (
     <SettingsFieldset
       title={l('语音识别', 'Speech transcription')}
-      description={l('选择优先使用的转录服务。云端凭证未配置时，Runtime 会尝试使用安装包内可用的本地 Whisper。', 'Choose the preferred transcription service. When cloud credentials are absent, the Runtime tries an available local Whisper packaged with the app.')}
+      description={l(
+        '选择实际需要语音识别时使用的服务。KrillinAI 会严格使用保存的配置，不会在云端与本地服务之间自动切换。',
+        'Choose the provider used when speech recognition is actually required. KrillinAI follows the saved setting and never switches automatically between cloud and local providers.'
+      )}
     >
+      <p className="creator-services-runtime-note">
+        {l('当前 Runtime', 'Current Runtime')}
+        <strong>{formatRuntimeLabel(props.capabilities.platform, props.capabilities.arch)}</strong>
+      </p>
+      <TranscriptionModeField
+        value={mode}
+        localAvailable={availableLocalProviders.length > 0}
+        onChange={selectMode}
+      />
       <SelectField
         id="transcription-provider"
-        label={l('优先服务', 'Preferred provider')}
+        label={l('语音识别服务', 'Transcription provider')}
         value={provider}
-        options={[
-          ['openai', 'OpenAI Whisper'],
-          ['faster-whisper', 'FasterWhisper'],
-          ['whisperkit', 'WhisperKit (Apple Silicon)'],
-          ['whisper.cpp', 'Whisper.cpp'],
-          ['aliyun', l('阿里云语音', 'Alibaba Cloud Speech')]
-        ]}
+        options={visibleProviders.map(candidate => [
+          candidate.provider,
+          candidate.available
+            ? transcriptionProviderLabel(candidate.provider, l)
+            : l(
+              `${transcriptionProviderLabel(candidate.provider, l)}（当前不可用）`,
+              `${transcriptionProviderLabel(candidate.provider, l)} (unavailable)`
+            )
+        ] as [string, string])}
         onChange={value => props.update(config => {
-          config.transcription.provider = value as CreatorServicesConfig['transcription']['provider'];
+          config.transcription.provider = value as CreatorTranscriptionProvider;
         })}
       />
+      {selectedCapability?.available === false ? (
+        <p className="creator-services-inline-note is-warning" role="alert">
+          {l(
+            `当前 ${formatRuntimeLabel(props.capabilities.platform, props.capabilities.arch)} 不支持 ${transcriptionProviderLabel(provider, l)} 的受控安装，请重新选择可用服务。`,
+            `${transcriptionProviderLabel(provider, l)} cannot be installed by the current ${formatRuntimeLabel(props.capabilities.platform, props.capabilities.arch)} Runtime. Choose an available provider.`
+          )}
+        </p>
+      ) : null}
       {provider === 'openai' ? (
-        <OpenAiFields
-          id="transcription-openai"
-          credential="transcription.openai.apiKey"
-          configuredCredentials={props.configuredCredentials}
-          value={props.config.transcription.openai}
-          modelPlaceholder="whisper-1"
-          onChange={value => props.update(config => {
-            config.transcription.openai = value;
-          })}
-        />
+        <>
+          <OpenAiFields
+            id="transcription-openai"
+            credential="transcription.openai.apiKey"
+            configuredCredentials={props.configuredCredentials}
+            value={props.config.transcription.openai}
+            modelPlaceholder="whisper-1"
+            modelReadonly
+            onChange={value => props.update(config => {
+              config.transcription.openai = value;
+            })}
+          />
+          {!props.configuredCredentials.has('transcription.openai.apiKey')
+            && props.config.transcription.openai.apiKey.trim().length === 0 ? (
+              <p className="creator-services-inline-note">
+                {l(
+                  'API Key 可以暂不填写。只有任务实际调用语音识别时才会提示配置；直接使用平台字幕的任务不会校验此 Key。',
+                  'The API key may be left blank for now. It is requested only when a task actually calls speech recognition; tasks using platform captions do not validate it.'
+                )}
+              </p>
+            ) : null}
+        </>
       ) : null}
       {provider === 'faster-whisper' ? (
         <>
@@ -335,30 +441,35 @@ function TranscriptionSettings(props: SettingsGroupProps) {
             id="faster-whisper-model"
             label={l('本地模型', 'Local model')}
             value={props.config.transcription.fasterWhisper.model}
-            options={[['tiny', 'tiny'], ['medium', 'medium'], ['large-v2', 'large-v2']]}
+            options={(selectedCapability?.models ?? []).map(model => [model, model])}
             onChange={value => props.update(config => {
               config.transcription.fasterWhisper.model = value as 'tiny' | 'medium' | 'large-v2';
             })}
           />
-          <ToggleField
-            label={l('GPU 加速', 'GPU acceleration')}
-            description={l('适用于支持 CUDA 的 Windows 或 Linux 设备。', 'For Windows or Linux devices with CUDA support.')}
-            checked={props.config.transcription.enableGpuAcceleration}
-            onChange={checked => props.update(config => {
-              config.transcription.enableGpuAcceleration = checked;
-            })}
-          />
+          {selectedCapability?.gpuAcceleration ? (
+            <ToggleField
+              label={l('GPU 加速', 'GPU acceleration')}
+              description={l('仅在当前设备已正确配置 CUDA 时开启。', 'Enable only when CUDA is configured correctly on this device.')}
+              checked={props.config.transcription.enableGpuAcceleration}
+              onChange={checked => props.update(config => {
+                config.transcription.enableGpuAcceleration = checked;
+              })}
+            />
+          ) : null}
         </>
       ) : null}
       {provider === 'whisperkit' ? (
-        <ReadonlyModelField label={l('本地模型', 'Local model')} value="large-v2" />
+        <ReadonlyModelField
+          label={l('本地模型', 'Local model')}
+          value={selectedCapability?.models[0] ?? props.config.transcription.whisperKit.model}
+        />
       ) : null}
       {provider === 'whisper.cpp' ? (
         <SelectField
           id="whisper-cpp-model"
           label={l('本地模型', 'Local model')}
           value={props.config.transcription.whisperCpp.model}
-          options={[['tiny', 'tiny'], ['medium', 'medium'], ['large-v2', 'large-v2']]}
+          options={(selectedCapability?.models ?? []).map(model => [model, model])}
           onChange={value => props.update(config => {
             config.transcription.whisperCpp.model = value as 'tiny' | 'medium' | 'large-v2';
           })}
@@ -379,7 +490,51 @@ function TranscriptionSettings(props: SettingsGroupProps) {
           })}
         />
       ) : null}
+      {selectedCapability?.kind === 'local' && selectedCapability.available ? (
+        <p className="creator-services-inline-note">
+          {l(
+            '保存后，KrillinAI 下次启动时会检查所选本地模型，缺失时才开始下载。未选择本地 Whisper 时不会下载。',
+            'After saving, KrillinAI checks the selected local model the next time it starts and downloads it only if missing. No model is downloaded unless local Whisper is selected.'
+          )}
+        </p>
+      ) : null}
     </SettingsFieldset>
+  );
+}
+
+function TranscriptionModeField(props: {
+  value: 'cloud' | 'local';
+  localAvailable: boolean;
+  onChange(value: 'cloud' | 'local'): void;
+}) {
+  const l = useLocalizedCopy();
+  return (
+    <div className="creator-services-field is-wide">
+      <span>{l('运行方式', 'Mode')}</span>
+      <div
+        className="creator-services-segmented"
+        role="group"
+        aria-label={l('语音识别运行方式', 'Transcription mode')}
+      >
+        <button
+          type="button"
+          aria-pressed={props.value === 'cloud'}
+          onClick={() => props.onChange('cloud')}
+        >
+          <Cloud size={16} aria-hidden="true" />
+          {l('云端 API', 'Cloud API')}
+        </button>
+        <button
+          type="button"
+          aria-pressed={props.value === 'local'}
+          disabled={!props.localAvailable && props.value !== 'local'}
+          onClick={() => props.onChange('local')}
+        >
+          <HardDriveDownload size={16} aria-hidden="true" />
+          {l('本地 Whisper', 'Local Whisper')}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -534,6 +689,7 @@ function OpenAiFields(props: {
   configuredCredentials: ReadonlySet<CreatorServicesCredentialField>;
   value: OpenAiCompatibleConfig;
   modelPlaceholder: string;
+  modelReadonly?: boolean;
   baseUrlPlaceholder?: string;
   onChange(value: OpenAiCompatibleConfig): void;
 }) {
@@ -555,13 +711,17 @@ function OpenAiFields(props: {
         configured={props.configuredCredentials.has(props.credential)}
         onChange={apiKey => props.onChange({ ...props.value, apiKey })}
       />
-      <TextField
-        id={`${props.id}-model`}
-        label={l('模型', 'Model')}
-        value={props.value.model}
-        placeholder={props.modelPlaceholder}
-        onChange={model => props.onChange({ ...props.value, model })}
-      />
+      {props.modelReadonly ? (
+        <ReadonlyModelField label={l('模型', 'Model')} value={props.modelPlaceholder} />
+      ) : (
+        <TextField
+          id={`${props.id}-model`}
+          label={l('模型', 'Model')}
+          value={props.value.model}
+          placeholder={props.modelPlaceholder}
+          onChange={model => props.onChange({ ...props.value, model })}
+        />
+      )}
     </>
   );
 }
@@ -851,4 +1011,76 @@ function ToggleField(props: {
       />
     </label>
   );
+}
+
+type LocalizedCopy = (zh: string, en: string) => string;
+
+function transcriptionCapability(
+  capabilities: CreatorServicesCapabilitiesResponse,
+  provider: CreatorTranscriptionProvider
+): CreatorTranscriptionProviderCapability | undefined {
+  return capabilities.transcription.providers.find(candidate => (
+    candidate.provider === provider
+  ));
+}
+
+function isLocalTranscriptionProvider(provider: CreatorTranscriptionProvider): boolean {
+  return provider === 'faster-whisper'
+    || provider === 'whisperkit'
+    || provider === 'whisper.cpp';
+}
+
+function transcriptionSelection(config: CreatorServicesConfig): string {
+  return `${config.transcription.provider}:${selectedTranscriptionModel(config)}`;
+}
+
+function selectedTranscriptionModel(config: CreatorServicesConfig): string {
+  switch (config.transcription.provider) {
+    case 'openai':
+      return config.transcription.openai.model;
+    case 'faster-whisper':
+      return config.transcription.fasterWhisper.model;
+    case 'whisperkit':
+      return config.transcription.whisperKit.model;
+    case 'whisper.cpp':
+      return config.transcription.whisperCpp.model;
+    case 'aliyun':
+      return '';
+  }
+}
+
+function transcriptionProviderLabel(
+  provider: CreatorTranscriptionProvider,
+  l: LocalizedCopy
+): string {
+  switch (provider) {
+    case 'openai':
+      return 'OpenAI Whisper';
+    case 'faster-whisper':
+      return 'FasterWhisper';
+    case 'whisperkit':
+      return 'WhisperKit';
+    case 'whisper.cpp':
+      return 'Whisper.cpp';
+    case 'aliyun':
+      return l('阿里云语音', 'Alibaba Cloud Speech');
+  }
+}
+
+function formatRuntimeLabel(platform: string, arch: string): string {
+  const platformLabel = platform === 'darwin'
+    ? 'macOS'
+    : platform === 'win32'
+      ? 'Windows'
+      : platform === 'linux'
+        ? 'Linux'
+        : platform;
+  const archLabel = platform === 'darwin' && arch === 'arm64'
+    ? 'Apple Silicon'
+    : arch === 'x64'
+      ? 'x64'
+      : arch === 'arm64'
+        ? 'ARM64'
+        : arch;
+  return `${platformLabel} · ${archLabel}`;
 }

@@ -106,6 +106,9 @@ export function createCreatorCommandDispatcher(input: {
               ...(request.input.workflow === true ? { workflow: true } : {}),
               ...(typeof request.input.workflowParentStageRunId === 'string'
                 ? { workflowParentStageRunId: request.input.workflowParentStageRunId }
+                : {}),
+              ...(typeof request.input.resumedFromStageRunId === 'string'
+                ? { resumedFromStageRunId: request.input.resumedFromStageRunId }
                 : {})
             }
           }).id;

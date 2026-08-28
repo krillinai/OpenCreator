@@ -29,7 +29,7 @@ export default defineConfig({
   plugins: [react(), opencreatorRuntimeDevPlugin()],
   server: {
     host: '127.0.0.1',
-    port: 9000,
+    port: 19861,
     strictPort: true
   },
   preview: {

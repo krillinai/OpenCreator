@@ -10,7 +10,7 @@ pnpm install
 pnpm web:dev
 ```
 
-打开 `http://127.0.0.1:9000/`。首次访问会按需启动 daemon；页面顶部显示“本地运行内核正常”后即可发送任务。
+打开 `http://127.0.0.1:19861/`。首次访问会按需启动 daemon；页面顶部显示“本地运行内核正常”后即可发送任务。
 
 ## 2. 核心工作流
 
@@ -85,9 +85,9 @@ Codex 自身会话和配置位于 `$CODEX_HOME`，需要单独按目录备份。
 ### 页面一直显示正在连接
 
 1. 确认终端中的 `pnpm web:dev` 未退出。
-2. 请求 `http://127.0.0.1:9000/.opencreator/runtime/healthz`，应返回 `{"ok":true}`。
+2. 请求 `http://127.0.0.1:19861/.opencreator/runtime/healthz`，应返回 `{"ok":true}`。
 3. 检查终端是否出现 `RUNTIME_START_FAILED` 或 `RUNTIME_PROXY_FAILED`。
-4. 确认 9000 端口没有被旧进程占用；Vite 被占用时会选择其他端口，终端会显示实际地址。
+4. 确认 19861 端口没有被旧进程占用；该端口被占用时 Vite 会直接退出。
 
 ### 刷新后历史为空
 

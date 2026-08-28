@@ -27,6 +27,8 @@ import {
 const e2eDir = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(e2eDir, '..');
 const fakeCodexScript = join(e2eDir, 'fixtures', 'fake-codex.mjs');
+const OVERSIZED_WAVE_PCM_BYTES = 10 * 1024 * 1024 + 4096;
+const OVERSIZED_WAVE_FILE_BYTES = OVERSIZED_WAVE_PCM_BYTES + 44;
 const enterpriseServer = new FakeEnterpriseAuthServer();
 let enterpriseOrigin = '';
 
@@ -71,6 +73,10 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     expect(runtimeManifest.resources.some(resource => resource.kind === 'model')).toBe(false);
     expect(runtimeManifest.resources.some(resource => /whisper/i.test(resource.path))).toBe(false);
     expect(hasWhisperKitDependency(fixture.root)).toBe(false);
+    expect(packagedCreatorAgentRuntimeFiles()).toEqual([
+      'SKILL.md',
+      'manifest.json'
+    ]);
 
     const projectDir = join(fixture.root, 'creator-workspace');
     mkdirSync(projectDir, { recursive: true });
@@ -119,6 +125,55 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
     expect(createdJob.body.job).toMatchObject({
       revision: 0,
       state: { targetLanguage: 'en' }
+    });
+    const agentTurn = await runtimeRequest<{
+      turn: {
+        role: string;
+        status: string;
+        content: string;
+      };
+    }>(currentApp.page, 'POST', `/creator/jobs/${createdJob.body.job.id}/agent-turns`, {
+      message: '合成横屏视频',
+      sandbox: 'danger-full-access'
+    });
+    expect(agentTurn.status).toBe(200);
+    expect(agentTurn.body.turn).toMatchObject({
+      role: 'assistant',
+      status: 'completed',
+      content: 'desktop e2e run completed'
+    });
+
+    const localSourceJob = await runtimeRequest<{
+      job: { id: string; revision: number };
+    }>(currentApp.page, 'POST', '/creator/jobs', {
+      projectId: createdProject.body.project.id,
+      templateId: 'video-translation',
+      state: {
+        sourceType: 'file',
+        sourceUrl: '',
+        targetLanguage: 'en'
+      }
+    });
+    expect(localSourceJob.status).toBe(201);
+    const uploadedSource = await uploadOversizedWaveSource(currentApp.page, {
+      jobId: localSourceJob.body.job.id,
+      expectedRevision: localSourceJob.body.job.revision,
+      pcmBytes: OVERSIZED_WAVE_PCM_BYTES
+    });
+    expect(uploadedSource.status).toBe(201);
+    expect(uploadedSource.body).toMatchObject({
+      job: { revision: 1 },
+      artifact: {
+        kind: 'source_video',
+        status: 'completed',
+        metadata: {
+          fileName: 'oversized-runtime-proxy.wav',
+          mimeType: 'audio/wav',
+          size: OVERSIZED_WAVE_FILE_BYTES,
+          hasAudio: true
+        }
+      },
+      deduplicated: false
     });
 
     const updatedJob = await runtimeRequest<{
@@ -231,15 +286,17 @@ async function launchCreatorDesktop(): Promise<{
   const binDir = join(root, 'bin');
   const stateDir = join(root, 'fake-codex-state');
   const codexHome = join(root, 'codex-home');
+  const userData = join(root, 'user-data');
   const enterpriseRunId = randomUUID();
   const enterpriseConfigPath = join(root, '.opencreator', 'config.toml');
-  writeCodexShim(binDir);
+  const codexBin = writeCodexShim(binDir);
+  writeDesktopSettings(userData, codexBin);
   writeEnterpriseE2EConfig(enterpriseConfigPath, enterpriseOrigin);
 
   const app = await launchPackagedApp({
     executablePath: packagedExecutable(desktopDir),
     args: [
-      `--user-data-dir=${join(root, 'user-data')}`,
+      `--user-data-dir=${userData}`,
       '--disable-gpu',
       `--opencreator-enterprise-e2e=${enterpriseRunId}`,
       `--opencreator-enterprise-e2e-config=${enterpriseConfigPath}`
@@ -296,6 +353,70 @@ async function runtimeRequest<T>(
   }, { method, path, body });
 }
 
+async function uploadOversizedWaveSource(
+  page: Page,
+  input: {
+    jobId: string;
+    expectedRevision: number;
+    pcmBytes: number;
+  }
+): Promise<{
+  status: number;
+  body: {
+    job: { revision: number };
+    artifact: {
+      kind: string;
+      status: string;
+      metadata: Record<string, unknown>;
+    };
+    deduplicated: boolean;
+  };
+}> {
+  return await page.evaluate(async ({ jobId, expectedRevision, pcmBytes }) => {
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+    const writeAscii = (offset: number, value: string) => {
+      for (let index = 0; index < value.length; index += 1) {
+        view.setUint8(offset + index, value.charCodeAt(index));
+      }
+    };
+    writeAscii(0, 'RIFF');
+    view.setUint32(4, pcmBytes + 36, true);
+    writeAscii(8, 'WAVE');
+    writeAscii(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, 48_000, true);
+    view.setUint32(28, 96_000, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeAscii(36, 'data');
+    view.setUint32(40, pcmBytes, true);
+
+    const query = new URLSearchParams({
+      expectedRevision: String(expectedRevision),
+      fileName: 'oversized-runtime-proxy.wav',
+      mime: 'audio/wav',
+      lastModified: '0'
+    });
+    const response = await fetch(
+      `/.opencreator/runtime/creator/jobs/${encodeURIComponent(jobId)}/source-video?${query}`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/vnd.opencreator.creator-source'
+        },
+        body: new Blob([header, new Uint8Array(pcmBytes)])
+      }
+    );
+    return {
+      status: response.status,
+      body: await response.json()
+    };
+  }, input);
+}
+
 function packagedRuntimeRoot(): string {
   const packageRoot = dirname(packagedExecutable(desktopDir));
   return process.platform === 'darwin'
@@ -307,7 +428,28 @@ function executableResource(path: string): string {
   return process.platform === 'win32' ? `${path}.exe` : path;
 }
 
-function writeCodexShim(binDir: string): void {
+function packagedCreatorAgentRuntimeFiles(): string[] {
+  const packageRoot = dirname(packagedExecutable(desktopDir));
+  const runtimeRoot = process.platform === 'darwin'
+    ? resolve(
+        packageRoot,
+        '..',
+        'Resources',
+        'daemon',
+        'runtime',
+        'opencreator-runtime'
+      )
+    : join(
+        packageRoot,
+        'resources',
+        'daemon',
+        'runtime',
+        'opencreator-runtime'
+      );
+  return ['SKILL.md', 'manifest.json'].filter(name => existsSync(join(runtimeRoot, name)));
+}
+
+function writeCodexShim(binDir: string): string {
   mkdirSync(binDir, { recursive: true });
   const scriptPath = process.platform === 'win32'
     ? join(binDir, 'codex.cmd')
@@ -319,6 +461,20 @@ function writeCodexShim(binDir: string): void {
       : `#!/bin/sh\nexec "${process.execPath}" "${fakeCodexScript}" "$@"\n`
   );
   if (process.platform !== 'win32') chmodSync(scriptPath, 0o755);
+  return scriptPath;
+}
+
+function writeDesktopSettings(userData: string, codexBin: string): void {
+  mkdirSync(userData, { recursive: true });
+  writeFileSync(
+    join(userData, 'desktop-settings.json'),
+    `${JSON.stringify({
+      closeBehavior: 'quit',
+      notificationsEnabled: false,
+      codexRuntimeMode: 'external',
+      externalCodexBin: codexBin
+    }, null, 2)}\n`
+  );
 }
 
 function withoutDesktopTestEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

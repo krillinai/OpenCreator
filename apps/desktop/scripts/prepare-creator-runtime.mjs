@@ -35,17 +35,30 @@ const vendorRoot = resolve(
 );
 const binDir = join(outputRoot, 'bin');
 const executableSuffix = targetPlatform === 'win32' ? '.exe' : '';
-const cliVersion = '2.1.0';
+const defaultCliVersion = '2.1.0';
+const configuredKrillinCliPath = process.env.OPENCREATOR_KRILLINAI_CLI_PATH?.trim();
+const configuredKrillinCliVersion = process.env.OPENCREATOR_KRILLINAI_CLI_VERSION?.trim();
+const configuredKrillinUpstreamCommit = process.env.OPENCREATOR_KRILLINAI_UPSTREAM_COMMIT?.trim();
 const protocolVersion = 1;
 const protocolSchemaSource = join(rootDir, 'packages', 'protocol', 'contracts', 'krillin-opencreator-v1.schema.json');
 const runtimeMode = 'cli';
 
 ensureCliDependencies();
 const vendorVersions = readVendorVersions();
-const vendoredKrillin = process.env.OPENCREATOR_KRILLINAI_CLI_PATH
+const vendoredKrillin = configuredKrillinCliPath
   ? undefined
   : vendorVersions?.dependencies?.krillinai;
-const serviceVersion = vendoredKrillin?.version ?? cliVersion;
+if (configuredKrillinCliPath && (!configuredKrillinCliVersion || !configuredKrillinUpstreamCommit)) {
+  throw new Error(
+    'Set OPENCREATOR_KRILLINAI_CLI_VERSION and OPENCREATOR_KRILLINAI_UPSTREAM_COMMIT '
+    + 'when OPENCREATOR_KRILLINAI_CLI_PATH is configured'
+  );
+}
+const cliVersion = configuredKrillinCliVersion ?? vendoredKrillin?.version ?? defaultCliVersion;
+const serviceVersion = cliVersion;
+const upstreamCommit = configuredKrillinUpstreamCommit
+  ?? vendoredKrillin?.upstreamCommit
+  ?? `v${defaultCliVersion}`;
 rmSync(outputRoot, { recursive: true, force: true });
 mkdirSync(binDir, { recursive: true });
 
@@ -53,7 +66,7 @@ const primaryExecutablePath = join(binDir, `krillinai-cli${executableSuffix}`);
 copyExecutable(
   resolveExecutable(
     'krillinai-cli',
-    process.env.OPENCREATOR_KRILLINAI_CLI_PATH,
+    configuredKrillinCliPath,
     join(vendorRoot, `krillinai-cli${executableSuffix}`)
   ),
   primaryExecutablePath
@@ -85,7 +98,7 @@ const buildRecord = {
   cliVersion,
   protocolVersion,
   protocolSha256,
-  upstreamCommit: vendoredKrillin?.upstreamCommit ?? `v${cliVersion}`,
+  upstreamCommit,
   integrationPatchSha256: hashFiles([
     join(scriptDir, 'install-creator-runtime-dependencies.mjs'),
     join(scriptDir, 'prepare-creator-runtime.mjs'),
@@ -131,7 +144,7 @@ console.log(JSON.stringify({ ok: true, outputRoot, resources: manifest.resources
 
 function ensureCliDependencies() {
   const required = [
-    [process.env.OPENCREATOR_KRILLINAI_CLI_PATH, join(vendorRoot, `krillinai-cli${executableSuffix}`)],
+    [configuredKrillinCliPath, join(vendorRoot, `krillinai-cli${executableSuffix}`)],
     [process.env.OPENCREATOR_FFMPEG_PATH, join(vendorRoot, `ffmpeg${executableSuffix}`)],
     [process.env.OPENCREATOR_FFPROBE_PATH, join(vendorRoot, `ffprobe${executableSuffix}`)],
     [process.env.OPENCREATOR_YT_DLP_PATH, join(vendorRoot, `yt-dlp${executableSuffix}`)]

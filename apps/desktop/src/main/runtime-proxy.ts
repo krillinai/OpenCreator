@@ -1,4 +1,8 @@
 const RUNTIME_PREFIX = '/.opencreator/runtime';
+const CREATOR_SOURCE_UPLOAD_CONTENT_TYPE =
+  'application/vnd.opencreator.creator-source';
+const CREATOR_SOURCE_UPLOAD_PATH =
+  /^\/creator\/jobs\/creator_job_[A-Za-z0-9_-]+\/source-video$/;
 
 export const MAX_RUNTIME_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
 
@@ -91,6 +95,19 @@ export function createRuntimeProxyHeaders(
   }
   headers.set('Authorization', `Bearer ${token}`);
   return headers;
+}
+
+export function isStreamingRuntimeUploadRequest(
+  target: Pick<URL, 'pathname'>,
+  request: Pick<Request, 'method' | 'headers'>
+): boolean {
+  const contentType = request.headers.get('content-type')
+    ?.split(';', 1)[0]
+    ?.trim()
+    .toLowerCase();
+  return request.method.toUpperCase() === 'POST'
+    && CREATOR_SOURCE_UPLOAD_PATH.test(target.pathname)
+    && contentType === CREATOR_SOURCE_UPLOAD_CONTENT_TYPE;
 }
 
 function parseDaemonOrigin(address: string): URL {

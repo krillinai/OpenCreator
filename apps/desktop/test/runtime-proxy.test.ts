@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_RUNTIME_REQUEST_BODY_BYTES,
   createRuntimeProxyTarget,
+  isStreamingRuntimeUploadRequest,
   isRuntimeRequestUrl,
   readBoundedRequestBody
 } from '../src/main/runtime-proxy.js';
@@ -89,5 +90,49 @@ describe('Desktop Runtime proxy', () => {
       body: body as unknown as Request['body']
     })).rejects.toMatchObject({ status: 413 });
     expect(pulled).toBe(false);
+  });
+
+  it('streams only the exact Creator source upload route and content type', () => {
+    const target = new URL(
+      'http://127.0.0.1:60764/creator/jobs/creator_job_abc-123/source-video'
+    );
+    expect(isStreamingRuntimeUploadRequest(target, {
+      method: 'POST',
+      headers: new Headers({
+        'content-type': 'application/vnd.opencreator.creator-source; charset=binary'
+      })
+    })).toBe(true);
+
+    for (const input of [
+      {
+        target,
+        method: 'PUT',
+        contentType: 'application/vnd.opencreator.creator-source'
+      },
+      {
+        target: new URL(
+          'http://127.0.0.1:60764/creator/jobs/creator_job_abc-123/actions'
+        ),
+        method: 'POST',
+        contentType: 'application/vnd.opencreator.creator-source'
+      },
+      {
+        target: new URL(
+          'http://127.0.0.1:60764/creator/jobs/not-a-creator-job/source-video'
+        ),
+        method: 'POST',
+        contentType: 'application/vnd.opencreator.creator-source'
+      },
+      {
+        target,
+        method: 'POST',
+        contentType: 'application/octet-stream'
+      }
+    ]) {
+      expect(isStreamingRuntimeUploadRequest(input.target, {
+        method: input.method,
+        headers: new Headers({ 'content-type': input.contentType })
+      })).toBe(false);
+    }
   });
 });

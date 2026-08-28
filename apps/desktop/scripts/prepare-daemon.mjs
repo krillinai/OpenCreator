@@ -96,6 +96,8 @@ pruneDevelopmentArtifacts(targetDir);
 
 assertExists(resolve(targetDir, 'dist/main.js'));
 assertExists(resolve(targetDir, 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'));
+assertExists(resolve(targetDir, 'runtime/opencreator-runtime/SKILL.md'));
+assertExists(resolve(targetDir, 'runtime/opencreator-runtime/manifest.json'));
 assertProtocolRuntimePackage();
 assertCleanDeployment();
 

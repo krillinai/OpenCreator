@@ -27,6 +27,8 @@ describe('creator web service', () => {
       expectedRevision: 0,
       input: { patch: { targetLanguage: 'ja' } }
     });
+    await service.cancelJob('job_1');
+    await service.resumeJob('job_1');
     await service.startAgentTurn('job_1', { message: '开始', clientMessageId: 'message-1' });
     await service.steerAgentTurn('job_1', { message: '调整', clientMessageId: 'message-2' });
     await service.interruptAgentTurn('job_1');
@@ -53,11 +55,13 @@ describe('creator web service', () => {
       creationKey: 'create-key-1'
     });
     expect(client.post).toHaveBeenNthCalledWith(2, '/creator/jobs/job_1/actions', expect.any(Object));
-    expect(client.post).toHaveBeenNthCalledWith(3, '/creator/jobs/job_1/agent-turns', expect.any(Object));
-    expect(client.post).toHaveBeenNthCalledWith(4, '/creator/jobs/job_1/agent-steer', expect.any(Object));
-    expect(client.post).toHaveBeenNthCalledWith(5, '/creator/jobs/job_1/agent-interrupt');
+    expect(client.post).toHaveBeenNthCalledWith(3, '/creator/jobs/job_1/cancel');
+    expect(client.post).toHaveBeenNthCalledWith(4, '/creator/jobs/job_1/resume');
+    expect(client.post).toHaveBeenNthCalledWith(5, '/creator/jobs/job_1/agent-turns', expect.any(Object));
+    expect(client.post).toHaveBeenNthCalledWith(6, '/creator/jobs/job_1/agent-steer', expect.any(Object));
+    expect(client.post).toHaveBeenNthCalledWith(7, '/creator/jobs/job_1/agent-interrupt');
     expect(client.post).toHaveBeenNthCalledWith(
-      6,
+      8,
       '/creator/jobs/job_1/agent-approvals/approval%201',
       expect.any(Object)
     );

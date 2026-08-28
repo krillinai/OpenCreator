@@ -532,7 +532,7 @@ function assertTrustedSender(event: IpcMainInvokeEvent, development: boolean): v
     development
     && url.protocol === 'http:'
     && url.hostname === '127.0.0.1'
-    && url.port === '9000'
+    && url.port === '19861'
   ) {
     return;
   }
@@ -555,7 +555,7 @@ function assertTrustedWorkspaceSender(
     development
     && url.protocol === 'http:'
     && url.hostname === '127.0.0.1'
-    && url.port === '9000'
+    && url.port === '19861'
   ) {
     return;
   }

@@ -13,12 +13,14 @@ import {
   Captions,
   Check,
   ChevronDown,
+  CircleStop,
   FileAudio,
   FileVideo,
   History,
   Languages,
   Mic2,
   MonitorPlay,
+  Play,
   Sparkles
 } from 'lucide-react';
 import { beginPaneResize } from '../../components/layout/pane-resize-2026-07-29.js';
@@ -914,7 +916,10 @@ export default function VideoTranslationWorkspace(props: {
   const [resultNotice, setResultNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submissionPhase, setSubmissionPhase] = useState<'uploading' | 'starting'>();
+  const [taskControlPending, setTaskControlPending] = useState<'canceling' | 'resuming'>();
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [agentFocus, setAgentFocus] = useState<AgentFocus>();
+  const cancelConfirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (creatorSession === null) return;
@@ -961,10 +966,10 @@ export default function VideoTranslationWorkspace(props: {
     ) ?? persistedOrientation ?? 'landscape');
     if (typeof persisted.verticalTitle === 'string') setVerticalTitle(persisted.verticalTitle);
     if (typeof persisted.verticalSubtitle === 'string') setVerticalSubtitle(persisted.verticalSubtitle);
-    if (persisted.currentStep === 0 || persisted.currentStep === 1 || persisted.currentStep === 2) {
+    if (persisted.currentStep === 0 || persisted.currentStep === 1 || persisted.currentStep === 2 || persisted.currentStep === 3) {
       setCurrentStep(persisted.currentStep);
     }
-    if (persisted.furthestStep === 0 || persisted.furthestStep === 1 || persisted.furthestStep === 2) {
+    if (persisted.furthestStep === 0 || persisted.furthestStep === 1 || persisted.furthestStep === 2 || persisted.furthestStep === 3) {
       setFurthestStep(persisted.furthestStep);
     }
     const persistedPhase = persisted.workspacePhase === 'configure' || persisted.workspacePhase === 'result'
@@ -1096,6 +1101,16 @@ export default function VideoTranslationWorkspace(props: {
     }
   }, [sourceOrientation, videoFormat]);
 
+  useEffect(() => {
+    if (!cancelDialogOpen) return;
+    cancelConfirmRef.current?.focus();
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setCancelDialogOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [cancelDialogOpen]);
+
   const jobArtifacts = creatorSession?.job.artifacts ?? [];
   const registeredSourceArtifact = [...jobArtifacts].reverse().find(artifact => (
     artifact.kind === 'source_video'
@@ -1115,11 +1130,17 @@ export default function VideoTranslationWorkspace(props: {
   const hasSource = sourceType === 'url'
     ? isValidVideoUrl(videoUrl)
     : videoFile !== null || registeredSourceArtifact !== undefined;
-  const latestStage = creatorSession === null
+  const latestStage = creatorSession?.job.stages.at(-1);
+  const activeStage = creatorSession === null
     ? undefined
-    : [...creatorSession.job.stages].reverse().find(stage => stage.stageId === 'subtitle')
-      ?? creatorSession.job.stages[creatorSession.job.stages.length - 1];
-  const stageFailure = latestStage?.status === 'failed' || latestStage?.status === 'interrupted'
+    : [...creatorSession.job.stages].reverse().find(stage => (
+        stage.status === 'queued' || stage.status === 'running'
+      ));
+  const resumableStage = activeStage === undefined
+    && (latestStage?.status === 'canceled' || latestStage?.status === 'interrupted')
+    ? latestStage
+    : undefined;
+  const stageFailure = latestStage?.status === 'failed'
     ? latestStage
     : undefined;
   const stageConfigurationCode = normalizeStageConfigurationError(
@@ -1134,6 +1155,11 @@ export default function VideoTranslationWorkspace(props: {
       ? creatorErrorMessage(needsInput, l)
       : stageFailure !== undefined
         ? stageErrorMessage(stageFailure.errorCode, stageFailure.errorMessage, l)
+        : resumableStage !== undefined
+          ? l(
+              `任务已终止，可从“${translationStageLabel(resumableStage.stageId, l)}”重新开始`,
+              `The task stopped and can restart from "${translationStageLabel(resumableStage.stageId, l)}"`
+            )
         : '';
   const sourceName = sourceType === 'url'
     ? (videoUrl.trim() || l('等待填写链接', 'Waiting for a link'))
@@ -1473,6 +1499,88 @@ export default function VideoTranslationWorkspace(props: {
       setSubmitting(false);
       setSubmissionPhase(undefined);
     }
+  }
+
+  function requestCancelTask() {
+    if (
+      activeStage === undefined
+      || activeStage.progress.cancelRequested === true
+      || taskControlPending !== undefined
+    ) return;
+    setCancelDialogOpen(true);
+  }
+
+  async function cancelTask() {
+    if (creatorSession === null || activeStage === undefined || taskControlPending !== undefined) return;
+    setCancelDialogOpen(false);
+    setTaskControlPending('canceling');
+    creatorSession.clearError();
+    setResultNotice(l('正在终止当前阶段...', 'Stopping the current stage...'));
+    try {
+      await creatorSession.cancelJob();
+      setResultNotice(l(
+        '终止请求已发送。已完成阶段和产物会保留；继续时当前阶段将重新开始。',
+        'Stop requested. Completed stages and outputs are preserved; the current stage will restart when resumed.'
+      ));
+    } catch (cause) {
+      setResultNotice(creatorErrorMessage(cause, l));
+    } finally {
+      setTaskControlPending(undefined);
+    }
+  }
+
+  async function resumeTask() {
+    if (creatorSession === null || resumableStage === undefined || taskControlPending !== undefined) return;
+    setTaskControlPending('resuming');
+    creatorSession.clearError();
+    setResultNotice(l('正在继续任务...', 'Resuming the task...'));
+    try {
+      await creatorSession.resumeJob();
+      setResultNotice(l(
+        `任务已继续，正在从“${translationStageLabel(resumableStage.stageId, l)}”重新开始`,
+        `The task resumed and is restarting from "${translationStageLabel(resumableStage.stageId, l)}"`
+      ));
+    } catch (cause) {
+      setResultNotice(creatorErrorMessage(cause, l));
+    } finally {
+      setTaskControlPending(undefined);
+    }
+  }
+
+  function renderTaskControlButton() {
+    if (activeStage !== undefined) {
+      const cancelRequested = activeStage.progress.cancelRequested === true;
+      return (
+        <button
+          className="video-translation-primary-action"
+          data-intent="danger"
+          type="button"
+          disabled={taskControlPending !== undefined || cancelRequested}
+          onClick={requestCancelTask}
+        >
+          <CircleStop size={16} strokeWidth={1.9} aria-hidden="true" />
+          {taskControlPending === 'canceling' || cancelRequested
+            ? l('正在终止...', 'Stopping...')
+            : l('终止任务', 'Stop task')}
+        </button>
+      );
+    }
+    if (resumableStage !== undefined) {
+      return (
+        <button
+          className="video-translation-primary-action"
+          type="button"
+          disabled={taskControlPending !== undefined}
+          onClick={() => void resumeTask()}
+        >
+          <Play size={16} strokeWidth={1.9} aria-hidden="true" />
+          {taskControlPending === 'resuming'
+            ? l('正在继续...', 'Resuming...')
+            : l('继续任务', 'Resume task')}
+        </button>
+      );
+    }
+    return null;
   }
 
   async function saveSubtitles() {
@@ -2058,7 +2166,9 @@ export default function VideoTranslationWorkspace(props: {
               {l('上一步', 'Back')}
             </button>
           ) : <span />}
-          {currentStep === 0 ? (
+          {activeStage !== undefined || resumableStage !== undefined ? (
+            renderTaskControlButton()
+          ) : currentStep === 0 ? (
             <div className="video-translation-action-group">
               {attemptedContinue && !hasSource ? (
                 <p className="video-translation-error" role="alert">{l('请先添加需要翻译的视频', 'Add a video to translate first')}</p>
@@ -2101,6 +2211,12 @@ export default function VideoTranslationWorkspace(props: {
         ) : null}
         </div>
         ) : null}
+        {workspacePhase === 'result' && (activeStage !== undefined || resumableStage !== undefined) ? (
+          <footer className="video-translation-wizard-actions video-translation-task-controls">
+            <span />
+            {renderTaskControlButton()}
+          </footer>
+        ) : null}
           </div>
 
           <div
@@ -2138,9 +2254,20 @@ export default function VideoTranslationWorkspace(props: {
               },
               {
                 id: 'run-translation',
-                label: l('开始翻译', 'Start translation'),
+                label: activeStage !== undefined
+                  ? activeStage.progress.cancelRequested === true
+                    ? l('正在终止...', 'Stopping...')
+                    : l('终止任务', 'Stop task')
+                  : resumableStage !== undefined
+                    ? l('继续任务', 'Resume task')
+                    : l('开始翻译', 'Start translation'),
                 kind: 'action',
-                onAction: () => void submit()
+                disabled: taskControlPending !== undefined || activeStage?.progress.cancelRequested === true,
+                onAction: () => activeStage !== undefined
+                  ? requestCancelTask()
+                  : resumableStage !== undefined
+                    ? void resumeTask()
+                    : void submit()
               },
               {
                 id: 'agent-review',
@@ -2149,9 +2276,56 @@ export default function VideoTranslationWorkspace(props: {
                 prompt: l('检查当前视频翻译设置，指出缺失项，并给出下一步建议。', 'Review the current video translation settings, identify missing inputs, and recommend the next step.')
               }
             ]}
+            onCancelTask={requestCancelTask}
+            onResumeTask={() => void resumeTask()}
+            taskControlPending={taskControlPending}
           />
         </div>
       </div>
+      {cancelDialogOpen && activeStage !== undefined ? (
+        <div
+          className="video-translation-confirm-backdrop"
+          role="presentation"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) setCancelDialogOpen(false);
+          }}
+        >
+          <section
+            className="video-translation-confirm-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="video-translation-cancel-title"
+          >
+            <header>
+              <span aria-hidden="true"><CircleStop size={18} strokeWidth={1.9} /></span>
+              <div>
+                <h2 id="video-translation-cancel-title">{l('终止翻译任务？', 'Stop translation task?')}</h2>
+                <p>
+                  {stageCancelDescription(activeStage, l)}
+                </p>
+              </div>
+            </header>
+            <div className="video-translation-confirm-note">
+              <strong>{l('终止后如何继续', 'How resuming works')}</strong>
+              <span>{stageResumeDescription(activeStage, l)}</span>
+            </div>
+            <footer>
+              <button type="button" onClick={() => setCancelDialogOpen(false)}>
+                {l('取消', 'Cancel')}
+              </button>
+              <button
+                ref={cancelConfirmRef}
+                type="button"
+                data-intent="danger"
+                onClick={() => void cancelTask()}
+              >
+                <CircleStop size={15} strokeWidth={1.9} aria-hidden="true" />
+                {l('终止任务', 'Stop task')}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -2182,6 +2356,15 @@ function creatorErrorMessage(cause: unknown, l: LocalizeCopy): string {
   if (code === 'creator_revision_conflict') {
     return l('任务状态刚刚发生变化，请重试一次。你的设置没有丢失。', 'The task changed just now. Retry once; your settings are preserved.');
   }
+  if (code === 'creator_job_not_running') {
+    return l('任务已经结束，无需再次终止。', 'The task has already ended.');
+  }
+  if (code === 'creator_job_not_resumable') {
+    return l('当前任务没有可继续的终止阶段。', 'This task has no stopped stage to resume.');
+  }
+  if (code === 'creator_job_control_unavailable') {
+    return l('当前 Creator Runtime 不支持任务终止与继续。', 'The current Creator Runtime does not support stopping and resuming tasks.');
+  }
   if (code === 'creator_source_missing') {
     return l('本地视频尚未上传，请重新选择视频后再试。', 'The local video has not been uploaded. Select it again and retry.');
   }
@@ -2208,6 +2391,74 @@ function creatorErrorMessage(cause: unknown, l: LocalizeCopy): string {
   }
   const message = typeof candidate?.message === 'string' ? candidate.message : '';
   return message || l('启动翻译失败，请检查配置后重试。', 'Failed to start translation. Check the configuration and retry.');
+}
+
+function translationStageLabel(stageId: string, l: LocalizeCopy): string {
+  if (stageId === 'subtitle') return l('字幕翻译', 'Subtitle translation');
+  if (stageId === 'tts') return l('配音生成', 'Dubbing');
+  if (stageId === 'render-horizontal') return l('横屏成片', 'Landscape render');
+  if (stageId === 'render-vertical') return l('竖屏成片', 'Portrait render');
+  return l('当前阶段', 'Current stage');
+}
+
+function stageCancelDescription(
+  stage: import('@opencreator/protocol').CreatorStageRun,
+  l: LocalizeCopy
+): string {
+  const percent = creatorStageProgressPercent(stage);
+  const label = translationStageLabel(stage.stageId, l);
+  if (stage.status === 'queued') {
+    return l(
+      `“${label}”正在等待执行。`,
+      `"${label}" is waiting to run.`
+    );
+  }
+  return percent === null
+    ? l(`当前正在执行“${label}”。`, `Currently running "${label}".`)
+    : l(
+        `当前正在执行“${label}”，进度 ${percent}%。`,
+        `Currently running "${label}" at ${percent}%.`
+      );
+}
+
+function stageResumeDescription(
+  stage: import('@opencreator/protocol').CreatorStageRun,
+  l: LocalizeCopy
+): string {
+  const label = translationStageLabel(stage.stageId, l);
+  if (stage.status === 'queued') {
+    return l(
+      `已完成阶段和产物会保留。继续任务时，“${label}”会重新进入执行队列。`,
+      `Completed stages and outputs are preserved. Resuming places "${label}" back in the execution queue.`
+    );
+  }
+  const percent = creatorStageProgressPercent(stage);
+  return percent === null
+    ? l(
+        `已完成阶段和产物会保留。继续任务时，“${label}”会从头重新执行。`,
+        `Completed stages and outputs are preserved. Resuming restarts "${label}" from the beginning.`
+      )
+    : l(
+        `已完成阶段和产物会保留。继续任务时，“${label}”会从头重新执行，当前 ${percent}% 的阶段内进度不会保留。`,
+        `Completed stages and outputs are preserved. Resuming restarts "${label}" from the beginning; its current ${percent}% progress is not preserved.`
+      );
+}
+
+function creatorStageProgressPercent(
+  stage: import('@opencreator/protocol').CreatorStageRun
+): number | null {
+  const payload = stage.progress.krillinEventPayload;
+  const nested = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : null;
+  const value = typeof stage.progress.percent === 'number'
+    ? stage.progress.percent
+    : typeof nested?.percent === 'number'
+      ? nested.percent
+      : null;
+  return value === null || !Number.isFinite(value)
+    ? null
+    : Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function stageErrorMessage(code: string | null, message: string | null, l: LocalizeCopy): string {

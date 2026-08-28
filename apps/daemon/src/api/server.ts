@@ -264,6 +264,7 @@ export type BuildServerInput = {
   creatorSourceUploadService?: CreatorSourceUploadService;
   creatorSourceMediaProbe?(path: string): Promise<MediaProbe>;
   creatorSourceMaxSizeBytes?: number;
+  creatorExecutors?: CreatorExecutor[];
   creatorAgentRuntime?: AgentRuntimeAdapter;
   allowedWebOrigins?: string[];
   enterpriseAgentIdentityStore?: EnterpriseAgentIdentityStore;
@@ -287,7 +288,7 @@ const ATTACHMENT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 export async function buildServer(input: BuildServerInput) {
   const server = Fastify({ logger: false });
   const allowedWebOrigins = new Set(
-    input.allowedWebOrigins ?? ['http://127.0.0.1:9000']
+    input.allowedWebOrigins ?? ['http://127.0.0.1:19861']
   );
   await server.register(cors, {
     origin(origin, callback) {
@@ -598,7 +599,7 @@ export async function buildServer(input: BuildServerInput) {
     resourceRoot: creatorRuntimeRoot,
     jobsRoot: creatorJobsRoot
   });
-  const creatorExecutors: CreatorExecutor[] = [
+  const creatorExecutors: CreatorExecutor[] = input.creatorExecutors ?? [
     createKrillinExecutor({
       resourceRoot: creatorRuntimeRoot,
       jobsRoot: creatorJobsRoot,
@@ -622,10 +623,10 @@ export async function buildServer(input: BuildServerInput) {
     creatorFfmpegPath = executable(/(?:^|\/)ffmpeg(?:\.exe)?$/i);
     creatorFfprobePath = executable(/(?:^|\/)ffprobe(?:\.exe)?$/i);
     const ytDlpPath = executable(/(?:^|\/)yt-dlp(?:\.exe)?$/i);
-    if (ytDlpPath && creatorFfprobePath) {
+    if (input.creatorExecutors === undefined && ytDlpPath && creatorFfprobePath) {
       creatorExecutors.push(createDownloadExecutor({ ytDlpPath, ffprobePath: creatorFfprobePath }));
     }
-    if (creatorFfmpegPath && creatorFfprobePath) {
+    if (input.creatorExecutors === undefined && creatorFfmpegPath && creatorFfprobePath) {
       creatorExecutors.push(
         createClipExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath: creatorFfprobePath }),
         createStickmanExecutor({ configStore: creatorServicesConfigStore, ffmpegPath: creatorFfmpegPath, ffprobePath: creatorFfprobePath })
@@ -1051,14 +1052,19 @@ export async function buildServer(input: BuildServerInput) {
     manager: knowledgeConversationManager
   });
   await registerCleanupRoutes(server, cleanupService);
-  await registerCreatorServicesRoutes(server, creatorServicesConfigStore);
+  await registerCreatorServicesRoutes(
+    server,
+    creatorServicesConfigStore,
+    () => krillinDependencyLoader.capabilities()
+  );
   await registerCreatorRoutes(server, creatorService, creatorEvents, {
     sseHeartbeatMs: input.sseHeartbeatMs,
     agentService: creatorAgentService,
     videoTranslationWorkflow,
     projectCoverService: creatorProjectCoverService,
     sourceUploadService: creatorSourceUploadService,
-    dispatcher: creatorCommandDispatcher
+    dispatcher: creatorCommandDispatcher,
+    stageRunner: creatorStageRunner
   });
   await registerAttachmentRoutes(server, attachmentService, {
     maxSizeBytes: input.attachmentMaxSizeBytes

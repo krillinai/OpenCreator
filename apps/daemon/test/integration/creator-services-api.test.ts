@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import type { CreatorServicesConfigStore } from '../../src/creator-services/config-store.js';
 import { registerCreatorServicesRoutes } from '../../src/api/routes.creator-services.js';
+import { createKrillinCreatorServicesCapabilities } from '../../src/creator/krillin/capabilities.js';
 
 describe('creator services API', () => {
   let server: FastifyInstance;
@@ -18,7 +19,11 @@ describe('creator services API', () => {
       reset: vi.fn(async () => createDefaultCreatorServicesConfig())
     };
     server = Fastify({ logger: false });
-    await registerCreatorServicesRoutes(server, store);
+    await registerCreatorServicesRoutes(
+      server,
+      store,
+      () => createKrillinCreatorServicesCapabilities('darwin', 'arm64')
+    );
   });
 
   afterEach(async () => {
@@ -33,7 +38,6 @@ describe('creator services API', () => {
     expect(config.llm.apiKey).toBe('');
     expect(read.json().configuredCredentials).toContain('llm.apiKey');
     config.llm.apiKey = 'sk-local';
-    config.transcription.provider = 'faster-whisper';
 
     const saved = await server.inject({
       method: 'PATCH',
@@ -74,6 +78,25 @@ describe('creator services API', () => {
     }));
   });
 
+  it('accepts the default OpenAI provider with an empty API key', async () => {
+    vi.mocked(store.read).mockResolvedValue(createDefaultCreatorServicesConfig());
+    const config = createDefaultCreatorServicesConfig();
+
+    const response = await server.inject({
+      method: 'PATCH',
+      url: '/creator-services/config',
+      payload: config
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(store.write).toHaveBeenCalledWith(expect.objectContaining({
+      transcription: expect.objectContaining({
+        provider: 'openai',
+        openai: expect.objectContaining({ apiKey: '' })
+      })
+    }));
+  });
+
   it('rejects unsupported providers without persisting the request', async () => {
     const config = createDefaultCreatorServicesConfig() as unknown as Record<string, any>;
     config.transcription.provider = 'unknown';
@@ -85,6 +108,44 @@ describe('creator services API', () => {
     });
 
     expect(response.statusCode).toBe(400);
+    expect(store.write).not.toHaveBeenCalled();
+  });
+
+  it('reports Runtime transcription capabilities', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/creator-services/capabilities'
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      platform: 'darwin',
+      arch: 'arm64',
+      transcription: {
+        providers: expect.arrayContaining([
+          expect.objectContaining({ provider: 'openai', available: true }),
+          expect.objectContaining({ provider: 'whisperkit', available: true }),
+          expect.objectContaining({ provider: 'faster-whisper', available: false }),
+          expect.objectContaining({ provider: 'whisper.cpp', available: false })
+        ])
+      }
+    });
+  });
+
+  it('rejects a local provider without a controlled Runtime installer', async () => {
+    const config = createDefaultCreatorServicesConfig();
+    config.transcription.provider = 'faster-whisper';
+
+    const response = await server.inject({
+      method: 'PATCH',
+      url: '/creator-services/config',
+      payload: config
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: { code: 'unsupported_capability' }
+    });
     expect(store.write).not.toHaveBeenCalled();
   });
 });

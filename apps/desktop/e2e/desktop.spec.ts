@@ -379,7 +379,7 @@ test('打包 App 将会话标题提升到 38px 原生标题栏且文件入口可
     const title = fixture.page.getByRole('heading', { name: 'hello' });
     const conversationHeader = fixture.page.locator(
       process.platform === 'darwin'
-        ? '.clawee-main-titlebar'
+        ? '.opencreator-main-titlebar'
         : '.conversation-page > .conversation-header'
     );
     const fileButton = conversationHeader.getByRole('button', {

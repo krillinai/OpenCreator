@@ -20,9 +20,14 @@ import type {
 import { CreatorExecutorError } from '../executor.js';
 import { validateMediaFile } from '../validators/media.js';
 import { validateSrtFile } from '../validators/srt.js';
-import { KrillinCliError, runKrillinCli } from './cli-runner.js';
+import {
+  KrillinCliError,
+  resolveKrillinCliSource,
+  runKrillinCli
+} from './cli-runner.js';
 import type { KrillinDependencyLoader } from './dependency-loader.js';
 import { preflightKrillinDependencies } from './dependency-preflight.js';
+import { createKrillinCliExecutionPlan } from './execution-plan.js';
 import { readKrillinRuntimeManifest, resolveInside } from './manifest.js';
 import type { KrillinRuntimeHost } from './runtime-host.js';
 import { KrillinServiceError, type KrillinServiceClient } from './service-client.js';
@@ -47,13 +52,11 @@ export function createKrillinExecutor(input: {
     async run(stage): Promise<CreatorExecutorResult> {
       const configured = await input.configStore.read();
       const preflight = preflightKrillinDependencies(input.resourceRoot, configured);
-      await input.dependencyLoader.ensure({
-        config: preflight.config,
-        signal: stage.signal,
-        reportProgress(progress) {
-          stage.reportProgress({ ...stage.stageRun.progress, ...progress });
-        }
-      });
+      await ensureKrillinTranscriptionDependency(
+        input.dependencyLoader,
+        preflight.config,
+        stage
+      );
       const ffprobe = executablePath(input.resourceRoot, /(?:^|\/)ffprobe(?:\.exe)?$/i);
       const materializedArtifacts = await writeArtifactIndex(input.jobsRoot, stage);
       const inputArtifactIds = materializedArtifacts.map(artifact => artifact.id);
@@ -61,16 +64,42 @@ export function createKrillinExecutor(input: {
       if (hasPackagedCli(preflight.manifest)) {
         let artifacts: KrillinResultArtifact[];
         try {
-          artifacts = await runKrillinCli({
-            resourceRoot: input.resourceRoot,
-            jobsRoot: input.jobsRoot,
-            dependencyRoot: input.dependencyLoader.root,
-            manifest: preflight.manifest,
-            stage,
-            config: preflight.config,
-            artifacts: materializedArtifacts,
+          const attempts = createKrillinCliExecutionPlan(
+            stage.stageRun.stageId,
+            resolveKrillinCliSource(materializedArtifacts, options),
             options
-          });
+          );
+          let completed: KrillinResultArtifact[] | undefined;
+          for (const attempt of attempts) {
+            try {
+              completed = await runKrillinCli({
+                resourceRoot: input.resourceRoot,
+                jobsRoot: input.jobsRoot,
+                dependencyRoot: input.dependencyLoader.root,
+                manifest: preflight.manifest,
+                stage,
+                config: preflight.config,
+                artifacts: materializedArtifacts,
+                options: attempt.options
+              });
+              break;
+            } catch (error) {
+              if (
+                error instanceof KrillinCliError
+                && error.code === attempt.continueOnErrorCode
+              ) {
+                continue;
+              }
+              throw error;
+            }
+          }
+          if (completed === undefined) {
+            throw new CreatorExecutorError(
+              'krillin_stage_failed',
+              'KrillinAI exhausted the subtitle execution plan'
+            );
+          }
+          artifacts = completed;
         } catch (error) {
           if (!(error instanceof KrillinCliError)) throw error;
           const normalized = normalizeKrillinFailure({
@@ -184,6 +213,20 @@ export function createKrillinExecutor(input: {
       };
     }
   };
+}
+
+async function ensureKrillinTranscriptionDependency(
+  loader: KrillinDependencyLoader,
+  config: CreatorServicesConfig,
+  stage: CreatorExecutorInput
+): Promise<void> {
+  await loader.ensure({
+    config,
+    signal: stage.signal,
+    reportProgress(progress) {
+      stage.reportProgress({ ...stage.stageRun.progress, ...progress });
+    }
+  });
 }
 
 export async function enforceKrillinDeadlines(input: {

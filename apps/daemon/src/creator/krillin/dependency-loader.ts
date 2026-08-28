@@ -11,9 +11,14 @@ import {
   writeFile
 } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import type { CreatorJson, CreatorServicesConfig } from '@opencreator/protocol';
+import type {
+  CreatorJson,
+  CreatorServicesCapabilitiesResponse,
+  CreatorServicesConfig
+} from '@opencreator/protocol';
 import { CreatorExecutorError } from '../executor.js';
 import { spawnCreatorProcess } from '../process-tree.js';
+import { createKrillinCreatorServicesCapabilities } from './capabilities.js';
 
 const whisperKitRelease = {
   executable: {
@@ -44,6 +49,7 @@ type WhisperKitInstaller = {
 
 export type KrillinDependencyLoader = {
   root: string;
+  capabilities(): CreatorServicesCapabilitiesResponse;
   ensure(input: {
     config: CreatorServicesConfig;
     signal: AbortSignal;
@@ -66,6 +72,9 @@ export function createKrillinDependencyLoader(input: {
 
   return {
     root,
+    capabilities() {
+      return createKrillinCreatorServicesCapabilities(platform, arch);
+    },
     async ensure({ config, signal, reportProgress }): Promise<void> {
       if (normalizedProvider(config) !== 'whisperkit') return;
       if (platform !== 'darwin' || arch !== 'arm64') {

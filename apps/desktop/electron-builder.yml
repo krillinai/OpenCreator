@@ -40,6 +40,10 @@ extraResources:
       - "!**/{test,tests,__tests__,example,examples}/**/*"
   - from: .pack/daemon/package.json
     to: daemon/package.json
+  - from: .pack/daemon/runtime
+    to: daemon/runtime
+    filter:
+      - "**/*"
   - from: .pack/deployment
     to: deployment
   - from: .pack/creator-runtime

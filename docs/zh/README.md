@@ -165,7 +165,7 @@ pnpm install
 pnpm web:dev
 ```
 
-打开 `http://127.0.0.1:9000/`。开发服务器会按需启动本地 daemon，并通过同源代理注入临时 Runtime token，不需要手工复制连接信息。
+打开 `http://127.0.0.1:19861/`。开发服务器会按需启动本地 daemon，并通过同源代理注入临时 Runtime token，不需要手工复制连接信息。
 
 首次启动时，Runtime 会准备默认项目；连接完成后输入框即可直接使用。如果只需要调试 daemon：
 
@@ -367,7 +367,7 @@ pnpm --filter @opencreator/daemon test -- test/smoke/real-codex-smoke.test.ts
 <details>
 <summary><strong>页面一直显示正在连接本地运行内核</strong></summary>
 
-确认 `pnpm web:dev` 没有退出，并访问 `http://127.0.0.1:9000/.opencreator/runtime/healthz`。正常响应应为 `{"ok":true}`。如果 9000 端口被占用，先停止旧进程再重试。
+确认 `pnpm web:dev` 没有退出，并访问 `http://127.0.0.1:19861/.opencreator/runtime/healthz`。正常响应应为 `{"ok":true}`。如果 19861 端口被占用，先停止旧进程再重试。
 
 </details>
 

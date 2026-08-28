@@ -9,8 +9,8 @@ describe('Workspace Ready sender validation', () => {
   });
 
   it('accepts only the fixed Vite origin in development', () => {
-    expect(isWorkspaceUrl('http://127.0.0.1:9000/', true)).toBe(true);
-    expect(isWorkspaceUrl('http://localhost:9000/', true)).toBe(false);
-    expect(isWorkspaceUrl('http://127.0.0.1:9001/', true)).toBe(false);
+    expect(isWorkspaceUrl('http://127.0.0.1:19861/', true)).toBe(true);
+    expect(isWorkspaceUrl('http://localhost:19861/', true)).toBe(false);
+    expect(isWorkspaceUrl('http://127.0.0.1:19862/', true)).toBe(false);
   });
 });

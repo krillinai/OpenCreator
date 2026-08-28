@@ -12,6 +12,7 @@ import type {
   CreatorEventEnvelope,
   CreatorJob,
   CreatorJobListResponse,
+  CreatorStageRun,
   CreatorSourceUploadResponse,
   CreatorTemplateListResponse
 } from '@opencreator/protocol';
@@ -25,6 +26,12 @@ type ClientLike = {
 
 const CREATOR_SOURCE_UPLOAD_CONTENT_TYPE =
   'application/vnd.opencreator.creator-source';
+
+export type CreatorJobControlResponse = {
+  job: CreatorJob;
+  stage: CreatorStageRun;
+  control: 'canceling' | 'canceled' | 'resumed';
+};
 
 export function createCreatorService(client: ClientLike) {
   const lastEventIdByJob = new Map<string, string>();
@@ -75,6 +82,16 @@ export function createCreatorService(client: ClientLike) {
     },
     applyAction(jobId: string, request: CreatorActionRequest): Promise<CreatorActionResponse> {
       return client.post(`/creator/jobs/${encodeURIComponent(jobId)}/actions`, request) as Promise<CreatorActionResponse>;
+    },
+    cancelJob(jobId: string): Promise<CreatorJobControlResponse> {
+      return client.post(
+        `/creator/jobs/${encodeURIComponent(jobId)}/cancel`
+      ) as Promise<CreatorJobControlResponse>;
+    },
+    resumeJob(jobId: string): Promise<CreatorJobControlResponse> {
+      return client.post(
+        `/creator/jobs/${encodeURIComponent(jobId)}/resume`
+      ) as Promise<CreatorJobControlResponse>;
     },
     runAgentTurn(jobId: string, request: CreatorAgentTurnRequest): Promise<{ turn: CreatorAgentTurn; action?: CreatorActionResponse }> {
       return client.post(`/creator/jobs/${encodeURIComponent(jobId)}/agent-turns`, request) as Promise<{ turn: CreatorAgentTurn; action?: CreatorActionResponse }>;

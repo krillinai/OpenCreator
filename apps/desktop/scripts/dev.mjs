@@ -14,13 +14,13 @@ let webProcess;
 try {
   await run('pnpm', ['--filter', '@opencreator/daemon', 'build'], rootDir);
   await run('pnpm', ['--filter', '@opencreator/desktop', 'build'], rootDir);
-  if (!(await isPortOpen(9000))) {
+  if (!(await isPortOpen(19861))) {
     webProcess = spawn('pnpm', ['--filter', '@opencreator/web', 'dev'], {
       cwd: rootDir,
       env: process.env,
       stdio: 'inherit'
     });
-    await waitForPort(9000, 30_000);
+    await waitForPort(19861, 30_000);
   }
   const code = await run(electron, ['.'], desktopDir, {
     ...process.env,
