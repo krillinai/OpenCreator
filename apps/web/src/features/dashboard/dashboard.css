@@ -873,6 +873,30 @@
   border-top: 1px solid var(--border-hairline);
 }
 
+.video-translation-voice-source {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.video-translation-voice-source strong,
+.video-translation-voice-source small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.video-translation-voice-source strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.video-translation-voice-source small {
+  color: var(--subtle);
+  font-size: 11px;
+  text-align: right;
+}
+
 .video-translation-upload.is-compact > button {
   min-height: 58px;
   justify-content: flex-start;
@@ -2390,6 +2414,25 @@
   display: grid;
   gap: 8px;
   margin-top: 18px;
+}
+
+.smart-dubbing-provider-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.smart-dubbing-provider-row strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.smart-dubbing-provider-row small {
+  color: var(--subtle);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .smart-dubbing-control-group:first-of-type {
@@ -7024,6 +7067,54 @@
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--muted);
+}
+
+.video-result-voice-output {
+  width: min(720px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.video-result-audio-preview {
+  min-height: 92px;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--conversation-bg);
+  box-sizing: border-box;
+}
+
+.video-result-audio-preview audio {
+  width: 100%;
+}
+
+.video-result-audio-status {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.video-result-audio-status button {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.video-result-audio-status button:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
 }
 
 .video-result-empty {

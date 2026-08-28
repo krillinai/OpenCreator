@@ -30,6 +30,7 @@ const baseProps = {
   onSaveSubtitles: vi.fn(),
   onAdjustSettings: vi.fn(),
   onExport: vi.fn(),
+  onReloadVoice: vi.fn(),
   onRequestRegenerate: vi.fn(),
   onCancelRegenerate: vi.fn(),
   onConfirmRegenerate: vi.fn()
@@ -164,6 +165,72 @@ describe('VideoTranslationResultWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '下载竖屏字幕' }));
     expect(onExport).toHaveBeenNthCalledWith(1, 'subtitles', 'horizontal-subtitle-v1');
     expect(onExport).toHaveBeenNthCalledWith(2, 'subtitles', 'vertical-subtitle-v1');
+  });
+
+  it('previews and downloads a generated dubbing artifact', () => {
+    const onExport = vi.fn();
+    render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="voice"
+        hasVideoArtifact={false}
+        hasVoiceArtifact
+        voiceOutput={{
+          artifactId: 'dubbed-audio-v2',
+          artifactVersion: 2,
+          fileName: 'target-dubbing-v2.wav',
+          src: 'blob:http://localhost/dubbed-audio'
+        }}
+        onExport={onExport}
+      />
+    );
+
+    expect(screen.getByLabelText('目标语言配音试听')).toHaveAttribute(
+      'src',
+      'blob:http://localhost/dubbed-audio'
+    );
+    expect(screen.getByLabelText('目标语言配音试听')).toHaveAttribute('preload', 'metadata');
+    expect(screen.getByText('target-dubbing-v2.wav')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '下载配音文件' }));
+    expect(onExport).toHaveBeenCalledWith('voice', 'dubbed-audio-v2');
+  });
+
+  it('shows voice preview loading failure and supports retrying', () => {
+    const onReloadVoice = vi.fn();
+    const { rerender } = render(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="voice"
+        hasVideoArtifact={false}
+        hasVoiceArtifact
+        voiceOutput={{
+          artifactId: 'dubbed-audio-v2',
+          artifactVersion: 2,
+          previewLoading: true
+        }}
+        onReloadVoice={onReloadVoice}
+      />
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('正在加载配音...');
+    rerender(
+      <VideoTranslationResultWorkspace
+        {...baseProps}
+        activeTab="voice"
+        hasVideoArtifact={false}
+        hasVoiceArtifact
+        voiceOutput={{
+          artifactId: 'dubbed-audio-v2',
+          artifactVersion: 2,
+          previewError: '配音文件读取失败'
+        }}
+        onReloadVoice={onReloadVoice}
+      />
+    );
+
+    expect(screen.getByRole('status')).toHaveTextContent('配音文件读取失败');
+    fireEvent.click(screen.getByRole('button', { name: '重新加载配音' }));
+    expect(onReloadVoice).toHaveBeenCalledOnce();
   });
 
   it('switches result tabs and selects a project version from history', () => {

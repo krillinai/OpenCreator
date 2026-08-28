@@ -37,6 +37,7 @@ import type {
 import { creatorTemplateForWorkspace } from './creator-workspace.js';
 import type { VideoMetadataService } from '../../services/video-metadata-service.js';
 import type { SmartDubbingService } from '../../services/smart-dubbing-service.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { VideoGenerationService } from '../../services/video-generation-service.js';
 
 type DashboardCategory = '视频创作' | '图像创作' | '音频处理' | '视频编辑' | '数字人';
@@ -171,6 +172,7 @@ export default function DashboardPage(props: {
   onWorkspaceModeChange?(active: boolean): void;
   skillLaunch?: CreatorSkillLaunch;
   smartDubbingService?: SmartDubbingService;
+  creatorServicesService?: CreatorServicesSettingsService | null;
   videoGenerationService?: VideoGenerationService;
   videoMetadataService?: VideoMetadataService;
   workspace?: CreatorWorkspace;
@@ -275,6 +277,7 @@ export default function DashboardPage(props: {
       <VideoTranslationWorkspace
         promptHint={activePromptHint}
         videoMetadataService={props.videoMetadataService}
+        creatorServicesService={props.creatorServicesService}
         onBack={closeWorkspace}
       />
     ));
@@ -294,6 +297,7 @@ export default function DashboardPage(props: {
       <SmartDubbingWorkspace
         promptHint={activePromptHint}
         service={props.smartDubbingService}
+        creatorServicesService={props.creatorServicesService}
         onBack={closeWorkspace}
       />
     );

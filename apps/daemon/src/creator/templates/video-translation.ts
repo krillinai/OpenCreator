@@ -18,7 +18,10 @@ export function createVideoTranslationTemplate(): CreatorTemplateDefinition {
       bilingual: z.boolean().default(true),
       subtitlePosition: z.enum(['top', 'bottom']).default('top'),
       dubbing: z.boolean().default(false),
-      voiceCode: z.string().default(''),
+      ttsProvider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax']).optional(),
+      ttsModel: z.string().optional(),
+      voiceCode: z.string().optional(),
+      voiceName: z.string().optional(),
       composeVideo: z.boolean().default(false),
       videoFormat: z.enum(['horizontal', 'vertical', 'all']).default('horizontal'),
       subtitleCues: z.array(z.object({

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
+  CreatorTtsProvider,
   SmartDubbingFormat,
   SmartDubbingResult,
   SmartDubbingStyle,
@@ -12,33 +13,18 @@ import {
   Gauge,
   LoaderCircle,
   Mic2,
-  Pause,
-  Play,
   RotateCcw,
   Sparkles,
   WandSparkles
 } from 'lucide-react';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
+import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { SmartDubbingService } from '../../services/smart-dubbing-service.js';
 import CreatorTaskSummary from './CreatorTaskSummary.js';
 import CreatorToolShell from './CreatorToolShell.js';
 
 type DubbingStep = 0 | 1 | 2;
-
-const voices: Array<{
-  value: SmartDubbingVoice;
-  zh: string;
-  en: string;
-  detailZh: string;
-  detailEn: string;
-}> = [
-  { value: 'nova', zh: '星语', en: 'Nova', detailZh: '自然清晰', detailEn: 'Natural and clear' },
-  { value: 'alloy', zh: '合金', en: 'Alloy', detailZh: '平衡中性', detailEn: 'Balanced and neutral' },
-  { value: 'echo', zh: '回声', en: 'Echo', detailZh: '沉稳有力', detailEn: 'Steady and strong' },
-  { value: 'onyx', zh: '缟玛瑙', en: 'Onyx', detailZh: '低沉厚实', detailEn: 'Deep and grounded' },
-  { value: 'shimmer', zh: '微光', en: 'Shimmer', detailZh: '轻快明亮', detailEn: 'Bright and lively' },
-  { value: 'fable', zh: '寓言', en: 'Fable', detailZh: '叙事感强', detailEn: 'Expressive narration' }
-];
 
 const styles: Array<{ value: SmartDubbingStyle; zh: string; en: string }> = [
   { value: 'natural', zh: '自然', en: 'Natural' },
@@ -51,42 +37,63 @@ const styles: Array<{ value: SmartDubbingStyle; zh: string; en: string }> = [
 
 const sampleTextZh = '每一个好故事，都从一个清晰的想法开始。让声音带着恰当的节奏和情绪，把内容自然地传递给听众。';
 const sampleTextEn = 'Every strong story begins with a clear idea. Give it the right pace and emotion, then let the voice carry it naturally to the audience.';
-const voicePreviewTextZh = '你好，这是当前音色的试听效果。';
-const voicePreviewTextEn = 'Hello. This is a preview of the selected voice.';
-
 export default function SmartDubbingWorkspace(props: {
   onBack(): void;
   promptHint?: string;
   service?: SmartDubbingService;
+  creatorServicesService?: CreatorServicesSettingsService | null;
 }) {
   const l = useLocalizedCopy();
   const [currentStep, setCurrentStep] = useState<DubbingStep>(0);
   const [furthestStep, setFurthestStep] = useState<DubbingStep>(0);
   const [text, setText] = useState('');
-  const [voice, setVoice] = useState<SmartDubbingVoice>('nova');
+  const [provider, setProvider] = useState<CreatorTtsProvider>('openai');
+  const [model, setModel] = useState('gpt-4o-mini-tts');
+  const [voice, setVoice] = useState<SmartDubbingVoice>('');
+  const [voiceName, setVoiceName] = useState('');
   const [style, setStyle] = useState<SmartDubbingStyle>('natural');
   const [speed, setSpeed] = useState(1);
   const [format, setFormat] = useState<SmartDubbingFormat>('mp3');
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<SmartDubbingResult>();
   const [audioUrl, setAudioUrl] = useState('');
-  const [voicePreviewUrl, setVoicePreviewUrl] = useState('');
-  const [previewingVoice, setPreviewingVoice] = useState<SmartDubbingVoice>();
-  const [playingVoice, setPlayingVoice] = useState<SmartDubbingVoice>();
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const voicePreviewAudioRef = useRef<HTMLAudioElement>(null);
   const characterCount = useMemo(() => [...text.trim()].length, [text]);
-  const selectedVoice = voices.find(item => item.value === voice) ?? voices[0]!;
   const selectedStyle = styles.find(item => item.value === style) ?? styles[0]!;
 
   useEffect(() => () => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
   }, [audioUrl]);
 
-  useEffect(() => () => {
-    if (voicePreviewUrl) URL.revokeObjectURL(voicePreviewUrl);
-  }, [voicePreviewUrl]);
+  useEffect(() => {
+    let active = true;
+    if (props.creatorServicesService === null || props.creatorServicesService === undefined) {
+      return () => {
+        active = false;
+      };
+    }
+    void props.creatorServicesService.getConfig()
+      .then(response => {
+        if (!active) return;
+        const selectedProvider = response.config.tts.provider;
+        setProvider(selectedProvider);
+        if (selectedProvider === 'edge-tts') {
+          setModel('');
+          setVoice('');
+          setVoiceName('');
+          return;
+        }
+        const selectedConfig = response.config.tts[selectedProvider];
+        setModel(selectedConfig.model);
+        setVoice(selectedConfig.defaultVoiceId);
+        setVoiceName(selectedConfig.defaultVoiceId);
+      })
+      .catch(() => setError(l('无法读取配音服务配置', 'Could not load TTS settings')));
+    return () => {
+      active = false;
+    };
+  }, [props.creatorServicesService]);
 
   function openStep(step: DubbingStep) {
     setCurrentStep(step);
@@ -97,6 +104,10 @@ export default function SmartDubbingWorkspace(props: {
     setError('');
     if (currentStep === 0 && characterCount === 0) {
       setError(l('请先填写需要配音的文案', 'Enter the script to be voiced'));
+      return;
+    }
+    if (currentStep === 1 && !voice.trim()) {
+      setError(l('请选择一个可用音色', 'Select an available voice'));
       return;
     }
     openStep(Math.min(2, currentStep + 1) as DubbingStep);
@@ -125,56 +136,6 @@ export default function SmartDubbingWorkspace(props: {
       setError(formatGenerationError(caught, l));
     } finally {
       setGenerating(false);
-    }
-  }
-
-  function stopVoicePreview() {
-    voicePreviewAudioRef.current?.pause();
-    setPlayingVoice(undefined);
-  }
-
-  function selectVoice(value: SmartDubbingVoice) {
-    if (playingVoice !== value) stopVoicePreview();
-    setVoice(value);
-    setResult(undefined);
-  }
-
-  async function previewVoice(value: SmartDubbingVoice) {
-    if (previewingVoice) return;
-    if (playingVoice === value) {
-      stopVoicePreview();
-      return;
-    }
-    if (!props.service) {
-      setError(l('智能配音服务暂不可用，请检查 Runtime 连接', 'Smart dubbing is unavailable. Check the Runtime connection.'));
-      return;
-    }
-    stopVoicePreview();
-    selectVoice(value);
-    setPreviewingVoice(value);
-    setError('');
-    try {
-      const response = await props.service.preview({
-        text: l(voicePreviewTextZh, voicePreviewTextEn),
-        voice: value,
-        style,
-        speed,
-        format: 'mp3'
-      });
-      const objectUrl = URL.createObjectURL(await response.blob());
-      setVoicePreviewUrl(previous => {
-        if (previous) URL.revokeObjectURL(previous);
-        return objectUrl;
-      });
-      const audio = voicePreviewAudioRef.current;
-      if (!audio) return;
-      audio.src = objectUrl;
-      await audio.play();
-      setPlayingVoice(value);
-    } catch (caught) {
-      setError(formatGenerationError(caught, l));
-    } finally {
-      setPreviewingVoice(undefined);
     }
   }
 
@@ -223,7 +184,8 @@ export default function SmartDubbingWorkspace(props: {
       sourceLabel={l('配音文案', 'Script')}
       sourceValue={text.trim()}
       items={[
-        { label: l('音色', 'Voice'), value: l(selectedVoice.zh, selectedVoice.en) },
+        { label: l('服务商', 'Provider'), value: providerLabel(provider, l) },
+        { label: l('音色', 'Voice'), value: voiceName || voice },
         { label: l('表达风格', 'Delivery'), value: l(selectedStyle.zh, selectedStyle.en) },
         { label: l('语速', 'Speed'), value: `${speed.toFixed(2)}x` },
         { label: l('音频格式', 'Format'), value: format.toUpperCase() },
@@ -236,7 +198,7 @@ export default function SmartDubbingWorkspace(props: {
     <CreatorToolShell
       title={l('智能配音', 'AI Dubbing')}
       subtitle={l('自然音色、表达风格与可下载音频', 'Natural voices, expressive delivery, and downloadable audio')}
-      context={result ? l(`${result.format.toUpperCase()} 配音已完成`, `${result.format.toUpperCase()} dubbing ready`) : currentStep === 0 ? l('正在编辑文案', 'Editing script') : currentStep === 1 ? l(`${l(selectedVoice.zh, selectedVoice.en)} · ${speed.toFixed(2)}x`, `${selectedVoice.en} · ${speed.toFixed(2)}x`) : l('等待生成', 'Ready to generate')}
+      context={result ? l(`${result.format.toUpperCase()} 配音已完成`, `${result.format.toUpperCase()} dubbing ready`) : currentStep === 0 ? l('正在编辑文案', 'Editing script') : currentStep === 1 ? `${voiceName || voice || providerLabel(provider, l)} · ${speed.toFixed(2)}x` : l('等待生成', 'Ready to generate')}
       initialMessage={l('把需要配音的文案发给我，再选择音色和表达风格。', 'Send me the script, then choose a voice and delivery style.')}
       suggestions={result ? [l('换成温暖风格', 'Use a warm style'), l('语速慢一点', 'Make it slower')] : [l('填入示例文案', 'Use a sample script'), l('使用专业风格', 'Use a professional style')]}
       placeholder={props.promptHint ?? l('输入配音文案或调整要求', 'Enter a script or delivery request')}
@@ -292,42 +254,34 @@ export default function SmartDubbingWorkspace(props: {
               <div className="creator-tool-panel-heading"><div><h2 id="smart-dubbing-voice-title">{l('音色与表达', 'Voice and delivery')}</h2><p>{l('选择基础音色，再设置表达风格和语速', 'Choose a voice, delivery style, and speaking rate')}</p></div></div>
               <div className="smart-dubbing-control-group">
                 <span>{l('基础音色', 'Voice')}</span>
-                <div className="smart-dubbing-voice-grid" role="radiogroup" aria-label={l('基础音色', 'Voice')}>
-                  {voices.map(item => (
-                    <div key={item.value} data-selected={voice === item.value}>
-                      <button type="button" role="radio" aria-checked={voice === item.value} onClick={() => selectVoice(item.value)}>
-                        <span><Mic2 size={16} strokeWidth={1.7} aria-hidden="true" /></span>
-                        <strong>{l(item.zh, item.en)}</strong>
-                        <small>{l(item.detailZh, item.detailEn)}</small>
-                      </button>
-                      <button
-                        className="smart-dubbing-voice-preview"
-                        type="button"
-                        disabled={previewingVoice !== undefined}
-                        aria-label={playingVoice === item.value ? l(`暂停 ${item.zh}`, `Pause ${item.en}`) : l(`试听 ${item.zh}`, `Preview ${item.en}`)}
-                        title={playingVoice === item.value ? l('暂停', 'Pause') : l('试听', 'Preview')}
-                        onClick={() => void previewVoice(item.value)}
-                      >
-                        {previewingVoice === item.value
-                          ? <LoaderCircle className="smart-dubbing-spinner" size={14} strokeWidth={1.8} aria-hidden="true" />
-                          : playingVoice === item.value
-                            ? <Pause size={14} strokeWidth={1.8} aria-hidden="true" />
-                            : <Play size={14} strokeWidth={1.8} aria-hidden="true" />}
-                      </button>
-                    </div>
-                  ))}
+                <div className="smart-dubbing-provider-row">
+                  <strong>{providerLabel(provider, l)}</strong>
+                  <small>{model || l('本地语音服务', 'Local speech service')}</small>
                 </div>
-                <audio ref={voicePreviewAudioRef} className="smart-dubbing-voice-audio" onEnded={() => setPlayingVoice(undefined)} />
+                <TtsVoicePicker
+                  id="smart-dubbing-voice"
+                  provider={provider}
+                  model={model}
+                  value={voice}
+                  service={props.creatorServicesService ?? null}
+                  label={l('配音音色', 'Dubbing voice')}
+                  onChange={(voiceId, selectedVoice) => {
+                    setVoice(voiceId);
+                    setVoiceName(selectedVoice?.name ?? voiceId);
+                    setResult(undefined);
+                  }}
+                  onVoiceResolved={selectedVoice => setVoiceName(selectedVoice.name)}
+                />
               </div>
               <div className="smart-dubbing-control-group">
                 <span>{l('表达风格', 'Delivery style')}</span>
                 <div className="creator-tool-segmented smart-dubbing-style-options" role="radiogroup" aria-label={l('表达风格', 'Delivery style')}>
-                  {styles.map(item => <button type="button" role="radio" aria-checked={style === item.value} aria-selected={style === item.value} key={item.value} onClick={() => { stopVoicePreview(); setStyle(item.value); setResult(undefined); }}>{l(item.zh, item.en)}</button>)}
+                  {styles.map(item => <button type="button" role="radio" aria-checked={style === item.value} aria-selected={style === item.value} key={item.value} onClick={() => { setStyle(item.value); setResult(undefined); }}>{l(item.zh, item.en)}</button>)}
                 </div>
               </div>
               <label className="smart-dubbing-speed">
                 <span><span><Gauge size={15} strokeWidth={1.8} aria-hidden="true" />{l('语速', 'Speaking rate')}</span><output>{speed.toFixed(2)}x</output></span>
-                <input type="range" min="0.75" max="1.25" step="0.05" value={speed} onChange={event => { stopVoicePreview(); setSpeed(Number(event.target.value)); setResult(undefined); }} />
+                <input type="range" min="0.75" max="1.25" step="0.05" value={speed} onChange={event => { setSpeed(Number(event.target.value)); setResult(undefined); }} />
                 <small><span>0.75x</span><span>1.00x</span><span>1.25x</span></small>
               </label>
               <div className="smart-dubbing-control-group">
@@ -385,6 +339,16 @@ export default function SmartDubbingWorkspace(props: {
   );
 }
 
+function providerLabel(
+  provider: CreatorTtsProvider,
+  l: (zh: string, en: string) => string
+): string {
+  if (provider === 'aliyun') return l('阿里云百炼', 'Alibaba Cloud Model Studio');
+  if (provider === 'minimax') return 'MiniMax';
+  if (provider === 'edge-tts') return 'Edge TTS';
+  return 'OpenAI TTS';
+}
+
 function formatBytes(size: number) {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
@@ -395,10 +359,10 @@ function formatGenerationError(error: unknown, l: (zh: string, en: string) => st
     ? String((error as { code?: unknown }).code)
     : '';
   if (code === 'SMART_DUBBING_CONFIG_REQUIRED') {
-    return l('请先在设置的创作服务中配置 OpenAI TTS API Key', 'Configure an OpenAI TTS API key in Creator Services first');
+    return l('请先在设置的配音服务中配置当前服务商的 API Key', 'Configure the selected TTS provider API key in Settings first');
   }
   if (code === 'SMART_DUBBING_PROVIDER_UNSUPPORTED') {
-    return l('当前配音服务商尚未接入智能配音，请在设置中选择 OpenAI TTS', 'The configured provider is not supported yet. Select OpenAI TTS in Settings.');
+    return l('当前配音服务商不支持智能配音，请在设置中选择阿里云百炼、OpenAI 或 MiniMax', 'Select Alibaba Cloud, OpenAI, or MiniMax for AI dubbing.');
   }
   if (code === 'SMART_DUBBING_UPSTREAM_ERROR') {
     return l('配音服务请求失败，请检查服务配置和网络后重试', 'The dubbing request failed. Check the service configuration and network, then retry.');

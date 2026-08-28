@@ -1,21 +1,19 @@
 import {
   smartDubbingStyles,
-  smartDubbingVoices,
   type CreateSmartDubbingRequest,
   type RuntimeErrorCode,
   type SmartDubbingResult,
   type SmartDubbingStyle
 } from '@opencreator/protocol';
 import { createHash, randomBytes } from 'node:crypto';
-import { request as httpsRequest } from 'node:https';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import type { CreatorServicesConfigStore } from '../creator-services/config-store.js';
+import {
+  KrillinTtsServiceError,
+  type KrillinTtsService
+} from '../creator/krillin/tts-service.js';
 
 const MAX_TEXT_LENGTH = 5_000;
-const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
-const REQUEST_TIMEOUT_MS = 90_000;
 const SAFE_RESULT_ID = /^[A-Za-z0-9_-]{12,64}$/;
 
 const styleInstructions: Record<SmartDubbingStyle, string> = {
@@ -56,8 +54,7 @@ export class SmartDubbingError extends Error {
 
 export function createSmartDubbingService(input: {
   dataDir: string;
-  configStore: CreatorServicesConfigStore;
-  fetchImpl?: typeof fetch;
+  ttsService: Pick<KrillinTtsService, 'synthesize'>;
   now?: () => Date;
   createId?: () => string;
 }): SmartDubbingService {
@@ -82,102 +79,41 @@ export function createSmartDubbingService(input: {
 
   async function synthesize(request: CreateSmartDubbingRequest) {
     validateRequest(request);
-    const config = await input.configStore.read();
-    if (config.tts.provider !== 'openai') {
-      throw new SmartDubbingError(
-        'SMART_DUBBING_PROVIDER_UNSUPPORTED',
-        `Smart dubbing does not support the configured ${config.tts.provider} provider yet`,
-        409
-      );
-    }
-    const provider = config.tts.openai;
-    if (!provider.apiKey.trim()) {
-      throw new SmartDubbingError(
-        'SMART_DUBBING_CONFIG_REQUIRED',
-        'Configure an OpenAI TTS API key before generating dubbing',
-        409
-      );
-    }
-
-    const model = provider.model.trim() || 'gpt-4o-mini-tts';
-    const endpoint = openAiSpeechEndpoint(provider.baseUrl);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    timeout.unref();
-    let response: Response;
     try {
-      const body: Record<string, unknown> = {
-        model,
-        input: request.text.trim(),
-        voice: request.voice,
-        response_format: request.format,
-        speed: request.speed
-      };
-      if (model.toLowerCase().includes('gpt-4o')) {
-        body.instructions = styleInstructions[request.style];
-      }
-      response = await fetchAudio({
-        endpoint,
-        apiKey: provider.apiKey,
-        body: JSON.stringify(body),
-        proxy: config.proxy.trim(),
-        signal: controller.signal,
-        fetchImpl: input.fetchImpl
+      return await input.ttsService.synthesize({
+        text: request.text.trim(),
+        voiceId: request.voice.trim(),
+        format: request.format,
+        speed: request.speed,
+        instructions: styleInstructions[request.style]
       });
-    } catch {
-      throw new SmartDubbingError(
-        'SMART_DUBBING_UPSTREAM_ERROR',
-        'The dubbing provider could not be reached',
-        502
-      );
-    } finally {
-      clearTimeout(timeout);
+    } catch (error) {
+      throw mapTtsError(error);
     }
-    if (!response.ok) {
-      throw new SmartDubbingError(
-        'SMART_DUBBING_UPSTREAM_ERROR',
-        await upstreamErrorMessage(response),
-        502
-      );
-    }
-    const content = Buffer.from(await response.arrayBuffer());
-    if (content.length === 0 || content.length > MAX_AUDIO_BYTES) {
-      throw new SmartDubbingError(
-        'SMART_DUBBING_UPSTREAM_ERROR',
-        'The dubbing provider returned an invalid audio file',
-        502
-      );
-    }
-    return {
-      content,
-      model,
-      mime: request.format === 'wav' ? 'audio/wav' as const : 'audio/mpeg' as const
-    };
   }
 
   return {
     async generate(request) {
-      const { content, mime, model } = await synthesize(request);
-
+      const synthesis = await synthesize(request);
       const id = createId();
       validateResultId(id);
       const result: SmartDubbingResult = {
         id,
-        fileName: `OpenCreator-dubbing-${id}.${request.format}`,
-        mime,
-        size: content.length,
-        provider: 'openai',
-        model,
-        voice: request.voice,
+        fileName: `OpenCreator-dubbing-${id}.${synthesis.format}`,
+        mime: synthesis.mime,
+        size: synthesis.content.length,
+        provider: synthesis.provider,
+        model: synthesis.model,
+        voice: synthesis.voiceId,
         style: request.style,
         speed: request.speed,
-        format: request.format,
+        format: synthesis.format,
         characterCount: [...request.text.trim()].length,
         createdAt: now().toISOString()
       };
       try {
         await mkdir(rootDir, { recursive: true, mode: 0o700 });
-        await writeFile(audioPath(result), content, { mode: 0o600, flag: 'wx' });
+        await writeFile(audioPath(result), synthesis.content, { mode: 0o600, flag: 'wx' });
         await writeFile(metadataPath(id), `${JSON.stringify(result)}\n`, { mode: 0o600, flag: 'wx' });
       } catch {
         await Promise.all([
@@ -193,8 +129,8 @@ export function createSmartDubbingService(input: {
       return result;
     },
     async preview(request) {
-      const { content, mime } = await synthesize(request);
-      return { content, mime };
+      const synthesis = await synthesize(request);
+      return { content: synthesis.content, mime: synthesis.mime };
     },
     get,
     async read(id) {
@@ -231,7 +167,7 @@ function validateRequest(request: CreateSmartDubbingRequest) {
       400
     );
   }
-  if (!(smartDubbingVoices as readonly string[]).includes(request.voice)) {
+  if (typeof request.voice !== 'string' || !request.voice.trim() || request.voice.length > 256) {
     throw new SmartDubbingError('VALIDATION_FAILED', 'voice is invalid', 400);
   }
   if (!(smartDubbingStyles as readonly string[]).includes(request.style)) {
@@ -245,86 +181,39 @@ function validateRequest(request: CreateSmartDubbingRequest) {
   }
 }
 
+function mapTtsError(error: unknown): SmartDubbingError {
+  if (error instanceof KrillinTtsServiceError) {
+    if (error.code === 'creator_tts_config_missing') {
+      return new SmartDubbingError(
+        'SMART_DUBBING_CONFIG_REQUIRED',
+        error.message,
+        409
+      );
+    }
+    if (error.code === 'unsupported_capability') {
+      return new SmartDubbingError(
+        'SMART_DUBBING_PROVIDER_UNSUPPORTED',
+        error.message,
+        409
+      );
+    }
+    return new SmartDubbingError(
+      'SMART_DUBBING_UPSTREAM_ERROR',
+      error.message,
+      error.statusCode >= 500 ? error.statusCode : 502
+    );
+  }
+  return new SmartDubbingError(
+    'SMART_DUBBING_UPSTREAM_ERROR',
+    error instanceof Error ? error.message : 'The dubbing provider could not be reached',
+    502
+  );
+}
+
 function validateResultId(id: string) {
   if (!SAFE_RESULT_ID.test(id)) {
     throw new SmartDubbingError('VALIDATION_FAILED', 'result id is invalid', 400);
   }
-}
-
-function openAiSpeechEndpoint(baseUrl: string): URL {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '');
-  if (!trimmed) return new URL('https://api.openai.com/v1/audio/speech');
-  const base = new URL(trimmed);
-  if (/\/audio\/speech$/i.test(base.pathname)) return base;
-  if (base.pathname === '' || base.pathname === '/') {
-    base.pathname = '/v1/audio/speech';
-  } else {
-    base.pathname = `${base.pathname.replace(/\/$/, '')}/audio/speech`;
-  }
-  return base;
-}
-
-async function fetchAudio(input: {
-  endpoint: URL;
-  apiKey: string;
-  body: string;
-  proxy: string;
-  signal: AbortSignal;
-  fetchImpl?: typeof fetch;
-}): Promise<Response> {
-  const headers = {
-    Accept: 'audio/mpeg, audio/wav, application/octet-stream',
-    Authorization: `Bearer ${input.apiKey}`,
-    'Content-Type': 'application/json'
-  };
-  if (input.fetchImpl !== undefined || !input.proxy || input.endpoint.protocol !== 'https:') {
-    return await (input.fetchImpl ?? fetch)(input.endpoint, {
-      method: 'POST',
-      headers,
-      body: input.body,
-      signal: input.signal
-    });
-  }
-  return await new Promise<Response>((resolveResponse, reject) => {
-    const request = httpsRequest(input.endpoint, {
-      method: 'POST',
-      headers: { ...headers, 'Content-Length': Buffer.byteLength(input.body) },
-      agent: new HttpsProxyAgent(input.proxy),
-      signal: input.signal
-    }, response => {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      response.on('data', (chunk: Buffer) => {
-        size += chunk.length;
-        if (size > MAX_AUDIO_BYTES) {
-          response.destroy(new Error('Audio response is too large'));
-          return;
-        }
-        chunks.push(chunk);
-      });
-      response.on('end', () => {
-        resolveResponse(new Response(Buffer.concat(chunks), {
-          status: response.statusCode ?? 502,
-          headers: response.headers as HeadersInit
-        }));
-      });
-      response.on('error', reject);
-    });
-    request.on('error', reject);
-    request.end(input.body);
-  });
-}
-
-async function upstreamErrorMessage(response: Response): Promise<string> {
-  try {
-    const payload = await response.json() as unknown;
-    if (isRecord(payload) && isRecord(payload.error) && typeof payload.error.message === 'string') {
-      return `Dubbing provider rejected the request: ${payload.error.message.slice(0, 300)}`;
-    }
-  } catch {
-    // The upstream may return an HTML or empty error response.
-  }
-  return `Dubbing provider rejected the request with status ${response.status}`;
 }
 
 function isSmartDubbingResult(value: unknown): value is SmartDubbingResult {
@@ -333,9 +222,10 @@ function isSmartDubbingResult(value: unknown): value is SmartDubbingResult {
     && typeof value.fileName === 'string'
     && (value.mime === 'audio/mpeg' || value.mime === 'audio/wav')
     && typeof value.size === 'number'
-    && value.provider === 'openai'
+    && (value.provider === 'openai' || value.provider === 'aliyun' || value.provider === 'minimax')
     && typeof value.model === 'string'
-    && (smartDubbingVoices as readonly unknown[]).includes(value.voice)
+    && typeof value.voice === 'string'
+    && value.voice.length > 0
     && (smartDubbingStyles as readonly unknown[]).includes(value.style)
     && typeof value.speed === 'number'
     && (value.format === 'mp3' || value.format === 'wav')

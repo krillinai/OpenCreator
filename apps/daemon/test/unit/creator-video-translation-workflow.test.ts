@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCreatorAgentRepository } from '../../src/creator/agent/repository.js';
 import { createCreatorCommandDispatcher } from '../../src/creator/command-dispatcher.js';
@@ -136,6 +137,28 @@ describe('video translation workflow', () => {
       'render-horizontal'
     ]);
     await runner.close();
+    fixture.db.close();
+  });
+
+  it('validates credentials for the provider saved in the job snapshot', async () => {
+    const fixture = setup({
+      dubbing: true,
+      ttsProvider: 'aliyun',
+      ttsModel: 'qwen3-tts-flash',
+      voiceCode: 'Cherry'
+    });
+    const config = createDefaultCreatorServicesConfig();
+    config.llm.apiKey = 'llm-key';
+    config.tts.provider = 'openai';
+    config.tts.openai.apiKey = 'openai-key';
+    const workflow = createVideoTranslationWorkflow({
+      creator: fixture.service,
+      dispatcher: fixture.dispatcher,
+      configStore: { read: vi.fn(async () => config) }
+    });
+
+    await expect(workflow.validate(fixture.service.getJob(fixture.jobId)!))
+      .rejects.toMatchObject({ code: 'creator_tts_config_missing' });
     fixture.db.close();
   });
 });

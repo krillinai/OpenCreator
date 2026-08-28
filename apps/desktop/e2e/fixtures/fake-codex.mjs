@@ -198,6 +198,20 @@ async function handleAppServer() {
       continue;
     }
 
+    if (message.method === 'config/read') {
+      send({
+        id: message.id,
+        result: {
+          config: {
+            model: 'gpt-5',
+            openai_base_url: ''
+          },
+          layers: []
+        }
+      });
+      continue;
+    }
+
     if (message.method === 'thread/start' || message.method === 'thread/resume') {
       currentThreadId = typeof params.threadId === 'string'
         ? params.threadId

@@ -43,6 +43,7 @@ import { createKrillinExecutor } from '../creator/krillin/adapter.js';
 import { createKrillinDependencyLoader } from '../creator/krillin/dependency-loader.js';
 import { readKrillinRuntimeManifest, resolveInside, verifyKrillinRuntimeManifest } from '../creator/krillin/manifest.js';
 import { createKrillinRuntimeHost } from '../creator/krillin/runtime-host.js';
+import { createKrillinTtsService } from '../creator/krillin/tts-service.js';
 import { createDownloadExecutor } from '../creator/download/executor.js';
 import { createImageExecutor } from '../creator/image/executor.js';
 import { createClipExecutor } from '../creator/clip/executor.js';
@@ -122,6 +123,7 @@ import {
   createFileCreatorServicesConfigStore,
   type CreatorServicesConfigStore
 } from '../creator-services/config-store.js';
+import { createSmartDubbingService } from '../smart-dubbing/service.js';
 import {
   createCreatorEventHub,
   creatorAgentEventKind,
@@ -599,6 +601,15 @@ export async function buildServer(input: BuildServerInput) {
     resourceRoot: creatorRuntimeRoot,
     jobsRoot: creatorJobsRoot
   });
+  const krillinTtsService = createKrillinTtsService({
+    resourceRoot: creatorRuntimeRoot,
+    workRoot: join(creatorJobsRoot, '.tts'),
+    configStore: creatorServicesConfigStore
+  });
+  const smartDubbingService = createSmartDubbingService({
+    dataDir,
+    ttsService: krillinTtsService
+  });
   const creatorExecutors: CreatorExecutor[] = input.creatorExecutors ?? [
     createKrillinExecutor({
       resourceRoot: creatorRuntimeRoot,
@@ -1055,8 +1066,10 @@ export async function buildServer(input: BuildServerInput) {
   await registerCreatorServicesRoutes(
     server,
     creatorServicesConfigStore,
-    () => krillinDependencyLoader.capabilities()
+    () => krillinDependencyLoader.capabilities(),
+    krillinTtsService
   );
+  await registerSmartDubbingRoutes(server, smartDubbingService);
   await registerCreatorRoutes(server, creatorService, creatorEvents, {
     sseHeartbeatMs: input.sseHeartbeatMs,
     agentService: creatorAgentService,

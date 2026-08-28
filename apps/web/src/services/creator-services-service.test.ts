@@ -8,6 +8,7 @@ describe('creator services service', () => {
     const get = vi.fn();
     const patch = vi.fn();
     const remove = vi.fn();
+    const rawRequest = vi.fn(async () => new Response(Buffer.from('preview')));
     const client = {
       get<T>(_path: string): Promise<T> {
         get(_path);
@@ -26,7 +27,20 @@ describe('creator services service', () => {
       delete<T>(_path: string): Promise<T> {
         remove(_path);
         return Promise.resolve({ config } as T);
+      },
+      rawRequest
+    };
+    const originalGet = client.get.bind(client);
+    client.get = <T>(_path: string): Promise<T> => {
+      if (_path.startsWith('/creator-services/tts/voices?')) {
+        get(_path);
+        return Promise.resolve({
+          provider: 'aliyun',
+          model: 'qwen3-tts-flash',
+          voices: []
+        } as T);
       }
+      return originalGet(_path);
     };
     const service = createCreatorServicesService(client);
 
@@ -34,10 +48,28 @@ describe('creator services service', () => {
     await service.getConfig();
     await service.saveConfig(config);
     await service.resetConfig();
+    await service.getTtsVoices('aliyun', 'qwen3-tts-flash');
+    await service.previewTtsVoice({
+      provider: 'aliyun',
+      model: 'qwen3-tts-flash',
+      voiceId: 'Cherry'
+    });
 
     expect(get).toHaveBeenNthCalledWith(1, '/creator-services/capabilities');
     expect(get).toHaveBeenNthCalledWith(2, '/creator-services/config');
     expect(patch).toHaveBeenCalledWith('/creator-services/config', config);
     expect(remove).toHaveBeenCalledWith('/creator-services/config');
+    expect(get).toHaveBeenNthCalledWith(
+      3,
+      '/creator-services/tts/voices?provider=aliyun&model=qwen3-tts-flash'
+    );
+    expect(rawRequest).toHaveBeenCalledWith('/creator-services/tts/preview', {
+      method: 'POST',
+      body: {
+        provider: 'aliyun',
+        model: 'qwen3-tts-flash',
+        voiceId: 'Cherry'
+      }
+    });
   });
 });

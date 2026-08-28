@@ -312,6 +312,8 @@ function stageOptions(input: CreatorExecutorInput): Record<string, unknown> {
     captionSource: state.preferPlatformCaptions === false ? 'whisper' : 'any',
     bilingual: state.bilingual === true,
     bilingualTop: state.subtitlePosition === 'top',
+    ttsProvider: typeof state.ttsProvider === 'string' ? state.ttsProvider : undefined,
+    ttsModel: typeof state.ttsModel === 'string' ? state.ttsModel : undefined,
     voiceCode: typeof state.voiceCode === 'string' ? state.voiceCode : undefined,
     verticalTitle: typeof state.verticalTitle === 'string' ? state.verticalTitle : undefined,
     verticalSubtitle: typeof state.verticalSubtitle === 'string' ? state.verticalSubtitle : undefined,

@@ -82,6 +82,31 @@ readline.on('line', line => {
     return;
   }
 
+  if (message.method === 'config/read') {
+    send({
+      id: message.id,
+      result: {
+        config: {
+          model: 'gpt-5',
+          openai_base_url: ''
+        },
+        layers: []
+      }
+    });
+    return;
+  }
+
+  if (message.method === 'account/read') {
+    send({
+      id: message.id,
+      result: {
+        account: null,
+        requiresOpenaiAuth: true
+      }
+    });
+    return;
+  }
+
   if (message.method === 'thread/turns/list') {
     const turns = readTurns(message.params?.threadId);
     const limit = Number(message.params?.limit ?? turns.length);

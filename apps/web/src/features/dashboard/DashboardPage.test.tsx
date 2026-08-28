@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import {
+  createDefaultCreatorServicesConfig,
   readCreatorResultSnapshots,
   type CreatorArtifact,
   type CreatorJob,
@@ -9,6 +10,7 @@ import {
 import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
+import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
 import DashboardPageView from './DashboardPage.js';
 
@@ -103,6 +105,43 @@ function createInMemoryCreatorService(): CreatorWebService {
       throw new Error('Agent turns require an explicit test fixture');
     })
   } as unknown as CreatorWebService;
+}
+
+function createTtsServices(options?: {
+  voiceId?: string;
+  voiceName?: string;
+}) {
+  const config = createDefaultCreatorServicesConfig();
+  const voiceId = options?.voiceId ?? config.tts.openai.defaultVoiceId;
+  const voiceName = options?.voiceName ?? 'Marin';
+  config.tts.openai.defaultVoiceId = voiceId;
+  const getConfig = vi.fn(async () => ({
+    config: structuredClone(config),
+    configuredCredentials: []
+  }));
+  const getTtsVoices = vi.fn(async () => ({
+    provider: 'openai' as const,
+    model: config.tts.openai.model,
+    voices: [{
+      id: voiceId,
+      name: voiceName,
+      provider: 'openai' as const,
+      kind: 'builtin' as const
+    }]
+  }));
+  const previewTtsVoice = vi.fn(async () => new Response(
+    new Blob(['preview-audio'], { type: 'audio/mpeg' })
+  ));
+  return {
+    service: {
+      getConfig,
+      getTtsVoices,
+      previewTtsVoice
+    } as unknown as CreatorServicesSettingsService,
+    getConfig,
+    getTtsVoices,
+    previewTtsVoice
+  };
 }
 
 const defaultTranslationCues: CreatorJson[] = [
@@ -1034,7 +1073,17 @@ describe('DashboardPage', () => {
   });
 
   it('adds dubbing through settings and generates it in the next version', async () => {
-    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+    const createObjectURL = vi.fn(() => 'blob:video-translation-dubbing');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURL
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectURL
+    });
+    const rendered = render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
     fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
       target: { value: 'https://www.youtube.com/watch?v=test' }
@@ -1060,6 +1109,14 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: '配音' }));
     expect(screen.getByText('配音文件已生成')).toBeInTheDocument();
     expect(screen.getByText('目标语言配音-V2.wav')).toBeInTheDocument();
+    expect(await screen.findByLabelText('目标语言配音试听')).toHaveAttribute(
+      'src',
+      'blob:video-translation-dubbing'
+    );
+    expect(createObjectURL).toHaveBeenCalledOnce();
+
+    rendered.unmount();
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:video-translation-dubbing');
   });
 
   it('returns to settings and creates a new version without replacing the old one', async () => {
@@ -1159,8 +1216,14 @@ describe('DashboardPage', () => {
     expect(layout.style.getPropertyValue('--video-translation-pane-width')).toBe('');
   });
 
-  it('supports local video, dubbing and vertical output options', () => {
-    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+  it('supports local video, dubbing and vertical output options', async () => {
+    const tts = createTtsServices();
+    render(
+      <DashboardPage
+        onSelectPrompt={vi.fn()}
+        creatorServicesService={tts.service}
+      />
+    );
     fireEvent.click(screen.getByRole('button', { name: '打开视频翻译配音' }));
 
     const video = new File(['video'], 'demo.mp4', { type: 'video/mp4' });
@@ -1185,7 +1248,8 @@ describe('DashboardPage', () => {
     fireEvent.click(screen.getByRole('radio', { name: /9:16/ }));
 
     expect(screen.getByText('demo.mp4')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: /声音代码/ })).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: '配音音色' })).toHaveValue('marin');
+    expect(tts.getTtsVoices).toHaveBeenCalledWith('openai', 'gpt-4o-mini-tts');
     expect(screen.getByRole('textbox', { name: /竖屏主标题/ })).toBeInTheDocument();
   });
 
@@ -1372,12 +1436,14 @@ describe('DashboardPage', () => {
       createdAt: '2026-08-20T00:00:00.000Z'
     };
     const generate = vi.fn(async () => ({ result }));
-    const preview = vi.fn(async () => new Response(new Blob(['preview-audio'], { type: 'audio/mpeg' })));
+    const preview = vi.fn();
     const openContent = vi.fn(async () => new Response(new Blob(['audio'], { type: 'audio/mpeg' })));
+    const tts = createTtsServices({ voiceId: 'nova', voiceName: '星语' });
     render(
       <DashboardPage
         onSelectPrompt={vi.fn()}
         smartDubbingService={{ generate, preview, openContent }}
+        creatorServicesService={tts.service}
       />
     );
 
@@ -1387,16 +1453,17 @@ describe('DashboardPage', () => {
       target: { value: '这是一段需要生成语音的测试文案。' }
     });
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
-    fireEvent.click(screen.getByRole('button', { name: '试听 星语' }));
-    expect(await screen.findByRole('button', { name: '暂停 星语' })).toBeInTheDocument();
-    expect(preview).toHaveBeenCalledWith(expect.objectContaining({
-      voice: 'nova',
-      style: 'natural',
-      speed: 1,
-      format: 'mp3'
-    }));
+    expect(await screen.findByRole('combobox', { name: '配音音色' })).toHaveValue('nova');
+    fireEvent.click(screen.getByRole('button', { name: '试听当前音色' }));
+    expect(await screen.findByRole('button', { name: '暂停音色试听' })).toBeInTheDocument();
+    expect(tts.previewTtsVoice).toHaveBeenCalledWith({
+      provider: 'openai',
+      model: 'gpt-4o-mini-tts',
+      voiceId: 'nova'
+    });
+    expect(preview).not.toHaveBeenCalled();
     expect(play).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: '暂停 星语' }));
+    fireEvent.click(screen.getByRole('button', { name: '暂停音色试听' }));
     expect(pause).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('radio', { name: '温暖' }));
     fireEvent.click(screen.getByRole('button', { name: '继续' }));

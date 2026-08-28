@@ -14,6 +14,9 @@ const openAiCompatibleSchema = z.object({
   apiKey: boundedString(4096),
   model: boundedString(128)
 }).strict();
+const ttsProviderSchema = (defaultVoiceId: string) => openAiCompatibleSchema.extend({
+  defaultVoiceId: boundedString(256).default(defaultVoiceId)
+}).strict();
 const klingAiSchema = z.object({
   baseUrl: boundedString(2048),
   accessKey: boundedString(4096),
@@ -72,6 +75,18 @@ const legacyVideoConfigSchema = z.object({
   ...structuredClone(videoConfigDefault),
   provider: 'seedance' as const
 }));
+const legacyAliyunTtsSchema = aliyunSchema.transform(() => (
+  structuredClone(creatorServicesDefaults.tts.aliyun)
+));
+const ttsConfigSchema = z.object({
+  provider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax']),
+  openai: ttsProviderSchema(creatorServicesDefaults.tts.openai.defaultVoiceId),
+  minimax: ttsProviderSchema(creatorServicesDefaults.tts.minimax.defaultVoiceId),
+  aliyun: z.union([
+    ttsProviderSchema(creatorServicesDefaults.tts.aliyun.defaultVoiceId),
+    legacyAliyunTtsSchema
+  ])
+}).strict();
 
 export const creatorServicesConfigSchema = z.object({
   proxy: boundedString(2048),
@@ -85,12 +100,7 @@ export const creatorServicesConfigSchema = z.object({
     whisperCpp: z.object({ model: z.enum(['tiny', 'medium', 'large-v2']) }).strict(),
     aliyun: aliyunSchema
   }).strict(),
-  tts: z.object({
-    provider: z.enum(['openai', 'aliyun', 'edge-tts', 'minimax']),
-    openai: openAiCompatibleSchema,
-    minimax: openAiCompatibleSchema,
-    aliyun: aliyunSchema
-  }).strict(),
+  tts: ttsConfigSchema,
   image: z.union([imageConfigSchema, legacyImageConfigSchema]),
   video: z.union([videoConfigSchema, legacyVideoConfigSchema]).default(videoConfigDefault)
 }).strict();
@@ -213,7 +223,7 @@ export function presentCreatorServicesConfig(
   redactAliyunCredentials('transcription.aliyun', redacted.transcription.aliyun, configuredCredentials);
   redact('tts.openai.apiKey', redacted.tts.openai.apiKey, () => { redacted.tts.openai.apiKey = ''; });
   redact('tts.minimax.apiKey', redacted.tts.minimax.apiKey, () => { redacted.tts.minimax.apiKey = ''; });
-  redactAliyunCredentials('tts.aliyun', redacted.tts.aliyun, configuredCredentials);
+  redact('tts.aliyun.apiKey', redacted.tts.aliyun.apiKey, () => { redacted.tts.aliyun.apiKey = ''; });
   redact('image.openai.apiKey', redacted.image.openai.apiKey, () => { redacted.image.openai.apiKey = ''; });
   redact('image.jimeng.apiKey', redacted.image.jimeng.apiKey, () => { redacted.image.jimeng.apiKey = ''; });
   redact('image.kling.accessKey', redacted.image.kling.accessKey, () => { redacted.image.kling.accessKey = ''; });
@@ -241,7 +251,7 @@ export function retainCreatorServicesCredentials(
   retainAliyunCredentials(merged.transcription.aliyun, current.transcription.aliyun);
   retainBlank(() => merged.tts.openai.apiKey, value => { merged.tts.openai.apiKey = value; }, current.tts.openai.apiKey);
   retainBlank(() => merged.tts.minimax.apiKey, value => { merged.tts.minimax.apiKey = value; }, current.tts.minimax.apiKey);
-  retainAliyunCredentials(merged.tts.aliyun, current.tts.aliyun);
+  retainBlank(() => merged.tts.aliyun.apiKey, value => { merged.tts.aliyun.apiKey = value; }, current.tts.aliyun.apiKey);
   retainBlank(() => merged.image.openai.apiKey, value => { merged.image.openai.apiKey = value; }, current.image.openai.apiKey);
   retainBlank(() => merged.image.jimeng.apiKey, value => { merged.image.jimeng.apiKey = value; }, current.image.jimeng.apiKey);
   retainBlank(() => merged.image.kling.accessKey, value => { merged.image.kling.accessKey = value; }, current.image.kling.accessKey);
@@ -289,7 +299,7 @@ function inferLegacyTextModelSource(value: {
 }
 
 function redactAliyunCredentials(
-  prefix: 'transcription.aliyun' | 'tts.aliyun',
+  prefix: 'transcription.aliyun',
   config: AliyunCredentials,
   configured: CreatorServicesCredentialField[]
 ): void {
@@ -311,7 +321,7 @@ function redactAliyunCredentials(
 }
 
 function redactAliyunField(
-  prefix: 'transcription.aliyun' | 'tts.aliyun',
+  prefix: 'transcription.aliyun',
   suffix: 'oss.accessKeyId' | 'oss.accessKeySecret' | 'speech.accessKeyId' | 'speech.accessKeySecret' | 'speech.appKey',
   value: string,
   write: (value: string) => void,

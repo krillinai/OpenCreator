@@ -1,13 +1,4 @@
-export const smartDubbingVoices = [
-  'nova',
-  'alloy',
-  'echo',
-  'onyx',
-  'shimmer',
-  'fable'
-] as const;
-
-export type SmartDubbingVoice = typeof smartDubbingVoices[number];
+export type SmartDubbingVoice = string;
 
 export const smartDubbingStyles = [
   'natural',
@@ -34,9 +25,10 @@ export type SmartDubbingResult = {
   fileName: string;
   mime: 'audio/mpeg' | 'audio/wav';
   size: number;
-  provider: 'openai';
+  provider: 'openai' | 'aliyun' | 'minimax';
   model: string;
   voice: SmartDubbingVoice;
+  voiceName?: string;
   style: SmartDubbingStyle;
   speed: number;
   format: SmartDubbingFormat;

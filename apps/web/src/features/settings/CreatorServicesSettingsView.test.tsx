@@ -1,7 +1,8 @@
 import {
   createDefaultCreatorServicesConfig,
   type CreatorServicesCapabilitiesResponse,
-  type CreatorServicesCredentialField
+  type CreatorServicesCredentialField,
+  type CreatorTtsProvider
 } from '@opencreator/protocol';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
@@ -79,7 +80,7 @@ describe('CreatorServicesSettingsView', () => {
 
     await user.click(screen.getByRole('button', { name: '云端 API' }));
     await user.click(screen.getByRole('combobox', { name: '语音识别服务' }));
-    await user.click(screen.getByRole('option', { name: '阿里云语音' }));
+    await user.click(screen.getByRole('option', { name: '阿里云百炼' }));
     expect(screen.getByText('OSS 存储')).toBeInTheDocument();
     expect(screen.getByText('语音服务')).toBeInTheDocument();
     expect(screen.getAllByLabelText('Access Key Secret')).toHaveLength(2);
@@ -212,7 +213,23 @@ function createService(
     getCapabilities: vi.fn(async () => structuredClone(capabilities)),
     getConfig: vi.fn(async () => ({ config: structuredClone(config), configuredCredentials })),
     saveConfig: vi.fn(async next => ({ config: structuredClone(next), configuredCredentials })),
-    resetConfig: vi.fn(async () => ({ config: createDefaultCreatorServicesConfig(), configuredCredentials: [] }))
+    resetConfig: vi.fn(async () => ({ config: createDefaultCreatorServicesConfig(), configuredCredentials: [] })),
+    getTtsVoices: vi.fn(async (provider: CreatorTtsProvider) => ({
+      provider,
+      model: config.tts[provider === 'edge-tts' ? 'openai' : provider].model,
+      voices: provider === 'edge-tts'
+        ? []
+        : [{
+            id: config.tts[provider].defaultVoiceId,
+            name: config.tts[provider].defaultVoiceId,
+            provider,
+            kind: 'builtin' as const
+          }]
+    })),
+    previewTtsVoice: vi.fn(async () => new Response(Buffer.from('preview-audio'), {
+      status: 200,
+      headers: { 'Content-Type': 'audio/mpeg' }
+    }))
   };
 }
 

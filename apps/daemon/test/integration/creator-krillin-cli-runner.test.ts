@@ -1,4 +1,5 @@
 import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
+import { parse } from '@iarna/toml';
 import {
   chmodSync,
   existsSync,
@@ -131,6 +132,146 @@ describe('KrillinAI CLI runner', () => {
       percent: 100
     });
   });
+
+  it.skipIf(process.platform === 'win32')('overrides the configured TTS provider and model from the job snapshot', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'creator-krillin-cli-tts-'));
+    const resourceRoot = join(tempDir, 'runtime');
+    const jobsRoot = join(tempDir, 'jobs');
+    const dependencyRoot = join(tempDir, 'dependencies');
+    const workdir = join(jobsRoot, 'job-tts', 'stage-run-tts');
+    const subtitle = join(jobsRoot, 'job-tts', 'artifacts', 'target.srt');
+    const cli = join(resourceRoot, 'bin', 'krillinai-cli');
+    mkdirSync(dirname(cli), { recursive: true });
+    mkdirSync(dirname(subtitle), { recursive: true });
+    mkdirSync(workdir, { recursive: true });
+    writeFileSync(subtitle, '1\n00:00:00,000 --> 00:00:01,000\n你好\n');
+    writeFileSync(cli, `#!${process.execPath}\n${FAKE_CLI}`);
+    chmodSync(cli, 0o755);
+
+    const manifest: KrillinRuntimeManifest = {
+      version: 1,
+      platform: process.platform,
+      arch: process.arch,
+      resources: [{
+        path: relative(resourceRoot, cli).replaceAll('\\', '/'),
+        sha256: 'b'.repeat(64),
+        kind: 'executable'
+      }]
+    };
+    const config = createDefaultCreatorServicesConfig();
+    config.tts.provider = 'openai';
+    config.tts.openai.model = 'gpt-4o-mini-tts';
+    config.tts.aliyun.apiKey = 'dashscope-key';
+    const progress: Array<Record<string, unknown>> = [];
+    const stage = {
+      stageRun: {
+        id: 'stage-run-tts',
+        stageId: 'tts',
+        progress: {}
+      },
+      job: {
+        id: 'job-tts',
+        state: {}
+      },
+      inputArtifacts: [],
+      workdir,
+      signal: new AbortController().signal,
+      reportProgress(value: Record<string, unknown>) {
+        progress.push(value);
+      }
+    } as unknown as CreatorExecutorInput;
+
+    const artifacts = await runKrillinCli({
+      resourceRoot,
+      jobsRoot,
+      dependencyRoot,
+      manifest,
+      stage,
+      config,
+      artifacts: [{ id: 'subtitle-1', kind: 'target_subtitle', path: subtitle }],
+      options: {
+        ttsProvider: 'aliyun',
+        ttsModel: 'qwen3-tts-instruct-flash',
+        voiceCode: 'Cherry'
+      }
+    });
+
+    expect(artifacts.map(artifact => artifact.kind)).toEqual(['dubbed_audio']);
+    expect(JSON.parse(readFileSync(join(workdir, 'observed-args.json'), 'utf8'))).toEqual([
+      'tts',
+      '--workdir',
+      workdir,
+      '--task-id',
+      'stage-run-tts',
+      '--input-srt',
+      subtitle,
+      '--line-mode',
+      'target-only',
+      '--voice',
+      'Cherry'
+    ]);
+    const observed = parse(readFileSync(join(workdir, 'observed-config.toml'), 'utf8')) as {
+      tts: {
+        provider: string;
+        openai: { model: string };
+        aliyun: { api_key: string; model: string };
+      };
+    };
+    expect(observed.tts).toMatchObject({
+      provider: 'aliyun',
+      openai: { model: 'gpt-4o-mini-tts' },
+      aliyun: {
+        api_key: 'dashscope-key',
+        model: 'qwen3-tts-instruct-flash'
+      }
+    });
+
+    progress.length = 0;
+    await expect(runKrillinCli({
+      resourceRoot,
+      jobsRoot,
+      dependencyRoot,
+      manifest,
+      stage,
+      config,
+      artifacts: [{ id: 'subtitle-1', kind: 'target_subtitle', path: subtitle }],
+      options: {
+        ttsProvider: 'aliyun',
+        ttsModel: 'qwen3-tts-instruct-flash',
+        voiceCode: 'FAIL'
+      }
+    })).rejects.toMatchObject({
+      code: 'generate_speech_failed',
+      message: 'fixture TTS failed'
+    });
+    expect(progress).toEqual([
+      {
+        krillinMode: 'cli',
+        providerStatus: 'running',
+        percent: 5
+      },
+      {
+        krillinMode: 'cli',
+        providerStatus: 'running',
+        percent: 64,
+        phase: 'generating_voice',
+        krillinEventPayload: {
+          percent: 64,
+          phase: 'generating_voice',
+          message: 'generating'
+        }
+      },
+      {
+        krillinMode: 'cli',
+        providerStatus: 'failed',
+        phase: 'failed',
+        krillinEventPayload: {
+          phase: 'failed',
+          message: 'fixture TTS failed'
+        }
+      }
+    ]);
+  });
 });
 
 const FAKE_CLI = String.raw`
@@ -145,25 +286,54 @@ writeFileSync(
   join(workdir, 'observed-config.toml'),
   readFileSync(join(process.cwd(), 'config', 'config.toml'))
 );
-writeFileSync(join(workdir, 'observed-dependencies.json'), JSON.stringify({
-  resourceRoot: process.env.KRILLINAI_RESOURCE_ROOT,
-  offline: process.env.KRILLINAI_OFFLINE_DEPENDENCIES,
-  bin: realpathSync(join(process.cwd(), 'bin')),
-  models: realpathSync(join(process.cwd(), 'models')),
-  ffmpeg: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'ffmpeg')),
-  whisperKit: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'whisperkit-cli'))
-}));
-const outputs = {
-  origin_video: join(workdir, 'origin_video.mp4'),
-  origin_srt: join(workdir, 'origin_language_srt.srt'),
-  target_srt: join(workdir, 'target_language_srt.srt'),
-  bilingual_srt: join(workdir, 'bilingual_srt.srt'),
-  short_origin_mixed_srt: join(workdir, 'short_origin_mixed_srt.srt')
-};
-writeFileSync(outputs.origin_video, 'video');
-writeFileSync(outputs.origin_srt, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
-writeFileSync(outputs.target_srt, '1\n00:00:00,000 --> 00:00:01,000\n你好\n');
-writeFileSync(outputs.bilingual_srt, '1\n00:00:00,000 --> 00:00:01,000\n你好\nHello\n');
-writeFileSync(outputs.short_origin_mixed_srt, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
-process.stdout.write(JSON.stringify({ ok: true, stage: 'subtitle', outputs }) + '\n');
+const voiceIndex = args.indexOf('--voice');
+const shouldFail = args[0] === 'tts' && voiceIndex >= 0 && args[voiceIndex + 1] === 'FAIL';
+if (shouldFail) {
+  process.stdout.write(JSON.stringify({
+    type: 'progress',
+    phase: 'generating_voice',
+    percent: 64,
+    message: 'generating'
+  }) + '\n');
+  process.stdout.write(JSON.stringify({
+    ok: false,
+    stage: 'tts',
+    error: {
+      code: 'generate_speech_failed',
+      message: 'fixture TTS failed',
+      retryable: true
+    }
+  }) + '\n');
+  process.exitCode = 1;
+  return;
+}
+let outputs;
+if (args[0] === 'tts') {
+  outputs = {
+    tts_audio: join(workdir, 'dubbed_audio.wav')
+  };
+  writeFileSync(outputs.tts_audio, 'audio');
+} else {
+  writeFileSync(join(workdir, 'observed-dependencies.json'), JSON.stringify({
+    resourceRoot: process.env.KRILLINAI_RESOURCE_ROOT,
+    offline: process.env.KRILLINAI_OFFLINE_DEPENDENCIES,
+    bin: realpathSync(join(process.cwd(), 'bin')),
+    models: realpathSync(join(process.cwd(), 'models')),
+    ffmpeg: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'ffmpeg')),
+    whisperKit: realpathSync(join(process.env.KRILLINAI_RESOURCE_ROOT, 'bin', 'whisperkit-cli'))
+  }));
+  outputs = {
+    origin_video: join(workdir, 'origin_video.mp4'),
+    origin_srt: join(workdir, 'origin_language_srt.srt'),
+    target_srt: join(workdir, 'target_language_srt.srt'),
+    bilingual_srt: join(workdir, 'bilingual_srt.srt'),
+    short_origin_mixed_srt: join(workdir, 'short_origin_mixed_srt.srt')
+  };
+  writeFileSync(outputs.origin_video, 'video');
+  writeFileSync(outputs.origin_srt, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+  writeFileSync(outputs.target_srt, '1\n00:00:00,000 --> 00:00:01,000\n你好\n');
+  writeFileSync(outputs.bilingual_srt, '1\n00:00:00,000 --> 00:00:01,000\n你好\nHello\n');
+  writeFileSync(outputs.short_origin_mixed_srt, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+}
+process.stdout.write(JSON.stringify({ ok: true, stage: args[0], outputs }) + '\n');
 `;

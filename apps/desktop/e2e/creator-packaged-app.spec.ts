@@ -104,6 +104,46 @@ test('实际 Desktop 包创建并重启恢复 Creator Job，且使用内嵌 Runt
       ])
     );
 
+    const aliyunVoices = await runtimeRequest<{
+      provider: string;
+      model: string;
+      voices: Array<{ id: string; name: string }>;
+    }>(
+      currentApp.page,
+      'GET',
+      '/creator-services/tts/voices?provider=aliyun&model=qwen3-tts-flash'
+    );
+    expect(aliyunVoices.status).toBe(200);
+    expect(aliyunVoices.body).toMatchObject({
+      provider: 'aliyun',
+      model: 'qwen3-tts-flash'
+    });
+    expect(aliyunVoices.body.voices.map(voice => voice.id)).toEqual(
+      expect.arrayContaining(['Cherry', 'Kiki'])
+    );
+
+    await currentApp.page.getByRole('button', { name: '设置' }).click();
+    await currentApp.page.getByRole('button', { name: 'AI 服务' }).click();
+    await expect(currentApp.page.getByRole('heading', { name: 'AI 服务' })).toBeVisible();
+    await currentApp.page.getByRole('tab', { name: '配音服务' }).click();
+    const providerSelect = currentApp.page.getByRole('combobox', { name: '服务商' });
+    await expect(providerSelect).toHaveText('OpenAI TTS');
+    await expect(currentApp.page.getByRole('combobox', { name: '默认音色' }))
+      .toHaveValue('marin');
+    await providerSelect.click();
+    await currentApp.page.getByRole('option', { name: '阿里云百炼' }).click();
+    await expect(currentApp.page.getByLabel('Base URL'))
+      .toHaveValue('https://dashscope.aliyuncs.com/api/v1');
+    await expect(currentApp.page.getByLabel('模型')).toHaveValue('qwen3-tts-flash');
+    await expect.poll(async () => (
+      currentApp.page.getByRole('combobox', { name: '默认音色' })
+        .locator('option')
+        .allTextContents()
+    )).toEqual(expect.arrayContaining([
+      expect.stringContaining('Cherry'),
+      expect.stringContaining('Kiki')
+    ]));
+
     await currentApp.page.getByRole('button', { name: '工作台' }).click();
     await expect(currentApp.page.getByRole('heading', { name: '工作台' })).toBeVisible();
     await currentApp.page.getByRole('button', { name: /^图像生成/ }).click();

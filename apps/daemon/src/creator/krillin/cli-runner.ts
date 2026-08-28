@@ -84,9 +84,10 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
     launcherRoot,
     useOnDemandTranscription: input.config.transcription.provider === 'whisperkit'
   });
+  const cliConfig = stageConfig(input.config, input.stage.stageRun.stageId, input.options);
   await writeFile(
     join(configDir, 'config.toml'),
-    createKrillinConfigToml(input.config),
+    createKrillinConfigToml(cliConfig),
     { mode: 0o600 }
   );
   await writeFile(join(dependencyBin, '.yt-dlp-last-check'), new Date().toISOString(), { mode: 0o600 });
@@ -125,9 +126,43 @@ export async function runKrillinCli(input: RunKrillinCliInput): Promise<KrillinR
       completedOutputKinds: artifacts.map(artifact => artifact.kind)
     });
     return artifacts;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'KrillinAI CLI failed';
+    input.stage.reportProgress({
+      krillinMode: 'cli',
+      providerStatus: 'failed',
+      phase: 'failed',
+      krillinEventPayload: {
+        phase: 'failed',
+        message
+      }
+    });
+    throw error;
   } finally {
     await rm(launcherRoot, { recursive: true, force: true });
   }
+}
+
+function stageConfig(
+  source: CreatorServicesConfig,
+  stageId: string,
+  options: Record<string, unknown>
+): CreatorServicesConfig {
+  if (stageId !== 'tts') return source;
+  const provider = stringOption(options, 'ttsProvider');
+  if (
+    provider !== 'openai'
+    && provider !== 'aliyun'
+    && provider !== 'minimax'
+    && provider !== 'edge-tts'
+  ) return source;
+  const config = structuredClone(source);
+  config.tts.provider = provider;
+  if (provider !== 'edge-tts') {
+    const model = stringOption(options, 'ttsModel');
+    if (model) config.tts[provider].model = model;
+  }
+  return config;
 }
 
 function commandArguments(

@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useConfirmDialog } from '../../components/dialogs/ConfirmDialogProvider.js';
+import { TtsVoicePicker } from '../../components/tts/TtsVoicePicker.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorServicesSettingsService } from '../../services/creator-services-service.js';
 import './creator-services-settings.css';
@@ -248,7 +249,12 @@ export function CreatorServicesSettingsView(props: {
             />
           ) : null}
           {activeSection === 'tts' ? (
-            <TtsSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
+            <TtsSettings
+              config={config}
+              update={updateConfig}
+              configuredCredentials={configuredCredentials}
+              service={props.service}
+            />
           ) : null}
           {activeSection === 'image' ? (
             <ImageSettings config={config} update={updateConfig} configuredCredentials={configuredCredentials} />
@@ -544,7 +550,10 @@ function TtsSettings(props: SettingsGroupProps) {
   return (
     <SettingsFieldset
       title={l('配音服务', 'Dubbing and speech synthesis')}
-      description={l('用于生成目标语言配音。Edge TTS 无需 API Key。', 'Generates target-language dubbing. Edge TTS does not require an API key.')}
+      description={l(
+        '统一配置视频翻译和智能配音使用的服务商、模型与默认音色。',
+        'Configure the provider, model, and default voice shared by video translation and AI dubbing.'
+      )}
     >
       <SelectField
         id="tts-provider"
@@ -553,7 +562,7 @@ function TtsSettings(props: SettingsGroupProps) {
         options={[
           ['openai', 'OpenAI TTS'],
           ['minimax', 'MiniMax'],
-          ['aliyun', l('阿里云语音', 'Alibaba Cloud Speech')],
+          ['aliyun', l('阿里云百炼', 'Alibaba Cloud Model Studio')],
           ['edge-tts', 'Edge TTS']
         ]}
         onChange={value => props.update(config => {
@@ -568,7 +577,7 @@ function TtsSettings(props: SettingsGroupProps) {
           value={props.config.tts.openai}
           modelPlaceholder="gpt-4o-mini-tts"
           onChange={value => props.update(config => {
-            config.tts.openai = value;
+            config.tts.openai = { ...config.tts.openai, ...value };
           })}
         />
       ) : null}
@@ -581,24 +590,36 @@ function TtsSettings(props: SettingsGroupProps) {
           modelPlaceholder="speech-2.8-hd"
           baseUrlPlaceholder="https://api.minimax.io"
           onChange={value => props.update(config => {
-            config.tts.minimax = value;
+            config.tts.minimax = { ...config.tts.minimax, ...value };
           })}
         />
       ) : null}
       {provider === 'aliyun' ? (
-        <AliyunFields
+        <OpenAiFields
           id="tts-aliyun"
-          credentialPrefix="tts.aliyun"
+          credential="tts.aliyun.apiKey"
           configuredCredentials={props.configuredCredentials}
-          oss={props.config.tts.aliyun.oss}
-          speech={props.config.tts.aliyun.speech}
-          onOssChange={value => props.update(config => {
-            config.tts.aliyun.oss = value;
-          })}
-          onSpeechChange={value => props.update(config => {
-            config.tts.aliyun.speech = value;
+          value={props.config.tts.aliyun}
+          modelPlaceholder="qwen3-tts-flash"
+          baseUrlPlaceholder="https://dashscope.aliyuncs.com/api/v1"
+          onChange={value => props.update(config => {
+            config.tts.aliyun = { ...config.tts.aliyun, ...value };
           })}
         />
+      ) : null}
+      {provider !== 'edge-tts' ? (
+        <div className="creator-services-tts-voice">
+          <TtsVoicePicker
+            id={`tts-${provider}-default-voice`}
+            provider={provider}
+            model={props.config.tts[provider].model}
+            value={props.config.tts[provider].defaultVoiceId}
+            service={props.service ?? null}
+            onChange={voiceId => props.update(config => {
+              config.tts[provider].defaultVoiceId = voiceId;
+            })}
+          />
+        </div>
       ) : null}
       {provider === 'edge-tts' ? (
         <p className="creator-services-inline-note">
@@ -670,6 +691,7 @@ function VideoSettings(props: SettingsGroupProps) {
 type SettingsGroupProps = {
   config: CreatorServicesConfig;
   configuredCredentials: ReadonlySet<CreatorServicesCredentialField>;
+  service?: CreatorServicesSettingsService | null;
   update(mutator: (draft: CreatorServicesConfig) => void): void;
 };
 
@@ -747,7 +769,7 @@ function KlingFields(props: {
 
 function AliyunFields(props: {
   id: string;
-  credentialPrefix: 'transcription.aliyun' | 'tts.aliyun';
+  credentialPrefix: 'transcription.aliyun';
   configuredCredentials: ReadonlySet<CreatorServicesCredentialField>;
   oss: AliyunOssConfig;
   speech: AliyunSpeechConfig;
@@ -1063,7 +1085,7 @@ function transcriptionProviderLabel(
     case 'whisper.cpp':
       return 'Whisper.cpp';
     case 'aliyun':
-      return l('阿里云语音', 'Alibaba Cloud Speech');
+      return l('阿里云百炼', 'Alibaba Cloud Model Studio');
   }
 }
 

@@ -24,12 +24,9 @@ export function createKrillinConfigToml(config: CreatorServicesConfig): string {
     },
     tts: {
       provider: config.tts.provider,
-      openai: openAi(config.tts.openai),
-      minimax: openAi(config.tts.minimax),
-      aliyun: {
-        oss: snakeAliyunOss(config.tts.aliyun.oss),
-        speech: snakeAliyunSpeech(config.tts.aliyun.speech)
-      }
+      openai: ttsProvider(config.tts.openai),
+      minimax: ttsProvider(config.tts.minimax),
+      aliyun: ttsProvider(config.tts.aliyun)
     },
     image: {
       provider: config.image.provider,
@@ -41,6 +38,13 @@ export function createKrillinConfigToml(config: CreatorServicesConfig): string {
 
 function openAi(value: { baseUrl: string; apiKey: string; model: string }) {
   return { base_url: value.baseUrl, api_key: value.apiKey, model: value.model };
+}
+
+function ttsProvider(value: { baseUrl: string; apiKey: string; model: string; defaultVoiceId: string }) {
+  return {
+    ...openAi(value),
+    default_voice_id: value.defaultVoiceId
+  };
 }
 
 function snakeAliyunOss(value: { accessKeyId: string; accessKeySecret: string; bucket: string }) {

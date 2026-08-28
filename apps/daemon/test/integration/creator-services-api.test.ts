@@ -1,13 +1,19 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultCreatorServicesConfig } from '@opencreator/protocol';
+import {
+  createDefaultCreatorServicesConfig,
+  type CreatorTtsProvider,
+  type CreatorTtsVoicesResponse
+} from '@opencreator/protocol';
 import type { CreatorServicesConfigStore } from '../../src/creator-services/config-store.js';
 import { registerCreatorServicesRoutes } from '../../src/api/routes.creator-services.js';
 import { createKrillinCreatorServicesCapabilities } from '../../src/creator/krillin/capabilities.js';
+import type { KrillinTtsService } from '../../src/creator/krillin/tts-service.js';
 
 describe('creator services API', () => {
   let server: FastifyInstance;
   let store: CreatorServicesConfigStore;
+  let ttsService: Pick<KrillinTtsService, 'listVoices' | 'preview'>;
 
   beforeEach(async () => {
     const initial = createDefaultCreatorServicesConfig();
@@ -18,11 +24,31 @@ describe('creator services API', () => {
       write: vi.fn(async config => config),
       reset: vi.fn(async () => createDefaultCreatorServicesConfig())
     };
+    ttsService = {
+      listVoices: vi.fn(async (
+        provider: CreatorTtsProvider
+      ): Promise<CreatorTtsVoicesResponse> => ({
+        provider,
+        model: provider === 'aliyun' ? 'qwen3-tts-flash' : '',
+        voices: provider === 'aliyun'
+          ? [{ id: 'Cherry', name: '芊悦', provider: 'aliyun', kind: 'builtin' as const }]
+          : []
+      })),
+      preview: vi.fn(async request => ({
+        content: Buffer.from(`preview:${request.voiceId}`),
+        mime: 'audio/mpeg' as const,
+        provider: 'aliyun' as const,
+        model: 'qwen3-tts-flash',
+        voiceId: request.voiceId,
+        format: 'mp3' as const
+      }))
+    };
     server = Fastify({ logger: false });
     await registerCreatorServicesRoutes(
       server,
       store,
-      () => createKrillinCreatorServicesCapabilities('darwin', 'arm64')
+      () => createKrillinCreatorServicesCapabilities('darwin', 'arm64'),
+      ttsService
     );
   });
 
@@ -147,5 +173,41 @@ describe('creator services API', () => {
       error: { code: 'unsupported_capability' }
     });
     expect(store.write).not.toHaveBeenCalled();
+  });
+
+  it('lists provider voices and streams a voice preview', async () => {
+    const voices = await server.inject({
+      method: 'GET',
+      url: '/creator-services/tts/voices?provider=aliyun&model=qwen3-tts-flash'
+    });
+
+    expect(voices.statusCode).toBe(200);
+    expect(voices.json()).toMatchObject({
+      provider: 'aliyun',
+      voices: [{ id: 'Cherry', name: '芊悦' }]
+    });
+    expect(ttsService.listVoices).toHaveBeenCalledWith('aliyun', 'qwen3-tts-flash');
+
+    const preview = await server.inject({
+      method: 'POST',
+      url: '/creator-services/tts/preview',
+      payload: {
+        provider: 'aliyun',
+        model: 'qwen3-tts-flash',
+        voiceId: 'Cherry',
+        text: '试听文本'
+      }
+    });
+
+    expect(preview.statusCode).toBe(200);
+    expect(preview.headers['content-type']).toContain('audio/mpeg');
+    expect(preview.headers['cache-control']).toBe('no-store');
+    expect(preview.rawPayload.toString()).toBe('preview:Cherry');
+    expect(ttsService.preview).toHaveBeenCalledWith({
+      provider: 'aliyun',
+      model: 'qwen3-tts-flash',
+      voiceId: 'Cherry',
+      text: '试听文本'
+    });
   });
 });

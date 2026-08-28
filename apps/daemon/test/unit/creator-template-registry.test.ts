@@ -55,6 +55,15 @@ describe('creator template registry', () => {
     }
   });
 
+  it('leaves new video translation TTS settings unset for the UI to inherit global defaults', () => {
+    const state = createVideoTranslationTemplate().inputSchema.parse({});
+
+    expect(state).not.toHaveProperty('ttsProvider');
+    expect(state).not.toHaveProperty('ttsModel');
+    expect(state).not.toHaveProperty('voiceCode');
+    expect(state).not.toHaveProperty('voiceName');
+  });
+
   it('passes the dedicated short subtitle into vertical rendering when available', () => {
     const template = createVideoTranslationTemplate();
     expect(template.stages.find(stage => stage.id === 'subtitle')?.outputArtifacts).toContainEqual({

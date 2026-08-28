@@ -4,6 +4,7 @@ import {
   FileAudio,
   FileVideo,
   Mic2,
+  RotateCcw,
   Save,
   Settings2
 } from 'lucide-react';
@@ -45,6 +46,15 @@ export type SubtitleResultOutput = {
   readOnly: boolean;
 };
 
+export type VoiceResultOutput = {
+  artifactId: string;
+  artifactVersion: number;
+  fileName?: string;
+  src?: string;
+  previewLoading?: boolean;
+  previewError?: string;
+};
+
 const resultTabs: Array<{
   value: VideoTranslationResultTab;
   label: string;
@@ -68,8 +78,7 @@ export default function VideoTranslationResultWorkspace(props: {
   hasVoiceArtifact: boolean;
   videoOutputs: VideoResultOutput[];
   subtitleOutputs: SubtitleResultOutput[];
-  voiceFileName?: string;
-  voiceArtifactVersion?: number;
+  voiceOutput?: VoiceResultOutput;
   subtitleDirty: boolean;
   nextVersion: number;
   affectedArtifacts: string[];
@@ -82,6 +91,7 @@ export default function VideoTranslationResultWorkspace(props: {
   onSaveSubtitles(): void;
   onAdjustSettings(): void;
   onExport(type: 'video' | 'subtitles' | 'voice', artifactId?: string): void;
+  onReloadVoice(): void;
   onRequestRegenerate(): void;
   onCancelRegenerate(): void;
   onConfirmRegenerate(): void;
@@ -287,19 +297,50 @@ export default function VideoTranslationResultWorkspace(props: {
               <p>{props.hasVoiceArtifact ? l('配音文件已生成', 'Dubbing file generated') : l('当前版本未生成配音', 'No dubbing was generated for this version')}</p>
             </div>
           </header>
-          {props.hasVoiceArtifact ? (
-            <div className="video-result-file-row">
-              <span aria-hidden="true"><FileAudio size={19} strokeWidth={1.7} /></span>
-              <div>
-                <strong>{props.voiceFileName ?? `${l('目标语言配音', 'Target-language-dubbing')}-V${props.version}.wav`}</strong>
-                <small>
-                  {l('配音', 'Dubbing')} V{props.voiceArtifactVersion ?? 1}
-                  {' · '}{l('项目', 'Project')} V{props.version}
-                </small>
+          {props.hasVoiceArtifact && props.voiceOutput !== undefined ? (
+            <div className="video-result-voice-output">
+              <div className="video-result-audio-preview">
+                {props.voiceOutput.src !== undefined ? (
+                  <audio
+                    controls
+                    preload="metadata"
+                    src={props.voiceOutput.src}
+                    aria-label={l('目标语言配音试听', 'Target-language dubbing preview')}
+                  />
+                ) : (
+                  <div className="video-result-audio-status" role="status">
+                    <span>
+                      {props.voiceOutput.previewLoading
+                        ? l('正在加载配音...', 'Loading dubbing...')
+                        : props.voiceOutput.previewError ?? l('配音试听暂时不可用，可直接下载文件。', 'Dubbing preview is unavailable. You can still download the file.')}
+                    </span>
+                    {!props.voiceOutput.previewLoading && props.voiceOutput.previewError !== undefined ? (
+                      <button type="button" onClick={props.onReloadVoice}>
+                        <RotateCcw size={15} strokeWidth={1.8} aria-hidden="true" />
+                        {l('重新加载配音', 'Reload dubbing')}
+                      </button>
+                    ) : null}
+                  </div>
+                )}
               </div>
-              <button type="button" onClick={() => props.onExport('voice')} aria-label={l('下载配音文件', 'Download dubbing file')} title={l('下载配音文件', 'Download dubbing file')}>
-                <Download size={16} strokeWidth={1.8} aria-hidden="true" />
-              </button>
+              <div className="video-result-file-row">
+                <span aria-hidden="true"><FileAudio size={19} strokeWidth={1.7} /></span>
+                <div>
+                  <strong>{props.voiceOutput.fileName ?? `${l('目标语言配音', 'Target-language-dubbing')}-V${props.version}.wav`}</strong>
+                  <small>
+                    {l('配音', 'Dubbing')} V{props.voiceOutput.artifactVersion}
+                    {' · '}{l('项目', 'Project')} V{props.version}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => props.onExport('voice', props.voiceOutput?.artifactId)}
+                  aria-label={l('下载配音文件', 'Download dubbing file')}
+                  title={l('下载配音文件', 'Download dubbing file')}
+                >
+                  <Download size={16} strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              </div>
             </div>
           ) : (
             <div className="video-result-empty">

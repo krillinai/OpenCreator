@@ -125,6 +125,8 @@ export type RuntimeErrorCode =
   | 'creator_llm_config_missing'
   | 'creator_transcription_config_missing'
   | 'creator_tts_config_missing'
+  | 'creator_tts_runtime_unavailable'
+  | 'creator_tts_upstream_error'
   | 'creator_dependency_prepare_failed'
   | 'dependency_not_packaged'
   | 'unsupported_source'

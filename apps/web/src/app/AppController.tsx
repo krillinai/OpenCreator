@@ -5092,6 +5092,8 @@ export function AppController(props: AppControllerProps) {
       onWorkspaceModeChange={handleCreatorWorkspaceModeChange}
       projectId={state.currentProjectId}
       creatorService={creatorService}
+      creatorServicesService={creatorServicesService}
+      smartDubbingService={smartDubbingService}
       workspace={props.route.view === 'workbench' ? props.route.tool : undefined}
       jobId={props.route.view === 'workbench' ? props.route.jobId : undefined}
       onJobCreated={rememberCreatorJob}

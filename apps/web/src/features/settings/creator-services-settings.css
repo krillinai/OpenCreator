@@ -143,10 +143,15 @@
 
 .creator-services-field.is-wide,
 .creator-services-subheading,
+.creator-services-tts-voice,
 .creator-services-toggle,
 .creator-services-inline-note,
 .creator-services-runtime-note {
   grid-column: 1 / -1;
+}
+
+.creator-services-tts-voice {
+  min-width: 0;
 }
 
 .creator-services-runtime-note {
@@ -467,6 +472,7 @@
   .creator-services-grid { grid-template-columns: minmax(0, 1fr); }
   .creator-services-field.is-wide,
   .creator-services-subheading,
+  .creator-services-tts-voice,
   .creator-services-toggle,
   .creator-services-inline-note,
   .creator-services-runtime-note { grid-column: auto; }

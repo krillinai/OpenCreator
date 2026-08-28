@@ -1,4 +1,8 @@
-import type { CreatorJob, CreatorStageRun } from '@opencreator/protocol';
+import type {
+  CreatorJob,
+  CreatorStageRun,
+  CreatorTtsProvider
+} from '@opencreator/protocol';
 import type { CreatorServicesConfigStore } from '../../creator-services/config-store.js';
 import type { CreatorCommandDispatcher } from '../command-dispatcher.js';
 import type { CreatorService } from '../service.js';
@@ -24,7 +28,7 @@ export function createVideoTranslationWorkflow(input: {
         'LLM configuration is incomplete'
       );
     }
-    if (job.state.dubbing === true && !hasTtsCredentials(config)) {
+    if (job.state.dubbing === true && !hasTtsCredentials(config, job)) {
       setConfigurationNeeded(input.creator, job.id, {
         code: 'creator_tts_config_missing',
         message: '请先完成目标语言配音服务配置',
@@ -88,18 +92,24 @@ function isSupportedVideoUrl(value: string): boolean {
   }
 }
 
-function hasTtsCredentials(config: Awaited<ReturnType<CreatorServicesConfigStore['read']>>): boolean {
-  if (config.tts.provider === 'edge-tts') return true;
-  if (config.tts.provider === 'openai') return config.tts.openai.apiKey.length > 0;
-  if (config.tts.provider === 'minimax') return config.tts.minimax.apiKey.length > 0;
-  return [
-    config.tts.aliyun.oss.accessKeyId,
-    config.tts.aliyun.oss.accessKeySecret,
-    config.tts.aliyun.oss.bucket,
-    config.tts.aliyun.speech.accessKeyId,
-    config.tts.aliyun.speech.accessKeySecret,
-    config.tts.aliyun.speech.appKey
-  ].every(value => value.length > 0);
+function hasTtsCredentials(
+  config: Awaited<ReturnType<CreatorServicesConfigStore['read']>>,
+  job: CreatorJob
+): boolean {
+  const provider = isTtsProvider(job.state.ttsProvider)
+    ? job.state.ttsProvider
+    : config.tts.provider;
+  if (provider === 'edge-tts') return true;
+  if (provider === 'openai') return config.tts.openai.apiKey.length > 0;
+  if (provider === 'minimax') return config.tts.minimax.apiKey.length > 0;
+  return config.tts.aliyun.apiKey.length > 0;
+}
+
+function isTtsProvider(value: unknown): value is CreatorTtsProvider {
+  return value === 'openai'
+    || value === 'aliyun'
+    || value === 'edge-tts'
+    || value === 'minimax';
 }
 
 function queueNextStage(

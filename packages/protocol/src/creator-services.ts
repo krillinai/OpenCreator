@@ -4,6 +4,37 @@ export type OpenAiCompatibleConfig = {
   model: string;
 };
 
+export type CreatorTtsProvider = 'openai' | 'aliyun' | 'edge-tts' | 'minimax';
+
+export type CreatorTtsProviderConfig = OpenAiCompatibleConfig & {
+  defaultVoiceId: string;
+};
+
+export type CreatorTtsVoice = {
+  id: string;
+  name: string;
+  provider: CreatorTtsProvider;
+  language?: string;
+  gender?: string;
+  scenario?: string;
+  kind?: 'builtin' | 'custom' | 'designed';
+  supportedModels?: string[];
+  recommended?: boolean;
+};
+
+export type CreatorTtsVoicesResponse = {
+  provider: CreatorTtsProvider;
+  model: string;
+  voices: CreatorTtsVoice[];
+};
+
+export type CreatorTtsPreviewRequest = {
+  provider: CreatorTtsProvider;
+  model?: string;
+  voiceId: string;
+  text?: string;
+};
+
 export type KlingAiConfig = {
   baseUrl: string;
   accessKey: string;
@@ -49,13 +80,10 @@ export type CreatorServicesConfig = {
     };
   };
   tts: {
-    provider: 'openai' | 'aliyun' | 'edge-tts' | 'minimax';
-    openai: OpenAiCompatibleConfig;
-    minimax: OpenAiCompatibleConfig;
-    aliyun: {
-      oss: AliyunOssConfig;
-      speech: AliyunSpeechConfig;
-    };
+    provider: CreatorTtsProvider;
+    openai: CreatorTtsProviderConfig;
+    minimax: CreatorTtsProviderConfig;
+    aliyun: CreatorTtsProviderConfig;
   };
   image: {
     provider: 'openai' | 'jimeng' | 'kling' | 'gemini';
@@ -104,11 +132,7 @@ export type CreatorServicesCredentialField =
   | 'transcription.aliyun.speech.appKey'
   | 'tts.openai.apiKey'
   | 'tts.minimax.apiKey'
-  | 'tts.aliyun.oss.accessKeyId'
-  | 'tts.aliyun.oss.accessKeySecret'
-  | 'tts.aliyun.speech.accessKeyId'
-  | 'tts.aliyun.speech.accessKeySecret'
-  | 'tts.aliyun.speech.appKey'
+  | 'tts.aliyun.apiKey'
   | 'image.openai.apiKey'
   | 'image.jimeng.apiKey'
   | 'image.kling.accessKey'
@@ -150,16 +174,20 @@ export function createDefaultCreatorServicesConfig(): CreatorServicesConfig {
       openai: {
         baseUrl: '',
         apiKey: '',
-        model: 'gpt-4o-mini-tts'
+        model: 'gpt-4o-mini-tts',
+        defaultVoiceId: 'marin'
       },
       minimax: {
         baseUrl: 'https://api.minimax.io',
         apiKey: '',
-        model: 'speech-2.8-hd'
+        model: 'speech-2.8-hd',
+        defaultVoiceId: 'English_Graceful_Lady'
       },
       aliyun: {
-        oss: { accessKeyId: '', accessKeySecret: '', bucket: '' },
-        speech: { accessKeyId: '', accessKeySecret: '', appKey: '' }
+        baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+        apiKey: '',
+        model: 'qwen3-tts-flash',
+        defaultVoiceId: 'Cherry'
       }
     },
     image: {

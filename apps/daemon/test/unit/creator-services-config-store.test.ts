@@ -111,6 +111,25 @@ describe('CreatorServicesConfigStore', () => {
     expect(retained.video).toEqual(current.video);
   });
 
+  it('redacts and retains the simplified TTS provider credentials', () => {
+    const current = createDefaultCreatorServicesConfig();
+    current.tts.openai.apiKey = 'tts-openai';
+    current.tts.minimax.apiKey = 'tts-minimax';
+    current.tts.aliyun.apiKey = 'tts-aliyun';
+
+    const presented = presentCreatorServicesConfig(current);
+
+    expect(presented.configuredCredentials).toEqual(expect.arrayContaining([
+      'tts.openai.apiKey',
+      'tts.minimax.apiKey',
+      'tts.aliyun.apiKey'
+    ]));
+    expect(presented.config.tts.openai.apiKey).toBe('');
+    expect(presented.config.tts.minimax.apiKey).toBe('');
+    expect(presented.config.tts.aliyun.apiKey).toBe('');
+    expect(retainCreatorServicesCredentials(presented.config, current).tts).toEqual(current.tts);
+  });
+
   it('uses Codex as fallback until a custom text model is configured', async () => {
     let persisted = createDefaultCreatorServicesConfig();
     const rawStore: CreatorServicesConfigStore = {
@@ -234,6 +253,60 @@ describe('CreatorServicesConfigStore', () => {
       video: {
         provider: 'seedance',
         seedance: { apiKey: '', model: 'doubao-seedance-1-0-pro-250528' }
+      }
+    });
+  });
+
+  it('migrates legacy TTS settings without treating Alibaba Cloud AK/SK as a Bailian API key', async () => {
+    const legacy = structuredClone(createDefaultCreatorServicesConfig()) as unknown as Record<string, any>;
+    legacy.tts = {
+      provider: 'aliyun',
+      openai: {
+        baseUrl: '',
+        apiKey: 'openai-key',
+        model: 'gpt-4o-mini-tts'
+      },
+      minimax: {
+        baseUrl: 'https://api.minimax.io',
+        apiKey: 'minimax-key',
+        model: 'speech-2.8-hd'
+      },
+      aliyun: {
+        oss: {
+          accessKeyId: 'old-oss-id',
+          accessKeySecret: 'old-oss-secret',
+          bucket: 'old-bucket'
+        },
+        speech: {
+          accessKeyId: 'old-speech-id',
+          accessKeySecret: 'old-speech-secret',
+          appKey: 'old-app-key'
+        }
+      }
+    };
+    const store = createCreatorServicesConfigStore({
+      getPassword: vi.fn(async () => JSON.stringify(legacy)),
+      setPassword: vi.fn(async () => undefined),
+      deletePassword: vi.fn(async () => undefined)
+    });
+
+    await expect(store.read()).resolves.toMatchObject({
+      tts: {
+        provider: 'aliyun',
+        openai: {
+          apiKey: 'openai-key',
+          defaultVoiceId: 'marin'
+        },
+        minimax: {
+          apiKey: 'minimax-key',
+          defaultVoiceId: 'English_Graceful_Lady'
+        },
+        aliyun: {
+          baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+          apiKey: '',
+          model: 'qwen3-tts-flash',
+          defaultVoiceId: 'Cherry'
+        }
       }
     });
   });
