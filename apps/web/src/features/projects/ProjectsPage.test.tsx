@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { CreatorJob } from '@opencreator/protocol';
+import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import ProjectsPage, { isMeaningfulCreatorJob, youtubeThumbnailUrls } from './ProjectsPage.js';
 import { LanguageProvider } from '../../i18n/LanguageProvider.js';
@@ -53,6 +54,8 @@ describe('ProjectsPage', () => {
     expect(screen.getByText('Thumbnail generation')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open project 夏季新品封面' }))
       .toHaveTextContent('默认工作目录');
+    expect(screen.getByRole('button', { name: 'Open project 夏季新品封面' }).querySelector('img'))
+      .toHaveAttribute('src', '/dashboard/templates/video-localization.jpg');
     expect(screen.getByRole('button', { name: 'Open project youtube.com · launch-talk' }).querySelector('img'))
       .toHaveAttribute('src', 'https://i.ytimg.com/vi/launch-talk/maxresdefault.jpg');
   });
@@ -117,6 +120,48 @@ describe('ProjectsPage', () => {
 
     await Promise.resolve();
     expect(service.openProjectCover).not.toHaveBeenCalled();
+  });
+
+  it('keeps the uploaded video cover request alive under StrictMode', async () => {
+    const createObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+    const revokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:uploaded-video-cover')
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn()
+    });
+    const localVideoJob = creatorJob({
+      id: 'job_local_video',
+      templateId: 'video-translation',
+      state: { sourceType: 'file', sourceFileName: 'uploaded-video.mp4' },
+      updatedAt: '2026-08-29T02:09:40.694Z',
+      artifacts: [artifact('job_local_video', 'source_video', 'uploaded-video.mp4')]
+    });
+    const service = {
+      openProjectCover: vi.fn(async () => new Response(new Blob(['jpeg'], { type: 'image/jpeg' })))
+    };
+    const rendered = render(
+      <StrictMode>
+        <ProjectsPage
+          jobs={[localVideoJob]}
+          workspaces={workspaces}
+          service={service}
+          onOpenJob={vi.fn()}
+        />
+      </StrictMode>
+    );
+    try {
+      const image = screen.getByRole('button', { name: '打开项目 uploaded-video.mp4' }).querySelector('img')!;
+      await waitFor(() => expect(image).toHaveAttribute('src', 'blob:uploaded-video-cover'));
+      expect(service.openProjectCover).toHaveBeenCalledWith('job_local_video');
+    } finally {
+      rendered.unmount();
+      restoreUrlMethod('createObjectURL', createObjectUrlDescriptor);
+      restoreUrlMethod('revokeObjectURL', revokeObjectUrlDescriptor);
+    }
   });
 
   it('orders recent projects by their actual update time and opens the exact job', () => {

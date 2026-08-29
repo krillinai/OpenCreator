@@ -612,6 +612,25 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('heading', { name: '选择输出内容' })).toBeInTheDocument();
   });
 
+  it('uses the selected vertical output ratio for the subtitle preview', () => {
+    render(<DashboardPage onSelectPrompt={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /^视频翻译/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '视频链接' }), {
+      target: { value: 'https://www.youtube.com/watch?v=vertical-preview' }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+    fireEvent.click(screen.getByRole('switch', { name: '合成字幕视频' }));
+    fireEvent.click(screen.getByRole('radio', { name: /9:16/ }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: '翻译流程' })).getByRole('button', {
+      name: /字幕样式$/
+    }));
+
+    expect(screen.getByRole('region', { name: '字幕样式预览' })).toHaveAttribute('data-ratio', '9:16');
+  });
+
   it('parses a public video link and exposes video and audio download variants', async () => {
     render(<DashboardPage onSelectPrompt={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^视频下载/ }));

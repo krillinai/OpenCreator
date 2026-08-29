@@ -31,6 +31,13 @@ describe('dashboard CSS contracts', () => {
     expect(disabledFormat[0]).toContain('opacity: 0.45;');
   });
 
+  it('renders the subtitle preview in the selected vertical output ratio', () => {
+    const verticalPreview = cssBlocks('.video-translation-subtitle-preview[data-ratio="9:16"] > div');
+
+    expect(verticalPreview).toHaveLength(1);
+    expect(verticalPreview[0]).toContain('aspect-ratio: 9 / 16;');
+  });
+
   it('keeps video result controls separate from the Agent panel layout', () => {
     const resultVersionButton = cssBlocks('.video-result-version > button');
     const resultVersionItem = cssBlocks('.video-result-version > div button');

@@ -2170,7 +2170,12 @@ export default function VideoTranslationWorkspace(props: {
                   </div>
                 </div>
 
-                <div className="video-translation-subtitle-preview" role="region" aria-label={l('字幕样式预览', 'Subtitle style preview')}>
+                <div
+                  className="video-translation-subtitle-preview"
+                  data-ratio={videoFormat === 'vertical' ? '9:16' : '16:9'}
+                  role="region"
+                  aria-label={l('字幕样式预览', 'Subtitle style preview')}
+                >
                   <span>{l('字幕样式预览', 'Subtitle style preview')}</span>
                   <div
                     style={{

@@ -24,6 +24,11 @@ describe('VideoTranslationAgentPanel', () => {
     expect(container.querySelector('.tool-agent-composer-icon-button')).toBeNull();
     expect(container.querySelectorAll('.tool-agent-composer-select')).toHaveLength(1);
     expect(container.querySelector('.tool-agent-composer-send')).not.toBeNull();
+    expect(container.querySelector('.video-translation-agent-header .opencreator-mark')).not.toBeNull();
+    expect(container.querySelector(
+      '.video-translation-agent-message[data-role="assistant"] .opencreator-mark'
+    )).not.toBeNull();
+    expect(container.querySelector('.lucide-bot')).toBeNull();
   });
 
   it('合并连续的工作台设置更新，并忽略纯界面状态', async () => {

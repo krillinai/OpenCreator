@@ -6,7 +6,6 @@ import type {
   CreatorStageRun
 } from '@opencreator/protocol';
 import {
-  Bot,
   CheckCircle2,
   CircleDot,
   CircleStop,
@@ -18,6 +17,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import OpenCreatorMark from '../../components/brand/OpenCreatorMark.js';
 import { MarkdownRenderer } from '../../components/markdown/MarkdownRenderer.js';
 import { useLocalizedCopy } from '../../i18n/useLocalizedCopy.js';
 import ToolAgentComposer, { type ToolAgentPermission } from './ToolAgentComposer.js';
@@ -191,7 +191,7 @@ export default function VideoTranslationAgentPanel(props: {
   return (
     <aside className="video-translation-agent" aria-label="OpenCreator">
       <header className="video-translation-agent-header">
-        <span aria-hidden="true"><Bot size={17} strokeWidth={1.8} /></span>
+        <span aria-hidden="true"><OpenCreatorMark size={18} /></span>
         <div>
           <h2>OpenCreator</h2>
           <p>{l('正在协助：', 'Helping with: ')}{props.stepLabel}</p>
@@ -264,7 +264,7 @@ export default function VideoTranslationAgentPanel(props: {
                 role="status"
                 aria-label={l('Agent 正在工作', 'Agent is working')}
               >
-                <span aria-hidden="true"><Bot size={13} strokeWidth={1.8} /></span>
+                <span aria-hidden="true"><OpenCreatorMark size={14} /></span>
                 <LoaderCircle
                   className="video-translation-agent-spin"
                   size={16}
@@ -347,7 +347,7 @@ function CollaborationMessageView(props: { message: CollaborationMessage }) {
     >
       {message.role === 'assistant' ? (
         <header>
-          <span aria-hidden="true"><Bot size={13} strokeWidth={1.8} /></span>
+          <span aria-hidden="true"><OpenCreatorMark size={14} /></span>
           <strong>OpenCreator</strong>
           <small>{l('Agent 回复', 'Agent reply')}</small>
         </header>

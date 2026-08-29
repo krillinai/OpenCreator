@@ -10,7 +10,7 @@ import {
   Search,
   Video
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppLanguage } from '../../i18n/LanguageProvider.js';
 import { useLocalizedCopy, type LocalizeCopy } from '../../i18n/useLocalizedCopy.js';
 import type { CreatorWebService } from '../../services/creator-service.js';
@@ -575,12 +575,12 @@ function artifactFormat(artifact: CreatorArtifact): string {
 }
 
 function projectCover(templateId: string): string {
-  if (templateId === 'video-translation') return '/workbench/templates/video-translation-example.png';
-  if (templateId === 'cover') return '/workbench/templates/video-localization.jpg';
-  if (templateId === 'image-generation') return '/workbench/templates/animated-story.jpg';
-  if (templateId === 'stickman-video') return '/workbench/templates/ai-video-insane.jpg';
-  if (templateId === 'auto-clip') return '/workbench/templates/animated-story.jpg';
-  return '/workbench/templates/digital-presenter.jpg';
+  if (templateId === 'video-translation') return '/dashboard/templates/video-translation-example.png';
+  if (templateId === 'cover') return '/dashboard/templates/video-localization.jpg';
+  if (templateId === 'image-generation') return '/dashboard/templates/animated-story.jpg';
+  if (templateId === 'stickman-video') return '/dashboard/templates/ai-video-insane.jpg';
+  if (templateId === 'auto-clip') return '/dashboard/templates/animated-story.jpg';
+  return '/dashboard/templates/digital-presenter.jpg';
 }
 
 function ProjectCoverImage(props: {
@@ -589,24 +589,24 @@ function ProjectCoverImage(props: {
   fallback: string;
   service?: Pick<CreatorWebService, 'openProjectCover'> | null;
 }) {
-  const requestedRuntimeCover = useRef(false);
   const [youtubeIndex, setYoutubeIndex] = useState(0);
   const [runtimeCover, setRuntimeCover] = useState<string>();
-  const hasRuntimeCoverCandidate = props.job.artifacts.some(artifact => (
-    projectCoverArtifactKinds.has(artifact.kind)
-    && artifact.path !== null
-    && artifact.status !== 'stale'
-  ));
+  const runtimeCoverCandidateKey = props.job.artifacts
+    .filter(artifact => (
+      projectCoverArtifactKinds.has(artifact.kind)
+      && artifact.path !== null
+      && artifact.status !== 'stale'
+    ))
+    .map(artifact => `${artifact.id}:${artifact.version}:${artifact.createdAt}`)
+    .join('|');
 
   useEffect(() => {
     if (
       youtubeIndex < props.youtubeCovers.length
-      || !hasRuntimeCoverCandidate
-      || requestedRuntimeCover.current
+      || runtimeCoverCandidateKey.length === 0
       || props.service === null
       || props.service === undefined
     ) return;
-    requestedRuntimeCover.current = true;
     let active = true;
     let objectUrl: string | undefined;
     void props.service.openProjectCover(props.job.id)
@@ -622,10 +622,10 @@ function ProjectCoverImage(props: {
       if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
     };
   }, [
-    hasRuntimeCoverCandidate,
     props.job.id,
     props.service,
     props.youtubeCovers.length,
+    runtimeCoverCandidateKey,
     youtubeIndex
   ]);
 

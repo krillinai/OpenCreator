@@ -1086,6 +1086,17 @@
   text-align: center;
 }
 
+.video-translation-subtitle-preview[data-ratio="9:16"] {
+  grid-template-rows: auto auto;
+}
+
+.video-translation-subtitle-preview[data-ratio="9:16"] > div {
+  width: min(236px, 100%);
+  min-height: 0;
+  aspect-ratio: 9 / 16;
+  justify-self: center;
+}
+
 .video-translation-subtitle-preview small,
 .video-translation-subtitle-preview strong {
   max-width: 100%;

@@ -6,7 +6,6 @@ import type {
 } from '@opencreator/protocol';
 import {
   Activity,
-  Bot,
   Check,
   MessageSquareText,
   Square,
@@ -15,6 +14,7 @@ import {
   X
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import OpenCreatorMark from '../../components/brand/OpenCreatorMark.js';
 
 export default function CreatorAgentPanel(props: {
   title: string;
@@ -37,7 +37,7 @@ export default function CreatorAgentPanel(props: {
   return (
     <aside className="creator-agent-panel" aria-label={props.title}>
       <header className="creator-agent-panel-header">
-        <Bot size={17} aria-hidden="true" />
+        <OpenCreatorMark size={18} aria-hidden="true" />
         <h2>{props.title}</h2>
         {props.busy && props.onInterrupt ? (
           <button type="button" onClick={props.onInterrupt} aria-label="停止 Agent">
